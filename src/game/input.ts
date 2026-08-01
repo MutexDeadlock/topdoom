@@ -6,6 +6,9 @@ export class Input {
   readonly pointer = { x: 0, y: 0 };
   mouseDown = false;
 
+  private rightDown = false;
+  private dragYawDelta = 0;
+
   private element: HTMLElement;
 
   constructor(element: HTMLElement) {
@@ -33,20 +36,34 @@ export class Input {
   private onBlur = () => {
     this.down.clear();
     this.mouseDown = false;
+    this.rightDown = false;
   };
 
   private onPointerMove = (e: PointerEvent) => {
     const rect = this.element.getBoundingClientRect();
     this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+    if (this.rightDown) this.dragYawDelta += e.movementX;
   };
 
-  private onPointerDown = () => {
-    this.mouseDown = true;
+  private onPointerDown = (e: PointerEvent) => {
+    if (e.button === 2) {
+      this.rightDown = true;
+      // Without capture, drags that cross the canvas edge would stop
+      // receiving pointermove (bound on the element, not the window).
+      this.element.setPointerCapture(e.pointerId);
+    } else if (e.button === 0) {
+      this.mouseDown = true;
+    }
   };
 
-  private onPointerUp = () => {
-    this.mouseDown = false;
+  private onPointerUp = (e: PointerEvent) => {
+    if (e.button === 2) {
+      this.rightDown = false;
+      this.element.releasePointerCapture(e.pointerId);
+    } else if (e.button === 0) {
+      this.mouseDown = false;
+    }
   };
 
   held(...codes: string[]): boolean {
@@ -56,6 +73,13 @@ export class Input {
   /** True only on the first frame a key went down. */
   pressed(code: string): boolean {
     return this.pressedThisFrame.has(code);
+  }
+
+  /** Accumulated horizontal pointer movement while right-dragging, since the last call. */
+  consumeDragYaw(): number {
+    const delta = this.dragYawDelta;
+    this.dragYawDelta = 0;
+    return delta;
   }
 
   /** Call once at the end of every frame. */
@@ -68,6 +92,8 @@ export class Input {
     this.down.clear();
     this.pressedThisFrame.clear();
     this.mouseDown = false;
+    this.rightDown = false;
+    this.dragYawDelta = 0;
   }
 
   dispose(): void {

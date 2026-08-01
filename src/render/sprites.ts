@@ -7,11 +7,11 @@ import { THING_SPRITES } from '../game/thingdefs.ts';
 import { doomToWorld, lightToColor } from './mapmesh.ts';
 
 /**
- * The camera never orbits (see TopDownCamera): its offset from whatever it
- * looks at is always south-and-tilted-up. So the direction from any point in
- * the level to the viewer is, for sprite-rotation purposes, this fixed
- * DOOM-space angle (0 = east, 90 = north, counter-clockwise) rather than
- * something recomputed per thing per frame.
+ * Default viewer angle (DOOM-space, 0 = east, 90 = north, counter-clockwise):
+ * due south, matching TopDownCamera's yaw=0. The camera can orbit (see
+ * TopDownCamera.viewerAngleDeg), so this constant is only the fallback for
+ * callers that don't pass a live angle; SpriteActor.setPose is re-called
+ * every frame with the camera's actual current viewer angle.
  */
 export const VIEWER_ANGLE_DEG = -90;
 
@@ -31,13 +31,14 @@ interface CachedSprite {
  * (lump, mirrored) pair.
  *
  * Things are rendered as flat planes fixed upright in the world rather than
- * as THREE.Sprite billboards, which fully face the camera. A camera-facing
- * billboard tips flat whenever the camera tilts toward looking straight
- * down, making a standing DOOM sprite read as a figure lying on the floor.
- * Since this game's camera never changes azimuth (see VIEWER_ANGLE_DEG), the
- * "face the viewer" direction is the same fixed world direction for every
- * actor, so the plane's orientation can be baked in once instead of
- * recomputed as a true billboard: it only ever needs to stay vertical.
+ * as THREE.Sprite billboards, which fully face the camera on every axis. A
+ * camera-facing billboard tips flat whenever the camera tilts toward looking
+ * straight down, making a standing DOOM sprite read as a figure lying on the
+ * floor. Since this game's camera only ever tilts a fixed amount off
+ * vertical (it can orbit in yaw, but never pitches further down or up), the
+ * plane only ever needs to turn around its vertical axis to track the
+ * camera's azimuth (see SpriteActor.setPose's viewerAngleDeg), never tilt —
+ * a cheaper, always-upright approximation instead of a true billboard.
  */
 export class SpriteMaterialCache {
   private cache = new Map<string, CachedSprite | null>();
@@ -132,10 +133,12 @@ export class SpriteMaterialCache {
 const DOOM_TIC = 1 / 35;
 
 /**
- * A single thing rendered as an upright plane. The plane's own orientation
- * never changes — see SpriteMaterialCache's class doc — so posing an actor
- * only ever repositions it and, if the facing angle or animation frame now
- * picks a different rotation frame, swaps in that lump's geometry/material.
+ * A single thing rendered as an upright plane. The plane never tilts — see
+ * SpriteMaterialCache's class doc — but does turn around its vertical axis
+ * to keep facing the camera as it orbits, so posing an actor repositions it,
+ * yaws it to the current viewer angle, and, if the facing angle or animation
+ * frame now picks a different rotation frame, swaps in that lump's
+ * geometry/material.
  *
  * Animation is a plain frame-letter cycle, e.g. DOOM's own PLAY sprite reuses
  * A, B, C, D as a 4-step leg cycle while walking and simply holds frame A
@@ -150,13 +153,25 @@ export class SpriteActor {
   private animIndex = 0;
   private animTimer = 0;
 
+  private bank: SpriteBank;
+  private materials: SpriteMaterialCache;
+  private spriteName: string;
+  private animFrames: string[];
+  private frameDuration: number;
+
   constructor(
-    private bank: SpriteBank,
-    private materials: SpriteMaterialCache,
-    private spriteName: string,
-    private animFrames: string[] = ['A'],
-    private frameDuration = 4 * DOOM_TIC,
-  ) {}
+    bank: SpriteBank,
+    materials: SpriteMaterialCache,
+    spriteName: string,
+    animFrames: string[] = ['A'],
+    frameDuration = 4 * DOOM_TIC,
+  ) {
+    this.bank = bank;
+    this.materials = materials;
+    this.spriteName = spriteName;
+    this.animFrames = animFrames;
+    this.frameDuration = frameDuration;
+  }
 
   /**
    * Repositions the actor and advances its animation; returns false if no
@@ -173,6 +188,7 @@ export class SpriteActor {
     light: number,
     dt = 0,
     animating = false,
+    viewerAngleDeg = VIEWER_ANGLE_DEG,
   ): boolean {
     if (animating && this.animFrames.length > 1) {
       this.animTimer += dt;
@@ -185,7 +201,7 @@ export class SpriteActor {
       this.animIndex = 0;
     }
 
-    const digit = pickRotationDigit(facingDeg);
+    const digit = pickRotationDigit(facingDeg, viewerAngleDeg);
     const found = this.bank.lookup(this.spriteName, this.animFrames[this.animIndex], digit);
     if (!found) return false;
 
@@ -199,14 +215,35 @@ export class SpriteActor {
     }
 
     doomToWorld(x, y, z, this.mesh.position);
+    // The plane's un-rotated pose already faces VIEWER_ANGLE_DEG (see
+    // SpriteMaterialCache's doc); turn it by however far the live viewer
+    // angle has moved from that default so it keeps facing the camera.
+    this.mesh.rotation.y = THREE.MathUtils.degToRad(viewerAngleDeg - VIEWER_ANGLE_DEG);
     (this.mesh.material as THREE.MeshBasicMaterial).color.setScalar(lightToColor(light));
     return true;
   }
 }
 
+interface PosedThing {
+  actor: SpriteActor;
+  x: number;
+  y: number;
+  z: number;
+  facingDeg: number;
+  light: number;
+}
+
 export interface ThingLayer {
   group: THREE.Group;
   count: number;
+  /**
+   * Re-poses every thing at the camera's current viewer angle. Things don't
+   * move or animate yet, so this only ever changes which rotation-frame lump
+   * is shown and which way each plane faces — cheap, and SpriteActor.setPose
+   * already skips the geometry/material swap when the resolved lump is
+   * unchanged from last call.
+   */
+  update(viewerAngleDeg: number): void;
 }
 
 /** One static upright plane per map THING whose type is a known, visible sprite. */
@@ -218,18 +255,32 @@ export function buildThingSprites(
 ): ThingLayer {
   const group = new THREE.Group();
   group.name = 'things';
-  let count = 0;
+  const posed: PosedThing[] = [];
 
   for (const t of map.things) {
     const spriteName = THING_SPRITES[t.type];
     if (!spriteName) continue;
 
     const sector = world.sectorAt(t.x, t.y);
+    const x = t.x;
+    const y = t.y;
+    const z = sector?.floorHeight ?? 0;
+    const facingDeg = t.angle;
+    const light = sector?.light ?? 128;
+
     const actor = new SpriteActor(bank, materials, spriteName);
-    if (!actor.setPose(t.x, t.y, sector?.floorHeight ?? 0, t.angle, sector?.light ?? 128)) continue;
+    if (!actor.setPose(x, y, z, facingDeg, light)) continue;
     group.add(actor.mesh);
-    count++;
+    posed.push({ actor, x, y, z, facingDeg, light });
   }
 
-  return { group, count };
+  return {
+    group,
+    count: posed.length,
+    update(viewerAngleDeg: number): void {
+      for (const p of posed) {
+        p.actor.setPose(p.x, p.y, p.z, p.facingDeg, p.light, 0, false, viewerAngleDeg);
+      }
+    },
+  };
 }

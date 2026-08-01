@@ -6,7 +6,7 @@ import { SpriteBank } from './wad/sprites.ts';
 import { loadMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
-import { SpriteActor, SpriteMaterialCache, buildThingSprites } from './render/sprites.ts';
+import { SpriteActor, SpriteMaterialCache, buildThingSprites, type ThingLayer } from './render/sprites.ts';
 import { WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
 import { PLAYER_HEIGHT, World } from './game/world.ts';
@@ -15,6 +15,9 @@ import { Input } from './game/input.ts';
 import { Menu, type Selection } from './ui/menu.ts';
 
 const hudEl = document.getElementById('hud')!;
+
+/** Camera-orbit degrees per pixel of right-mouse drag. */
+const YAW_SENSITIVITY = 0.15;
 
 /**
  * Renderer, canvas, camera and input live for the whole session — a new level
@@ -54,7 +57,7 @@ class Game {
   private world!: World;
   private player!: Player;
   private built: BuiltMap | null = null;
-  private things: THREE.Group | null = null;
+  private things: ThingLayer | null = null;
   private playerActor: SpriteActor;
   private wallFader!: WallFader;
 
@@ -107,7 +110,7 @@ class Game {
         if (obj instanceof THREE.Mesh) obj.geometry.dispose();
       });
     }
-    if (this.things) this.scene.remove(this.things);
+    if (this.things) this.scene.remove(this.things.group);
 
     const t0 = performance.now();
     const map = loadMap(this.wad, name);
@@ -117,14 +120,13 @@ class Game {
     this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
     this.player = new Player(this.world);
 
-    const thingLayer = buildThingSprites(map, this.world, this.spriteBank, this.spriteMaterials);
-    this.things = thingLayer.group;
-    this.scene.add(this.things);
+    this.things = buildThingSprites(map, this.world, this.spriteBank, this.spriteMaterials);
+    this.scene.add(this.things.group);
 
     const provider = this.wad.providerOf(name)?.name ?? '?';
     console.info(
       `${name} (${provider}): ${map.sectors.length} sectors, ${map.linedefs.length} linedefs, ` +
-        `${map.things.length} things (${thingLayer.count} rendered), ` +
+        `${map.things.length} things (${this.things.count} rendered), ` +
         `${this.built.triangles} tris in ${Math.round(performance.now() - t0)} ms`,
     );
     if (this.built.missingTextures.length > 0) {
@@ -160,10 +162,12 @@ class Game {
 
     const { input, camera } = this.view;
     this.handleHotkeys();
+    camera.yawDeg -= input.consumeDragYaw() * YAW_SENSITIVITY;
 
     const aim = camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + 32);
-    this.player.update(dt, input, aim);
+    this.player.update(dt, input, aim, camera.viewerAngleDeg + 180);
     camera.update(dt, this.player.x, this.player.y, this.player.eyeZ, aim);
+    this.things?.update(camera.viewerAngleDeg);
 
     const camPos = camera.camera.position;
     this.wallFader.update(
@@ -179,7 +183,16 @@ class Game {
     const facingDeg = (this.player.angle * 180) / Math.PI;
     const sector = this.world.sectorAt(this.player.x, this.player.y);
     const walking = Math.hypot(this.player.velX, this.player.velY) > 1;
-    this.playerActor.setPose(this.player.x, this.player.y, this.player.z, facingDeg, sector?.light ?? 128, dt, walking);
+    this.playerActor.setPose(
+      this.player.x,
+      this.player.y,
+      this.player.z,
+      facingDeg,
+      sector?.light ?? 128,
+      dt,
+      walking,
+      camera.viewerAngleDeg,
+    );
 
     this.view.renderer.render(this.scene, camera.camera);
 
@@ -217,9 +230,9 @@ class Game {
       `${this.currentMap}   ${this.title}`,
       `${this.fps} fps   ${this.built?.triangles ?? 0} tris`,
       `pos ${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}   z ${this.player.z.toFixed(0)}   sector ${sector}`,
-      `cam ${camera.distance.toFixed(0)} u / ${camera.tiltDeg.toFixed(0)}°   ceilings ${this.renderCeilings ? 'on' : 'off'}`,
+      `cam ${camera.distance.toFixed(0)} u / ${camera.tiltDeg.toFixed(0)}° tilt / ${camera.yawDeg.toFixed(0)}° yaw   ceilings ${this.renderCeilings ? 'on' : 'off'}`,
       '',
-      'WASD move   Shift run   mouse aim',
+      'WASD move   Shift run   mouse aim   right-drag rotate camera',
       'N/P map   C ceilings   +/- zoom   [ ] tilt   Esc menu',
     ].join('\n');
   }

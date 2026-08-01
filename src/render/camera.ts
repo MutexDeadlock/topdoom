@@ -7,17 +7,22 @@ export interface TopDownCameraOptions {
   distance?: number;
   /** How far the view leads towards the aim point, 0..1. */
   aimLead?: number;
+  /** Orbit around the target, in degrees. 0 keeps the camera due south. */
+  yawDeg?: number;
 }
 
 /**
  * A camera hanging above the player, tilted slightly off vertical so walls
  * show a bit of their height and the level reads as a space rather than a plan.
+ * `yawDeg` lets it orbit around the followed point (see Input's right-drag
+ * handling) so geometry facing away from the default south view stays reachable.
  */
 export class TopDownCamera {
   readonly camera: THREE.PerspectiveCamera;
   tiltDeg: number;
   distance: number;
   aimLead: number;
+  yawDeg: number;
 
   private target = new THREE.Vector3();
   private smoothed = new THREE.Vector3();
@@ -27,9 +32,19 @@ export class TopDownCamera {
     this.tiltDeg = options.tiltDeg ?? 60;
     this.distance = options.distance ?? 620;
     this.aimLead = options.aimLead ?? 0.18;
+    this.yawDeg = options.yawDeg ?? 0;
 
     this.camera = new THREE.PerspectiveCamera(55, aspect, 8, 12000);
     this.camera.up.set(0, 1, 0);
+  }
+
+  /**
+   * DOOM-space angle (0 = east, 90 = north, CCW) from the followed point to
+   * the camera. At yaw=0 this is -90 (due south), matching the sprite system's
+   * default viewer angle; see render/sprites.ts's VIEWER_ANGLE_DEG.
+   */
+  get viewerAngleDeg(): number {
+    return this.yawDeg - 90;
   }
 
   setAspect(aspect: number): void {
@@ -64,11 +79,15 @@ export class TopDownCamera {
     }
 
     const tilt = THREE.MathUtils.degToRad(this.tiltDeg);
-    // The offset sits south of the target so the camera looks slightly northward.
+    const yaw = THREE.MathUtils.degToRad(this.yawDeg);
+    // The offset sits yawDeg around the target from due south (yaw=0) so the
+    // camera can orbit while staying tilted the same amount off vertical.
+    const horiz = Math.sin(tilt) * this.distance;
     const offsetY = Math.cos(tilt) * this.distance;
-    const offsetZ = Math.sin(tilt) * this.distance;
+    const offsetX = horiz * Math.sin(yaw);
+    const offsetZ = horiz * Math.cos(yaw);
 
-    this.camera.position.set(this.smoothed.x, this.smoothed.y + offsetY, this.smoothed.z + offsetZ);
+    this.camera.position.set(this.smoothed.x + offsetX, this.smoothed.y + offsetY, this.smoothed.z + offsetZ);
     this.camera.lookAt(this.smoothed);
   }
 

@@ -34,10 +34,13 @@ export class Player {
   }
 
   /**
-   * Movement is camera-relative in the top-down sense: W is north (+y in DOOM
-   * space), independent of where the player is aiming.
+   * Movement is camera-relative: W always moves the player away from the
+   * camera on screen, independent of where the player is aiming. `forwardDeg`
+   * is the DOOM-space bearing the camera currently looks along (derived from
+   * TopDownCamera.viewerAngleDeg), so at the default yaw (camera due south,
+   * forwardDeg=90/north) this reduces to the old fixed-axis mapping exactly.
    */
-  update(dt: number, input: Input, aim: { x: number; y: number } | null): void {
+  update(dt: number, input: Input, aim: { x: number; y: number } | null, forwardDeg: number): void {
     let mx = 0;
     let my = 0;
     if (input.held('KeyW', 'ArrowUp')) my += 1;
@@ -51,9 +54,14 @@ export class Player {
       my /= len;
     }
 
+    const forwardRad = (forwardDeg * Math.PI) / 180;
+    const rightRad = forwardRad - Math.PI / 2;
+    const worldX = mx * Math.cos(rightRad) + my * Math.cos(forwardRad);
+    const worldY = mx * Math.sin(rightRad) + my * Math.sin(forwardRad);
+
     const speed = input.held('ShiftLeft', 'ShiftRight') ? RUN_SPEED : WALK_SPEED;
-    const targetX = mx * speed;
-    const targetY = my * speed;
+    const targetX = worldX * speed;
+    const targetY = worldY * speed;
 
     // Exponential approach gives DOOM-ish inertia without a full physics model.
     const k = 1 - Math.exp(-ACCELERATION * dt);

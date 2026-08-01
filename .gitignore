@@ -1,8 +1,6 @@
 .claude/settings.local.json
 node_modules
 dist
-public/wads/iwad/*.wad
-public/wads/iwad/*.WAD
-public/wads/pwad/*.wad
-public/wads/pwad/*.WAD
+public/wads/iwad/DOOM.WAD
+public/wads/iwad/DOOM2.WAD
 .DS_Store

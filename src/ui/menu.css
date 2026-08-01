@@ -1,0 +1,224 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #08080a;
+  color: #d8d0c0;
+  font: 13px/1.5 ui-monospace, 'DejaVu Sans Mono', monospace;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+canvas {
+  display: block;
+}
+
+#hud {
+  position: fixed;
+  left: 12px;
+  top: 12px;
+  line-height: 1.5;
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+  white-space: pre;
+  z-index: 10;
+}
+
+/* ---------- start menu ---------- */
+
+#menu {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: radial-gradient(ellipse at 50% 0%, #1a1012 0%, #08080a 70%);
+}
+
+#menu.hidden {
+  display: none;
+}
+
+#menu .panel {
+  width: 100%;
+  max-width: 620px;
+  border: 1px solid #34343c;
+  background: #121216;
+  padding: 26px 30px 22px;
+}
+
+#menu header {
+  border-bottom: 1px solid #2a2a32;
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+}
+
+#menu h1 {
+  margin: 0;
+  font-size: 30px;
+  letter-spacing: 6px;
+  color: #c0392b;
+}
+
+#menu .sub {
+  margin: 4px 0 0;
+  color: #7f7a74;
+}
+
+#menu section {
+  margin-bottom: 20px;
+}
+
+#menu h2 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: normal;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: #8d8781;
+}
+
+#menu .hint {
+  letter-spacing: 0;
+  text-transform: none;
+  color: #5d5852;
+}
+
+#menu .list {
+  border: 1px solid #2a2a32;
+  background: #0d0d10;
+  max-height: 190px;
+  overflow-y: auto;
+}
+
+#menu .list:empty::after {
+  content: 'Nothing in public/wads/ — load a file from disk below.';
+  display: block;
+  padding: 14px 12px;
+  color: #5d5852;
+}
+
+#menu .row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 7px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #1b1b21;
+}
+
+#menu .row:last-child {
+  border-bottom: none;
+}
+
+#menu .row:hover {
+  background: #17171c;
+}
+
+#menu .row.selected {
+  background: #241417;
+  color: #fff;
+}
+
+#menu .row input {
+  accent-color: #c0392b;
+  margin: 0;
+}
+
+#menu .row .name {
+  flex: 1;
+}
+
+#menu .row .meta {
+  color: #6f6a65;
+  font-size: 12px;
+}
+
+#menu .row.selected .meta {
+  color: #a08e88;
+}
+
+#menu select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #2a2a32;
+  background: #0d0d10;
+  color: inherit;
+  font: inherit;
+}
+
+#menu button {
+  font: inherit;
+  cursor: pointer;
+  border: 1px solid #34343c;
+  background: #17171c;
+  color: #b8b2ab;
+  padding: 8px 14px;
+}
+
+#menu button:hover:not(:disabled) {
+  border-color: #c0392b;
+  color: #fff;
+}
+
+#menu button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+#menu button.ghost {
+  margin-top: 8px;
+  width: 100%;
+  text-align: left;
+}
+
+#menu button.primary {
+  background: #c0392b;
+  border-color: #c0392b;
+  color: #fff;
+  letter-spacing: 2px;
+  padding: 10px 28px;
+}
+
+#menu button.primary:hover:not(:disabled) {
+  background: #d84937;
+}
+
+#menu footer {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-top: 1px solid #2a2a32;
+  padding-top: 16px;
+}
+
+#menu-status {
+  color: #7f7a74;
+}
+
+#menu-status.error {
+  color: #e06c5a;
+}
+
+#drop-hint {
+  position: fixed;
+  bottom: 16px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #4a4640;
+  pointer-events: none;
+}
+
+#menu.dragging {
+  outline: 2px dashed #c0392b;
+  outline-offset: -10px;
+}

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TopDoom</title>
+    <link rel="stylesheet" href="/src/ui/menu.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="hud"></div>
+
+    <div id="menu" class="hidden">
+      <div class="panel">
+        <header>
+          <h1>TOPDOOM</h1>
+          <p class="sub">Top-down DOOM on the original IWADs</p>
+        </header>
+
+        <section>
+          <h2>Game WAD</h2>
+          <div class="list" id="iwad-list"></div>
+          <button class="ghost" id="iwad-upload">Load IWAD from disk…</button>
+        </section>
+
+        <section>
+          <h2>Add-ons <span class="hint">optional, applied in order</span></h2>
+          <div class="list" id="pwad-list"></div>
+          <button class="ghost" id="pwad-upload">Add PWAD from disk…</button>
+        </section>
+
+        <section>
+          <h2>Level</h2>
+          <select id="level-select"></select>
+        </section>
+
+        <footer>
+          <button class="primary" id="start-button">Start</button>
+          <span id="menu-status"></span>
+        </footer>
+      </div>
+      <input type="file" id="file-input" accept=".wad,.WAD" hidden />
+      <div id="drop-hint">Drop WAD files anywhere to add them</div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

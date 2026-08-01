@@ -1,0 +1,75 @@
+/** Small little-endian cursor over an ArrayBuffer. */
+export class Reader {
+  private view: DataView;
+  pos = 0;
+
+  private buf: ArrayBuffer;
+
+  constructor(buf: ArrayBuffer, offset = 0, length?: number) {
+    this.buf = buf;
+    this.view = new DataView(buf, offset, length ?? buf.byteLength - offset);
+  }
+
+  get length(): number {
+    return this.view.byteLength;
+  }
+
+  get eof(): boolean {
+    return this.pos >= this.view.byteLength;
+  }
+
+  u8(): number {
+    return this.view.getUint8(this.pos++);
+  }
+
+  i16(): number {
+    const v = this.view.getInt16(this.pos, true);
+    this.pos += 2;
+    return v;
+  }
+
+  u16(): number {
+    const v = this.view.getUint16(this.pos, true);
+    this.pos += 2;
+    return v;
+  }
+
+  i32(): number {
+    const v = this.view.getInt32(this.pos, true);
+    this.pos += 4;
+    return v;
+  }
+
+  u32(): number {
+    const v = this.view.getUint32(this.pos, true);
+    this.pos += 4;
+    return v;
+  }
+
+  bytes(n: number): Uint8Array {
+    const out = new Uint8Array(this.buf, this.view.byteOffset + this.pos, n);
+    this.pos += n;
+    return out;
+  }
+
+  /**
+   * Lump name: 8 bytes, normalised to upper case. The name ends at the first
+   * NUL — map editors do not always zero the rest of the field, so bytes after
+   * it are leftovers from a previous edit and must be ignored, exactly as
+   * vanilla DOOM's strncpy does.
+   */
+  name8(): string {
+    let s = '';
+    let terminated = false;
+    for (let i = 0; i < 8; i++) {
+      const c = this.u8();
+      if (c === 0) terminated = true;
+      if (!terminated) s += String.fromCharCode(c);
+    }
+    return s.toUpperCase();
+  }
+
+  seek(p: number): void {
+    this.pos = p;
+  }
+}

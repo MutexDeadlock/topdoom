@@ -60,7 +60,8 @@ where nearby unrelated geometry makes results hard to interpret.
 
 ```
 src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite decoding
-src/render/    BSP polygon reconstruction, mesh building, materials, sprite billboards, camera
+src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
+               sprite billboards, camera
 src/game/      spatial queries, collision, player controller, input, thing→sprite table
 src/ui/        start menu
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
@@ -110,6 +111,47 @@ the camera and the player and produces the open dollhouse look — no extra logi
 `F_SKY1` flats are skipped. Coordinates: DOOM's `(x, y, z)` becomes three.js `(x, z, -y)`, so
 the map plane is XZ and Y is up.
 
+### Wall occlusion fading (`src/render/occlusion.ts`, `src/render/textures.ts`)
+
+Single-sided back-face culling (above) only removes walls facing away from the camera; it
+does nothing about a wall that legitimately faces the camera but sits directly on the
+camera→player sightline (e.g. a pillar in front of the player). `WallFader` tests every wall
+quad's 2D footprint against that sightline each frame and fades the ones that cross it, rather
+than the coarser fix of drawing the player on top of everything, which would also show it
+through walls that genuinely separate it from the camera.
+
+The fade is a **dithered discard**, not real alpha blending: wall quads are batched one mesh
+per texture across the whole map, three.js sorts transparent objects back-to-front per mesh,
+and with a mesh spanning the entire level that order is meaningless — plus both meshes still
+write depth by default, so whichever draws first can win the depth test and blank out the
+other. `MaterialBank` instead injects a fragment-shader snippet (`onBeforeCompile`) that
+discards a per-pixel fraction of fragments using interleaved-gradient-noise dithering, keyed
+off a per-vertex alpha `WallFader` writes into the (otherwise unused) 4th color channel. That
+keeps walls in the ordinary opaque, depth-tested/written pass — no batching or sort-order
+concerns, just fewer pixels drawn. `holes` textures (masked middles) already alpha-test on the
+*combined* texture × vertex alpha, so a faded grate discards outright instead of dithering.
+
+Fade amount is exponentially smoothed (`FADE_SPEED`) so walls don't pop in/out, but a pure
+exponential lerp never actually reaches its target — `WallFader.update` snaps once the
+remaining gap drops below a threshold, otherwise a wall settles a hair short of fully opaque
+forever and shows a permanent faint speckle (the dither test is a strict `<`).
+
+### Camera orbit and camera-relative movement (`src/render/camera.ts`, `src/game/input.ts`, `src/game/player.ts`)
+
+`TopDownCamera.yawDeg` lets the camera orbit around the followed point on right-mouse drag
+(`Input.consumeDragYaw`, accumulated via `pointermove` with `setPointerCapture` so the drag
+survives leaving the canvas mid-move); tilt and distance are unaffected, so the camera always
+stays the same amount off vertical. `viewerAngleDeg` (`yawDeg - 90`) is the DOOM-space bearing
+from the followed point to the camera, and is what sprite rendering (above) and player
+movement both key off — at the default `yawDeg = 0` it's `-90`, matching the old fixed
+south-facing camera exactly, so nothing downstream needed a special case for "not yet
+orbited."
+
+Movement (`Player.update`'s `forwardDeg` param, passed as `camera.viewerAngleDeg + 180`) is
+camera-relative rather than DOOM-axis-relative: `W` always moves the player away from the
+camera *on screen*, regardless of which way the camera has been orbited to face. `main.ts`
+recomputes this every frame from the live camera angle before calling `player.update`.
+
 ### Collision (`src/game/world.ts`)
 
 `World` provides spatial queries over a `DoomMap`: a 128-unit grid buckets linedefs for
@@ -149,12 +191,15 @@ Things render as upright planes (`render/sprites.ts: SpriteActor`/`SpriteMateria
 not `THREE.Sprite` billboards. A few decisions here are non-obvious enough to be worth
 knowing before touching this file:
 
-- **Planes have a fixed orientation, not a computed one.** `TopDownCamera` never orbits —
-  only tilt/zoom change — so the "face the viewer" direction is the *same constant world
-  direction* for every actor, always (`VIEWER_ANGLE_DEG`). A `THREE.Sprite` recomputes a full
-  camera-facing rotation every frame, which is not just wasted work here but actively wrong:
-  it tips flat as the camera tilts toward straight-down, making standing figures read as
-  lying on the floor. A plane baked once to stay vertical avoids that and is cheaper.
+- **Planes turn to face the camera's yaw, but never tilt.** `TopDownCamera` can orbit in yaw
+  (right-drag, see below) but only ever tilts a fixed amount off vertical — it never pitches
+  further down or up. So a plane only ever needs to rotate around its vertical axis to track
+  `camera.viewerAngleDeg` (`SpriteActor.setPose`'s `viewerAngleDeg` param, called every frame
+  from `main.ts`); it never needs a true billboard rotation. `VIEWER_ANGLE_DEG` is just the
+  default/fallback for callers that don't pass a live angle. A `THREE.Sprite`'s full
+  camera-facing rotation would be both wasted work and actively wrong here: it tips flat as
+  the camera tilts toward straight-down, making standing figures read as lying on the floor.
+  An always-upright plane avoids that and is cheaper.
 - **`DataTexture` can't use `flipY`.** WAD bitmaps start at their top row; a plane's default
   UVs put `v=0` at the bottom, so art arrives upside down. Setting `texture.flipY` does
   nothing — WebGL only honours `UNPACK_FLIP_Y_WEBGL` for image-source uploads, not the typed
@@ -168,9 +213,9 @@ knowing before touching this file:
   than its full height (common, worst on small pickups) would draw with its feet visibly
   below the floor. The bottom edge is anchored to the floor outright instead of trusting the
   offset; `left` is still used as-is for horizontal centring, which had no such problem.
-- **Rotation frame is picked once from a fixed viewer angle**, not recomputed per thing per
-  frame from the actual camera position — consistent with the fixed-orientation billboard
-  above, and cheap.
+- **Rotation frame (which of the 8 sprite angles) is picked from the live viewer angle**
+  every frame (`pickRotationDigit`), same as the plane's own yaw above — both track
+  `camera.viewerAngleDeg`, not a hardcoded constant, now that the camera orbits.
 
 Animation (`SpriteActor.setPose`'s `animFrames`/`animating`) is a plain frame-letter cycle
 with no separate idle art, matching DOOM itself: the player's `PLAY` sprite reuses `A,B,C,D`
@@ -203,8 +248,10 @@ Menu semantics worth knowing before touching `menu.ts`:
 ## Current state
 
 Playable as a walkable level viewer: geometry, textures, sector lighting, collision with
-step-up/headroom rules, floor following, map switching, PWAD loading. THINGS render as
-upright sprite billboards (monsters, weapons, ammo, health/armor, keys, powerups and common
-decorations — see the thing table in `game/thingdefs.ts`), and the player is drawn as the
-real `PLAY` sprite with a facing-driven rotation frame and a walk-cycle animation. Not yet
+step-up/headroom rules, floor following, map switching, PWAD loading, and a camera that can
+orbit in yaw (right-drag) around the player with dithered wall-occlusion fading so it never
+hides the player behind geometry. THINGS render as upright sprite billboards (monsters,
+weapons, ammo, health/armor, keys, powerups and common decorations — see the thing table in
+`game/thingdefs.ts`), and the player is drawn as the real `PLAY` sprite with a facing-driven
+rotation frame and a walk-cycle animation, both tracking the live camera angle. Not yet
 implemented: monster AI/combat, weapons, doors and lifts, pickup collection, sound.

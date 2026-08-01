@@ -2,8 +2,9 @@
 
 A top-down DOOM built on the original IWADs. The camera hangs above the player and is
 tilted slightly off vertical, so walls show some of their height and levels read as
-spaces rather than floor plans. Level geometry, textures and flats come straight out of
-`DOOM.WAD` / `DOOM2.WAD`; the game logic is new.
+spaces rather than floor plans; it can also orbit around the player on right-drag. Level
+geometry, textures and flats come straight out of `DOOM.WAD` / `DOOM2.WAD`; the game logic
+is new.
 
 ## Running it
 
@@ -47,9 +48,10 @@ declares itself an IWAD becomes the game WAD, a PWAD is added as an add-on.
 
 | Key | |
 |---|---|
-| `W` `A` `S` `D` | move (screen-relative, `W` is north) |
+| `W` `A` `S` `D` | move (screen-relative: `W` always moves away from the camera) |
 | `Shift` | run |
 | mouse | aim; the view leads slightly towards the cursor |
+| right-drag | orbit the camera around the player |
 | `N` / `P` | next / previous map |
 | `C` | toggle ceilings |
 | `+` / `-` | camera distance |
@@ -62,7 +64,7 @@ Ceilings are off by default — from above they would hide everything underneath
 
 ```
 src/wad/       WAD files, merged lump directory, map lumps, graphics decoding
-src/render/    BSP polygon reconstruction, mesh building, materials, camera
+src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading, camera
 src/game/      spatial queries, collision, player controller, input
 src/ui/        start menu
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
@@ -103,6 +105,14 @@ original.
 front. Walls between the camera and the player are therefore culled automatically, which
 is what produces the open dollhouse look without any extra logic.
 
+**Occlusion fading.** Back-face culling doesn't help when a wall legitimately faces the
+camera but still sits on the camera→player sightline (a pillar in front of the player, say).
+`render/occlusion.ts`'s `WallFader` tests every wall quad against that sightline each frame
+and fades the ones crossing it — as a dithered per-pixel discard rather than real alpha
+blending, since wall quads are batched per texture across the whole map and blending would
+need a meaningless whole-level draw order. That keeps faded walls in the ordinary
+depth-tested opaque pass.
+
 **Coordinates.** Everything stays in DOOM map units. DOOM's `(x, y, z)` becomes three.js
 `(x, z, -y)`, so the map plane is XZ and Y is up.
 
@@ -120,5 +130,8 @@ is walkable.
 ## State
 
 Playable as a walkable level viewer: geometry, textures, sector lighting, collision with
-step-up/headroom rules, floor following, map switching, and PWAD loading. Not yet: sprites
-(things are parsed but not drawn), monsters, weapons, doors and lifts, pickups, sound.
+step-up/headroom rules, floor following, map switching, PWAD loading, and an orbitable camera
+with wall-occlusion fading. THINGS render as upright sprites (monsters, weapons, ammo,
+health/armor, keys, powerups and common decorations), and the player is drawn as the real
+`PLAY` sprite with a facing-driven rotation frame and a walk-cycle animation. Not yet:
+monster AI/combat, weapons, doors and lifts, pickup collection, sound.

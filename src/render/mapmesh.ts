@@ -70,6 +70,10 @@ export interface BuiltMap {
   occluders: WallOccluder[];
   /** Wall batch meshes by key, so occlusion fading can reach their vertex-alpha attribute. */
   wallMeshes: Map<string, THREE.Mesh>;
+  /** Every rendered floor/ceiling triangle fan's vertex range, for fog-of-war fading. */
+  flatSurfaces: FlatSurface[];
+  /** Flat batch meshes by key, so fog-of-war can reach their vertex-alpha attribute. */
+  flatMeshes: Map<string, THREE.Mesh>;
 }
 
 /**
@@ -89,6 +93,19 @@ export interface WallOccluder {
   topH: number;
 }
 
+/**
+ * One rendered floor/ceiling triangle fan's vertex range within its batch,
+ * so `FogOfWar` (game/fogofwar.ts) can rewrite its alpha the same way
+ * `WallOccluder` lets `WallFader` rewrite a wall's. Keyed by subsector, not
+ * sector — see FogOfWar's class doc for why the distinction matters.
+ */
+export interface FlatSurface {
+  key: string;
+  vertexStart: number;
+  vertexCount: number;
+  subsector: number;
+}
+
 export function buildMapMesh(
   map: DoomMap,
   bank: MaterialBank,
@@ -98,6 +115,7 @@ export function buildMapMesh(
   const batches = new BatchSet();
   const missing = new Set<string>();
   const occluders: WallOccluder[] = [];
+  const flatSurfaces: FlatSurface[] = [];
 
   const texSize = (kind: SurfaceKind, name: string) => {
     const s = bank.size(kind, name);
@@ -105,13 +123,14 @@ export function buildMapMesh(
     return s;
   };
 
-  buildFlats(map, batches, texSize, renderCeilings);
+  buildFlats(map, batches, texSize, renderCeilings, flatSurfaces);
   buildWalls(map, batches, texSize, wallHeightCap, occluders);
 
   const group = new THREE.Group();
   group.name = 'map:' + map.name;
   let triangles = 0;
   const wallMeshes = new Map<string, THREE.Mesh>();
+  const flatMeshes = new Map<string, THREE.Mesh>();
 
   for (const b of batches.all()) {
     if (b.positions.length === 0) continue;
@@ -130,18 +149,26 @@ export function buildMapMesh(
     group.add(mesh);
     triangles += b.positions.length / 9;
     if (b.kind === 'wall') wallMeshes.set(b.key, mesh);
+    else flatMeshes.set(b.key, mesh);
   }
 
-  return { group, missingTextures: [...missing].sort(), triangles, occluders, wallMeshes };
+  return { group, missingTextures: [...missing].sort(), triangles, occluders, wallMeshes, flatSurfaces, flatMeshes };
 }
 
 type SizeFn = (kind: SurfaceKind, name: string) => { w: number; h: number } | null;
 
 /** Floors and ceilings, triangulated per subsector (each one is convex). */
-function buildFlats(map: DoomMap, batches: BatchSet, size: SizeFn, renderCeilings: boolean): void {
+function buildFlats(
+  map: DoomMap,
+  batches: BatchSet,
+  size: SizeFn,
+  renderCeilings: boolean,
+  flatSurfaces: FlatSurface[],
+): void {
   const polys = buildSubSectorPolys(map);
 
-  for (const poly of polys) {
+  for (let ss = 0; ss < polys.length; ss++) {
+    const poly = polys[ss];
     const n = poly.points.length / 2;
     if (n < 3) continue;
     const sector = map.sectors[poly.sector];
@@ -155,6 +182,7 @@ function buildFlats(map: DoomMap, batches: BatchSet, size: SizeFn, renderCeiling
       const height = isCeiling ? sector.ceilHeight : sector.floorHeight;
       const color = lightToColor(sector.light);
       const batch = batches.get('flat', texName);
+      const vertexStart = batch.positions.length / 3;
 
       // Fan triangulation around vertex 0. Floors keep the polygon's winding
       // (normal up), ceilings are reversed so their normal points down.
@@ -167,6 +195,9 @@ function buildFlats(map: DoomMap, batches: BatchSet, size: SizeFn, renderCeiling
           pushVertex(batch, x, height, -y, x / 64, -y / 64, color);
         }
       }
+
+      const vertexCount = batch.positions.length / 3 - vertexStart;
+      if (vertexCount > 0) flatSurfaces.push({ key: batch.key, vertexStart, vertexCount, subsector: ss });
     }
   }
 }

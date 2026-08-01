@@ -57,36 +57,35 @@ export class MaterialBank {
         alphaTest: holes ? 0.5 : 0,
       });
       mat.name = key;
-      // Walls carry a per-vertex alpha (see render/occlusion.ts) for
-      // occlusion fading. This is deliberately NOT real alpha blending
-      // (material.transparent): wall quads are batched one mesh per
-      // texture across the *whole* map, and three.js sorts transparent
+      // Both walls and flats carry a per-vertex alpha: walls for occlusion
+      // fading (render/occlusion.ts) and both walls and flats for
+      // fog-of-war reveal (game/fogofwar.ts). This is deliberately NOT real
+      // alpha blending (material.transparent): geometry is batched one mesh
+      // per texture across the *whole* map, and three.js sorts transparent
       // objects back-to-front per mesh — with a mesh spanning the entire
       // level that order is meaningless, and since both meshes still
       // write depth by default, whichever one draws first can win the
       // depth test and blank out the other (this is exactly how a faded
       // pillar could hide the wall behind it). Discarding a dithered
-      // fraction of fragments instead keeps walls fully in the ordinary
+      // fraction of fragments instead keeps geometry fully in the ordinary
       // opaque, depth-tested/written pass — no batch, no sort order, no
       // blending, just fewer pixels — so it composites correctly
       // regardless of draw order. Same caveat as before applies to
       // `holes` textures: alphaTest above already tests the *combined*
       // (texture × vertex) alpha, so a faded grate discards outright
       // instead of dithering.
-      if (kind === 'wall') {
-        mat.onBeforeCompile = (shader) => {
-          shader.fragmentShader = shader.fragmentShader.replace(
-            '#include <color_fragment>',
-            `#include <color_fragment>
+      mat.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <color_fragment>',
+          `#include <color_fragment>
             {
               // Interleaved gradient noise (Jimenez) — a cheap, decorrelated
               // per-pixel threshold for screen-door transparency.
               float dither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
               if (diffuseColor.a < dither) discard;
             }`,
-          );
-        };
-      }
+        );
+      };
     }
     this.materials.set(key, mat);
     return mat;

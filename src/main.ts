@@ -7,10 +7,11 @@ import { loadMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache, buildThingSprites, type ThingLayer } from './render/sprites.ts';
-import { WallFader } from './render/occlusion.ts';
+import { WallFader, applyFogToFlats } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
 import { PLAYER_HEIGHT, World } from './game/world.ts';
 import { Player } from './game/player.ts';
+import { FogOfWar } from './game/fogofwar.ts';
 import { Input } from './game/input.ts';
 import { Menu, type Selection } from './ui/menu.ts';
 
@@ -60,6 +61,7 @@ class Game {
   private things: ThingLayer | null = null;
   private playerActor: SpriteActor;
   private wallFader!: WallFader;
+  private fogOfWar!: FogOfWar;
 
   private renderCeilings = false;
   private running = false;
@@ -72,10 +74,14 @@ class Game {
   private wad: Wad;
   readonly title: string;
 
-  constructor(view: Viewport, wad: Wad, startMap: string, title: string) {
+  /** `?pos=x,y` override for the player start, consumed by the first map load. */
+  private startPos: { x: number; y: number } | null;
+
+  constructor(view: Viewport, wad: Wad, startMap: string, title: string, startPos: { x: number; y: number } | null = null) {
     this.view = view;
     this.wad = wad;
     this.title = title;
+    this.startPos = startPos;
 
     this.scene.background = new THREE.Color(0x05050a);
     this.scene.fog = new THREE.Fog(0x05050a, 1400, 2600);
@@ -119,6 +125,13 @@ class Game {
     this.scene.add(this.built.group);
     this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
     this.player = new Player(this.world);
+    // Applied before fog of war is seeded, so an explicit start position reveals
+    // exactly what is visible from there and nothing from the map's real spawn.
+    if (this.startPos) {
+      this.player.moveTo(this.startPos.x, this.startPos.y);
+      this.startPos = null;
+    }
+    this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player.x, this.player.y);
 
     this.things = buildThingSprites(map, this.world, this.spriteBank, this.spriteMaterials);
     this.scene.add(this.things.group);
@@ -167,7 +180,11 @@ class Game {
     const aim = camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + 32);
     this.player.update(dt, input, aim, camera.viewerAngleDeg + 180);
     camera.update(dt, this.player.x, this.player.y, this.player.eyeZ, aim);
-    this.things?.update(camera.viewerAngleDeg);
+
+    this.fogOfWar.update(dt, this.player.x, this.player.y);
+    const fog = this.fogOfWar;
+    const fogAlphaOf = (subsector: number) => fog.alphaOf(subsector);
+    this.things?.update(camera.viewerAngleDeg, fogAlphaOf);
 
     const camPos = camera.camera.position;
     this.wallFader.update(
@@ -179,6 +196,10 @@ class Game {
       this.player.y,
       this.player.z + PLAYER_HEIGHT / 2,
     );
+    // Walls resolve their own subsector inside FogOfWar (see wallAlpha); flats
+    // and things already know theirs, so they go through alphaOf directly.
+    this.wallFader.commit((i) => fog.wallAlpha(i));
+    if (this.built) applyFogToFlats(this.built.flatSurfaces, this.built.flatMeshes, fogAlphaOf);
 
     const facingDeg = (this.player.angle * 180) / Math.PI;
     const sector = this.world.sectorAt(this.player.x, this.player.y);
@@ -243,8 +264,16 @@ function titleOf(iwad: WadSource, pwads: WadSource[]): string {
   return pwads.length === 0 ? iwad.label : `${iwad.label} + ${pwads.map((p) => p.label).join(' + ')}`;
 }
 
+/** `?pos=x,y` — drop the player there instead of at the map's own start. */
+function parsePos(raw: string | null): { x: number; y: number } | null {
+  if (!raw) return null;
+  const [x, y] = raw.split(',').map(Number);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
+}
+
 async function boot(): Promise<void> {
   const view = new Viewport(document.getElementById('app')!);
+  const startPos = parsePos(new URLSearchParams(location.search).get('pos'));
   let game: Game | null = null;
 
   const startLevel = async (selection: Selection): Promise<void> => {
@@ -254,7 +283,7 @@ async function boot(): Promise<void> {
       const wad = new Wad(files);
 
       game?.dispose();
-      game = new Game(view, wad, selection.map, titleOf(selection.iwad, selection.pwads));
+      game = new Game(view, wad, selection.map, titleOf(selection.iwad, selection.pwads), startPos);
 
       menu.close();
       game.resume();

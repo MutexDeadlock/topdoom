@@ -1,5 +1,7 @@
 import * as THREE from 'three';
-import type { WallOccluder } from './mapmesh.ts';
+import type { FlatSurface, WallOccluder } from './mapmesh.ts';
+import { segmentIntersect } from '../util/geom.ts';
+import { dampen } from '../util/damping.ts';
 
 /**
  * Target coverage (0..1) once a wall sits on the camera-player sightline —
@@ -9,6 +11,8 @@ import type { WallOccluder } from './mapmesh.ts';
 const FADE_ALPHA = 0.2;
 /** Exponential smoothing rate (1/seconds) so fades don't pop in/out per frame. */
 const FADE_SPEED = 10;
+/** Snap-to-target threshold for `dampen` — see its doc for why this matters. */
+const SNAP_EPS = 0.004;
 
 /**
  * Fades the specific wall quad(s) currently between the camera and the
@@ -18,16 +22,23 @@ const FADE_SPEED = 10;
  * their front faces away from the camera (see mapmesh.ts's dollhouse
  * comment) — this covers what's left: quads that legitimately face the
  * camera but happen to sit on the line of sight to the player.
+ *
+ * `update` only computes this sightline factor; it does not touch geometry.
+ * A wall's on-screen alpha is actually the *product* of this factor and
+ * `FogOfWar`'s per-sector reveal factor (game/fogofwar.ts) — two independent
+ * systems driving the same vertex-alpha channel — so `commit` writes the
+ * combined value once both are known, instead of each system overwriting
+ * the other's work.
  */
 export class WallFader {
   private occluders: WallOccluder[];
   private meshes: Map<string, THREE.Mesh>;
-  private alpha: Float32Array;
+  private occlusionAlpha: Float32Array;
 
   constructor(occluders: WallOccluder[], meshes: Map<string, THREE.Mesh>) {
     this.occluders = occluders;
     this.meshes = meshes;
-    this.alpha = new Float32Array(occluders.length).fill(1);
+    this.occlusionAlpha = new Float32Array(occluders.length).fill(1);
   }
 
   /** Camera and target (player) positions in DOOM (x, y, height) coordinates. */
@@ -40,9 +51,6 @@ export class WallFader {
     targetY: number,
     targetZ: number,
   ): void {
-    const lerpT = 1 - Math.exp(-FADE_SPEED * dt);
-    const dirty = new Set<string>();
-
     for (let i = 0; i < this.occluders.length; i++) {
       const o = this.occluders[i];
       const cross = segmentIntersect(camX, camY, targetX, targetY, o.ax, o.ay, o.bx, o.by);
@@ -53,23 +61,27 @@ export class WallFader {
       }
 
       const target = occluding ? FADE_ALPHA : 1;
-      const prev = this.alpha[i];
-      let next = prev + (target - prev) * lerpT;
-      // The exponential approach never actually reaches `target` — left as
-      // pure lerp, a wall settles a hair short of fully opaque (e.g. 0.996)
-      // and stays there forever once the per-frame delta drops below the
-      // skip threshold below. Since the dither test is a strict `<`, that
-      // permanent gap still discards the sliver of pixels whose per-pixel
-      // threshold lands in it, i.e. a faint residual speckle on a wall
-      // that's supposed to be fully solid again. Snapping once close closes
-      // the gap for good instead of leaving it asymptotically open.
-      if (Math.abs(target - next) < 0.004) next = target;
-      if (next === prev) continue;
+      this.occlusionAlpha[i] = dampen(this.occlusionAlpha[i], target, FADE_SPEED, dt, SNAP_EPS);
+    }
+  }
 
-      this.alpha[i] = next;
+  /**
+   * Writes occlusion × fog-of-war combined alpha into each wall's vertex-colour
+   * alpha channel. `fogAlphaOf` is keyed by the wall's index in this list, not
+   * by sector: which subsector a wall quad faces into is geometry FogOfWar
+   * works out for itself (see its `wallAlpha`), so the mesh builder doesn't
+   * have to carry a fog-specific field around.
+   */
+  commit(fogAlphaOf: (occluderIndex: number) => number): void {
+    const dirty = new Set<string>();
+
+    for (let i = 0; i < this.occluders.length; i++) {
+      const o = this.occluders[i];
+      const combined = this.occlusionAlpha[i] * fogAlphaOf(i);
       const attr = this.meshes.get(o.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
       if (!attr) continue;
-      for (let v = 0; v < o.vertexCount; v++) attr.setW(o.vertexStart + v, next);
+      if (attr.getW(o.vertexStart) === combined) continue;
+      for (let v = 0; v < o.vertexCount; v++) attr.setW(o.vertexStart + v, combined);
       dirty.add(o.key);
     }
 
@@ -81,30 +93,29 @@ export class WallFader {
 }
 
 /**
- * 2D segment intersection between (ax,ay)-(bx,by) and (cx,cy)-(dx,dy).
- * Returns the crossing's parameter `t` along the first segment, or null if
- * they don't cross within both segments' bounds.
+ * Writes each floor/ceiling triangle fan's fog-of-war alpha into its
+ * vertex-colour alpha channel. Flats have no sightline-occlusion pass (only
+ * walls can stand between the camera and the player), so unlike
+ * `WallFader.commit` there's only the one writer here.
  */
-function segmentIntersect(
-  ax: number,
-  ay: number,
-  bx: number,
-  by: number,
-  cx: number,
-  cy: number,
-  dx: number,
-  dy: number,
-): { t: number } | null {
-  const rx = bx - ax;
-  const ry = by - ay;
-  const sx = dx - cx;
-  const sy = dy - cy;
+export function applyFogToFlats(
+  surfaces: FlatSurface[],
+  meshes: Map<string, THREE.Mesh>,
+  fogAlphaOf: (subsector: number) => number,
+): void {
+  const dirty = new Set<string>();
 
-  const denom = rx * sy - ry * sx;
-  if (Math.abs(denom) < 1e-9) return null;
+  for (const s of surfaces) {
+    const value = fogAlphaOf(s.subsector);
+    const attr = meshes.get(s.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+    if (!attr) continue;
+    if (attr.getW(s.vertexStart) === value) continue;
+    for (let v = 0; v < s.vertexCount; v++) attr.setW(s.vertexStart + v, value);
+    dirty.add(s.key);
+  }
 
-  const t = ((cx - ax) * sy - (cy - ay) * sx) / denom;
-  const u = ((cx - ax) * ry - (cy - ay) * rx) / denom;
-  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
-  return { t };
+  for (const key of dirty) {
+    const attr = meshes.get(key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+    if (attr) attr.needsUpdate = true;
+  }
 }

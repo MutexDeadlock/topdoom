@@ -1,5 +1,6 @@
 import { LF, NO_SIDE, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
 import { sectorOfSubSector } from '../render/bsp.ts';
+import { distSqToSegment } from '../util/geom.ts';
 
 /** Vanilla DOOM values, in map units. */
 export const PLAYER_RADIUS = 16;
@@ -165,6 +166,32 @@ export class World {
     return line.left === NO_SIDE || line.right === NO_SIDE;
   }
 
+  /**
+   * True if this line stops a line of sight through it (game/fogofwar.ts).
+   *
+   * Deliberately *not* `isSolidWall`, in both directions:
+   * - A **closed door** is a two-sided line whose sectors leave no vertical gap
+   *   (the door sector's ceiling is winched down to its floor). Vanilla never
+   *   flags those `BLOCKING` — it can't, they have to become passable when the
+   *   door opens — so `isSolidWall` says "not solid" and sight sails straight
+   *   through into the room beyond. Every one of DOOM2 MAP01's 24 openingless
+   *   two-sided lines is unflagged, which is exactly why the room behind the
+   *   locked door showed up from the corridor.
+   * - Conversely a **window or railing** is two-sided *and* `BLOCKING`: it stops
+   *   a body but not an eye. Treating it as sight-blocking would black out a
+   *   courtyard the player is plainly looking into over a fence.
+   *
+   * So the test is the vertical opening, matching what vanilla's own
+   * `P_CheckSight` keys off, rather than the movement-blocking rules.
+   */
+  blocksSight(lineIndex: number): boolean {
+    const line = this.map.linedefs[lineIndex];
+    if (!line) return true;
+    if (line.left === NO_SIDE || line.right === NO_SIDE) return true;
+    const opening = this.openingOf(lineIndex);
+    return !opening || opening.top <= opening.bottom;
+  }
+
   /** True if a body standing at feet height `z` cannot cross this line. */
   blocksMovement(lineIndex: number, z: number): boolean {
     if (this.isSolidWall(lineIndex)) return true;
@@ -186,18 +213,6 @@ export class World {
     const { minX, minY, maxX, maxY } = this.map.bounds;
     return { x: (minX + maxX) / 2, y: (minY + maxY) / 2, angle: 0 };
   }
-}
-
-/** Squared distance from a point to a line segment. */
-export function distSqToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const lenSq = dx * dx + dy * dy;
-  let t = lenSq > 0 ? ((px - ax) * dx + (py - ay) * dy) / lenSq : 0;
-  t = t < 0 ? 0 : t > 1 ? 1 : t;
-  const cx = ax + dx * t - px;
-  const cy = ay + dy * t - py;
-  return cx * cx + cy * cy;
 }
 
 /**

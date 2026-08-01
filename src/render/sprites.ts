@@ -231,6 +231,7 @@ interface PosedThing {
   z: number;
   facingDeg: number;
   light: number;
+  subsector: number;
 }
 
 export interface ThingLayer {
@@ -241,9 +242,12 @@ export interface ThingLayer {
    * move or animate yet, so this only ever changes which rotation-frame lump
    * is shown and which way each plane faces — cheap, and SpriteActor.setPose
    * already skips the geometry/material swap when the resolved lump is
-   * unchanged from last call.
+   * unchanged from last call. `fogAlphaOf`, when given, hides things sitting
+   * in a subsector fog-of-war hasn't revealed yet (game/fogofwar.ts) — a
+   * monster or item in an unexplored/secret room would otherwise spoil it
+   * despite the room's own geometry being faded out.
    */
-  update(viewerAngleDeg: number): void;
+  update(viewerAngleDeg: number, fogAlphaOf?: (subsector: number) => number): void;
 }
 
 /** One static upright plane per map THING whose type is a known, visible sprite. */
@@ -261,6 +265,7 @@ export function buildThingSprites(
     const spriteName = THING_SPRITES[t.type];
     if (!spriteName) continue;
 
+    const subsector = world.subsectorAt(t.x, t.y);
     const sector = world.sectorAt(t.x, t.y);
     const x = t.x;
     const y = t.y;
@@ -271,15 +276,16 @@ export function buildThingSprites(
     const actor = new SpriteActor(bank, materials, spriteName);
     if (!actor.setPose(x, y, z, facingDeg, light)) continue;
     group.add(actor.mesh);
-    posed.push({ actor, x, y, z, facingDeg, light });
+    posed.push({ actor, x, y, z, facingDeg, light, subsector });
   }
 
   return {
     group,
     count: posed.length,
-    update(viewerAngleDeg: number): void {
+    update(viewerAngleDeg: number, fogAlphaOf?: (subsector: number) => number): void {
       for (const p of posed) {
         p.actor.setPose(p.x, p.y, p.z, p.facingDeg, p.light, 0, false, viewerAngleDeg);
+        if (fogAlphaOf) p.actor.mesh.visible = fogAlphaOf(p.subsector) > 0.5;
       }
     },
   };

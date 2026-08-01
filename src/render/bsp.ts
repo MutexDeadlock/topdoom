@@ -1,48 +1,11 @@
 import { SUBSECTOR_BIT, type DoomMap } from '../wad/map.ts';
+import { clipConvexPolygon as clip } from '../util/geom.ts';
 
 export interface SubSectorPoly {
   /** Sector this subsector belongs to. */
   sector: number;
   /** Convex polygon in DOOM coordinates, counter-clockwise. */
   points: Float64Array; // [x0,y0, x1,y1, …]
-}
-
-const EPS = 1e-6;
-
-/**
- * Clips a convex polygon against the half-plane cross(p) <= 0 (Sutherland-Hodgman).
- * The line is given as a point (px, py) plus a direction (dx, dy).
- */
-function clip(poly: number[], px: number, py: number, dx: number, dy: number): number[] {
-  const n = poly.length / 2;
-  if (n === 0) return poly;
-  const out: number[] = [];
-
-  const side = (x: number, y: number) => dx * (y - py) - dy * (x - px);
-
-  let ax = poly[(n - 1) * 2];
-  let ay = poly[(n - 1) * 2 + 1];
-  let da = side(ax, ay);
-
-  for (let i = 0; i < n; i++) {
-    const bx = poly[i * 2];
-    const by = poly[i * 2 + 1];
-    const db = side(bx, by);
-
-    const aIn = da <= EPS;
-    const bIn = db <= EPS;
-
-    if (aIn !== bIn) {
-      const t = da / (da - db);
-      out.push(ax + (bx - ax) * t, ay + (by - ay) * t);
-    }
-    if (bIn) out.push(bx, by);
-
-    ax = bx;
-    ay = by;
-    da = db;
-  }
-  return out;
 }
 
 /**

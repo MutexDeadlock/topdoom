@@ -34,6 +34,21 @@ export class Player {
   }
 
   /**
+   * Drops the player at an arbitrary spot, resting on whatever floor is there
+   * and standing still. Used by the `?pos=x,y` deep link (see main.ts) to reach
+   * a specific place in a map without walking to it — the practical way to
+   * check something like "what does fog of war reveal from in front of MAP01's
+   * big window", which is otherwise several rooms and a locked door away.
+   */
+  moveTo(x: number, y: number): void {
+    this.x = x;
+    this.y = y;
+    this.velX = 0;
+    this.velY = 0;
+    this.z = this.world.groundFloor(x, y, PLAYER_RADIUS);
+  }
+
+  /**
    * Movement is camera-relative: W always moves the player away from the
    * camera on screen, independent of where the player is aiming. `forwardDeg`
    * is the DOOM-space bearing the camera currently looks along (derived from

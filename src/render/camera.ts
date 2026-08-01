@@ -30,7 +30,7 @@ export class TopDownCamera {
 
   constructor(aspect: number, options: TopDownCameraOptions = {}) {
     this.tiltDeg = options.tiltDeg ?? 60;
-    this.distance = options.distance ?? 620;
+    this.distance = options.distance ?? 480;
     this.aimLead = options.aimLead ?? 0.18;
     this.yawDeg = options.yawDeg ?? 0;
 

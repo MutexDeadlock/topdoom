@@ -5,11 +5,13 @@ import {
   uploadedSource,
   type WadSource,
 } from '../wad/library.ts';
+import { DEFAULT_SKILL, SKILL_NAMES, type Skill } from '../game/skill.ts';
 
 export interface Selection {
   iwad: WadSource;
   pwads: WadSource[];
   map: string;
+  skill: Skill;
 }
 
 export interface MenuDefaults {
@@ -30,6 +32,7 @@ export class Menu {
   private iwadList = el<HTMLDivElement>('iwad-list');
   private pwadList = el<HTMLDivElement>('pwad-list');
   private levelSelect = el<HTMLSelectElement>('level-select');
+  private difficultySelect = el<HTMLSelectElement>('difficulty-select');
   private startButton = el<HTMLButtonElement>('start-button');
   private statusEl = el<HTMLSpanElement>('menu-status');
   private fileInput = el<HTMLInputElement>('file-input');
@@ -52,6 +55,7 @@ export class Menu {
     this.levelSelect.addEventListener('change', () => this.refreshStartButton());
     this.startButton.addEventListener('click', () => this.start());
     this.installDropTarget();
+    this.renderDifficulties();
   }
 
   /** Reads the server library and applies whatever the URL asked for. */
@@ -217,6 +221,17 @@ export class Menu {
     this.refreshStartButton();
   }
 
+  /** Static, independent of the selected WADs — populated once and left alone. */
+  private renderDifficulties(): void {
+    for (const skill of [1, 2, 3, 4, 5] as const) {
+      const option = document.createElement('option');
+      option.value = String(skill);
+      option.textContent = SKILL_NAMES[skill];
+      this.difficultySelect.append(option);
+    }
+    this.difficultySelect.value = String(DEFAULT_SKILL);
+  }
+
   private selectLevel(name: string): void {
     const upper = name.toUpperCase();
     if ([...this.levelSelect.options].some((o) => o.value === upper)) {
@@ -301,6 +316,7 @@ export class Menu {
       iwad: this.selectedIwad,
       pwads: [...this.selectedPwads],
       map: this.levelSelect.value,
+      skill: Number(this.difficultySelect.value) as Skill,
     });
   }
 }

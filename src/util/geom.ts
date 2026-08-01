@@ -41,6 +41,58 @@ export function distSqToSegment(px: number, py: number, ax: number, ay: number, 
   return cx * cx + cy * cy;
 }
 
+/**
+ * Point-in-convex-polygon test via consistent cross-product sign (works for
+ * either winding order, since only sign *agreement* across edges matters).
+ * `poly` is a flat [x0,y0, x1,y1, …] array. Used by render/occlusion.ts's
+ * `FlatFader` to test whether a camera-player sightline's height-crossing
+ * point falls inside a raised floor's footprint.
+ */
+export function pointInConvexPolygon(px: number, py: number, poly: ArrayLike<number>): boolean {
+  const n = poly.length / 2;
+  if (n < 3) return false;
+  let sign = 0;
+  for (let i = 0; i < n; i++) {
+    const ax = poly[i * 2];
+    const ay = poly[i * 2 + 1];
+    const bx = poly[((i + 1) % n) * 2];
+    const by = poly[((i + 1) % n) * 2 + 1];
+    const cross = (bx - ax) * (py - ay) - (by - ay) * (px - ax);
+    if (cross !== 0) {
+      const s = cross > 0 ? 1 : -1;
+      if (sign === 0) sign = s;
+      else if (s !== sign) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Like `pointInConvexPolygon`, but also true when the point is within
+ * `radius` of the polygon's boundary. A single subsector polygon is a BSP
+ * implementation detail, not a visual unit — one physical floor (e.g. a
+ * raised platform) routinely gets split into several adjacent subsector
+ * polygons that share edges. The exact height-crossing point of a
+ * camera-player sightline can only ever land inside *one* of those pieces,
+ * but the player has real width (their collision circle, at least), so a
+ * neighbouring piece just across that shared edge is just as much "in the
+ * way" on screen. Inflating the test by the player's radius catches those
+ * without needing to know which polygons are fragments of the same surface.
+ */
+export function pointNearConvexPolygon(px: number, py: number, poly: ArrayLike<number>, radius: number): boolean {
+  if (pointInConvexPolygon(px, py, poly)) return true;
+  const n = poly.length / 2;
+  const r2 = radius * radius;
+  for (let i = 0; i < n; i++) {
+    const ax = poly[i * 2];
+    const ay = poly[i * 2 + 1];
+    const bx = poly[((i + 1) % n) * 2];
+    const by = poly[((i + 1) % n) * 2 + 1];
+    if (distSqToSegment(px, py, ax, ay, bx, by) <= r2) return true;
+  }
+  return false;
+}
+
 const CLIP_EPS = 1e-6;
 
 /**

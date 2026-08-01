@@ -4,6 +4,7 @@ import type { GraphicsBank } from '../wad/graphics.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { World } from '../game/world.ts';
 import { THING_SPRITES } from '../game/thingdefs.ts';
+import { spawnsAtSkill, type Skill } from '../game/skill.ts';
 import { doomToWorld, lightToColor } from './mapmesh.ts';
 
 /**
@@ -256,6 +257,7 @@ export function buildThingSprites(
   world: World,
   bank: SpriteBank,
   materials: SpriteMaterialCache,
+  skill: Skill,
 ): ThingLayer {
   const group = new THREE.Group();
   group.name = 'things';
@@ -264,6 +266,7 @@ export function buildThingSprites(
   for (const t of map.things) {
     const spriteName = THING_SPRITES[t.type];
     if (!spriteName) continue;
+    if (!spawnsAtSkill(t.flags, skill)) continue;
 
     const subsector = world.subsectorAt(t.x, t.y);
     const sector = world.sectorAt(t.x, t.y);

@@ -104,6 +104,11 @@ export interface FlatSurface {
   vertexStart: number;
   vertexCount: number;
   subsector: number;
+  /** DOOM (x, y) footprint of this subsector, flattened — see FlatFader. */
+  points: Float64Array;
+  /** World height (floor or ceiling) this surface sits at. */
+  height: number;
+  isCeiling: boolean;
 }
 
 export function buildMapMesh(
@@ -197,7 +202,9 @@ function buildFlats(
       }
 
       const vertexCount = batch.positions.length / 3 - vertexStart;
-      if (vertexCount > 0) flatSurfaces.push({ key: batch.key, vertexStart, vertexCount, subsector: ss });
+      if (vertexCount > 0) {
+        flatSurfaces.push({ key: batch.key, vertexStart, vertexCount, subsector: ss, points: poly.points, height, isCeiling });
+      }
     }
   }
 }

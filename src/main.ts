@@ -7,13 +7,14 @@ import { loadMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache, buildThingSprites, type ThingLayer } from './render/sprites.ts';
-import { WallFader, applyFogToFlats } from './render/occlusion.ts';
+import { FlatFader, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
 import { PLAYER_HEIGHT, World } from './game/world.ts';
 import { Player } from './game/player.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { Input } from './game/input.ts';
 import { Menu, type Selection } from './ui/menu.ts';
+import type { Skill } from './game/skill.ts';
 
 const hudEl = document.getElementById('hud')!;
 
@@ -61,6 +62,7 @@ class Game {
   private things: ThingLayer | null = null;
   private playerActor: SpriteActor;
   private wallFader!: WallFader;
+  private flatFader!: FlatFader;
   private fogOfWar!: FogOfWar;
 
   private renderCeilings = false;
@@ -72,15 +74,24 @@ class Game {
 
   private view: Viewport;
   private wad: Wad;
+  private skill: Skill;
   readonly title: string;
 
   /** `?pos=x,y` override for the player start, consumed by the first map load. */
   private startPos: { x: number; y: number } | null;
 
-  constructor(view: Viewport, wad: Wad, startMap: string, title: string, startPos: { x: number; y: number } | null = null) {
+  constructor(
+    view: Viewport,
+    wad: Wad,
+    startMap: string,
+    title: string,
+    skill: Skill,
+    startPos: { x: number; y: number } | null = null,
+  ) {
     this.view = view;
     this.wad = wad;
     this.title = title;
+    this.skill = skill;
     this.startPos = startPos;
 
     this.scene.background = new THREE.Color(0x05050a);
@@ -124,6 +135,7 @@ class Game {
     this.built = buildMapMesh(map, this.materials, { renderCeilings: this.renderCeilings });
     this.scene.add(this.built.group);
     this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
+    this.flatFader = new FlatFader(this.built.flatSurfaces, this.built.flatMeshes);
     this.player = new Player(this.world);
     // Applied before fog of war is seeded, so an explicit start position reveals
     // exactly what is visible from there and nothing from the map's real spawn.
@@ -131,9 +143,13 @@ class Game {
       this.player.moveTo(this.startPos.x, this.startPos.y);
       this.startPos = null;
     }
+    // Every level (re)load starts the camera facing the same way the player
+    // spawns facing, instead of always defaulting to due-north regardless of
+    // the map's own player-start angle.
+    this.view.camera.yawDeg = (this.player.angle * 180) / Math.PI - 90;
     this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player.x, this.player.y);
 
-    this.things = buildThingSprites(map, this.world, this.spriteBank, this.spriteMaterials);
+    this.things = buildThingSprites(map, this.world, this.spriteBank, this.spriteMaterials, this.skill);
     this.scene.add(this.things.group);
 
     const provider = this.wad.providerOf(name)?.name ?? '?';
@@ -187,7 +203,7 @@ class Game {
     this.things?.update(camera.viewerAngleDeg, fogAlphaOf);
 
     const camPos = camera.camera.position;
-    this.wallFader.update(
+    const camPlayerArgs = [
       dt,
       camPos.x,
       -camPos.z,
@@ -195,11 +211,13 @@ class Game {
       this.player.x,
       this.player.y,
       this.player.z + PLAYER_HEIGHT / 2,
-    );
+    ] as const;
+    this.wallFader.update(...camPlayerArgs);
+    this.flatFader.update(...camPlayerArgs);
     // Walls resolve their own subsector inside FogOfWar (see wallAlpha); flats
     // and things already know theirs, so they go through alphaOf directly.
     this.wallFader.commit((i) => fog.wallAlpha(i));
-    if (this.built) applyFogToFlats(this.built.flatSurfaces, this.built.flatMeshes, fogAlphaOf);
+    this.flatFader.commit(fogAlphaOf);
 
     const facingDeg = (this.player.angle * 180) / Math.PI;
     const sector = this.world.sectorAt(this.player.x, this.player.y);
@@ -283,7 +301,7 @@ async function boot(): Promise<void> {
       const wad = new Wad(files);
 
       game?.dispose();
-      game = new Game(view, wad, selection.map, titleOf(selection.iwad, selection.pwads), startPos);
+      game = new Game(view, wad, selection.map, titleOf(selection.iwad, selection.pwads), selection.skill, startPos);
 
       menu.close();
       game.resume();

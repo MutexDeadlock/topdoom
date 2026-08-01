@@ -48,10 +48,10 @@ export function lightToColor(light: number, contrast = 0): number {
   return Math.pow(l, 0.85) * 0.9 + 0.1;
 }
 
-function pushVertex(b: Batch, x: number, y: number, z: number, u: number, v: number, c: number): void {
+function pushVertex(b: Batch, x: number, y: number, z: number, u: number, v: number, c: number, alpha = 1): void {
   b.positions.push(x, y, z);
   b.uvs.push(u, v);
-  b.colors.push(c, c, c);
+  b.colors.push(c, c, c, alpha);
 }
 
 export interface MapMeshOptions {
@@ -66,6 +66,27 @@ export interface BuiltMap {
   /** Names of textures referenced by the map but missing from the WAD. */
   missingTextures: string[];
   triangles: number;
+  /** Every rendered wall quad, for occlusion-fading the ones between camera and player. */
+  occluders: WallOccluder[];
+  /** Wall batch meshes by key, so occlusion fading can reach their vertex-alpha attribute. */
+  wallMeshes: Map<string, THREE.Mesh>;
+}
+
+/**
+ * One rendered wall quad's footprint (2D segment + height range) and its
+ * vertex range within its batch, so `WallFader` (render/occlusion.ts) can
+ * test it against the camera-player sightline and rewrite just its alpha.
+ */
+export interface WallOccluder {
+  key: string;
+  vertexStart: number;
+  vertexCount: number;
+  ax: number;
+  ay: number;
+  bx: number;
+  by: number;
+  botH: number;
+  topH: number;
 }
 
 export function buildMapMesh(
@@ -76,6 +97,7 @@ export function buildMapMesh(
   const { renderCeilings = false, wallHeightCap = 0 } = options;
   const batches = new BatchSet();
   const missing = new Set<string>();
+  const occluders: WallOccluder[] = [];
 
   const texSize = (kind: SurfaceKind, name: string) => {
     const s = bank.size(kind, name);
@@ -84,11 +106,12 @@ export function buildMapMesh(
   };
 
   buildFlats(map, batches, texSize, renderCeilings);
-  buildWalls(map, batches, texSize, wallHeightCap);
+  buildWalls(map, batches, texSize, wallHeightCap, occluders);
 
   const group = new THREE.Group();
   group.name = 'map:' + map.name;
   let triangles = 0;
+  const wallMeshes = new Map<string, THREE.Mesh>();
 
   for (const b of batches.all()) {
     if (b.positions.length === 0) continue;
@@ -98,7 +121,7 @@ export function buildMapMesh(
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.Float32BufferAttribute(b.positions, 3));
     geom.setAttribute('uv', new THREE.Float32BufferAttribute(b.uvs, 2));
-    geom.setAttribute('color', new THREE.Float32BufferAttribute(b.colors, 3));
+    geom.setAttribute('color', new THREE.Float32BufferAttribute(b.colors, 4));
     geom.computeBoundingSphere();
 
     const mesh = new THREE.Mesh(geom, material);
@@ -106,9 +129,10 @@ export function buildMapMesh(
     mesh.frustumCulled = true;
     group.add(mesh);
     triangles += b.positions.length / 9;
+    if (b.kind === 'wall') wallMeshes.set(b.key, mesh);
   }
 
-  return { group, missingTextures: [...missing].sort(), triangles };
+  return { group, missingTextures: [...missing].sort(), triangles, occluders, wallMeshes };
 }
 
 type SizeFn = (kind: SurfaceKind, name: string) => { w: number; h: number } | null;
@@ -162,7 +186,7 @@ interface WallSpec {
   light: number;
 }
 
-function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec): void {
+function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: WallOccluder[]): void {
   if (spec.topH <= spec.botH) return;
   if (spec.texture === NO_TEXTURE || spec.texture === '') return;
   const dim = size('wall', spec.texture);
@@ -193,12 +217,20 @@ function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec): void {
   const C = [bx, botH, -by, u1, vBot] as const;
   const D = [ax, botH, -ay, u0, vBot] as const;
 
+  const vertexStart = batch.positions.length / 3;
   for (const v of [A, D, C, A, C, B]) {
     pushVertex(batch, v[0], v[1], v[2], v[3], v[4], color);
   }
+  occluders.push({ key: batch.key, vertexStart, vertexCount: 6, ax, ay, bx, by, botH, topH });
 }
 
-function buildWalls(map: DoomMap, batches: BatchSet, size: SizeFn, wallHeightCap: number): void {
+function buildWalls(
+  map: DoomMap,
+  batches: BatchSet,
+  size: SizeFn,
+  wallHeightCap: number,
+  occluders: WallOccluder[],
+): void {
   for (const line of map.linedefs) {
     const v1 = map.vertexes[line.v1];
     const v2 = map.vertexes[line.v2];
@@ -216,27 +248,32 @@ function buildWalls(map: DoomMap, batches: BatchSet, size: SizeFn, wallHeightCap
       // Solid wall: the middle texture spans the whole sector height.
       const unpegged = (line.flags & LF.LOWER_UNPEGGED) !== 0;
       const dim = size('wall', front.middle);
-      addWall(batches, size, {
-        ax: v1.x,
-        ay: v1.y,
-        bx: v2.x,
-        by: v2.y,
-        topH: cap(frontSec, frontSec.ceilHeight),
-        botH: frontSec.floorHeight,
-        texture: front.middle,
-        xOffset: front.xOffset,
-        yOffset: front.yOffset,
-        pegRef: unpegged ? frontSec.floorHeight + (dim?.h ?? 128) : frontSec.ceilHeight,
-        light: frontSec.light,
-      });
+      addWall(
+        batches,
+        size,
+        {
+          ax: v1.x,
+          ay: v1.y,
+          bx: v2.x,
+          by: v2.y,
+          topH: cap(frontSec, frontSec.ceilHeight),
+          botH: frontSec.floorHeight,
+          texture: front.middle,
+          xOffset: front.xOffset,
+          yOffset: front.yOffset,
+          pegRef: unpegged ? frontSec.floorHeight + (dim?.h ?? 128) : frontSec.ceilHeight,
+          light: frontSec.light,
+        },
+        occluders,
+      );
       continue;
     }
 
     if (!front || !back || !frontSec || !backSec) continue;
 
     // Two-sided line: each side gets its own step-up/step-down pieces.
-    addTwoSidedSide(batches, size, line.flags, v1, v2, front, frontSec, backSec, cap);
-    addTwoSidedSide(batches, size, line.flags, v2, v1, back, backSec, frontSec, cap);
+    addTwoSidedSide(batches, size, line.flags, v1, v2, front, frontSec, backSec, cap, occluders);
+    addTwoSidedSide(batches, size, line.flags, v2, v1, back, backSec, frontSec, cap, occluders);
   }
 }
 
@@ -250,6 +287,7 @@ function addTwoSidedSide(
   sec: Sector,
   other: Sector,
   cap: (sec: Sector, top: number) => number,
+  occluders: WallOccluder[],
 ): void {
   const base = { ax: a.x, ay: a.y, bx: b.x, by: b.y, xOffset: side.xOffset, yOffset: side.yOffset, light: sec.light };
   const upperUnpegged = (flags & LF.UPPER_UNPEGGED) !== 0;
@@ -258,24 +296,34 @@ function addTwoSidedSide(
   // Upper: this sector's ceiling is higher than the neighbour's.
   if (sec.ceilHeight > other.ceilHeight && !(sec.ceilTex === SKY_FLAT && other.ceilTex === SKY_FLAT)) {
     const dim = size('wall', side.upper);
-    addWall(batches, size, {
-      ...base,
-      topH: cap(sec, sec.ceilHeight),
-      botH: Math.min(cap(sec, sec.ceilHeight), other.ceilHeight),
-      texture: side.upper,
-      pegRef: upperUnpegged ? sec.ceilHeight : other.ceilHeight + (dim?.h ?? 128),
-    });
+    addWall(
+      batches,
+      size,
+      {
+        ...base,
+        topH: cap(sec, sec.ceilHeight),
+        botH: Math.min(cap(sec, sec.ceilHeight), other.ceilHeight),
+        texture: side.upper,
+        pegRef: upperUnpegged ? sec.ceilHeight : other.ceilHeight + (dim?.h ?? 128),
+      },
+      occluders,
+    );
   }
 
   // Lower: the neighbour's floor is higher, so a step faces this side.
   if (other.floorHeight > sec.floorHeight) {
-    addWall(batches, size, {
-      ...base,
-      topH: other.floorHeight,
-      botH: sec.floorHeight,
-      texture: side.lower,
-      pegRef: lowerUnpegged ? sec.ceilHeight : other.floorHeight,
-    });
+    addWall(
+      batches,
+      size,
+      {
+        ...base,
+        topH: other.floorHeight,
+        botH: sec.floorHeight,
+        texture: side.lower,
+        pegRef: lowerUnpegged ? sec.ceilHeight : other.floorHeight,
+      },
+      occluders,
+    );
   }
 
   // Middle: optional masked texture (grates, bars) inside the opening.
@@ -293,7 +341,7 @@ function addTwoSidedSide(
         top = openTop;
         bot = Math.max(openBot, openTop - dim.h);
       }
-      addWall(batches, size, { ...base, topH: top, botH: bot, texture: side.middle, pegRef: top });
+      addWall(batches, size, { ...base, topH: top, botH: bot, texture: side.middle, pegRef: top }, occluders);
     }
   }
 }

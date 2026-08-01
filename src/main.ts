@@ -7,8 +7,9 @@ import { loadMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache, buildThingSprites } from './render/sprites.ts';
+import { WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
-import { World } from './game/world.ts';
+import { PLAYER_HEIGHT, World } from './game/world.ts';
 import { Player } from './game/player.ts';
 import { Input } from './game/input.ts';
 import { Menu, type Selection } from './ui/menu.ts';
@@ -55,6 +56,7 @@ class Game {
   private built: BuiltMap | null = null;
   private things: THREE.Group | null = null;
   private playerActor: SpriteActor;
+  private wallFader!: WallFader;
 
   private renderCeilings = false;
   private running = false;
@@ -112,6 +114,7 @@ class Game {
     this.world = new World(map);
     this.built = buildMapMesh(map, this.materials, { renderCeilings: this.renderCeilings });
     this.scene.add(this.built.group);
+    this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
     this.player = new Player(this.world);
 
     const thingLayer = buildThingSprites(map, this.world, this.spriteBank, this.spriteMaterials);
@@ -161,6 +164,17 @@ class Game {
     const aim = camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + 32);
     this.player.update(dt, input, aim);
     camera.update(dt, this.player.x, this.player.y, this.player.eyeZ, aim);
+
+    const camPos = camera.camera.position;
+    this.wallFader.update(
+      dt,
+      camPos.x,
+      -camPos.z,
+      camPos.y,
+      this.player.x,
+      this.player.y,
+      this.player.z + PLAYER_HEIGHT / 2,
+    );
 
     const facingDeg = (this.player.angle * 180) / Math.PI;
     const sector = this.world.sectorAt(this.player.x, this.player.y);

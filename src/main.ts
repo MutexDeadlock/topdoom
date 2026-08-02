@@ -96,6 +96,18 @@ class Game {
   private fogOfWar!: FogOfWar;
   private specials?: SpecialsController;
   private teleportFogs: TeleportFog[] = [];
+  /**
+   * Set by the exit trigger and consumed right after `specials.update()`
+   * returns in `frame` — never loaded from inside the callback itself. The
+   * exit line is found by `SpecialsController.handleWalkTriggers`, partway
+   * through its own `update()`; a mover ticked dirty earlier that same call
+   * (e.g. a lift mid-move) is only rebuilt afterwards, by `rebuildAround`.
+   * Tearing down the scene synchronously inside the callback would run that
+   * still-pending rebuild on an already-disposed, orphaned `SpecialsController`
+   * — it would rebuild the old map's mover mesh from stale data and `add` it
+   * to the *new* map's scene, with nothing left to ever clean it up.
+   */
+  private pendingExit = false;
 
   private renderCeilings = false;
   private running = false;
@@ -204,7 +216,9 @@ class Game {
       this.built.polys,
       this.built,
       { renderCeilings: this.renderCeilings },
-      () => this.loadMapByIndex(this.mapIndex + 1),
+      () => {
+        this.pendingExit = true;
+      },
       (x, y, angle) => {
         // Matches vanilla P_Teleport: a fog puff where the player stood, and
         // another just ahead of the landing spot along the direction it
@@ -297,6 +311,16 @@ class Game {
     // Runs before player.update so a lift/door the player is standing on has
     // already moved this frame by the time groundFloor is sampled below.
     this.specials?.update(dt, this.player.x, this.player.y, this.player.angle, input, this.inventory.keys);
+    // Deferred from the exit trigger's callback — see `pendingExit`'s doc.
+    // The old SpecialsController's update() has now fully returned, so it's
+    // safe to dispose it and swap in the next map.
+    if (this.pendingExit) {
+      this.pendingExit = false;
+      this.loadMapByIndex(this.mapIndex + 1);
+      input.endFrame();
+      requestAnimationFrame(this.frame);
+      return;
+    }
 
     const aim = camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + 32);
     this.player.update(dt, input, aim, camera.viewerAngleDeg + 180);

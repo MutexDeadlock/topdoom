@@ -21,14 +21,15 @@
  * wasn't in this table at all until this fix, so its blue-locked door never
  * opened regardless of whether the player had the key.
  *
- * Crushers and teleporters are modeled too (see the tables below); still
- * deliberately absent: damage-floor sector specials (no sustained-damage/death
- * system yet) and scrolling textures. Boom/MBF-only special numbers (e.g. the
- * S1/SR teleports at 174/195, or the "silent" crusher at 150) are out of scope
- * — this table only covers the vanilla DOOM/DOOM2 special numbers, confirmed
- * against the Doom wiki's linedef type table rather than assumed, since a
- * plausible-looking Boom number slipped in on the first pass here (174 was
- * briefly, wrongly, listed as a vanilla S1 teleport).
+ * Crushers, teleporters and stair builders are modeled too (see the tables
+ * below); still deliberately absent: damage-floor sector specials (no
+ * sustained-damage/death system yet) and scrolling textures. Boom/MBF-only
+ * special numbers (e.g. the S1/SR teleports at 174/195, or the "silent"
+ * crusher at 150) are out of scope — this table only covers the vanilla
+ * DOOM/DOOM2 special numbers, confirmed against the Doom wiki's linedef type
+ * table rather than assumed, since a plausible-looking Boom number slipped in
+ * on the first pass here (174 was briefly, wrongly, listed as a vanilla S1
+ * teleport).
  */
 
 /** Map units/second. Vanilla speeds are per-tic at 35 tics/s. */
@@ -47,6 +48,11 @@ export const CRUSHER_SPEED_FAST = 70;
 export const CRUSHER_GAP = 8;
 /** DOOM's teleport landing marker (doomednum 14) — a spawn marker only, never rendered (see thingdefs.ts). */
 export const TELEPORT_DEST = 14;
+/** Vanilla P_BuildStairs: build8 runs at FLOORSPEED/4, turbo16 at FLOORSPEED*4. */
+export const STAIR_SPEED = FLOOR_SPEED / 4;
+export const STAIR_SPEED_TURBO = FLOOR_SPEED * 4;
+export const STAIR_STEP = 8;
+export const STAIR_STEP_TURBO = 16;
 
 /** Gap vanilla leaves between an open door's ceiling and the lowest neighboring ceiling. */
 export const DOOR_OPEN_GAP = 4;
@@ -124,6 +130,20 @@ export interface TeleportEffect {
   monsterOnly: boolean;
 }
 
+/**
+ * Raises a chain of adjacent sectors sharing the trigger sector's floor
+ * texture, each `stepHeight` higher than the last, all starting at once —
+ * vanilla's `EV_BuildStairs`/`T_BuildStairs`. The 16-unit vanilla specials
+ * (100/127) are also flagged to crush anything caught under the rising step;
+ * not modeled here, same as the ceiling crushers above and for the same
+ * reason (no damage/death pipeline yet).
+ */
+export interface StairsEffect {
+  kind: 'stairs';
+  stepHeight: number;
+  speed: number;
+}
+
 export type Effect =
   | DoorEffect
   | LiftEffect
@@ -131,7 +151,8 @@ export type Effect =
   | ExitEffect
   | CrusherEffect
   | CrusherStopEffect
-  | TeleportEffect;
+  | TeleportEffect
+  | StairsEffect;
 
 export interface SpecialDef {
   trigger: 'use' | 'walk';
@@ -256,6 +277,20 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   97: { trigger: 'walk', repeatable: true, effect: { kind: 'teleport', monsterOnly: false } },
   125: { trigger: 'walk', repeatable: false, effect: { kind: 'teleport', monsterOnly: true } },
   126: { trigger: 'walk', repeatable: true, effect: { kind: 'teleport', monsterOnly: true } },
+
+  // Stair builders — confirmed against the Doom wiki: 7/8 are 8-unit steps, 100/127 are 16-unit turbo steps.
+  7: { trigger: 'use', repeatable: false, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
+  8: { trigger: 'walk', repeatable: false, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
+  100: {
+    trigger: 'walk',
+    repeatable: false,
+    effect: { kind: 'stairs', stepHeight: STAIR_STEP_TURBO, speed: STAIR_SPEED_TURBO },
+  },
+  127: {
+    trigger: 'use',
+    repeatable: false,
+    effect: { kind: 'stairs', stepHeight: STAIR_STEP_TURBO, speed: STAIR_SPEED_TURBO },
+  },
 };
 
 /** `Sector.special` values that animate light level rather than move geometry. */

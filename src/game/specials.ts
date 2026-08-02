@@ -13,6 +13,7 @@ import {
   type LiftEffect,
   type FloorEffect,
   type CrusherEffect,
+  type StairsEffect,
   type MoveTarget,
   type LightPattern,
 } from '../wad/specials.ts';
@@ -59,6 +60,51 @@ function resolveTargets(map: DoomMap, line: LineDef, def: SpecialDef): number[] 
   return out;
 }
 
+interface StairStep {
+  sectorIndex: number;
+  targetHeight: number;
+}
+
+/**
+ * Vanilla `EV_BuildStairs`/`T_BuildStairs`: starting at `startSectorIndex`,
+ * follow a chain of two-sided lines where the current sector is the line's
+ * *front* side and the back sector's floor texture matches the start
+ * sector's, each one `stepHeight` higher than the last. This is directional
+ * and single-path, exactly like vanilla's own search — it takes the first
+ * matching line it finds each round and never branches — so a mapper's stair
+ * group only works if its connector lines all face the same way, same
+ * requirement vanilla itself has. Purely a function of static map data
+ * (adjacency + floor textures), so it's safe to run once at load time
+ * (`computeMovableSectors`) and again at trigger time without the two ever
+ * disagreeing.
+ */
+function findStairChain(map: DoomMap, startSectorIndex: number, stepHeight: number): StairStep[] {
+  const texture = map.sectors[startSectorIndex]?.floorTex;
+  if (texture === undefined) return [];
+  const steps: StairStep[] = [];
+  const visited = new Set<number>([startSectorIndex]);
+  let sectorIndex = startSectorIndex;
+  let height = map.sectors[startSectorIndex].floorHeight;
+  for (;;) {
+    height += stepHeight;
+    steps.push({ sectorIndex, targetHeight: height });
+    let next = -1;
+    for (const line of map.linedefs) {
+      if (line.left === NO_SIDE || line.right === NO_SIDE) continue;
+      if (map.sidedefs[line.right]?.sector !== sectorIndex) continue;
+      const backSector = map.sidedefs[line.left]?.sector;
+      if (backSector === undefined || visited.has(backSector)) continue;
+      if (map.sectors[backSector]?.floorTex !== texture) continue;
+      next = backSector;
+      break;
+    }
+    if (next === -1) break;
+    visited.add(next);
+    sectorIndex = next;
+  }
+  return steps;
+}
+
 /** One sidedef texture slot that's a switch graphic (SW1/SW2 name), with both states resolved. */
 interface SwitchEntry {
   sideIndex: number;
@@ -94,9 +140,15 @@ export function computeMovableSectors(map: DoomMap): Set<number> {
   for (const line of map.linedefs) {
     const def = LINE_SPECIALS[line.special];
     if (!def) continue;
-    // Exit doesn't move geometry; teleport's tag match is a destination
-    // lookup, not a mover — the target sector's own height never changes.
-    if (def.effect.kind !== 'exit' && def.effect.kind !== 'teleport') {
+    if (def.effect.kind === 'stairs') {
+      // The tag match only names the chain's start; the rest is discovered by
+      // walking the same texture-matched adjacency the trigger will use.
+      for (const startSector of resolveTargets(map, line, def)) {
+        for (const step of findStairChain(map, startSector, def.effect.stepHeight)) out.add(step.sectorIndex);
+      }
+    } else if (def.effect.kind !== 'exit' && def.effect.kind !== 'teleport') {
+      // Exit doesn't move geometry; teleport's tag match is a destination
+      // lookup, not a mover — the target sector's own height never changes.
       for (const sectorIndex of resolveTargets(map, line, def)) out.add(sectorIndex);
     }
     for (const e of findSwitchEntries(map, line)) out.add(e.sectorIndex);
@@ -259,8 +311,8 @@ function disposeGroup(group: THREE.Group): void {
 
 /**
  * Drives every linedef/sector special in a loaded map: doors, lifts, generic
- * floor movers, crushers, teleporters, blinking/flickering lights, and level
- * exits. Sector heights (`Sector.floorHeight`/`ceilHeight`/`light`) are
+ * floor movers, crushers, teleporters, stair builders, blinking/flickering
+ * lights, and level exits. Sector heights (`Sector.floorHeight`/`ceilHeight`/`light`) are
  * mutated directly on the `DoomMap` — `World` never caches them, so
  * collision, sight-blocking and the player's resting height all pick the
  * change up on their very next query, with no changes needed there. This
@@ -274,9 +326,15 @@ function disposeGroup(group: THREE.Group): void {
  * of which exists yet (no death state, no game over), so applying damage with
  * no consequence once it reached zero would be a half-built feature.
  *
+ * Stair builders (`triggerStairs`/`findStairChain`) reuse the plain
+ * `FloorMover` machinery per step — a stair step is just a floor rising to a
+ * fixed height — with the chain of sectors to raise discovered once at load
+ * time (`computeMovableSectors`) by walking the same texture-matched
+ * adjacency the trigger itself uses at runtime.
+ *
  * Not modeled: damage-floor sector specials (same reason as crusher damage),
- * and door "un-crush" safety (a closing door won't reverse if something is
- * standing under it).
+ * the 16-unit stair specials' crush flag (same reason), and door "un-crush"
+ * safety (a closing door won't reverse if something is standing under it).
  */
 export class SpecialsController {
   private map: DoomMap;
@@ -672,6 +730,27 @@ export class SpecialsController {
     if (existing && existing.kind === 'crusher') existing.state = 'stopped';
   }
 
+  /**
+   * All steps in the chain start rising together (not staggered) — each just
+   * has farther to travel, which is what produces the classic step-by-step
+   * reveal as they settle at different times. Reuses the plain `FloorMover`
+   * machinery per step rather than a dedicated mover kind, since a single
+   * step is exactly a floor rising to a fixed target height.
+   */
+  private triggerStairs(startSectorIndex: number, effect: StairsEffect): void {
+    if (this.movers.has(startSectorIndex)) return; // vanilla's sec->specialdata guard
+    for (const step of findStairChain(this.map, startSectorIndex, effect.stepHeight)) {
+      if (this.movers.has(step.sectorIndex)) continue;
+      this.movers.set(step.sectorIndex, {
+        kind: 'floor',
+        sectorIndex: step.sectorIndex,
+        speed: effect.speed,
+        target: step.targetHeight,
+        state: 'moving',
+      });
+    }
+  }
+
   /** First `TELEPORT_DEST` (doomednum 14) thing sitting in one of the tag-matched sectors — vanilla's own search is just as arbitrary when more than one exists. */
   private findTeleportDestination(sectorIndices: number[]): { x: number; y: number; angle: number } | null {
     if (sectorIndices.length === 0) return null;
@@ -714,6 +793,12 @@ export class SpecialsController {
       if (!def.repeatable) this.usedOnce.add(lineIndex);
       this.lastTeleport = dest;
       this.onTeleport(dest.x, dest.y, dest.angle);
+      return;
+    }
+
+    if (def.effect.kind === 'stairs') {
+      for (const startSector of resolveTargets(this.map, line, def)) this.triggerStairs(startSector, def.effect);
+      if (!def.repeatable) this.usedOnce.add(lineIndex);
       return;
     }
 

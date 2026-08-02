@@ -293,12 +293,25 @@ all, key or no key.
 
 Removing a picked-up item from the world is `ThingLayer`'s job, not `Inventory`'s: each
 posed thing already carries its doomednum and position (added alongside the existing
-per-thing pose data), so `tryPickup(x, y, radius, consume)` can test distance and call
+per-thing pose data), so `tryPickup(x, y, z, radius, consume)` can test distance and call
 back into `applyPickup` itself, hiding the mesh and marking it `picked` only if `consume`
 reports the pickup actually happened. `picked` short-circuits `ThingLayer.update` before it
 touches fog-of-war visibility — without that, a subsector coming into view after its item
 was already picked would make `fogAlphaOf` flip the (permanently hidden) mesh back to
 `visible = true`.
+
+`tryPickup`'s `z` check exists because 2D distance alone lets a player standing at the *base*
+of a not-yet-lowered pillar collect an item still sitting on top of it — DOOM2 MAP04's blue
+key does exactly this (sits on a pillar a switch must lower first). Matching vanilla's
+`PIT_CheckThing` overhead gate, a pickup more than `PLAYER_HEIGHT` above or below the player
+is skipped regardless of 2D range. That in turn requires a thing's height to track its
+sector's *live* `floorHeight` rather than a value cached at load — `PosedThing` stores the
+`Sector` reference itself (the same mutable object `SpecialsController` writes
+`floorHeight`/`light` onto) instead of a frozen `z` number, and both `ThingLayer.update` and
+`tryPickup` read `sector.floorHeight` fresh every call. Without this, an item on a lift/floor
+mover would hang frozen in its original position while the floor moved past it, and — worse
+— stay permanently out of reach even after the pillar carrying it actually lowered, since the
+height check would still be comparing against the stale load-time value.
 
 The HUD itself (`src/ui/hud.ts`) draws its icons from the same WAD pickup-sprite graphics
 the world renders items with (`MEDIA0`, `ARM1A0`/`ARM2A0`, `CLIPA0`, etc., via

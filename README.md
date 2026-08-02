@@ -55,6 +55,9 @@ declares itself an IWAD becomes the game WAD, a PWAD is added as an add-on.
 | `W` `A` `S` `D` | move (screen-relative: `W` always moves away from the camera) |
 | `Shift` | run |
 | mouse | aim; the view leads slightly towards the cursor |
+| left mouse | fire (hold to keep firing) |
+| `1`–`7` | select weapon; pressing a slot again toggles within it (fist/chainsaw, shotgun/super shotgun) |
+| mouse wheel | cycle through the weapons you own |
 | right-drag / `Q` `E` | orbit the camera around the player |
 | `N` / `P` | next / previous map |
 | `C` | toggle ceilings |
@@ -69,17 +72,48 @@ Ceilings are off by default — from above they would hide everything underneath
 Walking within range of a health, armor, ammo, key or weapon pickup collects it automatically
 — no key press needed. The bar along the bottom of the screen shows the running totals: a
 medikit icon and health, an armor icon (green or blue, matching whichever armor you're wearing
-— blank while you have none) and its value, all four ammo counts, and one slot per key color
-that lights up once collected. Weapons disappear and grant their ammo like the real game, but
-there's no weapon-select UI yet — ownership is tracked, not shown or usable — and powerups are
-still just decoration; both wait on the Shooting milestone to mean anything.
+— blank while you have none) and its value, all four ammo counts, one slot per key color that
+lights up once collected, and the weapon you currently have selected. That last one matters
+here in a way it doesn't in the original: the player sprite looks the same whatever it's
+holding, so the HUD icon is the only thing telling you what you're about to fire. Every icon
+is decoded from the loaded WAD's own pickup art rather than hand-drawn, so it matches whatever
+WAD set is in use. Powerups are still just decoration — they wait on a player-status-effect
+system to mean anything.
+
+## Weapons
+
+Picking a weapon up selects it, as in the original, and grants twice one ammo pickup's worth
+of its ammo. `1`–`7` pick a slot; pressing the same slot again toggles between the two weapons
+that share it (fist/chainsaw, shotgun/super shotgun) rather than always jumping to the better
+one, which would otherwise make the weaker weapon unreachable. The mouse wheel cycles through
+everything you own.
+
+Holding the left mouse button fires at the weapon's own rate, spending ammo. Hitscan weapons
+(pistol, shotgun, super shotgun, chaingun) draw a thin line from the player to whatever they
+hit, flashing for a fraction of a second; the shotguns throw a spread of pellets rather than a
+single line. The rocket launcher, plasma rifle and BFG launch a sprite that flies to its target
+and plays the original's own explosion animation on impact. The fist and chainsaw swing on
+their cooldown but have nothing to hit yet.
+
+**Aiming is by mouse, and putting the cursor on a monster locks onto it.** The shot is then
+aimed at that monster's actual position and height instead of at wherever the cursor's
+projection onto the floor plane happens to land — so shooting an enemy up on a ledge angles
+the shot to reach it, rather than firing flat and stopping against the step. It's the
+pointer-driven equivalent of DOOM's own auto-aim, which had no cursor to work from. The lock
+follows the cursor rather than waiting for the click, so the aim doesn't jump the moment you
+fire. Real walls and closed doors still stop a shot short and explode it there.
+
+There is no damage model yet — nothing takes any. Shooting spends ammo and draws the shot;
+monsters neither die nor fight back until the combat milestone.
 
 ## Layout
 
 ```
 src/wad/       WAD files, merged lump directory, map lumps, graphics decoding
-src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading, camera
-src/game/      spatial queries, collision, player controller, input, inventory/pickups
+src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
+               sprites, shot tracers, camera
+src/game/      spatial queries, collision, player controller, input, inventory/pickups,
+               weapons and shooting
 src/ui/        start menu, HUD
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
 scripts/       headless WAD inspection (node scripts/inspect-wad.ts)
@@ -127,6 +161,14 @@ blending, since wall quads are batched per texture across the whole map and blen
 need a meaningless whole-level draw order. That keeps faded walls in the ordinary
 depth-tested opaque pass.
 
+**Shots.** `game/world.ts`'s `shotPath` decides where a shot ends up, for tracers and
+projectiles alike. A free shot flies flat at the player's height and is stopped by walls *and*
+by any floor or ceiling step it can't clear — otherwise a rocket sails straight through a
+knee-high riser. A shot locked onto a monster instead slopes from the player's height to the
+target's over exactly the distance between them, and is allowed to clear those steps, since it
+is deliberately angled over them; only real walls and shut doors still cut it short. Both start
+at the player, never at the target's height, or the shot would appear to begin in mid-air.
+
 **Coordinates.** Everything stays in DOOM map units. DOOM's `(x, y, z)` becomes three.js
 `(x, z, -y)`, so the map plane is XZ and Y is up.
 
@@ -143,14 +185,16 @@ is walkable.
 
 ## State
 
-Playable as a walkable level viewer: geometry, textures, sector lighting, collision with
-step-up/headroom rules, gravity-based falling off ledges, vanilla's narrow-gap-crossing
-quirk, floor following, map switching, PWAD loading, and an orbitable camera (right-drag or
-`Q`/`E`) with wall-occlusion fading. Fog of war hides rooms and secrets until the player has actually seen
-them. THINGS render as upright sprites (monsters, weapons, ammo, health/armor, keys,
-powerups and common decorations), and the player is drawn as the real `PLAY` sprite with a
-facing-driven rotation frame and a walk-cycle animation. Health, armor, ammo, keys and
-weapons are collectible and tracked on a HUD (weapon ownership isn't usable yet — no select
-UI or shooting); doors, lifts, floor movers, crushers, switches and teleporters all work,
-including locked doors, which require the matching key. Not yet: monster AI/combat, weapon
-switching/shooting, sound.
+Playable as a walkable level viewer you can shoot in: geometry, textures, sector lighting,
+collision with step-up/headroom rules, gravity-based falling off ledges, vanilla's
+narrow-gap-crossing quirk, floor following, map switching, PWAD loading, and an orbitable
+camera (right-drag or `Q`/`E`) with wall-occlusion fading. Fog of war hides rooms and secrets
+until the player has actually seen them. THINGS render as upright sprites (monsters, weapons,
+ammo, health/armor, keys, powerups and common decorations), and the player is drawn as the
+real `PLAY` sprite with a facing-driven rotation frame and a walk-cycle animation. Health,
+armor, ammo, keys and weapons are collectible and tracked on a HUD; doors, lifts, floor
+movers, crushers, switches and teleporters all work, including locked doors, which require
+the matching key. All nine weapons can be selected (`1`–`7` or the wheel) and fired, with
+hitscan tracers, flying projectiles, impact explosions and click-to-target auto-aim. Not yet:
+monster AI, any damage model (nothing takes damage in either direction), powerup effects,
+sound.

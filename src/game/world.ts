@@ -1,6 +1,6 @@
 import { LF, NO_SIDE, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
 import { sectorOfSubSector } from '../render/bsp.ts';
-import { distSqToSegment } from '../util/geom.ts';
+import { distSqToSegment, segmentIntersect } from '../util/geom.ts';
 import { PLAYER_HEIGHT } from './player.ts';
 
 /** Vanilla DOOM value, in map units. */
@@ -382,4 +382,115 @@ export function slideMove(
   // from the new position — that lets the player round convex corners smoothly.
   if (ny === y && dy !== 0 && nx !== x && !circleBlocked(world, nx, y + dy, radius, z)) ny = y + dy;
   return { x: nx, y: ny };
+}
+
+/**
+ * How far a hitscan shot or a projectile travels before it's treated as
+ * having reached its target, in map units. Tuned by feel rather than lifted
+ * from vanilla's fixed-point MISSILERANGE, the same reasoning as player.ts's
+ * GRAVITY: there's no dt-scaled equivalent to convert it into.
+ */
+export const WEAPON_RANGE = 2048;
+
+/**
+ * Each candidate wall is extended this far past both its own endpoints
+ * before the ray is tested against it — the same fix and the same distance
+ * as FogOfWar's `BLOCKER_OVERLAP`. Two walls meeting exactly at a shared
+ * vertex (a corner, a door frame) otherwise let a ray aimed right at that
+ * point pass just outside the end of both and hit neither, so a shot fired
+ * straight at a corner would sail through the gap instead of stopping.
+ */
+const WALL_OVERLAP = 0.25;
+
+/**
+ * True if this line should stop a shot passing through it at height `z` —
+ * `z` being wherever *this particular* shot's line (which may be sloped, see
+ * `shotPath`) is when it crosses this line, not a single height for the whole
+ * flight.
+ *
+ * A line that blocks a body regardless of height (`isSolidWall` — a real
+ * wall, or a BLOCKING railing/pillar even though such a thing has a real,
+ * sight-passable opening) or that leaves no opening at all (a shut door,
+ * which vanilla never flags BLOCKING) always stops a shot.
+ *
+ * The height test on top of that only applies to a **free** shot, one aimed
+ * by the mouse at open floor with no target locked. Such a shot flies flat at
+ * the shooter's own height, so a sector whose floor has stepped up to or
+ * above `z` — a low platform just a bit taller than the shot is flying — has
+ * to stop it, even though a *taller* person could see over it; without this a
+ * projectile sailed straight through the riser, since the opening beyond it
+ * was tall enough for sight but not for the shot. A **locked-on** shot
+ * (`lockedOn`) is the opposite case: the player has clicked a monster they
+ * can see, and the shot is deliberately angled up or down to reach it, so an
+ * intervening step is something it clears rather than hits. Applying the
+ * height test there stopped such a shot dead at the near edge of the platform
+ * its target stood on — which read as the shot going flat and ignoring the
+ * click.
+ */
+function blocksShot(world: World, lineIndex: number, z: number, lockedOn: boolean): boolean {
+  if (world.isSolidWall(lineIndex)) return true;
+  const opening = world.openingOf(lineIndex);
+  if (!opening || opening.top <= opening.bottom) return true;
+  if (lockedOn) return false;
+  return z < opening.bottom || z > opening.top;
+}
+
+/** Where a shot actually ends up: the point it stopped at, the height it was at there, and how far that was. */
+export interface ShotPath {
+  x: number;
+  y: number;
+  z: number;
+  dist: number;
+}
+
+/**
+ * Traces a shot fired from (x, y) at height `z` along `angleRad` and returns
+ * where it ends up, stopped at the nearest line that blocks it
+ * (`blocksShot`, tested at that line's own height along the shot's slope).
+ *
+ * With no `target` this is a free shot: flat at `z`, out to `WEAPON_RANGE`,
+ * stopped by walls and by floor/ceiling steps it can't clear.
+ *
+ * With a `target` — auto-aim's locked-on monster (main.ts) — it instead runs
+ * from `z` to the target's own height over exactly the distance to it, so it
+ * angles toward a target standing higher or lower rather than flying flat
+ * past it, and stops *at* the target instead of continuing to whatever is
+ * behind. The origin height stays `z`, the shooter's own, so a rendered
+ * tracer/projectile always starts at the player rather than mid-air. Only
+ * real walls and shut doors can cut such a shot short (see `blocksShot`).
+ *
+ * Used both for a hitscan weapon's tracer endpoint and for how far a fired
+ * projectile is allowed to fly (game/weapons.ts, main.ts).
+ */
+export function shotPath(
+  world: World,
+  x: number,
+  y: number,
+  z: number,
+  angleRad: number,
+  target: { x: number; y: number; z: number } | null = null,
+): ShotPath {
+  const dx = Math.cos(angleRad);
+  const dy = Math.sin(angleRad);
+  const maxRange = target ? Math.hypot(target.x - x, target.y - y) : WEAPON_RANGE;
+  const endZ = target ? target.z : z;
+  const tx = x + dx * maxRange;
+  const ty = y + dy * maxRange;
+  let nearestT = 1;
+  for (const i of world.linesNear(x, y, maxRange)) {
+    const line = world.map.linedefs[i];
+    const a = world.map.vertexes[line.v1];
+    const b = world.map.vertexes[line.v2];
+    if (!a || !b) continue;
+    const ldx = b.x - a.x;
+    const ldy = b.y - a.y;
+    const len = Math.hypot(ldx, ldy);
+    const ex = len > 0 ? (ldx / len) * WALL_OVERLAP : 0;
+    const ey = len > 0 ? (ldy / len) * WALL_OVERLAP : 0;
+    const hit = segmentIntersect(x, y, tx, ty, a.x - ex, a.y - ey, b.x + ex, b.y + ey);
+    if (!hit || hit.t >= nearestT) continue;
+    if (blocksShot(world, i, z + (endZ - z) * hit.t, target !== null)) nearestT = hit.t;
+  }
+  const dist = maxRange * nearestT;
+  return { x: x + dx * dist, y: y + dy * dist, z: z + (endZ - z) * nearestT, dist };
 }

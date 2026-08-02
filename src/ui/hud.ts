@@ -1,5 +1,6 @@
 import type { GraphicsBank } from '../wad/graphics.ts';
-import { AMMO_TYPES, KEY_COLORS, type AmmoType, type Inventory, type KeyColor } from '../game/inventory.ts';
+import { AMMO_TYPES, KEY_COLORS, type AmmoType, type Inventory, type KeyColor, type WeaponId } from '../game/inventory.ts';
+import { WEAPON_CYCLE, WEAPONS } from '../game/weapons.ts';
 
 const AMMO_ICONS: Record<AmmoType, string> = {
   bullets: 'CLIPA0',
@@ -43,6 +44,8 @@ export class Hud {
   private armorIconBlue = this.root.querySelector<HTMLCanvasElement>('.hud-armor .icon-blue')!;
   private ammoValues: Record<AmmoType, HTMLElement>;
   private keyPanels: Record<KeyColor, HTMLElement>;
+  private weaponIcons: Record<WeaponId, HTMLCanvasElement>;
+  private currentWeaponShown: WeaponId | null = null;
 
   constructor(gfx: GraphicsBank) {
     drawIcon(this.root.querySelector<HTMLCanvasElement>('.hud-health canvas')!, gfx, 'MEDIA0');
@@ -62,6 +65,20 @@ export class Hud {
       drawIcon(panel.querySelector('canvas')!, gfx, KEY_ICONS[c]);
       this.keyPanels[c] = panel;
     }
+
+    // The weapon set is fixed at compile time (game/weapons.ts's WEAPON_CYCLE),
+    // unlike ammo/keys there's no small fixed handful worth hand-authoring in
+    // index.html — built here instead, one hidden icon per weapon, same as
+    // hud-armor's two icons toggling by `.hidden`.
+    const weaponPanel = this.root.querySelector<HTMLElement>('.hud-weapon')!;
+    this.weaponIcons = {} as Record<WeaponId, HTMLCanvasElement>;
+    for (const w of WEAPON_CYCLE) {
+      const canvas = document.createElement('canvas');
+      canvas.className = 'icon hidden';
+      drawIcon(canvas, gfx, WEAPONS[w].iconLump);
+      weaponPanel.appendChild(canvas);
+      this.weaponIcons[w] = canvas;
+    }
   }
 
   update(inv: Inventory): void {
@@ -72,5 +89,11 @@ export class Hud {
     this.armorPanel.classList.toggle('empty', inv.armorType === 0);
     for (const t of AMMO_TYPES) this.ammoValues[t].textContent = String(inv.ammo[t]);
     for (const c of KEY_COLORS) this.keyPanels[c].classList.toggle('collected', inv.keys.has(c));
+
+    if (inv.currentWeapon !== this.currentWeaponShown) {
+      if (this.currentWeaponShown) this.weaponIcons[this.currentWeaponShown].classList.add('hidden');
+      this.weaponIcons[inv.currentWeapon].classList.remove('hidden');
+      this.currentWeaponShown = inv.currentWeapon;
+    }
   }
 }

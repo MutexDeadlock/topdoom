@@ -4,7 +4,7 @@ import type { GraphicsBank } from '../wad/graphics.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { World } from '../game/world.ts';
 import { PLAYER_HEIGHT } from '../game/player.ts';
-import { THING_SPRITES } from '../game/thingdefs.ts';
+import { MONSTER_TYPES, THING_SPRITES } from '../game/thingdefs.ts';
 import { isMultiplayerOnly, spawnsAtSkill, type Skill } from '../game/skill.ts';
 import { doomToWorld, lightToColor } from './mapmesh.ts';
 
@@ -265,6 +265,20 @@ export interface ThingLayer {
    * instance disappears, not what picking one up means.
    */
   tryPickup(x: number, y: number, z: number, radius: number, consume: (type: number) => boolean): void;
+  /**
+   * DOOM (x, y, floor height) of the visible monster this ray hits first, or
+   * null. Backs auto-aim (main.ts): aiming with the cursor over a monster
+   * locks onto it instead of wherever the mouse's floor-plane projection
+   * landed — both its position (so the shot's angle is exact even when the
+   * click lands high on the sprite, far from the monster's own footprint)
+   * and its height (so a shot bound for a monster standing on a raised or
+   * lowered floor travels at *its* height, not the player's). Restricted the
+   * same way `update`'s visibility toggle is — a monster fog of war hasn't
+   * revealed, or one already picked (dead end for a monster today, but the
+   * check costs nothing to keep uniform) — can't be targeted through
+   * geometry that hides it on screen.
+   */
+  pickMonster(raycaster: THREE.Raycaster): { x: number; y: number; z: number } | null;
 }
 
 /** One static upright plane per map THING whose type is a known, visible sprite. */
@@ -329,6 +343,17 @@ export function buildThingSprites(
           p.actor.mesh.visible = false;
         }
       }
+    },
+    pickMonster(raycaster: THREE.Raycaster): { x: number; y: number; z: number } | null {
+      const byMesh = new Map<THREE.Object3D, PosedThing>();
+      for (const p of posed) {
+        if (p.picked || !p.actor.mesh.visible || !MONSTER_TYPES.has(p.type)) continue;
+        byMesh.set(p.actor.mesh, p);
+      }
+      const hit = raycaster.intersectObjects([...byMesh.keys()], false)[0];
+      if (!hit) return null;
+      const p = byMesh.get(hit.object);
+      return p ? { x: p.x, y: p.y, z: p.sector?.floorHeight ?? 0 } : null;
     },
   };
 }

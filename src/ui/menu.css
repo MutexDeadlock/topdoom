@@ -118,6 +118,10 @@ canvas {
   height: 22px;
 }
 
+#game-hud .hud-weapon .icon {
+  height: 32px;
+}
+
 /* ---------- start menu ---------- */
 
 #menu {

@@ -93,11 +93,22 @@ export class TopDownCamera {
 
   /** Where the pointer ray meets the horizontal plane at height `planeY`. */
   pointerToPlane(ndcX: number, ndcY: number, planeY: number): { x: number; y: number } | null {
-    const ray = new THREE.Raycaster();
-    ray.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
+    const ray = this.raycasterFor(ndcX, ndcY);
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY);
     const hit = new THREE.Vector3();
     if (!ray.ray.intersectPlane(plane, hit)) return null;
     return { x: hit.x, y: -hit.z };
+  }
+
+  /**
+   * A THREE.Raycaster through the pointer's NDC position, for callers that
+   * need to test against real meshes (auto-aim's click-on-a-monster check,
+   * render/sprites.ts's `ThingLayer.pickMonster`) rather than the flat plane
+   * `pointerToPlane` intersects.
+   */
+  raycasterFor(ndcX: number, ndcY: number): THREE.Raycaster {
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
+    return ray;
   }
 }

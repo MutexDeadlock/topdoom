@@ -11,11 +11,21 @@ export const KEY_COLORS = ['blue', 'red', 'yellow'] as const;
 export type KeyColor = (typeof KEY_COLORS)[number];
 
 /**
- * Ground weapons the player can own. Fist and pistol are absent — vanilla
- * starts every game with both already owned and neither has a map pickup —
- * so there's nothing yet to model for them.
+ * Every weapon the player can carry, including fist and pistol — vanilla
+ * starts every game with both already owned and neither has a map pickup,
+ * but now that weapons are selectable/fireable (game/weapons.ts) they still
+ * need an id like every other weapon to be `currentWeapon`-able.
  */
-export type WeaponId = 'chainsaw' | 'shotgun' | 'supershotgun' | 'chaingun' | 'rocketLauncher' | 'plasmaRifle' | 'bfg';
+export type WeaponId =
+  | 'fist'
+  | 'chainsaw'
+  | 'pistol'
+  | 'shotgun'
+  | 'supershotgun'
+  | 'chaingun'
+  | 'rocketLauncher'
+  | 'plasmaRifle'
+  | 'bfg';
 
 export interface Inventory {
   health: number;
@@ -25,9 +35,11 @@ export interface Inventory {
   ammo: Record<AmmoType, number>;
   keys: Set<KeyColor>;
   weapons: Set<WeaponId>;
+  /** Which owned weapon is selected — see game/weapons.ts for switching/firing. */
+  currentWeapon: WeaponId;
 }
 
-/** Vanilla DOOM's own new-game defaults: full health, no armor, a pistol's 50 bullets. */
+/** Vanilla DOOM's own new-game defaults: full health, no armor, fist + pistol with 50 bullets. */
 export function createInventory(): Inventory {
   return {
     health: 100,
@@ -35,7 +47,8 @@ export function createInventory(): Inventory {
     armorType: 0,
     ammo: { bullets: 50, shells: 0, rockets: 0, cells: 0 },
     keys: new Set(),
-    weapons: new Set(),
+    weapons: new Set(['fist', 'pistol']),
+    currentWeapon: 'pistol',
   };
 }
 
@@ -106,12 +119,9 @@ const WEAPON_PICKUPS: Record<number, { weapon: WeaponId; ammoType: AmmoType | nu
  * `P_TouchSpecialThing` rules for the subset of items this engine models —
  * health, armor, ammo, keys and weapons. Powerups are still left alone
  * (still decorative, not collectible) since there is no player-status-effect
- * system yet to give them meaning; that's deferred to the Shooting
- * milestone, the same way monster idle animations are deferred elsewhere.
- * Weapon *ownership* is tracked from this pickup on, even though nothing
- * reads `Inventory.weapons` yet — there's no weapon-select/switch UI or
- * shooting to plug it into — the same "state now, behavior later" split as
- * collected keys not yet gating locked doors.
+ * system yet to give them meaning — the same "state now, behavior later"
+ * split weapon ownership itself used to be in before game/weapons.ts made
+ * a picked-up weapon selectable and fireable.
  *
  * Returns false for an item that can't (or shouldn't) be picked up right
  * now — e.g. a Stimpack at full health, or a weapon already owned whose
@@ -173,6 +183,9 @@ export function applyPickup(inv: Inventory, type: number): boolean {
       }
     }
     inv.weapons.add(weapon.weapon);
+    // Matches vanilla's P_GiveWeapon, which switches the player to a weapon
+    // the instant it's newly picked up (not on every re-pickup of one already owned).
+    if (!hadWeapon) inv.currentWeapon = weapon.weapon;
     return !hadWeapon || gaveAmmo;
   }
 

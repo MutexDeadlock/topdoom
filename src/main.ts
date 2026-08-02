@@ -9,7 +9,7 @@ import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache, buildThingSprites, type ThingLayer } from './render/sprites.ts';
 import { FlatFader, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
-import { World } from './game/world.ts';
+import { World, shotPath } from './game/world.ts';
 import { Player, PLAYER_HEIGHT, PLAYER_RADIUS } from './game/player.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
@@ -18,6 +18,8 @@ import { Menu, type Selection } from './ui/menu.ts';
 import { Hud } from './ui/hud.ts';
 import type { Skill } from './game/skill.ts';
 import { applyPickup, createInventory, finishLevel, ITEM_PICKUP_RADIUS, type Inventory } from './game/inventory.ts';
+import { WeaponSystem, type Shot } from './game/weapons.ts';
+import { Tracer } from './render/tracer.ts';
 import { DEVMODE } from './constants.ts';
 
 /** Combined radius (map units) within which an item is close enough to pick up. */
@@ -41,17 +43,82 @@ const KEY_YAW_SPEED = 120;
  */
 const TFOG_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 const TFOG_FRAME_SECONDS = 6 / 35; // vanilla's S_TFOG* states hold each frame 6 tics
-const TFOG_LIFETIME = TFOG_FRAMES.length * TFOG_FRAME_SECONDS;
 /** Vanilla spawns the destination fog 20 units ahead of the landing spot, along the direction it faces. */
 const TFOG_SPAWN_OFFSET = 20;
 
-interface TeleportFog {
+/**
+ * A transient, one-shot sprite animation: plays through `frames` once at a
+ * fixed spot and then removes itself. Used for both the teleport-fog puff
+ * and a projectile's impact explosion below — neither is a real map `Thing`,
+ * so neither goes through `ThingLayer`.
+ */
+interface OneShotEffect {
   actor: SpriteActor;
   x: number;
   y: number;
   z: number;
   light: number;
   elapsed: number;
+  lifetime: number;
+}
+
+/**
+ * Height above the feet a weapon fires from, and the plane the mouse cursor
+ * is projected onto for aiming (`camera.pointerToPlane` below) — the two
+ * have to match, or a tracer/projectile would visibly start from a different
+ * height than where the crosshair appears to be.
+ */
+const AIM_HEIGHT_OFFSET = 32;
+
+/** Color of a hitscan tracer line (render/tracer.ts) — a hot yellow-white, like a vanilla muzzle flash. */
+const TRACER_COLOR = 0xfff2a8;
+
+/**
+ * Frame letters an in-flight projectile sprite cycles through while flying.
+ * `MISL` (rocket) only has directional flight art on frame A — B-D are its
+ * explosion frames, played separately (see IMPACT_EFFECTS) once it lands —
+ * while `PLSS`/`BFS1` (plasma bolt, BFG ball) are each a 2-frame
+ * omnidirectional pulse. Falls back to a single held frame for anything not
+ * listed.
+ */
+const PROJECTILE_FRAMES: Record<string, string[]> = {
+  PLSS: ['A', 'B'],
+  BFS1: ['A', 'B'],
+};
+
+/** Vanilla's own explosion states run at 4 tics/frame. */
+const IMPACT_FRAME_SECONDS = 4 / 35;
+
+/**
+ * A projectile's impact explosion, keyed by its flight sprite: vanilla's
+ * `MISL` reuses its own sprite name for the rocket's explosion (frames B-D,
+ * omnidirectional), while the plasma bolt and BFG ball explode into their
+ * own dedicated sprites. There's still no damage/monster-hit model (see
+ * CLAUDE.md's "Current state"), so this is cosmetic only — it plays where a
+ * shot reached shotPath's distance, not where it "hit" anything.
+ */
+const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {
+  MISL: { sprite: 'MISL', frames: ['B', 'C', 'D'] },
+  PLSS: { sprite: 'PLSE', frames: ['A', 'B', 'C', 'D', 'E'] },
+  BFS1: { sprite: 'BFE1', frames: ['A', 'B', 'C', 'D', 'E', 'F'] },
+};
+
+interface Projectile {
+  actor: SpriteActor;
+  originX: number;
+  originY: number;
+  /** Fire height at launch (the player's) — see spawnShot's doc for why this is never the target's own height. */
+  startZ: number;
+  /** shotPath's actual stopping height — the target's height if unobstructed, or wherever it got blocked short of that. */
+  endZ: number;
+  angleRad: number;
+  speed: number;
+  /** Distance (map units) to where shotPath says this shot's flight ends. */
+  maxDist: number;
+  traveled: number;
+  light: number;
+  /** SpriteBank name (PROJECTILE_FRAMES's key), so the impact explosion can look it up in IMPACT_EFFECTS. */
+  sprite: string;
 }
 
 /**
@@ -99,7 +166,11 @@ class Game {
   private flatFader!: FlatFader;
   private fogOfWar!: FogOfWar;
   private specials?: SpecialsController;
-  private teleportFogs: TeleportFog[] = [];
+  private teleportFogs: OneShotEffect[] = [];
+  private impacts: OneShotEffect[] = [];
+  private weaponSystem = new WeaponSystem();
+  private tracers: Tracer[] = [];
+  private projectiles: Projectile[] = [];
   /**
    * Set by the exit trigger and consumed right after `specials.update()`
    * returns in `frame` — never loaded from inside the callback itself. The
@@ -182,11 +253,21 @@ class Game {
     }
     if (this.things) this.scene.remove(this.things.group);
     this.specials?.dispose();
-    // A fog puff mid-animation when the map changes (e.g. a teleporter onto
-    // an exit line) would otherwise leave its plane glued into the new
-    // level's scene forever, since nothing else ever removes it.
+    // A fog puff or impact explosion mid-animation when the map changes (e.g.
+    // a teleporter onto an exit line) would otherwise leave its plane glued
+    // into the new level's scene forever, since nothing else ever removes it.
     for (const f of this.teleportFogs) this.scene.remove(f.actor.mesh);
     this.teleportFogs = [];
+    for (const e of this.impacts) this.scene.remove(e.actor.mesh);
+    this.impacts = [];
+    // Same reasoning for a tracer/projectile still in flight when the map changes.
+    for (const t of this.tracers) {
+      this.scene.remove(t.line);
+      t.dispose();
+    }
+    this.tracers = [];
+    for (const p of this.projectiles) this.scene.remove(p.actor.mesh);
+    this.projectiles = [];
 
     const t0 = performance.now();
     const map = loadMap(this.wad, name);
@@ -300,32 +381,137 @@ class Game {
     this.built?.group.traverse((obj) => {
       if (obj instanceof THREE.Mesh) obj.geometry.dispose();
     });
+    // Tracers own per-instance geometry/material (unlike sprite actors, whose
+    // geometry/material come from the shared, disposed-below SpriteMaterialCache).
+    for (const t of this.tracers) t.dispose();
     this.materials.dispose();
     this.spriteMaterials.dispose();
   }
 
-  private spawnTeleportFog(x: number, y: number, z: number): void {
-    const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, 'TFOG', TFOG_FRAMES, TFOG_FRAME_SECONDS);
+  /** Spawns a one-shot sprite animation (teleport fog, impact explosion) and returns it, or null if the sprite has no art. */
+  private spawnEffect(sprite: string, frames: string[], frameSeconds: number, x: number, y: number, z: number): OneShotEffect | null {
+    const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, sprite, frames, frameSeconds);
     const light = this.world.sectorAt(x, y)?.light ?? 128;
-    if (!actor.setPose(x, y, z, 0, light)) return;
+    if (!actor.setPose(x, y, z, 0, light)) return null;
     this.scene.add(actor.mesh);
-    this.teleportFogs.push({ actor, x, y, z, light, elapsed: 0 });
+    return { actor, x, y, z, light, elapsed: 0, lifetime: frames.length * frameSeconds };
   }
 
-  /** Advances every active teleport-fog puff and drops the ones that finished their one-shot animation. */
-  private updateTeleportFogs(dt: number, viewerAngleDeg: number): void {
-    if (this.teleportFogs.length === 0) return;
-    const remaining: TeleportFog[] = [];
-    for (const f of this.teleportFogs) {
-      f.elapsed += dt;
-      if (f.elapsed >= TFOG_LIFETIME) {
-        this.scene.remove(f.actor.mesh);
+  /** Advances a one-shot effect list in place and drops the ones that finished, matching every other list's remaining-array pattern here. */
+  private updateEffects(list: OneShotEffect[], dt: number, viewerAngleDeg: number): OneShotEffect[] {
+    if (list.length === 0) return list;
+    const remaining: OneShotEffect[] = [];
+    for (const e of list) {
+      e.elapsed += dt;
+      if (e.elapsed >= e.lifetime) {
+        this.scene.remove(e.actor.mesh);
         continue;
       }
-      f.actor.setPose(f.x, f.y, f.z, 0, f.light, dt, true, viewerAngleDeg);
-      remaining.push(f);
+      e.actor.setPose(e.x, e.y, e.z, 0, e.light, dt, true, viewerAngleDeg);
+      remaining.push(e);
     }
-    this.teleportFogs = remaining;
+    return remaining;
+  }
+
+  private spawnTeleportFog(x: number, y: number, z: number): void {
+    const effect = this.spawnEffect('TFOG', TFOG_FRAMES, TFOG_FRAME_SECONDS, x, y, z);
+    if (effect) this.teleportFogs.push(effect);
+  }
+
+  /**
+   * Turns one fired Shot (game/weapons.ts) into a tracer line or a flying
+   * projectile sprite. Always starts at the player's own fire height
+   * (`startZ`) — never mid-air — and, when `target` is auto-aim's locked-on
+   * monster, slopes toward that monster's height by the time it arrives
+   * instead of flying flat past it. `shotPath` resolves where it actually
+   * gets to (short of the target if a wall is in the way), which is what both
+   * the tracer/projectile's endpoint and — once it lands — its impact
+   * explosion use.
+   */
+  private spawnShot(shot: Shot, startZ: number, target: { x: number; y: number; z: number } | null): void {
+    const originX = this.player.x;
+    const originY = this.player.y;
+    const path = shotPath(this.world, originX, originY, startZ, shot.angleRad, target);
+
+    if (shot.kind === 'hitscan') {
+      const tracer = new Tracer(originX, originY, startZ, path.x, path.y, path.z, TRACER_COLOR);
+      this.scene.add(tracer.line);
+      this.tracers.push(tracer);
+      return;
+    }
+
+    const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, shot.sprite, PROJECTILE_FRAMES[shot.sprite]);
+    const light = this.world.sectorAt(originX, originY)?.light ?? 128;
+    if (!actor.setPose(originX, originY, startZ, (shot.angleRad * 180) / Math.PI, light)) return;
+    this.scene.add(actor.mesh);
+    this.projectiles.push({
+      actor,
+      originX,
+      originY,
+      startZ,
+      endZ: path.z,
+      angleRad: shot.angleRad,
+      speed: shot.speed,
+      maxDist: path.dist,
+      traveled: 0,
+      light,
+      sprite: shot.sprite,
+    });
+  }
+
+  /** Advances every active hitscan tracer and drops the ones whose flash finished. */
+  private updateTracers(dt: number): void {
+    if (this.tracers.length === 0) return;
+    const remaining: Tracer[] = [];
+    for (const t of this.tracers) {
+      if (t.update(dt)) {
+        remaining.push(t);
+      } else {
+        this.scene.remove(t.line);
+        t.dispose();
+      }
+    }
+    this.tracers = remaining;
+  }
+
+  /**
+   * Advances every in-flight projectile along its fixed straight line —
+   * sloped from `startZ` to `endZ` (see spawnShot's doc) rather than flat,
+   * so an auto-aimed shot visibly rises or dips toward its target instead of
+   * the sprite floating at a constant height mismatched with the line it's
+   * travelling along — and, once one reaches `maxDist` (the same
+   * wall-stopping distance a hitscan tracer would have ended at,
+   * shotPath, computed once at launch in spawnShot rather than
+   * re-raycast every frame), removes it and plays its impact explosion
+   * (IMPACT_EFFECTS) at `endZ` in its place. There's still no damage/monster-
+   * hit model (see CLAUDE.md's "Current state"), so this is cosmetic only:
+   * "reached its target" doesn't mean it hit anything, just that it
+   * travelled as far as the wall in its path allows.
+   */
+  private updateProjectiles(dt: number, viewerAngleDeg: number): void {
+    if (this.projectiles.length === 0) return;
+    const remaining: Projectile[] = [];
+    for (const p of this.projectiles) {
+      p.traveled += p.speed * dt;
+      if (p.traveled >= p.maxDist) {
+        this.scene.remove(p.actor.mesh);
+        const x = p.originX + Math.cos(p.angleRad) * p.maxDist;
+        const y = p.originY + Math.sin(p.angleRad) * p.maxDist;
+        const impact = IMPACT_EFFECTS[p.sprite];
+        if (impact) {
+          const effect = this.spawnEffect(impact.sprite, impact.frames, IMPACT_FRAME_SECONDS, x, y, p.endZ);
+          if (effect) this.impacts.push(effect);
+        }
+        continue;
+      }
+      const x = p.originX + Math.cos(p.angleRad) * p.traveled;
+      const y = p.originY + Math.sin(p.angleRad) * p.traveled;
+      const frac = p.maxDist > 0 ? p.traveled / p.maxDist : 1;
+      const z = p.startZ + (p.endZ - p.startZ) * frac;
+      p.actor.setPose(x, y, z, (p.angleRad * 180) / Math.PI, p.light, dt, true, viewerAngleDeg);
+      remaining.push(p);
+    }
+    this.projectiles = remaining;
   }
 
   private frame = (now: number) => {
@@ -354,9 +540,33 @@ class Game {
       return;
     }
 
-    const aim = camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + 32);
+    // Auto-aim: the cursor hovering over a monster locks aim onto its actual
+    // position — and height — instead of wherever the mouse's flat
+    // floor-plane projection lands underneath the cursor. This has to apply
+    // on hover, the same as regular mouse-aim always has (player.angle is
+    // set from `aim` unconditionally below, click or no), not just while the
+    // trigger is held: gating the lock to mouseDown made both the player's
+    // facing and the camera's aim-lead below jump the instant a click
+    // landed — which read as the camera lurching backward right as you fired.
+    const monster = this.things?.pickMonster(camera.raycasterFor(input.pointer.x, input.pointer.y)) ?? null;
+    const aim = monster ?? camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
     this.player.update(dt, input, aim, camera.viewerAngleDeg + 180);
     camera.update(dt, this.player.x, this.player.y, this.player.eyeZ, aim);
+
+    // A shot always *starts* at the player's own fire height — never the
+    // target's, or a tracer/projectile would visibly begin mid-air instead of
+    // at the player. Handing shotPath the locked-on monster as its target is
+    // what makes the shot angle toward *its* height and stop there; see
+    // world.ts's shotPath/blocksShot for why a locked shot is allowed to
+    // clear the floor steps a free one is stopped by.
+    const fireStartZ = this.player.z + AIM_HEIGHT_OFFSET;
+    const fireTarget = monster ? { x: monster.x, y: monster.y, z: monster.z + AIM_HEIGHT_OFFSET } : null;
+
+    // After player.update so player.angle already reflects this frame's aim.
+    this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
+    for (const shot of this.weaponSystem.update(dt, input.mouseDown, this.inventory, this.player.angle)) {
+      this.spawnShot(shot, fireStartZ, fireTarget);
+    }
 
     this.things?.tryPickup(this.player.x, this.player.y, this.player.z, PICKUP_RANGE, (type) =>
       applyPickup(this.inventory, type),
@@ -367,7 +577,10 @@ class Game {
     const fog = this.fogOfWar;
     const fogAlphaOf = (subsector: number) => fog.alphaOf(subsector);
     this.things?.update(camera.viewerAngleDeg, fogAlphaOf);
-    this.updateTeleportFogs(dt, camera.viewerAngleDeg);
+    this.teleportFogs = this.updateEffects(this.teleportFogs, dt, camera.viewerAngleDeg);
+    this.updateTracers(dt);
+    this.updateProjectiles(dt, camera.viewerAngleDeg);
+    this.impacts = this.updateEffects(this.impacts, dt, camera.viewerAngleDeg);
 
     const camPos = camera.camera.position;
     const camPlayerArgs = [
@@ -445,7 +658,7 @@ class Game {
       `pos ${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}   z ${this.player.z.toFixed(0)}   sector ${sector}`,
       `cam ${camera.distance.toFixed(0)} u / ${camera.tiltDeg.toFixed(0)}° tilt / ${camera.yawDeg.toFixed(0)}° yaw   ceilings ${this.renderCeilings ? 'on' : 'off'}`,
       '',
-      'WASD move   Shift run   mouse aim   right-drag / Q-E rotate camera   Space use',
+      'WASD move   Shift run   mouse aim/fire   1-7 / wheel weapon   right-drag / Q-E rotate camera   Space use',
       'N/P map   C ceilings   +/- zoom   [ ] tilt   Esc menu',
     ].join('\n');
   }

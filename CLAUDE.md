@@ -67,9 +67,9 @@ where nearby unrelated geometry makes results hard to interpret.
 ```
 src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite decoding
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
-               sprite billboards, camera
+               sprite billboards, shot tracers, camera
 src/game/      spatial queries, collision, player controller, input, thing→sprite table,
-               fog of war, inventory/pickups
+               fog of war, inventory/pickups, weapons and firing
 src/ui/        start menu, HUD
 src/util/      small pure helpers shared across layers (2D geometry, damped-lerp smoothing)
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
@@ -279,12 +279,14 @@ call at map load rather than something `Player`'s constructor has to reason abou
 
 Health, armor, ammo, keys and weapons are collectible; powerups are the one category still
 left alone (still rendered, still decorative) since there's no player-status-effect system
-yet to give picking one up any meaning. Weapons *are* picked up — `WeaponId` ownership and
-their ammo land in `Inventory.weapons`/`Inventory.ammo` — even though nothing reads
-`Inventory.weapons` yet, since there's no weapon-select/switch UI or shooting to plug it into.
-Track the state now, wire up its effect once the Shooting milestone lands: a weapon lying on
-the ground forever, uncollectible, reads as a bug (and was reported as one) in a way an unused
-`Set` never does, so this is the opposite call from leaving powerups alone above.
+yet to give picking one up any meaning. Weapon ownership and ammo land in
+`Inventory.weapons`/`Inventory.ammo`, and are read by `game/weapons.ts` (below) for
+selection and firing. `Inventory.currentWeapon` lives here rather than in `WeaponSystem` for
+the same reason the rest of the struct does: `main.ts` owns it, and the HUD reads it straight
+off the same struct it already reads health/ammo/keys from. Picking up a weapon **not already
+owned** selects it, matching vanilla's `P_GiveWeapon`; re-picking one you already have doesn't
+yank the selection away. `fist` and `pistol` are in `WeaponId` even though neither has a map
+pickup — every game starts owning both, and they still need ids to be `currentWeapon`-able.
 
 `applyPickup` (`game/inventory.ts`) follows vanilla's `P_TouchSpecialThing` for that
 subset — most importantly, a Stimpack/Medikit at full health, an armor pickup weaker than
@@ -358,6 +360,87 @@ divs above them). Finding the right icon lump names surfaced a pre-existing bug:
 pickup (`doomednum` 2010) was mapped to sprite `RCKT` in `game/thingdefs.ts`, which isn't a
 real lump — the actual sprite is `ROCK`, so rockets were invisible in the world before this
 fix (their pickup radius still worked; only their being visible before pickup didn't).
+
+**The weapon icon is not decoration.** Unlike the original's status bar, where the weapon in
+your hands fills the bottom third of the screen, this game's player sprite looks identical
+whatever it's holding — `PLAY` has no per-weapon art, and at this camera distance it wouldn't
+read anyway. The HUD icon is therefore the *only* indication of what's selected, which is why
+it exists at all. Its markup is built in `Hud`'s constructor from `WEAPON_CYCLE` rather than
+written into `index.html` like the other panels: the weapon list is a compile-time constant in
+`game/weapons.ts`, so duplicating it as static markup would be two lists to keep in sync.
+Icons reuse each weapon's own ground-pickup sprite (`WeaponDef.iconLump`); fist and pistol have
+no pickup, so they fall back to their first-person `PUNGA0`/`PISGA0` frames.
+
+### Weapons, firing and auto-aim (`src/game/weapons.ts`, `src/game/world.ts: shotPath`, `src/render/tracer.ts`, `src/main.ts`)
+
+`WeaponSystem` (`game/weapons.ts`) owns weapon selection and fire timing/ammo, and
+**deliberately knows nothing about three.js**: `update` returns a list of `Shot`s describing
+what was fired this frame (one per hitscan pellet, or one per projectile launched), and
+`main.ts` turns those into tracer lines and flying sprites. That's the same split as
+`game/specials.ts`'s line triggers vs. `main.ts`'s teleport-fog puffs, and it's what lets fire
+rates and ammo costs be tested headlessly against a synthetic map.
+
+Fire rates and spread are tuned by feel rather than converted from vanilla's tic-based weapon
+state tables — same reasoning as `player.ts`'s `GRAVITY`, they don't translate to a dt-scaled
+model. Ammo-per-shot has no such problem and is lifted straight from vanilla, since it's what
+decides how long a pickup's ammo lasts. Hitscan spread uses vanilla's own `P_Random - P_Random`
+trick (two uniform draws subtracted → triangular distribution centred on the aim line).
+
+**Slot keys toggle within a slot, they don't select "the best".** `WEAPON_SLOTS` lists each
+digit's weapons best-first, but pressing a digit already showing one of that slot's weapons
+advances to the *next* one owned rather than re-picking the best. Without this, slots 1 and 3
+(fist/chainsaw, shotgun/super shotgun) made their weaker weapon permanently unreachable once
+the upgrade was owned — which presented as "shotgun and super shotgun are the same weapon".
+
+**`shotPath` (`game/world.ts`) decides where a shot ends up**, for both tracer endpoints and
+how far a projectile may fly. It has two modes, and the difference is the whole reason it takes
+a `target` rather than just an angle:
+
+- **Free shot** (no target): flat at the player's fire height, out to `WEAPON_RANGE`. Blocked
+  by `isSolidWall` **and** by a two-sided line whose vertical opening the shot's height doesn't
+  fit through. Neither test alone is enough — `blocksSight` alone lets a shot through a
+  BLOCKING railing (it has a real opening), `isSolidWall` alone lets one through a shut door
+  (vanilla never flags those BLOCKING), and omitting the height test entirely lets a rocket
+  sail through a knee-high step because the opening beyond it was tall enough for *sight*.
+- **Locked-on shot** (auto-aim target): slopes from the player's fire height to the target's
+  over exactly the distance between them, and stops *at* the target. Here the height test is
+  deliberately **skipped** — the shot is angled over intervening steps on purpose. Leaving it
+  on meant a shot at a monster on a ledge got cut off at the ledge's near edge, and since the
+  returned height is "wherever it stopped", that presented as the shot going flat and ignoring
+  the click entirely.
+
+Both modes start at the player's own height, never the target's — using the target's height
+for the origin made tracers and projectiles visibly begin in mid-air rather than at the gun.
+Blocking is evaluated at the interpolated height where the ray crosses each candidate line, not
+one height for the whole flight. Candidate lines are extended `WALL_OVERLAP` past both ends for
+the same reason `FogOfWar` extends its sight blockers: two walls meeting at a shared vertex
+otherwise let a shot aimed at that corner slip between them.
+
+**Auto-aim is click-to-target, not vanilla's autoaim cone** — this game has a mouse pointer,
+so "aim at that one" is expressible directly. `ThingLayer.pickMonster` raycasts the cursor
+against monster sprite meshes (`MONSTER_TYPES` in `game/thingdefs.ts`, filtered to
+currently-`visible` meshes so a fog-of-war-hidden monster can't be targeted through the
+geometry hiding it) and returns the hit monster's position *and* its sector's live floor
+height. `main.ts` uses that as both the aim point and the shot's end height.
+
+The lock applies **on hover, not on click**. Gating it to `input.mouseDown` made `aim` — which
+drives `player.angle` *and* the camera's aim-lead — switch sources the instant a click landed,
+and since a monster is normally much nearer than the cursor's floor-plane projection, the
+camera's lead offset collapsed at that moment and read as the camera lurching backwards. Aim
+has always been set from the cursor unconditionally, click or no; the lock has to follow the
+same rule to stay continuous.
+
+Impact explosions and the teleport-fog puff share one mechanism in `main.ts`
+(`OneShotEffect`/`spawnEffect`/`updateEffects`): a transient sprite animation playing once at a
+fixed spot, outside `ThingLayer` since neither is a real map `Thing`. `IMPACT_EFFECTS` maps a
+projectile's flight sprite to its explosion — vanilla reuses `MISL` frames B–D for the rocket's
+own blast, while the plasma bolt and BFG ball explode into dedicated `PLSE`/`BFE1` sprites.
+
+**There is still no damage model**, in either direction: nothing is hurt, nothing dies, nothing
+shoots back. Firing spends ammo and draws the shot, and "reached its target" only means the
+shot travelled as far as geometry allows. Adding damage needs the mobj health/death/state
+pipeline that monster AI will bring — the same reason crushers deliberately don't hurt the
+player yet.
 
 ### Crushers and teleporters (`src/wad/specials.ts`, `src/game/specials.ts`, `src/main.ts`)
 
@@ -537,10 +620,15 @@ decorations — see the thing table in `game/thingdefs.ts`), and the player is d
 real `PLAY` sprite with a facing-driven rotation frame and a walk-cycle animation, both
 tracking the live camera angle. Health, armor, ammo, key and weapon pickups are collectible
 (`game/inventory.ts`) and drive a HUD (`src/ui/hud.ts`) drawn from the same WAD pickup-sprite
-graphics the world renders items with — weapon ownership is tracked but not yet usable, and
-powerups stay decorative-only. Multiplayer-only things (deathmatch weapon/ammo stashes)
-correctly don't spawn (`game/skill.ts: isMultiplayerOnly`). Doors, lifts, floor movers,
-crushers, switches and teleporters all work (`game/specials.ts`), including locked doors,
-which require the matching key to be collected first, and teleporters, which reproduce
-vanilla's teleport-fog puff at both ends of the jump (`main.ts`). Not yet implemented:
-monster AI/combat, weapon switching/shooting, sound.
+graphics the world renders items with; powerups stay decorative-only. Multiplayer-only things
+(deathmatch weapon/ammo stashes) correctly don't spawn (`game/skill.ts: isMultiplayerOnly`).
+All nine weapons can be selected (`1`-`7`, or the mouse wheel) and fired (`game/weapons.ts`):
+hitscan weapons draw a flashing tracer line to what they hit, the rocket launcher/plasma
+rifle/BFG launch a flying sprite that explodes on arrival, and clicking a monster locks aim
+onto it, angling the shot to its actual position and height (`ThingLayer.pickMonster`,
+`world.ts: shotPath`). The selected weapon shows in the HUD, since the player sprite looks the
+same whatever it holds. Doors, lifts, floor movers, crushers, switches and teleporters all
+work (`game/specials.ts`), including locked doors, which require the matching key to be
+collected first, and teleporters, which reproduce vanilla's teleport-fog puff at both ends of
+the jump (`main.ts`). Not yet implemented: monster AI, any damage model (nothing takes damage
+in either direction — see the weapons section above), powerup effects, sound.

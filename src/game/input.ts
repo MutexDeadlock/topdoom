@@ -8,6 +8,7 @@ export class Input {
 
   private rightDown = false;
   private dragYawDelta = 0;
+  private wheelDelta = 0;
 
   private element: HTMLElement;
 
@@ -20,6 +21,7 @@ export class Input {
     element.addEventListener('pointerdown', this.onPointerDown);
     window.addEventListener('pointerup', this.onPointerUp);
     element.addEventListener('contextmenu', (e) => e.preventDefault());
+    element.addEventListener('wheel', this.onWheel, { passive: true });
   }
 
   private onKeyDown = (e: KeyboardEvent) => {
@@ -66,6 +68,10 @@ export class Input {
     }
   };
 
+  private onWheel = (e: WheelEvent) => {
+    this.wheelDelta += e.deltaY;
+  };
+
   held(...codes: string[]): boolean {
     return codes.some((c) => this.down.has(c));
   }
@@ -82,6 +88,13 @@ export class Input {
     return delta;
   }
 
+  /** Accumulated scroll-wheel `deltaY` since the last call: positive is "down" (next weapon). */
+  consumeWheel(): number {
+    const delta = this.wheelDelta;
+    this.wheelDelta = 0;
+    return delta;
+  }
+
   /** Call once at the end of every frame. */
   endFrame(): void {
     this.pressedThisFrame.clear();
@@ -94,6 +107,7 @@ export class Input {
     this.mouseDown = false;
     this.rightDown = false;
     this.dragYawDelta = 0;
+    this.wheelDelta = 0;
   }
 
   dispose(): void {
@@ -103,5 +117,6 @@ export class Input {
     this.element.removeEventListener('pointermove', this.onPointerMove);
     this.element.removeEventListener('pointerdown', this.onPointerDown);
     window.removeEventListener('pointerup', this.onPointerUp);
+    this.element.removeEventListener('wheel', this.onWheel);
   }
 }

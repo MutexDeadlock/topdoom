@@ -48,6 +48,12 @@ export class Player {
     this.z = this.world.groundFloor(x, y, PLAYER_RADIUS);
   }
 
+  /** Teleporter landing: drops the player at the destination facing `angle`, matching vanilla's own view-angle snap on arrival. */
+  teleportTo(x: number, y: number, angle: number): void {
+    this.moveTo(x, y);
+    this.angle = angle;
+  }
+
   /**
    * Movement is camera-relative: W always moves the player away from the
    * camera on screen, independent of where the player is aiming. `forwardDeg`

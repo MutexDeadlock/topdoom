@@ -28,6 +28,30 @@ const hudEl = document.getElementById('hud')!;
 const YAW_SENSITIVITY = 0.15;
 
 /**
+ * Teleport-fog puff (vanilla's MT_TFOG): a one-shot animation, not a real
+ * thing, so it lives outside `ThingLayer` — no pickup/fog-of-war/skill
+ * filtering applies, it just plays through its frames once and disappears.
+ * `TFOG` has only rotation-0 (omnidirectional) art, confirmed against
+ * DOOM2.WAD's lump names (TFOGA0..TFOGJ0, no per-angle variants), matching
+ * how blood/explosion-style effect sprites are drawn in vanilla regardless of
+ * viewing angle.
+ */
+const TFOG_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
+const TFOG_FRAME_SECONDS = 6 / 35; // vanilla's S_TFOG* states hold each frame 6 tics
+const TFOG_LIFETIME = TFOG_FRAMES.length * TFOG_FRAME_SECONDS;
+/** Vanilla spawns the destination fog 20 units ahead of the landing spot, along the direction it faces. */
+const TFOG_SPAWN_OFFSET = 20;
+
+interface TeleportFog {
+  actor: SpriteActor;
+  x: number;
+  y: number;
+  z: number;
+  light: number;
+  elapsed: number;
+}
+
+/**
  * Renderer, canvas, camera and input live for the whole session — a new level
  * must not cost a new WebGL context.
  */
@@ -71,6 +95,7 @@ class Game {
   private flatFader!: FlatFader;
   private fogOfWar!: FogOfWar;
   private specials?: SpecialsController;
+  private teleportFogs: TeleportFog[] = [];
 
   private renderCeilings = false;
   private running = false;
@@ -141,6 +166,11 @@ class Game {
     }
     if (this.things) this.scene.remove(this.things.group);
     this.specials?.dispose();
+    // A fog puff mid-animation when the map changes (e.g. a teleporter onto
+    // an exit line) would otherwise leave its plane glued into the new
+    // level's scene forever, since nothing else ever removes it.
+    for (const f of this.teleportFogs) this.scene.remove(f.actor.mesh);
+    this.teleportFogs = [];
 
     const t0 = performance.now();
     const map = loadMap(this.wad, name);
@@ -175,6 +205,22 @@ class Game {
       this.built,
       { renderCeilings: this.renderCeilings },
       () => this.loadMapByIndex(this.mapIndex + 1),
+      (x, y, angle) => {
+        // Matches vanilla P_Teleport: a fog puff where the player stood, and
+        // another just ahead of the landing spot along the direction it
+        // faces — captured before/after teleportTo moves the player.
+        this.spawnTeleportFog(this.player.x, this.player.y, this.player.z);
+        this.player.teleportTo(x, y, angle);
+        this.spawnTeleportFog(
+          this.player.x + Math.cos(angle) * TFOG_SPAWN_OFFSET,
+          this.player.y + Math.sin(angle) * TFOG_SPAWN_OFFSET,
+          this.player.z,
+        );
+        // Snap the camera to face the same way the player now does, same as
+        // the initial spawn — a teleport should reorient the view instantly,
+        // not leave it aimed at wherever the old spot happened to be.
+        this.view.camera.yawDeg = (angle * 180) / Math.PI - 90;
+      },
       this.player.x,
       this.player.y,
     );
@@ -215,6 +261,30 @@ class Game {
     this.spriteMaterials.dispose();
   }
 
+  private spawnTeleportFog(x: number, y: number, z: number): void {
+    const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, 'TFOG', TFOG_FRAMES, TFOG_FRAME_SECONDS);
+    const light = this.world.sectorAt(x, y)?.light ?? 128;
+    if (!actor.setPose(x, y, z, 0, light)) return;
+    this.scene.add(actor.mesh);
+    this.teleportFogs.push({ actor, x, y, z, light, elapsed: 0 });
+  }
+
+  /** Advances every active teleport-fog puff and drops the ones that finished their one-shot animation. */
+  private updateTeleportFogs(dt: number, viewerAngleDeg: number): void {
+    if (this.teleportFogs.length === 0) return;
+    const remaining: TeleportFog[] = [];
+    for (const f of this.teleportFogs) {
+      f.elapsed += dt;
+      if (f.elapsed >= TFOG_LIFETIME) {
+        this.scene.remove(f.actor.mesh);
+        continue;
+      }
+      f.actor.setPose(f.x, f.y, f.z, 0, f.light, dt, true, viewerAngleDeg);
+      remaining.push(f);
+    }
+    this.teleportFogs = remaining;
+  }
+
   private frame = (now: number) => {
     if (!this.running) return;
     const dt = Math.min(0.05, (now - this.lastTime) / 1000);
@@ -241,6 +311,7 @@ class Game {
     const fog = this.fogOfWar;
     const fogAlphaOf = (subsector: number) => fog.alphaOf(subsector);
     this.things?.update(camera.viewerAngleDeg, fogAlphaOf);
+    this.updateTeleportFogs(dt, camera.viewerAngleDeg);
 
     const camPos = camera.camera.position;
     const camPlayerArgs = [

@@ -4,12 +4,15 @@ import {
   LINE_SPECIALS,
   SECTOR_LIGHT_SPECIALS,
   DOOR_OPEN_GAP,
+  CRUSHER_GAP,
   SWITCH_FLASH_SECONDS,
+  TELEPORT_DEST,
   switchPairTexture,
   type SpecialDef,
   type DoorEffect,
   type LiftEffect,
   type FloorEffect,
+  type CrusherEffect,
   type MoveTarget,
   type LightPattern,
 } from '../wad/specials.ts';
@@ -91,7 +94,9 @@ export function computeMovableSectors(map: DoomMap): Set<number> {
   for (const line of map.linedefs) {
     const def = LINE_SPECIALS[line.special];
     if (!def) continue;
-    if (def.effect.kind !== 'exit') {
+    // Exit doesn't move geometry; teleport's tag match is a destination
+    // lookup, not a mover — the target sector's own height never changes.
+    if (def.effect.kind !== 'exit' && def.effect.kind !== 'teleport') {
       for (const sectorIndex of resolveTargets(map, line, def)) out.add(sectorIndex);
     }
     for (const e of findSwitchEntries(map, line)) out.add(e.sectorIndex);
@@ -138,7 +143,18 @@ interface FloorMover {
   state: 'moving' | 'done';
 }
 
-type Mover = DoorMover | LiftMover | FloorMover;
+type CrusherState = 'lowering' | 'raising' | 'stopped';
+interface CrusherMover {
+  kind: 'crusher';
+  sectorIndex: number;
+  speed: number;
+  /** The sector's own ceiling height when the crusher was spawned — not neighbor-derived, unlike a door. */
+  topHeight: number;
+  bottomHeight: number;
+  state: CrusherState;
+}
+
+type Mover = DoorMover | LiftMover | FloorMover | CrusherMover;
 
 interface LightState {
   pattern: LightPattern;
@@ -243,17 +259,24 @@ function disposeGroup(group: THREE.Group): void {
 
 /**
  * Drives every linedef/sector special in a loaded map: doors, lifts, generic
- * floor movers, blinking/flickering lights, and level exits. Sector heights
- * (`Sector.floorHeight`/`ceilHeight`/`light`) are mutated directly on the
- * `DoomMap` — `World` never caches them, so collision, sight-blocking and the
- * player's resting height all pick the change up on their very next query,
- * with no changes needed there. This controller only owns the two things
- * that don't already "just work": rebuilding the small per-sector geometry a
- * mover's height change invalidates, and re-triggering.
+ * floor movers, crushers, teleporters, blinking/flickering lights, and level
+ * exits. Sector heights (`Sector.floorHeight`/`ceilHeight`/`light`) are
+ * mutated directly on the `DoomMap` — `World` never caches them, so
+ * collision, sight-blocking and the player's resting height all pick the
+ * change up on their very next query, with no changes needed there. This
+ * controller only owns the two things that don't already "just work":
+ * rebuilding the small per-sector geometry a mover's height change
+ * invalidates, and re-triggering.
  *
- * Not modeled: crushers/damage floors (no player health system yet) and door
- * "un-crush" safety (a closing door won't reverse if something is standing
- * under it).
+ * Crushers are pure ceiling geometry — down to floor+gap, back to their start
+ * height, forever — with no player damage: vanilla's crush damage assumes a
+ * mobj health/death pipeline (`P_DamageMobj` → `P_KillMobj` → respawn), none
+ * of which exists yet (no death state, no game over), so applying damage with
+ * no consequence once it reached zero would be a half-built feature.
+ *
+ * Not modeled: damage-floor sector specials (same reason as crusher damage),
+ * and door "un-crush" safety (a closing door won't reverse if something is
+ * standing under it).
  */
 export class SpecialsController {
   private map: DoomMap;
@@ -265,6 +288,7 @@ export class SpecialsController {
   private built: BuiltMap;
   private meshOptions: MapMeshOptions;
   private onExit: (secret: boolean) => void;
+  private onTeleport: (x: number, y: number, angle: number) => void;
 
   private movableSectors: Set<number>;
   /** Movable sectors sharing a linedef with a given movable sector — see `rebuildAround`. */
@@ -282,6 +306,15 @@ export class SpecialsController {
 
   private prevX: number;
   private prevY: number;
+  /**
+   * Set by `trigger` for the one frame a teleport fires, and consumed at the
+   * end of `update` to seed `prevX`/`prevY` from the destination instead of
+   * the pre-teleport position `update` was called with. Without this, the
+   * next frame's walk-trigger scan would test a segment from the old spot all
+   * the way to the teleport pad — an arbitrarily long jump that could cross
+   * (and wrongly re-trigger) unrelated lines along the way.
+   */
+  private lastTeleport: { x: number; y: number } | null = null;
 
   constructor(
     map: DoomMap,
@@ -293,6 +326,7 @@ export class SpecialsController {
     built: BuiltMap,
     meshOptions: MapMeshOptions,
     onExit: (secret: boolean) => void,
+    onTeleport: (x: number, y: number, angle: number) => void,
     playerX: number,
     playerY: number,
   ) {
@@ -304,6 +338,7 @@ export class SpecialsController {
     this.polys = polys;
     this.built = built;
     this.onExit = onExit;
+    this.onTeleport = onTeleport;
     this.prevX = playerX;
     this.prevY = playerY;
 
@@ -349,6 +384,18 @@ export class SpecialsController {
     }
   }
 
+  /**
+   * Routing this field read through a method (rather than reading
+   * `this.lastTeleport` directly at the end of `update`) works around a type
+   * narrowing quirk in this project's pinned tsc: reading the field inline
+   * after the several method calls in `update` — any of which may reach
+   * `trigger` and reassign it — left it typed as `null` regardless, when it
+   * can genuinely be non-null there.
+   */
+  private consumeLastTeleport(): { x: number; y: number } | null {
+    return this.lastTeleport;
+  }
+
   update(
     dt: number,
     playerX: number,
@@ -359,13 +406,17 @@ export class SpecialsController {
   ): void {
     const dirty = new Set<number>();
     this.tickMovers(dt, dirty);
+    this.lastTeleport = null;
     this.handleUseTrigger(playerX, playerY, playerAngle, input, ownedKeys);
     this.handleWalkTriggers(playerX, playerY, ownedKeys);
     this.rebuildAround(dirty);
     this.updateSwitchFlashes(dt);
     this.updateLights(dt);
-    this.prevX = playerX;
-    this.prevY = playerY;
+    // See `lastTeleport`'s doc: a teleport this frame reseeds prevX/prevY from
+    // the destination, not the (now stale, pre-teleport) playerX/playerY.
+    const teleport = this.consumeLastTeleport();
+    this.prevX = teleport ? teleport.x : playerX;
+    this.prevY = teleport ? teleport.y : playerY;
   }
 
   /**
@@ -457,7 +508,8 @@ export class SpecialsController {
     for (const mover of this.movers.values()) {
       if (mover.kind === 'door') this.tickDoor(mover, dt, dirty);
       else if (mover.kind === 'lift') this.tickLift(mover, dt, dirty);
-      else this.tickFloor(mover, dt, dirty);
+      else if (mover.kind === 'floor') this.tickFloor(mover, dt, dirty);
+      else this.tickCrusher(mover, dt, dirty);
     }
   }
 
@@ -520,6 +572,27 @@ export class SpecialsController {
     if (sector.floorHeight !== before) dirty.add(mover.sectorIndex);
   }
 
+  /** No hold/rest state, unlike doors and lifts — a crusher reverses at each end and repeats forever. */
+  private tickCrusher(mover: CrusherMover, dt: number, dirty: Set<number>): void {
+    if (mover.state === 'stopped') return;
+    const sector = this.map.sectors[mover.sectorIndex];
+    const before = sector.ceilHeight;
+    if (mover.state === 'lowering') {
+      sector.ceilHeight = Math.max(mover.bottomHeight, sector.ceilHeight - mover.speed * dt);
+      if (sector.ceilHeight <= mover.bottomHeight) {
+        sector.ceilHeight = mover.bottomHeight;
+        mover.state = 'raising';
+      }
+    } else {
+      sector.ceilHeight = Math.min(mover.topHeight, sector.ceilHeight + mover.speed * dt);
+      if (sector.ceilHeight >= mover.topHeight) {
+        sector.ceilHeight = mover.topHeight;
+        mover.state = 'lowering';
+      }
+    }
+    if (sector.ceilHeight !== before) dirty.add(mover.sectorIndex);
+  }
+
   private triggerDoor(sectorIndex: number, effect: DoorEffect): void {
     const existing = this.movers.get(sectorIndex);
     if (!existing || existing.kind !== 'door') {
@@ -576,6 +649,40 @@ export class SpecialsController {
     this.movers.set(sectorIndex, { kind: 'floor', sectorIndex, speed: effect.speed, target, state: 'moving' });
   }
 
+  /** A sector already crushing (in either direction) ignores a re-trigger, matching vanilla's `sec->specialdata` guard. */
+  private triggerCrusher(sectorIndex: number, effect: CrusherEffect): void {
+    const existing = this.movers.get(sectorIndex);
+    if (existing && existing.kind === 'crusher') {
+      if (existing.state === 'stopped') existing.state = 'lowering';
+      return;
+    }
+    const sector = this.map.sectors[sectorIndex];
+    this.movers.set(sectorIndex, {
+      kind: 'crusher',
+      sectorIndex,
+      speed: effect.speed,
+      topHeight: sector.ceilHeight,
+      bottomHeight: sector.floorHeight + CRUSHER_GAP,
+      state: 'lowering',
+    });
+  }
+
+  private triggerCrusherStop(sectorIndex: number): void {
+    const existing = this.movers.get(sectorIndex);
+    if (existing && existing.kind === 'crusher') existing.state = 'stopped';
+  }
+
+  /** First `TELEPORT_DEST` (doomednum 14) thing sitting in one of the tag-matched sectors — vanilla's own search is just as arbitrary when more than one exists. */
+  private findTeleportDestination(sectorIndices: number[]): { x: number; y: number; angle: number } | null {
+    if (sectorIndices.length === 0) return null;
+    const targets = new Set(sectorIndices);
+    for (const t of this.map.things) {
+      if (t.type !== TELEPORT_DEST) continue;
+      if (targets.has(this.world.sectorIndexAt(t.x, t.y))) return { x: t.x, y: t.y, angle: (t.angle * Math.PI) / 180 };
+    }
+    return null;
+  }
+
   // ---- Triggers ----------------------------------------------------------
 
   private trigger(lineIndex: number, ownedKeys: ReadonlySet<KeyColor>): void {
@@ -597,13 +704,28 @@ export class SpecialsController {
       return;
     }
 
+    if (def.effect.kind === 'teleport') {
+      // No monster AI to walk these lines, so the monster-only variants
+      // (125/126) can never fire — same outcome vanilla's own player check
+      // on EV_Teleport gives them today, since nothing here is a monster.
+      if (def.effect.monsterOnly) return;
+      const dest = this.findTeleportDestination(resolveTargets(this.map, line, def));
+      if (!dest) return; // no matching landing thing — vanilla leaves the special un-consumed too
+      if (!def.repeatable) this.usedOnce.add(lineIndex);
+      this.lastTeleport = dest;
+      this.onTeleport(dest.x, dest.y, dest.angle);
+      return;
+    }
+
     const targets = resolveTargets(this.map, line, def);
     if (targets.length === 0) return;
 
     for (const sectorIndex of targets) {
       if (def.effect.kind === 'door') this.triggerDoor(sectorIndex, def.effect);
       else if (def.effect.kind === 'lift') this.triggerLift(sectorIndex, def.effect);
-      else this.triggerFloor(sectorIndex, def.effect);
+      else if (def.effect.kind === 'floor') this.triggerFloor(sectorIndex, def.effect);
+      else if (def.effect.kind === 'crusher') this.triggerCrusher(sectorIndex, def.effect);
+      else this.triggerCrusherStop(sectorIndex);
     }
     if (!def.repeatable) this.usedOnce.add(lineIndex);
   }

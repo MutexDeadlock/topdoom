@@ -55,6 +55,12 @@ where nearby unrelated geometry makes results hard to interpret.
   works.
 - `tsconfig.json` has `noUnusedLocals`/`noUnusedParameters` on; `npm run typecheck` is the
   cheapest way to catch this before running anything.
+- The pinned `tsc` has a control-flow narrowing quirk: reading a nullable `this`-field directly
+  after several intervening method calls (any of which may reassign it) can stay typed as its
+  last-seen literal instead of widening back to the declared union — surfaced by
+  `SpecialsController.lastTeleport` in `game/specials.ts`. Routing the read through a trivial
+  getter (`consumeLastTeleport`) works around it; reach for that pattern rather than fighting the
+  checker if the same shape of bug shows up elsewhere.
 
 ## Architecture
 
@@ -324,6 +330,46 @@ pickup (`doomednum` 2010) was mapped to sprite `RCKT` in `game/thingdefs.ts`, wh
 real lump — the actual sprite is `ROCK`, so rockets were invisible in the world before this
 fix (their pickup radius still worked; only their being visible before pickup didn't).
 
+### Crushers and teleporters (`src/wad/specials.ts`, `src/game/specials.ts`, `src/main.ts`)
+
+The vanilla-only line special table (doors/lifts/floors above, plus these two) is confirmed
+against the Doom wiki's linedef type table rather than assumed, after a first pass briefly (and
+wrongly) listed 174 as a vanilla S1 teleport — it's Boom-only. Same story for crusher stop: 58
+looks like it could be a third stop-crusher alongside 57/74, but is an unrelated "floor up 24"
+special.
+
+**Crushers** (start: 6/25/49/73/77/141, stop: 57/74) are pure ceiling geometry — repeatedly
+lower to floor+8, reverse, return to the sector's *own* start height (not neighbor-derived, unlike
+a door's open height), forever, with no hold/rest state in between. Deliberately no player
+damage: vanilla's crush damage assumes a mobj health/death/respawn pipeline that doesn't exist
+yet (no death state, no game over), so applying damage with no consequence once it reached zero
+would be a half-built feature.
+
+**Teleporters** (39/97 trigger for the player; Doom II's 125/126 are monster-only and never fire
+— there's no monster AI to walk them, the same outcome vanilla's own player-vs-monster gate gives
+them today). The destination is the first doomednum-14 landing thing found inside a tag-matched
+sector (`SpecialsController.findTeleportDestination`); reaching it calls back into `main.ts` to
+move the player (`Player.teleportTo`) and snap the camera yaw to match, the same as the initial
+spawn.
+
+Teleporting moves the player an arbitrary distance in a single frame, which breaks
+`SpecialsController`'s own walk-trigger detection: it tracks `prevX`/`prevY` to know what segment
+the player just crossed, and naively leaving those at the pre-teleport position would make the
+very next frame test a segment from the old spot all the way to the teleport pad — long enough to
+cross, and wrongly re-trigger, unrelated lines along the way. `lastTeleport` is set once inside
+`trigger` and consumed at the end of `update` to reseed `prevX`/`prevY` from the destination
+instead.
+
+Vanilla also spawns a one-shot `MT_TFOG` fog puff at both ends of a teleport (where the player
+stood, and 20 units ahead of the landing spot along the direction it faces). That isn't a real
+map `Thing`, so it isn't modeled through `ThingLayer` — `main.ts` owns a small list of transient
+`SpriteActor`s instead, each playing through the `TFOG` sprite's frames (`A`-`J`, confirmed
+against the actual lump names in `DOOM.WAD`/`DOOM2.WAD` — all rotation-0, i.e. omnidirectional,
+so no facing logic is needed) once before removing itself. Map transitions clear any still-active
+puffs explicitly, the same way `built.group`/`things.group` are torn down, since a teleport onto
+an exit line could otherwise cut an animation short and leave its plane glued into the next
+level's scene.
+
 ### Fog of war (`src/game/fogofwar.ts`, `src/render/occlusion.ts`, `src/render/mapmesh.ts`)
 
 The dollhouse camera can see the entire level at once, including rooms the player hasn't
@@ -453,7 +499,8 @@ tracking the live camera angle. Health, armor, ammo, key and weapon pickups are 
 (`game/inventory.ts`) and drive a HUD (`src/ui/hud.ts`) drawn from the same WAD pickup-sprite
 graphics the world renders items with — weapon ownership is tracked but not yet usable, and
 powerups stay decorative-only. Multiplayer-only things (deathmatch weapon/ammo stashes)
-correctly don't spawn (`game/skill.ts: isMultiplayerOnly`). Doors, lifts, floor movers and
-switches work (`game/specials.ts`), including locked doors, which require the matching key
-to be collected first. Not yet implemented: monster AI/combat, weapon switching/shooting,
-sound.
+correctly don't spawn (`game/skill.ts: isMultiplayerOnly`). Doors, lifts, floor movers,
+crushers, switches and teleporters all work (`game/specials.ts`), including locked doors,
+which require the matching key to be collected first, and teleporters, which reproduce
+vanilla's teleport-fog puff at both ends of the jump (`main.ts`). Not yet implemented:
+monster AI/combat, weapon switching/shooting, sound.

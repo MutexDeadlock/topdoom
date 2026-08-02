@@ -21,8 +21,14 @@
  * wasn't in this table at all until this fix, so its blue-locked door never
  * opened regardless of whether the player had the key.
  *
- * Deliberately absent: crushers and damage-floor specials (no player health
- * system yet) and scrolling textures.
+ * Crushers and teleporters are modeled too (see the tables below); still
+ * deliberately absent: damage-floor sector specials (no sustained-damage/death
+ * system yet) and scrolling textures. Boom/MBF-only special numbers (e.g. the
+ * S1/SR teleports at 174/195, or the "silent" crusher at 150) are out of scope
+ * — this table only covers the vanilla DOOM/DOOM2 special numbers, confirmed
+ * against the Doom wiki's linedef type table rather than assumed, since a
+ * plausible-looking Boom number slipped in on the first pass here (174 was
+ * briefly, wrongly, listed as a vanilla S1 teleport).
  */
 
 /** Map units/second. Vanilla speeds are per-tic at 35 tics/s. */
@@ -34,6 +40,13 @@ export const LIFT_SPEED_FAST = 140; // 4 u/tic
 export const LIFT_WAIT = 105 / 35; // seconds a lift stays down
 export const FLOOR_SPEED = 35;
 export const CEILING_SPEED = 35;
+/** Vanilla CEILSPEED: 1 u/tic; crush-and-raise "fast" variants run at 2x. */
+export const CRUSHER_SPEED = 35;
+export const CRUSHER_SPEED_FAST = 70;
+/** Vanilla leaves this much gap above the floor at the bottom of a crush cycle, never fully sealing shut. */
+export const CRUSHER_GAP = 8;
+/** DOOM's teleport landing marker (doomednum 14) — a spawn marker only, never rendered (see thingdefs.ts). */
+export const TELEPORT_DEST = 14;
 
 /** Gap vanilla leaves between an open door's ceiling and the lowest neighboring ceiling. */
 export const DOOR_OPEN_GAP = 4;
@@ -94,7 +107,31 @@ export interface ExitEffect {
   secret: boolean;
 }
 
-export type Effect = DoorEffect | LiftEffect | FloorEffect | ExitEffect;
+/** Ceiling repeatedly lowers to floor+`CRUSHER_GAP`, then returns to its start height, forever. */
+export interface CrusherEffect {
+  kind: 'crusher';
+  speed: number;
+}
+
+/** Freezes whatever crusher is currently active on the targeted sector(s) wherever it is. */
+export interface CrusherStopEffect {
+  kind: 'crusherStop';
+}
+
+export interface TeleportEffect {
+  kind: 'teleport';
+  /** 125/126: vanilla gates these to non-player things; with no monster AI to walk them, they never fire. */
+  monsterOnly: boolean;
+}
+
+export type Effect =
+  | DoorEffect
+  | LiftEffect
+  | FloorEffect
+  | ExitEffect
+  | CrusherEffect
+  | CrusherStopEffect
+  | TeleportEffect;
 
 export interface SpecialDef {
   trigger: 'use' | 'walk';
@@ -202,6 +239,23 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   51: { trigger: 'use', repeatable: false, effect: { kind: 'exit', secret: true } },
   52: { trigger: 'walk', repeatable: false, effect: { kind: 'exit', secret: false } },
   124: { trigger: 'walk', repeatable: false, effect: { kind: 'exit', secret: true } },
+
+  // Crushers — vanilla numbers confirmed against the Doom wiki's linedef type
+  // table (57/74 stop crushers, not 58, which is an unrelated "floor up 24").
+  6: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST } },
+  25: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED } },
+  49: { trigger: 'use', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED } },
+  73: { trigger: 'walk', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED } },
+  77: { trigger: 'walk', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST } },
+  141: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED } },
+  57: { trigger: 'walk', repeatable: false, effect: { kind: 'crusherStop' } },
+  74: { trigger: 'walk', repeatable: true, effect: { kind: 'crusherStop' } },
+
+  // Teleporters — 125/126 are the Doom II monster-only variants (see TeleportEffect doc).
+  39: { trigger: 'walk', repeatable: false, effect: { kind: 'teleport', monsterOnly: false } },
+  97: { trigger: 'walk', repeatable: true, effect: { kind: 'teleport', monsterOnly: false } },
+  125: { trigger: 'walk', repeatable: false, effect: { kind: 'teleport', monsterOnly: true } },
+  126: { trigger: 'walk', repeatable: true, effect: { kind: 'teleport', monsterOnly: true } },
 };
 
 /** `Sector.special` values that animate light level rather than move geometry. */

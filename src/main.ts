@@ -26,6 +26,8 @@ const hudEl = document.getElementById('hud')!;
 
 /** Camera-orbit degrees per pixel of right-mouse drag. */
 const YAW_SENSITIVITY = 0.15;
+/** Degrees per second Q/E rotate the camera — a keyboard alternative to right-drag. */
+const KEY_YAW_SPEED = 120;
 
 /**
  * Teleport-fog puff (vanilla's MT_TFOG): a one-shot animation, not a real
@@ -307,6 +309,9 @@ class Game {
     const { input, camera } = this.view;
     this.handleHotkeys();
     camera.yawDeg -= input.consumeDragYaw() * YAW_SENSITIVITY;
+    // Signs match right-drag: E rotates the same way as dragging right, Q as dragging left.
+    if (input.held('KeyQ')) camera.yawDeg += KEY_YAW_SPEED * dt;
+    if (input.held('KeyE')) camera.yawDeg -= KEY_YAW_SPEED * dt;
 
     // Runs before player.update so a lift/door the player is standing on has
     // already moved this frame by the time groundFloor is sampled below.
@@ -409,7 +414,7 @@ class Game {
       `pos ${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}   z ${this.player.z.toFixed(0)}   sector ${sector}`,
       `cam ${camera.distance.toFixed(0)} u / ${camera.tiltDeg.toFixed(0)}° tilt / ${camera.yawDeg.toFixed(0)}° yaw   ceilings ${this.renderCeilings ? 'on' : 'off'}`,
       '',
-      'WASD move   Shift run   mouse aim   right-drag rotate camera   Space use',
+      'WASD move   Shift run   mouse aim   right-drag / Q-E rotate camera   Space use',
       'N/P map   C ceilings   +/- zoom   [ ] tilt   Esc menu',
     ].join('\n');
   }

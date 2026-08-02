@@ -148,12 +148,13 @@ forever and shows a permanent faint speckle (the dither test is a strict `<`).
 
 `TopDownCamera.yawDeg` lets the camera orbit around the followed point on right-mouse drag
 (`Input.consumeDragYaw`, accumulated via `pointermove` with `setPointerCapture` so the drag
-survives leaving the canvas mid-move); tilt and distance are unaffected, so the camera always
-stays the same amount off vertical. `viewerAngleDeg` (`yawDeg - 90`) is the DOOM-space bearing
-from the followed point to the camera, and is what sprite rendering (above) and player
-movement both key off — at the default `yawDeg = 0` it's `-90`, matching the old fixed
-south-facing camera exactly, so nothing downstream needed a special case for "not yet
-orbited."
+survives leaving the canvas mid-move) or by holding `Q`/`E` (`main.ts`'s `KEY_YAW_SPEED`,
+degrees/sec, signed to match the same rotation direction as dragging left/right respectively);
+tilt and distance are unaffected, so the camera always stays the same amount off vertical.
+`viewerAngleDeg` (`yawDeg - 90`) is the DOOM-space bearing from the followed point to the
+camera, and is what sprite rendering (above) and player movement both key off — at the
+default `yawDeg = 0` it's `-90`, matching the old fixed south-facing camera exactly, so
+nothing downstream needed a special case for "not yet orbited."
 
 Movement (`Player.update`'s `forwardDeg` param, passed as `camera.viewerAngleDeg + 180`) is
 camera-relative rather than DOOM-axis-relative: `W` always moves the player away from the
@@ -515,9 +516,9 @@ Menu semantics worth knowing before touching `menu.ts`:
 
 Playable as a walkable level viewer: geometry, textures, sector lighting, collision with
 step-up/headroom rules, gravity-based falling off ledges, vanilla's narrow-gap-crossing quirk,
-floor following, map switching, PWAD loading, and a camera that can orbit in yaw (right-drag)
-around the player with dithered wall-occlusion fading so it never hides the player behind
-geometry. Subsector-based fog of war (`game/fogofwar.ts`) hides
+floor following, map switching, PWAD loading, and a camera that can orbit in yaw (right-drag
+or `Q`/`E`) around the player with dithered wall-occlusion fading so it never hides the player
+behind geometry. Subsector-based fog of war (`game/fogofwar.ts`) hides
 whatever the player has not yet had line of sight to — geometry and things reveal permanently
 once seen, which keeps unreached rooms and secrets dark until they are actually in view.
 THINGS render as upright

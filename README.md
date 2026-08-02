@@ -2,7 +2,7 @@
 
 A top-down DOOM built on the original IWADs. The camera hangs above the player and is
 tilted slightly off vertical, so walls show some of their height and levels read as
-spaces rather than floor plans; it can also orbit around the player on right-drag. Level
+spaces rather than floor plans; it can also orbit around the player on right-drag or `Q`/`E`. Level
 geometry, textures and flats come straight out of `DOOM.WAD` / `DOOM2.WAD`; the game logic
 is new.
 
@@ -51,7 +51,7 @@ declares itself an IWAD becomes the game WAD, a PWAD is added as an add-on.
 | `W` `A` `S` `D` | move (screen-relative: `W` always moves away from the camera) |
 | `Shift` | run |
 | mouse | aim; the view leads slightly towards the cursor |
-| right-drag | orbit the camera around the player |
+| right-drag / `Q` `E` | orbit the camera around the player |
 | `N` / `P` | next / previous map |
 | `C` | toggle ceilings |
 | `+` / `-` | camera distance |
@@ -141,8 +141,8 @@ is walkable.
 
 Playable as a walkable level viewer: geometry, textures, sector lighting, collision with
 step-up/headroom rules, gravity-based falling off ledges, vanilla's narrow-gap-crossing
-quirk, floor following, map switching, PWAD loading, and an orbitable camera with
-wall-occlusion fading. Fog of war hides rooms and secrets until the player has actually seen
+quirk, floor following, map switching, PWAD loading, and an orbitable camera (right-drag or
+`Q`/`E`) with wall-occlusion fading. Fog of war hides rooms and secrets until the player has actually seen
 them. THINGS render as upright sprites (monsters, weapons, ammo, health/armor, keys,
 powerups and common decorations), and the player is drawn as the real `PLAY` sprite with a
 facing-driven rotation frame and a walk-cycle animation. Health, armor, ammo, keys and

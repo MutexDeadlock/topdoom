@@ -26,6 +26,7 @@ import {
 } from './world.ts';
 import type { Input } from './input.ts';
 import type { FogOfWar } from './fogofwar.ts';
+import type { KeyColor } from './inventory.ts';
 import {
   buildMoverMesh,
   lightToColor,
@@ -250,10 +251,9 @@ function disposeGroup(group: THREE.Group): void {
  * that don't already "just work": rebuilding the small per-sector geometry a
  * mover's height change invalidates, and re-triggering.
  *
- * Not modeled: crushers/damage floors (no player health system yet), key
- * requirements on locked doors (no inventory yet — see wad/specials.ts), and
- * door "un-crush" safety (a closing door won't reverse if something is
- * standing under it).
+ * Not modeled: crushers/damage floors (no player health system yet) and door
+ * "un-crush" safety (a closing door won't reverse if something is standing
+ * under it).
  */
 export class SpecialsController {
   private map: DoomMap;
@@ -349,11 +349,18 @@ export class SpecialsController {
     }
   }
 
-  update(dt: number, playerX: number, playerY: number, playerAngle: number, input: Input): void {
+  update(
+    dt: number,
+    playerX: number,
+    playerY: number,
+    playerAngle: number,
+    input: Input,
+    ownedKeys: ReadonlySet<KeyColor>,
+  ): void {
     const dirty = new Set<number>();
     this.tickMovers(dt, dirty);
-    this.handleUseTrigger(playerX, playerY, playerAngle, input);
-    this.handleWalkTriggers(playerX, playerY);
+    this.handleUseTrigger(playerX, playerY, playerAngle, input, ownedKeys);
+    this.handleWalkTriggers(playerX, playerY, ownedKeys);
     this.rebuildAround(dirty);
     this.updateSwitchFlashes(dt);
     this.updateLights(dt);
@@ -571,11 +578,16 @@ export class SpecialsController {
 
   // ---- Triggers ----------------------------------------------------------
 
-  private trigger(lineIndex: number): void {
+  private trigger(lineIndex: number, ownedKeys: ReadonlySet<KeyColor>): void {
     const line = this.map.linedefs[lineIndex];
     const def = LINE_SPECIALS[line.special];
     if (!def) return;
     if (!def.repeatable && this.usedOnce.has(lineIndex)) return;
+    // A missing key leaves the door untouched and this attempt un-flagged, so
+    // the player can walk off, find the key, and try the same line again —
+    // matching vanilla, which just prints "you need the X key" and does
+    // nothing else.
+    if (def.effect.kind === 'door' && def.effect.requiredKey && !ownedKeys.has(def.effect.requiredKey)) return;
 
     this.flashSwitch(lineIndex);
 
@@ -596,7 +608,13 @@ export class SpecialsController {
     if (!def.repeatable) this.usedOnce.add(lineIndex);
   }
 
-  private handleUseTrigger(playerX: number, playerY: number, playerAngle: number, input: Input): void {
+  private handleUseTrigger(
+    playerX: number,
+    playerY: number,
+    playerAngle: number,
+    input: Input,
+    ownedKeys: ReadonlySet<KeyColor>,
+  ): void {
     if (!input.pressed('Space')) return;
     const tx = playerX + Math.cos(playerAngle) * USE_RANGE;
     const ty = playerY + Math.sin(playerAngle) * USE_RANGE;
@@ -616,10 +634,10 @@ export class SpecialsController {
         bestLine = i;
       }
     }
-    if (bestLine >= 0) this.trigger(bestLine);
+    if (bestLine >= 0) this.trigger(bestLine, ownedKeys);
   }
 
-  private handleWalkTriggers(playerX: number, playerY: number): void {
+  private handleWalkTriggers(playerX: number, playerY: number, ownedKeys: ReadonlySet<KeyColor>): void {
     if (playerX === this.prevX && playerY === this.prevY) return;
     for (const i of this.world.linesNear(playerX, playerY, PLAYER_RADIUS + 8)) {
       const line = this.map.linedefs[i];
@@ -628,7 +646,7 @@ export class SpecialsController {
       const a = this.map.vertexes[line.v1];
       const b = this.map.vertexes[line.v2];
       if (!a || !b) continue;
-      if (segmentIntersect(this.prevX, this.prevY, playerX, playerY, a.x, a.y, b.x, b.y)) this.trigger(i);
+      if (segmentIntersect(this.prevX, this.prevY, playerX, playerY, a.x, a.y, b.x, b.y)) this.trigger(i, ownedKeys);
     }
   }
 

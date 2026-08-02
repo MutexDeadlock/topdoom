@@ -6,10 +6,20 @@
  * (`VDOORSPEED`/`PLATSPEED`/`FLOORSPEED` etc.) rather than reproducing it
  * tic-for-tic.
  *
- * Keyed door numbers (26-28, 32-34, 133-136) are included and treated as
- * regular unlocked doors: there is no key/inventory system yet (see
- * CLAUDE.md), and leaving them inert would permanently block progress in
- * maps that gate an exit behind a locked door. Revisit once pickups exist.
+ * Keyed door numbers (26-28, 32-34, 99, 133-137) carry a `requiredKey` on
+ * their `DoorEffect`, checked against the player's collected keys in
+ * `game/specials.ts` before the door is allowed to trigger — same per-special
+ * card/skull checks vanilla's `P_UseSpecialLine` does. 26-34 are manual (D1),
+ * like their unkeyed siblings 1/31/117/118; 99 and 133-137 are switches
+ * (S1/SR) that target sectors by tag like any other remote door, *not*
+ * manual, despite being use-triggered same as the manual ones — confirmed by
+ * scanning every stock DOOM/DOOM2 map: every 99/133-137 linedef shares its
+ * exact tag with the sector(s) it's supposed to open (e.g. DOOM2 MAP04's
+ * blue door is a pair of 99s both tagged 6), while 26-34's occasional
+ * nonzero tag is leftover map-editor noise vanilla's manual-door code never
+ * reads. Getting this wrong silently no-ops the door: MAP04's special 99
+ * wasn't in this table at all until this fix, so its blue-locked door never
+ * opened regardless of whether the player had the key.
  *
  * Deliberately absent: crushers and damage-floor specials (no player health
  * system yet) and scrolling textures.
@@ -53,6 +63,8 @@ export interface DoorEffect {
   speed: number;
   waitSeconds: number;
   mode: DoorMode;
+  /** Card/skull key of this color the player must already have collected, for the keyed door specials. */
+  requiredKey?: 'blue' | 'red' | 'yellow';
 }
 
 export interface LiftEffect {
@@ -92,8 +104,13 @@ export interface SpecialDef {
   effect: Effect;
 }
 
-function door(speed: number, mode: DoorMode = 'openClose', waitSeconds = DOOR_WAIT): DoorEffect {
-  return { kind: 'door', speed, waitSeconds, mode };
+function door(
+  speed: number,
+  mode: DoorMode = 'openClose',
+  waitSeconds = DOOR_WAIT,
+  requiredKey?: 'blue' | 'red' | 'yellow',
+): DoorEffect {
+  return { kind: 'door', speed, waitSeconds, mode, requiredKey };
 }
 
 function lift(speed = LIFT_SPEED, waitSeconds = LIFT_WAIT): LiftEffect {
@@ -110,17 +127,23 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   31: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly') },
   117: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED_FAST) },
   118: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED_FAST, 'openOnly') },
-  // Keyed manual doors, treated as unlocked — see file doc comment.
-  26: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED) },
-  27: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED) },
-  28: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED) },
-  32: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly') },
-  33: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly') },
-  34: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly') },
-  133: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED_FAST, 'openOnly') },
-  134: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED_FAST) },
-  135: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED_FAST, 'openOnly') },
-  136: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED_FAST) },
+  // Keyed manual doors — key colors per vanilla P_UseSpecialLine, confirmed
+  // against source rather than guessed: note 26/27/28 order (Blue/Yellow/Red)
+  // does not match 32/33/34's (Blue/Red/Yellow).
+  26: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED, 'openClose', DOOR_WAIT, 'blue') },
+  27: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED, 'openClose', DOOR_WAIT, 'yellow') },
+  28: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED, 'openClose', DOOR_WAIT, 'red') },
+  32: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly', DOOR_WAIT, 'blue') },
+  33: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly', DOOR_WAIT, 'red') },
+  34: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly', DOOR_WAIT, 'yellow') },
+  // Keyed remote doors (S1/SR switches, tag-targeted — see file doc comment
+  // on why these are not `manual` despite being use-triggered like the ones above).
+  99: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED_FAST, 'openOnly', DOOR_WAIT, 'blue') },
+  133: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED_FAST, 'openOnly', DOOR_WAIT, 'blue') },
+  134: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED_FAST, 'openClose', DOOR_WAIT, 'red') },
+  135: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED_FAST, 'openOnly', DOOR_WAIT, 'red') },
+  136: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED_FAST, 'openClose', DOOR_WAIT, 'yellow') },
+  137: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED_FAST, 'openOnly', DOOR_WAIT, 'yellow') },
 
   // Remote doors (tag-targeted).
   4: { trigger: 'walk', repeatable: false, effect: door(DOOR_SPEED) },

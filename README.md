@@ -60,13 +60,23 @@ declares itself an IWAD becomes the game WAD, a PWAD is added as an add-on.
 
 Ceilings are off by default — from above they would hide everything underneath.
 
+## HUD
+
+Walking within range of a health, armor, ammo, key or weapon pickup collects it automatically
+— no key press needed. The bar along the bottom of the screen shows the running totals: a
+medikit icon and health, an armor icon (green or blue, matching whichever armor you're wearing
+— blank while you have none) and its value, all four ammo counts, and one slot per key color
+that lights up once collected. Weapons disappear and grant their ammo like the real game, but
+there's no weapon-select UI yet — ownership is tracked, not shown or usable — and powerups are
+still just decoration; both wait on the Shooting milestone to mean anything.
+
 ## Layout
 
 ```
 src/wad/       WAD files, merged lump directory, map lumps, graphics decoding
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading, camera
-src/game/      spatial queries, collision, player controller, input
-src/ui/        start menu
+src/game/      spatial queries, collision, player controller, input, inventory/pickups
+src/ui/        start menu, HUD
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
 scripts/       headless WAD inspection (node scripts/inspect-wad.ts)
 ```
@@ -133,5 +143,8 @@ Playable as a walkable level viewer: geometry, textures, sector lighting, collis
 step-up/headroom rules, floor following, map switching, PWAD loading, and an orbitable camera
 with wall-occlusion fading. THINGS render as upright sprites (monsters, weapons, ammo,
 health/armor, keys, powerups and common decorations), and the player is drawn as the real
-`PLAY` sprite with a facing-driven rotation frame and a walk-cycle animation. Not yet:
-monster AI/combat, weapons, doors and lifts, pickup collection, sound.
+`PLAY` sprite with a facing-driven rotation frame and a walk-cycle animation. Health, armor,
+ammo, keys and weapons are collectible and tracked on a HUD (weapon ownership isn't usable
+yet — no select UI or shooting); doors, lifts, floor movers and switches work, including
+locked doors, which require the matching key. Not yet: monster AI/combat, weapon
+switching/shooting, sound.

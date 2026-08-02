@@ -40,7 +40,7 @@ export const THING_SPRITES: Record<number, string> = {
   // Ammo
   2007: 'CLIP',
   2048: 'AMMO',
-  2010: 'RCKT',
+  2010: 'ROCK',
   2046: 'BROK',
   2047: 'CELL',
   17: 'CELP',

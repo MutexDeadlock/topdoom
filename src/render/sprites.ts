@@ -1,10 +1,10 @@
 import * as THREE from 'three';
-import type { DoomMap } from '../wad/map.ts';
+import type { DoomMap, Sector } from '../wad/map.ts';
 import type { GraphicsBank } from '../wad/graphics.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
-import type { World } from '../game/world.ts';
+import { PLAYER_HEIGHT, type World } from '../game/world.ts';
 import { THING_SPRITES } from '../game/thingdefs.ts';
-import { spawnsAtSkill, type Skill } from '../game/skill.ts';
+import { isMultiplayerOnly, spawnsAtSkill, type Skill } from '../game/skill.ts';
 import { doomToWorld, lightToColor } from './mapmesh.ts';
 
 /**
@@ -229,10 +229,14 @@ interface PosedThing {
   actor: SpriteActor;
   x: number;
   y: number;
-  z: number;
+  /** Its containing sector, read live every frame — see `ThingLayer.update`'s doc on why `z` isn't cached. */
+  sector: Sector | undefined;
   facingDeg: number;
   light: number;
   subsector: number;
+  type: number;
+  /** Set once a pickup consumes this instance; it then stays permanently hidden (see ThingLayer.update). */
+  picked: boolean;
 }
 
 export interface ThingLayer {
@@ -240,15 +244,26 @@ export interface ThingLayer {
   count: number;
   /**
    * Re-poses every thing at the camera's current viewer angle. Things don't
-   * move or animate yet, so this only ever changes which rotation-frame lump
-   * is shown and which way each plane faces — cheap, and SpriteActor.setPose
-   * already skips the geometry/material swap when the resolved lump is
-   * unchanged from last call. `fogAlphaOf`, when given, hides things sitting
-   * in a subsector fog-of-war hasn't revealed yet (game/fogofwar.ts) — a
-   * monster or item in an unexplored/secret room would otherwise spoil it
+   * move in x/y or animate yet, so this only ever changes which rotation-frame
+   * lump is shown, which way each plane faces, and — because a thing's `z` is
+   * read from its sector's live `floorHeight` rather than cached — its height,
+   * so a pickup resting on a lift/floor-mover sector rides it up and down
+   * exactly like the floor geometry itself does. SpriteActor.setPose already
+   * skips the geometry/material swap when the resolved lump is unchanged from
+   * last call, so this stays cheap. `fogAlphaOf`, when given, hides things
+   * sitting in a subsector fog-of-war hasn't revealed yet (game/fogofwar.ts) —
+   * a monster or item in an unexplored/secret room would otherwise spoil it
    * despite the room's own geometry being faded out.
    */
   update(viewerAngleDeg: number, fogAlphaOf?: (subsector: number) => number): void;
+  /**
+   * Consumes every not-yet-picked thing within `radius` of (x, y) *and*
+   * within reach vertically of `z` whose type `consume` accepts (returning
+   * true), hiding it permanently. `consume` is the inventory-side effect
+   * (game/inventory.ts's applyPickup) — this layer only owns which world
+   * instance disappears, not what picking one up means.
+   */
+  tryPickup(x: number, y: number, z: number, radius: number, consume: (type: number) => boolean): void;
 }
 
 /** One static upright plane per map THING whose type is a known, visible sprite. */
@@ -266,20 +281,20 @@ export function buildThingSprites(
   for (const t of map.things) {
     const spriteName = THING_SPRITES[t.type];
     if (!spriteName) continue;
+    if (isMultiplayerOnly(t.flags)) continue;
     if (!spawnsAtSkill(t.flags, skill)) continue;
 
     const subsector = world.subsectorAt(t.x, t.y);
     const sector = world.sectorAt(t.x, t.y);
     const x = t.x;
     const y = t.y;
-    const z = sector?.floorHeight ?? 0;
     const facingDeg = t.angle;
     const light = sector?.light ?? 128;
 
     const actor = new SpriteActor(bank, materials, spriteName);
-    if (!actor.setPose(x, y, z, facingDeg, light)) continue;
+    if (!actor.setPose(x, y, sector?.floorHeight ?? 0, facingDeg, light)) continue;
     group.add(actor.mesh);
-    posed.push({ actor, x, y, z, facingDeg, light, subsector });
+    posed.push({ actor, x, y, sector, facingDeg, light, subsector, type: t.type, picked: false });
   }
 
   return {
@@ -287,8 +302,31 @@ export function buildThingSprites(
     count: posed.length,
     update(viewerAngleDeg: number, fogAlphaOf?: (subsector: number) => number): void {
       for (const p of posed) {
-        p.actor.setPose(p.x, p.y, p.z, p.facingDeg, p.light, 0, false, viewerAngleDeg);
+        if (p.picked) {
+          p.actor.mesh.visible = false;
+          continue;
+        }
+        p.actor.setPose(p.x, p.y, p.sector?.floorHeight ?? 0, p.facingDeg, p.light, 0, false, viewerAngleDeg);
         if (fogAlphaOf) p.actor.mesh.visible = fogAlphaOf(p.subsector) > 0.5;
+      }
+    },
+    tryPickup(x: number, y: number, z: number, radius: number, consume: (type: number) => boolean): void {
+      const rSq = radius * radius;
+      for (const p of posed) {
+        if (p.picked) continue;
+        const dx = p.x - x;
+        const dy = p.y - y;
+        if (dx * dx + dy * dy > rSq) continue;
+        // Matches vanilla's PIT_CheckThing overhead/underneath gate: a thing
+        // sitting on a not-yet-lowered pillar is in 2D range but out of
+        // physical reach, and must stay uncollected until the pillar drops
+        // (e.g. DOOM2 MAP04's blue key). Read live off the sector rather than
+        // a cached height for the same reason `update` does.
+        if (Math.abs((p.sector?.floorHeight ?? 0) - z) > PLAYER_HEIGHT) continue;
+        if (consume(p.type)) {
+          p.picked = true;
+          p.actor.mesh.visible = false;
+        }
       }
     },
   };

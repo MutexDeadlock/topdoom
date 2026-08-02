@@ -25,3 +25,19 @@ export function spawnsAtSkill(flags: number, skill: Skill): boolean {
   if (skill === 3) return (flags & SKILL_FLAG.MEDIUM) !== 0;
   return (flags & SKILL_FLAG.HARD) !== 0;
 }
+
+/** THING flag bit marking a thing as multiplayer-only (vanilla's `MTF_NOTSINGLE`). */
+const MULTIPLAYER_ONLY = 0x0010;
+
+/**
+ * True if this THING should be skipped because vanilla only spawns it in a
+ * netgame: `P_LoadThings` reads `if (!netgame && (options & MTF_NOTSINGLE))
+ * continue;` — unconditional on skill, only on whether other players are
+ * present. Deathmatch weapon stashes and similar multiplayer-only placements
+ * carry this flag so they don't clutter a single-player game. This engine
+ * has no multiplayer mode at all, so netgame is always false and the flag
+ * always applies.
+ */
+export function isMultiplayerOnly(flags: number): boolean {
+  return (flags & MULTIPLAYER_ONLY) !== 0;
+}

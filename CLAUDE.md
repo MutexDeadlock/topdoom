@@ -63,8 +63,8 @@ src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite de
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards, camera
 src/game/      spatial queries, collision, player controller, input, thing→sprite table,
-               fog of war
-src/ui/        start menu
+               fog of war, inventory/pickups
+src/ui/        start menu, HUD
 src/util/      small pure helpers shared across layers (2D geometry, damped-lerp smoothing)
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
 scripts/       headless WAD inspection (node scripts/inspect-wad.ts)
@@ -189,6 +189,15 @@ DOOM halves the art needed for symmetric actors). `thingdefs.ts` maps THING doom
 their sprite name; a type absent from that table renders nothing, same as DOOM's own
 invisible spawn markers (player starts, deathmatch spots, teleport landings).
 
+**`game/skill.ts: isMultiplayerOnly`** filters out things carrying THING flag bit `0x10`
+before `buildThingSprites` poses them — vanilla's own `P_SpawnMapThing` reads
+`if (!netgame && (options & 16)) return NULL;`, i.e. the bit hides a thing whenever no other
+players are present. This engine has no multiplayer mode, so `netgame` is always false and
+the bit always applies. Mappers use it to stash deathmatch-only weapons/ammo without
+cluttering single-player — E1M1 has two `SHOT` (shotgun) things at different spots; only the
+one *without* the bit is the "real" single-player pickup, the other is deathmatch-only and
+was rendering (and, once pickups existed, collectible) before this filter existed.
+
 Things render as upright planes (`render/sprites.ts: SpriteActor`/`SpriteMaterialCache`),
 not `THREE.Sprite` billboards. A few decisions here are non-obvious enough to be worth
 knowing before touching this file:
@@ -225,6 +234,82 @@ as its walk cycle and simply holds `A` while not moving. Every other thing still
 a single held frame — giving monsters their own idle animation needs DOOM's actual per-type
 state tables (which frames are "idle" vs. attack/pain/death), not a guessed frame range, so
 that's deferred to the combat/monster milestone rather than approximated now.
+
+### Item pickups and HUD (`src/game/inventory.ts`, `src/ui/hud.ts`, `render/sprites.ts: ThingLayer.tryPickup`)
+
+`Inventory` (health, armor + armor type, four ammo classes, collected keys) is a plain
+struct owned by `Game` in `main.ts`, not by `Player` — nothing about resting height or
+movement needs it, and keeping it separate is what makes `finishLevel` (below) a one-line
+call at map load rather than something `Player`'s constructor has to reason about.
+
+Health, armor, ammo, keys and weapons are collectible; powerups are the one category still
+left alone (still rendered, still decorative) since there's no player-status-effect system
+yet to give picking one up any meaning. Weapons *are* picked up — `WeaponId` ownership and
+their ammo land in `Inventory.weapons`/`Inventory.ammo` — even though nothing reads
+`Inventory.weapons` yet, since there's no weapon-select/switch UI or shooting to plug it into.
+Track the state now, wire up its effect once the Shooting milestone lands: a weapon lying on
+the ground forever, uncollectible, reads as a bug (and was reported as one) in a way an unused
+`Set` never does, so this is the opposite call from leaving powerups alone above.
+
+`applyPickup` (`game/inventory.ts`) follows vanilla's `P_TouchSpecialThing` for that
+subset — most importantly, a Stimpack/Medikit at full health, an armor pickup weaker than
+what's already worn, or a weapon whose ammo type is already capped and which is already
+owned, **isn't** consumed (`applyPickup` returns `false`), leaving the item on the ground
+exactly like vanilla, rather than a pickup silently vanishing for no visible effect.
+Health/armor *bonus* items (health bonus, soulsphere, megasphere, armor bonus) are the
+exception vanilla itself carves out — they push past the normal 100/100 cap up to 200 and
+are always consumed. A weapon's ammo grant follows vanilla's `P_GiveWeapon` too: it's
+`2 × clipammo[type]` — twice a single ammo pickup of that type — since every weapon here is
+placed directly on the map rather than dropped by a dead monster (which only vanilla-gives
+half); there are no monster drops yet for that distinction to matter.
+
+**Keys don't survive a level transition; health/armor/ammo do** (`finishLevel`, called from
+`main.ts: loadMapByIndex` before the new map loads) — matching vanilla's own
+`G_PlayerFinishLevel`, which clears `player->cards` but nothing else. This does mean a locked
+door on the far side of a level transition needs its key collected again on the new map, same
+as vanilla itself requires.
+
+**Locked doors check the matching key** (`game/specials.ts: SpecialsController.trigger`).
+`wad/specials.ts`'s keyed door specials (26-28, 32-34, 99, 133-137) each carry a `requiredKey`
+color on their `DoorEffect` — resolved per-special against vanilla's `P_UseSpecialLine`
+source rather than guessed, since the two manual-door groups don't share an ordering
+(26/27/28 are Blue/Yellow/Red, 32/33/34 are Blue/Red/Yellow). `trigger` checks
+`ownedKeys.has(requiredKey)` before doing anything else — no flashing switch texture, no
+`usedOnce` mark — so a player who doesn't have the key yet can walk off, find it, and press
+the same line again later, matching vanilla's own "you need the X key" behavior functionally
+(there's no on-screen message system yet to show the text itself). `ownedKeys` is threaded
+through from `Game.frame` as `this.inventory.keys` on every call to `SpecialsController.update`,
+same as `playerX`/`playerY` — inventory is a `main.ts`-owned struct, not something
+`SpecialsController` reaches for on its own (see `Inventory` above for why).
+
+Getting the key check to actually fire surfaced a second, unrelated bug in the same table:
+99 and 133-137 were missing or mismarked `manual: true`. Unlike 26-34 (real D1 manual doors,
+which open the *linedef's own* back sector and ignore tag entirely), 99/133-137 are S1/SR
+switches that target sectors by tag like any other remote door — confirmed by scanning every
+stock DOOM/DOOM2 map, where every 99/133-137 linedef's tag exactly matches the sector(s) it
+opens. `wad/specials.ts`'s own doc comment has the numbers; the concrete bug this caused was
+DOOM2 MAP04's blue door (special 99, missing from the table until this fix) never opening at
+all, key or no key.
+
+Removing a picked-up item from the world is `ThingLayer`'s job, not `Inventory`'s: each
+posed thing already carries its doomednum and position (added alongside the existing
+per-thing pose data), so `tryPickup(x, y, radius, consume)` can test distance and call
+back into `applyPickup` itself, hiding the mesh and marking it `picked` only if `consume`
+reports the pickup actually happened. `picked` short-circuits `ThingLayer.update` before it
+touches fog-of-war visibility — without that, a subsector coming into view after its item
+was already picked would make `fogAlphaOf` flip the (permanently hidden) mesh back to
+`visible = true`.
+
+The HUD itself (`src/ui/hud.ts`) draws its icons from the same WAD pickup-sprite graphics
+the world renders items with (`MEDIA0`, `ARM1A0`/`ARM2A0`, `CLIPA0`, etc., via
+`GraphicsBank.picture`) rather than hand-drawn icons, decoded once into `<canvas>` elements
+whose markup lives statically in `index.html` (`#game-hud`) whether or not that WAD's
+graphics happen to be loaded yet — `Hud`'s constructor draws into it once per `Game`
+instance (a WAD's graphics can only be decoded after the WAD is loaded, unlike the marker
+divs above them). Finding the right icon lump names surfaced a pre-existing bug: the rocket
+pickup (`doomednum` 2010) was mapped to sprite `RCKT` in `game/thingdefs.ts`, which isn't a
+real lump — the actual sprite is `ROCK`, so rockets were invisible in the world before this
+fix (their pickup radius still worked; only their being visible before pickup didn't).
 
 ### Fog of war (`src/game/fogofwar.ts`, `src/render/occlusion.ts`, `src/render/mapmesh.ts`)
 
@@ -351,5 +436,11 @@ THINGS render as upright
 sprite billboards (monsters, weapons, ammo, health/armor, keys, powerups and common
 decorations — see the thing table in `game/thingdefs.ts`), and the player is drawn as the
 real `PLAY` sprite with a facing-driven rotation frame and a walk-cycle animation, both
-tracking the live camera angle. Not yet implemented: monster AI/combat, weapons, doors and
-lifts, pickup collection, sound.
+tracking the live camera angle. Health, armor, ammo, key and weapon pickups are collectible
+(`game/inventory.ts`) and drive a HUD (`src/ui/hud.ts`) drawn from the same WAD pickup-sprite
+graphics the world renders items with — weapon ownership is tracked but not yet usable, and
+powerups stay decorative-only. Multiplayer-only things (deathmatch weapon/ammo stashes)
+correctly don't spawn (`game/skill.ts: isMultiplayerOnly`). Doors, lifts, floor movers and
+switches work (`game/specials.ts`), including locked doors, which require the matching key
+to be collected first. Not yet implemented: monster AI/combat, weapon switching/shooting,
+sound.

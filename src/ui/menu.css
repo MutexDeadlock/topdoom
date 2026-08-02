@@ -29,6 +29,95 @@ canvas {
   z-index: 10;
 }
 
+/* ---------- game HUD ---------- */
+
+#game-hud {
+  position: fixed;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 8px 20px;
+  background: rgba(13, 13, 16, 0.85);
+  border: 1px solid #2a2a32;
+  pointer-events: none;
+  color: #d8d0c0;
+}
+
+#game-hud.hidden {
+  display: none;
+}
+
+#game-hud .icon {
+  image-rendering: pixelated;
+  height: 32px;
+  width: auto;
+  display: block;
+}
+
+#game-hud .icon.hidden {
+  display: none;
+}
+
+#game-hud .hud-stat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#game-hud .value {
+  font-size: 20px;
+  min-width: 2.2em;
+  text-align: right;
+}
+
+#game-hud .hud-armor.empty .value {
+  color: #5d5852;
+}
+
+#game-hud .hud-ammo {
+  display: flex;
+  gap: 14px;
+}
+
+#game-hud .hud-ammo > div {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#game-hud .hud-ammo .icon {
+  height: 22px;
+}
+
+#game-hud .hud-ammo .value {
+  font-size: 14px;
+  min-width: 1.6em;
+}
+
+#game-hud .hud-keys {
+  display: flex;
+  gap: 6px;
+}
+
+#game-hud .hud-keys > div {
+  height: 22px;
+  opacity: 0.15;
+  filter: grayscale(1);
+}
+
+#game-hud .hud-keys > div.collected {
+  opacity: 1;
+  filter: none;
+}
+
+#game-hud .hud-keys .icon {
+  height: 22px;
+}
+
 /* ---------- start menu ---------- */
 
 #menu {

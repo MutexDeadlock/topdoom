@@ -9,13 +9,18 @@ import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache, buildThingSprites, type ThingLayer } from './render/sprites.ts';
 import { FlatFader, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
-import { PLAYER_HEIGHT, World } from './game/world.ts';
+import { PLAYER_HEIGHT, PLAYER_RADIUS, World } from './game/world.ts';
 import { Player } from './game/player.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
 import { Input } from './game/input.ts';
 import { Menu, type Selection } from './ui/menu.ts';
+import { Hud } from './ui/hud.ts';
 import type { Skill } from './game/skill.ts';
+import { applyPickup, createInventory, finishLevel, ITEM_PICKUP_RADIUS, type Inventory } from './game/inventory.ts';
+
+/** Combined radius (map units) within which an item is close enough to pick up. */
+const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
 
 const hudEl = document.getElementById('hud')!;
 
@@ -77,6 +82,8 @@ class Game {
   private view: Viewport;
   private wad: Wad;
   private skill: Skill;
+  private hud: Hud;
+  private inventory: Inventory = createInventory();
   readonly title: string;
 
   /** `?pos=x,y` override for the player start, consumed by the first map load. */
@@ -103,6 +110,7 @@ class Game {
     this.materials = new MaterialBank(gfx, view.renderer);
     this.spriteBank = new SpriteBank(wad);
     this.spriteMaterials = new SpriteMaterialCache(gfx, view.renderer);
+    this.hud = new Hud(gfx);
     this.mapNames = wad.mapNames();
     if (this.mapNames.length === 0) throw new Error('no maps in the selected WADs');
 
@@ -120,6 +128,8 @@ class Game {
   }
 
   private loadMapByIndex(index: number): void {
+    // Keys don't survive a level transition in vanilla DOOM; health/armor/ammo do.
+    finishLevel(this.inventory);
     this.mapIndex = (index + this.mapNames.length) % this.mapNames.length;
     const name = this.mapNames[this.mapIndex];
 
@@ -216,11 +226,16 @@ class Game {
 
     // Runs before player.update so a lift/door the player is standing on has
     // already moved this frame by the time groundFloor is sampled below.
-    this.specials?.update(dt, this.player.x, this.player.y, this.player.angle, input);
+    this.specials?.update(dt, this.player.x, this.player.y, this.player.angle, input, this.inventory.keys);
 
     const aim = camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + 32);
     this.player.update(dt, input, aim, camera.viewerAngleDeg + 180);
     camera.update(dt, this.player.x, this.player.y, this.player.eyeZ, aim);
+
+    this.things?.tryPickup(this.player.x, this.player.y, this.player.z, PICKUP_RANGE, (type) =>
+      applyPickup(this.inventory, type),
+    );
+    this.hud.update(this.inventory);
 
     this.fogOfWar.update(dt, this.player.x, this.player.y);
     const fog = this.fogOfWar;

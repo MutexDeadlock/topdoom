@@ -360,9 +360,9 @@ function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: Wal
   const len = Math.hypot(dx, dy);
   if (len < 1e-6) return;
 
-  // DOOM brightens east-west walls and darkens north-south ones so that
-  // corners stay legible without real lighting.
-  const contrast = dy === 0 ? 16 : dx === 0 ? -16 : 0;
+  // DOOM darkens east-west walls and brightens north-south ones so that
+  // corners stay legible without real lighting (r_segs.c: R_StoreWallRange).
+  const contrast = dy === 0 ? -16 : dx === 0 ? 16 : 0;
   const color = lightToColor(spec.light, contrast);
 
   const u0 = spec.xOffset / dim.w;

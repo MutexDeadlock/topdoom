@@ -14,6 +14,8 @@ export interface WadManifestEntry {
   type: 'IWAD' | 'PWAD';
   /** Map markers the file defines, so the menu can list levels without downloading it. */
   maps: string[];
+  /** Total lump count, shown for map-less add-ons so they don't look empty. */
+  lumpCount: number;
 }
 
 /**
@@ -44,6 +46,7 @@ function describeWad(path: string, folder: WadFolder): WadManifestEntry | null {
     size: buf.length,
     type: ident,
     maps,
+    lumpCount: numLumps,
   };
 }
 

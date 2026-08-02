@@ -13,6 +13,8 @@ export interface WadSource {
   type: WadType;
   /** Map markers this file defines. */
   maps: string[];
+  /** Total lump count — shown for map-less add-ons so they don't look empty. */
+  lumpCount: number;
   size: number;
   origin: 'server' | 'upload';
   bytes(): Promise<ArrayBuffer>;
@@ -26,6 +28,22 @@ interface ManifestEntry {
   size: number;
   type: WadType;
   maps: string[];
+  lumpCount: number;
+}
+
+/** Which DOOM's map-naming convention a WAD's maps follow, if any. */
+export type MapStyle = 'doom1' | 'doom2' | null;
+
+/**
+ * DOOM names maps `E<episode>M<mission>`, DOOM II `MAP<nn>` — the two schemes
+ * never mix within one game, so a WAD's own maps (if it has any) say which
+ * game it belongs to. A WAD with no maps of its own (a texture/sound add-on)
+ * has no style and is compatible with either.
+ */
+export function mapStyle(source: WadSource): MapStyle {
+  if (source.maps.some((m) => /^E\dM\d$/.test(m))) return 'doom1';
+  if (source.maps.some((m) => /^MAP\d\d$/.test(m))) return 'doom2';
+  return null;
 }
 
 function formatSize(bytes: number): string {
@@ -39,7 +57,9 @@ export function describeSource(src: WadSource): string {
   if (src.maps.length > 0) {
     parts.push(src.maps.length === 1 ? src.maps[0] : `${src.maps.length} maps`);
   } else {
-    parts.push('no maps');
+    // No maps of its own (a texture/sound add-on) — the lump count is the
+    // only sign there's actually something in the file.
+    parts.push(`no maps (${src.lumpCount} lump${src.lumpCount === 1 ? '' : 's'})`);
   }
   if (src.origin === 'upload') parts.push('from disk');
   return parts.join(' · ');
@@ -53,6 +73,7 @@ function serverSource(entry: ManifestEntry): WadSource {
     label: entry.file,
     type: entry.type,
     maps: entry.maps,
+    lumpCount: entry.lumpCount,
     size: entry.size,
     origin: 'server',
     bytes() {
@@ -73,6 +94,7 @@ export function uploadedSource(name: string, buffer: ArrayBuffer): WadSource {
     label: name,
     type: file.type,
     maps: file.mapNames(),
+    lumpCount: file.entries.length,
     size: buffer.byteLength,
     origin: 'upload',
     bytes: () => Promise.resolve(buffer),

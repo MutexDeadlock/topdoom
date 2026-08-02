@@ -511,6 +511,16 @@ Menu semantics worth knowing before touching `menu.ts`:
   the practical way to check a specific spot in a level — the room with MAP01's big window is
   several rooms and a still-unimplemented door away from the spawn, so scripting a walk to it
   is far more work than `?map=MAP01&pos=800,600`.
+- **Add-ons are filtered by game (`wad/library.ts: mapStyle`)**: a WAD's own maps say which
+  game it belongs to (`ExMy` → DOOM 1, `MAPxx` → DOOM II never mix within one game), and an
+  add-on whose style conflicts with the selected game WAD is rendered disabled in
+  `renderPwads` rather than hidden — a mapset that's simply for the other game is still worth
+  seeing in the list, just not pickable. Switching the game WAD calls
+  `pruneIncompatiblePwads` to drop any already-ticked add-on that no longer matches, so the
+  merged map list (`mergedMaps`) never silently mixes an E1M1 with a MAP01 mapset. An add-on
+  with no maps of its own (textures, sounds, ...) has no style and stays selectable
+  regardless — `describeSource` shows its lump count in that case instead of a map count, so
+  it doesn't read as an empty file.
 
 ## Current state
 

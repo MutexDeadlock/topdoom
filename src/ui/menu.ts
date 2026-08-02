@@ -1,6 +1,7 @@
 import {
   describeSource,
   fetchLibrary,
+  mapStyle,
   mergedMaps,
   uploadedSource,
   type WadSource,
@@ -125,6 +126,7 @@ export class Menu {
         this.makeRow('radio', source, selected, () => {
           this.selectedIwad = source;
           this.selectedPwads = this.selectedPwads.filter((p) => p !== source);
+          this.pruneIncompatiblePwads();
           this.render();
         }),
       );
@@ -133,16 +135,27 @@ export class Menu {
 
   private renderPwads(): void {
     this.pwadList.replaceChildren();
+    const iwadStyle = this.selectedIwad ? mapStyle(this.selectedIwad) : null;
     for (const source of this.sources) {
       // A PWAD uploaded via the "game WAD" picker still lands in selectedIwad
       // (see addFiles) and shouldn't also show up here as an add-on.
       if (source.type !== 'PWAD' || source === this.selectedIwad) continue;
+      // Map-less add-ons (textures, sounds, ...) fit either game; one with
+      // maps of its own only makes sense alongside a matching game WAD.
+      const style = mapStyle(source);
+      const incompatible = iwadStyle !== null && style !== null && style !== iwadStyle;
       const index = this.selectedPwads.indexOf(source);
-      const row = this.makeRow('checkbox', source, index >= 0, () => {
-        if (index >= 0) this.selectedPwads.splice(index, 1);
-        else this.selectedPwads.push(source);
-        this.render();
-      });
+      const row = this.makeRow(
+        'checkbox',
+        source,
+        index >= 0,
+        () => {
+          if (index >= 0) this.selectedPwads.splice(index, 1);
+          else this.selectedPwads.push(source);
+          this.render();
+        },
+        incompatible,
+      );
       if (index >= 0) {
         const order = document.createElement('span');
         order.className = 'meta';
@@ -153,18 +166,30 @@ export class Menu {
     }
   }
 
+  /** Drops any selected add-on whose own maps no longer match the selected game WAD. */
+  private pruneIncompatiblePwads(): void {
+    const iwadStyle = this.selectedIwad ? mapStyle(this.selectedIwad) : null;
+    if (!iwadStyle) return;
+    this.selectedPwads = this.selectedPwads.filter((p) => {
+      const style = mapStyle(p);
+      return style === null || style === iwadStyle;
+    });
+  }
+
   private makeRow(
     kind: 'radio' | 'checkbox',
     source: WadSource,
     selected: boolean,
     onPick: () => void,
+    disabled = false,
   ): HTMLLabelElement {
     const row = document.createElement('label');
-    row.className = 'row' + (selected ? ' selected' : '');
+    row.className = 'row' + (selected ? ' selected' : '') + (disabled ? ' disabled' : '');
 
     const input = document.createElement('input');
     input.type = kind;
     input.checked = selected;
+    input.disabled = disabled;
     if (kind === 'radio') input.name = 'iwad';
     input.addEventListener('change', onPick);
 
@@ -275,6 +300,7 @@ export class Menu {
         if (asIwad) {
           this.selectedIwad = source;
           this.selectedPwads = this.selectedPwads.filter((p) => p.key !== source.key);
+          this.pruneIncompatiblePwads();
         } else if (!this.selectedPwads.some((p) => p.key === source.key)) {
           this.selectedPwads.push(source);
         }

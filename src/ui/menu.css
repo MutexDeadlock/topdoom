@@ -217,6 +217,15 @@ canvas {
   color: #fff;
 }
 
+#menu .row.disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+#menu .row.disabled:hover {
+  background: none;
+}
+
 #menu .row input {
   accent-color: #c0392b;
   margin: 0;
@@ -295,16 +304,6 @@ canvas {
 
 #menu-status.error {
   color: #e06c5a;
-}
-
-#drop-hint {
-  position: fixed;
-  bottom: 16px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  color: #4a4640;
-  pointer-events: none;
 }
 
 #menu.dragging {

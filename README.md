@@ -28,7 +28,11 @@ without downloading anything. The same manifest is baked into the output on `npm
   maps works too if you put it there.
 - **Add-ons** — offered from `public/wads/pwad/`, any number, merged in the order they were
   ticked. The level list updates as you tick them and names the file a map came from when an
-  add-on took it over.
+  add-on took it over. An add-on whose own maps are `ExMy` (DOOM 1) or `MAPxx` (DOOM II) is
+  disabled once it conflicts with the selected game WAD's own naming scheme, and any already
+  ticked when you switch game WAD is unticked automatically; add-ons with no maps of their
+  own (textures, sounds, ...) always stay selectable, showing their lump count instead of a
+  map count so they don't read as empty.
 - **Level** — every map in the resulting set, grouped by episode for DOOM 1.
 
 The folder a file sits in decides how it's served, regardless of its own IWAD/PWAD

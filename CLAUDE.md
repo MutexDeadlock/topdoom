@@ -69,9 +69,10 @@ src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite de
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards, shot tracers, camera
 src/game/      spatial queries, collision, player controller, input, thing→sprite table,
-               fog of war, inventory/pickups, weapons and firing
+               fog of war, inventory/pickups, weapons and firing, damage/death
 src/ui/        start menu, HUD
 src/util/      small pure helpers shared across layers (2D geometry, damped-lerp smoothing)
+src/constants.ts   Genuinely cross-cutting values only (VERSION, DEVMODE) — see below
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
 scripts/       headless WAD inspection (node scripts/inspect-wad.ts)
 ```
@@ -436,11 +437,134 @@ fixed spot, outside `ThingLayer` since neither is a real map `Thing`. `IMPACT_EF
 projectile's flight sprite to its explosion — vanilla reuses `MISL` frames B–D for the rocket's
 own blast, while the plasma bolt and BFG ball explode into dedicated `PLSE`/`BFE1` sprites.
 
-**There is still no damage model**, in either direction: nothing is hurt, nothing dies, nothing
-shoots back. Firing spends ammo and draws the shot, and "reached its target" only means the
-shot travelled as far as geometry allows. Adding damage needs the mobj health/death/state
-pipeline that monster AI will bring — the same reason crushers deliberately don't hurt the
-player yet.
+### Damage, monster death and player death (`src/game/thingdefs.ts`, `src/render/sprites.ts`, `src/game/inventory.ts`, `src/game/world.ts: hasLineOfSight`, `src/main.ts`)
+
+Shots and explosions hurt and kill; there is still no monster AI, so nothing shoots back except
+a rocket/BFG blast splashing the shooter — that, and a monster's own death, are the only ways
+the player currently takes damage.
+
+**A shot deals direct damage two different ways, depending on whether one was locked on.** A
+locked-on shot (a monster was under the cursor when it fired) resolves hit-or-miss against that
+exact target: `main.ts`'s `spawnShot` compares `shotPath`'s returned distance against the
+straight-line distance to the target to know whether something (a wall) cut the shot short
+before it got there. A *free* shot (nothing under the cursor) instead tests its straight flight
+path against every monster's body — `ThingLayer.raycastMonster` — the way any real hitscan or
+projectile trace would, so a monster standing between the player and a wall they're shooting at
+still gets hit even though it was never clicked; only the nearer of "a wall/step" (`shotPath`)
+and "a monster in the way" (`raycastMonster`) actually stops the shot. `raycastMonster` tests a
+single approximate hitbox (`MONSTER_HIT_RADIUS`/`_HEIGHT` in `render/sprites.ts`) rather than
+each monster's real, and quite varied (16-128 units), vanilla radius — modelling that accurately
+would need a whole per-species size table for a check this approximate to begin with. Either way,
+for a hitscan pellet damage is applied immediately (an instant line has no travel time to wait
+out); for a projectile it's carried on the `Projectile` object and applied in `updateProjectiles`
+once the sprite visually reaches its (possibly shot-short-by-a-monster) `maxDist` — monster
+positions never change mid-flight (no AI), so resolving hit/miss at launch and only *applying* it
+on arrival is safe and doesn't need a second raycast.
+
+**Splash damage is separate from a direct hit, and reaches everyone nearby regardless of what
+(if anything) was targeted** — a rocket or BFG shot fired at a bare wall still explodes and can
+still hurt a monster standing close by, matching vanilla. `main.ts`'s `applyRadiusDamage` walks
+every living monster `ThingLayer.monstersNear` returns within the blast radius, skips anyone
+`hasLineOfSight` (`game/world.ts`, a straight-line reuse of the sight-blocking test `FogOfWar`
+uses for reveal — not `shotPath`, which models a directed weapon's own blocking rules, not "does
+this omnidirectional blast reach that point") says is blocked by a wall, and applies damage
+falling off linearly to 0 at the radius edge, matching vanilla's own `P_RadiusAttack`.
+
+**A rocket that explodes against a wall sits its own impact point exactly on that wall**, which
+broke splash to everyone else the instant it happened: a raw segment-intersection test between
+the blast and a nearby monster reports the ray blocked by the very wall it started on (the ray's
+own origin is a valid crossing point, at parameter `t≈0`), so `hasLineOfSight` said "blocked" in
+every direction, including straight out into the open room the explosion plainly sits in — splash
+only ever worked when a shot connected directly with a monster (out in open space, never exactly
+on a wall) and never when it hit geometry instead, which for a *free* shot is the common case.
+`SELF_HIT_MARGIN` skips a crossing within 1 unit of the ray's own start, the same "nudge off the
+geometry you're standing on" idea `WALL_OVERLAP`/`BLOCKER_OVERLAP` already use elsewhere — just
+applied to the ray's near end instead of extending its target. The tradeoff: a rocket that
+explodes directly against a *closed door* could in principle leak a sliver of splash through to
+whatever's just beyond it, since the door's own self-hit is now the one crossing being ignored —
+accepted as the same order of approximation those other margins already are, in exchange for
+splash actually working at all against ordinary walls.
+
+**A splash's radius and damage are a fixed pair on the weapon, independent of that shot's own
+random direct-hit roll** — `WeaponDef.splash` (`game/weapons.ts`), not derived from
+`damageDiceSides`/`Multiplier` the way an earlier version of this wrongly assumed. Vanilla's
+rocket explosion (`A_Explode`) really does pass a constant 128/128 to `P_RadiusAttack`, entirely
+separate from the missile's own `(P_Random()%8+1)*20` contact-damage roll used for a direct hit;
+conflating the two made splash swing with the same small, unreliable random roll as contact
+damage, when vanilla's is always a reliable, fixed 128 units.
+
+**`hitsPlayer` gates whether a splash can hurt the player who fired it, and it's the fix for a
+BFG kill also killing the player standing merely "near" the monster it killed.** The rocket sets
+it `true` — vanilla really does let a rocket's own blast hurt whoever fired it (the classic
+"rocket jump" self-damage), so `applyRadiusDamage` includes the player as a splash candidate the
+same as any monster. The BFG sets it `false`: vanilla's BFG ball never calls `A_Explode` at all —
+its real damage is the "spray" mechanic (`A_BFGSpray`), 40 individually autoaimed hitscans fired
+*from* the shooter at nearby visible things, which by construction can never land back on the
+shooter itself. Implementing that spray exactly is far more code than this milestone justifies,
+so it's approximated as a plain radius splash instead (bigger than the rocket's, to feel
+appropriately devastating for its 40-cell cost) — but `hitsPlayer: false` is what keeps that
+approximation from introducing damage vanilla's own BFG could never actually deal.
+
+**`tracers` (also `WeaponDef.splash`, true only for the BFG) draws a thin green line from the
+impact to every monster that splash actually damaged**, reusing `render/tracer.ts`'s `Tracer` —
+the exact same primitive a hitscan weapon's own tracer already is, just a different color
+(`BFG_TRACER_COLOR`) to read as "spray," not "bullet." This isn't vanilla — vanilla's real spray
+rays are pure math, never rendered — but the approximated splash above was otherwise completely
+invisible: nothing on screen showed *which* nearby monsters the blast actually caught, unlike a
+locked hitscan/projectile hit, which always draws something. Giving the BFG's own approximation
+the same "show what a shot hit" treatment this engine already uses everywhere else was a more
+consistent fix than leaving it silent. The rocket leaves `tracers` off; its explosion sprite is
+already vanilla's whole visual for what it hit.
+
+Self-splash is otherwise the only path through which the player takes damage at all right now,
+since there's no monster AI to attack back. Per-weapon direct-hit damage rolls follow vanilla's
+own `((rand % sides) + 1) * multiplier` shape and are lifted rather than tuned by feel, the same
+reasoning ammo-per-shot already used — they decide how tough a fight actually is.
+
+**Monster health and death-frame sequences are confirmed against the actual lump names in
+DOOM.WAD/DOOM2.WAD**, not guessed, the same rigor as `THING_SPRITES`/`TFOG`/rocket-sprite fixes
+elsewhere in this file. Health values themselves aren't in the WAD (they're vanilla's own
+`mobjinfo` constants), but the death *frame letters* are derivable from the WAD directly: death
+art in vanilla is rotation-0 (omnidirectional) only, so the point where a sprite's directional
+(rotation 1-8) frames stop and its rotation-0 tail begins marks exactly where movement/attack/
+pain art ends and death art starts — confirmed by dumping every monster sprite's frame/rotation
+pairs from the real IWADs and cross-checking the resulting counts against known vanilla death-
+state counts (e.g. POSS's rotation-0 tail is 14 letters long, split 5 DIE + 9 XDIE, matching
+vanilla's zombieman exactly). `game/thingdefs.ts`'s `MONSTER_DEATH_FRAMES` takes the DIE (front)
+half of that tail; `MONSTER_XDEATH_FRAMES` takes the XDIE (gib, back) half where one exists at
+all — only five monster types in stock DOOM actually have gib art (the human grunts and the
+imp), everything else, including similarly-sized monsters like the demon, simply has no
+`xdeathstate` in vanilla and always plays its plain death regardless of overkill. `ThingLayer.
+damage` picks between the two exactly the way vanilla's `P_KillMobj` does: gib only if the
+killing blow pushed health below *minus* the monster's own max health (`MONSTER_HEALTH`) *and*
+gib art actually exists for that type — otherwise the plain death, same as vanilla falling back
+when a type has no `xdeathstate` regardless of how far past 0 the health went. Commander Keen (a
+pain-cascade "death" with no distinct DIE state) and the boss brain (2 sprite frames total, no
+death art at all) are deliberately absent from both tables — `ThingLayer.damage` falls back to
+just hiding a killed monster with no entry there, same as an unrecognized lump elsewhere in the
+renderer.
+
+A monster's death is a permanent, one-way animation switch, not a new actor: `SpriteActor.die`
+overrides the normal alive walk-cycle with a one-shot sequence that advances forward and holds
+on its last frame forever, reusing the same mesh/materials rather than spawning a second object
+to swap in — cheaper, and it means a corpse still participates in fog-of-war fading exactly like
+it did alive. `ThingLayer.damage(id, amount)` — `id` being the stable index `pickMonster`/
+`monstersNear` hand back — subtracts health and calls `die` once it reaches 0; `pickMonster`
+skips anything already dead so a corpse can't be re-targeted.
+
+**The player's own death reuses the exact same mechanism** on `main.ts`'s single persistent
+`playerActor`: `PLAYER_DEATH_FRAMES` (`H`-`N`) is `PLAY`'s own confirmed DIE half, the same way
+monster tables were derived. `Inventory.applyDamage` (`game/inventory.ts`) is vanilla's own
+`P_DamageMobj` armor formula — green armor absorbs a third of the damage, blue half, spending
+armor points 1-for-1 with whatever it absorbed and falling back to bare once it runs out
+mid-hit — reused for the player specifically since monsters have no armor to absorb anything.
+Health hitting 0 sets `Game.playerDead`, which freezes movement/aim/firing/pickups in `frame`
+(fog of war, effects, faders and rendering all keep ticking — a rocket already in flight when
+the player dies still lands and can still deal splash) and shows a `#death-overlay` div. `R`
+calls `restart`: a fresh `Inventory` and a `loadMapByIndex` reload of the current map, which
+already resets the player/world/specials/fog for a normal level transition and, via its own
+top-of-function reset, `playerDead`/the overlay/`playerActor`'s animation state too — restart
+isn't a special case, just the ordinary map-load path with a clean inventory.
 
 ### Crushers and teleporters (`src/wad/specials.ts`, `src/game/specials.ts`, `src/main.ts`)
 
@@ -452,10 +576,11 @@ special.
 
 **Crushers** (start: 6/25/49/73/77/141, stop: 57/74) are pure ceiling geometry — repeatedly
 lower to floor+8, reverse, return to the sector's *own* start height (not neighbor-derived, unlike
-a door's open height), forever, with no hold/rest state in between. Deliberately no player
-damage: vanilla's crush damage assumes a mobj health/death/respawn pipeline that doesn't exist
-yet (no death state, no game over), so applying damage with no consequence once it reached zero
-would be a half-built feature.
+a door's open height), forever, with no hold/rest state in between. Deliberately still no player
+damage, even though a health/death pipeline exists now (see "Damage, monster death and player
+death" above): a crusher's own repeat/reverse timing has no "what happens after the player dies
+underneath it" story yet (`restart` reloads the whole map, which would also un-crush anything
+mid-squeeze), unlike a single weapon hit, so wiring it in here would be a half-built feature.
 
 **Teleporters** (39/97 trigger for the player; Doom II's 125/126 are monster-only and never fire
 — there's no monster AI to walk them, the same outcome vanilla's own player-vs-monster gate gives
@@ -605,6 +730,52 @@ Menu semantics worth knowing before touching `menu.ts`:
   regardless — `describeSource` shows its lump count in that case instead of a map count, so
   it doesn't read as an empty file.
 
+`VERSION` (`src/constants.ts`) is shown bottom-right on the menu, prefixed with `v`
+(`ui/menu.ts`); a static credit sits bottom-left in `index.html`/`menu.css`, next to it.
+
+### Dev mode (`src/constants.ts`, `src/main.ts`)
+
+`constants.ts` stays deliberately small — only values genuinely shared across more than a
+couple of files belong there. `PLAYER_RADIUS`/`PLAYER_HEIGHT` and `NO_SIDE`/`LF`/
+`SUBSECTOR_BIT` briefly lived here during a consolidation pass and were moved back to
+`game/player.ts` and `wad/map.ts` respectively once it was clear they belong with the code
+that owns their meaning (player tuning values; WAD binary-format constants next to the
+`DoomMap` types that describe that format) rather than in a generic bucket — don't re-add
+constants here just because they're imported in two or three places; a constant used in
+>2 files that isn't otherwise identity-coupled to one module is the actual bar.
+
+`DEVMODE` reads `import.meta.env.VITE_DEVMODE`, defaulting to `false`; set
+`VITE_DEVMODE=true` in a git-ignored `.env.local` at the repo root to turn it on (Vite loads
+`.env.local` itself, no plugin needed). It gates two things in `main.ts`, both because a
+player has no legitimate reason to reach for them:
+- **The debug overlay** (`updateHud`) — off, `#hud` shows only the fps counter; on, the full
+  map/pos/sector/camera-state block plus the hotkey hint lines.
+- **`N`/`P` (jump to next/prev map), `+`/`-` (camera distance) and `[`/`]` (camera tilt)** in
+  `handleHotkeys` — early-return on `!DEVMODE`, so these hotkeys are simply inert outside dev
+  mode.
+
+`C` (ceiling toggle) is deliberately *not* gated — from directly above, a rendered ceiling
+would hide everything under it, so leaving it off by default is a real, permanent view
+choice, not a debug convenience, and it works regardless of `DEVMODE`.
+
+**`C` rebuilds geometry in place rather than reloading the map.** `renderCeilings` only
+changes which flat triangles `render/mapmesh.ts: buildMapMesh` emits — it has no bearing on
+the player, world state, fog-of-war reveal, mover positions or picked-up items. An earlier
+version routed the toggle through `loadMapByIndex` (the same path map transitions and `N`/`P`
+use) to get a rebuilt mesh, which reset all of that from scratch — pressing `C` looked
+indistinguishable from the level restarting: player snapped back to spawn, opened doors
+closed again, collected items reappeared. `main.ts: toggleCeilings` instead only rebuilds the
+static mesh and both faders, then calls `SpecialsController.setBuilt` with the fresh
+`BuiltMap` so movable-sector meshes (doors/lifts/crushers) get rebuilt too — `buildMoverMesh`
+also reads `meshOptions.renderCeilings`, and rebuilding from the still-live `this.map` sector
+heights (the same object `SpecialsController` mutates directly for movers) preserves each
+mover's current position exactly the way `rebuildAround` already does after an ordinary
+height change. `setBuilt` also re-runs `indexLightGeometry`, which points a light-flicker
+sector at the specific occluder/flat objects it recolors each tick (`sectorOccluders`/
+`sectorFlats`); those are derived from `built.occluders`/`built.flatSurfaces` at construction
+time, so without re-deriving them they'd stay pointed at the pre-toggle geometry — e.g. a
+newly-added ceiling flat in a blinking sector would never pick up the blink.
+
 ## Current state
 
 Playable as a walkable level viewer: geometry, textures, sector lighting, collision with
@@ -624,11 +795,17 @@ graphics the world renders items with; powerups stay decorative-only. Multiplaye
 (deathmatch weapon/ammo stashes) correctly don't spawn (`game/skill.ts: isMultiplayerOnly`).
 All nine weapons can be selected (`1`-`7`, or the mouse wheel) and fired (`game/weapons.ts`):
 hitscan weapons draw a flashing tracer line to what they hit, the rocket launcher/plasma
-rifle/BFG launch a flying sprite that explodes on arrival, and clicking a monster locks aim
-onto it, angling the shot to its actual position and height (`ThingLayer.pickMonster`,
-`world.ts: shotPath`). The selected weapon shows in the HUD, since the player sprite looks the
-same whatever it holds. Doors, lifts, floor movers, crushers, switches and teleporters all
-work (`game/specials.ts`), including locked doors, which require the matching key to be
-collected first, and teleporters, which reproduce vanilla's teleport-fog puff at both ends of
-the jump (`main.ts`). Not yet implemented: monster AI, any damage model (nothing takes damage
-in either direction — see the weapons section above), powerup effects, sound.
+rifle/BFG launch a flying sprite that explodes on arrival, and hovering the cursor over a
+monster locks aim onto it, angling the shot to its actual position and height
+(`ThingLayer.pickMonster`, `world.ts: shotPath`). The selected weapon shows in the HUD, since
+the player sprite looks the same whatever it holds. A locked-on shot that lands, or anyone
+caught in a rocket/BFG blast's splash (including the player themselves), takes real damage —
+monster health is vanilla's own, death plays that monster's confirmed WAD death animation, and
+the player's own death freezes the game behind a `#death-overlay` until `R` restarts the level
+(`game/thingdefs.ts`, `render/sprites.ts: SpriteActor.die`, `game/inventory.ts: applyDamage`,
+`main.ts`). Doors, lifts, floor movers, crushers, switches and teleporters all work
+(`game/specials.ts`), including locked doors, which require the matching key to be collected
+first, and teleporters, which reproduce vanilla's teleport-fog puff at both ends of the jump
+(`main.ts`). Not yet implemented: monster AI (nothing moves or fights back — the only way the
+player takes damage today is a rocket/BFG blast catching them too), crushers still don't hurt
+the player, powerup effects, sound.

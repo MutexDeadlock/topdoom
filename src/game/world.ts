@@ -214,6 +214,41 @@ export class World {
   }
 }
 
+/**
+ * A blast's own impact point routinely sits exactly on the wall it hit (a
+ * rocket exploding against a wall, rather than on a monster out in the open)
+ * — without this margin, a splash-damage ray leaving from that point would
+ * immediately register a self-intersection with that very wall at its own
+ * origin (t≈0) and `hasLineOfSight` would report every direction blocked,
+ * including straight out into the open room the explosion is plainly in.
+ * Skipping a crossing this close to the ray's start is the same "nudge off
+ * the geometry you're standing on" idea `WALL_OVERLAP`/`BLOCKER_OVERLAP` use
+ * elsewhere, just applied to the *near* end of the ray instead of extending
+ * its target.
+ */
+const SELF_HIT_MARGIN = 1;
+
+/**
+ * True if a straight line between two points isn't crossed by any
+ * sight-blocking line (`World.blocksSight`) — the same test FogOfWar's own
+ * player-to-sample rays use for reveal, factored out here so splash/radius
+ * damage (main.ts's `applyRadiusDamage`) can ask "does this blast actually
+ * reach that monster/the player" without duplicating the raycast.
+ */
+export function hasLineOfSight(world: World, x1: number, y1: number, x2: number, y2: number): boolean {
+  const dist = Math.hypot(x2 - x1, y2 - y1);
+  for (const i of world.linesNear((x1 + x2) / 2, (y1 + y2) / 2, dist / 2 + 1)) {
+    if (!world.blocksSight(i)) continue;
+    const line = world.map.linedefs[i];
+    const a = world.map.vertexes[line.v1];
+    const b = world.map.vertexes[line.v2];
+    if (!a || !b) continue;
+    const hit = segmentIntersect(x1, y1, x2, y2, a.x, a.y, b.x, b.y);
+    if (hit && hit.t * dist > SELF_HIT_MARGIN) return false;
+  }
+  return true;
+}
+
 /** Sectors on the other side of a two-sided line from `sectorIndex`. */
 function neighborSectors(map: DoomMap, sectorIndex: number): Sector[] {
   const out: Sector[] = [];

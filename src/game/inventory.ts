@@ -196,3 +196,26 @@ export function applyPickup(inv: Inventory, type: number): boolean {
 export function finishLevel(inv: Inventory): void {
   inv.keys.clear();
 }
+
+/**
+ * Reduces health by `amount`, letting worn armor absorb part of it first —
+ * matches vanilla's own `P_DamageMobj`: green armor (`armorType` 1) absorbs a
+ * third of the damage, blue (`armorType` 2) half, spending armor points
+ * 1-for-1 with whatever it absorbed and falling back to bare (`armorType` 0)
+ * once it runs out mid-hit. `health` is clamped at 0 rather than going
+ * negative — main.ts's own death check is a simple `<= 0`, not "how far past
+ * 0".
+ */
+export function applyDamage(inv: Inventory, amount: number): void {
+  let damage = amount;
+  if (inv.armorType > 0 && inv.armor > 0) {
+    let saved = inv.armorType === 1 ? damage / 3 : damage / 2;
+    if (inv.armor <= saved) {
+      saved = inv.armor;
+      inv.armorType = 0;
+    }
+    inv.armor -= saved;
+    damage -= saved;
+  }
+  inv.health = Math.max(0, inv.health - damage);
+}

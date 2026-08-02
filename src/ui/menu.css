@@ -122,6 +122,37 @@ canvas {
   height: 32px;
 }
 
+/* ---------- death overlay ---------- */
+
+#death-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  pointer-events: none;
+  background: rgba(20, 4, 4, 0.35);
+}
+
+#death-overlay.hidden {
+  display: none;
+}
+
+#death-overlay .title {
+  font-size: 48px;
+  letter-spacing: 8px;
+  color: #c0392b;
+  text-shadow: 0 2px 8px #000;
+}
+
+#death-overlay .hint {
+  color: #d8d0c0;
+  letter-spacing: 2px;
+}
+
 /* ---------- start menu ---------- */
 
 #menu {

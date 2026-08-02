@@ -48,6 +48,19 @@ declares itself an IWAD becomes the game WAD, a PWAD is added as an add-on.
 
 `?wad=DOOM2.WAD&pwad=SCYTHE.WAD&map=MAP05` preselects and skips the menu.
 
+The current version and a credit line sit in the bottom corners of the menu.
+
+## Dev mode
+
+Set `VITE_DEVMODE=true` in a `.env.local` file at the repo root (git-ignored, create it
+yourself) and restart `npm run dev` to turn on:
+
+- the debug overlay in the top-left corner (map name, position, sector, camera state,
+  hotkey hints — without it, only the fps counter shows)
+- the `N` / `P`, `+` / `-` and `[` / `]` hotkeys below
+
+Without it those hotkeys are simply inert. `C` (ceiling toggle) always works either way.
+
 ## Controls
 
 | Key | |
@@ -59,13 +72,15 @@ declares itself an IWAD becomes the game WAD, a PWAD is added as an add-on.
 | `1`–`7` | select weapon; pressing a slot again toggles within it (fist/chainsaw, shotgun/super shotgun) |
 | mouse wheel | cycle through the weapons you own |
 | right-drag / `Q` `E` | orbit the camera around the player |
-| `N` / `P` | next / previous map |
+| `N` / `P` | next / previous map *(dev mode only)* |
 | `C` | toggle ceilings |
-| `+` / `-` | camera distance |
-| `[` / `]` | camera tilt |
+| `+` / `-` | camera distance *(dev mode only)* |
+| `[` / `]` | camera tilt *(dev mode only)* |
+| `R` | restart the level (once dead) |
 | `Esc` | menu / resume |
 
-Ceilings are off by default — from above they would hide everything underneath.
+Ceilings are off by default — from above they would hide everything underneath. See
+[Dev mode](#dev-mode) for the keys marked above.
 
 ## HUD
 
@@ -103,8 +118,25 @@ pointer-driven equivalent of DOOM's own auto-aim, which had no cursor to work fr
 follows the cursor rather than waiting for the click, so the aim doesn't jump the moment you
 fire. Real walls and closed doors still stop a shot short and explode it there.
 
-There is no damage model yet — nothing takes any. Shooting spends ammo and draws the shot;
-monsters neither die nor fight back until the combat milestone.
+**A shot that lands deals real damage**, using monster health values and the same random damage
+rolls as vanilla; a monster's health hitting 0 plays its own confirmed WAD death animation and it
+stops being targetable. Overkill it by enough — vanilla's own rule, only for the handful of
+monster types (the human grunts and the imp) that actually have gib art — and it gibs instead of
+dying normally. A locked-on shot hits whatever it was aimed at; an unlocked one still
+hits any monster its straight path crosses on the way to a wall, the way a real shot would — you
+don't have to click something for it to be in the way. A rocket's blast also splashes everyone
+nearby, falling off with distance the same way vanilla's own explosions do — including the
+player, so firing one at your own feet hurts you too, exactly like the original. A BFG blast
+splashes nearby monsters as well, but — unlike the rocket — never the player who fired it,
+matching the original's own BFG, which doesn't damage through a radius explosion at all. A thin
+green line draws from the impact to everything the BFG's splash actually caught, the same
+tracer a hitscan shot draws to its own target, so it's visible which nearby monsters it hit.
+There's still no monster AI, so nothing shoots back; a rocket blast catching the player is currently the
+only way they take damage.
+Worn armor absorbs part of any hit the player takes (a third for green, half for blue, same as
+the original) before it reaches health. Health hitting 0 ends the level with a death screen —
+press `R` to restart it, with a clean inventory. The fist and chainsaw still swing on cooldown
+but have nothing to hit yet.
 
 ## Layout
 
@@ -115,62 +147,14 @@ src/render/    BSP polygon reconstruction, mesh building, materials, occlusion f
 src/game/      spatial queries, collision, player controller, input, inventory/pickups,
                weapons and shooting
 src/ui/        start menu, HUD
+src/constants.ts   cross-cutting constants (VERSION, DEVMODE)
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
 scripts/       headless WAD inspection (node scripts/inspect-wad.ts)
 ```
 
-Some notes on the parts that are less obvious:
-
-**Merging WADs.** `WadFile` parses one file; `Wad` concatenates several into the single
-lump directory the engine reads, with later files winning on name collisions. That one rule
-gives PWAD overrides for free: a replaced `MAP01` marker resolves to the add-on, and its map
-lumps follow it contiguously, so nothing else needs to know a PWAD is involved.
-
-Marker ranges are the exception — `F_START..F_END` can nest (`F1_START`) and every file may
-open its own, so `markedRange` counts depth instead of spanning first to last marker.
-Texture definitions are merged across files rather than replaced: vanilla treats a PWAD's
-`TEXTURE1` as a full replacement, which breaks any pairing the PWAD wasn't built for.
-Merging only ever adds names that would otherwise resolve to nothing. Patch indices are
-per-file, so they are resolved through the defining file's `PNAMES` at load time.
-
-**Lump names end at the first NUL.** Editors don't always zero the remaining bytes of an
-8-byte name field, so anything after the terminator is leftover from a previous edit.
-Reading it as part of the name turns `"-"` into `"-GRAY7"` and breaks real PWADs.
-
-**Floors.** `SEGS` only stores edges that lie on real linedefs — the edges created by BSP
-splits are not in the WAD. `render/bsp.ts` therefore rebuilds each subsector by taking a
-quad covering the whole map and clipping it against every partition line on the path from
-the root down to that leaf, then against the subsector's own segs. The result is convex,
-so a triangle fan is enough.
-
-**Walls.** Built per linedef from the sidedefs: one-sided lines get their middle texture
-over the full sector height, two-sided lines get upper/lower steps plus an optional masked
-middle. Vertical texture alignment follows DOOM's pegging rules (`LOWER_UNPEGGED` /
-`UPPER_UNPEGGED`), so door tracks and step textures line up the way they do in the
-original.
-
-**No back faces.** Walls are drawn single-sided, facing the way DOOM defines as their
-front. Walls between the camera and the player are therefore culled automatically, which
-is what produces the open dollhouse look without any extra logic.
-
-**Occlusion fading.** Back-face culling doesn't help when a wall legitimately faces the
-camera but still sits on the camera→player sightline (a pillar in front of the player, say).
-`render/occlusion.ts`'s `WallFader` tests every wall quad against that sightline each frame
-and fades the ones crossing it — as a dithered per-pixel discard rather than real alpha
-blending, since wall quads are batched per texture across the whole map and blending would
-need a meaningless whole-level draw order. That keeps faded walls in the ordinary
-depth-tested opaque pass.
-
-**Shots.** `game/world.ts`'s `shotPath` decides where a shot ends up, for tracers and
-projectiles alike. A free shot flies flat at the player's height and is stopped by walls *and*
-by any floor or ceiling step it can't clear — otherwise a rocket sails straight through a
-knee-high riser. A shot locked onto a monster instead slopes from the player's height to the
-target's over exactly the distance between them, and is allowed to clear those steps, since it
-is deliberately angled over them; only real walls and shut doors still cut it short. Both start
-at the player, never at the target's height, or the shot would appear to begin in mid-air.
-
-**Coordinates.** Everything stays in DOOM map units. DOOM's `(x, y, z)` becomes three.js
-`(x, z, -y)`, so the map plane is XZ and Y is up.
+For how any of this actually works under the hood — WAD merging rules, BSP polygon
+reconstruction, occlusion fading, collision, fog of war, shot/damage resolution, and so on —
+see [CLAUDE.md](CLAUDE.md), which documents the implementation in depth.
 
 ## Checking a WAD without a browser
 
@@ -195,6 +179,8 @@ real `PLAY` sprite with a facing-driven rotation frame and a walk-cycle animatio
 armor, ammo, keys and weapons are collectible and tracked on a HUD; doors, lifts, floor
 movers, crushers, switches and teleporters all work, including locked doors, which require
 the matching key. All nine weapons can be selected (`1`–`7` or the wheel) and fired, with
-hitscan tracers, flying projectiles, impact explosions and click-to-target auto-aim. Not yet:
-monster AI, any damage model (nothing takes damage in either direction), powerup effects,
-sound.
+hitscan tracers, flying projectiles, impact explosions and click-to-target auto-aim. Locked-on
+shots and explosion splash deal real damage, killing monsters (with their own confirmed WAD
+death animation) and, via splash only, the player — armor absorbs part of it first, and health
+hitting 0 shows a death screen `R` restarts from. Not yet: monster AI (nothing fights back),
+crushers hurting the player, powerup effects, sound.

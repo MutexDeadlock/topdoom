@@ -4,7 +4,14 @@ import type { GraphicsBank } from '../wad/graphics.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { World } from '../game/world.ts';
 import { PLAYER_HEIGHT } from '../game/player.ts';
-import { MONSTER_TYPES, THING_SPRITES } from '../game/thingdefs.ts';
+import {
+  MONSTER_DEATH_FRAME_SECONDS,
+  MONSTER_DEATH_FRAMES,
+  MONSTER_HEALTH,
+  MONSTER_TYPES,
+  MONSTER_XDEATH_FRAMES,
+  THING_SPRITES,
+} from '../game/thingdefs.ts';
 import { isMultiplayerOnly, spawnsAtSkill, type Skill } from '../game/skill.ts';
 import { doomToWorld, lightToColor } from './mapmesh.ts';
 
@@ -161,6 +168,20 @@ export class SpriteActor {
   private animFrames: string[];
   private frameDuration: number;
 
+  /**
+   * Once set (via `die`), permanently overrides the normal walk-cycle
+   * animation with a one-shot sequence that advances forward and then holds
+   * on its last frame forever — a corpse, not a loop. `setPose` ignores its
+   * own `animating` parameter entirely while this is set: unlike the alive
+   * cycle (which idles by holding frame 0 and resumes from the start once
+   * moving again), a death animation has no "idle" state to fall back to and
+   * must never run in reverse or reset.
+   */
+  private deathFrames: string[] | null = null;
+  private deathFrameDuration = 0;
+  private deathIndex = 0;
+  private deathTimer = 0;
+
   constructor(
     bank: SpriteBank,
     materials: SpriteMaterialCache,
@@ -192,7 +213,16 @@ export class SpriteActor {
     animating = false,
     viewerAngleDeg = VIEWER_ANGLE_DEG,
   ): boolean {
-    if (animating && this.animFrames.length > 1) {
+    let frames = this.animFrames;
+    if (this.deathFrames) {
+      frames = this.deathFrames;
+      this.deathTimer += dt;
+      while (this.deathTimer >= this.deathFrameDuration && this.deathIndex < frames.length - 1) {
+        this.deathTimer -= this.deathFrameDuration;
+        this.deathIndex++;
+      }
+      this.animIndex = this.deathIndex;
+    } else if (animating && this.animFrames.length > 1) {
       this.animTimer += dt;
       while (this.animTimer >= this.frameDuration) {
         this.animTimer -= this.frameDuration;
@@ -204,7 +234,7 @@ export class SpriteActor {
     }
 
     const digit = pickRotationDigit(facingDeg, viewerAngleDeg);
-    const found = this.bank.lookup(this.spriteName, this.animFrames[this.animIndex], digit);
+    const found = this.bank.lookup(this.spriteName, frames[this.animIndex], digit);
     if (!found) return false;
 
     const key = found.lump + (found.flip ? ':f' : '');
@@ -224,9 +254,33 @@ export class SpriteActor {
     (this.mesh.material as THREE.MeshBasicMaterial).color.setScalar(lightToColor(light));
     return true;
   }
+
+  /**
+   * Switches this actor permanently into its one-shot death animation (see
+   * the `deathFrames` field doc). Idempotent-ish: calling it again just
+   * restarts the sequence, which nothing currently does since a monster/the
+   * player only dies once per life.
+   */
+  die(frames: string[], frameDuration: number): void {
+    this.deathFrames = frames;
+    this.deathFrameDuration = frameDuration;
+    this.deathIndex = 0;
+    this.deathTimer = 0;
+  }
+
+  /** Undoes `die`, back to the normal alive animation — used when a level restart brings the player back to life. */
+  revive(): void {
+    this.deathFrames = null;
+    this.deathIndex = 0;
+    this.deathTimer = 0;
+    this.animIndex = 0;
+    this.animTimer = 0;
+  }
 }
 
 interface PosedThing {
+  /** Index into the `posed` array itself — a stable handle callers (main.ts) can hold onto across frames to target this exact instance with `ThingLayer.damage`. */
+  id: number;
   actor: SpriteActor;
   x: number;
   y: number;
@@ -238,6 +292,10 @@ interface PosedThing {
   type: number;
   /** Set once a pickup consumes this instance; it then stays permanently hidden (see ThingLayer.update). */
   picked: boolean;
+  /** Remaining hit points; only meaningful for a `MONSTER_TYPES` thing (see `MONSTER_HEALTH`) — everything else stays at `Infinity` and can never die. */
+  health: number;
+  /** Set once `health` reaches 0; see `ThingLayer.damage`. */
+  dead: boolean;
 }
 
 export interface ThingLayer {
@@ -245,18 +303,20 @@ export interface ThingLayer {
   count: number;
   /**
    * Re-poses every thing at the camera's current viewer angle. Things don't
-   * move in x/y or animate yet, so this only ever changes which rotation-frame
-   * lump is shown, which way each plane faces, and — because a thing's `z` is
-   * read from its sector's live `floorHeight` rather than cached — its height,
-   * so a pickup resting on a lift/floor-mover sector rides it up and down
-   * exactly like the floor geometry itself does. SpriteActor.setPose already
-   * skips the geometry/material swap when the resolved lump is unchanged from
-   * last call, so this stays cheap. `fogAlphaOf`, when given, hides things
-   * sitting in a subsector fog-of-war hasn't revealed yet (game/fogofwar.ts) —
-   * a monster or item in an unexplored/secret room would otherwise spoil it
-   * despite the room's own geometry being faded out.
+   * move in x/y or hold a walk cycle, so `dt` only ever matters for a dead
+   * monster's death animation (SpriteActor.die) — everything else this
+   * changes (which rotation-frame lump is shown, which way each plane faces,
+   * and — because a thing's `z` is read from its sector's live `floorHeight`
+   * rather than cached — its height, so a pickup resting on a lift/floor-mover
+   * sector rides it up and down exactly like the floor geometry itself does)
+   * is dt-independent. SpriteActor.setPose already skips the geometry/material
+   * swap when the resolved lump is unchanged from last call, so this stays
+   * cheap. `fogAlphaOf`, when given, hides things sitting in a subsector fog
+   * of war hasn't revealed yet (game/fogofwar.ts) — a monster or item in an
+   * unexplored/secret room would otherwise spoil it despite the room's own
+   * geometry being faded out.
    */
-  update(viewerAngleDeg: number, fogAlphaOf?: (subsector: number) => number): void;
+  update(dt: number, viewerAngleDeg: number, fogAlphaOf?: (subsector: number) => number): void;
   /**
    * Consumes every not-yet-picked thing within `radius` of (x, y) *and*
    * within reach vertically of `z` whose type `consume` accepts (returning
@@ -274,12 +334,62 @@ export interface ThingLayer {
    * and its height (so a shot bound for a monster standing on a raised or
    * lowered floor travels at *its* height, not the player's). Restricted the
    * same way `update`'s visibility toggle is — a monster fog of war hasn't
-   * revealed, or one already picked (dead end for a monster today, but the
-   * check costs nothing to keep uniform) — can't be targeted through
-   * geometry that hides it on screen.
+   * revealed, one already picked (dead end for a monster today, but the
+   * check costs nothing to keep uniform), or one already dead — can't be
+   * targeted through geometry that hides it on screen, or after it's been
+   * killed. The returned `id` is what `damage` below takes, so a shot fired
+   * this frame can still land on exactly this instance later (a projectile's
+   * flight, or a wall check that might block it first) without re-picking.
    */
-  pickMonster(raycaster: THREE.Raycaster): { x: number; y: number; z: number } | null;
+  pickMonster(raycaster: THREE.Raycaster): { id: number; x: number; y: number; z: number } | null;
+  /**
+   * Living monsters within `radius` (2D — matching vanilla's own radius-attack
+   * distance test, which ignores height) of (x, y). Candidates for splash
+   * damage (main.ts); the caller still has to check line-of-sight itself,
+   * since that needs the `World` this layer doesn't otherwise touch.
+   */
+  monstersNear(x: number, y: number, radius: number): { id: number; x: number; y: number; z: number }[];
+  /**
+   * Applies `amount` damage to the monster `pickMonster`/`monstersNear`
+   * returned as `id`, switching it to its death animation once health drops
+   * to 0 — gibbed (`MONSTER_XDEATH_FRAMES`) instead of a plain death
+   * (`MONSTER_DEATH_FRAMES`) if the killing blow overkilled by enough margin,
+   * matching vanilla's own `P_KillMobj` rule, or just hiding it for a monster
+   * type with no confirmed death art at all. A no-op if `id` is stale,
+   * already dead, or the amount is non-positive — a projectile's flight can
+   * outlive whatever picked its target, and splash damage rolls a falloff
+   * that can reach 0 at the blast's edge.
+   */
+  damage(id: number, amount: number): void;
+  /**
+   * Nearest living monster whose body the ray from (x, y, z) along `angleRad`
+   * crosses within `maxDist`, or null. Backs a *free* shot (no locked-on
+   * target — main.ts's `spawnShot`): a shot fired at a wall with a monster
+   * standing in the way should still hit that monster, the way any real
+   * hitscan trace would, rather than sailing straight through it to whatever
+   * is behind. A locked shot doesn't need this — it already knows its exact
+   * target — this is specifically for the "didn't click anything, but
+   * something's in the path anyway" case. `MONSTER_HIT_RADIUS`/`_HEIGHT` are a
+   * single approximate hitbox rather than each monster's real (and quite
+   * varied — 16 to 128 units) vanilla radius, since modelling that accurately
+   * would need a whole per-species size table for a check this approximate
+   * to begin with.
+   */
+  raycastMonster(
+    x: number,
+    y: number,
+    z: number,
+    angleRad: number,
+    maxDist: number,
+  ): { id: number; x: number; y: number; z: number; dist: number } | null;
 }
+
+/**
+ * Single approximate hitbox `ThingLayer.raycastMonster` tests a free shot's
+ * ray against — see that method's doc for why this isn't per-species.
+ */
+const MONSTER_HIT_RADIUS = 24;
+const MONSTER_HIT_HEIGHT = 64;
 
 /** One static upright plane per map THING whose type is a known, visible sprite. */
 export function buildThingSprites(
@@ -309,19 +419,32 @@ export function buildThingSprites(
     const actor = new SpriteActor(bank, materials, spriteName);
     if (!actor.setPose(x, y, sector?.floorHeight ?? 0, facingDeg, light)) continue;
     group.add(actor.mesh);
-    posed.push({ actor, x, y, sector, facingDeg, light, subsector, type: t.type, picked: false });
+    posed.push({
+      id: posed.length,
+      actor,
+      x,
+      y,
+      sector,
+      facingDeg,
+      light,
+      subsector,
+      type: t.type,
+      picked: false,
+      health: MONSTER_HEALTH[t.type] ?? Infinity,
+      dead: false,
+    });
   }
 
   return {
     group,
     count: posed.length,
-    update(viewerAngleDeg: number, fogAlphaOf?: (subsector: number) => number): void {
+    update(dt: number, viewerAngleDeg: number, fogAlphaOf?: (subsector: number) => number): void {
       for (const p of posed) {
         if (p.picked) {
           p.actor.mesh.visible = false;
           continue;
         }
-        p.actor.setPose(p.x, p.y, p.sector?.floorHeight ?? 0, p.facingDeg, p.light, 0, false, viewerAngleDeg);
+        p.actor.setPose(p.x, p.y, p.sector?.floorHeight ?? 0, p.facingDeg, p.light, dt, false, viewerAngleDeg);
         if (fogAlphaOf) p.actor.mesh.visible = fogAlphaOf(p.subsector) > 0.5;
       }
     },
@@ -344,16 +467,68 @@ export function buildThingSprites(
         }
       }
     },
-    pickMonster(raycaster: THREE.Raycaster): { x: number; y: number; z: number } | null {
+    pickMonster(raycaster: THREE.Raycaster): { id: number; x: number; y: number; z: number } | null {
       const byMesh = new Map<THREE.Object3D, PosedThing>();
       for (const p of posed) {
-        if (p.picked || !p.actor.mesh.visible || !MONSTER_TYPES.has(p.type)) continue;
+        if (p.picked || p.dead || !p.actor.mesh.visible || !MONSTER_TYPES.has(p.type)) continue;
         byMesh.set(p.actor.mesh, p);
       }
       const hit = raycaster.intersectObjects([...byMesh.keys()], false)[0];
       if (!hit) return null;
       const p = byMesh.get(hit.object);
-      return p ? { x: p.x, y: p.y, z: p.sector?.floorHeight ?? 0 } : null;
+      return p ? { id: p.id, x: p.x, y: p.y, z: p.sector?.floorHeight ?? 0 } : null;
+    },
+    monstersNear(x: number, y: number, radius: number): { id: number; x: number; y: number; z: number }[] {
+      const out: { id: number; x: number; y: number; z: number }[] = [];
+      const rSq = radius * radius;
+      for (const p of posed) {
+        if (p.dead || !MONSTER_TYPES.has(p.type)) continue;
+        const dx = p.x - x;
+        const dy = p.y - y;
+        if (dx * dx + dy * dy >= rSq) continue;
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.sector?.floorHeight ?? 0 });
+      }
+      return out;
+    },
+    damage(id: number, amount: number): void {
+      const p = posed[id];
+      if (!p || p.dead || amount <= 0 || !MONSTER_TYPES.has(p.type)) return;
+      p.health -= amount;
+      if (p.health > 0) return;
+      p.dead = true;
+      // Matches vanilla's P_KillMobj: gib only if this killing blow overkilled
+      // by more than the monster's own max health, and only if it actually has
+      // gib art (most don't — see MONSTER_XDEATH_FRAMES's doc).
+      const maxHealth = MONSTER_HEALTH[p.type] ?? 0;
+      const gibbed = p.health < -maxHealth && MONSTER_XDEATH_FRAMES[p.type];
+      const frames = gibbed || MONSTER_DEATH_FRAMES[p.type];
+      if (frames) p.actor.die(frames, MONSTER_DEATH_FRAME_SECONDS);
+      else p.actor.mesh.visible = false;
+    },
+    raycastMonster(
+      x: number,
+      y: number,
+      z: number,
+      angleRad: number,
+      maxDist: number,
+    ): { id: number; x: number; y: number; z: number; dist: number } | null {
+      const dx = Math.cos(angleRad);
+      const dy = Math.sin(angleRad);
+      let nearest: { id: number; x: number; y: number; z: number; dist: number } | null = null;
+      for (const p of posed) {
+        if (p.dead || !p.actor.mesh.visible || !MONSTER_TYPES.has(p.type)) continue;
+        const floorZ = p.sector?.floorHeight ?? 0;
+        if (Math.abs(floorZ - z) > MONSTER_HIT_HEIGHT) continue;
+        const relX = p.x - x;
+        const relY = p.y - y;
+        const t = relX * dx + relY * dy;
+        if (t < 0 || t > maxDist || (nearest && t >= nearest.dist)) continue;
+        const perpX = relX - dx * t;
+        const perpY = relY - dy * t;
+        if (perpX * perpX + perpY * perpY > MONSTER_HIT_RADIUS * MONSTER_HIT_RADIUS) continue;
+        nearest = { id: p.id, x: x + dx * t, y: y + dy * t, z: floorZ, dist: t };
+      }
+      return nearest;
     },
   };
 }

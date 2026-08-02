@@ -107,3 +107,93 @@ export const THING_SPRITES: Record<number, string> = {
 export const MONSTER_TYPES = new Set([
   3004, 9, 3001, 3002, 58, 3006, 3005, 3003, 69, 7, 16, 71, 65, 66, 67, 68, 64, 84, 72, 88,
 ]);
+
+/** Vanilla `mobjinfo` spawn health, confirmed against the Doom Wiki's monster table. */
+export const MONSTER_HEALTH: Record<number, number> = {
+  3004: 20, // POSS zombieman
+  9: 30, // SPOS shotgun guy
+  3001: 60, // TROO imp
+  3002: 150, // SARG demon
+  58: 150, // SARG spectre
+  3006: 100, // SKUL lost soul
+  3005: 400, // HEAD cacodemon
+  3003: 1000, // BOSS baron of hell
+  69: 500, // BOS2 hell knight
+  7: 3000, // SPID spider mastermind
+  16: 4000, // CYBR cyberdemon
+  71: 400, // PAIN pain elemental
+  65: 70, // CPOS heavy weapon dude
+  66: 300, // SKEL revenant
+  67: 600, // FATT mancubus
+  68: 500, // BSPI arachnotron
+  64: 700, // VILE arch-vile
+  84: 50, // SSWV wolfenstein SS
+  72: 100, // KEEN commander keen
+  88: 250, // BBRN boss brain
+};
+
+/**
+ * Regular-death sprite frame letters, one entry per doomednum that shares its
+ * sprite's DIE (not gib/XDIE) sequence — confirmed against the actual lump
+ * names in DOOM.WAD/DOOM2.WAD rather than guessed. Death art in vanilla is
+ * rotation-0 (omnidirectional) only, so the point where a sprite's
+ * directional (rotation 1-8) frames stop and its rotation-0 tail begins marks
+ * exactly where movement/attack/pain art ends and death art starts; DIE is
+ * the *front* portion of that tail — the back portion is XDIE (see
+ * `MONSTER_XDEATH_FRAMES` below), vanilla's own extra-gib animation, played
+ * instead of this one when a killing blow overkills by a wide enough margin.
+ * Commander Keen (72, a pain-cascade "death" with no distinct DIE state) and
+ * the boss brain (88, only 2 sprite frames total, no death art at all) are
+ * deliberately absent; `ThingLayer.damage` falls back to just hiding a
+ * killed monster with no entry here.
+ */
+export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
+  3004: ['H', 'I', 'J', 'K', 'L'], // POSS
+  9: ['H', 'I', 'J', 'K', 'L'], // SPOS
+  3001: ['I', 'J', 'K', 'L', 'M'], // TROO
+  3002: ['I', 'J', 'K', 'L', 'M', 'N'], // SARG
+  58: ['I', 'J', 'K', 'L', 'M', 'N'], // SARG (spectre)
+  3006: ['G', 'H', 'I', 'J', 'K'], // SKUL
+  3005: ['G', 'H', 'I', 'J', 'K', 'L'], // HEAD
+  3003: ['I', 'J', 'K', 'L', 'M', 'N', 'O'], // BOSS
+  69: ['I', 'J', 'K', 'L', 'M', 'N', 'O'], // BOS2
+  7: ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S'], // SPID
+  16: ['H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'], // CYBR
+  71: ['H', 'I', 'J', 'K', 'L', 'M'], // PAIN
+  65: ['H', 'I', 'J', 'K', 'L'], // CPOS
+  66: ['M', 'N', 'O', 'P', 'Q'], // SKEL
+  67: ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'], // FATT
+  68: ['J', 'K', 'L', 'M', 'N', 'O', 'P'], // BSPI
+  64: ['R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'], // VILE
+  84: ['I', 'J', 'K', 'L', 'M'], // SSWV
+};
+
+/**
+ * Gib (XDeath) sprite frame letters — the back portion of the same
+ * rotation-0 tail `MONSTER_DEATH_FRAMES` takes its front portion from, also
+ * confirmed against the real WAD lump names. Only five monster types in
+ * stock DOOM actually have one at all: the human grunts (zombieman, shotgun
+ * guy, chaingunner, Wolfenstein SS) and the imp — every other monster,
+ * including ones that are otherwise similarly sized (the demon, for
+ * instance), simply has no `xdeathstate` in vanilla's own `mobjinfo` and
+ * always plays its plain death. `ThingLayer.damage` picks between this and
+ * `MONSTER_DEATH_FRAMES` the same way vanilla's `P_KillMobj` does: gib only
+ * if overkill damage pushed health below *minus* the monster's own max
+ * health (`MONSTER_HEALTH`), and only if an entry exists here at all.
+ */
+export const MONSTER_XDEATH_FRAMES: Record<number, string[]> = {
+  3004: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // POSS
+  9: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // SPOS
+  3001: ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // TROO
+  65: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'], // CPOS
+  84: ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V'], // SSWV
+};
+
+/**
+ * Flat per-frame duration for a monster's death animation, regular or gib
+ * alike. Vanilla's actual death/xdeath states each hold for their own tic
+ * count rather than one uniform rate; collapsing that to a single constant
+ * is the same simplification player.ts's GRAVITY and weapons.ts's fire rates
+ * already make for anything that doesn't survive a dt-scaled model cleanly.
+ */
+export const MONSTER_DEATH_FRAME_SECONDS = 6 / 35;

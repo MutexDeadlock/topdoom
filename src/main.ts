@@ -9,7 +9,7 @@ import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache, buildThingSprites, type ThingLayer } from './render/sprites.ts';
 import { FlatFader, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
-import { World, shotPath } from './game/world.ts';
+import { World, hasLineOfSight, shotPath } from './game/world.ts';
 import { Player, PLAYER_HEIGHT, PLAYER_RADIUS } from './game/player.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
@@ -17,7 +17,14 @@ import { Input } from './game/input.ts';
 import { Menu, type Selection } from './ui/menu.ts';
 import { Hud } from './ui/hud.ts';
 import type { Skill } from './game/skill.ts';
-import { applyPickup, createInventory, finishLevel, ITEM_PICKUP_RADIUS, type Inventory } from './game/inventory.ts';
+import {
+  applyDamage,
+  applyPickup,
+  createInventory,
+  finishLevel,
+  ITEM_PICKUP_RADIUS,
+  type Inventory,
+} from './game/inventory.ts';
 import { WeaponSystem, type Shot } from './game/weapons.ts';
 import { Tracer } from './render/tracer.ts';
 import { DEVMODE } from './constants.ts';
@@ -72,6 +79,8 @@ const AIM_HEIGHT_OFFSET = 32;
 
 /** Color of a hitscan tracer line (render/tracer.ts) — a hot yellow-white, like a vanilla muzzle flash. */
 const TRACER_COLOR = 0xfff2a8;
+/** Color of a BFG spray tracer (WeaponDef.splash's `tracers`) — the same green as the BFG's own ball/explosion sprites, distinguishing it from a hitscan's muzzle-flash yellow. */
+const BFG_TRACER_COLOR = 0x66ff33;
 
 /**
  * Frame letters an in-flight projectile sprite cycles through while flying.
@@ -93,15 +102,25 @@ const IMPACT_FRAME_SECONDS = 4 / 35;
  * A projectile's impact explosion, keyed by its flight sprite: vanilla's
  * `MISL` reuses its own sprite name for the rocket's explosion (frames B-D,
  * omnidirectional), while the plasma bolt and BFG ball explode into their
- * own dedicated sprites. There's still no damage/monster-hit model (see
- * CLAUDE.md's "Current state"), so this is cosmetic only — it plays where a
- * shot reached shotPath's distance, not where it "hit" anything.
+ * own dedicated sprites. Purely cosmetic — it plays where a shot reached
+ * shotPath's distance; whether (and what) it actually damaged is resolved
+ * separately, in `spawnShot`/`updateProjectiles`/`applyRadiusDamage` below.
  */
 const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {
   MISL: { sprite: 'MISL', frames: ['B', 'C', 'D'] },
   PLSS: { sprite: 'PLSE', frames: ['A', 'B', 'C', 'D', 'E'] },
   BFS1: { sprite: 'BFE1', frames: ['A', 'B', 'C', 'D', 'E', 'F'] },
 };
+
+/**
+ * Player death animation frame letters, confirmed against the actual `PLAY`
+ * lump names in DOOM.WAD/DOOM2.WAD the same way game/thingdefs.ts's
+ * MONSTER_DEATH_FRAMES were: PLAY's rotation-0-only tail runs H through W
+ * (16 letters), split as DIE1-7 (H-N, this sequence) then XDIE1-9 (O-W, the
+ * gib variant this engine doesn't model — see MONSTER_DEATH_FRAMES's doc).
+ */
+const PLAYER_DEATH_FRAMES = ['H', 'I', 'J', 'K', 'L', 'M', 'N'];
+const PLAYER_DEATH_FRAME_SECONDS = 6 / 35;
 
 interface Projectile {
   actor: SpriteActor;
@@ -119,6 +138,12 @@ interface Projectile {
   light: number;
   /** SpriteBank name (PROJECTILE_FRAMES's key), so the impact explosion can look it up in IMPACT_EFFECTS. */
   sprite: string;
+  /** Direct-hit damage, applied to `hitMonsterId` (if any) on arrival. */
+  damage: number;
+  /** Splash to apply at the impact point regardless of what was targeted, or null for a non-explosive projectile — see weapons.ts's WeaponDef.splash. */
+  splash: { radius: number; damage: number; hitsPlayer: boolean; tracers: boolean } | null;
+  /** The monster this shot was locked onto *and actually reached* (spawnShot resolves that), or null — a free shot, one that missed a monster it wasn't locked onto, or a locked shot a wall cut short before the target. */
+  hitMonsterId: number | null;
 }
 
 /**
@@ -196,6 +221,9 @@ class Game {
   private skill: Skill;
   private hud: Hud;
   private inventory: Inventory = createInventory();
+  private deathOverlay = document.getElementById('death-overlay')!;
+  /** True once the player's health has hit 0 — freezes movement/aim/firing/pickups (see `frame`) until `restart`. */
+  private playerDead = false;
   readonly title: string;
 
   /** `?pos=x,y` override for the player start, consumed by the first map load. */
@@ -242,6 +270,13 @@ class Game {
   private loadMapByIndex(index: number): void {
     // Keys don't survive a level transition in vanilla DOOM; health/armor/ammo do.
     finishLevel(this.inventory);
+    // A fresh map always starts with a living player — covers both a normal
+    // level transition (which can't happen while dead; movement is frozen)
+    // and `restart`'s "reload the same map" call, defensively in one place
+    // rather than duplicated at each caller.
+    this.playerDead = false;
+    this.deathOverlay.classList.add('hidden');
+    this.playerActor.revive();
     this.mapIndex = (index + this.mapNames.length) % this.mapNames.length;
     const name = this.mapNames[this.mapIndex];
 
@@ -427,14 +462,56 @@ class Game {
    * gets to (short of the target if a wall is in the way), which is what both
    * the tracer/projectile's endpoint and — once it lands — its impact
    * explosion use.
+   *
+   * Whether this shot actually *lands* on `targetId` is resolved here too:
+   * `shotPath` returns wherever it got blocked, so comparing that distance
+   * against the target's own distance is how "did it get there" is known. A
+   * hitscan pellet's damage applies immediately (it's an instant line, same
+   * as its tracer); a projectile's carries through to `updateProjectiles`,
+   * applied once the sprite visually arrives rather than the instant it's
+   * fired — monster positions never change mid-flight, so resolving hit/miss
+   * now and only *applying* it later is safe.
    */
-  private spawnShot(shot: Shot, startZ: number, target: { x: number; y: number; z: number } | null): void {
+  private spawnShot(
+    shot: Shot,
+    startZ: number,
+    target: { x: number; y: number; z: number } | null,
+    targetId: number | null,
+  ): void {
     const originX = this.player.x;
     const originY = this.player.y;
     const path = shotPath(this.world, originX, originY, startZ, shot.angleRad, target);
 
+    let hitMonsterId: number | null = null;
+    let endX = path.x;
+    let endY = path.y;
+    let endDist = path.dist;
+
+    if (target !== null && targetId !== null) {
+      // A locked shot only actually connects if nothing stopped it short of
+      // the target — shotPath returns wherever it got blocked, so comparing
+      // that distance against the target's own is how "did this land" is known.
+      const wantDist = Math.hypot(target.x - originX, target.y - originY);
+      if (path.dist >= wantDist - 1) hitMonsterId = targetId;
+    } else {
+      // No locked target: still test the straight path itself against every
+      // monster's body (`ThingLayer.raycastMonster`), the way any real
+      // hitscan/projectile trace would — a monster standing between the
+      // player and a wall they're shooting at shouldn't be invisible to the
+      // shot just because it wasn't clicked. Only ever shortens the shot
+      // (never past `path.dist`, the wall/step it would have hit anyway).
+      const monsterHit = this.things?.raycastMonster(originX, originY, startZ, shot.angleRad, path.dist) ?? null;
+      if (monsterHit) {
+        hitMonsterId = monsterHit.id;
+        endX = monsterHit.x;
+        endY = monsterHit.y;
+        endDist = monsterHit.dist;
+      }
+    }
+
     if (shot.kind === 'hitscan') {
-      const tracer = new Tracer(originX, originY, startZ, path.x, path.y, path.z, TRACER_COLOR);
+      if (hitMonsterId !== null) this.things?.damage(hitMonsterId, shot.damage);
+      const tracer = new Tracer(originX, originY, startZ, endX, endY, path.z, TRACER_COLOR);
       this.scene.add(tracer.line);
       this.tracers.push(tracer);
       return;
@@ -452,10 +529,13 @@ class Game {
       endZ: path.z,
       angleRad: shot.angleRad,
       speed: shot.speed,
-      maxDist: path.dist,
+      maxDist: endDist,
       traveled: 0,
       light,
       sprite: shot.sprite,
+      damage: shot.damage,
+      splash: shot.splash,
+      hitMonsterId,
     });
   }
 
@@ -483,10 +563,12 @@ class Game {
    * wall-stopping distance a hitscan tracer would have ended at,
    * shotPath, computed once at launch in spawnShot rather than
    * re-raycast every frame), removes it and plays its impact explosion
-   * (IMPACT_EFFECTS) at `endZ` in its place. There's still no damage/monster-
-   * hit model (see CLAUDE.md's "Current state"), so this is cosmetic only:
-   * "reached its target" doesn't mean it hit anything, just that it
-   * travelled as far as the wall in its path allows.
+   * (IMPACT_EFFECTS) at `endZ` in its place. "Reached its target" doesn't by
+   * itself mean it hit anything — `p.hitMonsterId` is only set when this shot
+   * was locked onto a monster it actually got to (spawnShot resolves that up
+   * front) — but the impact point always applies splash (`p.splash`)
+   * regardless, the same as a rocket exploding against a bare wall still
+   * hurts anyone standing nearby in vanilla.
    */
   private updateProjectiles(dt: number, viewerAngleDeg: number): void {
     if (this.projectiles.length === 0) return;
@@ -497,6 +579,10 @@ class Game {
         this.scene.remove(p.actor.mesh);
         const x = p.originX + Math.cos(p.angleRad) * p.maxDist;
         const y = p.originY + Math.sin(p.angleRad) * p.maxDist;
+        if (p.hitMonsterId !== null) this.things?.damage(p.hitMonsterId, p.damage);
+        if (p.splash) {
+          this.applyRadiusDamage(x, y, p.endZ, p.splash.radius, p.splash.damage, p.splash.hitsPlayer, p.splash.tracers);
+        }
         const impact = IMPACT_EFFECTS[p.sprite];
         if (impact) {
           const effect = this.spawnEffect(impact.sprite, impact.frames, IMPACT_FRAME_SECONDS, x, y, p.endZ);
@@ -512,6 +598,69 @@ class Game {
       remaining.push(p);
     }
     this.projectiles = remaining;
+  }
+
+  /**
+   * An explosion's blast: every living monster within `radius` of the impact
+   * point that has an unobstructed line to it (`hasLineOfSight`) takes
+   * damage falling off linearly to 0 at the radius edge, matching vanilla's
+   * own `P_RadiusAttack` falloff. `hitsPlayer` gates whether the player is
+   * even a candidate — true for the rocket, matching vanilla's own
+   * self-splash ("rocket jump") behavior, but false for the BFG, whose real
+   * vanilla damage never reaches the shooter (see `WeaponDef.splash`'s doc);
+   * without this a BFG shot that merely killed a monster *near* the player
+   * also splashed the player itself, which isn't how the original ever
+   * behaves. Self-splash is otherwise the only path through which the player
+   * can currently take damage at all, since there's no monster AI to attack
+   * back. 2D distance only, no height check — matching vanilla's own
+   * `P_RadiusAttack`, which ignores z entirely and relies on line-of-sight
+   * alone to decide whether a floor above/below the blast is protected;
+   * `z` is only carried along for `tracers`' visuals, never the falloff math.
+   * `tracers`, when set, draws a `BFG_TRACER_COLOR` line from the impact to
+   * every monster the blast actually damaged — see `WeaponDef.splash`'s doc
+   * on why only the BFG sets it.
+   */
+  private applyRadiusDamage(
+    x: number,
+    y: number,
+    z: number,
+    radius: number,
+    maxDamage: number,
+    hitsPlayer: boolean,
+    tracers: boolean,
+  ): void {
+    for (const m of this.things?.monstersNear(x, y, radius) ?? []) {
+      const dist = Math.hypot(m.x - x, m.y - y);
+      if (dist >= radius || !hasLineOfSight(this.world, x, y, m.x, m.y)) continue;
+      this.things?.damage(m.id, maxDamage * (1 - dist / radius));
+      if (tracers) {
+        const tracer = new Tracer(x, y, z, m.x, m.y, m.z, BFG_TRACER_COLOR);
+        this.scene.add(tracer.line);
+        this.tracers.push(tracer);
+      }
+    }
+
+    if (!hitsPlayer) return;
+    const pdist = Math.hypot(this.player.x - x, this.player.y - y);
+    if (pdist < radius && hasLineOfSight(this.world, x, y, this.player.x, this.player.y)) {
+      this.damagePlayer(maxDamage * (1 - pdist / radius));
+    }
+  }
+
+  /** Applies armor-mitigated damage (`applyDamage`) to the player, transitioning to the death animation once health hits 0. A no-op once already dead — no double death. */
+  private damagePlayer(amount: number): void {
+    if (this.playerDead || amount <= 0) return;
+    applyDamage(this.inventory, amount);
+    if (this.inventory.health > 0) return;
+    this.playerDead = true;
+    this.playerActor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
+    this.deathOverlay.classList.remove('hidden');
+  }
+
+  /** `R`, while dead: a fresh inventory and a reload of the current map — `loadMapByIndex` resets the player/world/specials/fog and, via the doc on its own top, `playerDead`/the death overlay/`playerActor` too. */
+  private restart(): void {
+    this.inventory = createInventory();
+    this.loadMapByIndex(this.mapIndex);
   }
 
   private frame = (now: number) => {
@@ -540,43 +689,59 @@ class Game {
       return;
     }
 
-    // Auto-aim: the cursor hovering over a monster locks aim onto its actual
-    // position — and height — instead of wherever the mouse's flat
-    // floor-plane projection lands underneath the cursor. This has to apply
-    // on hover, the same as regular mouse-aim always has (player.angle is
-    // set from `aim` unconditionally below, click or no), not just while the
-    // trigger is held: gating the lock to mouseDown made both the player's
-    // facing and the camera's aim-lead below jump the instant a click
-    // landed — which read as the camera lurching backward right as you fired.
-    const monster = this.things?.pickMonster(camera.raycasterFor(input.pointer.x, input.pointer.y)) ?? null;
-    const aim = monster ?? camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
-    this.player.update(dt, input, aim, camera.viewerAngleDeg + 180);
-    camera.update(dt, this.player.x, this.player.y, this.player.eyeZ, aim);
+    // Auto-aim, movement, firing and pickups all freeze once the player is
+    // dead — there's nothing to aim/move/fire/collect with a corpse — but
+    // fog of war, things, effects, faders and rendering below keep ticking
+    // normally, so a still-flying rocket the player fired right before dying
+    // finishes its flight and can still deal splash damage (including, in a
+    // grim-but-correct edge case, to the player's own corpse — damagePlayer
+    // is a no-op once already dead, so this can't double-kill).
+    let aim: { x: number; y: number } | null = null;
+    if (!this.playerDead) {
+      // The cursor hovering over a monster locks aim onto its actual
+      // position — and height — instead of wherever the mouse's flat
+      // floor-plane projection lands underneath the cursor. This has to
+      // apply on hover, the same as regular mouse-aim always has
+      // (player.angle is set from `aim` unconditionally below, click or
+      // no), not just while the trigger is held: gating the lock to
+      // mouseDown made both the player's facing and the camera's aim-lead
+      // below jump the instant a click landed — which read as the camera
+      // lurching backward right as you fired.
+      const monster = this.things?.pickMonster(camera.raycasterFor(input.pointer.x, input.pointer.y)) ?? null;
+      aim = monster ?? camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
+      this.player.update(dt, input, aim, camera.viewerAngleDeg + 180);
 
-    // A shot always *starts* at the player's own fire height — never the
-    // target's, or a tracer/projectile would visibly begin mid-air instead of
-    // at the player. Handing shotPath the locked-on monster as its target is
-    // what makes the shot angle toward *its* height and stop there; see
-    // world.ts's shotPath/blocksShot for why a locked shot is allowed to
-    // clear the floor steps a free one is stopped by.
-    const fireStartZ = this.player.z + AIM_HEIGHT_OFFSET;
-    const fireTarget = monster ? { x: monster.x, y: monster.y, z: monster.z + AIM_HEIGHT_OFFSET } : null;
+      // A shot always *starts* at the player's own fire height — never the
+      // target's, or a tracer/projectile would visibly begin mid-air instead
+      // of at the player. Handing shotPath the locked-on monster as its
+      // target is what makes the shot angle toward *its* height and stop
+      // there; see world.ts's shotPath/blocksShot for why a locked shot is
+      // allowed to clear the floor steps a free one is stopped by.
+      const fireStartZ = this.player.z + AIM_HEIGHT_OFFSET;
+      const fireTarget = monster ? { x: monster.x, y: monster.y, z: monster.z + AIM_HEIGHT_OFFSET } : null;
 
-    // After player.update so player.angle already reflects this frame's aim.
-    this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
-    for (const shot of this.weaponSystem.update(dt, input.mouseDown, this.inventory, this.player.angle)) {
-      this.spawnShot(shot, fireStartZ, fireTarget);
+      // After player.update so player.angle already reflects this frame's aim.
+      this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
+      for (const shot of this.weaponSystem.update(dt, input.mouseDown, this.inventory, this.player.angle)) {
+        this.spawnShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
+      }
+
+      this.things?.tryPickup(this.player.x, this.player.y, this.player.z, PICKUP_RANGE, (type) =>
+        applyPickup(this.inventory, type),
+      );
+    } else if (input.pressed('KeyR')) {
+      this.restart();
+      input.endFrame();
+      requestAnimationFrame(this.frame);
+      return;
     }
-
-    this.things?.tryPickup(this.player.x, this.player.y, this.player.z, PICKUP_RANGE, (type) =>
-      applyPickup(this.inventory, type),
-    );
+    camera.update(dt, this.player.x, this.player.y, this.player.eyeZ, aim);
     this.hud.update(this.inventory);
 
     this.fogOfWar.update(dt, this.player.x, this.player.y);
     const fog = this.fogOfWar;
     const fogAlphaOf = (subsector: number) => fog.alphaOf(subsector);
-    this.things?.update(camera.viewerAngleDeg, fogAlphaOf);
+    this.things?.update(dt, camera.viewerAngleDeg, fogAlphaOf);
     this.teleportFogs = this.updateEffects(this.teleportFogs, dt, camera.viewerAngleDeg);
     this.updateTracers(dt);
     this.updateProjectiles(dt, camera.viewerAngleDeg);
@@ -604,7 +769,11 @@ class Game {
 
     const facingDeg = (this.player.angle * 180) / Math.PI;
     const sector = this.world.sectorAt(this.player.x, this.player.y);
-    const walking = Math.hypot(this.player.velX, this.player.velY) > 1;
+    // player.update (and with it, velX/velY) stops running once dead, so
+    // this must not read possibly-stale velocity from the moment of death —
+    // not that it would matter anyway, since setPose ignores `animating`
+    // entirely once `die()` has been called (see SpriteActor's doc).
+    const walking = !this.playerDead && Math.hypot(this.player.velX, this.player.velY) > 1;
     this.playerActor.setPose(
       this.player.x,
       this.player.y,
@@ -659,7 +828,7 @@ class Game {
       `cam ${camera.distance.toFixed(0)} u / ${camera.tiltDeg.toFixed(0)}° tilt / ${camera.yawDeg.toFixed(0)}° yaw   ceilings ${this.renderCeilings ? 'on' : 'off'}`,
       '',
       'WASD move   Shift run   mouse aim/fire   1-7 / wheel weapon   right-drag / Q-E rotate camera   Space use',
-      'N/P map   C ceilings   +/- zoom   [ ] tilt   Esc menu',
+      'N/P map   C ceilings   +/- zoom   [ ] tilt   R restart (when dead)   Esc menu',
     ].join('\n');
   }
 }

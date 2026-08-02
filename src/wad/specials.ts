@@ -98,7 +98,9 @@ export type MoveTarget =
   | 'nextHigherFloor'
   | 'nextLowerFloor'
   | 'lowestNeighborCeiling'
-  | 'highestNeighborCeiling';
+  | 'highestNeighborCeiling'
+  /** Special 55's target: the floor rises, rather than the usual lower/level pattern. */
+  | 'lowestNeighborCeilingMinus8';
 
 export interface FloorEffect {
   kind: 'floor';
@@ -245,14 +247,20 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   122: { trigger: 'use', repeatable: false, effect: lift(LIFT_SPEED_FAST) },
   123: { trigger: 'use', repeatable: true, effect: lift(LIFT_SPEED_FAST) },
 
-  // Generic floor movers.
+  // Generic floor movers — trigger/repeatability and target each confirmed
+  // against the Doom wiki's linedef type table individually, after 23 turned
+  // out to be a switch (S1), not a walkover, in an earlier pass here.
   5: { trigger: 'walk', repeatable: false, effect: floor('lowestNeighborCeiling') },
   19: { trigger: 'walk', repeatable: false, effect: floor('highestNeighborFloor') },
-  23: { trigger: 'walk', repeatable: false, effect: floor('lowestNeighborFloor') },
+  23: { trigger: 'use', repeatable: false, effect: floor('lowestNeighborFloor') },
+  38: { trigger: 'walk', repeatable: false, effect: floor('lowestNeighborFloor') },
   82: { trigger: 'walk', repeatable: true, effect: floor('lowestNeighborFloor') },
   45: { trigger: 'use', repeatable: true, effect: floor('highestNeighborFloor') },
   18: { trigger: 'use', repeatable: false, effect: floor('nextHigherFloor') },
-  55: { trigger: 'use', repeatable: false, effect: floor('nextLowerFloor') },
+  // 55 raises (not lowers) to 8 below the lowest neighboring ceiling and
+  // crushes; the crush part is out of scope, same as the ceiling crushers and
+  // the 16-unit stair specials (no damage/death pipeline yet).
+  55: { trigger: 'use', repeatable: false, effect: floor('lowestNeighborCeilingMinus8') },
   102: { trigger: 'use', repeatable: false, effect: floor('highestNeighborFloor') },
 
   // Level exit — advances to the next map, same as the existing N hotkey.

@@ -285,6 +285,8 @@ function resolveFloorTarget(map: DoomMap, sectorIndex: number, target: MoveTarge
       return lowestNeighborCeiling(map, sectorIndex);
     case 'highestNeighborCeiling':
       return highestNeighborCeiling(map, sectorIndex);
+    case 'lowestNeighborCeilingMinus8':
+      return lowestNeighborCeiling(map, sectorIndex) - CRUSHER_GAP;
   }
 }
 

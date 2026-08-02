@@ -40,12 +40,19 @@ export const LIFT_SPEED = 35; // 1 u/tic
 export const LIFT_SPEED_FAST = 140; // 4 u/tic
 export const LIFT_WAIT = 105 / 35; // seconds a lift stays down
 export const FLOOR_SPEED = 35;
+/** Vanilla turboLower: FLOORSPEED*4, same fast-quad scaling as doors/lifts above. */
+export const FLOOR_SPEED_FAST = FLOOR_SPEED * 4;
 export const CEILING_SPEED = 35;
 /** Vanilla CEILSPEED: 1 u/tic; crush-and-raise "fast" variants run at 2x. */
 export const CRUSHER_SPEED = 35;
 export const CRUSHER_SPEED_FAST = 70;
-/** Vanilla leaves this much gap above the floor at the bottom of a crush cycle, never fully sealing shut. */
-export const CRUSHER_GAP = 8;
+/**
+ * Vanilla's recurring 8-unit gap: how far a crusher's bottom sits above the
+ * floor, and how far the 55/56/65/94 and 36/70/71/98 floor families stop
+ * short of the ceiling/neighbor-floor height they're nominally targeting,
+ * rather than sealing flush with it.
+ */
+export const EIGHT_UNIT_GAP = 8;
 /** DOOM's teleport landing marker (doomednum 14) — a spawn marker only, never rendered (see thingdefs.ts). */
 export const TELEPORT_DEST = 14;
 /** Vanilla P_BuildStairs: build8 runs at FLOORSPEED/4, turbo16 at FLOORSPEED*4. */
@@ -99,8 +106,10 @@ export type MoveTarget =
   | 'nextLowerFloor'
   | 'lowestNeighborCeiling'
   | 'highestNeighborCeiling'
-  /** Special 55's target: the floor rises, rather than the usual lower/level pattern. */
-  | 'lowestNeighborCeilingMinus8';
+  /** The 55/56/65/94 family's target: the floor rises, rather than the usual lower/level pattern. */
+  | 'lowestNeighborCeilingMinus8'
+  /** The 36/70/71/98 "turboLower" family's target: stops 8 short of flush with the highest neighbor. */
+  | 'highestNeighborFloorPlus8';
 
 export interface FloorEffect {
   kind: 'floor';
@@ -115,7 +124,7 @@ export interface ExitEffect {
   secret: boolean;
 }
 
-/** Ceiling repeatedly lowers to floor+`CRUSHER_GAP`, then returns to its start height, forever. */
+/** Ceiling repeatedly lowers to floor+`EIGHT_UNIT_GAP`, then returns to its start height, forever. */
 export interface CrusherEffect {
   kind: 'crusher';
   speed: number;
@@ -248,20 +257,50 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   123: { trigger: 'use', repeatable: true, effect: lift(LIFT_SPEED_FAST) },
 
   // Generic floor movers — trigger/repeatability and target each confirmed
-  // against the Doom wiki's linedef type table individually, after 23 turned
-  // out to be a switch (S1), not a walkover, in an earlier pass here.
-  5: { trigger: 'walk', repeatable: false, effect: floor('lowestNeighborCeiling') },
+  // against the Doom wiki's linedef type table individually (a broad,
+  // all-at-once fetch across this whole family contradicted an earlier,
+  // already-verified single-number fetch on where 19 belongs, so every
+  // number below was re-checked one at a time rather than trusted from that
+  // summary — matching this file's existing rule of not trusting a plausible
+  // Doom-wiki summary without a targeted check). 23 turned out to be a switch
+  // (S1), not a walkover, in an earlier pass here.
   19: { trigger: 'walk', repeatable: false, effect: floor('highestNeighborFloor') },
+  45: { trigger: 'use', repeatable: true, effect: floor('highestNeighborFloor') },
+  102: { trigger: 'use', repeatable: false, effect: floor('highestNeighborFloor') },
+
+  // "Lowest neighboring floor" quad (W1/WR/S1/SR).
   23: { trigger: 'use', repeatable: false, effect: floor('lowestNeighborFloor') },
   38: { trigger: 'walk', repeatable: false, effect: floor('lowestNeighborFloor') },
+  60: { trigger: 'use', repeatable: true, effect: floor('lowestNeighborFloor') },
   82: { trigger: 'walk', repeatable: true, effect: floor('lowestNeighborFloor') },
-  45: { trigger: 'use', repeatable: true, effect: floor('highestNeighborFloor') },
+
   18: { trigger: 'use', repeatable: false, effect: floor('nextHigherFloor') },
-  // 55 raises (not lowers) to 8 below the lowest neighboring ceiling and
-  // crushes; the crush part is out of scope, same as the ceiling crushers and
-  // the 16-unit stair specials (no damage/death pipeline yet).
+
+  // "Lowest neighboring ceiling" quad (W1/WR/S1/SR). 24 is the fifth vanilla
+  // member of this family (G1, gun-fired) but there's no shoot-trigger input
+  // yet (see CLAUDE.md: weapon switching/shooting isn't implemented), so it's
+  // left out rather than wired to the wrong trigger kind.
+  5: { trigger: 'walk', repeatable: false, effect: floor('lowestNeighborCeiling') },
+  64: { trigger: 'use', repeatable: true, effect: floor('lowestNeighborCeiling') },
+  91: { trigger: 'walk', repeatable: true, effect: floor('lowestNeighborCeiling') },
+  101: { trigger: 'use', repeatable: false, effect: floor('lowestNeighborCeiling') },
+
+  // "8 below lowest neighboring ceiling, crush" quad (W1/WR/S1/SR) — these
+  // raise (not lower) the floor; the crush part is out of scope, same as the
+  // ceiling crushers and the 16-unit stair specials (no damage/death pipeline
+  // yet).
   55: { trigger: 'use', repeatable: false, effect: floor('lowestNeighborCeilingMinus8') },
-  102: { trigger: 'use', repeatable: false, effect: floor('highestNeighborFloor') },
+  56: { trigger: 'walk', repeatable: false, effect: floor('lowestNeighborCeilingMinus8') },
+  65: { trigger: 'use', repeatable: true, effect: floor('lowestNeighborCeilingMinus8') },
+  94: { trigger: 'walk', repeatable: true, effect: floor('lowestNeighborCeilingMinus8') },
+
+  // "8 above highest neighboring floor, fast" quad (W1/WR/S1/SR) — vanilla's
+  // turboLower: normally lowers a floor that started above every neighbor,
+  // but stops 8 short of flush rather than levelling with it exactly.
+  36: { trigger: 'walk', repeatable: false, effect: floor('highestNeighborFloorPlus8', FLOOR_SPEED_FAST) },
+  70: { trigger: 'use', repeatable: true, effect: floor('highestNeighborFloorPlus8', FLOOR_SPEED_FAST) },
+  71: { trigger: 'use', repeatable: false, effect: floor('highestNeighborFloorPlus8', FLOOR_SPEED_FAST) },
+  98: { trigger: 'walk', repeatable: true, effect: floor('highestNeighborFloorPlus8', FLOOR_SPEED_FAST) },
 
   // Level exit — advances to the next map, same as the existing N hotkey.
   11: { trigger: 'use', repeatable: false, effect: { kind: 'exit', secret: false } },

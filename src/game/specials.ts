@@ -4,7 +4,7 @@ import {
   LINE_SPECIALS,
   SECTOR_LIGHT_SPECIALS,
   DOOR_OPEN_GAP,
-  CRUSHER_GAP,
+  EIGHT_UNIT_GAP,
   SWITCH_FLASH_SECONDS,
   TELEPORT_DEST,
   switchPairTexture,
@@ -286,7 +286,9 @@ function resolveFloorTarget(map: DoomMap, sectorIndex: number, target: MoveTarge
     case 'highestNeighborCeiling':
       return highestNeighborCeiling(map, sectorIndex);
     case 'lowestNeighborCeilingMinus8':
-      return lowestNeighborCeiling(map, sectorIndex) - CRUSHER_GAP;
+      return lowestNeighborCeiling(map, sectorIndex) - EIGHT_UNIT_GAP;
+    case 'highestNeighborFloorPlus8':
+      return highestNeighborFloor(map, sectorIndex) + EIGHT_UNIT_GAP;
   }
 }
 
@@ -722,7 +724,7 @@ export class SpecialsController {
       sectorIndex,
       speed: effect.speed,
       topHeight: sector.ceilHeight,
-      bottomHeight: sector.floorHeight + CRUSHER_GAP,
+      bottomHeight: sector.floorHeight + EIGHT_UNIT_GAP,
       state: 'lowering',
     });
   }

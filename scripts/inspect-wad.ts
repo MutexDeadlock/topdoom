@@ -10,7 +10,8 @@ import { Wad, WadFile } from '../src/wad/wad.ts';
 import { GraphicsBank } from '../src/wad/graphics.ts';
 import { loadMap } from '../src/wad/map.ts';
 import { buildSubSectorPolys } from '../src/render/bsp.ts';
-import { World, circleBlocked, PLAYER_RADIUS } from '../src/game/world.ts';
+import { World, circleBlocked } from '../src/game/world.ts';
+import { PLAYER_RADIUS } from '../src/game/player.ts';
 
 function readWad(path: string): WadFile {
   const file = readFileSync(path);

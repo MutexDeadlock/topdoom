@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { FlatSurface, WallOccluder } from './mapmesh.ts';
 import { pointNearConvexPolygon, segmentIntersect } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
-import { PLAYER_RADIUS } from '../game/world.ts';
+import { PLAYER_RADIUS } from '../game/player.ts';
 
 /**
  * Target coverage (0..1) once a wall sits on the camera-player sightline —

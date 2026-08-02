@@ -9,8 +9,8 @@ import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache, buildThingSprites, type ThingLayer } from './render/sprites.ts';
 import { FlatFader, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
-import { PLAYER_HEIGHT, PLAYER_RADIUS, World } from './game/world.ts';
-import { Player } from './game/player.ts';
+import { World } from './game/world.ts';
+import { Player, PLAYER_HEIGHT, PLAYER_RADIUS } from './game/player.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
 import { Input } from './game/input.ts';
@@ -18,6 +18,7 @@ import { Menu, type Selection } from './ui/menu.ts';
 import { Hud } from './ui/hud.ts';
 import type { Skill } from './game/skill.ts';
 import { applyPickup, createInventory, finishLevel, ITEM_PICKUP_RADIUS, type Inventory } from './game/inventory.ts';
+import { DEVMODE } from './constants.ts';
 
 /** Combined radius (map units) within which an item is close enough to pick up. */
 const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
@@ -397,6 +398,9 @@ class Game {
       this.renderCeilings = !this.renderCeilings;
       this.loadMapByIndex(this.mapIndex);
     }
+    // Level switching, zoom and tilt are dev/debug conveniences, gated the
+    // same as the debug HUD below (see DEVMODE).
+    if (!DEVMODE) return;
     if (input.pressed('KeyN')) this.loadMapByIndex(this.mapIndex + 1);
     if (input.pressed('KeyP')) this.loadMapByIndex(this.mapIndex - 1);
     if (input.held('Equal', 'NumpadAdd')) camera.distance = Math.max(200, camera.distance - 8);
@@ -406,6 +410,10 @@ class Game {
   }
 
   private updateHud(): void {
+    if (!DEVMODE) {
+      hudEl.textContent = `${this.fps} fps`;
+      return;
+    }
     const { camera } = this.view;
     const sector = this.world.sectorIndexAt(this.player.x, this.player.y);
     hudEl.textContent = [

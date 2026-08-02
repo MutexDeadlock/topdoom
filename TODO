@@ -1,11 +1,8 @@
 WIP - Sector-Specials (Doors, Switches...)
 BETA - Item pickups / "Inventory" / HUD
-WIP - "Physik"
+BETA - "Physik"
 NEXT - Shooting
 NEXT - Enemy "AI"
 NEXT - UX
 
 TODO - Sound
-
-TODO - constants.ts
-TODO - "by @fauler420" + Version number (constants.ts)

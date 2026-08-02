@@ -1,5 +1,9 @@
-import { PLAYER_RADIUS, slideMove, type World } from './world.ts';
+import { slideMove, type World } from './world.ts';
 import type { Input } from './input.ts';
+
+/** Vanilla DOOM values, in map units. */
+export const PLAYER_RADIUS = 16;
+export const PLAYER_HEIGHT = 56;
 
 /** Map units per second. Vanilla DOOM runs at roughly 583. */
 const WALK_SPEED = 260;

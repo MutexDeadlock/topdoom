@@ -1,10 +1,9 @@
 import { LF, NO_SIDE, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
 import { sectorOfSubSector } from '../render/bsp.ts';
 import { distSqToSegment } from '../util/geom.ts';
+import { PLAYER_HEIGHT } from './player.ts';
 
-/** Vanilla DOOM values, in map units. */
-export const PLAYER_RADIUS = 16;
-export const PLAYER_HEIGHT = 56;
+/** Vanilla DOOM value, in map units. */
 export const MAX_STEP_UP = 24;
 
 const GRID_CELL = 128;

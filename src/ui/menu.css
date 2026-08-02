@@ -311,3 +311,20 @@ canvas {
   outline: 2px dashed #c0392b;
   outline-offset: -10px;
 }
+
+#menu-credit,
+#menu-version {
+  position: fixed;
+  bottom: 10px;
+  color: #4a4640;
+  font-size: 12px;
+  pointer-events: none;
+}
+
+#menu-credit {
+  left: 14px;
+}
+
+#menu-version {
+  right: 14px;
+}

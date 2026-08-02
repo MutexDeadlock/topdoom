@@ -18,7 +18,6 @@ import {
   type LightPattern,
 } from '../wad/specials.ts';
 import {
-  PLAYER_RADIUS,
   World,
   lowestNeighborFloor,
   highestNeighborFloor,
@@ -28,6 +27,7 @@ import {
   highestNeighborCeiling,
   darkestNeighborLight,
 } from './world.ts';
+import { PLAYER_RADIUS } from './player.ts';
 import type { Input } from './input.ts';
 import type { FogOfWar } from './fogofwar.ts';
 import type { KeyColor } from './inventory.ts';

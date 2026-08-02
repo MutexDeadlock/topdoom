@@ -6,6 +6,7 @@ import {
   type WadSource,
 } from '../wad/library.ts';
 import { DEFAULT_SKILL, SKILL_NAMES, type Skill } from '../game/skill.ts';
+import { VERSION } from '../constants.ts';
 
 export interface Selection {
   iwad: WadSource;
@@ -56,6 +57,7 @@ export class Menu {
     this.startButton.addEventListener('click', () => this.start());
     this.installDropTarget();
     this.renderDifficulties();
+    el<HTMLDivElement>('menu-version').textContent = `v${VERSION}`;
   }
 
   /** Reads the server library and applies whatever the URL asked for. */

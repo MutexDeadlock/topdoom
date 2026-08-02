@@ -3,7 +3,7 @@ import { Wad } from './wad/wad.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
 import { GraphicsBank } from './wad/graphics.ts';
 import { SpriteBank } from './wad/sprites.ts';
-import { loadMap } from './wad/map.ts';
+import { loadMap, type DoomMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache, buildThingSprites, type ThingLayer } from './render/sprites.ts';
@@ -89,6 +89,7 @@ class Game {
   private mapNames: string[];
   private mapIndex = 0;
 
+  private map!: DoomMap;
   private world!: World;
   private player!: Player;
   private built: BuiltMap | null = null;
@@ -189,6 +190,7 @@ class Game {
 
     const t0 = performance.now();
     const map = loadMap(this.wad, name);
+    this.map = map;
     this.world = new World(map);
     // Sectors a door/lift/floor mover will drive are pulled out of the static
     // batches up front — SpecialsController owns their geometry instead (see
@@ -254,6 +256,30 @@ class Game {
     if (this.built.missingTextures.length > 0) {
       console.warn('missing textures:', this.built.missingTextures.join(', '));
     }
+  }
+
+  /**
+   * `renderCeilings` only changes which flats get built — it doesn't touch the
+   * player, world, fog of war or specials state — so rebuilding via
+   * `loadMapByIndex` (which resets all of that, including mover positions and
+   * picked-up items) would make the toggle look like the level restarting.
+   * Rebuild just the static map mesh and hand the movable-sector code a fresh
+   * `BuiltMap` to draw its own ceilings from instead.
+   */
+  private toggleCeilings(): void {
+    this.renderCeilings = !this.renderCeilings;
+    if (this.built) {
+      this.scene.remove(this.built.group);
+      this.built.group.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+      });
+    }
+    const movableSectors = computeMovableSectors(this.map);
+    this.built = buildMapMesh(this.map, this.materials, { renderCeilings: this.renderCeilings, movableSectors });
+    this.scene.add(this.built.group);
+    this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
+    this.flatFader = new FlatFader(this.built.flatSurfaces, this.built.flatMeshes);
+    this.specials?.setBuilt(this.built, { renderCeilings: this.renderCeilings });
   }
 
   resume(): void {
@@ -394,10 +420,7 @@ class Game {
 
   private handleHotkeys(): void {
     const { input, camera } = this.view;
-    if (input.pressed('KeyC')) {
-      this.renderCeilings = !this.renderCeilings;
-      this.loadMapByIndex(this.mapIndex);
-    }
+    if (input.pressed('KeyC')) this.toggleCeilings();
     // Level switching, zoom and tilt are dev/debug conveniences, gated the
     // same as the debug HUD below (see DEVMODE).
     if (!DEVMODE) return;

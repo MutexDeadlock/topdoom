@@ -5,7 +5,7 @@ import type { WallOccluder } from '../render/mapmesh.ts';
 import type { World } from './world.ts';
 
 /** How far the player can reveal, in map units. Roughly what the camera frames. */
-const SIGHT_RADIUS = 2000;
+const SIGHT_RADIUS = 3000;
 /** Exponential smoothing rate (1/seconds) for the reveal, gentler than wall occlusion. */
 const FADE_SPEED = 3;
 /** Snap-to-target threshold for `dampen` — see its doc for why this matters. */

@@ -145,7 +145,7 @@ class Game {
     this.startPos = startPos;
 
     this.scene.background = new THREE.Color(0x05050a);
-    this.scene.fog = new THREE.Fog(0x05050a, 1400, 2600);
+    this.scene.fog = new THREE.Fog(0x05050a, 2100, 3900);
 
     const gfx = new GraphicsBank(wad);
     this.materials = new MaterialBank(gfx, view.renderer);

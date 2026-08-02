@@ -6,6 +6,13 @@ const WALK_SPEED = 260;
 const RUN_SPEED = 500;
 const ACCELERATION = 12; // per second, as a lerp factor
 const EYE_HEIGHT = 41;
+/**
+ * Map units per second^2. Tuned by feel rather than lifted from vanilla's fixed-point
+ * tic-based gravity (1 unit/tic^2 at 35 tics/s), which doesn't translate to a dt-scaled
+ * model directly — this drops the player roughly a body height in about a third of a
+ * second, which reads as a fall rather than a teleport without feeling floaty.
+ */
+const GRAVITY = 1600;
 
 export class Player {
   x: number;
@@ -17,6 +24,8 @@ export class Player {
 
   velX = 0;
   velY = 0;
+  /** Vertical velocity, map units/sec. Only ever goes negative — there's no jump input, only gravity once a step drops out from under the player. */
+  private velZ = 0;
 
   private world: World;
 
@@ -45,6 +54,7 @@ export class Player {
     this.y = y;
     this.velX = 0;
     this.velY = 0;
+    this.velZ = 0;
     this.z = this.world.groundFloor(x, y, PLAYER_RADIUS);
   }
 
@@ -98,13 +108,31 @@ export class Player {
       this.y = moved.y;
     }
 
-    // Snap straight to the resting floor here — the camera already smooths
-    // its own followed point (see TopDownCamera.update). groundFloor (not the
-    // bare sector floor) keeps z pinned to a ledge's high side for as long as
-    // the player's circle still straddles it, matching DOOM's thing->floorz;
-    // otherwise the very next step-up check would compare the newly-low z
-    // against the still-high opening and block every move near that edge.
-    this.z = this.world.groundFloor(this.x, this.y, PLAYER_RADIUS);
+    // groundFloor (not the bare sector floor) keeps the resting height pinned to
+    // a ledge's high side for as long as the player's circle still straddles it,
+    // matching DOOM's thing->floorz — that's also what makes a gap narrower than
+    // the player's diameter (2*PLAYER_RADIUS) crossable without falling in: the
+    // circle overlaps both edges at once the whole way across, so this never
+    // reports the lower pit floor in between, the same "step over it" quirk
+    // vanilla has.
+    const groundZ = this.world.groundFloor(this.x, this.y, PLAYER_RADIUS);
+    if (this.z > groundZ) {
+      // Airborne: the ground dropped out from under the player (walked off a
+      // ledge, or a straddled gap turned out too wide to glide over). Fall
+      // under gravity instead of snapping straight down, and clamp to the
+      // floor once reached rather than overshooting through it.
+      this.velZ -= GRAVITY * dt;
+      this.z = Math.max(groundZ, this.z + this.velZ * dt);
+      if (this.z === groundZ) this.velZ = 0;
+    } else {
+      // On the ground, or stepping up onto a higher tread within MAX_STEP_UP
+      // (already enforced by circleBlocked/blocksMovement above). Vanilla
+      // snaps this instantly rather than animating it — climbing a real
+      // staircase already looks smooth because each tread is a separate
+      // sector crossed one frame at a time while walking.
+      this.z = groundZ;
+      this.velZ = 0;
+    }
 
     if (aim) this.angle = Math.atan2(aim.y - this.y, aim.x - this.x);
   }

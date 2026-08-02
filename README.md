@@ -140,11 +140,13 @@ is walkable.
 ## State
 
 Playable as a walkable level viewer: geometry, textures, sector lighting, collision with
-step-up/headroom rules, floor following, map switching, PWAD loading, and an orbitable camera
-with wall-occlusion fading. THINGS render as upright sprites (monsters, weapons, ammo,
-health/armor, keys, powerups and common decorations), and the player is drawn as the real
-`PLAY` sprite with a facing-driven rotation frame and a walk-cycle animation. Health, armor,
-ammo, keys and weapons are collectible and tracked on a HUD (weapon ownership isn't usable
-yet — no select UI or shooting); doors, lifts, floor movers and switches work, including
-locked doors, which require the matching key. Not yet: monster AI/combat, weapon
+step-up/headroom rules, gravity-based falling off ledges, vanilla's narrow-gap-crossing
+quirk, floor following, map switching, PWAD loading, and an orbitable camera with
+wall-occlusion fading. Fog of war hides rooms and secrets until the player has actually seen
+them. THINGS render as upright sprites (monsters, weapons, ammo, health/armor, keys,
+powerups and common decorations), and the player is drawn as the real `PLAY` sprite with a
+facing-driven rotation frame and a walk-cycle animation. Health, armor, ammo, keys and
+weapons are collectible and tracked on a HUD (weapon ownership isn't usable yet — no select
+UI or shooting); doors, lifts, floor movers, crushers, switches and teleporters all work,
+including locked doors, which require the matching key. Not yet: monster AI/combat, weapon
 switching/shooting, sound.

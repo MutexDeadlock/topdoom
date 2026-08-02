@@ -186,6 +186,34 @@ is exactly what causes the deadlock above.
 `slideMove` moves a circle by trying the two axes separately and retrying the blocked axis
 from the new position, so the player rounds convex corners smoothly instead of stopping dead.
 
+### Vertical physics: stairs, falling, gap-crossing (`src/game/player.ts`)
+
+`Player.update` compares the current `z` against the freshly-recomputed `groundFloor` (above)
+each frame rather than always snapping straight to it:
+
+- **`z <= groundFloor`** (on the ground, or a step-up onto a higher tread within
+  `MAX_STEP_UP` — already gated by `circleBlocked`/`blocksMovement`) snaps instantly, matching
+  vanilla, which doesn't animate climbing a stair riser either; walking across a real
+  staircase already reads as smooth because each tread is a separate sector crossed one
+  frame at a time.
+- **`z > groundFloor`** (the ground dropped out from under the player — walked off a ledge)
+  is airborne: `velZ` accumulates at a constant `GRAVITY` and `z` integrates from it every
+  frame, clamped to `groundFloor` once reached, instead of teleporting straight down. `velZ`
+  is only ever negative — there's no jump input, so gravity is the only thing that ever moves
+  `z` away from `groundFloor` in the first place.
+
+`GRAVITY`'s value is tuned by feel (roughly a body height of fall in a third of a second),
+not converted from vanilla's fixed-point tics-per-second gravity constant, which doesn't
+translate cleanly to a dt-scaled model.
+
+Crossing a short chasm without falling in — DOOM's own "gap narrower than the player" quirk —
+falls out of `groundFloor` for free rather than needing separate jump logic: a gap narrower
+than `2*PLAYER_RADIUS` (32 units) keeps the collision circle straddling *both* edges for the
+entire crossing, so `groundFloor` reports the high (walkable) side throughout and the low pit
+floor in between is never sampled. A wider gap does lose that straddle partway across, and the
+player falls in under the gravity above — there's no actual jump input to clear it, unlike
+some later source ports.
+
 ### Things as sprites (`src/wad/sprites.ts`, `src/render/sprites.ts`, `src/game/thingdefs.ts`)
 
 `SpriteBank` (`wad/sprites.ts`) indexes `S_START`/`S_END` lumps by sprite name + frame
@@ -486,9 +514,10 @@ Menu semantics worth knowing before touching `menu.ts`:
 ## Current state
 
 Playable as a walkable level viewer: geometry, textures, sector lighting, collision with
-step-up/headroom rules, floor following, map switching, PWAD loading, and a camera that can
-orbit in yaw (right-drag) around the player with dithered wall-occlusion fading so it never
-hides the player behind geometry. Subsector-based fog of war (`game/fogofwar.ts`) hides
+step-up/headroom rules, gravity-based falling off ledges, vanilla's narrow-gap-crossing quirk,
+floor following, map switching, PWAD loading, and a camera that can orbit in yaw (right-drag)
+around the player with dithered wall-occlusion fading so it never hides the player behind
+geometry. Subsector-based fog of war (`game/fogofwar.ts`) hides
 whatever the player has not yet had line of sight to — geometry and things reveal permanently
 once seen, which keeps unreached rooms and secrets dark until they are actually in view.
 THINGS render as upright

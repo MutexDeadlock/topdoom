@@ -151,12 +151,7 @@ export class FogOfWar {
     this.wallSubsector = new Int32Array(occluders.length);
     for (let i = 0; i < occluders.length; i++) {
       const o = occluders[i];
-      const dx = o.bx - o.ax;
-      const dy = o.by - o.ay;
-      const len = Math.hypot(dx, dy) || 1;
-      const mx = (o.ax + o.bx) / 2 + (dy / len) * WALL_PROBE_OFFSET;
-      const my = (o.ay + o.by) / 2 + (-dx / len) * WALL_PROBE_OFFSET;
-      this.wallSubsector[i] = world.subsectorAt(mx, my);
+      this.wallSubsector[i] = this.probeWallSubsector(o.ax, o.ay, o.bx, o.by);
     }
 
     // Seed the spawn's surroundings fully revealed instead of fading up from
@@ -263,5 +258,25 @@ export class FogOfWar {
   /** Reveal alpha for a wall quad, by the index it has in the built map's occluder list. */
   wallAlpha(occluderIndex: number): number {
     return this.alphaOf(this.wallSubsector[occluderIndex]);
+  }
+
+  /**
+   * Reveal alpha for a wall quad that isn't in the static occluder list —
+   * game/specials.ts's mover geometry (door/lift walls), which is built and
+   * rebuilt on its own and so was never indexed in the constructor loop
+   * above. Same probe, computed on demand instead of cached; movers only
+   * ever have a handful of quads, so this costs nothing per frame.
+   */
+  wallAlphaAt(ax: number, ay: number, bx: number, by: number): number {
+    return this.alphaOf(this.probeWallSubsector(ax, ay, bx, by));
+  }
+
+  private probeWallSubsector(ax: number, ay: number, bx: number, by: number): number {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = Math.hypot(dx, dy) || 1;
+    const mx = (ax + bx) / 2 + (dy / len) * WALL_PROBE_OFFSET;
+    const my = (ay + by) / 2 + (-dx / len) * WALL_PROBE_OFFSET;
+    return this.world.subsectorAt(mx, my);
   }
 }

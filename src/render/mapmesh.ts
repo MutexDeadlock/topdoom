@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { LF, NO_SIDE, type DoomMap, type SideDef, type Sector } from '../wad/map.ts';
-import { buildSubSectorPolys } from './bsp.ts';
+import { LF, NO_SIDE, type DoomMap, type LineDef, type SideDef, type Sector } from '../wad/map.ts';
+import { buildSubSectorPolys, type SubSectorPoly } from './bsp.ts';
 import type { MaterialBank, SurfaceKind } from './textures.ts';
 
 export const SKY_FLAT = 'F_SKY1';
@@ -59,6 +59,20 @@ export interface MapMeshOptions {
   renderCeilings?: boolean;
   /** Walls above this height above their floor are omitted (0 = no limit). */
   wallHeightCap?: number;
+  /**
+   * Sectors driven by a specials mover (game/specials.ts): every line that
+   * touches one is left out of the static batches here entirely — *both* its
+   * sides, not just the one the mover owns. A moving door/lift changes not
+   * just vertex positions but which quads exist at all (an upper step shrinks
+   * to nothing as a door opens), and that is just as true of the *neighbour's*
+   * side: DOOM puts a platform's visible front texture on the sidedef of the
+   * lower sector looking at it, i.e. on the static room's side of the line, not
+   * the lift's. Leaving that side static froze the lift's front wall at its
+   * raised height while the platform slid down behind it. `buildMoverMesh`
+   * builds those sides too, in its own small per-sector mesh the mover
+   * rebuilds on demand.
+   */
+  movableSectors?: Set<number>;
 }
 
 export interface BuiltMap {
@@ -74,6 +88,8 @@ export interface BuiltMap {
   flatSurfaces: FlatSurface[];
   /** Flat batch meshes by key, so fog-of-war can reach their vertex-alpha attribute. */
   flatMeshes: Map<string, THREE.Mesh>;
+  /** Subsector polygons computed for this build — reused by `buildMoverMesh` so it never re-walks the BSP. */
+  polys: SubSectorPoly[];
 }
 
 /**
@@ -91,6 +107,8 @@ export interface WallOccluder {
   by: number;
   botH: number;
   topH: number;
+  /** Sector whose light level this quad was coloured from — for specials-driven relight. */
+  sector: number;
 }
 
 /**
@@ -104,6 +122,8 @@ export interface FlatSurface {
   vertexStart: number;
   vertexCount: number;
   subsector: number;
+  /** Sector this fan belongs to — for specials-driven relight. */
+  sector: number;
   /** DOOM (x, y) footprint of this subsector, flattened — see FlatFader. */
   points: Float64Array;
   /** World height (floor or ceiling) this surface sits at. */
@@ -111,12 +131,16 @@ export interface FlatSurface {
   isCeiling: boolean;
 }
 
-export function buildMapMesh(
-  map: DoomMap,
-  bank: MaterialBank,
-  options: MapMeshOptions = {},
-): BuiltMap {
-  const { renderCeilings = false, wallHeightCap = 0 } = options;
+/** One sector's worth of dynamic geometry — see `buildMoverMesh`. */
+export interface MoverMesh {
+  group: THREE.Group;
+  meshes: Map<string, THREE.Mesh>;
+  wallQuads: WallOccluder[];
+  flatFans: FlatSurface[];
+}
+
+export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshOptions = {}): BuiltMap {
+  const { renderCeilings = false, wallHeightCap = 0, movableSectors } = options;
   const batches = new BatchSet();
   const missing = new Set<string>();
   const occluders: WallOccluder[] = [];
@@ -128,8 +152,9 @@ export function buildMapMesh(
     return s;
   };
 
-  buildFlats(map, batches, texSize, renderCeilings, flatSurfaces);
-  buildWalls(map, batches, texSize, wallHeightCap, occluders);
+  const polys = buildSubSectorPolys(map);
+  buildFlats(map, polys, batches, texSize, renderCeilings, flatSurfaces, movableSectors);
+  buildWalls(map, batches, texSize, wallHeightCap, occluders, movableSectors);
 
   const group = new THREE.Group();
   group.name = 'map:' + map.name;
@@ -157,7 +182,84 @@ export function buildMapMesh(
     else flatMeshes.set(b.key, mesh);
   }
 
-  return { group, missingTextures: [...missing].sort(), triangles, occluders, wallMeshes, flatSurfaces, flatMeshes };
+  return { group, missingTextures: [...missing].sort(), triangles, occluders, wallMeshes, flatSurfaces, flatMeshes, polys };
+}
+
+/**
+ * One sector's touching geometry (its own flats, plus every wall quad on
+ * either side of a line bordering it) as a small standalone mesh, for
+ * game/specials.ts to own and rebuild whenever that sector's height changes.
+ * `polys` must be the same array `buildMapMesh` used (or an equivalent one
+ * from `buildSubSectorPolys`) — subsector footprints don't depend on sector
+ * height, so recomputing them per mover/per frame would be pure waste.
+ * `options.movableSectors` is required (not merely honoured): it is what
+ * decides which of a shared line's two sides this mover owns, and without it
+ * a line between two movers would have both of them build both sides.
+ */
+export function buildMoverMesh(
+  map: DoomMap,
+  polys: SubSectorPoly[],
+  sectorIndex: number,
+  bank: MaterialBank,
+  options: MapMeshOptions = {},
+): MoverMesh {
+  const { renderCeilings = false, wallHeightCap = 0, movableSectors } = options;
+  const batches = new BatchSet();
+  const texSize = (kind: SurfaceKind, name: string) => bank.size(kind, name);
+  const wallQuads: WallOccluder[] = [];
+  const flatFans: FlatSurface[] = [];
+
+  for (let ss = 0; ss < polys.length; ss++) {
+    if (polys[ss].sector !== sectorIndex) continue;
+    processFlat(map, polys[ss], ss, batches, texSize, renderCeilings, flatFans);
+  }
+
+  // Own sides always; a neighbour's side only when that neighbour is static —
+  // it has no mover of its own to build it, and its upper/lower step is sized
+  // from *this* sector's moving heights. A neighbour that is itself movable
+  // builds its own side and is rebuilt alongside this one (see
+  // SpecialsController's neighbour propagation).
+  const includeSide = (s: number) => s === sectorIndex || !movableSectors?.has(s);
+
+  for (const line of map.linedefs) {
+    if (!touchesSector(map, line, sectorIndex)) continue;
+    processLine(map, line, batches, texSize, wallHeightCap, wallQuads, includeSide);
+  }
+
+  const group = new THREE.Group();
+  const meshes = new Map<string, THREE.Mesh>();
+  for (const b of batches.all()) {
+    if (b.positions.length === 0) continue;
+    const material = bank.get(b.kind, b.texture);
+    if (!material) continue;
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.Float32BufferAttribute(b.positions, 3));
+    geom.setAttribute('uv', new THREE.Float32BufferAttribute(b.uvs, 2));
+    geom.setAttribute('color', new THREE.Float32BufferAttribute(b.colors, 4));
+    geom.computeBoundingSphere();
+
+    const mesh = new THREE.Mesh(geom, material);
+    mesh.name = b.key;
+    group.add(mesh);
+    meshes.set(b.key, mesh);
+  }
+
+  return { group, meshes, wallQuads, flatFans };
+}
+
+/** True if either side of `line` belongs to `sectorIndex`. */
+function touchesSector(map: DoomMap, line: LineDef, sectorIndex: number): boolean {
+  const front = line.right !== NO_SIDE ? map.sidedefs[line.right] : undefined;
+  const back = line.left !== NO_SIDE ? map.sidedefs[line.left] : undefined;
+  return front?.sector === sectorIndex || back?.sector === sectorIndex;
+}
+
+/** True if either side of `line` belongs to a sector in `sectors`. */
+function touchesAny(map: DoomMap, line: LineDef, sectors: Set<number>): boolean {
+  const front = line.right !== NO_SIDE ? map.sidedefs[line.right] : undefined;
+  const back = line.left !== NO_SIDE ? map.sidedefs[line.left] : undefined;
+  return (front !== undefined && sectors.has(front.sector)) || (back !== undefined && sectors.has(back.sector));
 }
 
 type SizeFn = (kind: SurfaceKind, name: string) => { w: number; h: number } | null;
@@ -165,46 +267,67 @@ type SizeFn = (kind: SurfaceKind, name: string) => { w: number; h: number } | nu
 /** Floors and ceilings, triangulated per subsector (each one is convex). */
 function buildFlats(
   map: DoomMap,
+  polys: SubSectorPoly[],
+  batches: BatchSet,
+  size: SizeFn,
+  renderCeilings: boolean,
+  flatSurfaces: FlatSurface[],
+  movableSectors?: Set<number>,
+): void {
+  for (let ss = 0; ss < polys.length; ss++) {
+    if (movableSectors && movableSectors.has(polys[ss].sector)) continue;
+    processFlat(map, polys[ss], ss, batches, size, renderCeilings, flatSurfaces);
+  }
+}
+
+function processFlat(
+  map: DoomMap,
+  poly: SubSectorPoly,
+  ss: number,
   batches: BatchSet,
   size: SizeFn,
   renderCeilings: boolean,
   flatSurfaces: FlatSurface[],
 ): void {
-  const polys = buildSubSectorPolys(map);
+  const n = poly.points.length / 2;
+  if (n < 3) return;
+  const sector = map.sectors[poly.sector];
+  if (!sector) return;
 
-  for (let ss = 0; ss < polys.length; ss++) {
-    const poly = polys[ss];
-    const n = poly.points.length / 2;
-    if (n < 3) continue;
-    const sector = map.sectors[poly.sector];
-    if (!sector) continue;
+  for (const isCeiling of renderCeilings ? [false, true] : [false]) {
+    const texName = isCeiling ? sector.ceilTex : sector.floorTex;
+    if (texName === SKY_FLAT || texName === NO_TEXTURE || texName === '') continue;
+    if (!size('flat', texName)) continue;
 
-    for (const isCeiling of renderCeilings ? [false, true] : [false]) {
-      const texName = isCeiling ? sector.ceilTex : sector.floorTex;
-      if (texName === SKY_FLAT || texName === NO_TEXTURE || texName === '') continue;
-      if (!size('flat', texName)) continue;
+    const height = isCeiling ? sector.ceilHeight : sector.floorHeight;
+    const color = lightToColor(sector.light);
+    const batch = batches.get('flat', texName);
+    const vertexStart = batch.positions.length / 3;
 
-      const height = isCeiling ? sector.ceilHeight : sector.floorHeight;
-      const color = lightToColor(sector.light);
-      const batch = batches.get('flat', texName);
-      const vertexStart = batch.positions.length / 3;
-
-      // Fan triangulation around vertex 0. Floors keep the polygon's winding
-      // (normal up), ceilings are reversed so their normal points down.
-      for (let i = 1; i < n - 1; i++) {
-        const idx = isCeiling ? [0, i + 1, i] : [0, i, i + 1];
-        for (const k of idx) {
-          const x = poly.points[k * 2];
-          const y = poly.points[k * 2 + 1];
-          // Flats are 64x64 and aligned to the world grid, never to the sector.
-          pushVertex(batch, x, height, -y, x / 64, -y / 64, color);
-        }
+    // Fan triangulation around vertex 0. Floors keep the polygon's winding
+    // (normal up), ceilings are reversed so their normal points down.
+    for (let i = 1; i < n - 1; i++) {
+      const idx = isCeiling ? [0, i + 1, i] : [0, i, i + 1];
+      for (const k of idx) {
+        const x = poly.points[k * 2];
+        const y = poly.points[k * 2 + 1];
+        // Flats are 64x64 and aligned to the world grid, never to the sector.
+        pushVertex(batch, x, height, -y, x / 64, -y / 64, color);
       }
+    }
 
-      const vertexCount = batch.positions.length / 3 - vertexStart;
-      if (vertexCount > 0) {
-        flatSurfaces.push({ key: batch.key, vertexStart, vertexCount, subsector: ss, points: poly.points, height, isCeiling });
-      }
+    const vertexCount = batch.positions.length / 3 - vertexStart;
+    if (vertexCount > 0) {
+      flatSurfaces.push({
+        key: batch.key,
+        vertexStart,
+        vertexCount,
+        subsector: ss,
+        sector: poly.sector,
+        points: poly.points,
+        height,
+        isCeiling,
+      });
     }
   }
 }
@@ -222,6 +345,8 @@ interface WallSpec {
   /** World height at which texture row 0 sits (DOOM's "pegging"). */
   pegRef: number;
   light: number;
+  /** Sector whose light level `light` was read from — carried onto the occluder record. */
+  sector: number;
 }
 
 function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: WallOccluder[]): void {
@@ -259,7 +384,7 @@ function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: Wal
   for (const v of [A, D, C, A, C, B]) {
     pushVertex(batch, v[0], v[1], v[2], v[3], v[4], color);
   }
-  occluders.push({ key: batch.key, vertexStart, vertexCount: 6, ax, ay, bx, by, botH, topH });
+  occluders.push({ key: batch.key, vertexStart, vertexCount: 6, ax, ay, bx, by, botH, topH, sector: spec.sector });
 }
 
 function buildWalls(
@@ -268,50 +393,81 @@ function buildWalls(
   size: SizeFn,
   wallHeightCap: number,
   occluders: WallOccluder[],
+  movableSectors?: Set<number>,
 ): void {
   for (const line of map.linedefs) {
-    const v1 = map.vertexes[line.v1];
-    const v2 = map.vertexes[line.v2];
-    if (!v1 || !v2) continue;
+    // Whole line, both sides: a static neighbour's step is sized from the
+    // moving sector's heights, so it can't stay in a batch nobody rebuilds
+    // (see MapMeshOptions.movableSectors).
+    if (movableSectors && touchesAny(map, line, movableSectors)) continue;
+    processLine(map, line, batches, size, wallHeightCap, occluders);
+  }
+}
 
-    const front = line.right !== NO_SIDE ? map.sidedefs[line.right] : undefined;
-    const back = line.left !== NO_SIDE ? map.sidedefs[line.left] : undefined;
-    const frontSec = front ? map.sectors[front.sector] : undefined;
-    const backSec = back ? map.sectors[back.sector] : undefined;
+function processLine(
+  map: DoomMap,
+  line: LineDef,
+  batches: BatchSet,
+  size: SizeFn,
+  wallHeightCap: number,
+  occluders: WallOccluder[],
+  /**
+   * Per-side filter: a side is only built if this returns true for its owning
+   * sector (undefined = build every side, the static-batch case, which now
+   * excludes movable lines wholesale before it gets here). `buildMoverMesh`
+   * needs *side* granularity rather than line granularity for the one case
+   * where a line's two sides have different owners: between two movable
+   * sectors (e.g. a switch mounted on a lift's own frame) each mover builds
+   * only its own side, or both would build both and double every quad.
+   */
+  includeSide?: (sectorIndex: number) => boolean,
+): void {
+  const v1 = map.vertexes[line.v1];
+  const v2 = map.vertexes[line.v2];
+  if (!v1 || !v2) return;
 
-    const cap = (sec: Sector, top: number) =>
-      wallHeightCap > 0 ? Math.min(top, sec.floorHeight + wallHeightCap) : top;
+  const front = line.right !== NO_SIDE ? map.sidedefs[line.right] : undefined;
+  const back = line.left !== NO_SIDE ? map.sidedefs[line.left] : undefined;
+  const frontSec = front ? map.sectors[front.sector] : undefined;
+  const backSec = back ? map.sectors[back.sector] : undefined;
 
-    if (front && frontSec && !backSec) {
-      // Solid wall: the middle texture spans the whole sector height.
-      const unpegged = (line.flags & LF.LOWER_UNPEGGED) !== 0;
-      const dim = size('wall', front.middle);
-      addWall(
-        batches,
-        size,
-        {
-          ax: v1.x,
-          ay: v1.y,
-          bx: v2.x,
-          by: v2.y,
-          topH: cap(frontSec, frontSec.ceilHeight),
-          botH: frontSec.floorHeight,
-          texture: front.middle,
-          xOffset: front.xOffset,
-          yOffset: front.yOffset,
-          pegRef: unpegged ? frontSec.floorHeight + (dim?.h ?? 128) : frontSec.ceilHeight,
-          light: frontSec.light,
-        },
-        occluders,
-      );
-      continue;
-    }
+  const cap = (sec: Sector, top: number) => (wallHeightCap > 0 ? Math.min(top, sec.floorHeight + wallHeightCap) : top);
 
-    if (!front || !back || !frontSec || !backSec) continue;
+  if (front && frontSec && !backSec) {
+    if (includeSide && !includeSide(front.sector)) return;
+    // Solid wall: the middle texture spans the whole sector height.
+    const unpegged = (line.flags & LF.LOWER_UNPEGGED) !== 0;
+    const dim = size('wall', front.middle);
+    addWall(
+      batches,
+      size,
+      {
+        ax: v1.x,
+        ay: v1.y,
+        bx: v2.x,
+        by: v2.y,
+        topH: cap(frontSec, frontSec.ceilHeight),
+        botH: frontSec.floorHeight,
+        texture: front.middle,
+        xOffset: front.xOffset,
+        yOffset: front.yOffset,
+        pegRef: unpegged ? frontSec.floorHeight + (dim?.h ?? 128) : frontSec.ceilHeight,
+        light: frontSec.light,
+        sector: front.sector,
+      },
+      occluders,
+    );
+    return;
+  }
 
-    // Two-sided line: each side gets its own step-up/step-down pieces.
-    addTwoSidedSide(batches, size, line.flags, v1, v2, front, frontSec, backSec, cap, occluders);
-    addTwoSidedSide(batches, size, line.flags, v2, v1, back, backSec, frontSec, cap, occluders);
+  if (!front || !back || !frontSec || !backSec) return;
+
+  // Two-sided line: each side gets its own step-up/step-down pieces.
+  if (!includeSide || includeSide(front.sector)) {
+    addTwoSidedSide(batches, size, line.flags, v1, v2, front, front.sector, frontSec, backSec, cap, occluders);
+  }
+  if (!includeSide || includeSide(back.sector)) {
+    addTwoSidedSide(batches, size, line.flags, v2, v1, back, back.sector, backSec, frontSec, cap, occluders);
   }
 }
 
@@ -322,12 +478,13 @@ function addTwoSidedSide(
   a: { x: number; y: number },
   b: { x: number; y: number },
   side: SideDef,
+  secIndex: number,
   sec: Sector,
   other: Sector,
   cap: (sec: Sector, top: number) => number,
   occluders: WallOccluder[],
 ): void {
-  const base = { ax: a.x, ay: a.y, bx: b.x, by: b.y, xOffset: side.xOffset, yOffset: side.yOffset, light: sec.light };
+  const base = { ax: a.x, ay: a.y, bx: b.x, by: b.y, xOffset: side.xOffset, yOffset: side.yOffset, light: sec.light, sector: secIndex };
   const upperUnpegged = (flags & LF.UPPER_UNPEGGED) !== 0;
   const lowerUnpegged = (flags & LF.LOWER_UNPEGGED) !== 0;
 

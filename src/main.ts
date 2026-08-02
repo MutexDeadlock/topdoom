@@ -12,6 +12,7 @@ import { TopDownCamera } from './render/camera.ts';
 import { PLAYER_HEIGHT, World } from './game/world.ts';
 import { Player } from './game/player.ts';
 import { FogOfWar } from './game/fogofwar.ts';
+import { SpecialsController, computeMovableSectors } from './game/specials.ts';
 import { Input } from './game/input.ts';
 import { Menu, type Selection } from './ui/menu.ts';
 import type { Skill } from './game/skill.ts';
@@ -64,6 +65,7 @@ class Game {
   private wallFader!: WallFader;
   private flatFader!: FlatFader;
   private fogOfWar!: FogOfWar;
+  private specials?: SpecialsController;
 
   private renderCeilings = false;
   private running = false;
@@ -128,11 +130,16 @@ class Game {
       });
     }
     if (this.things) this.scene.remove(this.things.group);
+    this.specials?.dispose();
 
     const t0 = performance.now();
     const map = loadMap(this.wad, name);
     this.world = new World(map);
-    this.built = buildMapMesh(map, this.materials, { renderCeilings: this.renderCeilings });
+    // Sectors a door/lift/floor mover will drive are pulled out of the static
+    // batches up front — SpecialsController owns their geometry instead (see
+    // render/mapmesh.ts's MapMeshOptions doc for why).
+    const movableSectors = computeMovableSectors(map);
+    this.built = buildMapMesh(map, this.materials, { renderCeilings: this.renderCeilings, movableSectors });
     this.scene.add(this.built.group);
     this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
     this.flatFader = new FlatFader(this.built.flatSurfaces, this.built.flatMeshes);
@@ -148,6 +155,19 @@ class Game {
     // the map's own player-start angle.
     this.view.camera.yawDeg = (this.player.angle * 180) / Math.PI - 90;
     this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player.x, this.player.y);
+    this.specials = new SpecialsController(
+      map,
+      this.world,
+      this.materials,
+      this.scene,
+      this.fogOfWar,
+      this.built.polys,
+      this.built,
+      { renderCeilings: this.renderCeilings },
+      () => this.loadMapByIndex(this.mapIndex + 1),
+      this.player.x,
+      this.player.y,
+    );
 
     this.things = buildThingSprites(map, this.world, this.spriteBank, this.spriteMaterials, this.skill);
     this.scene.add(this.things.group);
@@ -177,6 +197,7 @@ class Game {
 
   dispose(): void {
     this.pause();
+    this.specials?.dispose();
     this.built?.group.traverse((obj) => {
       if (obj instanceof THREE.Mesh) obj.geometry.dispose();
     });
@@ -192,6 +213,10 @@ class Game {
     const { input, camera } = this.view;
     this.handleHotkeys();
     camera.yawDeg -= input.consumeDragYaw() * YAW_SENSITIVITY;
+
+    // Runs before player.update so a lift/door the player is standing on has
+    // already moved this frame by the time groundFloor is sampled below.
+    this.specials?.update(dt, this.player.x, this.player.y, this.player.angle, input);
 
     const aim = camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + 32);
     this.player.update(dt, input, aim, camera.viewerAngleDeg + 180);
@@ -218,6 +243,9 @@ class Game {
     // and things already know theirs, so they go through alphaOf directly.
     this.wallFader.commit((i) => fog.wallAlpha(i));
     this.flatFader.commit(fogAlphaOf);
+    // Door/lift geometry lives in its own meshes (game/specials.ts), so it
+    // carries its own faders rather than the two above.
+    this.specials?.updateFading(...camPlayerArgs);
 
     const facingDeg = (this.player.angle * 180) / Math.PI;
     const sector = this.world.sectorAt(this.player.x, this.player.y);
@@ -271,7 +299,7 @@ class Game {
       `pos ${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}   z ${this.player.z.toFixed(0)}   sector ${sector}`,
       `cam ${camera.distance.toFixed(0)} u / ${camera.tiltDeg.toFixed(0)}° tilt / ${camera.yawDeg.toFixed(0)}° yaw   ceilings ${this.renderCeilings ? 'on' : 'off'}`,
       '',
-      'WASD move   Shift run   mouse aim   right-drag rotate camera',
+      'WASD move   Shift run   mouse aim   right-drag rotate camera   Space use',
       'N/P map   C ceilings   +/- zoom   [ ] tilt   Esc menu',
     ].join('\n');
   }

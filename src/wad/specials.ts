@@ -1,0 +1,193 @@
+/**
+ * Vanilla DOOM linedef/sector special numbers this engine understands, as a
+ * flat data table rather than per-type code. Not exhaustive — a curated set
+ * covering doors, lifts, generic floor movers, lights and level exits, which
+ * is what `game/specials.ts` drives off. Timings/speeds approximate vanilla
+ * (`VDOORSPEED`/`PLATSPEED`/`FLOORSPEED` etc.) rather than reproducing it
+ * tic-for-tic.
+ *
+ * Keyed door numbers (26-28, 32-34, 133-136) are included and treated as
+ * regular unlocked doors: there is no key/inventory system yet (see
+ * CLAUDE.md), and leaving them inert would permanently block progress in
+ * maps that gate an exit behind a locked door. Revisit once pickups exist.
+ *
+ * Deliberately absent: crushers and damage-floor specials (no player health
+ * system yet) and scrolling textures.
+ */
+
+/** Map units/second. Vanilla speeds are per-tic at 35 tics/s. */
+export const DOOR_SPEED = 70; // 2 u/tic
+export const DOOR_SPEED_FAST = 280; // 8 u/tic
+export const DOOR_WAIT = 150 / 35; // seconds a door stays open
+export const LIFT_SPEED = 35; // 1 u/tic
+export const LIFT_SPEED_FAST = 140; // 4 u/tic
+export const LIFT_WAIT = 105 / 35; // seconds a lift stays down
+export const FLOOR_SPEED = 35;
+export const CEILING_SPEED = 35;
+
+/** Gap vanilla leaves between an open door's ceiling and the lowest neighboring ceiling. */
+export const DOOR_OPEN_GAP = 4;
+
+/** Vanilla BUTTONTIME: seconds a used switch shows its "pressed" texture before reverting. */
+export const SWITCH_FLASH_SECONDS = 35 / 35;
+
+/**
+ * Vanilla switch textures always come in SW1xxxx/SW2xxxx pairs sharing a
+ * suffix (e.g. SW1BRCOM/SW2BRCOM) — no exceptions in the stock IWADs, so this
+ * is derived from the naming convention rather than a hardcoded pair list
+ * (which is exactly the kind of hand-transcribed table that turned out wrong
+ * for the linedef-type numbers above; texture existence is re-checked at
+ * render time via the material bank anyway, so a false-positive name match
+ * here is harmless).
+ */
+export function switchPairTexture(name: string): string | null {
+  if (name.startsWith('SW1')) return 'SW2' + name.slice(3);
+  if (name.startsWith('SW2')) return 'SW1' + name.slice(3);
+  return null;
+}
+
+export type DoorMode = 'openClose' | 'openOnly' | 'closeOnly';
+
+export interface DoorEffect {
+  kind: 'door';
+  speed: number;
+  waitSeconds: number;
+  mode: DoorMode;
+}
+
+export interface LiftEffect {
+  kind: 'lift';
+  speed: number;
+  waitSeconds: number;
+}
+
+export type MoveTarget =
+  | 'lowestNeighborFloor'
+  | 'highestNeighborFloor'
+  | 'nextHigherFloor'
+  | 'nextLowerFloor'
+  | 'lowestNeighborCeiling'
+  | 'highestNeighborCeiling';
+
+export interface FloorEffect {
+  kind: 'floor';
+  speed: number;
+  target: MoveTarget;
+}
+
+export type LightPattern = 'blinkRandom' | 'blink05' | 'blink1' | 'glow' | 'syncBlink05' | 'syncBlink1' | 'flicker';
+
+export interface ExitEffect {
+  kind: 'exit';
+  secret: boolean;
+}
+
+export type Effect = DoorEffect | LiftEffect | FloorEffect | ExitEffect;
+
+export interface SpecialDef {
+  trigger: 'use' | 'walk';
+  repeatable: boolean;
+  /** Manual doors act on the linedef's own back sector instead of a tag lookup (vanilla `line->backsector`). */
+  manual?: boolean;
+  effect: Effect;
+}
+
+function door(speed: number, mode: DoorMode = 'openClose', waitSeconds = DOOR_WAIT): DoorEffect {
+  return { kind: 'door', speed, waitSeconds, mode };
+}
+
+function lift(speed = LIFT_SPEED, waitSeconds = LIFT_WAIT): LiftEffect {
+  return { kind: 'lift', speed, waitSeconds };
+}
+
+function floor(target: MoveTarget, speed = FLOOR_SPEED): FloorEffect {
+  return { kind: 'floor', speed, target };
+}
+
+export const LINE_SPECIALS: Record<number, SpecialDef> = {
+  // Manual doors (untagged, target the line's own back sector).
+  1: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED) },
+  31: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly') },
+  117: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED_FAST) },
+  118: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED_FAST, 'openOnly') },
+  // Keyed manual doors, treated as unlocked — see file doc comment.
+  26: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED) },
+  27: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED) },
+  28: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED) },
+  32: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly') },
+  33: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly') },
+  34: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly') },
+  133: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED_FAST, 'openOnly') },
+  134: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED_FAST) },
+  135: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED_FAST, 'openOnly') },
+  136: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED_FAST) },
+
+  // Remote doors (tag-targeted).
+  4: { trigger: 'walk', repeatable: false, effect: door(DOOR_SPEED) },
+  29: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED) },
+  90: { trigger: 'walk', repeatable: true, effect: door(DOOR_SPEED) },
+  63: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED) },
+  2: { trigger: 'walk', repeatable: false, effect: door(DOOR_SPEED, 'openOnly') },
+  103: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED, 'openOnly') },
+  61: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED, 'openOnly') },
+  86: { trigger: 'walk', repeatable: true, effect: door(DOOR_SPEED, 'openOnly') },
+  3: { trigger: 'walk', repeatable: false, effect: door(DOOR_SPEED, 'closeOnly') },
+  50: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED, 'closeOnly') },
+  42: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED, 'closeOnly') },
+  75: { trigger: 'walk', repeatable: true, effect: door(DOOR_SPEED, 'closeOnly') },
+  // Fast doors group by trigger type first (WR/W1/S1/SR), each a
+  // openClose/openOnly/closeOnly triad — confirmed against three independent
+  // references after the vanilla assumption "108/109 are a W1/S1 openClose
+  // pair" turned out wrong (real bug: DOOM2 MAP02 tag 5 uses 114, which is
+  // SR openClose — a repeatable *switch*, not the one-shot walk-closeOnly
+  // this table previously had it as, so tag 5's door could never be opened).
+  105: { trigger: 'walk', repeatable: true, effect: door(DOOR_SPEED_FAST) },
+  106: { trigger: 'walk', repeatable: true, effect: door(DOOR_SPEED_FAST, 'openOnly') },
+  107: { trigger: 'walk', repeatable: true, effect: door(DOOR_SPEED_FAST, 'closeOnly') },
+  108: { trigger: 'walk', repeatable: false, effect: door(DOOR_SPEED_FAST) },
+  109: { trigger: 'walk', repeatable: false, effect: door(DOOR_SPEED_FAST, 'openOnly') },
+  110: { trigger: 'walk', repeatable: false, effect: door(DOOR_SPEED_FAST, 'closeOnly') },
+  111: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED_FAST) },
+  112: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED_FAST, 'openOnly') },
+  113: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED_FAST, 'closeOnly') },
+  114: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED_FAST) },
+  115: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED_FAST, 'openOnly') },
+  116: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED_FAST, 'closeOnly') },
+
+  // Lifts (lower to lowest neighboring floor, wait, raise back).
+  10: { trigger: 'walk', repeatable: false, effect: lift() },
+  21: { trigger: 'use', repeatable: false, effect: lift() },
+  62: { trigger: 'use', repeatable: true, effect: lift() },
+  88: { trigger: 'walk', repeatable: true, effect: lift() },
+  120: { trigger: 'walk', repeatable: true, effect: lift(LIFT_SPEED_FAST) },
+  121: { trigger: 'walk', repeatable: false, effect: lift(LIFT_SPEED_FAST) },
+  122: { trigger: 'use', repeatable: false, effect: lift(LIFT_SPEED_FAST) },
+  123: { trigger: 'use', repeatable: true, effect: lift(LIFT_SPEED_FAST) },
+
+  // Generic floor movers.
+  5: { trigger: 'walk', repeatable: false, effect: floor('lowestNeighborCeiling') },
+  19: { trigger: 'walk', repeatable: false, effect: floor('highestNeighborFloor') },
+  23: { trigger: 'walk', repeatable: false, effect: floor('lowestNeighborFloor') },
+  82: { trigger: 'walk', repeatable: true, effect: floor('lowestNeighborFloor') },
+  45: { trigger: 'use', repeatable: true, effect: floor('highestNeighborFloor') },
+  18: { trigger: 'use', repeatable: false, effect: floor('nextHigherFloor') },
+  55: { trigger: 'use', repeatable: false, effect: floor('nextLowerFloor') },
+  102: { trigger: 'use', repeatable: false, effect: floor('highestNeighborFloor') },
+
+  // Level exit — advances to the next map, same as the existing N hotkey.
+  11: { trigger: 'use', repeatable: false, effect: { kind: 'exit', secret: false } },
+  51: { trigger: 'use', repeatable: false, effect: { kind: 'exit', secret: true } },
+  52: { trigger: 'walk', repeatable: false, effect: { kind: 'exit', secret: false } },
+  124: { trigger: 'walk', repeatable: false, effect: { kind: 'exit', secret: true } },
+};
+
+/** `Sector.special` values that animate light level rather than move geometry. */
+export const SECTOR_LIGHT_SPECIALS: Record<number, LightPattern> = {
+  1: 'blinkRandom',
+  2: 'blink05',
+  3: 'blink1',
+  8: 'glow',
+  12: 'syncBlink05',
+  13: 'syncBlink1',
+  17: 'flicker',
+};

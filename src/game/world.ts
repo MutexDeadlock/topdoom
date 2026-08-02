@@ -215,6 +215,118 @@ export class World {
   }
 }
 
+/** Sectors on the other side of a two-sided line from `sectorIndex`. */
+function neighborSectors(map: DoomMap, sectorIndex: number): Sector[] {
+  const out: Sector[] = [];
+  for (const line of map.linedefs) {
+    if (line.left === NO_SIDE || line.right === NO_SIDE) continue;
+    const frontSec = map.sidedefs[line.right]?.sector;
+    const backSec = map.sidedefs[line.left]?.sector;
+    let neighborIndex: number | undefined;
+    if (frontSec === sectorIndex) neighborIndex = backSec;
+    else if (backSec === sectorIndex) neighborIndex = frontSec;
+    if (neighborIndex === undefined) continue;
+    const sec = map.sectors[neighborIndex];
+    if (sec) out.push(sec);
+  }
+  return out;
+}
+
+/**
+ * Neighbor-height queries a specials mover needs to resolve a target height
+ * (`P_FindLowestFloorSurrounding` and friends in vanilla). Each falls back to
+ * the sector's own current height only when it has no two-sided neighbors at
+ * all — never leaves a mover with nowhere to go. That fallback must not
+ * apply just because the sector's own height happens to already be the most
+ * extreme value: a closed door's sector has floor == ceiling, so seeding a
+ * *lowest* reduction with its own (already-lowest-possible) ceiling would
+ * make every real neighbor lose to it, pinning the door's "open" target at
+ * its own closed height instead of the corridor's actual ceiling.
+ */
+export function lowestNeighborFloor(map: DoomMap, sectorIndex: number): number {
+  const sector = map.sectors[sectorIndex];
+  let result = sector?.floorHeight ?? 0;
+  let found = false;
+  for (const n of neighborSectors(map, sectorIndex)) {
+    if (!found || n.floorHeight < result) result = n.floorHeight;
+    found = true;
+  }
+  return result;
+}
+
+export function highestNeighborFloor(map: DoomMap, sectorIndex: number): number {
+  const sector = map.sectors[sectorIndex];
+  let result = sector?.floorHeight ?? 0;
+  let found = false;
+  for (const n of neighborSectors(map, sectorIndex)) {
+    if (!found || n.floorHeight > result) result = n.floorHeight;
+    found = true;
+  }
+  return result;
+}
+
+export function nextHigherFloor(map: DoomMap, sectorIndex: number): number {
+  const sector = map.sectors[sectorIndex];
+  const base = sector?.floorHeight ?? 0;
+  let result = base;
+  let found = false;
+  for (const n of neighborSectors(map, sectorIndex)) {
+    if (n.floorHeight > base && (!found || n.floorHeight < result)) {
+      result = n.floorHeight;
+      found = true;
+    }
+  }
+  return result;
+}
+
+export function nextLowerFloor(map: DoomMap, sectorIndex: number): number {
+  const sector = map.sectors[sectorIndex];
+  const base = sector?.floorHeight ?? 0;
+  let result = base;
+  let found = false;
+  for (const n of neighborSectors(map, sectorIndex)) {
+    if (n.floorHeight < base && (!found || n.floorHeight > result)) {
+      result = n.floorHeight;
+      found = true;
+    }
+  }
+  return result;
+}
+
+export function lowestNeighborCeiling(map: DoomMap, sectorIndex: number): number {
+  const sector = map.sectors[sectorIndex];
+  let result = sector?.ceilHeight ?? 0;
+  let found = false;
+  for (const n of neighborSectors(map, sectorIndex)) {
+    if (!found || n.ceilHeight < result) result = n.ceilHeight;
+    found = true;
+  }
+  return result;
+}
+
+export function highestNeighborCeiling(map: DoomMap, sectorIndex: number): number {
+  const sector = map.sectors[sectorIndex];
+  let result = sector?.ceilHeight ?? 0;
+  let found = false;
+  for (const n of neighborSectors(map, sectorIndex)) {
+    if (!found || n.ceilHeight > result) result = n.ceilHeight;
+    found = true;
+  }
+  return result;
+}
+
+/** Darkest neighboring sector's light level — the "minlight" a blink/glow special dims to. */
+export function darkestNeighborLight(map: DoomMap, sectorIndex: number): number {
+  const sector = map.sectors[sectorIndex];
+  let result = sector?.light ?? 0;
+  let found = false;
+  for (const n of neighborSectors(map, sectorIndex)) {
+    if (!found || n.light < result) result = n.light;
+    found = true;
+  }
+  return result;
+}
+
 /**
  * True if a circle centred at (x, y) reaches across the infinite extension of
  * segment a-b, rather than sitting entirely on one side of it. A two-sided

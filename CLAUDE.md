@@ -440,8 +440,8 @@ own blast, while the plasma bolt and BFG ball explode into dedicated `PLSE`/`BFE
 ### Damage, monster death and player death (`src/game/thingdefs.ts`, `src/render/sprites.ts`, `src/game/inventory.ts`, `src/game/world.ts: hasLineOfSight`, `src/main.ts`)
 
 Shots and explosions hurt and kill; there is still no monster AI, so nothing shoots back except
-a rocket/BFG blast splashing the shooter — that, and a monster's own death, are the only ways
-the player currently takes damage.
+a rocket/BFG blast splashing the shooter. The other source of player damage that isn't a weapon
+at all is crushers/crushing floors/crushing stairs (see "Crushers and teleporters" below).
 
 **A shot deals direct damage two different ways, depending on whether one was locked on.** A
 locked-on shot (a monster was under the cursor when it fired) resolves hit-or-miss against that
@@ -516,8 +516,9 @@ the same "show what a shot hit" treatment this engine already uses everywhere el
 consistent fix than leaving it silent. The rocket leaves `tracers` off; its explosion sprite is
 already vanilla's whole visual for what it hit.
 
-Self-splash is otherwise the only path through which the player takes damage at all right now,
-since there's no monster AI to attack back. Per-weapon direct-hit damage rolls follow vanilla's
+Self-splash and crush damage (see "Crushers and teleporters" below) are otherwise the only paths
+through which the player takes damage at all right now, since there's no monster AI to attack
+back. Per-weapon direct-hit damage rolls follow vanilla's
 own `((rand % sides) + 1) * multiplier` shape and are lifted rather than tuned by feel, the same
 reasoning ammo-per-shot already used — they decide how tough a fight actually is.
 
@@ -576,11 +577,23 @@ special.
 
 **Crushers** (start: 6/25/49/73/77/141, stop: 57/74) are pure ceiling geometry — repeatedly
 lower to floor+8, reverse, return to the sector's *own* start height (not neighbor-derived, unlike
-a door's open height), forever, with no hold/rest state in between. Deliberately still no player
-damage, even though a health/death pipeline exists now (see "Damage, monster death and player
-death" above): a crusher's own repeat/reverse timing has no "what happens after the player dies
-underneath it" story yet (`restart` reloads the whole map, which would also un-crush anything
-mid-squeeze), unlike a single weapon hit, so wiring it in here would be a half-built feature.
+a door's open height), forever, with no hold/rest state in between. They (and the vanilla
+`raiseFloorCrush` floor family — 55/56/65/94) now deal `CRUSH_DAMAGE` every
+`CRUSH_DAMAGE_INTERVAL` (vanilla's own 10 HP every 4 tics) to the player or any monster standing
+in their sector, via `SpecialsController`'s `onCrush` callback into `main.ts: applyCrushDamage` —
+the same callback-into-main.ts pattern as `onExit`/`onTeleport`, since `SpecialsController`
+mutates geometry but has no idea where anyone is standing. `ThingLayer.monstersInSector` finds
+monster candidates by comparing against the exact same mutable `Sector` object reference
+`PosedThing.sector` was seeded from, the same trick `tryPickup`'s live-height read already relies
+on. The turbo-16 stair specials (100/127) are deliberately *not* included, even though the Doom
+wiki names them "...and Crush" — the actual vanilla `EV_BuildStairs` source (p_floor.c) never
+sets a crush flag on the floor movers it spawns, so real vanilla turbo stairs don't crush either;
+caught by checking the source directly after the wiki's naming turned out misleading, same
+discipline as the 174/58/40 catches elsewhere in this file. This is a real behavior gap from vanilla,
+noted deliberately rather than missed: nothing here actually *blocks* a mover on contact (no
+thing/mover collision check exists), so a crusher never stops, reverses early, or gets "stuck" —
+it just keeps hurting whoever's in the way every interval until they leave or die, which is the
+part of the vanilla feel that actually matters for a crusher reading as a hazard.
 
 **Teleporters** (39/97 trigger for the player; Doom II's 125/126 are monster-only and never fire
 — there's no monster AI to walk them, the same outcome vanilla's own player-vs-monster gate gives
@@ -803,9 +816,12 @@ caught in a rocket/BFG blast's splash (including the player themselves), takes r
 monster health is vanilla's own, death plays that monster's confirmed WAD death animation, and
 the player's own death freezes the game behind a `#death-overlay` until `R` restarts the level
 (`game/thingdefs.ts`, `render/sprites.ts: SpriteActor.die`, `game/inventory.ts: applyDamage`,
-`main.ts`). Doors, lifts, floor movers, crushers, switches and teleporters all work
-(`game/specials.ts`), including locked doors, which require the matching key to be collected
+`main.ts`). Doors, lifts, floor movers, crushers, stair builders, switches and teleporters all
+work (`game/specials.ts`), including locked doors, which require the matching key to be collected
 first, and teleporters, which reproduce vanilla's teleport-fog puff at both ends of the jump
-(`main.ts`). Not yet implemented: monster AI (nothing moves or fights back — the only way the
-player takes damage today is a rocket/BFG blast catching them too), crushers still don't hurt
-the player, powerup effects, sound.
+(`main.ts`); crushers and the crushing floor family (55/56/65/94 — not the turbo-16 stairs, which
+never crush even in vanilla) deal periodic damage to the player or any monster caught in their
+sector, though nothing here actually
+blocks a mover on contact the way vanilla does. Not yet implemented: monster AI (nothing moves or
+fights back — the only ways the player takes damage today are a rocket/BFG blast catching them
+too, or standing in a crusher's way), powerup effects, sound.

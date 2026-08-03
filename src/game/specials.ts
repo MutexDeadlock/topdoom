@@ -5,6 +5,7 @@ import {
   SECTOR_LIGHT_SPECIALS,
   DOOR_OPEN_GAP,
   EIGHT_UNIT_GAP,
+  CRUSH_DAMAGE_INTERVAL,
   SWITCH_FLASH_SECONDS,
   TELEPORT_DEST,
   switchPairTexture,
@@ -193,6 +194,9 @@ interface FloorMover {
   speed: number;
   target: number;
   state: 'moving' | 'done';
+  crush: boolean;
+  /** Counts down to the next `onCrush` call while `crush` is set and `state === 'moving'`; see `CrusherMover.crushTimer`. */
+  crushTimer: number;
 }
 
 type CrusherState = 'lowering' | 'raising' | 'stopped';
@@ -204,6 +208,8 @@ interface CrusherMover {
   topHeight: number;
   bottomHeight: number;
   state: CrusherState;
+  /** Counts down to the next `onCrush` call; reset to `CRUSH_DAMAGE_INTERVAL` each time it fires, matching vanilla's every-4-tics cadence. */
+  crushTimer: number;
 }
 
 type Mover = DoorMover | LiftMover | FloorMover | CrusherMover;
@@ -282,11 +288,16 @@ function resolveFloorTarget(map: DoomMap, sectorIndex: number, target: MoveTarge
     case 'nextLowerFloor':
       return nextLowerFloor(map, sectorIndex);
     case 'lowestNeighborCeiling':
-      return lowestNeighborCeiling(map, sectorIndex);
+      // Vanilla's raiseFloor clamps to the sector's own ceiling too — a floor
+      // can never be sent above the ceiling it sits under, which matters
+      // whenever that ceiling happens to be lower than every neighbor's.
+      return Math.min(lowestNeighborCeiling(map, sectorIndex), map.sectors[sectorIndex].ceilHeight);
     case 'highestNeighborCeiling':
       return highestNeighborCeiling(map, sectorIndex);
     case 'lowestNeighborCeilingMinus8':
-      return lowestNeighborCeiling(map, sectorIndex) - EIGHT_UNIT_GAP;
+      return (
+        Math.min(lowestNeighborCeiling(map, sectorIndex), map.sectors[sectorIndex].ceilHeight) - EIGHT_UNIT_GAP
+      );
     case 'highestNeighborFloorPlus8':
       return highestNeighborFloor(map, sectorIndex) + EIGHT_UNIT_GAP;
   }
@@ -325,10 +336,17 @@ function disposeGroup(group: THREE.Group): void {
  * invalidates, and re-triggering.
  *
  * Crushers are pure ceiling geometry — down to floor+gap, back to their start
- * height, forever — with no player damage: vanilla's crush damage assumes a
- * mobj health/death pipeline (`P_DamageMobj` → `P_KillMobj` → respawn), none
- * of which exists yet (no death state, no game over), so applying damage with
- * no consequence once it reached zero would be a half-built feature.
+ * height, forever. They (and the `raiseFloorCrush` floor family — 55/56/65/94
+ * — but *not* the turbo-16 stairs; see `StairsEffect`'s doc) also deal
+ * periodic damage to whoever's caught in their sector via `onCrush`, a
+ * callback into `main.ts` — this controller mutates map geometry but has no
+ * idea where the player or any monster is standing, the same reason
+ * `onExit`/`onTeleport` are callbacks rather than direct calls. Unlike
+ * vanilla, nothing here actually *blocks* the mover on contact (no
+ * thing/geometry collision check for movers exists), so a crusher never
+ * stops or reverses early — it just keeps hurting whoever's in its way every
+ * `CRUSH_DAMAGE_INTERVAL` until they leave or die, which is the part of the
+ * vanilla behavior that actually matters for how a crusher reads as a hazard.
  *
  * Stair builders (`triggerStairs`/`findStairChain`) reuse the plain
  * `FloorMover` machinery per step — a stair step is just a floor rising to a
@@ -336,9 +354,10 @@ function disposeGroup(group: THREE.Group): void {
  * time (`computeMovableSectors`) by walking the same texture-matched
  * adjacency the trigger itself uses at runtime.
  *
- * Not modeled: damage-floor sector specials (same reason as crusher damage),
- * the 16-unit stair specials' crush flag (same reason), and door "un-crush"
- * safety (a closing door won't reverse if something is standing under it).
+ * Not modeled: damage-floor sector specials (a sustained per-tic hazard like
+ * nukage/lava — a different mechanism from a mover's periodic crush damage),
+ * and door "un-crush" safety (a closing door won't reverse if something is
+ * standing under it — doors have no `crush` flag at all here).
  */
 export class SpecialsController {
   private map: DoomMap;
@@ -351,6 +370,7 @@ export class SpecialsController {
   private meshOptions: MapMeshOptions;
   private onExit: (secret: boolean) => void;
   private onTeleport: (x: number, y: number, angle: number) => void;
+  private onCrush: (sectorIndex: number) => void;
 
   private movableSectors: Set<number>;
   /** Movable sectors sharing a linedef with a given movable sector — see `rebuildAround`. */
@@ -389,6 +409,7 @@ export class SpecialsController {
     meshOptions: MapMeshOptions,
     onExit: (secret: boolean) => void,
     onTeleport: (x: number, y: number, angle: number) => void,
+    onCrush: (sectorIndex: number) => void,
     playerX: number,
     playerY: number,
   ) {
@@ -401,6 +422,7 @@ export class SpecialsController {
     this.built = built;
     this.onExit = onExit;
     this.onTeleport = onTeleport;
+    this.onCrush = onCrush;
     this.prevX = playerX;
     this.prevY = playerY;
 
@@ -662,6 +684,7 @@ export class SpecialsController {
       mover.state = 'done';
     }
     if (sector.floorHeight !== before) dirty.add(mover.sectorIndex);
+    if (mover.crush) this.tickCrush(mover.sectorIndex, mover, dt);
   }
 
   /** No hold/rest state, unlike doors and lifts — a crusher reverses at each end and repeats forever. */
@@ -683,6 +706,15 @@ export class SpecialsController {
       }
     }
     if (sector.ceilHeight !== before) dirty.add(mover.sectorIndex);
+    this.tickCrush(mover.sectorIndex, mover, dt);
+  }
+
+  /** Fires `onCrush` for `sectorIndex` every `CRUSH_DAMAGE_INTERVAL`, matching vanilla's every-4-tics crush-damage cadence. */
+  private tickCrush(sectorIndex: number, timer: { crushTimer: number }, dt: number): void {
+    timer.crushTimer -= dt;
+    if (timer.crushTimer > 0) return;
+    this.onCrush(sectorIndex);
+    timer.crushTimer += CRUSH_DAMAGE_INTERVAL;
   }
 
   private triggerDoor(sectorIndex: number, effect: DoorEffect): void {
@@ -734,11 +766,44 @@ export class SpecialsController {
     if (existing.state === 'rest') existing.state = 'lowering';
   }
 
-  private triggerFloor(sectorIndex: number, effect: FloorEffect): void {
+  private triggerFloor(sectorIndex: number, effect: FloorEffect, line: LineDef): void {
     const existing = this.movers.get(sectorIndex);
     if (existing && existing.kind === 'floor' && existing.state === 'moving') return;
+    if (effect.changeTexture) this.applyFloorChange(sectorIndex, line);
     const target = resolveFloorTarget(this.map, sectorIndex, effect.target);
-    this.movers.set(sectorIndex, { kind: 'floor', sectorIndex, speed: effect.speed, target, state: 'moving' });
+    this.movers.set(sectorIndex, {
+      kind: 'floor',
+      sectorIndex,
+      speed: effect.speed,
+      target,
+      state: 'moving',
+      crush: effect.crush,
+      crushTimer: CRUSH_DAMAGE_INTERVAL,
+    });
+  }
+
+  /**
+   * Vanilla's "AndChange" model-sector copy: the texture comes from the
+   * *triggering linedef's own front sector*, not the sector actually moving
+   * or its neighbors — confirmed against `EV_DoPlat`'s `raiseToNearestAndChange`
+   * case (`sec->floorpic = sides[line->sidenum[0]].sector->floorpic`), which
+   * is how mappers control what a raised floor turns into regardless of what
+   * it's rising toward. Rebuilt immediately (not left for the next dirty-mover
+   * pass) so the texture swap and the start of the rise read as one action,
+   * same as `flashSwitch` rebuilding right after it mutates a switch texture.
+   */
+  private applyFloorChange(sectorIndex: number, line: LineDef): void {
+    const modelSectorIndex = line.right !== NO_SIDE ? this.map.sidedefs[line.right]?.sector : undefined;
+    if (modelSectorIndex === undefined) return;
+    const sector = this.map.sectors[sectorIndex];
+    sector.floorTex = this.map.sectors[modelSectorIndex].floorTex;
+    // "NO MORE DAMAGE, IF APPLICABLE" — vanilla's own comment. A light-blink
+    // special already runs off its own independent thinker in this engine
+    // (see `lightStates`), so clearing this doesn't stop that, matching
+    // vanilla's own decoupling between a sector's `special` field and an
+    // already-spawned light thinker.
+    sector.special = 0;
+    this.rebuildMoverMesh(sectorIndex);
   }
 
   /** A sector already crushing (in either direction) ignores a re-trigger, matching vanilla's `sec->specialdata` guard. */
@@ -756,6 +821,7 @@ export class SpecialsController {
       topHeight: sector.ceilHeight,
       bottomHeight: sector.floorHeight + EIGHT_UNIT_GAP,
       state: 'lowering',
+      crushTimer: CRUSH_DAMAGE_INTERVAL,
     });
   }
 
@@ -781,6 +847,10 @@ export class SpecialsController {
         speed: effect.speed,
         target: step.targetHeight,
         state: 'moving',
+        // Despite the wiki naming 100/127 "...and Crush", real vanilla
+        // stairs never set a crush flag — see StairsEffect's doc.
+        crush: false,
+        crushTimer: CRUSH_DAMAGE_INTERVAL,
       });
     }
   }
@@ -842,7 +912,7 @@ export class SpecialsController {
     for (const sectorIndex of targets) {
       if (def.effect.kind === 'door') this.triggerDoor(sectorIndex, def.effect);
       else if (def.effect.kind === 'lift') this.triggerLift(sectorIndex, def.effect);
-      else if (def.effect.kind === 'floor') this.triggerFloor(sectorIndex, def.effect);
+      else if (def.effect.kind === 'floor') this.triggerFloor(sectorIndex, def.effect, line);
       else if (def.effect.kind === 'crusher') this.triggerCrusher(sectorIndex, def.effect);
       else this.triggerCrusherStop(sectorIndex);
     }

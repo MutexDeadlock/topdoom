@@ -350,6 +350,15 @@ export interface ThingLayer {
    */
   monstersNear(x: number, y: number, radius: number): { id: number; x: number; y: number; z: number }[];
   /**
+   * Living monsters standing in exactly `sector` — a reference-equality check
+   * against the same mutable `Sector` object `PosedThing.sector` was seeded
+   * from (see that field's doc), not a sector-index lookup this layer has no
+   * way to perform on its own. Backs crush damage (main.ts's `onCrush`
+   * callback into `SpecialsController`): a crusher/crushing floor knows only
+   * which sector it's squeezing, not who's standing in it.
+   */
+  monstersInSector(sector: Sector): { id: number; x: number; y: number; z: number }[];
+  /**
    * Applies `amount` damage to the monster `pickMonster`/`monstersNear`
    * returned as `id`, switching it to its death animation once health drops
    * to 0 — gibbed (`MONSTER_XDEATH_FRAMES`) instead of a plain death
@@ -487,6 +496,14 @@ export function buildThingSprites(
         const dy = p.y - y;
         if (dx * dx + dy * dy >= rSq) continue;
         out.push({ id: p.id, x: p.x, y: p.y, z: p.sector?.floorHeight ?? 0 });
+      }
+      return out;
+    },
+    monstersInSector(sector: Sector): { id: number; x: number; y: number; z: number }[] {
+      const out: { id: number; x: number; y: number; z: number }[] = [];
+      for (const p of posed) {
+        if (p.dead || !MONSTER_TYPES.has(p.type) || p.sector !== sector) continue;
+        out.push({ id: p.id, x: p.x, y: p.y, z: sector.floorHeight });
       }
       return out;
     },

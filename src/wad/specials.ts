@@ -22,8 +22,12 @@
  * opened regardless of whether the player had the key.
  *
  * Crushers, teleporters and stair builders are modeled too (see the tables
- * below); still deliberately absent: damage-floor sector specials (no
- * sustained-damage/death system yet) and scrolling textures. Boom/MBF-only
+ * below), including crush damage now that a damage/death pipeline exists
+ * (`game/inventory.ts: applyDamage`, `ThingLayer.damage` — see CLAUDE.md's
+ * "Damage, monster death and player death"); still deliberately absent:
+ * damage-floor sector specials (a *sustained* per-tic hazard like nukage or
+ * lava — a different mechanism from a crusher's periodic hit, and not wired
+ * up here yet) and scrolling textures. Boom/MBF-only
  * special numbers (e.g. the S1/SR teleports at 174/195, or the "silent"
  * crusher at 150) are out of scope — this table only covers the vanilla
  * DOOM/DOOM2 special numbers, confirmed against the Doom wiki's linedef type
@@ -36,12 +40,19 @@
 export const DOOR_SPEED = 70; // 2 u/tic
 export const DOOR_SPEED_FAST = 280; // 8 u/tic
 export const DOOR_WAIT = 150 / 35; // seconds a door stays open
-export const LIFT_SPEED = 35; // 1 u/tic
-export const LIFT_SPEED_FAST = 140; // 4 u/tic
-export const LIFT_WAIT = 105 / 35; // seconds a lift stays down
 export const FLOOR_SPEED = 35;
+// Vanilla's `downWaitUpStay`/`blazeDWUS` plat types run at PLATSPEED*4/*8 (and
+// PLATSPEED == FLOORSPEED), not *1/*4 — confirmed against the actual source
+// (p_plats.c: EV_DoPlat) after a naive "fast is 4x normal" guess here turned
+// out to make both tiers wrong (the "fast" lift ran at what should've been
+// the *normal* speed, and "normal" ran 4x too slow).
+export const LIFT_SPEED = FLOOR_SPEED * 4; // 4 u/tic
+export const LIFT_SPEED_FAST = FLOOR_SPEED * 8; // 8 u/tic
+export const LIFT_WAIT = 105 / 35; // seconds a lift stays down
 /** Vanilla turboLower: FLOORSPEED*4, same fast-quad scaling as doors/lifts above. */
 export const FLOOR_SPEED_FAST = FLOOR_SPEED * 4;
+/** Vanilla's "AndChange" plat family (raiseToNearestAndChange) runs at PLATSPEED/2, and PLATSPEED == FLOORSPEED. */
+export const FLOOR_SPEED_HALF = FLOOR_SPEED / 2;
 export const CEILING_SPEED = 35;
 /** Vanilla CEILSPEED: 1 u/tic; crush-and-raise "fast" variants run at 2x. */
 export const CRUSHER_SPEED = 35;
@@ -60,6 +71,9 @@ export const STAIR_SPEED = FLOOR_SPEED / 4;
 export const STAIR_SPEED_TURBO = FLOOR_SPEED * 4;
 export const STAIR_STEP = 8;
 export const STAIR_STEP_TURBO = 16;
+/** Vanilla: a mover with `crush` set deals this much damage every `CRUSH_DAMAGE_INTERVAL` while something is caught in its sector. */
+export const CRUSH_DAMAGE = 10;
+export const CRUSH_DAMAGE_INTERVAL = 4 / 35;
 
 /** Gap vanilla leaves between an open door's ceiling and the lowest neighboring ceiling. */
 export const DOOR_OPEN_GAP = 4;
@@ -106,7 +120,7 @@ export type MoveTarget =
   | 'nextLowerFloor'
   | 'lowestNeighborCeiling'
   | 'highestNeighborCeiling'
-  /** The 55/56/65/94 family's target: the floor rises, rather than the usual lower/level pattern. */
+  /** The 55/56/65/94 family's target ("raiseFloorCrush" in vanilla): the floor rises, rather than the usual lower/level pattern. */
   | 'lowestNeighborCeilingMinus8'
   /** The 36/70/71/98 "turboLower" family's target: stops 8 short of flush with the highest neighbor. */
   | 'highestNeighborFloorPlus8';
@@ -115,6 +129,24 @@ export interface FloorEffect {
   kind: 'floor';
   speed: number;
   target: MoveTarget;
+  /**
+   * Vanilla's "AndChange" specials (20/22/68/95 — `raiseToNearestAndChange`):
+   * on trigger, copy the *triggering linedef's own front-sector* floor
+   * texture onto the sector(s) about to move, and clear their `special`
+   * ("NO MORE DAMAGE, IF APPLICABLE" in vanilla's own source comment — a
+   * light-blink special already has its own independent thinker in this
+   * engine too, so clearing it here doesn't stop that, matching vanilla).
+   * Not the *target* sector's texture — the model is the switch/walkover
+   * line's own front side, which is how mappers control what a raised floor
+   * turns into.
+   */
+  changeTexture: boolean;
+  /**
+   * The 55/56/65/94 family (`raiseFloorCrush`): deals `CRUSH_DAMAGE` every
+   * `CRUSH_DAMAGE_INTERVAL` to anyone caught in the target sector while the
+   * floor is moving, same as the ceiling crushers below.
+   */
+  crush: boolean;
 }
 
 export type LightPattern = 'blinkRandom' | 'blink05' | 'blink1' | 'glow' | 'syncBlink05' | 'syncBlink1' | 'flicker';
@@ -124,7 +156,12 @@ export interface ExitEffect {
   secret: boolean;
 }
 
-/** Ceiling repeatedly lowers to floor+`EIGHT_UNIT_GAP`, then returns to its start height, forever. */
+/**
+ * Ceiling repeatedly lowers to floor+`EIGHT_UNIT_GAP`, then returns to its
+ * start height, forever, dealing `CRUSH_DAMAGE` every `CRUSH_DAMAGE_INTERVAL`
+ * to anyone caught in its sector the whole time (not just while lowering —
+ * vanilla's own crusher thinker doesn't gate damage by direction either).
+ */
 export interface CrusherEffect {
   kind: 'crusher';
   speed: number;
@@ -144,10 +181,11 @@ export interface TeleportEffect {
 /**
  * Raises a chain of adjacent sectors sharing the trigger sector's floor
  * texture, each `stepHeight` higher than the last, all starting at once —
- * vanilla's `EV_BuildStairs`/`T_BuildStairs`. The 16-unit vanilla specials
- * (100/127) are also flagged to crush anything caught under the rising step;
- * not modeled here, same as the ceiling crushers above and for the same
- * reason (no damage/death pipeline yet).
+ * vanilla's `EV_BuildStairs`/`T_BuildStairs`. Despite the wiki naming the
+ * 16-unit vanilla specials (100/127) "...and Crush", the actual source never
+ * sets a crush flag on the floor movers it spawns — see the table below —
+ * so stairs never deal crush damage, unlike the ceiling crushers and the
+ * 55/56/65/94 floor family.
  */
 export interface StairsEffect {
   kind: 'stairs';
@@ -186,8 +224,12 @@ function lift(speed = LIFT_SPEED, waitSeconds = LIFT_WAIT): LiftEffect {
   return { kind: 'lift', speed, waitSeconds };
 }
 
-function floor(target: MoveTarget, speed = FLOOR_SPEED): FloorEffect {
-  return { kind: 'floor', speed, target };
+function floor(
+  target: MoveTarget,
+  speed = FLOOR_SPEED,
+  options: { changeTexture?: boolean; crush?: boolean } = {},
+): FloorEffect {
+  return { kind: 'floor', speed, target, changeTexture: options.changeTexture ?? false, crush: options.crush ?? false };
 }
 
 export const LINE_SPECIALS: Record<number, SpecialDef> = {
@@ -276,23 +318,40 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
 
   18: { trigger: 'use', repeatable: false, effect: floor('nextHigherFloor') },
 
-  // "Lowest neighboring ceiling" quad (W1/WR/S1/SR). 24 is the fifth vanilla
-  // member of this family (G1, gun-fired) but there's no shoot-trigger input
-  // yet (see CLAUDE.md: weapon switching/shooting isn't implemented), so it's
-  // left out rather than wired to the wrong trigger kind.
+  // "Raise to next highest floor and change texture" quad (S1/SR/W1/WR) —
+  // vanilla's `raiseToNearestAndChange`, confirmed against the actual id
+  // Software source (p_switch.c/p_spec.c case 20/68/22/95) rather than a wiki
+  // summary, since this behavior (mutating floor texture + sector special,
+  // not just height) isn't the kind of thing a summary reliably captures. See
+  // `FloorEffect.changeTexture`'s doc for what "change" means here. 47 is the
+  // fifth vanilla member (G1, gun-fired) but there's no shoot-trigger input
+  // yet, so it's left out, same reasoning as 24 below.
+  20: { trigger: 'use', repeatable: false, effect: floor('nextHigherFloor', FLOOR_SPEED_HALF, { changeTexture: true }) },
+  68: { trigger: 'use', repeatable: true, effect: floor('nextHigherFloor', FLOOR_SPEED_HALF, { changeTexture: true }) },
+  22: { trigger: 'walk', repeatable: false, effect: floor('nextHigherFloor', FLOOR_SPEED_HALF, { changeTexture: true }) },
+  95: { trigger: 'walk', repeatable: true, effect: floor('nextHigherFloor', FLOOR_SPEED_HALF, { changeTexture: true }) },
+
+  // "Lowest neighboring ceiling" quad (W1/WR/S1/SR) — vanilla's `raiseFloor`,
+  // confirmed against p_floor.c: the actual target is the *lesser* of the
+  // lowest neighboring ceiling and the sector's own current ceiling (a floor
+  // can never be sent above its own ceiling), not the neighbor value alone —
+  // `resolveFloorTarget` in game/specials.ts applies that clamp. 24 is the
+  // fifth vanilla member of this family (G1, gun-fired) but there's no
+  // shoot-trigger input yet (see CLAUDE.md: weapon switching/shooting isn't
+  // implemented), so it's left out rather than wired to the wrong trigger kind.
   5: { trigger: 'walk', repeatable: false, effect: floor('lowestNeighborCeiling') },
   64: { trigger: 'use', repeatable: true, effect: floor('lowestNeighborCeiling') },
   91: { trigger: 'walk', repeatable: true, effect: floor('lowestNeighborCeiling') },
   101: { trigger: 'use', repeatable: false, effect: floor('lowestNeighborCeiling') },
 
-  // "8 below lowest neighboring ceiling, crush" quad (W1/WR/S1/SR) — these
-  // raise (not lower) the floor; the crush part is out of scope, same as the
-  // ceiling crushers and the 16-unit stair specials (no damage/death pipeline
-  // yet).
-  55: { trigger: 'use', repeatable: false, effect: floor('lowestNeighborCeilingMinus8') },
-  56: { trigger: 'walk', repeatable: false, effect: floor('lowestNeighborCeilingMinus8') },
-  65: { trigger: 'use', repeatable: true, effect: floor('lowestNeighborCeilingMinus8') },
-  94: { trigger: 'walk', repeatable: true, effect: floor('lowestNeighborCeilingMinus8') },
+  // "Raise floor crush" quad (S1/SR/W1/WR) — vanilla's `raiseFloorCrush`,
+  // confirmed against p_floor.c to share `raiseFloor`'s own-ceiling clamp
+  // above, minus another 8 units, and deals `CRUSH_DAMAGE` to anyone caught
+  // underneath while it rises, same as the ceiling crushers below.
+  55: { trigger: 'use', repeatable: false, effect: floor('lowestNeighborCeilingMinus8', FLOOR_SPEED, { crush: true }) },
+  56: { trigger: 'walk', repeatable: false, effect: floor('lowestNeighborCeilingMinus8', FLOOR_SPEED, { crush: true }) },
+  65: { trigger: 'use', repeatable: true, effect: floor('lowestNeighborCeilingMinus8', FLOOR_SPEED, { crush: true }) },
+  94: { trigger: 'walk', repeatable: true, effect: floor('lowestNeighborCeilingMinus8', FLOOR_SPEED, { crush: true }) },
 
   // "8 above highest neighboring floor, fast" quad (W1/WR/S1/SR) — vanilla's
   // turboLower: normally lowers a floor that started above every neighbor,
@@ -325,7 +384,15 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   125: { trigger: 'walk', repeatable: false, effect: { kind: 'teleport', monsterOnly: true } },
   126: { trigger: 'walk', repeatable: true, effect: { kind: 'teleport', monsterOnly: true } },
 
-  // Stair builders — confirmed against the Doom wiki: 7/8 are 8-unit steps, 100/127 are 16-unit turbo steps.
+  // Stair builders — confirmed against the Doom wiki: 7/8 are 8-unit steps,
+  // 100/127 are 16-unit turbo steps. The wiki names 100/127 "...and Crush",
+  // but the actual vanilla `EV_BuildStairs` source (p_floor.c) never sets a
+  // `crush` flag on the floor movers it spawns — `Z_Malloc` zero-inits the
+  // struct and nothing overwrites it — so real vanilla turbo-16 stairs don't
+  // actually crush, unlike the unrelated 55/56/65/94 floor family and the
+  // ceiling crushers, which do set it. Caught by checking the source directly
+  // rather than trusting the wiki's naming, the same discipline that already
+  // caught 174/58/40 elsewhere in this file.
   7: { trigger: 'use', repeatable: false, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
   8: { trigger: 'walk', repeatable: false, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
   100: {

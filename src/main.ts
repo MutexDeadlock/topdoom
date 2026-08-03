@@ -13,6 +13,7 @@ import { World, hasLineOfSight, shotPath } from './game/world.ts';
 import { Player, PLAYER_HEIGHT, PLAYER_RADIUS } from './game/player.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
+import { CRUSH_DAMAGE } from './wad/specials.ts';
 import { Input } from './game/input.ts';
 import { Menu, type Selection } from './ui/menu.ts';
 import { Hud } from './ui/hud.ts';
@@ -356,6 +357,7 @@ class Game {
         // not leave it aimed at wherever the old spot happened to be.
         this.view.camera.yawDeg = (angle * 180) / Math.PI - 90;
       },
+      (sectorIndex) => this.applyCrushDamage(sectorIndex),
       this.player.x,
       this.player.y,
     );
@@ -655,6 +657,20 @@ class Game {
     this.playerDead = true;
     this.playerActor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
     this.deathOverlay.classList.remove('hidden');
+  }
+
+  /**
+   * `SpecialsController`'s `onCrush` callback: it owns the moving geometry
+   * but has no idea who's standing in it, so it hands back just the sector
+   * index and leaves finding out to us. 2D sector membership only — matching
+   * `applyRadiusDamage`'s own choice to ignore z, and this engine doesn't
+   * model a mover actually blocking on contact anyway (see `SpecialsController`'s
+   * class doc), so there's no finer "did it actually reach you" test to make.
+   */
+  private applyCrushDamage(sectorIndex: number): void {
+    if (this.world.sectorIndexAt(this.player.x, this.player.y) === sectorIndex) this.damagePlayer(CRUSH_DAMAGE);
+    const sector = this.map.sectors[sectorIndex];
+    for (const m of this.things?.monstersInSector(sector) ?? []) this.things?.damage(m.id, CRUSH_DAMAGE);
   }
 
   /** `R`, while dead: a fresh inventory and a reload of the current map — `loadMapByIndex` resets the player/world/specials/fog and, via the doc on its own top, `playerDead`/the death overlay/`playerActor` too. */

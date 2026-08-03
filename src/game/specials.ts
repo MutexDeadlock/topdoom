@@ -52,7 +52,7 @@ import {
 } from '../render/mapmesh.ts';
 import type { SubSectorPoly } from '../render/bsp.ts';
 import type { MaterialBank } from '../render/textures.ts';
-import { FlatFader, WallFader } from '../render/occlusion.ts';
+import { FlatFader, type FadeTarget, WallFader } from '../render/occlusion.ts';
 import { segmentIntersect } from '../util/geom.ts';
 
 /** How far ahead of the player a `use` press reaches, in map units. */
@@ -705,22 +705,15 @@ export class SpecialsController {
 
   /**
    * Per-frame vertex-alpha pass over the mover geometry, mirroring what
-   * `game.ts` runs over the static batches: camera-player sightline occlusion
-   * combined with fog-of-war reveal. Separate from `update` because it needs
-   * the camera position, which is only settled after the player has moved.
+   * `game.ts` runs over the static batches: camera sightline occlusion
+   * (player plus every awake monster — see `WallFader.update`'s doc) combined
+   * with fog-of-war reveal. Separate from `update` because it needs the
+   * camera position, which is only settled after the player has moved.
    */
-  updateFading(
-    dt: number,
-    camX: number,
-    camY: number,
-    camZ: number,
-    targetX: number,
-    targetY: number,
-    targetZ: number,
-  ): void {
+  updateFading(dt: number, camX: number, camY: number, camZ: number, targets: FadeTarget[]): void {
     for (const g of this.moverMeshes.values()) {
-      g.walls.update(dt, camX, camY, camZ, targetX, targetY, targetZ);
-      g.flats.update(dt, camX, camY, camZ, targetX, targetY, targetZ);
+      g.walls.update(dt, camX, camY, camZ, targets, (line) => this.world.openingOf(line));
+      g.flats.update(dt, camX, camY, camZ, targets);
       // Mover quads aren't in the static occluder list FogOfWar indexed at
       // load, so their subsector is probed from the quad itself.
       g.walls.commit((i) => {

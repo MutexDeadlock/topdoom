@@ -5,6 +5,7 @@ import type { DoomMap } from '../wad/map.ts';
 import { pointNearConvexPolygon, segmentIntersect } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
 import { PLAYER_RADIUS } from '../game/player.ts';
+import type { Opening } from '../game/world.ts';
 import { SCROLL_LINE_SPECIAL, SCROLL_SPEED } from '../wad/specials.ts';
 
 /**
@@ -17,6 +18,13 @@ const FADE_ALPHA = 0.2;
 const FADE_SPEED = 10;
 /** Snap-to-target threshold for `dampen` — see its doc for why this matters. */
 const SNAP_EPS = 0.004;
+
+/** A point occlusion is tested against — the player, or an awake monster (see `update`'s doc). */
+export interface FadeTarget {
+  x: number;
+  y: number;
+  z: number;
+}
 
 /**
  * Fades the specific wall quad(s) currently between the camera and the
@@ -45,23 +53,65 @@ export class WallFader {
     this.occlusionAlpha = new Float32Array(occluders.length).fill(1);
   }
 
-  /** Camera and target (player) positions in DOOM (x, y, height) coordinates. */
+  /**
+   * Camera position in DOOM (x, y, height) coordinates, and every point a
+   * wall between the camera and it should fade for — the player plus every
+   * currently-awake monster (`ThingLayer.awakeMonsters`, game.ts), so a
+   * chasing monster stays visible through walls the same way the player
+   * does, while one that hasn't noticed the player yet stays hidden.
+   *
+   * `openingOf` (`World.openingOf`, threaded through as a callback so this
+   * class doesn't need a `World` reference of its own) is what tells a
+   * genuinely solid quad apart from one that only *renders* solid — a masked
+   * middle texture (grate, fence, barred window) is built (`mapmesh.ts:
+   * addTwoSidedSide`) to span exactly its line's own vertical opening, so a
+   * quad whose `[botH, topH]` sits inside that opening is the passable gap
+   * itself, not something blocking it: a shot (and a look) already passes
+   * straight through it, same as `World.blocksSight`/`blocksShot` already
+   * treat it elsewhere, so fading it too has nothing left to usefully
+   * reveal. This has to be a per-*quad* check, not a per-*line* one: the
+   * same two-sided line's upper/lower step quads sit *outside* that opening
+   * (they're the riser exposed where the neighbouring sector's floor/ceiling
+   * doesn't reach as far) and are genuinely solid regardless of whether the
+   * line has an opening elsewhere — gating on the line as a whole made an
+   * ordinary step in a corridor stop fading too, which is what broke an
+   * approaching zombieman staying hidden behind it. DOOM2 MAP01's east imp
+   * closet (sector 38) is the concrete case the *quad*-level version of this
+   * fixes — its fence's masked-middle quad used to fade to near-invisible
+   * the moment the imp inside woke up, which read as the closet wall itself
+   * vanishing rather than "you can see the imp through the bars."
+   *
+   * Note there is deliberately no "only fade if this is the *sole* wall in
+   * the way" rule: whether fading a wall actually reveals its monster is
+   * settled upstream by `ThingLayer.awakeMonsters`, which already drops any
+   * monster fog of war isn't currently drawing (see its doc). A version of
+   * this method that counted blockers per target instead was written first,
+   * for the same symptom, and fixed nothing — the wall in question had only
+   * one blocker; its monster simply wasn't rendered.
+   */
   update(
     dt: number,
     camX: number,
     camY: number,
     camZ: number,
-    targetX: number,
-    targetY: number,
-    targetZ: number,
+    targets: FadeTarget[],
+    openingOf: (line: number) => Opening | null,
   ): void {
     for (let i = 0; i < this.occluders.length; i++) {
       const o = this.occluders[i];
-      const cross = segmentIntersect(camX, camY, targetX, targetY, o.ax, o.ay, o.bx, o.by);
+      const opening = openingOf(o.line);
+      const isPassableGap = opening !== null && o.botH >= opening.bottom && o.topH <= opening.top;
       let occluding = false;
-      if (cross) {
-        const height = camZ + (targetZ - camZ) * cross.t;
-        occluding = height > o.botH && height < o.topH;
+      if (!isPassableGap) {
+        for (const t of targets) {
+          const cross = segmentIntersect(camX, camY, t.x, t.y, o.ax, o.ay, o.bx, o.by);
+          if (!cross) continue;
+          const height = camZ + (t.z - camZ) * cross.t;
+          if (height > o.botH && height < o.topH) {
+            occluding = true;
+            break;
+          }
+        }
       }
 
       const target = occluding ? FADE_ALPHA : 1;
@@ -135,25 +185,24 @@ export class FlatFader {
     this.alpha = new Float32Array(surfaces.length).fill(1);
   }
 
-  /** Camera and target (player) positions in DOOM (x, y, height) coordinates. */
-  update(
-    dt: number,
-    camX: number,
-    camY: number,
-    camZ: number,
-    targetX: number,
-    targetY: number,
-    targetZ: number,
-  ): void {
+  /**
+   * Camera position in DOOM (x, y, height) coordinates, and every point a
+   * floor between the camera and it should fade for — see `WallFader.update`'s
+   * doc for why this is a list rather than just the player.
+   */
+  update(dt: number, camX: number, camY: number, camZ: number, targets: FadeTarget[]): void {
     for (let i = 0; i < this.surfaces.length; i++) {
       const s = this.surfaces[i];
       let occluding = false;
-      if (!s.isCeiling && s.height > targetZ && s.height < camZ) {
-        const t = (s.height - camZ) / (targetZ - camZ);
-        if (t > 0 && t < 1) {
-          const x = camX + (targetX - camX) * t;
-          const y = camY + (targetY - camY) * t;
-          occluding = pointNearConvexPolygon(x, y, s.points, PLAYER_RADIUS);
+      for (const pt of targets) {
+        if (s.isCeiling || s.height <= pt.z || s.height >= camZ) continue;
+        const t = (s.height - camZ) / (pt.z - camZ);
+        if (t <= 0 || t >= 1) continue;
+        const x = camX + (pt.x - camX) * t;
+        const y = camY + (pt.y - camY) * t;
+        if (pointNearConvexPolygon(x, y, s.points, PLAYER_RADIUS)) {
+          occluding = true;
+          break;
         }
       }
 

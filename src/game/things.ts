@@ -249,6 +249,20 @@ export interface ThingLayer {
   /** Count of living monsters currently alerted (chasing/attacking, or mid-reaction-delay) — for the debug HUD. */
   awakeMonsterCount(): number;
   /**
+   * Positions of the alerted monsters `awakeMonsterCount` counts, narrowed to
+   * those actually being *rendered* right now — occlusion fading (game.ts)
+   * treats each as an extra sightline target alongside the player, so a
+   * wall/floor hiding a chasing monster fades the same way one hiding the
+   * player does. Two exclusions, both load-bearing: anything not yet alerted
+   * (an unseen sleeping monster is supposed to stay hidden), and anything
+   * fog of war is currently hiding (`mesh.visible`, set from `fogAlphaOf` in
+   * `update` above) — a monster in a subsector the player has never had
+   * sight of isn't drawn at all, so fading the wall in front of it reveals
+   * an empty dark room and nothing else. Must be called after `update` has
+   * run for the frame, so `mesh.visible` reflects this frame's fog.
+   */
+  awakeMonsters(): { x: number; y: number; z: number }[];
+  /**
    * Living monsters standing in exactly `sector` — a reference-equality check
    * against the same mutable `Sector` object `PosedThing.sector` was seeded
    * from (see that field's doc), not a sector-index lookup this layer has no
@@ -637,6 +651,14 @@ export function buildThingSprites(
         if (!p.dead && MONSTER_TYPES.has(p.type) && p.alerted) n++;
       }
       return n;
+    },
+    awakeMonsters(): { x: number; y: number; z: number }[] {
+      const out: { x: number; y: number; z: number }[] = [];
+      for (const p of posed) {
+        if (p.dead || !MONSTER_TYPES.has(p.type) || !p.alerted || !p.actor.mesh.visible) continue;
+        out.push({ x: p.x, y: p.y, z: p.z });
+      }
+      return out;
     },
     monstersInSector(sector: Sector): { id: number; x: number; y: number; z: number }[] {
       const out: { id: number; x: number; y: number; z: number }[] = [];

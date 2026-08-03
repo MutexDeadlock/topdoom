@@ -8,7 +8,7 @@ import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import { buildThingSprites, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
 import { MONSTER_FIRE_HEIGHT, sameSpecies } from './game/monsters.ts';
-import { FlatFader, TextureScroller, WallFader } from './render/occlusion.ts';
+import { FlatFader, type FadeTarget, TextureScroller, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
 import { World, hasLineOfSight, shotPath } from './game/world.ts';
 import { Player, PLAYER_HEIGHT, PLAYER_RADIUS } from './game/player.ts';
@@ -216,6 +216,21 @@ const MONSTER_BULLET_SLOP = 12;
 const MONSTER_PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + 24;
 /** Vertical companion to `MONSTER_PROJECTILE_HIT_RADIUS` — the same overhead/underneath tolerance `ThingLayer.tryPickup`'s own gate already uses for picking an item up through a window onto a floor above/below. */
 const MONSTER_PROJECTILE_HIT_HEIGHT = 128;
+
+/**
+ * How far (2D, from the player) an awake monster can be and still count as an
+ * occlusion-fade target (see the `fadeTargets` build below). Deliberately a
+ * plain distance cap rather than requiring unobstructed `hasLineOfSight`: the
+ * whole point of fading is to reveal a monster a wall is currently hiding, so
+ * gating on "already has line of sight" made the fade a no-op for exactly the
+ * case it exists for — an earlier version did this and a zombieman one wall
+ * away in a corridor stopped fading the wall in front of it. A distance cap
+ * still bounds the original concern (an alerted monster dead-reckoning from
+ * clear across the level shouldn't fade every wall along that long a
+ * straight line) without reintroducing that contradiction. Tuned by feel to
+ * roughly a room-or-corridor's length, not converted from anything vanilla.
+ */
+const MONSTER_FADE_RANGE = 768;
 
 /**
  * Renderer, canvas, camera and input live for the whole session — a new level
@@ -1129,17 +1144,24 @@ export class Game {
     this.impacts = this.updateEffects(this.impacts, dt, camera.viewerAngleDeg);
 
     const camPos = camera.camera.position;
-    const camPlayerArgs = [
-      dt,
-      camPos.x,
-      -camPos.z,
-      camPos.y,
-      this.player.x,
-      this.player.y,
-      this.player.z + PLAYER_HEIGHT / 2,
-    ] as const;
-    this.wallFader.update(...camPlayerArgs);
-    this.flatFader.update(...camPlayerArgs);
+    const camArgs = [dt, camPos.x, -camPos.z, camPos.y] as const;
+    // A wall/floor hiding a monster only fades once that monster is actually
+    // alerted (ThingLayer.awakeMonsters) — an unseen sleeping monster is
+    // supposed to stay hidden, same as before this list existed — and within
+    // MONSTER_FADE_RANGE (see its doc for why that's a distance cap and not
+    // a `hasLineOfSight` check). Monsters reuse PLAYER_HEIGHT/2 for their own
+    // target height, same as hasLineOfSight does, since there's no
+    // per-species height table.
+    const fadeTargets: FadeTarget[] = [
+      { x: this.player.x, y: this.player.y, z: this.player.z + PLAYER_HEIGHT / 2 },
+      ...(this.things
+        ?.awakeMonsters()
+        .filter((m) => Math.hypot(m.x - this.player.x, m.y - this.player.y) <= MONSTER_FADE_RANGE)
+        .map((m) => ({ x: m.x, y: m.y, z: m.z + PLAYER_HEIGHT / 2 })) ?? []),
+    ];
+    const openingOf = (line: number) => this.world.openingOf(line);
+    this.wallFader.update(...camArgs, fadeTargets, openingOf);
+    this.flatFader.update(...camArgs, fadeTargets);
     // Walls resolve their own subsector inside FogOfWar (see wallAlpha); flats
     // and things already know theirs, so they go through alphaOf directly.
     this.wallFader.commit((i) => fog.wallAlpha(i));
@@ -1149,7 +1171,7 @@ export class Game {
     this.textureScroller.update(dt);
     // Door/lift geometry lives in its own meshes (game/specials.ts), so it
     // carries its own faders rather than the two above.
-    this.specials?.updateFading(...camPlayerArgs);
+    this.specials?.updateFading(...camArgs, fadeTargets);
 
     const facingDeg = (this.player.angle * 180) / Math.PI;
     const sector = this.world.sectorAt(this.player.x, this.player.y);

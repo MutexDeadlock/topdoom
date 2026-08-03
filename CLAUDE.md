@@ -137,6 +137,50 @@ quad's 2D footprint against that sightline each frame and fades the ones that cr
 than the coarser fix of drawing the player on top of everything, which would also show it
 through walls that genuinely separate it from the camera.
 
+`WallFader.update`/`FlatFader.update` take a *list* of sightline targets (`FadeTarget[]`), not
+just the player — `game.ts` passes the player plus every currently-**awake** monster
+(`ThingLayer.awakeMonsters`, the same `alerted` flag `awakeMonsterCount` already exposed for the
+debug HUD) within `MONSTER_FADE_RANGE` (`game.ts`, a plain 2D distance cap, tuned by feel to
+roughly a room/corridor's length), and a quad fades if it sits on any one of those sightlines.
+Both gates matter: a sleeping monster isn't being tracked yet, so there's no reason for a wall to
+reveal it early; and without the range cap, an alerted monster dead-reckoning toward the player
+from clear across the level would fade every wall along that long a straight line, none of which
+have anything to do with what the player can currently see happening. The range cap is
+deliberately a plain distance, not a `hasLineOfSight` check — an earlier version required
+unobstructed line of sight instead, which made the fade a no-op for exactly the case it exists
+for (a wall genuinely hiding a nearby monster also means `hasLineOfSight` is false, so the
+monster never became a fade target and the wall in front of it stopped fading, concretely
+breaking a zombieman approaching down a corridor one wall away).
+`SpecialsController.updateFading` (mover geometry — doors, lifts) takes the same target list,
+since it reuses the identical `WallFader`/`FlatFader` machinery for its own meshes.
+
+`WallFader.update` also takes an `openingOf` callback (`World.openingOf`, threaded through so this
+class needs no `World` reference of its own) and skips fading any quad whose own `[botH, topH]`
+sits *inside* its line's vertical opening — a masked middle texture (grate, fence, barred window)
+is built (`mapmesh.ts: addTwoSidedSide`) to span exactly that opening, so a quad living inside it
+is the passable gap itself: a shot (and a look) already passes straight through it, same as
+`World.blocksSight`/`blocksShot` already treat it elsewhere, so fading it too has nothing left to
+usefully reveal. This has to be a **per-quad** check, not a per-*line* one — an earlier version
+gated on `World.blocksSight(line)` for the whole line, which wrongly also suppressed fading for
+that same line's upper/lower step quads (they sit *outside* the opening — the riser exposed where
+the neighbouring sector's floor/ceiling falls short — and are genuinely solid regardless of
+whether the line has an opening elsewhere), breaking the ordinary case of an approaching monster
+hidden behind a two-sided step in a corridor. DOOM2 MAP01's east imp closet (sector 38) is the
+concrete case the quad-level version fixes — its fence's masked-middle quad used to fade to
+near-invisible the moment the imp inside woke up, reading as the closet wall vanishing rather than
+"you can see the imp through the bars." `FlatFader` has no equivalent gate — floors have no
+comparable "visually-solid-but-actually-passable" case.
+
+**`awakeMonsters` only returns monsters fog of war is actually drawing** (`p.actor.mesh.visible`,
+which `ThingLayer.update` sets from `fogAlphaOf` earlier in the same frame). A monster in a
+subsector the player has never had sight of isn't rendered at all, so fading the wall in front of
+it reveals an empty dark room and nothing else — concretely, a MAP01 secret compartment's wall
+dithered away whenever the imps sealed inside woke up, with the imps themselves still invisible.
+This is also why `WallFader.update` needs no "only fade if this is the *sole* wall in the way"
+rule: whether fading actually reveals anything is settled here, upstream. A blocker-counting
+version of `update` was written first for this same symptom and fixed nothing — that wall had
+only one blocker; its monsters simply weren't being drawn.
+
 The fade is a **dithered discard**, not real alpha blending: wall quads are batched one mesh
 per texture across the whole map, three.js sorts transparent objects back-to-front per mesh,
 and with a mesh spanning the entire level that order is meaningless — plus both meshes still
@@ -1400,8 +1444,8 @@ level's population has actually noticed the player.
 Playable as a walkable level viewer: geometry, textures, sector lighting, collision with
 step-up/headroom rules, gravity-based falling off ledges, vanilla's narrow-gap-crossing quirk,
 floor following, map switching, PWAD loading, and a camera that can orbit in yaw (right-drag
-or `Q`/`E`) around the player with dithered wall-occlusion fading so it never hides the player
-behind geometry. Subsector-based fog of war (`game/fogofwar.ts`) hides
+or `Q`/`E`) around the player with dithered wall-occlusion fading so it never hides the player,
+or an awake monster, behind geometry. Subsector-based fog of war (`game/fogofwar.ts`) hides
 whatever the player has not yet had line of sight to — geometry and things reveal permanently
 once seen, which keeps unreached rooms and secrets dark until they are actually in view.
 THINGS render as upright

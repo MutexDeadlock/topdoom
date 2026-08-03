@@ -835,23 +835,38 @@ uses for reveal — not `shotPath`, which models a directed weapon's own blockin
 this omnidirectional blast reach that point") says is blocked by a wall, and applies damage
 falling off linearly to 0 at the radius edge, matching vanilla's own `P_RadiusAttack`.
 
-**`hasLineOfSight` also checks floor/ceiling, not just walls** — it takes `z1`/`z2` and, after its
-line-crossing test, samples points along the path (`SIGHT_HEIGHT_SAMPLE_STEP`) checking that the
-straight 3D line's own interpolated height at each stays within that point's sector's
-floor..ceiling range. Without this, a monster standing in a room genuinely *underneath* a ledge
-the player is standing on — with no shared two-sided line anywhere near the straight 2D path
-between them, since the floor is what separates them, not a wall — registered as fully visible
-(and shootable) purely because the line-crossing test never found anything to block: a monster
-that chased around to end up under a ledge could keep hitting the player through the floor even
-after losing any real sightline. This is a coarser stand-in for vanilla's own `P_CheckSight`, which
-walks the BSP narrowing an actual top/bottom sight wedge through every sector's real floor/ceiling
-as it crosses — sampling discrete points along the path instead is far simpler and, per the same
-"tuned by feel over exact fixed-point port" reasoning as elsewhere in this codebase, close enough.
-Every caller (monster AI's `canSee`/`tryWake`, `applyRadiusDamage` above) was updated to pass real
-heights rather than the flat `MONSTER_ENGAGE_HEIGHT` guess an earlier version used in
-`stepMonsterAI`'s `canSee` — now redundant and removed, since a proper 3D sight check makes a
-separate flat vertical cap both unnecessary and, for a genuinely tall open room, wrong (vanilla
-itself has no such cap at all).
+**`hasLineOfSight` also checks floor/ceiling, not just walls** — without this, a monster standing
+in a room genuinely *underneath* a ledge the player is standing on — with no shared two-sided line
+anywhere near the straight 2D path between them, since the floor is what separates them, not a
+wall — registered as fully visible (and shootable) purely because the line-crossing test never
+found anything to block: a monster that chased around to end up under a ledge could keep hitting
+the player through the floor even after losing any real sightline. Every caller (monster AI's
+`canSee`/`tryWake`, `applyRadiusDamage` above) passes real heights rather than the flat
+`MONSTER_ENGAGE_HEIGHT` guess an earlier version used in `stepMonsterAI`'s `canSee` — now redundant
+and removed, since a proper 3D sight check makes a separate flat vertical cap both unnecessary and,
+for a genuinely tall open room, wrong (vanilla itself has no such cap at all).
+
+**The floor/ceiling check is a sight *wedge* from a fixed eye height, matching vanilla's own
+`P_CheckSight` (`sightzstart`/`topslope`/`bottomslope`) — not a straight line interpolated from
+`z1` to `z2`.** An earlier version did exactly that: sampled points along the path
+(`SIGHT_HEIGHT_SAMPLE_STEP`) and rejected if the straight line's own height at any sample, linearly
+interpolated between the two *feet* heights, fell outside that sample's sector's floor..ceiling
+range. That's wrong the moment the two ends stand at different floor heights, which is most of the
+time in a real level: a monster on a raised platform and the player one step below it, in an
+otherwise completely open room, produces a line that dips below the *platform's own floor* almost
+immediately — it's heading toward the lower end over the *entire* distance, not just at the actual
+step — so the platform's own floor was misreported as blocking sight to the monster standing on it.
+Confirmed as a real, shipped bug against DOOM.WAD's E1M1: a pair of zombiemen one step up on a
+24-unit platform never woke no matter how long the player stood in plain view of them. `SIGHT_EYE_HEIGHT`
+(`3/4` of `PLAYER_HEIGHT`, vanilla's own fraction — this engine has no per-species heights to draw
+on, so both ends reuse the player's) fixes the origin at `z1 + SIGHT_EYE_HEIGHT` instead of sliding
+it toward `z2`, and narrows `[bottomSlope, topSlope]` against each sampled sector's floor/ceiling
+the way vanilla narrows its wedge crossing each line's opening — the target bound uses the full
+`[z2, z2 + PLAYER_HEIGHT]` span (feet to head) rather than a single point, so any part of that range
+clearing every sampled opening is enough, same as vanilla. This is still a coarser stand-in for the
+real thing — vanilla walks the BSP and narrows the wedge at every actual line crossing, this samples
+discrete points along the path instead — but the *shape* of the check now matches vanilla's, which
+is what the ordinary-step case needed.
 
 **A rocket that explodes against a wall sits its own impact point exactly on that wall**, which
 broke splash to everyone else the instant it happened: a raw segment-intersection test between

@@ -343,7 +343,7 @@ const SIGHT_HEIGHT_SAMPLE_STEP = 64;
 /**
  * True if a straight 3D line between two points isn't crossed by any
  * sight-blocking *line* (`World.blocksSight`, e.g. a closed door) **and**
- * doesn't need to pass through the floor or ceiling of any sector it
+ * has an unbroken sight wedge through the floor/ceiling of every sector it
  * travels over/under along the way.
  *
  * The line-crossing half is the same test FogOfWar's own player-to-sample
@@ -355,12 +355,37 @@ const SIGHT_HEIGHT_SAMPLE_STEP = 64;
  * the way at all: a monster standing in a room genuinely underneath a ledge
  * the player is standing on, with no shared two-sided line anywhere near the
  * straight 2D path between them, registered as fully visible (and
- * shootable) purely because nothing in `linesNear` ever blocked it. Vanilla
- * avoids this because its own `P_CheckSight` walks the BSP and narrows a
- * top/bottom sight wedge through every sector's actual floor/ceiling height
- * as it crosses — this is a coarser stand-in for that: sample points along
- * the path, and reject if the straight line's own interpolated height at any
- * sampled point falls outside that point's sector's floor..ceiling range.
+ * shootable) purely because nothing in `linesNear` ever blocked it.
+ *
+ * That half is a **sight wedge from a fixed eye height**, narrowed through
+ * every sampled sector's floor/ceiling — `3/4` of `PLAYER_HEIGHT` above
+ * `z1` (vanilla's own `sightzstart` fraction — this engine has no
+ * per-species heights to draw on, so both ends reuse the player's), matching
+ * vanilla's own `P_CheckSight` (`sightzstart`/`topslope`/`bottomslope`), not
+ * a naive straight line interpolated from `z1` to `z2`. That distinction is
+ * load-bearing: with a plain interpolated line, two points on *different
+ * floor heights* — a monster on a raised 24-unit platform and the player one
+ * step below it, in an otherwise completely open room — produce a line that
+ * dips below the platform's own floor almost immediately, since it's heading
+ * toward the lower end over the *entire* distance, not just at the actual
+ * step. That reported the platform's own floor as blocking sight to the
+ * monster standing on it, which broke waking monsters on any raised nook or
+ * landing (confirmed against DOOM.WAD's E1M1: a pair of zombiemen on a
+ * 24-unit platform, one step up from the connecting room, never woke no
+ * matter how long the player stood in plain view). A fixed eye-height origin
+ * doesn't have this problem — the wedge only narrows where an actual floor
+ * rises into it or ceiling drops into it, not wherever the straight line to
+ * the target's *feet* happens to be sloping through on its way there. The
+ * wedge's target bound uses `[z2, z2 + PLAYER_HEIGHT]` (feet to head) rather
+ * than a single point for the same reason vanilla does: any part of that
+ * range clearing every sampled opening is enough.
+ *
+ * The eye-height fraction is computed inline rather than as a module-level
+ * constant, deliberately: `world.ts` and `player.ts` import from each other,
+ * and a top-level `const` evaluated at module load (rather than deferred
+ * inside a function body, the way every other `PLAYER_HEIGHT` use in this
+ * file already is) hit the import cycle's initialization order and threw
+ * "Cannot access 'PLAYER_HEIGHT' before initialization" on page load.
  */
 export function hasLineOfSight(world: World, x1: number, y1: number, z1: number, x2: number, y2: number, z2: number): boolean {
   const dist = Math.hypot(x2 - x1, y2 - y1);
@@ -373,14 +398,23 @@ export function hasLineOfSight(world: World, x1: number, y1: number, z1: number,
     const hit = segmentIntersect(x1, y1, x2, y2, a.x, a.y, b.x, b.y);
     if (hit && hit.t * dist > SELF_HIT_MARGIN) return false;
   }
+  if (dist === 0) return true;
+
+  const eyeZ = z1 + PLAYER_HEIGHT * 0.75;
+  let topSlope = (z2 + PLAYER_HEIGHT - eyeZ) / dist;
+  let bottomSlope = (z2 - eyeZ) / dist;
 
   const steps = Math.max(1, Math.ceil(dist / SIGHT_HEIGHT_SAMPLE_STEP));
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
     const sector = world.sectorAt(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
     if (!sector) continue;
-    const sz = z1 + (z2 - z1) * t;
-    if (sz < sector.floorHeight || sz > sector.ceilHeight) return false;
+    const sampleDist = dist * t;
+    const floorSlope = (sector.floorHeight - eyeZ) / sampleDist;
+    const ceilSlope = (sector.ceilHeight - eyeZ) / sampleDist;
+    if (floorSlope > bottomSlope) bottomSlope = floorSlope;
+    if (ceilSlope < topSlope) topSlope = ceilSlope;
+    if (topSlope <= bottomSlope) return false;
   }
   return true;
 }

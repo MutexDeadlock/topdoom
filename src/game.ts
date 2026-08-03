@@ -8,13 +8,13 @@ import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import { buildThingSprites, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
 import { MONSTER_FIRE_HEIGHT, sameSpecies } from './game/monsters.ts';
-import { FlatFader, WallFader } from './render/occlusion.ts';
+import { FlatFader, TextureScroller, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
 import { World, hasLineOfSight, shotPath } from './game/world.ts';
 import { Player, PLAYER_HEIGHT, PLAYER_RADIUS } from './game/player.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
-import { CRUSH_DAMAGE } from './wad/specials.ts';
+import { CRUSH_DAMAGE, DAMAGE_FLOOR_INTERVAL, SECTOR_DAMAGE_SPECIALS } from './wad/specials.ts';
 import { Input } from './game/input.ts';
 import { Hud } from './ui/hud.ts';
 import type { Skill } from './game/skill.ts';
@@ -187,6 +187,18 @@ interface Projectile {
   sourceId: number | null;
   /** The firing monster's doomednum, for `sameSpecies` — vanilla's "don't hit same species as originator" rule on projectiles. */
   sourceType: number;
+  /**
+   * The wall `shotPath` found blocking this projectile's flight at launch
+   * (null if it flew unobstructed to `target`/`WEAPON_RANGE`), carried
+   * through to `updateProjectiles` so a shoot-triggered special (24/46/47)
+   * fires at actual arrival rather than the instant the shot is launched —
+   * vanilla's `P_ShootSpecialLine` for a missile runs from `PIT_CheckLine`
+   * when the projectile's own movement reaches the line, not when it's
+   * fired. A hitscan pellet has no such delay (it's resolved and gone in the
+   * same frame), so its trigger fires immediately in `spawnShot` instead —
+   * this field only matters for the flying-sprite case.
+   */
+  lineIndex: number | null;
 }
 
 /**
@@ -248,6 +260,7 @@ export class Game {
   private playerActor: SpriteActor;
   private wallFader!: WallFader;
   private flatFader!: FlatFader;
+  private textureScroller!: TextureScroller;
   private fogOfWar!: FogOfWar;
   private specials?: SpecialsController;
   private teleportFogs: OneShotEffect[] = [];
@@ -267,6 +280,8 @@ export class Game {
    * to the *new* map's scene, with nothing left to ever clean it up.
    */
   private pendingExit = false;
+  /** Counts down to the next damage-floor tick while the player stands on one — see `updateDamageFloor`. Reset (not merely paused) whenever they aren't, so re-entering a hazard always gives the same brief grace period rather than resuming mid-countdown from a stale visit. */
+  private damageFloorTimer = DAMAGE_FLOOR_INTERVAL;
 
   private running = false;
   private lastTime = 0;
@@ -377,6 +392,8 @@ export class Game {
     this.scene.add(this.built.group);
     this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
     this.flatFader = new FlatFader(this.built.flatSurfaces, this.built.flatMeshes);
+    this.textureScroller = new TextureScroller(map, this.built.occluders, this.built.wallMeshes, this.materials);
+    this.damageFloorTimer = DAMAGE_FLOOR_INTERVAL;
     this.player = new Player(this.world);
     // Applied before fog of war is seeded, so an explicit start position reveals
     // exactly what is visible from there and nothing from the map's real spawn.
@@ -547,8 +564,16 @@ export class Game {
       }
     }
 
+    // A shoot-triggered special (24/46/47) only fires if the shot actually
+    // reached the wall it's mounted on rather than being absorbed by a
+    // monster body first — a `hitMonsterId` (something closer stopped it)
+    // means this shot never got there. A hitscan pellet is resolved and gone
+    // this same frame, so it fires immediately here, same as vanilla's
+    // instant `PTR_ShootTraverse`; a projectile's is deferred to actual
+    // arrival in `updateProjectiles` (see `Projectile.lineIndex`'s doc).
     if (shot.kind === 'hitscan') {
       if (hitMonsterId !== null) this.things?.damage(hitMonsterId, shot.damage);
+      else this.specials?.triggerShot(path.lineIndex, this.inventory.keys);
       const tracer = new Tracer(originX, originY, startZ, endX, endY, path.z, TRACER_COLOR);
       this.scene.add(tracer.line);
       this.tracers.push(tracer);
@@ -576,6 +601,7 @@ export class Game {
       hitMonsterId,
       sourceId: null,
       sourceType: 0,
+      lineIndex: hitMonsterId === null ? path.lineIndex : null,
     });
   }
 
@@ -630,6 +656,7 @@ export class Game {
       hitMonsterId: null,
       sourceId: atk.sourceId,
       sourceType: atk.sourceType,
+      lineIndex: path.lineIndex,
     });
   }
 
@@ -703,6 +730,12 @@ export class Game {
       endX = this.player.x;
       endY = this.player.y;
       endZ = this.player.z + AIM_HEIGHT_OFFSET;
+    } else {
+      // Nothing living stopped it — whatever's left is a wall, the only thing
+      // `shotPath` itself could have blocked it on. `triggerShot`'s
+      // `byMonster` gate reproduces vanilla's own hardcoded exception: this
+      // can only actually do anything for a 46 line, never 24/47.
+      this.specials?.triggerShot(path.lineIndex, this.inventory.keys, true);
     }
     const tracer = new Tracer(atk.x, atk.y, atk.z, endX, endY, endZ, MONSTER_TRACER_COLOR);
     this.scene.add(tracer.line);
@@ -822,8 +855,14 @@ export class Game {
         if (fromMonster) {
           if (reachedPlayer) this.damagePlayer(p.damage);
           else if (struck !== null) this.things?.damage(struck, p.damage, { id: p.sourceId!, type: p.sourceType });
+          // A clean miss (reached maxDist without hitting a body) means it
+          // arrived at whatever wall shotPath found at launch — fire its
+          // shoot special now, at actual arrival, not back when it launched.
+          else this.specials?.triggerShot(p.lineIndex, this.inventory.keys, true);
         } else if (p.hitMonsterId !== null) {
           this.things?.damage(p.hitMonsterId, p.damage);
+        } else {
+          this.specials?.triggerShot(p.lineIndex, this.inventory.keys);
         }
         if (p.splash) {
           this.applyRadiusDamage(x, y, z, p.splash.radius, p.splash.damage, p.splash.hitsPlayer, p.splash.tracers);
@@ -910,6 +949,35 @@ export class Game {
     if (this.world.sectorIndexAt(this.player.x, this.player.y) === sectorIndex) this.damagePlayer(CRUSH_DAMAGE);
     const sector = this.map.sectors[sectorIndex];
     for (const m of this.things?.monstersInSector(sector) ?? []) this.things?.damage(m.id, CRUSH_DAMAGE);
+  }
+
+  /**
+   * Vanilla's `P_PlayerInSpecialSector`, run directly here rather than
+   * through `SpecialsController` — a damage floor isn't driven by any mover,
+   * just `sector.special` plus the player's own position, none of which
+   * needs `SpecialsController`'s machinery (see `SECTOR_DAMAGE_SPECIALS`'s
+   * doc). Player-only, matching vanilla, which never damages monsters this
+   * way. Gated on `player.z === sector.floorHeight` — vanilla's own
+   * `mo->z != sector->floorheight` check, skipping a player still falling
+   * into the sector rather than actually resting on its floor; comparing
+   * against the *local* 2D-position sector's own floor height (not
+   * `World.groundFloor`, which can read a straddled ledge's higher side) is
+   * what keeps this from firing early while still up on an adjacent ledge.
+   */
+  private updateDamageFloor(dt: number): void {
+    const sector = this.world.sectorAt(this.player.x, this.player.y);
+    const effect = sector ? SECTOR_DAMAGE_SPECIALS[sector.special] : undefined;
+    if (!sector || !effect || this.player.z !== sector.floorHeight) {
+      this.damageFloorTimer = DAMAGE_FLOOR_INTERVAL;
+      return;
+    }
+    this.damageFloorTimer -= dt;
+    if (this.damageFloorTimer > 0) return;
+    this.damageFloorTimer += DAMAGE_FLOOR_INTERVAL;
+    this.damagePlayer(effect.amount);
+    if (effect.exitBelowHealth !== undefined && this.inventory.health > 0 && this.inventory.health <= effect.exitBelowHealth) {
+      this.pendingExit = true;
+    }
   }
 
   /** `R`, while dead: a fresh inventory and a reload of the current map — `loadMapByIndex` resets the player/world/specials/fog and, via the doc on its own top, `playerDead`/the death overlay/`playerActor` too. */
@@ -1010,6 +1078,7 @@ export class Game {
       this.things?.tryPickup(this.player.x, this.player.y, this.player.z, PICKUP_RANGE, (type, dropped) =>
         applyPickup(this.inventory, type, dropped),
       );
+      this.updateDamageFloor(dt);
     } else if (input.pressed('KeyR')) {
       this.restart();
       input.endFrame();
@@ -1075,6 +1144,9 @@ export class Game {
     // and things already know theirs, so they go through alphaOf directly.
     this.wallFader.commit((i) => fog.wallAlpha(i));
     this.flatFader.commit(fogAlphaOf);
+    // Independent of camera/player position — a scrolling wall animates
+    // whether or not it's currently faded or in view.
+    this.textureScroller.update(dt);
     // Door/lift geometry lives in its own meshes (game/specials.ts), so it
     // carries its own faders rather than the two above.
     this.specials?.updateFading(...camPlayerArgs);

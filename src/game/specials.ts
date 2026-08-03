@@ -3,11 +3,17 @@ import { NO_SIDE, type DoomMap, type LineDef } from '../wad/map.ts';
 import {
   LINE_SPECIALS,
   SECTOR_LIGHT_SPECIALS,
+  SECTOR_DOOR_SPECIALS,
+  DOOR_SPEED,
+  DOOR_WAIT,
   DOOR_OPEN_GAP,
+  DOOR_CLOSE_WAIT_SECONDS,
+  DOOR_RAISE_WAIT_SECONDS,
   EIGHT_UNIT_GAP,
   CRUSH_DAMAGE_INTERVAL,
   SWITCH_FLASH_SECONDS,
   TELEPORT_DEST,
+  FLOOR_SPEED,
   switchPairTexture,
   type SpecialDef,
   type DoorEffect,
@@ -15,8 +21,12 @@ import {
   type FloorEffect,
   type CrusherEffect,
   type StairsEffect,
+  type CeilingEffect,
+  type CeilingTarget,
+  type LightChangeEffect,
   type MoveTarget,
   type LightPattern,
+  type SectorDoorTimer,
 } from '../wad/specials.ts';
 import {
   World,
@@ -35,6 +45,7 @@ import type { KeyColor } from './inventory.ts';
 import {
   buildMoverMesh,
   lightToColor,
+  NO_TEXTURE,
   type BuiltMap,
   type MapMeshOptions,
   type MoverMesh,
@@ -57,6 +68,27 @@ function resolveTargets(map: DoomMap, line: LineDef, def: SpecialDef): number[] 
   const out: number[] = [];
   for (let i = 0; i < map.sectors.length; i++) {
     if (map.sectors[i].tag === line.tag) out.push(i);
+  }
+  return out;
+}
+
+/**
+ * Every two-sided line's *other-side* sector index, in the order that line
+ * appears in `map.linedefs` — which, since every stock WAD's `sector->lines[]`
+ * is built by walking linedefs in that same ascending order (vanilla's own
+ * `P_GroupLines`), is exactly the order vanilla itself would enumerate a given
+ * sector's own bordering lines in. Used wherever a special's own vanilla
+ * source walks `sec->lines[i]` and reacts to whichever neighbor comes first —
+ * `lowerAndChange`'s model-sector search and the donut's ring/outer search.
+ */
+function neighborSectorIndices(map: DoomMap, sectorIndex: number): number[] {
+  const out: number[] = [];
+  for (const line of map.linedefs) {
+    if (line.left === NO_SIDE || line.right === NO_SIDE) continue;
+    const front = map.sidedefs[line.right]?.sector;
+    const back = map.sidedefs[line.left]?.sector;
+    if (front === sectorIndex && back !== undefined) out.push(back);
+    else if (back === sectorIndex && front !== undefined) out.push(front);
   }
   return out;
 }
@@ -153,6 +185,12 @@ function findSwitchEntries(map: DoomMap, line: LineDef): SwitchEntry[] {
 /** Sectors whose height a mover will drive, or whose wall carries a switch texture — must stay out of the static batch (see mapmesh.ts). */
 export function computeMovableSectors(map: DoomMap): Set<number> {
   const out = new Set<number>();
+  for (let i = 0; i < map.sectors.length; i++) {
+    // Sector-type door timers (10/14) never wait for a linedef trigger, so
+    // there's no `def`/tag-resolution step to hook into here — the sector
+    // itself is the mover from the moment the map loads.
+    if (SECTOR_DOOR_SPECIALS[map.sectors[i].special] !== undefined) out.add(i);
+  }
   for (const line of map.linedefs) {
     const def = LINE_SPECIALS[line.special];
     if (!def) continue;
@@ -162,9 +200,27 @@ export function computeMovableSectors(map: DoomMap): Set<number> {
       for (const startSector of resolveTargets(map, line, def)) {
         for (const step of findStairChain(map, startSector, def.effect.stepHeight)) out.add(step.sectorIndex);
       }
-    } else if (def.effect.kind !== 'exit' && def.effect.kind !== 'teleport') {
+    } else if (def.effect.kind === 'donut') {
+      // Same reasoning as stairs above: the tag only names the "hole", and
+      // its ring neighbor is discovered dynamically (see triggerDonut) so it
+      // has to be walked here too, not just resolved from the tag.
+      for (const startSector of resolveTargets(map, line, def)) {
+        out.add(startSector);
+        const ringIndex = neighborSectorIndices(map, startSector)[0];
+        if (ringIndex !== undefined) out.add(ringIndex);
+      }
+    } else if (
+      def.effect.kind !== 'exit' &&
+      def.effect.kind !== 'teleport' &&
+      def.effect.kind !== 'lightChange'
+    ) {
       // Exit doesn't move geometry; teleport's tag match is a destination
       // lookup, not a mover — the target sector's own height never changes.
+      // A pure light change never moves geometry either, and deliberately
+      // stays out of the movable set: `recolorSector` only ever rewrites
+      // static-batch geometry (see its doc), so pulling a lightChange-only
+      // sector's geometry into a mover-mesh would just make it unreachable
+      // from there instead.
       for (const sectorIndex of resolveTargets(map, line, def)) out.add(sectorIndex);
     }
     for (const e of findSwitchEntries(map, line)) out.add(e.sectorIndex);
@@ -181,7 +237,16 @@ export function computeLightSectors(map: DoomMap): Set<number> {
   return out;
 }
 
-type DoorState = 'raising' | 'hold' | 'lowering' | 'open' | 'closed';
+/**
+ * `holdClosed` is the mirror of `hold`: waiting at the *bottom* before
+ * automatically moving again, rather than at the top. Two cases reach it —
+ * a `closeThenOpen` door (16/76) after it finishes closing, and a
+ * sector-type-14 door's initial 5-minute wait before its first move at all
+ * (`spawnSectorDoorTimer`) — both transition to `raising` once
+ * `holdRemaining` elapses, same shape as `hold`'s own transition to
+ * `lowering`.
+ */
+type DoorState = 'raising' | 'hold' | 'holdClosed' | 'lowering' | 'open' | 'closed';
 interface DoorMover {
   kind: 'door';
   sectorIndex: number;
@@ -212,6 +277,24 @@ interface FloorMover {
   crush: boolean;
   /** Counts down to the next `onCrush` call while `crush` is set and `state === 'moving'`; see `CrusherMover.crushTimer`. */
   crushTimer: number;
+  /**
+   * Texture/special applied only once this mover reaches `target`, never at
+   * trigger time — vanilla's `lowerAndChange` and the donut's ring riser
+   * (`donutRaise`), both of which apply `floor->texture`/`newspecial` in
+   * `T_MoveFloor`'s `pastdest` branch rather than up front the way this
+   * table's ordinary `FloorEffect.changeTexture` family does. `tickFloor`
+   * applies it in the same tick the mover's `state` flips to `'done'`.
+   */
+  arrivalTexture?: { floorTex: string; special: number };
+}
+
+/** A one-way ceiling mover — see `CeilingEffect`'s doc. No hold, no reversal, no crush handling: vanilla has no case that needs any of those for this mover. */
+interface CeilingMover {
+  kind: 'ceiling';
+  sectorIndex: number;
+  speed: number;
+  target: number;
+  state: 'moving' | 'done';
 }
 
 type CrusherState = 'lowering' | 'raising' | 'stopped';
@@ -227,7 +310,7 @@ interface CrusherMover {
   crushTimer: number;
 }
 
-type Mover = DoorMover | LiftMover | FloorMover | CrusherMover;
+type Mover = DoorMover | LiftMover | FloorMover | CrusherMover | CeilingMover;
 
 interface LightState {
   pattern: LightPattern;
@@ -315,6 +398,21 @@ function resolveFloorTarget(map: DoomMap, sectorIndex: number, target: MoveTarge
       );
     case 'highestNeighborFloorPlus8':
       return highestNeighborFloor(map, sectorIndex) + EIGHT_UNIT_GAP;
+    case 'plus24':
+      return map.sectors[sectorIndex].floorHeight + 24;
+    case 'plus32':
+      return map.sectors[sectorIndex].floorHeight + 32;
+    case 'plus512':
+      return map.sectors[sectorIndex].floorHeight + 512;
+  }
+}
+
+function resolveCeilingTarget(map: DoomMap, sectorIndex: number, target: CeilingTarget): number {
+  switch (target) {
+    case 'highestNeighborCeiling':
+      return highestNeighborCeiling(map, sectorIndex);
+    case 'floorPlus8':
+      return map.sectors[sectorIndex].floorHeight + EIGHT_UNIT_GAP;
   }
 }
 
@@ -482,6 +580,11 @@ export class SpecialsController {
     this.indexMovableNeighbors();
     for (const sectorIndex of this.movableSectors) this.createMoverMesh(sectorIndex);
 
+    for (let i = 0; i < map.sectors.length; i++) {
+      const timer = SECTOR_DOOR_SPECIALS[map.sectors[i].special];
+      if (timer) this.spawnSectorDoorTimer(i, timer);
+    }
+
     const lightSectors = computeLightSectors(map);
     for (const sectorIndex of lightSectors) {
       const sector = map.sectors[sectorIndex];
@@ -499,23 +602,66 @@ export class SpecialsController {
   }
 
   /**
-   * `sectorOccluders`/`sectorFlats` point at the specific occluder/flat
-   * objects a light-flicker sector needs to recolor each tick (see
-   * `updateFading`), pulled out of `built.occluders`/`built.flatSurfaces`
-   * once at construction time.
+   * Sector-type door timers (10/14, `SECTOR_DOOR_SPECIALS`) spawn their
+   * `DoorMover` directly, bypassing `triggerDoor` entirely — there's no
+   * linedef, no tag, nothing to trigger, just a mover that starts waiting
+   * the moment the map loads. `closeIn30` reuses the ordinary `hold` state
+   * (already exactly "wait, then lower, then stop") seeded straight into it
+   * rather than via a `raising` phase, since the sector is assumed already
+   * open in the map data; `raiseIn5Min` reuses `holdClosed` the same way,
+   * assumed already closed. Both use a plain `openClose` `DoorEffect` since
+   * neither vanilla type is `openOnly`/`closeThenOpen` once it actually
+   * starts moving (see `SECTOR_DOOR_SPECIALS`'s own doc).
+   */
+  private spawnSectorDoorTimer(sectorIndex: number, timer: SectorDoorTimer): void {
+    const sector = this.map.sectors[sectorIndex];
+    const effect: DoorEffect = { kind: 'door', speed: DOOR_SPEED, waitSeconds: DOOR_WAIT, mode: 'openClose' };
+    if (timer === 'closeIn30') {
+      this.movers.set(sectorIndex, {
+        kind: 'door',
+        sectorIndex,
+        effect,
+        openHeight: sector.ceilHeight,
+        closeHeight: sector.floorHeight,
+        state: 'hold',
+        holdRemaining: DOOR_CLOSE_WAIT_SECONDS,
+      });
+    } else {
+      this.movers.set(sectorIndex, {
+        kind: 'door',
+        sectorIndex,
+        effect,
+        openHeight: lowestNeighborCeiling(this.map, sectorIndex) - DOOR_OPEN_GAP,
+        closeHeight: sector.floorHeight,
+        state: 'holdClosed',
+        holdRemaining: DOOR_RAISE_WAIT_SECONDS,
+      });
+    }
+  }
+
+  /**
+   * `sectorOccluders`/`sectorFlats` point at every sector's own occluder/flat
+   * objects, pulled out of `built.occluders`/`built.flatSurfaces` once at
+   * construction time so `recolorSector` never has to re-scan the whole map.
+   * Originally scoped to just the load-time blink-pattern sectors
+   * (`lightStates`), but the `lightChange` line specials
+   * (`triggerLightChange`) can recolor *any* tag-matched sector on demand,
+   * not just ones with an ongoing pattern, so this indexes every sector
+   * unconditionally now — a one-time, load-only cost. Static-batch-only, same
+   * as `recolorSector` itself: a sector that's also a mover (in
+   * `movableSectors`) has its geometry in its own `moverMeshes` entry
+   * instead, out of reach here — an existing limitation the blink-pattern
+   * feature already had, not a new one.
    */
   private indexLightGeometry(): void {
     this.sectorOccluders.clear();
     this.sectorFlats.clear();
-    if (this.lightStates.size === 0) return;
     for (const o of this.built.occluders) {
-      if (!this.lightStates.has(o.sector)) continue;
       const arr = this.sectorOccluders.get(o.sector) ?? [];
       arr.push(o);
       this.sectorOccluders.set(o.sector, arr);
     }
     for (const f of this.built.flatSurfaces) {
-      if (!this.lightStates.has(f.sector)) continue;
       const arr = this.sectorFlats.get(f.sector) ?? [];
       arr.push(f);
       this.sectorFlats.set(f.sector, arr);
@@ -647,6 +793,7 @@ export class SpecialsController {
       if (mover.kind === 'door') this.tickDoor(mover, dt, dirty);
       else if (mover.kind === 'lift') this.tickLift(mover, dt, dirty);
       else if (mover.kind === 'floor') this.tickFloor(mover, dt, dirty);
+      else if (mover.kind === 'ceiling') this.tickCeiling(mover, dt, dirty);
       else this.tickCrusher(mover, dt, dirty);
     }
   }
@@ -658,17 +805,29 @@ export class SpecialsController {
       sector.ceilHeight = Math.min(mover.openHeight, sector.ceilHeight + mover.effect.speed * dt);
       if (sector.ceilHeight >= mover.openHeight) {
         sector.ceilHeight = mover.openHeight;
-        mover.state = mover.effect.mode === 'openOnly' ? 'open' : 'hold';
+        // A closeThenOpen door stays open for good once it reopens, same as
+        // openOnly — vanilla removes its thinker outright at this point
+        // (`case close30ThenOpen: case blazeOpen: case open:` share one
+        // branch in T_VerticalDoor's UP-pastdest handler).
+        mover.state = mover.effect.mode === 'openOnly' || mover.effect.mode === 'closeThenOpen' ? 'open' : 'hold';
         mover.holdRemaining = mover.effect.waitSeconds;
       }
     } else if (mover.state === 'hold') {
       mover.holdRemaining -= dt;
       if (mover.holdRemaining <= 0) mover.state = 'lowering';
+    } else if (mover.state === 'holdClosed') {
+      mover.holdRemaining -= dt;
+      if (mover.holdRemaining <= 0) mover.state = 'raising';
     } else if (mover.state === 'lowering') {
       sector.ceilHeight = Math.max(mover.closeHeight, sector.ceilHeight - mover.effect.speed * dt);
       if (sector.ceilHeight <= mover.closeHeight) {
         sector.ceilHeight = mover.closeHeight;
-        mover.state = 'closed';
+        if (mover.effect.mode === 'closeThenOpen') {
+          mover.state = 'holdClosed';
+          mover.holdRemaining = DOOR_CLOSE_WAIT_SECONDS;
+        } else {
+          mover.state = 'closed';
+        }
       }
     }
     if (sector.ceilHeight !== before) dirty.add(mover.sectorIndex);
@@ -706,9 +865,27 @@ export class SpecialsController {
     if ((dir > 0 && sector.floorHeight >= mover.target) || (dir < 0 && sector.floorHeight <= mover.target)) {
       sector.floorHeight = mover.target;
       mover.state = 'done';
+      if (mover.arrivalTexture) {
+        sector.floorTex = mover.arrivalTexture.floorTex;
+        sector.special = mover.arrivalTexture.special;
+      }
     }
     if (sector.floorHeight !== before) dirty.add(mover.sectorIndex);
     if (mover.crush) this.tickCrush(mover.sectorIndex, mover, dt);
+  }
+
+  /** One-way ceiling move — see `CeilingMover`'s doc for why there's no hold/reversal/crush handling at all. */
+  private tickCeiling(mover: CeilingMover, dt: number, dirty: Set<number>): void {
+    if (mover.state === 'done') return;
+    const sector = this.map.sectors[mover.sectorIndex];
+    const before = sector.ceilHeight;
+    const dir = mover.target > sector.ceilHeight ? 1 : -1;
+    sector.ceilHeight += dir * mover.speed * dt;
+    if ((dir > 0 && sector.ceilHeight >= mover.target) || (dir < 0 && sector.ceilHeight <= mover.target)) {
+      sector.ceilHeight = mover.target;
+      mover.state = 'done';
+    }
+    if (sector.ceilHeight !== before) dirty.add(mover.sectorIndex);
   }
 
   /** No hold/rest state, unlike doors and lifts — a crusher reverses at each end and repeats forever. */
@@ -744,21 +921,27 @@ export class SpecialsController {
   private triggerDoor(sectorIndex: number, effect: DoorEffect): void {
     const existing = this.movers.get(sectorIndex);
     if (!existing || existing.kind !== 'door') {
-      const openHeight = lowestNeighborCeiling(this.map, sectorIndex) - DOOR_OPEN_GAP;
-      const closeHeight = this.map.sectors[sectorIndex].floorHeight;
+      const sector = this.map.sectors[sectorIndex];
+      const closeThenOpen = effect.mode === 'closeThenOpen';
+      // A closeThenOpen door is authored already open, and reopens to
+      // wherever it already sits — vanilla's own `door->topheight =
+      // sec->ceilingheight;` (p_doors.c), unlike every other DoorMode here,
+      // which always computes a fresh neighbor-ceiling target.
+      const openHeight = closeThenOpen ? sector.ceilHeight : lowestNeighborCeiling(this.map, sectorIndex) - DOOR_OPEN_GAP;
+      const closeHeight = sector.floorHeight;
       this.movers.set(sectorIndex, {
         kind: 'door',
         sectorIndex,
         effect,
         openHeight,
         closeHeight,
-        state: 'raising',
+        state: closeThenOpen ? 'lowering' : 'raising',
         holdRemaining: 0,
       });
       return;
     }
     const mover = existing;
-    if (effect.mode === 'closeOnly') {
+    if (effect.mode === 'closeOnly' || effect.mode === 'closeThenOpen') {
       mover.state = 'lowering';
       return;
     }
@@ -854,6 +1037,158 @@ export class SpecialsController {
     if (existing && existing.kind === 'crusher') existing.state = 'stopped';
   }
 
+  /** Vanilla's own `sec->specialdata` guard: a sector already driven by *any* mover ignores this — unlike doors/lifts/floors above, there's no interactive re-trigger behavior worth having for a one-way move. */
+  private triggerCeiling(sectorIndex: number, effect: CeilingEffect): void {
+    if (this.movers.has(sectorIndex)) return;
+    const target = resolveCeilingTarget(this.map, sectorIndex, effect.target);
+    this.movers.set(sectorIndex, { kind: 'ceiling', sectorIndex, speed: effect.speed, target, state: 'moving' });
+  }
+
+  /**
+   * Vanilla's `raiseToTexture` (`EV_DoFloor`'s own case, not reachable
+   * through `resolveFloorTarget`): scans every two-sided line bordering the
+   * sector and, for *both* of that line's sidedefs (not just the far one —
+   * confirmed against `p_floor.c`), checks its lower texture's pixel height,
+   * keeping the smallest found. No candidates at all: vanilla's own
+   * `minsize` sentinel (`MAXINT`) is replicated as `Infinity`, meaning the
+   * floor just rises forever rather than being clamped to something safer —
+   * this only happens on a malformed map (no bordering line has a bottom
+   * texture at all), which no real map actually does.
+   */
+  private triggerRaiseToTexture(sectorIndex: number): void {
+    const existing = this.movers.get(sectorIndex);
+    if (existing && existing.kind === 'floor' && existing.state === 'moving') return;
+    let minHeight = Infinity;
+    for (const line of this.map.linedefs) {
+      const front = line.right !== NO_SIDE ? this.map.sidedefs[line.right]?.sector : undefined;
+      const back = line.left !== NO_SIDE ? this.map.sidedefs[line.left]?.sector : undefined;
+      if (front === undefined || back === undefined) continue;
+      if (front !== sectorIndex && back !== sectorIndex) continue;
+      for (const side of [this.map.sidedefs[line.right], this.map.sidedefs[line.left]]) {
+        if (!side || side.lower === NO_TEXTURE || side.lower === '') continue;
+        const h = this.bank.textureHeight(side.lower);
+        if (h !== null && h < minHeight) minHeight = h;
+      }
+    }
+    const sector = this.map.sectors[sectorIndex];
+    const target = sector.floorHeight + minHeight;
+    this.movers.set(sectorIndex, {
+      kind: 'floor',
+      sectorIndex,
+      speed: FLOOR_SPEED,
+      target,
+      state: 'moving',
+      crush: false,
+      crushTimer: CRUSH_DAMAGE_INTERVAL,
+    });
+  }
+
+  /**
+   * Vanilla's `lowerAndChange` — see `LowerAndChangeEffect`'s doc for the
+   * model-sector search and why the texture/special only apply on arrival
+   * (`arrivalTexture`, applied by `tickFloor`).
+   */
+  private triggerLowerAndChange(sectorIndex: number): void {
+    const existing = this.movers.get(sectorIndex);
+    if (existing && existing.kind === 'floor' && existing.state === 'moving') return;
+    const target = lowestNeighborFloor(this.map, sectorIndex);
+    let arrivalTexture: { floorTex: string; special: number } | undefined;
+    for (const neighborIndex of neighborSectorIndices(this.map, sectorIndex)) {
+      const neighbor = this.map.sectors[neighborIndex];
+      if (neighbor.floorHeight === target) {
+        arrivalTexture = { floorTex: neighbor.floorTex, special: neighbor.special };
+        break;
+      }
+    }
+    this.movers.set(sectorIndex, {
+      kind: 'floor',
+      sectorIndex,
+      speed: FLOOR_SPEED,
+      target,
+      state: 'moving',
+      crush: false,
+      crushTimer: CRUSH_DAMAGE_INTERVAL,
+      arrivalTexture,
+    });
+  }
+
+  /**
+   * Vanilla's `EV_DoDonut` — see `DonutEffect`'s doc for the ring/outer
+   * search and the deliberate divergence from vanilla's own buggy two-sided
+   * check. Only the hole (`holeIndex`) gets vanilla's busy-sector guard,
+   * matching the real source, which never checks the ring before
+   * overwriting its mover.
+   */
+  private triggerDonut(holeIndex: number): void {
+    if (this.movers.has(holeIndex)) return;
+    const ringIndex = neighborSectorIndices(this.map, holeIndex)[0];
+    if (ringIndex === undefined) return;
+    let outerIndex: number | undefined;
+    for (const candidate of neighborSectorIndices(this.map, ringIndex)) {
+      if (candidate === holeIndex) continue;
+      outerIndex = candidate;
+      break;
+    }
+    if (outerIndex === undefined) return;
+    const outer = this.map.sectors[outerIndex];
+    this.movers.set(ringIndex, {
+      kind: 'floor',
+      sectorIndex: ringIndex,
+      speed: FLOOR_SPEED / 2,
+      target: outer.floorHeight,
+      state: 'moving',
+      crush: false,
+      crushTimer: CRUSH_DAMAGE_INTERVAL,
+      arrivalTexture: { floorTex: outer.floorTex, special: 0 },
+    });
+    this.movers.set(holeIndex, {
+      kind: 'floor',
+      sectorIndex: holeIndex,
+      speed: FLOOR_SPEED / 2,
+      target: outer.floorHeight,
+      state: 'moving',
+      crush: false,
+      crushTimer: CRUSH_DAMAGE_INTERVAL,
+    });
+  }
+
+  /**
+   * Instant light-level changes/strobe-starts — see `LightChangeMode`'s doc
+   * for each mode's vanilla source. Unlike a blink pattern assigned at map
+   * load (`lightStates`, seeded in the constructor), these can target *any*
+   * sector on demand, which is exactly what `recolorSector` already handles
+   * generically — the only new piece here is computing the new level itself.
+   */
+  private triggerLightChange(sectorIndex: number, effect: LightChangeEffect): void {
+    const sector = this.map.sectors[sectorIndex];
+    switch (effect.mode) {
+      case 'setLevel':
+        sector.light = effect.level ?? sector.light;
+        this.recolorSector(sectorIndex);
+        break;
+      case 'brightestNeighbor': {
+        let bright = 0;
+        for (const n of neighborSectorIndices(this.map, sectorIndex)) bright = Math.max(bright, this.map.sectors[n].light);
+        sector.light = bright;
+        this.recolorSector(sectorIndex);
+        break;
+      }
+      case 'darkestNeighbor': {
+        let min = sector.light;
+        for (const n of neighborSectorIndices(this.map, sectorIndex)) {
+          if (this.map.sectors[n].light < min) min = this.map.sectors[n].light;
+        }
+        sector.light = min;
+        this.recolorSector(sectorIndex);
+        break;
+      }
+      case 'startStrobe':
+        if (this.movers.has(sectorIndex)) return; // vanilla's sec->specialdata guard
+        this.lightStates.set(sectorIndex, makeLightState('blink1', sector.light, darkestNeighborLight(this.map, sectorIndex)));
+        break;
+    }
+  }
+
   /**
    * All steps in the chain start rising together (not staggered) — each just
    * has farther to travel, which is what produces the classic step-by-step
@@ -939,11 +1274,43 @@ export class SpecialsController {
     if (targets.length === 0) return null;
 
     for (const sectorIndex of targets) {
-      if (def.effect.kind === 'door') this.triggerDoor(sectorIndex, def.effect);
-      else if (def.effect.kind === 'lift') this.triggerLift(sectorIndex, def.effect);
-      else if (def.effect.kind === 'floor') this.triggerFloor(sectorIndex, def.effect, line);
-      else if (def.effect.kind === 'crusher') this.triggerCrusher(sectorIndex, def.effect);
-      else this.triggerCrusherStop(sectorIndex);
+      switch (def.effect.kind) {
+        case 'door':
+          this.triggerDoor(sectorIndex, def.effect);
+          break;
+        case 'lift':
+          this.triggerLift(sectorIndex, def.effect);
+          break;
+        case 'floor':
+          this.triggerFloor(sectorIndex, def.effect, line);
+          break;
+        case 'crusher':
+          this.triggerCrusher(sectorIndex, def.effect);
+          break;
+        case 'crusherStop':
+          this.triggerCrusherStop(sectorIndex);
+          break;
+        case 'ceiling':
+          this.triggerCeiling(sectorIndex, def.effect);
+          break;
+        case 'raiseToTexture':
+          this.triggerRaiseToTexture(sectorIndex);
+          break;
+        case 'lowerAndChange':
+          this.triggerLowerAndChange(sectorIndex);
+          break;
+        case 'donut':
+          // The tag match already resolved to the "hole" sector; the ring
+          // and outer sectors are discovered dynamically inside — see
+          // triggerDonut's doc.
+          this.triggerDonut(sectorIndex);
+          break;
+        case 'lightChange':
+          this.triggerLightChange(sectorIndex, def.effect);
+          break;
+        default:
+          break;
+      }
     }
     if (!def.repeatable) this.usedOnce.add(lineIndex);
     return null;
@@ -976,6 +1343,26 @@ export class SpecialsController {
       if (dest) return dest;
     }
     return null;
+  }
+
+  /**
+   * Fires a `shoot` special (24, 46, 47) when a hitscan pellet or projectile
+   * is stopped by exactly this line — vanilla's `P_ShootSpecialLine`. Unlike
+   * the walk/use triggers, which scan nearby lines themselves (`linesNear`),
+   * the caller already knows which line stopped the shot: `shotPath`
+   * (`game/world.ts`) returns it directly, so this is a plain lookup rather
+   * than another geometric search. `byMonster` reproduces vanilla's own
+   * per-number gate (`SpecialDef.monsterCanTrigger` — true only for 46): a
+   * monster's shot that happens to stop against a 24 or 47 line does nothing,
+   * same as vanilla.
+   */
+  triggerShot(lineIndex: number | null, ownedKeys: ReadonlySet<KeyColor>, byMonster = false): void {
+    if (lineIndex === null) return;
+    const line = this.map.linedefs[lineIndex];
+    const def = LINE_SPECIALS[line.special];
+    if (!def || def.trigger !== 'shoot') return;
+    if (byMonster && !def.monsterCanTrigger) return;
+    this.trigger(lineIndex, ownedKeys, byMonster);
   }
 
   private handleUseTrigger(

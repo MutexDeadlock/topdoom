@@ -41,6 +41,20 @@ export class MaterialBank {
     return false;
   }
 
+  /**
+   * Wall texture pixel height, or null if the name doesn't resolve — vanilla's
+   * `textureheight[]` lookup, needed by `raiseToTexture` (`game/specials.ts`)
+   * to find the shortest bottom-texture height among a sector's neighboring
+   * lines. Decodes (and caches, via `GraphicsBank.texture`'s own cache) the
+   * full bitmap rather than reading just the `TEXTURE1`/`TEXTURE2` header,
+   * since this is only ever called from a rarely-firing trigger, not a hot
+   * path — not worth a second, header-only lookup path just to skip
+   * compositing patches that would otherwise never get decoded anyway.
+   */
+  textureHeight(name: string): number | null {
+    return this.gfx.texture(name)?.height ?? null;
+  }
+
   get(kind: SurfaceKind, name: string): THREE.MeshBasicMaterial | null {
     const key = kind + ':' + name.toUpperCase();
     const hit = this.materials.get(key);

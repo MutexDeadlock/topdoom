@@ -730,6 +730,8 @@ export interface ShotPath {
   y: number;
   z: number;
   dist: number;
+  /** The line that actually stopped it short (a wall, a shut door), or null if it reached `target`/`WEAPON_RANGE` unobstructed — the shoot-triggered specials (`game/specials.ts: triggerShot`) key off this. */
+  lineIndex: number | null;
 }
 
 /**
@@ -778,6 +780,7 @@ export function shotPath(
   const tx = x + dx * maxRange;
   const ty = y + dy * maxRange;
   let nearestT = 1;
+  let blockingLine: number | null = null;
   for (const i of world.linesNear(x, y, maxRange)) {
     const line = world.map.linedefs[i];
     const a = world.map.vertexes[line.v1];
@@ -790,8 +793,11 @@ export function shotPath(
     const ey = len > 0 ? (ldy / len) * WALL_OVERLAP : 0;
     const hit = segmentIntersect(x, y, tx, ty, a.x - ex, a.y - ey, b.x + ex, b.y + ey);
     if (!hit || hit.t >= nearestT) continue;
-    if (blocksShot(world, i, z + (endZ - z) * hit.t, skipHeightTest)) nearestT = hit.t;
+    if (blocksShot(world, i, z + (endZ - z) * hit.t, skipHeightTest)) {
+      nearestT = hit.t;
+      blockingLine = i;
+    }
   }
   const dist = maxRange * nearestT;
-  return { x: x + dx * dist, y: y + dy * dist, z: z + (endZ - z) * nearestT, dist };
+  return { x: x + dx * dist, y: y + dy * dist, z: z + (endZ - z) * nearestT, dist, lineIndex: blockingLine };
 }

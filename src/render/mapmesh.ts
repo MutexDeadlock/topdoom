@@ -4,7 +4,8 @@ import { buildSubSectorPolys, type SubSectorPoly } from './bsp.ts';
 import type { MaterialBank, SurfaceKind } from './textures.ts';
 
 export const SKY_FLAT = 'F_SKY1';
-const NO_TEXTURE = '-';
+/** DOOM's sentinel for "no texture assigned" in a sidedef texture slot — also used by `game/specials.ts`'s `raiseToTexture` to skip unset bottom textures. */
+export const NO_TEXTURE = '-';
 
 /**
  * DOOM's map plane is (x, y) with z as height. three.js is y-up, so a DOOM
@@ -109,6 +110,10 @@ export interface WallOccluder {
   topH: number;
   /** Sector whose light level this quad was coloured from — for specials-driven relight. */
   sector: number;
+  /** Linedef this quad was built from — for `TextureScroller` (render/occlusion.ts) to find special-48's front side. */
+  line: number;
+  /** True if this quad came from the linedef's front (right) sidedef — vanilla's `sidenum[0]`, the only side a scrolling special ever animates. */
+  frontSide: boolean;
 }
 
 /**
@@ -221,9 +226,9 @@ export function buildMoverMesh(
   // SpecialsController's neighbour propagation).
   const includeSide = (s: number) => s === sectorIndex || !movableSectors?.has(s);
 
-  for (const line of map.linedefs) {
+  for (const [lineIndex, line] of map.linedefs.entries()) {
     if (!touchesSector(map, line, sectorIndex)) continue;
-    processLine(map, line, batches, texSize, wallHeightCap, wallQuads, includeSide);
+    processLine(map, line, lineIndex, batches, texSize, wallHeightCap, wallQuads, includeSide);
   }
 
   const group = new THREE.Group();
@@ -347,6 +352,9 @@ interface WallSpec {
   light: number;
   /** Sector whose light level `light` was read from — carried onto the occluder record. */
   sector: number;
+  /** Linedef this quad belongs to, and whether it's the front (right) side — carried onto the occluder record for `TextureScroller`. */
+  line: number;
+  frontSide: boolean;
 }
 
 function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: WallOccluder[]): void {
@@ -384,7 +392,20 @@ function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: Wal
   for (const v of [A, D, C, A, C, B]) {
     pushVertex(batch, v[0], v[1], v[2], v[3], v[4], color);
   }
-  occluders.push({ key: batch.key, vertexStart, vertexCount: 6, ax, ay, bx, by, botH, topH, sector: spec.sector });
+  occluders.push({
+    key: batch.key,
+    vertexStart,
+    vertexCount: 6,
+    ax,
+    ay,
+    bx,
+    by,
+    botH,
+    topH,
+    sector: spec.sector,
+    line: spec.line,
+    frontSide: spec.frontSide,
+  });
 }
 
 function buildWalls(
@@ -395,18 +416,19 @@ function buildWalls(
   occluders: WallOccluder[],
   movableSectors?: Set<number>,
 ): void {
-  for (const line of map.linedefs) {
+  for (const [lineIndex, line] of map.linedefs.entries()) {
     // Whole line, both sides: a static neighbour's step is sized from the
     // moving sector's heights, so it can't stay in a batch nobody rebuilds
     // (see MapMeshOptions.movableSectors).
     if (movableSectors && touchesAny(map, line, movableSectors)) continue;
-    processLine(map, line, batches, size, wallHeightCap, occluders);
+    processLine(map, line, lineIndex, batches, size, wallHeightCap, occluders);
   }
 }
 
 function processLine(
   map: DoomMap,
   line: LineDef,
+  lineIndex: number,
   batches: BatchSet,
   size: SizeFn,
   wallHeightCap: number,
@@ -454,6 +476,8 @@ function processLine(
         pegRef: unpegged ? frontSec.floorHeight + (dim?.h ?? 128) : frontSec.ceilHeight,
         light: frontSec.light,
         sector: front.sector,
+        line: lineIndex,
+        frontSide: true,
       },
       occluders,
     );
@@ -464,10 +488,10 @@ function processLine(
 
   // Two-sided line: each side gets its own step-up/step-down pieces.
   if (!includeSide || includeSide(front.sector)) {
-    addTwoSidedSide(batches, size, line.flags, v1, v2, front, front.sector, frontSec, backSec, cap, occluders);
+    addTwoSidedSide(batches, size, line.flags, v1, v2, front, front.sector, frontSec, backSec, cap, occluders, lineIndex, true);
   }
   if (!includeSide || includeSide(back.sector)) {
-    addTwoSidedSide(batches, size, line.flags, v2, v1, back, back.sector, backSec, frontSec, cap, occluders);
+    addTwoSidedSide(batches, size, line.flags, v2, v1, back, back.sector, backSec, frontSec, cap, occluders, lineIndex, false);
   }
 }
 
@@ -483,8 +507,21 @@ function addTwoSidedSide(
   other: Sector,
   cap: (sec: Sector, top: number) => number,
   occluders: WallOccluder[],
+  lineIndex: number,
+  frontSide: boolean,
 ): void {
-  const base = { ax: a.x, ay: a.y, bx: b.x, by: b.y, xOffset: side.xOffset, yOffset: side.yOffset, light: sec.light, sector: secIndex };
+  const base = {
+    ax: a.x,
+    ay: a.y,
+    bx: b.x,
+    by: b.y,
+    xOffset: side.xOffset,
+    yOffset: side.yOffset,
+    light: sec.light,
+    sector: secIndex,
+    line: lineIndex,
+    frontSide,
+  };
   const upperUnpegged = (flags & LF.UPPER_UNPEGGED) !== 0;
   const lowerUnpegged = (flags & LF.LOWER_UNPEGGED) !== 0;
 

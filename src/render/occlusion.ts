@@ -1,8 +1,11 @@
 import * as THREE from 'three';
 import type { FlatSurface, WallOccluder } from './mapmesh.ts';
+import type { MaterialBank } from './textures.ts';
+import type { DoomMap } from '../wad/map.ts';
 import { pointNearConvexPolygon, segmentIntersect } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
 import { PLAYER_RADIUS } from '../game/player.ts';
+import { SCROLL_LINE_SPECIAL, SCROLL_SPEED } from '../wad/specials.ts';
 
 /**
  * Target coverage (0..1) once a wall sits on the camera-player sightline —
@@ -175,6 +178,97 @@ export class FlatFader {
 
     for (const key of dirty) {
       const attr = this.meshes.get(key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+      if (attr) attr.needsUpdate = true;
+    }
+  }
+}
+
+/** One static-batch wall quad animated by `TextureScroller`, with everything needed to recompute its U each frame without re-deriving it from the linedef. */
+interface ScrollingWall {
+  key: string;
+  vertexStart: number;
+  /** The quad's own original U at its left/right edges (indices 0/1/3 vs. 2/4/5 — see `addWall`'s fixed `[A, D, C, A, C, B]` push order in mapmesh.ts), read back once from the geometry at index time rather than recomputed, so this doesn't need to know xOffset/texture length itself. */
+  u0: number;
+  u1: number;
+  /** UV units per map unit of scroll — `1 / textureWidth`, so a fixed 35 map-units/sec (vanilla's `FRACUNIT`/tic) scrolls a narrow texture's pattern past faster than a wide one, same as vanilla's own offset-over-width UV math. */
+  uPerUnit: number;
+}
+
+/**
+ * Vanilla's `P_UpdateSpecials` scroll effect (linedef special 48,
+ * `SCROLL_LINE_SPECIAL`): continuously scrolls a line's front-sidedef
+ * texture, forever, with no trigger — see `SCROLL_LINE_SPECIAL`'s doc in
+ * wad/specials.ts for why this lives outside `SpecialsController`'s
+ * trigger/mover machinery entirely. Mechanically this is the same
+ * "index each affected quad's vertex range once, rewrite one attribute on it
+ * every frame" shape `WallFader`/`FlatFader` already use for vertex-alpha —
+ * here it's the `uv` attribute's U component instead.
+ *
+ * **Static-batch geometry only.** A scroll-48 line whose sector also happens
+ * to be a specials mover has its geometry rebuilt wholesale by
+ * `SpecialsController` instead of living in the shared static batch this
+ * class indexes — the same pre-existing limitation already accepted for
+ * `SpecialsController.recolorSector`'s light changes (see its doc), not a
+ * new one. In practice this never actually excludes anything: a mapper only
+ * has a reason to put 48 on a *static* wall — it's a decorative treatment
+ * (waterfalls, lava streams, conveyor-look walls), never a line whose own
+ * sector also needs to move.
+ */
+export class TextureScroller {
+  private meshes: Map<string, THREE.Mesh>;
+  private walls: ScrollingWall[] = [];
+  private scrollUnits = 0;
+
+  constructor(map: DoomMap, occluders: WallOccluder[], wallMeshes: Map<string, THREE.Mesh>, bank: MaterialBank) {
+    this.meshes = wallMeshes;
+    for (const [lineIndex, line] of map.linedefs.entries()) {
+      if (line.special !== SCROLL_LINE_SPECIAL) continue;
+      for (const o of occluders) {
+        if (o.line !== lineIndex || !o.frontSide) continue;
+        const attr = wallMeshes.get(o.key)?.geometry.getAttribute('uv') as THREE.BufferAttribute | undefined;
+        if (!attr) continue;
+        const texName = o.key.slice(o.key.indexOf(':') + 1);
+        const dim = bank.size('wall', texName);
+        if (!dim || dim.w <= 0) continue;
+        this.walls.push({
+          key: o.key,
+          vertexStart: o.vertexStart,
+          u0: attr.getX(o.vertexStart), // index 0: one of the quad's two "A" copies (see addWall's push order)
+          u1: attr.getX(o.vertexStart + 2), // index 2: one of the quad's two "C" copies
+          uPerUnit: 1 / dim.w,
+        });
+      }
+    }
+  }
+
+  update(dt: number): void {
+    if (this.walls.length === 0) return;
+    this.scrollUnits += SCROLL_SPEED * dt;
+    const dirty = new Set<string>();
+    for (const w of this.walls) {
+      const attr = this.meshes.get(w.key)?.geometry.getAttribute('uv') as THREE.BufferAttribute | undefined;
+      if (!attr) continue;
+      // Bounded to [0, 1) so the value actually written into the (single-
+      // precision) buffer never grows large enough to lose precision over a
+      // long session — three.js's RepeatWrapping (see MaterialBank.toTexture)
+      // already makes an unwrapped UV outside [0, 1] render correctly on its
+      // own, so this wrap is purely a float32-precision safeguard, not a
+      // correctness requirement.
+      const delta = (this.scrollUnits * w.uPerUnit) % 1;
+      const u0 = w.u0 + delta;
+      const u1 = w.u1 + delta;
+      // Matches addWall's fixed [A, D, C, A, C, B] vertex push order:
+      // indices 0/1/3 are the quad's left edge (u0), 2/4/5 its right (u1).
+      attr.setX(w.vertexStart, u0);
+      attr.setX(w.vertexStart + 1, u0);
+      attr.setX(w.vertexStart + 2, u1);
+      attr.setX(w.vertexStart + 3, u0);
+      attr.setX(w.vertexStart + 4, u1);
+      attr.setX(w.vertexStart + 5, u1);
+      dirty.add(w.key);
+    }
+    for (const key of dirty) {
+      const attr = this.meshes.get(key)?.geometry.getAttribute('uv') as THREE.BufferAttribute | undefined;
       if (attr) attr.needsUpdate = true;
     }
   }

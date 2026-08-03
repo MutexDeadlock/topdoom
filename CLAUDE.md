@@ -489,6 +489,33 @@ for the whole flight. Candidate lines are extended `WALL_OVERLAP` past both ends
 reason `FogOfWar` extends its sight blockers: two walls meeting at a shared vertex otherwise let
 a shot aimed at that corner slip between them.
 
+**`shotPath`'s returned `lineIndex` — whichever line actually stopped the shot, or null if it
+reached its target/`WEAPON_RANGE` unobstructed — is what drives `wad/specials.ts`'s three
+shoot-triggered ("impact") specials, 24/46/47** (`SpecialsController.triggerShot`), vanilla's
+`P_ShootSpecialLine`. A hitscan pellet's trigger fires immediately in `spawnShot`/
+`resolveMonsterHitscan` (it's resolved and gone within the same frame, matching vanilla's own
+instant `PTR_ShootTraverse` call), but a projectile's is deferred to the frame it actually
+*arrives* at that wall in `updateProjectiles` rather than firing back at launch — vanilla calls
+`P_ShootSpecialLine` for a missile from `PIT_CheckLine`, which only runs once the missile's own
+movement reaches the line, not when it's fired — so `Projectile.lineIndex` carries the line
+found at launch (safe to resolve early, same as `maxDist` itself: static geometry doesn't move
+mid-flight, and this project already accepts that approximation elsewhere) forward to the
+explosion branch. Either way, the special only fires if nothing closer — a monster's body,
+or the player — actually absorbed the shot first: `hitMonsterId`/`reachedPlayer`/`struck` all
+take priority over the wall.
+
+24 and 47 reuse the plain `FloorEffect` machinery already built for their walkover/switch
+siblings (5/64/91/101 and 20/68/22/95 respectively — same targets, same speeds), just
+tag-triggered by a shot instead. **Only 46 can be triggered by a monster's own shot** —
+`SpecialDef.monsterCanTrigger`, reproducing a hardcoded, per-number exception in vanilla's
+`P_ShootSpecialLine` itself (`if (!thing->player)` rejects every case *except* 46) rather than
+some general property of shoot-triggers; a monster's hitscan bolt or fireball that happens to
+stop dead against a 24 or 47 line does nothing, exactly as in vanilla. Getting 46's own
+repeatability backwards was a real mistake caught while adding the other two: vanilla's
+`P_ChangeSwitchTexture(line, useAgain)` clears `line->special` when `useAgain` is falsy, and
+46 passes `1` (stays repeatable — GR) while 24 and 47 both pass `0` (one-shot — G1), which is
+the opposite of what an early version of this table had for 46.
+
 **Auto-aim is click-to-target, not vanilla's autoaim cone** — this game has a mouse pointer,
 so "aim at that one" is expressible directly. `ThingLayer.pickMonster` raycasts the cursor
 against monster sprite meshes (`MONSTER_TYPES` in `game/thingdefs.ts`, filtered to
@@ -1064,6 +1091,148 @@ puffs explicitly, the same way `built.group`/`things.group` are torn down, since
 an exit line could otherwise cut an animation short and leave its plane glued into the next
 level's scene.
 
+### One-way ceiling movers, delayed doors, instant light changes, and the donut (`src/wad/specials.ts`, `src/game/specials.ts`)
+
+The remaining vanilla line/sector specials this table didn't originally cover, closed out in one
+pass by auditing `linuxdoom-1.10`'s `p_floor.c`/`p_ceilng.c`/`p_doors.c`/`p_lights.c` directly
+against this table's keys rather than assumed — the same discipline the rest of this file already
+holds itself to.
+
+**A ceiling can now move on its own** (`CeilingEffect`/`CeilingMover`), separately from a door's
+ceiling raise or a crusher's repeating cycle: it moves once to a target and stops, no hold, no
+reversal. Special 40 ("RaiseCeilingLowerFloor") is the one vanilla case that needs it —
+`raiseToHighest`, to the highest neighboring ceiling — but **this engine deliberately only
+implements 40's ceiling half**, because real vanilla's own floor half never actually runs. Tracing
+`EV_DoCeiling`/`EV_DoFloor`'s own source: both guard on the same per-sector `specialdata` "already
+busy" pointer, `case 40`'s handler calls `EV_DoCeiling` before `EV_DoFloor`, and since they target
+the exact same tag-matched sectors, `EV_DoCeiling` claims `specialdata` first — so by the time
+`EV_DoFloor` runs, every one of those sectors is already busy and it does nothing, every time, in
+real vanilla. Special 44/72 ("Ceiling Crush", `lowerAndCrush`) is the other user of
+`CeilingMover`, lowering once to floor+8 and stopping — and despite the name, confirmed against
+`p_ceilng.c` that it **never actually deals crush damage**: `EV_DoCeiling`'s `switch` sets
+`ceiling->crush = true` only for the *cyclic* crush types (`crushAndRaise` family) and
+`lowerAndCrush` is a separate `case` label positioned just past that assignment, so jumping to it
+directly skips setting the flag — `ceiling->crush` stays at its default `false`. `CeilingMover`
+has no crush/damage handling at all as a result; there's no real vanilla case that would ever
+need it.
+
+**`raiseToTexture` (30/96) and `lowerAndChange` (37/84)** are both plain `FloorMover`s under the
+hood, just with trigger-time logic too specific to fit the neighbor-height `MoveTarget` model
+every other floor family uses (`SpecialsController.triggerRaiseToTexture`/`triggerLowerAndChange`).
+`raiseToTexture` rises by the shortest bottom-texture pixel height found among the sector's
+neighboring two-sided lines — checking *both* sidedefs of each line, not just the far side,
+confirmed against `p_floor.c` — resolved via `MaterialBank.textureHeight`, which decodes (and,
+same as every other texture lookup, caches) the full bitmap just for its height; firing rarely
+enough that this isn't worth a second, header-only lookup path. `lowerAndChange` searches the
+sector's own two-sided neighbors for the first one whose floor already sits exactly at the
+destination height, and copies *that* neighbor's floor texture and `special` — a different
+texture-source rule from the existing `changeTexture` family (which always copies the triggering
+*line's* own front sector) — and, confirmed against `T_MoveFloor`, applies it only once the mover
+actually **arrives**, not at trigger time. `FloorMover.arrivalTexture` carries that (texture,
+special) pair from trigger time to whichever tick flips `state` to `'done'`.
+
+**Delayed doors** cover two different vanilla mechanisms that both boil down to "wait, then move
+once, unprompted." Line specials 16/76 (`DoorMode: 'closeThenOpen'`) close immediately, wait
+`DOOR_CLOSE_WAIT_SECONDS` (30s) at the bottom, then reopen once to wherever they already were —
+confirmed against `p_doors.c`: `door->topheight = sec->ceilingheight` at trigger time, unlike
+every other `DoorMode` here, which always computes a fresh neighbor-ceiling target — and stay open
+for good after that. Sector types 10/14 (`SECTOR_DOOR_SPECIALS`) skip the trigger entirely: a
+`DoorMover` is spawned straight into `SpecialsController`'s constructor the moment the map loads,
+assumed already open (10, closes once after 30s and stays shut) or already closed (14, opens once
+after `DOOR_RAISE_WAIT_SECONDS` = 5 minutes, then runs one ordinary open-wait-close cycle and
+settles shut for good, since nothing ever re-triggers it). Both reuse existing `DoorState`s rather
+than needing their own: 10 is seeded straight into `'hold'` (already exactly "wait, then lower,
+then stop"), 14 into a new `'holdClosed'` state — the wait-at-the-*bottom* mirror of `'hold'`,
+which `16/76`'s post-close wait also uses — that transitions to `'raising'` once its timer expires.
+
+**Instant/switch-triggered light changes** (`LightChangeEffect`) are the runtime-triggered
+counterpart to the sector-type blink patterns already documented under "Fog of war"'s neighbor —
+`sector.special` assigns an ongoing pattern once at map load, these mutate (or start animating) a
+*tag-matched* sector's light on demand instead. `'setLevel'` (13/35/79/81/138/139) is a literal
+light value; `'brightestNeighbor'` (12/80) is vanilla's own "bright = 0 means search" rule — the
+max level among immediate two-sided neighbors, or pitch black if there are none, confirmed against
+`EV_LightTurnOn`; `'darkestNeighbor'` (104, `EV_TurnTagLightsOff`) is the min of the sector's own
+*current* level and its neighbors', which — unlike `'brightestNeighbor'` — never brightens a
+sector, only ever darkens or leaves it unchanged; `'startStrobe'` (17, `EV_StartLightStrobing`)
+spawns the same slow, non-synced `blink1` pattern a sector-type-3 sector gets at map load, skipped
+if the sector already has an active mover (vanilla's own `specialdata` guard — light thinkers and
+movers share that one slot in real vanilla, this engine's own `lightStates`/`movers` maps are
+already independent, but the *trigger* still respects the same guard vanilla's own function does).
+Because any of these can now target a sector that was never a light-pattern sector to begin with,
+`indexLightGeometry` — previously scoped to just the load-time blink sectors — now indexes every
+sector's static-batch occluders/flats unconditionally, a one-time load cost. Still static-batch
+only, the same pre-existing limitation the blink-pattern feature already had: a sector that's also
+a mover has its geometry in its own per-mover mesh, out of `recolorSector`'s reach either way.
+
+**The donut** (special 9, `DonutEffect`) is vanilla's `EV_DoDonut`: the tagged sector (the "hole")
+lowers while a second sector surrounding it (the "ring") rises, both toward a *third*, outer
+sector's floor height, with the ring additionally taking that outer sector's floor texture on
+arrival (the same deferred-copy mechanism as `lowerAndChange`, `arrivalTexture`). Neither the ring
+nor the outer sector is tag-matched — both are discovered dynamically by walking neighbors outward
+from the hole (`SpecialsController.triggerDonut`/`neighborSectorIndices`, and mirrored at map-load
+time in `computeMovableSectors` so the ring's own geometry is correctly pulled out of the static
+batch too), which is exactly as arbitrary as vanilla's own search (whichever neighbor happens to
+be first in the sector's own line list — reproduced here by walking `map.linedefs` in ascending
+index order, matching vanilla's own `P_GroupLines`, which builds `sector->lines[]` the same way).
+One vanilla wrinkle is deliberately *not* reproduced: the real `EV_DoDonut` excludes "the line
+leading back to the hole" from the ring's own outer search via `!s2->lines[i]->flags &
+ML_TWOSIDED`, which — due to C operator precedence (`!` binds tighter than `&`) — always evaluates
+to zero, so that half of the check is dead code and real vanilla's own two-sidedness filtering
+silently never fires. This engine does the two-sided check *correctly* instead, since blindly
+porting the bug risks dereferencing a one-sided line's absent back sector — a real crash for a
+special this rare not to be worth reproducing. Checked against the two real donut sectors in the
+shipped IWADs (E1M2 tag 8, E2M2 tag 1; `DOOM2.WAD` has none) — both resolve to sane, non-degenerate
+ring/outer sectors.
+
+### Damage floors and scrolling textures (`src/wad/specials.ts`, `src/game.ts`, `src/render/occlusion.ts`)
+
+The last two vanilla mechanisms this table's own header comment used to call out-of-scope, both
+outside `LINE_SPECIALS`'s trigger/mover model entirely — one because it's driven by the player's
+position rather than a trigger, the other because it's a continuous cosmetic animation with no
+trigger at all.
+
+**Damage floors** (`SECTOR_DAMAGE_SPECIALS`) are vanilla's `P_PlayerInSpecialSector` — nukage (7,
+5 HP), hellslime (5, 10 HP), super hellslime (16, 20 HP) and strobe-hurt (4, 20 HP), all every
+`DAMAGE_FLOOR_INTERVAL`, plus E1M8's finale special (11, 20 HP, and ends the level once it drops
+the player to 10 HP or below — vanilla's own inline `G_ExitLevel()` call in that same switch case).
+Player-only, matching vanilla, which passes a `player_t*` and never damages monsters this way.
+Dealt directly in `game.ts: updateDamageFloor` rather than through `SpecialsController` — a damage
+floor has no mover, nothing for `SpecialsController`'s machinery to own, just `sector.special` plus
+the player's live position, so it's checked once a frame straight off `World.sectorAt`. Gated on
+`player.z === sector.floorHeight` (vanilla's `mo->z != sector->floorheight` guard, skipping a
+player still falling into the sector) — deliberately the *local* 2D-position sector's own floor,
+not `World.groundFloor` (which reads a straddled ledge's higher side), so standing on a ledge next
+to a damage pit doesn't damage the player until they actually step down into it. Special 4
+("STROBE FAST/DEATH SLIME") is *also* one of the sector-type light-blink specials
+(`SECTOR_LIGHT_SPECIALS`) — vanilla spawns the same non-synced fast strobe sector type 2 gets and
+then explicitly restores `sector->special = 4` afterward so the damage check still sees it; this
+engine never clears `sector.special` after seeding a light pattern in the first place, so 4 living
+in both tables "just works" without needing to reproduce that restore step. None of the four
+regular types currently distinguish a radiation-suit powerup (`pw_ironfeet` — always damages,
+since powerups are still decorative-only, see "Not yet implemented" below) the way vanilla's own
+`P_PlayerInSpecialSector` does.
+
+**Scrolling textures** (`SCROLL_LINE_SPECIAL` = 48, `render/occlusion.ts: TextureScroller`) are
+vanilla's `P_UpdateSpecials`: a linedef with this special scrolls its front sidedef's texture
+35 map-units/second (`FRACUNIT`/tic), forever, no trigger, active from the moment the map loads —
+used surprisingly often in the stock IWADs (250 linedefs across both games, not a rare effect) for
+waterfalls, lava streams and conveyor-look walls. Mechanically the same shape as
+`WallFader`/`FlatFader`: index the affected quads' vertex ranges once, rewrite one attribute on
+them every frame — here the `uv` attribute's U component instead of vertex-alpha, computed from
+each quad's own texture width (`MaterialBank.size`) so a narrow texture's pattern visibly cycles
+faster than a wide one for the same 35 units/sec, matching vanilla's own offset-over-width UV math.
+`WallOccluder` gained `line`/`frontSide` fields (threaded through `mapmesh.ts`'s `processLine`/
+`addTwoSidedSide`/`addWall`) so `TextureScroller` can find exactly the linedef's *front* (vanilla's
+`sidenum[0]`) quad — the only side vanilla ever scrolls — among the batched geometry. **Static-batch
+geometry only**, the same pre-existing limitation `SpecialsController.recolorSector`'s light
+changes already accept: a scroll-48 line whose sector is also a specials mover has its geometry
+rebuilt wholesale instead of living in the shared static batch this indexes. In practice this never
+actually excludes anything real — a mapper only puts 48 on a purely decorative wall, never one
+whose own sector also needs to move. The accumulated scroll offset is wrapped to `[0, 1)` before
+being written into the (single-precision) `uv` buffer, purely to avoid float32 precision loss over
+a long session — three.js's `RepeatWrapping` (`MaterialBank.toTexture`) already renders an
+unwrapped UV outside `[0, 1]` correctly on its own, so the wrap isn't needed for correctness.
+
 ### Fog of war (`src/game/fogofwar.ts`, `src/render/occlusion.ts`, `src/render/mapmesh.ts`)
 
 The dollhouse camera can see the entire level at once, including rooms the player hasn't
@@ -1249,7 +1418,23 @@ the player's own death freezes the game behind a `#death-overlay` until `R` rest
 `game.ts`). Doors, lifts, floor movers, crushers, stair builders, switches and teleporters all
 work (`game/specials.ts`), including locked doors, which require the matching key to be collected
 first, and teleporters, which reproduce vanilla's teleport-fog puff at both ends of the jump
-(`game.ts`); crushers and the crushing floor family (55/56/65/94 — not the turbo-16 stairs, which
+(`game.ts`). Shoot-triggered specials (24/46/47) fire off whatever a hitscan pellet or projectile
+actually lands on — a monster's own shot can trigger 46 too, matching vanilla's one hardcoded
+exception for it (`world.ts: shotPath`'s returned `lineIndex`, `SpecialsController.triggerShot`).
+The floor-mover table also covers vanilla's "raise to next highest floor" family at both normal
+and turbo speed (18/69/119/128/129-132) and its fixed-height raises (58/59/92/93's own +24,
+140's +512, and 14/15/66/67's +24/+32 — the latter four are a different vanilla code path,
+`EV_DoPlat`'s `raiseAndChange`, but land on the exact same triggering-line-front-sector texture
+copy the existing `changeTexture` family already models, so no new mechanism was needed for
+them). One-way ceiling movers, `raiseToTexture`, `lowerAndChange`, delayed doors (both the
+linedef and sector-type varieties), instant/switch-triggered light changes, and the donut effect
+are all modeled too (see "One-way ceiling movers, delayed doors, instant light changes, and the
+donut" above), and so are the two vanilla mechanisms that sit outside the linedef-trigger model
+entirely: damage-floor sector specials and continuously scrolling wall textures (see "Damage
+floors and scrolling textures" above) — closing out every vanilla (non-Boom) linedef/sector
+special this engine's own audit against the real source found. `wad/specials.ts`'s own table
+comments have the full vanilla-numbers-to-mechanism mapping. Crushers and the crushing floor
+family (55/56/65/94 — not the turbo-16 stairs, which
 never crush even in vanilla) deal periodic damage to the player or any monster caught in their
 sector, though a *mover* (crusher, door, lift) still doesn't detect or stop for a thing in its way
 the way vanilla does — a separate, still-open gap from the thing-vs-thing collision described

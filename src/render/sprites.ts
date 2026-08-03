@@ -7,6 +7,7 @@ import { PLAYER_HEIGHT } from '../game/player.ts';
 import {
   MONSTER_DEATH_FRAME_SECONDS,
   MONSTER_DEATH_FRAMES,
+  MONSTER_DROPS,
   MONSTER_HEALTH,
   MONSTER_TYPES,
   MONSTER_XDEATH_FRAMES,
@@ -296,6 +297,8 @@ interface PosedThing {
   health: number;
   /** Set once `health` reaches 0; see `ThingLayer.damage`. */
   dead: boolean;
+  /** True for an item `ThingLayer.damage` spawned itself (`MONSTER_DROPS`) rather than one the map placed — threaded through to `applyPickup`'s own `dropped` param, which halves the ammo it grants. */
+  dropped: boolean;
 }
 
 export interface ThingLayer {
@@ -322,9 +325,11 @@ export interface ThingLayer {
    * within reach vertically of `z` whose type `consume` accepts (returning
    * true), hiding it permanently. `consume` is the inventory-side effect
    * (game/inventory.ts's applyPickup) — this layer only owns which world
-   * instance disappears, not what picking one up means.
+   * instance disappears, not what picking one up means. `consume`'s second
+   * argument is the instance's own `dropped` flag, so a monster's dropped
+   * clip/weapon can grant half ammo the way vanilla's own dropped pickups do.
    */
-  tryPickup(x: number, y: number, z: number, radius: number, consume: (type: number) => boolean): void;
+  tryPickup(x: number, y: number, z: number, radius: number, consume: (type: number, dropped: boolean) => boolean): void;
   /**
    * DOOM (x, y, floor height) of the visible monster this ray hits first, or
    * null. Backs auto-aim (main.ts): aiming with the cursor over a monster
@@ -441,6 +446,40 @@ export function buildThingSprites(
       picked: false,
       health: MONSTER_HEALTH[t.type] ?? Infinity,
       dead: false,
+      dropped: false,
+    });
+  }
+
+  /**
+   * Spawns a monster's death drop (`MONSTER_DROPS`) at its own position —
+   * called from `damage` below, the only place a `PosedThing` is ever added
+   * after the initial map-load loop above. Mirrors that loop's own
+   * pose/push, just for one instance instead of every map THING, and always
+   * marked `dropped: true` (see `PosedThing`'s doc) so `tryPickup` grants it
+   * at vanilla's halved dropped-item rate rather than a map-placed one's.
+   */
+  function spawnDrop(x: number, y: number, sector: Sector | undefined, facingDeg: number, type: number): void {
+    const spriteName = THING_SPRITES[type];
+    if (!spriteName) return;
+    const light = sector?.light ?? 128;
+    const subsector = world.subsectorAt(x, y);
+    const actor = new SpriteActor(bank, materials, spriteName);
+    if (!actor.setPose(x, y, sector?.floorHeight ?? 0, facingDeg, light)) return;
+    group.add(actor.mesh);
+    posed.push({
+      id: posed.length,
+      actor,
+      x,
+      y,
+      sector,
+      facingDeg,
+      light,
+      subsector,
+      type,
+      picked: false,
+      health: Infinity,
+      dead: false,
+      dropped: true,
     });
   }
 
@@ -457,7 +496,7 @@ export function buildThingSprites(
         if (fogAlphaOf) p.actor.mesh.visible = fogAlphaOf(p.subsector) > 0.5;
       }
     },
-    tryPickup(x: number, y: number, z: number, radius: number, consume: (type: number) => boolean): void {
+    tryPickup(x: number, y: number, z: number, radius: number, consume: (type: number, dropped: boolean) => boolean): void {
       const rSq = radius * radius;
       for (const p of posed) {
         if (p.picked) continue;
@@ -470,7 +509,7 @@ export function buildThingSprites(
         // (e.g. DOOM2 MAP04's blue key). Read live off the sector rather than
         // a cached height for the same reason `update` does.
         if (Math.abs((p.sector?.floorHeight ?? 0) - z) > PLAYER_HEIGHT) continue;
-        if (consume(p.type)) {
+        if (consume(p.type, p.dropped)) {
           p.picked = true;
           p.actor.mesh.visible = false;
         }
@@ -521,6 +560,9 @@ export function buildThingSprites(
       const frames = gibbed || MONSTER_DEATH_FRAMES[p.type];
       if (frames) p.actor.die(frames, MONSTER_DEATH_FRAME_SECONDS);
       else p.actor.mesh.visible = false;
+
+      const dropType = MONSTER_DROPS[p.type];
+      if (dropType) spawnDrop(p.x, p.y, p.sector, p.facingDeg, dropType);
     },
     raycastMonster(
       x: number,

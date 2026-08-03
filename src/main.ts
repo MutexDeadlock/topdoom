@@ -742,8 +742,8 @@ class Game {
         this.spawnShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
       }
 
-      this.things?.tryPickup(this.player.x, this.player.y, this.player.z, PICKUP_RANGE, (type) =>
-        applyPickup(this.inventory, type),
+      this.things?.tryPickup(this.player.x, this.player.y, this.player.z, PICKUP_RANGE, (type, dropped) =>
+        applyPickup(this.inventory, type, dropped),
       );
     } else if (input.pressed('KeyR')) {
       this.restart();

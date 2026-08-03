@@ -99,10 +99,9 @@ const ARMOR_BONUS = 2015;
 /**
  * Ammo granted alongside a weapon pickup follows vanilla's `P_GiveWeapon`:
  * it hands over `2 * clipammo[type]` — twice the amount a single ammo
- * pickup of that type gives — for a weapon placed directly on the map (as
- * opposed to one dropped by a dead monster, which only gives half; this
- * engine has no monster drops yet, so every weapon pickup takes the "not
- * dropped" branch). The chainsaw needs no ammo at all.
+ * pickup of that type gives — for a weapon placed directly on the map, or
+ * exactly half that (`1 * clipammo[type]`) for one a dead monster dropped
+ * (`applyPickup`'s `dropped` param). The chainsaw needs no ammo at all.
  */
 const WEAPON_PICKUPS: Record<number, { weapon: WeaponId; ammoType: AmmoType | null; ammoAmount: number }> = {
   2005: { weapon: 'chainsaw', ammoType: null, ammoAmount: 0 },
@@ -127,8 +126,16 @@ const WEAPON_PICKUPS: Record<number, { weapon: WeaponId; ammoType: AmmoType | nu
  * now — e.g. a Stimpack at full health, or a weapon already owned whose
  * ammo type is already full — so the caller leaves it on the ground and
  * visible, matching vanilla rather than "wasting" the pickup.
+ *
+ * `dropped` is true for an item spawned by `ThingLayer.damage` on a
+ * monster's death (`game/thingdefs.ts`'s `MONSTER_DROPS`) rather than one
+ * placed directly on the map, and halves whatever ammo it would otherwise
+ * grant — matching vanilla's own `P_GiveAmmo`/`P_GiveWeapon`, which give a
+ * dropped pickup's ammo at half the rate of a map-placed one. Only ammo and
+ * weapon pickups are affected; nothing else (health, armor, keys) is ever
+ * dropped by a monster in vanilla, so `dropped` is meaningless there.
  */
-export function applyPickup(inv: Inventory, type: number): boolean {
+export function applyPickup(inv: Inventory, type: number, dropped = false): boolean {
   if (type === MEGASPHERE) {
     inv.health = MAX_HEALTH_BONUS;
     inv.armor = MAX_ARMOR;
@@ -161,7 +168,8 @@ export function applyPickup(inv: Inventory, type: number): boolean {
   if (ammo) {
     const cap = AMMO_MAX[ammo.type];
     if (inv.ammo[ammo.type] >= cap) return false;
-    inv.ammo[ammo.type] = Math.min(inv.ammo[ammo.type] + ammo.amount, cap);
+    const amount = dropped ? Math.floor(ammo.amount / 2) : ammo.amount;
+    inv.ammo[ammo.type] = Math.min(inv.ammo[ammo.type] + amount, cap);
     return true;
   }
 
@@ -177,8 +185,9 @@ export function applyPickup(inv: Inventory, type: number): boolean {
     let gaveAmmo = false;
     if (weapon.ammoType) {
       const cap = AMMO_MAX[weapon.ammoType];
+      const amount = dropped ? Math.floor(weapon.ammoAmount / 2) : weapon.ammoAmount;
       if (inv.ammo[weapon.ammoType] < cap) {
-        inv.ammo[weapon.ammoType] = Math.min(inv.ammo[weapon.ammoType] + weapon.ammoAmount, cap);
+        inv.ammo[weapon.ammoType] = Math.min(inv.ammo[weapon.ammoType] + amount, cap);
         gaveAmmo = true;
       }
     }

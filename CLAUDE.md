@@ -553,6 +553,23 @@ it did alive. `ThingLayer.damage(id, amount)` — `id` being the stable index `p
 `monstersNear` hand back — subtracts health and calls `die` once it reaches 0; `pickMonster`
 skips anything already dead so a corpse can't be re-targeted.
 
+**A killed monster can drop an item, lifted straight from vanilla's `P_KillMobj`** — which has
+exactly three `switch` cases, so only three monster types actually drop anything at all: the
+zombieman and Wolfenstein SS both drop a clip, the shotgun guy a shotgun, the chaingunner a
+chaingun (`game/thingdefs.ts`'s `MONSTER_DROPS`). Everything else, including monsters that feel
+like they obviously should (the imp, the demon), drops nothing in vanilla and doesn't here
+either. `ThingLayer.damage` spawns the drop itself, inline, the moment it marks a monster dead —
+via a `spawnDrop` helper that's just the same pose/push the initial map-load loop does, for one
+instance instead of every map THING — so a drop appears no matter *how* the kill happened (direct
+hit, splash, gib, or even a crusher via `monstersInSector`/`onCrush`), matching vanilla, which
+drops from that same one `P_KillMobj` regardless of cause. Each `PosedThing` carries its own
+`dropped` flag, seeded `true` only for a `spawnDrop`-spawned instance and threaded through
+`tryPickup`'s `consume` callback into `Inventory.applyPickup`'s own `dropped` param — vanilla's
+`P_GiveAmmo`/`P_GiveWeapon` give a dropped pickup's ammo at exactly half the rate of a map-placed
+one (a dropped clip's 5 bullets vs. a map one's 10; a dropped shotgun's 4 shells vs. a map one's
+8), and `applyPickup` reproduces that halving precisely rather than treating every clip/shotgun/
+chaingun pickup identically regardless of where it came from.
+
 **The player's own death reuses the exact same mechanism** on `main.ts`'s single persistent
 `playerActor`: `PLAYER_DEATH_FRAMES` (`H`-`N`) is `PLAY`'s own confirmed DIE half, the same way
 monster tables were derived. `Inventory.applyDamage` (`game/inventory.ts`) is vanilla's own

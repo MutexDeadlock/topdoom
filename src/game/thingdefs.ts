@@ -197,3 +197,21 @@ export const MONSTER_XDEATH_FRAMES: Record<number, string[]> = {
  * already make for anything that doesn't survive a dt-scaled model cleanly.
  */
 export const MONSTER_DEATH_FRAME_SECONDS = 6 / 35;
+
+/**
+ * Item a monster leaves behind on death (doomednum of the pickup to spawn),
+ * lifted straight from vanilla's `P_KillMobj` — only three `switch` cases
+ * exist there at all, so only three monster types actually drop anything:
+ * the zombieman and Wolfenstein SS both drop a clip, the shotgun guy a
+ * shotgun, the chaingunner a chaingun. Every other monster, including ones
+ * that feel like they obviously should (the imp, the demon), drops nothing
+ * in vanilla and doesn't here either. A drop always spawns regardless of
+ * *how* the kill happened — direct hit, splash, gib or not — matching
+ * vanilla, which drops from the same `P_KillMobj` no matter the cause.
+ */
+export const MONSTER_DROPS: Record<number, number> = {
+  3004: 2007, // POSS zombieman -> CLIP
+  84: 2007, // SSWV wolfenstein SS -> CLIP
+  9: 2001, // SPOS shotgun guy -> SHOTGUN
+  65: 2002, // CPOS chaingunner -> CHAINGUN
+};

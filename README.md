@@ -122,7 +122,10 @@ fire. Real walls and closed doors still stop a shot short and explode it there.
 rolls as vanilla; a monster's health hitting 0 plays its own confirmed WAD death animation and it
 stops being targetable. Overkill it by enough — vanilla's own rule, only for the handful of
 monster types (the human grunts and the imp) that actually have gib art — and it gibs instead of
-dying normally. A locked-on shot hits whatever it was aimed at; an unlocked one still
+dying normally. Three monster types drop something when killed, matching vanilla exactly: the
+zombieman and Wolfenstein SS drop a clip, the shotgun guy a shotgun, the chaingunner a chaingun —
+everyone else, gibbed or not, drops nothing. A drop grants half the ammo a map-placed pickup of
+the same thing would, same as picking up a real dropped item always has. A locked-on shot hits whatever it was aimed at; an unlocked one still
 hits any monster its straight path crosses on the way to a wall, the way a real shot would — you
 don't have to click something for it to be in the way. A rocket's blast also splashes everyone
 nearby, falling off with distance the same way vanilla's own explosions do — including the

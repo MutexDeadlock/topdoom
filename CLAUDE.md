@@ -371,6 +371,21 @@ opens. `wad/specials.ts`'s own doc comment has the numbers; the concrete bug thi
 DOOM2 MAP04's blue door (special 99, missing from the table until this fix) never opening at
 all, key or no key.
 
+**A `use` trigger only fires from a linedef's front (right-sidedef) side** —
+`game/specials.ts: isFrontSide`, confirmed against `linuxdoom-1.10/p_switch.c`'s
+`P_UseSpecialLine`, which unconditionally rejects every use-triggered special from the back
+side except an unused one (124, a "sliding door" case never used as a `use` special in
+`LINE_SPECIALS`). `handleUseTrigger` computes the player's side of each candidate line (via
+`P_PointOnLineSide`'s own cross-product test) and skips any line the player is on the back of,
+same as vanilla's `PTR_UseTraverse` computing `side` from the player's position before calling
+`P_UseSpecialLine`. Walk triggers get no such check — `P_CrossSpecialLine` has none — so this
+is `use`-only. Without it, a manual door or switch mounted on an ordinary-looking wall (a
+disguised "push wall" secret, the common case for a D1 manual-door special like 31) could be
+opened from *either* side, letting a player skip the switch a mapper hid elsewhere and open a
+secret from the wrong direction entirely; E1M2's sector 21 secret is exactly this shape — a
+manual door usable only from its intended (front) side, with a remote switch in a separate
+secret room as the other, tag-based way in.
+
 Removing a picked-up item from the world is `ThingLayer`'s job, not `Inventory`'s: each
 posed thing already carries its doomednum and position (added alongside the existing
 per-thing pose data), so `tryPickup(x, y, z, radius, consume)` can test distance and call

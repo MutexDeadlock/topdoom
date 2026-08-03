@@ -61,6 +61,21 @@ function resolveTargets(map: DoomMap, line: LineDef, def: SpecialDef): number[] 
   return out;
 }
 
+/**
+ * Vanilla `P_PointOnLineSide`: true when (x, y) sits on the line's front
+ * (right-sidedef) side. `P_UseSpecialLine` (confirmed against
+ * `linuxdoom-1.10/p_switch.c`) rejects *every* use-triggered special except
+ * an unused one (124, a "sliding door" case that never appears as a `use`
+ * special in `LINE_SPECIALS`) when activated from the back side — so a
+ * manual door or switch mounted on a wall is only usable from the side a
+ * mapper actually intended, not through the wall from behind it.
+ */
+function isFrontSide(ax: number, ay: number, bx: number, by: number, x: number, y: number): boolean {
+  const dx = bx - ax;
+  const dy = by - ay;
+  return (y - ay) * dx < dy * (x - ax);
+}
+
 interface StairStep {
   sectorIndex: number;
   targetHeight: number;
@@ -983,6 +998,7 @@ export class SpecialsController {
       const a = this.map.vertexes[line.v1];
       const b = this.map.vertexes[line.v2];
       if (!a || !b) continue;
+      if (!isFrontSide(a.x, a.y, b.x, b.y, playerX, playerY)) continue;
       const hit = segmentIntersect(playerX, playerY, tx, ty, a.x, a.y, b.x, b.y);
       if (hit && hit.t < bestT) {
         bestT = hit.t;

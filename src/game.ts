@@ -17,6 +17,8 @@ import { SpecialsController, computeMovableSectors } from './game/specials.ts';
 import { CRUSH_DAMAGE, DAMAGE_FLOOR_INTERVAL, SECTOR_DAMAGE_SPECIALS } from './wad/specials.ts';
 import { Input } from './game/input.ts';
 import { Hud } from './ui/hud.ts';
+import { ProfilerHud } from './ui/profilerhud.ts';
+import { FrameProfiler } from './util/profiler.ts';
 import type { Skill } from './game/skill.ts';
 import {
   applyDamage,
@@ -309,6 +311,15 @@ export class Game {
   private wad: Wad;
   private skill: Skill;
   private hud: Hud;
+  /**
+   * DEVMODE's per-category timing breakdown (top-right overlay). Measurement
+   * itself always runs — `performance.now()` calls are cheap enough not to
+   * bother gating, matching how `fps` below is always computed regardless of
+   * DEVMODE — only the DOM panel's visibility (toggled once, in the
+   * constructor) and `updateHud`'s decision to push samples to it are gated.
+   */
+  private profiler = new FrameProfiler();
+  private profilerHud = new ProfilerHud();
   private inventory: Inventory = createInventory();
   private deathOverlay = document.getElementById('death-overlay')!;
   /** True once the player's health has hit 0 — freezes movement/aim/firing/pickups (see `frame`) until `restart`. */
@@ -347,6 +358,9 @@ export class Game {
     // frame A (this list's first entry) until the player is actually moving.
     this.playerActor = new SpriteActor(this.spriteBank, this.spriteMaterials, 'PLAY', ['A', 'B', 'C', 'D']);
     this.scene.add(this.playerActor.mesh);
+
+    // DEVMODE never changes at runtime, so this is set once rather than every frame.
+    document.getElementById('profiler-hud')!.classList.toggle('visible', DEVMODE);
 
     const wanted = this.mapNames.indexOf(startMap.toUpperCase());
     this.loadMapByIndex(wanted >= 0 ? wanted : 0);
@@ -990,6 +1004,7 @@ export class Game {
     if (!this.running) return;
     const dt = Math.min(0.05, (now - this.lastTime) / 1000);
     this.lastTime = now;
+    this.profiler.beginFrame();
 
     const { input, camera } = this.view;
     this.handleHotkeys();
@@ -1017,7 +1032,9 @@ export class Game {
 
     // Runs before player.update so a lift/door the player is standing on has
     // already moved this frame by the time groundFloor is sampled below.
-    this.specials?.update(dt, this.player.x, this.player.y, this.player.angle, input, this.inventory.keys);
+    this.profiler.time('Specials', () =>
+      this.specials?.update(dt, this.player.x, this.player.y, this.player.angle, input, this.inventory.keys),
+    );
     // Deferred from the exit trigger's callback — see `pendingExit`'s doc.
     // The old SpecialsController's update() has now fully returned, so it's
     // safe to dispose it and swap in the next map.
@@ -1047,10 +1064,13 @@ export class Game {
       // mouseDown made both the player's facing and the camera's aim-lead
       // below jump the instant a click landed — which read as the camera
       // lurching backward right as you fired.
-      const monster = this.things?.pickMonster(camera.raycasterFor(input.pointer.x, input.pointer.y)) ?? null;
-      aim = monster ?? camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
-      // Monsters are solid: the player walks around them, not through them.
-      this.player.update(dt, input, aim, camera.viewerAngleDeg + 180, this.things?.solidBodies(this.player));
+      const monster = this.profiler.time('Player', () => {
+        const m = this.things?.pickMonster(camera.raycasterFor(input.pointer.x, input.pointer.y)) ?? null;
+        aim = m ?? camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
+        // Monsters are solid: the player walks around them, not through them.
+        this.player.update(dt, input, aim, camera.viewerAngleDeg + 180, this.things?.solidBodies(this.player));
+        return m;
+      });
 
       // A shot always *starts* at the player's own fire height — never the
       // target's, or a tracer/projectile would visibly begin mid-air instead
@@ -1061,22 +1081,26 @@ export class Game {
       const fireStartZ = this.player.z + AIM_HEIGHT_OFFSET;
       const fireTarget = monster ? { x: monster.x, y: monster.y, z: monster.z + AIM_HEIGHT_OFFSET } : null;
 
-      // After player.update so player.angle already reflects this frame's aim.
-      this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
-      const shots = this.weaponSystem.update(dt, input.mouseDown, this.inventory, this.player.angle);
-      // Vanilla's P_FireWeapon calls P_NoiseAlert every time a shot is actually
-      // fired (ammo/cooldown allowed it) — this is what lets a monster with no
-      // line of sight to the player still wake up on gunfire (World.noiseAlert,
-      // game/world.ts). Melee weapons (fist/chainsaw) fire vanilla's own noise
-      // alert too, but don't yet deal damage at all (see weapons.ts), so this
-      // only covers hitscan/projectile shots for now.
-      if (shots.length > 0) this.world.noiseAlert(this.player.x, this.player.y);
-      for (const shot of shots) {
-        this.spawnShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
-      }
+      this.profiler.time('Weapons', () => {
+        // After player.update so player.angle already reflects this frame's aim.
+        this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
+        const shots = this.weaponSystem.update(dt, input.mouseDown, this.inventory, this.player.angle);
+        // Vanilla's P_FireWeapon calls P_NoiseAlert every time a shot is actually
+        // fired (ammo/cooldown allowed it) — this is what lets a monster with no
+        // line of sight to the player still wake up on gunfire (World.noiseAlert,
+        // game/world.ts). Melee weapons (fist/chainsaw) fire vanilla's own noise
+        // alert too, but don't yet deal damage at all (see weapons.ts), so this
+        // only covers hitscan/projectile shots for now.
+        if (shots.length > 0) this.world.noiseAlert(this.player.x, this.player.y);
+        for (const shot of shots) {
+          this.spawnShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
+        }
+      });
 
-      this.things?.tryPickup(this.player, PICKUP_RANGE, (type, dropped) => applyPickup(this.inventory, type, dropped));
-      this.updateDamageFloor(dt);
+      this.profiler.time('Player', () => {
+        this.things?.tryPickup(this.player, PICKUP_RANGE, (type, dropped) => applyPickup(this.inventory, type, dropped));
+        this.updateDamageFloor(dt);
+      });
     } else if (input.pressed('KeyR')) {
       this.restart();
       input.endFrame();
@@ -1086,7 +1110,7 @@ export class Game {
     camera.update(dt, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, aim);
     this.hud.update(this.inventory);
 
-    this.fogOfWar.update(dt, this.player.x, this.player.y);
+    this.profiler.time('Fog of War', () => this.fogOfWar.update(dt, this.player.x, this.player.y));
     const fog = this.fogOfWar;
     const fogAlphaOf = (subsector: number) => fog.alphaOf(subsector);
     // Monsters freeze in place while the player is dead (nothing to chase) —
@@ -1095,66 +1119,76 @@ export class Game {
     // monster fired this frame comes back for us to actually apply/render,
     // the same "system returns data, caller realizes it" split as
     // WeaponSystem.update's Shot[].
-    const monsterAttacks = this.things?.update(
-      dt,
-      camera.viewerAngleDeg,
-      this.playerDead ? null : this.player,
-      fogAlphaOf,
-      (prev, pos) => this.monsterCrossedLines(prev, pos),
-    ) ?? [];
-    for (const atk of monsterAttacks) {
-      // A monster with a real flying projectile (game/monsters.ts's
-      // MONSTER_STATS, e.g. the imp's fireball) launches one instead of
-      // resolving as an instant hit — damage lands later, on arrival
-      // (updateProjectiles), not here.
-      if (atk.kind === 'ranged' && atk.projectile) {
-        this.spawnMonsterProjectile(atk);
-      } else if (atk.kind === 'ranged') {
-        // A hitscan bolt (the human gunners, the spider mastermind) traces
-        // its actual flight and damages the first thing in the way, which
-        // need not be what it aimed at — vanilla's P_LineAttack has no
-        // species check whatsoever, so monsters really do gun each other
-        // down when one walks through another's line of fire.
-        this.resolveMonsterHitscan(atk);
-      } else {
-        // Melee lands on whatever it swung at, no trace involved.
-        this.damageFromMonster(atk.targetId, atk.damage, atk.sourceId, atk.sourceType);
+    const monsterAttacks = this.profiler.time(
+      'Monsters',
+      () =>
+        this.things?.update(
+          dt,
+          camera.viewerAngleDeg,
+          this.playerDead ? null : this.player,
+          fogAlphaOf,
+          (prev, pos) => this.monsterCrossedLines(prev, pos),
+        ) ?? [],
+    );
+    this.profiler.time('Monsters', () => {
+      for (const atk of monsterAttacks) {
+        // A monster with a real flying projectile (game/monsters.ts's
+        // MONSTER_STATS, e.g. the imp's fireball) launches one instead of
+        // resolving as an instant hit — damage lands later, on arrival
+        // (updateProjectiles), not here.
+        if (atk.kind === 'ranged' && atk.projectile) {
+          this.spawnMonsterProjectile(atk);
+        } else if (atk.kind === 'ranged') {
+          // A hitscan bolt (the human gunners, the spider mastermind) traces
+          // its actual flight and damages the first thing in the way, which
+          // need not be what it aimed at — vanilla's P_LineAttack has no
+          // species check whatsoever, so monsters really do gun each other
+          // down when one walks through another's line of fire.
+          this.resolveMonsterHitscan(atk);
+        } else {
+          // Melee lands on whatever it swung at, no trace involved.
+          this.damageFromMonster(atk.targetId, atk.damage, atk.sourceId, atk.sourceType);
+        }
       }
-    }
-    this.teleportFogs = this.updateEffects(this.teleportFogs, dt, camera.viewerAngleDeg);
-    this.updateTracers(dt);
-    this.updateProjectiles(dt, camera.viewerAngleDeg);
-    this.impacts = this.updateEffects(this.impacts, dt, camera.viewerAngleDeg);
+    });
+    this.profiler.time('Effects', () => {
+      this.teleportFogs = this.updateEffects(this.teleportFogs, dt, camera.viewerAngleDeg);
+      this.updateTracers(dt);
+      this.updateProjectiles(dt, camera.viewerAngleDeg);
+      this.impacts = this.updateEffects(this.impacts, dt, camera.viewerAngleDeg);
+    });
 
-    const camPos = camera.camera.position;
-    const camArgs = [dt, camPos.x, -camPos.z, camPos.y] as const;
-    // A wall/floor hiding a monster only fades once that monster is actually
-    // alerted (ThingLayer.awakeMonsters) — an unseen sleeping monster is
-    // supposed to stay hidden, same as before this list existed — and within
-    // MONSTER_FADE_RANGE (see its doc for why that's a distance cap and not
-    // a `hasLineOfSight` check). Monsters reuse PLAYER_HEIGHT/2 for their own
-    // target height, same as hasLineOfSight does, since there's no
-    // per-species height table.
-    const fadeTargets: FadeTarget[] = [
-      { x: this.player.x, y: this.player.y, z: this.player.z + PLAYER_HEIGHT / 2 },
-      ...(this.things
-        ?.awakeMonsters()
-        .filter((m) => Math.hypot(m.x - this.player.x, m.y - this.player.y) <= MONSTER_FADE_RANGE)
-        .map((m) => ({ x: m.x, y: m.y, z: m.z + PLAYER_HEIGHT / 2 })) ?? []),
-    ];
-    const openingOf = (line: number) => this.world.openingOf(line);
-    this.wallFader.update(...camArgs, fadeTargets, openingOf);
-    this.flatFader.update(...camArgs, fadeTargets);
-    // Walls resolve their own subsector inside FogOfWar (see wallAlpha); flats
-    // and things already know theirs, so they go through alphaOf directly.
-    this.wallFader.commit((i) => fog.wallAlpha(i));
-    this.flatFader.commit(fogAlphaOf);
-    // Independent of camera/player position — a scrolling wall animates
-    // whether or not it's currently faded or in view.
-    this.textureScroller.update(dt);
-    // Door/lift geometry lives in its own meshes (game/specials.ts), so it
-    // carries its own faders rather than the two above.
-    this.specials?.updateFading(...camArgs, fadeTargets);
+    this.profiler.time('Fading', () => {
+      const camPos = camera.camera.position;
+      const camArgs = [dt, camPos.x, -camPos.z, camPos.y] as const;
+      // A wall/floor hiding a monster only fades once that monster is actually
+      // alerted (ThingLayer.awakeMonsters) — an unseen sleeping monster is
+      // supposed to stay hidden, same as before this list existed — and within
+      // MONSTER_FADE_RANGE (see its doc for why that's a distance cap and not
+      // a `hasLineOfSight` check). Monsters reuse PLAYER_HEIGHT/2 for their own
+      // target height, same as hasLineOfSight does, since there's no
+      // per-species height table.
+      const fadeTargets: FadeTarget[] = [
+        { x: this.player.x, y: this.player.y, z: this.player.z + PLAYER_HEIGHT / 2 },
+        ...(this.things
+          ?.awakeMonsters()
+          .filter((m) => Math.hypot(m.x - this.player.x, m.y - this.player.y) <= MONSTER_FADE_RANGE)
+          .map((m) => ({ x: m.x, y: m.y, z: m.z + PLAYER_HEIGHT / 2 })) ?? []),
+      ];
+      const openingOf = (line: number) => this.world.openingOf(line);
+      this.wallFader.update(...camArgs, fadeTargets, openingOf);
+      this.flatFader.update(...camArgs, fadeTargets);
+      // Walls resolve their own subsector inside FogOfWar (see wallAlpha); flats
+      // and things already know theirs, so they go through alphaOf directly.
+      this.wallFader.commit((i) => fog.wallAlpha(i));
+      this.flatFader.commit(fogAlphaOf);
+      // Independent of camera/player position — a scrolling wall animates
+      // whether or not it's currently faded or in view.
+      this.textureScroller.update(dt);
+      // Door/lift geometry lives in its own meshes (game/specials.ts), so it
+      // carries its own faders rather than the two above.
+      this.specials?.updateFading(...camArgs, fadeTargets);
+    });
 
     const facingDeg = (this.player.angle * 180) / Math.PI;
     const sector = this.world.sectorAt(this.player.x, this.player.y);
@@ -1174,7 +1208,8 @@ export class Game {
       camera.viewerAngleDeg,
     );
 
-    this.view.renderer.render(this.scene, camera.camera);
+    this.profiler.time('Render', () => this.view.renderer.render(this.scene, camera.camera));
+    this.profiler.endFrame();
 
     this.fpsAccum += dt;
     this.fpsFrames++;
@@ -1218,5 +1253,6 @@ export class Game {
       'WASD move  Shift run  mouse aim/fire  1-7/wheel weapon  Q-E/drag cam  Space use',
       'N/P map  +/- zoom  [/] tilt  R restart  Esc menu',
     ].join('\n');
+    this.profilerHud.update(this.profiler.samples(), this.profiler.totalMs);
   }
 }

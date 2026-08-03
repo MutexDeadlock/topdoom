@@ -1002,7 +1002,15 @@ export class Game {
 
   private frame = (now: number) => {
     if (!this.running) return;
-    const dt = Math.min(0.05, (now - this.lastTime) / 1000);
+    // rawDt is the real elapsed wall-clock time; dt clamps it so physics/AI
+    // never take a giant step after a stall (tab backgrounded, a slow map
+    // load). The fps counter below must use rawDt, not dt — using the
+    // clamped value made a genuine slideshow (e.g. real frame times of
+    // ~500ms, a true 2fps) under-detect itself as ~20fps, since 10 frames'
+    // worth of clamped 0.05s deltas hits the accumulator's 0.5s threshold
+    // long before 10 * 500ms of real time actually has.
+    const rawDt = (now - this.lastTime) / 1000;
+    const dt = Math.min(0.05, rawDt);
     this.lastTime = now;
     this.profiler.beginFrame();
 
@@ -1211,7 +1219,7 @@ export class Game {
     this.profiler.time('Render', () => this.view.renderer.render(this.scene, camera.camera));
     this.profiler.endFrame();
 
-    this.fpsAccum += dt;
+    this.fpsAccum += rawDt;
     this.fpsFrames++;
     if (this.fpsAccum >= 0.5) {
       this.fps = Math.round(this.fpsFrames / this.fpsAccum);

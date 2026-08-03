@@ -67,7 +67,7 @@ export interface WeaponDef {
 }
 
 /** `((rand % sides) + 1) * multiplier` — vanilla's own P_Random damage-roll shape. 0 sides means "always 0". */
-function rollDamage(sides: number, multiplier: number): number {
+export function rollDamage(sides: number, multiplier: number): number {
   return sides > 0 ? (Math.floor(Math.random() * sides) + 1) * multiplier : 0;
 }
 

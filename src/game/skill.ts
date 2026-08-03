@@ -41,3 +41,18 @@ const MULTIPLAYER_ONLY = 0x0010;
 export function isMultiplayerOnly(flags: number): boolean {
   return (flags & MULTIPLAYER_ONLY) !== 0;
 }
+
+/** THING flag bit marking a thing "ambush" in the editor — vanilla's `MF_AMBUSH`, commonly called "deaf". */
+const AMBUSH = 0x0008;
+
+/**
+ * True if this THING is deaf to gunfire: vanilla's `A_Look` only lets an
+ * ambush-flagged monster react to its sector's sound target (`World.noiseAlert`)
+ * if it can actually see the source, rather than waking on sound alone the
+ * way every other monster does. It can still wake normally by directly
+ * spotting the player in its own field of view — the flag only removes the
+ * "hears you through the wall" shortcut, matching vanilla exactly.
+ */
+export function isAmbush(flags: number): boolean {
+  return (flags & AMBUSH) !== 0;
+}

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { DoomMap, Sector } from '../wad/map.ts';
 import type { GraphicsBank } from '../wad/graphics.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
-import type { World } from '../game/world.ts';
+import { hasLineOfSight, type World } from '../game/world.ts';
 import { PLAYER_HEIGHT } from '../game/player.ts';
 import {
   MONSTER_DEATH_FRAME_SECONDS,
@@ -14,7 +14,16 @@ import {
   THING_SPRITES,
   WEAPON_TYPES,
 } from '../game/thingdefs.ts';
-import { isMultiplayerOnly, spawnsAtSkill, type Skill } from '../game/skill.ts';
+import { isAmbush, isMultiplayerOnly, spawnsAtSkill, type Skill } from '../game/skill.ts';
+import {
+  canSpotPlayer,
+  MONSTER_FIRE_HEIGHT,
+  MONSTER_STATS,
+  REACTION_TIME,
+  reactToDamage,
+  stepMonsterAI,
+  type MonsterAttack,
+} from '../game/monsters.ts';
 import { doomToWorld, lightToColor } from './mapmesh.ts';
 
 /**
@@ -286,7 +295,18 @@ interface PosedThing {
   actor: SpriteActor;
   x: number;
   y: number;
-  /** Its containing sector, read live every frame — see `ThingLayer.update`'s doc on why `z` isn't cached. */
+  /**
+   * Feet height. For anything that never moves (every non-monster, and a
+   * dead or not-yet-alerted monster) this is refreshed every frame straight
+   * from `sector.floorHeight` in `update()`, the same "ride a moving floor
+   * for free" trick as before monsters could move at all. Once a monster is
+   * alerted, `stepMonsterAI` owns it instead (`groundFloor` + gravity, the
+   * same physics `Player.update` uses), since a chasing monster needs to
+   * fall off ledges and cross sector boundaries rather than trust a single
+   * fixed sector reference.
+   */
+  z: number;
+  /** Its containing sector — the live reference `z` is read from while not an alerted monster; reassigned each frame by `update()` once a monster starts moving. */
   sector: Sector | undefined;
   facingDeg: number;
   light: number;
@@ -300,27 +320,82 @@ interface PosedThing {
   dead: boolean;
   /** True for an item `ThingLayer.damage` spawned itself (`MONSTER_DROPS`) rather than one the map placed — threaded through to `applyPickup`'s own `dropped` param, which halves the ammo it grants. */
   dropped: boolean;
+
+  // --- Monster AI (game/monsters.ts) — inert defaults for every non-monster PosedThing. ---
+  /** True once this monster has spotted the player and started chasing (`update`'s throttled wake check, LOOK_INTERVAL). */
+  alerted: boolean;
+  /** The map thing's "ambush"/deaf flag (`game/skill.ts: isAmbush`) — gates whether a sound-alerted sector alone can wake this monster; see `update`'s wake check. */
+  ambush: boolean;
+  velZ: number;
+  angle: number;
+  attackCooldown: number;
+  painTimer: number;
+  stuckTimer: number;
+  stuckX: number;
+  stuckY: number;
+  jitterAngle: number;
+  jitterTimer: number;
 }
+
+/** A monster's fired attack, plus where it fired from — `main.ts` turns a `'ranged'` one into a tracer and applies `damage` to the player either way. */
+export interface MonsterAttackEvent extends MonsterAttack {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/** How often an unalerted monster re-checks line of sight to the player — vanilla's own idle `A_Look` calls run every 10 tics (~0.29s), not every tic. */
+const LOOK_INTERVAL = 0.3;
+
+/**
+ * DOOM's own walk-cycle convention: every monster's RUN states step through 4
+ * frames (A-D), the same convention `PLAY`'s own walk cycle already uses
+ * elsewhere in this file. Unlike the death frames above, this isn't
+ * rederived from the WAD itself (attack/pain frames aren't structurally
+ * distinguishable from walk frames the way the rotation-0-only death tail
+ * is) — it's vanilla's well-known `info.c` state layout, cross-checked
+ * arithmetically against this file's own WAD-confirmed death-frame start
+ * letters (e.g. POSS's death starting at `H`, position 8, matches exactly
+ * 4 walk + 2 attack + 1 pain frame before it). Attack/pain get no dedicated
+ * pose here for the same reason `SpriteActor`'s own doc gives for deferring
+ * monster idle animation: guessing unconfirmed letters risks silently wrong
+ * art rather than just missing art. A ranged attack's tracer (main.ts) is
+ * the actual on-screen "it's firing" cue instead.
+ */
+const MONSTER_WALK_FRAMES = ['A', 'B', 'C', 'D'];
 
 export interface ThingLayer {
   group: THREE.Group;
   count: number;
   /**
-   * Re-poses every thing at the camera's current viewer angle. Things don't
-   * move in x/y or hold a walk cycle, so `dt` only ever matters for a dead
-   * monster's death animation (SpriteActor.die) — everything else this
-   * changes (which rotation-frame lump is shown, which way each plane faces,
-   * and — because a thing's `z` is read from its sector's live `floorHeight`
-   * rather than cached — its height, so a pickup resting on a lift/floor-mover
-   * sector rides it up and down exactly like the floor geometry itself does)
-   * is dt-independent. SpriteActor.setPose already skips the geometry/material
-   * swap when the resolved lump is unchanged from last call, so this stays
-   * cheap. `fogAlphaOf`, when given, hides things sitting in a subsector fog
-   * of war hasn't revealed yet (game/fogofwar.ts) — a monster or item in an
+   * Re-poses every thing at the camera's current viewer angle and, for a
+   * living `MONSTER_TYPES` thing, ticks its AI (`game/monsters.ts`): an
+   * unalerted monster re-checks line of sight to `player` every
+   * `LOOK_INTERVAL`, and once alerted, `stepMonsterAI` moves/faces/attacks it
+   * every frame — same movement primitives (`slideMove`, `groundFloor`,
+   * gravity) `Player.update` uses, so a chasing monster falls off ledges and
+   * steps up onto low platforms the same way the player does. `player` is
+   * `null` while the player is dead, which freezes every monster in place
+   * (nothing to chase) without touching their pose/animation/fog-visibility,
+   * which keep updating normally. Returns every attack fired this frame —
+   * the caller (main.ts) applies its damage and, for a `'ranged'` one, draws
+   * a tracer from where it fired.
+   *
+   * For anything else (or a dead/not-yet-alerted monster), `z` is refreshed
+   * straight from the thing's sector's live `floorHeight`, the same "ride a
+   * moving floor for free" trick as before monsters could move — a corpse
+   * left on a lift still rides it, same as a pickup always has.
+   * `fogAlphaOf`, when given, hides things sitting in a subsector fog of war
+   * hasn't revealed yet (game/fogofwar.ts) — a monster or item in an
    * unexplored/secret room would otherwise spoil it despite the room's own
    * geometry being faded out.
    */
-  update(dt: number, viewerAngleDeg: number, fogAlphaOf?: (subsector: number) => number): void;
+  update(
+    dt: number,
+    viewerAngleDeg: number,
+    player: { x: number; y: number; z: number } | null,
+    fogAlphaOf?: (subsector: number) => number,
+  ): MonsterAttackEvent[];
   /**
    * Consumes every not-yet-picked thing within `radius` of (x, y) *and*
    * within reach vertically of `z` whose type `consume` accepts (returning
@@ -446,9 +521,11 @@ export function buildThingSprites(
     const y = t.y;
     const facingDeg = t.angle;
     const light = sector?.light ?? 128;
+    const z = sector?.floorHeight ?? 0;
+    const isMonster = MONSTER_TYPES.has(t.type);
 
-    const actor = new SpriteActor(bank, materials, spriteName);
-    if (!actor.setPose(x, y, sector?.floorHeight ?? 0, facingDeg, light)) continue;
+    const actor = new SpriteActor(bank, materials, spriteName, isMonster ? MONSTER_WALK_FRAMES : ['A']);
+    if (!actor.setPose(x, y, z, facingDeg, light)) continue;
     actor.mesh.scale.setScalar(pickupScaleFor(t.type));
     group.add(actor.mesh);
     posed.push({
@@ -456,6 +533,7 @@ export function buildThingSprites(
       actor,
       x,
       y,
+      z,
       sector,
       facingDeg,
       light,
@@ -465,6 +543,17 @@ export function buildThingSprites(
       health: MONSTER_HEALTH[t.type] ?? Infinity,
       dead: false,
       dropped: false,
+      alerted: false,
+      ambush: isAmbush(t.flags),
+      velZ: 0,
+      angle: (facingDeg * Math.PI) / 180,
+      attackCooldown: 0,
+      painTimer: 0,
+      stuckTimer: 0,
+      stuckX: x,
+      stuckY: y,
+      jitterAngle: 0,
+      jitterTimer: 0,
     });
   }
 
@@ -480,9 +569,10 @@ export function buildThingSprites(
     const spriteName = THING_SPRITES[type];
     if (!spriteName) return;
     const light = sector?.light ?? 128;
+    const z = sector?.floorHeight ?? 0;
     const subsector = world.subsectorAt(x, y);
     const actor = new SpriteActor(bank, materials, spriteName);
-    if (!actor.setPose(x, y, sector?.floorHeight ?? 0, facingDeg, light)) return;
+    if (!actor.setPose(x, y, z, facingDeg, light)) return;
     actor.mesh.scale.setScalar(pickupScaleFor(type));
     group.add(actor.mesh);
     posed.push({
@@ -490,6 +580,7 @@ export function buildThingSprites(
       actor,
       x,
       y,
+      z,
       sector,
       facingDeg,
       light,
@@ -499,21 +590,87 @@ export function buildThingSprites(
       health: Infinity,
       dead: false,
       dropped: true,
+      alerted: false,
+      ambush: false,
+      velZ: 0,
+      angle: (facingDeg * Math.PI) / 180,
+      attackCooldown: 0,
+      painTimer: 0,
+      stuckTimer: 0,
+      stuckX: x,
+      stuckY: y,
+      jitterAngle: 0,
+      jitterTimer: 0,
     });
   }
 
   return {
     group,
     count: posed.length,
-    update(dt: number, viewerAngleDeg: number, fogAlphaOf?: (subsector: number) => number): void {
+    update(
+      dt: number,
+      viewerAngleDeg: number,
+      player: { x: number; y: number; z: number } | null,
+      fogAlphaOf?: (subsector: number) => number,
+    ): MonsterAttackEvent[] {
+      const attacks: MonsterAttackEvent[] = [];
       for (const p of posed) {
         if (p.picked) {
           p.actor.mesh.visible = false;
           continue;
         }
-        p.actor.setPose(p.x, p.y, p.sector?.floorHeight ?? 0, p.facingDeg, p.light, dt, false, viewerAngleDeg);
+
+        let animating = false;
+        const stats = !p.dead ? MONSTER_STATS[p.type] : undefined;
+        if (stats && player) {
+          if (!p.alerted) {
+            // Throttled the same way vanilla's own idle A_Look is — see LOOK_INTERVAL.
+            p.stuckTimer += dt;
+            if (p.stuckTimer >= LOOK_INTERVAL) {
+              p.stuckTimer = 0;
+              // Matches vanilla's A_Look: a sound-alerted sector (World.noiseAlert,
+              // fired on player gunshots) wakes this monster with no sight check
+              // at all — unless it's "ambush"/deaf, which still needs to actually
+              // see the source, just without the usual forward-FOV restriction
+              // (see isAmbush's doc). Either way, a monster that isn't woken by
+              // sound still falls through to the ordinary FOV+sight check every
+              // monster gets, sound-alerted sector or not.
+              const heardIt = !!p.sector && world.isSoundAlerted(p.sector);
+              const seesDespiteDeaf = p.ambush && heardIt && hasLineOfSight(world, p.x, p.y, player.x, player.y);
+              const heardAndAware = !p.ambush && heardIt;
+              const spottedNormally =
+                canSpotPlayer(p.facingDeg, p.x, p.y, player.x, player.y) && hasLineOfSight(world, p.x, p.y, player.x, player.y);
+              if (seesDespiteDeaf || heardAndAware || spottedNormally) {
+                p.alerted = true;
+                // Starts moving immediately (matching vanilla) but can't fire
+                // until REACTION_TIME passes — see that constant's doc for why
+                // skipping this made a monster with a long sightline attack
+                // the instant it came into view, with no perceptible reaction.
+                p.attackCooldown = REACTION_TIME;
+              }
+            }
+          }
+          if (p.alerted) {
+            const beforeX = p.x;
+            const beforeY = p.y;
+            const result = stepMonsterAI(p, stats, dt, world, player.x, player.y, player.z);
+            p.sector = world.sectorAt(p.x, p.y);
+            p.subsector = world.subsectorAt(p.x, p.y);
+            if (p.sector) p.light = p.sector.light;
+            p.facingDeg = (p.angle * 180) / Math.PI;
+            animating = p.x !== beforeX || p.y !== beforeY;
+            if (result) attacks.push({ ...result, x: p.x, y: p.y, z: p.z + MONSTER_FIRE_HEIGHT });
+          } else {
+            p.z = p.sector?.floorHeight ?? p.z;
+          }
+        } else {
+          p.z = p.sector?.floorHeight ?? p.z;
+        }
+
+        p.actor.setPose(p.x, p.y, p.z, p.facingDeg, p.light, dt, animating, viewerAngleDeg);
         if (fogAlphaOf) p.actor.mesh.visible = fogAlphaOf(p.subsector) > 0.5;
       }
+      return attacks;
     },
     tryPickup(x: number, y: number, z: number, radius: number, consume: (type: number, dropped: boolean) => boolean): void {
       const rSq = radius * radius;
@@ -543,7 +700,7 @@ export function buildThingSprites(
       const hit = raycaster.intersectObjects([...byMesh.keys()], false)[0];
       if (!hit) return null;
       const p = byMesh.get(hit.object);
-      return p ? { id: p.id, x: p.x, y: p.y, z: p.sector?.floorHeight ?? 0 } : null;
+      return p ? { id: p.id, x: p.x, y: p.y, z: p.z } : null;
     },
     monstersNear(x: number, y: number, radius: number): { id: number; x: number; y: number; z: number }[] {
       const out: { id: number; x: number; y: number; z: number }[] = [];
@@ -553,7 +710,7 @@ export function buildThingSprites(
         const dx = p.x - x;
         const dy = p.y - y;
         if (dx * dx + dy * dy >= rSq) continue;
-        out.push({ id: p.id, x: p.x, y: p.y, z: p.sector?.floorHeight ?? 0 });
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z });
       }
       return out;
     },
@@ -561,7 +718,7 @@ export function buildThingSprites(
       const out: { id: number; x: number; y: number; z: number }[] = [];
       for (const p of posed) {
         if (p.dead || !MONSTER_TYPES.has(p.type) || p.sector !== sector) continue;
-        out.push({ id: p.id, x: p.x, y: p.y, z: sector.floorHeight });
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z });
       }
       return out;
     },
@@ -569,7 +726,11 @@ export function buildThingSprites(
       const p = posed[id];
       if (!p || p.dead || amount <= 0 || !MONSTER_TYPES.has(p.type)) return;
       p.health -= amount;
-      if (p.health > 0) return;
+      if (p.health > 0) {
+        const stats = MONSTER_STATS[p.type];
+        if (stats) reactToDamage(p, stats);
+        return;
+      }
       p.dead = true;
       // Matches vanilla's P_KillMobj: gib only if this killing blow overkilled
       // by more than the monster's own max health, and only if it actually has
@@ -595,8 +756,7 @@ export function buildThingSprites(
       let nearest: { id: number; x: number; y: number; z: number; dist: number } | null = null;
       for (const p of posed) {
         if (p.dead || !p.actor.mesh.visible || !MONSTER_TYPES.has(p.type)) continue;
-        const floorZ = p.sector?.floorHeight ?? 0;
-        if (Math.abs(floorZ - z) > MONSTER_HIT_HEIGHT) continue;
+        if (Math.abs(p.z - z) > MONSTER_HIT_HEIGHT) continue;
         const relX = p.x - x;
         const relY = p.y - y;
         const t = relX * dx + relY * dy;
@@ -604,7 +764,7 @@ export function buildThingSprites(
         const perpX = relX - dx * t;
         const perpY = relY - dy * t;
         if (perpX * perpX + perpY * perpY > MONSTER_HIT_RADIUS * MONSTER_HIT_RADIUS) continue;
-        nearest = { id: p.id, x: x + dx * t, y: y + dy * t, z: floorZ, dist: t };
+        nearest = { id: p.id, x: x + dx * t, y: y + dy * t, z: p.z, dist: t };
       }
       return nearest;
     },

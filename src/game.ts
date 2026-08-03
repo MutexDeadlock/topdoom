@@ -82,6 +82,8 @@ const AIM_HEIGHT_OFFSET = 32;
 const TRACER_COLOR = 0xfff2a8;
 /** Color of a BFG spray tracer (WeaponDef.splash's `tracers`) — the same green as the BFG's own ball/explosion sprites, distinguishing it from a hitscan's muzzle-flash yellow. */
 const BFG_TRACER_COLOR = 0x66ff33;
+/** Color of a monster's ranged-attack tracer (game/monsters.ts) — a hostile red, distinct from either of the player's own tracer colors above. */
+const MONSTER_TRACER_COLOR = 0xff4433;
 
 /**
  * Frame letters an in-flight projectile sprite cycles through while flying.
@@ -758,7 +760,15 @@ export class Game {
 
       // After player.update so player.angle already reflects this frame's aim.
       this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
-      for (const shot of this.weaponSystem.update(dt, input.mouseDown, this.inventory, this.player.angle)) {
+      const shots = this.weaponSystem.update(dt, input.mouseDown, this.inventory, this.player.angle);
+      // Vanilla's P_FireWeapon calls P_NoiseAlert every time a shot is actually
+      // fired (ammo/cooldown allowed it) — this is what lets a monster with no
+      // line of sight to the player still wake up on gunfire (World.noiseAlert,
+      // game/world.ts). Melee weapons (fist/chainsaw) fire vanilla's own noise
+      // alert too, but don't yet deal damage at all (see weapons.ts), so this
+      // only covers hitscan/projectile shots for now.
+      if (shots.length > 0) this.world.noiseAlert(this.player.x, this.player.y);
+      for (const shot of shots) {
         this.spawnShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
       }
 
@@ -777,7 +787,26 @@ export class Game {
     this.fogOfWar.update(dt, this.player.x, this.player.y);
     const fog = this.fogOfWar;
     const fogAlphaOf = (subsector: number) => fog.alphaOf(subsector);
-    this.things?.update(dt, camera.viewerAngleDeg, fogAlphaOf);
+    // Monsters freeze in place while the player is dead (nothing to chase) —
+    // passing null skips their AI entirely without touching pose/animation/fog
+    // visibility, which keep updating normally. Every attack a still-living
+    // monster fired this frame comes back for us to actually apply/render,
+    // the same "system returns data, caller realizes it" split as
+    // WeaponSystem.update's Shot[].
+    const monsterAttacks = this.things?.update(
+      dt,
+      camera.viewerAngleDeg,
+      this.playerDead ? null : { x: this.player.x, y: this.player.y, z: this.player.z },
+      fogAlphaOf,
+    ) ?? [];
+    for (const atk of monsterAttacks) {
+      this.damagePlayer(atk.damage);
+      if (atk.kind === 'ranged') {
+        const tracer = new Tracer(atk.x, atk.y, atk.z, this.player.x, this.player.y, this.player.z + AIM_HEIGHT_OFFSET, MONSTER_TRACER_COLOR);
+        this.scene.add(tracer.line);
+        this.tracers.push(tracer);
+      }
+    }
     this.teleportFogs = this.updateEffects(this.teleportFogs, dt, camera.viewerAngleDeg);
     this.updateTracers(dt);
     this.updateProjectiles(dt, camera.viewerAngleDeg);

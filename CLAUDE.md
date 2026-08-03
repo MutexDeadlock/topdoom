@@ -468,11 +468,119 @@ fixed spot, outside `ThingLayer` since neither is a real map `Thing`. `IMPACT_EF
 projectile's flight sprite to its explosion — vanilla reuses `MISL` frames B–D for the rocket's
 own blast, while the plasma bolt and BFG ball explode into dedicated `PLSE`/`BFE1` sprites.
 
+### Monster AI (`src/game/monsters.ts`, `src/render/sprites.ts`)
+
+Every `MONSTER_TYPES` entry except Commander Keen (72) and the boss brain (88) — neither attacks
+or moves in vanilla either (Keen's "death" is a pain cascade with no real combat state, the boss
+brain is a stationary cube-spawner with no player-facing attack this engine models) — now wakes,
+chases and attacks the player. The split follows the same shape as `WeaponSystem`/`SpecialsController`
+elsewhere: `game/monsters.ts`'s `stepMonsterAI` is a pure function that reads/writes a monster's own
+mutable state and returns *what happened* (a fired `MonsterAttack` or nothing); `ThingLayer.update`
+(`render/sprites.ts`) is where that state actually lives (each `PosedThing` carries its own AI
+fields alongside the pose/health/drop fields it already had) and where the wake-up check runs;
+`Game.frame` (`src/game.ts`) turns a returned attack into damage and, for a ranged one, a tracer.
+
+**A monster stays inert until it spots the player, checked on a throttle rather than every
+frame** — `ThingLayer.update`'s `LOOK_INTERVAL` (~0.3s) mirrors vanilla's own idle `A_Look`,
+which vanilla itself only runs every 10 tics, not continuously. That check is gated by
+`game/monsters.ts: canSpotPlayer` *before* `hasLineOfSight` even runs: vanilla's own
+`P_LookForPlayers` only lets a monster notice the player within roughly its forward 180° (the
+map-placed thing angle, unchanged until the monster actually wakes), unless the player is within
+melee range regardless of facing. Skipping this meant a monster facing away from the player at
+spawn — most of a level's population, at the moment the level loads — still "saw" the player and
+attacked instantly the moment there was an unobstructed line between them, which reads exactly
+backwards: the monster visibly isn't looking at you. Once alerted (by sight, by sound, or by
+taking any damage at all — `reactToDamage` sets it unconditionally, matching vanilla's own
+`P_DamageMobj` setting `target` regardless of prior sight or facing) a monster is alerted for
+good and the FOV gate no longer applies — matching vanilla's own `A_Chase`, which never re-checks
+it once hunting; there's no "lost the scent and went back to sleep" in vanilla either.
+
+**Monsters also wake from gunfire, without needing sight, via `World.noiseAlert`/`isSoundAlerted`
+(`game/world.ts`)** — confirmed against the actual `linuxdoom-1.10` source
+([`p_enemy.c`](https://github.com/id-Software/DOOM/blob/master/linuxdoom-1.10/p_enemy.c),
+[`p_pspr.c`](https://github.com/id-Software/DOOM/blob/master/linuxdoom-1.10/p_pspr.c)) rather than
+assumed, the same rigor as this file's line-special tables. `game.ts` calls `noiseAlert` at the
+player's position whenever a shot actually fires (matching vanilla's `P_FireWeapon`, which calls
+`P_NoiseAlert` for every successful weapon fire — melee included, though fist/chainsaw don't
+apply it yet since neither deals damage at all regardless, see "Weapons, firing and auto-aim"
+below). `noiseAlert` floods outward sector-by-sector through two-sided lines, matching vanilla's
+`P_RecursiveSound` exactly: a fully closed door (zero vertical opening) stops it outright, an
+`LF.BLOCK_SOUND`-flagged line softens it once (crossable, but a *second* such line on the same
+path stops it), and every other two-sided line passes it through unchanged. Once a sector is
+marked (`isSoundAlerted`), it stays marked for the rest of the level, matching vanilla's own
+`sector->soundtarget`, which is never cleared — a monster that only wanders into an already-noisy
+sector later still wakes, not just whoever was standing there at the moment of the shot. A
+sound-alerted monster wakes with **no FOV or sight check at all** (matching vanilla's `A_Look`,
+which `goto seeyou`s straight off `soundtarget` for anything not "ambush"-flagged) — this is
+deliberately more permissive than the sight-based wake above; a gunshot two rooms over should pull
+monsters even where they can't yet see the shooter. **Ambush-flagged things** (`game/skill.ts:
+isAmbush`, vanilla's `MF_AMBUSH`/editor "deaf") are the one exception: they ignore the sector flag
+entirely unless they can actually see the source (still with no FOV restriction, matching
+vanilla precisely), falling back to the same ordinary FOV+sight check every monster gets — a
+mapper's "won't come running at gunfire, but still spots you normally" ambush setup works exactly
+as intended.
+
+**A newly-alerted monster starts moving immediately but can't fire until `REACTION_TIME`
+(~0.5s) passes** — vanilla's own `reactiontime`. Without it, a monster that merely has a long
+sightline (some `MONSTER_STATS` ranged ranges reach 1400+ units) fired the exact frame it came
+into view, with no perceptible reaction — the sight check and the first shot happened in the
+same frame, since `attackCooldown` otherwise starts at 0. `ThingLayer.update` seeds
+`attackCooldown` with `REACTION_TIME` the moment the wake check succeeds, reusing the same field
+`stepMonsterAI`'s attack gate already checks rather than adding a second timer. This delay only
+applies to the sight-triggered wake — a monster alerted by taking damage fires as soon as it's
+otherwise able to, same as vanilla doesn't re-delay an already-awake monster either.
+
+**Movement reuses the exact same physics as the player** — `slideMove`, `groundFloor`, and
+gravity integration once airborne (`game/monsters.ts`'s `settleVertical`, mirroring
+`Player.update`'s own branch) — so a chasing monster steps up onto low ledges, slides around
+convex corners, and falls off a ledge under gravity instead of snapping to the floor, exactly
+like the player does. There is no pathfinding at all, matching vanilla (which also routinely
+gets monsters stuck on complex geometry): `stepMonsterAI` samples every half second whether a
+chasing monster has actually moved since the last sample, and if not, blends a random lateral
+`jitterAngle` into its heading for a bit — a cheap "try a new direction" fallback, not a real
+nav-mesh detour.
+
+**A monster always keeps closing distance until genuinely adjacent to the player, firing
+whenever its own attack is off cooldown and in range along the way — it never "keeps its
+distance."** Vanilla has no such instinct either: a ranged monster (zombieman, cyberdemon, ...)
+walks right up to the player if nothing stops it, the same as a melee one. `stepMonsterAI` stops
+advancing once within `MELEE_RANGE` (used here as a generic "personal space" distance, not just
+the melee attack's own reach) — without this, a monster whose *attack* range happened to be long
+(some `MONSTER_STATS` ranged ranges reach 1400+ units) froze solid the instant the player came
+into view, which read as static and robotic rather than hunting. Line of sight (`hasLineOfSight`,
+plus a `MONSTER_ENGAGE_HEIGHT` overhead/underneath gate — the same idea as `ThingLayer.tryPickup`'s
+own gate, so a monster on a floor far above/below the player can't magically snipe through a
+window) gates both whether an attack can land and whether the monster is "close enough" to stop
+approaching; without sight it keeps beelining toward the player's *actual* current position (no
+separate remembered last-known-position state) rather than firing blind.
+
+**Ranged attacks are an instant hitscan-style bolt (a `Tracer`, colored red to read as
+"hostile"), not vanilla's own flying fireball/rocket sprite per monster type** — a distinct
+flight sprite, speed and (for the revenant) homing behavior per species is a lot of extra
+bookkeeping for a difference that mostly reads the same to the player as this engine's hitscan
+tracers already do; see `MONSTER_STATS`'s doc for the full reasoning. Damage dice and speeds are
+tuned for feel/balance rather than lifted from vanilla's own per-monster tables, the same
+simplification `weapons.ts`'s fire rates/spread and `player.ts`'s `GRAVITY` already make for
+values that don't survive a clean conversion from vanilla's tic-based model. **Monsters don't
+fight each other, and neither monsters nor the player physically block one another on contact**
+— both real vanilla behaviors, both left out of this milestone, the same kind of honestly-noted
+gap as crushers not blocking movers on contact below.
+
+**Animation reuses the walk-cycle convention (`A`-`D`, held on `A` while idle) `PLAY`'s own idle
+sprite already established**, rather than inventing dedicated attack/pain frame art: unlike the
+death frames (`MONSTER_DEATH_FRAMES`), which are derivable straight from the WAD because death
+art is structurally the rotation-0-only tail of a sprite's frame set, attack and pain frames are
+ordinary rotation 1-8 frames indistinguishable from walk frames by structure alone — the split
+is only known from vanilla's own (well-documented, but not WAD-derivable) `info.c` state tables.
+Guessing specific letters risked silently wrong art the same way `SpriteActor`'s own doc already
+argues against for monster idle animation; a fired ranged attack's tracer is the actual
+"it's attacking" visual cue instead.
+
 ### Damage, monster death and player death (`src/game/thingdefs.ts`, `src/render/sprites.ts`, `src/game/inventory.ts`, `src/game/world.ts: hasLineOfSight`, `src/main.ts`)
 
-Shots and explosions hurt and kill; there is still no monster AI, so nothing shoots back except
-a rocket/BFG blast splashing the shooter. The other source of player damage that isn't a weapon
-at all is crushers/crushing floors/crushing stairs (see "Crushers and teleporters" below).
+Shots, explosions and — now that monster AI exists (see above) — monster melee/ranged attacks
+all hurt and kill. The other source of player damage that isn't a weapon at all is
+crushers/crushing floors/crushing stairs (see "Crushers and teleporters" below).
 
 **A shot deals direct damage two different ways, depending on whether one was locked on.** A
 locked-on shot (a monster was under the cursor when it fired) resolves hit-or-miss against that
@@ -547,11 +655,11 @@ the same "show what a shot hit" treatment this engine already uses everywhere el
 consistent fix than leaving it silent. The rocket leaves `tracers` off; its explosion sprite is
 already vanilla's whole visual for what it hit.
 
-Self-splash and crush damage (see "Crushers and teleporters" below) are otherwise the only paths
-through which the player takes damage at all right now, since there's no monster AI to attack
-back. Per-weapon direct-hit damage rolls follow vanilla's
-own `((rand % sides) + 1) * multiplier` shape and are lifted rather than tuned by feel, the same
-reasoning ammo-per-shot already used — they decide how tough a fight actually is.
+Self-splash, crush damage (see "Crushers and teleporters" below) and monster melee/ranged
+attacks (see "Monster AI" above) are the paths through which the player takes damage. Per-weapon
+direct-hit damage rolls follow vanilla's own `((rand % sides) + 1) * multiplier` shape and are
+lifted rather than tuned by feel, the same reasoning ammo-per-shot already used — they decide how
+tough a fight actually is.
 
 **Monster health and death-frame sequences are confirmed against the actual lump names in
 DOOM.WAD/DOOM2.WAD**, not guessed, the same rigor as `THING_SPRITES`/`TFOG`/rocket-sprite fixes
@@ -643,9 +751,14 @@ thing/mover collision check exists), so a crusher never stops, reverses early, o
 it just keeps hurting whoever's in the way every interval until they leave or die, which is the
 part of the vanilla feel that actually matters for a crusher reading as a hazard.
 
-**Teleporters** (39/97 trigger for the player; Doom II's 125/126 are monster-only and never fire
-— there's no monster AI to walk them, the same outcome vanilla's own player-vs-monster gate gives
-them today). The destination is the first doomednum-14 landing thing found inside a tag-matched
+**Teleporters** (39/97 trigger for the player; Doom II's 125/126 are monster-only and still never
+fire — `SpecialsController.handleWalkTriggers` only tracks the *player's* `prevX`/`prevY` to
+detect a walk-over crossing, not each monster's, so a monster walking onto one of these today
+just walks straight over it. Wiring that up would need per-monster previous-position tracking
+plus a per-monster teleport call the same shape as the player's — a reasonable follow-up now
+that monster AI exists, but out of scope for this milestone since mappers use 125/126 rarely and
+only for deliberate monster-closet setups). The destination is the first doomednum-14 landing
+thing found inside a tag-matched
 sector (`SpecialsController.findTeleportDestination`); reaching it calls back into `main.ts` to
 move the player (`Player.teleportTo`) and snap the camera yaw to match, the same as the initial
 spawn.
@@ -870,6 +983,14 @@ first, and teleporters, which reproduce vanilla's teleport-fog puff at both ends
 (`main.ts`); crushers and the crushing floor family (55/56/65/94 — not the turbo-16 stairs, which
 never crush even in vanilla) deal periodic damage to the player or any monster caught in their
 sector, though nothing here actually
-blocks a mover on contact the way vanilla does. Not yet implemented: monster AI (nothing moves or
-fights back — the only ways the player takes damage today are a rocket/BFG blast catching them
-too, or standing in a crusher's way), powerup effects, sound.
+blocks a mover on contact the way vanilla does. Monsters now wake, chase and attack the player
+(`game/monsters.ts`, see "Monster AI" above): they use the same movement physics as the player
+(collision, step-up, gravity), melee-capable types close all the way in while ranged-only types
+stop and fire once in sight and in range, taking damage always alerts (and sometimes staggers) a
+monster regardless of whether it had spotted the player yet, and gunfire wakes monsters within
+sound-propagation range even without sight (`World.noiseAlert`, respecting closed doors and
+`BLOCK_SOUND` lines the same way vanilla does). There's no monster-vs-monster infighting, no
+monster-vs-player/monster-vs-monster physical blocking on contact, and 125/126 (Doom II's
+monster-only teleporters) still don't fire for a monster that walks onto them — all noted gaps,
+not oversights. Not yet implemented: powerup effects, and actual audio (the noise-alert *mechanic*
+above works off vanilla's sound-propagation rules, but nothing in this engine plays a sound yet).

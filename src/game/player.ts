@@ -16,7 +16,7 @@ const EYE_HEIGHT = 41;
  * model directly — this drops the player roughly a body height in about a third of a
  * second, which reads as a fall rather than a teleport without feeling floaty.
  */
-const GRAVITY = 1600;
+export const GRAVITY = 1600;
 
 export class Player {
   x: number;

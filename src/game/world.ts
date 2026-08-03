@@ -23,6 +23,10 @@ export class World {
   private gridMinY: number;
   private gridCols: number;
   private gridRows: number;
+  /** Adjacency list for `noiseAlert`'s flood, precomputed once instead of rescanning every linedef per visited sector. */
+  private sectorNeighbors: { neighbor: number; lineIndex: number }[][] = [];
+  /** Sectors a noise has ever reached (`noiseAlert`) — never cleared, matching vanilla's own `soundtarget`, which persists for the rest of the level once set. */
+  private soundAlertedSectors = new Set<Sector>();
 
   readonly map: DoomMap;
 
@@ -34,6 +38,21 @@ export class World {
     this.gridCols = Math.max(1, Math.ceil((maxX - minX) / GRID_CELL) + 1);
     this.gridRows = Math.max(1, Math.ceil((maxY - minY) / GRID_CELL) + 1);
     this.buildGrid();
+    this.buildSectorNeighbors();
+  }
+
+  /** Every sector's two-sided-line neighbors, for `noiseAlert`'s flood — built once rather than rescanning all linedefs per visited sector. */
+  private buildSectorNeighbors(): void {
+    this.sectorNeighbors = this.map.sectors.map(() => []);
+    for (let li = 0; li < this.map.linedefs.length; li++) {
+      const line = this.map.linedefs[li];
+      if (line.left === NO_SIDE || line.right === NO_SIDE) continue;
+      const front = this.map.sidedefs[line.right]?.sector;
+      const back = this.map.sidedefs[line.left]?.sector;
+      if (front === undefined || back === undefined) continue;
+      this.sectorNeighbors[front]?.push({ neighbor: back, lineIndex: li });
+      this.sectorNeighbors[back]?.push({ neighbor: front, lineIndex: li });
+    }
   }
 
   /** Buckets every linedef into the cells its bounding box touches. */
@@ -211,6 +230,56 @@ export class World {
     if (t) return { x: t.x, y: t.y, angle: (t.angle * Math.PI) / 180 };
     const { minX, minY, maxX, maxY } = this.map.bounds;
     return { x: (minX + maxX) / 2, y: (minY + maxY) / 2, angle: 0 };
+  }
+
+  /**
+   * Floods a noise outward from the sector at (x, y) through every two-sided
+   * line, matching vanilla's `P_NoiseAlert`/`P_RecursiveSound` (confirmed
+   * against the actual `linuxdoom-1.10` source rather than assumed, the same
+   * rigor as the line-special tables elsewhere in this codebase): a line
+   * whose vertical opening is fully closed (a shut door) stops the flood
+   * outright, a `LF.BLOCK_SOUND` line softens it once (crossable, but a
+   * *second* `BLOCK_SOUND` crossing on the same path stops it), and every
+   * other two-sided line passes it through unchanged. Marked sectors
+   * (`isSoundAlerted`) stay marked for the rest of the level — vanilla's own
+   * `sector->soundtarget` is never cleared either — so a monster that only
+   * wanders into an already-noisy sector later still wakes, not just
+   * whichever monster happened to be standing there at the moment of the
+   * shot. The state-space search tracks `(sector, hasCrossedABlockLine)`
+   * pairs rather than just sectors, so a sector reached first via a
+   * sound-blocked path can still be re-entered (and propagate further) via a
+   * later, unblocked path — exactly the nuance vanilla's own
+   * `soundtraversed <= soundblocks+1` guard preserves.
+   */
+  noiseAlert(x: number, y: number): void {
+    const start = this.sectorIndexAt(x, y);
+    const visited = new Set<number>();
+    const stack: number[] = [start * 2];
+    while (stack.length > 0) {
+      const state = stack.pop()!;
+      if (visited.has(state)) continue;
+      visited.add(state);
+      const sectorIndex = state >> 1;
+      const soundBlocked = state & 1;
+      const sector = this.map.sectors[sectorIndex];
+      if (!sector) continue;
+      this.soundAlertedSectors.add(sector);
+
+      for (const { neighbor, lineIndex } of this.sectorNeighbors[sectorIndex] ?? []) {
+        const opening = this.openingOf(lineIndex);
+        if (!opening || opening.top <= opening.bottom) continue; // closed door: stops sound outright
+        if (this.map.linedefs[lineIndex]?.flags & LF.BLOCK_SOUND) {
+          if (soundBlocked === 0) stack.push(neighbor * 2 + 1);
+        } else {
+          stack.push(neighbor * 2 + soundBlocked);
+        }
+      }
+    }
+  }
+
+  /** True if a noise (`noiseAlert`) has ever reached this sector this level. */
+  isSoundAlerted(sector: Sector): boolean {
+    return this.soundAlertedSectors.has(sector);
   }
 }
 

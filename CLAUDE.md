@@ -62,6 +62,13 @@ where nearby unrelated geometry makes results hard to interpret.
   getter (`consumeLastTeleport`) works around it; reach for that pattern rather than fighting the
   checker if the same shape of bug shows up elsewhere.
 
+## Documentation maintenance
+
+- After finishing a task in topdoom that changes behavior, architecture, controls, or anything
+else **CLAUDE.md/README.md** document, check whether those docs need updating and update them —
+don't wait for the user to separately ask "check and update documentation."
+- **README.md**: Don't let it get as bloated as CLAUDE.md. This should only contain a project overview, setup steps, and instructions for starting and playing the game.
+
 ## Architecture
 
 ```

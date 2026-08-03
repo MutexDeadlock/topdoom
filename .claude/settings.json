@@ -2,6 +2,10 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:doomwiki.org)"
+    ],
+    "deny": [
+      "Edit(TODO)", 
+      "Edit(CHANGELOG)"
     ]
   }
 }

@@ -135,7 +135,7 @@ export class TopDownCamera {
   /**
    * A THREE.Raycaster through the pointer's NDC position, for callers that
    * need to test against real meshes (auto-aim's click-on-a-monster check,
-   * render/sprites.ts's `ThingLayer.pickMonster`) rather than the flat plane
+   * game/things.ts's `ThingLayer.pickMonster`) rather than the flat plane
    * `pointerToPlane` intersects.
    */
   raycasterFor(ndcX: number, ndcY: number): THREE.Raycaster {

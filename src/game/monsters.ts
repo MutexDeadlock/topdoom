@@ -1,18 +1,19 @@
+import type { Sector } from '../wad/map.ts';
 import { hasLineOfSight, slideMove, type World } from './world.ts';
 import { GRAVITY } from './player.ts';
 import { rollDamage } from './weapons.ts';
 
 /**
  * The mutable chase/attack state `stepMonsterAI` reads and writes, kept alive
- * across frames on the caller's own object. `render/sprites.ts`'s
+ * across frames on the caller's own object. `game/things.ts`'s
  * `PosedThing` structurally satisfies this — it carries these fields plus a
  * pile of rendering-only ones (`actor`, `light`, `dead`, ...) this function
  * never touches, so it's passed in directly rather than copied in and out.
  *
- * This function is only ever called once a monster is alerted — waking up
- * (the idle line-of-sight check) is `render/sprites.ts`'s job, throttled
- * there to roughly vanilla's own "look" cadence rather than every frame; see
- * that file's `LOOK_INTERVAL`.
+ * This function is only ever called once a monster is alerted — waking up is
+ * `tryWake`'s job below, called from `game/things.ts`'s `ThingLayer.update`
+ * throttled to roughly vanilla's own "look" cadence rather than every frame;
+ * see that file's `LOOK_INTERVAL`.
  */
 export interface MonsterBody {
   x: number;
@@ -69,7 +70,7 @@ export interface MonsterStats {
    * Movement/collision circle radius. A single approximate value per type
    * rather than vanilla's real (and for some monsters very different,
    * 16-128 unit) per-species radius — the same simplification
-   * `render/sprites.ts`'s `MONSTER_HIT_RADIUS` already makes for being shot.
+   * `game/things.ts`'s `MONSTER_HIT_RADIUS` already makes for being shot.
    */
   radius: number;
   melee: AttackStats | null;
@@ -101,11 +102,11 @@ export const PAIN_STAGGER = 0.35;
  * Without this, a monster with a long sightline (or a big ranged attack
  * range — see `MONSTER_STATS`) fires the exact frame it happens to gain
  * line of sight, which reads as attacking before it could plausibly have
- * noticed the player at all. `ThingLayer.update` seeds `attackCooldown`
- * with this the moment a monster's wake check succeeds, reusing the same
- * field the attack loop already checks rather than adding a second timer.
- * A flat delay rather than vanilla's varied per-monster tic value, the same
- * "tuned by feel" simplification as `MonsterStats.speed`.
+ * noticed the player at all. `tryWake` seeds `attackCooldown` with this the
+ * moment a monster's wake check succeeds, reusing the same field the attack
+ * loop already checks rather than adding a second timer. A flat delay rather
+ * than vanilla's varied per-monster tic value, the same "tuned by feel"
+ * simplification as `MonsterStats.speed`.
  */
 export const REACTION_TIME = 0.5;
 
@@ -210,11 +211,11 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
  * notices the player within roughly its forward 180°, unless the player is
  * close enough to sense regardless (vanilla's `MELEERANGE` exception) — a
  * monster facing away doesn't magically notice someone behind it just
- * because the line between them happens to be clear. `ThingLayer.update`
- * only calls this for the initial wake-up check; once alerted, a monster
- * tracks/attacks the player regardless of which way it's currently facing,
- * matching vanilla's own `A_Chase`, which never re-applies the FOV gate to
- * an already-hunting monster.
+ * because the line between them happens to be clear. `tryWake` only calls
+ * this for the initial wake-up check; once alerted, a monster tracks/attacks
+ * the player regardless of which way it's currently facing, matching
+ * vanilla's own `A_Chase`, which never re-applies the FOV gate to an
+ * already-hunting monster.
  */
 export function canSpotPlayer(facingDeg: number, monsterX: number, monsterY: number, playerX: number, playerY: number): boolean {
   const dist = Math.hypot(playerX - monsterX, playerY - monsterY);
@@ -222,6 +223,47 @@ export function canSpotPlayer(facingDeg: number, monsterX: number, monsterY: num
   const toPlayerDeg = (Math.atan2(playerY - monsterY, playerX - monsterX) * 180) / Math.PI;
   const diff = Math.abs((((toPlayerDeg - facingDeg + 180) % 360) + 360) % 360 - 180);
   return diff <= 90;
+}
+
+/** The subset of `PosedThing` (`game/things.ts`) `tryWake` needs — position, facing, its ambush flag, and the two fields it mutates on success. */
+export interface WakeCheckBody {
+  x: number;
+  y: number;
+  facingDeg: number;
+  ambush: boolean;
+  alerted: boolean;
+  attackCooldown: number;
+}
+
+/**
+ * Vanilla's own idle `A_Look`: called from `game/things.ts`'s `ThingLayer.update`
+ * once per unalerted monster, throttled there to that file's `LOOK_INTERVAL`
+ * rather than every frame (matching vanilla's own idle checks, which run
+ * every 10 tics, not continuously). A sound-alerted sector (`World.noiseAlert`,
+ * fired on player gunshots) wakes a monster with no sight check at all — unless
+ * it's "ambush"/deaf (`game/skill.ts: isAmbush`), which still needs to actually
+ * see the source, just without the usual forward-FOV restriction. Either way, a
+ * monster that isn't woken by sound still falls through to the ordinary
+ * FOV+sight check (`canSpotPlayer` + `hasLineOfSight`) every monster gets,
+ * sound-alerted sector or not.
+ *
+ * On success, mutates `body.alerted` and seeds `attackCooldown` with
+ * `REACTION_TIME` (see that constant's doc for why skipping this made a
+ * monster with a long sightline attack the instant it came into view, with no
+ * perceptible reaction) — the same "mutate the body, report what happened"
+ * shape as `stepMonsterAI`. Returns whether it woke, in case the caller wants
+ * to react to that moment itself.
+ */
+export function tryWake(body: WakeCheckBody, world: World, sector: Sector | undefined, playerX: number, playerY: number): boolean {
+  const heardIt = !!sector && world.isSoundAlerted(sector);
+  const seesDespiteDeaf = body.ambush && heardIt && hasLineOfSight(world, body.x, body.y, playerX, playerY);
+  const heardAndAware = !body.ambush && heardIt;
+  const spottedNormally =
+    canSpotPlayer(body.facingDeg, body.x, body.y, playerX, playerY) && hasLineOfSight(world, body.x, body.y, playerX, playerY);
+  if (!seesDespiteDeaf && !heardAndAware && !spottedNormally) return false;
+  body.alerted = true;
+  body.attackCooldown = REACTION_TIME;
+  return true;
 }
 
 /**

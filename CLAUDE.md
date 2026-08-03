@@ -69,7 +69,8 @@ src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite de
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards, shot tracers, camera
 src/game/      spatial queries, collision, player controller, input, thing→sprite table,
-               fog of war, inventory/pickups, weapons and firing, damage/death
+               thing/monster world state (AI, pickups, damage), fog of war, inventory/pickups,
+               weapons and firing, damage/death
 src/ui/        start menu, HUD
 src/util/      small pure helpers shared across layers (2D geometry, damped-lerp smoothing)
 src/constants.ts   Genuinely cross-cutting values only (VERSION, DEVMODE) — see below
@@ -234,7 +235,7 @@ floor in between is never sampled. A wider gap does lose that straddle partway a
 player falls in under the gravity above — there's no actual jump input to clear it, unlike
 some later source ports.
 
-### Things as sprites (`src/wad/sprites.ts`, `src/render/sprites.ts`, `src/game/thingdefs.ts`)
+### Things as sprites (`src/wad/sprites.ts`, `src/render/sprites.ts`, `src/game/things.ts`, `src/game/thingdefs.ts`)
 
 `SpriteBank` (`wad/sprites.ts`) indexes `S_START`/`S_END` lumps by sprite name + frame
 letter, resolving DOOM's `SSSSFR` / `SSSSFRfr` naming (a frame can list a second
@@ -243,11 +244,21 @@ DOOM halves the art needed for symmetric actors). `thingdefs.ts` maps THING doom
 their sprite name; a type absent from that table renders nothing, same as DOOM's own
 invisible spawn markers (player starts, deathmatch spots, teleport landings).
 
+**The split between `render/sprites.ts` and `game/things.ts` follows the same rendering/game
+divide as the rest of the tree.** `render/sprites.ts` only knows how to turn a
+(sprite name, frame letter, viewer angle) into a posed plane — `SpriteActor`/
+`SpriteMaterialCache`, no knowledge of maps, AI, health, or pickups. `game/things.ts` owns
+`ThingLayer`/`PosedThing`/`buildThingSprites`: which map things exist, their per-instance
+game state (health, alerted/ambush/AI fields, picked/dropped flags), and the update loop that
+ticks monster AI, applies pickups/damage, and drives drops — it calls into `SpriteActor` to
+actually pose the mesh each frame, but the game-state bookkeeping itself has nothing to do
+with rendering.
+
 **`game/skill.ts: isMultiplayerOnly`** filters out things carrying THING flag bit `0x10`
-before `buildThingSprites` poses them — vanilla's own `P_SpawnMapThing` reads
-`if (!netgame && (options & 16)) return NULL;`, i.e. the bit hides a thing whenever no other
-players are present. This engine has no multiplayer mode, so `netgame` is always false and
-the bit always applies. Mappers use it to stash deathmatch-only weapons/ammo without
+before `buildThingSprites` (`game/things.ts`) poses them — vanilla's own `P_SpawnMapThing`
+reads `if (!netgame && (options & 16)) return NULL;`, i.e. the bit hides a thing whenever no
+other players are present. This engine has no multiplayer mode, so `netgame` is always false
+and the bit always applies. Mappers use it to stash deathmatch-only weapons/ammo without
 cluttering single-player — E1M1 has two `SHOT` (shotgun) things at different spots; only the
 one *without* the bit is the "real" single-player pickup, the other is deathmatch-only and
 was rendering (and, once pickups existed, collectible) before this filter existed.
@@ -302,7 +313,7 @@ a single held frame — giving monsters their own idle animation needs DOOM's ac
 state tables (which frames are "idle" vs. attack/pain/death), not a guessed frame range, so
 that's deferred to the combat/monster milestone rather than approximated now.
 
-### Item pickups and HUD (`src/game/inventory.ts`, `src/ui/hud.ts`, `render/sprites.ts: ThingLayer.tryPickup`)
+### Item pickups and HUD (`src/game/inventory.ts`, `src/ui/hud.ts`, `game/things.ts: ThingLayer.tryPickup`)
 
 `Inventory` (health, armor + armor type, four ammo classes, collected keys) is a plain
 struct owned by `Game` in `main.ts`, not by `Player` — nothing about resting height or
@@ -468,22 +479,25 @@ fixed spot, outside `ThingLayer` since neither is a real map `Thing`. `IMPACT_EF
 projectile's flight sprite to its explosion — vanilla reuses `MISL` frames B–D for the rocket's
 own blast, while the plasma bolt and BFG ball explode into dedicated `PLSE`/`BFE1` sprites.
 
-### Monster AI (`src/game/monsters.ts`, `src/render/sprites.ts`)
+### Monster AI (`src/game/monsters.ts`, `src/game/things.ts`)
 
 Every `MONSTER_TYPES` entry except Commander Keen (72) and the boss brain (88) — neither attacks
 or moves in vanilla either (Keen's "death" is a pain cascade with no real combat state, the boss
 brain is a stationary cube-spawner with no player-facing attack this engine models) — now wakes,
 chases and attacks the player. The split follows the same shape as `WeaponSystem`/`SpecialsController`
-elsewhere: `game/monsters.ts`'s `stepMonsterAI` is a pure function that reads/writes a monster's own
-mutable state and returns *what happened* (a fired `MonsterAttack` or nothing); `ThingLayer.update`
-(`render/sprites.ts`) is where that state actually lives (each `PosedThing` carries its own AI
-fields alongside the pose/health/drop fields it already had) and where the wake-up check runs;
+elsewhere: `game/monsters.ts`'s `stepMonsterAI` (chasing/attacking) and `tryWake` (waking up) are
+pure functions that read/write a monster's own mutable state and return *what happened* (a fired
+`MonsterAttack`, or whether it woke); `ThingLayer.update` (`game/things.ts`) is where that state
+actually lives (each `PosedThing` carries its own AI fields alongside the pose/health/drop fields
+it already had) and owns the throttle that calls `tryWake` — the wake *decision* itself (FOV,
+sight, sound, ambush rules) lives in `monsters.ts` alongside `stepMonsterAI`, not in `things.ts`.
 `Game.frame` (`src/game.ts`) turns a returned attack into damage and, for a ranged one, a tracer.
 
 **A monster stays inert until it spots the player, checked on a throttle rather than every
 frame** — `ThingLayer.update`'s `LOOK_INTERVAL` (~0.3s) mirrors vanilla's own idle `A_Look`,
-which vanilla itself only runs every 10 tics, not continuously. That check is gated by
-`game/monsters.ts: canSpotPlayer` *before* `hasLineOfSight` even runs: vanilla's own
+which vanilla itself only runs every 10 tics, not continuously; `tryWake` is what runs each time
+the throttle fires. That check is gated by `game/monsters.ts: canSpotPlayer` *before*
+`hasLineOfSight` even runs: vanilla's own
 `P_LookForPlayers` only lets a monster notice the player within roughly its forward 180° (the
 map-placed thing angle, unchanged until the monster actually wakes), unless the player is within
 melee range regardless of facing. Skipping this meant a monster facing away from the player at
@@ -576,7 +590,7 @@ Guessing specific letters risked silently wrong art the same way `SpriteActor`'s
 argues against for monster idle animation; a fired ranged attack's tracer is the actual
 "it's attacking" visual cue instead.
 
-### Damage, monster death and player death (`src/game/thingdefs.ts`, `src/render/sprites.ts`, `src/game/inventory.ts`, `src/game/world.ts: hasLineOfSight`, `src/main.ts`)
+### Damage, monster death and player death (`src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/inventory.ts`, `src/game/world.ts: hasLineOfSight`, `src/main.ts`)
 
 Shots, explosions and — now that monster AI exists (see above) — monster melee/ranged attacks
 all hurt and kill. The other source of player damage that isn't a weapon at all is
@@ -591,7 +605,7 @@ path against every monster's body — `ThingLayer.raycastMonster` — the way an
 projectile trace would, so a monster standing between the player and a wall they're shooting at
 still gets hit even though it was never clicked; only the nearer of "a wall/step" (`shotPath`)
 and "a monster in the way" (`raycastMonster`) actually stops the shot. `raycastMonster` tests a
-single approximate hitbox (`MONSTER_HIT_RADIUS`/`_HEIGHT` in `render/sprites.ts`) rather than
+single approximate hitbox (`MONSTER_HIT_RADIUS`/`_HEIGHT` in `game/things.ts`) rather than
 each monster's real, and quite varied (16-128 units), vanilla radius — modelling that accurately
 would need a whole per-species size table for a check this approximate to begin with. Either way,
 for a hitscan pellet damage is applied immediately (an instant line has no travel time to wait

@@ -6,7 +6,7 @@ import { loadMap, type DoomMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
-import { buildThingSprites, type ThingLayer } from './game/things.ts';
+import { buildThingSprites, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
 import { FlatFader, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
 import { World, hasLineOfSight, shotPath } from './game/world.ts';
@@ -88,32 +88,54 @@ const MONSTER_TRACER_COLOR = 0xff4433;
 
 /**
  * Frame letters an in-flight projectile sprite cycles through while flying.
- * `MISL` (rocket) only has directional flight art on frame A — B-D are its
+ * `MISL` (rocket, also the cyberdemon's own rocket — see game/monsters.ts's
+ * `MONSTER_STATS`) only has directional flight art on frame A — B-D are its
  * explosion frames, played separately (see IMPACT_EFFECTS) once it lands —
- * while `PLSS`/`BFS1` (plasma bolt, BFG ball) are each a 2-frame
- * omnidirectional pulse. Falls back to a single held frame for anything not
- * listed.
+ * while every other entry here is a 2-frame pulse (omnidirectional for
+ * `PLSS`/`BFS1`/`BAL1`/`BAL2`/`MANF`/`APLS`, directional for `BAL7`/`FATB`),
+ * confirmed against the actual lump names and frame/rotation counts in
+ * `DOOM2.WAD` — dumped directly from the IWAD rather than assumed, the same
+ * rigor as `MONSTER_DEATH_FRAMES`. Falls back to a single held frame for
+ * anything not listed.
  */
 const PROJECTILE_FRAMES: Record<string, string[]> = {
   PLSS: ['A', 'B'],
   BFS1: ['A', 'B'],
+  BAL1: ['A', 'B'], // imp fireball
+  BAL2: ['A', 'B'], // cacodemon fireball
+  BAL7: ['A', 'B'], // baron/hell knight fireball
+  MANF: ['A', 'B'], // mancubus fireball
+  APLS: ['A', 'B'], // arachnotron plasma ball
+  FATB: ['A', 'B'], // revenant missile
 };
 
 /** Vanilla's own explosion states run at 4 tics/frame. */
 const IMPACT_FRAME_SECONDS = 4 / 35;
 
 /**
- * A projectile's impact explosion, keyed by its flight sprite: vanilla's
- * `MISL` reuses its own sprite name for the rocket's explosion (frames B-D,
- * omnidirectional), while the plasma bolt and BFG ball explode into their
- * own dedicated sprites. Purely cosmetic — it plays where a shot reached
+ * A projectile's impact explosion, keyed by its flight sprite. Confirmed
+ * against the real `linuxdoom-1.10` `info.c` mobjinfo/state tables (not
+ * assumed): most fireballs explode into their own trailing frames on the
+ * *same* sprite (`BAL1`/`BAL2`/`BAL7`'s own `C`-`E`, `APLS`'s dedicated
+ * `APBX`, `FATB`'s dedicated `FBXP`) the same way `MISL` reuses its own
+ * `B`-`D` for the rocket's blast — except the mancubus's `MANF`, which has
+ * no explosion frames of its own at all and explodes using the *rocket's*
+ * `MISL` frames instead, a genuine vanilla oddity rather than a
+ * simplification made here. Purely cosmetic — it plays where a shot reached
  * shotPath's distance; whether (and what) it actually damaged is resolved
- * separately, in `spawnShot`/`updateProjectiles`/`applyRadiusDamage` below.
+ * separately, in `spawnShot`/`spawnMonsterProjectile`/`updateProjectiles`/
+ * `applyRadiusDamage` below.
  */
 const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {
   MISL: { sprite: 'MISL', frames: ['B', 'C', 'D'] },
   PLSS: { sprite: 'PLSE', frames: ['A', 'B', 'C', 'D', 'E'] },
   BFS1: { sprite: 'BFE1', frames: ['A', 'B', 'C', 'D', 'E', 'F'] },
+  BAL1: { sprite: 'BAL1', frames: ['C', 'D', 'E'] },
+  BAL2: { sprite: 'BAL2', frames: ['C', 'D', 'E'] },
+  BAL7: { sprite: 'BAL7', frames: ['C', 'D', 'E'] },
+  MANF: { sprite: 'MISL', frames: ['B', 'C', 'D'] },
+  APLS: { sprite: 'APBX', frames: ['A', 'B', 'C', 'D', 'E'] },
+  FATB: { sprite: 'FBXP', frames: ['A', 'B', 'C'] },
 };
 
 /**
@@ -148,7 +170,24 @@ interface Projectile {
   splash: { radius: number; damage: number; hitsPlayer: boolean; tracers: boolean } | null;
   /** The monster this shot was locked onto *and actually reached* (spawnShot resolves that), or null — a free shot, one that missed a monster it wasn't locked onto, or a locked shot a wall cut short before the target. */
   hitMonsterId: number | null;
+  /**
+   * True for a monster's own fired projectile (`spawnMonsterProjectile`)
+   * rather than the player's — arrival damages the player (`damage`) instead
+   * of `hitMonsterId`, and, unlike a player shot (whose target never moves
+   * mid-flight — see `spawnShot`'s doc), its flight also ends early the
+   * moment it gets close to the player's *live*, still-moving position
+   * (`updateProjectiles`), not just at the wall-stop distance computed at
+   * launch — so a player who steps behind cover after the shot was fired can
+   * actually dodge it, rather than always eating the hit once it reaches
+   * wherever they used to be standing.
+   */
+  targetsPlayer: boolean;
 }
+
+/** How close a player-targeting monster projectile has to get to the player's live position before it's treated as a hit — see `Projectile.targetsPlayer`'s doc. */
+const MONSTER_PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + 24;
+/** Vertical companion to `MONSTER_PROJECTILE_HIT_RADIUS` — matches `MONSTER_ENGAGE_HEIGHT` (game/monsters.ts), the same overhead/underneath tolerance used to decide whether this monster could engage the player at all. */
+const MONSTER_PROJECTILE_HIT_HEIGHT = 128;
 
 /**
  * Renderer, canvas, camera and input live for the whole session — a new level
@@ -544,6 +583,48 @@ export class Game {
       damage: shot.damage,
       splash: shot.splash,
       hitMonsterId,
+      targetsPlayer: false,
+    });
+  }
+
+  /**
+   * Turns a monster's fired ranged `MonsterAttackEvent` (`game/monsters.ts`,
+   * via `game/things.ts`'s `ThingLayer.update`) into a flying `Projectile`,
+   * for the monster types whose `AttackStats.ranged.projectile` is
+   * configured — the caller (`frame`) only reaches here after already
+   * checking that field is set. Reuses `shotPath` exactly the way a
+   * player's own locked-on shot does (`spawnShot`'s doc): a straight line
+   * from the monster to the player's position *at the moment it fired*,
+   * stopped early only by a real wall/shut door, angled from the monster's
+   * own height to the player's. Unlike a player's shot, though, the flight
+   * doesn't resolve hit-or-miss up front — the player can keep moving after
+   * the shot leaves, so `updateProjectiles` re-tests proximity to the
+   * player's *live* position every frame instead (see `Projectile.targetsPlayer`'s doc).
+   */
+  private spawnMonsterProjectile(atk: MonsterAttackEvent): void {
+    if (!atk.projectile) return;
+    const target = { x: this.player.x, y: this.player.y, z: this.player.z + AIM_HEIGHT_OFFSET };
+    const path = shotPath(this.world, atk.x, atk.y, atk.z, atk.projectile.angleRad, target);
+    const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, atk.projectile.sprite, PROJECTILE_FRAMES[atk.projectile.sprite]);
+    const light = this.world.sectorAt(atk.x, atk.y)?.light ?? 128;
+    if (!actor.setPose(atk.x, atk.y, atk.z, (atk.projectile.angleRad * 180) / Math.PI, light)) return;
+    this.scene.add(actor.mesh);
+    this.projectiles.push({
+      actor,
+      originX: atk.x,
+      originY: atk.y,
+      startZ: atk.z,
+      endZ: path.z,
+      angleRad: atk.projectile.angleRad,
+      speed: atk.projectile.speed,
+      maxDist: path.dist,
+      traveled: 0,
+      light,
+      sprite: atk.projectile.sprite,
+      damage: atk.damage,
+      splash: null,
+      hitMonsterId: null,
+      targetsPlayer: true,
     });
   }
 
@@ -577,31 +658,52 @@ export class Game {
    * front) — but the impact point always applies splash (`p.splash`)
    * regardless, the same as a rocket exploding against a bare wall still
    * hurts anyone standing nearby in vanilla.
+   *
+   * A `targetsPlayer` projectile (a monster's own shot, `spawnMonsterProjectile`)
+   * has a second, earlier way to arrive: every frame it also checks proximity
+   * to the player's *live* position (`MONSTER_PROJECTILE_HIT_RADIUS`/`_HEIGHT`),
+   * not just the wall-stop distance computed once at launch — a player shot's
+   * target (a monster) never moves mid-flight, so resolving that one up front
+   * is safe (see spawnShot's doc), but the player very much can, and should be
+   * able to step behind cover or just outrun a slower fireball after it's
+   * already been fired rather than always eating the hit once the projectile
+   * reaches wherever they used to be standing. Reaching the wall-stop distance
+   * *without* having gotten close to the player first is a clean miss for a
+   * `targetsPlayer` shot — no damage, just the impact sprite/splash as usual.
    */
   private updateProjectiles(dt: number, viewerAngleDeg: number): void {
     if (this.projectiles.length === 0) return;
     const remaining: Projectile[] = [];
     for (const p of this.projectiles) {
       p.traveled += p.speed * dt;
-      if (p.traveled >= p.maxDist) {
+      const clamped = Math.min(p.traveled, p.maxDist);
+      const x = p.originX + Math.cos(p.angleRad) * clamped;
+      const y = p.originY + Math.sin(p.angleRad) * clamped;
+      const frac = p.maxDist > 0 ? clamped / p.maxDist : 1;
+      const z = p.startZ + (p.endZ - p.startZ) * frac;
+
+      const reachedPlayer =
+        p.targetsPlayer &&
+        Math.hypot(this.player.x - x, this.player.y - y) <= MONSTER_PROJECTILE_HIT_RADIUS &&
+        Math.abs(this.player.z - z) <= MONSTER_PROJECTILE_HIT_HEIGHT;
+
+      if (reachedPlayer || p.traveled >= p.maxDist) {
         this.scene.remove(p.actor.mesh);
-        const x = p.originX + Math.cos(p.angleRad) * p.maxDist;
-        const y = p.originY + Math.sin(p.angleRad) * p.maxDist;
-        if (p.hitMonsterId !== null) this.things?.damage(p.hitMonsterId, p.damage);
+        if (p.targetsPlayer) {
+          if (reachedPlayer) this.damagePlayer(p.damage);
+        } else if (p.hitMonsterId !== null) {
+          this.things?.damage(p.hitMonsterId, p.damage);
+        }
         if (p.splash) {
-          this.applyRadiusDamage(x, y, p.endZ, p.splash.radius, p.splash.damage, p.splash.hitsPlayer, p.splash.tracers);
+          this.applyRadiusDamage(x, y, z, p.splash.radius, p.splash.damage, p.splash.hitsPlayer, p.splash.tracers);
         }
         const impact = IMPACT_EFFECTS[p.sprite];
         if (impact) {
-          const effect = this.spawnEffect(impact.sprite, impact.frames, IMPACT_FRAME_SECONDS, x, y, p.endZ);
+          const effect = this.spawnEffect(impact.sprite, impact.frames, IMPACT_FRAME_SECONDS, x, y, z);
           if (effect) this.impacts.push(effect);
         }
         continue;
       }
-      const x = p.originX + Math.cos(p.angleRad) * p.traveled;
-      const y = p.originY + Math.sin(p.angleRad) * p.traveled;
-      const frac = p.maxDist > 0 ? p.traveled / p.maxDist : 1;
-      const z = p.startZ + (p.endZ - p.startZ) * frac;
       p.actor.setPose(x, y, z, (p.angleRad * 180) / Math.PI, p.light, dt, true, viewerAngleDeg);
       remaining.push(p);
     }
@@ -801,6 +903,16 @@ export class Game {
       fogAlphaOf,
     ) ?? [];
     for (const atk of monsterAttacks) {
+      // A monster with a real flying projectile (game/monsters.ts's
+      // MONSTER_STATS, e.g. the imp's fireball) launches one instead of
+      // resolving as an instant hit — damage lands later, on arrival
+      // (updateProjectiles), not here. Everything else (melee, and the
+      // ranged monsters that really do fire vanilla hitscan bullets) still
+      // hits immediately, with a tracer for the ranged case.
+      if (atk.kind === 'ranged' && atk.projectile) {
+        this.spawnMonsterProjectile(atk);
+        continue;
+      }
       this.damagePlayer(atk.damage);
       if (atk.kind === 'ranged') {
         const tracer = new Tracer(atk.x, atk.y, atk.z, this.player.x, this.player.y, this.player.z + AIM_HEIGHT_OFFSET, MONSTER_TRACER_COLOR);

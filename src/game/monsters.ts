@@ -55,6 +55,40 @@ export interface AttackStats {
   diceMult: number;
   /** Seconds between attacks. */
   cooldown: number;
+  /**
+   * Non-null for a ranged attack that actually throws a flying projectile
+   * sprite (vanilla's fireball/rocket monsters), rather than resolving as an
+   * instant hitscan bolt — see `MONSTER_STATS`'s doc for which monsters get
+   * one and why the rest don't. `sprite` is confirmed against the real
+   * `DOOM2.WAD` lump names (each has its own 2-frame omnidirectional-or-
+   * directional flight pulse — dumped from the actual IWAD — and, per the
+   * real `linuxdoom-1.10` `info.c` mobjinfo/state tables, its own 3-5-frame
+   * explosion, except the mancubus's `MANF`, which explodes using the
+   * rocket's own `MISL` frames instead of dedicated art of its own — a real
+   * vanilla oddity, not a simplification here). `speed` (map units/sec) is
+   * tuned by feel the same as everything else in this file.
+   */
+  projectile?: { sprite: string; speed: number };
+  /**
+   * Vanilla's own `P_CheckMissileRange` distance falloff (confirmed against
+   * the real `linuxdoom-1.10` source), converted from a per-check miss
+   * *chance* into a deterministic cooldown *multiplier* — see
+   * `stepMonsterAI`'s doc for why. `rangeFalloffScale` (default 1) shrinks
+   * distance before capping; vanilla halves it (0.5) for exactly three
+   * types — cyberdemon, spider mastermind, revenant — making them
+   * noticeably more willing to fire from far away than everything else.
+   * `rangeFalloffCap` (default 200 map units) is vanilla's own clamp, except
+   * the cyberdemon's own extra-tight 160.
+   */
+  rangeFalloffScale?: number;
+  rangeFalloffCap?: number;
+  /**
+   * Vanilla's revenant-only rule (`MT_UNDEAD` in `P_CheckMissileRange`):
+   * refuses to fire its missile within this distance at all, preferring to
+   * close to melee range instead rather than lobbing one from just out of
+   * fist's reach.
+   */
+  minRangedDist?: number;
 }
 
 export interface MonsterStats {
@@ -87,6 +121,14 @@ export interface MonsterStats {
 export interface MonsterAttack {
   kind: 'melee' | 'ranged';
   damage: number;
+  /**
+   * Set only for a `'ranged'` attack fired by a monster whose `AttackStats.ranged.projectile`
+   * is configured — the caller (`game.ts`) spawns a flying projectile sprite
+   * angled at `angleRad` instead of an instant hitscan tracer. Absent means
+   * the ordinary hitscan-style bolt this engine already used for every
+   * ranged monster before real projectiles existed.
+   */
+  projectile?: { sprite: string; speed: number; angleRad: number };
 }
 
 /** Vanilla's own MELEERANGE, plus a little slack for this engine's coarser per-frame (rather than per-tic) distance sampling. */
@@ -139,17 +181,24 @@ export const MONSTER_FIRE_HEIGHT = 40;
  * attack this engine models), so both stay exactly as decorative/passive as
  * they were before monster AI existed.
  *
- * Ranged attacks are modeled as an instant hitscan-style bolt (a tracer,
- * main.ts) rather than vanilla's own flying fireball/rocket projectile per
- * monster type (imp BAL1, cacodemon BAL2, baron/knight BAL7, revenant's
- * homing missile, mancubus/arachnotron's paired shots, cyberdemon rockets,
- * spider mastermind's chaingun, arch-vile's fire column) — a distinct flight
- * sprite, speed and (for the revenant) homing behavior per monster type is a
- * lot of extra bookkeeping for a difference that mostly reads the same to
- * the player as this engine's own hitscan tracers already do. Damage values
- * here are tuned for game balance/feel rather than lifted from vanilla's own
- * per-monster damage rolls, the same reasoning weapons.ts's fire rates and
- * spread already use. There's also no monster-vs-monster infighting and
+ * Ranged attacks are either an instant hitscan-style bolt (a tracer, drawn
+ * by `game.ts`) — for the monsters that really do fire vanilla hitscan
+ * bullets (the human gunners, and the spider mastermind's chaingun) — or a
+ * real flying projectile sprite (`AttackStats.ranged.projectile`, also
+ * `game.ts`) for the ones that genuinely throw a fireball/rocket in vanilla.
+ * Two are deliberately left as the hitscan-tracer stand-in despite not
+ * matching vanilla exactly: the pain elemental (whose real "attack" is
+ * spawning a lost soul, not firing anything — there's no lost-soul-spawning
+ * mechanic here to model instead) and the arch-vile (whose real fire attack
+ * is a stationary tracking flame summoned *at* the target, not a projectile
+ * that flies from the vile to it — a proper implementation needs a whole
+ * different mechanism than "spawn sprite, fly toward target"). Revenant
+ * missiles also don't home in on the player the way vanilla's `A_Tracer`
+ * makes them — they fly straight, the same simplification as everything
+ * else in this file that isn't worth a dedicated behavior for. Damage
+ * values are tuned for game balance/feel rather than lifted from vanilla's
+ * own per-monster damage rolls, the same reasoning weapons.ts's fire rates
+ * and spread already use. There's also no monster-vs-monster infighting and
  * monsters don't physically block the player (or each other) on contact —
  * both real vanilla behaviors, both left out of this milestone's scope, the
  * same kind of honestly-noted gap as crushers not blocking movers on contact
@@ -164,7 +213,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 240,
     radius: 20,
     melee: { range: MELEE_RANGE, diceSides: 6, diceMult: 3, cooldown: 0.8 },
-    ranged: { range: 1000, diceSides: 6, diceMult: 3, cooldown: 1.4 },
+    ranged: { range: 1000, diceSides: 6, diceMult: 3, cooldown: 1.4, projectile: { sprite: 'BAL1', speed: 500 } },
     painChance: 0.5,
   }, // TROO imp
   3002: { speed: 320, radius: 30, melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 4, cooldown: 0.7 }, ranged: null, painChance: 0.4 }, // SARG demon
@@ -174,36 +223,78 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 220,
     radius: 31,
     melee: { range: MELEE_RANGE, diceSides: 6, diceMult: 6, cooldown: 0.9 },
-    ranged: { range: 1200, diceSides: 6, diceMult: 5, cooldown: 1.3 },
+    ranged: { range: 1200, diceSides: 6, diceMult: 5, cooldown: 1.3, projectile: { sprite: 'BAL2', speed: 500 } },
     painChance: 0.3,
   }, // HEAD cacodemon
   3003: {
     speed: 240,
     radius: 24,
     melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 8, cooldown: 0.9 },
-    ranged: { range: 1300, diceSides: 8, diceMult: 6, cooldown: 1.6 },
+    ranged: { range: 1300, diceSides: 8, diceMult: 6, cooldown: 1.6, projectile: { sprite: 'BAL7', speed: 550 } },
     painChance: 0.2,
   }, // BOSS baron of hell
   69: {
     speed: 260,
     radius: 24,
     melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 6, cooldown: 0.8 },
-    ranged: { range: 1300, diceSides: 8, diceMult: 5, cooldown: 1.5 },
+    ranged: { range: 1300, diceSides: 8, diceMult: 5, cooldown: 1.5, projectile: { sprite: 'BAL7', speed: 550 } },
     painChance: 0.25,
-  }, // BOS2 hell knight
+  }, // BOS2 hell knight — vanilla's hell knight throws the same BAL7 fireball as the baron
   71: { speed: 220, radius: 31, melee: null, ranged: { range: 1200, diceSides: 4, diceMult: 3, cooldown: 1.6 }, painChance: 0.3 }, // PAIN pain elemental (stands in for its unmodeled soul-spawn attack)
   66: {
     speed: 280,
     radius: 20,
     melee: { range: MELEE_RANGE, diceSides: 6, diceMult: 4, cooldown: 0.8 },
-    ranged: { range: 1600, diceSides: 6, diceMult: 5, cooldown: 1.6 },
+    ranged: {
+      range: 1600,
+      diceSides: 6,
+      diceMult: 5,
+      cooldown: 1.6,
+      projectile: { sprite: 'FATB', speed: 750 },
+      rangeFalloffScale: 0.5,
+      minRangedDist: 196,
+    },
     painChance: 0.3,
   }, // SKEL revenant
-  67: { speed: 180, radius: 48, melee: null, ranged: { range: 1300, diceSides: 8, diceMult: 6, cooldown: 1.8 }, painChance: 0.2 }, // FATT mancubus
-  68: { speed: 260, radius: 64, melee: null, ranged: { range: 1600, diceSides: 3, diceMult: 3, cooldown: 0.3 }, painChance: 0.2 }, // BSPI arachnotron
-  7: { speed: 280, radius: 128, melee: null, ranged: { range: 2200, diceSides: 3, diceMult: 4, cooldown: 0.2 }, painChance: 0.1 }, // SPID spider mastermind
-  16: { speed: 320, radius: 40, melee: null, ranged: { range: 2400, diceSides: 8, diceMult: 20, cooldown: 1.1 }, painChance: 0.05 }, // CYBR cyberdemon
-  64: { speed: 350, radius: 20, melee: null, ranged: { range: 1600, diceSides: 8, diceMult: 8, cooldown: 2.0 }, painChance: 0.15 }, // VILE arch-vile
+  67: {
+    speed: 180,
+    radius: 48,
+    melee: null,
+    ranged: { range: 1300, diceSides: 8, diceMult: 6, cooldown: 1.8, projectile: { sprite: 'MANF', speed: 450 } },
+    painChance: 0.2,
+  }, // FATT mancubus
+  68: {
+    speed: 260,
+    radius: 64,
+    melee: null,
+    ranged: { range: 1600, diceSides: 3, diceMult: 3, cooldown: 0.3, projectile: { sprite: 'APLS', speed: 900 } },
+    painChance: 0.2,
+  }, // BSPI arachnotron
+  7: {
+    speed: 280,
+    radius: 128,
+    melee: null,
+    ranged: { range: 2200, diceSides: 3, diceMult: 4, cooldown: 0.2, rangeFalloffScale: 0.5 },
+    painChance: 0.1,
+  }, // SPID spider mastermind (real hitscan chaingun in vanilla too)
+  16: {
+    speed: 320,
+    radius: 40,
+    melee: null,
+    ranged: {
+      range: 2400,
+      diceSides: 8,
+      diceMult: 20,
+      cooldown: 1.1,
+      projectile: { sprite: 'MISL', speed: 1100 },
+      rangeFalloffScale: 0.5,
+      rangeFalloffCap: 160,
+    },
+    painChance: 0.05,
+  }, // CYBR cyberdemon — the same MISL rocket sprite the player's own rocket launcher fires
+  // VILE arch-vile: vanilla's own P_CheckMissileRange refuses to fire beyond 14*64=896 map units
+  // for this type specifically (MT_VILE), tighter than the generic 200-unit falloff cap below.
+  64: { speed: 350, radius: 20, melee: null, ranged: { range: 896, diceSides: 8, diceMult: 8, cooldown: 2.0 }, painChance: 0.15 }, // VILE arch-vile
 };
 
 /**
@@ -313,6 +404,40 @@ function settleVertical(body: MonsterBody, world: World, radius: number, dt: num
  * without sight of it (no separate "last known position" memory) — a
  * deliberate simplification, not vanilla's own `chasedir` wandering.
  */
+/**
+ * How long to wait before this monster's *next* ranged attack, given the
+ * distance the one it just fired connected at. Vanilla's own
+ * `P_CheckMissileRange` doesn't use a cooldown at all — every ~3-tic chase
+ * tick it rolls `P_Random() < dist` (dist shrinking as the target gets
+ * closer) and only fires on a "miss" of that roll, so a monster far from its
+ * target can go through many failed rolls, and therefore many real seconds,
+ * before ever actually firing again, while one nearly on top of its target
+ * fires almost every possible chance. Reusing that as a literal per-frame
+ * probability doesn't translate to a fixed dt-scaled tick, though — sampled
+ * every render frame (far more often than vanilla's own ~3-tic cadence) the
+ * same per-attempt chance would resolve almost immediately regardless of how
+ * small it is. Converting the *expected* number of ~3-tic attempts (1/p,
+ * for a per-attempt success probability p) into an expected real-time delay
+ * and applying that as this monster's own cooldown keeps the same
+ * close-fires-often/far-fires-rarely shape vanilla has without needing to
+ * simulate its per-tic retry loop. `stats.ranged`'s `rangeFalloffScale`/
+ * `Cap` reproduce the same per-type offset/halving/clamp
+ * `P_CheckMissileRange` itself applies (see that interface's doc) before
+ * this converts the resulting "distance" into a cooldown multiplier.
+ */
+function rangedCooldown(stats: MonsterStats, dist: number): number {
+  if (!stats.ranged) return 0;
+  // Vanilla's own offset: melee-capable monsters get -64, ranged-only -192
+  // ("no melee attack, so fire more" — P_CheckMissileRange's own comment).
+  const offset = stats.melee ? 64 : 192;
+  const scale = stats.ranged.rangeFalloffScale ?? 1;
+  const cap = stats.ranged.rangeFalloffCap ?? 200;
+  const effectiveDist = Math.min(cap, Math.max(0, (dist - offset) * scale));
+  // p = (256 - effectiveDist) / 256 is vanilla's own per-attempt fire chance;
+  // effectiveDist is capped well under 256, so this never divides by ~0.
+  return stats.ranged.cooldown * (256 / (256 - effectiveDist));
+}
+
 export function stepMonsterAI(
   body: MonsterBody,
   stats: MonsterStats,
@@ -340,9 +465,13 @@ export function stepMonsterAI(
     if (stats.melee && dist <= stats.melee.range) {
       attack = { kind: 'melee', damage: rollDamage(stats.melee.diceSides, stats.melee.diceMult) };
       body.attackCooldown = stats.melee.cooldown;
-    } else if (stats.ranged && dist <= stats.ranged.range) {
-      attack = { kind: 'ranged', damage: rollDamage(stats.ranged.diceSides, stats.ranged.diceMult) };
-      body.attackCooldown = stats.ranged.cooldown;
+    } else if (stats.ranged && dist <= stats.ranged.range && dist >= (stats.ranged.minRangedDist ?? 0)) {
+      attack = {
+        kind: 'ranged',
+        damage: rollDamage(stats.ranged.diceSides, stats.ranged.diceMult),
+        projectile: stats.ranged.projectile ? { ...stats.ranged.projectile, angleRad: body.angle } : undefined,
+      };
+      body.attackCooldown = rangedCooldown(stats, dist);
     }
   }
 

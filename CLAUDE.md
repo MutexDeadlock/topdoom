@@ -568,11 +568,52 @@ window) gates both whether an attack can land and whether the monster is "close 
 approaching; without sight it keeps beelining toward the player's *actual* current position (no
 separate remembered last-known-position state) rather than firing blind.
 
-**Ranged attacks are an instant hitscan-style bolt (a `Tracer`, colored red to read as
-"hostile"), not vanilla's own flying fireball/rocket sprite per monster type** — a distinct
-flight sprite, speed and (for the revenant) homing behavior per species is a lot of extra
-bookkeeping for a difference that mostly reads the same to the player as this engine's hitscan
-tracers already do; see `MONSTER_STATS`'s doc for the full reasoning. Damage dice and speeds are
+**A ranged attack's own cooldown scales with distance, so a monster fires far less often from
+across a room than up close** — confirmed against vanilla's real `P_CheckMissileRange`
+(`linuxdoom-1.10`), which doesn't use a cooldown at all: every ~3-tic chase check it rolls
+`P_Random() < dist` (`dist` shrinking as the target closes) and only actually fires on a "miss"
+of that roll, so a monster far from the player can go through many failed rolls — many real
+seconds — before firing again, while one nearly on top of the player fires almost every chance
+it gets. Missing this falloff entirely was the actual "monsters shoot more than vanilla" bug: a
+flat cooldown fires at full rate regardless of range, which reads as far more trigger-happy than
+vanilla the moment a monster is shooting from any real distance. Reusing the *chance* directly
+wasn't an option — sampled every render frame (far more often than vanilla's own ~3-tic cadence)
+the same per-attempt probability would resolve almost immediately no matter how small it is.
+`rangedCooldown` (`game/monsters.ts`) instead converts the *expected number of attempts* (`1/p`
+for a per-attempt success chance `p`) into an expected real-time delay and uses that as this
+monster's own cooldown — same close-fires-often/far-fires-rarely shape, without simulating
+vanilla's per-tic retry loop. `AttackStats.ranged`'s `rangeFalloffScale`/`Cap` reproduce vanilla's
+own per-type offset/halving/clamp (halved for exactly the three types vanilla special-cases —
+cyberdemon, spider mastermind, revenant — making them noticeably more willing to fire from far
+away than everything else; the cyberdemon alone gets an extra-tight 160-unit cap on top). The
+revenant additionally won't fire its missile within 196 units at all (`minRangedDist`, vanilla's
+own `MT_UNDEAD` rule — its internal name from when the revenant was "Undead" in development),
+preferring to close to melee range instead of lobbing one from just outside fist's reach; the
+arch-vile's own attack range is capped at 896 units (`14*64`, also read straight off
+`P_CheckMissileRange`) rather than the longer range this file otherwise tunes by feel.
+
+**Ranged attacks are either an instant hitscan-style bolt or a real flying projectile sprite,
+matching which one vanilla actually uses per monster type** (`game/monsters.ts`'s
+`AttackStats.ranged.projectile`, `game.ts`'s `spawnMonsterProjectile`/`PROJECTILE_FRAMES`/
+`IMPACT_EFFECTS`). The human gunners (zombieman, shotgun guy, chaingunner, Wolfenstein SS) and
+the spider mastermind really do fire vanilla hitscan bullets, so they keep the tracer (colored
+red to read as "hostile", distinct from either of the player's own tracer colors); the imp
+(`BAL1`), cacodemon (`BAL2`), baron/hell knight (`BAL7`), mancubus (`MANF`), arachnotron (`APLS`),
+revenant (`FATB`) and cyberdemon (`MISL`, the same sprite the player's own rocket launcher uses)
+throw a real projectile instead, sprite names and frame counts confirmed by dumping the actual
+`DOOM2.WAD` sprite lumps and cross-checked against `linuxdoom-1.10`'s `info.c` mobjinfo/state
+tables rather than assumed — including the mancubus's genuine vanilla oddity of exploding with
+the *rocket's* `MISL` frames instead of any dedicated art of its own (`MANF` has no explosion
+frames in the WAD at all). The pain elemental and arch-vile stay on the hitscan-tracer stand-in
+despite not matching vanilla exactly, and the revenant's missile flies straight rather than
+homing — see `MONSTER_STATS`'s doc for why each of those specific gaps was left alone rather than
+built out further. A monster projectile reuses the same `Projectile`/`updateProjectiles` machinery
+the player's own rocket/plasma/BFG shots already use, distinguished by `targetsPlayer: true`: it's
+still launched via `shotPath` exactly like a player's locked-on shot (stopped early only by a real
+wall), but unlike a player's shot — whose target (a monster) never moves mid-flight — its arrival
+is re-checked every frame against the player's *live* position (`MONSTER_PROJECTILE_HIT_RADIUS`/
+`_HEIGHT`), not just the wall-stop distance computed at launch, so stepping behind cover or
+outrunning a slower fireball after it's already fired actually works. Damage dice and speeds are
 tuned for feel/balance rather than lifted from vanilla's own per-monster tables, the same
 simplification `weapons.ts`'s fire rates/spread and `player.ts`'s `GRAVITY` already make for
 values that don't survive a clean conversion from vanilla's tic-based model. **Monsters don't

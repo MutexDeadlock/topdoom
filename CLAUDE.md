@@ -281,6 +281,19 @@ knowing before touching this file:
 - **Rotation frame (which of the 8 sprite angles) is picked from the live viewer angle**
   every frame (`pickRotationDigit`), same as the plane's own yaw above — both track
   `camera.viewerAngleDeg`, not a hardcoded constant, now that the camera orbits.
+- **Ammo/health/armor/keys/powerups/decorations render `PICKUP_SCALE` (1.4×) larger than
+  their native WAD pixel size; monsters and weapons don't.** Vanilla's 1:1 unit-per-pixel
+  sizing suits a ground-level first-person view; from this game's far, tilted top-down camera
+  the same pixel size reads much smaller, and small collectibles (a clip, a shell box) are
+  what actually gets lost — monsters are already large enough to read and weapons already
+  stand out, so both are deliberately left at native size while everything smaller gets
+  bumped up. Applied as `actor.mesh.scale.setScalar(...)` rather than baked into the shared
+  per-lump geometry (`SpriteMaterialCache`'s cache), since scale needs to vary by thing type
+  even when two types happen to reuse art. It composes safely with the floor-anchoring
+  above: geometry is translated so the plane's bottom-center sits at local `(0, 0)` *before*
+  `mesh.scale` is applied, so scaling stretches the plane upward and outward from that point
+  instead of moving its anchor — a scaled item still sits exactly on the floor, still
+  horizontally centred on its own `(x, y)`.
 
 Animation (`SpriteActor.setPose`'s `animFrames`/`animating`) is a plain frame-letter cycle
 with no separate idle art, matching DOOM itself: the player's `PLAY` sprite reuses `A,B,C,D`

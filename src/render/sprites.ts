@@ -12,6 +12,7 @@ import {
   MONSTER_TYPES,
   MONSTER_XDEATH_FRAMES,
   THING_SPRITES,
+  WEAPON_TYPES,
 } from '../game/thingdefs.ts';
 import { isMultiplayerOnly, spawnsAtSkill, type Skill } from '../game/skill.ts';
 import { doomToWorld, lightToColor } from './mapmesh.ts';
@@ -405,6 +406,22 @@ export interface ThingLayer {
 const MONSTER_HIT_RADIUS = 24;
 const MONSTER_HIT_HEIGHT = 64;
 
+/**
+ * Non-monster, non-weapon things (ammo, health/armor, keys, powerups,
+ * decorations) are drawn at vanilla's native patch size times this factor.
+ * The far, tilted top-down camera reads a lot worse than DOOM's own
+ * ground-level first-person view at the same pixel size, and small
+ * collectibles like a clip or a shell box are the ones that suffer most —
+ * monsters are already large enough to read fine, and weapons already stand
+ * out, so both are left at their native size instead.
+ */
+const PICKUP_SCALE = 1.4;
+
+/** Whether `type` gets the up-scale above — everything except monsters and weapons. */
+function pickupScaleFor(type: number): number {
+  return MONSTER_TYPES.has(type) || WEAPON_TYPES.has(type) ? 1 : PICKUP_SCALE;
+}
+
 /** One static upright plane per map THING whose type is a known, visible sprite. */
 export function buildThingSprites(
   map: DoomMap,
@@ -432,6 +449,7 @@ export function buildThingSprites(
 
     const actor = new SpriteActor(bank, materials, spriteName);
     if (!actor.setPose(x, y, sector?.floorHeight ?? 0, facingDeg, light)) continue;
+    actor.mesh.scale.setScalar(pickupScaleFor(t.type));
     group.add(actor.mesh);
     posed.push({
       id: posed.length,
@@ -465,6 +483,7 @@ export function buildThingSprites(
     const subsector = world.subsectorAt(x, y);
     const actor = new SpriteActor(bank, materials, spriteName);
     if (!actor.setPose(x, y, sector?.floorHeight ?? 0, facingDeg, light)) return;
+    actor.mesh.scale.setScalar(pickupScaleFor(type));
     group.add(actor.mesh);
     posed.push({
       id: posed.length,

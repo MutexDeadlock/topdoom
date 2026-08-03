@@ -108,6 +108,9 @@ export const MONSTER_TYPES = new Set([
   3004, 9, 3001, 3002, 58, 3006, 3005, 3003, 69, 7, 16, 71, 65, 66, 67, 68, 64, 84, 72, 88,
 ]);
 
+/** Doomednums of the "Weapons" block above — kept out of `render/sprites.ts`'s pickup up-scale, see there for why. */
+export const WEAPON_TYPES = new Set([2001, 82, 2002, 2003, 2004, 2005, 2006]);
+
 /** Vanilla `mobjinfo` spawn health, confirmed against the Doom Wiki's monster table. */
 export const MONSTER_HEALTH: Record<number, number> = {
   3004: 20, // POSS zombieman

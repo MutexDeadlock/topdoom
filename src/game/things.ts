@@ -31,7 +31,7 @@ import { SpriteActor, SpriteMaterialCache } from '../render/sprites.ts';
 interface PosedThing {
   /** 
    * Index into the `posed` array itself.
-   * A stable handle callers (main.ts) can hold onto across frames to target 
+   * A stable handle callers (game.ts) can hold onto across frames to target 
    * this exact instance with `ThingLayer.damage`.
    */
   id: number;
@@ -158,7 +158,7 @@ const LOOK_INTERVAL = 0.3;
  * 4 walk + 2 attack + 1 pain frame before it). Attack/pain get no dedicated
  * pose here for the same reason monster idle animation is deferred
  * elsewhere: guessing unconfirmed letters risks silently wrong art rather
- * than just missing art. A ranged attack's tracer (main.ts) is the actual
+ * than just missing art. A ranged attack's tracer (game.ts) is the actual
  * on-screen "it's firing" cue instead.
  */
 const MONSTER_WALK_FRAMES = ['A', 'B', 'C', 'D'];
@@ -222,7 +222,7 @@ export interface ThingLayer {
   tryPickup(x: number, y: number, z: number, radius: number, consume: (type: number, dropped: boolean) => boolean): void;
   /**
    * DOOM (x, y, floor height) of the visible monster this ray hits first, or
-   * null. Backs auto-aim (main.ts): aiming with the cursor over a monster
+   * null. Backs auto-aim (game.ts): aiming with the cursor over a monster
    * locks onto it instead of wherever the mouse's floor-plane projection
    * landed — both its position (so the shot's angle is exact even when the
    * click lands high on the sprite, far from the monster's own footprint)
@@ -240,7 +240,7 @@ export interface ThingLayer {
   /**
    * Living monsters within `radius` (2D — matching vanilla's own radius-attack
    * distance test, which ignores height) of (x, y). Candidates for splash
-   * damage (main.ts); the caller still has to check line-of-sight itself,
+   * damage (game.ts); the caller still has to check line-of-sight itself,
    * since that needs the `World` this layer doesn't otherwise touch.
    */
   monstersNear(x: number, y: number, radius: number): { id: number; x: number; y: number; z: number; type: number }[];
@@ -250,7 +250,7 @@ export interface ThingLayer {
    * Living monsters standing in exactly `sector` — a reference-equality check
    * against the same mutable `Sector` object `PosedThing.sector` was seeded
    * from (see that field's doc), not a sector-index lookup this layer has no
-   * way to perform on its own. Backs crush damage (main.ts's `onCrush`
+   * way to perform on its own. Backs crush damage (game.ts's `onCrush`
    * callback into `SpecialsController`): a crusher/crushing floor knows only
    * which sector it's squeezing, not who's standing in it.
    */

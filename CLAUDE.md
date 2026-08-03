@@ -150,7 +150,7 @@ forever and shows a permanent faint speckle (the dither test is a strict `<`).
 
 `TopDownCamera.yawDeg` lets the camera orbit around the followed point on right-mouse drag
 (`Input.consumeDragYaw`, accumulated via `pointermove` with `setPointerCapture` so the drag
-survives leaving the canvas mid-move) or by pressing `Q`/`E` (`main.ts`'s `KEY_YAW_STEP`, a
+survives leaving the canvas mid-move) or by pressing `Q`/`E` (`game.ts`'s `KEY_YAW_STEP`, a
 45° step per press, signed to match the same rotation direction as dragging left/right
 respectively); tilt and distance are unaffected, so the camera always stays the same amount
 off vertical. `viewerAngleDeg` (`yawDeg - 90`) is the DOOM-space bearing from the followed
@@ -163,14 +163,14 @@ animate `yawDeg` towards (`YAW_STEP_SMOOTH_RATE`) rather than jumping instantly 
 to feel snappy, but smooth rather than a hard cut. Plain assignment (`camera.yawDeg = ...`,
 used for the instant reorient on spawn/teleport, and by right-drag) still jumps immediately:
 the `yawDeg` setter keeps `targetYawDeg` in lockstep so nothing left over from a prior Q/E
-animates after an instant set. `main.ts`'s drag-handling line only assigns `camera.yawDeg` when
+animates after an instant set. `game.ts`'s drag-handling line only assigns `camera.yawDeg` when
 `Input.consumeDragYaw()` is actually nonzero — calling the setter unconditionally every frame,
 even as a no-op `-= 0`, would snap `targetYawDeg` back to the current (still mid-animation)
 value and cancel a Q/E step after just one frame of smoothing, which is exactly the bug this
 guard fixes.
 
 Holding Q/E (rather than tapping) auto-repeats the same 45° `stepYaw` every
-`KEY_YAW_REPEAT_INTERVAL` — `main.ts`'s `qHoldTime`/`eHoldTime` accumulate `dt` while
+`KEY_YAW_REPEAT_INTERVAL` — `game.ts`'s `qHoldTime`/`eHoldTime` accumulate `dt` while
 `Input.held` is true and fire+reset once the interval is reached, alongside the immediate
 step already fired on `Input.pressed`. The interval is tuned to roughly the time one step's
 smoothing takes to settle, so a hold reads as continuous rotation made of chained 45° steps
@@ -178,7 +178,7 @@ rather than a single tap that then does nothing until released and pressed again
 
 Movement (`Player.update`'s `forwardDeg` param, passed as `camera.viewerAngleDeg + 180`) is
 camera-relative rather than DOOM-axis-relative: `W` always moves the player away from the
-camera *on screen*, regardless of which way the camera has been orbited to face. `main.ts`
+camera *on screen*, regardless of which way the camera has been orbited to face. `game.ts`
 recomputes this every frame from the live camera angle before calling `player.update`.
 
 ### Collision (`src/game/world.ts`)
@@ -271,7 +271,7 @@ knowing before touching this file:
   (right-drag, see below) but only ever tilts a fixed amount off vertical — it never pitches
   further down or up. So a plane only ever needs to rotate around its vertical axis to track
   `camera.viewerAngleDeg` (`SpriteActor.setPose`'s `viewerAngleDeg` param, called every frame
-  from `main.ts`); it never needs a true billboard rotation. `VIEWER_ANGLE_DEG` is just the
+  from `game.ts`); it never needs a true billboard rotation. `VIEWER_ANGLE_DEG` is just the
   default/fallback for callers that don't pass a live angle. A `THREE.Sprite`'s full
   camera-facing rotation would be both wasted work and actively wrong here: it tips flat as
   the camera tilts toward straight-down, making standing figures read as lying on the floor.
@@ -316,7 +316,7 @@ that's deferred to the combat/monster milestone rather than approximated now.
 ### Item pickups and HUD (`src/game/inventory.ts`, `src/ui/hud.ts`, `game/things.ts: ThingLayer.tryPickup`)
 
 `Inventory` (health, armor + armor type, four ammo classes, collected keys) is a plain
-struct owned by `Game` in `main.ts`, not by `Player` — nothing about resting height or
+struct owned by `Game` in `game.ts`, not by `Player` — nothing about resting height or
 movement needs it, and keeping it separate is what makes `finishLevel` (below) a one-line
 call at map load rather than something `Player`'s constructor has to reason about.
 
@@ -325,7 +325,7 @@ left alone (still rendered, still decorative) since there's no player-status-eff
 yet to give picking one up any meaning. Weapon ownership and ammo land in
 `Inventory.weapons`/`Inventory.ammo`, and are read by `game/weapons.ts` (below) for
 selection and firing. `Inventory.currentWeapon` lives here rather than in `WeaponSystem` for
-the same reason the rest of the struct does: `main.ts` owns it, and the HUD reads it straight
+the same reason the rest of the struct does: `game.ts` owns it, and the HUD reads it straight
 off the same struct it already reads health/ammo/keys from. Picking up a weapon **not already
 owned** selects it, matching vanilla's `P_GiveWeapon`; re-picking one you already have doesn't
 yank the selection away. `fist` and `pistol` are in `WeaponId` even though neither has a map
@@ -344,7 +344,7 @@ placed directly on the map rather than dropped by a dead monster (which only van
 half); there are no monster drops yet for that distinction to matter.
 
 **Keys don't survive a level transition; health/armor/ammo do** (`finishLevel`, called from
-`main.ts: loadMapByIndex` before the new map loads) — matching vanilla's own
+`game.ts: loadMapByIndex` before the new map loads) — matching vanilla's own
 `G_PlayerFinishLevel`, which clears `player->cards` but nothing else. This does mean a locked
 door on the far side of a level transition needs its key collected again on the new map, same
 as vanilla itself requires.
@@ -359,7 +359,7 @@ source rather than guessed, since the two manual-door groups don't share an orde
 the same line again later, matching vanilla's own "you need the X key" behavior functionally
 (there's no on-screen message system yet to show the text itself). `ownedKeys` is threaded
 through from `Game.frame` as `this.inventory.keys` on every call to `SpecialsController.update`,
-same as `playerX`/`playerY` — inventory is a `main.ts`-owned struct, not something
+same as `playerX`/`playerY` — inventory is a `game.ts`-owned struct, not something
 `SpecialsController` reaches for on its own (see `Inventory` above for why).
 
 Getting the key check to actually fire surfaced a second, unrelated bug in the same table:
@@ -414,13 +414,13 @@ written into `index.html` like the other panels: the weapon list is a compile-ti
 Icons reuse each weapon's own ground-pickup sprite (`WeaponDef.iconLump`); fist and pistol have
 no pickup, so they fall back to their first-person `PUNGA0`/`PISGA0` frames.
 
-### Weapons, firing and auto-aim (`src/game/weapons.ts`, `src/game/world.ts: shotPath`, `src/render/tracer.ts`, `src/main.ts`)
+### Weapons, firing and auto-aim (`src/game/weapons.ts`, `src/game/world.ts: shotPath`, `src/render/tracer.ts`, `src/game.ts`)
 
 `WeaponSystem` (`game/weapons.ts`) owns weapon selection and fire timing/ammo, and
 **deliberately knows nothing about three.js**: `update` returns a list of `Shot`s describing
 what was fired this frame (one per hitscan pellet, or one per projectile launched), and
-`main.ts` turns those into tracer lines and flying sprites. That's the same split as
-`game/specials.ts`'s line triggers vs. `main.ts`'s teleport-fog puffs, and it's what lets fire
+`game.ts` turns those into tracer lines and flying sprites. That's the same split as
+`game/specials.ts`'s line triggers vs. `game.ts`'s teleport-fog puffs, and it's what lets fire
 rates and ammo costs be tested headlessly against a synthetic map.
 
 Fire rates and spread are tuned by feel rather than converted from vanilla's tic-based weapon
@@ -479,7 +479,7 @@ so "aim at that one" is expressible directly. `ThingLayer.pickMonster` raycasts 
 against monster sprite meshes (`MONSTER_TYPES` in `game/thingdefs.ts`, filtered to
 currently-`visible` meshes so a fog-of-war-hidden monster can't be targeted through the
 geometry hiding it) and returns the hit monster's position *and* its sector's live floor
-height. `main.ts` uses that as both the aim point and the shot's end height.
+height. `game.ts` uses that as both the aim point and the shot's end height.
 
 The lock applies **on hover, not on click**. Gating it to `input.mouseDown` made `aim` — which
 drives `player.angle` *and* the camera's aim-lead — switch sources the instant a click landed,
@@ -488,7 +488,7 @@ camera's lead offset collapsed at that moment and read as the camera lurching ba
 has always been set from the cursor unconditionally, click or no; the lock has to follow the
 same rule to stay continuous.
 
-Impact explosions and the teleport-fog puff share one mechanism in `main.ts`
+Impact explosions and the teleport-fog puff share one mechanism in `game.ts`
 (`OneShotEffect`/`spawnEffect`/`updateEffects`): a transient sprite animation playing once at a
 fixed spot, outside `ThingLayer` since neither is a real map `Thing`. `IMPACT_EFFECTS` maps a
 projectile's flight sprite to its explosion — vanilla reuses `MISL` frames B–D for the rocket's
@@ -802,7 +802,7 @@ Guessing specific letters risked silently wrong art the same way `SpriteActor`'s
 argues against for monster idle animation; a fired ranged attack's tracer is the actual
 "it's attacking" visual cue instead.
 
-### Damage, monster death and player death (`src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/inventory.ts`, `src/game/world.ts: hasLineOfSight`, `src/main.ts`)
+### Damage, monster death and player death (`src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/inventory.ts`, `src/game/world.ts: hasLineOfSight`, `src/game.ts`)
 
 Shots, explosions and — now that monster AI exists (see above) — monster melee/ranged attacks
 all hurt and kill. The other source of player damage that isn't a weapon at all is
@@ -810,7 +810,7 @@ crushers/crushing floors/crushing stairs (see "Crushers and teleporters" below).
 
 **A shot deals direct damage two different ways, depending on whether one was locked on.** A
 locked-on shot (a monster was under the cursor when it fired) resolves hit-or-miss against that
-exact target: `main.ts`'s `spawnShot` compares `shotPath`'s returned distance against the
+exact target: `game.ts`'s `spawnShot` compares `shotPath`'s returned distance against the
 straight-line distance to the target to know whether something (a wall) cut the shot short
 before it got there. A *free* shot (nothing under the cursor) instead tests its straight flight
 path against every monster's body — `ThingLayer.raycastMonster` — the way any real hitscan or
@@ -828,7 +828,7 @@ on arrival is safe and doesn't need a second raycast.
 
 **Splash damage is separate from a direct hit, and reaches everyone nearby regardless of what
 (if anything) was targeted** — a rocket or BFG shot fired at a bare wall still explodes and can
-still hurt a monster standing close by, matching vanilla. `main.ts`'s `applyRadiusDamage` walks
+still hurt a monster standing close by, matching vanilla. `game.ts`'s `applyRadiusDamage` walks
 every living monster `ThingLayer.monstersNear` returns within the blast radius, skips anyone
 `hasLineOfSight` (`game/world.ts`, a straight-line reuse of the sight-blocking test `FogOfWar`
 uses for reveal — not `shotPath`, which models a directed weapon's own blocking rules, not "does
@@ -953,7 +953,7 @@ one (a dropped clip's 5 bullets vs. a map one's 10; a dropped shotgun's 4 shells
 8), and `applyPickup` reproduces that halving precisely rather than treating every clip/shotgun/
 chaingun pickup identically regardless of where it came from.
 
-**The player's own death reuses the exact same mechanism** on `main.ts`'s single persistent
+**The player's own death reuses the exact same mechanism** on `game.ts`'s single persistent
 `playerActor`: `PLAYER_DEATH_FRAMES` (`H`-`N`) is `PLAY`'s own confirmed DIE half, the same way
 monster tables were derived. `Inventory.applyDamage` (`game/inventory.ts`) is vanilla's own
 `P_DamageMobj` armor formula — green armor absorbs a third of the damage, blue half, spending
@@ -967,7 +967,7 @@ already resets the player/world/specials/fog for a normal level transition and, 
 top-of-function reset, `playerDead`/the overlay/`playerActor`'s animation state too — restart
 isn't a special case, just the ordinary map-load path with a clean inventory.
 
-### Crushers and teleporters (`src/wad/specials.ts`, `src/game/specials.ts`, `src/main.ts`)
+### Crushers and teleporters (`src/wad/specials.ts`, `src/game/specials.ts`, `src/game.ts`)
 
 The vanilla-only line special table (doors/lifts/floors above, plus these two) is confirmed
 against the Doom wiki's linedef type table rather than assumed, after a first pass briefly (and
@@ -980,8 +980,8 @@ lower to floor+8, reverse, return to the sector's *own* start height (not neighb
 a door's open height), forever, with no hold/rest state in between. They (and the vanilla
 `raiseFloorCrush` floor family — 55/56/65/94) now deal `CRUSH_DAMAGE` every
 `CRUSH_DAMAGE_INTERVAL` (vanilla's own 10 HP every 4 tics) to the player or any monster standing
-in their sector, via `SpecialsController`'s `onCrush` callback into `main.ts: applyCrushDamage` —
-the same callback-into-main.ts pattern as `onExit`/`onTeleport`, since `SpecialsController`
+in their sector, via `SpecialsController`'s `onCrush` callback into `game.ts: applyCrushDamage` —
+the same callback-into-game.ts pattern as `onExit`/`onTeleport`, since `SpecialsController`
 mutates geometry but has no idea where anyone is standing. `ThingLayer.monstersInSector` finds
 monster candidates by comparing against the exact same mutable `Sector` object reference
 `PosedThing.sector` was seeded from, the same trick `tryPickup`'s live-height read already relies
@@ -997,7 +997,7 @@ part of the vanilla feel that actually matters for a crusher reading as a hazard
 
 **Teleporters** (39/97 for either the player or a monster; Doom II's 125/126 for monsters only).
 The destination is the first doomednum-14 landing thing found inside a tag-matched sector
-(`SpecialsController.findTeleportDestination`); reaching it calls back into `main.ts` to move the
+(`SpecialsController.findTeleportDestination`); reaching it calls back into `game.ts` to move the
 player (`Player.teleportTo`) and snap the camera yaw to match, the same as the initial spawn.
 
 **Monsters cross walk triggers too**, via `SpecialsController.crossMonster` — `ThingLayer` keeps
@@ -1026,7 +1026,7 @@ instead.
 
 Vanilla also spawns a one-shot `MT_TFOG` fog puff at both ends of a teleport (where the player
 stood, and 20 units ahead of the landing spot along the direction it faces). That isn't a real
-map `Thing`, so it isn't modeled through `ThingLayer` — `main.ts` owns a small list of transient
+map `Thing`, so it isn't modeled through `ThingLayer` — `game.ts` owns a small list of transient
 `SpriteActor`s instead, each playing through the `TFOG` sprite's frames (`A`-`J`, confirmed
 against the actual lump names in `DOOM.WAD`/`DOOM2.WAD` — all rotation-0, i.e. omnidirectional,
 so no facing logic is needed) once before removing itself. Map transitions clear any still-active
@@ -1160,7 +1160,7 @@ Menu semantics worth knowing before touching `menu.ts`:
 `VERSION` (`src/constants.ts`) is shown bottom-right on the menu, prefixed with `v`
 (`ui/menu.ts`); a static credit sits bottom-left in `index.html`/`menu.css`, next to it.
 
-### Dev mode (`src/constants.ts`, `src/main.ts`)
+### Dev mode (`src/constants.ts`, `src/game.ts`)
 
 `constants.ts` stays deliberately small — only values genuinely shared across more than a
 couple of files belong there. `PLAYER_RADIUS`/`PLAYER_HEIGHT` and `NO_SIDE`/`LF`/
@@ -1173,7 +1173,7 @@ constants here just because they're imported in two or three places; a constant 
 
 `DEVMODE` reads `import.meta.env.VITE_DEVMODE`, defaulting to `false`; set
 `VITE_DEVMODE=true` in a git-ignored `.env.local` at the repo root to turn it on (Vite loads
-`.env.local` itself, no plugin needed). It gates two things in `main.ts`, both because a
+`.env.local` itself, no plugin needed). It gates two things in `game.ts`, both because a
 player has no legitimate reason to reach for them:
 - **The debug overlay** (`updateHud`) — off, `#hud` shows only the fps counter; on, the full
   map/pos/sector/camera-state block plus the hotkey hint lines.
@@ -1191,7 +1191,7 @@ the player, world state, fog-of-war reveal, mover positions or picked-up items. 
 version routed the toggle through `loadMapByIndex` (the same path map transitions and `N`/`P`
 use) to get a rebuilt mesh, which reset all of that from scratch — pressing `C` looked
 indistinguishable from the level restarting: player snapped back to spawn, opened doors
-closed again, collected items reappeared. `main.ts: toggleCeilings` instead only rebuilds the
+closed again, collected items reappeared. `game.ts: toggleCeilings` instead only rebuilds the
 static mesh and both faders, then calls `SpecialsController.setBuilt` with the fresh
 `BuiltMap` so movable-sector meshes (doors/lifts/crushers) get rebuilt too — `buildMoverMesh`
 also reads `meshOptions.renderCeilings`, and rebuilding from the still-live `this.map` sector
@@ -1230,10 +1230,10 @@ caught in a rocket/BFG blast's splash (including the player themselves), takes r
 monster health is vanilla's own, death plays that monster's confirmed WAD death animation, and
 the player's own death freezes the game behind a `#death-overlay` until `R` restarts the level
 (`game/thingdefs.ts`, `render/sprites.ts: SpriteActor.die`, `game/inventory.ts: applyDamage`,
-`main.ts`). Doors, lifts, floor movers, crushers, stair builders, switches and teleporters all
+`game.ts`). Doors, lifts, floor movers, crushers, stair builders, switches and teleporters all
 work (`game/specials.ts`), including locked doors, which require the matching key to be collected
 first, and teleporters, which reproduce vanilla's teleport-fog puff at both ends of the jump
-(`main.ts`); crushers and the crushing floor family (55/56/65/94 — not the turbo-16 stairs, which
+(`game.ts`); crushers and the crushing floor family (55/56/65/94 — not the turbo-16 stairs, which
 never crush even in vanilla) deal periodic damage to the player or any monster caught in their
 sector, though a *mover* (crusher, door, lift) still doesn't detect or stop for a thing in its way
 the way vanilla does — a separate, still-open gap from the thing-vs-thing collision described

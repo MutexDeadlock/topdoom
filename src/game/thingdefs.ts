@@ -99,10 +99,12 @@ export const THING_SPRITES: Record<number, string> = {
 
 /**
  * Doomednums of the "Monsters" block above — the things auto-aim (game/weapons.ts's
- * click-to-target, wired up in main.ts) is willing to snap a shot onto. There's
- * still no monster AI (see CLAUDE.md's "Current state"), so these things never
- * move or fight back; this only decides what counts as a valid click-target,
- * not anything about combat itself.
+ * click-to-target, wired up in game.ts's `ThingLayer.pickMonster`) is willing to
+ * snap a shot onto, and the set `game/monsters.ts`'s AI ticks. This table only
+ * decides which doomednums count as a monster at all (for targeting, AI, and
+ * every other `MONSTER_TYPES.has(...)` check across the game/ tree) — the AI
+ * behavior itself (waking, chasing, attacking, infighting) lives in
+ * `game/monsters.ts`, not here.
  */
 export const MONSTER_TYPES = new Set([
   3004, 9, 3001, 3002, 58, 3006, 3005, 3003, 69, 7, 16, 71, 65, 66, 67, 68, 64, 84, 72, 88,

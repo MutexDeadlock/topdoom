@@ -53,7 +53,7 @@ export interface WeaponDef {
    * rocket's, but never able to hurt the player who fired it. `null` means no
    * splash at all (plasma, a direct-hit-only bolt in vanilla too).
    *
-   * `tracers` draws a thin line (main.ts's `Tracer`, the same primitive
+   * `tracers` draws a thin line (`render/tracer.ts`'s `Tracer`, the same primitive
    * hitscan weapons use) from the impact to every monster the splash actually
    * hit — true only for the BFG, giving its spray some visible feedback for
    * what it hit, the same reason a hitscan weapon's tracer exists in the
@@ -252,7 +252,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
 export interface HitscanShot {
   kind: 'hitscan';
   angleRad: number;
-  /** This pellet's own damage roll (WeaponDef.damageDiceSides/Multiplier) — only applied if it actually lands on the locked-on target (main.ts). */
+  /** This pellet's own damage roll (WeaponDef.damageDiceSides/Multiplier) — only applied if it actually lands on the locked-on target (game.ts). */
   damage: number;
 }
 
@@ -273,15 +273,16 @@ export type Shot = HitscanShot | ProjectileShot;
  * Owns weapon selection (number keys, mouse wheel) and fire timing/ammo.
  * Deliberately knows nothing about THREE.js: `update` only returns *what*
  * was fired this frame (one `Shot` per hitscan pellet or per projectile
- * launched), and main.ts turns those into tracer lines / flying projectile
- * sprites — the same split as game/specials.ts's line triggers vs. main.ts's
- * teleport-fog puffs.
+ * launched), and `game.ts` turns those into tracer lines / flying projectile
+ * sprites — the same split as `game/specials.ts`'s line triggers vs.
+ * `game.ts`'s teleport-fog puffs, and `game/monsters.ts`'s own `MonsterAttack`
+ * return value for a monster's fired shot.
  *
- * There's still no monster AI, so a `Shot` doesn't know *what* it's aimed at
- * beyond the angle/damage numbers here — whether it actually lands on
- * anything (a locked-on target within range, or a monster caught in a
- * projectile's splash) is resolved entirely in main.ts, which is also where
- * the damage this class rolls per shot actually gets applied.
+ * A `Shot` doesn't know *what* it's aimed at beyond the angle/damage numbers
+ * here — whether it actually lands on anything (a locked-on target within
+ * range, a monster caught in a free shot's path, or one caught in a
+ * projectile's splash) is resolved entirely in `game.ts`, which is also
+ * where the damage this class rolls per shot actually gets applied.
  */
 export class WeaponSystem {
   private cooldownRemaining = 0;

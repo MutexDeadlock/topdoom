@@ -305,7 +305,7 @@ function resolveFloorTarget(map: DoomMap, sectorIndex: number, target: MoveTarge
 
 /**
  * One movable sector's geometry plus the two faders that own its vertex
- * alpha, exactly as `main.ts` runs them over the static batches. Mover walls
+ * alpha, exactly as `game.ts` runs them over the static batches. Mover walls
  * need the camera-player sightline fade for the same reason static ones do —
  * a lift's front wall or a door frame sits between camera and player just as
  * readily as any other wall — and rebuilding the mesh drops the faders'
@@ -339,7 +339,7 @@ function disposeGroup(group: THREE.Group): void {
  * height, forever. They (and the `raiseFloorCrush` floor family — 55/56/65/94
  * — but *not* the turbo-16 stairs; see `StairsEffect`'s doc) also deal
  * periodic damage to whoever's caught in their sector via `onCrush`, a
- * callback into `main.ts` — this controller mutates map geometry but has no
+ * callback into `game.ts` — this controller mutates map geometry but has no
  * idea where the player or any monster is standing, the same reason
  * `onExit`/`onTeleport` are callbacks rather than direct calls. Unlike
  * vanilla, nothing here actually *blocks* the mover on contact (no
@@ -511,7 +511,7 @@ export class SpecialsController {
 
   /**
    * Swaps in a `BuiltMap` rebuilt for a new `renderCeilings` value (see
-   * `main.ts: toggleCeilings`). The option only changes which flats exist —
+   * `game.ts: toggleCeilings`). The option only changes which flats exist —
    * movers, lights, switches and the rest of play state are untouched — so
    * this only needs to refresh the geometry this controller itself derives
    * from `built`: the light-sector index above, and every mover's own mesh
@@ -563,7 +563,7 @@ export class SpecialsController {
 
   /**
    * Per-frame vertex-alpha pass over the mover geometry, mirroring what
-   * `main.ts` runs over the static batches: camera-player sightline occlusion
+   * `game.ts` runs over the static batches: camera-player sightline occlusion
    * combined with fog-of-war reveal. Separate from `update` because it needs
    * the camera position, which is only settled after the player has moved.
    */

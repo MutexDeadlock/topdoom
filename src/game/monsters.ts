@@ -319,7 +319,7 @@ const CHASE_AXIS_EPSILON = 10;
 
 /**
  * Height above a monster's feet a ranged attack's tracer is drawn from — the
- * monster's own equivalent of main.ts's `AIM_HEIGHT_OFFSET`.
+ * monster's own equivalent of `game.ts`'s `AIM_HEIGHT_OFFSET`.
  */
 export const MONSTER_FIRE_HEIGHT = 40;
 

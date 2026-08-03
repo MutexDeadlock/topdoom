@@ -706,7 +706,7 @@ export interface ShotPath {
  * With no `target` this is a free shot: flat at `z`, out to `WEAPON_RANGE`,
  * stopped by walls and by floor/ceiling steps it can't clear.
  *
- * With a `target` — auto-aim's locked-on monster (main.ts), or a monster's
+ * With a `target` — auto-aim's locked-on monster (game.ts), or a monster's
  * own fired shot aimed at whatever it's hunting, player or another monster
  * (game.ts's `spawnMonsterProjectile`/`resolveMonsterHitscan`) — it instead
  * runs from `z` to the target's own height over exactly the
@@ -726,7 +726,7 @@ export interface ShotPath {
  * exactly the way a free shot would be, just angled correctly.
  *
  * Used both for a hitscan weapon's tracer endpoint and for how far a fired
- * projectile is allowed to fly (game/weapons.ts, main.ts, game.ts).
+ * projectile is allowed to fly (game/weapons.ts, game.ts).
  */
 export function shotPath(
   world: World,

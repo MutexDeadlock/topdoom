@@ -212,7 +212,7 @@ export function finishLevel(inv: Inventory): void {
  * third of the damage, blue (`armorType` 2) half, spending armor points
  * 1-for-1 with whatever it absorbed and falling back to bare (`armorType` 0)
  * once it runs out mid-hit. `health` is clamped at 0 rather than going
- * negative — main.ts's own death check is a simple `<= 0`, not "how far past
+ * negative — `game.ts`'s own death check is a simple `<= 0`, not "how far past
  * 0".
  */
 export function applyDamage(inv: Inventory, amount: number): void {

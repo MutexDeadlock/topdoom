@@ -1,14 +1,17 @@
-WIP - Sector-Specials (Doors, Switches...)
-BETA - Item pickups / "Inventory" / HUD
-BETA - "Physik"
-BETA - Shooting
-NEXT - Enemy "AI"
+TEST - Sector-Specials (Doors, Switches...)
+TEST - Item pickups / "Inventory" / HUD
+TEST - "Physik"
+TEST - Shooting
+TEST - Enemy "AI"
 NEXT - UX
 
 TODO - Sound
 
 IDEE!
 "Overlay" über die bestehenden Maps, die (dann fixe) Kamerawinkel, Zoom, FoW etc. ein-/umstellen.
+Spieler braucht sich dann nicht mehr um Kamera kümmern.
 Wirkt vllt sogar "cinematisch", uj!
-lump Name z.B. "E1M1/TOPDOOMEXTRA".
-Editor dafür baut Claude :)
+Lump Name z.B. "E1M1/TOPDOOMEXTRA".
+Editor dafür direkt im Spiel ("Edit-Mode"), baut Claude :)
+
+IDEE: 

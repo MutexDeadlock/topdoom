@@ -1,2 +1,16 @@
+v0.7.0
+- Q and E rotate camera by 45deg
+- initial COMBAT \o/
+    - weapon shooting/switching/aiming
+    - weapons also do damage
+    - DEATH for monsters/player
+    - monster "AI" + infighting (also sound propagation, before sound, lol)
+- increased size of smaller pickup items
+- add support for "Raise to next highest floor and change texture" linedefs
+- crushers should hurt/kill now
+- fixed lift speed/s
+- cleaned up debug infos, and add "monsters awake" counter
+
+
 v0.6.0
 - first internal release

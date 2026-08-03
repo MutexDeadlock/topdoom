@@ -486,10 +486,8 @@ export class SpecialsController {
   /**
    * `sectorOccluders`/`sectorFlats` point at the specific occluder/flat
    * objects a light-flicker sector needs to recolor each tick (see
-   * `updateFading`); both come from `built`, so a `renderCeilings` toggle
-   * that hands in a fresh `BuiltMap` (see `setBuilt`) leaves them stale
-   * until re-indexed — same walk as the constructor's, just against
-   * whatever `this.built` currently is instead of the constructor argument.
+   * `updateFading`), pulled out of `built.occluders`/`built.flatSurfaces`
+   * once at construction time.
    */
   private indexLightGeometry(): void {
     this.sectorOccluders.clear();
@@ -507,23 +505,6 @@ export class SpecialsController {
       arr.push(f);
       this.sectorFlats.set(f.sector, arr);
     }
-  }
-
-  /**
-   * Swaps in a `BuiltMap` rebuilt for a new `renderCeilings` value (see
-   * `game.ts: toggleCeilings`). The option only changes which flats exist —
-   * movers, lights, switches and the rest of play state are untouched — so
-   * this only needs to refresh the geometry this controller itself derives
-   * from `built`: the light-sector index above, and every mover's own mesh
-   * (`buildMoverMesh` reads `meshOptions.renderCeilings` too, and rebuilding
-   * from the still-live `this.map` sector heights preserves each mover's
-   * current position exactly like `rebuildAround` does after a height change).
-   */
-  setBuilt(built: BuiltMap, meshOptions: MapMeshOptions): void {
-    this.built = built;
-    this.meshOptions = { ...meshOptions, movableSectors: this.movableSectors };
-    this.indexLightGeometry();
-    for (const sectorIndex of this.movableSectors) this.rebuildMoverMesh(sectorIndex);
   }
 
   /**

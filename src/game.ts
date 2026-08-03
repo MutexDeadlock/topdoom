@@ -268,7 +268,6 @@ export class Game {
    */
   private pendingExit = false;
 
-  private renderCeilings = false;
   private running = false;
   private lastTime = 0;
   /** Seconds Q/E has been continuously held, for auto-repeat — see `frame`. */
@@ -374,7 +373,7 @@ export class Game {
     // batches up front — SpecialsController owns their geometry instead (see
     // render/mapmesh.ts's MapMeshOptions doc for why).
     const movableSectors = computeMovableSectors(map);
-    this.built = buildMapMesh(map, this.materials, { renderCeilings: this.renderCeilings, movableSectors });
+    this.built = buildMapMesh(map, this.materials, { movableSectors });
     this.scene.add(this.built.group);
     this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
     this.flatFader = new FlatFader(this.built.flatSurfaces, this.built.flatMeshes);
@@ -398,7 +397,7 @@ export class Game {
       this.fogOfWar,
       this.built.polys,
       this.built,
-      { renderCeilings: this.renderCeilings },
+      {},
       () => {
         this.pendingExit = true;
       },
@@ -435,30 +434,6 @@ export class Game {
     if (this.built.missingTextures.length > 0) {
       console.warn('missing textures:', this.built.missingTextures.join(', '));
     }
-  }
-
-  /**
-   * `renderCeilings` only changes which flats get built — it doesn't touch the
-   * player, world, fog of war or specials state — so rebuilding via
-   * `loadMapByIndex` (which resets all of that, including mover positions and
-   * picked-up items) would make the toggle look like the level restarting.
-   * Rebuild just the static map mesh and hand the movable-sector code a fresh
-   * `BuiltMap` to draw its own ceilings from instead.
-   */
-  private toggleCeilings(): void {
-    this.renderCeilings = !this.renderCeilings;
-    if (this.built) {
-      this.scene.remove(this.built.group);
-      this.built.group.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) obj.geometry.dispose();
-      });
-    }
-    const movableSectors = computeMovableSectors(this.map);
-    this.built = buildMapMesh(this.map, this.materials, { renderCeilings: this.renderCeilings, movableSectors });
-    this.scene.add(this.built.group);
-    this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
-    this.flatFader = new FlatFader(this.built.flatSurfaces, this.built.flatMeshes);
-    this.specials?.setBuilt(this.built, { renderCeilings: this.renderCeilings });
   }
 
   resume(): void {
@@ -1139,7 +1114,6 @@ export class Game {
 
   private handleHotkeys(): void {
     const { input, camera } = this.view;
-    if (input.pressed('KeyC')) this.toggleCeilings();
     // Level switching, zoom and tilt are dev/debug conveniences, gated the
     // same as the debug HUD below (see DEVMODE).
     if (!DEVMODE) return;
@@ -1160,12 +1134,12 @@ export class Game {
     const sector = this.world.sectorIndexAt(this.player.x, this.player.y);
     hudEl.textContent = [
       `${this.currentMap}   ${this.title}`,
-      `${this.fps} fps   ${this.built?.triangles ?? 0} tris`,
+      `${this.fps} fps   ${this.built?.triangles ?? 0} tris   monsters awake ${this.things?.awakeMonsterCount() ?? 0}`,
       `pos ${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}   z ${this.player.z.toFixed(0)}   sector ${sector}`,
-      `cam ${camera.distance.toFixed(0)} u / ${camera.tiltDeg.toFixed(0)}° tilt / ${camera.yawDeg.toFixed(0)}° yaw   ceilings ${this.renderCeilings ? 'on' : 'off'}`,
+      `cam ${camera.distance.toFixed(0)}u ${camera.tiltDeg.toFixed(0)}°tilt ${camera.yawDeg.toFixed(0)}°yaw`,
       '',
-      'WASD move   Shift run   mouse aim/fire   1-7 / wheel weapon   right-drag / Q-E rotate camera   Space use',
-      'N/P map   C ceilings   +/- zoom   [ ] tilt   R restart (when dead)   Esc menu',
+      'WASD move  Shift run  mouse aim/fire  1-7/wheel weapon  Q-E/drag cam  Space use',
+      'N/P map  +/- zoom  [/] tilt  R restart  Esc menu',
     ].join('\n');
   }
 }

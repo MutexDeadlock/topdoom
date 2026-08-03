@@ -1176,32 +1176,18 @@ constants here just because they're imported in two or three places; a constant 
 `.env.local` itself, no plugin needed). It gates two things in `game.ts`, both because a
 player has no legitimate reason to reach for them:
 - **The debug overlay** (`updateHud`) — off, `#hud` shows only the fps counter; on, the full
-  map/pos/sector/camera-state block plus the hotkey hint lines.
+  map/pos/sector/camera-state/awake-monster-count block plus the hotkey hint lines.
 - **`N`/`P` (jump to next/prev map), `+`/`-` (camera distance) and `[`/`]` (camera tilt)** in
   `handleHotkeys` — early-return on `!DEVMODE`, so these hotkeys are simply inert outside dev
   mode.
 
-`C` (ceiling toggle) is deliberately *not* gated — from directly above, a rendered ceiling
-would hide everything under it, so leaving it off by default is a real, permanent view
-choice, not a debug convenience, and it works regardless of `DEVMODE`.
-
-**`C` rebuilds geometry in place rather than reloading the map.** `renderCeilings` only
-changes which flat triangles `render/mapmesh.ts: buildMapMesh` emits — it has no bearing on
-the player, world state, fog-of-war reveal, mover positions or picked-up items. An earlier
-version routed the toggle through `loadMapByIndex` (the same path map transitions and `N`/`P`
-use) to get a rebuilt mesh, which reset all of that from scratch — pressing `C` looked
-indistinguishable from the level restarting: player snapped back to spawn, opened doors
-closed again, collected items reappeared. `game.ts: toggleCeilings` instead only rebuilds the
-static mesh and both faders, then calls `SpecialsController.setBuilt` with the fresh
-`BuiltMap` so movable-sector meshes (doors/lifts/crushers) get rebuilt too — `buildMoverMesh`
-also reads `meshOptions.renderCeilings`, and rebuilding from the still-live `this.map` sector
-heights (the same object `SpecialsController` mutates directly for movers) preserves each
-mover's current position exactly the way `rebuildAround` already does after an ordinary
-height change. `setBuilt` also re-runs `indexLightGeometry`, which points a light-flicker
-sector at the specific occluder/flat objects it recolors each tick (`sectorOccluders`/
-`sectorFlats`); those are derived from `built.occluders`/`built.flatSurfaces` at construction
-time, so without re-deriving them they'd stay pointed at the pre-toggle geometry — e.g. a
-newly-added ceiling flat in a blinking sector would never pick up the blink.
+Ceilings are never rendered — `render/mapmesh.ts: buildMapMesh`'s `renderCeilings` option
+still exists and defaults to (and, with the removal of the debug toggle that used to flip it,
+is now always) `false`. From directly above, a rendered ceiling would hide everything under
+it, so this is a permanent view choice, not a debug convenience. `updateHud`'s debug block
+also reports `ThingLayer.awakeMonsterCount()` — the number of living monsters currently
+alerted (chasing/attacking, or mid-`reactionTicks` delay) — useful for judging whether a
+level's population has actually noticed the player.
 
 ## Current state
 

@@ -246,6 +246,8 @@ export interface ThingLayer {
   monstersNear(x: number, y: number, radius: number): { id: number; x: number; y: number; z: number; type: number }[];
   /** This exact monster's live position and type, or null if the id is stale or it has since died. Lets a shot fired at a monster keep tracking it across frames. */
   monsterById(id: number): { id: number; x: number; y: number; z: number; type: number } | null;
+  /** Count of living monsters currently alerted (chasing/attacking, or mid-reaction-delay) — for the debug HUD. */
+  awakeMonsterCount(): number;
   /**
    * Living monsters standing in exactly `sector` — a reference-equality check
    * against the same mutable `Sector` object `PosedThing.sector` was seeded
@@ -628,6 +630,13 @@ export function buildThingSprites(
       const p = posed[id];
       if (!p || p.dead || !MONSTER_TYPES.has(p.type)) return null;
       return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type };
+    },
+    awakeMonsterCount(): number {
+      let n = 0;
+      for (const p of posed) {
+        if (!p.dead && MONSTER_TYPES.has(p.type) && p.alerted) n++;
+      }
+      return n;
     },
     monstersInSector(sector: Sector): { id: number; x: number; y: number; z: number }[] {
       const out: { id: number; x: number; y: number; z: number }[] = [];

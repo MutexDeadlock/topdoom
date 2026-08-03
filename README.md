@@ -134,12 +134,38 @@ splashes nearby monsters as well, but — unlike the rocket — never the player
 matching the original's own BFG, which doesn't damage through a radius explosion at all. A thin
 green line draws from the impact to everything the BFG's splash actually caught, the same
 tracer a hitscan shot draws to its own target, so it's visible which nearby monsters it hit.
-There's still no monster AI, so nothing shoots back; a rocket blast catching the player is currently the
-only way they take damage.
+**Monsters wake, hunt and shoot back.** One notices the player by sight — only within roughly its
+forward 180°, so a monster facing away doesn't spot you behind its back — or by hearing gunfire,
+which spreads room to room the way the original's does, stopped by closed doors and softened by
+the sound-blocking lines mappers use for exactly that. Monsters marked "deaf" in the editor ignore
+the noise, as intended. Once alerted, one hesitates for a beat and then closes on the player,
+stepping up onto low ledges and sliding around corners with the same physics the player moves
+with; it won't walk off a drop it couldn't survive, unless it's one of the three types that float.
+
+Every timing that decides how a monster *feels* — how fast it walks, how long its attack takes,
+how often it can fire from a given distance, how long a hit staggers it — is taken from the
+original's own tables rather than tuned by hand, so the pecking order carries over: a zombieman
+shambles, a demon rushes, and nothing in the game can quite keep up with a running player. A
+monster stands still for the whole length of an attack instead of shooting on the move, which is
+what makes a mancubus plant itself for its volley and a chaingunner hold position and hose you
+until you break line of sight. Lost souls drift slowly and then hurl themselves at you, and can
+be sidestepped once committed. Damage numbers are the deliberate exception — they're tuned softer
+than the original's, so the rhythm matches but the bite doesn't.
+
+Monsters walk the original's eight movement directions rather than heading straight at you,
+committing to a heading and re-routing when it stops working, which is where DOOM's characteristic
+zig-zag approach comes from. They're solid: they block each other and they block you, so a demon
+in a corridor is something to squeeze past rather than walk through. And they will absolutely
+fight each other — a shot that clips the wrong monster on its way to you turns that monster on
+whoever fired it, with the original's own rules about who can be provoked (a monster already
+committed to a fight ignores new attackers for a while, nobody picks a fight with an arch-vile,
+and a fireball passes harmlessly through the shooter's own kind, barons and hell knights counting
+as one). Monster closets work too: monsters trigger the teleport lines, doors and lifts the
+original lets them, including the teleporters only they can use.
+
 Worn armor absorbs part of any hit the player takes (a third for green, half for blue, same as
 the original) before it reaches health. Health hitting 0 ends the level with a death screen —
-press `R` to restart it, with a clean inventory. The fist and chainsaw still swing on cooldown
-but have nothing to hit yet.
+press `R` to restart it, with a clean inventory.
 
 ## Layout
 
@@ -172,7 +198,7 @@ is walkable.
 
 ## State
 
-Playable as a walkable level viewer you can shoot in: geometry, textures, sector lighting,
+Playable as a walkable level viewer you can fight in: geometry, textures, sector lighting,
 collision with step-up/headroom rules, gravity-based falling off ledges, vanilla's
 narrow-gap-crossing quirk, floor following, map switching, PWAD loading, and an orbitable
 camera (right-drag or `Q`/`E`) with wall-occlusion fading. Fog of war hides rooms and secrets
@@ -182,8 +208,13 @@ real `PLAY` sprite with a facing-driven rotation frame and a walk-cycle animatio
 armor, ammo, keys and weapons are collectible and tracked on a HUD; doors, lifts, floor
 movers, crushers, switches and teleporters all work, including locked doors, which require
 the matching key. All nine weapons can be selected (`1`–`7` or the wheel) and fired, with
-hitscan tracers, flying projectiles, impact explosions and click-to-target auto-aim. Locked-on
-shots and explosion splash deal real damage, killing monsters (with their own confirmed WAD
-death animation) and, via splash only, the player — armor absorbs part of it first, and health
-hitting 0 shows a death screen `R` restarts from. Not yet: monster AI (nothing fights back),
-crushers hurting the player, powerup effects, sound.
+hitscan tracers, flying projectiles, impact explosions and click-to-target auto-aim.
+
+Monsters wake, hunt, walk the original's 8-direction pathing, fight back and fight each
+other — see [Weapons](#weapons) above for the full rundown. Locked-on shots, explosion
+splash and monster attacks all deal real damage, killing monsters (with their own confirmed
+WAD death animation) and the player, whose armor absorbs part of any hit first; health
+hitting 0 shows a death screen `R` restarts from. Crushers and the crushing-floor family
+also hurt anyone caught underneath, matching the original. Not yet: powerup effects and
+sound (the sound-propagation rules that alert monsters to gunfire are modeled, but nothing
+actually plays audio).

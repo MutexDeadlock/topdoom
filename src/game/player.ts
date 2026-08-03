@@ -1,4 +1,4 @@
-import { slideMove, type World } from './world.ts';
+import { slideMove, type ThingBlocker, type World } from './world.ts';
 import type { Input } from './input.ts';
 
 /** Vanilla DOOM values, in map units. */
@@ -74,8 +74,21 @@ export class Player {
    * is the DOOM-space bearing the camera currently looks along (derived from
    * TopDownCamera.viewerAngleDeg), so at the default yaw (camera due south,
    * forwardDeg=90/north) this reduces to the old fixed-axis mapping exactly.
+   *
+   * `blockers` are the solid bodies (living monsters) the player has to walk
+   * around rather than through — vanilla's monsters are all `MF_SOLID`, so
+   * they stop a mover exactly the way a wall does. Unlike a monster's own
+   * movement, this still slides along them (`slideMove`), because the player
+   * is the one thing in DOOM that gets `P_SlideMove`; bumping a demon in a
+   * corridor should scrape past it, not stop dead.
    */
-  update(dt: number, input: Input, aim: { x: number; y: number } | null, forwardDeg: number): void {
+  update(
+    dt: number,
+    input: Input,
+    aim: { x: number; y: number } | null,
+    forwardDeg: number,
+    blockers?: readonly ThingBlocker[],
+  ): void {
     let mx = 0;
     let my = 0;
     if (input.held('KeyW', 'ArrowUp')) my += 1;
@@ -104,7 +117,7 @@ export class Player {
     this.velY += (targetY - this.velY) * k;
 
     if (Math.abs(this.velX) > 0.01 || Math.abs(this.velY) > 0.01) {
-      const moved = slideMove(this.world, this.x, this.y, this.velX * dt, this.velY * dt, PLAYER_RADIUS, this.z);
+      const moved = slideMove(this.world, this.x, this.y, this.velX * dt, this.velY * dt, PLAYER_RADIUS, this.z, false, false, blockers);
       // Kill the velocity component that was absorbed by a wall.
       if (moved.x === this.x) this.velX = 0;
       if (moved.y === this.y) this.velY = 0;

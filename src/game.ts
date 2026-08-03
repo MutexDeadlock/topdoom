@@ -7,6 +7,7 @@ import { MaterialBank } from './render/textures.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import { buildThingSprites, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
+import { MONSTER_FIRE_HEIGHT, sameSpecies } from './game/monsters.ts';
 import { FlatFader, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
 import { World, hasLineOfSight, shotPath } from './game/world.ts';
@@ -171,22 +172,37 @@ interface Projectile {
   /** The monster this shot was locked onto *and actually reached* (spawnShot resolves that), or null — a free shot, one that missed a monster it wasn't locked onto, or a locked shot a wall cut short before the target. */
   hitMonsterId: number | null;
   /**
-   * True for a monster's own fired projectile (`spawnMonsterProjectile`)
-   * rather than the player's — arrival damages the player (`damage`) instead
-   * of `hitMonsterId`, and, unlike a player shot (whose target never moves
-   * mid-flight — see `spawnShot`'s doc), its flight also ends early the
-   * moment it gets close to the player's *live*, still-moving position
-   * (`updateProjectiles`), not just at the wall-stop distance computed at
-   * launch — so a player who steps behind cover after the shot was fired can
-   * actually dodge it, rather than always eating the hit once it reaches
-   * wherever they used to be standing.
+   * The monster that fired this, or `null` for one of the player's own shots.
+   *
+   * A monster's projectile resolves its hit completely differently from a
+   * player's. A player shot's target (a monster) doesn't move meaningfully
+   * mid-flight, so `spawnShot` settles hit-or-miss up front and this only
+   * carries the answer (`hitMonsterId`). A monster's shot has to keep asking:
+   * every frame it re-tests proximity against the player's *live* position
+   * and against every living monster it passes, so stepping behind cover or
+   * just outrunning a slow fireball actually works — and so a fireball aimed
+   * at the player that clips a demon on the way hits the demon, which is what
+   * starts most infights.
    */
-  targetsPlayer: boolean;
+  sourceId: number | null;
+  /** The firing monster's doomednum, for `sameSpecies` — vanilla's "don't hit same species as originator" rule on projectiles. */
+  sourceType: number;
 }
 
-/** How close a player-targeting monster projectile has to get to the player's live position before it's treated as a hit — see `Projectile.targetsPlayer`'s doc. */
+/**
+ * Slack added to the player's own radius when testing whether a monster's
+ * hitscan bolt passes through them. Vanilla resolves this against the
+ * player's real 16-unit box with an aim that was computed against their exact
+ * position the same tic; here the bolt is fired along the angle the monster
+ * faced when its attack *started*, up to a whole attack-state earlier, so
+ * without a little tolerance a strafing player would be missed by shots that
+ * vanilla would land.
+ */
+const MONSTER_BULLET_SLOP = 12;
+
+/** How close a monster projectile has to get to the player's live position before it's treated as a hit — see `Projectile.sourceId`'s doc. */
 const MONSTER_PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + 24;
-/** Vertical companion to `MONSTER_PROJECTILE_HIT_RADIUS` — matches `MONSTER_ENGAGE_HEIGHT` (game/monsters.ts), the same overhead/underneath tolerance used to decide whether this monster could engage the player at all. */
+/** Vertical companion to `MONSTER_PROJECTILE_HIT_RADIUS` — the same overhead/underneath tolerance `ThingLayer.tryPickup`'s own gate already uses for picking an item up through a window onto a floor above/below. */
 const MONSTER_PROJECTILE_HIT_HEIGHT = 128;
 
 /**
@@ -583,7 +599,8 @@ export class Game {
       damage: shot.damage,
       splash: shot.splash,
       hitMonsterId,
-      targetsPlayer: false,
+      sourceId: null,
+      sourceType: 0,
     });
   }
 
@@ -592,19 +609,31 @@ export class Game {
    * via `game/things.ts`'s `ThingLayer.update`) into a flying `Projectile`,
    * for the monster types whose `AttackStats.ranged.projectile` is
    * configured — the caller (`frame`) only reaches here after already
-   * checking that field is set. Reuses `shotPath` exactly the way a
-   * player's own locked-on shot does (`spawnShot`'s doc): a straight line
-   * from the monster to the player's position *at the moment it fired*,
-   * stopped early only by a real wall/shut door, angled from the monster's
-   * own height to the player's. Unlike a player's shot, though, the flight
-   * doesn't resolve hit-or-miss up front — the player can keep moving after
-   * the shot leaves, so `updateProjectiles` re-tests proximity to the
-   * player's *live* position every frame instead (see `Projectile.targetsPlayer`'s doc).
+   * checking that field is set. `atk.targetId` says what it was actually
+   * aimed at — the player when `null`, another monster (an infight)
+   * otherwise — resolved live via `ThingLayer.monsterById` rather than
+   * trusted from whenever the attack started, since a projectile with real
+   * flight time shouldn't aim at where its target *used to be*. Reuses
+   * `shotPath` similarly to a player's own locked-on shot (`spawnShot`'s
+   * doc): a straight line from the monster to its target's position *at the
+   * moment it fired*, angled from the monster's own height to the target's,
+   * stopped early only by a real wall or shut door — explicitly passing
+   * `skipHeightTest: false`, unlike a player's own locked shot, since the
+   * player has no "auto-aim" leniency to justify a monster's fireball
+   * clearing a low or high step it shouldn't (see `shotPath`'s doc). Unlike a
+   * player's shot, though, the flight doesn't resolve hit-or-miss up front —
+   * its target can keep moving after the shot leaves, so `updateProjectiles`
+   * re-tests proximity to live positions every frame instead (the player's
+   * always; other monsters' only if this shot is `sourceId`-tagged as
+   * someone's own — see `Projectile.sourceId`'s doc and `monsterStruckBy`).
    */
   private spawnMonsterProjectile(atk: MonsterAttackEvent): void {
     if (!atk.projectile) return;
-    const target = { x: this.player.x, y: this.player.y, z: this.player.z + AIM_HEIGHT_OFFSET };
-    const path = shotPath(this.world, atk.x, atk.y, atk.z, atk.projectile.angleRad, target);
+    const victim = atk.targetId === null ? null : this.things?.monsterById(atk.targetId);
+    const target = victim
+      ? { x: victim.x, y: victim.y, z: victim.z + MONSTER_FIRE_HEIGHT }
+      : { x: this.player.x, y: this.player.y, z: this.player.z + AIM_HEIGHT_OFFSET };
+    const path = shotPath(this.world, atk.x, atk.y, atk.z, atk.projectile.angleRad, target, false);
     const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, atk.projectile.sprite, PROJECTILE_FRAMES[atk.projectile.sprite]);
     const light = this.world.sectorAt(atk.x, atk.y)?.light ?? 128;
     if (!actor.setPose(atk.x, atk.y, atk.z, (atk.projectile.angleRad * 180) / Math.PI, light)) return;
@@ -624,8 +653,124 @@ export class Game {
       damage: atk.damage,
       splash: null,
       hitMonsterId: null,
-      targetsPlayer: true,
+      sourceId: atk.sourceId,
+      sourceType: atk.sourceType,
     });
+  }
+
+  /**
+   * Applies a monster's damage to whatever it landed on — the player when
+   * `targetId` is null, otherwise another monster, tagged with who did it so
+   * `ThingLayer.damage` can run vanilla's retaliation rule and start an
+   * infight.
+   */
+  private damageFromMonster(targetId: number | null, damage: number, sourceId: number, sourceType: number): void {
+    if (targetId === null) this.damagePlayer(damage);
+    else this.things?.damage(targetId, damage, { id: sourceId, type: sourceType });
+  }
+
+  /**
+   * Traces a monster's hitscan bolt and damages the first thing it actually
+   * reaches. Three things can stop it and the nearest wins: a wall
+   * (`shotPath`), another monster standing in the line of fire
+   * (`raycastMonster`, minus the shooter itself), or the player. Vanilla's
+   * `P_LineAttack` works exactly this way — it damages whatever the trace
+   * first runs into, with no notion of an intended target and no species
+   * check, which is why a zombieman firing past another zombieman starts a
+   * fight.
+   *
+   * The tracer is drawn to wherever the bolt stopped rather than to the
+   * target, so a shot that hits an unintended body visibly ends there.
+   */
+  private resolveMonsterHitscan(atk: MonsterAttackEvent): void {
+    // Aimed at whatever it was shooting at, sloped from the monster's own fire
+    // height to the target's — vanilla's P_AimLineAttack works out that slope
+    // before P_LineAttack traces it, which is what lets a zombieman on a ledge
+    // shoot down at you. shotPath caps the flight at the target's distance and
+    // shortens it further if a wall gets in the way first.
+    const victim = atk.targetId === null ? null : this.things?.monsterById(atk.targetId);
+    const aim = victim
+      ? { x: victim.x, y: victim.y, z: victim.z + MONSTER_FIRE_HEIGHT }
+      : { x: this.player.x, y: this.player.y, z: this.player.z + AIM_HEIGHT_OFFSET };
+    const path = shotPath(this.world, atk.x, atk.y, atk.z, atk.angleRad, aim, false);
+
+    // Whatever the shot was aimed at, the trace damages the first body it
+    // reaches — vanilla's PTR_ShootTraverse has no notion of an intended
+    // target and no species check at all, which is why one zombieman firing
+    // past another starts a fight.
+    const blocker = this.things?.raycastMonster(atk.x, atk.y, atk.z, atk.angleRad, path.dist, {
+      ignoreId: atk.sourceId,
+      includeHidden: true,
+    });
+    const dirX = Math.cos(atk.angleRad);
+    const dirY = Math.sin(atk.angleRad);
+    const relX = this.player.x - atk.x;
+    const relY = this.player.y - atk.y;
+    const playerAlong = relX * dirX + relY * dirY;
+    const perpX = relX - dirX * playerAlong;
+    const perpY = relY - dirY * playerAlong;
+    const playerInPath =
+      !this.playerDead &&
+      playerAlong >= 0 &&
+      playerAlong <= path.dist &&
+      Math.hypot(perpX, perpY) <= PLAYER_RADIUS + MONSTER_BULLET_SLOP;
+
+    let endX = atk.x + dirX * path.dist;
+    let endY = atk.y + dirY * path.dist;
+    let endZ = path.z;
+    if (blocker && (!playerInPath || blocker.dist <= playerAlong)) {
+      this.things?.damage(blocker.id, atk.damage, { id: atk.sourceId, type: atk.sourceType });
+      endX = blocker.x;
+      endY = blocker.y;
+      endZ = blocker.z + MONSTER_FIRE_HEIGHT;
+    } else if (playerInPath) {
+      this.damagePlayer(atk.damage);
+      endX = this.player.x;
+      endY = this.player.y;
+      endZ = this.player.z + AIM_HEIGHT_OFFSET;
+    }
+    const tracer = new Tracer(atk.x, atk.y, atk.z, endX, endY, endZ, MONSTER_TRACER_COLOR);
+    this.scene.add(tracer.line);
+    this.tracers.push(tracer);
+  }
+
+  /**
+   * The monster a still-flying monster projectile has just run into, or null.
+   * Skips the shooter itself and anything `sameSpecies` says the shot passes
+   * harmlessly through — vanilla's `PIT_CheckThing` "don't hit same species as
+   * originator" rule, which is why a pack of imps can throw fireballs across
+   * each other all day without ever starting a fight amongst themselves, while
+   * one imp fireball landing on a demon absolutely does.
+   */
+  private monsterStruckBy(p: Projectile, x: number, y: number, z: number): number | null {
+    if (p.sourceId === null) return null;
+    for (const m of this.things?.monstersNear(x, y, MONSTER_PROJECTILE_HIT_RADIUS) ?? []) {
+      if (m.id === p.sourceId) continue;
+      if (sameSpecies(p.sourceType, m.type)) continue;
+      if (Math.abs(m.z - z) > MONSTER_PROJECTILE_HIT_HEIGHT) continue;
+      return m.id;
+    }
+    return null;
+  }
+
+  /**
+   * Runs the walk triggers a monster crossed this frame
+   * (`SpecialsController.crossMonster` — teleports plus the few door/lift
+   * types vanilla lets a monster activate). A teleport gets the same `TFOG`
+   * puff at both ends the player's own does; vanilla spawns it for any thing
+   * that teleports, not just the player.
+   */
+  private monsterCrossedLines(prevX: number, prevY: number, x: number, y: number): { x: number; y: number; angle: number } | null {
+    const dest = this.specials?.crossMonster(prevX, prevY, x, y, this.inventory.keys);
+    if (!dest) return null;
+    const destRad = (dest.angle * Math.PI) / 180;
+    this.spawnTeleportFog(x, y, this.world.groundFloor(x, y, 0));
+    this.spawnTeleportFog(
+      dest.x + Math.cos(destRad) * TFOG_SPAWN_OFFSET,
+      dest.y + Math.sin(destRad) * TFOG_SPAWN_OFFSET,
+      this.world.groundFloor(dest.x, dest.y, 0),
+    );
+    return dest;
   }
 
   /** Advances every active hitscan tracer and drops the ones whose flash finished. */
@@ -659,17 +804,22 @@ export class Game {
    * regardless, the same as a rocket exploding against a bare wall still
    * hurts anyone standing nearby in vanilla.
    *
-   * A `targetsPlayer` projectile (a monster's own shot, `spawnMonsterProjectile`)
-   * has a second, earlier way to arrive: every frame it also checks proximity
-   * to the player's *live* position (`MONSTER_PROJECTILE_HIT_RADIUS`/`_HEIGHT`),
-   * not just the wall-stop distance computed once at launch — a player shot's
-   * target (a monster) never moves mid-flight, so resolving that one up front
-   * is safe (see spawnShot's doc), but the player very much can, and should be
-   * able to step behind cover or just outrun a slower fireball after it's
-   * already been fired rather than always eating the hit once the projectile
-   * reaches wherever they used to be standing. Reaching the wall-stop distance
-   * *without* having gotten close to the player first is a clean miss for a
-   * `targetsPlayer` shot — no damage, just the impact sprite/splash as usual.
+   * A monster's own shot (`p.sourceId !== null`, `spawnMonsterProjectile`)
+   * has two earlier ways to arrive, checked every frame instead of resolved
+   * once at launch: proximity to the player's *live* position
+   * (`MONSTER_PROJECTILE_HIT_RADIUS`/`_HEIGHT`, `reachedPlayer`), and — since
+   * a monster can just as well be shooting at another monster, or clip one
+   * on the way to its actual target — proximity to any other living monster
+   * along the way (`monsterStruckBy`, gated by `sameSpecies` the same way
+   * `PIT_CheckThing` gates missile-vs-missile-originator collisions). A
+   * player shot's target (a monster) never moves mid-flight, so resolving
+   * that one up front is safe (see spawnShot's doc), but anything a monster
+   * fires at can, and should be able to step behind cover or just outrun a
+   * slower fireball after it's already been fired rather than always eating
+   * the hit once the projectile reaches wherever its target used to be.
+   * Reaching the wall-stop distance without having gotten close to either is
+   * a clean miss for a monster's shot — no damage, just the impact
+   * sprite/splash as usual.
    */
   private updateProjectiles(dt: number, viewerAngleDeg: number): void {
     if (this.projectiles.length === 0) return;
@@ -682,15 +832,21 @@ export class Game {
       const frac = p.maxDist > 0 ? clamped / p.maxDist : 1;
       const z = p.startZ + (p.endZ - p.startZ) * frac;
 
+      // A monster's shot re-tests what it has reached every frame (see
+      // Projectile.sourceId); a player's already knows.
+      const fromMonster = p.sourceId !== null;
       const reachedPlayer =
-        p.targetsPlayer &&
+        fromMonster &&
+        !this.playerDead &&
         Math.hypot(this.player.x - x, this.player.y - y) <= MONSTER_PROJECTILE_HIT_RADIUS &&
         Math.abs(this.player.z - z) <= MONSTER_PROJECTILE_HIT_HEIGHT;
+      const struck = fromMonster && !reachedPlayer ? this.monsterStruckBy(p, x, y, z) : null;
 
-      if (reachedPlayer || p.traveled >= p.maxDist) {
+      if (reachedPlayer || struck || p.traveled >= p.maxDist) {
         this.scene.remove(p.actor.mesh);
-        if (p.targetsPlayer) {
+        if (fromMonster) {
           if (reachedPlayer) this.damagePlayer(p.damage);
+          else if (struck !== null) this.things?.damage(struck, p.damage, { id: p.sourceId!, type: p.sourceType });
         } else if (p.hitMonsterId !== null) {
           this.things?.damage(p.hitMonsterId, p.damage);
         }
@@ -741,7 +897,7 @@ export class Game {
   ): void {
     for (const m of this.things?.monstersNear(x, y, radius) ?? []) {
       const dist = Math.hypot(m.x - x, m.y - y);
-      if (dist >= radius || !hasLineOfSight(this.world, x, y, m.x, m.y)) continue;
+      if (dist >= radius || !hasLineOfSight(this.world, x, y, z, m.x, m.y, m.z)) continue;
       this.things?.damage(m.id, maxDamage * (1 - dist / radius));
       if (tracers) {
         const tracer = new Tracer(x, y, z, m.x, m.y, m.z, BFG_TRACER_COLOR);
@@ -752,7 +908,7 @@ export class Game {
 
     if (!hitsPlayer) return;
     const pdist = Math.hypot(this.player.x - x, this.player.y - y);
-    if (pdist < radius && hasLineOfSight(this.world, x, y, this.player.x, this.player.y)) {
+    if (pdist < radius && hasLineOfSight(this.world, x, y, z, this.player.x, this.player.y, this.player.z)) {
       this.damagePlayer(maxDamage * (1 - pdist / radius));
     }
   }
@@ -850,7 +1006,8 @@ export class Game {
       // lurching backward right as you fired.
       const monster = this.things?.pickMonster(camera.raycasterFor(input.pointer.x, input.pointer.y)) ?? null;
       aim = monster ?? camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
-      this.player.update(dt, input, aim, camera.viewerAngleDeg + 180);
+      // Monsters are solid: the player walks around them, not through them.
+      this.player.update(dt, input, aim, camera.viewerAngleDeg + 180, this.things?.solidBodies(this.player.x, this.player.y));
 
       // A shot always *starts* at the player's own fire height — never the
       // target's, or a tracer/projectile would visibly begin mid-air instead
@@ -901,23 +1058,25 @@ export class Game {
       camera.viewerAngleDeg,
       this.playerDead ? null : { x: this.player.x, y: this.player.y, z: this.player.z },
       fogAlphaOf,
+      (px, py, x, y) => this.monsterCrossedLines(px, py, x, y),
     ) ?? [];
     for (const atk of monsterAttacks) {
       // A monster with a real flying projectile (game/monsters.ts's
       // MONSTER_STATS, e.g. the imp's fireball) launches one instead of
       // resolving as an instant hit — damage lands later, on arrival
-      // (updateProjectiles), not here. Everything else (melee, and the
-      // ranged monsters that really do fire vanilla hitscan bullets) still
-      // hits immediately, with a tracer for the ranged case.
+      // (updateProjectiles), not here.
       if (atk.kind === 'ranged' && atk.projectile) {
         this.spawnMonsterProjectile(atk);
-        continue;
-      }
-      this.damagePlayer(atk.damage);
-      if (atk.kind === 'ranged') {
-        const tracer = new Tracer(atk.x, atk.y, atk.z, this.player.x, this.player.y, this.player.z + AIM_HEIGHT_OFFSET, MONSTER_TRACER_COLOR);
-        this.scene.add(tracer.line);
-        this.tracers.push(tracer);
+      } else if (atk.kind === 'ranged') {
+        // A hitscan bolt (the human gunners, the spider mastermind) traces
+        // its actual flight and damages the first thing in the way, which
+        // need not be what it aimed at — vanilla's P_LineAttack has no
+        // species check whatsoever, so monsters really do gun each other
+        // down when one walks through another's line of fire.
+        this.resolveMonsterHitscan(atk);
+      } else {
+        // Melee lands on whatever it swung at, no trace involved.
+        this.damageFromMonster(atk.targetId, atk.damage, atk.sourceId, atk.sourceType);
       }
     }
     this.teleportFogs = this.updateEffects(this.teleportFogs, dt, camera.viewerAngleDeg);

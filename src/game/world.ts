@@ -159,11 +159,11 @@ export class World {
    * step-up test would compare the now-low z against the still-high opening
    * bottom and block every further move near that edge, forever.
    */
-  groundFloor(x: number, y: number, radius: number): number {
+  groundFloor(x: number, y: number, radius: number, forMonster = false): number {
     let floor = this.floorAt(x, y);
     const rSq = radius * radius;
     for (const i of this.linesNear(x, y, radius)) {
-      if (this.isSolidWall(i)) continue;
+      if (this.isSolidWall(i, forMonster)) continue;
       const line = this.map.linedefs[i];
       const a = this.map.vertexes[line.v1];
       const b = this.map.vertexes[line.v2];
@@ -176,11 +176,46 @@ export class World {
     return floor;
   }
 
-  /** True if this line is a hard wall regardless of height — no opening to test. */
-  isSolidWall(lineIndex: number): boolean {
+  /**
+   * The lowest floor this circle's footprint touches — vanilla's own
+   * `tmdropoffz`, the mirror image of `groundFloor`'s `tmfloorz` (highest
+   * touched floor instead of lowest). `circleBlocked`'s dropoff check
+   * compares the two: a mover that would rest somewhere `groundFloor` puts it
+   * well above this — i.e. it's still straddling a ledge whose far side drops
+   * away sharply — is standing over a dropoff, matching vanilla's own
+   * `P_TryMove` rule.
+   */
+  dropoffFloor(x: number, y: number, radius: number): number {
+    let floor = this.floorAt(x, y);
+    const rSq = radius * radius;
+    for (const i of this.linesNear(x, y, radius)) {
+      if (this.isSolidWall(i)) continue;
+      const line = this.map.linedefs[i];
+      const a = this.map.vertexes[line.v1];
+      const b = this.map.vertexes[line.v2];
+      if (!a || !b) continue;
+      if (distSqToSegment(x, y, a.x, a.y, b.x, b.y) >= rSq) continue;
+      if (!crossesLine(x, y, radius, a.x, a.y, b.x, b.y)) continue;
+      const front = this.map.sectors[this.map.sidedefs[line.right]?.sector];
+      const back = this.map.sectors[this.map.sidedefs[line.left]?.sector];
+      if (front && back) floor = Math.min(floor, front.floorHeight, back.floorHeight);
+    }
+    return floor;
+  }
+
+  /**
+   * True if this line is a hard wall regardless of height — no opening to
+   * test. `forMonster` additionally treats an `LF.BLOCK_MONSTERS` line as
+   * solid — vanilla's own `ML_BLOCKMONSTERS`, a line that fences monsters
+   * out of an area (or off a ledge) while leaving the player free to walk
+   * through; the player's own movement never passes `forMonster: true`, so
+   * this only ever narrows what a monster can cross, never the player.
+   */
+  isSolidWall(lineIndex: number, forMonster = false): boolean {
     const line = this.map.linedefs[lineIndex];
     if (!line) return true;
     if (line.flags & LF.BLOCKING) return true;
+    if (forMonster && line.flags & LF.BLOCK_MONSTERS) return true;
     return line.left === NO_SIDE || line.right === NO_SIDE;
   }
 
@@ -210,9 +245,9 @@ export class World {
     return !opening || opening.top <= opening.bottom;
   }
 
-  /** True if a body standing at feet height `z` cannot cross this line. */
-  blocksMovement(lineIndex: number, z: number): boolean {
-    if (this.isSolidWall(lineIndex)) return true;
+  /** True if a body standing at feet height `z` cannot cross this line. `forMonster` — see `isSolidWall`. */
+  blocksMovement(lineIndex: number, z: number, forMonster = false): boolean {
+    if (this.isSolidWall(lineIndex, forMonster)) return true;
     const opening = this.openingOf(lineIndex);
     if (!opening) return true;
     if (opening.top - opening.bottom < PLAYER_HEIGHT) return true;
@@ -298,13 +333,36 @@ export class World {
 const SELF_HIT_MARGIN = 1;
 
 /**
- * True if a straight line between two points isn't crossed by any
- * sight-blocking line (`World.blocksSight`) — the same test FogOfWar's own
- * player-to-sample rays use for reveal, factored out here so splash/radius
- * damage (main.ts's `applyRadiusDamage`) can ask "does this blast actually
- * reach that monster/the player" without duplicating the raycast.
+ * How far apart (map units) to sample intervening sectors' floor/ceiling
+ * along a sightline — see `hasLineOfSight`'s doc for why this exists at all.
+ * Fine enough to catch a typical ledge/mezzanine overhang, coarse enough
+ * that a long sightline doesn't cost dozens of BSP walks.
  */
-export function hasLineOfSight(world: World, x1: number, y1: number, x2: number, y2: number): boolean {
+const SIGHT_HEIGHT_SAMPLE_STEP = 64;
+
+/**
+ * True if a straight 3D line between two points isn't crossed by any
+ * sight-blocking *line* (`World.blocksSight`, e.g. a closed door) **and**
+ * doesn't need to pass through the floor or ceiling of any sector it
+ * travels over/under along the way.
+ *
+ * The line-crossing half is the same test FogOfWar's own player-to-sample
+ * rays use for reveal, factored out here so splash/radius damage (game.ts's
+ * `applyRadiusDamage`) and monster AI (game/monsters.ts) can ask "does this
+ * reach that point" without duplicating the raycast. The floor/ceiling half
+ * exists because that test alone only ever finds a *wall* between two
+ * points — it has no idea a solid floor could separate them with no wall in
+ * the way at all: a monster standing in a room genuinely underneath a ledge
+ * the player is standing on, with no shared two-sided line anywhere near the
+ * straight 2D path between them, registered as fully visible (and
+ * shootable) purely because nothing in `linesNear` ever blocked it. Vanilla
+ * avoids this because its own `P_CheckSight` walks the BSP and narrows a
+ * top/bottom sight wedge through every sector's actual floor/ceiling height
+ * as it crosses — this is a coarser stand-in for that: sample points along
+ * the path, and reject if the straight line's own interpolated height at any
+ * sampled point falls outside that point's sector's floor..ceiling range.
+ */
+export function hasLineOfSight(world: World, x1: number, y1: number, z1: number, x2: number, y2: number, z2: number): boolean {
   const dist = Math.hypot(x2 - x1, y2 - y1);
   for (const i of world.linesNear((x1 + x2) / 2, (y1 + y2) / 2, dist / 2 + 1)) {
     if (!world.blocksSight(i)) continue;
@@ -314,6 +372,15 @@ export function hasLineOfSight(world: World, x1: number, y1: number, x2: number,
     if (!a || !b) continue;
     const hit = segmentIntersect(x1, y1, x2, y2, a.x, a.y, b.x, b.y);
     if (hit && hit.t * dist > SELF_HIT_MARGIN) return false;
+  }
+
+  const steps = Math.max(1, Math.ceil(dist / SIGHT_HEIGHT_SAMPLE_STEP));
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    const sector = world.sectorAt(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
+    if (!sector) continue;
+    const sz = z1 + (z2 - z1) * t;
+    if (sz < sector.floorHeight || sz > sector.ceilHeight) return false;
   }
   return true;
 }
@@ -449,8 +516,70 @@ function crossesLine(x: number, y: number, radius: number, ax: number, ay: numbe
   return Math.abs(cross) / len < radius;
 }
 
-/** True if a circle at (x, y) overlaps any line that blocks it. */
-export function circleBlocked(world: World, x: number, y: number, radius: number, z: number): boolean {
+/**
+ * A body (monster or player) that other bodies physically bump into —
+ * vanilla's `MF_SOLID` things, tested by `PIT_CheckThing`. Callers pass the
+ * set of *other* bodies; nothing here filters out the mover itself.
+ *
+ * There is deliberately no height on this, because vanilla has none either:
+ * `PIT_CheckThing`'s solid-blocking path returns before any z comparison, so
+ * a DOOM actor blocks over its **entire** vertical extent regardless of how
+ * far above or below the mover it actually is — the "infinitely tall actors"
+ * behavior. Adding a height check here would be a quiet deviation, not a fix;
+ * mappers routinely (if accidentally) rely on the vanilla rule.
+ */
+export interface ThingBlocker {
+  x: number;
+  y: number;
+  radius: number;
+}
+
+/**
+ * True if a body of `radius` standing at (x, y) overlaps one of `blockers` —
+ * vanilla's `PIT_CheckThing` overlap test, which is an axis-aligned **box**
+ * check on the summed radii (`abs(dx) < r1+r2 && abs(dy) < r1+r2`), not the
+ * circle test the rest of this file's collision uses. Kept boxy on purpose:
+ * it's why squeezing past a DOOM monster in a doorway behaves the way it
+ * does, and rounding it off would change contact ranges everywhere by up to
+ * ~40% on the diagonal.
+ */
+function blockedByThings(x: number, y: number, radius: number, blockers: readonly ThingBlocker[] | undefined): boolean {
+  if (!blockers) return false;
+  for (const b of blockers) {
+    const reach = radius + b.radius;
+    if (Math.abs(b.x - x) < reach && Math.abs(b.y - y) < reach) return true;
+  }
+  return false;
+}
+
+/**
+ * True if a circle at (x, y) overlaps any line that blocks it. `forMonster`
+ * — see `World.isSolidWall`. `avoidDropoff`, when true, also rejects this
+ * position if it stands over a dropoff — `groundFloor`'s rest height sits
+ * more than `MAX_STEP_UP` above `dropoffFloor`'s lowest touched floor —
+ * matching vanilla's own `P_TryMove`, which uses the identical 24-unit
+ * threshold for both the step-up allowance and this dropoff rule. Vanilla
+ * exempts `MF_DROPOFF`/`MF_FLOAT` things (notably its floating monsters);
+ * here that's the caller's job (`game/monsters.ts` never passes true for a
+ * flying monster type) — the player's own movement never passes it at all,
+ * since walking off a ledge and falling under gravity is this engine's own
+ * deliberate, already-shipped player feature (see player.ts's own doc).
+ * `blockers` are the other solid bodies in the way (see `ThingBlocker`);
+ * omitting them means only geometry blocks, which is what every caller did
+ * before monsters could bump into anything.
+ */
+export function circleBlocked(
+  world: World,
+  x: number,
+  y: number,
+  radius: number,
+  z: number,
+  forMonster = false,
+  avoidDropoff = false,
+  blockers?: readonly ThingBlocker[],
+): boolean {
+  if (blockedByThings(x, y, radius, blockers)) return true;
+  if (avoidDropoff && world.groundFloor(x, y, radius, forMonster) - world.dropoffFloor(x, y, radius) > MAX_STEP_UP) return true;
   const rSq = radius * radius;
   for (const i of world.linesNear(x, y, radius + 1)) {
     const line = world.map.linedefs[i];
@@ -458,16 +587,18 @@ export function circleBlocked(world: World, x: number, y: number, radius: number
     const b = world.map.vertexes[line.v2];
     if (!a || !b) continue;
     if (distSqToSegment(x, y, a.x, a.y, b.x, b.y) >= rSq) continue;
-    if (world.isSolidWall(i)) return true;
+    if (world.isSolidWall(i, forMonster)) return true;
     if (!crossesLine(x, y, radius, a.x, a.y, b.x, b.y)) continue;
-    if (world.blocksMovement(i, z)) return true;
+    if (world.blocksMovement(i, z, forMonster)) return true;
   }
   return false;
 }
 
 /**
  * Moves a circle by (dx, dy) and slides along whatever it hits, by trying the
- * two axes separately. Returns the position actually reached.
+ * two axes separately. Returns the position actually reached. `forMonster`/
+ * `avoidDropoff` — see `circleBlocked`; the player's own movement never
+ * passes either.
  */
 export function slideMove(
   world: World,
@@ -477,22 +608,26 @@ export function slideMove(
   dy: number,
   radius: number,
   z: number,
+  forMonster = false,
+  avoidDropoff = false,
+  blockers?: readonly ThingBlocker[],
 ): { x: number; y: number } {
   let nx = x;
   let ny = y;
-  if (dx !== 0 && !circleBlocked(world, x + dx, y, radius, z)) nx = x + dx;
-  if (dy !== 0 && !circleBlocked(world, nx, y + dy, radius, z)) ny = y + dy;
+  if (dx !== 0 && !circleBlocked(world, x + dx, y, radius, z, forMonster, avoidDropoff, blockers)) nx = x + dx;
+  if (dy !== 0 && !circleBlocked(world, nx, y + dy, radius, z, forMonster, avoidDropoff, blockers)) ny = y + dy;
   // If sliding on one axis failed while the other moved, retry the blocked axis
   // from the new position — that lets the player round convex corners smoothly.
-  if (ny === y && dy !== 0 && nx !== x && !circleBlocked(world, nx, y + dy, radius, z)) ny = y + dy;
+  if (ny === y && dy !== 0 && nx !== x && !circleBlocked(world, nx, y + dy, radius, z, forMonster, avoidDropoff, blockers)) ny = y + dy;
   return { x: nx, y: ny };
 }
 
 /**
  * How far a hitscan shot or a projectile travels before it's treated as
- * having reached its target, in map units. Tuned by feel rather than lifted
- * from vanilla's fixed-point MISSILERANGE, the same reasoning as player.ts's
- * GRAVITY: there's no dt-scaled equivalent to convert it into.
+ * having reached its target, in map units — vanilla's own `MISSILERANGE`
+ * (`32*64`), which every one of its hitscan attacks passes to `P_LineAttack`,
+ * player and monster alike. A pure distance with no time component, so unlike
+ * player.ts's `GRAVITY` there was never anything to convert.
  */
 export const WEAPON_RANGE = 2048;
 
@@ -512,27 +647,43 @@ const WALL_OVERLAP = 0.25;
  * `shotPath`) is when it crosses this line, not a single height for the whole
  * flight.
  *
- * A line that blocks a body regardless of height (`isSolidWall` — a real
- * wall, or a BLOCKING railing/pillar even though such a thing has a real,
- * sight-passable opening) or that leaves no opening at all (a shut door,
- * which vanilla never flags BLOCKING) always stops a shot.
+ * Deliberately **not** `isSolidWall`: a shot is never stopped by the
+ * `BLOCKING` flag alone, only by a line with no opening at all — either a
+ * genuinely one-sided wall, or a two-sided line whose opening has closed
+ * (a shut door). Vanilla's own hitscan/projectile traversal
+ * (`PTR_ShootTraverse` in `p_map.c`) only ever checks whether a line is
+ * two-sided and whether its vertical opening clears the shot; it never reads
+ * `ML_BLOCKING` at all, which only ever gates *movement*
+ * (`PIT_CheckLine`/`P_CheckPosition`). A two-sided `BLOCKING` line — a barred
+ * window or railing, the exact same kind of thing `blocksSight` already
+ * treats as sight-passable — stops a *walking* thing but not a bullet or
+ * fireball, precisely like a real window: you can shoot through bars you
+ * can't walk through. Reusing `isSolidWall` here was wrong, and was exactly
+ * why DOOM2 MAP01's east imp closet (sector 38, whose fence is a real
+ * `BLOCKING` two-sided line) blocked *both* the player's own shots at the
+ * imp and the imp's fireballs at the player, when vanilla would let both
+ * pass straight through.
  *
- * The height test on top of that only applies to a **free** shot, one aimed
- * by the mouse at open floor with no target locked. Such a shot flies flat at
- * the shooter's own height, so a sector whose floor has stepped up to or
- * above `z` — a low platform just a bit taller than the shot is flying — has
- * to stop it, even though a *taller* person could see over it; without this a
+ * The height test below only applies to a **free** shot, one aimed by the
+ * mouse at open floor with no target locked. Such a shot flies flat at the
+ * shooter's own height, so a sector whose floor has stepped up to or above
+ * `z` — a low platform just a bit taller than the shot is flying — has to
+ * stop it, even though a *taller* person could see over it; without this a
  * projectile sailed straight through the riser, since the opening beyond it
  * was tall enough for sight but not for the shot. A **locked-on** shot
- * (`lockedOn`) is the opposite case: the player has clicked a monster they
- * can see, and the shot is deliberately angled up or down to reach it, so an
+ * (`lockedOn`) is the opposite case: the shot is deliberately angled up or
+ * down to reach a target it already knows the exact position of, so an
  * intervening step is something it clears rather than hits. Applying the
  * height test there stopped such a shot dead at the near edge of the platform
  * its target stood on — which read as the shot going flat and ignoring the
- * click.
+ * click. `shotPath`'s own `skipHeightTest` parameter controls this
+ * separately from whether a `target` was given at all — see its doc for why
+ * a monster's own fired shot needs a target (to slope toward the player's
+ * height) without inheriting this leniency.
  */
 function blocksShot(world: World, lineIndex: number, z: number, lockedOn: boolean): boolean {
-  if (world.isSolidWall(lineIndex)) return true;
+  const line = world.map.linedefs[lineIndex];
+  if (!line || line.left === NO_SIDE || line.right === NO_SIDE) return true;
   const opening = world.openingOf(lineIndex);
   if (!opening || opening.top <= opening.bottom) return true;
   if (lockedOn) return false;
@@ -555,16 +706,27 @@ export interface ShotPath {
  * With no `target` this is a free shot: flat at `z`, out to `WEAPON_RANGE`,
  * stopped by walls and by floor/ceiling steps it can't clear.
  *
- * With a `target` — auto-aim's locked-on monster (main.ts) — it instead runs
- * from `z` to the target's own height over exactly the distance to it, so it
- * angles toward a target standing higher or lower rather than flying flat
- * past it, and stops *at* the target instead of continuing to whatever is
- * behind. The origin height stays `z`, the shooter's own, so a rendered
- * tracer/projectile always starts at the player rather than mid-air. Only
- * real walls and shut doors can cut such a shot short (see `blocksShot`).
+ * With a `target` — auto-aim's locked-on monster (main.ts), or a monster's
+ * own fired shot aimed at whatever it's hunting, player or another monster
+ * (game.ts's `spawnMonsterProjectile`/`resolveMonsterHitscan`) — it instead
+ * runs from `z` to the target's own height over exactly the
+ * distance to it, so it angles toward a target standing higher or lower
+ * rather than flying flat past it, and stops *at* the target instead of
+ * continuing to whatever is behind. The origin height stays `z`, the
+ * shooter's own, so a rendered tracer/projectile always starts at the
+ * shooter rather than mid-air.
+ *
+ * `skipHeightTest` (default: true whenever `target` is given) is the
+ * player-auto-aim leniency described on `blocksShot` — clearing an
+ * intervening step instead of being stopped dead at its near edge — kept as
+ * a *separate* parameter from `target` specifically so a monster's own shot
+ * can still slope toward the player's height without inheriting it: the
+ * player has no such "auto-aim" convenience to justify skipping the height
+ * test, so a monster's projectile should be blocked by a low or high step
+ * exactly the way a free shot would be, just angled correctly.
  *
  * Used both for a hitscan weapon's tracer endpoint and for how far a fired
- * projectile is allowed to fly (game/weapons.ts, main.ts).
+ * projectile is allowed to fly (game/weapons.ts, main.ts, game.ts).
  */
 export function shotPath(
   world: World,
@@ -573,6 +735,7 @@ export function shotPath(
   z: number,
   angleRad: number,
   target: { x: number; y: number; z: number } | null = null,
+  skipHeightTest: boolean = target !== null,
 ): ShotPath {
   const dx = Math.cos(angleRad);
   const dy = Math.sin(angleRad);
@@ -593,7 +756,7 @@ export function shotPath(
     const ey = len > 0 ? (ldy / len) * WALL_OVERLAP : 0;
     const hit = segmentIntersect(x, y, tx, ty, a.x - ex, a.y - ey, b.x + ex, b.y + ey);
     if (!hit || hit.t >= nearestT) continue;
-    if (blocksShot(world, i, z + (endZ - z) * hit.t, target !== null)) nearestT = hit.t;
+    if (blocksShot(world, i, z + (endZ - z) * hit.t, skipHeightTest)) nearestT = hit.t;
   }
   const dist = maxRange * nearestT;
   return { x: x + dx * dist, y: y + dy * dist, z: z + (endZ - z) * nearestT, dist };

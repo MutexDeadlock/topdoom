@@ -439,25 +439,40 @@ the upgrade was owned — which presented as "shotgun and super shotgun are the 
 how far a projectile may fly. It has two modes, and the difference is the whole reason it takes
 a `target` rather than just an angle:
 
-- **Free shot** (no target): flat at the player's fire height, out to `WEAPON_RANGE`. Blocked
-  by `isSolidWall` **and** by a two-sided line whose vertical opening the shot's height doesn't
-  fit through. Neither test alone is enough — `blocksSight` alone lets a shot through a
-  BLOCKING railing (it has a real opening), `isSolidWall` alone lets one through a shut door
-  (vanilla never flags those BLOCKING), and omitting the height test entirely lets a rocket
-  sail through a knee-high step because the opening beyond it was tall enough for *sight*.
-- **Locked-on shot** (auto-aim target): slopes from the player's fire height to the target's
-  over exactly the distance between them, and stops *at* the target. Here the height test is
-  deliberately **skipped** — the shot is angled over intervening steps on purpose. Leaving it
-  on meant a shot at a monster on a ledge got cut off at the ledge's near edge, and since the
-  returned height is "wherever it stopped", that presented as the shot going flat and ignoring
-  the click entirely.
+- **Free shot** (no target): flat at the player's fire height, out to `WEAPON_RANGE`. Blocked by
+  a line with no opening at all (a genuinely one-sided wall, or a two-sided line whose opening
+  has closed, like a shut door) **and** by a two-sided line whose vertical opening the shot's
+  height doesn't fit through. Neither test alone is enough — `blocksSight` alone lets a shot
+  through a shut door (vanilla never flags those `BLOCKING`, so `blocksSight`'s own no-opening
+  test is what actually catches them), and omitting the height test entirely lets a rocket sail
+  through a knee-high step because the opening beyond it was tall enough for *sight*.
+  Deliberately **not** `isSolidWall`, and this one bit — reusing the movement-blocking predicate
+  for shots — was a real, shipped bug: it made a shot treat a `BLOCKING`-flagged two-sided line
+  (a barred window/railing) as impassable the same as a real wall, when vanilla's own hitscan/
+  projectile trace (`PTR_ShootTraverse`) never reads `ML_BLOCKING` at all — only movement does.
+  Concretely, DOOM2 MAP01's east imp closet (sector 38)'s fence is exactly this kind of line, and
+  the bug blocked *both* the player's own shots at the imp and the imp's fireballs at the player
+  through it, when vanilla lets bullets and fireballs pass through bars just fine (see
+  `blocksShot`'s doc in `game/world.ts`).
+- **Locked-on shot** (auto-aim target, or a monster's own fired shot at the player): slopes from
+  the shooter's fire height to the target's over exactly the distance between them, and stops
+  *at* the target. A separate `skipHeightTest` parameter (default: on whenever a `target` is
+  given, preserving the player auto-aim behavior below) controls whether the height test above
+  still applies on top of that slope — deliberately **skipped** for the player's own auto-aimed
+  shot: it's angled over intervening steps on purpose, and leaving the height test on meant a
+  shot at a monster on a ledge got cut off at the ledge's near edge, which (since the returned
+  height is "wherever it stopped") presented as the shot going flat and ignoring the click
+  entirely. A monster's own fired shot (`game.ts`'s `spawnMonsterProjectile`) needs the same
+  slope-toward-target-height behavior but explicitly passes `skipHeightTest: false`, since the
+  player has no "auto-aim" convenience to justify a monster's fireball clearing a low or high
+  step it shouldn't.
 
-Both modes start at the player's own height, never the target's — using the target's height
-for the origin made tracers and projectiles visibly begin in mid-air rather than at the gun.
-Blocking is evaluated at the interpolated height where the ray crosses each candidate line, not
-one height for the whole flight. Candidate lines are extended `WALL_OVERLAP` past both ends for
-the same reason `FogOfWar` extends its sight blockers: two walls meeting at a shared vertex
-otherwise let a shot aimed at that corner slip between them.
+Both modes start at the shooter's own height, never the target's — using the target's height for
+the origin made tracers and projectiles visibly begin in mid-air rather than at the gun. Blocking
+is evaluated at the interpolated height where the ray crosses each candidate line, not one height
+for the whole flight. Candidate lines are extended `WALL_OVERLAP` past both ends for the same
+reason `FogOfWar` extends its sight blockers: two walls meeting at a shared vertex otherwise let
+a shot aimed at that corner slip between them.
 
 **Auto-aim is click-to-target, not vanilla's autoaim cone** — this game has a mouse pointer,
 so "aim at that one" is expressible directly. `ThingLayer.pickMonster` raycasts the cursor
@@ -534,63 +549,169 @@ vanilla precisely), falling back to the same ordinary FOV+sight check every mons
 mapper's "won't come running at gunfire, but still spots you normally" ambush setup works exactly
 as intended.
 
-**A newly-alerted monster starts moving immediately but can't fire until `REACTION_TIME`
-(~0.5s) passes** — vanilla's own `reactiontime`. Without it, a monster that merely has a long
-sightline (some `MONSTER_STATS` ranged ranges reach 1400+ units) fired the exact frame it came
-into view, with no perceptible reaction — the sight check and the first shot happened in the
-same frame, since `attackCooldown` otherwise starts at 0. `ThingLayer.update` seeds
-`attackCooldown` with `REACTION_TIME` the moment the wake check succeeds, reusing the same field
-`stepMonsterAI`'s attack gate already checks rather than adding a second timer. This delay only
-applies to the sight-triggered wake — a monster alerted by taking damage fires as soon as it's
-otherwise able to, same as vanilla doesn't re-delay an already-awake monster either.
+**Every timing value in `MONSTER_STATS` is lifted from vanilla's own `info.c`; only the damage
+dice are tuned by feel.** This is the opposite of the split `weapons.ts`'s fire rates and
+`player.ts`'s `GRAVITY` make, and deliberately so — those genuinely don't survive conversion out
+of vanilla's per-tic accumulation model, whereas a monster's walk speed, attack length, pain
+length and chase cadence are all plain constants that do. Vanilla moves a monster exactly
+`mobjinfo.speed` units per `A_Chase` call and calls `A_Chase` once per state of its own walk
+loop, so `MonsterStats.speed` in units/sec is just
+`speed × (A_Chase states in the loop) × 35 / (tics in the loop)` — nothing to lose in
+translation, and the per-loop state count genuinely matters (the arachnotron and spider
+mastermind spend 2-3 of their 12 walk states on footstep-sound actions that don't move them, the
+cyberdemon 2 of 8). An earlier pass eyeballed these at roughly 2-3× vanilla, which is the single
+biggest reason monsters didn't feel like DOOM's: it both flattened the gap between a shambling
+zombieman (70 units/sec) and a charging demon (175), and let nearly everything keep pace with a
+running player, when in vanilla the fastest monster in the game — the arch-vile at 262 — is
+still barely half the player's own run speed. `MonsterStats.chaseInterval` (the same loop's
+seconds per `A_Chase` call) comes out of the same arithmetic and is what the rest of the AI
+clock is quantized to below.
 
-**Movement reuses the exact same physics as the player** — `slideMove`, `groundFloor`, and
-gravity integration once airborne (`game/monsters.ts`'s `settleVertical`, mirroring
-`Player.update`'s own branch) — so a chasing monster steps up onto low ledges, slides around
-convex corners, and falls off a ledge under gravity instead of snapping to the floor, exactly
-like the player does. There is no pathfinding at all, matching vanilla (which also routinely
-gets monsters stuck on complex geometry): `stepMonsterAI` samples every half second whether a
-chasing monster has actually moved since the last sample, and if not, blends a random lateral
-`jitterAngle` into its heading for a bit — a cheap "try a new direction" fallback, not a real
-nav-mesh detour.
+**A newly-alerted monster starts moving immediately but can't fire until its `reactiontime`
+elapses** — vanilla's own field, which is 8 for every monster in the game. `tryWake` seeds
+`MonsterBody.reactionTicks` with `REACTION_CHASES` (8), and `runChaseCall` decrements it once per
+chase call exactly as vanilla's `A_Chase` does — so it's measured in chase calls, not seconds,
+and a zombieman's hesitation (8 × 0.114s ≈ 0.91s) really does last twice as long as a demon's
+(8 × 0.057s ≈ 0.46s) purely because their `chaseInterval`s differ, the same as every other
+vanilla-derived timing in this file. Without any such delay a monster with a long sightline fired
+the exact frame it came into view, with no perceptible reaction. It gates **ranged attacks only**
+(`checkMissileRange` reads it, melee does not) — vanilla reads `reactiontime` nowhere except
+`P_CheckMissileRange`, so a demon woken at arm's length bites on the spot. A monster alerted by
+taking damage has `reactionTicks` zeroed outright (`reactToDamage`, vanilla's own "we're awake
+now") rather than waiting it out, same as vanilla doesn't re-delay an already-awake monster.
 
-**A monster always keeps closing distance until genuinely adjacent to the player, firing
-whenever its own attack is off cooldown and in range along the way — it never "keeps its
-distance."** Vanilla has no such instinct either: a ranged monster (zombieman, cyberdemon, ...)
-walks right up to the player if nothing stops it, the same as a melee one. `stepMonsterAI` stops
-advancing once within `MELEE_RANGE` (used here as a generic "personal space" distance, not just
-the melee attack's own reach) — without this, a monster whose *attack* range happened to be long
-(some `MONSTER_STATS` ranged ranges reach 1400+ units) froze solid the instant the player came
-into view, which read as static and robotic rather than hunting. Line of sight (`hasLineOfSight`,
-plus a `MONSTER_ENGAGE_HEIGHT` overhead/underneath gate — the same idea as `ThingLayer.tryPickup`'s
-own gate, so a monster on a floor far above/below the player can't magically snipe through a
-window) gates both whether an attack can land and whether the monster is "close enough" to stop
-approaching; without sight it keeps beelining toward the player's *actual* current position (no
-separate remembered last-known-position state) rather than firing blind.
+**Movement is vanilla's `P_NewChaseDir`, on vanilla's eight directions** (`game/monsters.ts`'s
+`newChaseDir`/`tryWalk`), not a beeline. A monster only ever walks along E/NE/N/NW/W/SW/S/SE,
+commits to a heading for `movecount` chase calls, and re-routes when that expires or a move gets
+refused — trying the direct diagonal first, then the two cardinals (longer axis first, with
+vanilla's ~22% random swap), then its previous heading, then a full scan from a randomly chosen
+end, and only as a last resort the about-face it has been avoiding throughout. That
+refuse-to-turn-around rule is what stops a blocked monster oscillating, and the random scan
+direction is what eventually unwedges two monsters stuck in the same doorway. There is still no
+pathfinding, matching vanilla, which also routinely gets monsters stuck on complex geometry — but
+this *is* vanilla's actual algorithm rather than the "if it hasn't moved in half a second, blend
+in a random lateral angle" heuristic an earlier version used, which produced a visibly different
+gait: a drifting curve into a wall instead of DOOM's flat commit-and-re-route.
 
-**A ranged attack's own cooldown scales with distance, so a monster fires far less often from
-across a room than up close** — confirmed against vanilla's real `P_CheckMissileRange`
-(`linuxdoom-1.10`), which doesn't use a cooldown at all: every ~3-tic chase check it rolls
-`P_Random() < dist` (`dist` shrinking as the target closes) and only actually fires on a "miss"
-of that roll, so a monster far from the player can go through many failed rolls — many real
-seconds — before firing again, while one nearly on top of the player fires almost every chance
-it gets. Missing this falloff entirely was the actual "monsters shoot more than vanilla" bug: a
-flat cooldown fires at full rate regardless of range, which reads as far more trigger-happy than
-vanilla the moment a monster is shooting from any real distance. Reusing the *chance* directly
-wasn't an option — sampled every render frame (far more often than vanilla's own ~3-tic cadence)
-the same per-attempt probability would resolve almost immediately no matter how small it is.
-`rangedCooldown` (`game/monsters.ts`) instead converts the *expected number of attempts* (`1/p`
-for a per-attempt success chance `p`) into an expected real-time delay and uses that as this
-monster's own cooldown — same close-fires-often/far-fires-rarely shape, without simulating
-vanilla's per-tic retry loop. `AttackStats.ranged`'s `rangeFalloffScale`/`Cap` reproduce vanilla's
-own per-type offset/halving/clamp (halved for exactly the three types vanilla special-cases —
-cyberdemon, spider mastermind, revenant — making them noticeably more willing to fire from far
-away than everything else; the cyberdemon alone gets an extra-tight 160-unit cap on top). The
-revenant additionally won't fire its missile within 196 units at all (`minRangedDist`, vanilla's
-own `MT_UNDEAD` rule — its internal name from when the revenant was "Undead" in development),
-preferring to close to melee range instead of lobbing one from just outside fist's reach; the
-arch-vile's own attack range is capped at 896 units (`14*64`, also read straight off
-`P_CheckMissileRange`) rather than the longer range this file otherwise tunes by feel.
+Two consequences worth knowing. Monster movement **deliberately doesn't use `slideMove`**:
+vanilla's `P_Move` is all-or-nothing (only the player gets `P_SlideMove`), and re-routing rather
+than sliding along a wall is exactly what produces the zig-zag. And the walk itself is
+**interpolated per frame** along whatever `movedir` the last chase call settled on, rather than
+jumping a full `speed` units per call the way vanilla does — same distance covered and same
+8-way path, but vanilla's jump reads as continuous only because it renders at 35fps, and at this
+engine's frame rate it would visibly stutter. Everything else (`groundFloor`, gravity
+integration once airborne via `settleVertical`) still mirrors `Player.update` exactly, so a
+chasing monster steps up onto low ledges the same way the player does.
+
+Two deliberate differences from the player's own movement, both passed as extra arguments to
+`slideMove`/`circleBlocked`/`groundFloor` (`game/world.ts`) that the player's own movement calls
+never set:
+
+- **`forMonster: true`** makes `isSolidWall` additionally treat an `LF.BLOCK_MONSTERS`-flagged
+  line as solid — vanilla's own `ML_BLOCKMONSTERS`, used to fence monsters out of an area (or off
+  a ledge) while the player can still walk through freely.
+- **`avoidDropoff: true`** (for every monster type except the cacodemon, lost soul and pain
+  elemental — vanilla's actual floating/hovering monsters, `MonsterStats.flies`) makes a monster
+  refuse to step into a position where `groundFloor`'s rest height would sit more than
+  `MAX_STEP_UP` above `World.dropoffFloor`'s lowest touched floor — i.e. it won't walk out over a
+  drop deeper than a step, matching vanilla's own `P_TryMove` dropoff rule (confirmed against the
+  real `linuxdoom-1.10` source: identical 24-unit threshold, and the identical `MF_DROPOFF`/
+  `MF_FLOAT` exemption, here narrowed to just the three flying types). This is why a grounded
+  monster won't simply walk off a high ledge chasing the player the way the player's own falling
+  physics lets *them* do — the player's own ability to walk off a ledge and fall under gravity is
+  a deliberate, already-shipped feature of this engine (see `player.ts`), not something monsters
+  get too. `tryWalk` (above) treats a dropoff-refused step exactly like a wall-refused one — it's
+  just another `circleBlocked` failure — so `newChaseDir`'s ordinary re-routing already handles a
+  monster balking at a ledge; no separate fallback is needed for it.
+
+**A monster always keeps closing distance until it physically runs into its target — it never
+"keeps its distance."** Vanilla has no such instinct either: a ranged monster (zombieman,
+cyberdemon, ...) walks right up to the player if nothing stops it, the same as a melee one. What
+stops it is real contact, not a rule: every monster and the player are solid bodies
+(`World.ThingBlocker`), so a monster closes until it bumps into you. An earlier version had no
+thing-vs-thing collision at all and used `MELEE_RANGE` as a stand-in "personal space" distance,
+which both let monsters walk clean through each other and through the player, and — without any
+stop rule at all — let a monster overshoot its target and oscillate past it. Line of sight
+(`hasLineOfSight`, genuinely 3D-aware — see "Damage, monster death and player death" below for
+why) gates whether an attack can land; without sight a monster keeps heading toward its target's
+*actual* current position (no separate remembered last-known-position state) rather than firing
+blind.
+
+**Bodies block bodies, using vanilla's box test.** `circleBlocked`/`slideMove` (`game/world.ts`)
+take an optional `blockers` list, and `blockedByThings` reproduces `PIT_CheckThing`'s overlap
+check exactly: an axis-aligned **box** on the summed radii (`abs(dx) < r1+r2 && abs(dy) < r1+r2`),
+not the circle test the rest of this file's collision uses, and with **no height comparison at
+all** — vanilla's solid-blocking path returns before any z check, which is the well-known
+"infinitely tall actors" behavior. Both deviations from the surrounding code are deliberate:
+rounding the box off would change every contact range by up to ~40% on the diagonal, and adding a
+height check would quietly break the map geometry that (accidentally or not) relies on the
+vanilla rule. `ThingLayer.solidBodies` is the outward-facing half, handed to `Player.update` by
+`game.ts`; monsters get the equivalent list built for them internally (`blockersFor`). The player
+still *slides* along bodies (`slideMove`) while monsters don't, matching vanilla exactly — the
+player is the one thing in DOOM that gets `P_SlideMove`, so scraping past a demon in a corridor
+works, while the demon itself re-routes around you.
+
+**But walking and attacking are mutually exclusive: a monster plants itself for the whole length
+of its attack.** This is the one part of the above vanilla genuinely enforces rather than merely
+tends toward — an attack is a state sequence of its own, and `A_Chase` (the only thing that ever
+calls `P_Move`) doesn't run again until that sequence ends. `AttackStats.duration` is that
+sequence's summed tics over 35, read straight off `info.c`, and `MonsterBody.attackPause` holds
+the monster still for exactly that long. It ranges from 0.43s (a cacodemon's bite/spit) to 2.7s
+(an arch-vile), and its absence was very visible: monsters slid toward the player at full speed
+while firing, so a mancubus never planted for its volley and a zombieman never stopped to raise
+its pistol. What the paragraph above rules out is a monster stopping *before* it has anything to
+fire — not this.
+
+Multi-shot attacks fall out of the same field. `AttackStats.shots`/`shotInterval` reproduce the
+attacks where vanilla fires several times from inside one `missilestate` rather than making a
+fresh `A_Chase` decision per shot: the cyberdemon's three rockets (12 tics apart), the mancubus's
+three volleys, the chaingunner's and spider mastermind's paired bullets. `AttackStats.refire` is
+the extreme case — vanilla's `A_CPosRefire`/`A_SpidRefire` (chaingunner, spider mastermind,
+arachnotron) jump the attack state straight back into itself and only break out when the target
+stops being visible, never re-rolling `P_CheckMissileRange`. So those three plant themselves and
+hose continuously for as long as they can see the player, which combined with the attack pause
+above is what finally makes a chaingunner read like vanilla's rather than a strolling pea-shooter.
+
+**A ranged attack's own firing chance falls off with distance, so a monster shoots far less often
+from across a room than up close** — vanilla's `A_Chase`/`P_CheckMissileRange`, now run as the
+real per-chase-call decision rather than converted into a cooldown. Three gates stand between one
+shot and the next, and `runChaseCall` applies each on the same cadence vanilla does:
+
+1. `MF_JUSTATTACKED` — the call right after an attack always re-routes instead of attacking
+   ("do not attack twice in a row").
+2. The **`movecount` gate**, the heavyweight: `A_Chase` refuses to even *consider* a missile
+   while `movecount` is nonzero, and `P_TryWalk` reseeds it to `P_Random() & 15` (0-15) every
+   time the monster commits to a direction. So a monster only gets a chance to fire roughly
+   every 8-9 chase calls. Missing this entirely was the original "monsters shoot far more than
+   vanilla" bug.
+3. `P_CheckMissileRange`'s roll — `P_Random() < dist` *suppresses* the shot, so the fire chance
+   is `(256 - dist) / 256` and shrinks with distance. A failed roll falls into `P_NewChaseDir`
+   and so pays gate 2 all over again.
+
+An intermediate version modelled 2 and 3 statistically, converting an expected attempt count into
+a seconds-long cooldown, because sampling a per-attempt probability every render frame (far more
+often than vanilla's own ~3-tic cadence) would resolve it almost immediately no matter how small
+it is. Running the chase logic on a discrete `chaseInterval` tick removes that problem at the
+source — the roll is now sampled exactly as many times as vanilla samples it, so it can just be
+the roll. `AttackStats.ranged`'s `rangeFalloffScale`/`Cap` reproduce vanilla's
+own per-type offset/halving/clamp (halved for exactly the types vanilla special-cases —
+cyberdemon, spider mastermind, revenant, lost soul — making them noticeably more willing to fire
+from far away than everything else; the cyberdemon alone gets an extra-tight 160-unit cap on
+top). `MF_JUSTHIT` short-circuits all of it: a monster that just took a hit fires back
+immediately, regardless of distance.
+
+**Ranged attacks have no maximum range**, and giving them one was a mistake worth recording.
+Vanilla's `P_CheckMissileRange` never rejects a shot for being too far — the falloff above is the
+*whole* mechanism — and there are exactly two real distance gates in the game, both per-type and
+both measured on the *offset* distance (after `P_CheckMissileRange`'s own -64/-192 subtraction,
+which is where vanilla applies them): the revenant won't fire its missile inside 196 units
+(`minOffsetDist`, vanilla's `MT_UNDEAD` rule — its internal name from when the revenant was
+"Undead" in development), preferring to close to melee range instead of lobbing one from just
+outside fist's reach, and the arch-vile won't fire beyond `14*64` = 896 (`maxOffsetDist`).
+Hand-picked 1000-2400 unit caps stood in for the falloff before it was modelled properly; once
+it was, all they did was make monsters stop firing at distances vanilla is perfectly willing to
+shoot from. A hitscan attack otherwise reaches `WEAPON_RANGE` (vanilla's `MISSILERANGE`, 2048)
+and a projectile simply flies until it hits something.
 
 **Ranged attacks are either an instant hitscan-style bolt or a real flying projectile sprite,
 matching which one vanilla actually uses per monster type** (`game/monsters.ts`'s
@@ -608,18 +729,68 @@ frames in the WAD at all). The pain elemental and arch-vile stay on the hitscan-
 despite not matching vanilla exactly, and the revenant's missile flies straight rather than
 homing — see `MONSTER_STATS`'s doc for why each of those specific gaps was left alone rather than
 built out further. A monster projectile reuses the same `Projectile`/`updateProjectiles` machinery
-the player's own rocket/plasma/BFG shots already use, distinguished by `targetsPlayer: true`: it's
-still launched via `shotPath` exactly like a player's locked-on shot (stopped early only by a real
-wall), but unlike a player's shot — whose target (a monster) never moves mid-flight — its arrival
-is re-checked every frame against the player's *live* position (`MONSTER_PROJECTILE_HIT_RADIUS`/
-`_HEIGHT`), not just the wall-stop distance computed at launch, so stepping behind cover or
-outrunning a slower fireball after it's already fired actually works. Damage dice and speeds are
-tuned for feel/balance rather than lifted from vanilla's own per-monster tables, the same
-simplification `weapons.ts`'s fire rates/spread and `player.ts`'s `GRAVITY` already make for
-values that don't survive a clean conversion from vanilla's tic-based model. **Monsters don't
-fight each other, and neither monsters nor the player physically block one another on contact**
-— both real vanilla behaviors, both left out of this milestone, the same kind of honestly-noted
-gap as crushers not blocking movers on contact below.
+the player's own rocket/plasma/BFG shots already use, distinguished by a non-null `sourceId`
+(vanilla's own doomednum tags along as `sourceType`, for the species check below): it's still
+launched via `shotPath` exactly like a player's locked-on shot (stopped early only by a real
+wall), aimed at whichever target the monster actually fired at — the player, or another monster
+if this is an infight (`atk.targetId`, resolved live via `ThingLayer.monsterById` rather than
+trusted from launch time). Unlike a player's shot — whose target (a monster) never moves
+mid-flight — its arrival is re-checked every frame against both the player's *live* position
+(`MONSTER_PROJECTILE_HIT_RADIUS`/`_HEIGHT`) and every other living monster it might clip along the
+way (`monsterStruckBy`, `sameSpecies`-gated the same as a hitscan bolt), not just the wall-stop
+distance computed at launch, so stepping behind cover or outrunning a slower fireball after it's
+already fired actually works — for whoever it's flying at. Damage dice are the one
+thing here still tuned for feel/balance rather than lifted from vanilla's per-monster tables (see
+the timing note at the top of this section for why they're the exception, not the rule) — so a
+monster's *rhythm* is vanilla's while its bite is deliberately softer.
+
+**Monsters fight each other**, and the mechanism is exactly vanilla's: nothing about being hurt
+is player-specific. `ThingLayer.damage` takes an optional `source`, and a monster hit by another
+monster re-points its `targetId` at the attacker (`monsters.ts: shouldRetarget`/`commitTarget`);
+`stepMonsterAI` takes a plain `target` position and never learns whether it's chasing the player
+or a baron. `game.ts` is where a shot finds out who it hit — `resolveMonsterHitscan` traces the
+bolt and damages the first body along it (vanilla's `PTR_ShootTraverse` has no notion of an
+intended target and no species check whatsoever, which is why one zombieman firing past another
+starts a fight), and `monsterStruckBy` does the same per frame for a projectile in flight.
+
+Three vanilla rules keep that from degenerating, all reproduced:
+- **A committed monster ignores new attackers** for `BASE_THRESHOLD` (100) chase calls
+  (`MonsterBody.threshold`, vanilla's own). Without it a brawl in a crowded room turns into
+  everyone spinning to face the last stray hit and nobody landing a second blow.
+- **Nothing ever retaliates against an arch-vile**, and an arch-vile re-targets even while
+  committed — vanilla singles out `MT_VILE` in both directions of the rule, so its
+  resurrect/flame behavior can't start a fight with the monsters it is meant to be helping.
+- **A projectile passes harmlessly through the shooter's own species** (`sameSpecies`, vanilla's
+  `PIT_CheckThing` rule), with baron and hell knight counting as one species in both directions —
+  vanilla's single hardcoded cross-type pairing. A pack of imps can therefore throw fireballs
+  across each other all day without infighting, while one imp fireball landing on a demon
+  absolutely does start something. Note this applies to **projectiles only**: hitscan attacks
+  have no species check in vanilla at all, so zombiemen really do gun each other down.
+
+A target that dies hands the monster's attention straight back to the player (`resolveTarget`),
+matching vanilla's `A_Chase`, which falls back to `P_LookForPlayers` once `target->health <= 0`.
+
+**The lost soul is the third kind of attack: it throws itself.** Vanilla's `A_SkullAttack` gives
+it no projectile at all — it sets `MF_SKULLFLY` and launches the monster along its own facing at
+`SKULLSPEED` (20 units/tic, 700 units/sec), dealing contact damage through `PIT_CheckThing` when
+it reaches the target and clearing the flag on any blocked move. `AttackStats.charge` plus
+`stepCharge` (`game/monsters.ts`) reproduces that, and it's the reason the lost soul can carry
+vanilla's real chase speed — 46.7 units/sec, by far the slowest in the game, less than a fifth of
+a walking player. Modelling it as an ordinary fast melee walker (which is what an eyeballed
+260 units/sec amounted to) got the threat roughly right by getting both halves wrong; with the
+charge in place the vanilla numbers work, because a lost soul is meant to drift harmlessly and
+then commit. `stepCharge` is deliberately the one movement in this file that doesn't use
+`slideMove`: a charge that rounded corners would home in on the player, and being able to
+sidestep a committed lost soul is the whole reason the attack is fair.
+
+**`painChance` is vanilla's `mobjinfo.painchance` over 256 exactly, and `painDuration` its
+`painstate` chain's tics over 35.** Both are plain constants in the same table `MONSTER_HEALTH`
+already lifts from, so there was never anything to convert; an earlier eyeballed set had the imp
+and demon shrugging off roughly half the hits that stagger them in vanilla, and flattened pain
+length to one shared value where vanilla ranges from 4 tics (imp, demon, baron barely flinch) to
+12 (cacodemon, pain elemental recoil visibly). A stagger also *aborts* whatever attack was under
+way rather than letting it resume — including the unfired shots of a volley — matching vanilla's
+pain state replacing the attack state outright.
 
 **Animation reuses the walk-cycle convention (`A`-`D`, held on `A` while idle) `PLAY`'s own idle
 sprite already established**, rather than inventing dedicated attack/pain frame art: unlike the
@@ -663,6 +834,24 @@ every living monster `ThingLayer.monstersNear` returns within the blast radius, 
 uses for reveal — not `shotPath`, which models a directed weapon's own blocking rules, not "does
 this omnidirectional blast reach that point") says is blocked by a wall, and applies damage
 falling off linearly to 0 at the radius edge, matching vanilla's own `P_RadiusAttack`.
+
+**`hasLineOfSight` also checks floor/ceiling, not just walls** — it takes `z1`/`z2` and, after its
+line-crossing test, samples points along the path (`SIGHT_HEIGHT_SAMPLE_STEP`) checking that the
+straight 3D line's own interpolated height at each stays within that point's sector's
+floor..ceiling range. Without this, a monster standing in a room genuinely *underneath* a ledge
+the player is standing on — with no shared two-sided line anywhere near the straight 2D path
+between them, since the floor is what separates them, not a wall — registered as fully visible
+(and shootable) purely because the line-crossing test never found anything to block: a monster
+that chased around to end up under a ledge could keep hitting the player through the floor even
+after losing any real sightline. This is a coarser stand-in for vanilla's own `P_CheckSight`, which
+walks the BSP narrowing an actual top/bottom sight wedge through every sector's real floor/ceiling
+as it crosses — sampling discrete points along the path instead is far simpler and, per the same
+"tuned by feel over exact fixed-point port" reasoning as elsewhere in this codebase, close enough.
+Every caller (monster AI's `canSee`/`tryWake`, `applyRadiusDamage` above) was updated to pass real
+heights rather than the flat `MONSTER_ENGAGE_HEIGHT` guess an earlier version used in
+`stepMonsterAI`'s `canSee` — now redundant and removed, since a proper 3D sight check makes a
+separate flat vertical cap both unnecessary and, for a genuinely tall open room, wrong (vanilla
+itself has no such cap at all).
 
 **A rocket that explodes against a wall sits its own impact point exactly on that wall**, which
 broke splash to everyone else the instant it happened: a raw segment-intersection test between
@@ -806,17 +995,26 @@ thing/mover collision check exists), so a crusher never stops, reverses early, o
 it just keeps hurting whoever's in the way every interval until they leave or die, which is the
 part of the vanilla feel that actually matters for a crusher reading as a hazard.
 
-**Teleporters** (39/97 trigger for the player; Doom II's 125/126 are monster-only and still never
-fire — `SpecialsController.handleWalkTriggers` only tracks the *player's* `prevX`/`prevY` to
-detect a walk-over crossing, not each monster's, so a monster walking onto one of these today
-just walks straight over it. Wiring that up would need per-monster previous-position tracking
-plus a per-monster teleport call the same shape as the player's — a reasonable follow-up now
-that monster AI exists, but out of scope for this milestone since mappers use 125/126 rarely and
-only for deliberate monster-closet setups). The destination is the first doomednum-14 landing
-thing found inside a tag-matched
-sector (`SpecialsController.findTeleportDestination`); reaching it calls back into `main.ts` to
-move the player (`Player.teleportTo`) and snap the camera yaw to match, the same as the initial
-spawn.
+**Teleporters** (39/97 for either the player or a monster; Doom II's 125/126 for monsters only).
+The destination is the first doomednum-14 landing thing found inside a tag-matched sector
+(`SpecialsController.findTeleportDestination`); reaching it calls back into `main.ts` to move the
+player (`Player.teleportTo`) and snap the camera yaw to match, the same as the initial spawn.
+
+**Monsters cross walk triggers too**, via `SpecialsController.crossMonster` — `ThingLayer` keeps
+each monster's own `prevX`/`prevY` and hands the segment it just walked to a `crossLines`
+callback, the same "system reports, `game.ts` realizes" shape as `fogAlphaOf` and the crush
+callback. Vanilla runs `P_CrossSpecialLine` for *any* thing, not just the player, but gates
+non-players to a very short allow-list, reproduced verbatim as `MONSTER_CROSSABLE`: 39/97/125/126
+(teleports), 4 (raise door) and 10/88 (the two down-wait-up-stay lifts). Everything else — exit
+lines, stair builders, most doors and floors — does nothing under a monster's feet, which is why
+a level's monsters can't wander around rearranging its geometry. 125/126 are the monster-only
+pair: vanilla lists them *only* in the non-player branch, so a player walking one does nothing at
+all, which is what makes the classic monster-closet setup work (a pack behind a line only they
+can trigger, teleporting into the arena the moment they start chasing). A monster's teleport
+deliberately does **not** touch `lastTeleport` — that exists solely to reseed the *player's* own
+walk-trigger tracking (see its doc), and where a monster jumped to says nothing about where the
+player just walked — but it does get the same `TFOG` puff at both ends, since vanilla spawns that
+for any thing that teleports.
 
 Teleporting moves the player an arbitrary distance in a single frame, which breaks
 `SpecialsController`'s own walk-trigger detection: it tracks `prevX`/`prevY` to know what segment
@@ -1037,15 +1235,25 @@ work (`game/specials.ts`), including locked doors, which require the matching ke
 first, and teleporters, which reproduce vanilla's teleport-fog puff at both ends of the jump
 (`main.ts`); crushers and the crushing floor family (55/56/65/94 — not the turbo-16 stairs, which
 never crush even in vanilla) deal periodic damage to the player or any monster caught in their
-sector, though nothing here actually
-blocks a mover on contact the way vanilla does. Monsters now wake, chase and attack the player
-(`game/monsters.ts`, see "Monster AI" above): they use the same movement physics as the player
-(collision, step-up, gravity), melee-capable types close all the way in while ranged-only types
-stop and fire once in sight and in range, taking damage always alerts (and sometimes staggers) a
-monster regardless of whether it had spotted the player yet, and gunfire wakes monsters within
-sound-propagation range even without sight (`World.noiseAlert`, respecting closed doors and
-`BLOCK_SOUND` lines the same way vanilla does). There's no monster-vs-monster infighting, no
-monster-vs-player/monster-vs-monster physical blocking on contact, and 125/126 (Doom II's
-monster-only teleporters) still don't fire for a monster that walks onto them — all noted gaps,
-not oversights. Not yet implemented: powerup effects, and actual audio (the noise-alert *mechanic*
-above works off vanilla's sound-propagation rules, but nothing in this engine plays a sound yet).
+sector, though a *mover* (crusher, door, lift) still doesn't detect or stop for a thing in its way
+the way vanilla does — a separate, still-open gap from the thing-vs-thing collision described
+next, which is about two things walking into each other, not a moving sector hitting one. Monsters
+now wake, chase and attack the player (`game/monsters.ts`, see "Monster AI" above): they use the
+same movement physics as the player (collision, step-up, gravity) but on vanilla's real 8-direction
+`P_NewChaseDir` pathing rather than a beeline, every type keeps closing until it physically runs
+into its target — monsters and the player are solid bodies that block one another on contact,
+vanilla's `PIT_CheckThing` box test — and stands still for the length of whatever attack it fires.
+Taking damage always alerts (and sometimes staggers) a monster regardless of whether it had
+spotted its attacker yet, and re-targets it onto whoever dealt the damage if nothing else already
+has its attention — vanilla's infighting, complete with threshold commitment, arch-vile exemptions
+and same-species projectile immunity, so a shot that clips the wrong monster can turn it on the
+shooter. Gunfire wakes monsters within sound-propagation range even without sight
+(`World.noiseAlert`, respecting closed doors and `BLOCK_SOUND` lines the same way vanilla does),
+and a monster walks the same walk triggers vanilla lets it (teleports, including the monster-only
+125/126 pair, one door type, two lift types), so a mapper's monster-closet setup works. Remaining
+known deviations, all deliberate: monster *damage* values are tuned softer than vanilla's, a
+monster's own projectile carries no splash (so a cyberdemon's rocket doesn't blast what it lands
+next to), the revenant's missile flies straight instead of homing, and the pain elemental and
+arch-vile use a hitscan stand-in for attacks vanilla implements differently. Not yet implemented:
+powerup effects, and actual audio (the noise-alert *mechanic* above works off vanilla's
+sound-propagation rules, but nothing in this engine plays a sound yet).

@@ -359,6 +359,34 @@ function disposeGroup(group: THREE.Group): void {
  * and door "un-crush" safety (a closing door won't reverse if something is
  * standing under it — doors have no `crush` flag at all here).
  */
+/** A teleport landing spot: where to put the thing, and which way it should face on arrival. */
+export interface TeleportDest {
+  x: number;
+  y: number;
+  angle: number;
+}
+
+/**
+ * The only line specials a non-player thing may activate by walking over
+ * them — vanilla's own short allow-list in `P_CrossSpecialLine`'s
+ * `if (!thing->player)` branch. Everything else in the game (exit lines,
+ * stair builders, most doors and floors) simply does nothing under a
+ * monster's feet, which is why a level's monsters can't wander around
+ * rearranging its geometry.
+ */
+/** How far around a monster to look for walk-trigger lines — the largest monster radius (the spider mastermind's 128) plus slack. */
+const MONSTER_CROSS_RADIUS = 136;
+
+const MONSTER_CROSSABLE = new Set([
+  4, // raise door
+  10, // plat down-wait-up-stay
+  39, // teleport
+  88, // plat down-wait-up-stay, retriggerable
+  97, // teleport, retriggerable
+  125, // teleport, monsters only
+  126, // teleport, monsters only, retriggerable
+]);
+
 export class SpecialsController {
   private map: DoomMap;
   private world: World;
@@ -868,46 +896,51 @@ export class SpecialsController {
 
   // ---- Triggers ----------------------------------------------------------
 
-  private trigger(lineIndex: number, ownedKeys: ReadonlySet<KeyColor>): void {
+  private trigger(lineIndex: number, ownedKeys: ReadonlySet<KeyColor>, byMonster = false): TeleportDest | null {
     const line = this.map.linedefs[lineIndex];
     const def = LINE_SPECIALS[line.special];
-    if (!def) return;
-    if (!def.repeatable && this.usedOnce.has(lineIndex)) return;
+    if (!def) return null;
+    if (!def.repeatable && this.usedOnce.has(lineIndex)) return null;
     // A missing key leaves the door untouched and this attempt un-flagged, so
     // the player can walk off, find the key, and try the same line again —
     // matching vanilla, which just prints "you need the X key" and does
     // nothing else.
-    if (def.effect.kind === 'door' && def.effect.requiredKey && !ownedKeys.has(def.effect.requiredKey)) return;
+    if (def.effect.kind === 'door' && def.effect.requiredKey && !ownedKeys.has(def.effect.requiredKey)) return null;
 
     this.flashSwitch(lineIndex);
 
     if (def.effect.kind === 'exit') {
       this.usedOnce.add(lineIndex);
       this.onExit(def.effect.secret);
-      return;
+      return null;
     }
 
     if (def.effect.kind === 'teleport') {
-      // No monster AI to walk these lines, so the monster-only variants
-      // (125/126) can never fire — same outcome vanilla's own player check
-      // on EV_Teleport gives them today, since nothing here is a monster.
-      if (def.effect.monsterOnly) return;
+      // 125/126 are Doom II's monster-only teleport pair: vanilla lists them
+      // only in `P_CrossSpecialLine`'s non-player branch, so a player walking
+      // one does nothing at all. 39/97 work for either.
+      if (def.effect.monsterOnly && !byMonster) return null;
       const dest = this.findTeleportDestination(resolveTargets(this.map, line, def));
-      if (!dest) return; // no matching landing thing — vanilla leaves the special un-consumed too
+      if (!dest) return null; // no matching landing thing — vanilla leaves the special un-consumed too
       if (!def.repeatable) this.usedOnce.add(lineIndex);
+      // A monster's teleport is the caller's to perform, and must *not* touch
+      // `lastTeleport` — that exists solely to reseed the player's own
+      // walk-trigger tracking (see its doc); where a monster jumped to says
+      // nothing about where the player just walked.
+      if (byMonster) return dest;
       this.lastTeleport = dest;
       this.onTeleport(dest.x, dest.y, dest.angle);
-      return;
+      return null;
     }
 
     if (def.effect.kind === 'stairs') {
       for (const startSector of resolveTargets(this.map, line, def)) this.triggerStairs(startSector, def.effect);
       if (!def.repeatable) this.usedOnce.add(lineIndex);
-      return;
+      return null;
     }
 
     const targets = resolveTargets(this.map, line, def);
-    if (targets.length === 0) return;
+    if (targets.length === 0) return null;
 
     for (const sectorIndex of targets) {
       if (def.effect.kind === 'door') this.triggerDoor(sectorIndex, def.effect);
@@ -917,6 +950,36 @@ export class SpecialsController {
       else this.triggerCrusherStop(sectorIndex);
     }
     if (!def.repeatable) this.usedOnce.add(lineIndex);
+    return null;
+  }
+
+  /**
+   * A monster walking from (prevX, prevY) to (x, y) crosses whatever walk
+   * triggers lie between — vanilla's `P_CrossSpecialLine` runs for any thing,
+   * not just the player, but gates non-players to a very short allow-list
+   * (`MONSTER_CROSSABLE`): teleports, one door type and two lift types.
+   * Returns the landing spot if the crossing teleported it, so the caller can
+   * move the monster and puff the fog; everything else (a door opening, a lift
+   * dropping) happens as a side effect, exactly as it does under the player.
+   *
+   * This is what makes a mapper's monster closet work: the classic setup is a
+   * pack of monsters behind a 125/126 line that only they can walk, teleporting
+   * them into the arena the moment they start chasing.
+   */
+  crossMonster(prevX: number, prevY: number, x: number, y: number, ownedKeys: ReadonlySet<KeyColor>): TeleportDest | null {
+    if (prevX === x && prevY === y) return null;
+    for (const i of this.world.linesNear(x, y, MONSTER_CROSS_RADIUS)) {
+      const line = this.map.linedefs[i];
+      const def = LINE_SPECIALS[line.special];
+      if (!def || def.trigger !== 'walk' || !MONSTER_CROSSABLE.has(line.special)) continue;
+      const a = this.map.vertexes[line.v1];
+      const b = this.map.vertexes[line.v2];
+      if (!a || !b) continue;
+      if (!segmentIntersect(prevX, prevY, x, y, a.x, a.y, b.x, b.y)) continue;
+      const dest = this.trigger(i, ownedKeys, true);
+      if (dest) return dest;
+    }
+    return null;
   }
 
   private handleUseTrigger(

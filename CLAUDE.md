@@ -149,13 +149,31 @@ forever and shows a permanent faint speckle (the dither test is a strict `<`).
 
 `TopDownCamera.yawDeg` lets the camera orbit around the followed point on right-mouse drag
 (`Input.consumeDragYaw`, accumulated via `pointermove` with `setPointerCapture` so the drag
-survives leaving the canvas mid-move) or by holding `Q`/`E` (`main.ts`'s `KEY_YAW_SPEED`,
-degrees/sec, signed to match the same rotation direction as dragging left/right respectively);
-tilt and distance are unaffected, so the camera always stays the same amount off vertical.
-`viewerAngleDeg` (`yawDeg - 90`) is the DOOM-space bearing from the followed point to the
-camera, and is what sprite rendering (above) and player movement both key off — at the
-default `yawDeg = 0` it's `-90`, matching the old fixed south-facing camera exactly, so
-nothing downstream needed a special case for "not yet orbited."
+survives leaving the canvas mid-move) or by pressing `Q`/`E` (`main.ts`'s `KEY_YAW_STEP`, a
+45° step per press, signed to match the same rotation direction as dragging left/right
+respectively); tilt and distance are unaffected, so the camera always stays the same amount
+off vertical. `viewerAngleDeg` (`yawDeg - 90`) is the DOOM-space bearing from the followed
+point to the camera, and is what sprite rendering (above) and player movement both key off —
+at the default `yawDeg = 0` it's `-90`, matching the old fixed south-facing camera exactly,
+so nothing downstream needed a special case for "not yet orbited."
+
+A `stepYaw` call (Q/E) queues its step as a `targetYawDeg` for `TopDownCamera.update` to
+animate `yawDeg` towards (`YAW_STEP_SMOOTH_RATE`) rather than jumping instantly — fast enough
+to feel snappy, but smooth rather than a hard cut. Plain assignment (`camera.yawDeg = ...`,
+used for the instant reorient on spawn/teleport, and by right-drag) still jumps immediately:
+the `yawDeg` setter keeps `targetYawDeg` in lockstep so nothing left over from a prior Q/E
+animates after an instant set. `main.ts`'s drag-handling line only assigns `camera.yawDeg` when
+`Input.consumeDragYaw()` is actually nonzero — calling the setter unconditionally every frame,
+even as a no-op `-= 0`, would snap `targetYawDeg` back to the current (still mid-animation)
+value and cancel a Q/E step after just one frame of smoothing, which is exactly the bug this
+guard fixes.
+
+Holding Q/E (rather than tapping) auto-repeats the same 45° `stepYaw` every
+`KEY_YAW_REPEAT_INTERVAL` — `main.ts`'s `qHoldTime`/`eHoldTime` accumulate `dt` while
+`Input.held` is true and fire+reset once the interval is reached, alongside the immediate
+step already fired on `Input.pressed`. The interval is tuned to roughly the time one step's
+smoothing takes to settle, so a hold reads as continuous rotation made of chained 45° steps
+rather than a single tap that then does nothing until released and pressed again.
 
 Movement (`Player.update`'s `forwardDeg` param, passed as `camera.viewerAngleDeg + 180`) is
 camera-relative rather than DOOM-axis-relative: `W` always moves the player away from the

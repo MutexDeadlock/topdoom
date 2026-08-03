@@ -37,8 +37,10 @@ const hudEl = document.getElementById('hud')!;
 
 /** Camera-orbit degrees per pixel of right-mouse drag. */
 const YAW_SENSITIVITY = 0.15;
-/** Degrees per second Q/E rotate the camera — a keyboard alternative to right-drag. */
-const KEY_YAW_SPEED = 120;
+/** Degrees Q/E snap the camera per press — a keyboard alternative to right-drag. */
+const KEY_YAW_STEP = 45;
+/** Seconds between auto-repeated Q/E steps while the key stays held, after the initial tap. */
+const KEY_YAW_REPEAT_INTERVAL = 0.26;
 
 /**
  * Teleport-fog puff (vanilla's MT_TFOG): a one-shot animation, not a real
@@ -213,6 +215,9 @@ class Game {
   private renderCeilings = false;
   private running = false;
   private lastTime = 0;
+  /** Seconds Q/E has been continuously held, for auto-repeat — see `frame`. */
+  private qHoldTime = 0;
+  private eHoldTime = 0;
   private fpsAccum = 0;
   private fpsFrames = 0;
   private fps = 0;
@@ -686,10 +691,27 @@ class Game {
 
     const { input, camera } = this.view;
     this.handleHotkeys();
-    camera.yawDeg -= input.consumeDragYaw() * YAW_SENSITIVITY;
+    // Guarded on a nonzero delta: a plain `yawDeg` assignment (even a no-op
+    // "-= 0" one) goes through the setter, which snaps `targetYawDeg` back to
+    // the current value — running it unconditionally every frame would cancel
+    // a Q/E stepYaw animation after just one frame of smoothing.
+    const dragYaw = input.consumeDragYaw();
+    if (dragYaw !== 0) camera.yawDeg -= dragYaw * YAW_SENSITIVITY;
     // Signs match right-drag: E rotates the same way as dragging right, Q as dragging left.
-    if (input.held('KeyQ')) camera.yawDeg += KEY_YAW_SPEED * dt;
-    if (input.held('KeyE')) camera.yawDeg -= KEY_YAW_SPEED * dt;
+    // stepYaw (not a plain assignment) is what makes this animate smoothly instead of
+    // snapping. Holding the key auto-repeats the same step every KEY_YAW_REPEAT_INTERVAL,
+    // roughly how long one step's smoothing takes to settle, so a hold reads as continuous
+    // rotation made of chained 45° steps rather than a single tap.
+    this.qHoldTime = input.held('KeyQ') ? this.qHoldTime + dt : 0;
+    this.eHoldTime = input.held('KeyE') ? this.eHoldTime + dt : 0;
+    if (input.pressed('KeyQ') || this.qHoldTime >= KEY_YAW_REPEAT_INTERVAL) {
+      camera.stepYaw(KEY_YAW_STEP);
+      this.qHoldTime = 0;
+    }
+    if (input.pressed('KeyE') || this.eHoldTime >= KEY_YAW_REPEAT_INTERVAL) {
+      camera.stepYaw(-KEY_YAW_STEP);
+      this.eHoldTime = 0;
+    }
 
     // Runs before player.update so a lift/door the player is standing on has
     // already moved this frame by the time groundFloor is sampled below.

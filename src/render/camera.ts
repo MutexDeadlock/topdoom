@@ -11,6 +11,9 @@ export interface TopDownCameraOptions {
   yawDeg?: number;
 }
 
+/** How fast `yawDeg` catches up to a `stepYaw` target, as a lerp-per-second rate. */
+const YAW_STEP_SMOOTH_RATE = 18;
+
 /**
  * A camera hanging above the player, tilted slightly off vertical so walls
  * show a bit of their height and the level reads as a space rather than a plan.
@@ -22,7 +25,10 @@ export class TopDownCamera {
   tiltDeg: number;
   distance: number;
   aimLead: number;
-  yawDeg: number;
+
+  private _yawDeg: number;
+  /** Where `yawDeg` is animating towards — see `stepYaw`. Equal to `_yawDeg` outside of a Q/E snap. */
+  private targetYawDeg: number;
 
   private target = new THREE.Vector3();
   private smoothed = new THREE.Vector3();
@@ -32,10 +38,34 @@ export class TopDownCamera {
     this.tiltDeg = options.tiltDeg ?? 60;
     this.distance = options.distance ?? 480;
     this.aimLead = options.aimLead ?? 0.18;
-    this.yawDeg = options.yawDeg ?? 0;
+    this._yawDeg = options.yawDeg ?? 0;
+    this.targetYawDeg = this._yawDeg;
 
     this.camera = new THREE.PerspectiveCamera(55, aspect, 8, 12000);
     this.camera.up.set(0, 1, 0);
+  }
+
+  /**
+   * Orbit angle in degrees, 0 = due south. Assigning it (right-drag, or an
+   * instant reorient on spawn/teleport) jumps immediately, matching before;
+   * `stepYaw` is the only way to animate towards a new value.
+   */
+  get yawDeg(): number {
+    return this._yawDeg;
+  }
+
+  set yawDeg(value: number) {
+    this._yawDeg = value;
+    this.targetYawDeg = value;
+  }
+
+  /**
+   * Queues a relative yaw change (the Q/E 45° snap) to animate smoothly
+   * towards over the next few frames, rather than jumping instantly the way
+   * a plain `yawDeg` assignment does.
+   */
+  stepYaw(deltaDeg: number): void {
+    this.targetYawDeg += deltaDeg;
   }
 
   /**
@@ -44,7 +74,7 @@ export class TopDownCamera {
    * default viewer angle; see render/sprites.ts's VIEWER_ANGLE_DEG.
    */
   get viewerAngleDeg(): number {
-    return this.yawDeg - 90;
+    return this._yawDeg - 90;
   }
 
   setAspect(aspect: number): void {
@@ -78,8 +108,10 @@ export class TopDownCamera {
       this.smoothed.lerp(this.target, 1 - Math.exp(-10 * dt));
     }
 
+    this._yawDeg += (this.targetYawDeg - this._yawDeg) * (1 - Math.exp(-YAW_STEP_SMOOTH_RATE * dt));
+
     const tilt = THREE.MathUtils.degToRad(this.tiltDeg);
-    const yaw = THREE.MathUtils.degToRad(this.yawDeg);
+    const yaw = THREE.MathUtils.degToRad(this._yawDeg);
     // The offset sits yawDeg around the target from due south (yaw=0) so the
     // camera can orbit while staying tilted the same amount off vertical.
     const horiz = Math.sin(tilt) * this.distance;

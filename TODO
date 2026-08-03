@@ -6,3 +6,9 @@ NEXT - Enemy "AI"
 NEXT - UX
 
 TODO - Sound
+
+IDEE!
+"Overlay" über die bestehenden Maps, die (dann fixe) Kamerawinkel, Zoom, FoW etc. ein-/umstellen.
+Wirkt vllt sogar "cinematisch", uj!
+lump Name z.B. "E1M1/TOPDOOMEXTRA".
+Editor dafür baut Claude :)

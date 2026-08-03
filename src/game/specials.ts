@@ -51,6 +51,7 @@ import {
   type MoverMesh,
 } from '../render/mapmesh.ts';
 import type { SubSectorPoly } from '../render/bsp.ts';
+import type { Placement, Pos2 } from '../types.ts';
 import type { MaterialBank } from '../render/textures.ts';
 import { FlatFader, type FadeTarget, WallFader } from '../render/occlusion.ts';
 import { segmentIntersect } from '../util/geom.ts';
@@ -472,12 +473,8 @@ function disposeGroup(group: THREE.Group): void {
  * and door "un-crush" safety (a closing door won't reverse if something is
  * standing under it — doors have no `crush` flag at all here).
  */
-/** A teleport landing spot: where to put the thing, and which way it should face on arrival. */
-export interface TeleportDest {
-  x: number;
-  y: number;
-  angle: number;
-}
+/** A teleport landing spot: where to put the thing, and which way it should face on arrival (radians — see `Placement`). */
+export type TeleportDest = Placement;
 
 /**
  * The only line specials a non-player thing may activate by walking over
@@ -510,7 +507,7 @@ export class SpecialsController {
   private built: BuiltMap;
   private meshOptions: MapMeshOptions;
   private onExit: (secret: boolean) => void;
-  private onTeleport: (x: number, y: number, angle: number) => void;
+  private onTeleport: (dest: Placement) => void;
   private onCrush: (sectorIndex: number) => void;
 
   private movableSectors: Set<number>;
@@ -537,7 +534,7 @@ export class SpecialsController {
    * the way to the teleport pad — an arbitrarily long jump that could cross
    * (and wrongly re-trigger) unrelated lines along the way.
    */
-  private lastTeleport: { x: number; y: number } | null = null;
+  private lastTeleport: Pos2 | null = null;
 
   constructor(
     map: DoomMap,
@@ -549,7 +546,7 @@ export class SpecialsController {
     built: BuiltMap,
     meshOptions: MapMeshOptions,
     onExit: (secret: boolean) => void,
-    onTeleport: (x: number, y: number, angle: number) => void,
+    onTeleport: (dest: Placement) => void,
     onCrush: (sectorIndex: number) => void,
     playerX: number,
     playerY: number,
@@ -676,7 +673,7 @@ export class SpecialsController {
    * `trigger` and reassign it — left it typed as `null` regardless, when it
    * can genuinely be non-null there.
    */
-  private consumeLastTeleport(): { x: number; y: number } | null {
+  private consumeLastTeleport(): Pos2 | null {
     return this.lastTeleport;
   }
 
@@ -1208,7 +1205,7 @@ export class SpecialsController {
   }
 
   /** First `TELEPORT_DEST` (doomednum 14) thing sitting in one of the tag-matched sectors — vanilla's own search is just as arbitrary when more than one exists. */
-  private findTeleportDestination(sectorIndices: number[]): { x: number; y: number; angle: number } | null {
+  private findTeleportDestination(sectorIndices: number[]): Placement | null {
     if (sectorIndices.length === 0) return null;
     const targets = new Set(sectorIndices);
     for (const t of this.map.things) {
@@ -1253,7 +1250,7 @@ export class SpecialsController {
       // nothing about where the player just walked.
       if (byMonster) return dest;
       this.lastTeleport = dest;
-      this.onTeleport(dest.x, dest.y, dest.angle);
+      this.onTeleport(dest);
       return null;
     }
 
@@ -1310,7 +1307,7 @@ export class SpecialsController {
   }
 
   /**
-   * A monster walking from (prevX, prevY) to (x, y) crosses whatever walk
+   * A monster walking from `prev` to `pos` crosses whatever walk
    * triggers lie between — vanilla's `P_CrossSpecialLine` runs for any thing,
    * not just the player, but gates non-players to a very short allow-list
    * (`MONSTER_CROSSABLE`): teleports, one door type and two lift types.
@@ -1322,16 +1319,16 @@ export class SpecialsController {
    * pack of monsters behind a 125/126 line that only they can walk, teleporting
    * them into the arena the moment they start chasing.
    */
-  crossMonster(prevX: number, prevY: number, x: number, y: number, ownedKeys: ReadonlySet<KeyColor>): TeleportDest | null {
-    if (prevX === x && prevY === y) return null;
-    for (const i of this.world.linesNear(x, y, MONSTER_CROSS_RADIUS)) {
+  crossMonster(prev: Pos2, pos: Pos2, ownedKeys: ReadonlySet<KeyColor>): TeleportDest | null {
+    if (prev.x === pos.x && prev.y === pos.y) return null;
+    for (const i of this.world.linesNear(pos.x, pos.y, MONSTER_CROSS_RADIUS)) {
       const line = this.map.linedefs[i];
       const def = LINE_SPECIALS[line.special];
       if (!def || def.trigger !== 'walk' || !MONSTER_CROSSABLE.has(line.special)) continue;
       const a = this.map.vertexes[line.v1];
       const b = this.map.vertexes[line.v2];
       if (!a || !b) continue;
-      if (!segmentIntersect(prevX, prevY, x, y, a.x, a.y, b.x, b.y)) continue;
+      if (!segmentIntersect(prev.x, prev.y, pos.x, pos.y, a.x, a.y, b.x, b.y)) continue;
       const dest = this.trigger(i, ownedKeys, true);
       if (dest) return dest;
     }

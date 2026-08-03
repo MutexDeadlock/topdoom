@@ -27,8 +27,9 @@ import {
 } from './monsters.ts';
 import type { ThingBlocker } from './world.ts';
 import { SpriteActor, SpriteMaterialCache } from '../render/sprites.ts';
+import type { Placement, Pos2, Pos3 } from '../types.ts';
 
-interface PosedThing {
+interface PosedThing extends Pos3 {
   /** 
    * Index into the `posed` array itself.
    * A stable handle callers (game.ts) can hold onto across frames to target 
@@ -36,10 +37,8 @@ interface PosedThing {
    */
   id: number;
   actor: SpriteActor;
-  x: number;
-  y: number;
   /**
-   * Feet height. For anything that never moves (every non-monster, and a
+   * Feet height (`Pos3.z`). For anything that never moves (every non-monster, and a
    * dead or not-yet-alerted monster) this is refreshed every frame straight
    * from `sector.floorHeight` in `update()`, the same "ride a moving floor
    * for free" trick as before monsters could move at all. Once a monster is
@@ -49,7 +48,7 @@ interface PosedThing {
    * fixed sector reference.
    */
   z: number;
-  /** 
+  /**
    * Its containing sector — the live reference `z` is read from while 
    * not an alerted monster; reassigned each frame by `update()` once a monster starts moving. 
    */
@@ -105,9 +104,8 @@ interface PosedThing {
    * `game/monsters.ts` has no business knowing the throttle exists.
    */
   lookTimer: number;
-  /** Position at the end of the previous frame, so `crossLines` can test the segment this monster just walked. */
-  prevX: number;
-  prevY: number;
+  /** Position at the end of the previous frame, so `crossLines` can test the segment this monster just walked. Mutated in place; never re-allocated. */
+  prev: Pos2;
   /**
    * Who this monster is currently hunting: `null` for the player, otherwise
    * another `PosedThing`'s id. Set by `damage` when something hurts it (see
@@ -122,10 +120,7 @@ interface PosedThing {
  * `'ranged'` one into a tracer or projectile and applies `damage` to whatever
  * it actually reaches.
  */
-export interface MonsterAttackEvent extends MonsterAttack {
-  x: number;
-  y: number;
-  z: number;
+export interface MonsterAttackEvent extends MonsterAttack, Pos3 {
   /** The firing monster's own id and doomednum, so a shot that lands on another monster can be attributed (and species-checked) correctly. */
   sourceId: number;
   sourceType: number;
@@ -163,6 +158,17 @@ const LOOK_INTERVAL = 0.3;
  */
 const MONSTER_WALK_FRAMES = ['A', 'B', 'C', 'D'];
 
+/**
+ * One monster as the rest of the engine sees it: the stable `id`
+ * `ThingLayer.damage` takes, its live position, and its doomednum (for the
+ * species checks in `game.ts`). Every lookup below hands back this same shape
+ * rather than each spelling out `{ id, x, y, z, type }` of its own.
+ */
+export interface MonsterRef extends Pos3 {
+  id: number;
+  type: number;
+}
+
 export interface ThingLayer {
   group: THREE.Group;
   count: number;
@@ -173,7 +179,7 @@ export interface ThingLayer {
    * internally (`blockersFor`); this is the outward-facing half, for
    * `game.ts` to hand to `Player.update`.
    */
-  solidBodies(x: number, y: number): ThingBlocker[];
+  solidBodies(pos: Pos2): ThingBlocker[];
   /**
    * Re-poses every thing at the camera's current viewer angle and, for a
    * living `MONSTER_TYPES` thing, ticks its AI (`game/monsters.ts`): an
@@ -206,9 +212,9 @@ export interface ThingLayer {
   update(
     dt: number,
     viewerAngleDeg: number,
-    player: { x: number; y: number; z: number } | null,
+    player: Pos3 | null,
     fogAlphaOf?: (subsector: number) => number,
-    crossLines?: (prevX: number, prevY: number, x: number, y: number) => { x: number; y: number; angle: number } | null,
+    crossLines?: (prev: Pos2, pos: Pos2) => Placement | null,
   ): MonsterAttackEvent[];
   /**
    * Consumes every not-yet-picked thing within `radius` of (x, y) *and*
@@ -219,7 +225,7 @@ export interface ThingLayer {
    * argument is the instance's own `dropped` flag, so a monster's dropped
    * clip/weapon can grant half ammo the way vanilla's own dropped pickups do.
    */
-  tryPickup(x: number, y: number, z: number, radius: number, consume: (type: number, dropped: boolean) => boolean): void;
+  tryPickup(pos: Pos3, radius: number, consume: (type: number, dropped: boolean) => boolean): void;
   /**
    * DOOM (x, y, floor height) of the visible monster this ray hits first, or
    * null. Backs auto-aim (game.ts): aiming with the cursor over a monster
@@ -236,16 +242,16 @@ export interface ThingLayer {
    * this frame can still land on exactly this instance later (a projectile's
    * flight, or a wall check that might block it first) without re-picking.
    */
-  pickMonster(raycaster: THREE.Raycaster): { id: number; x: number; y: number; z: number } | null;
+  pickMonster(raycaster: THREE.Raycaster): MonsterRef | null;
   /**
    * Living monsters within `radius` (2D — matching vanilla's own radius-attack
    * distance test, which ignores height) of (x, y). Candidates for splash
    * damage (game.ts); the caller still has to check line-of-sight itself,
    * since that needs the `World` this layer doesn't otherwise touch.
    */
-  monstersNear(x: number, y: number, radius: number): { id: number; x: number; y: number; z: number; type: number }[];
+  monstersNear(pos: Pos2, radius: number): MonsterRef[];
   /** This exact monster's live position and type, or null if the id is stale or it has since died. Lets a shot fired at a monster keep tracking it across frames. */
-  monsterById(id: number): { id: number; x: number; y: number; z: number; type: number } | null;
+  monsterById(id: number): MonsterRef | null;
   /** Count of living monsters currently alerted (chasing/attacking, or mid-reaction-delay) — for the debug HUD. */
   awakeMonsterCount(): number;
   /**
@@ -261,7 +267,7 @@ export interface ThingLayer {
    * an empty dark room and nothing else. Must be called after `update` has
    * run for the frame, so `mesh.visible` reflects this frame's fog.
    */
-  awakeMonsters(): { x: number; y: number; z: number }[];
+  awakeMonsters(): Pos3[];
   /**
    * Living monsters standing in exactly `sector` — a reference-equality check
    * against the same mutable `Sector` object `PosedThing.sector` was seeded
@@ -270,7 +276,7 @@ export interface ThingLayer {
    * callback into `SpecialsController`): a crusher/crushing floor knows only
    * which sector it's squeezing, not who's standing in it.
    */
-  monstersInSector(sector: Sector): { id: number; x: number; y: number; z: number }[];
+  monstersInSector(sector: Sector): MonsterRef[];
   /**
    * Applies `amount` damage to the monster `pickMonster`/`monstersNear`
    * returned as `id`, switching it to its death animation once health drops
@@ -313,13 +319,11 @@ export interface ThingLayer {
    * the *player* hasn't seen yet must still connect.
    */
   raycastMonster(
-    x: number,
-    y: number,
-    z: number,
+    origin: Pos3,
     angleRad: number,
     maxDist: number,
     opts?: { ignoreId?: number; includeHidden?: boolean },
-  ): { id: number; x: number; y: number; z: number; dist: number; type: number } | null;
+  ): (MonsterRef & { dist: number }) | null;
 }
 
 /**
@@ -411,8 +415,7 @@ export function buildThingSprites(
       reactionTicks: 0,
       refiring: false,
       lookTimer: 0,
-      prevX: x,
-      prevY: y,
+      prev: { x, y },
       targetId: null,
     });
   }
@@ -470,8 +473,7 @@ export function buildThingSprites(
       reactionTicks: 0,
       refiring: false,
       lookTimer: 0,
-      prevX: x,
-      prevY: y,
+      prev: { x, y },
       targetId: null,
     });
   }
@@ -483,7 +485,7 @@ export function buildThingSprites(
    * vanilla's `A_Chase` does the same via `P_LookForPlayers` once
    * `target->health <= 0`, since there is nobody else for a monster to want.
    */
-  function resolveTarget(p: PosedThing, player: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
+  function resolveTarget(p: PosedThing, player: Pos3): Pos3 {
     if (p.targetId === null) return player;
     const other = posed[p.targetId];
     if (!other || other.dead) {
@@ -501,7 +503,7 @@ export function buildThingSprites(
    * `BLOCKER_SEARCH_RADIUS` so the box test in `circleBlocked` stays short;
    * `p` itself is excluded, since a body always overlaps where it already is.
    */
-  function blockersFor(p: PosedThing, player: { x: number; y: number; z: number }): ThingBlocker[] {
+  function blockersFor(p: PosedThing, player: Pos3): ThingBlocker[] {
     const out: ThingBlocker[] = [{ x: player.x, y: player.y, radius: PLAYER_RADIUS }];
     for (const other of posed) {
       if (other === p || other.dead || !MONSTER_TYPES.has(other.type)) continue;
@@ -514,11 +516,11 @@ export function buildThingSprites(
   return {
     group,
     count: posed.length,
-    solidBodies(x: number, y: number): ThingBlocker[] {
+    solidBodies(pos: Pos2): ThingBlocker[] {
       const out: ThingBlocker[] = [];
       for (const p of posed) {
         if (p.dead || !MONSTER_TYPES.has(p.type)) continue;
-        if (Math.abs(p.x - x) > BLOCKER_SEARCH_RADIUS || Math.abs(p.y - y) > BLOCKER_SEARCH_RADIUS) continue;
+        if (Math.abs(p.x - pos.x) > BLOCKER_SEARCH_RADIUS || Math.abs(p.y - pos.y) > BLOCKER_SEARCH_RADIUS) continue;
         out.push({ x: p.x, y: p.y, radius: MONSTER_STATS[p.type]?.radius ?? MONSTER_HIT_RADIUS });
       }
       return out;
@@ -526,9 +528,9 @@ export function buildThingSprites(
     update(
       dt: number,
       viewerAngleDeg: number,
-      player: { x: number; y: number; z: number } | null,
+      player: Pos3 | null,
       fogAlphaOf?: (subsector: number) => number,
-      crossLines?: (prevX: number, prevY: number, x: number, y: number) => { x: number; y: number; angle: number } | null,
+      crossLines?: (prev: Pos2, pos: Pos2) => Placement | null,
     ): MonsterAttackEvent[] {
       const attacks: MonsterAttackEvent[] = [];
       for (const p of posed) {
@@ -547,7 +549,7 @@ export function buildThingSprites(
             p.lookTimer += dt;
             if (p.lookTimer >= LOOK_INTERVAL) {
               p.lookTimer = 0;
-              tryWake(p, world, p.sector, player.x, player.y, player.z);
+              tryWake(p, world, p.sector, player);
             }
           }
           if (p.alerted) {
@@ -557,19 +559,19 @@ export function buildThingSprites(
             const result = stepMonsterAI(p, stats, dt, world, target, blockersFor(p, player));
             // Walk triggers this monster crossed on the way (teleports,
             // and the handful of doors/lifts vanilla lets a monster open).
-            const dest = crossLines?.(p.prevX, p.prevY, p.x, p.y);
+            const dest = crossLines?.(p.prev, p);
             if (dest) {
               p.x = dest.x;
               p.y = dest.y;
-              p.angle = (dest.angle * Math.PI) / 180;
+              p.angle = dest.angle;
               p.velZ = 0;
               // Re-route from scratch: the heading it had is meaningless on
               // the far side of the map.
               p.movedir = DI_NODIR;
               p.movecount = 0;
             }
-            p.prevX = p.x;
-            p.prevY = p.y;
+            p.prev.x = p.x;
+            p.prev.y = p.y;
             p.sector = world.sectorAt(p.x, p.y);
             p.subsector = world.subsectorAt(p.x, p.y);
             if (p.sector) p.light = p.sector.light;
@@ -598,26 +600,26 @@ export function buildThingSprites(
       }
       return attacks;
     },
-    tryPickup(x: number, y: number, z: number, radius: number, consume: (type: number, dropped: boolean) => boolean): void {
+    tryPickup(pos: Pos3, radius: number, consume: (type: number, dropped: boolean) => boolean): void {
       const rSq = radius * radius;
       for (const p of posed) {
         if (p.picked) continue;
-        const dx = p.x - x;
-        const dy = p.y - y;
+        const dx = p.x - pos.x;
+        const dy = p.y - pos.y;
         if (dx * dx + dy * dy > rSq) continue;
         // Matches vanilla's PIT_CheckThing overhead/underneath gate: a thing
         // sitting on a not-yet-lowered pillar is in 2D range but out of
         // physical reach, and must stay uncollected until the pillar drops
         // (e.g. DOOM2 MAP04's blue key). Read live off the sector rather than
         // a cached height for the same reason `update` does.
-        if (Math.abs((p.sector?.floorHeight ?? 0) - z) > PLAYER_HEIGHT) continue;
+        if (Math.abs((p.sector?.floorHeight ?? 0) - pos.z) > PLAYER_HEIGHT) continue;
         if (consume(p.type, p.dropped)) {
           p.picked = true;
           p.actor.mesh.visible = false;
         }
       }
     },
-    pickMonster(raycaster: THREE.Raycaster): { id: number; x: number; y: number; z: number } | null {
+    pickMonster(raycaster: THREE.Raycaster): MonsterRef | null {
       const byMesh = new Map<THREE.Object3D, PosedThing>();
       for (const p of posed) {
         if (p.picked || p.dead || !p.actor.mesh.visible || !MONSTER_TYPES.has(p.type)) continue;
@@ -626,21 +628,21 @@ export function buildThingSprites(
       const hit = raycaster.intersectObjects([...byMesh.keys()], false)[0];
       if (!hit) return null;
       const p = byMesh.get(hit.object);
-      return p ? { id: p.id, x: p.x, y: p.y, z: p.z } : null;
+      return p ? { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type } : null;
     },
-    monstersNear(x: number, y: number, radius: number): { id: number; x: number; y: number; z: number; type: number }[] {
-      const out: { id: number; x: number; y: number; z: number; type: number }[] = [];
+    monstersNear(pos: Pos2, radius: number): MonsterRef[] {
+      const out: MonsterRef[] = [];
       const rSq = radius * radius;
       for (const p of posed) {
         if (p.dead || !MONSTER_TYPES.has(p.type)) continue;
-        const dx = p.x - x;
-        const dy = p.y - y;
+        const dx = p.x - pos.x;
+        const dy = p.y - pos.y;
         if (dx * dx + dy * dy >= rSq) continue;
         out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type });
       }
       return out;
     },
-    monsterById(id: number): { id: number; x: number; y: number; z: number; type: number } | null {
+    monsterById(id: number): MonsterRef | null {
       const p = posed[id];
       if (!p || p.dead || !MONSTER_TYPES.has(p.type)) return null;
       return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type };
@@ -652,19 +654,19 @@ export function buildThingSprites(
       }
       return n;
     },
-    awakeMonsters(): { x: number; y: number; z: number }[] {
-      const out: { x: number; y: number; z: number }[] = [];
+    awakeMonsters(): Pos3[] {
+      const out: Pos3[] = [];
       for (const p of posed) {
         if (p.dead || !MONSTER_TYPES.has(p.type) || !p.alerted || !p.actor.mesh.visible) continue;
         out.push({ x: p.x, y: p.y, z: p.z });
       }
       return out;
     },
-    monstersInSector(sector: Sector): { id: number; x: number; y: number; z: number }[] {
-      const out: { id: number; x: number; y: number; z: number }[] = [];
+    monstersInSector(sector: Sector): MonsterRef[] {
+      const out: MonsterRef[] = [];
       for (const p of posed) {
         if (p.dead || !MONSTER_TYPES.has(p.type) || p.sector !== sector) continue;
-        out.push({ id: p.id, x: p.x, y: p.y, z: p.z });
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type });
       }
       return out;
     },
@@ -702,31 +704,29 @@ export function buildThingSprites(
       if (dropType) spawnDrop(p.x, p.y, p.sector, p.facingDeg, dropType);
     },
     raycastMonster(
-      x: number,
-      y: number,
-      z: number,
+      origin: Pos3,
       angleRad: number,
       maxDist: number,
       opts?: { ignoreId?: number; includeHidden?: boolean },
-    ): { id: number; x: number; y: number; z: number; dist: number; type: number } | null {
+    ): (MonsterRef & { dist: number }) | null {
       const dx = Math.cos(angleRad);
       const dy = Math.sin(angleRad);
-      let nearest: { id: number; x: number; y: number; z: number; dist: number; type: number } | null = null;
+      let nearest: (MonsterRef & { dist: number }) | null = null;
       for (const p of posed) {
         if (p.dead || !MONSTER_TYPES.has(p.type)) continue;
         if (p.id === opts?.ignoreId) continue;
         // Fog of war is a *player*-facing conceit; a monster shooting another
         // monster in an unrevealed room must still connect.
         if (!opts?.includeHidden && !p.actor.mesh.visible) continue;
-        if (Math.abs(p.z - z) > MONSTER_HIT_HEIGHT) continue;
-        const relX = p.x - x;
-        const relY = p.y - y;
+        if (Math.abs(p.z - origin.z) > MONSTER_HIT_HEIGHT) continue;
+        const relX = p.x - origin.x;
+        const relY = p.y - origin.y;
         const t = relX * dx + relY * dy;
         if (t < 0 || t > maxDist || (nearest && t >= nearest.dist)) continue;
         const perpX = relX - dx * t;
         const perpY = relY - dy * t;
         if (perpX * perpX + perpY * perpY > MONSTER_HIT_RADIUS * MONSTER_HIT_RADIUS) continue;
-        nearest = { id: p.id, x: x + dx * t, y: y + dy * t, z: p.z, dist: t, type: p.type };
+        nearest = { id: p.id, x: origin.x + dx * t, y: origin.y + dy * t, z: p.z, dist: t, type: p.type };
       }
       return nearest;
     },

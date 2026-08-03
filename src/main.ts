@@ -2,6 +2,7 @@ import { Wad } from './wad/wad.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
 import { Menu, type Selection } from './ui/menu.ts';
 import { Game, Viewport } from './game.ts';
+import type { Pos2 } from './types.ts';
 
 /** A short label naming the WAD set, for the HUD. */
 function titleOf(iwad: WadSource, pwads: WadSource[]): string {
@@ -9,7 +10,7 @@ function titleOf(iwad: WadSource, pwads: WadSource[]): string {
 }
 
 /** `?pos=x,y` — drop the player there instead of at the map's own start. */
-function parsePos(raw: string | null): { x: number; y: number } | null {
+function parsePos(raw: string | null): Pos2 | null {
   if (!raw) return null;
   const [x, y] = raw.split(',').map(Number);
   return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;

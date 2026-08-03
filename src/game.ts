@@ -28,6 +28,7 @@ import {
 } from './game/inventory.ts';
 import { WeaponSystem, type Shot } from './game/weapons.ts';
 import { Tracer } from './render/tracer.ts';
+import type { Placement, Pos2, Pos3 } from './types.ts';
 import { DEVMODE } from './constants.ts';
 
 /** Combined radius (map units) within which an item is close enough to pick up. */
@@ -62,11 +63,8 @@ const TFOG_SPAWN_OFFSET = 20;
  * and a projectile's impact explosion below — neither is a real map `Thing`,
  * so neither goes through `ThingLayer`.
  */
-interface OneShotEffect {
+interface OneShotEffect extends Pos3 {
   actor: SpriteActor;
-  x: number;
-  y: number;
-  z: number;
   light: number;
   elapsed: number;
   lifetime: number;
@@ -318,7 +316,7 @@ export class Game {
   readonly title: string;
 
   /** `?pos=x,y` override for the player start, consumed by the first map load. */
-  private startPos: { x: number; y: number } | null;
+  private startPos: Pos2 | null;
 
   constructor(
     view: Viewport,
@@ -326,7 +324,7 @@ export class Game {
     startMap: string,
     title: string,
     skill: Skill,
-    startPos: { x: number; y: number } | null = null,
+    startPos: Pos2 | null = null,
   ) {
     this.view = view;
     this.wad = wad;
@@ -413,7 +411,7 @@ export class Game {
     // Applied before fog of war is seeded, so an explicit start position reveals
     // exactly what is visible from there and nothing from the map's real spawn.
     if (this.startPos) {
-      this.player.moveTo(this.startPos.x, this.startPos.y);
+      this.player.moveTo(this.startPos);
       this.startPos = null;
     }
     // Every level (re)load starts the camera facing the same way the player
@@ -433,21 +431,21 @@ export class Game {
       () => {
         this.pendingExit = true;
       },
-      (x, y, angle) => {
+      (dest) => {
         // Matches vanilla P_Teleport: a fog puff where the player stood, and
         // another just ahead of the landing spot along the direction it
         // faces — captured before/after teleportTo moves the player.
-        this.spawnTeleportFog(this.player.x, this.player.y, this.player.z);
-        this.player.teleportTo(x, y, angle);
-        this.spawnTeleportFog(
-          this.player.x + Math.cos(angle) * TFOG_SPAWN_OFFSET,
-          this.player.y + Math.sin(angle) * TFOG_SPAWN_OFFSET,
-          this.player.z,
-        );
+        this.spawnTeleportFog(this.player);
+        this.player.teleportTo(dest);
+        this.spawnTeleportFog({
+          x: this.player.x + Math.cos(dest.angle) * TFOG_SPAWN_OFFSET,
+          y: this.player.y + Math.sin(dest.angle) * TFOG_SPAWN_OFFSET,
+          z: this.player.z,
+        });
         // Snap the camera to face the same way the player now does, same as
         // the initial spawn — a teleport should reorient the view instantly,
         // not leave it aimed at wherever the old spot happened to be.
-        this.view.camera.yawDeg = (angle * 180) / Math.PI - 90;
+        this.view.camera.yawDeg = (dest.angle * 180) / Math.PI - 90;
       },
       (sectorIndex) => this.applyCrushDamage(sectorIndex),
       this.player.x,
@@ -494,12 +492,12 @@ export class Game {
   }
 
   /** Spawns a one-shot sprite animation (teleport fog, impact explosion) and returns it, or null if the sprite has no art. */
-  private spawnEffect(sprite: string, frames: string[], frameSeconds: number, x: number, y: number, z: number): OneShotEffect | null {
+  private spawnEffect(sprite: string, frames: string[], frameSeconds: number, at: Pos3): OneShotEffect | null {
     const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, sprite, frames, frameSeconds);
-    const light = this.world.sectorAt(x, y)?.light ?? 128;
-    if (!actor.setPose(x, y, z, 0, light)) return null;
+    const light = this.world.sectorAt(at.x, at.y)?.light ?? 128;
+    if (!actor.setPose(at.x, at.y, at.z, 0, light)) return null;
     this.scene.add(actor.mesh);
-    return { actor, x, y, z, light, elapsed: 0, lifetime: frames.length * frameSeconds };
+    return { actor, x: at.x, y: at.y, z: at.z, light, elapsed: 0, lifetime: frames.length * frameSeconds };
   }
 
   /** Advances a one-shot effect list in place and drops the ones that finished, matching every other list's remaining-array pattern here. */
@@ -518,8 +516,8 @@ export class Game {
     return remaining;
   }
 
-  private spawnTeleportFog(x: number, y: number, z: number): void {
-    const effect = this.spawnEffect('TFOG', TFOG_FRAMES, TFOG_FRAME_SECONDS, x, y, z);
+  private spawnTeleportFog(at: Pos3): void {
+    const effect = this.spawnEffect('TFOG', TFOG_FRAMES, TFOG_FRAME_SECONDS, at);
     if (effect) this.teleportFogs.push(effect);
   }
 
@@ -542,15 +540,9 @@ export class Game {
    * fired — monster positions never change mid-flight, so resolving hit/miss
    * now and only *applying* it later is safe.
    */
-  private spawnShot(
-    shot: Shot,
-    startZ: number,
-    target: { x: number; y: number; z: number } | null,
-    targetId: number | null,
-  ): void {
-    const originX = this.player.x;
-    const originY = this.player.y;
-    const path = shotPath(this.world, originX, originY, startZ, shot.angleRad, target);
+  private spawnShot(shot: Shot, startZ: number, target: Pos3 | null, targetId: number | null): void {
+    const origin: Pos3 = { x: this.player.x, y: this.player.y, z: startZ };
+    const path = shotPath(this.world, origin, shot.angleRad, target);
 
     let hitMonsterId: number | null = null;
     let endX = path.x;
@@ -561,7 +553,7 @@ export class Game {
       // A locked shot only actually connects if nothing stopped it short of
       // the target — shotPath returns wherever it got blocked, so comparing
       // that distance against the target's own is how "did this land" is known.
-      const wantDist = Math.hypot(target.x - originX, target.y - originY);
+      const wantDist = Math.hypot(target.x - origin.x, target.y - origin.y);
       if (path.dist >= wantDist - 1) hitMonsterId = targetId;
     } else {
       // No locked target: still test the straight path itself against every
@@ -570,7 +562,7 @@ export class Game {
       // player and a wall they're shooting at shouldn't be invisible to the
       // shot just because it wasn't clicked. Only ever shortens the shot
       // (never past `path.dist`, the wall/step it would have hit anyway).
-      const monsterHit = this.things?.raycastMonster(originX, originY, startZ, shot.angleRad, path.dist) ?? null;
+      const monsterHit = this.things?.raycastMonster(origin, shot.angleRad, path.dist) ?? null;
       if (monsterHit) {
         hitMonsterId = monsterHit.id;
         endX = monsterHit.x;
@@ -589,20 +581,20 @@ export class Game {
     if (shot.kind === 'hitscan') {
       if (hitMonsterId !== null) this.things?.damage(hitMonsterId, shot.damage);
       else this.specials?.triggerShot(path.lineIndex, this.inventory.keys);
-      const tracer = new Tracer(originX, originY, startZ, endX, endY, path.z, TRACER_COLOR);
+      const tracer = new Tracer(origin, { x: endX, y: endY, z: path.z }, TRACER_COLOR);
       this.scene.add(tracer.line);
       this.tracers.push(tracer);
       return;
     }
 
     const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, shot.sprite, PROJECTILE_FRAMES[shot.sprite]);
-    const light = this.world.sectorAt(originX, originY)?.light ?? 128;
-    if (!actor.setPose(originX, originY, startZ, (shot.angleRad * 180) / Math.PI, light)) return;
+    const light = this.world.sectorAt(origin.x, origin.y)?.light ?? 128;
+    if (!actor.setPose(origin.x, origin.y, startZ, (shot.angleRad * 180) / Math.PI, light)) return;
     this.scene.add(actor.mesh);
     this.projectiles.push({
       actor,
-      originX,
-      originY,
+      originX: origin.x,
+      originY: origin.y,
       startZ,
       endZ: path.z,
       angleRad: shot.angleRad,
@@ -649,7 +641,7 @@ export class Game {
     const target = victim
       ? { x: victim.x, y: victim.y, z: victim.z + MONSTER_FIRE_HEIGHT }
       : { x: this.player.x, y: this.player.y, z: this.player.z + AIM_HEIGHT_OFFSET };
-    const path = shotPath(this.world, atk.x, atk.y, atk.z, atk.projectile.angleRad, target, false);
+    const path = shotPath(this.world, atk, atk.projectile.angleRad, target, false);
     const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, atk.projectile.sprite, PROJECTILE_FRAMES[atk.projectile.sprite]);
     const light = this.world.sectorAt(atk.x, atk.y)?.light ?? 128;
     if (!actor.setPose(atk.x, atk.y, atk.z, (atk.projectile.angleRad * 180) / Math.PI, light)) return;
@@ -709,13 +701,13 @@ export class Game {
     const aim = victim
       ? { x: victim.x, y: victim.y, z: victim.z + MONSTER_FIRE_HEIGHT }
       : { x: this.player.x, y: this.player.y, z: this.player.z + AIM_HEIGHT_OFFSET };
-    const path = shotPath(this.world, atk.x, atk.y, atk.z, atk.angleRad, aim, false);
+    const path = shotPath(this.world, atk, atk.angleRad, aim, false);
 
     // Whatever the shot was aimed at, the trace damages the first body it
     // reaches — vanilla's PTR_ShootTraverse has no notion of an intended
     // target and no species check at all, which is why one zombieman firing
     // past another starts a fight.
-    const blocker = this.things?.raycastMonster(atk.x, atk.y, atk.z, atk.angleRad, path.dist, {
+    const blocker = this.things?.raycastMonster(atk, atk.angleRad, path.dist, {
       ignoreId: atk.sourceId,
       includeHidden: true,
     });
@@ -752,7 +744,7 @@ export class Game {
       // can only actually do anything for a 46 line, never 24/47.
       this.specials?.triggerShot(path.lineIndex, this.inventory.keys, true);
     }
-    const tracer = new Tracer(atk.x, atk.y, atk.z, endX, endY, endZ, MONSTER_TRACER_COLOR);
+    const tracer = new Tracer(atk, { x: endX, y: endY, z: endZ }, MONSTER_TRACER_COLOR);
     this.scene.add(tracer.line);
     this.tracers.push(tracer);
   }
@@ -765,12 +757,12 @@ export class Game {
    * each other all day without ever starting a fight amongst themselves, while
    * one imp fireball landing on a demon absolutely does.
    */
-  private monsterStruckBy(p: Projectile, x: number, y: number, z: number): number | null {
+  private monsterStruckBy(p: Projectile, at: Pos3): number | null {
     if (p.sourceId === null) return null;
-    for (const m of this.things?.monstersNear(x, y, MONSTER_PROJECTILE_HIT_RADIUS) ?? []) {
+    for (const m of this.things?.monstersNear(at, MONSTER_PROJECTILE_HIT_RADIUS) ?? []) {
       if (m.id === p.sourceId) continue;
       if (sameSpecies(p.sourceType, m.type)) continue;
-      if (Math.abs(m.z - z) > MONSTER_PROJECTILE_HIT_HEIGHT) continue;
+      if (Math.abs(m.z - at.z) > MONSTER_PROJECTILE_HIT_HEIGHT) continue;
       return m.id;
     }
     return null;
@@ -783,16 +775,15 @@ export class Game {
    * puff at both ends the player's own does; vanilla spawns it for any thing
    * that teleports, not just the player.
    */
-  private monsterCrossedLines(prevX: number, prevY: number, x: number, y: number): { x: number; y: number; angle: number } | null {
-    const dest = this.specials?.crossMonster(prevX, prevY, x, y, this.inventory.keys);
+  private monsterCrossedLines(prev: Pos2, pos: Pos2): Placement | null {
+    const dest = this.specials?.crossMonster(prev, pos, this.inventory.keys);
     if (!dest) return null;
-    const destRad = (dest.angle * Math.PI) / 180;
-    this.spawnTeleportFog(x, y, this.world.groundFloor(x, y, 0));
-    this.spawnTeleportFog(
-      dest.x + Math.cos(destRad) * TFOG_SPAWN_OFFSET,
-      dest.y + Math.sin(destRad) * TFOG_SPAWN_OFFSET,
-      this.world.groundFloor(dest.x, dest.y, 0),
-    );
+    this.spawnTeleportFog({ x: pos.x, y: pos.y, z: this.world.groundFloor(pos.x, pos.y, 0) });
+    this.spawnTeleportFog({
+      x: dest.x + Math.cos(dest.angle) * TFOG_SPAWN_OFFSET,
+      y: dest.y + Math.sin(dest.angle) * TFOG_SPAWN_OFFSET,
+      z: this.world.groundFloor(dest.x, dest.y, 0),
+    });
     return dest;
   }
 
@@ -850,10 +841,12 @@ export class Game {
     for (const p of this.projectiles) {
       p.traveled += p.speed * dt;
       const clamped = Math.min(p.traveled, p.maxDist);
-      const x = p.originX + Math.cos(p.angleRad) * clamped;
-      const y = p.originY + Math.sin(p.angleRad) * clamped;
       const frac = p.maxDist > 0 ? clamped / p.maxDist : 1;
-      const z = p.startZ + (p.endZ - p.startZ) * frac;
+      const at: Pos3 = {
+        x: p.originX + Math.cos(p.angleRad) * clamped,
+        y: p.originY + Math.sin(p.angleRad) * clamped,
+        z: p.startZ + (p.endZ - p.startZ) * frac,
+      };
 
       // A monster's shot re-tests what it has reached every frame (see
       // Projectile.sourceId); a player's already knows.
@@ -861,9 +854,9 @@ export class Game {
       const reachedPlayer =
         fromMonster &&
         !this.playerDead &&
-        Math.hypot(this.player.x - x, this.player.y - y) <= MONSTER_PROJECTILE_HIT_RADIUS &&
-        Math.abs(this.player.z - z) <= MONSTER_PROJECTILE_HIT_HEIGHT;
-      const struck = fromMonster && !reachedPlayer ? this.monsterStruckBy(p, x, y, z) : null;
+        Math.hypot(this.player.x - at.x, this.player.y - at.y) <= MONSTER_PROJECTILE_HIT_RADIUS &&
+        Math.abs(this.player.z - at.z) <= MONSTER_PROJECTILE_HIT_HEIGHT;
+      const struck = fromMonster && !reachedPlayer ? this.monsterStruckBy(p, at) : null;
 
       if (reachedPlayer || struck || p.traveled >= p.maxDist) {
         this.scene.remove(p.actor.mesh);
@@ -880,16 +873,16 @@ export class Game {
           this.specials?.triggerShot(p.lineIndex, this.inventory.keys);
         }
         if (p.splash) {
-          this.applyRadiusDamage(x, y, z, p.splash.radius, p.splash.damage, p.splash.hitsPlayer, p.splash.tracers);
+          this.applyRadiusDamage(at, p.splash.radius, p.splash.damage, p.splash.hitsPlayer, p.splash.tracers);
         }
         const impact = IMPACT_EFFECTS[p.sprite];
         if (impact) {
-          const effect = this.spawnEffect(impact.sprite, impact.frames, IMPACT_FRAME_SECONDS, x, y, z);
+          const effect = this.spawnEffect(impact.sprite, impact.frames, IMPACT_FRAME_SECONDS, at);
           if (effect) this.impacts.push(effect);
         }
         continue;
       }
-      p.actor.setPose(x, y, z, (p.angleRad * 180) / Math.PI, p.light, dt, true, viewerAngleDeg);
+      p.actor.setPose(at.x, at.y, at.z, (p.angleRad * 180) / Math.PI, p.light, dt, true, viewerAngleDeg);
       remaining.push(p);
     }
     this.projectiles = remaining;
@@ -910,34 +903,26 @@ export class Game {
    * back. 2D distance only, no height check — matching vanilla's own
    * `P_RadiusAttack`, which ignores z entirely and relies on line-of-sight
    * alone to decide whether a floor above/below the blast is protected;
-   * `z` is only carried along for `tracers`' visuals, never the falloff math.
+   * `at.z` is only carried along for `tracers`' visuals, never the falloff math.
    * `tracers`, when set, draws a `BFG_TRACER_COLOR` line from the impact to
    * every monster the blast actually damaged — see `WeaponDef.splash`'s doc
    * on why only the BFG sets it.
    */
-  private applyRadiusDamage(
-    x: number,
-    y: number,
-    z: number,
-    radius: number,
-    maxDamage: number,
-    hitsPlayer: boolean,
-    tracers: boolean,
-  ): void {
-    for (const m of this.things?.monstersNear(x, y, radius) ?? []) {
-      const dist = Math.hypot(m.x - x, m.y - y);
-      if (dist >= radius || !hasLineOfSight(this.world, x, y, z, m.x, m.y, m.z)) continue;
+  private applyRadiusDamage(at: Pos3, radius: number, maxDamage: number, hitsPlayer: boolean, tracers: boolean): void {
+    for (const m of this.things?.monstersNear(at, radius) ?? []) {
+      const dist = Math.hypot(m.x - at.x, m.y - at.y);
+      if (dist >= radius || !hasLineOfSight(this.world, at, m)) continue;
       this.things?.damage(m.id, maxDamage * (1 - dist / radius));
       if (tracers) {
-        const tracer = new Tracer(x, y, z, m.x, m.y, m.z, BFG_TRACER_COLOR);
+        const tracer = new Tracer(at, m, BFG_TRACER_COLOR);
         this.scene.add(tracer.line);
         this.tracers.push(tracer);
       }
     }
 
     if (!hitsPlayer) return;
-    const pdist = Math.hypot(this.player.x - x, this.player.y - y);
-    if (pdist < radius && hasLineOfSight(this.world, x, y, z, this.player.x, this.player.y, this.player.z)) {
+    const pdist = Math.hypot(this.player.x - at.x, this.player.y - at.y);
+    if (pdist < radius && hasLineOfSight(this.world, at, this.player)) {
       this.damagePlayer(maxDamage * (1 - pdist / radius));
     }
   }
@@ -1051,7 +1036,7 @@ export class Game {
     // finishes its flight and can still deal splash damage (including, in a
     // grim-but-correct edge case, to the player's own corpse — damagePlayer
     // is a no-op once already dead, so this can't double-kill).
-    let aim: { x: number; y: number } | null = null;
+    let aim: Pos2 | null = null;
     if (!this.playerDead) {
       // The cursor hovering over a monster locks aim onto its actual
       // position — and height — instead of wherever the mouse's flat
@@ -1065,7 +1050,7 @@ export class Game {
       const monster = this.things?.pickMonster(camera.raycasterFor(input.pointer.x, input.pointer.y)) ?? null;
       aim = monster ?? camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
       // Monsters are solid: the player walks around them, not through them.
-      this.player.update(dt, input, aim, camera.viewerAngleDeg + 180, this.things?.solidBodies(this.player.x, this.player.y));
+      this.player.update(dt, input, aim, camera.viewerAngleDeg + 180, this.things?.solidBodies(this.player));
 
       // A shot always *starts* at the player's own fire height — never the
       // target's, or a tracer/projectile would visibly begin mid-air instead
@@ -1090,9 +1075,7 @@ export class Game {
         this.spawnShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
       }
 
-      this.things?.tryPickup(this.player.x, this.player.y, this.player.z, PICKUP_RANGE, (type, dropped) =>
-        applyPickup(this.inventory, type, dropped),
-      );
+      this.things?.tryPickup(this.player, PICKUP_RANGE, (type, dropped) => applyPickup(this.inventory, type, dropped));
       this.updateDamageFloor(dt);
     } else if (input.pressed('KeyR')) {
       this.restart();
@@ -1100,7 +1083,7 @@ export class Game {
       requestAnimationFrame(this.frame);
       return;
     }
-    camera.update(dt, this.player.x, this.player.y, this.player.eyeZ, aim);
+    camera.update(dt, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, aim);
     this.hud.update(this.inventory);
 
     this.fogOfWar.update(dt, this.player.x, this.player.y);
@@ -1115,9 +1098,9 @@ export class Game {
     const monsterAttacks = this.things?.update(
       dt,
       camera.viewerAngleDeg,
-      this.playerDead ? null : { x: this.player.x, y: this.player.y, z: this.player.z },
+      this.playerDead ? null : this.player,
       fogAlphaOf,
-      (px, py, x, y) => this.monsterCrossedLines(px, py, x, y),
+      (prev, pos) => this.monsterCrossedLines(prev, pos),
     ) ?? [];
     for (const atk of monsterAttacks) {
       // A monster with a real flying projectile (game/monsters.ts's

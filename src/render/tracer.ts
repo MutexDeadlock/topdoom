@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { doomToWorld } from './mapmesh.ts';
+import type { Pos3 } from '../types.ts';
 
 /** Total lifetime of a hitscan tracer, in seconds. */
 export const TRACER_LIFETIME = 0.15;
@@ -18,9 +19,9 @@ export class Tracer {
   readonly line: THREE.Line;
   private elapsed = 0;
 
-  constructor(x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, color: number) {
-    const a = doomToWorld(x1, y1, z1);
-    const b = doomToWorld(x2, y2, z2);
+  constructor(from: Pos3, to: Pos3, color: number) {
+    const a = doomToWorld(from.x, from.y, from.z);
+    const b = doomToWorld(to.x, to.y, to.z);
     const geometry = new THREE.BufferGeometry().setFromPoints([a, b]);
     const material = new THREE.LineBasicMaterial({ color, fog: true });
     this.line = new THREE.Line(geometry, material);

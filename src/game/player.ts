@@ -1,5 +1,6 @@
 import { slideMove, type ThingBlocker, type World } from './world.ts';
 import type { Input } from './input.ts';
+import type { Placement, Pos2, Pos3 } from '../types.ts';
 
 /** Vanilla DOOM values, in map units. */
 export const PLAYER_RADIUS = 16;
@@ -18,7 +19,7 @@ const EYE_HEIGHT = 41;
  */
 export const GRAVITY = 1600;
 
-export class Player {
+export class Player implements Pos3 {
   x: number;
   y: number;
   /** Feet height. */
@@ -53,19 +54,19 @@ export class Player {
    * check something like "what does fog of war reveal from in front of MAP01's
    * big window", which is otherwise several rooms and a locked door away.
    */
-  moveTo(x: number, y: number): void {
-    this.x = x;
-    this.y = y;
+  moveTo(pos: Pos2): void {
+    this.x = pos.x;
+    this.y = pos.y;
     this.velX = 0;
     this.velY = 0;
     this.velZ = 0;
-    this.z = this.world.groundFloor(x, y, PLAYER_RADIUS);
+    this.z = this.world.groundFloor(pos.x, pos.y, PLAYER_RADIUS);
   }
 
-  /** Teleporter landing: drops the player at the destination facing `angle`, matching vanilla's own view-angle snap on arrival. */
-  teleportTo(x: number, y: number, angle: number): void {
-    this.moveTo(x, y);
-    this.angle = angle;
+  /** Teleporter landing: drops the player at the destination facing `dest.angle`, matching vanilla's own view-angle snap on arrival. */
+  teleportTo(dest: Placement): void {
+    this.moveTo(dest);
+    this.angle = dest.angle;
   }
 
   /**
@@ -85,7 +86,7 @@ export class Player {
   update(
     dt: number,
     input: Input,
-    aim: { x: number; y: number } | null,
+    aim: Pos2 | null,
     forwardDeg: number,
     blockers?: readonly ThingBlocker[],
   ): void {
@@ -117,7 +118,7 @@ export class Player {
     this.velY += (targetY - this.velY) * k;
 
     if (Math.abs(this.velX) > 0.01 || Math.abs(this.velY) > 0.01) {
-      const moved = slideMove(this.world, this.x, this.y, this.velX * dt, this.velY * dt, PLAYER_RADIUS, this.z, false, false, blockers);
+      const moved = slideMove(this.world, this, this.velX * dt, this.velY * dt, PLAYER_RADIUS, false, false, blockers);
       // Kill the velocity component that was absorbed by a wall.
       if (moved.x === this.x) this.velX = 0;
       if (moved.y === this.y) this.velY = 0;

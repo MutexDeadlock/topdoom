@@ -2,6 +2,7 @@ import { LF, NO_SIDE, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } fro
 import { sectorOfSubSector } from '../render/bsp.ts';
 import { distSqToSegment, segmentIntersect } from '../util/geom.ts';
 import { PLAYER_HEIGHT } from './player.ts';
+import type { Placement, Pos2, Pos3 } from '../types.ts';
 
 /** Vanilla DOOM value, in map units. */
 export const MAX_STEP_UP = 24;
@@ -260,7 +261,7 @@ export class World {
   }
 
   /** Player 1 start (thing type 1); falls back to the map centre. */
-  playerStart(): { x: number; y: number; angle: number } {
+  playerStart(): Placement {
     const t = this.thingsOfType(1)[0];
     if (t) return { x: t.x, y: t.y, angle: (t.angle * Math.PI) / 180 };
     const { minX, minY, maxX, maxY } = this.map.bounds;
@@ -387,27 +388,27 @@ const SIGHT_HEIGHT_SAMPLE_STEP = 64;
  * file already is) hit the import cycle's initialization order and threw
  * "Cannot access 'PLAYER_HEIGHT' before initialization" on page load.
  */
-export function hasLineOfSight(world: World, x1: number, y1: number, z1: number, x2: number, y2: number, z2: number): boolean {
-  const dist = Math.hypot(x2 - x1, y2 - y1);
-  for (const i of world.linesNear((x1 + x2) / 2, (y1 + y2) / 2, dist / 2 + 1)) {
+export function hasLineOfSight(world: World, from: Pos3, to: Pos3): boolean {
+  const dist = Math.hypot(to.x - from.x, to.y - from.y);
+  for (const i of world.linesNear((from.x + to.x) / 2, (from.y + to.y) / 2, dist / 2 + 1)) {
     if (!world.blocksSight(i)) continue;
     const line = world.map.linedefs[i];
     const a = world.map.vertexes[line.v1];
     const b = world.map.vertexes[line.v2];
     if (!a || !b) continue;
-    const hit = segmentIntersect(x1, y1, x2, y2, a.x, a.y, b.x, b.y);
+    const hit = segmentIntersect(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
     if (hit && hit.t * dist > SELF_HIT_MARGIN) return false;
   }
   if (dist === 0) return true;
 
-  const eyeZ = z1 + PLAYER_HEIGHT * 0.75;
-  let topSlope = (z2 + PLAYER_HEIGHT - eyeZ) / dist;
-  let bottomSlope = (z2 - eyeZ) / dist;
+  const eyeZ = from.z + PLAYER_HEIGHT * 0.75;
+  let topSlope = (to.z + PLAYER_HEIGHT - eyeZ) / dist;
+  let bottomSlope = (to.z - eyeZ) / dist;
 
   const steps = Math.max(1, Math.ceil(dist / SIGHT_HEIGHT_SAMPLE_STEP));
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
-    const sector = world.sectorAt(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t);
+    const sector = world.sectorAt(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
     if (!sector) continue;
     const sampleDist = dist * t;
     const floorSlope = (sector.floorHeight - eyeZ) / sampleDist;
@@ -562,9 +563,7 @@ function crossesLine(x: number, y: number, radius: number, ax: number, ay: numbe
  * behavior. Adding a height check here would be a quiet deviation, not a fix;
  * mappers routinely (if accidentally) rely on the vanilla rule.
  */
-export interface ThingBlocker {
-  x: number;
-  y: number;
+export interface ThingBlocker extends Pos2 {
   radius: number;
 }
 
@@ -636,16 +635,15 @@ export function circleBlocked(
  */
 export function slideMove(
   world: World,
-  x: number,
-  y: number,
+  from: Pos3,
   dx: number,
   dy: number,
   radius: number,
-  z: number,
   forMonster = false,
   avoidDropoff = false,
   blockers?: readonly ThingBlocker[],
-): { x: number; y: number } {
+): Pos2 {
+  const { x, y, z } = from;
   let nx = x;
   let ny = y;
   if (dx !== 0 && !circleBlocked(world, x + dx, y, radius, z, forMonster, avoidDropoff, blockers)) nx = x + dx;
@@ -725,30 +723,27 @@ function blocksShot(world: World, lineIndex: number, z: number, lockedOn: boolea
 }
 
 /** Where a shot actually ends up: the point it stopped at, the height it was at there, and how far that was. */
-export interface ShotPath {
-  x: number;
-  y: number;
-  z: number;
+export interface ShotPath extends Pos3 {
   dist: number;
   /** The line that actually stopped it short (a wall, a shut door), or null if it reached `target`/`WEAPON_RANGE` unobstructed — the shoot-triggered specials (`game/specials.ts: triggerShot`) key off this. */
   lineIndex: number | null;
 }
 
 /**
- * Traces a shot fired from (x, y) at height `z` along `angleRad` and returns
+ * Traces a shot fired from `origin` along `angleRad` and returns
  * where it ends up, stopped at the nearest line that blocks it
  * (`blocksShot`, tested at that line's own height along the shot's slope).
  *
- * With no `target` this is a free shot: flat at `z`, out to `WEAPON_RANGE`,
+ * With no `target` this is a free shot: flat at `origin.z`, out to `WEAPON_RANGE`,
  * stopped by walls and by floor/ceiling steps it can't clear.
  *
  * With a `target` — auto-aim's locked-on monster (game.ts), or a monster's
  * own fired shot aimed at whatever it's hunting, player or another monster
  * (game.ts's `spawnMonsterProjectile`/`resolveMonsterHitscan`) — it instead
- * runs from `z` to the target's own height over exactly the
+ * runs from `origin.z` to the target's own height over exactly the
  * distance to it, so it angles toward a target standing higher or lower
  * rather than flying flat past it, and stops *at* the target instead of
- * continuing to whatever is behind. The origin height stays `z`, the
+ * continuing to whatever is behind. The origin height stays `origin.z`, the
  * shooter's own, so a rendered tracer/projectile always starts at the
  * shooter rather than mid-air.
  *
@@ -766,13 +761,12 @@ export interface ShotPath {
  */
 export function shotPath(
   world: World,
-  x: number,
-  y: number,
-  z: number,
+  origin: Pos3,
   angleRad: number,
-  target: { x: number; y: number; z: number } | null = null,
+  target: Pos3 | null = null,
   skipHeightTest: boolean = target !== null,
 ): ShotPath {
+  const { x, y, z } = origin;
   const dx = Math.cos(angleRad);
   const dy = Math.sin(angleRad);
   const maxRange = target ? Math.hypot(target.x - x, target.y - y) : WEAPON_RANGE;

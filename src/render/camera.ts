@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Pos2, Pos3 } from '../types.ts';
 
 export interface TopDownCameraOptions {
   /** Tilt away from straight down, in degrees. Small values stay top-down. */
@@ -83,17 +84,16 @@ export class TopDownCamera {
   }
 
   /**
-   * @param px,py  player position in DOOM coordinates
-   * @param pz     player eye height
-   * @param aim    world-space point the player is aiming at, if any
+   * @param pos  the followed point in DOOM coordinates (the player's feet)
+   * @param aim  world-space point the player is aiming at, if any
    */
-  update(dt: number, px: number, py: number, pz: number, aim: { x: number; y: number } | null): void {
-    this.target.set(px, pz, -py);
+  update(dt: number, pos: Pos3, aim: Pos2 | null): void {
+    this.target.set(pos.x, pos.z, -pos.y);
 
     if (aim && this.aimLead > 0) {
       // Nudge the focus towards the cursor, capped so the player stays on screen.
-      const dx = aim.x - px;
-      const dy = aim.y - py;
+      const dx = aim.x - pos.x;
+      const dy = aim.y - pos.y;
       const dist = Math.hypot(dx, dy);
       const maxLead = 220;
       const scale = dist > 0 ? (Math.min(dist * this.aimLead, maxLead) / dist) : 0;
@@ -124,7 +124,7 @@ export class TopDownCamera {
   }
 
   /** Where the pointer ray meets the horizontal plane at height `planeY`. */
-  pointerToPlane(ndcX: number, ndcY: number, planeY: number): { x: number; y: number } | null {
+  pointerToPlane(ndcX: number, ndcY: number, planeY: number): Pos2 | null {
     const ray = this.raycasterFor(ndcX, ndcY);
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY);
     const hit = new THREE.Vector3();

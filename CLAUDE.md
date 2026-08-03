@@ -81,6 +81,7 @@ src/game/      spatial queries, collision, player controller, input, thing→spr
 src/ui/        start menu, HUD
 src/util/      small pure helpers shared across layers (2D geometry, damped-lerp smoothing)
 src/constants.ts   Genuinely cross-cutting values only (VERSION, DEVMODE) — see below
+src/types.ts       Structural position types shared across layers (Pos2/Pos3/Placement) — see below
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
 scripts/       headless WAD inspection (node scripts/inspect-wad.ts)
 ```
@@ -1409,6 +1410,44 @@ Menu semantics worth knowing before touching `menu.ts`:
 
 `VERSION` (`src/constants.ts`) is shown bottom-right on the menu, prefixed with `v`
 (`ui/menu.ts`); a static credit sits bottom-left in `index.html`/`menu.css`, next to it.
+
+### Shared position types (`src/types.ts`)
+
+`Pos2` (`{x, y}`), `Pos3` (`+z`) and `Placement` (`{x, y, angle}`) replace the inline
+`{ x: number; y: number; z: number }` that used to be spelled out in a dozen signatures each,
+and the loose scalar parameter runs (`x, y, z, …`) that went with them. Always **DOOM map
+space** (x east, y north, z up = feet height), never three.js space — `mapmesh.ts:
+doomToWorld` is the one place the two meet. Nothing here is a direction or velocity: those
+stay separate `velX`/`velY`/`velZ` fields, and headings are plain `angle` numbers.
+
+They're **structural**, and that's the whole reason taking one as a parameter is safe even in
+per-frame code: `Player` (which now `implements Pos3`), `PosedThing`, `MonsterBody` and the
+WAD's own `Thing` already carry `x`/`y`(/`z`), so a caller passes the object it already has
+with **no conversion and no allocation** — `things.update(…, this.player, …)` and
+`solidBodies(this.player)` are strictly cheaper than the per-frame `{x, y, z}` literals they
+replaced. `MonsterRef` (`game/things.ts`, `Pos3 + id + type`) is the same idea one layer up:
+every `ThingLayer` monster lookup (`pickMonster`, `monstersNear`, `monsterById`,
+`monstersInSector`, `raycastMonster`) hands back that one shape.
+
+**Deliberately *not* applied to the tight scalar loops**: `util/geom.ts`'s primitives, and
+`World`'s point queries (`linesNear`, `subsectorAt`, `sectorAt`, `floorAt`, `groundFloor`,
+`circleBlocked`). Their callers compute loose scalars on the fly — `circleBlocked(world, x +
+dx, y, …)` inside `slideMove`, a fog-of-war sample sweeping a polygon's edges — so a
+`Pos2` parameter there would force a fresh object per call in exactly the code that runs
+thousands of times a frame. The rule is: take a `Pos2`/`Pos3` where callers already hold a
+point object, keep scalars where they're computing coordinates inline. `slideMove` itself sits
+on the right side of that line (one caller, `Player.update`, which passes `this`) and
+destructures `from` once at the top, so nothing downstream changed.
+
+`Placement.angle` is **radians**, matching `Player.angle`/`MonsterBody.angle` rather than the
+WAD's own degrees — both producers (`World.playerStart`,
+`SpecialsController.findTeleportDestination`) already converted on the way out. Naming the
+type is what surfaced a real shipped bug: two consumers of the previously-untyped
+`{x, y, angle}` (`game.ts: monsterCrossedLines`, `things.ts`'s monster-teleport branch)
+converted a *second* time on the way back in, so a monster that teleported through a walk
+trigger came out facing an angle scaled by π/180 and its destination `TFOG` puff was offset
+along that wrong heading. The player's own teleport path (`onTeleport` → `Player.teleportTo`)
+never had the bug, which is why it went unnoticed.
 
 ### Dev mode (`src/constants.ts`, `src/game.ts`)
 

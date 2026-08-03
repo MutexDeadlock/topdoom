@@ -6,6 +6,7 @@ import { pointNearConvexPolygon, segmentIntersect } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
 import { PLAYER_RADIUS } from '../game/player.ts';
 import type { Opening } from '../game/world.ts';
+import type { Pos3 } from '../types.ts';
 import { SCROLL_LINE_SPECIAL, SCROLL_SPEED } from '../wad/specials.ts';
 
 /**
@@ -20,11 +21,7 @@ const FADE_SPEED = 10;
 const SNAP_EPS = 0.004;
 
 /** A point occlusion is tested against — the player, or an awake monster (see `update`'s doc). */
-export interface FadeTarget {
-  x: number;
-  y: number;
-  z: number;
-}
+export type FadeTarget = Pos3;
 
 /**
  * Fades the specific wall quad(s) currently between the camera and the

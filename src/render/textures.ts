@@ -3,6 +3,12 @@ import type { Bitmap, GraphicsBank } from '../wad/graphics.ts';
 
 export type SurfaceKind = 'wall' | 'flat';
 
+/** A texture's pixel dimensions, as `MaterialBank.size` reports them. */
+export interface Size {
+  w: number;
+  h: number;
+}
+
 /**
  * Turns WAD bitmaps into three.js materials and caches them, so every wall
  * texture and flat exists exactly once on the GPU.
@@ -106,7 +112,7 @@ export class MaterialBank {
   }
 
   /** Pixel size of a texture; needed to convert world units into UVs. */
-  size(kind: SurfaceKind, name: string): { w: number; h: number } | null {
+  size(kind: SurfaceKind, name: string): Size | null {
     const bmp = kind === 'flat' ? this.gfx.flat(name) : this.gfx.texture(name);
     return bmp ? { w: bmp.width, h: bmp.height } : null;
   }

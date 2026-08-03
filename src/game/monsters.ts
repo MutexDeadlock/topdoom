@@ -2,6 +2,7 @@ import type { Sector } from '../wad/map.ts';
 import { circleBlocked, hasLineOfSight, WEAPON_RANGE, type ThingBlocker, type World } from './world.ts';
 import { GRAVITY } from './player.ts';
 import { rollDamage } from './weapons.ts';
+import type { Pos3 } from '../types.ts';
 
 /**
  * The mutable chase/attack state `stepMonsterAI` reads and writes, kept alive
@@ -15,11 +16,7 @@ import { rollDamage } from './weapons.ts';
  * throttled to roughly vanilla's own "look" cadence rather than every frame;
  * see that file's `LOOK_INTERVAL`.
  */
-export interface MonsterBody {
-  x: number;
-  y: number;
-  /** Feet height. */
-  z: number;
+export interface MonsterBody extends Pos3 {
   velZ: number;
   /** Facing/movement direction, radians — same convention as `Player.angle`. */
   angle: number;
@@ -581,10 +578,7 @@ export function canSpotPlayer(facingDeg: number, monsterX: number, monsterY: num
 }
 
 /** The subset of `PosedThing` (`game/things.ts`) `tryWake` needs — position, facing, its ambush flag, and the two fields it mutates on success. */
-export interface WakeCheckBody {
-  x: number;
-  y: number;
-  z: number;
+export interface WakeCheckBody extends Pos3 {
   facingDeg: number;
   ambush: boolean;
   alerted: boolean;
@@ -608,20 +602,12 @@ export interface WakeCheckBody {
  * `stepMonsterAI`. Returns whether it woke, in case the caller wants to react
  * to that moment itself.
  */
-export function tryWake(
-  body: WakeCheckBody,
-  world: World,
-  sector: Sector | undefined,
-  playerX: number,
-  playerY: number,
-  playerZ: number,
-): boolean {
+export function tryWake(body: WakeCheckBody, world: World, sector: Sector | undefined, player: Pos3): boolean {
   const heardIt = !!sector && world.isSoundAlerted(sector);
-  const seesDespiteDeaf = body.ambush && heardIt && hasLineOfSight(world, body.x, body.y, body.z, playerX, playerY, playerZ);
+  const seesDespiteDeaf = body.ambush && heardIt && hasLineOfSight(world, body, player);
   const heardAndAware = !body.ambush && heardIt;
   const spottedNormally =
-    canSpotPlayer(body.facingDeg, body.x, body.y, playerX, playerY) &&
-    hasLineOfSight(world, body.x, body.y, body.z, playerX, playerY, playerZ);
+    canSpotPlayer(body.facingDeg, body.x, body.y, player.x, player.y) && hasLineOfSight(world, body, player);
   if (!seesDespiteDeaf && !heardAndAware && !spottedNormally) return false;
   body.alerted = true;
   body.reactionTicks = REACTION_CHASES;
@@ -920,7 +906,7 @@ export function stepMonsterAI(
   stats: MonsterStats,
   dt: number,
   world: World,
-  target: { x: number; y: number; z: number },
+  target: Pos3,
   blockers?: readonly ThingBlocker[],
 ): MonsterAttack | null {
   if (body.painTimer > 0) {
@@ -933,7 +919,7 @@ export function stepMonsterAI(
   const dx = target.x - body.x;
   const dy = target.y - body.y;
   const dist = Math.hypot(dx, dy);
-  const canSee = hasLineOfSight(world, body.x, body.y, body.z, target.x, target.y, target.z);
+  const canSee = hasLineOfSight(world, body, target);
 
   if (body.chargeTimer > 0) {
     const hit = stepCharge(body, stats, dt, world, dist);
@@ -1026,7 +1012,7 @@ function runChaseCall(
   body: MonsterBody,
   stats: MonsterStats,
   world: World,
-  target: { x: number; y: number; z: number },
+  target: Pos3,
   dist: number,
   dx: number,
   dy: number,

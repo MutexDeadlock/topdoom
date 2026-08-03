@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { LF, NO_SIDE, type DoomMap, type LineDef, type SideDef, type Sector } from '../wad/map.ts';
 import { buildSubSectorPolys, type SubSectorPoly } from './bsp.ts';
-import type { MaterialBank, SurfaceKind } from './textures.ts';
+import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
+import type { Pos2 } from '../types.ts';
 
 export const SKY_FLAT = 'F_SKY1';
 /** DOOM's sentinel for "no texture assigned" in a sidedef texture slot — also used by `game/specials.ts`'s `raiseToTexture` to skip unset bottom textures. */
@@ -267,7 +268,7 @@ function touchesAny(map: DoomMap, line: LineDef, sectors: Set<number>): boolean 
   return (front !== undefined && sectors.has(front.sector)) || (back !== undefined && sectors.has(back.sector));
 }
 
-type SizeFn = (kind: SurfaceKind, name: string) => { w: number; h: number } | null;
+type SizeFn = (kind: SurfaceKind, name: string) => Size | null;
 
 /** Floors and ceilings, triangulated per subsector (each one is convex). */
 function buildFlats(
@@ -499,8 +500,8 @@ function addTwoSidedSide(
   batches: BatchSet,
   size: SizeFn,
   flags: number,
-  a: { x: number; y: number },
-  b: { x: number; y: number },
+  a: Pos2,
+  b: Pos2,
   side: SideDef,
   secIndex: number,
   sec: Sector,

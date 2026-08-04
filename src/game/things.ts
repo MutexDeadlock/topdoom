@@ -60,6 +60,16 @@ interface PosedThing extends Pos3 {
    */
   blockRadius: number;
   /**
+   * This type's attack/pain WAD frame letters (`MONSTER_ATTACK_FRAMES`/
+   * `MONSTER_PAIN_FRAMES`), resolved once at spawn for the same reason
+   * `blockRadius` is: both tables are sparse-numeric-key `Record`s, so a
+   * lookup on every attack/pain event is a dictionary hash V8 has to do that
+   * a one-time spawn-time resolve avoids. `undefined` for anything without a
+   * table entry (every non-monster, and the few monster types missing one).
+   */
+  attackFrames: string[] | undefined;
+  painFrames: string[] | undefined;
+  /**
    * Whether this thing is drawn (and so targetable/shootable) right now:
    * fog of war hasn't revealed its subsector, it was picked up, or it died
    * with no death art. Replaces reading `mesh.visible` back off a per-thing
@@ -462,6 +472,8 @@ export function buildThingSprites(
       anim,
       scale: pickupScaleFor(t.type),
       blockRadius: MONSTER_STATS[t.type]?.radius ?? MONSTER_HIT_RADIUS,
+      attackFrames: MONSTER_ATTACK_FRAMES[t.type],
+      painFrames: MONSTER_PAIN_FRAMES[t.type],
       visible: true,
       hidden: false,
       queryStamp: 0,
@@ -523,6 +535,8 @@ export function buildThingSprites(
       anim,
       scale: pickupScaleFor(type),
       blockRadius: MONSTER_STATS[type]?.radius ?? MONSTER_HIT_RADIUS,
+      attackFrames: MONSTER_ATTACK_FRAMES[type],
+      painFrames: MONSTER_PAIN_FRAMES[type],
       visible: true,
       hidden: false,
       queryStamp: 0,
@@ -881,8 +895,7 @@ export function buildThingSprites(
                 sourceType: p.type,
                 targetId: p.targetId,
               });
-              const frames = MONSTER_ATTACK_FRAMES[p.type];
-              if (frames) p.anim.playOnce(frames, MONSTER_ACTION_FRAME_SECONDS);
+              if (p.attackFrames) p.anim.playOnce(p.attackFrames, MONSTER_ACTION_FRAME_SECONDS);
             }
           } else {
             p.z = p.sector?.floorHeight ?? p.z;
@@ -997,8 +1010,7 @@ export function buildThingSprites(
         // (stats.painChance) passed and the monster wasn't mid-charge — a
         // hit that fails the roll alerts/retargets the monster same as any
         // other, but shouldn't flinch it on screen.
-        const painFrames = MONSTER_PAIN_FRAMES[p.type];
-        if (painFrames && p.painTimer > 0) p.anim.playOnce(painFrames, MONSTER_ACTION_FRAME_SECONDS);
+        if (p.painFrames && p.painTimer > 0) p.anim.playOnce(p.painFrames, MONSTER_ACTION_FRAME_SECONDS);
         // Being hurt always wakes a monster, sight or no — vanilla's
         // P_DamageMobj sets the target unconditionally.
         p.alerted = true;

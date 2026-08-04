@@ -142,6 +142,49 @@ export class SpriteMaterialCache {
 const DOOM_TIC = 1 / 35;
 
 /**
+ * A one-shot frame sequence, either holding on its last frame forever once
+ * exhausted (`SpriteAnimator`'s death slot) or clearing itself and handing
+ * control back to the caller (its attack/pain override slot) — the two only
+ * differ in that one behavior, so both share this bookkeeping instead of each
+ * carrying their own {frames, duration, index, timer} quadruple.
+ */
+class FrameSequence {
+  frames: string[] | null = null;
+  index = 0;
+  private frameDuration = 0;
+  private holdLast = false;
+  private timer = 0;
+
+  start(frames: string[], frameDuration: number, holdLast: boolean): void {
+    this.frames = frames;
+    this.frameDuration = frameDuration;
+    this.holdLast = holdLast;
+    this.index = 0;
+    this.timer = 0;
+  }
+
+  stop(): void {
+    this.frames = null;
+    this.index = 0;
+    this.timer = 0;
+  }
+
+  advance(dt: number): void {
+    if (!this.frames) return;
+    this.timer += dt;
+    while (this.timer >= this.frameDuration) {
+      if (this.holdLast && this.index >= this.frames.length - 1) break;
+      this.timer -= this.frameDuration;
+      this.index++;
+      if (!this.holdLast && this.index >= this.frames.length) {
+        this.frames = null;
+        break;
+      }
+    }
+  }
+}
+
+/**
  * The frame-cycle state of one animated sprite, and the lookup from that
  * state to the geometry/material actually drawn — with **no `THREE.Object3D`
  * of its own**. That split is what lets the same animation logic serve both
@@ -171,31 +214,25 @@ export class SpriteAnimator {
   private frameDuration: number;
 
   /**
-   * Once set (via `die`), permanently overrides the normal walk-cycle
-   * animation with a one-shot sequence that advances forward and then holds
-   * on its last frame forever — a corpse, not a loop. `advance` ignores its
-   * own `animating` parameter entirely while this is set: unlike the alive
-   * cycle (which idles by holding frame 0 and resumes from the start once
-   * moving again), a death animation has no "idle" state to fall back to and
-   * must never run in reverse or reset.
+   * Permanently overrides the normal walk-cycle animation with a one-shot
+   * sequence that advances forward and then holds on its last frame forever
+   * — a corpse, not a loop. `advance` ignores its own `animating` parameter
+   * entirely while this is set: unlike the alive cycle (which idles by
+   * holding frame 0 and resumes from the start once moving again), a death
+   * animation has no "idle" state to fall back to and must never run in
+   * reverse or reset. Set via `die`.
    */
-  private deathFrames: string[] | null = null;
-  private deathFrameDuration = 0;
-  private deathIndex = 0;
-  private deathTimer = 0;
+  private death = new FrameSequence();
 
   /**
    * A transient one-shot sequence (attack/pain) that plays forward over its
    * own frames and then clears itself, handing back to the alive cycle —
-   * unlike `deathFrames`, which is permanent. `playOnce` re-arms it
+   * unlike `death`, which is permanent. `playOnce` re-arms it
    * unconditionally, so a later call (e.g. a pain flinch landing mid-attack)
    * simply replaces whatever was already playing, matching vanilla's own
    * state machine: a new state transition always wins, there's no queueing.
    */
-  private overrideFrames: string[] | null = null;
-  private overrideFrameDuration = 0;
-  private overrideIndex = 0;
-  private overrideTimer = 0;
+  private override = new FrameSequence();
 
   constructor(
     bank: SpriteBank,
@@ -218,29 +255,15 @@ export class SpriteAnimator {
    * from the first frame instead of wherever it happened to stop.
    */
   advance(dt: number, animating: boolean): void {
-    if (this.deathFrames) {
-      this.deathTimer += dt;
-      while (this.deathTimer >= this.deathFrameDuration && this.deathIndex < this.deathFrames.length - 1) {
-        this.deathTimer -= this.deathFrameDuration;
-        this.deathIndex++;
-      }
-      this.animIndex = this.deathIndex;
+    this.death.advance(dt);
+    if (this.death.frames) {
+      this.animIndex = this.death.index;
       return;
     }
-    if (this.overrideFrames) {
-      this.overrideTimer += dt;
-      while (this.overrideTimer >= this.overrideFrameDuration) {
-        this.overrideTimer -= this.overrideFrameDuration;
-        this.overrideIndex++;
-        if (this.overrideIndex >= this.overrideFrames.length) {
-          this.overrideFrames = null;
-          break;
-        }
-      }
-      if (this.overrideFrames) {
-        this.animIndex = this.overrideIndex;
-        return;
-      }
+    this.override.advance(dt);
+    if (this.override.frames) {
+      this.animIndex = this.override.index;
+      return;
     }
     if (animating && this.animFrames.length > 1) {
       this.animTimer += dt;
@@ -261,7 +284,7 @@ export class SpriteAnimator {
    * changed) costs one `SpriteBank` lookup and nothing else.
    */
   resolve(facingDeg: number, viewerAngleDeg: number): CachedSprite | null {
-    const frames = this.deathFrames ?? this.overrideFrames ?? this.animFrames;
+    const frames = this.death.frames ?? this.override.frames ?? this.animFrames;
     const digit = pickRotationDigit(facingDeg, viewerAngleDeg);
     const found = this.bank.lookup(this.spriteName, frames[this.animIndex], digit);
     if (!found) return null;
@@ -276,38 +299,28 @@ export class SpriteAnimator {
 
   /**
    * Switches this sprite permanently into its one-shot death animation (see
-   * the `deathFrames` field doc). Idempotent-ish: calling it again just
+   * the `death` field doc). Idempotent-ish: calling it again just
    * restarts the sequence, which nothing currently does since a monster/the
    * player only dies once per life.
    */
   die(frames: string[], frameDuration: number): void {
-    this.deathFrames = frames;
-    this.deathFrameDuration = frameDuration;
-    this.deathIndex = 0;
-    this.deathTimer = 0;
+    this.death.start(frames, frameDuration, true);
   }
 
   /**
-   * Plays `frames` forward once (see the `overrideFrames` field doc), then
+   * Plays `frames` forward once (see the `override` field doc), then
    * automatically hands back to the alive cycle. No-op while dead — a corpse
    * has no attack/pain animation to interrupt its held last death frame with.
    */
   playOnce(frames: string[], frameDuration: number): void {
-    if (this.deathFrames) return;
-    this.overrideFrames = frames;
-    this.overrideFrameDuration = frameDuration;
-    this.overrideIndex = 0;
-    this.overrideTimer = 0;
+    if (this.death.frames) return;
+    this.override.start(frames, frameDuration, false);
   }
 
   /** Undoes `die`, back to the normal alive animation — used when a level restart brings the player back to life. */
   revive(): void {
-    this.deathFrames = null;
-    this.deathIndex = 0;
-    this.deathTimer = 0;
-    this.overrideFrames = null;
-    this.overrideIndex = 0;
-    this.overrideTimer = 0;
+    this.death.stop();
+    this.override.stop();
     this.animIndex = 0;
     this.animTimer = 0;
   }

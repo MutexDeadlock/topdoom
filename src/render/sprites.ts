@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { GraphicsBank } from '../wad/graphics.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
-import { doomToWorld, lightToColor } from './mapmesh.ts';
+import { doomToWorld, litColor } from './mapmesh.ts';
 
 /**
  * Default viewer angle (DOOM-space, 0 = east, 90 = north, counter-clockwise):
@@ -318,7 +318,7 @@ export class SpriteActor {
     // SpriteMaterialCache's doc); turn it by however far the live viewer
     // angle has moved from that default so it keeps facing the camera.
     this.mesh.rotation.y = THREE.MathUtils.degToRad(viewerAngleDeg - VIEWER_ANGLE_DEG);
-    (this.mesh.material as THREE.MeshBasicMaterial).color.setScalar(lightToColor(light));
+    (this.mesh.material as THREE.MeshBasicMaterial).color.setScalar(litColor(light));
     return true;
   }
 

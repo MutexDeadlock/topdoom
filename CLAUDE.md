@@ -130,6 +130,68 @@ the camera and the player and produces the open dollhouse look — no extra logi
 `F_SKY1` flats are skipped. Coordinates: DOOM's `(x, y, z)` becomes three.js `(x, z, -y)`, so
 the map plane is XZ and Y is up.
 
+### Sector lighting (`src/render/mapmesh.ts: lightToColor`)
+
+Walls, flats and sprites are all tinted by their sector's light level through this one
+function, so it decides how the whole game reads. Two things about it are easy to get wrong,
+and both were shipped bugs.
+
+**The ramp is vanilla's own `COLORMAP`, measured from the lump rather than modelled.** Vanilla
+never multiplies a colour by the light level: it picks one of `COLORMAP`'s 32 rows and remaps
+every palette index through it, and that ramp is nothing like linear in light level.
+`COLORMAP_GAIN` is the mean linear-luminance ratio of each row, measured across the PLAYPAL
+colours — the same "confirm it against the real lump" discipline as the sprite and death-frame
+tables. DOOM.WAD's and DOOM2.WAD's COLORMAPs are byte-identical and Freedoom's is within 0.003,
+so one baked table serves all three; per-colour spread is ~12% of the mean (the ramp
+desaturates slightly as it darkens), which is close enough for a single scalar per row.
+An earlier hand-tuned curve (`pow(l, 0.85) * 0.9 + 0.1`) was both far too bright and far too
+flat — it put only ~0.05 of display brightness between adjacent light levels where vanilla puts
+~0.12, so a room's step shading was barely readable, and it rendered DOOM2 MAP01's light-112
+start room at 0.55 display brightness instead of 0.15.
+
+Vanilla builds the row index as `startmap - scale/DISTMAP` (`r_main.c`), where
+`startmap = (15 - lightnum) * 4` and the subtracted term grows as a surface gets *closer* — so
+in vanilla the light level really sets how fast a surface falls off with distance, not a flat
+brightness. This engine has no distance lighting (the camera hangs at a near-constant distance
+from everything it draws), so the ramp is sampled once at a fixed reference distance:
+`REFERENCE_STEPS` is that subtracted term, and it is **the knob to turn if the game reads too
+dark or too bright.** 4 (≈ a 300-unit viewing distance) is chosen because it puts a uniform
+~0.12 of display brightness between adjacent light segments across light 112-208, which is 88%
+of every sector in the stock IWADs. Both ends necessarily saturate — vanilla spends 4 rows per
+light segment, so its 16 segments want 64 rows where only 32 exist, and light ≤ 96 (2.8% of
+stock sectors) bottoms out together as do 224/240 (9%). That is vanilla's ramp rather than a
+shortcut; it just never shows up in vanilla, where distance fills the range back in.
+
+**Light is quantized to DOOM's own 16 segments (`light >> 4`)**, so two sectors whose levels
+differ by less than 16 are genuinely identical on screen — as they are in vanilla. Every stock
+map's sector lights are multiples of 16 anyway. This is also what makes the fake-contrast offset
+work out: `addWall` passes ±16, which after the shift is exactly the ±1 *segment* nudge vanilla
+applies (`lightnum--`/`lightnum++`). Vanilla **darkens** east-west walls and **brightens**
+north-south ones (`r_segs.c: R_StoreWallRange`) so corners stay legible under flat sector
+lighting — this engine had that sign inverted for a long time.
+
+**The returned value is linear-light, not a display value.** Vertex colours (and
+`material.color.setScalar`, for the non-batched sprites) are consumed as-is by the shader, and
+the renderer's `outputColorSpace` (`SRGBColorSpace`, `game.ts`) encodes the final fragment to
+sRGB on the way out. Returning a display-space value gets it gamma-encoded a second time, which
+disproportionately brightens the dark end — the other half of why dark sectors used to glow.
+
+**A vanilla-exact ramp is still too dark for this camera, so there's a fixed brightness lift on
+top of it, `BRIGHTNESS_LIFT` in `constants.ts`.** Vanilla's ramp assumes a first-person view a
+few dozen units from what it's lighting, broken up by nearby bright surfaces and real depth
+cues; this camera looks down on an entire dim room at once with neither, so a faithfully dark
+room reads as murkier here than vanilla ever intended it to. `applyBrightnessLift(linear, lift)`
+(`mapmesh.ts`) pushes a value toward 1 by a fraction `lift` of its remaining headroom
+`(1 - linear)`, so black brightens by the full amount and already-bright surfaces barely move —
+brighten the dark end, taper off toward the bright end, not a flat multiply. `lightToColor`
+itself is left untouched by this (still pure, still exactly vanilla) — `litColor` is
+`lightToColor` plus `BRIGHTNESS_LIFT`, and is what every real draw call (walls, flats, sprites)
+uses. `BRIGHTNESS_LIFT` was found by feel via a temporary in-HUD slider (not vanilla-derived,
+same honesty as `player.ts`'s `GRAVITY`) and lives in `constants.ts` on its own — not because it
+meets that file's own >2-file bar, but because it's the one number in this whole scheme meant to
+be hand-retuned later, and `constants.ts` is where this project already keeps that kind of knob
+easy to find.
+
 ### Wall occlusion fading (`src/render/occlusion.ts`, `src/render/textures.ts`)
 
 Single-sided back-face culling (above) only removes walls facing away from the camera; it

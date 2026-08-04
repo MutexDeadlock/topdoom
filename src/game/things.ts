@@ -28,7 +28,7 @@ import {
 import type { ThingBlocker } from './world.ts';
 import { SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
-import { doomToWorld, lightToColor } from '../render/mapmesh.ts';
+import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
 
 interface PosedThing extends Pos3 {
@@ -896,7 +896,7 @@ export function buildThingSprites(
         const cached = p.anim.resolve(p.facingDeg, viewerAngleDeg);
         if (!cached) continue;
         doomToWorld(p.x, p.y, p.z, worldPos);
-        batch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, lightToColor(p.light), p.id);
+        batch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, litColor(p.light), p.id);
       }
       batch.end();
       return attacks;

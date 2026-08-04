@@ -3,6 +3,7 @@ import { LF, NO_SIDE, type DoomMap, type LineDef, type SideDef, type Sector } fr
 import { buildSubSectorPolys, type SubSectorPoly } from './bsp.ts';
 import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
 import type { Pos2 } from '../types.ts';
+import { BRIGHTNESS_LIFT } from '../constants.ts';
 
 export const SKY_FLAT = 'F_SKY1';
 /** DOOM's sentinel for "no texture assigned" in a sidedef texture slot — also used by `game/specials.ts`'s `raiseToTexture` to skip unset bottom textures. */
@@ -43,11 +44,106 @@ class BatchSet {
   }
 }
 
-/** Sector light level (0..255) as a linear-ish vertex colour, plus fake contrast. */
+/**
+ * What each of `COLORMAP`'s 32 rows does to brightness, as a **linear-light**
+ * multiplier.
+ *
+ * Vanilla never scales a colour by the light level directly — it picks a row
+ * of the `COLORMAP` lump and remaps every palette index through it, and that
+ * ramp is nothing like linear in light level. These numbers are *measured*
+ * from the real lump rather than modelled: for each colormap row, the mean
+ * ratio of remapped to original luminance across the PLAYPAL colours bright
+ * enough for the ratio to mean anything. Same rigor as the sprite/death-frame
+ * tables elsewhere — and DOOM.WAD's and DOOM2.WAD's COLORMAPs are byte for
+ * byte identical, with Freedoom's within 0.003, so one baked table serves all
+ * three. (Per-colour spread is ~12% of the mean, so a single scalar per row is
+ * a fair summary; the colormap desaturates slightly as it darkens.)
+ *
+ * `r_main.c` builds the row index as `startmap - scale/DISTMAP`, where
+ * `startmap = (15 - lightnum) * 4` and the subtracted term grows as a surface
+ * gets *closer* — vanilla's lighting diminishes with distance, so the light
+ * level really sets how fast a surface falls off rather than a flat
+ * brightness. This engine has no distance lighting (the camera hangs at a
+ * near-constant distance from everything it draws), so the ramp is sampled at
+ * one fixed reference distance: `REFERENCE_STEPS` is that subtracted term.
+ * 4 corresponds to a ~300-unit viewing distance, and is chosen because it puts
+ * a uniform ~0.12 of display brightness between adjacent light segments across
+ * light 112-208 — 88% of every sector in the stock IWADs. It is the knob to
+ * turn if the whole game reads too dark or too bright; raising it brightens
+ * and eventually flattens the bright end, lowering it darkens.
+ *
+ * Note both ends necessarily saturate: vanilla spends 4 colormap rows per
+ * light segment, so its 16 segments want 64 rows and only 32 exist. Light
+ * <= 96 (2.8% of stock sectors) all bottom out together, as do 224 and 240
+ * (9%). That is vanilla's own ramp, not a shortcut — it simply doesn't show
+ * up in vanilla, where distance fills the range back in.
+ */
+const COLORMAP_GAIN = [
+  1.0, 0.9662, 0.9055, 0.8253, 0.7552, 0.6956, 0.6437, 0.584,
+  0.5366, 0.4949, 0.4492, 0.4067, 0.3632, 0.3282, 0.2946, 0.2627,
+  0.2317, 0.2023, 0.1765, 0.1526, 0.1312, 0.1086, 0.0918, 0.0758,
+  0.0621, 0.0492, 0.0383, 0.0288, 0.0202, 0.0142, 0.0082, 0.0034,
+];
+
+/** See above: vanilla's distance term, sampled at one fixed viewing distance. */
+const REFERENCE_STEPS = 4;
+
+/** `COLORMAP_GAIN` folded down to one entry per light segment, built once. */
+const LIGHT_GAIN = Array.from({ length: 16 }, (_, seg) => {
+  const row = (15 - seg) * 4 - REFERENCE_STEPS;
+  return COLORMAP_GAIN[Math.max(0, Math.min(31, row))];
+});
+
+/**
+ * Sector light level (0..255) as a linear vertex colour, plus fake contrast.
+ *
+ * The result is deliberately linear-light, not a display value: vertex colours
+ * (and `material.color.setScalar`, for the non-batched sprites) are consumed
+ * as-is by the shader, and the renderer's `outputColorSpace` (`SRGBColorSpace`,
+ * `game.ts`) encodes the final fragment to sRGB on the way out. Returning a
+ * display-space value here would get it gamma-encoded a second time.
+ *
+ * `contrast` is the fake-contrast offset in light units; vanilla nudges its
+ * *segment* index by one (`lightnum--`/`++`), which is exactly what +/-16 here
+ * amounts to after the shift below.
+ */
 export function lightToColor(light: number, contrast = 0): number {
-  const l = Math.max(0, Math.min(255, light + contrast)) / 255;
-  // Slight lift so pitch-dark sectors stay readable from a top-down camera.
-  return Math.pow(l, 0.85) * 0.9 + 0.1;
+  const clamped = Math.max(0, Math.min(255, light + contrast));
+  return LIGHT_GAIN[clamped >> 4];
+}
+
+/**
+ * The fake-contrast offset for a wall running from (ax,ay) to (bx,by) — the
+ * one true copy, so `addWall` and `SpecialsController.recolorSector` (which
+ * needs to redo this per-quad when a sector's light changes at runtime) can't
+ * drift apart the way they once did.
+ */
+export function wallContrast(ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  return dy === 0 ? -16 : dx === 0 ? 16 : 0;
+}
+
+/**
+ * A "lift" toward full brightness: pushes `linear` up by a fraction `lift` of
+ * its remaining headroom `(1 - linear)`, so a pitch-black surface (linear = 0)
+ * brightens by the full `lift` while an already-bright one barely moves — the
+ * effect a surface gets is proportional to how dark it already is. `lift = 0`
+ * is a no-op, `lift = 1` flattens everything to full bright.
+ */
+export function applyBrightnessLift(linear: number, lift: number): number {
+  const l = Math.max(0, Math.min(1, lift));
+  return linear + l * (1 - linear);
+}
+
+/**
+ * `lightToColor` plus `BRIGHTNESS_LIFT` (`constants.ts`) — what everything
+ * should actually be drawn with. `lightToColor` itself stays pure and
+ * vanilla-exact so it's easy to verify in isolation; every real draw call
+ * (walls, flats, sprites) goes through this instead.
+ */
+export function litColor(light: number, contrast = 0): number {
+  return applyBrightnessLift(lightToColor(light, contrast), BRIGHTNESS_LIFT);
 }
 
 function pushVertex(b: Batch, x: number, y: number, z: number, u: number, v: number, c: number, alpha = 1): void {
@@ -306,7 +402,7 @@ function processFlat(
     if (!size('flat', texName)) continue;
 
     const height = isCeiling ? sector.ceilHeight : sector.floorHeight;
-    const color = lightToColor(sector.light);
+    const color = litColor(sector.light);
     const batch = batches.get('flat', texName);
     const vertexStart = batch.positions.length / 3;
 
@@ -371,8 +467,7 @@ function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: Wal
 
   // DOOM darkens east-west walls and brightens north-south ones so that
   // corners stay legible without real lighting (r_segs.c: R_StoreWallRange).
-  const contrast = dy === 0 ? -16 : dx === 0 ? 16 : 0;
-  const color = lightToColor(spec.light, contrast);
+  const color = litColor(spec.light, wallContrast(spec.ax, spec.ay, spec.bx, spec.by));
 
   const u0 = spec.xOffset / dim.w;
   const u1 = (spec.xOffset + len) / dim.w;

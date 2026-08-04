@@ -44,7 +44,8 @@ import type { FogOfWar } from './fogofwar.ts';
 import type { KeyColor } from './inventory.ts';
 import {
   buildMoverMesh,
-  lightToColor,
+  litColor,
+  wallContrast,
   NO_TEXTURE,
   type BuiltMap,
   type MapMeshOptions,
@@ -1447,17 +1448,14 @@ export class SpecialsController {
     const dirty = new Set<string>();
 
     for (const o of this.sectorOccluders.get(sectorIndex) ?? []) {
-      const dx = o.bx - o.ax;
-      const dy = o.by - o.ay;
-      const contrast = dy === 0 ? 16 : dx === 0 ? -16 : 0;
-      const c = lightToColor(sector.light, contrast);
+      const c = litColor(sector.light, wallContrast(o.ax, o.ay, o.bx, o.by));
       const attr = this.built.wallMeshes.get(o.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
       if (!attr) continue;
       for (let v = 0; v < o.vertexCount; v++) attr.setXYZ(o.vertexStart + v, c, c, c);
       dirty.add(o.key);
     }
     for (const f of this.sectorFlats.get(sectorIndex) ?? []) {
-      const c = lightToColor(sector.light);
+      const c = litColor(sector.light);
       const attr = this.built.flatMeshes.get(f.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
       if (!attr) continue;
       for (let v = 0; v < f.vertexCount; v++) attr.setXYZ(f.vertexStart + v, c, c, c);

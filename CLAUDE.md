@@ -1163,15 +1163,45 @@ length to one shared value where vanilla ranges from 4 tics (imp, demon, baron b
 way rather than letting it resume — including the unfired shots of a volley — matching vanilla's
 pain state replacing the attack state outright.
 
-**Animation reuses the walk-cycle convention (`A`-`D`, held on `A` while idle) `PLAY`'s own idle
-sprite already established**, rather than inventing dedicated attack/pain frame art: unlike the
-death frames (`MONSTER_DEATH_FRAMES`), which are derivable straight from the WAD because death
-art is structurally the rotation-0-only tail of a sprite's frame set, attack and pain frames are
-ordinary rotation 1-8 frames indistinguishable from walk frames by structure alone — the split
-is only known from vanilla's own (well-documented, but not WAD-derivable) `info.c` state tables.
-Guessing specific letters risked silently wrong art the same way `SpriteActor`'s own doc already
-argues against for monster idle animation; a fired ranged attack's tracer is the actual
-"it's attacking" visual cue instead.
+**Attack and pain each get a real, dedicated pose** (`game/thingdefs.ts`'s `MONSTER_ATTACK_FRAMES`/
+`MONSTER_PAIN_FRAMES`), not just the walk-cycle/tracer stand-in an earlier version of this engine
+shipped with. The blocker that stand-in was working around was real: unlike death frames
+(`MONSTER_DEATH_FRAMES`), which are derivable straight from the WAD because death art is
+structurally the rotation-0-only tail of a sprite's frame set, attack and pain frames are ordinary
+rotation 1-8 frames indistinguishable from walk frames by structure alone, so there's no way to
+read them off the WAD directly the way death frames are. The fix was to stop trying to derive them
+from the WAD alone and instead pull vanilla's own `info.c` `missilestate`/`painstate` chains
+(`linuxdoom-1.10/info.c`, fetched from the same upstream repo this file already cites for
+`p_enemy.c`/`p_pspr.c`) and convert each state's raw frame number to a letter — then verify every
+single letter for every monster (walk + attack + pain + death \[+ xdeath\]) against the real
+`SpriteBank`-indexed WAD lumps, checking that the *total* letter count for each sprite exactly
+matches its WAD-confirmed `A`..(whatever) rotation-1 range. All 18 sprites (17 monsters + `PLAY`)
+matched exactly, so nothing here is guessed the way the old doc worried it would have to be.
+That same cross-check is what caught **four pre-existing bugs in `MONSTER_DEATH_FRAMES`/
+`MONSTER_XDEATH_FRAMES`** the WAD-derivation method had silently gotten wrong: the lost soul,
+revenant and arch-vile's death tables were each missing their actual first frame (`SKULF0`, and
+for the revenant/arch-vile a directional (not rotation-0) `SKELL1`-`8`/`VILEQ1`-`8` reused
+directly from their own pain state — a genuine info.c quirk, not a scanning slip, and exactly the
+kind of thing a pure "eyeball the lump names" derivation misses), and the chaingunner's `MONSTER_DEATH_FRAMES`/`MONSTER_XDEATH_FRAMES`
+split the line two letters too early, silently dropping `CPOSM0`/`CPOSN0` and wrongly duplicating
+them into what should have been the gib tail.
+
+Both tables are played through `SpriteAnimator.playOnce` (`render/sprites.ts`), not `die`: a third
+animation mode alongside the permanent one-shot-then-hold `die` and the looping alive cycle, this
+one plays its frames forward exactly once and then hands back to the walk/idle cycle on its own,
+which is what makes it reusable for both attack and pain (each a transient interruption, not a
+permanent state change) rather than needing a separate mechanism per case. A later `playOnce` call
+(a pain flinch landing mid-attack pose) simply replaces whatever was already playing, matching
+vanilla's own state machine, which has no queueing either — a new transition always wins outright.
+`ThingLayer.update` triggers a monster's attack pose exactly where it already detects `stepMonsterAI`
+returning a fired `MonsterAttack` (`game/things.ts`), and its pain pose inside `damage()` right
+after `reactToDamage` — gated on `p.painTimer > 0` rather than every non-lethal hit, since
+`reactToDamage` only actually sets it when the hit rolls past the monster's own `painChance`
+(a failed roll still alerts/retargets the monster, just doesn't visibly stagger it). The player's
+own attack/pain letters (`game.ts`'s `PLAYER_ATTACK_FRAMES`/`PLAYER_PAIN_FRAMES`, derived and
+WAD-checked the same way) trigger analogously: attack whenever `WeaponSystem.update` actually
+returns a nonempty `Shot[]` (the same "a shot was fired" signal `noiseAlert` already keys off),
+pain inside `damagePlayer` whenever the player survives a hit (armor-mitigated health still > 0).
 
 ### Damage, monster death and player death (`src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/inventory.ts`, `src/game/world.ts: hasLineOfSight`, `src/game.ts`)
 
@@ -1848,10 +1878,14 @@ rifle/BFG launch a flying sprite that explodes on arrival, the fist and chainsaw
 whatever is within `PLAYER_MELEE_RANGE` in front of the player, and hovering the cursor over a
 monster locks aim onto it, angling the shot to its actual position and height
 (`ThingLayer.pickMonster`, `world.ts: shotPath`). The selected weapon shows in the HUD, since
-the player sprite looks the same whatever it holds. A locked-on shot that lands, or anyone
-caught in a rocket/BFG blast's splash (including the player themselves), takes real damage —
-monster health is vanilla's own, death plays that monster's confirmed WAD death animation, and
-the player's own death freezes the game behind a `#death-overlay` until `R` restarts the level
+the player sprite looks the same whatever it holds — though firing and taking a non-lethal hit
+each pose it (and a monster) through their own real WAD attack/pain frames, not just the walk
+cycle (`game/thingdefs.ts`'s `MONSTER_ATTACK_FRAMES`/`MONSTER_PAIN_FRAMES`, `game.ts`'s
+`PLAYER_ATTACK_FRAMES`/`PLAYER_PAIN_FRAMES`, `render/sprites.ts: SpriteAnimator.playOnce`). A
+locked-on shot that lands, or anyone caught in a rocket/BFG blast's splash (including the player
+themselves), takes real damage — monster health is vanilla's own, death plays that monster's
+confirmed WAD death animation, and the player's own death freezes the game behind a
+`#death-overlay` until `R` restarts the level
 (`game/thingdefs.ts`, `render/sprites.ts: SpriteActor.die`, `game/inventory.ts: applyDamage`,
 `game.ts`). Doors, lifts, floor movers, crushers, stair builders, switches and teleporters all
 work (`game/specials.ts`), including locked doors, which require the matching key to be collected

@@ -184,6 +184,19 @@ export class SpriteAnimator {
   private deathIndex = 0;
   private deathTimer = 0;
 
+  /**
+   * A transient one-shot sequence (attack/pain) that plays forward over its
+   * own frames and then clears itself, handing back to the alive cycle —
+   * unlike `deathFrames`, which is permanent. `playOnce` re-arms it
+   * unconditionally, so a later call (e.g. a pain flinch landing mid-attack)
+   * simply replaces whatever was already playing, matching vanilla's own
+   * state machine: a new state transition always wins, there's no queueing.
+   */
+  private overrideFrames: string[] | null = null;
+  private overrideFrameDuration = 0;
+  private overrideIndex = 0;
+  private overrideTimer = 0;
+
   constructor(
     bank: SpriteBank,
     materials: SpriteMaterialCache,
@@ -212,7 +225,24 @@ export class SpriteAnimator {
         this.deathIndex++;
       }
       this.animIndex = this.deathIndex;
-    } else if (animating && this.animFrames.length > 1) {
+      return;
+    }
+    if (this.overrideFrames) {
+      this.overrideTimer += dt;
+      while (this.overrideTimer >= this.overrideFrameDuration) {
+        this.overrideTimer -= this.overrideFrameDuration;
+        this.overrideIndex++;
+        if (this.overrideIndex >= this.overrideFrames.length) {
+          this.overrideFrames = null;
+          break;
+        }
+      }
+      if (this.overrideFrames) {
+        this.animIndex = this.overrideIndex;
+        return;
+      }
+    }
+    if (animating && this.animFrames.length > 1) {
       this.animTimer += dt;
       while (this.animTimer >= this.frameDuration) {
         this.animTimer -= this.frameDuration;
@@ -231,7 +261,7 @@ export class SpriteAnimator {
    * changed) costs one `SpriteBank` lookup and nothing else.
    */
   resolve(facingDeg: number, viewerAngleDeg: number): CachedSprite | null {
-    const frames = this.deathFrames ?? this.animFrames;
+    const frames = this.deathFrames ?? this.overrideFrames ?? this.animFrames;
     const digit = pickRotationDigit(facingDeg, viewerAngleDeg);
     const found = this.bank.lookup(this.spriteName, frames[this.animIndex], digit);
     if (!found) return null;
@@ -257,11 +287,27 @@ export class SpriteAnimator {
     this.deathTimer = 0;
   }
 
+  /**
+   * Plays `frames` forward once (see the `overrideFrames` field doc), then
+   * automatically hands back to the alive cycle. No-op while dead — a corpse
+   * has no attack/pain animation to interrupt its held last death frame with.
+   */
+  playOnce(frames: string[], frameDuration: number): void {
+    if (this.deathFrames) return;
+    this.overrideFrames = frames;
+    this.overrideFrameDuration = frameDuration;
+    this.overrideIndex = 0;
+    this.overrideTimer = 0;
+  }
+
   /** Undoes `die`, back to the normal alive animation — used when a level restart brings the player back to life. */
   revive(): void {
     this.deathFrames = null;
     this.deathIndex = 0;
     this.deathTimer = 0;
+    this.overrideFrames = null;
+    this.overrideIndex = 0;
+    this.overrideTimer = 0;
     this.animIndex = 0;
     this.animTimer = 0;
   }
@@ -366,6 +412,10 @@ export class SpriteActor {
 
   die(frames: string[], frameDuration: number): void {
     this.anim.die(frames, frameDuration);
+  }
+
+  playOnce(frames: string[], frameDuration: number): void {
+    this.anim.playOnce(frames, frameDuration);
   }
 
   revive(): void {

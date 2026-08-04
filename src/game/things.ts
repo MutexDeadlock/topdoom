@@ -4,10 +4,13 @@ import type { SpriteBank } from '../wad/sprites.ts';
 import type { World } from './world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import {
+  MONSTER_ACTION_FRAME_SECONDS,
+  MONSTER_ATTACK_FRAMES,
   MONSTER_DEATH_FRAME_SECONDS,
   MONSTER_DEATH_FRAMES,
   MONSTER_DROPS,
   MONSTER_HEALTH,
+  MONSTER_PAIN_FRAMES,
   MONSTER_TYPES,
   MONSTER_XDEATH_FRAMES,
   THING_SPRITES,
@@ -215,16 +218,15 @@ const LOOK_INTERVAL = 0.3;
  * DOOM's own walk-cycle convention: every monster's RUN states step through 4
  * frames (A-D), the same convention `PLAY`'s own walk cycle already uses for
  * the player actor. Unlike the death frames (`MONSTER_DEATH_FRAMES`), this
- * isn't rederived from the WAD itself (attack/pain frames aren't
- * structurally distinguishable from walk frames the way the rotation-0-only
- * death tail is) — it's vanilla's well-known `info.c` state layout,
- * cross-checked arithmetically against the WAD-confirmed death-frame start
- * letters (e.g. POSS's death starting at `H`, position 8, matches exactly
- * 4 walk + 2 attack + 1 pain frame before it). Attack/pain get no dedicated
- * pose here for the same reason monster idle animation is deferred
- * elsewhere: guessing unconfirmed letters risks silently wrong art rather
- * than just missing art. A ranged attack's tracer (game.ts) is the actual
- * on-screen "it's firing" cue instead.
+ * isn't rederived from the WAD itself — vanilla's info.c layout puts the
+ * walk cycle first for every monster type, uniformly, so there's no
+ * per-type structural signal to check it against the way the rotation-0-only
+ * death tail gives death frames. A handful of real monsters deviate from
+ * this in vanilla (the lost soul only cycles A-B, the spider mastermind and
+ * arachnotron cycle further before repeating), left as a known, accepted
+ * gap — see `MONSTER_ATTACK_FRAMES`'s doc (`thingdefs.ts`) for how those
+ * type-specific frame letters *are* derived and confirmed despite that
+ * limitation.
  */
 const MONSTER_WALK_FRAMES = ['A', 'B', 'C', 'D'];
 
@@ -879,6 +881,8 @@ export function buildThingSprites(
                 sourceType: p.type,
                 targetId: p.targetId,
               });
+              const frames = MONSTER_ATTACK_FRAMES[p.type];
+              if (frames) p.anim.playOnce(frames, MONSTER_ACTION_FRAME_SECONDS);
             }
           } else {
             p.z = p.sector?.floorHeight ?? p.z;
@@ -989,6 +993,12 @@ export function buildThingSprites(
       if (p.health > 0) {
         const stats = MONSTER_STATS[p.type];
         if (stats) reactToDamage(p, stats);
+        // reactToDamage only actually sets painTimer if the stagger roll
+        // (stats.painChance) passed and the monster wasn't mid-charge — a
+        // hit that fails the roll alerts/retargets the monster same as any
+        // other, but shouldn't flinch it on screen.
+        const painFrames = MONSTER_PAIN_FRAMES[p.type];
+        if (painFrames && p.painTimer > 0) p.anim.playOnce(painFrames, MONSTER_ACTION_FRAME_SECONDS);
         // Being hurt always wakes a monster, sight or no — vanilla's
         // P_DamageMobj sets the target unconditionally.
         p.alerted = true;

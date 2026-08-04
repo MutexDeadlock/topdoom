@@ -158,6 +158,20 @@ const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {
 const PLAYER_DEATH_FRAMES = ['H', 'I', 'J', 'K', 'L', 'M', 'N'];
 const PLAYER_DEATH_FRAME_SECONDS = 6 / 35;
 
+/**
+ * Player attack/pain sprite frame letters — derived and WAD-cross-checked
+ * the same way `game/thingdefs.ts`'s `MONSTER_ATTACK_FRAMES`/
+ * `MONSTER_PAIN_FRAMES` are (see that doc): vanilla's `info.c` puts
+ * `S_PLAY_ATK1`/`ATK2` at `E`/`F` and `S_PLAY_PAIN`/`PAIN2` at `G`, right
+ * before the confirmed `PLAYER_DEATH_FRAMES` tail starts at `H` — 4 walk +
+ * 2 attack + 1 pain, exactly accounting for the gap. Played via
+ * `SpriteAnimator.playOnce`, not `die`: unlike death, both hand back to the
+ * ordinary walk/idle cycle once they finish.
+ */
+const PLAYER_ATTACK_FRAMES = ['E', 'F'];
+const PLAYER_PAIN_FRAMES = ['G'];
+const PLAYER_ACTION_FRAME_SECONDS = 3 / 35;
+
 interface Projectile {
   actor: SpriteActor;
   originX: number;
@@ -1039,10 +1053,13 @@ export class Game {
   private damagePlayer(amount: number): void {
     if (this.playerDead || amount <= 0) return;
     applyDamage(this.inventory, amount);
-    if (this.inventory.health > 0) return;
-    this.playerDead = true;
-    this.playerActor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
-    this.deathOverlay.classList.remove('hidden');
+    if (this.inventory.health <= 0) {
+      this.playerDead = true;
+      this.playerActor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
+      this.deathOverlay.classList.remove('hidden');
+      return;
+    }
+    this.playerActor.playOnce(PLAYER_PAIN_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
   }
 
   /**
@@ -1247,7 +1264,10 @@ export class Game {
         // game/world.ts). Melee swings count: P_FireWeapon is the same entry
         // point for every weapon, so swinging a fist in an empty room wakes the
         // neighbours the same as firing a pistol would.
-        if (shots.length > 0) this.world.noiseAlert(this.player.x, this.player.y);
+        if (shots.length > 0) {
+          this.world.noiseAlert(this.player.x, this.player.y);
+          this.playerActor.playOnce(PLAYER_ATTACK_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
+        }
         for (const shot of shots) {
           this.spawnShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
         }

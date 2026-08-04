@@ -415,7 +415,7 @@ export interface ThingLayer {
  * ray against — see that method's doc for why this isn't per-species.
  */
 const MONSTER_HIT_RADIUS = 24;
-const MONSTER_HIT_HEIGHT = 64;
+export const MONSTER_HIT_HEIGHT = 64;
 
 /**
  * Non-monster, non-weapon things (ammo, health/armor, keys, powerups,

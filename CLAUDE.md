@@ -1938,9 +1938,12 @@ special this engine's own audit against the real source found. `wad/specials.ts`
 comments have the full vanilla-numbers-to-mechanism mapping. Crushers and the crushing floor
 family (55/56/65/94 — not the turbo-16 stairs, which
 never crush even in vanilla) deal periodic damage to the player or any monster caught in their
-sector, though a *mover* (crusher, door, lift) still doesn't detect or stop for a thing in its way
-the way vanilla does — a separate, still-open gap from the thing-vs-thing collision described
-next, which is about two things walking into each other, not a moving sector hitting one. Monsters
+sector. A closing door reverses back open rather than crushing through the player or a monster
+standing under it, vanilla's own `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule
+(`SpecialsController`'s `blocksDoorClose` callback into `game.ts: isDoorBlocked`) — but a crusher
+or lift still doesn't detect or stop for a thing in its way the way vanilla does, a separate,
+still-open gap from the thing-vs-thing collision described next, which is about two things walking
+into each other, not a moving sector hitting one. Monsters
 now wake, chase and attack the player (`game/monsters.ts`, see "Monster AI" above): they use the
 same movement physics as the player (collision, step-up, gravity) but on vanilla's real 8-direction
 `P_NewChaseDir` pathing rather than a beeline, every type keeps closing until it physically runs

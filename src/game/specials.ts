@@ -469,10 +469,18 @@ function disposeGroup(group: THREE.Group): void {
  * time (`computeMovableSectors`) by walking the same texture-matched
  * adjacency the trigger itself uses at runtime.
  *
- * Not modeled: damage-floor sector specials (a sustained per-tic hazard like
- * nukage/lava — a different mechanism from a mover's periodic crush damage),
- * and door "un-crush" safety (a closing door won't reverse if something is
- * standing under it — doors have no `crush` flag at all here).
+ * A closing door reverses back open rather than crushing through the player
+ * or a monster standing under it — vanilla's `T_MovePlane`/`PIT_ChangeSector`
+ * "un-crush" rule, via the `blocksDoorClose` callback (a callback into
+ * `game.ts` for the same reason `onCrush` is: this controller mutates map
+ * geometry but has no idea who's standing in it). Approximated as 2D sector
+ * membership plus a flat headroom check against `PLAYER_HEIGHT`/
+ * `MONSTER_HIT_HEIGHT`, the same coarseness `applyCrushDamage` already
+ * accepts — and, unlike vanilla, applied uniformly to every door regardless
+ * of speed, since this engine has no separate "blazeClose never reverses"
+ * door type to hook the one real vanilla exception on. Lifts, floors and
+ * crushers still don't detect or stop for a thing in their way at all — see
+ * the crusher paragraph above.
  */
 /** A teleport landing spot: where to put the thing, and which way it should face on arrival (radians — see `Placement`). */
 export type TeleportDest = Placement;
@@ -510,6 +518,7 @@ export class SpecialsController {
   private onExit: (secret: boolean) => void;
   private onTeleport: (dest: Placement) => void;
   private onCrush: (sectorIndex: number) => void;
+  private blocksDoorClose: (sectorIndex: number, ceilingHeight: number) => boolean;
 
   private movableSectors: Set<number>;
   /** Movable sectors sharing a linedef with a given movable sector — see `rebuildAround`. */
@@ -549,6 +558,7 @@ export class SpecialsController {
     onExit: (secret: boolean) => void,
     onTeleport: (dest: Placement) => void,
     onCrush: (sectorIndex: number) => void,
+    blocksDoorClose: (sectorIndex: number, ceilingHeight: number) => boolean,
     playerX: number,
     playerY: number,
   ) {
@@ -562,6 +572,7 @@ export class SpecialsController {
     this.onExit = onExit;
     this.onTeleport = onTeleport;
     this.onCrush = onCrush;
+    this.blocksDoorClose = blocksDoorClose;
     this.prevX = playerX;
     this.prevY = playerY;
 
@@ -810,14 +821,23 @@ export class SpecialsController {
       mover.holdRemaining -= dt;
       if (mover.holdRemaining <= 0) mover.state = 'raising';
     } else if (mover.state === 'lowering') {
-      sector.ceilHeight = Math.max(mover.closeHeight, sector.ceilHeight - mover.effect.speed * dt);
-      if (sector.ceilHeight <= mover.closeHeight) {
-        sector.ceilHeight = mover.closeHeight;
-        if (mover.effect.mode === 'closeThenOpen') {
-          mover.state = 'holdClosed';
-          mover.holdRemaining = DOOR_CLOSE_WAIT_SECONDS;
-        } else {
-          mover.state = 'closed';
+      const next = Math.max(mover.closeHeight, sector.ceilHeight - mover.effect.speed * dt);
+      if (this.blocksDoorClose(mover.sectorIndex, next)) {
+        // Vanilla's T_MovePlane/PIT_ChangeSector: closing further would leave
+        // whoever's standing under it with no headroom, so the door bounces
+        // back open instead of sliding shut through them — this tick's move
+        // is skipped outright, not merely reverted after applying it.
+        mover.state = 'raising';
+      } else {
+        sector.ceilHeight = next;
+        if (sector.ceilHeight <= mover.closeHeight) {
+          sector.ceilHeight = mover.closeHeight;
+          if (mover.effect.mode === 'closeThenOpen') {
+            mover.state = 'holdClosed';
+            mover.holdRemaining = DOOR_CLOSE_WAIT_SECONDS;
+          } else {
+            mover.state = 'closed';
+          }
         }
       }
     }

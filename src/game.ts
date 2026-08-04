@@ -6,7 +6,7 @@ import { loadMap, type DoomMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
-import { buildThingSprites, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
+import { buildThingSprites, MONSTER_HIT_HEIGHT, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
 import { MONSTER_FIRE_HEIGHT, sameSpecies } from './game/monsters.ts';
 import { FlatFader, type FadeTarget, TextureScroller, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
@@ -596,6 +596,7 @@ export class Game {
         this.view.camera.yawDeg = (dest.angle * 180) / Math.PI - 90;
       },
       (sectorIndex) => this.applyCrushDamage(sectorIndex),
+      (sectorIndex, ceilingHeight) => this.isDoorBlocked(sectorIndex, ceilingHeight),
       this.player.x,
       this.player.y,
     );
@@ -1125,6 +1126,58 @@ export class Game {
     if (this.world.sectorIndexAt(this.player.x, this.player.y) === sectorIndex) this.damagePlayer(CRUSH_DAMAGE);
     const sector = this.map.sectors[sectorIndex];
     for (const m of this.things?.monstersInSector(sector) ?? []) this.things?.damage(m.id, CRUSH_DAMAGE);
+  }
+
+  /**
+   * Whether a `radius`-circle centered at (x, y) overlaps `sectorIndex` at
+   * all, not just whichever sector its bare center point resolves to.
+   * `isDoorBlocked` originally used a plain `sectorIndexAt` point test and
+   * that missed the common case of the player standing half in a doorway:
+   * walking up to a door leaves the collision circle straddling the frame
+   * (the same straddling `World.groundFloor` already has to account for),
+   * so the player's *center* can still read as the corridor sector's while
+   * the door sector — the one actually about to close on them — never gets
+   * checked at all. Approximated the same way `FogOfWar`'s own polygon
+   * sampling is: a ring of points around the circle's rim rather than an
+   * exact circle/polygon intersection, which is more than enough precision
+   * for a doorway-sized sector.
+   */
+  private circleOverlapsSector(x: number, y: number, radius: number, sectorIndex: number): boolean {
+    if (this.world.sectorIndexAt(x, y) === sectorIndex) return true;
+    const RIM_SAMPLES = 8;
+    for (let i = 0; i < RIM_SAMPLES; i++) {
+      const angle = (i / RIM_SAMPLES) * Math.PI * 2;
+      const sx = x + Math.cos(angle) * radius;
+      const sy = y + Math.sin(angle) * radius;
+      if (this.world.sectorIndexAt(sx, sy) === sectorIndex) return true;
+    }
+    return false;
+  }
+
+  /**
+   * `SpecialsController`'s door-close obstruction check, vanilla's
+   * `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule: a closing door reverses
+   * back open the instant lowering it further would leave the player or a
+   * monster with no headroom, rather than sliding shut through them. Uses
+   * `circleOverlapsSector` (above) rather than `applyCrushDamage`'s plain
+   * point test — a crusher's own sector is typically the whole room, where
+   * the point test's blind spot barely matters, but a door's sector is often
+   * no wider than the doorway itself, where it does — plus a flat headroom
+   * test against `PLAYER_HEIGHT`/`MONSTER_HIT_HEIGHT`, this engine has no
+   * per-thing floor/ceiling clip to do better with.
+   */
+  private isDoorBlocked(sectorIndex: number, ceilingHeight: number): boolean {
+    if (
+      this.circleOverlapsSector(this.player.x, this.player.y, PLAYER_RADIUS, sectorIndex) &&
+      this.player.z + PLAYER_HEIGHT > ceilingHeight
+    ) {
+      return true;
+    }
+    const sector = this.map.sectors[sectorIndex];
+    for (const m of this.things?.monstersInSector(sector) ?? []) {
+      if (m.z + MONSTER_HIT_HEIGHT > ceilingHeight) return true;
+    }
+    return false;
   }
 
   /**

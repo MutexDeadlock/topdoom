@@ -344,9 +344,23 @@ export class World {
     return this.map.things.filter((t) => t.type === type);
   }
 
-  /** Player 1 start (thing type 1); falls back to the map centre. */
+  /**
+   * Player 1 start (thing type 1); falls back to the map centre.
+   *
+   * Uses the *last* doomednum-1 thing in the map, not the first. Vanilla's
+   * `P_SpawnMapThing` calls `P_SpawnPlayer` for every player-1 thing it
+   * encounters, and each call overwrites `players[0].mo` — so whichever one
+   * comes last in the thing list is where the player actually ends up;
+   * every earlier one becomes an orphaned "voodoo doll" mobj still sitting
+   * on the map (a mapping trick for scripted effects like crusher-triggered
+   * linedefs). Picking the first one instead spawns the player on top of a
+   * voodoo doll — confirmed against oku2v31.wad's MAP01, which has 27
+   * doomednum-1 things: 26 of them a voodoo-doll row and the 27th (last)
+   * the real start.
+   */
   playerStart(): Placement {
-    const t = this.thingsOfType(1)[0];
+    const starts = this.thingsOfType(1);
+    const t = starts[starts.length - 1];
     if (t) return { x: t.x, y: t.y, angle: (t.angle * Math.PI) / 180 };
     const { minX, minY, maxX, maxY } = this.map.bounds;
     return { x: (minX + maxX) / 2, y: (minY + maxY) / 2, angle: 0 };

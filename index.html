@@ -45,6 +45,19 @@
       <div class="hint">press R to restart</div>
     </div>
 
+    <div id="fatal-error" class="hidden">
+      <div class="panel">
+        <h1>Graphics error</h1>
+        <p class="message"></p>
+        <p class="hint">
+          Check <code>chrome://gpu</code> (or your browser's equivalent) for WebGL2 status, and
+          make sure hardware acceleration is enabled. This is a browser/GPU configuration issue,
+          not something wrong with the game files.
+        </p>
+        <pre class="detail"></pre>
+      </div>
+    </div>
+
     <div id="menu" class="hidden">
       <div class="panel">
         <header>

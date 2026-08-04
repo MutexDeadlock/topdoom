@@ -16,8 +16,38 @@ function parsePos(raw: string | null): Pos2 | null {
   return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null;
 }
 
+/**
+ * `new Viewport` synchronously throws when the browser can't create a WebGL2
+ * context (blocklisted GPU, disabled hardware acceleration, ...) — three.js's
+ * own error is a raw `Error`, not something a player can act on. Without this,
+ * `boot()` throws before the menu ever opens and the page is left showing only
+ * the static HUD markup, which reads as "broken" rather than "your browser
+ * can't run this". The `try` necessarily wraps all of `Viewport`'s
+ * construction (camera setup, input listeners), not just the renderer call,
+ * so the GPU-specific message and its chrome://gpu hint are only shown when
+ * the error actually looks like a WebGL context failure — anything else gets
+ * a generic message so it doesn't misreport an unrelated bug as a GPU issue.
+ */
+function showFatalError(err: unknown): void {
+  const overlay = document.getElementById('fatal-error')!;
+  const isWebglError = err instanceof Error && /webgl/i.test(err.message);
+  overlay.querySelector('.message')!.textContent = isWebglError
+    ? "Your browser couldn't create a WebGL2 context, so TopDoom can't render."
+    : 'TopDoom failed to start.';
+  overlay.querySelector('.hint')!.classList.toggle('hidden', !isWebglError);
+  overlay.querySelector('.detail')!.textContent = err instanceof Error ? err.message : String(err);
+  overlay.classList.remove('hidden');
+}
+
 async function boot(): Promise<void> {
-  const view = new Viewport(document.getElementById('app')!);
+  let view: Viewport;
+  try {
+    view = new Viewport(document.getElementById('app')!);
+  } catch (err) {
+    console.error(err);
+    showFatalError(err);
+    return;
+  }
   const startPos = parsePos(new URLSearchParams(location.search).get('pos'));
   let game: Game | null = null;
 

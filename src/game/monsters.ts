@@ -150,7 +150,26 @@ export interface AttackStats {
    * vanilla oddity, not a simplification here). `speed` (map units/sec) is
    * tuned by feel the same as everything else in this file.
    */
-  projectile?: { sprite: string; speed: number };
+  projectile?: {
+    sprite: string;
+    speed: number;
+    /**
+     * The mancubus-only case: vanilla's `A_FatAttack1/2/3` each spawn *two*
+     * `MT_FATSHOT`s rather than one, fanned around the aim line by
+     * `FATSPREAD` (confirmed against the real `linuxdoom-1.10` `p_enemy.c`) —
+     * one array entry per shot in the burst (`AttackStats.shots`), each
+     * listing that shot's projectiles as offsets in radians from the
+     * straight-at-target angle. `P_SpawnMissile` computes its own angle
+     * straight at the target and ignores the firing actor's facing, so only
+     * the *second* missile of `A_FatAttack1`/`A_FatAttack2` is actually
+     * deflected (by `+FATSPREAD`/`-2*FATSPREAD`); `A_FatAttack3`'s pair
+     * straddles the aim line evenly instead (`±FATSPREAD/2`) — a real vanilla
+     * asymmetry, not a transcription slip. Omitted (implicitly `[0]` per
+     * shot) for every other projectile-throwing monster, which fires one
+     * straight shot per burst entry.
+     */
+    pairOffsetsRad?: number[][];
+  };
   /**
    * Vanilla's own `P_CheckMissileRange` distance falloff (confirmed against
    * the real `linuxdoom-1.10` source), converted from a per-check miss
@@ -259,16 +278,21 @@ export interface MonsterAttack {
   angleRad: number;
   /**
    * Set only for a `'ranged'` attack fired by a monster whose `AttackStats.ranged.projectile`
-   * is configured — the caller (`game.ts`) spawns a flying projectile sprite
-   * angled at `angleRad` instead of an instant hitscan tracer. Absent means
-   * the ordinary hitscan-style bolt this engine already used for every
-   * ranged monster before real projectiles existed.
+   * is configured — the caller (`game.ts`) spawns one flying projectile
+   * sprite per entry instead of an instant hitscan tracer. Absent means the
+   * ordinary hitscan-style bolt this engine already used for every ranged
+   * monster before real projectiles existed. Almost always exactly one
+   * entry; the mancubus is the one type that fires two at once (see
+   * `AttackStats.projectile.pairOffsetsRad`).
    */
-  projectile?: { sprite: string; speed: number; angleRad: number };
+  projectiles?: { sprite: string; speed: number; angleRad: number }[];
 }
 
 /** Vanilla's own MELEERANGE, plus a little slack for this engine's coarser per-frame (rather than per-tic) distance sampling. */
 export const MELEE_RANGE = 72;
+
+/** Vanilla's own `FATSPREAD` (`ANG90/8`) — the mancubus's fireball-pair fan angle, see `AttackStats.projectile.pairOffsetsRad`. */
+const FATSPREAD = Math.PI / 2 / 8;
 
 /**
  * Vanilla's `mobjinfo.reactiontime`, which is 8 for every monster in the
@@ -504,11 +528,23 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       duration: 2.286,
       shots: 3,
       shotInterval: 0.571,
-      projectile: { sprite: 'MANF', speed: 450 },
+      projectile: {
+        sprite: 'MANF',
+        speed: 450,
+        // A_FatAttack1/2/3: each volley's first MT_FATSHOT flies straight at
+        // the target (P_SpawnMissile ignores the actor's own facing), the
+        // second is deflected — asymmetrically for the first two volleys,
+        // straddling evenly for the third. See the field's own doc.
+        pairOffsetsRad: [
+          [0, FATSPREAD],
+          [0, -2 * FATSPREAD],
+          [-FATSPREAD / 2, FATSPREAD / 2],
+        ],
+      },
     },
     painChance: 0.313,
     painDuration: 0.171,
-  }, // FATT mancubus — A_FatAttack1/2/3, three volleys out of one 80-tic attack state
+  }, // FATT mancubus — A_FatAttack1/2/3, three volleys out of one 80-tic attack state, each firing a pair of fireballs
   68: {
     speed: 116.7,
     chaseInterval: 0.103,
@@ -856,13 +892,22 @@ function stepCharge(body: MonsterBody, stats: MonsterStats, dt: number, world: W
   return null;
 }
 
-/** Rolls one instance of `attack`'s damage, tagged with the projectile (if any) the caller should spawn. */
-function fireAttack(kind: 'melee' | 'ranged', attack: AttackStats, angleRad: number): MonsterAttack {
+/**
+ * Rolls one instance of `attack`'s damage, tagged with the projectile(s) (if
+ * any) the caller should spawn. `offsetsRad` is one radian offset per
+ * projectile this shot spawns — omitted means the ordinary single straight
+ * shot every monster but the mancubus fires (see
+ * `AttackStats.projectile.pairOffsetsRad`).
+ */
+function fireAttack(kind: 'melee' | 'ranged', attack: AttackStats, angleRad: number, offsetsRad?: number[]): MonsterAttack {
+  const projectile = attack.projectile;
   return {
     kind,
     damage: rollDamage(attack.diceSides, attack.diceMult),
     angleRad,
-    projectile: attack.projectile ? { ...attack.projectile, angleRad } : undefined,
+    projectiles: projectile
+      ? (offsetsRad ?? [0]).map((off) => ({ sprite: projectile.sprite, speed: projectile.speed, angleRad: angleRad + off }))
+      : undefined,
   };
 }
 
@@ -951,7 +996,8 @@ export function stepMonsterAI(
     body.angle = Math.atan2(dy, dx); // A_FaceTarget, re-run between volley shots
     body.burstTimer -= dt;
     if (body.burstTimer <= 0) {
-      attack = fireAttack('ranged', ranged, body.angle);
+      const shotIndex = (ranged.shots ?? 1) - body.burstLeft;
+      attack = fireAttack('ranged', ranged, body.angle, ranged.projectile?.pairOffsetsRad?.[shotIndex]);
       body.burstLeft -= 1;
       body.burstTimer = ranged.shotInterval ?? 0;
     }

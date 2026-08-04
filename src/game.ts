@@ -810,35 +810,41 @@ export class Game {
    * someone's own — see `Projectile.sourceId`'s doc and `monsterStruckBy`).
    */
   private spawnMonsterProjectile(atk: MonsterAttackEvent): void {
-    if (!atk.projectile) return;
+    if (!atk.projectiles) return;
     const victim = atk.targetId === null ? null : this.things?.monsterById(atk.targetId);
     const target = victim
       ? { x: victim.x, y: victim.y, z: victim.z + MONSTER_FIRE_HEIGHT }
       : { x: this.player.x, y: this.player.y, z: this.player.z + AIM_HEIGHT_OFFSET };
-    const path = shotPath(this.world, atk, atk.projectile.angleRad, target, false);
-    const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, atk.projectile.sprite, PROJECTILE_FRAMES[atk.projectile.sprite]);
     const light = this.world.sectorAt(atk.x, atk.y)?.light ?? 128;
-    if (!actor.setPose(atk.x, atk.y, atk.z, (atk.projectile.angleRad * 180) / Math.PI, light)) return;
-    this.scene.add(actor.mesh);
-    this.projectiles.push({
-      actor,
-      originX: atk.x,
-      originY: atk.y,
-      startZ: atk.z,
-      endZ: path.z,
-      angleRad: atk.projectile.angleRad,
-      speed: atk.projectile.speed,
-      maxDist: path.dist,
-      traveled: 0,
-      light,
-      sprite: atk.projectile.sprite,
-      damage: atk.damage,
-      splash: null,
-      hitMonsterId: null,
-      sourceId: atk.sourceId,
-      sourceType: atk.sourceType,
-      lineIndex: path.lineIndex,
-    });
+    // Almost always one entry; the mancubus fires two per volley (see
+    // MonsterAttack.projectiles's doc) — each resolved and spawned
+    // independently, since a fanned-out fireball flies its own path and can
+    // miss on its own.
+    for (const proj of atk.projectiles) {
+      const path = shotPath(this.world, atk, proj.angleRad, target, false);
+      const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, proj.sprite, PROJECTILE_FRAMES[proj.sprite]);
+      if (!actor.setPose(atk.x, atk.y, atk.z, (proj.angleRad * 180) / Math.PI, light)) continue;
+      this.scene.add(actor.mesh);
+      this.projectiles.push({
+        actor,
+        originX: atk.x,
+        originY: atk.y,
+        startZ: atk.z,
+        endZ: path.z,
+        angleRad: proj.angleRad,
+        speed: proj.speed,
+        maxDist: path.dist,
+        traveled: 0,
+        light,
+        sprite: proj.sprite,
+        damage: atk.damage,
+        splash: null,
+        hitMonsterId: null,
+        sourceId: atk.sourceId,
+        sourceType: atk.sourceType,
+        lineIndex: path.lineIndex,
+      });
+    }
   }
 
   /**
@@ -1238,7 +1244,7 @@ export class Game {
     // the true aim, the same trick weapons.ts uses for pellet spread.
     const off = ((Math.random() - Math.random()) * SHADOW_AIM_SPREAD_DEG * Math.PI) / 180;
     atk.angleRad += off;
-    if (atk.projectile) atk.projectile.angleRad += off;
+    if (atk.projectiles) for (const proj of atk.projectiles) proj.angleRad += off;
   }
 
   /**
@@ -1435,7 +1441,7 @@ export class Game {
         // MONSTER_STATS, e.g. the imp's fireball) launches one instead of
         // resolving as an instant hit — damage lands later, on arrival
         // (updateProjectiles), not here.
-        if (atk.kind === 'ranged' && atk.projectile) {
+        if (atk.kind === 'ranged' && atk.projectiles) {
           this.spawnMonsterProjectile(atk);
         } else if (atk.kind === 'ranged') {
           // A hitscan bolt (the human gunners, the spider mastermind) traces

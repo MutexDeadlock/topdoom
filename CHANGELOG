@@ -1,3 +1,28 @@
+v0.8.0
+Gameplay
+  - all powerups work now: invulnerability, berserk, partial invisibility,
+    radiation suit, computer area map and light amp visor, on vanilla's timers
+    (incl. screen tints for invulnerability/suit, and monsters shooting wide
+    while you're invisible)
+  - backpack works now, and was invisible before (doomednum 8 had no sprite)
+  - fist and chainsaw finally do damage (2-20, x10 for the fist with berserk)
+Engine
+  - MASSIVE performance optimizations (NUTS.WAD from ~2 fps to ~38 fps !!!)
+  - add support for A LOT more linedef/sector specials! 
+    Vanilla compatiblity should be complete now.
+  - add attack & pain animations
+  - improved lightning, we're now much closer to vanilla
+  - wall/floor "fading" effect now also applies to awake monsters (still needs some tweaking)
+  - fixed useable linedefs could be triggered from both sides
+  - fixed a monster teleporting through a walk trigger ended up facing the
+    wrong way (its landing angle got converted from degrees a second time)
+  - fixed picking wrong player1 spawn if multiple player1 spawns are present
+UI / HUD
+  - new HUD strip showing which powerups are running and for how much longer
+  - more accurate FPS counter
+  - DEVMODE: add simple profiler overlay
+
+
 v0.7.0
 - Q and E rotate camera by 45deg
 - initial COMBAT \o/

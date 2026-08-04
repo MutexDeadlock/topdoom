@@ -1,5 +1,5 @@
 /** Shown bottom-right on the start menu. */
-export const VERSION = '0.7.0';
+export const VERSION = '0.8.0';
 
 /**
  * Set VITE_DEVMODE=true in .env.local to enable in-game debug info and dev hotkeys.

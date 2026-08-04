@@ -250,6 +250,24 @@ export class FogOfWar {
     return true;
   }
 
+  /**
+   * Marks the whole level explored — the computer area map powerup
+   * (`game/inventory.ts`'s `COMPUTER_MAP_TYPE`), which in vanilla fills in the
+   * automap for the entire level at once. Here that *is* the whole effect:
+   * this engine's map view and its play view are the same view, so revealing
+   * the geometry is exactly what vanilla's own `pw_allmap` does to the automap.
+   *
+   * Only the `explored` flags are set, not `alpha` — the ordinary per-frame
+   * lerp below fades the level in over `FADE_SPEED` instead of snapping it on,
+   * which reads as the map drawing itself rather than a hard cut. Setting
+   * `pending` to 0 also retires the sight-sampling loop above for the rest of
+   * the level, since there is nothing left it could reveal.
+   */
+  revealAll(): void {
+    this.explored.fill(1);
+    this.pending = 0;
+  }
+
   /** Current reveal alpha (0 = hidden, 1 = fully shown) for a subsector. */
   alphaOf(subsector: number): number {
     return this.alpha[subsector] ?? 1;

@@ -284,6 +284,19 @@ export class SpriteActor {
   readonly mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ visible: false }));
   private anim: SpriteAnimator;
 
+  /**
+   * Current translucency (1 = the ordinary opaque material). Anything below 1
+   * draws through a per-actor **clone** of the shared cached material rather
+   * than the cached one itself: `SpriteMaterialCache` hands out one material
+   * per (lump, mirrored) pair for everything that draws that lump, so setting
+   * `opacity` on it directly would fade every other user of the same art too.
+   * Only the player ever uses this (partial invisibility, game/inventory.ts's
+   * `PINS` powerup), and `PLAY` happens to be the player's alone — but relying
+   * on that would make this a trap the first time something else reuses a lump.
+   */
+  private opacity = 1;
+  private translucent = new Map<THREE.MeshBasicMaterial, THREE.MeshBasicMaterial>();
+
   constructor(
     bank: SpriteBank,
     materials: SpriteMaterialCache,
@@ -308,18 +321,47 @@ export class SpriteActor {
     this.anim.advance(dt, animating);
     const cached = this.anim.resolve(facingDeg, viewerAngleDeg);
     if (!cached) return false;
-    if (this.mesh.geometry !== cached.geometry) {
-      this.mesh.geometry = cached.geometry;
-      this.mesh.material = cached.material;
-    }
+    if (this.mesh.geometry !== cached.geometry) this.mesh.geometry = cached.geometry;
+    // Material and geometry can now disagree (a translucent clone stands in for
+    // the cached material), so it's swapped on its own rather than only when
+    // the geometry changes.
+    const material = this.opacity < 1 ? this.translucentOf(cached.material) : cached.material;
+    if (this.mesh.material !== material) this.mesh.material = material;
 
     doomToWorld(x, y, z, this.mesh.position);
     // The plane's un-rotated pose already faces VIEWER_ANGLE_DEG (see
     // SpriteMaterialCache's doc); turn it by however far the live viewer
     // angle has moved from that default so it keeps facing the camera.
     this.mesh.rotation.y = THREE.MathUtils.degToRad(viewerAngleDeg - VIEWER_ANGLE_DEG);
-    (this.mesh.material as THREE.MeshBasicMaterial).color.setScalar(litColor(light));
+    material.color.setScalar(litColor(light));
+    // Only ever written on a clone — the cached material is shared, and its
+    // own opacity must stay at the default 1 for everything else drawing it.
+    if (this.opacity < 1) material.opacity = this.opacity;
     return true;
+  }
+
+  /** Draws this actor at `opacity` (1 = normal) from the next `setPose` on — see the `opacity` field's doc. */
+  setOpacity(opacity: number): void {
+    this.opacity = opacity;
+  }
+
+  private translucentOf(base: THREE.MeshBasicMaterial): THREE.MeshBasicMaterial {
+    let clone = this.translucent.get(base);
+    if (!clone) {
+      clone = base.clone();
+      clone.transparent = true;
+      // The shared material alpha-tests at 0.5 against `texture.a * opacity`,
+      // which would discard the *whole* sprite at any opacity below that. A WAD
+      // sprite's alpha is binary (0 or 255, and NearestFilter never blends
+      // between them), so any threshold under the lowest opacity used cuts
+      // exactly the same silhouette the 0.5 test does.
+      clone.alphaTest = 0.01;
+      // One translucent plane among opaque geometry: not writing depth keeps it
+      // from punching a hole in whatever is drawn after it.
+      clone.depthWrite = false;
+      this.translucent.set(base, clone);
+    }
+    return clone;
   }
 
   die(frames: string[], frameDuration: number): void {
@@ -328,5 +370,15 @@ export class SpriteActor {
 
   revive(): void {
     this.anim.revive();
+  }
+
+  /**
+   * Releases the translucent clones made by `setOpacity`. Their textures are
+   * shared with (and owned by) `SpriteMaterialCache`, so those are deliberately
+   * left alone — only the cloned materials are this actor's to free.
+   */
+  dispose(): void {
+    for (const m of this.translucent.values()) m.dispose();
+    this.translucent.clear();
   }
 }

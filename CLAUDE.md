@@ -480,14 +480,32 @@ that's deferred to the combat/monster milestone rather than approximated now.
 
 ### Item pickups and HUD (`src/game/inventory.ts`, `src/ui/hud.ts`, `game/things.ts: ThingLayer.tryPickup`)
 
+The HUD's powerup strip (`.hud-powers`, built from `STRIP_POWER_IDS` the same way `.hud-weapon`
+is built from `WEAPON_CYCLE`) exists for the same reason the weapon icon does: a running
+powerup has no other on-screen presence at all — no number that changes, no door that opens —
+so without it there's no way to know one is active or how much of it is left. Each row shows
+that powerup's own ground-pickup sprite plus a countdown, blank for the one remaining
+`Infinity`-duration entry (a countdown there would only ever read the same number). The
+backpack shares the strip: same kind of "you have this now" status, also with no number of its
+own. The whole panel collapses via `.hud-stat.hidden` while nothing is active, so `#game-hud`'s
+flex `gap` doesn't leave a hole.
+
+**Berserk is deliberately not in the strip at all** (`STRIP_POWER_IDS` = `POWER_IDS` minus
+`'berserk'`) — it already has an on-screen presence the other five don't: the health icon
+itself swaps from `MEDIA0` to berserk's own `PSTRA0` while it's held, the same idea as the
+armor icon already swapping between its green/blue art by `armorType`. Two `<canvas>`
+elements sit in `.hud-health` (`.icon-normal`/`.icon-berserk`), toggled by `.hidden` off
+`hasPower(inv, 'berserk')` — no separate countdown needed, since berserk is one of the
+`Infinity`-duration powers anyway.
+
 `Inventory` (health, armor + armor type, four ammo classes, collected keys) is a plain
 struct owned by `Game` in `game.ts`, not by `Player` — nothing about resting height or
 movement needs it, and keeping it separate is what makes `finishLevel` (below) a one-line
 call at map load rather than something `Player`'s constructor has to reason about.
 
-Health, armor, ammo, keys and weapons are collectible; powerups are the one category still
-left alone (still rendered, still decorative) since there's no player-status-effect system
-yet to give picking one up any meaning. Weapon ownership and ammo land in
+Health, armor, ammo, keys, weapons, the backpack and all six powerups are collectible — see
+"Powerups" below for the powerup half, which is the only category whose effect lives outside
+this struct's own numbers. Weapon ownership and ammo land in
 `Inventory.weapons`/`Inventory.ammo`, and are read by `game/weapons.ts` (below) for
 selection and firing. `Inventory.currentWeapon` lives here rather than in `WeaponSystem` for
 the same reason the rest of the struct does: `game.ts` owns it, and the HUD reads it straight
@@ -508,11 +526,12 @@ are always consumed. A weapon's ammo grant follows vanilla's `P_GiveWeapon` too:
 placed directly on the map rather than dropped by a dead monster (which only vanilla-gives
 half); there are no monster drops yet for that distinction to matter.
 
-**Keys don't survive a level transition; health/armor/ammo do** (`finishLevel`, called from
-`game.ts: loadMapByIndex` before the new map loads) — matching vanilla's own
-`G_PlayerFinishLevel`, which clears `player->cards` but nothing else. This does mean a locked
-door on the far side of a level transition needs its key collected again on the new map, same
-as vanilla itself requires.
+**Keys and powerups don't survive a level transition; health/armor/ammo and the backpack's
+raised caps do** (`finishLevel`, called from `game.ts: loadMapByIndex` before the new map
+loads) — matching vanilla's own `G_PlayerFinishLevel`, which clears `player->cards` and
+`player->powers` (and drops `MF_SHADOW`) but nothing else; `player->backpack`/`maxammo` are
+deliberately not among them. This does mean a locked door on the far side of a level
+transition needs its key collected again on the new map, same as vanilla itself requires.
 
 **Locked doors check the matching key** (`game/specials.ts: SpecialsController.trigger`).
 `wad/specials.ts`'s keyed door specials (26-28, 32-34, 99, 133-137) each carry a `requiredKey`
@@ -594,19 +613,114 @@ written into `index.html` like the other panels: the weapon list is a compile-ti
 Icons reuse each weapon's own ground-pickup sprite (`WeaponDef.iconLump`); fist and pistol have
 no pickup, so they fall back to their first-person `PUNGA0`/`PISGA0` frames.
 
+Both dynamically-built panels (`.hud-weapon` and `.hud-powers` below) `replaceChildren()` before
+filling themselves. `Hud` is constructed per `Game`, against the *same* static `#game-hud`
+element — so a second game started from the menu would otherwise stack a second full set of
+icons on top of the first's.
+
+### Powerups and the backpack (`src/game/inventory.ts`, `src/game.ts`, `src/ui/hud.ts`)
+
+`Inventory.powers` holds seconds remaining per `PowerId`, ticked by `tickPowers` (which
+`game.ts` calls only while alive, matching vanilla's `P_PlayerThink` handing off to
+`P_DeathThink` before it reaches them). Durations are vanilla's own `INVULNTICS`/`INVISTICS`/
+`IRONTICS`/`INFRATICS` over 35 — plain constants that survive conversion out of tics intact,
+unlike `weapons.ts`'s fire rates. Berserk and the computer area map are `Infinity`: vanilla
+stores them as a flag that never counts down, and `finishLevel` clears them along with every
+other power at the end of the level anyway.
+
+`givePower` reproduces `P_GivePower`'s three-way split rather than treating the six uniformly:
+the four timed ones always take and **restart** their clock (they never stack), berserk always
+takes and additionally tops health back up to the normal 100 cap (`P_GiveBody`, never past it
+the way a bonus item would) and switches to the fist, and the computer area map is the only one
+that can be **refused** — it falls into `P_GivePower`'s generic "already got it" branch, so a
+second one stays on the ground rather than silently vanishing.
+
+Where each effect actually lives is the load-bearing part, since only two of the seven are
+inventory arithmetic:
+
+- **Backpack** (`ammoMax`) doubles every cap permanently and hands over one `CLIP_AMMO` of each
+  class. Every cap check in `inventory.ts` routes through `ammoMax` rather than reading
+  `AMMO_MAX` — a weapon pickup's own ammo grant respects the raised cap too, not just plain
+  ammo pickups. It is always consumed, even at full ammo, unlike every other ammo pickup.
+- **Invulnerability** is checked in `applyDamage`, in the same place and with the same
+  `damage < 1000` threshold vanilla's `P_DamageMobj` uses.
+- **Radiation suit** gates `game.ts: updateDamageFloor` through `suitBlocks`, and vanilla is
+  deliberately not uniform here either — `DamageFloorEffect.suit` is per sector type: nukage/
+  hellslime are blocked outright, the two 20-damage slimes share a `case` reading
+  `!pw_ironfeet || (P_Random()<5)` so a suit still leaks `SUIT_LEAK_CHANCE` of hits, and E1M8's
+  finale type (11) never consults the suit at all. The interval keeps running while a hit is
+  blocked (vanilla's clock is the global `leveltime&0x1f`), so the suit skips damage rather
+  than banking it up for the moment it expires.
+- **Berserk**'s ×10 is applied in `WeaponSystem.update`, to the **fist only** — vanilla's
+  `A_Punch` reads `pw_strength` and `A_Saw` deliberately doesn't.
+- **Computer area map** is the one whose whole effect lives outside `Inventory`:
+  `FogOfWar.revealAll`, watched for by doomednum (`COMPUTER_MAP_TYPE`) in `game.ts`'s pickup
+  callback. Here that *is* vanilla's `pw_allmap` — this engine's play view and its map view are
+  the same view, so revealing the geometry is exactly what filling in the automap does. It sets
+  only the `explored` flags, not `alpha`, so the ordinary reveal lerp fades the level in rather
+  than snapping it on.
+- **Partial invisibility** is two things, neither of them a rule about being seen:
+  `INVISIBILITY_OPACITY` on the player sprite, and `game.ts: applyShadowAim` throwing a
+  monster's *ranged* shot off-aim by vanilla's own `A_FaceTarget` fuzz
+  (`(P_Random()-P_Random())<<21`, i.e. up to ±44.8°, `SHADOW_AIM_SPREAD_DEG`). That fuzz is the
+  entire vanilla mechanic — `MF_SHADOW` never touches `P_CheckSight`, waking, or a monster's
+  willingness to attack, so none of those are gated on it here either. It's applied per shot
+  (each bullet of a burst goes its own way) and only to a shot aimed at the player
+  (`targetId === null`): nothing else here carries `MF_SHADOW`, and an infight shouldn't go wide
+  because the player drank something. Melee is deliberately unaffected, matching vanilla, whose
+  melee lands on `P_CheckMeleeRange` rather than on the fuzzed angle.
+- **Light amplification visor** rides `WebGLRenderer.toneMappingExposure`
+  (`LIGHT_VISOR_EXPOSURE`). `Viewport` sets `toneMapping = LinearToneMapping` **once**, at
+  construction: changing `toneMapping` itself recompiles every material's shader, while the
+  exposure is a plain uniform, and `LinearToneMapping` at exposure 1 is `saturate(color)` —
+  bit-identical to `NoToneMapping` for anything already in range, so it costs nothing until the
+  visor turns it up. A flat multiply is an approximation of vanilla's "force the brightest
+  colormap row everywhere"; matching that exactly would mean rebuilding every surface's baked
+  vertex lighting (see "Sector lighting"), which is far more than the effect is worth.
+
+The two screen tints (`#screen-tint`, `menu.css`) are CSS on the composited frame rather than
+anything in the render pipeline. Invulnerability uses `backdrop-filter: grayscale(1) invert(1)`
+— vanilla's `INVULNERABILITYMAP` really is a *grayscale* inverse of the palette, not a colour
+inversion — and the suit a flat green wash. The element sits at `z-index: 5`: above the canvas,
+below every HUD layer (all at 10+), so the world recolours and the readouts over it don't.
+`Game.dispose` has to clear both classes and reset the exposure, since the `Viewport` and these
+overlay elements outlive a `Game` — otherwise the menu, and the next level started from it,
+inherit whatever powerup was running when the last one ended.
+
+`SpriteActor.setOpacity` (`render/sprites.ts`) draws through a per-actor **clone** of the shared
+cached material rather than mutating it: `SpriteMaterialCache` hands out one material per
+(lump, mirrored) pair to everything drawing that lump. Only the player ever uses this, and
+`PLAY` happens to be the player's alone, but relying on that would be a trap the first time
+something else reuses a lump. The clone drops `alphaTest` from 0.5 to 0.01 — the test is against
+`texture.a * opacity`, so at 0.35 opacity the 0.5 threshold would discard the *entire* sprite;
+WAD sprite alpha is binary (0 or 255, and `NearestFilter` never blends between them), so any
+threshold below the opacity in use cuts exactly the same silhouette. It's the stand-in for
+vanilla's `fuzz` colormap (a per-column smear of what's behind the sprite, a software-renderer
+trick with no direct equivalent here) and deliberately errs toward still being findable on
+screen: in vanilla the invisible thing is *you*, seen from your own eyes; here it's a sprite you
+have to keep track of.
+
 ### Weapons, firing and auto-aim (`src/game/weapons.ts`, `src/game/world.ts: shotPath`, `src/render/tracer.ts`, `src/game.ts`)
 
 `WeaponSystem` (`game/weapons.ts`) owns weapon selection and fire timing/ammo, and
 **deliberately knows nothing about three.js**: `update` returns a list of `Shot`s describing
-what was fired this frame (one per hitscan pellet, or one per projectile launched), and
-`game.ts` turns those into tracer lines and flying sprites. That's the same split as
+what was fired this frame (one per hitscan pellet, one per projectile launched, or one per
+melee swing), and `game.ts` turns those into tracer lines and flying sprites. That's the same split as
 `game/specials.ts`'s line triggers vs. `game.ts`'s teleport-fog puffs, and it's what lets fire
 rates and ammo costs be tested headlessly against a synthetic map.
 
 Fire rates and spread are tuned by feel rather than converted from vanilla's tic-based weapon
 state tables — same reasoning as `player.ts`'s `GRAVITY`, they don't translate to a dt-scaled
 model. Ammo-per-shot has no such problem and is lifted straight from vanilla, since it's what
-decides how long a pickup's ammo lasts. Hitscan spread uses vanilla's own `P_Random - P_Random`
+decides how long a pickup's ammo lasts — as are the damage dice, including the fist's and
+chainsaw's shared 2-20 (`(P_Random()%10+1)<<1`). **A melee swing is resolved entirely
+differently from every other shot**: `spawnShot` returns before `shotPath` even runs, and just
+raycasts `PLAYER_MELEE_RANGE` (vanilla's own `MELEERANGE`, 64) along the aim angle — a swing
+doesn't travel, so it needs none of `shotPath`'s wall/step blocking, matching vanilla's
+`A_Punch`/`A_Saw`, which trace `MELEERANGE` from the player and damage whatever is there. It
+needs no lock-on case either: `player.angle` is already set from the same `aim` the lock uses,
+so the ray finds a hovered monster on its own, and simply can't reach one further off than the
+swing's own range. Hitscan spread uses vanilla's own `P_Random - P_Random`
 trick (two uniform draws subtracted → triangular distribution centred on the aim line).
 
 **Slot keys toggle within a slot, they don't select "the best".** `WEAPON_SLOTS` lists each
@@ -737,9 +851,9 @@ it once hunting; there's no "lost the scent and went back to sleep" in vanilla e
 [`p_pspr.c`](https://github.com/id-Software/DOOM/blob/master/linuxdoom-1.10/p_pspr.c)) rather than
 assumed, the same rigor as this file's line-special tables. `game.ts` calls `noiseAlert` at the
 player's position whenever a shot actually fires (matching vanilla's `P_FireWeapon`, which calls
-`P_NoiseAlert` for every successful weapon fire — melee included, though fist/chainsaw don't
-apply it yet since neither deals damage at all regardless, see "Weapons, firing and auto-aim"
-below). `noiseAlert` floods outward sector-by-sector through two-sided lines, matching vanilla's
+`P_NoiseAlert` for every successful weapon fire, melee included — `P_FireWeapon` is the same
+entry point for every weapon, so swinging a fist in an empty room wakes the neighbours the same
+as firing a pistol would). `noiseAlert` floods outward sector-by-sector through two-sided lines, matching vanilla's
 `P_RecursiveSound` exactly: a fully closed door (zero vertical opening) stops it outright, an
 `LF.BLOCK_SOUND`-flagged line softens it once (crossable, but a *second* such line on the same
 path stops it), and every other two-sided line passes it through unchanged. Once a sector is
@@ -1454,10 +1568,10 @@ to a damage pit doesn't damage the player until they actually step down into it.
 (`SECTOR_LIGHT_SPECIALS`) — vanilla spawns the same non-synced fast strobe sector type 2 gets and
 then explicitly restores `sector->special = 4` afterward so the damage check still sees it; this
 engine never clears `sector.special` after seeding a light pattern in the first place, so 4 living
-in both tables "just works" without needing to reproduce that restore step. None of the four
-regular types currently distinguish a radiation-suit powerup (`pw_ironfeet` — always damages,
-since powerups are still decorative-only, see "Not yet implemented" below) the way vanilla's own
-`P_PlayerInSpecialSector` does.
+in both tables "just works" without needing to reproduce that restore step. A radiation suit
+gates the damage per type (`DamageFloorEffect.suit`, `game.ts: suitBlocks`) exactly the way
+vanilla's own `P_PlayerInSpecialSector` does — see "Powerups and the backpack" above for why
+the five types don't all treat it the same.
 
 **Scrolling textures** (`SCROLL_LINE_SPECIAL` = 48, `render/occlusion.ts: TextureScroller`) are
 vanilla's `P_UpdateSpecials`: a linedef with this special scrolls its front sidedef's texture
@@ -1720,13 +1834,18 @@ sprite billboards (monsters, weapons, ammo, health/armor, keys, powerups and com
 decorations — see the thing table in `game/thingdefs.ts`), batched into one `InstancedMesh` per
 sprite lump so a map with ten thousand of them stays playable (`render/spritebatch.ts`), and the
 player is drawn as the real `PLAY` sprite with a facing-driven rotation frame and a walk-cycle
-animation, both tracking the live camera angle. Health, armor, ammo, key and weapon pickups are collectible
+animation, both tracking the live camera angle. Health, armor, ammo, key, weapon, backpack and
+powerup pickups are all collectible
 (`game/inventory.ts`) and drive a HUD (`src/ui/hud.ts`) drawn from the same WAD pickup-sprite
-graphics the world renders items with; powerups stay decorative-only. Multiplayer-only things
+graphics the world renders items with. All six powerups do what vanilla's do — invulnerability,
+berserk, partial invisibility, radiation suit, computer area map and light amplification visor,
+on vanilla's own timers — as does the backpack (see "Powerups and the backpack" above).
+Multiplayer-only things
 (deathmatch weapon/ammo stashes) correctly don't spawn (`game/skill.ts: isMultiplayerOnly`).
 All nine weapons can be selected (`1`-`7`, or the mouse wheel) and fired (`game/weapons.ts`):
 hitscan weapons draw a flashing tracer line to what they hit, the rocket launcher/plasma
-rifle/BFG launch a flying sprite that explodes on arrival, and hovering the cursor over a
+rifle/BFG launch a flying sprite that explodes on arrival, the fist and chainsaw swing at
+whatever is within `PLAYER_MELEE_RANGE` in front of the player, and hovering the cursor over a
 monster locks aim onto it, angling the shot to its actual position and height
 (`ThingLayer.pickMonster`, `world.ts: shotPath`). The selected weapon shows in the HUD, since
 the player sprite looks the same whatever it holds. A locked-on shot that lands, or anyone
@@ -1775,5 +1894,5 @@ known deviations, all deliberate: monster *damage* values are tuned softer than 
 monster's own projectile carries no splash (so a cyberdemon's rocket doesn't blast what it lands
 next to), the revenant's missile flies straight instead of homing, and the pain elemental and
 arch-vile use a hitscan stand-in for attacks vanilla implements differently. Not yet implemented:
-powerup effects, and actual audio (the noise-alert *mechanic* above works off vanilla's
-sound-propagation rules, but nothing in this engine plays a sound yet).
+actual audio (the noise-alert *mechanic* above works off vanilla's sound-propagation rules, but
+nothing in this engine plays a sound yet).

@@ -14,7 +14,13 @@ import { World, hasLineOfSight, shotPath } from './game/world.ts';
 import { Player, PLAYER_HEIGHT, PLAYER_RADIUS } from './game/player.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
-import { CRUSH_DAMAGE, DAMAGE_FLOOR_INTERVAL, SECTOR_DAMAGE_SPECIALS } from './wad/specials.ts';
+import {
+  CRUSH_DAMAGE,
+  DAMAGE_FLOOR_INTERVAL,
+  SECTOR_DAMAGE_SPECIALS,
+  SUIT_LEAK_CHANCE,
+  type DamageFloorEffect,
+} from './wad/specials.ts';
 import { Input } from './game/input.ts';
 import { Hud } from './ui/hud.ts';
 import { ProfilerHud } from './ui/profilerhud.ts';
@@ -23,9 +29,12 @@ import type { Skill } from './game/skill.ts';
 import {
   applyDamage,
   applyPickup,
+  COMPUTER_MAP_TYPE,
   createInventory,
   finishLevel,
+  hasPower,
   ITEM_PICKUP_RADIUS,
+  tickPowers,
   type Inventory,
 } from './game/inventory.ts';
 import { WeaponSystem, type Shot } from './game/weapons.ts';
@@ -245,6 +254,41 @@ const MONSTER_FADE_RANGE = 768;
 const MAX_FADE_TARGETS = 48;
 
 /**
+ * How solid the player sprite draws while partial invisibility is held
+ * (`game/inventory.ts`'s `PINS` powerup). Vanilla draws a shadowed thing
+ * through its own `fuzz` colormap — a per-column smear of the pixels behind
+ * it, which is a software-renderer trick with no direct equivalent here.
+ * Plain translucency is the honest stand-in: it reads as "hard to see"
+ * without leaving the player unable to find themselves on screen, which
+ * matters more here than in vanilla (there the invisible thing is *you*,
+ * seen from your own eyes; here it's a sprite you have to keep track of).
+ */
+const INVISIBILITY_OPACITY = 0.35;
+
+/**
+ * `WebGLRenderer.toneMappingExposure` while the light amplification visor is
+ * held — a flat multiply over the whole frame (`LinearToneMapping`, see
+ * `Viewport`), which is as close as this engine gets to vanilla's own visor
+ * without rebuilding every surface's baked vertex lighting. Vanilla forces
+ * the *brightest* colormap row everywhere, i.e. full bright regardless of
+ * sector light; a multiply keeps some of the level's own shading while
+ * lifting a dark room to plainly readable, and lets already-bright rooms
+ * saturate out the way vanilla's does.
+ */
+const LIGHT_VISOR_EXPOSURE = 2.5;
+
+/**
+ * Vanilla's `A_FaceTarget`: a monster aiming at something carrying
+ * `MF_SHADOW` — which, in this engine, only ever means the player under
+ * partial invisibility — throws its facing off by
+ * `(P_Random()-P_Random())<<21` BAM, i.e. up to ±255/2048 of a full turn.
+ * That is the *entire* mechanic behind the blur sphere in vanilla: it doesn't
+ * touch sight, waking, or a monster's willingness to attack at all, it just
+ * makes them shoot wide.
+ */
+const SHADOW_AIM_SPREAD_DEG = (255 / 2048) * 360;
+
+/**
  * Renderer, canvas, camera and input live for the whole session — a new level
  * must not cost a new WebGL context.
  */
@@ -258,6 +302,13 @@ export class Viewport {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    // Set once, here, rather than switched on and off with the light visor:
+    // changing `toneMapping` itself recompiles every material's shader, while
+    // `toneMappingExposure` is a plain uniform. `LinearToneMapping` at the
+    // default exposure of 1 is `saturate(color)` — bit-identical to
+    // `NoToneMapping` for anything already in range, so this costs nothing
+    // until `LIGHT_VISOR_EXPOSURE` actually turns it up.
+    this.renderer.toneMapping = THREE.LinearToneMapping;
     container.appendChild(this.renderer.domElement);
 
     this.camera = new TopDownCamera(window.innerWidth / window.innerHeight);
@@ -334,6 +385,8 @@ export class Game {
   private profilerHud = new ProfilerHud();
   private inventory: Inventory = createInventory();
   private deathOverlay = document.getElementById('death-overlay')!;
+  /** Full-screen colour overlay for the powerups that recolour the view — see `updatePowerEffects`. */
+  private screenTint = document.getElementById('screen-tint')!;
   /** True once the player's health has hit 0 — freezes movement/aim/firing/pickups (see `frame`) until `restart`. */
   private playerDead = false;
   readonly title: string;
@@ -511,6 +564,13 @@ export class Game {
 
   dispose(): void {
     this.pause();
+    // The Viewport (renderer) and the overlay elements outlive this Game, so
+    // anything updatePowerEffects turned on has to be turned back off here —
+    // otherwise the menu, and the next level started from it, inherit whatever
+    // powerup happened to be running when this one ended.
+    this.screenTint.classList.remove('invulnerable', 'suited');
+    this.view.renderer.toneMappingExposure = 1;
+    this.playerActor.dispose();
     this.specials?.dispose();
     this.built?.group.traverse((obj) => {
       if (obj instanceof THREE.Mesh) obj.geometry.dispose();
@@ -576,6 +636,20 @@ export class Game {
    */
   private spawnShot(shot: Shot, startZ: number, target: Pos3 | null, targetId: number | null): void {
     const origin: Pos3 = { x: this.player.x, y: this.player.y, z: startZ };
+
+    // A swing never travels, so it needs none of shotPath's wall/step
+    // blocking: vanilla's A_Punch/A_Saw just trace MELEERANGE along the
+    // player's facing and damage the first thing there. Aim is already
+    // pointing at a hovered monster (player.angle is set from the same `aim`
+    // the lock-on uses), so the ray finds a locked-on target without a
+    // separate case for it — it simply can't reach one further off than the
+    // swing's own range, the same as vanilla.
+    if (shot.kind === 'melee') {
+      const swung = this.things?.raycastMonster(origin, shot.angleRad, shot.range) ?? null;
+      if (swung) this.things?.damage(swung.id, shot.damage);
+      return;
+    }
+
     const path = shotPath(this.world, origin, shot.angleRad, target);
 
     let hitMonsterId: number | null = null;
@@ -1007,11 +1081,61 @@ export class Game {
     }
     this.damageFloorTimer -= dt;
     if (this.damageFloorTimer > 0) return;
+    // The interval keeps running even when a suit blocks the hit, matching
+    // vanilla's own global `leveltime&0x1f` clock: the suit skips the damage,
+    // it doesn't bank it up for the moment it expires.
     this.damageFloorTimer += DAMAGE_FLOOR_INTERVAL;
+    if (this.suitBlocks(effect)) return;
     this.damagePlayer(effect.amount);
     if (effect.exitBelowHealth !== undefined && this.inventory.health > 0 && this.inventory.health <= effect.exitBelowHealth) {
       this.pendingExit = true;
     }
+  }
+
+  /** Whether a worn radiation suit stops this damage floor's hit — see `DamageFloorEffect.suit` for why the three types differ. */
+  private suitBlocks(effect: DamageFloorEffect): boolean {
+    if (effect.suit === 'ignored' || !hasPower(this.inventory, 'radiationSuit')) return false;
+    return effect.suit === 'blocks' || Math.random() >= SUIT_LEAK_CHANCE;
+  }
+
+  /**
+   * Throws a monster's ranged shot off-aim while the player holds partial
+   * invisibility — vanilla's `A_FaceTarget` fuzz (see `SHADOW_AIM_SPREAD_DEG`),
+   * applied per shot, so each bullet of a chaingunner's burst goes its own way
+   * rather than the whole burst sharing one offset. Deliberately only for a
+   * shot aimed at the *player* (`targetId === null`): nothing else in this
+   * engine ever carries `MF_SHADOW`, and an infight between two monsters
+   * shouldn't suddenly go wide because the player drank something.
+   *
+   * Ranged only, matching vanilla: a melee swing lands on a range check
+   * (`P_CheckMeleeRange`), never on the fuzzed angle, so a demon still bites
+   * an invisible player just fine.
+   */
+  private applyShadowAim(atk: MonsterAttackEvent): void {
+    if (atk.kind !== 'ranged' || atk.targetId !== null || !hasPower(this.inventory, 'invisibility')) return;
+    // Vanilla's own P_Random-P_Random shape: a triangular spread centred on
+    // the true aim, the same trick weapons.ts uses for pellet spread.
+    const off = ((Math.random() - Math.random()) * SHADOW_AIM_SPREAD_DEG * Math.PI) / 180;
+    atk.angleRad += off;
+    if (atk.projectile) atk.projectile.angleRad += off;
+  }
+
+  /**
+   * Pushes the three powerups whose effect is a *view* change rather than a
+   * rule change out to where they actually happen: the invulnerability and
+   * radiation-suit screen tints (CSS, `#screen-tint` — see menu.css for why
+   * they're done on the composited frame instead of in the lighting), the
+   * light visor's exposure lift, and the player sprite's own translucency
+   * under partial invisibility. Driven off inventory state every frame rather
+   * than toggled on pickup/expiry, so a level change or a restart clearing the
+   * powers takes effect without needing its own teardown path.
+   */
+  private updatePowerEffects(): void {
+    const inv = this.inventory;
+    this.screenTint.classList.toggle('invulnerable', hasPower(inv, 'invulnerability'));
+    this.screenTint.classList.toggle('suited', hasPower(inv, 'radiationSuit'));
+    this.view.renderer.toneMappingExposure = hasPower(inv, 'lightVisor') ? LIGHT_VISOR_EXPOSURE : 1;
+    this.playerActor.setOpacity(hasPower(inv, 'invisibility') ? INVISIBILITY_OPACITY : 1);
   }
 
   /** `R`, while dead: a fresh inventory and a reload of the current map — `loadMapByIndex` resets the player/world/specials/fog and, via the doc on its own top, `playerDead`/the death overlay/`playerActor` too. */
@@ -1083,6 +1207,10 @@ export class Game {
     // is a no-op once already dead, so this can't double-kill).
     let aim: Pos2 | null = null;
     if (!this.playerDead) {
+      // Ticked with the rest of the player's own update and not while dead,
+      // matching vanilla: powers age in `P_PlayerThink`, which hands off to
+      // `P_DeathThink` and returns before reaching them once health hits 0.
+      tickPowers(this.inventory, dt);
       // The cursor hovering over a monster locks aim onto its actual
       // position — and height — instead of wherever the mouse's flat
       // floor-plane projection lands underneath the cursor. This has to
@@ -1116,9 +1244,9 @@ export class Game {
         // Vanilla's P_FireWeapon calls P_NoiseAlert every time a shot is actually
         // fired (ammo/cooldown allowed it) — this is what lets a monster with no
         // line of sight to the player still wake up on gunfire (World.noiseAlert,
-        // game/world.ts). Melee weapons (fist/chainsaw) fire vanilla's own noise
-        // alert too, but don't yet deal damage at all (see weapons.ts), so this
-        // only covers hitscan/projectile shots for now.
+        // game/world.ts). Melee swings count: P_FireWeapon is the same entry
+        // point for every weapon, so swinging a fist in an empty room wakes the
+        // neighbours the same as firing a pistol would.
         if (shots.length > 0) this.world.noiseAlert(this.player.x, this.player.y);
         for (const shot of shots) {
           this.spawnShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
@@ -1126,7 +1254,13 @@ export class Game {
       });
 
       this.profiler.time('Player', () => {
-        this.things?.tryPickup(this.player, PICKUP_RANGE, (type, dropped) => applyPickup(this.inventory, type, dropped));
+        this.things?.tryPickup(this.player, PICKUP_RANGE, (type, dropped) => {
+          const taken = applyPickup(this.inventory, type, dropped);
+          // The computer area map's whole effect lives outside the inventory
+          // struct — see COMPUTER_MAP_TYPE's doc.
+          if (taken && type === COMPUTER_MAP_TYPE) this.fogOfWar.revealAll();
+          return taken;
+        });
         this.updateDamageFloor(dt);
       });
     } else if (input.pressed('KeyR')) {
@@ -1137,6 +1271,7 @@ export class Game {
     }
     camera.update(dt, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, aim);
     this.hud.update(this.inventory);
+    this.updatePowerEffects();
 
     this.profiler.time('Fog of War', () => this.fogOfWar.update(dt, this.player.x, this.player.y));
     const fog = this.fogOfWar;
@@ -1160,6 +1295,11 @@ export class Game {
     );
     this.profiler.time('Monsters', () => {
       for (const atk of monsterAttacks) {
+        // Applied here rather than inside game/monsters.ts because whether the
+        // player is currently shadowed is inventory state, which the AI has no
+        // reason to know about — the same "systems report, game.ts realizes"
+        // split every other attack effect on this loop follows.
+        this.applyShadowAim(atk);
         // A monster with a real flying projectile (game/monsters.ts's
         // MONSTER_STATS, e.g. the imp's fireball) launches one instead of
         // resolving as an instant hit — damage lands later, on arrival

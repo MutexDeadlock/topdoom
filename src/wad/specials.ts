@@ -720,13 +720,16 @@ export const SECTOR_LIGHT_SPECIALS: Record<number, LightPattern> = {
  * take sector damage in real vanilla either. `amount` is dealt every
  * `DAMAGE_FLOOR_INTERVAL` while the player is actually resting on that
  * sector's own floor (vanilla's `mo->z != sector->floorheight` guard skips a
- * player still falling into the sector). Every case here would additionally
- * skip the roll entirely with a radiation-suit powerup equipped
- * (`pw_ironfeet`) — and 4 specifically still has a further `P_Random() < 5`
- * chance to hurt anyway even *with* the suit — but powerups are still
- * decorative-only in this engine (see CLAUDE.md's "Current state"), so
- * there's nothing to gate on yet; every sector here always damages every
- * interval until that changes. `exitBelowHealth` is vanilla's E1M8 finale
+ * player still falling into the sector).
+ *
+ * `suit` is how a radiation suit (`game/inventory.ts`'s `radiationSuit`
+ * power, vanilla's `pw_ironfeet`) interacts with each type, and vanilla is
+ * deliberately not uniform about it: nukage and hellslime are blocked
+ * outright (`'blocks'`), the two 20-damage slimes share a `case` whose
+ * condition is `!pw_ironfeet || (P_Random()<5)` so a suit still leaks
+ * `SUIT_LEAK_CHANCE` of hits through (`'leaks'`), and E1M8's finale type
+ * never consults the suit at all (`'ignored'`) — it's scripted to end the
+ * level, not a hazard to survive. `exitBelowHealth` is vanilla's E1M8 finale
  * quirk (type 11): once this damage drops the player at or below that health,
  * the level ends, matching vanilla's own `G_ExitLevel()` call inline in the
  * same switch case (its `cheats &= ~CF_GODMODE` line has nothing to clear
@@ -734,15 +737,18 @@ export const SECTOR_LIGHT_SPECIALS: Record<number, LightPattern> = {
  */
 export interface DamageFloorEffect {
   amount: number;
+  suit: 'blocks' | 'leaks' | 'ignored';
   exitBelowHealth?: number;
 }
 export const SECTOR_DAMAGE_SPECIALS: Record<number, DamageFloorEffect> = {
-  7: { amount: 5 }, // NUKAGE DAMAGE
-  5: { amount: 10 }, // HELLSLIME DAMAGE
-  16: { amount: 20 }, // SUPER HELLSLIME DAMAGE
-  4: { amount: 20 }, // STROBE HURT
-  11: { amount: 20, exitBelowHealth: 10 }, // EXIT SUPER DAMAGE (E1M8 finale)
+  7: { amount: 5, suit: 'blocks' }, // NUKAGE DAMAGE
+  5: { amount: 10, suit: 'blocks' }, // HELLSLIME DAMAGE
+  16: { amount: 20, suit: 'leaks' }, // SUPER HELLSLIME DAMAGE
+  4: { amount: 20, suit: 'leaks' }, // STROBE HURT
+  11: { amount: 20, suit: 'ignored', exitBelowHealth: 10 }, // EXIT SUPER DAMAGE (E1M8 finale)
 };
+/** Vanilla's `P_Random() < 5`: the chance a `'leaks'` damage floor hurts anyway despite a radiation suit. */
+export const SUIT_LEAK_CHANCE = 5 / 256;
 /** Not vanilla's literal `leveltime&0x1f` (every 32 tics since level start, a global clock) — a plain independent countdown instead, same simplification `CRUSH_DAMAGE_INTERVAL` already makes. 32 tics at 35 tics/sec. */
 export const DAMAGE_FLOOR_INTERVAL = 32 / 35;
 

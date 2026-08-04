@@ -13,7 +13,8 @@
 
     <div id="game-hud">
       <div class="hud-stat hud-health">
-        <canvas class="icon"></canvas>
+        <canvas class="icon icon-normal"></canvas>
+        <canvas class="icon icon-berserk hidden"></canvas>
         <span class="value">100</span>
       </div>
       <div class="hud-stat hud-armor empty">
@@ -33,7 +34,10 @@
         <div class="key-yellow"><canvas class="icon"></canvas></div>
       </div>
       <div class="hud-stat hud-weapon"></div>
+      <div class="hud-stat hud-powers"></div>
     </div>
+
+    <div id="screen-tint"></div>
 
     <div id="death-overlay" class="hidden">
       <div class="title">YOU DIED</div>

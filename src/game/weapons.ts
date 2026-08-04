@@ -1,5 +1,22 @@
-import type { AmmoType, Inventory, WeaponId } from './inventory.ts';
+import { hasPower, type AmmoType, type Inventory, type WeaponId } from './inventory.ts';
 import type { Input } from './input.ts';
+
+/**
+ * Vanilla's `MELEERANGE`: how far `A_Punch`/`A_Saw` trace out from the
+ * player's own centre. `game/monsters.ts` keeps its own, slightly longer
+ * `MELEE_RANGE` for the *monster* side of the same idea — that one is a
+ * body-to-body distance sampled per frame rather than per tic and carries
+ * slack for it; this is a plain trace length, so it's vanilla's number as-is.
+ */
+export const PLAYER_MELEE_RANGE = 64;
+
+/**
+ * What berserk multiplies a **fist** punch by — vanilla's `A_Punch`, which
+ * scales its own `(P_Random()%10+1)*2` roll by 10 while `pw_strength` is
+ * held, turning a 2-20 tickle into 20-200. `A_Saw` deliberately does not read
+ * the power at all, so the chainsaw is unaffected in vanilla and here.
+ */
+const BERSERK_FIST_MULTIPLIER = 10;
 
 export type WeaponKind = 'melee' | 'hitscan' | 'projectile';
 
@@ -14,6 +31,8 @@ export interface WeaponDef {
   pellets: number;
   /** Hitscan only: each pellet's random spread off the aim line, in degrees. */
   spreadDeg: number;
+  /** Melee only: how far in front of the player the swing reaches (`PLAYER_MELEE_RANGE`); 0 for everything else. */
+  meleeRange: number;
   /** Projectile only: travel speed, map units/sec. */
   projectileSpeed: number;
   /** Projectile only: SpriteBank name the flying shot is drawn as. */
@@ -29,10 +48,10 @@ export interface WeaponDef {
    * A direct/pellet hit's damage roll is `((rand % damageDiceSides) + 1) *
    * damageDiceMultiplier` — vanilla's own P_Random-based per-weapon formula
    * (pistol/chaingun/shotgun pellets: 5,10,15; plasma bolt: 5,10,15,20;
-   * rocket: 20-160 in steps of 20), lifted rather than tuned by feel since it
-   * decides how tough a fight actually is, the same reasoning ammo-per-shot
-   * already used. `0` sides means "no direct damage yet" — fist and chainsaw,
-   * which still have nothing to hit (see CLAUDE.md).
+   * rocket: 20-160 in steps of 20; fist and chainsaw: 2-20), lifted rather
+   * than tuned by feel since it decides how tough a fight actually is, the
+   * same reasoning ammo-per-shot already used. The fist's roll is additionally
+   * scaled while berserk is held — see `BERSERK_FIST_MULTIPLIER`.
    */
   damageDiceSides: number;
   damageDiceMultiplier: number;
@@ -119,11 +138,13 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kind: 'melee',
     pellets: 0,
     spreadDeg: 0,
+    meleeRange: PLAYER_MELEE_RANGE,
     projectileSpeed: 0,
     projectileSprite: '',
     iconLump: 'PUNGA0',
-    damageDiceSides: 0,
-    damageDiceMultiplier: 0,
+    // Vanilla A_Punch: (P_Random()%10+1)<<1, i.e. 2-20, times 10 with berserk.
+    damageDiceSides: 10,
+    damageDiceMultiplier: 2,
     splash: null,
   },
   chainsaw: {
@@ -133,11 +154,15 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kind: 'melee',
     pellets: 0,
     spreadDeg: 0,
+    meleeRange: PLAYER_MELEE_RANGE,
     projectileSpeed: 0,
     projectileSprite: '',
     iconLump: 'CSAWA0',
-    damageDiceSides: 0,
-    damageDiceMultiplier: 0,
+    // Vanilla A_Saw rolls the same 2-20 as the punch — the chainsaw's advantage
+    // is its fire rate (`cooldown`), not a bigger bite, and berserk never
+    // touches it (see BERSERK_FIST_MULTIPLIER).
+    damageDiceSides: 10,
+    damageDiceMultiplier: 2,
     splash: null,
   },
   pistol: {
@@ -147,6 +172,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kind: 'hitscan',
     pellets: 1,
     spreadDeg: 5.6,
+    meleeRange: 0,
     projectileSpeed: 0,
     projectileSprite: '',
     iconLump: 'PISGA0',
@@ -161,6 +187,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kind: 'hitscan',
     pellets: 7,
     spreadDeg: 5.6,
+    meleeRange: 0,
     projectileSpeed: 0,
     projectileSprite: '',
     iconLump: 'SHOTA0',
@@ -175,6 +202,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kind: 'hitscan',
     pellets: 20,
     spreadDeg: 8.4,
+    meleeRange: 0,
     projectileSpeed: 0,
     projectileSprite: '',
     iconLump: 'SGN2A0',
@@ -192,6 +220,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kind: 'hitscan',
     pellets: 1,
     spreadDeg: 5.6,
+    meleeRange: 0,
     projectileSpeed: 0,
     projectileSprite: '',
     iconLump: 'MGUNA0',
@@ -207,6 +236,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kind: 'projectile',
     pellets: 0,
     spreadDeg: 0,
+    meleeRange: 0,
     projectileSpeed: 1000,
     projectileSprite: 'MISL',
     iconLump: 'LAUNA0',
@@ -223,6 +253,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kind: 'projectile',
     pellets: 0,
     spreadDeg: 0,
+    meleeRange: 0,
     projectileSpeed: 1600,
     projectileSprite: 'PLSS',
     iconLump: 'PLASA0',
@@ -237,6 +268,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kind: 'projectile',
     pellets: 0,
     spreadDeg: 0,
+    meleeRange: 0,
     projectileSpeed: 700,
     projectileSprite: 'BFS1',
     iconLump: 'BFUGA0',
@@ -267,7 +299,16 @@ export interface ProjectileShot {
   splash: { radius: number; damage: number; hitsPlayer: boolean; tracers: boolean } | null;
 }
 
-export type Shot = HitscanShot | ProjectileShot;
+export interface MeleeShot {
+  kind: 'melee';
+  angleRad: number;
+  /** How far in front of the player this swing reaches (`WeaponDef.meleeRange`). */
+  range: number;
+  /** This swing's damage roll, already scaled by berserk where it applies. */
+  damage: number;
+}
+
+export type Shot = HitscanShot | ProjectileShot | MeleeShot;
 
 /**
  * Owns weapon selection (number keys, mouse wheel) and fire timing/ammo.
@@ -307,10 +348,9 @@ export class WeaponSystem {
 
   /**
    * Ticks the fire cooldown and, while `firing` is held and both cooldown
-   * and ammo allow it, spends ammo and returns the shot(s) fired this frame.
-   * Empty whenever nothing fired, including every frame for a melee weapon
-   * (it still pays cooldown/no ammo, just has nothing to render — there's no
-   * target to swing at yet).
+   * and ammo allow it, spends ammo and returns the shot(s) fired this frame:
+   * one `HitscanShot` per pellet, one `ProjectileShot` per launch, or one
+   * `MeleeShot` per swing. Empty whenever nothing fired.
    */
   update(dt: number, firing: boolean, inv: Inventory, aimAngleRad: number): Shot[] {
     this.cooldownRemaining = Math.max(0, this.cooldownRemaining - dt);
@@ -322,7 +362,19 @@ export class WeaponSystem {
     this.cooldownRemaining = def.cooldown;
     if (def.ammoType) inv.ammo[def.ammoType] -= def.ammoPerShot;
 
-    if (def.kind === 'melee') return [];
+    if (def.kind === 'melee') {
+      // Berserk scales the fist only, exactly as vanilla's A_Punch/A_Saw split
+      // it — see BERSERK_FIST_MULTIPLIER.
+      const berserk = inv.currentWeapon === 'fist' && hasPower(inv, 'berserk');
+      return [
+        {
+          kind: 'melee',
+          angleRad: aimAngleRad,
+          range: def.meleeRange,
+          damage: rollDamage(def.damageDiceSides, def.damageDiceMultiplier) * (berserk ? BERSERK_FIST_MULTIPLIER : 1),
+        },
+      ];
+    }
 
     if (def.kind === 'hitscan') {
       const shots: Shot[] = [];

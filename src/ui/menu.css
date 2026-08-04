@@ -193,6 +193,63 @@ canvas {
   height: 32px;
 }
 
+#game-hud .hud-stat.hidden {
+  display: none;
+}
+
+#game-hud .hud-powers {
+  display: flex;
+  gap: 10px;
+}
+
+#game-hud .hud-powers > div {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#game-hud .hud-powers > div.hidden {
+  display: none;
+}
+
+#game-hud .hud-powers .icon {
+  height: 22px;
+}
+
+#game-hud .hud-powers .value {
+  font-size: 14px;
+  min-width: 0;
+  color: #d8d0c0;
+}
+
+/* ---------- powerup screen tint ---------- */
+
+/*
+ * Sits above the canvas but below every HUD layer (z-index 10+), so a powerup
+ * recolours the world without touching the readouts drawn over it. Both
+ * effects can be on at once, which is why they are separate classes on one
+ * element rather than one class per combination.
+ */
+#screen-tint {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/*
+ * Vanilla's invulnerability colormap is a *grayscale inverse* of the palette.
+ * We don't invert the colors because that looks to agressive, so grayscale only.
+ */
+#screen-tint.invulnerable {
+  backdrop-filter: grayscale(1);
+}
+
+/* Vanilla shifts the palette green while a radiation suit is worn. */
+#screen-tint.suited {
+  background: rgba(64, 255, 96, 0.12);
+}
+
 /* ---------- death overlay ---------- */
 
 #death-overlay {

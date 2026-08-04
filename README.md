@@ -84,16 +84,31 @@ Ceilings are off by default — from above they would hide everything underneath
 
 ## HUD
 
-Walking within range of a health, armor, ammo, key or weapon pickup collects it automatically
-— no key press needed. The bar along the bottom of the screen shows the running totals: a
-medikit icon and health, an armor icon (green or blue, matching whichever armor you're wearing
-— blank while you have none) and its value, all four ammo counts, one slot per key color that
-lights up once collected, and the weapon you currently have selected. That last one matters
-here in a way it doesn't in the original: the player sprite looks the same whatever it's
-holding, so the HUD icon is the only thing telling you what you're about to fire. Every icon
-is decoded from the loaded WAD's own pickup art rather than hand-drawn, so it matches whatever
-WAD set is in use. Powerups are still just decoration — they wait on a player-status-effect
-system to mean anything.
+Walking within range of a health, armor, ammo, key, weapon, backpack or powerup pickup
+collects it automatically — no key press needed. The bar along the bottom of the screen shows
+the running totals: a medikit icon and health, an armor icon (green or blue, matching
+whichever armor you're wearing — blank while you have none) and its value, all four ammo
+counts, one slot per key color that lights up once collected, and the weapon you currently
+have selected. That last one matters here in a way it doesn't in the original: the player
+sprite looks the same whatever it's holding, so the HUD icon is the only thing telling you
+what you're about to fire. Every icon is decoded from the loaded WAD's own pickup art rather
+than hand-drawn, so it matches whatever WAD set is in use.
+
+## Powerups
+
+All six spheres and the backpack work, on the original's own timers:
+
+| Pickup | Effect |
+| --- | --- |
+| Invulnerability (30s) | Nothing can hurt you; the screen goes inverted, as in the original |
+| Berserk (rest of the level) | Heals you to 100, switches to the fist and makes it hit ten times as hard |
+| Partial invisibility (60s) | You're drawn semi-transparent and monsters shoot wide of you |
+| Radiation suit (60s) | Nukage/slime floors stop hurting; the screen tints green |
+| Computer area map (rest of the level) | Reveals the whole level's geometry at once (this game's fog of war *is* its automap) |
+| Light amplification visor (120s) | Brightens the whole view |
+| Backpack | Doubles every ammo cap and hands over a clip of each; kept across levels |
+
+Powerups (but not the backpack) run out at the end of a level, exactly as in the original.
 
 ## Weapons
 
@@ -107,8 +122,9 @@ Holding the left mouse button fires at the weapon's own rate, spending ammo. Hit
 (pistol, shotgun, super shotgun, chaingun) draw a thin line from the player to whatever they
 hit, flashing for a fraction of a second; the shotguns throw a spread of pellets rather than a
 single line. The rocket launcher, plasma rifle and BFG launch a sprite that flies to its target
-and plays the original's own explosion animation on impact. The fist and chainsaw swing on
-their cooldown but have nothing to hit yet.
+and plays the original's own explosion animation on impact. The fist and chainsaw swing at
+whatever is within arm's reach in front of you, for the original's own 2–20 damage — ten times
+that for the fist while berserk is running.
 
 **Aiming is by mouse, and putting the cursor on a monster locks onto it.** The shot is then
 aimed at that monster's actual position and height instead of at wherever the cursor's
@@ -205,7 +221,8 @@ camera (right-drag or `Q`/`E`) with wall-occlusion fading. Fog of war hides room
 until the player has actually seen them. THINGS render as upright sprites (monsters, weapons,
 ammo, health/armor, keys, powerups and common decorations), and the player is drawn as the
 real `PLAY` sprite with a facing-driven rotation frame and a walk-cycle animation. Health,
-armor, ammo, keys and weapons are collectible and tracked on a HUD; doors, lifts, floor
+armor, ammo, keys, weapons, the backpack and all six powerups are collectible and tracked on a
+HUD (see [Powerups](#powerups) above); doors, lifts, floor
 movers, crushers, switches and teleporters all work, including locked doors, which require
 the matching key. All nine weapons can be selected (`1`–`7` or the wheel) and fired, with
 hitscan tracers, flying projectiles, impact explosions and click-to-target auto-aim.
@@ -215,6 +232,6 @@ other — see [Weapons](#weapons) above for the full rundown. Locked-on shots, e
 splash and monster attacks all deal real damage, killing monsters (with their own confirmed
 WAD death animation) and the player, whose armor absorbs part of any hit first; health
 hitting 0 shows a death screen `R` restarts from. Crushers and the crushing-floor family
-also hurt anyone caught underneath, matching the original. Not yet: powerup effects and
-sound (the sound-propagation rules that alert monsters to gunfire are modeled, but nothing
-actually plays audio).
+also hurt anyone caught underneath, matching the original. Not yet: sound (the
+sound-propagation rules that alert monsters to gunfire are modeled, but nothing actually plays
+audio).

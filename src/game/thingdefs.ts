@@ -46,6 +46,7 @@ export const THING_SPRITES: Record<number, string> = {
   17: 'CELP',
   2008: 'SHEL',
   2049: 'SBOX',
+  8: 'BPAK',
 
   // Health & armor
   2011: 'STIM',

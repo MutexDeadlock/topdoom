@@ -368,10 +368,13 @@ const INVULNERABLE_DAMAGE_LIMIT = 1000;
  * first, in the same place vanilla's own `P_DamageMobj` checks it (see
  * `INVULNERABLE_DAMAGE_LIMIT`). `health` is clamped at 0 rather than going
  * negative — `game.ts`'s own death check is a simple `<= 0`, not "how far past
- * 0".
+ * 0". Returns whether the hit actually landed (`false` while invulnerable
+ * blocked it outright), the same "did anything happen" boolean `applyPickup`
+ * already returns for the same reason — `game.ts: damagePlayer` needs it to
+ * skip the pain flash/flinch animation for a hit that did nothing.
  */
-export function applyDamage(inv: Inventory, amount: number): void {
-  if (hasPower(inv, 'invulnerability') && amount < INVULNERABLE_DAMAGE_LIMIT) return;
+export function applyDamage(inv: Inventory, amount: number): boolean {
+  if (hasPower(inv, 'invulnerability') && amount < INVULNERABLE_DAMAGE_LIMIT) return false;
   let damage = amount;
   if (inv.armorType > 0 && inv.armor > 0) {
     let saved = inv.armorType === 1 ? damage / 3 : damage / 2;
@@ -383,4 +386,5 @@ export function applyDamage(inv: Inventory, amount: number): void {
     damage -= saved;
   }
   inv.health = Math.max(0, inv.health - damage);
+  return true;
 }

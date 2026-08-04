@@ -250,6 +250,20 @@ canvas {
   background: rgba(64, 255, 96, 0.12);
 }
 
+/*
+ * Separate element from #screen-tint: its red needs to blend with (not
+ * replace) a suit's own green wash, and its opacity is a continuously
+ * decaying value driven from JS every frame rather than an on/off class.
+ */
+#pain-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: #ff0000;
+  opacity: 0;
+}
+
 /* ---------- death overlay ---------- */
 
 #death-overlay {

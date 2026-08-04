@@ -303,6 +303,50 @@ const LIGHT_VISOR_EXPOSURE = 2.5;
 const SHADOW_AIM_SPREAD_DEG = (255 / 2048) * 360;
 
 /**
+ * The red screen flash on taking damage, echoing vanilla's own palette shift
+ * (`ST_doPaletteStuff`'s `damagecount`): vanilla adds the raw damage taken to
+ * a counter clamped to 100 and ticks it down by 1 every tic (35/sec), so a
+ * big hit flashes hard and a level's steady chip damage keeps a faint red
+ * edge lit rather than ever fully clearing. `PAIN_FLASH_MAX_DAMAGE` is that
+ * same 100-point clamp and `PAIN_FLASH_FADE_SECONDS` is 100 tics over 35 —
+ * vanilla's own full-to-zero decay time. `PAIN_FLASH_MAX_ALPHA` has no
+ * vanilla analogue (there it's a straight palette swap, not a translucent
+ * overlay) and is tuned by feel, same honesty as `BRIGHTNESS_LIFT`.
+ */
+const PAIN_FLASH_MAX_DAMAGE = 100;
+const PAIN_FLASH_FADE_SECONDS = 100 / 35;
+const PAIN_FLASH_MAX_ALPHA = 0.5;
+
+/**
+ * How long before a timed powerup expires that its screen effect starts
+ * blinking on/off as a warning, and how fast — there's no direct vanilla
+ * analogue for a *screen effect* blinking (vanilla's own low-on-something
+ * blink, `cnt & 8` in `ST_Ticker`, flickers a HUD number instead), so this
+ * borrows just the idea: an unmissable "about to wear off" cue for every
+ * timed powerup with a screen effect to blink — invulnerability, the suit
+ * and invisibility all matter to play right up to the moment they expire
+ * (walking back into a hazard, or back into plain sight, a second early is
+ * costly), unlike the light visor, which has no screen effect of its own to
+ * blink (a flickering `toneMappingExposure` would just look broken).
+ */
+const POWER_BLINK_WARNING_SECONDS = 3;
+const POWER_BLINK_HZ = 4;
+
+/**
+ * Whether a powerup's screen effect should currently show, given its
+ * remaining seconds (`Inventory.powers[id]`). Once inside the warning
+ * window, `floor(secs * Hz) % 2` alternates every `1/Hz` seconds as `secs`
+ * counts down — a plain on/off square wave ending exactly at 0, no separate
+ * blink-phase timer to track.
+ */
+function powerBlinkVisible(secondsLeft: number): boolean {
+  return (
+    secondsLeft > 0 &&
+    (secondsLeft > POWER_BLINK_WARNING_SECONDS || Math.floor(secondsLeft * POWER_BLINK_HZ) % 2 === 0)
+  );
+}
+
+/**
  * Renderer, canvas, camera and input live for the whole session — a new level
  * must not cost a new WebGL context.
  */
@@ -401,6 +445,10 @@ export class Game {
   private deathOverlay = document.getElementById('death-overlay')!;
   /** Full-screen colour overlay for the powerups that recolour the view — see `updatePowerEffects`. */
   private screenTint = document.getElementById('screen-tint')!;
+  /** Full-screen red damage flash, separate from `screenTint` — see `PAIN_FLASH_MAX_DAMAGE`'s doc. */
+  private painFlashEl = document.getElementById('pain-flash')!;
+  /** Current intensity of the damage flash, 0-1, bumped in `damagePlayer` and decayed in `updatePainFlash`. */
+  private painFlash = 0;
   /** True once the player's health has hit 0 — freezes movement/aim/firing/pickups (see `frame`) until `restart`. */
   private playerDead = false;
   readonly title: string;
@@ -458,6 +506,8 @@ export class Game {
     // rather than duplicated at each caller.
     this.playerDead = false;
     this.deathOverlay.classList.add('hidden');
+    this.painFlash = 0;
+    this.painFlashEl.style.opacity = '0';
     this.playerActor.revive();
     this.mapIndex = (index + this.mapNames.length) % this.mapNames.length;
     const name = this.mapNames[this.mapIndex];
@@ -583,6 +633,7 @@ export class Game {
     // otherwise the menu, and the next level started from it, inherit whatever
     // powerup happened to be running when this one ended.
     this.screenTint.classList.remove('invulnerable', 'suited');
+    this.painFlashEl.style.opacity = '0';
     this.view.renderer.toneMappingExposure = 1;
     this.playerActor.dispose();
     this.specials?.dispose();
@@ -1049,10 +1100,10 @@ export class Game {
     }
   }
 
-  /** Applies armor-mitigated damage (`applyDamage`) to the player, transitioning to the death animation once health hits 0. A no-op once already dead — no double death. */
+  /** Applies armor-mitigated damage (`applyDamage`) to the player, transitioning to the death animation once health hits 0. A no-op once already dead, or once `applyDamage` reports invulnerability blocked the hit outright — no double death, and no pain flash/flinch for a hit that did nothing. */
   private damagePlayer(amount: number): void {
-    if (this.playerDead || amount <= 0) return;
-    applyDamage(this.inventory, amount);
+    if (this.playerDead || amount <= 0 || !applyDamage(this.inventory, amount)) return;
+    this.painFlash = Math.min(1, this.painFlash + amount / PAIN_FLASH_MAX_DAMAGE);
     if (this.inventory.health <= 0) {
       this.playerDead = true;
       this.playerActor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
@@ -1149,10 +1200,16 @@ export class Game {
    */
   private updatePowerEffects(): void {
     const inv = this.inventory;
-    this.screenTint.classList.toggle('invulnerable', hasPower(inv, 'invulnerability'));
-    this.screenTint.classList.toggle('suited', hasPower(inv, 'radiationSuit'));
+    this.screenTint.classList.toggle('invulnerable', powerBlinkVisible(inv.powers.invulnerability));
+    this.screenTint.classList.toggle('suited', powerBlinkVisible(inv.powers.radiationSuit));
     this.view.renderer.toneMappingExposure = hasPower(inv, 'lightVisor') ? LIGHT_VISOR_EXPOSURE : 1;
-    this.playerActor.setOpacity(hasPower(inv, 'invisibility') ? INVISIBILITY_OPACITY : 1);
+    this.playerActor.setOpacity(powerBlinkVisible(inv.powers.invisibility) ? INVISIBILITY_OPACITY : 1);
+  }
+
+  /** Decays `painFlash` (bumped in `damagePlayer`) and writes it to `painFlashEl`'s opacity — see `PAIN_FLASH_MAX_DAMAGE`'s doc for the vanilla numbers behind the fade rate. */
+  private updatePainFlash(dt: number): void {
+    this.painFlash = Math.max(0, this.painFlash - dt / PAIN_FLASH_FADE_SECONDS);
+    this.painFlashEl.style.opacity = String(this.painFlash * PAIN_FLASH_MAX_ALPHA);
   }
 
   /** `R`, while dead: a fresh inventory and a reload of the current map — `loadMapByIndex` resets the player/world/specials/fog and, via the doc on its own top, `playerDead`/the death overlay/`playerActor` too. */
@@ -1292,6 +1349,7 @@ export class Game {
     camera.update(dt, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, aim);
     this.hud.update(this.inventory);
     this.updatePowerEffects();
+    this.updatePainFlash(dt);
 
     this.profiler.time('Fog of War', () => this.fogOfWar.update(dt, this.player.x, this.player.y));
     const fog = this.fogOfWar;

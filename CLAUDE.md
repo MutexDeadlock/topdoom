@@ -687,6 +687,32 @@ below every HUD layer (all at 10+), so the world recolours and the readouts over
 overlay elements outlive a `Game` — otherwise the menu, and the next level started from it,
 inherit whatever powerup was running when the last one ended.
 
+**Invulnerability's tint, the suit's tint and invisibility's sprite translucency all blink for
+their last `POWER_BLINK_WARNING_SECONDS` (3s), via the shared `powerBlinkVisible(secondsLeft)`.**
+Not a vanilla mechanic (vanilla's own "running low" blink, `cnt & 8` in `ST_Ticker`, flickers a
+HUD number, not a screen effect) — added because these are the powerups where losing track of
+the exact expiry moment is actually costly (walking back into a hazard, or back into plain
+sight, a second early); the light visor is the one screen-effect powerup left out, since a
+flickering `toneMappingExposure` would just look broken rather than read as a warning.
+`floor(secondsLeft * POWER_BLINK_HZ) % 2` alternates every `1/POWER_BLINK_HZ` seconds as the
+remaining time counts down to 0 — a plain on/off square wave with no separate phase timer, so it
+needs nothing reset on pickup or level
+change the same way `updatePowerEffects` itself doesn't.
+
+**A red damage flash (`#pain-flash`, its own element rather than a third `#screen-tint` class)
+echoes vanilla's palette-shift pain flash** (`ST_doPaletteStuff`'s `damagecount`), applied in
+`Game.damagePlayer`. Vanilla adds the raw damage taken to a counter clamped to 100 and ticks it
+down by 1 every tic; this engine mirrors that as a normalized `painFlash` (0-1, `+= amount /
+PAIN_FLASH_MAX_DAMAGE`, clamped to 1) decayed every frame by `dt / PAIN_FLASH_FADE_SECONDS`
+(100 tics over 35 — vanilla's own full-to-zero time) and written straight to the element's
+`opacity` (scaled by `PAIN_FLASH_MAX_ALPHA`, tuned by feel since vanilla swaps palettes outright
+rather than blending a translucent overlay). It's a separate element from `#screen-tint` because
+its red has to blend with, not replace, the suit's own persistent green wash — two `background`s
+on one element can't coexist, but two stacked elements can. `damagePlayer` bumps it on every hit,
+lethal or not (so the killing blow still flashes), and `loadMapByIndex`/`Game.dispose` reset it
+to 0 alongside `playerDead`/the tint classes for the same "don't leak into the next map or the
+menu" reason.
+
 `SpriteActor.setOpacity` (`render/sprites.ts`) draws through a per-actor **clone** of the shared
 cached material rather than mutating it: `SpriteMaterialCache` hands out one material per
 (lump, mirrored) pair to everything drawing that lump. Only the player ever uses this, and
@@ -1407,7 +1433,11 @@ monster tables were derived. `Inventory.applyDamage` (`game/inventory.ts`) is va
 `P_DamageMobj` armor formula — green armor absorbs a third of the damage, blue half, spending
 armor points 1-for-1 with whatever it absorbed and falling back to bare once it runs out
 mid-hit — reused for the player specifically since monsters have no armor to absorb anything.
-Health hitting 0 sets `Game.playerDead`, which freezes movement/aim/firing/pickups in `frame`
+`applyDamage` returns whether the hit actually landed, `false` while invulnerability blocked it
+outright (`INVULNERABLE_DAMAGE_LIMIT`) — `game.ts: damagePlayer` uses that to skip the pain
+flash and flinch animation for a hit that did nothing, which a first version of the pain flash
+didn't check, so an invulnerable player flashed red on every hit that was actually landing on
+nothing. Health hitting 0 sets `Game.playerDead`, which freezes movement/aim/firing/pickups in `frame`
 (fog of war, effects, faders and rendering all keep ticking — a rocket already in flight when
 the player dies still lands and can still deal splash) and shows a `#death-overlay` div. `R`
 calls `restart`: a fresh `Inventory` and a `loadMapByIndex` reload of the current map, which

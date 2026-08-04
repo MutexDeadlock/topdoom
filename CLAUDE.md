@@ -74,7 +74,7 @@ don't wait for the user to separately ask "check and update documentation."
 ```
 src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite decoding
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
-               sprite billboards, shot tracers, camera
+               sprite billboards + their instanced batching, shot tracers, camera
 src/game/      spatial queries, collision, player controller, input, thing→sprite table,
                thing/monster world state (AI, pickups, damage), fog of war, inventory/pickups,
                weapons and firing, damage/death
@@ -299,13 +299,63 @@ invisible spawn markers (player starts, deathmatch spots, teleport landings).
 
 **The split between `render/sprites.ts` and `game/things.ts` follows the same rendering/game
 divide as the rest of the tree.** `render/sprites.ts` only knows how to turn a
-(sprite name, frame letter, viewer angle) into a posed plane — `SpriteActor`/
+(sprite name, frame letter, viewer angle) into a posed plane — `SpriteAnimator`/`SpriteActor`/
 `SpriteMaterialCache`, no knowledge of maps, AI, health, or pickups. `game/things.ts` owns
 `ThingLayer`/`PosedThing`/`buildThingSprites`: which map things exist, their per-instance
 game state (health, alerted/ambush/AI fields, picked/dropped flags), and the update loop that
-ticks monster AI, applies pickups/damage, and drives drops — it calls into `SpriteActor` to
-actually pose the mesh each frame, but the game-state bookkeeping itself has nothing to do
-with rendering.
+ticks monster AI, applies pickups/damage, and drives drops — it calls into the sprite layer to
+actually draw each frame, but the game-state bookkeeping itself has nothing to do with
+rendering.
+
+**Map things are drawn batched, not one mesh each** (`render/spritebatch.ts: SpriteBatch`),
+and this is a hard performance requirement rather than a refinement. A stress-test map like
+NUTS.WAD has 10,696 things in a single 69-subsector open arena, so essentially all of them are
+on screen and fog-of-war-revealed at once; one `THREE.Mesh` each meant ~10k draw calls per
+frame and a ~2fps slideshow with the renderer dominating the DEVMODE profiler. `SpriteBatch`
+keys one `InstancedMesh` per cached (lump, mirrored) pair and rebuilds the instance buffers
+every frame — measured on that map, **10,693 sprites in 19 draw calls**.
+
+Rebuilding wholesale each frame rather than maintaining instances incrementally is deliberate:
+which lump a thing uses changes constantly (every monster re-picks its rotation frame as the
+camera orbits *and* as its own facing changes, with its walk cycle advancing on top), so batch
+membership isn't stable across frames and there's nothing worth preserving. Two properties keep
+the per-sprite write cheap enough to do unconditionally:
+
+- **Every sprite shares one rotation.** The planes never tilt and all track the same camera yaw
+  (above), so the yaw's sin/cos are computed once per frame in `begin` and each instance matrix
+  is written into the buffer as plain scalars — no per-sprite `Matrix4`/`Quaternion` allocation
+  or `compose` call. (Verified against three.js's own `compose` on all of NUTS.WAD's things:
+  worst element error 1e-8, i.e. float32 rounding.)
+- **Sector light rides along as a per-instance color**, which *fixes* a pre-existing bug rather
+  than merely preserving behavior: the one-mesh-each path tints by mutating the lump's **shared**
+  material, so wherever several things shared a lump the last one posed each frame decided the
+  light for all of them.
+
+That per-instance color needs one non-obvious thing. three.js's fragment shader only multiplies
+`vColor` in under `USE_COLOR` — i.e. `material.vertexColors` — while `USE_INSTANCING_COLOR`
+alone populates `vColor` in the *vertex* shader and is then ignored downstream. So the batch's
+materials are clones with `vertexColors: true` and a white base color, and
+`SpriteMaterialCache` gives every sprite geometry an all-white `color` attribute, without which
+WebGL's default (0,0,0) generic attribute would render every batched sprite black. The
+non-instanced material ignores that attribute entirely (`vertexColors` stays false there).
+
+The batches set `frustumCulled = false`: a batch's instances are scattered across the whole
+map, so culling it as one object could only ever cull nothing while costing a per-frame bounds
+recompute to decide that — off-screen instances are clipped by the GPU for the price of a
+4-vertex vertex shader instead. That in turn means the bounding sphere three.js lazily computes
+and caches for *raycasting* would go stale as instances move, so `end()` nulls it each frame.
+
+`SpriteAnimator` is what makes both paths possible: it owns the frame cycle and the
+state→(geometry, material) lookup with **no `THREE.Object3D` of its own**. `SpriteActor` wraps
+one in a `THREE.Mesh` for the handful of sprites that genuinely are standalone (the player,
+teleport fog, projectiles, impact explosions — a dozen at a time, where batching would buy
+nothing); `PosedThing` holds a bare `SpriteAnimator` and feeds `SpriteBatch`. Because a batched
+thing has no mesh of its own, `PosedThing.visible` replaces what used to be read back off
+`mesh.visible`, and `ThingLayer.pickMonster` routes its auto-aim raycast through
+`SpriteBatch.raycast`, which maps an `instanceId` hit back to the owning thing. That raycast
+skips (rather than being blocked by) instances its predicate rejects, so a decoration standing
+in front of a monster still doesn't make it untargetable — matching the behavior from when only
+monster meshes were in the raycast set at all.
 
 **`game/skill.ts: isMultiplayerOnly`** filters out things carrying THING flag bit `0x10`
 before `buildThingSprites` (`game/things.ts`) poses them — vanilla's own `P_SpawnMapThing`
@@ -746,6 +796,56 @@ still *slides* along bodies (`slideMove`) while monsters don't, matching vanilla
 player is the one thing in DOOM that gets `P_SlideMove`, so scraping past a demon in a corridor
 works, while the demon itself re-routes around you.
 
+`blockersFor` reads a **uniform grid of living monsters** (`blockerGrid`, rebuilt once per
+`ThingLayer.update`) rather than scanning every thing on the map, for the same reason vanilla has
+a blockmap: the naive version is O(monsters²) per frame — fine at a stock level's population,
+catastrophic past it, since NUTS.WAD's 10,696 things work out to ~114 million distance checks per
+frame the moment they all wake up (measured: 690k of those pairs are real neighbours, so ~166×
+of the work was wasted). Verified as returning exactly the same neighbour set as the linear scan
+across all 10,696 of that map's real positions.
+
+Four details of it are load-bearing, and each was measured — together they took monster AI on
+that map from **578 ms/frame to 11 ms**:
+
+- **The search box is sized per monster**, from `ownRadius + maxBlockerRadius + BLOCKER_MARGIN`,
+  and per *pair* from the two radii actually involved. `blockedByThings` can never report an
+  overlap outside `r1 + r2`, so a fixed box is guaranteed waste — and specifically the wrong
+  shape of waste here, because NUTS.WAD contains 795 spider masterminds (radius 128) whose mere
+  presence would otherwise widen every 20-unit grunt's search too.
+- **`BLOCKER_MARGIN` is the sum of two independent maxima**, not the max of a per-type sum: the
+  monster doing the probing (`tryWalk` tests a full `speed × chaseInterval` step ahead) and the
+  monster that drifted since the grid was built (`speed × MAX_FRAME_DT`) are *different*
+  monsters, so the worst case pairs the longest probe with the fastest other monster's drift.
+- **The grid is a flat array**, not a `Map`. At ~15 cell lookups per monster per frame, `Map.get`
+  on a packed numeric key cost more than everything it was guarding.
+- **`PosedThing.blockRadius` is resolved once at spawn.** `MONSTER_STATS` is a `Record` with
+  sparse numeric keys, so V8 backs it with a dictionary — one hash lookup per *candidate* per
+  monster per frame was more expensive than the collision arithmetic.
+
+**The same grid backs `monstersNear` and `raycastMonster`**, and neither can afford to be the
+linear scan it started as, because both are called *per shot in flight*, not per frame:
+
+- `monstersNear` runs once per airborne projectile per frame (`game.ts`'s `monsterStruckBy`,
+  which re-tests every monster projectile against everything it might clip). On NUTS.WAD monsters
+  launch ~29 projectiles per frame, so well over a thousand can be in the air at once — as a
+  linear scan over all 10,693 things that measured 0.080 ms *per call*, i.e. over a hundred
+  milliseconds a frame on its own. Grid-backed it is 0.002 ms.
+- `raycastMonster` runs once per monster hitscan (~59/frame on that map): 0.071 → 0.011 ms.
+  Its query is a ray rather than a box, so `forEachMonsterAlongRay` steps the ray by half a cell
+  and sweeps each step's 3×3 cell neighbourhood — deliberately simpler than
+  `World.forEachLineAlongSegment`'s exact DDA, and conservative by a wide margin (a full 128-unit
+  cell of clearance either side against a ~24-unit hit radius). Monsters are deduped with a stamp
+  on `PosedThing.queryStamp` rather than a `Set`, since consecutive steps overlap heavily.
+
+Both were verified to return results identical to the linear scans over 2,400 queries across
+NUTS.WAD, DOOM2 MAP07 and DOOM E1M7. `monstersInSector` is deliberately left linear — it runs on
+a crusher tick, not per frame.
+
+For the same reason, `game.ts` caps occlusion-fade targets at `MAX_FADE_TARGETS` (nearest first):
+`WallFader`/`FlatFader` cost is quads × targets, and a map can have hundreds of monsters awake
+inside `MONSTER_FADE_RANGE` at once. It's purely a cost bound — past a couple of dozen nearby
+monsters, every wall any of them stands behind is already being faded by a nearer one.
+
 **But walking and attacking are mutually exclusive: a monster plants itself for the whole length
 of its attack.** This is the one part of the above vanilla genuinely enforces rather than merely
 tends toward — an attack is a state sequence of its own, and `A_Chase` (the only thing that ever
@@ -962,6 +1062,38 @@ clearing every sampled opening is enough, same as vanilla. This is still a coars
 real thing — vanilla walks the BSP and narrows the wedge at every actual line crossing, this samples
 discrete points along the path instead — but the *shape* of the check now matches vanilla's, which
 is what the ordinary-step case needed.
+
+**`hasLineOfSight` is the most performance-sensitive query in the engine**, and two things keep it
+affordable. Both were verified to produce **bit-identical results** to the straightforward version
+across 21,240 sightline pairs on six maps (DOOM2 MAP01/03/07, DOOM E1M1/E1M7, NUTS.WAD) — this is
+pure optimization, not an approximation traded for speed:
+
+- **Wall candidates come from `World.forEachLineAlongSegment`, not `linesNear`.** `linesNear`
+  takes a *radius*, so covering a sightline with it means a box half the line's length on a
+  side — O(dist²) grid cells to test a thin segment. Walking only the cells the segment actually
+  crosses is O(dist), and is sound because `buildGrid` buckets each line into every cell its
+  bounding box touches: if a line genuinely crosses the segment, their intersection lies in a
+  cell that both pass through. On NUTS.WAD (median sightline ~4400 units, p90 ~11700) the box
+  query scanned up to ~8300 cells where the segment crosses ~90, and this one change took
+  `hasLineOfSight` across that map's monsters from **164 ms/frame to 8.7 ms**.
+- **`SIGHT_MAX_HEIGHT_SAMPLES` caps the floor/ceiling sampling** so the step stretches past
+  `SIGHT_HEIGHT_SAMPLE_STEP` instead of the sample count growing without bound. 32 is chosen so
+  nothing within `WEAPON_RANGE` (2048, vanilla's `MISSILERANGE`, and the furthest anything here
+  can shoot) changes at all — 2048/64 is exactly 32 — while a monster 12,000 units away stops
+  costing ~180 BSP walks per frame to answer a question no attack could act on.
+
+Relatedly, `stepMonsterAI` resolves sight **lazily, at most once per call**: it's only consumed by
+the refire loop and by `runChaseCall`, and the chase call is quantized to `chaseInterval`
+(~0.11-0.29s) while `stepMonsterAI` itself runs every rendered frame — so evaluating it eagerly
+threw the answer away most frames. Vanilla has the same structure for the same reason,
+`P_CheckSight` being called from inside `A_Chase` rather than once per tic per thinker.
+
+Both `forEachLineAlongSegment` and the lazy accessor exist because these run thousands of times a
+frame: the segment walk dedupes through a per-linedef stamp array rather than allocating a `Set`
+and spreading it per call, the way `linesNear` does. (An equivalent allocation-free `linesNear`
+for the *collision* callers was tried and measured as **no faster** — the callback makes that call
+site megamorphic and costs the early-out — so `groundFloor`/`dropoffFloor`/`circleBlocked`
+deliberately still use the plain array-returning `linesNear`. Don't "fix" that without measuring.)
 
 **A rocket that explodes against a wall sits its own impact point exactly on that wall**, which
 broke splash to everyone else the instant it happened: a raw segment-intersection test between
@@ -1523,9 +1655,10 @@ whatever the player has not yet had line of sight to — geometry and things rev
 once seen, which keeps unreached rooms and secrets dark until they are actually in view.
 THINGS render as upright
 sprite billboards (monsters, weapons, ammo, health/armor, keys, powerups and common
-decorations — see the thing table in `game/thingdefs.ts`), and the player is drawn as the
-real `PLAY` sprite with a facing-driven rotation frame and a walk-cycle animation, both
-tracking the live camera angle. Health, armor, ammo, key and weapon pickups are collectible
+decorations — see the thing table in `game/thingdefs.ts`), batched into one `InstancedMesh` per
+sprite lump so a map with ten thousand of them stays playable (`render/spritebatch.ts`), and the
+player is drawn as the real `PLAY` sprite with a facing-driven rotation frame and a walk-cycle
+animation, both tracking the live camera angle. Health, armor, ammo, key and weapon pickups are collectible
 (`game/inventory.ts`) and drive a HUD (`src/ui/hud.ts`) drawn from the same WAD pickup-sprite
 graphics the world renders items with; powerups stay decorative-only. Multiplayer-only things
 (deathmatch weapon/ammo stashes) correctly don't spawn (`game/skill.ts: isMultiplayerOnly`).

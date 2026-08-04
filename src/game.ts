@@ -233,6 +233,18 @@ const MONSTER_PROJECTILE_HIT_HEIGHT = 128;
 const MONSTER_FADE_RANGE = 768;
 
 /**
+ * Most awake monsters that can act as occlusion-fade targets at once, nearest
+ * first. `WallFader`/`FlatFader` cost is quads × targets, so an unbounded list
+ * turns into a real per-frame cost on a map that can have hundreds of monsters
+ * awake inside `MONSTER_FADE_RANGE` at the same time (NUTS.WAD's arena being
+ * the extreme case). Purely a cost bound, not a behavior choice: past a couple
+ * of dozen nearby monsters, every wall any of them stands behind is already
+ * being faded by one of the nearer ones, so the ones dropped here have nothing
+ * left to reveal.
+ */
+const MAX_FADE_TARGETS = 48;
+
+/**
  * Renderer, canvas, camera and input live for the whole session — a new level
  * must not cost a new WebGL context.
  */
@@ -389,7 +401,12 @@ export class Game {
         if (obj instanceof THREE.Mesh) obj.geometry.dispose();
       });
     }
-    if (this.things) this.scene.remove(this.things.group);
+    if (this.things) {
+      this.scene.remove(this.things.group);
+      // The batched sprite meshes/materials are per-level; the geometry and
+      // textures behind them belong to spriteMaterials, which outlives a map.
+      this.things.dispose();
+    }
     this.specials?.dispose();
     // A fog puff or impact explosion mid-animation when the map changes (e.g.
     // a teleporter onto an exit line) would otherwise leave its plane glued
@@ -501,6 +518,9 @@ export class Game {
     // Tracers own per-instance geometry/material (unlike sprite actors, whose
     // geometry/material come from the shared, disposed-below SpriteMaterialCache).
     for (const t of this.tracers) t.dispose();
+    // The sprite batches' instance buffers and cloned materials are the things
+    // layer's own; the geometry/textures behind them are spriteMaterials'.
+    this.things?.dispose();
     this.materials.dispose();
     this.spriteMaterials.dispose();
   }
@@ -1176,12 +1196,17 @@ export class Game {
       // a `hasLineOfSight` check). Monsters reuse PLAYER_HEIGHT/2 for their own
       // target height, same as hasLineOfSight does, since there's no
       // per-species height table.
+      const nearby = (this.things?.awakeMonsters() ?? [])
+        .map((m) => ({ m, d: Math.hypot(m.x - this.player.x, m.y - this.player.y) }))
+        .filter((e) => e.d <= MONSTER_FADE_RANGE);
+      // Nearest first, then capped — see MAX_FADE_TARGETS for why dropping the
+      // rest costs nothing visually.
+      nearby.sort((a, b) => a.d - b.d);
       const fadeTargets: FadeTarget[] = [
         { x: this.player.x, y: this.player.y, z: this.player.z + PLAYER_HEIGHT / 2 },
-        ...(this.things
-          ?.awakeMonsters()
-          .filter((m) => Math.hypot(m.x - this.player.x, m.y - this.player.y) <= MONSTER_FADE_RANGE)
-          .map((m) => ({ x: m.x, y: m.y, z: m.z + PLAYER_HEIGHT / 2 })) ?? []),
+        ...nearby
+          .slice(0, MAX_FADE_TARGETS)
+          .map((e) => ({ x: e.m.x, y: e.m.y, z: e.m.z + PLAYER_HEIGHT / 2 })),
       ];
       const openingOf = (line: number) => this.world.openingOf(line);
       this.wallFader.update(...camArgs, fadeTargets, openingOf);

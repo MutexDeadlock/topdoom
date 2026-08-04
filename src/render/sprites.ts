@@ -18,7 +18,7 @@ export function pickRotationDigit(facingDeg: number, viewerAngleDeg = VIEWER_ANG
   return (Math.floor((diff + 22.5) / 45) % 8) + 1;
 }
 
-interface CachedSprite {
+export interface CachedSprite {
   material: THREE.MeshBasicMaterial;
   geometry: THREE.BufferGeometry;
 }
@@ -99,6 +99,18 @@ export class SpriteMaterialCache {
 
       const geometry = new THREE.PlaneGeometry(bmp.width, bmp.height);
       geometry.translate(offsetX, offsetY, 0);
+      // An all-white per-vertex color, purely so the *instanced* path
+      // (render/spritebatch.ts) can tint each instance by its own sector
+      // light. three.js's fragment shader only multiplies `vColor` in under
+      // `USE_COLOR` — i.e. `material.vertexColors` — and `USE_INSTANCING_COLOR`
+      // alone populates `vColor` in the vertex shader but is then ignored
+      // downstream, so an InstancedMesh's per-instance color needs
+      // `vertexColors: true`, which in turn needs this attribute to exist or
+      // WebGL's default (0,0,0) generic attribute renders every sprite black.
+      // White here means the instanced path's tint is exactly its instanceColor.
+      // Ignored entirely by the non-instanced material below (`vertexColors`
+      // stays false there), which tints via `material.color` instead.
+      geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(12).fill(1), 3));
 
       const material = new THREE.MeshBasicMaterial({
         map: texture,
@@ -130,23 +142,25 @@ export class SpriteMaterialCache {
 const DOOM_TIC = 1 / 35;
 
 /**
- * A single thing rendered as an upright plane. The plane never tilts — see
- * SpriteMaterialCache's class doc — but does turn around its vertical axis
- * to keep facing the camera as it orbits, so posing an actor repositions it,
- * yaws it to the current viewer angle, and, if the facing angle or animation
- * frame now picks a different rotation frame, swaps in that lump's
- * geometry/material.
+ * The frame-cycle state of one animated sprite, and the lookup from that
+ * state to the geometry/material actually drawn — with **no `THREE.Object3D`
+ * of its own**. That split is what lets the same animation logic serve both
+ * ways this engine draws a sprite: `SpriteActor` below (one `THREE.Mesh` per
+ * sprite, for the handful of standalone actors — the player, teleport fog,
+ * projectiles, impacts) and `render/spritebatch.ts`'s `SpriteBatch` (one
+ * `InstancedMesh` per lump, for `game/things.ts`'s map things, of which a
+ * stress-test map like NUTS.WAD has over ten thousand — see SpriteBatch's own
+ * doc for why those must not be one mesh each).
  *
  * Animation is a plain frame-letter cycle, e.g. DOOM's own PLAY sprite reuses
  * A, B, C, D as a 4-step leg cycle while walking and simply holds frame A
  * while idle — there is no separate "idle" art, just the walk cycle stopped
  * on its first frame. `animFrames` defaults to a single held frame, which is
- * every non-animated actor (all things, for now).
+ * every non-animated actor.
  */
-export class SpriteActor {
-  readonly mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ visible: false }));
-
+export class SpriteAnimator {
   private lastKey = '';
+  private cached: CachedSprite | null = null;
   private animIndex = 0;
   private animTimer = 0;
 
@@ -159,7 +173,7 @@ export class SpriteActor {
   /**
    * Once set (via `die`), permanently overrides the normal walk-cycle
    * animation with a one-shot sequence that advances forward and then holds
-   * on its last frame forever — a corpse, not a loop. `setPose` ignores its
+   * on its last frame forever — a corpse, not a loop. `advance` ignores its
    * own `animating` parameter entirely while this is set: unlike the alive
    * cycle (which idles by holding frame 0 and resumes from the start once
    * moving again), a death animation has no "idle" state to fall back to and
@@ -185,27 +199,15 @@ export class SpriteActor {
   }
 
   /**
-   * Repositions the actor and advances its animation; returns false if no
-   * matching lump was found. `animating` selects the frame cycle (e.g. the
+   * Advances the frame cycle by `dt`. `animating` selects the cycle (e.g. the
    * player only cycles legs while actually moving); while false the actor
    * holds on `animFrames[0]` and the cycle resets, so motion always resumes
    * from the first frame instead of wherever it happened to stop.
    */
-  setPose(
-    x: number,
-    y: number,
-    z: number,
-    facingDeg: number,
-    light: number,
-    dt = 0,
-    animating = false,
-    viewerAngleDeg = VIEWER_ANGLE_DEG,
-  ): boolean {
-    let frames = this.animFrames;
+  advance(dt: number, animating: boolean): void {
     if (this.deathFrames) {
-      frames = this.deathFrames;
       this.deathTimer += dt;
-      while (this.deathTimer >= this.deathFrameDuration && this.deathIndex < frames.length - 1) {
+      while (this.deathTimer >= this.deathFrameDuration && this.deathIndex < this.deathFrames.length - 1) {
         this.deathTimer -= this.deathFrameDuration;
         this.deathIndex++;
       }
@@ -220,31 +222,30 @@ export class SpriteActor {
       this.animTimer = 0;
       this.animIndex = 0;
     }
-
-    const digit = pickRotationDigit(facingDeg, viewerAngleDeg);
-    const found = this.bank.lookup(this.spriteName, frames[this.animIndex], digit);
-    if (!found) return false;
-
-    const key = found.lump + (found.flip ? ':f' : '');
-    if (key !== this.lastKey) {
-      const cached = this.materials.get(found.lump, found.flip);
-      if (!cached) return false;
-      this.mesh.geometry = cached.geometry;
-      this.mesh.material = cached.material;
-      this.lastKey = key;
-    }
-
-    doomToWorld(x, y, z, this.mesh.position);
-    // The plane's un-rotated pose already faces VIEWER_ANGLE_DEG (see
-    // SpriteMaterialCache's doc); turn it by however far the live viewer
-    // angle has moved from that default so it keeps facing the camera.
-    this.mesh.rotation.y = THREE.MathUtils.degToRad(viewerAngleDeg - VIEWER_ANGLE_DEG);
-    (this.mesh.material as THREE.MeshBasicMaterial).color.setScalar(lightToColor(light));
-    return true;
   }
 
   /**
-   * Switches this actor permanently into its one-shot death animation (see
+   * The geometry/material for the current frame as seen from `viewerAngleDeg`,
+   * or null if the WAD has no such lump. Memoized on the resolved lump name,
+   * so the steady state (a sprite whose frame and rotation digit haven't
+   * changed) costs one `SpriteBank` lookup and nothing else.
+   */
+  resolve(facingDeg: number, viewerAngleDeg: number): CachedSprite | null {
+    const frames = this.deathFrames ?? this.animFrames;
+    const digit = pickRotationDigit(facingDeg, viewerAngleDeg);
+    const found = this.bank.lookup(this.spriteName, frames[this.animIndex], digit);
+    if (!found) return null;
+
+    const key = found.lump + (found.flip ? ':f' : '');
+    if (key !== this.lastKey) {
+      this.cached = this.materials.get(found.lump, found.flip);
+      this.lastKey = key;
+    }
+    return this.cached;
+  }
+
+  /**
+   * Switches this sprite permanently into its one-shot death animation (see
    * the `deathFrames` field doc). Idempotent-ish: calling it again just
    * restarts the sequence, which nothing currently does since a monster/the
    * player only dies once per life.
@@ -263,5 +264,69 @@ export class SpriteActor {
     this.deathTimer = 0;
     this.animIndex = 0;
     this.animTimer = 0;
+  }
+}
+
+/**
+ * One sprite drawn as its own upright `THREE.Mesh`. The plane never tilts —
+ * see SpriteMaterialCache's class doc — but does turn around its vertical
+ * axis to keep facing the camera as it orbits, so posing an actor
+ * repositions it, yaws it to the current viewer angle, and, if the facing
+ * angle or animation frame now picks a different rotation frame, swaps in
+ * that lump's geometry/material.
+ *
+ * Used only for the handful of sprites that aren't map things — the player,
+ * teleport fog, projectiles, impact explosions. Map things go through
+ * `SpriteBatch` instead: one mesh each is fine for a dozen actors and far too
+ * many draw calls for ten thousand.
+ */
+export class SpriteActor {
+  readonly mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ visible: false }));
+  private anim: SpriteAnimator;
+
+  constructor(
+    bank: SpriteBank,
+    materials: SpriteMaterialCache,
+    spriteName: string,
+    animFrames: string[] = ['A'],
+    frameDuration = 4 * DOOM_TIC,
+  ) {
+    this.anim = new SpriteAnimator(bank, materials, spriteName, animFrames, frameDuration);
+  }
+
+  /** Repositions the actor and advances its animation; returns false if no matching lump was found. */
+  setPose(
+    x: number,
+    y: number,
+    z: number,
+    facingDeg: number,
+    light: number,
+    dt = 0,
+    animating = false,
+    viewerAngleDeg = VIEWER_ANGLE_DEG,
+  ): boolean {
+    this.anim.advance(dt, animating);
+    const cached = this.anim.resolve(facingDeg, viewerAngleDeg);
+    if (!cached) return false;
+    if (this.mesh.geometry !== cached.geometry) {
+      this.mesh.geometry = cached.geometry;
+      this.mesh.material = cached.material;
+    }
+
+    doomToWorld(x, y, z, this.mesh.position);
+    // The plane's un-rotated pose already faces VIEWER_ANGLE_DEG (see
+    // SpriteMaterialCache's doc); turn it by however far the live viewer
+    // angle has moved from that default so it keeps facing the camera.
+    this.mesh.rotation.y = THREE.MathUtils.degToRad(viewerAngleDeg - VIEWER_ANGLE_DEG);
+    (this.mesh.material as THREE.MeshBasicMaterial).color.setScalar(lightToColor(light));
+    return true;
+  }
+
+  die(frames: string[], frameDuration: number): void {
+    this.anim.die(frames, frameDuration);
+  }
+
+  revive(): void {
+    this.anim.revive();
   }
 }

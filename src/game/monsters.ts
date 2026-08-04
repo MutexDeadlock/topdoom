@@ -715,9 +715,9 @@ function settleVertical(body: MonsterBody, world: World, radius: number, dt: num
  * `MF_JUSTHIT` short-circuits the whole thing: a monster that just took a hit
  * fires back immediately regardless of distance.
  */
-function checkMissileRange(body: MonsterBody, stats: MonsterStats, dist: number, canSee: boolean): boolean {
+function checkMissileRange(body: MonsterBody, stats: MonsterStats, dist: number, canSee: () => boolean): boolean {
   const ranged = stats.ranged;
-  if (!ranged || !canSee) return false;
+  if (!ranged || !canSee()) return false;
   if (body.justHit) {
     body.justHit = false;
     return true;
@@ -919,7 +919,22 @@ export function stepMonsterAI(
   const dx = target.x - body.x;
   const dy = target.y - body.y;
   const dist = Math.hypot(dx, dy);
-  const canSee = hasLineOfSight(world, body, target);
+  /**
+   * Sight, resolved **on demand and at most once per call**. It's only ever
+   * consumed by the refire loop and by `runChaseCall`, both of which run far
+   * less often than this function does — the chase call is quantized to
+   * `chaseInterval` (~0.11-0.29s), while this runs every rendered frame — so
+   * evaluating it eagerly meant a full sightline trace per monster per frame
+   * whose answer was usually thrown away. Vanilla has the same structure for
+   * the same reason: `P_CheckSight` is called from inside `A_Chase`, not once
+   * per tic for every thinker. This was measured as the single largest cost in
+   * the engine on a crowded map (see `World.forEachLineAlongSegment`).
+   */
+  let sightCached: boolean | null = null;
+  const canSee = (): boolean => {
+    if (sightCached === null) sightCached = hasLineOfSight(world, body, target);
+    return sightCached;
+  };
 
   if (body.chargeTimer > 0) {
     const hit = stepCharge(body, stats, dt, world, dist);
@@ -951,7 +966,7 @@ export function stepMonsterAI(
   // attack without ever returning to A_Chase, so it bypasses the chase-call
   // cadence and every gate on it. It breaks only on losing sight.
   if (!attack && body.refiring) {
-    if (ranged && canSee) {
+    if (ranged && canSee()) {
       attack = beginRangedAttack(body, ranged, dx, dy);
     } else {
       body.refiring = false;
@@ -1016,7 +1031,7 @@ function runChaseCall(
   dist: number,
   dx: number,
   dy: number,
-  canSee: boolean,
+  canSee: () => boolean,
   blockers?: readonly ThingBlocker[],
 ): MonsterAttack | null {
   if (body.reactionTicks > 0) body.reactionTicks--;
@@ -1029,7 +1044,7 @@ function runChaseCall(
     return null;
   }
 
-  if (stats.melee && canSee && dist <= (stats.melee.range ?? MELEE_RANGE)) {
+  if (stats.melee && dist <= (stats.melee.range ?? MELEE_RANGE) && canSee()) {
     body.angle = Math.atan2(dy, dx); // A_FaceTarget
     body.attackPause = stats.melee.duration;
     // Melee has no P_CheckMissileRange equivalent: A_Chase swings whenever the

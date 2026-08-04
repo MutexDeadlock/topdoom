@@ -28,6 +28,15 @@ export class World {
   private sectorNeighbors: { neighbor: number; lineIndex: number }[][] = [];
   /** Sectors a noise has ever reached (`noiseAlert`) — never cleared, matching vanilla's own `soundtarget`, which persists for the rest of the level once set. */
   private soundAlertedSectors = new Set<Sector>();
+  /**
+   * Per-linedef "last query that already visited this line" stamps, so
+   * `forEachLineAlongSegment` can dedupe a line that spans several of the
+   * cells it walks without allocating a `Set` per call. `linesNear` allocates
+   * one every time, which is fine at its call rate but not at a sightline
+   * check's — see `hasLineOfSight`.
+   */
+  private lineStamp: Int32Array;
+  private queryId = 0;
 
   readonly map: DoomMap;
 
@@ -38,6 +47,7 @@ export class World {
     this.gridMinY = minY;
     this.gridCols = Math.max(1, Math.ceil((maxX - minX) / GRID_CELL) + 1);
     this.gridRows = Math.max(1, Math.ceil((maxY - minY) / GRID_CELL) + 1);
+    this.lineStamp = new Int32Array(map.linedefs.length);
     this.buildGrid();
     this.buildSectorNeighbors();
   }
@@ -102,6 +112,80 @@ export class World {
       }
     }
     return [...seen];
+  }
+
+  /**
+   * Every linedef bucketed into a grid cell the segment (x1, y1)-(x2, y2)
+   * passes through, each visited at most once.
+   *
+   * This is the query a **sightline** wants, and `linesNear` is badly wrong
+   * for it: that one takes a radius, so covering a segment with it means a box
+   * half the sightline's length on a side — O(dist²) grid cells for what is a
+   * thin line. On a big open map that is the single most expensive thing the
+   * engine does. Measured on NUTS.WAD, whose monsters have a median sightline
+   * of ~4400 units and a p90 of ~11700: the box query scans up to ~8300 cells
+   * where the segment itself only crosses ~90, and `hasLineOfSight` across all
+   * of that map's monsters cost 177 ms per frame before this existed.
+   *
+   * Sound because of how `buildGrid` buckets: a line is registered in every
+   * cell its *bounding box* touches, so if a line genuinely crosses this
+   * segment, their intersection point lies in some cell that the segment
+   * passes through and that the line's bounding box covers — hence the line is
+   * in that cell's bucket, and the walk below visits it.
+   *
+   * Allocation-free by design (a stamp array instead of a per-call `Set`, and
+   * a callback instead of a returned array), since this runs thousands of
+   * times per frame. The visitor may return `true` to stop the walk early,
+   * the way a `break` would in the loop this replaces.
+   */
+  forEachLineAlongSegment(
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    visit: (lineIndex: number) => boolean | void,
+  ): void {
+    const stamp = ++this.queryId;
+    let cx = this.cellX(x1);
+    let cy = this.cellY(y1);
+    const ex = this.cellX(x2);
+    const ey = this.cellY(y2);
+
+    const dx = x2 - x1;
+    const dy = y2 - y1;
+    const stepX = dx >= 0 ? 1 : -1;
+    const stepY = dy >= 0 ? 1 : -1;
+    // How far along the segment (in its own 0..1 parameter) one full cell of
+    // travel costs on each axis, and how far to the first cell boundary.
+    const tDeltaX = dx !== 0 ? Math.abs(GRID_CELL / dx) : Infinity;
+    const tDeltaY = dy !== 0 ? Math.abs(GRID_CELL / dy) : Infinity;
+    let tMaxX =
+      dx !== 0 ? (this.gridMinX + (cx + (stepX > 0 ? 1 : 0)) * GRID_CELL - x1) / dx : Infinity;
+    let tMaxY =
+      dy !== 0 ? (this.gridMinY + (cy + (stepY > 0 ? 1 : 0)) * GRID_CELL - y1) / dy : Infinity;
+
+    // Bounded rather than "until (cx,cy) reaches (ex,ey)": cellX/cellY clamp to
+    // the grid, so a segment starting or ending outside the map can otherwise
+    // never reach its end cell.
+    const maxSteps = this.gridCols + this.gridRows + 2;
+    for (let step = 0; ; step++) {
+      const bucket = this.grid.get(cy * this.gridCols + cx);
+      if (bucket) {
+        for (const i of bucket) {
+          if (this.lineStamp[i] === stamp) continue;
+          this.lineStamp[i] = stamp;
+          if (visit(i) === true) return;
+        }
+      }
+      if ((cx === ex && cy === ey) || step >= maxSteps) return;
+      if (tMaxX < tMaxY) {
+        tMaxX += tDeltaX;
+        cx += stepX;
+      } else {
+        tMaxY += tDeltaY;
+        cy += stepY;
+      }
+    }
   }
 
   /** Walks the BSP tree down to the subsector containing the point. */
@@ -342,6 +426,21 @@ const SELF_HIT_MARGIN = 1;
 const SIGHT_HEIGHT_SAMPLE_STEP = 64;
 
 /**
+ * Ceiling on how many floor/ceiling samples one sightline may take, whatever
+ * its length — the step above stretches past `SIGHT_HEIGHT_SAMPLE_STEP` rather
+ * than the sample count growing without bound.
+ *
+ * 32 is chosen so nothing within `WEAPON_RANGE` (2048, vanilla's own
+ * `MISSILERANGE` and the furthest anything in this engine can actually shoot)
+ * changes at all: 2048/64 is exactly 32 samples, so every sightline that can
+ * end in a shot keeps the full 64-unit precision, and only sightlines longer
+ * than any weapon's reach get coarser. Without the cap, a monster 12,000 units
+ * away — routine on a big open map like NUTS.WAD — cost ~180 BSP walks per
+ * frame just to decide a sight question that no attack could act on anyway.
+ */
+const SIGHT_MAX_HEIGHT_SAMPLES = 32;
+
+/**
  * True if a straight 3D line between two points isn't crossed by any
  * sight-blocking *line* (`World.blocksSight`, e.g. a closed door) **and**
  * has an unbroken sight wedge through the floor/ceiling of every sector it
@@ -390,22 +489,31 @@ const SIGHT_HEIGHT_SAMPLE_STEP = 64;
  */
 export function hasLineOfSight(world: World, from: Pos3, to: Pos3): boolean {
   const dist = Math.hypot(to.x - from.x, to.y - from.y);
-  for (const i of world.linesNear((from.x + to.x) / 2, (from.y + to.y) / 2, dist / 2 + 1)) {
-    if (!world.blocksSight(i)) continue;
+  // Walks only the grid cells the sightline actually crosses. Using
+  // `linesNear`'s radius query here instead is O(dist²) in cells and was, on
+  // its own, the engine's single biggest cost on a crowded map — see
+  // `World.forEachLineAlongSegment`'s doc.
+  let blocked = false;
+  world.forEachLineAlongSegment(from.x, from.y, to.x, to.y, (i) => {
+    if (!world.blocksSight(i)) return;
     const line = world.map.linedefs[i];
     const a = world.map.vertexes[line.v1];
     const b = world.map.vertexes[line.v2];
-    if (!a || !b) continue;
+    if (!a || !b) return;
     const hit = segmentIntersect(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
-    if (hit && hit.t * dist > SELF_HIT_MARGIN) return false;
-  }
+    if (hit && hit.t * dist > SELF_HIT_MARGIN) return (blocked = true);
+  });
+  if (blocked) return false;
   if (dist === 0) return true;
 
   const eyeZ = from.z + PLAYER_HEIGHT * 0.75;
   let topSlope = (to.z + PLAYER_HEIGHT - eyeZ) / dist;
   let bottomSlope = (to.z - eyeZ) / dist;
 
-  const steps = Math.max(1, Math.ceil(dist / SIGHT_HEIGHT_SAMPLE_STEP));
+  const steps = Math.min(
+    SIGHT_MAX_HEIGHT_SAMPLES,
+    Math.max(1, Math.ceil(dist / SIGHT_HEIGHT_SAMPLE_STEP)),
+  );
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
     const sector = world.sectorAt(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);

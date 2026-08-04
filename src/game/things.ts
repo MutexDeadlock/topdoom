@@ -26,7 +26,9 @@ import {
   type MonsterAttack,
 } from './monsters.ts';
 import type { ThingBlocker } from './world.ts';
-import { SpriteActor, SpriteMaterialCache } from '../render/sprites.ts';
+import { SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from '../render/sprites.ts';
+import { SpriteBatch } from '../render/spritebatch.ts';
+import { doomToWorld, lightToColor } from '../render/mapmesh.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
 
 interface PosedThing extends Pos3 {
@@ -36,7 +38,35 @@ interface PosedThing extends Pos3 {
    * this exact instance with `ThingLayer.damage`.
    */
   id: number;
-  actor: SpriteActor;
+  /**
+   * This thing's animation state and current-lump lookup. Deliberately *not*
+   * a `SpriteActor` (which owns a `THREE.Mesh`): every map thing is drawn
+   * through the shared `SpriteBatch` instead, so ten thousand of them cost a
+   * few dozen draw calls rather than ten thousand — see `SpriteBatch`'s doc.
+   */
+  anim: SpriteAnimator;
+  /** Native-size multiplier (`pickupScaleFor`), handed to the batch each frame. */
+  scale: number;
+  /**
+   * Collision radius, resolved once at spawn. `MONSTER_STATS` is a `Record`
+   * with sparse numeric keys, so V8 backs it with a dictionary and every
+   * `MONSTER_STATS[type]` is a hash lookup — fine anywhere it happens once,
+   * but `blockersFor` was doing one per *candidate* per monster per frame
+   * (hundreds of thousands), which cost more than the collision arithmetic it
+   * was feeding.
+   */
+  blockRadius: number;
+  /**
+   * Whether this thing is drawn (and so targetable/shootable) right now:
+   * fog of war hasn't revealed its subsector, it was picked up, or it died
+   * with no death art. Replaces reading `mesh.visible` back off a per-thing
+   * mesh, which the batched renderer no longer gives each thing.
+   */
+  visible: boolean;
+  /** Permanently hidden regardless of fog — a consumed pickup, or a corpse with no death animation to play. */
+  hidden: boolean;
+  /** Scratch dedupe marker for `forEachMonsterAlongRay`, whose stepped cell neighbourhoods overlap. Meaningless between queries. */
+  queryStamp: number;
   /**
    * Feet height (`Pos3.z`). For anything that never moves (every non-monster, and a
    * dead or not-yet-alerted monster) this is refreshed every frame straight
@@ -129,11 +159,51 @@ export interface MonsterAttackEvent extends MonsterAttack, Pos3 {
 }
 
 /**
- * How far around a moving body to look for other bodies it could bump into.
- * Must exceed the largest possible contact reach — two spider masterminds, at
- * 128 units of radius each — with room to spare for a frame's movement.
+ * How far around the *player* to look for bodies they could bump into
+ * (`solidBodies`). A fixed worst case is fine here — it must exceed the
+ * largest possible contact reach (two spider masterminds, at 128 units of
+ * radius each) with room to spare for a frame's movement, and it's paid once
+ * per frame for one body. `blockersFor` deliberately does **not** use it: run
+ * per monster per frame, a fixed box that assumes the largest monster in the
+ * game is exactly the waste that made monster AI the frame's bottleneck.
  */
 const BLOCKER_SEARCH_RADIUS = 320;
+
+/**
+ * Cell size of the monster lookup grid (`blockerGrid`). Deliberately much
+ * smaller than the worst-case search box: the box is sized *per monster* from
+ * its own radius (see `blockersFor`), so small cells are what let an ordinary
+ * 20-unit-radius monster scan a handful of candidates instead of everything
+ * within the largest radius any monster in the game could need.
+ */
+const BLOCKER_GRID_CELL = 128;
+
+/** `game.ts`'s own per-frame `dt` clamp; the most simulated time one frame can ever represent. */
+const MAX_FRAME_DT = 0.05;
+
+/**
+ * Slack added to every blocker search, so that tightening the search to the
+ * bodies that can actually touch (see `blockersFor`) can't miss one. Two
+ * independent sources of position uncertainty, both derived from the stats
+ * table rather than hardcoded so they can't drift out of sync with it:
+ *
+ * - **The probe reaches past the body.** `monsters.ts: tryWalk` tests a
+ *   position a full vanilla `P_Move` step away (`speed × chaseInterval`), so a
+ *   blocker just outside the body's own radius can still be the thing that
+ *   refuses the move.
+ * - **The grid is up to a frame stale.** `blockerGrid` buckets each monster by
+ *   where it was at `rebuildBlockerGrid` time, but monsters later in the same
+ *   update loop have since moved — by at most `speed × MAX_FRAME_DT`.
+ *
+ * The two maxima are taken **independently and then added**, not maximised as
+ * a per-type sum: the monster doing the probing and the monster that drifted
+ * are different monsters, so the worst case pairs the game's longest probe
+ * step with the fastest *other* monster's drift, and nothing requires those to
+ * be the same type.
+ */
+const BLOCKER_MARGIN =
+  Object.values(MONSTER_STATS).reduce((max, s) => Math.max(max, s.speed * s.chaseInterval), 0) +
+  Object.values(MONSTER_STATS).reduce((max, s) => Math.max(max, s.speed), 0) * MAX_FRAME_DT;
 
 /** 
  * How often an unalerted monster re-checks line of sight to the player — 
@@ -172,6 +242,8 @@ export interface MonsterRef extends Pos3 {
 export interface ThingLayer {
   group: THREE.Group;
   count: number;
+  /** Releases the instanced meshes/materials this layer owns; call when the map is unloaded. Shared geometry and textures belong to `SpriteMaterialCache`, which outlives a level. */
+  dispose(): void;
   /**
    * Every living monster near (x, y) as a solid body the *player* has to walk
    * around — vanilla's monsters are all `MF_SOLID`, so they block a mover the
@@ -261,11 +333,11 @@ export interface ThingLayer {
    * wall/floor hiding a chasing monster fades the same way one hiding the
    * player does. Two exclusions, both load-bearing: anything not yet alerted
    * (an unseen sleeping monster is supposed to stay hidden), and anything
-   * fog of war is currently hiding (`mesh.visible`, set from `fogAlphaOf` in
-   * `update` above) — a monster in a subsector the player has never had
-   * sight of isn't drawn at all, so fading the wall in front of it reveals
-   * an empty dark room and nothing else. Must be called after `update` has
-   * run for the frame, so `mesh.visible` reflects this frame's fog.
+   * fog of war is currently hiding (`PosedThing.visible`, set from
+   * `fogAlphaOf` in `update` above) — a monster in a subsector the player has
+   * never had sight of isn't drawn at all, so fading the wall in front of it
+   * reveals an empty dark room and nothing else. Must be called after
+   * `update` has run for the frame, so `visible` reflects this frame's fog.
    */
   awakeMonsters(): Pos3[];
   /**
@@ -357,9 +429,12 @@ export function buildThingSprites(
   materials: SpriteMaterialCache,
   skill: Skill,
 ): ThingLayer {
-  const group = new THREE.Group();
+  const batch = new SpriteBatch();
+  const group = batch.group;
   group.name = 'things';
   const posed: PosedThing[] = [];
+  /** Scratch for `doomToWorld`, reused across every sprite — this runs per thing per frame. */
+  const worldPos = new THREE.Vector3();
 
   for (const t of map.things) {
     const spriteName = THING_SPRITES[t.type];
@@ -376,13 +451,18 @@ export function buildThingSprites(
     const z = sector?.floorHeight ?? 0;
     const isMonster = MONSTER_TYPES.has(t.type);
 
-    const actor = new SpriteActor(bank, materials, spriteName, isMonster ? MONSTER_WALK_FRAMES : ['A']);
-    if (!actor.setPose(x, y, z, facingDeg, light)) continue;
-    actor.mesh.scale.setScalar(pickupScaleFor(t.type));
-    group.add(actor.mesh);
+    const anim = new SpriteAnimator(bank, materials, spriteName, isMonster ? MONSTER_WALK_FRAMES : ['A']);
+    // Skips a thing whose art the WAD doesn't actually carry, same as before —
+    // resolving once here is what the old build-time `setPose` call was for.
+    if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) continue;
     posed.push({
       id: posed.length,
-      actor,
+      anim,
+      scale: pickupScaleFor(t.type),
+      blockRadius: MONSTER_STATS[t.type]?.radius ?? MONSTER_HIT_RADIUS,
+      visible: true,
+      hidden: false,
+      queryStamp: 0,
       x,
       y,
       z,
@@ -434,13 +514,16 @@ export function buildThingSprites(
     const light = sector?.light ?? 128;
     const z = sector?.floorHeight ?? 0;
     const subsector = world.subsectorAt(x, y);
-    const actor = new SpriteActor(bank, materials, spriteName);
-    if (!actor.setPose(x, y, z, facingDeg, light)) return;
-    actor.mesh.scale.setScalar(pickupScaleFor(type));
-    group.add(actor.mesh);
+    const anim = new SpriteAnimator(bank, materials, spriteName);
+    if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) return;
     posed.push({
       id: posed.length,
-      actor,
+      anim,
+      scale: pickupScaleFor(type),
+      blockRadius: MONSTER_STATS[type]?.radius ?? MONSTER_HIT_RADIUS,
+      visible: true,
+      hidden: false,
+      queryStamp: 0,
       x,
       y,
       z,
@@ -497,21 +580,226 @@ export function buildThingSprites(
   }
 
   /**
+   * Living monsters bucketed by `BLOCKER_GRID_CELL`, rebuilt once per
+   * `update()` and read by `blockersFor` below. Vanilla has the same thing for
+   * the same reason — its blockmap — and this exists because without it
+   * monster-vs-monster collision is O(monsters²) per frame: every alerted
+   * monster scanning every other thing on the map. That is fine at a stock
+   * level's population and catastrophic beyond it (NUTS.WAD's 10,696 things
+   * work out to ~114 million distance checks per frame the moment they all
+   * wake up, which on its own is a multi-hundred-millisecond frame).
+   *
+   * Cells hold `PosedThing`s rather than ids so `blockersFor` needs no second
+   * lookup, and their arrays are emptied and refilled rather than reallocated,
+   * since this runs every frame.
+   */
+  const blockerCols = Math.max(1, Math.ceil((map.bounds.maxX - map.bounds.minX) / BLOCKER_GRID_CELL) + 1);
+  const blockerRows = Math.max(1, Math.ceil((map.bounds.maxY - map.bounds.minY) / BLOCKER_GRID_CELL) + 1);
+  const blockerGrid: PosedThing[][] = new Array(blockerCols * blockerRows);
+  /** Indices of the cells that actually have anything in them, so a rebuild clears only those instead of walking the whole grid. */
+  const blockerDirty: number[] = [];
+  /** Bumped per `forEachMonsterAlongRay` call; see `PosedThing.queryStamp`. */
+  let monsterQueryStamp = 0;
+  /**
+   * Largest collision radius among the monsters currently in the grid, so
+   * `blockersFor` can size its search box to what this map actually contains
+   * instead of to the biggest monster in the game. On a map of ordinary
+   * 20-unit-radius grunts that is the difference between a box a couple of
+   * cells across and one nine cells across.
+   */
+  let maxBlockerRadius = PLAYER_RADIUS;
+
+  /**
+   * Grid key for a map position. DOOM map coordinates are 16-bit signed, so
+   * the biased cell indices comfortably fit the 16 bits each this packs them
+   * into — one number key rather than a string, which matters at this call rate.
+   */
+  /**
+   * Every living monster in the grid cells covering `radius` around (x, y).
+   * The caller still has to apply its own exact distance test — this only
+   * narrows the candidates from "every thing on the map" to "the ones nearby".
+   *
+   * The cell range is padded by `BLOCKER_MARGIN` because the grid buckets each
+   * monster by where it stood at `rebuildBlockerGrid` time, and one may have
+   * moved since; positions read off the things themselves are always live.
+   */
+  function forEachMonsterNear(x: number, y: number, radius: number, visit: (p: PosedThing) => void): void {
+    const reach = radius + BLOCKER_MARGIN;
+    const c0 = blockerCol(x - reach);
+    const c1 = blockerCol(x + reach);
+    const r0 = blockerRow(y - reach);
+    const r1 = blockerRow(y + reach);
+    for (let gy = r0; gy <= r1; gy++) {
+      const rowBase = gy * blockerCols;
+      for (let gx = c0; gx <= c1; gx++) {
+        const cell = blockerGrid[rowBase + gx];
+        if (cell === undefined) continue;
+        for (const p of cell) visit(p);
+      }
+    }
+  }
+
+  /**
+   * Every living monster in or beside the grid cells a ray passes through,
+   * each visited at most once. Backs `raycastMonster`, which a crowded map
+   * calls once per monster hitscan — dozens of times a frame — and which as a
+   * scan of every thing measured ~4 ms/frame on NUTS.WAD.
+   *
+   * Deliberately simpler than `World.forEachLineAlongSegment`'s exact DDA: it
+   * steps along the ray by half a cell and sweeps each step's 3×3 cell
+   * neighbourhood. Stepping by half a cell means no cell on the path can be
+   * skipped, and the 3×3 sweep gives a full cell (128 units) of clearance on
+   * either side — far more than the ~24-unit hit radius the caller tests
+   * against — so it cannot miss a monster the exact ray would hit. Monsters
+   * are stamped rather than deduped through a `Set`, since consecutive steps'
+   * neighbourhoods overlap heavily.
+   */
+  function forEachMonsterAlongRay(
+    x: number,
+    y: number,
+    dirX: number,
+    dirY: number,
+    maxDist: number,
+    visit: (p: PosedThing) => void,
+  ): void {
+    const stamp = ++monsterQueryStamp;
+    const stride = BLOCKER_GRID_CELL / 2;
+    const steps = Math.ceil(maxDist / stride);
+    for (let s = 0; s <= steps; s++) {
+      const t = Math.min(s * stride, maxDist);
+      const cx = blockerCol(x + dirX * t);
+      const cy = blockerRow(y + dirY * t);
+      for (let gy = cy - 1; gy <= cy + 1; gy++) {
+        if (gy < 0 || gy >= blockerRows) continue;
+        const rowBase = gy * blockerCols;
+        for (let gx = cx - 1; gx <= cx + 1; gx++) {
+          if (gx < 0 || gx >= blockerCols) continue;
+          const cell = blockerGrid[rowBase + gx];
+          if (cell === undefined) continue;
+          for (const p of cell) {
+            if (p.queryStamp === stamp) continue;
+            p.queryStamp = stamp;
+            visit(p);
+          }
+        }
+      }
+    }
+  }
+
+  /** Grid column/row for a map coordinate, clamped so a thing outside the map's own bounds still lands in a real cell. */
+  function blockerCol(x: number): number {
+    const c = Math.floor((x - map.bounds.minX) / BLOCKER_GRID_CELL);
+    return c < 0 ? 0 : c >= blockerCols ? blockerCols - 1 : c;
+  }
+
+  function blockerRow(y: number): number {
+    const r = Math.floor((y - map.bounds.minY) / BLOCKER_GRID_CELL);
+    return r < 0 ? 0 : r >= blockerRows ? blockerRows - 1 : r;
+  }
+
+  function rebuildBlockerGrid(): void {
+    for (const i of blockerDirty) blockerGrid[i].length = 0;
+    blockerDirty.length = 0;
+    maxBlockerRadius = PLAYER_RADIUS;
+    for (const p of posed) {
+      if (p.dead || !MONSTER_TYPES.has(p.type)) continue;
+      if (p.blockRadius > maxBlockerRadius) maxBlockerRadius = p.blockRadius;
+      const i = blockerRow(p.y) * blockerCols + blockerCol(p.x);
+      let cell = blockerGrid[i];
+      if (!cell) blockerGrid[i] = cell = [];
+      if (cell.length === 0) blockerDirty.push(i);
+      cell.push(p);
+    }
+  }
+
+  /**
+   * Reused storage for `blockersFor`'s result. `blockerPool` owns the blocker
+   * objects and only ever grows; `blockerScratch` is emptied and refilled with
+   * references to them on every call, so a steady-state frame allocates
+   * nothing here at all.
+   *
+   * This matters more than it looks: a freshly-built list per call meant
+   * roughly half a million short-lived objects per frame on a crowded map
+   * (every alerted monster × its ~65 real neighbours), which profiled as **60%
+   * of all monster-AI time** — far more than the neighbour search it was
+   * feeding. The tradeoff is that `blockersFor`'s return value is only valid
+   * until the next call, which is why it's typed `readonly` and why the one
+   * caller (`stepMonsterAI`, via `circleBlocked`/`blockedByThings`) consumes it
+   * synchronously and never stores it. `solidBodies` below deliberately does
+   * *not* share this: it's called once per frame for the player, where a plain
+   * allocation costs nothing and an aliased buffer would be a trap.
+   */
+  const blockerPool: ThingBlocker[] = [];
+  const blockerScratch: ThingBlocker[] = [];
+
+  function pushBlocker(x: number, y: number, radius: number): void {
+    const i = blockerScratch.length;
+    let b = blockerPool[i];
+    if (!b) blockerPool[i] = b = { x: 0, y: 0, radius: 0 };
+    b.x = x;
+    b.y = y;
+    b.radius = radius;
+    blockerScratch.push(b);
+  }
+
+  /**
    * The solid bodies near `p` that it can physically bump into — every other
    * living monster plus the player, matching vanilla, where every monster is
-   * `MF_SOLID` and `PIT_CheckThing` stops a mover against it. Filtered by
-   * `BLOCKER_SEARCH_RADIUS` so the box test in `circleBlocked` stays short;
-   * `p` itself is excluded, since a body always overlaps where it already is.
+   * `MF_SOLID` and `PIT_CheckThing` stops a mover against it. `p` itself is
+   * excluded, since a body always overlaps where it already is.
+   *
+   * **The returned array is reused** — see `blockerScratch`. Valid only until
+   * the next call.
+   *
+   * The search box is sized from the radii actually involved rather than from
+   * a fixed worst case, and only the grid cells it covers are scanned. Both
+   * halves matter: `blockedByThings` can never report an overlap outside
+   * `r1 + r2`, so anything beyond that (plus `BLOCKER_MARGIN`, which covers
+   * the probe reach and the grid's frame of staleness) is guaranteed waste.
+   * This is the single hottest thing in monster AI — see `blockerGrid`.
    */
-  function blockersFor(p: PosedThing, player: Pos3): ThingBlocker[] {
-    const out: ThingBlocker[] = [{ x: player.x, y: player.y, radius: PLAYER_RADIUS }];
-    for (const other of posed) {
-      if (other === p || other.dead || !MONSTER_TYPES.has(other.type)) continue;
-      if (Math.abs(other.x - p.x) > BLOCKER_SEARCH_RADIUS || Math.abs(other.y - p.y) > BLOCKER_SEARCH_RADIUS) continue;
-      out.push({ x: other.x, y: other.y, radius: MONSTER_STATS[other.type]?.radius ?? MONSTER_HIT_RADIUS });
+  function blockersFor(p: PosedThing, player: Pos3): readonly ThingBlocker[] {
+    blockerScratch.length = 0;
+    const ownRadius = p.blockRadius;
+    // `blockedByThings` only ever reports an overlap inside `r1 + r2`, so
+    // nothing further than the widest possible summed radii (plus the margin)
+    // can matter — searching further is pure waste, and it was: a fixed
+    // 320-unit box collected ~145 candidates per monster on a map of 20-unit
+    // grunts, which profiled as half of all monster-AI time.
+    const reach = ownRadius + maxBlockerRadius + BLOCKER_MARGIN;
+    const playerReach = ownRadius + PLAYER_RADIUS + BLOCKER_MARGIN;
+    if (Math.abs(player.x - p.x) <= playerReach && Math.abs(player.y - p.y) <= playerReach) {
+      pushBlocker(player.x, player.y, PLAYER_RADIUS);
     }
-    return out;
+    const c0 = blockerCol(p.x - reach);
+    const c1 = blockerCol(p.x + reach);
+    const r0 = blockerRow(p.y - reach);
+    const r1 = blockerRow(p.y + reach);
+    for (let gy = r0; gy <= r1; gy++) {
+      const rowBase = gy * blockerCols;
+      for (let gx = c0; gx <= c1; gx++) {
+        const cell = blockerGrid[rowBase + gx];
+        if (cell === undefined || cell.length === 0) continue;
+        for (const other of cell) {
+          // `dead` is re-checked because a monster can be killed (infighting,
+          // splash) after the grid was built for this frame.
+          if (other === p || other.dead) continue;
+          // Tighter than `reach`, which has to assume the map's largest
+          // monster: this pair's own summed radii is the real bound. That
+          // matters on a map like NUTS.WAD, where 795 spider masterminds
+          // (radius 128) would otherwise widen every 20-unit grunt's box too.
+          const pairReach = ownRadius + other.blockRadius + BLOCKER_MARGIN;
+          if (Math.abs(other.x - p.x) > pairReach || Math.abs(other.y - p.y) > pairReach) continue;
+          pushBlocker(other.x, other.y, other.blockRadius);
+        }
+      }
+    }
+    return blockerScratch;
   }
+
+  // Seeded once here so a lookup that lands before the first `update` (a
+  // splash on the opening frame, say) still finds the monsters that exist.
+  rebuildBlockerGrid();
 
   return {
     group,
@@ -533,9 +821,13 @@ export function buildThingSprites(
       crossLines?: (prev: Pos2, pos: Pos2) => Placement | null,
     ): MonsterAttackEvent[] {
       const attacks: MonsterAttackEvent[] = [];
+      // Once per frame, ahead of any blockersFor call below — see its doc for
+      // why a frame-granular grid is accurate enough for contact.
+      rebuildBlockerGrid();
+      batch.begin(viewerAngleDeg);
       for (const p of posed) {
-        if (p.picked) {
-          p.actor.mesh.visible = false;
+        if (p.hidden) {
+          p.visible = false;
           continue;
         }
 
@@ -595,10 +887,22 @@ export function buildThingSprites(
           p.z = p.sector?.floorHeight ?? p.z;
         }
 
-        p.actor.setPose(p.x, p.y, p.z, p.facingDeg, p.light, dt, animating, viewerAngleDeg);
-        if (fogAlphaOf) p.actor.mesh.visible = fogAlphaOf(p.subsector) > 0.5;
+        p.visible = !fogAlphaOf || fogAlphaOf(p.subsector) > 0.5;
+        p.anim.advance(dt, animating);
+        // Resolving the lump is only worth doing for something actually being
+        // drawn — for a map like NUTS.WAD this skips thousands of SpriteBank
+        // lookups a frame while the player has only explored part of it.
+        if (!p.visible) continue;
+        const cached = p.anim.resolve(p.facingDeg, viewerAngleDeg);
+        if (!cached) continue;
+        doomToWorld(p.x, p.y, p.z, worldPos);
+        batch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, lightToColor(p.light), p.id);
       }
+      batch.end();
       return attacks;
+    },
+    dispose(): void {
+      batch.dispose();
     },
     tryPickup(pos: Pos3, radius: number, consume: (type: number, dropped: boolean) => boolean): void {
       const rSq = radius * radius;
@@ -615,31 +919,39 @@ export function buildThingSprites(
         if (Math.abs((p.sector?.floorHeight ?? 0) - pos.z) > PLAYER_HEIGHT) continue;
         if (consume(p.type, p.dropped)) {
           p.picked = true;
-          p.actor.mesh.visible = false;
+          p.hidden = true;
+          p.visible = false;
         }
       }
     },
     pickMonster(raycaster: THREE.Raycaster): MonsterRef | null {
-      const byMesh = new Map<THREE.Object3D, PosedThing>();
-      for (const p of posed) {
-        if (p.picked || p.dead || !p.actor.mesh.visible || !MONSTER_TYPES.has(p.type)) continue;
-        byMesh.set(p.actor.mesh, p);
-      }
-      const hit = raycaster.intersectObjects([...byMesh.keys()], false)[0];
-      if (!hit) return null;
-      const p = byMesh.get(hit.object);
-      return p ? { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type } : null;
+      // The batch hands back the id of the nearest instance this predicate
+      // accepts, skipping (rather than being blocked by) everything else — so
+      // a barrel standing in front of an imp still doesn't make it
+      // untargetable, exactly as when only monster meshes were raycast at all.
+      const id = batch.raycast(raycaster, (owner) => {
+        const p = posed[owner];
+        return !!p && !p.picked && !p.dead && p.visible && MONSTER_TYPES.has(p.type);
+      });
+      if (id === null) return null;
+      const p = posed[id];
+      return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type };
     },
     monstersNear(pos: Pos2, radius: number): MonsterRef[] {
+      // Grid-backed, not a scan of every thing. This is called once per
+      // in-flight projectile per frame (`game.ts`'s `monsterStruckBy`), and a
+      // crowded map can have well over a thousand projectiles in the air at
+      // once — as a linear scan that alone measured ~138 ms/frame on NUTS.WAD,
+      // more than everything else in the frame put together.
       const out: MonsterRef[] = [];
       const rSq = radius * radius;
-      for (const p of posed) {
-        if (p.dead || !MONSTER_TYPES.has(p.type)) continue;
+      forEachMonsterNear(pos.x, pos.y, radius, (p) => {
+        if (p.dead) return;
         const dx = p.x - pos.x;
         const dy = p.y - pos.y;
-        if (dx * dx + dy * dy >= rSq) continue;
+        if (dx * dx + dy * dy >= rSq) return;
         out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type });
-      }
+      });
       return out;
     },
     monsterById(id: number): MonsterRef | null {
@@ -657,7 +969,7 @@ export function buildThingSprites(
     awakeMonsters(): Pos3[] {
       const out: Pos3[] = [];
       for (const p of posed) {
-        if (p.dead || !MONSTER_TYPES.has(p.type) || !p.alerted || !p.actor.mesh.visible) continue;
+        if (p.dead || !MONSTER_TYPES.has(p.type) || !p.alerted || !p.visible) continue;
         out.push({ x: p.x, y: p.y, z: p.z });
       }
       return out;
@@ -697,8 +1009,11 @@ export function buildThingSprites(
       const maxHealth = MONSTER_HEALTH[p.type] ?? 0;
       const gibbed = p.health < -maxHealth && MONSTER_XDEATH_FRAMES[p.type];
       const frames = gibbed || MONSTER_DEATH_FRAMES[p.type];
-      if (frames) p.actor.die(frames, MONSTER_DEATH_FRAME_SECONDS);
-      else p.actor.mesh.visible = false;
+      if (frames) p.anim.die(frames, MONSTER_DEATH_FRAME_SECONDS);
+      else {
+        p.hidden = true;
+        p.visible = false;
+      }
 
       const dropType = MONSTER_DROPS[p.type];
       if (dropType) spawnDrop(p.x, p.y, p.sector, p.facingDeg, dropType);
@@ -712,22 +1027,24 @@ export function buildThingSprites(
       const dx = Math.cos(angleRad);
       const dy = Math.sin(angleRad);
       let nearest: (MonsterRef & { dist: number }) | null = null;
-      for (const p of posed) {
-        if (p.dead || !MONSTER_TYPES.has(p.type)) continue;
-        if (p.id === opts?.ignoreId) continue;
+      // Grid-backed rather than a scan of every thing: this runs once per
+      // monster hitscan, which a crowded map fires dozens of times a frame.
+      forEachMonsterAlongRay(origin.x, origin.y, dx, dy, maxDist, (p) => {
+        if (p.dead) return;
+        if (p.id === opts?.ignoreId) return;
         // Fog of war is a *player*-facing conceit; a monster shooting another
         // monster in an unrevealed room must still connect.
-        if (!opts?.includeHidden && !p.actor.mesh.visible) continue;
-        if (Math.abs(p.z - origin.z) > MONSTER_HIT_HEIGHT) continue;
+        if (!opts?.includeHidden && !p.visible) return;
+        if (Math.abs(p.z - origin.z) > MONSTER_HIT_HEIGHT) return;
         const relX = p.x - origin.x;
         const relY = p.y - origin.y;
         const t = relX * dx + relY * dy;
-        if (t < 0 || t > maxDist || (nearest && t >= nearest.dist)) continue;
+        if (t < 0 || t > maxDist || (nearest && t >= nearest.dist)) return;
         const perpX = relX - dx * t;
         const perpY = relY - dy * t;
-        if (perpX * perpX + perpY * perpY > MONSTER_HIT_RADIUS * MONSTER_HIT_RADIUS) continue;
+        if (perpX * perpX + perpY * perpY > MONSTER_HIT_RADIUS * MONSTER_HIT_RADIUS) return;
         nearest = { id: p.id, x: origin.x + dx * t, y: origin.y + dy * t, z: p.z, dist: t, type: p.type };
-      }
+      });
       return nearest;
     },
   };

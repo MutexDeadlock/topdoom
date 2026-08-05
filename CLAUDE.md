@@ -319,8 +319,80 @@ one-sided or `LF.BLOCKING`) block on mere proximity regardless of side, since re
 walls stop you from any direction. Conflating "near" with "straddling" for passable openings
 is exactly what causes the deadlock above.
 
-`slideMove` moves a circle by trying the two axes separately and retrying the blocked axis
-from the new position, so the player rounds convex corners smoothly instead of stopping dead.
+`slideMove` is vanilla's `P_SlideMove`/`P_HitSlideLine`: a refused move is **projected onto
+the blocking line's own direction** and retried, up to three walls deep, so what survives is
+the component running along the wall and what's lost is the component pushing into it.
+`blockingLineAt` is what identifies that wall — deliberately a separate function from
+`circleBlocked` rather than an extension of it, because the two want opposite things:
+`circleBlocked` is the hot one (every monster's `tryWalk` probe, every dropoff test) and
+returns on the *first* blocker it finds, while this one has to weigh all of them to pick the
+nearest, i.e. the wall the circle is actually pressed against rather than one it merely grazes.
+
+It used to try the two axes separately instead, retrying the blocked axis from the new
+position — and that only ever worked for an **axis-aligned** wall, for which (and only for
+which) the coordinate axes happen to *be* the wall's own tangent and normal. Against anything
+diagonal it stopped the player dead: pushing due north into a 45° wall leaves `dx = 0`, so
+there is no second axis left to move on at all. Measured on real geometry (300 wall-adjacent
+spots per map × 16 push directions, one second of running each), the share of probes that
+covered under 5% of a free second's distance fell from 4.1% → 1.9% on E1M1, 6.1% → 2.7% on
+E1M3, 3.8% → 1.8% on DOOM2 MAP01 and 3.7% → 2.0% on SCYTHE MAP01 — the residue being genuine
+head-on walls, which *should* stop you. (MAP07 is unchanged at 1.9%: its walls are almost all
+axis-aligned, which is exactly the case the old split already handled.) Rounding a convex
+corner, the one case the axis split was written for, still works — the projection produces the
+same slide, derived from the wall's geometry rather than from the coordinate system.
+
+The per-axis attempt survives as a **fallback**, for the two cases projection can't resolve: a
+solid body rather than a line stopped the move (`SOLID_BODY` — and axis separation is the
+*correct* slide there anyway, since vanilla's `PIT_CheckThing` blocker is an axis-aligned box,
+so its faces run along the axes), or the circle already overlaps the wall it is trying to slide
+along, so the projection makes no progress. Every position the projection loop returns has been
+validated by `blockingLineAt`; the loop never falls out with an unchecked one.
+
+Unlike vanilla, the projection runs from the circle's *current* position instead of first
+advancing it to the contact point. At this engine's frame rate a move step is a few map units,
+so the skipped fraction is far below anything visible, and the perpendicular distance to the
+wall is preserved by the projection either way, so the circle never creeps into it.
+
+**`Player.update` adopts whatever the slide actually managed as the new velocity**
+(`(moved.x - x) / dt`), which is vanilla's `P_SlideMove` writing its clipped vector back to
+`momx`/`momy`: the along-wall component carries into the next frame and the into-wall component
+is gone. The old rule — zero whichever *axis* failed to move — cannot express a diagonal wall's
+slide at all, since neither axis is that wall's tangent. With the write-back, the steady state
+of "push into a wall at angle θ off it, lerp back toward the input direction, project again"
+settles at exactly `speed × cos θ` along the wall, verified across wall angles 0-90° and push
+angles 10/30/60° to three decimals.
+
+### Movement speed and straferunning (`src/game/player.ts`)
+
+Forward and sideways are **separate, differently-sized thrusts that are never renormalized**,
+and that is the whole of vanilla's straferunning. `G_BuildTiccmd` accumulates `forwardmove` and
+`sidemove` independently, clamps *each* to `MAXPLMOVE` on its own, and `P_PlayerThink` then
+thrusts along both — so running forward and sideways at once genuinely covers the diagonal of
+the two rather than the same distance in a different direction. `FORWARD_MOVE`/`SIDE_MOVE`/
+`MAX_PL_MOVE` are vanilla's own tables (`g_game.c`: `{25, 50}` and `{24, 40}`, clamp 50),
+scaled once by `MOVE_UNIT_SPEED`. Only that scale is this engine's: 10 map-units/sec per move
+unit against vanilla's own 11.67, so full-speed forward running is 500 rather than vanilla's
+~583 and everything else follows from the ratios (250 walking forward, 400 running sideways,
+240 walking sideways). Keeping the tables rather than a pair of hand-picked speed constants is
+what makes the two straferun speeds come out right without being aimed at:
+
+- **SR40** — `W`+`D` running is `forwardmove` 50 and `sidemove` 40, `hypot(500, 400)` = 640
+  units/sec, **1.281×** plain running against vanilla's own 746.9/583.3 = 1.280.
+- **SR50** is vanilla's `MAXPLMOVE` *clamp artifact*: reachable there only by binding a second
+  strafe key and holding both bindings on the same side at once, so `sidemove` sums past 50
+  before the clamp cuts it back — this engine has no second strafe binding, so nothing can
+  currently push `side` past a single `sideMove`, and SR50 is a latent rather than a reachable
+  behavior here. `MAX_PL_MOVE`'s per-axis clamp is still exactly vanilla's own regardless.
+
+The previous version normalized the `(mx, my)` input vector to unit length before scaling by a
+single speed, which makes every direction equally fast and takes SR40 away with it.
+
+`ACCELERATION` (the exponential approach toward the target velocity) is deliberately **not**
+vanilla-derived and is the one thing here still tuned by feel, same as `GRAVITY` below: vanilla
+reaches its terminal speed through per-tic thrust against a 0.90625 friction multiplier, which
+works out to a ~3.4/sec continuous rate against this engine's 12. Only the *terminal* speeds
+decide the straferun ratios, so the two are independent — but the ramp-up here is markedly
+snappier than vanilla's, and that is a live tuning knob rather than a matched behavior.
 
 ### Vertical physics: stairs, falling, gap-crossing (`src/game/player.ts`)
 
@@ -1445,7 +1517,8 @@ connected across enormous distances — thousands of units — wherever the play
 lane. It cuts off sharply only close to the vile row itself: sampled every 128 units across the
 map's width, visibility from *any* of the 1,272 arch-viles drops from 107/107 columns exposed at
 the row's own front edge to 0/107 within about 750 units retreating straight back. A player
-running at `RUN_SPEED` (500 u/s) covers roughly 943 units over the 1.886s windup — enough to clear
+running flat out (500 u/s — `FORWARD_MOVE`'s run entry times `MOVE_UNIT_SPEED`, see "Movement
+speed and straferunning") covers roughly 943 units over the 1.886s windup — enough to clear
 that gap in principle, but only if the retreat starts at (or very near) the instant the vile
 commits, which is exactly what the windup flame above exists to signal. Waiting even a fraction of
 a second after being spotted, or retreating at an angle rather than straight down a covered lane,
@@ -2305,7 +2378,10 @@ without needing to tear down and rebuild anything.
 ## Current state
 
 Playable as a walkable level viewer: geometry, textures, sector lighting, collision with
-step-up/headroom rules, gravity-based falling off ledges, vanilla's narrow-gap-crossing quirk,
+step-up/headroom rules, vanilla's own wall sliding (`P_HitSlideLine`'s projection onto the
+blocking wall, not an axis split) and straferunning (unblended forward/side speeds off
+vanilla's own ticcmd tables, SR40 at vanilla's ratio),
+gravity-based falling off ledges, vanilla's narrow-gap-crossing quirk,
 floor following, map switching, PWAD loading, and a camera that can orbit in yaw (right-drag
 or `Q`/`E`) around the player with dithered wall-occlusion fading so it never hides the player,
 or an awake monster, behind geometry. Subsector-based fog of war (`game/fogofwar.ts`) hides

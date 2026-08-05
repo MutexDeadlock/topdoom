@@ -6,9 +6,26 @@ import type { Placement, Pos2, Pos3 } from '../types.ts';
 export const PLAYER_RADIUS = 16;
 export const PLAYER_HEIGHT = 56;
 
-/** Map units per second. Vanilla DOOM runs at roughly 583. */
-const WALK_SPEED = 260;
-const RUN_SPEED = 500;
+/**
+ * Vanilla's own ticcmd move tables (`g_game.c`'s `forwardmove`/`sidemove`),
+ * indexed `[walk, run]`, and its `MAXPLMOVE` clamp. Everything below is
+ * expressed in these units and scaled once by `MOVE_UNIT_SPEED`, rather than
+ * as a pair of hand-picked map-units/sec constants, because the *ratios*
+ * between them are what makes DOOM's movement feel like DOOM — see `update`.
+ */
+const FORWARD_MOVE = [25, 50] as const;
+const SIDE_MOVE = [24, 40] as const;
+const MAX_PL_MOVE = 50;
+
+/**
+ * Map units/sec per vanilla move unit. Vanilla's own works out to 11.67
+ * (`forwardmove` 50 against its terminal running speed of ~583 units/sec);
+ * this engine deliberately runs a little slower, so full-speed forward
+ * running is 500 and everything else follows from the tables above:
+ * 250 walking forward, 400 running sideways, 240 walking sideways.
+ */
+const MOVE_UNIT_SPEED = 10;
+
 const ACCELERATION = 12; // per second, as a lerp factor
 const EYE_HEIGHT = 41;
 /**
@@ -97,6 +114,25 @@ export class Player implements Pos3 {
    * movement, this still slides along them (`slideMove`), because the player
    * is the one thing in DOOM that gets `P_SlideMove`; bumping a demon in a
    * corridor should scrape past it, not stop dead.
+   *
+   * **Forward and sideways are separate, differently-sized thrusts that are
+   * never renormalized**, which is the whole of vanilla's straferunning.
+   * `G_BuildTiccmd` accumulates `forwardmove` and `sidemove` independently,
+   * clamps each to `MAXPLMOVE` on its own, and `P_PlayerThink` then thrusts
+   * along both — so running forward *and* sideways at once genuinely moves
+   * faster than either alone, by the diagonal of the two. Normalizing the
+   * input vector (which this used to do) makes every direction equally fast
+   * and takes both SR40 and SR50 away with it.
+   *
+   * - **SR40**: `W`+`D` while running is `forwardmove` 50 and `sidemove` 40,
+   *   i.e. `hypot(500, 400)` = 640 units/sec — 1.28x plain running, exactly
+   *   vanilla's own 746.9/583.3 ratio.
+   * - **SR50** is vanilla's own `MAXPLMOVE` clamp artifact — reachable there
+   *   only by binding a second strafe key and holding both on the same side
+   *   so `sidemove` sums past 50 before the clamp — and this engine has no
+   *   such second binding, so it's a latent rather than a reachable behavior
+   *   here: `MAX_PL_MOVE`'s clamp is still exactly vanilla's own, there's
+   *   just nothing that can currently push `side` past `sideMove` to exercise it.
    */
   update(
     dt: number,
@@ -105,27 +141,25 @@ export class Player implements Pos3 {
     forwardDeg: number,
     blockers?: readonly ThingBlocker[],
   ): void {
-    let mx = 0;
-    let my = 0;
-    if (input.held('KeyW', 'ArrowUp')) my += 1;
-    if (input.held('KeyS', 'ArrowDown')) my -= 1;
-    if (input.held('KeyA', 'ArrowLeft')) mx -= 1;
-    if (input.held('KeyD', 'ArrowRight')) mx += 1;
+    const run = input.held('ShiftLeft', 'ShiftRight') ? 1 : 0;
+    const forwardMove = FORWARD_MOVE[run];
+    const sideMove = SIDE_MOVE[run];
 
-    const len = Math.hypot(mx, my);
-    if (len > 0) {
-      mx /= len;
-      my /= len;
-    }
+    let forward = 0;
+    let side = 0;
+    if (input.held('KeyW', 'ArrowUp')) forward += forwardMove;
+    if (input.held('KeyS', 'ArrowDown')) forward -= forwardMove;
+    if (input.held('KeyA', 'ArrowLeft')) side -= sideMove;
+    if (input.held('KeyD', 'ArrowRight')) side += sideMove;
+
+    // Per-axis clamping, not a magnitude clamp — see the doc above.
+    forward = Math.max(-MAX_PL_MOVE, Math.min(MAX_PL_MOVE, forward)) * MOVE_UNIT_SPEED;
+    side = Math.max(-MAX_PL_MOVE, Math.min(MAX_PL_MOVE, side)) * MOVE_UNIT_SPEED;
 
     const forwardRad = (forwardDeg * Math.PI) / 180;
     const rightRad = forwardRad - Math.PI / 2;
-    const worldX = mx * Math.cos(rightRad) + my * Math.cos(forwardRad);
-    const worldY = mx * Math.sin(rightRad) + my * Math.sin(forwardRad);
-
-    const speed = input.held('ShiftLeft', 'ShiftRight') ? RUN_SPEED : WALK_SPEED;
-    const targetX = worldX * speed;
-    const targetY = worldY * speed;
+    const targetX = side * Math.cos(rightRad) + forward * Math.cos(forwardRad);
+    const targetY = side * Math.sin(rightRad) + forward * Math.sin(forwardRad);
 
     // Exponential approach gives DOOM-ish inertia without a full physics model.
     const k = 1 - Math.exp(-ACCELERATION * dt);
@@ -134,9 +168,17 @@ export class Player implements Pos3 {
 
     if (Math.abs(this.velX) > 0.01 || Math.abs(this.velY) > 0.01) {
       const moved = slideMove(this.world, this, this.velX * dt, this.velY * dt, PLAYER_RADIUS, false, false, blockers);
-      // Kill the velocity component that was absorbed by a wall.
-      if (moved.x === this.x) this.velX = 0;
-      if (moved.y === this.y) this.velY = 0;
+      // Adopt whatever the slide actually managed as the new velocity, exactly
+      // as vanilla's P_SlideMove writes its clipped vector back to momx/momy:
+      // the component that ran along a wall carries over to the next frame and
+      // the one that pushed into it is gone. Reading it back off the achieved
+      // displacement is what keeps a slid-along-a-wall run at full speed — the
+      // old "zero whichever axis didn't move" rule couldn't express a diagonal
+      // wall's slide at all, since neither axis is that wall's tangent.
+      if (dt > 0) {
+        this.velX = (moved.x - this.x) / dt;
+        this.velY = (moved.y - this.y) / dt;
+      }
       this.x = moved.x;
       this.y = moved.y;
     }

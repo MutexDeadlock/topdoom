@@ -82,6 +82,10 @@ Without it those hotkeys are simply inert. `C` (ceiling toggle) always works eit
 Ceilings are off by default — from above they would hide everything underneath. See
 [Dev mode](#dev-mode) for the keys marked above.
 
+Forward and sideways are separate speeds that are never blended into one, exactly as in
+vanilla — so **straferunning works**. Running forward and sideways at once (`W`+`D`+`Shift`)
+moves you faster than either alone: SR40, 1.28× plain running, matching vanilla's ratio.
+
 ## HUD
 
 Walking within range of a health, armor, ammo, key, weapon, backpack or powerup pickup
@@ -215,7 +219,8 @@ is walkable.
 ## State
 
 Playable as a walkable level viewer you can fight in: geometry, textures, sector lighting,
-collision with step-up/headroom rules, gravity-based falling off ledges, vanilla's
+collision with step-up/headroom rules and vanilla's own wall-sliding, straferunning,
+gravity-based falling off ledges, vanilla's
 narrow-gap-crossing quirk, floor following, map switching, PWAD loading, and an orbitable
 camera (right-drag or `Q`/`E`) with wall-occlusion fading. Fog of war hides rooms and secrets
 until the player has actually seen them. THINGS render as upright sprites (monsters, weapons,

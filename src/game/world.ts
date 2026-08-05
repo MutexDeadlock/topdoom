@@ -750,10 +750,96 @@ export function circleBlocked(
 }
 
 /**
- * Moves a circle by (dx, dy) and slides along whatever it hits, by trying the
- * two axes separately. Returns the position actually reached. `forMonster`/
- * `avoidDropoff` — see `circleBlocked`; the player's own movement never
- * passes either.
+ * `blockingLineAt`'s answer when something other than a linedef stopped the
+ * circle — a solid body, or a dropoff. There's no wall direction to slide
+ * along in that case, so `slideMove` falls back to its per-axis attempt,
+ * which happens to be exactly the right slide for a body anyway: vanilla's
+ * `PIT_CheckThing` blocker is an axis-aligned **box** (see `blockedByThings`),
+ * so its faces run along the axes.
+ */
+export const SOLID_BODY = -1;
+
+/**
+ * Which line blocks a circle at (x, y), or `null` if nothing does —
+ * `circleBlocked`'s answer plus the identity of the blocker, which is what
+ * `slideMove` needs to project a move onto the wall it ran into.
+ *
+ * Kept separate from `circleBlocked` rather than folded into it because the
+ * two want opposite things: `circleBlocked` is the hot one (every monster's
+ * `tryWalk` probe, every dropoff test) and returns on the *first* blocker it
+ * finds, while this one has to look at all of them to pick the right wall.
+ * Where several block at once (an inside corner) the nearest to (x, y) wins:
+ * that's the one the circle is furthest inside, i.e. the wall it's actually
+ * pressed against rather than one it merely grazes.
+ */
+export function blockingLineAt(
+  world: World,
+  x: number,
+  y: number,
+  radius: number,
+  z: number,
+  forMonster = false,
+  avoidDropoff = false,
+  blockers?: readonly ThingBlocker[],
+): number | null {
+  if (blockedByThings(x, y, radius, blockers)) return SOLID_BODY;
+  if (avoidDropoff && world.groundFloor(x, y, radius, forMonster) - world.dropoffFloor(x, y, radius) > MAX_STEP_UP) return SOLID_BODY;
+  const rSq = radius * radius;
+  let best: number | null = null;
+  let bestDistSq = Infinity;
+  for (const i of world.linesNear(x, y, radius + 1)) {
+    const line = world.map.linedefs[i];
+    const a = world.map.vertexes[line.v1];
+    const b = world.map.vertexes[line.v2];
+    if (!a || !b) continue;
+    const dSq = distSqToSegment(x, y, a.x, a.y, b.x, b.y);
+    if (dSq >= rSq || dSq >= bestDistSq) continue;
+    if (!world.isSolidWall(i, forMonster)) {
+      if (!crossesLine(x, y, radius, a.x, a.y, b.x, b.y)) continue;
+      if (!world.blocksMovement(i, z, forMonster)) continue;
+    }
+    best = i;
+    bestDistSq = dSq;
+  }
+  return best;
+}
+
+/** How many walls one `slideMove` will project against before giving up — vanilla's own `P_SlideMove` retry count. */
+const SLIDE_ATTEMPTS = 3;
+
+/** Below this (map units) a projected slide has nothing left to give; treat the wall as head-on. */
+const SLIDE_EPSILON = 1e-6;
+
+/**
+ * Moves a circle by (dx, dy) and slides along whatever it hits, returning the
+ * position actually reached. `forMonster`/`avoidDropoff` — see
+ * `circleBlocked`; the player's own movement never passes either, and nothing
+ * else calls this at all (vanilla's `P_SlideMove` is the player's alone —
+ * monsters get `P_Move`'s all-or-nothing step, see `game/monsters.ts`).
+ *
+ * This is vanilla's `P_HitSlideLine`: the move that got refused is
+ * **projected onto the blocking line's own direction** and retried, so what
+ * survives is the component running along the wall and what's lost is the
+ * component pushing into it. Up to `SLIDE_ATTEMPTS` walls are clipped against
+ * in turn, which is what lets an inside corner shed one wall's component and
+ * then the next's.
+ *
+ * It used to try the two axes separately instead, and that only ever worked
+ * for an **axis-aligned** wall — for those, and only those, the axes happen to
+ * be the wall's own tangent and normal. Against anything diagonal it stopped
+ * the player dead: pushing due north into a 45° wall gives dx = 0, so there
+ * was no second axis left to move on at all and the player stuck fast (against
+ * a 5.6° wall — the shallow kind real maps are full of — a full second of
+ * running covered 33 units instead of ~500). Rounding a convex corner, the one
+ * case the axis split was written for, still works: the projection there is
+ * the same slide, arrived at from the wall's geometry rather than from the
+ * coordinate system's.
+ *
+ * The move is projected from the circle's *current* position rather than first
+ * advancing it to the contact point the way vanilla does. At this engine's
+ * frame rate a move step is a few map units, so the skipped fraction is far
+ * below anything visible — and the perpendicular distance to the wall is
+ * preserved by the projection either way, so the circle never creeps into it.
  */
 export function slideMove(
   world: World,
@@ -766,12 +852,37 @@ export function slideMove(
   blockers?: readonly ThingBlocker[],
 ): Pos2 {
   const { x, y, z } = from;
+  let mx = dx;
+  let my = dy;
+  let lastHit = null as number | null;
+  for (let attempt = 0; attempt < SLIDE_ATTEMPTS; attempt++) {
+    if (mx === 0 && my === 0) break;
+    const hit = blockingLineAt(world, x + mx, y + my, radius, z, forMonster, avoidDropoff, blockers);
+    if (hit === null) return { x: x + mx, y: y + my };
+    // A body/dropoff has no wall direction, and hitting the same wall twice
+    // means the projection made no progress (the circle already overlaps it) —
+    // either way the per-axis fallback below is the only thing left to try.
+    if (hit === SOLID_BODY || hit === lastHit) break;
+    lastHit = hit;
+    const line = world.map.linedefs[hit];
+    const a = world.map.vertexes[line.v1];
+    const b = world.map.vertexes[line.v2];
+    const ldx = b.x - a.x;
+    const ldy = b.y - a.y;
+    const len = Math.hypot(ldx, ldy);
+    if (len === 0) break;
+    const along = (mx * ldx + my * ldy) / len;
+    mx = (ldx / len) * along;
+    my = (ldy / len) * along;
+    if (Math.abs(mx) < SLIDE_EPSILON && Math.abs(my) < SLIDE_EPSILON) break;
+  }
+
+  // Fallback for the cases the projection can't resolve: a solid body, or a
+  // circle already overlapping the wall it's trying to slide along.
   let nx = x;
   let ny = y;
   if (dx !== 0 && !circleBlocked(world, x + dx, y, radius, z, forMonster, avoidDropoff, blockers)) nx = x + dx;
   if (dy !== 0 && !circleBlocked(world, nx, y + dy, radius, z, forMonster, avoidDropoff, blockers)) ny = y + dy;
-  // If sliding on one axis failed while the other moved, retry the blocked axis
-  // from the new position — that lets the player round convex corners smoothly.
   if (ny === y && dy !== 0 && nx !== x && !circleBlocked(world, nx, y + dy, radius, z, forMonster, avoidDropoff, blockers)) ny = y + dy;
   return { x: nx, y: ny };
 }

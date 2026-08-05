@@ -209,8 +209,18 @@ export interface AttackStats {
    * real `linuxdoom-1.10` `info.c` mobjinfo/state tables, its own 3-5-frame
    * explosion, except the mancubus's `MANF`, which explodes using the
    * rocket's own `MISL` frames instead of dedicated art of its own — a real
-   * vanilla oddity, not a simplification here). `speed` (map units/sec) is
-   * tuned by feel the same as everything else in this file.
+   * vanilla oddity, not a simplification here).
+   *
+   * `speed` (map units/sec) is that missile type's own `mobjinfo.speed`,
+   * which for a missile is plain fracunits *per tic*, so the conversion is
+   * just `× 35` — the same "a plain constant that survives conversion out of
+   * tics intact" case as `MonsterStats.speed`/`chaseInterval`, not one of
+   * this file's tuned-by-feel values. Getting these eyeballed instead was a
+   * real, shipped bug, worst on the revenant (750 against vanilla's own 350):
+   * a missile faster than the player's own 500-unit/sec run
+   * (`player.ts: FORWARD_MOVE`) simply cannot be outrun, which took away
+   * both halves of what a revenant missile is supposed to be — a shot you
+   * *can* outpace, and which then loops back around and keeps coming.
    */
   projectile?: {
     sprite: string;
@@ -609,7 +619,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 3, duration: 0.629 },
     // A direct missile hit is vanilla's universal (rand%8+1)*mobjinfo.damage
     // (PIT_CheckThing/p_map.c) — TROOPSHOT's own damage field is 3.
-    ranged: { diceSides: 8, diceMult: 3, duration: 0.629, projectile: { sprite: 'BAL1', speed: 500 } },
+    ranged: { diceSides: 8, diceMult: 3, duration: 0.629, projectile: { sprite: 'BAL1', speed: 350 } },
     painChance: 0.781,
     painDuration: 0.114,
   }, // TROO imp
@@ -658,7 +668,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     // A_HeadAttack melee: (rand%6+1)*10.
     melee: { range: MELEE_RANGE, diceSides: 6, diceMult: 10, duration: 0.429 },
     // Universal missile-hit formula; HEADSHOT's own damage field is 5.
-    ranged: { diceSides: 8, diceMult: 5, duration: 0.429, projectile: { sprite: 'BAL2', speed: 500 } },
+    ranged: { diceSides: 8, diceMult: 5, duration: 0.429, projectile: { sprite: 'BAL2', speed: 350 } },
     painChance: 0.5,
     painDuration: 0.343,
     flies: true,
@@ -670,7 +680,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     // A_BruisAttack melee: (rand%8+1)*10.
     melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10, duration: 0.686 },
     // Universal missile-hit formula; BRUISERSHOT's own damage field is 8.
-    ranged: { diceSides: 8, diceMult: 8, duration: 0.686, projectile: { sprite: 'BAL7', speed: 550 } },
+    ranged: { diceSides: 8, diceMult: 8, duration: 0.686, projectile: { sprite: 'BAL7', speed: 525 } },
     painChance: 0.195,
     painDuration: 0.114,
   }, // BOSS baron of hell
@@ -680,7 +690,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     radius: 24,
     // Baron and hell knight share A_BruisAttack/MT_BRUISERSHOT exactly.
     melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10, duration: 0.686 },
-    ranged: { diceSides: 8, diceMult: 8, duration: 0.686, projectile: { sprite: 'BAL7', speed: 550 } },
+    ranged: { diceSides: 8, diceMult: 8, duration: 0.686, projectile: { sprite: 'BAL7', speed: 525 } },
     painChance: 0.195,
     painDuration: 0.114,
   }, // BOS2 hell knight — vanilla's hell knight throws the same BAL7 fireball as the baron
@@ -713,7 +723,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       duration: 0.857,
       // A_Tracer — the one monster projectile with real homing; see
       // AttackStats.projectile.homing's doc.
-      projectile: { sprite: 'FATB', speed: 750, homing: true },
+      projectile: { sprite: 'FATB', speed: 350, homing: true },
       rangeFalloffScale: 0.5,
       minOffsetDist: 196,
     },
@@ -734,7 +744,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       shotInterval: 0.571,
       projectile: {
         sprite: 'MANF',
-        speed: 450,
+        speed: 700,
         // A_FatAttack1/2/3: each volley's first MT_FATSHOT flies straight at
         // the target (P_SpawnMissile ignores the actor's own facing), the
         // second is deflected — asymmetrically for the first two volleys,
@@ -755,7 +765,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     radius: 64,
     melee: null,
     // Universal missile-hit formula; ARACHPLAZ's own damage field is 5.
-    ranged: { diceSides: 8, diceMult: 5, duration: 0.257, refire: true, projectile: { sprite: 'APLS', speed: 900 } },
+    ranged: { diceSides: 8, diceMult: 5, duration: 0.257, refire: true, projectile: { sprite: 'APLS', speed: 875 } },
     painChance: 0.5,
     painDuration: 0.171,
   }, // BSPI arachnotron — A_SpidRefire, same never-let-up loop as the chaingunner
@@ -797,7 +807,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       // own launcher fires, and the one monster projectile whose death
       // state actually calls A_Explode; see AttackStats.projectile.splash's
       // doc. radius/damage are vanilla's own literal P_RadiusAttack(...,128).
-      projectile: { sprite: 'MISL', speed: 1100, splash: { radius: 128, damage: 128 } },
+      projectile: { sprite: 'MISL', speed: 700, splash: { radius: 128, damage: 128 } },
       rangeFalloffScale: 0.5,
       rangeFalloffCap: 160,
     },
@@ -940,13 +950,20 @@ export function commitTarget(body: MonsterBody): void {
 }
 
 /**
- * Whether a monster-fired *projectile* should pass harmlessly through
- * `victimType` — vanilla's `PIT_CheckThing` "don't hit same species as
- * originator" rule, which is why a room full of imps can't wipe itself out
- * with crossfire. Barons and hell knights count as the same species in both
- * directions, vanilla's one hardcoded cross-type pairing. Note it applies to
- * projectiles only: hitscan attacks (`P_LineAttack`) have no species check at
- * all, so zombiemen really do gun each other down in vanilla, and do here.
+ * Whether a monster-fired *projectile* deals no damage to `victimType` —
+ * vanilla's `PIT_CheckThing` "don't hit same species as originator" rule,
+ * which is why a room full of imps can't wipe itself out with crossfire.
+ * Barons and hell knights count as the same species in both directions,
+ * vanilla's one hardcoded cross-type pairing. Note it applies to projectiles
+ * only: hitscan attacks (`P_LineAttack`) have no species check at all, so
+ * zombiemen really do gun each other down in vanilla, and do here.
+ *
+ * **This is not a pass-through.** Vanilla's branch returns `false` — "explode,
+ * but do no damage" in its own comment — so the missile *stops dead* on a
+ * same-species body and detonates there; only the shooter's own body is
+ * genuinely passed through (`thing == tmthing->target`). Reading it as a
+ * pass-through was a real, shipped bug — see `game.ts: monsterStruckBy`, which
+ * owns that distinction, for why it decided whole fights on a crowded map.
  */
 export function sameSpecies(shooterType: number, victimType: number): boolean {
   if (shooterType === victimType) return true;

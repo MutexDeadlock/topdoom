@@ -967,6 +967,67 @@ function shotTargetHalfHeight(): number {
   return PLAYER_HEIGHT / 2;
 }
 
+/**
+ * Where one frame's worth of a *curving* projectile's flight ran into
+ * geometry, or null if that step is clear — the per-step counterpart to
+ * `shotPath`'s single launch-time trace, for the one projectile whose path
+ * isn't a straight line and so can't have its stopping point resolved up
+ * front: the revenant's homing missile (`game.ts:
+ * advanceHomingProjectile`).
+ *
+ * A straight shot's whole flight lies on the ray `shotPath` already traced,
+ * so its stopping distance is known the moment it launches. A homing missile
+ * curves away from that ray — it can loop right around and come back — so
+ * the launch ray says nothing at all about where it will actually meet a
+ * wall, and using that ray's own distance as a flight budget instead simply
+ * detonated it in mid-air after that many units of curving travel. This is
+ * vanilla's own arrangement rather than a workaround: `P_TryMove` tests each
+ * of a missile's moves against the lines it crosses (`PIT_CheckLine`) as it
+ * makes them, and a vanilla missile has no distance budget or lifetime of
+ * any kind — it flies until it hits something.
+ *
+ * Blocking is `blocksShot` at the height the step is actually at where it
+ * crosses each line, the same test a straight shot's launch trace uses. A
+ * crossing within `SELF_HIT_MARGIN` of the step's own start is skipped for
+ * the same reason `hasLineOfSight` skips one: a missile that just passed
+ * through a line's opening starts the next step sitting essentially on it.
+ */
+export function projectileStepBlocker(
+  world: World,
+  from: Pos3,
+  to: Pos3,
+): { x: number; y: number; z: number; lineIndex: number } | null {
+  const dist = Math.hypot(to.x - from.x, to.y - from.y);
+  if (dist === 0) return null;
+  let nearestT = Infinity;
+  let hitLine = -1;
+  world.forEachLineAlongSegment(from.x, from.y, to.x, to.y, (i) => {
+    const line = world.map.linedefs[i];
+    const a = world.map.vertexes[line.v1];
+    const b = world.map.vertexes[line.v2];
+    if (!a || !b) return;
+    // WALL_OVERLAP-extended for the shared-vertex corner-leak reason
+    // documented on `shotPath`'s own crossing test.
+    const ldx = b.x - a.x;
+    const ldy = b.y - a.y;
+    const len = Math.hypot(ldx, ldy);
+    const ex = len > 0 ? (ldx / len) * WALL_OVERLAP : 0;
+    const ey = len > 0 ? (ldy / len) * WALL_OVERLAP : 0;
+    const hit = segmentIntersect(from.x, from.y, to.x, to.y, a.x - ex, a.y - ey, b.x + ex, b.y + ey);
+    if (!hit || hit.t >= nearestT || hit.t * dist <= SELF_HIT_MARGIN) return;
+    if (!blocksShot(world, i, from.z + (to.z - from.z) * hit.t)) return;
+    nearestT = hit.t;
+    hitLine = i;
+  });
+  if (hitLine < 0) return null;
+  return {
+    x: from.x + (to.x - from.x) * nearestT,
+    y: from.y + (to.y - from.y) * nearestT,
+    z: from.z + (to.z - from.z) * nearestT,
+    lineIndex: hitLine,
+  };
+}
+
 /** Where a shot actually ends up: the point it stopped at, the height it was at there, and how far that was. */
 export interface ShotPath extends Pos3 {
   dist: number;

@@ -481,9 +481,12 @@ and caches for *raycasting* would go stale as instances move, so `end()` nulls i
 
 `SpriteAnimator` is what makes both paths possible: it owns the frame cycle and the
 state→(geometry, material) lookup with **no `THREE.Object3D` of its own**. `SpriteActor` wraps
-one in a `THREE.Mesh` for the handful of sprites that genuinely are standalone (the player,
-teleport fog, projectiles, impact explosions — a dozen at a time, where batching would buy
-nothing); `PosedThing` holds a bare `SpriteAnimator` and feeds `SpriteBatch`. Because a batched
+one in a `THREE.Mesh` for the **player**, now the only sprite that genuinely wants one: there is
+exactly one of it, and it needs `setOpacity` (partial invisibility), which has no per-instance
+equivalent in a batch. Everything else holds a bare `SpriteAnimator` and feeds a `SpriteBatch` —
+`PosedThing` for map things, and `game.ts`'s own `effectBatch` for projectiles, impact
+explosions, teleport fog and the revenant's smoke trail (see "Batching the effect sprites"
+below). Because a batched
 thing has no mesh of its own, `PosedThing.visible` replaces what used to be read back off
 `mesh.visible`, and `ThingLayer.pickMonster` routes its auto-aim raycast through
 `SpriteBatch.raycast`, which maps an `instanceId` hit back to the owning thing. That raycast
@@ -930,6 +933,31 @@ fixed spot, outside `ThingLayer` since neither is a real map `Thing`. `IMPACT_EF
 projectile's flight sprite to its explosion — vanilla reuses `MISL` frames B–D for the rocket's
 own blast, while the plasma bolt and BFG ball explode into dedicated `PLSE`/`BFE1` sprites.
 
+**Batching the effect sprites.** Those effects, and projectiles in flight, are drawn through
+`Game.effectBatch` — a second `SpriteBatch` alongside the one `ThingLayer` already keeps, so an
+`OneShotEffect`/`Projectile` holds a bare `SpriteAnimator` and owns no `THREE.Object3D`, exactly
+like `PosedThing`. They were a `SpriteActor` (one mesh, one draw call) each until recently, on
+the reasoning that a dozen are alive at a time and batching would buy nothing. **That stopped
+being true the moment the revenant's homing missile got its real vanilla flight** (see "A homing
+missile therefore has no flight-distance budget at all" below): a missile that flies until it
+hits something lives far longer than one detonating on a launch-time distance budget, and it
+spawns a smoke puff every 4 tics for the whole of that flight. NUTS.WAD has **1,758 revenants**,
+the single most common thing on that map, and 2,000 of their missiles in the air work out to
+~10,000 live smoke puffs on top — **~12,000 meshes and draw calls per frame**, which is the exact
+wall `SpriteBatch` was written for (see "Map things are drawn batched" above). Measured against
+real NUTS.WAD/DOOM2.WAD sprite data, that population is **12,000 draw calls batched down to 11**;
+the CPU-side per-sprite work is near-identical either way (1.4 → 1.0 ms/frame for all 12,000),
+which is the point — the meshes were all of it. The rest of an in-flight missile's per-frame cost
+was measured on the same map and is not where the time goes: `projectileStepBlocker` 0.47 ms,
+`ThingLayer.monstersNear` 0.29 ms and the sector lookup 0.07 ms, for 2,000 missiles *combined*.
+The one CPU change worth making alongside was collapsing `advanceHomingProjectile`'s
+`floorAt` + `ceilingAt` (two wrappers around the same BSP walk) into a single `sectorAt`.
+
+It also picks up the same per-instance-color fix batching gave map things: sector light used to
+be written onto the lump's *shared* material, so wherever several effects drew the same lump —
+which is every smoke puff on screen, all of them `PUFF` — the last one posed that frame decided
+the tint for all of them.
+
 ### Monster AI (`src/game/monsters.ts`, `src/game/things.ts`)
 
 Every `MONSTER_TYPES` entry except Commander Keen (72) and the boss brain (88) — neither attacks
@@ -1229,6 +1257,22 @@ frames in the WAD at all). The lost soul, arch-vile and pain elemental's own ran
 neither of these — see "The lost soul is the third kind of attack", "The arch-vile: resurrection
 and the real blast attack" and "The pain elemental: spawning a lost soul" below.
 
+**A projectile's flight speed is that missile type's own `mobjinfo.speed`, not a tuned number** —
+for a missile that field is plain fracunits *per tic*, so the conversion is just `× 35`, the same
+"survives conversion out of tics intact" case as `MonsterStats.speed`/`chaseInterval` (imp/
+cacodemon 10 → 350, baron/hell knight 15 → 525, mancubus 20 → 700, arachnotron 25 → 875,
+revenant's `MT_TRACER` 10 → 350, cyberdemon's `MT_ROCKET` 20 → 700; the lost soul's charge was
+already right, `SKULLSPEED` 20 → 700). Having these eyeballed instead was a real, shipped bug across the whole
+table, and worst by far on the revenant: 750 against vanilla's 350, i.e. **faster than the
+player's own 500-unit/sec full-speed run** (`player.ts: FORWARD_MOVE × MOVE_UNIT_SPEED`). A
+missile faster than the thing it's chasing cannot be evaded by moving at all, which took away
+both halves of what a revenant missile is supposed to be — a shot you *can* outpace, and which
+then curves back around and keeps coming. (The player's own weapon projectile speeds,
+`weapons.ts: WeaponDef.projectileSpeed`, are still hand-picked and still off vanilla — rocket
+1000 vs 700, plasma 1600 vs 875, BFG 700 vs 875 — deliberately left alone for now, since those
+are a feel decision about the player's own weapons rather than about how avoidable an incoming
+shot is.)
+
 **Every projectile-throwing monster's direct-hit damage is the same universal formula, confirmed
 against `p_map.c`'s `PIT_CheckThing`: `(rand%8+1) * that missile type's own mobjinfo `damage`
 field.** `AttackStats.ranged.diceSides` is therefore `8` for every one of them regardless of
@@ -1295,16 +1339,38 @@ most `REVENANT_TRACER_TURN_RATE_RAD` per second (vanilla's own clamped `TRACEANG
 16.875° every 4th tic, converted to a continuous rate the same way `MonsterStats.speed` converts
 vanilla's own per-tic movement — a smooth curve either way, unlike the AI clock's chase-call
 cadence where discreteness is load-bearing) and eases its height toward the target's own
-`TRACER_HOMING_Z_OFFSET`-above-feet point over the flight's remaining distance, the continuous
-equivalent of vanilla's `momz` spring (which converges to the same "arrive at the right height by
+`TRACER_HOMING_Z_OFFSET`-above-feet point over the distance still separating the two, the
+continuous equivalent of vanilla's `momz` spring (which paces itself off that same live distance,
+`P_AproxDistance(dest - actor) / speed`, and converges to the same "arrive at the right height by
 the time it gets there" behavior without a persisted vertical velocity to track). A dead or
 missing target (vanilla's own `!dest || dest->health<=0` bail-out) simply leaves the missile on
 whatever heading it already had — it doesn't stop, retarget, or fall out of the sky. Because a
 homing missile's path isn't the fixed ray every other projectile uses, `Projectile.homing` carries
 its own live, mutable `x`/`y`/`z`/`headingRad` rather than being derived from `originX`/`Y`/
-`angleRad`/`traveled` each frame; `traveled` (and so the `maxDist` arrival distance `shotPath`
-computed at launch) is unaffected, so a curving missile still gives up at the same distance budget
-a straight one would, even though the *path* covering that distance is no longer straight.
+`angleRad`/`traveled` each frame.
+
+**A homing missile therefore has no flight-distance budget at all, unlike every straight
+projectile here, and that difference is the other half of why the revenant used to feel wrong.**
+A straight shot's whole flight lies on the ray `shotPath` traced at launch, so `maxDist` — where
+that ray meets a wall — is a correct stopping point known up front. A curving one leaves that ray
+almost immediately (looping right back around toward a target that sidestepped it, which *is* the
+mechanic), so the wall the launch ray happened to find says nothing about where the missile ends
+up; spending its distance against that budget anyway just detonated it in mid-air a fixed distance
+out, typically mid-turn on its way back around. Vanilla puts no lifetime or range limit on a
+missile either — `P_TryMove` tests each move against the lines it actually crosses
+(`PIT_CheckLine`) as it makes them, and the missile flies until it hits something — so
+`advanceHomingProjectile` checks each frame's step against the geometry that step really crossed
+(`world.ts: projectileStepBlocker`, the per-step counterpart to `shotPath`'s one launch-time
+trace, reusing the identical `blocksShot` predicate at the height the step is at where it crosses
+each line) and stops there, updating `Projectile.lineIndex` to whatever wall it genuinely met so a
+shoot-triggered special still fires on the right line. No safety cap stands behind that: every
+real map is enclosed, so a missile chasing a player it can't catch meets a wall soon enough, and
+capping it would reintroduce exactly the mid-air detonation this removes.
+
+The one thing this genuinely did cost is rendering, and it's paid in `game.ts` rather than here:
+missiles that live that much longer, each trailing smoke every 4 tics, pushed the count of
+non-map-thing sprites on a map like NUTS.WAD from "a dozen" into five figures — see "Batching the
+effect sprites" above for the measurements and the fix (`Game.effectBatch`).
 
 **`advanceHomingProjectile` also reproduces vanilla's `P_ZMovement` floor/ceiling hit** — a real
 mechanic for every missile in vanilla (reaching the floor or ceiling of whatever sector it's
@@ -1313,11 +1379,13 @@ other projectiles: their height is a straight interpolation between two points `
 validated against wall openings at launch, so it can't dip below ground mid-flight. A homing
 missile's height *eases* toward a target that can sit on a very different floor while its `x`/`y`
 curves over terrain `shotPath` never re-checked, and without this, easing toward a lower target
-while still passing over higher ground visibly sank the sprite into that floor well before
-`maxDist` caught up — read as the missile exploding on the floor mid-flight rather than at its
-target. Checked every frame via `World.floorAt`/`ceilingAt` at the missile's current `x`/`y`;
-hitting either clamps `z` to it and forces `p.traveled = p.maxDist`, the same signal a straight
-flight reaching the end of its own distance budget already sends `updateProjectiles`.
+while still passing over higher ground visibly sank the sprite into that floor — read as the
+missile exploding on the floor mid-flight rather than at its target. Checked every frame via
+`World.floorAt`/`ceilingAt` at the missile's current `x`/`y`; hitting either clamps `z` to it and
+forces `p.traveled = p.maxDist`, the same signal a straight flight reaching the end of its own
+distance budget sends `updateProjectiles` — and, now that this branch never accumulates `traveled`
+itself, that forcing is the *only* thing that ever ends a homing missile's flight short of
+reaching a body.
 
 **A guided missile trails smoke; an unguided one doesn't — the wiki's own "The homing missiles can
 be distinguished by a gray smoke trail" is the entire visible tell, and this engine's `Projectile
@@ -1382,12 +1450,35 @@ Three vanilla rules keep that from degenerating, all reproduced:
 - **Nothing ever retaliates against an arch-vile**, and an arch-vile re-targets even while
   committed — vanilla singles out `MT_VILE` in both directions of the rule, so its
   resurrect/flame behavior can't start a fight with the monsters it is meant to be helping.
-- **A projectile passes harmlessly through the shooter's own species** (`sameSpecies`, vanilla's
-  `PIT_CheckThing` rule), with baron and hell knight counting as one species in both directions —
-  vanilla's single hardcoded cross-type pairing. A pack of imps can therefore throw fireballs
-  across each other all day without infighting, while one imp fireball landing on a demon
-  absolutely does start something. Note this applies to **projectiles only**: hitscan attacks
-  have no species check in vanilla at all, so zombiemen really do gun each other down.
+- **A projectile deals no damage to the shooter's own species — but is *stopped* by it**
+  (`sameSpecies`, vanilla's `PIT_CheckThing` rule; `game.ts: monsterStruckBy` owns the
+  stop-vs-pass distinction), with baron and hell knight counting as one species in both
+  directions — vanilla's single hardcoded cross-type pairing. A pack of imps can therefore throw
+  fireballs across each other all day without infighting, while one imp fireball landing on a
+  demon absolutely does start something. Note this applies to **projectiles only**: hitscan
+  attacks have no species check in vanilla at all, so zombiemen really do gun each other down.
+
+  **"Stopped by it" is the load-bearing half, and reading it as a pass-through was a real,
+  shipped bug.** Vanilla's branch is `if (thing == tmthing->target) return true;` — the
+  *shooter's own body*, genuinely passed through so a missile can leave the monster that fired it
+  — followed by `if (thing->type != MT_PLAYER) return false;` under the comment "Explode, but do
+  no damage." `return false` is `P_TryMove` failing, which for a missile is `P_ExplodeMissile` on
+  the spot. So any *other* same-species body detonates the missile harmlessly the instant it
+  touches it. This engine instead skipped every same-species body and kept flying until it found
+  something it could hurt, silently converting a fizzle into a guaranteed eventual kill on
+  whatever else happened to be downrange. On a crowded map that decides the fight outright:
+  NUTS.WAD's 1,758 revenants (its most common thing) stand shoulder to shoulder, so in vanilla
+  nearly every revenant missile dies on a neighbouring revenant within a few units of the muzzle
+  and only the few with a clear lane reach anything — while passing through them let *every*
+  missile fly on and find a baron, so the barons lost a fight they win in vanilla. The blast
+  itself is unaffected either way: `P_ExplodeMissile` runs the missile's own death state
+  regardless, so a cyberdemon rocket fizzling on another cyberdemon still calls `A_Explode` and
+  still splashes whatever is nearby (`updateProjectiles` applies `p.splash` for both outcomes).
+  Fixing this also settled two smaller things in the same function: candidates are now resolved
+  **nearest-first** (with a fizzle and a real hit both possible among the bodies a missile arrives
+  among, which one it picks now matters), and `monsterStruckBy` returns a result *object* rather
+  than a bare id, which removes a latent truthiness bug — `posed` index 0 is a valid monster id,
+  and the caller's `if (reachedPlayer || struck || ...)` treated a hit on it as no hit at all.
 
 A target that dies hands the monster's attention straight back to the player (`resolveTarget`),
 matching vanilla's `A_Chase`, which falls back to `P_LookForPlayers` once `target->health <= 0`.
@@ -1997,12 +2088,12 @@ instead.
 Vanilla also spawns a one-shot `MT_TFOG` fog puff at both ends of a teleport (where the player
 stood, and 20 units ahead of the landing spot along the direction it faces). That isn't a real
 map `Thing`, so it isn't modeled through `ThingLayer` — `game.ts` owns a small list of transient
-`SpriteActor`s instead, each playing through the `TFOG` sprite's frames (`A`-`J`, confirmed
-against the actual lump names in `DOOM.WAD`/`DOOM2.WAD` — all rotation-0, i.e. omnidirectional,
-so no facing logic is needed) once before removing itself. Map transitions clear any still-active
-puffs explicitly, the same way `built.group`/`things.group` are torn down, since a teleport onto
-an exit line could otherwise cut an animation short and leave its plane glued into the next
-level's scene.
+`OneShotEffect`s instead (drawn through `effectBatch`, see "Batching the effect sprites" above),
+each playing through the `TFOG` sprite's frames (`A`-`J`, confirmed against the actual lump names
+in `DOOM.WAD`/`DOOM2.WAD` — all rotation-0, i.e. omnidirectional, so no facing logic is needed)
+once before removing itself. Map transitions clear any still-active puffs explicitly, the same
+way `built.group`/`things.group` are torn down, since a teleport onto an exit line could
+otherwise leave one animating over the next level.
 
 ### One-way ceiling movers, delayed doors, instant light changes, and the donut (`src/wad/specials.ts`, `src/game/specials.ts`)
 
@@ -2467,8 +2558,9 @@ windup, so there's actually something on screen to react to. The pain elemental'
 also works — `A_PainAttack`/`A_PainShootSkull`, it spawns a lost soul in front of itself and
 launches it at whatever it was targeting, and killing one spawns three more the same way
 (`A_PainDie`), both subject to vanilla's own level-wide 20-skull cap (see "The pain elemental:
-spawning a lost soul" above). Monster damage dice, splash and homing all match vanilla exactly now
-too (see "Ranged attacks are either an instant hitscan-style bolt..." above): every
+spawning a lost soul" above). Monster damage dice, projectile speeds, splash and homing all match
+vanilla exactly now too (see "Ranged attacks are either an instant hitscan-style bolt..." above):
+every
 projectile-throwing monster's direct-hit damage is vanilla's own universal `(rand%8+1)*mobjinfo
 .damage` formula, the shotgun guy and spider mastermind's multi-pellet blasts are modelled as
 summed independent rolls, the cyberdemon's rocket splashes exactly like the player's own (and
@@ -2477,7 +2569,10 @@ only the cyberdemon's, matching vanilla's real, checked-not-assumed per-type
 turning heading, height ease and trailing smoke) exactly as often as vanilla's own — which is not
 every shot: `MonsterBody.homingBias` reproduces the real "revenants come in guided and unguided
 runs" quirk confirmed against doomwiki.org/wiki/Revenant (see "Not every revenant missile actually
-homes..." above) — and the arch-vile's warning flame tracks the *target's* live facing angle with
+homes..." above) — and, at vanilla's own 350 units/sec rather than a speed the player can't
+outrun, it flies until it hits something instead of expiring on a launch-time distance budget, so
+dodging one really does make it loop back around for another pass — and the arch-vile's warning
+flame tracks the *target's* live facing angle with
 a real sight gate from the vile (vanilla's own `A_Fire`) rather than a frozen offset vector. Not
 yet implemented: actual audio (the noise-alert *mechanic* above works off vanilla's
 sound-propagation rules, but nothing in this engine plays a sound yet).

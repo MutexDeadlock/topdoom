@@ -4,13 +4,14 @@ import { GraphicsBank } from './wad/graphics.ts';
 import { SpriteBank } from './wad/sprites.ts';
 import { loadMap, type DoomMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
-import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
-import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
+import { buildMapMesh, doomToWorld, litColor, type BuiltMap } from './render/mapmesh.ts';
+import { SpriteActor, SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from './render/sprites.ts';
+import { SpriteBatch } from './render/spritebatch.ts';
 import { buildThingSprites, MONSTER_HIT_HEIGHT, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
 import { MONSTER_FIRE_HEIGHT, MONSTER_STATS, sameSpecies } from './game/monsters.ts';
 import { FlatFader, type FadeTarget, TextureScroller, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
-import { World, hasLineOfSight, shotPath } from './game/world.ts';
+import { World, hasLineOfSight, projectileStepBlocker, shotPath } from './game/world.ts';
 import { Player, PLAYER_HEIGHT, PLAYER_RADIUS } from './game/player.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
@@ -75,7 +76,14 @@ const TFOG_SPAWN_OFFSET = 20;
  * so neither goes through `ThingLayer`.
  */
 interface OneShotEffect extends Pos3 {
-  actor: SpriteActor;
+  /**
+   * A bare `SpriteAnimator`, drawn through `Game.effectBatch` — no
+   * `THREE.Object3D` of its own, the same arrangement `PosedThing`
+   * (`game/things.ts`) uses and for the same reason. See `effectBatch`'s doc
+   * for why these stopped being one `SpriteActor` (i.e. one mesh, one draw
+   * call) each.
+   */
+  anim: SpriteAnimator;
   light: number;
   elapsed: number;
   lifetime: number;
@@ -282,7 +290,8 @@ const PLAYER_PAIN_FRAMES = ['G'];
 const PLAYER_ACTION_FRAME_SECONDS = 3 / 35;
 
 interface Projectile {
-  actor: SpriteActor;
+  /** Drawn through `Game.effectBatch`, same as `OneShotEffect.anim` — see that field's doc. */
+  anim: SpriteAnimator;
   originX: number;
   originY: number;
   /** Fire height at launch (the player's) — see spawnShot's doc for why this is never the target's own height. */
@@ -528,6 +537,34 @@ export class Game {
   private specials?: SpecialsController;
   private teleportFogs: OneShotEffect[] = [];
   private impacts: OneShotEffect[] = [];
+  /**
+   * Every non-map-thing sprite this class draws — projectiles in flight,
+   * impact explosions, teleport-fog puffs, the revenant's smoke trail, the
+   * arch-vile's windup flame — batched into one `InstancedMesh` per lump,
+   * the same machinery `game/things.ts` already draws map things with.
+   *
+   * These used to be a `SpriteActor` (its own `THREE.Mesh`, its own draw
+   * call) each, on the reasoning that only a dozen are ever alive at once.
+   * That stopped being true the moment the revenant's homing missile got its
+   * real vanilla flight (`advanceHomingProjectile`): a missile that flies
+   * until it hits something lives far longer than one detonating on a
+   * launch-time distance budget, and it spawns a smoke puff every 4 tics for
+   * the whole of that flight. On NUTS.WAD — 1,758 revenants, the single most
+   * common thing on that map — 2,000 missiles in the air work out to ~10,000
+   * live smoke puffs on top, i.e. ~12,000 meshes and draw calls per frame,
+   * which is the exact draw-call wall `SpriteBatch` was written for in the
+   * first place (see its doc). The CPU-side flight work for those same 2,000
+   * missiles measures well under a millisecond, so the meshes really were
+   * all of it. Batched, the whole population costs one draw call per
+   * distinct lump on screen.
+   *
+   * The player is deliberately *not* in here: it's genuinely one sprite, and
+   * it needs `SpriteActor.setOpacity` (partial invisibility), which has no
+   * per-instance equivalent in a batch.
+   */
+  private effectBatch = new SpriteBatch();
+  /** Scratch for `doomToWorld`, reused across every batched sprite — same reason `game/things.ts` keeps one. */
+  private batchPos = new THREE.Vector3();
   private weaponSystem = new WeaponSystem();
   private tracers: Tracer[] = [];
   private projectiles: Projectile[] = [];
@@ -612,6 +649,7 @@ export class Game {
     // frame A (this list's first entry) until the player is actually moving.
     this.playerActor = new SpriteActor(this.spriteBank, this.spriteMaterials, 'PLAY', ['A', 'B', 'C', 'D']);
     this.scene.add(this.playerActor.mesh);
+    this.scene.add(this.effectBatch.group);
 
     // DEVMODE never changes at runtime, so this is set once rather than every frame.
     document.getElementById('profiler-hud')!.classList.toggle('visible', DEVMODE);
@@ -653,11 +691,11 @@ export class Game {
     }
     this.specials?.dispose();
     // A fog puff or impact explosion mid-animation when the map changes (e.g.
-    // a teleporter onto an exit line) would otherwise leave its plane glued
-    // into the new level's scene forever, since nothing else ever removes it.
-    for (const f of this.teleportFogs) this.scene.remove(f.actor.mesh);
+    // a teleporter onto an exit line) would otherwise keep animating over the
+    // new level. Dropping the list is the whole of it now that these are
+    // batched (`effectBatch`) rather than owning a mesh each: nothing is added
+    // to the batch for an effect that isn't in one of these lists.
     this.teleportFogs = [];
-    for (const e of this.impacts) this.scene.remove(e.actor.mesh);
     this.impacts = [];
     // Same reasoning for a tracer/projectile still in flight when the map changes.
     for (const t of this.tracers) {
@@ -665,7 +703,6 @@ export class Game {
       t.dispose();
     }
     this.tracers = [];
-    for (const p of this.projectiles) this.scene.remove(p.actor.mesh);
     this.projectiles = [];
 
     const t0 = performance.now();
@@ -772,20 +809,33 @@ export class Game {
     // Tracers own per-instance geometry/material (unlike sprite actors, whose
     // geometry/material come from the shared, disposed-below SpriteMaterialCache).
     for (const t of this.tracers) t.dispose();
-    // The sprite batches' instance buffers and cloned materials are the things
-    // layer's own; the geometry/textures behind them are spriteMaterials'.
+    // Both sprite batches' instance buffers and cloned materials are their
+    // own; the geometry/textures behind them are spriteMaterials'.
     this.things?.dispose();
+    this.effectBatch.dispose();
     this.materials.dispose();
     this.spriteMaterials.dispose();
   }
 
-  /** Spawns a one-shot sprite animation (teleport fog, impact explosion) and returns it, or null if the sprite has no art. */
+  /**
+   * Spawns a one-shot sprite animation (teleport fog, impact explosion, smoke
+   * puff) and returns it, or null if the sprite has no art — checked here,
+   * once, by resolving the first frame, so `updateEffects` never has to carry
+   * a "this one turned out to have no lump" case through every frame.
+   */
   private spawnEffect(sprite: string, frames: string[], frameSeconds: number, at: Pos3): OneShotEffect | null {
-    const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, sprite, frames, frameSeconds);
+    const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, sprite, frames, frameSeconds);
+    if (!anim.resolve(0, VIEWER_ANGLE_DEG)) return null;
     const light = this.world.sectorAt(at.x, at.y)?.light ?? 128;
-    if (!actor.setPose(at.x, at.y, at.z, 0, light)) return null;
-    this.scene.add(actor.mesh);
-    return { actor, x: at.x, y: at.y, z: at.z, light, elapsed: 0, lifetime: frames.length * frameSeconds };
+    return { anim, x: at.x, y: at.y, z: at.z, light, elapsed: 0, lifetime: frames.length * frameSeconds };
+  }
+
+  /** Queues one already-advanced sprite into `effectBatch` at a DOOM-space point. */
+  private batchSprite(anim: SpriteAnimator, at: Pos3, facingDeg: number, light: number, viewerAngleDeg: number): void {
+    const cached = anim.resolve(facingDeg, viewerAngleDeg);
+    if (!cached) return;
+    doomToWorld(at.x, at.y, at.z, this.batchPos);
+    this.effectBatch.add(cached, this.batchPos.x, this.batchPos.y, this.batchPos.z, 1, litColor(light), 0);
   }
 
   /** Advances a one-shot effect list in place and drops the ones that finished, matching every other list's remaining-array pattern here. */
@@ -794,10 +844,7 @@ export class Game {
     const remaining: OneShotEffect[] = [];
     for (const e of list) {
       e.elapsed += dt;
-      if (e.elapsed >= e.lifetime) {
-        this.scene.remove(e.actor.mesh);
-        continue;
-      }
+      if (e.elapsed >= e.lifetime) continue;
       if (e.followTargetId !== undefined && e.vileSourceId !== undefined) {
         const vile = this.things?.monsterById(e.vileSourceId);
         const target = e.followTargetId === null ? this.player : this.things?.monsterById(e.followTargetId);
@@ -813,7 +860,8 @@ export class Game {
           e.z = front.z;
         }
       }
-      e.actor.setPose(e.x, e.y, e.z, 0, e.light, dt, true, viewerAngleDeg);
+      e.anim.advance(dt, true);
+      this.batchSprite(e.anim, e, 0, e.light, viewerAngleDeg);
       remaining.push(e);
     }
     return remaining;
@@ -904,12 +952,11 @@ export class Game {
       return;
     }
 
-    const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, shot.sprite, PROJECTILE_FRAMES[shot.sprite]);
+    const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, shot.sprite, PROJECTILE_FRAMES[shot.sprite]);
     const light = this.world.sectorAt(origin.x, origin.y)?.light ?? 128;
-    if (!actor.setPose(origin.x, origin.y, startZ, (shot.angleRad * 180) / Math.PI, light)) return;
-    this.scene.add(actor.mesh);
+    if (!anim.resolve((shot.angleRad * 180) / Math.PI, VIEWER_ANGLE_DEG)) return;
     this.projectiles.push({
-      actor,
+      anim,
       originX: origin.x,
       originY: origin.y,
       startZ,
@@ -966,11 +1013,10 @@ export class Game {
     // miss on its own.
     for (const proj of atk.projectiles) {
       const path = shotPath(this.world, atk, proj.angleRad, target, false);
-      const actor = new SpriteActor(this.spriteBank, this.spriteMaterials, proj.sprite, PROJECTILE_FRAMES[proj.sprite]);
-      if (!actor.setPose(atk.x, atk.y, atk.z, (proj.angleRad * 180) / Math.PI, light)) continue;
-      this.scene.add(actor.mesh);
+      const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, proj.sprite, PROJECTILE_FRAMES[proj.sprite]);
+      if (!anim.resolve((proj.angleRad * 180) / Math.PI, VIEWER_ANGLE_DEG)) continue;
       this.projectiles.push({
-        actor,
+        anim,
         originX: atk.x,
         originY: atk.y,
         startZ: atk.z,
@@ -1174,26 +1220,73 @@ export class Game {
   }
 
   /**
-   * The monster a still-flying monster projectile has just run into, or null.
-   * Skips the shooter itself and anything `sameSpecies` says the shot passes
-   * harmlessly through — vanilla's `PIT_CheckThing` "don't hit same species as
-   * originator" rule, which is why a pack of imps can throw fireballs across
-   * each other all day without ever starting a fight amongst themselves, while
-   * one imp fireball landing on a demon absolutely does.
+   * What a still-flying monster projectile has just run into, or null if it
+   * hit nothing this frame. A non-null result always ends the flight; `id` is
+   * who takes the direct damage, or **null for a body that stops the missile
+   * without being hurt by it**.
+   *
+   * That second case is vanilla's `PIT_CheckThing` species rule, and it is
+   * genuinely a *stop*, not a pass-through — the distinction this engine had
+   * backwards, and it matters enormously on a crowded map. Vanilla's branch
+   * reads, in full:
+   *
+   * ```c
+   * // Don't hit same species as originator.
+   * if (thing == tmthing->target) return true;
+   * if (thing->type != MT_PLAYER) {
+   *     // Explode, but do no damage.
+   *     return false;
+   * }
+   * ```
+   *
+   * `return true` means "keep going" and `return false` means "stop moving",
+   * which for a missile is `P_TryMove` failing and `P_XYMovement` calling
+   * `P_ExplodeMissile` on the spot. So only the **shooter itself** is passed
+   * through; any *other* monster of the same species detonates the missile
+   * harmlessly the instant it touches it. This engine instead `continue`d
+   * past every same-species body and kept flying until it found something it
+   * could hurt, which quietly turned a fizzle into a guaranteed eventual kill
+   * on whatever else was downrange.
+   *
+   * On NUTS.WAD that inversion decides the whole fight. Its 1,758 revenants —
+   * the most common thing on the map — stand shoulder to shoulder, so in
+   * vanilla nearly every revenant missile dies on a neighbouring revenant
+   * within a few units of being fired, and only the few with a clear lane
+   * ever reach anything. Passing through them instead let every single
+   * missile fly on and find a baron, which is why the barons were losing a
+   * fight they win in vanilla.
+   *
+   * The blast is unaffected: vanilla's `P_ExplodeMissile` runs the missile's
+   * own death state either way, so a cyberdemon rocket that fizzles on
+   * another cyberdemon still calls `A_Explode` and still splashes whatever is
+   * nearby. Only the direct hit is skipped — `updateProjectiles` applies
+   * `p.splash` regardless of which case this returns.
+   *
+   * Candidates are resolved **nearest first**, since with the fizzle case in
+   * play this now decides between two very different outcomes when a missile
+   * arrives among several bodies at once.
    */
-  private monsterStruckBy(p: Projectile, at: Pos3): number | null {
+  private monsterStruckBy(p: Projectile, at: Pos3): { id: number | null } | null {
     if (p.sourceId === null) return null;
+    let nearest: { id: number | null } | null = null;
+    let nearestSq = Infinity;
     for (const m of this.things?.monstersNear(at, MONSTER_PROJECTILE_HIT_RADIUS) ?? []) {
+      // Vanilla's `thing == tmthing->target`: a missile never collides with
+      // whoever fired it, so it can leave its own shooter's body.
       if (m.id === p.sourceId) continue;
-      if (sameSpecies(p.sourceType, m.type)) continue;
+      // Vanilla's own "see if it went over / under" test, which really is a
+      // pass-through — the missile is simply at the wrong height.
       if (Math.abs(m.z - at.z) > MONSTER_PROJECTILE_HIT_HEIGHT) continue;
+      const dSq = (m.x - at.x) ** 2 + (m.y - at.y) ** 2;
+      if (dSq >= nearestSq) continue;
       // Same wall check `reachedPlayer` needs, and for the same reason — see
       // its comment. Traced from the monster for the same `SELF_HIT_MARGIN`
       // reason, and last so it only runs on an already-close candidate.
       if (!hasLineOfSight(this.world, m, at)) continue;
-      return m.id;
+      nearestSq = dSq;
+      nearest = { id: sameSpecies(p.sourceType, m.type) ? null : m.id };
     }
-    return null;
+    return nearest;
   }
 
   /**
@@ -1302,10 +1395,13 @@ export class Game {
       const struck = fromMonster && !reachedPlayer ? this.monsterStruckBy(p, at) : null;
 
       if (reachedPlayer || struck || p.traveled >= p.maxDist) {
-        this.scene.remove(p.actor.mesh);
         if (fromMonster) {
           if (reachedPlayer) this.damagePlayer(p.damage);
-          else if (struck !== null) this.things?.damage(struck, p.damage, { id: p.sourceId!, type: p.sourceType });
+          // `struck.id === null` is the same-species fizzle: the body stopped
+          // the missile but takes no damage from it (see monsterStruckBy).
+          else if (struck) {
+            if (struck.id !== null) this.things?.damage(struck.id, p.damage, { id: p.sourceId!, type: p.sourceType });
+          }
           // A clean miss (reached maxDist without hitting a body) means it
           // arrived at whatever wall shotPath found at launch — fire its
           // shoot special now, at actual arrival, not back when it launched.
@@ -1340,7 +1436,8 @@ export class Game {
       // A homing missile's sprite tracks its live, turning heading rather
       // than the fixed launch angle every other projectile keeps.
       const poseAngleRad = p.homing?.headingRad ?? p.angleRad;
-      p.actor.setPose(at.x, at.y, at.z, (poseAngleRad * 180) / Math.PI, p.light, dt, true, viewerAngleDeg);
+      p.anim.advance(dt, true);
+      this.batchSprite(p.anim, at, (poseAngleRad * 180) / Math.PI, p.light, viewerAngleDeg);
       remaining.push(p);
     }
     this.projectiles = remaining;
@@ -1363,6 +1460,23 @@ export class Game {
    * unadjusted, same as vanilla's early return — it doesn't stop, home in on
    * something else, or fall out of the sky.
    *
+   * **A homing missile has no flight-distance budget** — unlike every
+   * straight projectile here, which stops at the `maxDist` `shotPath` traced
+   * for it at launch. It can't: it curves away from that launch ray (looping
+   * right back around toward a target that sidestepped it, which is the
+   * whole point of the mechanic), so the wall that ray found says nothing
+   * about where this missile actually ends up, and spending its distance
+   * against that budget just detonated it in mid-air a fixed distance out —
+   * typically while it was still mid-turn, coming back around. That budget
+   * *plus* an over-vanilla speed was why the revenant's missile read as
+   * unavoidable-then-gone rather than vanilla's outrun-it-and-it-keeps-
+   * coming. Vanilla has no lifetime or range limit on a missile either: it
+   * flies until it hits something, so this checks each frame's step against
+   * the geometry it actually crossed (`projectileStepBlocker`, the per-step
+   * counterpart to `shotPath` — see its doc) and stops there, updating
+   * `lineIndex` to whatever wall it really met so a shoot-triggered special
+   * still fires on the right line.
+   *
    * Vanilla's own `P_ZMovement` also explodes a missile outright the instant
    * it reaches the floor or ceiling of whatever sector it's currently
    * flying over — every projectile in this engine already flies a path
@@ -1371,11 +1485,12 @@ export class Game {
    * toward a target that can be on a very different floor while its `x`/`y`
    * curves over terrain `shotPath` never re-checked. Without this, easing
    * toward a lower target's height while still passing over higher ground
-   * visibly sank the sprite into that floor before `maxDist` ever caught up
-   * with it — read as "explodes on the floor mid-air". Forcing `p.traveled`
-   * to `p.maxDist` is what signals arrival to `updateProjectiles`'s own
-   * `p.traveled >= p.maxDist` check, the same way reaching the end of a
-   * straight flight already does.
+   * visibly sank the sprite into that floor — read as "explodes on the floor
+   * mid-air". Forcing `p.traveled` to `p.maxDist` is what signals arrival to
+   * `updateProjectiles`'s own `p.traveled >= p.maxDist` check, the same way
+   * reaching the end of a straight flight already does — and, since this
+   * branch never accumulates `traveled` itself, it is now the *only* thing
+   * that ever ends a homing missile's flight short of hitting a body.
    *
    * Also spawns the trailing smoke puff every `SMOKE_TRAIL_INTERVAL` — see
    * that constant's doc for why a `homing` object existing at all already
@@ -1389,19 +1504,41 @@ export class Game {
     if (target) {
       const bearing = Math.atan2(target.y - homing.y, target.x - homing.x);
       homing.headingRad = turnToward(homing.headingRad, bearing, REVENANT_TRACER_TURN_RATE_RAD * dt);
-      const remaining = Math.max(p.maxDist - p.traveled, step);
+      // Paced by the live distance still to cover, not by what's left of a
+      // launch-time budget this flight no longer has (see this method's
+      // doc) — which is also what vanilla's own `A_Tracer` momz spring uses
+      // (`P_AproxDistance(dest - actor) / speed`), so it stays correct for a
+      // missile that has curved right past its target and is coming back.
+      const remaining = Math.max(Math.hypot(target.x - homing.x, target.y - homing.y), step);
       homing.z += (target.z + TRACER_HOMING_Z_OFFSET - homing.z) * Math.min(1, step / remaining);
     }
+    const fromX = homing.x;
+    const fromY = homing.y;
+    const fromZ = homing.z;
     homing.x += Math.cos(homing.headingRad) * step;
     homing.y += Math.sin(homing.headingRad) * step;
-    p.traveled += step;
-    const floorZ = this.world.floorAt(homing.x, homing.y);
-    const ceilZ = this.world.ceilingAt(homing.x, homing.y);
-    if (homing.z <= floorZ) {
-      homing.z = floorZ;
+    const wall = projectileStepBlocker(
+      this.world,
+      { x: fromX, y: fromY, z: fromZ },
+      { x: homing.x, y: homing.y, z: homing.z },
+    );
+    if (wall) {
+      homing.x = wall.x;
+      homing.y = wall.y;
+      homing.z = wall.z;
+      p.lineIndex = wall.lineIndex;
       p.traveled = p.maxDist;
-    } else if (homing.z >= ceilZ) {
-      homing.z = ceilZ;
+      return { x: homing.x, y: homing.y, z: homing.z };
+    }
+    // One sector lookup rather than floorAt + ceilingAt, which are two
+    // wrappers around the same BSP walk — this runs per missile per frame,
+    // and a crowded map can have thousands of them in the air.
+    const sector = this.world.sectorAt(homing.x, homing.y);
+    if (sector && homing.z <= sector.floorHeight) {
+      homing.z = sector.floorHeight;
+      p.traveled = p.maxDist;
+    } else if (sector && homing.z >= sector.ceilHeight) {
+      homing.z = sector.ceilHeight;
       p.traveled = p.maxDist;
     }
     // The smoke trail — see SMOKE_TRAIL_INTERVAL's doc for why this only
@@ -1895,10 +2032,16 @@ export class Game {
       }
     });
     this.profiler.time('Effects', () => {
+      // One begin/end pair around all four lists, the same per-frame rebuild
+      // `game/things.ts` does — and it has to enclose `updateProjectiles`,
+      // which pushes this frame's new impact explosions and smoke puffs onto
+      // `impacts` for the pass right after it to draw.
+      this.effectBatch.begin(camera.viewerAngleDeg);
       this.teleportFogs = this.updateEffects(this.teleportFogs, dt, camera.viewerAngleDeg);
       this.updateTracers(dt);
       this.updateProjectiles(dt, camera.viewerAngleDeg);
       this.impacts = this.updateEffects(this.impacts, dt, camera.viewerAngleDeg);
+      this.effectBatch.end();
     });
 
     this.profiler.time('Fading', () => {

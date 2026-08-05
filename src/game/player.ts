@@ -29,7 +29,7 @@ export class Player implements Pos3 {
 
   velX = 0;
   velY = 0;
-  /** Vertical velocity, map units/sec. Only ever goes negative — there's no jump input, only gravity once a step drops out from under the player. */
+  /** Vertical velocity, map units/sec. Otherwise only ever negative — there's no jump input, only gravity once a step drops out from under the player — except `launchUpward`'s arch-vile knockback, the one thing that ever sets it positive. */
   private velZ = 0;
 
   private world: World;
@@ -67,6 +67,21 @@ export class Player implements Pos3 {
   teleportTo(dest: Placement): void {
     this.moveTo(dest);
     this.angle = dest.angle;
+  }
+
+  /**
+   * The arch-vile's knockback (`game/monsters.ts`'s `AttackStats.blast`,
+   * vanilla's `A_VileAttack` momz launch) — the one way `velZ` ever goes
+   * positive. A bare velocity set wouldn't be enough: `update`'s airborne
+   * branch only integrates gravity while `z > groundFloor`, and immediately
+   * after this call `z` still sits exactly on the floor, so the very next
+   * frame would fall into the ground-snap branch and zero the launch right
+   * back out before it ever moved anything. The `+1` nudge is what makes
+   * `update` see the player as already airborne.
+   */
+  launchUpward(speed: number): void {
+    this.velZ = speed;
+    this.z += 1;
   }
 
   /**

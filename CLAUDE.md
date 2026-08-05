@@ -1043,6 +1043,18 @@ Both were verified to return results identical to the linear scans over 2,400 qu
 NUTS.WAD, DOOM2 MAP07 and DOOM E1M7. `monstersInSector` is deliberately left linear — it runs on
 a crusher tick, not per frame.
 
+**The arch-vile's corpse-resurrection check (`findRaisableCorpse`, below) shares this same grid**
+via a second bucket array, `corpseGrid`, filled in the identical `posed` pass that fills
+`blockerGrid` — it originally shipped as a plain linear scan, on the reasoning that arch-viles
+are rare enough for an unindexed O(viles × things) check not to matter. That reasoning was never
+actually checked against a map that stresses it: NUTS.WAD has 1,272 arch-viles, and once its
+population is fully alerted the linear scan cost **17.5ms/frame** of `things.update()` alone
+(measured headlessly against real NUTS.WAD data, no rendering) — the concrete slowdown reported
+when waking the vile group in the map's north area. Grid-backed, the same scenario costs
+**10.7ms/frame**. Unlike `blockersFor`/`monstersNear`/`raycastMonster` above, which were indexed
+from the start because their O(n²) cost was obvious on paper, this one shipped on an assumption
+that simply didn't hold for the one map that actually has enough arch-viles to test it.
+
 For the same reason, `game.ts` caps occlusion-fade targets at `MAX_FADE_TARGETS` (nearest first):
 `WallFader`/`FlatFader` cost is quads × targets, and a map can have hundreds of monsters awake
 inside `MONSTER_FADE_RANGE` at once. It's purely a cost bound — past a couple of dozen nearby
@@ -1122,10 +1134,12 @@ throw a real projectile instead, sprite names and frame counts confirmed by dump
 `DOOM2.WAD` sprite lumps and cross-checked against `linuxdoom-1.10`'s `info.c` mobjinfo/state
 tables rather than assumed — including the mancubus's genuine vanilla oddity of exploding with
 the *rocket's* `MISL` frames instead of any dedicated art of its own (`MANF` has no explosion
-frames in the WAD at all). The pain elemental and arch-vile stay on the hitscan-tracer stand-in
-despite not matching vanilla exactly, and the revenant's missile flies straight rather than
-homing — see `MONSTER_STATS`'s doc for why each of those specific gaps was left alone rather than
-built out further. A monster projectile reuses the same `Projectile`/`updateProjectiles` machinery
+frames in the WAD at all). The pain elemental stays on the hitscan-tracer stand-in despite not
+matching vanilla exactly (its real "attack" spawns a lost soul, which this engine doesn't model),
+and the revenant's missile flies straight rather than homing — see `MONSTER_STATS`'s doc for why
+each of those specific gaps was left alone rather than built out further. The arch-vile's own
+ranged attack is neither of these — see "The arch-vile: resurrection and the real blast attack"
+below. A monster projectile reuses the same `Projectile`/`updateProjectiles` machinery
 the player's own rocket/plasma/BFG shots already use, distinguished by a non-null `sourceId`
 (vanilla's own doomednum tags along as `sourceType`, for the species check below): it's still
 launched via `shotPath` exactly like a player's locked-on shot (stopped early only by a real
@@ -1179,6 +1193,98 @@ charge in place the vanilla numbers work, because a lost soul is meant to drift 
 then commit. `stepCharge` is deliberately the one movement in this file that doesn't use
 `slideMove`: a charge that rounded corners would home in on the player, and being able to
 sidestep a committed lost soul is the whole reason the attack is fair.
+
+**The arch-vile: resurrection and the real blast attack.** Both of vanilla's signature arch-vile
+mechanics are now modeled, confirmed against the real `linuxdoom-1.10` `p_enemy.c`/`info.c` rather
+than assumed, the same rigor the rest of this section holds itself to.
+
+*Resurrection* (`A_VileChase`/`PIT_VileCheck`) is `MonsterStats.resurrects`, set only for the
+arch-vile: on every chase call where it has a `movedir`, it checks one chase-call's travel ahead
+of its own position (vanilla's `viletryx`/`viletryy`) for a raisable corpse — `MF_CORPSE`, not
+still mid-death-animation (vanilla's `tics != -1`; this engine's equivalent is
+`PosedThing.deadTime` against `deathFrameCount * MONSTER_DEATH_FRAME_SECONDS`), within
+`corpse.radius + vile.radius` (vanilla's own box test, not a circle), and with room to actually
+stand back up (`circleBlocked` against the corpse's own footprint) — and, if one exists, raises it
+*instead of* taking its ordinary chase-call turn at all, matching vanilla exactly: a tic that
+resurrects skips the reactiontime/threshold aging and the melee/missile/walk decision entirely,
+not just pre-empts it. `game/thingdefs.ts`'s `MONSTER_RAISE_FRAMES` is vanilla's own
+`raisestate` table for the 13 monster types that have one (every boss, the lost soul, the arch-vile
+itself, Commander Keen and the boss brain don't); getting these letters right needed pulling them
+directly from `info.c` rather than reusing `MONSTER_DEATH_FRAMES` reversed, which was tried first
+and is wrong — vanilla's raise sequences are hand-authored per type and don't share one derivation
+rule (the zombieman's 3 raise states reverse its death sequence's *middle* frames, the shotgun
+guy's 4 reverse its *entire* death sequence including the settled final frame, despite both
+sprites sharing the identical death letter range). `ThingLayer.reviveCorpse` is the actual
+revival: full health back (`MONSTER_HEALTH`), immediately alerted and re-targeting the player
+(vanilla's `corpsehit->target = NULL`), held still (`attackPause`) for exactly as long as its own
+raise animation takes to play — reusing `SpriteActor.revive()` (undoes `die()`) plus `playOnce`,
+the same one-shot-then-hand-back-to-the-alive-cycle mechanism attack/pain poses already use, just
+running dead-to-alive instead of interrupting a living pose. The arch-vile's own raise-adjacent
+`S_VILE_HEAL1-3` art is deliberately not reproduced: those three states reference sprite frame
+indices 26-28, past `Z` (25) and with no corresponding WAD lumps at all — a genuine vanilla
+engine quirk, not a transcription slip here — so the vile simply keeps its ordinary held pose
+during the hold instead of inventing replacement art vanilla itself never really had either.
+
+*The real attack* (`A_VileAttack`) replaces the hitscan-tracer stand-in with vanilla's actual,
+much nastier mechanic: `AttackStats.blast` marks a ranged attack as guaranteed, un-rolled direct
+damage (`diceSides:1, diceMult:20` — `rollDamage` with one side always returns exactly the
+multiplier, encoding vanilla's literal, unrolled `20`) plus an upward launch
+(`Player.launchUpward`/`ThingLayer.damage`'s `knockUpSpeed` param — vanilla's
+`momz = 1000*FRACUNIT/mass`, using vanilla's own default mass of 100 since this engine has no
+per-species mass table), followed by a separate radius blast (vanilla's own flat
+`P_RadiusAttack(fire, actor, 70)`) centered near the *victim* rather than the vile itself. Two
+things make this different from every other ranged monster's timing: `AttackStats.startDelaySeconds`
+(66/35s — vanilla's `A_VileAttack` doesn't fire until 66 tics into its `missilestate` chain, unlike
+every other monster's shots, which fire on the very next tick after `A_Chase` commits to them,
+an accepted simplification everywhere else since the windup itself has no mechanical consequence
+there) and a *second* line-of-sight check at the exact moment the shot would fire
+(`stepMonsterAI`'s burst-fire block, gated on `ranged.blast`) — vanilla's `A_VileAttack` calls
+`P_CheckSight` again right before dealing any of this, so breaking sight during the ~1.9s windup
+makes the whole attack fizzle for nothing, which is the entire reason ducking behind cover saves
+you from it. Getting this delay real (not just cosmetic, unlike the mancubus's near-identical-looking
+timing gap) is what makes that escape mechanism actually work — and is what first exposed a real,
+previously-latent bug in `render/sprites.ts`'s `SpriteAnimator.advance`, unrelated to the arch-vile
+specifically: `animIndex` is one field shared across the death/override/base-cycle domains, and nothing
+re-validated it against `animFrames` the instant `attackPause` reaches 0 (so the monster resumes
+walking) *before* its own attack-pose `playOnce` animation finishes — which every other monster's
+attack never does, since their shot fires near the start of `duration` rather than 66/94 tics into
+it, so `attackPause` always outlasts the pose. The arch-vile is the first (and, short of adding
+another monster with a similarly back-loaded attack, only) type that can trigger it: once the
+override sequence ends leaving `animIndex` at its own last index (routinely past `animFrames`'s
+4-letter walk cycle), a frame where the walk cycle's own timer hasn't yet ticked over left that stale
+index sitting there for `resolve` to index `animFrames` with — a real crash (`SpriteBank.lookup`
+reading `undefined.toUpperCase()`), reproduced with a headless `ThingLayer` integration test rather
+than assumed. `advance` now clamps `animIndex` back into `animFrames`'s range unconditionally at the
+top of that branch, closing the gap for every monster, not just this one. `game.ts: resolveVileBlast` is a
+dedicated path rather than reusing `resolveMonsterHitscan`, since there's no trace to run — vanilla
+damages `actor->target` directly, not whatever a ray happens to hit first. Its splash reuses
+`applyRadiusDamage`, extended with an optional `source` param (attributed to the vile, so
+`shouldRetarget`'s existing "nothing retaliates against an arch-vile" rule covers it automatically)
+and, spotted while wiring this up, a real missing vanilla rule that applies to *every* explosion,
+not just this one: `PIT_RadiusAttack` exempts the spider mastermind and cyberdemon from all
+concussion/splash damage, direct hits only — previously unmodeled for the rocket/BFG's own splash
+too. Vanilla's `MT_FIRE` is a real, persistent map object that appears the instant the windup
+*starts* (`A_VileTarget`) and tracks 24 units in front of the target for its whole ~1.9s duration —
+not just cosmetic: without a visible warning while the vile is charging, a player has nothing to
+react to and "duck behind cover mid-windup" (the sight re-check's entire reason to exist) isn't a
+mechanic they can actually use. `beginRangedAttack` (`game/monsters.ts`) reports a fourth,
+purely-cosmetic `MonsterAttack` kind — `'vileWindup'` — the instant a `blast` attack starts, separate
+from the `'ranged'` event `resolveVileBlast` handles once the shot actually resolves; `things.ts`
+also moves the vile's own `attackFrames` pose to trigger on `'vileWindup'` rather than at the blast
+landing, matching vanilla's real timing (`S_VILE_ATK1`-`ATK10` play across the *entire* missilestate
+chain, not just its last state). `game.ts: spawnVileWindupFire` reuses the same one-shot
+`spawnEffect`/`this.impacts` machinery every other cosmetic effect in this file already uses, just
+with two differences: its `lifetime` is overridden to the windup's own length
+(`VILE_WINDUP_TRACK_SECONDS`, read from `MONSTER_STATS` rather than duplicated) instead of one pass
+through its frames, and `OneShotEffect` gained an optional `followTargetId` — re-deriving `x`/`y`/`z`
+from that target's *live* position every frame (plus a frozen offset vector) instead of staying
+fixed, which is what makes the flame visibly track a moving target. Freezing the offset at spawn
+rather than recomputing it from the vile's own live position too is a deliberate simplification —
+vanilla's own offset is based on the *target's* facing, which this engine has no clean equivalent of
+using here, and a frozen vector already produces a flame that convincingly follows the target. No
+explicit hand-off is needed between this and `resolveVileBlast`'s own burst effect (or nothing, if
+the shot fizzles): both are timed off the same `startDelaySeconds`, so one's natural expiry lines up
+with the other's spawn (or the attack's fizzle) without either needing to know the other exists.
 
 **`painChance` is vanilla's `mobjinfo.painchance` over 256 exactly, and `painDuration` its
 `painstate` chain's tics over 35.** Both are plain constants in the same table `MONSTER_HEALTH`
@@ -1956,10 +2062,19 @@ and same-species projectile immunity, so a shot that clips the wrong monster can
 shooter. Gunfire wakes monsters within sound-propagation range even without sight
 (`World.noiseAlert`, respecting closed doors and `BLOCK_SOUND` lines the same way vanilla does),
 and a monster walks the same walk triggers vanilla lets it (teleports, including the monster-only
-125/126 pair, one door type, two lift types), so a mapper's monster-closet setup works. Remaining
-known deviations, all deliberate: monster *damage* values are tuned softer than vanilla's, a
-monster's own projectile carries no splash (so a cyberdemon's rocket doesn't blast what it lands
-next to), the revenant's missile flies straight instead of homing, and the pain elemental and
-arch-vile use a hitscan stand-in for attacks vanilla implements differently. Not yet implemented:
-actual audio (the noise-alert *mechanic* above works off vanilla's sound-propagation rules, but
-nothing in this engine plays a sound yet).
+125/126 pair, one door type, two lift types), so a mapper's monster-closet setup works. The
+arch-vile's two signature mechanics both work: it resurrects eligible nearby corpses back to full
+health instead of taking its ordinary turn (`A_VileChase`/`PIT_VileCheck`, see "The arch-vile:
+resurrection and the real blast attack" above), and its ranged attack is vanilla's real
+`A_VileAttack` — guaranteed direct damage, an upward launch, and a separate radius blast, gated on
+a second line-of-sight check at the moment it actually fires, so ducking behind cover during its
+windup genuinely saves you from it — and a visible warning flame tracks the target for that whole
+windup, so there's actually something on screen to react to. Remaining known deviations, all
+deliberate: monster *damage* values are tuned softer than vanilla's, a monster's own projectile
+carries no splash (so a cyberdemon's rocket doesn't blast what it lands next to), the revenant's
+missile flies straight instead of homing, the pain elemental uses a hitscan stand-in for its real
+(unmodeled) lost-soul-spawning attack, and the arch-vile's own flame tracks its target via a frozen
+offset vector re-applied to the target's live position each frame rather than vanilla's real
+persistent, independently-sight-tracking `MT_FIRE` object. Not yet implemented: actual audio (the
+noise-alert *mechanic* above works off vanilla's sound-propagation rules, but nothing in this
+engine plays a sound yet).

@@ -11,6 +11,7 @@ import {
   MONSTER_DROPS,
   MONSTER_HEALTH,
   MONSTER_PAIN_FRAMES,
+  MONSTER_RAISE_FRAMES,
   MONSTER_TYPES,
   MONSTER_XDEATH_FRAMES,
   THING_SPRITES,
@@ -27,8 +28,9 @@ import {
   stepMonsterAI,
   tryWake,
   type MonsterAttack,
+  type RaiseCandidate,
 } from './monsters.ts';
-import type { ThingBlocker } from './world.ts';
+import { circleBlocked, type ThingBlocker } from './world.ts';
 import { SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
@@ -110,9 +112,26 @@ interface PosedThing extends Pos3 {
   health: number;
   /** Set once `health` reaches 0; see `ThingLayer.damage`. */
   dead: boolean;
-  /** 
-   * True for an item `ThingLayer.damage` spawned itself (`MONSTER_DROPS`) rather than 
-   * one the map placed — threaded through to `applyPickup`'s own `dropped` param, which halves the ammo it grants. 
+  /**
+   * Seconds since `dead` was set. Vanilla's `PIT_VileCheck` refuses to raise
+   * a corpse whose own death animation is still playing (`tics != -1`,
+   * "not lying still yet") — `findRaisableCorpse` compares this against
+   * `deathFrameCount * MONSTER_DEATH_FRAME_SECONDS` for the same gate.
+   */
+  deadTime: number;
+  /** Frame count of whichever death animation (`MONSTER_DEATH_FRAMES` or the gibbed `MONSTER_XDEATH_FRAMES`) `ThingLayer.damage` actually played — set at time of death, read back by `deadTime`'s "still settling" check above. 0 for anything that never died with real death art (see `damage`'s `hidden` fallback). */
+  deathFrameCount: number;
+  /**
+   * This type's resurrection frames (`MONSTER_RAISE_FRAMES`), resolved once
+   * at spawn for the same reason `attackFrames`/`painFrames` are — and
+   * doubles as the arch-vile's own eligibility test: `undefined` means this
+   * type has no vanilla `raisestate` and `findRaisableCorpse` skips it
+   * outright, matching vanilla's `raisestate == S_NULL` check.
+   */
+  raiseFrames: string[] | undefined;
+  /**
+   * True for an item `ThingLayer.damage` spawned itself (`MONSTER_DROPS`) rather than
+   * one the map placed — threaded through to `applyPickup`'s own `dropped` param, which halves the ammo it grants.
    */
   dropped: boolean;
 
@@ -379,8 +398,14 @@ export interface ThingLayer {
    * (not already committed elsewhere, source isn't an arch-vile, ...), the
    * same way vanilla's `P_DamageMobj` sets `target` regardless of who or what
    * caused the damage.
+   *
+   * `knockUpSpeed`, when given, nudges the victim airborne with that much
+   * upward velocity — the arch-vile's real `A_VileAttack` launch
+   * (`game.ts: resolveVileBlast`), applied here rather than left to the
+   * caller since it's the same `PosedThing.z`/`velZ` fields `stepMonsterAI`'s
+   * own gravity integration already owns.
    */
-  damage(id: number, amount: number, source?: { id: number; type: number }): void;
+  damage(id: number, amount: number, source?: { id: number; type: number }, knockUpSpeed?: number): void;
   /**
    * Nearest living monster whose body the ray from (x, y, z) along `angleRad`
    * crosses within `maxDist`, or null. Backs a *free* shot (no locked-on
@@ -474,6 +499,9 @@ export function buildThingSprites(
       blockRadius: MONSTER_STATS[t.type]?.radius ?? MONSTER_HIT_RADIUS,
       attackFrames: MONSTER_ATTACK_FRAMES[t.type],
       painFrames: MONSTER_PAIN_FRAMES[t.type],
+      raiseFrames: MONSTER_RAISE_FRAMES[t.type],
+      deadTime: 0,
+      deathFrameCount: 0,
       visible: true,
       hidden: false,
       queryStamp: 0,
@@ -537,6 +565,9 @@ export function buildThingSprites(
       blockRadius: MONSTER_STATS[type]?.radius ?? MONSTER_HIT_RADIUS,
       attackFrames: MONSTER_ATTACK_FRAMES[type],
       painFrames: MONSTER_PAIN_FRAMES[type],
+      raiseFrames: MONSTER_RAISE_FRAMES[type],
+      deadTime: 0,
+      deathFrameCount: 0,
       visible: true,
       hidden: false,
       queryStamp: 0,
@@ -614,6 +645,27 @@ export function buildThingSprites(
   const blockerGrid: PosedThing[][] = new Array(blockerCols * blockerRows);
   /** Indices of the cells that actually have anything in them, so a rebuild clears only those instead of walking the whole grid. */
   const blockerDirty: number[] = [];
+
+  /**
+   * Raisable corpses (`dead && raiseFrames`) bucketed the same way as
+   * `blockerGrid`, sharing its cell grid — rebuilt in the same `posed` pass
+   * as `blockerGrid` rather than a second one. Backs `findRaisableCorpse`,
+   * originally a plain linear scan over every posed thing on the reasoning
+   * that arch-viles are rare enough for it not to matter — an assumption
+   * that was never actually checked against a real map. NUTS.WAD has 1,272
+   * of them, and once its whole population is alerted (measured with a
+   * synthetic all-monsters-awake pass over real NUTS.WAD data, `ThingLayer`
+   * only, no rendering) the linear scan cost **17.5ms/frame avg** just for
+   * `things.update()`, dropping to **10.7ms/frame** with this grid — the
+   * concrete slowdown reported when waking the vile group in the map's
+   * north area. Unlike `blockersFor`, whose O(monsters²) cost was measured
+   * and indexed from the start, this one shipped on an unverified assumption.
+   */
+  const corpseGrid: PosedThing[][] = new Array(blockerCols * blockerRows);
+  /** Indices of the cells that actually have anything in them, so a rebuild clears only those instead of walking the whole grid. */
+  const corpseDirty: number[] = [];
+  /** Largest collision radius among corpses currently in `corpseGrid`, sizing `findRaisableCorpse`'s search box the same way `maxBlockerRadius` sizes `blockersFor`'s. */
+  let maxCorpseRadius = 0;
   /** Bumped per `forEachMonsterAlongRay` call; see `PosedThing.queryStamp`. */
   let monsterQueryStamp = 0;
   /**
@@ -717,8 +769,21 @@ export function buildThingSprites(
     for (const i of blockerDirty) blockerGrid[i].length = 0;
     blockerDirty.length = 0;
     maxBlockerRadius = PLAYER_RADIUS;
+    for (const i of corpseDirty) corpseGrid[i].length = 0;
+    corpseDirty.length = 0;
+    maxCorpseRadius = 0;
     for (const p of posed) {
-      if (p.dead || !MONSTER_TYPES.has(p.type)) continue;
+      if (p.dead) {
+        if (!p.raiseFrames) continue;
+        if (p.blockRadius > maxCorpseRadius) maxCorpseRadius = p.blockRadius;
+        const i = blockerRow(p.y) * blockerCols + blockerCol(p.x);
+        let cell = corpseGrid[i];
+        if (!cell) corpseGrid[i] = cell = [];
+        if (cell.length === 0) corpseDirty.push(i);
+        cell.push(p);
+        continue;
+      }
+      if (!MONSTER_TYPES.has(p.type)) continue;
       if (p.blockRadius > maxBlockerRadius) maxBlockerRadius = p.blockRadius;
       const i = blockerRow(p.y) * blockerCols + blockerCol(p.x);
       let cell = blockerGrid[i];
@@ -813,6 +878,91 @@ export function buildThingSprites(
     return blockerScratch;
   }
 
+  /**
+   * Vanilla's `PIT_VileCheck`, called from `monsters.ts`'s `runChaseCall` as
+   * the `resurrect` callback: the first corpse near `(x, y)` the arch-vile
+   * calling this could raise, or null. Grid-accelerated via `corpseGrid`
+   * rather than a linear scan over every posed thing — this runs once per
+   * arch-vile per chase call (`chaseInterval`, ~0.057s), and a linear version
+   * measured at 17.5ms/frame on NUTS.WAD once its 1,272 arch-viles wake (see
+   * `corpseGrid`'s own doc for the full measurement), the concrete slowdown
+   * this fixes. Same shape as `blockersFor`: box the
+   * search to `vileRadius + maxCorpseRadius + BLOCKER_MARGIN`, only walk the
+   * grid cells that box covers, then apply the exact per-pair distance test.
+   * Which corpse comes back first when several qualify depends on grid-cell
+   * iteration order rather than spawn order — as arbitrary as vanilla's own
+   * blockmap order, same acceptable-approximation shape as `donut`'s
+   * neighbor search elsewhere in this file.
+   *
+   * Skips the box-check-only-fit-against-walls half of vanilla's own
+   * `P_CheckPosition` re-test against *other* nearby things (vanilla's own
+   * corpse height-quadrupling trick) — corpses raise rarely enough, and
+   * monsters overlapping a corpse-sized footprint tightly enough for that to
+   * matter is rare enough, that reusing `blockersFor`'s own per-point,
+   * per-caller machinery here wasn't worth the coupling.
+   */
+  function findRaisableCorpse(x: number, y: number, vileRadius: number): RaiseCandidate | null {
+    const reach = vileRadius + maxCorpseRadius + BLOCKER_MARGIN;
+    const c0 = blockerCol(x - reach);
+    const c1 = blockerCol(x + reach);
+    const r0 = blockerRow(y - reach);
+    const r1 = blockerRow(y + reach);
+    for (let gy = r0; gy <= r1; gy++) {
+      const rowBase = gy * blockerCols;
+      for (let gx = c0; gx <= c1; gx++) {
+        const cell = corpseGrid[rowBase + gx];
+        if (cell === undefined || cell.length === 0) continue;
+        for (const c of cell) {
+          // A corpse this same frame's earlier vile already resurrected —
+          // grid buckets are up to a frame stale, `dead` is read live.
+          if (!c.dead) continue;
+          // "Not lying still yet" — vanilla's own `thing->tics != -1` gate.
+          if (c.deadTime < c.deathFrameCount * MONSTER_DEATH_FRAME_SECONDS) continue;
+          const pairReach = c.blockRadius + vileRadius;
+          if (Math.abs(c.x - x) > pairReach || Math.abs(c.y - y) > pairReach) continue;
+          if (circleBlocked(world, c.x, c.y, c.blockRadius, c.z, true)) continue; // no room to stand back up
+          return { id: c.id, x: c.x, y: c.y };
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Vanilla's `A_VileChase` resurrection branch: restores a corpse to full
+   * health and rejoins combat immediately, matching `P_SetMobjState`'s
+   * synchronous flag/health reset — there's no separate "coming back to
+   * life" delay the way the vile's own `S_VILE_HEAL` hold is. `attackPause`
+   * is set to the raise animation's own length (`revive`'s `playOnce` below)
+   * so `stepMonsterAI`'s existing "don't walk/attack while attackPause > 0"
+   * gate holds it still until the animation actually finishes, the same way
+   * it already holds an attacking monster still for its swing.
+   */
+  function reviveCorpse(p: PosedThing): void {
+    p.dead = false;
+    p.health = MONSTER_HEALTH[p.type] ?? p.health;
+    p.hidden = false;
+    p.velZ = 0; // clears any stale knockback velocity from however it died — dead things never integrate it, so it could otherwise sit unused for the rest of the level and then jump on revival
+    p.alerted = true; // vanilla's raisestate falls straight through to RUN1 — already chasing, not dormant again
+    p.targetId = null; // vanilla's corpsehit->target = NULL; resolveTarget falls back to the player
+    p.movedir = DI_NODIR;
+    p.movecount = 0;
+    p.chaseTimer = 0;
+    p.moveBlocked = false;
+    p.threshold = 0;
+    p.justHit = false;
+    p.justAttacked = false;
+    p.reactionTicks = 0;
+    p.refiring = false;
+    p.burstLeft = 0;
+    p.burstTimer = 0;
+    p.chargeTimer = 0;
+    p.painTimer = 0;
+    p.attackPause = (p.raiseFrames?.length ?? 0) * MONSTER_DEATH_FRAME_SECONDS;
+    p.anim.revive();
+    if (p.raiseFrames) p.anim.playOnce(p.raiseFrames, MONSTER_DEATH_FRAME_SECONDS);
+  }
+
   // Seeded once here so a lookup that lands before the first `update` (a
   // splash on the opening frame, say) still finds the monsters that exist.
   rebuildBlockerGrid();
@@ -846,6 +996,7 @@ export function buildThingSprites(
           p.visible = false;
           continue;
         }
+        if (p.dead) p.deadTime += dt;
 
         let animating = false;
         const stats = !p.dead ? MONSTER_STATS[p.type] : undefined;
@@ -864,7 +1015,7 @@ export function buildThingSprites(
             const beforeX = p.x;
             const beforeY = p.y;
             const target = resolveTarget(p, player);
-            const result = stepMonsterAI(p, stats, dt, world, target, blockersFor(p, player));
+            const result = stepMonsterAI(p, stats, dt, world, target, blockersFor(p, player), findRaisableCorpse);
             // Walk triggers this monster crossed on the way (teleports,
             // and the handful of doors/lifts vanilla lets a monster open).
             const dest = crossLines?.(p.prev, p);
@@ -885,7 +1036,18 @@ export function buildThingSprites(
             if (p.sector) p.light = p.sector.light;
             p.facingDeg = (p.angle * 180) / Math.PI;
             animating = p.x !== beforeX || p.y !== beforeY;
-            if (result) {
+            if (result?.kind === 'resurrect') {
+              // Applied directly here rather than reported through `attacks`
+              // — a resurrection isn't damage for `game.ts` to realize, it's
+              // pure AI-state that only `ThingLayer` (which owns the corpse's
+              // `PosedThing`) can actually carry out. No attack pose either:
+              // the vile has no distinct WAD art for this (see
+              // `MONSTER_RAISE_FRAMES`'s doc on vanilla's own S_VILE_HEAL
+              // quirk) — its ordinary held idle frame during `attackPause`
+              // is the stand-in.
+              const corpse = result.resurrectId !== undefined ? posed[result.resurrectId] : undefined;
+              if (corpse?.dead) reviveCorpse(corpse);
+            } else if (result) {
               attacks.push({
                 ...result,
                 x: p.x,
@@ -895,7 +1057,16 @@ export function buildThingSprites(
                 sourceType: p.type,
                 targetId: p.targetId,
               });
-              if (p.attackFrames) p.anim.playOnce(p.attackFrames, MONSTER_ACTION_FRAME_SECONDS);
+              // The arch-vile's own attack pose starts here, at the windup's
+              // *beginning* ('vileWindup', vanilla's real cast timing —
+              // MONSTER_ATTACK_FRAMES plays through the whole missilestate
+              // chase, not just the instant the flame lands) rather than at
+              // the blast actually landing (kind 'ranged' with .blast set) —
+              // re-triggering playOnce there would snap the pose back to its
+              // first frame right as the explosion hits, instead of letting
+              // it finish naturally.
+              const alreadyPosedAtWindup = result.kind === 'ranged' && result.blast;
+              if (p.attackFrames && !alreadyPosedAtWindup) p.anim.playOnce(p.attackFrames, MONSTER_ACTION_FRAME_SECONDS);
             }
           } else {
             p.z = p.sector?.floorHeight ?? p.z;
@@ -999,10 +1170,17 @@ export function buildThingSprites(
       }
       return out;
     },
-    damage(id: number, amount: number, source?: { id: number; type: number }): void {
+    damage(id: number, amount: number, source?: { id: number; type: number }, knockUpSpeed?: number): void {
       const p = posed[id];
       if (!p || p.dead || amount <= 0 || !MONSTER_TYPES.has(p.type)) return;
       p.health -= amount;
+      if (knockUpSpeed) {
+        p.velZ = knockUpSpeed;
+        // Nudges z off the floor so stepMonsterAI's own airborne check
+        // (z > groundFloor) engages next frame instead of the ground-snap
+        // branch zeroing velZ straight back out before it ever takes effect.
+        p.z += 1;
+      }
       if (p.health > 0) {
         const stats = MONSTER_STATS[p.type];
         if (stats) reactToDamage(p, stats);
@@ -1025,12 +1203,14 @@ export function buildThingSprites(
         return;
       }
       p.dead = true;
+      p.deadTime = 0;
       // Matches vanilla's P_KillMobj: gib only if this killing blow overkilled
       // by more than the monster's own max health, and only if it actually has
       // gib art (most don't — see MONSTER_XDEATH_FRAMES's doc).
       const maxHealth = MONSTER_HEALTH[p.type] ?? 0;
       const gibbed = p.health < -maxHealth && MONSTER_XDEATH_FRAMES[p.type];
       const frames = gibbed || MONSTER_DEATH_FRAMES[p.type];
+      p.deathFrameCount = frames ? frames.length : 0;
       if (frames) p.anim.die(frames, MONSTER_DEATH_FRAME_SECONDS);
       else {
         p.hidden = true;

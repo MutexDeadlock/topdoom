@@ -309,6 +309,56 @@ export const MONSTER_PAIN_FRAMES: Record<number, string[]> = {
 export const MONSTER_ACTION_FRAME_SECONDS = 3 / 35;
 
 /**
+ * Resurrection sprite frame letters — vanilla's `mobjinfo.raisestate`, the
+ * arch-vile's `A_VileChase`/`PIT_VileCheck` target (`game/monsters.ts`'s
+ * `MonsterStats.resurrects`, `game/things.ts`'s `ThingLayer`). Only 13 of the
+ * game's monster types have a real `raisestate` at all — every boss (spider
+ * mastermind, cyberdemon), the lost soul, the arch-vile itself, Commander
+ * Keen and the boss brain are absent from vanilla's own table and so absent
+ * here too, meaning `findRaisableCorpse` naturally never considers them
+ * (no entry means "not raisable", the same convention `MONSTER_XDEATH_FRAMES`
+ * already uses for "no gib art").
+ *
+ * These letters are **not** simply the reverse of `MONSTER_DEATH_FRAMES` —
+ * that was tried first and is wrong: vanilla's raise sequences are hand-authored
+ * per type and don't share one derivation rule (compare zombieman, 3 states
+ * reversed from its death sequence's *middle* frames, against shotgun guy, 4
+ * states reversed from its *entire* death sequence including the final
+ * settled frame, despite both sprites sharing the exact same death letter
+ * range H-L). Every letter below is instead read directly off the real
+ * `linuxdoom-1.10/info.c` `S_*_RAISE*` state table, the same rigor
+ * `MONSTER_ATTACK_FRAMES`/`MONSTER_PAIN_FRAMES` already hold themselves to —
+ * and, as a sanity check, every one of them does fall inside its type's own
+ * WAD-confirmed `MONSTER_DEATH_FRAMES` range, which a transcription error
+ * would likely have broken.
+ *
+ * Played via `SpriteAnimator.playOnce` after `revive()` undoes `die()` (see
+ * `ThingLayer`'s `reviveCorpse`) — the same one-shot-then-hand-back-to-the-
+ * alive-cycle mechanism attack/pain animations already use, just running in
+ * the "backwards" direction from dead to alive instead of interrupting a
+ * living pose. Uses `MONSTER_DEATH_FRAME_SECONDS`'s same flat per-frame rate
+ * rather than a dedicated constant — vanilla's own raise states hold 5-8
+ * tics, squarely inside death's own 5-8 tic range, so there's nothing this
+ * would tune differently.
+ */
+export const MONSTER_RAISE_FRAMES: Record<number, string[]> = {
+  3004: ['K', 'J', 'I'], // POSS
+  9: ['L', 'K', 'J', 'I'], // SPOS
+  3001: ['M', 'L', 'K', 'J'], // TROO
+  3002: ['N', 'M', 'L', 'K', 'J'], // SARG
+  58: ['N', 'M', 'L', 'K', 'J'], // SARG (spectre)
+  3005: ['L', 'K', 'J', 'I', 'H'], // HEAD
+  3003: ['O', 'N', 'M', 'L', 'K', 'J'], // BOSS
+  69: ['O', 'N', 'M', 'L', 'K', 'J'], // BOS2
+  65: ['N', 'M', 'L', 'K', 'J', 'I'], // CPOS
+  66: ['Q', 'P', 'O', 'N', 'M'], // SKEL
+  67: ['R', 'Q', 'P', 'O', 'N', 'M', 'L'], // FATT
+  68: ['P', 'O', 'N', 'M', 'L', 'K'], // BSPI
+  71: ['M', 'L', 'K', 'J', 'I'], // PAIN
+  84: ['M', 'L', 'K', 'J'], // SSWV
+};
+
+/**
  * Item a monster leaves behind on death (doomednum of the pickup to spawn),
  * lifted straight from vanilla's `P_KillMobj` — only three `switch` cases
  * exist there at all, so only three monster types actually drop anything:

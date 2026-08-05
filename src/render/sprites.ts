@@ -265,6 +265,18 @@ export class SpriteAnimator {
       this.animIndex = this.override.index;
       return;
     }
+    // this.animIndex is one field shared across three domains (death,
+    // override, this base cycle) rather than each owning its own — cheaper
+    // day to day, but it means a value left over from a *longer* death/
+    // override sequence can still be sitting there the instant control falls
+    // through to here, and nothing below would touch it if this call's own
+    // animTimer hasn't yet built up enough to reach the while loop. Clamping
+    // here, unconditionally, is what makes that safe regardless: every other
+    // path in this method already leaves animIndex valid for whichever array
+    // is about to be read (death.index/override.index for their own,
+    // matching-length arrays, or the reset below), so this is the one seam
+    // where a stale value can otherwise survive into a read.
+    if (this.animIndex >= this.animFrames.length) this.animIndex = 0;
     if (animating && this.animFrames.length > 1) {
       this.animTimer += dt;
       while (this.animTimer >= this.frameDuration) {

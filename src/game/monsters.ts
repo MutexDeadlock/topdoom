@@ -118,6 +118,18 @@ export interface AttackStats {
   shots?: number;
   shotInterval?: number;
   /**
+   * Seconds after this attack starts before its (first) shot actually
+   * fires — every other monster's burst timer starts at 0 (fires on the
+   * very next tick), an accepted timing simplification since the windup
+   * itself has no mechanical consequence for them. The arch-vile is the one
+   * exception: vanilla's `A_VileAttack` doesn't fire until 66 tics into its
+   * `missilestate` sequence, and re-checks line of sight at that exact
+   * moment (`AttackStats.blast`'s doc) — breaking sight during the windup is
+   * the entire reason ducking behind cover saves you from it, so unlike the
+   * mancubus's timing this delay has to be real, not merely cosmetic.
+   */
+  startDelaySeconds?: number;
+  /**
    * Vanilla's `A_CPosRefire`/`A_SpidRefire` loop (the chaingunner, spider
    * mastermind and arachnotron): the attack state jumps straight back to
    * itself and only breaks out when the target is no longer visible, never
@@ -199,6 +211,19 @@ export interface AttackStats {
    * measured on the offset distance.
    */
   maxOffsetDist?: number;
+  /**
+   * Set only for the arch-vile's real ranged attack (`A_VileAttack`) —
+   * replaces the ordinary hitscan-tracer stand-in every other non-projectile
+   * ranged monster still uses (see `MONSTER_STATS`'s doc) with vanilla's
+   * actual mechanic: guaranteed direct damage (`diceSides:1, diceMult:20`
+   * encodes vanilla's literal, unrolled `20` — no roll at all) plus an
+   * upward launch on the target, then a separate radius blast (vanilla's own
+   * flat `P_RadiusAttack(fire, actor, 70)`) centered near the victim rather
+   * than the vile itself. Only actually applied if the second sight check at
+   * fire time passes — see `startDelaySeconds` and `stepMonsterAI`'s
+   * burst-fire block.
+   */
+  blast?: { knockUpSpeed: number; splashRadius: number; splashDamage: number };
 }
 
 export interface MonsterStats {
@@ -269,10 +294,30 @@ export interface MonsterStats {
    * rest of it.
    */
   flies?: boolean;
+  /**
+   * Vanilla's `A_VileChase` corpse-resurrection check — set only for the
+   * arch-vile. `runChaseCall` tries this (via the caller-supplied
+   * `resurrect` callback) before anything else on every chase call it has a
+   * `movedir`, exactly like vanilla, which runs the corpse search *instead
+   * of* `A_Chase` and only falls through to the ordinary attack/walk
+   * decision once no raisable corpse is found nearby.
+   */
+  resurrects?: boolean;
 }
 
 export interface MonsterAttack {
-  kind: 'melee' | 'ranged';
+  /**
+   * `'vileWindup'` is a fourth, purely-cosmetic kind: fired once, the instant
+   * a `blast` attack (the arch-vile's `A_VileAttack`) *starts* rather than
+   * when it actually lands — see `beginRangedAttack`'s doc. Everything else
+   * about this event (`damage`/`angleRad`) is unused; `game.ts` reads only
+   * `targetId`/the shooter's position (from `MonsterAttackEvent`) to spawn
+   * and track a warning flame near the target for the windup's duration,
+   * vanilla's whole reason breaking sight mid-windup saves you from it —
+   * without *some* visible warning while it's charging, there'd be nothing
+   * for the player to react to in the first place.
+   */
+  kind: 'melee' | 'ranged' | 'resurrect' | 'vileWindup';
   damage: number;
   /** The heading it was fired along (`A_FaceTarget`'s angle) — what a hitscan bolt traces down, so it can hit whatever is actually in the way. */
   angleRad: number;
@@ -286,6 +331,17 @@ export interface MonsterAttack {
    * `AttackStats.projectile.pairOffsetsRad`).
    */
   projectiles?: { sprite: string; speed: number; angleRad: number }[];
+  /** Set only for the arch-vile's real `A_VileAttack` — see `AttackStats.blast`'s doc. `game.ts` applies direct damage plus knockback, then a radius blast, instead of the generic hitscan-tracer path every other non-projectile ranged monster uses. */
+  blast?: { knockUpSpeed: number; splashRadius: number; splashDamage: number };
+  /** Set only for a `'resurrect'` attack (`AttackStats.resurrects`): the raised corpse's `PosedThing` id — see `ThingLayer.update`, which applies the actual revival since `stepMonsterAI` has no access to the thing list itself. */
+  resurrectId?: number;
+}
+
+/** One corpse `ThingLayer`'s `findRaisableCorpse` found eligible for the arch-vile to raise — just enough for `runChaseCall` to face it and report which one. */
+export interface RaiseCandidate {
+  id: number;
+  x: number;
+  y: number;
 }
 
 /** Vanilla's own MELEERANGE, plus a little slack for this engine's coarser per-frame (rather than per-tic) distance sampling. */
@@ -293,6 +349,20 @@ export const MELEE_RANGE = 72;
 
 /** Vanilla's own `FATSPREAD` (`ANG90/8`) — the mancubus's fireball-pair fan angle, see `AttackStats.projectile.pairOffsetsRad`. */
 const FATSPREAD = Math.PI / 2 / 8;
+
+/**
+ * Vanilla's `A_VileAttack` launch: `target->momz = 1000*FRACUNIT/target->info->mass`.
+ * This engine has no per-species mass table, so this uses vanilla's own
+ * default mass (100, `MT_PLAYER`'s and most monsters' value) for every
+ * victim rather than the real, sometimes very different, per-type figure —
+ * the same single-value simplification `MonsterStats.radius` already makes.
+ * `momz` is added once per *tic* in vanilla, so ×35 converts it to this
+ * engine's units/sec.
+ */
+const VILE_KNOCKUP_SPEED = (1000 / 100) * 35;
+
+/** Vanilla's S_VILE_HEAL1-3: the arch-vile holds still for 30 tics while the corpse it just found rises. */
+const VILE_HEAL_DURATION = 30 / 35;
 
 /**
  * Vanilla's `mobjinfo.reactiontime`, which is 8 for every monster in the
@@ -588,9 +658,21 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     chaseInterval: 0.057,
     radius: 20,
     melee: null,
-    ranged: { maxOffsetDist: 896, diceSides: 8, diceMult: 8, duration: 2.686 },
+    ranged: {
+      maxOffsetDist: 896,
+      // Vanilla's A_VileAttack deals a flat, unrolled 20 — diceSides:1 makes
+      // rollDamage always return exactly diceMult regardless of the roll.
+      diceSides: 1,
+      diceMult: 20,
+      duration: 2.686,
+      // A_VileAttack doesn't fire until 66 tics into the missilestate chain
+      // (ATK1..ATK9's summed tics) — see AttackStats.startDelaySeconds's doc.
+      startDelaySeconds: 66 / 35,
+      blast: { knockUpSpeed: VILE_KNOCKUP_SPEED, splashRadius: 70, splashDamage: 70 },
+    },
     painChance: 0.039,
     painDuration: 0.286,
+    resurrects: true,
   }, // VILE arch-vile
 };
 
@@ -908,6 +990,7 @@ function fireAttack(kind: 'melee' | 'ranged', attack: AttackStats, angleRad: num
     projectiles: projectile
       ? (offsetsRad ?? [0]).map((off) => ({ sprite: projectile.sprite, speed: projectile.speed, angleRad: angleRad + off }))
       : undefined,
+    blast: attack.blast,
   };
 }
 
@@ -953,6 +1036,7 @@ export function stepMonsterAI(
   world: World,
   target: Pos3,
   blockers?: readonly ThingBlocker[],
+  resurrect?: (x: number, y: number, vileRadius: number) => RaiseCandidate | null,
 ): MonsterAttack | null {
   if (body.painTimer > 0) {
     body.painTimer = Math.max(0, body.painTimer - dt);
@@ -997,7 +1081,15 @@ export function stepMonsterAI(
     body.burstTimer -= dt;
     if (body.burstTimer <= 0) {
       const shotIndex = (ranged.shots ?? 1) - body.burstLeft;
-      attack = fireAttack('ranged', ranged, body.angle, ranged.projectile?.pairOffsetsRad?.[shotIndex]);
+      // The arch-vile's blast re-checks sight at the exact moment it would
+      // fire (vanilla's own A_VileAttack) — losing sight during the windup
+      // makes the whole attack fizzle instead of firing blind. No other
+      // ranged monster does this: their shots fire the instant
+      // P_CheckMissileRange already confirmed sight, so re-checking here
+      // would be redundant.
+      if (!ranged.blast || canSee()) {
+        attack = fireAttack('ranged', ranged, body.angle, ranged.projectile?.pairOffsetsRad?.[shotIndex]);
+      }
       body.burstLeft -= 1;
       body.burstTimer = ranged.shotInterval ?? 0;
     }
@@ -1023,7 +1115,7 @@ export function stepMonsterAI(
     body.chaseTimer += dt;
     if (body.chaseTimer >= stats.chaseInterval) {
       body.chaseTimer -= stats.chaseInterval;
-      attack = runChaseCall(body, stats, world, target, dist, dx, dy, canSee, blockers);
+      attack = runChaseCall(body, stats, world, target, dist, dx, dy, canSee, blockers, resurrect);
     }
   }
 
@@ -1048,7 +1140,12 @@ export function stepMonsterAI(
   return attack;
 }
 
-/** Starts a ranged attack: holds the monster still for its state sequence and queues its shots (or launches a charge). */
+/**
+ * Starts a ranged attack: holds the monster still for its state sequence and
+ * queues its shots (or launches a charge). Returns null except for the
+ * arch-vile's `blast` attacks, which report a `'vileWindup'` event the
+ * instant the windup begins — see `MonsterAttack.kind`'s doc.
+ */
 function beginRangedAttack(body: MonsterBody, ranged: AttackStats, dx: number, dy: number): MonsterAttack | null {
   body.angle = Math.atan2(dy, dx); // A_FaceTarget
   body.attackPause = ranged.duration;
@@ -1059,7 +1156,8 @@ function beginRangedAttack(body: MonsterBody, ranged: AttackStats, dx: number, d
     return null;
   }
   body.burstLeft = ranged.shots ?? 1;
-  body.burstTimer = 0;
+  body.burstTimer = ranged.startDelaySeconds ?? 0;
+  if (ranged.blast) return { kind: 'vileWindup', damage: 0, angleRad: body.angle };
   return null;
 }
 
@@ -1079,7 +1177,28 @@ function runChaseCall(
   dy: number,
   canSee: () => boolean,
   blockers?: readonly ThingBlocker[],
+  resurrect?: (x: number, y: number, vileRadius: number) => RaiseCandidate | null,
 ): MonsterAttack | null {
+  // A_VileChase: try to raise a corpse instead of taking this chase call's
+  // ordinary turn, matching vanilla exactly — a tic that finds one replaces
+  // A_Chase outright, skipping the reactiontime/threshold aging and
+  // melee/missile/walk decisions below entirely rather than merely
+  // pre-empting them.
+  if (stats.resurrects && resurrect && body.movedir !== DI_NODIR) {
+    // One chase call's worth of travel ahead of the vile's own position —
+    // vanilla's own viletryx/y (A_VileChase), scaled from vanilla's
+    // per-tic speed to this engine's units-per-second one.
+    const stepDist = stats.speed * stats.chaseInterval;
+    const aheadX = body.x + DIR_X[body.movedir] * stepDist;
+    const aheadY = body.y + DIR_Y[body.movedir] * stepDist;
+    const found = resurrect(aheadX, aheadY, stats.radius);
+    if (found) {
+      body.angle = Math.atan2(found.y - body.y, found.x - body.x); // A_FaceTarget at the corpse
+      body.attackPause = VILE_HEAL_DURATION;
+      return { kind: 'resurrect', damage: 0, angleRad: body.angle, resurrectId: found.id };
+    }
+  }
+
   if (body.reactionTicks > 0) body.reactionTicks--;
   if (body.threshold > 0) body.threshold--;
 

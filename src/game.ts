@@ -7,7 +7,7 @@ import { MaterialBank } from './render/textures.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import { buildThingSprites, MONSTER_HIT_HEIGHT, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
-import { MONSTER_FIRE_HEIGHT, sameSpecies } from './game/monsters.ts';
+import { MONSTER_FIRE_HEIGHT, MONSTER_STATS, sameSpecies } from './game/monsters.ts';
 import { FlatFader, type FadeTarget, TextureScroller, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
 import { World, hasLineOfSight, shotPath } from './game/world.ts';
@@ -79,6 +79,17 @@ interface OneShotEffect extends Pos3 {
   light: number;
   elapsed: number;
   lifetime: number;
+  /**
+   * Set only for the arch-vile's windup flame (`spawnVileWindupFire`):
+   * `x`/`y`/`z` are re-derived from this target's *live* position every
+   * frame (plus the frozen `followOffsetX`/`Y`, vanilla's own fixed offset
+   * from the target) instead of staying fixed like every other one-shot
+   * effect, so the flame visibly tracks a moving target during the windup.
+   * `null` means the player. Absent (the common case) skips this entirely.
+   */
+  followTargetId?: number | null;
+  followOffsetX?: number;
+  followOffsetY?: number;
 }
 
 /**
@@ -147,6 +158,31 @@ const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {
   APLS: { sprite: 'APBX', frames: ['A', 'B', 'C', 'D', 'E'] },
   FATB: { sprite: 'FBXP', frames: ['A', 'B', 'C'] },
 };
+
+/**
+ * The arch-vile's flame, vanilla's `MT_FIRE` (`S_FIRE1`-`S_FIRE30`) — its own
+ * sprite, not an impact effect keyed off a flight sprite like the table
+ * above, since `resolveVileBlast` has no flying projectile to key off in the
+ * first place. `FIREA0`-`FIREH0` (8 letters, all rotation-0/omnidirectional)
+ * confirmed against the real `DOOM2.WAD` lump names; vanilla's own 30-state
+ * loop revisits earlier letters to flicker rather than climbing monotonically
+ * (`A,B,A,B,C,B,C,...`), which is just randomized flicker on top of a rising
+ * baseline and not worth reproducing exactly for a purely cosmetic one-shot.
+ */
+const VILE_FIRE_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
+
+/** Vanilla's own 24-unit offset (`A_VileAttack`'s `FixedMul(24*FRACUNIT, ...)`) — see `resolveVileBlast`'s doc. */
+const VILE_FIRE_OFFSET = 24;
+
+/**
+ * How long the windup flame (`spawnVileWindupFire`) tracks its target —
+ * exactly the arch-vile's own `startDelaySeconds` (`MONSTER_STATS`), read
+ * from there rather than duplicated so the two can't drift apart: the flame
+ * should disappear right around the same moment the real shot either lands
+ * (`resolveVileBlast`'s own burst effect takes over) or fizzles (sight lost),
+ * not before or long after.
+ */
+const VILE_WINDUP_TRACK_SECONDS = MONSTER_STATS[64].ranged?.startDelaySeconds ?? 0;
 
 /**
  * Player death animation frame letters, confirmed against the actual `PLAY`
@@ -670,6 +706,17 @@ export class Game {
         this.scene.remove(e.actor.mesh);
         continue;
       }
+      if (e.followTargetId !== undefined) {
+        const pos = e.followTargetId === null ? this.player : this.things?.monsterById(e.followTargetId);
+        // A dead/stale target just leaves the flame at its last known spot
+        // for the rest of its short life rather than popping it early —
+        // it's about to expire on its own anyway (see spawnVileWindupFire).
+        if (pos) {
+          e.x = pos.x + (e.followOffsetX ?? 0);
+          e.y = pos.y + (e.followOffsetY ?? 0);
+          e.z = pos.z;
+        }
+      }
       e.actor.setPose(e.x, e.y, e.z, 0, e.light, dt, true, viewerAngleDeg);
       remaining.push(e);
     }
@@ -856,6 +903,84 @@ export class Game {
   private damageFromMonster(targetId: number | null, damage: number, sourceId: number, sourceType: number): void {
     if (targetId === null) this.damagePlayer(damage);
     else this.things?.damage(targetId, damage, { id: sourceId, type: sourceType });
+  }
+
+  /**
+   * The arch-vile's real `A_VileAttack` (`atk.blast` — see
+   * `AttackStats.blast`'s doc in `game/monsters.ts`): unlike every other
+   * non-projectile ranged monster, this isn't a traced hitscan bolt — vanilla
+   * damages `actor->target` directly (guaranteed, no roll, no trace to miss
+   * along) and launches it upward, then blasts a radius around it. No tracer
+   * or projectile sprite is drawn for the shot itself; the transient `FIRE`
+   * sprite spawned here is the whole visual, standing in for vanilla's own
+   * `MT_FIRE` (which this engine doesn't model as a persistent, sight-tracking
+   * object — see `AttackStats.blast`'s doc for why that's out of scope).
+   */
+  private resolveVileBlast(atk: MonsterAttackEvent): void {
+    if (!atk.blast) return;
+    const victim = atk.targetId === null ? null : this.things?.monsterById(atk.targetId);
+    const at = victim ? { x: victim.x, y: victim.y, z: victim.z } : { x: this.player.x, y: this.player.y, z: this.player.z };
+    if (atk.targetId === null) {
+      this.damagePlayer(atk.damage);
+      this.player.launchUpward(atk.blast.knockUpSpeed);
+    } else {
+      this.things?.damage(atk.targetId, atk.damage, { id: atk.sourceId, type: atk.sourceType }, atk.blast.knockUpSpeed);
+    }
+    const offset = this.vileFireOffset(atk, at);
+    const fireAt = { x: at.x + offset.x, y: at.y + offset.y, z: at.z };
+    this.applyRadiusDamage(fireAt, atk.blast.splashRadius, atk.blast.splashDamage, true, false, {
+      id: atk.sourceId,
+      type: atk.sourceType,
+    });
+    const effect = this.spawnEffect('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, fireAt);
+    if (effect) this.impacts.push(effect);
+  }
+
+  /**
+   * The arch-vile's warning flame, spawned the instant its windup starts
+   * (`atk.kind === 'vileWindup'`, fired once from `beginRangedAttack`) —
+   * vanilla's real `MT_FIRE` exists for this entire ~1.9s stretch, tracking
+   * the target the whole time, and losing sight of it during that window is
+   * the whole reason `resolveVileBlast`'s attack can fizzle. Without
+   * *something* visible while it's charging, there'd be nothing for the
+   * player to actually react to. Reuses `spawnEffect`'s one-shot machinery
+   * but overrides its lifetime to the windup's own length and marks it to
+   * track the target's live position (`OneShotEffect.followTargetId`) —
+   * `resolveVileBlast`'s own burst effect (or nothing, if the shot fizzles)
+   * takes over right around when this one's lifetime naturally runs out, so
+   * no explicit hand-off between the two is needed.
+   */
+  private spawnVileWindupFire(atk: MonsterAttackEvent): void {
+    const victim = atk.targetId === null ? null : this.things?.monsterById(atk.targetId);
+    const at = victim ? { x: victim.x, y: victim.y, z: victim.z } : { x: this.player.x, y: this.player.y, z: this.player.z };
+    const offset = this.vileFireOffset(atk, at);
+    const effect = this.spawnEffect('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, {
+      x: at.x + offset.x,
+      y: at.y + offset.y,
+      z: at.z,
+    });
+    if (!effect) return;
+    effect.lifetime = VILE_WINDUP_TRACK_SECONDS;
+    effect.followTargetId = atk.targetId;
+    effect.followOffsetX = offset.x;
+    effect.followOffsetY = offset.y;
+    this.impacts.push(effect);
+  }
+
+  /**
+   * Vanilla moves the arch-vile's flame 24 units from its target back toward
+   * the shooter (`A_VileAttack`'s `fire->x = target->x - 24*cos(actor->angle)`,
+   * symmetrically for y) — not cosmetic slop: `atk.x`/`atk.y` is the vile's
+   * own position (see `MonsterAttackEvent`'s doc), and without this offset
+   * the fire sprite spawns at the exact same x/y/z as the target's own
+   * sprite, both anchored billboards, and is effectively invisible sitting
+   * behind/inside it. Returns just the offset vector rather than the final
+   * position, since `spawnVileWindupFire` needs to keep re-applying it to a
+   * moving target every frame rather than computing it once.
+   */
+  private vileFireOffset(atk: MonsterAttackEvent, targetPos: Pos2): Pos2 {
+    const towardVile = Math.atan2(atk.y - targetPos.y, atk.x - targetPos.x);
+    return { x: Math.cos(towardVile) * VILE_FIRE_OFFSET, y: Math.sin(towardVile) * VILE_FIRE_OFFSET };
   }
 
   /**
@@ -1086,13 +1211,30 @@ export class Game {
    * `at.z` is only carried along for `tracers`' visuals, never the falloff math.
    * `tracers`, when set, draws a `BFG_TRACER_COLOR` line from the impact to
    * every monster the blast actually damaged — see `WeaponDef.splash`'s doc
-   * on why only the BFG sets it.
+   * on why only the BFG sets it. `source`, when given, attributes the hit for
+   * `ThingLayer.damage`'s own retaliation/infighting rule the same as a
+   * direct hit does — noticed while wiring up the arch-vile's own blast
+   * (`resolveVileBlast`), whose splash needed this to stay exempt from
+   * retaliation like every other hit it deals (`shouldRetarget`'s arch-vile
+   * rule already handles that once a source is actually passed); the
+   * rocket/BFG's own splash calls below don't pass one, matching their
+   * existing behavior exactly.
    */
-  private applyRadiusDamage(at: Pos3, radius: number, maxDamage: number, hitsPlayer: boolean, tracers: boolean): void {
+  private applyRadiusDamage(
+    at: Pos3,
+    radius: number,
+    maxDamage: number,
+    hitsPlayer: boolean,
+    tracers: boolean,
+    source?: { id: number; type: number },
+  ): void {
     for (const m of this.things?.monstersNear(at, radius) ?? []) {
+      // Vanilla's PIT_RadiusAttack: the spider mastermind and cyberdemon take
+      // no concussion/splash damage at all, direct hits only.
+      if (m.type === 7 || m.type === 16) continue;
       const dist = Math.hypot(m.x - at.x, m.y - at.y);
       if (dist >= radius || !hasLineOfSight(this.world, at, m)) continue;
-      this.things?.damage(m.id, maxDamage * (1 - dist / radius));
+      this.things?.damage(m.id, maxDamage * (1 - dist / radius), source);
       if (tracers) {
         const tracer = new Tracer(at, m, BFG_TRACER_COLOR);
         this.scene.add(tracer.line);
@@ -1437,12 +1579,24 @@ export class Game {
         // reason to know about — the same "systems report, game.ts realizes"
         // split every other attack effect on this loop follows.
         this.applyShadowAim(atk);
+        // The arch-vile's windup warning — see spawnVileWindupFire's doc.
+        // Purely cosmetic (no damage, no trace), so it's handled before
+        // (and separately from) every other kind below.
+        if (atk.kind === 'vileWindup') {
+          this.spawnVileWindupFire(atk);
+          continue;
+        }
         // A monster with a real flying projectile (game/monsters.ts's
         // MONSTER_STATS, e.g. the imp's fireball) launches one instead of
         // resolving as an instant hit — damage lands later, on arrival
         // (updateProjectiles), not here.
         if (atk.kind === 'ranged' && atk.projectiles) {
           this.spawnMonsterProjectile(atk);
+        } else if (atk.kind === 'ranged' && atk.blast) {
+          // The arch-vile's real attack — guaranteed damage plus knockback
+          // and a radius blast, not a traced hitscan bolt. See
+          // resolveVileBlast's doc for why this needs its own path.
+          this.resolveVileBlast(atk);
         } else if (atk.kind === 'ranged') {
           // A hitscan bolt (the human gunners, the spider mastermind) traces
           // its actual flight and damages the first thing in the way, which

@@ -2004,6 +2004,69 @@ already resets the player/world/specials/fog for a normal level transition and, 
 top-of-function reset, `playerDead`/the overlay/`playerActor`'s animation state too — restart
 isn't a special case, just the ordinary map-load path with a clean inventory.
 
+### Exploding barrels (`src/game/things.ts`, `src/render/sprites.ts`, `src/game.ts`)
+
+Vanilla's `MT_BARREL` has no AI at all — it's a plain `MF_SOLID|MF_SHOOTABLE` prop, not a
+`MONSTER_TYPES` member, so none of "Monster AI" above applies to it. It still needs to plug into
+almost every piece of machinery a monster does — solid collision, hitscan/projectile/splash/melee
+hit-testing, auto-aim lock-on — which vanilla gets for free because none of those systems actually
+know or care what "monster" means; they only check `MF_SHOOTABLE`/`MF_SOLID`. This engine's
+equivalent generic layer is `ThingLayer`'s `blockerGrid` (see "Monster AI"'s own doc on it), so a
+barrel joins that same grid alongside every `MONSTER_TYPES` thing (`rebuildBlockerGrid`,
+`solidBodies`, `pickMonster`) rather than needing its own parallel set of spatial queries —
+`raycastMonster`/`monstersNear` (both grid-backed) become barrel-aware for free as a result, which
+is what makes a rocket, a stray hitscan pellet, a monster's own fireball, or another barrel's blast
+all able to hit one through the exact same code paths that already hit monsters.
+
+**Only `ThingLayer.damage`'s actual death/pain behavior is special-cased**, gated on the type being
+`BARREL_TYPE` (2035) rather than in `MONSTER_TYPES`: no `painstate` (a barrel that survives a hit
+just sits there — vanilla's `MT_BARREL` has `painchance = 0`), no alerting, no infighting retarget
+(it has no AI to alert or retarget in the first place), and a kill switches its sprite to `BEXP`
+instead of picking from `MONSTER_DEATH_FRAMES`/`MONSTER_XDEATH_FRAMES` — a barrel's own idle art
+(`BAR1`) and its explosion art are genuinely different sprite lumps, unlike every monster, whose
+death states reuse the same sprite name as their walk/attack states. `SpriteAnimator.die` gained an
+optional third `spriteName` argument for exactly this — every other caller still omits it and
+resolves against the animator's own fixed `spriteName` as before.
+
+**`A_Explode` fires partway through the death animation, not instantly on death** — confirmed
+against `linuxdoom-1.10/info.c`: `S_BEXP1`/`S_BEXP2` each hold 5 tics before `S_BEXP3` calls it, so
+`BARREL_EXPLODE_DELAY_SECONDS` is `2 * BARREL_DEATH_FRAME_SECONDS` (a flat per-frame rate standing
+in for vanilla's own uneven 5/5/5/10/10 tic counts, the same simplification
+`MONSTER_DEATH_FRAME_SECONDS` already makes elsewhere). `ThingLayer.update` ticks this off the same
+`deadTime` clock it already ticks for every dead thing, and reports it back to `game.ts` as a
+`BarrelExplosion` (`{x, y, z, source}`) once due — the same "system reports, game.ts realizes" split
+`MonsterAttackEvent` already uses, bundled alongside it in `update`'s return value
+(`ThingUpdateResult`) rather than folded into the same array, since a barrel exploding isn't an
+attack aimed at anyone. No separate visual effect is spawned for the blast the way every other
+explosion in this engine needs one (`spawnEffect`/`effectBatch`) — the barrel's own `PosedThing` is
+already playing its `BEXP` animation at exactly that position, so there's nothing left to add.
+Vanilla's `S_BEXP5` falls through to `S_NULL`, i.e. the debris is removed outright once the
+animation finishes, the same "transitioning to `S_NULL` deletes the object" rule
+`MONSTER_CORPSE_VANISHES` already reproduces for the lost soul and pain elemental — a barrel just
+isn't a `MONSTER_TYPES` member, so it gets its own copy of that check rather than sharing the table.
+
+**The blast itself is `applyRadiusDamage`, exactly the rocket's own splash** — vanilla's literal
+`A_Explode` call is `P_RadiusAttack(thingy, thingy->target, 128)`, identical radius and damage to
+the rocket launcher's. `source` (`PosedThing.explodeSource`, captured in `ThingLayer.damage` at the
+moment the barrel died, `null` meaning the player) stands in for `thingy->target` and is what makes
+a chain of barrels attribute correctly: since `applyRadiusDamage` walks `ThingLayer.monstersNear`
+(now barrel-inclusive) and calls `ThingLayer.damage` on whatever it finds within range and sight,
+a second barrel caught in the blast is killed through the exact same call a monster would be, which
+captures this same `source` onto *it* and queues its own explosion a frame later — propagating the
+original attacker down the whole chain rather than attributing each link to the barrel before it,
+matching vanilla's own `bombsource` propagation through `P_RadiusAttack`. The spider mastermind/
+cyberdemon splash exemption `applyRadiusDamage` already has applies here for free too, and a barrel
+killed by the player's own direct fire (no explicit `source`, matching every other player-caused
+splash in this engine) propagates that same "no source" forward exactly like an unattributed
+vanilla blast would.
+
+**Not reproduced**: a crusher killing a barrel. Vanilla's crush damage is real `P_DamageMobj`
+against anything `MF_SHOOTABLE` standing in the crushing sector, so it can detonate a barrel too —
+but this engine's own crush damage (`ThingLayer.monstersInSector`, "Crushers and teleporters"
+below) is `MONSTER_TYPES`-gated, and a barrel deliberately isn't one, so a barrel sitting under a
+crusher just gets bypassed rather than eventually crushed. Left as a known, narrow gap rather than
+widening that gate, since a mapper putting a barrel directly under a crusher's path is rare.
+
 ### Crushers and teleporters (`src/wad/specials.ts`, `src/game/specials.ts`, `src/game.ts`)
 
 The vanilla-only line special table (doors/lifts/floors above, plus these two) is confirmed
@@ -2573,6 +2636,11 @@ homes..." above) — and, at vanilla's own 350 units/sec rather than a speed the
 outrun, it flies until it hits something instead of expiring on a launch-time distance budget, so
 dodging one really does make it loop back around for another pass — and the arch-vile's warning
 flame tracks the *target's* live facing angle with
-a real sight gate from the vile (vanilla's own `A_Fire`) rather than a frozen offset vector. Not
-yet implemented: actual audio (the noise-alert *mechanic* above works off vanilla's
-sound-propagation rules, but nothing in this engine plays a sound yet).
+a real sight gate from the vile (vanilla's own `A_Fire`) rather than a frozen offset vector.
+Exploding barrels work too (`game/things.ts`, see "Exploding barrels" above): solid and shootable
+by anything that can hit a monster (hitscan, projectiles, melee, splash, even a monster's own
+stray shot), auto-aim-lockable the same as a monster, and — vanilla's `A_Explode`, firing partway
+through the death animation rather than instantly — chain-reacting into any other barrel caught in
+the blast, with the original attacker propagated all the way down the chain. Not yet implemented:
+actual audio (the noise-alert *mechanic* above works off vanilla's sound-propagation rules, but
+nothing in this engine plays a sound yet).

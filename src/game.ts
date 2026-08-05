@@ -7,7 +7,15 @@ import { MaterialBank } from './render/textures.ts';
 import { buildMapMesh, doomToWorld, litColor, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from './render/sprites.ts';
 import { SpriteBatch } from './render/spritebatch.ts';
-import { buildThingSprites, MONSTER_HIT_HEIGHT, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
+import {
+  BARREL_SPLASH_DAMAGE,
+  BARREL_SPLASH_RADIUS,
+  buildThingSprites,
+  MONSTER_HIT_HEIGHT,
+  type BarrelExplosion,
+  type MonsterAttackEvent,
+  type ThingLayer,
+} from './game/things.ts';
 import { MONSTER_FIRE_HEIGHT, MONSTER_STATS, sameSpecies } from './game/monsters.ts';
 import { FlatFader, type FadeTarget, TextureScroller, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
@@ -1602,6 +1610,22 @@ export class Game {
   }
 
   /**
+   * A barrel's own `A_Explode` — vanilla's literal `P_RadiusAttack(thingy,
+   * thingy->target, 128)`, identical shape to the rocket's own splash
+   * (`applyRadiusDamage`), just with `exp.source` (captured at the moment
+   * the barrel died — `ThingLayer.damage`'s `PosedThing.explodeSource`)
+   * standing in for `thingy->target`. Since `ThingLayer.monstersNear` (which
+   * `applyRadiusDamage` walks) now includes barrels alongside monsters, a
+   * second barrel caught in the blast takes damage through the exact same
+   * `ThingLayer.damage` call any monster would — which, if it kills that
+   * barrel too, captures this same `source` onto it and queues its own
+   * `A_Explode` a frame later, exactly like vanilla's own chain reaction.
+   */
+  private applyBarrelExplosion(exp: BarrelExplosion): void {
+    this.applyRadiusDamage(exp, BARREL_SPLASH_RADIUS, BARREL_SPLASH_DAMAGE, true, exp.source);
+  }
+
+  /**
    * Vanilla's real `A_BFGSpray` (`weapons.ts`'s `WeaponDef.spray`), fired once
    * when the player's own BFG ball reaches wherever it's going. `travelAngleRad`
    * is the ball's own fixed flight angle (`Projectile.angleRad` — a BFG ball
@@ -1982,7 +2006,7 @@ export class Game {
     // monster fired this frame comes back for us to actually apply/render,
     // the same "system returns data, caller realizes it" split as
     // WeaponSystem.update's Shot[].
-    const monsterAttacks = this.profiler.time(
+    const thingUpdate = this.profiler.time(
       'Monsters',
       () =>
         this.things?.update(
@@ -1991,8 +2015,9 @@ export class Game {
           this.playerDead ? null : this.player,
           fogAlphaOf,
           (prev, pos) => this.monsterCrossedLines(prev, pos),
-        ) ?? [],
+        ) ?? { attacks: [], barrelExplosions: [] },
     );
+    const monsterAttacks = thingUpdate.attacks;
     this.profiler.time('Monsters', () => {
       for (const atk of monsterAttacks) {
         // Applied here rather than inside game/monsters.ts because whether the
@@ -2030,6 +2055,12 @@ export class Game {
           this.damageFromMonster(atk.targetId, atk.damage, atk.sourceId, atk.sourceType);
         }
       }
+      // A barrel's own A_Explode, become due this frame (game/things.ts's
+      // update() ticks the delay; see applyBarrelExplosion's doc). No visual
+      // spawnEffect is needed here the way every other explosion needs one —
+      // the barrel's own PosedThing is already drawing its BEXP death
+      // animation at exactly this spot.
+      for (const exp of thingUpdate.barrelExplosions) this.applyBarrelExplosion(exp);
     });
     this.profiler.time('Effects', () => {
       // One begin/end pair around all four lists, the same per-frame rebuild

@@ -154,6 +154,13 @@ splashes nearby monsters as well, but — unlike the rocket — never the player
 matching the original's own BFG, which doesn't damage through a radius explosion at all. A thin
 green line draws from the impact to everything the BFG's splash actually caught, the same
 tracer a hitscan shot draws to its own target, so it's visible which nearby monsters it hit.
+
+**Barrels explode.** Shoot one, punch one, or catch it in a blast, and it detonates a moment
+later for the same 128-radius, 128-damage splash a rocket deals — hurting the player and any
+monster nearby, and, if another barrel is close enough, setting that one off too, chaining as
+far as the barrels reach. You can also lock onto a barrel with the cursor the same way as a
+monster.
+
 **Monsters wake, hunt and shoot back.** One notices the player by sight — only within roughly its
 forward 180°, so a monster facing away doesn't spot you behind its back — or by hearing gunfire,
 which spreads room to room the way the original's does, stopped by closed doors and softened by

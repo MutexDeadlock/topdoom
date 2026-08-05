@@ -131,6 +131,24 @@ interface PosedThing extends Pos3 {
    */
   raiseFrames: string[] | undefined;
   /**
+   * Set once a dead barrel's own `A_Explode` has actually fired
+   * (`BARREL_EXPLODE_DELAY_SECONDS` after death, not on death itself — see
+   * that constant's doc), so `update()`'s per-frame `deadTime` check doesn't
+   * re-fire it every subsequent frame. Meaningless for anything else.
+   */
+  barrelExploded: boolean;
+  /**
+   * Who dealt a barrel's killing blow, captured at the moment it died and
+   * carried forward to its own `A_Explode` — vanilla's `P_RadiusAttack`
+   * passes the exploding barrel's own `target` (whoever damaged it) as the
+   * new blast's `bombsource`, which is how a chain of barrels keeps
+   * attributing every link back to whoever set the first one off rather than
+   * to the previous barrel in the chain. `null` means "the player", the same
+   * convention `ThingLayer.damage`'s own `source` parameter already uses.
+   * Meaningless for anything else.
+   */
+  explodeSource: { id: number; type: number } | null;
+  /**
    * True for an item `ThingLayer.damage` spawned itself (`MONSTER_DROPS`) rather than
    * one the map placed — threaded through to `applyPickup`'s own `dropped` param, which halves the ammo it grants.
    */
@@ -283,11 +301,12 @@ export interface ThingLayer {
   /** Releases the instanced meshes/materials this layer owns; call when the map is unloaded. Shared geometry and textures belong to `SpriteMaterialCache`, which outlives a level. */
   dispose(): void;
   /**
-   * Every living monster near (x, y) as a solid body the *player* has to walk
-   * around — vanilla's monsters are all `MF_SOLID`, so they block a mover the
-   * same way a wall does. Monsters get the equivalent list built for them
-   * internally (`blockersFor`); this is the outward-facing half, for
-   * `game.ts` to hand to `Player.update`.
+   * Every living monster near (x, y), plus every still-standing barrel, as a
+   * solid body the *player* has to walk around — vanilla's monsters and
+   * `MT_BARREL` are both `MF_SOLID`, so either blocks a mover the same way a
+   * wall does. Monsters get the equivalent list built for them internally
+   * (`blockersFor`); this is the outward-facing half, for `game.ts` to hand
+   * to `Player.update`.
    */
   solidBodies(pos: Pos2): ThingBlocker[];
   /**
@@ -318,6 +337,11 @@ export interface ThingLayer {
    * (`SpecialsController.crossMonster`) can fire any walk trigger it crossed
    * (teleports, the handful of doors/lifts vanilla lets a monster open) —
    * see "Crushers and teleporters" in CLAUDE.md.
+   *
+   * Also ticks every exploding barrel's own death clock (barrels aren't
+   * `MONSTER_TYPES`, so none of the AI above applies to them — see
+   * `BARREL_TYPE`'s doc) and reports any `A_Explode` that became due this
+   * frame alongside the monster attacks, see `ThingUpdateResult`.
    */
   update(
     dt: number,
@@ -325,7 +349,7 @@ export interface ThingLayer {
     player: Pos3 | null,
     fogAlphaOf?: (subsector: number) => number,
     crossLines?: (prev: Pos2, pos: Pos2) => Placement | null,
-  ): MonsterAttackEvent[];
+  ): ThingUpdateResult;
   /**
    * Consumes every not-yet-picked thing within `radius` of (x, y) *and*
    * within reach vertically of `z` whose type `consume` accepts (returning
@@ -351,6 +375,10 @@ export interface ThingLayer {
    * killed. The returned `id` is what `damage` below takes, so a shot fired
    * this frame can still land on exactly this instance later (a projectile's
    * flight, or a wall check that might block it first) without re-picking.
+   *
+   * Also willing to lock onto a still-standing barrel — vanilla's own
+   * `P_AimLineAttack` has no notion of "monster", only `MF_SHOOTABLE`, so a
+   * barrel is exactly as auto-aimable as any monster in real DOOM too.
    */
   pickMonster(raycaster: THREE.Raycaster): MonsterRef | null;
   /**
@@ -413,6 +441,13 @@ export interface ThingLayer {
    * (`game.ts: resolveVileBlast`), applied here rather than left to the
    * caller since it's the same `PosedThing.z`/`velZ` fields `stepMonsterAI`'s
    * own gravity integration already owns.
+   *
+   * A barrel (`id` referring to a `BARREL_TYPE` instance, not a
+   * `MONSTER_TYPES` one) takes this same call but follows none of the above:
+   * no pain state (vanilla's `MT_BARREL` has no `painstate`/`painchance` at
+   * all), no infighting retarget, and death switches its sprite to `BEXP`
+   * (not its own idle `BAR1`) rather than picking from `MONSTER_DEATH_FRAMES`
+   * — see `BARREL_TYPE`'s doc.
    */
   damage(id: number, amount: number, source?: { id: number; type: number }, knockUpSpeed?: number): void;
   /**
@@ -459,6 +494,75 @@ const PAIN_ELEMENTAL_TYPE = 71;
 const MAX_SKULLS_ON_LEVEL = 20;
 
 /**
+ * The exploding barrel's own doomednum (`THING_SPRITES`'s `BAR1` entry) —
+ * vanilla `MT_BARREL`. Unlike every monster, a barrel has no AI at all
+ * (`MONSTER_STATS` has no entry for it, so it never enters the
+ * `if (stats && player)` branch in `update()` below) — it's just a plain
+ * `MF_SOLID|MF_SHOOTABLE` prop that happens to deal splash damage on death.
+ */
+const BARREL_TYPE = 2035;
+/** Vanilla `mobjinfo` spawnhealth for `MT_BARREL`. */
+const BARREL_HEALTH = 20;
+/**
+ * Vanilla `MT_BARREL`'s own `radius` (10 map units) — real and much smaller
+ * than `MONSTER_HIT_RADIUS`, the approximate fallback used for a type with no
+ * `MONSTER_STATS` entry, which a barrel otherwise is.
+ */
+const BARREL_RADIUS = 10;
+/** `S_BAR1`/`S_BAR2` — a two-frame idle sway, each vanilla frame held 6 tics. */
+const BARREL_IDLE_FRAMES = ['A', 'B'];
+const BARREL_IDLE_FRAME_SECONDS = 6 / 35;
+/**
+ * A barrel's death art is a genuinely different sprite lump from its own idle
+ * art (`BEXP`, not `BAR1`) — unlike every monster, whose death states reuse
+ * the same sprite name as their walk/attack states. `SpriteAnimator.die`'s
+ * optional third argument exists specifically for this.
+ */
+const BARREL_DEATH_SPRITE = 'BEXP';
+/** `S_BEXP1`-`S_BEXP5` frame letters. */
+const BARREL_DEATH_FRAMES = ['A', 'B', 'C', 'D', 'E'];
+/**
+ * A flat per-frame rate standing in for vanilla's own uneven per-state tic
+ * counts (5, 5, 5, 10, 10) — the same "one uniform rate" simplification
+ * `MONSTER_DEATH_FRAME_SECONDS` already makes elsewhere. Matches the real
+ * rate of the first three frames, which is the one that actually matters:
+ * `BARREL_EXPLODE_DELAY_SECONDS` below is timed off it.
+ */
+const BARREL_DEATH_FRAME_SECONDS = 5 / 35;
+/**
+ * Vanilla's own `A_Explode` fires on entering `S_BEXP3` — the death
+ * animation's third frame, i.e. two frames after the barrel actually died,
+ * not instantly on death. Confirmed against `linuxdoom-1.10/info.c`'s
+ * `S_BEXP1`/`S_BEXP2` durations (5 tics each) rather than assumed.
+ */
+const BARREL_EXPLODE_DELAY_SECONDS = 2 * BARREL_DEATH_FRAME_SECONDS;
+/**
+ * Vanilla's own literal `A_Explode` call — `P_RadiusAttack(thingy,
+ * thingy->target, 128)` — identical radius and damage to the rocket
+ * launcher's own splash (`weapons.ts`'s `rocketLauncher.splash`).
+ */
+export const BARREL_SPLASH_RADIUS = 128;
+export const BARREL_SPLASH_DAMAGE = 128;
+
+/**
+ * A barrel's `A_Explode` becoming due (`BARREL_EXPLODE_DELAY_SECONDS` after
+ * it died, not on death itself), for `game.ts` to turn into
+ * `applyRadiusDamage`. `source`, when set, is who dealt the killing blow —
+ * see `PosedThing.explodeSource`'s doc for why this is what makes a chain of
+ * barrels attribute correctly all the way back to whoever set the first one
+ * off.
+ */
+export interface BarrelExplosion extends Pos3 {
+  source?: { id: number; type: number };
+}
+
+/** `ThingLayer.update`'s return value — see that method's doc. */
+export interface ThingUpdateResult {
+  attacks: MonsterAttackEvent[];
+  barrelExplosions: BarrelExplosion[];
+}
+
+/**
  * Non-monster, non-weapon things (ammo, health/armor, keys, powerups,
  * decorations) are drawn at vanilla's native patch size times this factor.
  * The far, tilted top-down camera reads a lot worse than DOOM's own
@@ -503,8 +607,10 @@ export function buildThingSprites(
     const light = sector?.light ?? 128;
     const z = sector?.floorHeight ?? 0;
     const isMonster = MONSTER_TYPES.has(t.type);
+    const isBarrel = t.type === BARREL_TYPE;
 
-    const anim = new SpriteAnimator(bank, materials, spriteName, isMonster ? MONSTER_WALK_FRAMES : ['A']);
+    const animFrames = isMonster ? MONSTER_WALK_FRAMES : isBarrel ? BARREL_IDLE_FRAMES : ['A'];
+    const anim = new SpriteAnimator(bank, materials, spriteName, animFrames, isBarrel ? BARREL_IDLE_FRAME_SECONDS : undefined);
     // Skips a thing whose art the WAD doesn't actually carry, same as before —
     // resolving once here is what the old build-time `setPose` call was for.
     if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) continue;
@@ -512,12 +618,14 @@ export function buildThingSprites(
       id: posed.length,
       anim,
       scale: pickupScaleFor(t.type),
-      blockRadius: MONSTER_STATS[t.type]?.radius ?? MONSTER_HIT_RADIUS,
+      blockRadius: isBarrel ? BARREL_RADIUS : MONSTER_STATS[t.type]?.radius ?? MONSTER_HIT_RADIUS,
       attackFrames: MONSTER_ATTACK_FRAMES[t.type],
       painFrames: MONSTER_PAIN_FRAMES[t.type],
       raiseFrames: MONSTER_RAISE_FRAMES[t.type],
       deadTime: 0,
       deathFrameCount: 0,
+      barrelExploded: false,
+      explodeSource: null,
       visible: true,
       hidden: false,
       queryStamp: 0,
@@ -530,7 +638,7 @@ export function buildThingSprites(
       subsector,
       type: t.type,
       picked: false,
-      health: MONSTER_HEALTH[t.type] ?? Infinity,
+      health: isBarrel ? BARREL_HEALTH : MONSTER_HEALTH[t.type] ?? Infinity,
       dead: false,
       dropped: false,
       alerted: false,
@@ -585,6 +693,8 @@ export function buildThingSprites(
       raiseFrames: MONSTER_RAISE_FRAMES[type],
       deadTime: 0,
       deathFrameCount: 0,
+      barrelExploded: false,
+      explodeSource: null,
       visible: true,
       hidden: false,
       queryStamp: 0,
@@ -685,6 +795,8 @@ export function buildThingSprites(
       raiseFrames: MONSTER_RAISE_FRAMES[LOST_SOUL_TYPE],
       deadTime: 0,
       deathFrameCount: 0,
+      barrelExploded: false,
+      explodeSource: null,
       visible: true,
       hidden: false,
       queryStamp: 0,
@@ -909,7 +1021,12 @@ export function buildThingSprites(
         cell.push(p);
         continue;
       }
-      if (!MONSTER_TYPES.has(p.type)) continue;
+      // A living barrel is exactly as solid as a monster — vanilla's own
+      // MF_SOLID — so it joins the same grid: it blocks the player
+      // (`solidBodies`), blocks a monster's own movement (`blockersFor`), and
+      // is found by `raycastMonster`/`monstersNear`, all for free through the
+      // machinery already built for monsters.
+      if (!MONSTER_TYPES.has(p.type) && p.type !== BARREL_TYPE) continue;
       if (p.blockRadius > maxBlockerRadius) maxBlockerRadius = p.blockRadius;
       const i = blockerRow(p.y) * blockerCols + blockerCol(p.x);
       let cell = blockerGrid[i];
@@ -1099,9 +1216,9 @@ export function buildThingSprites(
     solidBodies(pos: Pos2): ThingBlocker[] {
       const out: ThingBlocker[] = [];
       for (const p of posed) {
-        if (p.dead || !MONSTER_TYPES.has(p.type)) continue;
+        if (p.dead || (!MONSTER_TYPES.has(p.type) && p.type !== BARREL_TYPE)) continue;
         if (Math.abs(p.x - pos.x) > BLOCKER_SEARCH_RADIUS || Math.abs(p.y - pos.y) > BLOCKER_SEARCH_RADIUS) continue;
-        out.push({ x: p.x, y: p.y, radius: MONSTER_STATS[p.type]?.radius ?? MONSTER_HIT_RADIUS });
+        out.push({ x: p.x, y: p.y, radius: p.blockRadius });
       }
       return out;
     },
@@ -1111,8 +1228,9 @@ export function buildThingSprites(
       player: Pos3 | null,
       fogAlphaOf?: (subsector: number) => number,
       crossLines?: (prev: Pos2, pos: Pos2) => Placement | null,
-    ): MonsterAttackEvent[] {
+    ): ThingUpdateResult {
       const attacks: MonsterAttackEvent[] = [];
+      const barrelExplosions: BarrelExplosion[] = [];
       // Once per frame, ahead of any blockersFor call below — see its doc for
       // why a frame-granular grid is accurate enough for contact.
       rebuildBlockerGrid();
@@ -1124,20 +1242,41 @@ export function buildThingSprites(
         }
         if (p.dead) {
           p.deadTime += dt;
-          // Vanilla removes the mobj outright once these two types' death
-          // animation ends (see MONSTER_CORPSE_VANISHES's doc) rather than
-          // leaving a permanent corpse the way every other monster's death
-          // sequence does — without this, SpriteAnimator.die's ordinary
-          // hold-last-frame behavior leaves a lost soul or pain elemental's
-          // last death frame floating on screen forever.
-          if (MONSTER_CORPSE_VANISHES.has(p.type) && p.deadTime >= p.deathFrameCount * MONSTER_DEATH_FRAME_SECONDS) {
+          if (p.type === BARREL_TYPE) {
+            // Vanilla's own A_Explode, firing partway through the death
+            // animation rather than instantly on death — see
+            // BARREL_EXPLODE_DELAY_SECONDS's doc.
+            if (!p.barrelExploded && p.deadTime >= BARREL_EXPLODE_DELAY_SECONDS) {
+              p.barrelExploded = true;
+              barrelExplosions.push({ x: p.x, y: p.y, z: p.z, source: p.explodeSource ?? undefined });
+            }
+            // Vanilla's S_BEXP5 falls through to S_NULL — the debris is
+            // removed outright once its explosion animation finishes,
+            // matching MONSTER_CORPSE_VANISHES's own reasoning for the lost
+            // soul/pain elemental below (a barrel just isn't a MONSTER_TYPES
+            // member, so it can't share that table).
+            if (p.deadTime >= p.deathFrameCount * BARREL_DEATH_FRAME_SECONDS) {
+              p.hidden = true;
+              p.visible = false;
+              continue;
+            }
+          } else if (
+            // Vanilla removes the mobj outright once these two types' death
+            // animation ends (see MONSTER_CORPSE_VANISHES's doc) rather than
+            // leaving a permanent corpse the way every other monster's death
+            // sequence does — without this, SpriteAnimator.die's ordinary
+            // hold-last-frame behavior leaves a lost soul or pain elemental's
+            // last death frame floating on screen forever.
+            MONSTER_CORPSE_VANISHES.has(p.type) &&
+            p.deadTime >= p.deathFrameCount * MONSTER_DEATH_FRAME_SECONDS
+          ) {
             p.hidden = true;
             p.visible = false;
             continue;
           }
         }
 
-        let animating = false;
+        let animating = p.type === BARREL_TYPE;
         const stats = !p.dead ? MONSTER_STATS[p.type] : undefined;
         if (stats && player) {
           if (!p.alerted) {
@@ -1238,7 +1377,7 @@ export function buildThingSprites(
         batch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, litColor(p.light), p.id);
       }
       batch.end();
-      return attacks;
+      return { attacks, barrelExplosions };
     },
     dispose(): void {
       batch.dispose();
@@ -1266,11 +1405,13 @@ export function buildThingSprites(
     pickMonster(raycaster: THREE.Raycaster): MonsterRef | null {
       // The batch hands back the id of the nearest instance this predicate
       // accepts, skipping (rather than being blocked by) everything else — so
-      // a barrel standing in front of an imp still doesn't make it
-      // untargetable, exactly as when only monster meshes were raycast at all.
+      // a plain decoration standing in front of a monster or barrel still
+      // doesn't make it untargetable, exactly as when only monster meshes
+      // were raycast at all. Barrels are included alongside MONSTER_TYPES —
+      // see pickMonster's own doc for why.
       const id = batch.raycast(raycaster, (owner) => {
         const p = posed[owner];
-        return !!p && !p.picked && !p.dead && p.visible && MONSTER_TYPES.has(p.type);
+        return !!p && !p.picked && !p.dead && p.visible && (MONSTER_TYPES.has(p.type) || p.type === BARREL_TYPE);
       });
       if (id === null) return null;
       const p = posed[id];
@@ -1323,7 +1464,8 @@ export function buildThingSprites(
     },
     damage(id: number, amount: number, source?: { id: number; type: number }, knockUpSpeed?: number): void {
       const p = posed[id];
-      if (!p || p.dead || amount <= 0 || !MONSTER_TYPES.has(p.type)) return;
+      const isBarrel = !!p && p.type === BARREL_TYPE;
+      if (!p || p.dead || amount <= 0 || !(isBarrel || MONSTER_TYPES.has(p.type))) return;
       p.health -= amount;
       if (knockUpSpeed) {
         p.velZ = knockUpSpeed;
@@ -1333,6 +1475,10 @@ export function buildThingSprites(
         p.z += 1;
       }
       if (p.health > 0) {
+        // Vanilla's MT_BARREL has no painstate/painchance at all — a barrel
+        // that survives a hit just sits there, no flinch, no wake, no
+        // infighting (it has no AI to alert or retarget in the first place).
+        if (isBarrel) return;
         const stats = MONSTER_STATS[p.type];
         if (stats) reactToDamage(p, stats);
         // reactToDamage only actually sets painTimer if the stagger roll
@@ -1361,6 +1507,18 @@ export function buildThingSprites(
       }
       p.dead = true;
       p.deadTime = 0;
+      if (isBarrel) {
+        // BEXP, not BAR1 — see BARREL_DEATH_SPRITE's doc. The splash itself
+        // fires later, once BARREL_EXPLODE_DELAY_SECONDS elapses (see
+        // update()) — `source` is captured now so it can still be attributed
+        // correctly then, and propagated to any barrel that blast itself
+        // kills (see PosedThing.explodeSource's doc).
+        p.barrelExploded = false;
+        p.explodeSource = source ?? null;
+        p.deathFrameCount = BARREL_DEATH_FRAMES.length;
+        p.anim.die(BARREL_DEATH_FRAMES, BARREL_DEATH_FRAME_SECONDS, BARREL_DEATH_SPRITE);
+        return;
+      }
       // Matches vanilla's P_KillMobj: gib only if this killing blow overkilled
       // by more than the monster's own max health, and only if it actually has
       // gib art (most don't — see MONSTER_XDEATH_FRAMES's doc).

@@ -234,6 +234,17 @@ export class SpriteAnimator {
    */
   private override = new FrameSequence();
 
+  /**
+   * Sprite name to resolve the death sequence's frames against, when it
+   * differs from `spriteName` — set only by `die`'s optional third argument.
+   * Every monster's death states reuse the same sprite name as its walk/
+   * attack states, so this is `null` for all of them; the exploding barrel
+   * is the one thing in the game whose death art (`BEXP`) is a genuinely
+   * different lump than its own idle art (`BAR1`), which `spriteName` alone
+   * can't express since it's fixed for this animator's whole life.
+   */
+  private deathSpriteName: string | null = null;
+
   constructor(
     bank: SpriteBank,
     materials: SpriteMaterialCache,
@@ -297,8 +308,9 @@ export class SpriteAnimator {
    */
   resolve(facingDeg: number, viewerAngleDeg: number): CachedSprite | null {
     const frames = this.death.frames ?? this.override.frames ?? this.animFrames;
+    const spriteName = this.death.frames && this.deathSpriteName ? this.deathSpriteName : this.spriteName;
     const digit = pickRotationDigit(facingDeg, viewerAngleDeg);
-    const found = this.bank.lookup(this.spriteName, frames[this.animIndex], digit);
+    const found = this.bank.lookup(spriteName, frames[this.animIndex], digit);
     if (!found) return null;
 
     const key = found.lump + (found.flip ? ':f' : '');
@@ -314,9 +326,14 @@ export class SpriteAnimator {
    * the `death` field doc). Idempotent-ish: calling it again just
    * restarts the sequence, which nothing currently does since a monster/the
    * player only dies once per life.
+   *
+   * `spriteName`, when given, resolves the death frames against that lump
+   * instead of this animator's own `spriteName` — see `deathSpriteName`'s
+   * doc for the one case (the exploding barrel) that needs it.
    */
-  die(frames: string[], frameDuration: number): void {
+  die(frames: string[], frameDuration: number, spriteName?: string): void {
     this.death.start(frames, frameDuration, true);
+    this.deathSpriteName = spriteName ?? null;
   }
 
   /**
@@ -333,6 +350,7 @@ export class SpriteAnimator {
   revive(): void {
     this.death.stop();
     this.override.stop();
+    this.deathSpriteName = null;
     this.animIndex = 0;
     this.animTimer = 0;
   }

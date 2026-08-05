@@ -6,6 +6,7 @@ import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import {
   MONSTER_ACTION_FRAME_SECONDS,
   MONSTER_ATTACK_FRAMES,
+  MONSTER_CORPSE_VANISHES,
   MONSTER_DEATH_FRAME_SECONDS,
   MONSTER_DEATH_FRAMES,
   MONSTER_DROPS,
@@ -160,6 +161,8 @@ interface PosedThing extends Pos3 {
   justAttacked: boolean;
   reactionTicks: number;
   refiring: boolean;
+  /** Only meaningful for the revenant (see `MonsterBody.homingBias`'s doc); seeded/rerolled below regardless of type, the same as every other inert-elsewhere AI field. */
+  homingBias: boolean;
   /**
    * Seconds since this monster's last idle look-around. Separate from the AI
    * timers above because it only ticks *before* the monster wakes, and
@@ -261,13 +264,17 @@ const MONSTER_WALK_FRAMES = ['A', 'B', 'C', 'D'];
 
 /**
  * One monster as the rest of the engine sees it: the stable `id`
- * `ThingLayer.damage` takes, its live position, and its doomednum (for the
- * species checks in `game.ts`). Every lookup below hands back this same shape
- * rather than each spelling out `{ id, x, y, z, type }` of its own.
+ * `ThingLayer.damage` takes, its live position, its doomednum (for the
+ * species checks in `game.ts`), and its current facing — needed by
+ * `game.ts`'s arch-vile flame tracking, which (like vanilla's own `A_Fire`)
+ * keys off the *target's* facing, not just its position. Every lookup below
+ * hands back this same shape rather than each spelling out
+ * `{ id, x, y, z, type, angle }` of its own.
  */
 export interface MonsterRef extends Pos3 {
   id: number;
   type: number;
+  angle: number;
 }
 
 export interface ThingLayer {
@@ -442,6 +449,13 @@ export interface ThingLayer {
 const MONSTER_HIT_RADIUS = 24;
 export const MONSTER_HIT_HEIGHT = 64;
 
+/** The lost soul's doomednum — what the pain elemental's `A_PainShootSkull` spawns (see `spawnLostSoul`). */
+const LOST_SOUL_TYPE = 3006;
+/** The pain elemental's own doomednum — `damage()`'s death branch checks this for its `A_PainDie` triple-spawn. */
+const PAIN_ELEMENTAL_TYPE = 71;
+/** Vanilla's own hard cap on how many lost souls can exist on a level at once — `A_PainShootSkull`'s "count > 20" guard. */
+const MAX_SKULLS_ON_LEVEL = 20;
+
 /**
  * Non-monster, non-weapon things (ammo, health/armor, keys, powerups,
  * decorations) are drawn at vanilla's native patch size times this factor.
@@ -536,6 +550,7 @@ export function buildThingSprites(
       justAttacked: false,
       reactionTicks: 0,
       refiring: false,
+      homingBias: Math.random() < 0.5,
       lookTimer: 0,
       prev: { x, y },
       targetId: null,
@@ -602,9 +617,115 @@ export function buildThingSprites(
       justAttacked: false,
       reactionTicks: 0,
       refiring: false,
+      homingBias: Math.random() < 0.5,
       lookTimer: 0,
       prev: { x, y },
       targetId: null,
+    });
+  }
+
+  /**
+   * The pain elemental's `A_PainShootSkull`: spawns a lost soul just in front
+   * of `origin` along `angleRad` and immediately launches it at whatever
+   * `origin` itself is currently targeting — vanilla's own
+   * `newmobj->target = actor->target` followed by `A_SkullAttack(newmobj)`.
+   * Called both from `update()`'s live `A_PainAttack` (`AttackStats.spawn`,
+   * once per attack) and from `damage()`'s death branch (`A_PainDie`, three
+   * of these at once, fanned around the elemental's own facing) — see both
+   * call sites for why neither needs the *player's* position on hand: the
+   * new skull is simply spawned already alerted and already past its
+   * reaction delay, so it makes its own first missile-range roll (and so its
+   * own charge decision) on its very next ordinary chase call, the same path
+   * every other monster's attack already goes through.
+   *
+   * Vanilla's own cap ("if there are already 20 skulls on the level, don't
+   * spit another one") is a *level-wide* count of `MT_SKULL`, not a
+   * per-elemental one, so a room full of pain elementals throttles itself
+   * once the level's total skull population fills up rather than each
+   * elemental keeping its own tally.
+   *
+   * If the spawn point has no room, this simply does nothing — vanilla
+   * actually spawns the mobj and then kills it outright with 10000 damage
+   * when `P_TryMove` refuses it, which looks identical to never having
+   * spawned it at all, so skipping the pointless detour through a
+   * dead instance changes nothing observable.
+   */
+  function spawnLostSoul(origin: PosedThing, angleRad: number): void {
+    let skullCount = 0;
+    for (const p of posed) if (p.type === LOST_SOUL_TYPE && !p.dead) skullCount++;
+    if (skullCount > MAX_SKULLS_ON_LEVEL) return;
+
+    const skullRadius = MONSTER_STATS[LOST_SOUL_TYPE].radius;
+    const originRadius = MONSTER_STATS[origin.type]?.radius ?? skullRadius;
+    // Vanilla's `4*FRACUNIT + 3*(actor->info->radius + skullRadius)/2` — both
+    // radii are already plain map units here (not FRACUNIT-scaled), so the
+    // shared scaling factor just divides back out.
+    const prestep = 4 + 1.5 * (originRadius + skullRadius);
+    const x = origin.x + Math.cos(angleRad) * prestep;
+    const y = origin.y + Math.sin(angleRad) * prestep;
+    const z = origin.z + 8;
+    if (circleBlocked(world, x, y, skullRadius, z, true)) return;
+
+    const spriteName = THING_SPRITES[LOST_SOUL_TYPE];
+    if (!spriteName) return;
+    const sector = world.sectorAt(x, y);
+    const subsector = world.subsectorAt(x, y);
+    const facingDeg = (angleRad * 180) / Math.PI;
+    const anim = new SpriteAnimator(bank, materials, spriteName, MONSTER_WALK_FRAMES);
+    if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) return;
+    posed.push({
+      id: posed.length,
+      anim,
+      scale: pickupScaleFor(LOST_SOUL_TYPE),
+      blockRadius: skullRadius,
+      attackFrames: MONSTER_ATTACK_FRAMES[LOST_SOUL_TYPE],
+      painFrames: MONSTER_PAIN_FRAMES[LOST_SOUL_TYPE],
+      raiseFrames: MONSTER_RAISE_FRAMES[LOST_SOUL_TYPE],
+      deadTime: 0,
+      deathFrameCount: 0,
+      visible: true,
+      hidden: false,
+      queryStamp: 0,
+      x,
+      y,
+      z,
+      sector,
+      facingDeg,
+      light: sector?.light ?? 128,
+      subsector,
+      type: LOST_SOUL_TYPE,
+      picked: false,
+      health: MONSTER_HEALTH[LOST_SOUL_TYPE] ?? Infinity,
+      dead: false,
+      dropped: false,
+      // Already alerted, with reactionTicks/movecount pre-zeroed so its very
+      // first chase call is free to roll straight into checkMissileRange
+      // (and so straight into its own charge) rather than first walking a
+      // step and waiting out a reaction delay it never had in vanilla —
+      // there `A_SkullAttack` fires synchronously in the same tic it spawns.
+      alerted: true,
+      ambush: false,
+      velZ: 0,
+      angle: angleRad,
+      attackPause: 0,
+      burstLeft: 0,
+      burstTimer: 0,
+      chargeTimer: 0,
+      chargeAngle: 0,
+      painTimer: 0,
+      movedir: DI_NODIR,
+      movecount: 0,
+      chaseTimer: 0,
+      moveBlocked: false,
+      threshold: 0,
+      justHit: false,
+      justAttacked: false,
+      reactionTicks: 0,
+      refiring: false,
+      homingBias: Math.random() < 0.5,
+      lookTimer: 0,
+      prev: { x, y },
+      targetId: origin.targetId,
     });
   }
 
@@ -774,7 +895,10 @@ export function buildThingSprites(
     maxCorpseRadius = 0;
     for (const p of posed) {
       if (p.dead) {
-        if (!p.raiseFrames) continue;
+        // A hidden corpse (MONSTER_CORPSE_VANISHES — see that doc) no longer
+        // exists as far as an arch-vile is concerned, matching vanilla's own
+        // P_RemoveMobj: it's simply not there to raise.
+        if (!p.raiseFrames || p.hidden) continue;
         if (p.blockRadius > maxCorpseRadius) maxCorpseRadius = p.blockRadius;
         const i = blockerRow(p.y) * blockerCols + blockerCol(p.x);
         let cell = corpseGrid[i];
@@ -996,7 +1120,20 @@ export function buildThingSprites(
           p.visible = false;
           continue;
         }
-        if (p.dead) p.deadTime += dt;
+        if (p.dead) {
+          p.deadTime += dt;
+          // Vanilla removes the mobj outright once these two types' death
+          // animation ends (see MONSTER_CORPSE_VANISHES's doc) rather than
+          // leaving a permanent corpse the way every other monster's death
+          // sequence does — without this, SpriteAnimator.die's ordinary
+          // hold-last-frame behavior leaves a lost soul or pain elemental's
+          // last death frame floating on screen forever.
+          if (MONSTER_CORPSE_VANISHES.has(p.type) && p.deadTime >= p.deathFrameCount * MONSTER_DEATH_FRAME_SECONDS) {
+            p.hidden = true;
+            p.visible = false;
+            continue;
+          }
+        }
 
         let animating = false;
         const stats = !p.dead ? MONSTER_STATS[p.type] : undefined;
@@ -1008,7 +1145,10 @@ export function buildThingSprites(
             p.lookTimer += dt;
             if (p.lookTimer >= LOOK_INTERVAL) {
               p.lookTimer = 0;
-              tryWake(p, world, p.sector, player);
+              // Waking is one of the two events that can reshuffle a
+              // revenant's guided/unguided personality — see
+              // MonsterBody.homingBias's doc. A no-op for every other type.
+              if (tryWake(p, world, p.sector, player)) p.homingBias = Math.random() < 0.5;
             }
           }
           if (p.alerted) {
@@ -1047,6 +1187,15 @@ export function buildThingSprites(
               // is the stand-in.
               const corpse = result.resurrectId !== undefined ? posed[result.resurrectId] : undefined;
               if (corpse?.dead) reviveCorpse(corpse);
+            } else if (result?.kind === 'spawn') {
+              // Same reasoning as 'resurrect' above: spawning a monster is
+              // pure AI-state only ThingLayer's own `posed` array can carry
+              // out, not damage for `game.ts` to realize, so this never goes
+              // through `attacks`. The elemental's own attack pose still
+              // plays, unlike 'resurrect' — A_PainAttack has real dedicated
+              // art (MONSTER_ATTACK_FRAMES[71]), unlike the vile's raise.
+              spawnLostSoul(p, result.angleRad);
+              if (p.attackFrames) p.anim.playOnce(p.attackFrames, MONSTER_ACTION_FRAME_SECONDS);
             } else if (result) {
               attacks.push({
                 ...result,
@@ -1123,7 +1272,7 @@ export function buildThingSprites(
       });
       if (id === null) return null;
       const p = posed[id];
-      return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type };
+      return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle };
     },
     monstersNear(pos: Pos2, radius: number): MonsterRef[] {
       // Grid-backed, not a scan of every thing. This is called once per
@@ -1138,14 +1287,14 @@ export function buildThingSprites(
         const dx = p.x - pos.x;
         const dy = p.y - pos.y;
         if (dx * dx + dy * dy >= rSq) return;
-        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type });
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle });
       });
       return out;
     },
     monsterById(id: number): MonsterRef | null {
       const p = posed[id];
       if (!p || p.dead || !MONSTER_TYPES.has(p.type)) return null;
-      return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type };
+      return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle };
     },
     awakeMonsterCount(): number {
       let n = 0;
@@ -1166,7 +1315,7 @@ export function buildThingSprites(
       const out: MonsterRef[] = [];
       for (const p of posed) {
         if (p.dead || !MONSTER_TYPES.has(p.type) || p.sector !== sector) continue;
-        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type });
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle });
       }
       return out;
     },
@@ -1189,6 +1338,12 @@ export function buildThingSprites(
         // hit that fails the roll alerts/retargets the monster same as any
         // other, but shouldn't flinch it on screen.
         if (p.painFrames && p.painTimer > 0) p.anim.playOnce(p.painFrames, MONSTER_ACTION_FRAME_SECONDS);
+        // The other event that can reshuffle a revenant's guided/unguided
+        // personality (MonsterBody.homingBias's doc) — a real pain flinch,
+        // same gate as the pose line just above. A no-op for every other
+        // type, and a hit that failed the stagger roll doesn't reroll it
+        // either, matching "if the damage causes a pain state".
+        if (p.painTimer > 0) p.homingBias = Math.random() < 0.5;
         // Being hurt always wakes a monster, sight or no — vanilla's
         // P_DamageMobj sets the target unconditionally.
         p.alerted = true;
@@ -1219,6 +1374,17 @@ export function buildThingSprites(
 
       const dropType = MONSTER_DROPS[p.type];
       if (dropType) spawnDrop(p.x, p.y, p.sector, p.facingDeg, dropType);
+
+      // A_PainDie: three more lost souls, fanned 90/180/270 degrees around
+      // the elemental's own last facing — vanilla's own
+      // `A_PainShootSkull(actor, actor->angle+ANG90/180/270)`, fired
+      // unconditionally on death regardless of what attack (if any) was
+      // under way when it died.
+      if (p.type === PAIN_ELEMENTAL_TYPE) {
+        spawnLostSoul(p, p.angle + Math.PI / 2);
+        spawnLostSoul(p, p.angle + Math.PI);
+        spawnLostSoul(p, p.angle + (3 * Math.PI) / 2);
+      }
     },
     raycastMonster(
       origin: Pos3,
@@ -1245,7 +1411,7 @@ export function buildThingSprites(
         const perpX = relX - dx * t;
         const perpY = relY - dy * t;
         if (perpX * perpX + perpY * perpY > MONSTER_HIT_RADIUS * MONSTER_HIT_RADIUS) return;
-        nearest = { id: p.id, x: origin.x + dx * t, y: origin.y + dy * t, z: p.z, dist: t, type: p.type };
+        nearest = { id: p.id, x: origin.x + dx * t, y: origin.y + dy * t, z: p.z, dist: t, type: p.type, angle: p.angle };
       });
       return nearest;
     },

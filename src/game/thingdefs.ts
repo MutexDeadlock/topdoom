@@ -221,6 +221,47 @@ export const MONSTER_XDEATH_FRAMES: Record<number, string[]> = {
 export const MONSTER_DEATH_FRAME_SECONDS = 6 / 35;
 
 /**
+ * The two monster types whose corpse doesn't stay on screen once its death
+ * animation finishes — confirmed against the real `linuxdoom-1.10` `info.c`:
+ * every monster's *final* death state has `tics: -1` (vanilla's "hold this
+ * state forever", which is what makes a corpse a permanent fixture) except
+ * `S_SKULL_DIE6` (lost soul, `tics: 6`) and `S_PAIN_DIE6` (pain elemental,
+ * `tics: 8`), both of which instead expire normally and fall through to
+ * `S_NULL` — and `P_SetMobjState` transitioning *to* `S_NULL` is what calls
+ * `P_RemoveMobj`, i.e. the object is deleted outright rather than left
+ * standing. `ThingLayer.update` hides (`hidden = true`) either type's corpse
+ * once `deadTime` reaches the end of its death animation
+ * (`deathFrameCount * MONSTER_DEATH_FRAME_SECONDS`, the same threshold
+ * `findRaisableCorpse` already uses for "done settling") instead of letting
+ * `SpriteAnimator.die`'s ordinary hold-last-frame behavior leave a floating
+ * corpse on screen forever, which is what every *other* monster's corpse
+ * correctly does and what a first version of this wrongly did for these two
+ * as well. Both are exactly the game's two floating (`MonsterStats.flies`)
+ * monster types, which tracks thematically — there's no ground for a solid
+ * body to visibly settle onto — though nothing here special-cases "flying"
+ * directly, only the two real doomednums confirmed above.
+ *
+ * This has a second, easy-to-miss consequence for the pain elemental
+ * specifically: its mobjinfo *does* carry a real `raisestate`
+ * (`S_PAIN_RAISE1`, hence its entry in `MONSTER_RAISE_FRAMES` below), but
+ * vanilla's own resurrection check (`PIT_VileCheck`'s `if (thing->tics != -1)
+ * return true; // not lying still yet`) requires the corpse to *already* be
+ * sitting in a permanent, `tics == -1` hold state — which a pain elemental's
+ * corpse never reaches before `P_RemoveMobj` deletes it. So despite the
+ * mobjinfo entry looking raisable, a dead pain elemental can never actually
+ * be resurrected in real vanilla either, a genuine dead-data quirk rather
+ * than an oversight in this table. This engine reproduces the same net
+ * result the same structural way, without special-casing the doomednum a
+ * second time: `rebuildBlockerGrid` never buckets a `hidden` corpse into
+ * `corpseGrid`, and a pain elemental's corpse is always hidden by the time
+ * `findRaisableCorpse`'s own "finished settling" gate would otherwise start
+ * accepting it (both are keyed off the exact same `deadTime` threshold), so
+ * the two correctly-modeled mechanisms combine into the same unreachability
+ * vanilla has, rather than needing a third rule that says so directly.
+ */
+export const MONSTER_CORPSE_VANISHES = new Set([3006, 71]); // SKUL, PAIN
+
+/**
  * Attack sprite frame letters, one entry per doomednum — unlike the death
  * tables above, these aren't structurally derivable from the WAD (attack
  * frames sit among ordinary rotation 1-8 art, indistinguishable by structure

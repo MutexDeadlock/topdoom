@@ -913,8 +913,10 @@ vanilla precisely), falling back to the same ordinary FOV+sight check every mons
 mapper's "won't come running at gunfire, but still spots you normally" ambush setup works exactly
 as intended.
 
-**Every timing value in `MONSTER_STATS` is lifted from vanilla's own `info.c`; only the damage
-dice are tuned by feel.** This is the opposite of the split `weapons.ts`'s fire rates and
+**Every timing *and* damage value in `MONSTER_STATS` is lifted from vanilla's own source, not
+tuned by feel** (an earlier version tuned the damage dice softer; see "Ranged attacks are either
+an instant hitscan-style bolt..." above for the corrected, source-confirmed values). This is the
+opposite of the split `weapons.ts`'s fire rates and
 `player.ts`'s `GRAVITY` make, and deliberately so — those genuinely don't survive conversion out
 of vanilla's per-tic accumulation model, whereas a monster's walk speed, attack length, pain
 length and chase cadence are all plain constants that do. Vanilla moves a monster exactly
@@ -1151,12 +1153,112 @@ throw a real projectile instead, sprite names and frame counts confirmed by dump
 `DOOM2.WAD` sprite lumps and cross-checked against `linuxdoom-1.10`'s `info.c` mobjinfo/state
 tables rather than assumed — including the mancubus's genuine vanilla oddity of exploding with
 the *rocket's* `MISL` frames instead of any dedicated art of its own (`MANF` has no explosion
-frames in the WAD at all). The pain elemental stays on the hitscan-tracer stand-in despite not
-matching vanilla exactly (its real "attack" spawns a lost soul, which this engine doesn't model),
-and the revenant's missile flies straight rather than homing — see `MONSTER_STATS`'s doc for why
-each of those specific gaps was left alone rather than built out further. The arch-vile's own
-ranged attack is neither of these — see "The arch-vile: resurrection and the real blast attack"
-below. A monster projectile reuses the same `Projectile`/`updateProjectiles` machinery
+frames in the WAD at all). The lost soul, arch-vile and pain elemental's own ranged attacks are
+neither of these — see "The lost soul is the third kind of attack", "The arch-vile: resurrection
+and the real blast attack" and "The pain elemental: spawning a lost soul" below.
+
+**Every projectile-throwing monster's direct-hit damage is the same universal formula, confirmed
+against `p_map.c`'s `PIT_CheckThing`: `(rand%8+1) * that missile type's own mobjinfo `damage`
+field.** `AttackStats.ranged.diceSides` is therefore `8` for every one of them regardless of
+type — only `diceMult` (the mobjinfo `damage` value: 3 for the imp's `TROOPSHOT`, 5 for the
+cacodemon's `HEADSHOT`, 8 for the baron/hell knight's `BRUISERSHOT` and the mancubus's `FATSHOT`,
+5 for the arachnotron's `ARACHPLAZ`, 10 for the revenant's `TRACER`, 20 for the cyberdemon's
+`ROCKET`) varies — and the lost soul's own `MF_SKULLFLY` contact damage (`AttackStats.charge`) is
+the exact same formula through the exact same code path in vanilla (`PIT_CheckThing`'s other
+branch), just with `MT_SKULL`'s own damage field (3). Melee dice are equally exact, just each
+monster's own `A_*Attack` function's literal roll instead of one shared formula (`A_TroopAttack`'s
+`(rand%8+1)*3`, `A_SargAttack`'s `(rand%10+1)*4`, `A_HeadAttack`'s `(rand%6+1)*10`,
+`A_BruisAttack`'s `(rand%8+1)*10`, `A_SkelFist`'s `(rand%10+1)*6`) — an earlier version of this
+table had every monster's dice tuned softer than these, which is corrected now that both formulas
+are confirmed rather than eyeballed.
+
+**Two monsters fire more than one pellet/shot per attack call, and this engine reproduces that
+as a summed dice roll rather than N independently-traced shots down N different lines.** The
+shotgun guy's `A_SPosAttack` fires three separate `(rand%5+1)*3` hitscan pellets per call, and the
+spider mastermind fires the same `A_SPosAttack` twice per attack (`AttackStats.pellets`, `3`, on
+top of the existing `shots: 2`). Vanilla also gives each pellet its own random spread off the aim
+line, which this engine's monster hitscans don't model at all (unlike the player's own shotgun,
+`weapons.ts`'s `WeaponDef.pellets`/`spreadDeg`) — but with no spread, every pellet travels the
+identical ray, so "three independent rolls that all land on the same thing" and "one roll of three
+summed dice" are the same outcome, not an approximation of one.
+
+**The cyberdemon's rocket splashes, matching vanilla, and no other monster projectile does —
+confirmed by checking every monster fireball's own death state in `info.c`, not assumed either
+way.** `A_CyberAttack` spawns a real `MT_ROCKET`, the identical type the player's own launcher
+fires, and `MT_ROCKET`'s death state (`S_EXPLODE1`) is the one monster-projectile death state in
+the game that calls `A_Explode` — every other monster fireball's own death state (imp/cacodemon/
+baron/hell knight/mancubus/arachnotron/revenant) has no action at all, so none of them ever call
+`P_RadiusAttack` in real vanilla either. `AttackStats.projectile.splash` (`{ radius: 128, damage:
+128 }`, vanilla's own literal `P_RadiusAttack(thingy, thingy->target, 128)`, identical to
+`weapons.ts`'s `rocketLauncher.splash`) is set only for the cyberdemon as a result; the splash
+still can't hurt the cyberdemon itself (or the spider mastermind), matching `applyRadiusDamage`'s
+existing `PIT_RadiusAttack` cyborg/spider exemption below, which needed no change to also cover
+this case.
+
+**The revenant's missile really does home in on its target, `A_Tracer`, confirmed against
+`p_enemy.c` rather than assumed** (`AttackStats.projectile.homing`, `game.ts`'s
+`advanceHomingProjectile`) — the one monster projectile in the game with a homing flight state;
+every other fireball's fixed straight line is correct for it, not a shared simplification.
+
+**Not every revenant missile actually homes, and this is vanilla's own behavior, not a bug** —
+confirmed against [doomwiki.org's writeup of the underlying mechanism](https://doomwiki.org/wiki/Revenant)
+rather than assumed, since it isn't obvious from `p_enemy.c` alone: `A_Tracer` only turns (and
+trails smoke — see below) on tics where the *global* tic counter `gametic & 3 == 0`, and because a
+revenant's own attack-state cycle keeps a fixed parity relative to that counter for as long as
+nothing disturbs it, every missile a given revenant fires lands on the same side of that gate.
+In practice a revenant is either a "guided" shooter or an "unguided" one for a stretch of shots,
+not a fresh coin flip per shot, until a hit that actually staggers it (or its very first wake)
+reshuffles which side it's on. This engine has no discrete tic clock to reproduce that gate
+exactly (see `MonsterStats.speed`'s doc on why per-tic accumulation is converted rather than
+simulated elsewhere in this file too), so `MonsterBody.homingBias` is a direct stand-in: a plain
+persistent coin flip per revenant, seeded on spawn and rerolled on wake and on an actual pain
+flinch (`things.ts`), threaded into `fireAttack`'s `homingBias` param so every shot that revenant
+fires while its bias hasn't changed comes out the same way. `Projectile.homing` — and so both the
+turning and the trailing smoke below — is only ever attached to a shot that won this roll; a shot
+that loses it is a plain, undistinguished `FATB` flying `updateProjectiles`'s ordinary fixed
+straight line, identical to every other monster's fireball.
+
+`advanceHomingProjectile` turns the missile's heading toward its target's *current* bearing by at
+most `REVENANT_TRACER_TURN_RATE_RAD` per second (vanilla's own clamped `TRACEANGLE` turn,
+16.875° every 4th tic, converted to a continuous rate the same way `MonsterStats.speed` converts
+vanilla's own per-tic movement — a smooth curve either way, unlike the AI clock's chase-call
+cadence where discreteness is load-bearing) and eases its height toward the target's own
+`TRACER_HOMING_Z_OFFSET`-above-feet point over the flight's remaining distance, the continuous
+equivalent of vanilla's `momz` spring (which converges to the same "arrive at the right height by
+the time it gets there" behavior without a persisted vertical velocity to track). A dead or
+missing target (vanilla's own `!dest || dest->health<=0` bail-out) simply leaves the missile on
+whatever heading it already had — it doesn't stop, retarget, or fall out of the sky. Because a
+homing missile's path isn't the fixed ray every other projectile uses, `Projectile.homing` carries
+its own live, mutable `x`/`y`/`z`/`headingRad` rather than being derived from `originX`/`Y`/
+`angleRad`/`traveled` each frame; `traveled` (and so the `maxDist` arrival distance `shotPath`
+computed at launch) is unaffected, so a curving missile still gives up at the same distance budget
+a straight one would, even though the *path* covering that distance is no longer straight.
+
+**`advanceHomingProjectile` also reproduces vanilla's `P_ZMovement` floor/ceiling hit** — a real
+mechanic for every missile in vanilla (reaching the floor or ceiling of whatever sector it's
+currently over explodes it on the spot), but one that's never been reachable for this engine's
+other projectiles: their height is a straight interpolation between two points `shotPath` already
+validated against wall openings at launch, so it can't dip below ground mid-flight. A homing
+missile's height *eases* toward a target that can sit on a very different floor while its `x`/`y`
+curves over terrain `shotPath` never re-checked, and without this, easing toward a lower target
+while still passing over higher ground visibly sank the sprite into that floor well before
+`maxDist` caught up — read as the missile exploding on the floor mid-flight rather than at its
+target. Checked every frame via `World.floorAt`/`ceilingAt` at the missile's current `x`/`y`;
+hitting either clamps `z` to it and forces `p.traveled = p.maxDist`, the same signal a straight
+flight reaching the end of its own distance budget already sends `updateProjectiles`.
+
+**A guided missile trails smoke; an unguided one doesn't — the wiki's own "The homing missiles can
+be distinguished by a gray smoke trail" is the entire visible tell, and this engine's `Projectile
+.homing` already only exists on a shot that won the `homingBias` roll, so gating the trail on it
+falls out for free.** `advanceHomingProjectile` spawns one (vanilla's `MT_SMOKE`, which reuses the
+plain bullet-puff sprite `PUFF` rather than art of its own — frames `B,C,B,C,D`, `S_SMOKE1`-`5`,
+confirmed against `info.c`) every `SMOKE_TRAIL_INTERVAL`, the same 4-tic cadence vanilla's
+`A_Tracer` gates the turn itself with. Vanilla actually spawns a second, redundant puff
+(`P_SpawnPuff`'s `MT_PUFF`) one step further behind at the same moment — cosmetically
+near-identical smoke from the same sprite, so reproducing only one of the two loses nothing worth
+the extra bookkeeping.
+
+A monster projectile reuses the same `Projectile`/`updateProjectiles` machinery
 the player's own rocket/plasma/BFG shots already use, distinguished by a non-null `sourceId`
 (vanilla's own doomednum tags along as `sourceType`, for the species check below): it's still
 launched via `shotPath` exactly like a player's locked-on shot (stopped early only by a real
@@ -1173,10 +1275,13 @@ already fired actually works — for whoever it's flying at.
 rather than a refinement.** The hit test is a fat 2D disc (`MONSTER_PROJECTILE_HIT_RADIUS`, 40
 units) plus a generous ±128 height tolerance, and a projectile's flight *ends* at whatever wall
 `shotPath` found — so on the last frames before it bursts, anyone standing within that disc on the
-**far** side of that wall matched the proximity test and took a full direct hit through it. Monster
-projectiles carry no splash (below), so unlike the rocket/BFG there was no "blast reached around
-the corner" reading that could excuse it: a rocket visibly exploding against the wall in front of
-the player was simply dealing its contact damage through the wall. The trace runs **from the
+**far** side of that wall matched the proximity test and took a full direct hit through it. At the
+time this was fixed no monster projectile had splash yet (the cyberdemon's rocket does now — see
+"Ranged attacks are either an instant hitscan-style bolt..." above — but that's a separate,
+already-sight-gated effect applied at the impact point in `applyRadiusDamage`, not part of this
+direct-hit arrival test), so there was no "blast reached around the corner" reading that could
+excuse it: a rocket visibly exploding against the wall in front of the player was simply dealing
+its contact damage through the wall. The trace runs **from the
 player/monster toward the projectile**, not the other way round: by then `at` sits essentially *on*
 the wall, and `hasLineOfSight`'s own `SELF_HIT_MARGIN` (see `world.ts`) would discard that crossing
 as a self-hit and report the very wall it just stopped against as clear. Both checks sit **last** in
@@ -1227,6 +1332,54 @@ charge in place the vanilla numbers work, because a lost soul is meant to drift 
 then commit. `stepCharge` is deliberately the one movement in this file that doesn't use
 `slideMove`: a charge that rounded corners would home in on the player, and being able to
 sidestep a committed lost soul is the whole reason the attack is fair.
+
+**The pain elemental: spawning a lost soul.** `A_PainAttack` deals no damage and fires nothing of
+its own — confirmed against the real `linuxdoom-1.10` `p_enemy.c`, it calls `A_PainShootSkull`,
+which spawns a brand-new `MT_SKULL` a short distance in front of the elemental and immediately
+hands it off to the *lost soul's own* `A_SkullAttack` (the charge above), so the elemental's real
+"attack" is entirely mediated through a monster this engine already models rather than a shot of
+its own. `AttackStats.spawn` (`game/monsters.ts`) marks the elemental's `ranged` entry as this
+kind — `beginRangedAttack` reports a `'spawn'` event the instant the attack starts, the same
+"return what happened, let the caller realize it" split as every other attack kind, and
+`game/things.ts: spawnLostSoul` is what actually carries it out, since only `ThingLayer` (which
+owns the `posed` array every monster lives in) can add a new one. It's applied directly inside
+`ThingLayer.update`, the same way as the arch-vile's own resurrection below, rather than reported
+through `MonsterAttackEvent` — spawning a monster isn't damage for `game.ts` to apply, it's pure
+AI-state only the thing list itself can carry out.
+
+Two vanilla details this reproduces exactly, both confirmed against the real source rather than
+guessed: the spawn point is `4 + 1.5×(elemental radius + lost soul radius)` map units in front of
+the elemental along its own facing (vanilla's `4*FRACUNIT + 3*(actor->info->radius +
+skullradius)/2`, both radii already plain map units here so the shared fixed-point scaling
+divides straight back out) and 8 units above its feet, and nothing spawns at all if that point has
+no room — vanilla's own `P_TryMove` check, which in real vanilla actually spawns the mobj and then
+kills it outright with 10000 damage rather than never spawning it, a difference with no visible
+consequence since a monster that dies the instant it exists never renders a single frame either
+way. There's also a real, level-wide cap: vanilla refuses to spawn another skull once 20 already
+exist anywhere on the level (a plain count of every living `MT_SKULL`, not a per-elemental tally),
+so a room full of pain elementals throttles itself once the level's total skull population fills
+up — `spawnLostSoul` counts `posed` the same way.
+
+One vanilla detail is deliberately simplified: `A_PainShootSkull` hands the new skull
+`actor->target` and calls `A_SkullAttack` on it *synchronously*, so it launches already knowing
+exactly where its target is standing. This engine's `ThingLayer.damage` (the death-triggered triple
+spawn below) has no player position on hand to match that exactly, so every spawned skull —
+both the live-attack one and the death ones — instead starts already `alerted`, with its
+`targetId` copied straight from the spawning elemental's own (`null` meaning the player, matching
+vanilla's `newmobj->target = actor->target`) and its `reactionTicks`/`movecount` pre-zeroed, so its
+very first ordinary chase call is free to roll straight into `checkMissileRange` — and so straight
+into its own charge — without first walking a step or waiting out a reaction delay it never had in
+vanilla. The visible difference is at most one `chaseInterval` (~0.17s) of drift versus vanilla's
+perfectly synchronous launch, not a different mechanic.
+
+**A killed pain elemental spawns three more, vanilla's own `A_PainDie`.** Fired unconditionally on
+death — regardless of what attack, if any, was under way when the killing blow landed, matching
+vanilla, which calls it from the death state sequence itself rather than from anything AI-related —
+`ThingLayer.damage`'s death branch calls `spawnLostSoul` three times, fanned 90°/180°/270° around
+the elemental's own last facing (vanilla's `A_PainShootSkull(actor, actor->angle+ANG90/180/270)`),
+subject to the exact same placement and level-wide-cap rules as the live attack above. This is
+what makes killing a pain elemental at melee range reliably worse than shooting it from a distance
+in vanilla too — up to three lost souls erupt from directly where it died.
 
 **The arch-vile: resurrection and the real blast attack.** Both of vanilla's signature arch-vile
 mechanics are now modeled, confirmed against the real `linuxdoom-1.10` `p_enemy.c`/`info.c` rather
@@ -1339,19 +1492,32 @@ purely-cosmetic `MonsterAttack` kind — `'vileWindup'` — the instant a `blast
 from the `'ranged'` event `resolveVileBlast` handles once the shot actually resolves; `things.ts`
 also moves the vile's own `attackFrames` pose to trigger on `'vileWindup'` rather than at the blast
 landing, matching vanilla's real timing (`S_VILE_ATK1`-`ATK10` play across the *entire* missilestate
-chain, not just its last state). `game.ts: spawnVileWindupFire` reuses the same one-shot
-`spawnEffect`/`this.impacts` machinery every other cosmetic effect in this file already uses, just
-with two differences: its `lifetime` is overridden to the windup's own length
-(`VILE_WINDUP_TRACK_SECONDS`, read from `MONSTER_STATS` rather than duplicated) instead of one pass
-through its frames, and `OneShotEffect` gained an optional `followTargetId` — re-deriving `x`/`y`/`z`
-from that target's *live* position every frame (plus a frozen offset vector) instead of staying
-fixed, which is what makes the flame visibly track a moving target. Freezing the offset at spawn
-rather than recomputing it from the vile's own live position too is a deliberate simplification —
-vanilla's own offset is based on the *target's* facing, which this engine has no clean equivalent of
-using here, and a frozen vector already produces a flame that convincingly follows the target. No
-explicit hand-off is needed between this and `resolveVileBlast`'s own burst effect (or nothing, if
-the shot fizzles): both are timed off the same `startDelaySeconds`, so one's natural expiry lines up
-with the other's spawn (or the attack's fizzle) without either needing to know the other exists.
+chain, not just its last state).
+
+**The flame now tracks the same way vanilla's real `A_Fire` does: 24 units in front of wherever
+the *target* is currently facing, sight-gated from the vile.** `game.ts: spawnVileWindupFire`
+reuses the same one-shot `spawnEffect`/`this.impacts` machinery every other cosmetic effect in
+this file already uses, just with two differences: its `lifetime` is overridden to the windup's
+own length (`VILE_WINDUP_TRACK_SECONDS`, read from `MONSTER_STATS` rather than duplicated) instead
+of one pass through its frames, and `OneShotEffect` gained `followTargetId`/`vileSourceId` —
+`updateEffects` re-derives `x`/`y`/`z` every frame from `vileFireFrontOf(target)` (vanilla's own
+`dest->x + 24*cos(dest->angle)`, `dest->y + 24*sin(dest->angle)`, `dest->z`, keyed off the
+*target's* own `MonsterRef.angle`/`Player.angle` — a field `MonsterRef` didn't carry before this),
+but only while `World.hasLineOfSight(vile, target)` holds — matching `A_Fire`'s own "don't move it
+if the vile lost sight" `P_CheckSight` gate exactly, including its behavior on failure: the flame
+simply freezes wherever it last was rather than disappearing or continuing to chase, since real
+vanilla's `A_Fire` just returns early and touches nothing. An earlier version instead froze a
+single offset vector *toward the vile* at spawn time and kept re-applying it to the target's live
+position — a reasonable-looking stand-in, but the wrong formula (vanilla's own windup offset is
+based on the *target's* facing, not the vile's position at all) and missing the sight gate
+entirely, so the flame slid around behind a moving, turning player instead of staying planted in
+front of whichever way they were actually looking. `vileFireOffset` (the *different*,
+vile-facing-based formula `A_VileAttack` uses for its own one-time final reposition once the shot
+actually lands) is untouched by this — vanilla genuinely uses two different offsets for the two
+moments, not an inconsistency to reconcile. No explicit hand-off is needed between the windup
+flame and `resolveVileBlast`'s own burst effect (or nothing, if the shot fizzles): both are timed
+off the same `startDelaySeconds`, so one's natural expiry lines up with the other's spawn (or the
+attack's fizzle) without either needing to know the other exists.
 
 **`painChance` is vanilla's `mobjinfo.painchance` over 256 exactly, and `painDuration` its
 `painstate` chain's tics over 35.** Both are plain constants in the same table `MONSTER_HEALTH`
@@ -1582,6 +1748,36 @@ to swap in — cheaper, and it means a corpse still participates in fog-of-war f
 it did alive. `ThingLayer.damage(id, amount)` — `id` being the stable index `pickMonster`/
 `monstersNear` hand back — subtracts health and calls `die` once it reaches 0; `pickMonster`
 skips anything already dead so a corpse can't be re-targeted.
+
+**Two types are the exception to "holds on its last frame forever": the lost soul and the pain
+elemental don't leave a corpse at all.** Confirmed against the real `linuxdoom-1.10` `info.c`:
+every other monster's final death state has `tics: -1` (vanilla's own "hold this state forever",
+which is what makes a corpse a permanent fixture), but `S_SKULL_DIE6` and `S_PAIN_DIE6` both have
+an ordinary finite tic count and fall through to `S_NULL` — and transitioning *to* `S_NULL` is
+what makes vanilla call `P_RemoveMobj`, deleting the object outright rather than leaving it
+standing. `MONSTER_CORPSE_VANISHES` (`game/thingdefs.ts`) is exactly those two doomednums;
+`ThingLayer.update` hides either type's corpse (`hidden = true`) the instant `deadTime` reaches
+the end of its death animation instead of letting `SpriteAnimator.die`'s ordinary hold-last-frame
+behavior leave it floating on screen forever, which a first version of monster death did for these
+two exactly as it does for every other monster's corpse. Both are the game's two floating monster
+types, which tracks thematically (there's no ground for a solid body to visibly settle onto), but
+nothing here keys off "flying" — only the two confirmed doomednums.
+
+This has a second, easy-to-miss consequence for the pain elemental specifically, also confirmed
+against the source rather than assumed: its mobjinfo *does* carry a real `raisestate`
+(`S_PAIN_RAISE1`, hence its own entry in `MONSTER_RAISE_FRAMES`), but vanilla's actual
+resurrection check (`PIT_VileCheck`'s `if (thing->tics != -1) return true; // not lying still
+yet`) requires the corpse to already be sitting in a permanent, settled `tics == -1` state — which
+a pain elemental's corpse never reaches before `P_RemoveMobj` deletes it. So despite the mobjinfo
+entry looking raisable, a dead pain elemental can never actually be resurrected in real vanilla
+either — a genuine dead-data quirk in the original game, not an oversight in this engine's own
+table. This engine reproduces the same unreachability the same structural way rather than adding a
+third special case that says so directly: `rebuildBlockerGrid` never buckets a `hidden` corpse
+into `corpseGrid` (a hidden corpse "isn't there" for an arch-vile any more than a removed mobj is
+for `PIT_VileCheck`), and a pain elemental's corpse is always hidden by the exact moment
+`findRaisableCorpse`'s own "finished settling" gate would otherwise start accepting it — both are
+keyed off the identical `deadTime` threshold — so the two independently-correct mechanisms combine
+into vanilla's own unreachability for free.
 
 **A killed monster can drop an item, lifted straight from vanilla's `P_KillMobj`** — which has
 exactly three `switch` cases, so only three monster types actually drop anything at all: the
@@ -2136,12 +2332,21 @@ resurrection and the real blast attack" above), and its ranged attack is vanilla
 `A_VileAttack` — guaranteed direct damage, an upward launch, and a separate radius blast, gated on
 a second line-of-sight check at the moment it actually fires, so ducking behind cover during its
 windup genuinely saves you from it — and a visible warning flame tracks the target for that whole
-windup, so there's actually something on screen to react to. Remaining known deviations, all
-deliberate: monster *damage* values are tuned softer than vanilla's, a monster's own projectile
-carries no splash (so a cyberdemon's rocket doesn't blast what it lands next to), the revenant's
-missile flies straight instead of homing, the pain elemental uses a hitscan stand-in for its real
-(unmodeled) lost-soul-spawning attack, and the arch-vile's own flame tracks its target via a frozen
-offset vector re-applied to the target's live position each frame rather than vanilla's real
-persistent, independently-sight-tracking `MT_FIRE` object. Not yet implemented: actual audio (the
-noise-alert *mechanic* above works off vanilla's sound-propagation rules, but nothing in this
-engine plays a sound yet).
+windup, so there's actually something on screen to react to. The pain elemental's real attack
+also works — `A_PainAttack`/`A_PainShootSkull`, it spawns a lost soul in front of itself and
+launches it at whatever it was targeting, and killing one spawns three more the same way
+(`A_PainDie`), both subject to vanilla's own level-wide 20-skull cap (see "The pain elemental:
+spawning a lost soul" above). Monster damage dice, splash and homing all match vanilla exactly now
+too (see "Ranged attacks are either an instant hitscan-style bolt..." above): every
+projectile-throwing monster's direct-hit damage is vanilla's own universal `(rand%8+1)*mobjinfo
+.damage` formula, the shotgun guy and spider mastermind's multi-pellet blasts are modelled as
+summed independent rolls, the cyberdemon's rocket splashes exactly like the player's own (and
+only the cyberdemon's, matching vanilla's real, checked-not-assumed per-type
+`A_Explode`/no-`A_Explode` split), the revenant's missile can genuinely home (`A_Tracer`, a real
+turning heading, height ease and trailing smoke) exactly as often as vanilla's own — which is not
+every shot: `MonsterBody.homingBias` reproduces the real "revenants come in guided and unguided
+runs" quirk confirmed against doomwiki.org/wiki/Revenant (see "Not every revenant missile actually
+homes..." above) — and the arch-vile's warning flame tracks the *target's* live facing angle with
+a real sight gate from the vile (vanilla's own `A_Fire`) rather than a frozen offset vector. Not
+yet implemented: actual audio (the noise-alert *mechanic* above works off vanilla's
+sound-propagation rules, but nothing in this engine plays a sound yet).

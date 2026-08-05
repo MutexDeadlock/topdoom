@@ -81,15 +81,26 @@ interface OneShotEffect extends Pos3 {
   lifetime: number;
   /**
    * Set only for the arch-vile's windup flame (`spawnVileWindupFire`):
-   * `x`/`y`/`z` are re-derived from this target's *live* position every
-   * frame (plus the frozen `followOffsetX`/`Y`, vanilla's own fixed offset
-   * from the target) instead of staying fixed like every other one-shot
-   * effect, so the flame visibly tracks a moving target during the windup.
-   * `null` means the player. Absent (the common case) skips this entirely.
+   * vanilla's real `MT_FIRE`/`A_Fire` — `x`/`y`/`z` are re-derived every
+   * frame from this target's *live* position **and current facing**
+   * (`updateEffects`, matching `A_Fire`'s own `dest->angle`-based offset)
+   * instead of staying fixed like every other one-shot effect, so the flame
+   * visibly repositions itself in front of wherever the target is currently
+   * looking. `null` means the player. Absent (the common case) skips this
+   * entirely.
    */
   followTargetId?: number | null;
-  followOffsetX?: number;
-  followOffsetY?: number;
+  /**
+   * The arch-vile that spawned this flame — `updateEffects` re-checks sight
+   * from *this* monster to `followTargetId` every frame
+   * (`World.hasLineOfSight`) before repositioning, matching `A_Fire`'s own
+   * `P_CheckSight` gate ("don't move it if the vile lost sight"): losing
+   * sight freezes the flame exactly where it last was rather than hiding it
+   * or continuing to chase the target, since vanilla's `A_Fire` simply
+   * returns early and touches nothing when sight is blocked. Always set
+   * alongside `followTargetId`.
+   */
+  vileSourceId?: number;
 }
 
 /**
@@ -185,6 +196,57 @@ const VILE_FIRE_OFFSET = 24;
 const VILE_WINDUP_TRACK_SECONDS = MONSTER_STATS[64].ranged?.startDelaySeconds ?? 0;
 
 /**
+ * The revenant missile's real turn rate (`AttackStats.projectile.homing`,
+ * `updateProjectiles`) — vanilla's `A_Tracer` turns by a fixed `TRACEANGLE`
+ * (`0xc000000`, 16.875° of a 32-bit `angle_t`) every 4th tic, i.e. every
+ * 4/35s. Converted to a continuous rate (16.875° / (4/35s)) rather than
+ * reproduced as a discrete every-4th-tic snap, the same conversion
+ * `MonsterStats.speed` already makes for vanilla's own per-tic movement —
+ * unlike the AI clock's chase-call cadence (which gates real probability
+ * rolls, so discreteness is load-bearing there), a missile's turn is a smooth
+ * visual curve either way, and a continuous version at the same average rate
+ * is indistinguishable from vanilla's stepped one at any real flight time.
+ */
+const REVENANT_TRACER_TURN_RATE_RAD = (16.875 * Math.PI) / 180 / (4 / 35);
+
+/**
+ * Vanilla's `A_Tracer`'s own vertical aim point — `dest->z + 40*FRACUNIT`,
+ * i.e. roughly chest height above the target's feet rather than its exact
+ * floor position, so a homing missile aims at where the target actually is,
+ * not the ground under it.
+ */
+const TRACER_HOMING_Z_OFFSET = 40;
+
+/**
+ * The revenant missile's trailing smoke puff (vanilla's `MT_SMOKE`, spawned
+ * from inside `A_Tracer` itself) — the *only* visible difference between a
+ * guided and an unguided shot per doomwiki.org/wiki/Revenant ("The homing
+ * missiles can be distinguished by a gray smoke trail"), so it's spawned
+ * only for shots that actually won the `homingBias` roll
+ * (`advanceHomingProjectile`), at the same `gametic & 3` cadence — every 4
+ * tics — vanilla gates the turn itself with. `MT_SMOKE` reuses the plain
+ * bullet-puff sprite (`PUFF`) rather than art of its own; frames B,C,B,C,D
+ * (`S_SMOKE1`-`5`) confirmed against `info.c`, each held the same 4 tics.
+ * Vanilla also spawns a second, redundant `P_SpawnPuff` (`MT_PUFF`) one step
+ * further behind at the same cadence — cosmetically near-identical smoke,
+ * from the same sprite, so reproducing only one of the two loses nothing
+ * worth the extra bookkeeping.
+ */
+const SMOKE_TRAIL_FRAMES = ['B', 'C', 'B', 'C', 'D'];
+const SMOKE_TRAIL_FRAME_SECONDS = 4 / 35;
+const SMOKE_TRAIL_INTERVAL = 4 / 35;
+
+/**
+ * Turns `from` toward `to` (radians) by at most `maxDelta`, the short way
+ * around — the continuous equivalent of `A_Tracer`'s own clamped per-call
+ * turn (see `REVENANT_TRACER_TURN_RATE_RAD`).
+ */
+function turnToward(from: number, to: number, maxDelta: number): number {
+  const diff = Math.atan2(Math.sin(to - from), Math.cos(to - from));
+  return from + Math.max(-maxDelta, Math.min(maxDelta, diff));
+}
+
+/**
  * Player death animation frame letters, confirmed against the actual `PLAY`
  * lump names in DOOM.WAD/DOOM2.WAD the same way game/thingdefs.ts's
  * MONSTER_DEATH_FRAMES were: PLAY's rotation-0-only tail runs H through W
@@ -258,6 +320,22 @@ interface Projectile {
    * this field only matters for the flying-sprite case.
    */
   lineIndex: number | null;
+  /**
+   * Present only for the revenant's missile (`AttackStats.projectile.homing`
+   * — vanilla's `MT_TRACER`/`A_Tracer`), absent for every other projectile,
+   * player and monster alike, which fly the fixed straight line the
+   * `originX`/`Y`/`angleRad`/`traveled` fields above already describe.
+   * A homing missile's path isn't fixed, so it needs its own live, mutable
+   * position/heading instead of that closed-form origin+angle+distance
+   * formula — `updateProjectiles` turns `headingRad` toward `targetId`'s
+   * *current* bearing at vanilla's own turn rate and integrates `x`/`y`/`z`
+   * from it every frame. `targetId` is `null` for the player, matching
+   * `MonsterAttackEvent.targetId`'s own convention. `smokeTimer` paces the
+   * trailing smoke puffs (`SMOKE_TRAIL_INTERVAL`) that are this missile's
+   * only visible "guided" tell, per doomwiki.org/wiki/Revenant — an unguided
+   * shot never gets a `homing` object at all, so it never trails either.
+   */
+  homing?: { targetId: number | null; x: number; y: number; z: number; headingRad: number; smokeTimer: number };
 }
 
 /**
@@ -706,15 +784,19 @@ export class Game {
         this.scene.remove(e.actor.mesh);
         continue;
       }
-      if (e.followTargetId !== undefined) {
-        const pos = e.followTargetId === null ? this.player : this.things?.monsterById(e.followTargetId);
-        // A dead/stale target just leaves the flame at its last known spot
-        // for the rest of its short life rather than popping it early —
-        // it's about to expire on its own anyway (see spawnVileWindupFire).
-        if (pos) {
-          e.x = pos.x + (e.followOffsetX ?? 0);
-          e.y = pos.y + (e.followOffsetY ?? 0);
-          e.z = pos.z;
+      if (e.followTargetId !== undefined && e.vileSourceId !== undefined) {
+        const vile = this.things?.monsterById(e.vileSourceId);
+        const target = e.followTargetId === null ? this.player : this.things?.monsterById(e.followTargetId);
+        // Vanilla's own A_Fire: "don't move it if the vile lost sight" — a
+        // broken sightline (or a dead/stale vile or target) just leaves the
+        // flame exactly where it last was, matching A_Fire's early return,
+        // rather than hiding it or popping it early. It's about to expire on
+        // its own anyway if the shot fizzles (see spawnVileWindupFire).
+        if (vile && target && hasLineOfSight(this.world, vile, target)) {
+          const front = this.vileFireFrontOf(target);
+          e.x = front.x;
+          e.y = front.y;
+          e.z = front.z;
         }
       }
       e.actor.setPose(e.x, e.y, e.z, 0, e.light, dt, true, viewerAngleDeg);
@@ -885,11 +967,14 @@ export class Game {
         light,
         sprite: proj.sprite,
         damage: atk.damage,
-        splash: null,
+        splash: proj.splash ? { radius: proj.splash.radius, damage: proj.splash.damage, hitsPlayer: true, tracers: false } : null,
         hitMonsterId: null,
         sourceId: atk.sourceId,
         sourceType: atk.sourceType,
         lineIndex: path.lineIndex,
+        homing: proj.homing
+          ? { targetId: atk.targetId, x: atk.x, y: atk.y, z: atk.z, headingRad: proj.angleRad, smokeTimer: 0 }
+          : undefined,
       });
     }
   }
@@ -912,9 +997,10 @@ export class Game {
    * damages `actor->target` directly (guaranteed, no roll, no trace to miss
    * along) and launches it upward, then blasts a radius around it. No tracer
    * or projectile sprite is drawn for the shot itself; the transient `FIRE`
-   * sprite spawned here is the whole visual, standing in for vanilla's own
-   * `MT_FIRE` (which this engine doesn't model as a persistent, sight-tracking
-   * object — see `AttackStats.blast`'s doc for why that's out of scope).
+   * sprite spawned here is vanilla's own `MT_FIRE` reaching the end of its
+   * life — `spawnVileWindupFire` already spawned and has been tracking the
+   * real one since the windup started, so this just plays its final burst in
+   * place at wherever that one last was.
    */
   private resolveVileBlast(atk: MonsterAttackEvent): void {
     if (!atk.blast) return;
@@ -945,38 +1031,55 @@ export class Game {
    * *something* visible while it's charging, there'd be nothing for the
    * player to actually react to. Reuses `spawnEffect`'s one-shot machinery
    * but overrides its lifetime to the windup's own length and marks it to
-   * track the target's live position (`OneShotEffect.followTargetId`) —
-   * `resolveVileBlast`'s own burst effect (or nothing, if the shot fizzles)
-   * takes over right around when this one's lifetime naturally runs out, so
-   * no explicit hand-off between the two is needed.
+   * track the target (`OneShotEffect.followTargetId`/`vileSourceId`,
+   * resolved every frame in `updateEffects` via vanilla's own `A_Fire`
+   * formula, not a frozen offset) — `resolveVileBlast`'s own burst effect
+   * (or nothing, if the shot fizzles) takes over right around when this
+   * one's lifetime naturally runs out, so no explicit hand-off between the
+   * two is needed. Placed at `vileFireFrontOf` up front for the same reason
+   * vanilla's own `A_VileTarget` calls `A_Fire` immediately after spawning
+   * `MT_FIRE` — the fresh spawn point is never a frame the player actually
+   * sees uncorrected.
    */
   private spawnVileWindupFire(atk: MonsterAttackEvent): void {
-    const victim = atk.targetId === null ? null : this.things?.monsterById(atk.targetId);
-    const at = victim ? { x: victim.x, y: victim.y, z: victim.z } : { x: this.player.x, y: this.player.y, z: this.player.z };
-    const offset = this.vileFireOffset(atk, at);
-    const effect = this.spawnEffect('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, {
-      x: at.x + offset.x,
-      y: at.y + offset.y,
-      z: at.z,
-    });
+    const target = atk.targetId === null ? this.player : this.things?.monsterById(atk.targetId);
+    if (!target) return;
+    const effect = this.spawnEffect('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, this.vileFireFrontOf(target));
     if (!effect) return;
     effect.lifetime = VILE_WINDUP_TRACK_SECONDS;
     effect.followTargetId = atk.targetId;
-    effect.followOffsetX = offset.x;
-    effect.followOffsetY = offset.y;
+    effect.vileSourceId = atk.sourceId;
     this.impacts.push(effect);
   }
 
   /**
-   * Vanilla moves the arch-vile's flame 24 units from its target back toward
-   * the shooter (`A_VileAttack`'s `fire->x = target->x - 24*cos(actor->angle)`,
-   * symmetrically for y) — not cosmetic slop: `atk.x`/`atk.y` is the vile's
-   * own position (see `MonsterAttackEvent`'s doc), and without this offset
-   * the fire sprite spawns at the exact same x/y/z as the target's own
-   * sprite, both anchored billboards, and is effectively invisible sitting
-   * behind/inside it. Returns just the offset vector rather than the final
-   * position, since `spawnVileWindupFire` needs to keep re-applying it to a
-   * moving target every frame rather than computing it once.
+   * Vanilla's own `A_Fire`: `dest->x + 24*cos(dest->angle)`/`sin`, `dest->z`
+   * — a fixed 24 units directly in front of wherever the target is
+   * *currently facing*, not toward the vile (contrast `vileFireOffset`,
+   * `A_VileAttack`'s different, vile-facing-based final reposition).
+   * `updateEffects` calls this every frame the windup flame still has sight
+   * of its target; `spawnVileWindupFire` calls it once up front.
+   */
+  private vileFireFrontOf(target: Pos3 & { angle: number }): Pos3 {
+    return {
+      x: target.x + Math.cos(target.angle) * VILE_FIRE_OFFSET,
+      y: target.y + Math.sin(target.angle) * VILE_FIRE_OFFSET,
+      z: target.z,
+    };
+  }
+
+  /**
+   * `resolveVileBlast`'s one-time final reposition, at the moment the shot
+   * actually lands — vanilla moves the fire 24 units from its target back
+   * toward the shooter (`A_VileAttack`'s
+   * `fire->x = target->x - 24*cos(actor->angle)`, symmetrically for y), a
+   * *different* formula from the windup's own target-facing-based one
+   * (`updateEffects`) — vanilla genuinely uses two different offsets for the
+   * two moments, not an inconsistency here. Not cosmetic slop either way:
+   * `atk.x`/`atk.y` is the vile's own position (see `MonsterAttackEvent`'s
+   * doc), and without this offset the fire sprite would spawn at the exact
+   * same x/y/z as the target's own sprite, both anchored billboards, and be
+   * effectively invisible sitting behind/inside it.
    */
   private vileFireOffset(atk: MonsterAttackEvent, targetPos: Pos2): Pos2 {
     const towardVile = Math.atan2(atk.y - targetPos.y, atk.x - targetPos.x);
@@ -1148,14 +1251,19 @@ export class Game {
     if (this.projectiles.length === 0) return;
     const remaining: Projectile[] = [];
     for (const p of this.projectiles) {
-      p.traveled += p.speed * dt;
-      const clamped = Math.min(p.traveled, p.maxDist);
-      const frac = p.maxDist > 0 ? clamped / p.maxDist : 1;
-      const at: Pos3 = {
-        x: p.originX + Math.cos(p.angleRad) * clamped,
-        y: p.originY + Math.sin(p.angleRad) * clamped,
-        z: p.startZ + (p.endZ - p.startZ) * frac,
-      };
+      let at: Pos3;
+      if (p.homing) {
+        at = this.advanceHomingProjectile(p, dt);
+      } else {
+        p.traveled += p.speed * dt;
+        const clamped = Math.min(p.traveled, p.maxDist);
+        const frac = p.maxDist > 0 ? clamped / p.maxDist : 1;
+        at = {
+          x: p.originX + Math.cos(p.angleRad) * clamped,
+          y: p.originY + Math.sin(p.angleRad) * clamped,
+          z: p.startZ + (p.endZ - p.startZ) * frac,
+        };
+      }
 
       // A monster's shot re-tests what it has reached every frame (see
       // Projectile.sourceId); a player's already knows.
@@ -1167,11 +1275,10 @@ export class Game {
         Math.abs(this.player.z - at.z) <= MONSTER_PROJECTILE_HIT_HEIGHT &&
         // Proximity alone isn't arrival: the hit radius is a fat 2D disc, so a
         // projectile stopping against a wall (its `maxDist`) would otherwise
-        // damage anyone standing within it on the *far* side of that wall —
-        // monster projectiles carry no splash, so a rocket visibly bursting on
-        // the wall in front of you was dealing a full direct hit through it.
-        // Traced from the player rather than from `at` deliberately: `at` sits
-        // essentially *on* the wall by then, and `hasLineOfSight`'s own
+        // damage anyone standing within it on the *far* side of that wall,
+        // dealing a full direct hit through it. Traced from the player
+        // rather than from `at` deliberately: `at` sits essentially *on*
+        // the wall by then, and `hasLineOfSight`'s own
         // `SELF_HIT_MARGIN` would skip that crossing as a self-hit and report
         // the wall it just stopped against as clear. Last in the chain so it
         // only ever runs once the (cheap) proximity tests already passed.
@@ -1193,7 +1300,17 @@ export class Game {
           this.specials?.triggerShot(p.lineIndex, this.inventory.keys);
         }
         if (p.splash) {
-          this.applyRadiusDamage(at, p.splash.radius, p.splash.damage, p.splash.hitsPlayer, p.splash.tracers);
+          // Attributed to the firing monster (if any), the same as a direct
+          // hit already is — a cyberdemon's own rocket splash should start
+          // an infight exactly like one of its direct hits would.
+          this.applyRadiusDamage(
+            at,
+            p.splash.radius,
+            p.splash.damage,
+            p.splash.hitsPlayer,
+            p.splash.tracers,
+            fromMonster ? { id: p.sourceId!, type: p.sourceType } : undefined,
+          );
         }
         const impact = IMPACT_EFFECTS[p.sprite];
         if (impact) {
@@ -1202,10 +1319,86 @@ export class Game {
         }
         continue;
       }
-      p.actor.setPose(at.x, at.y, at.z, (p.angleRad * 180) / Math.PI, p.light, dt, true, viewerAngleDeg);
+      // A homing missile's sprite tracks its live, turning heading rather
+      // than the fixed launch angle every other projectile keeps.
+      const poseAngleRad = p.homing?.headingRad ?? p.angleRad;
+      p.actor.setPose(at.x, at.y, at.z, (poseAngleRad * 180) / Math.PI, p.light, dt, true, viewerAngleDeg);
       remaining.push(p);
     }
     this.projectiles = remaining;
+  }
+
+  /**
+   * One frame of the revenant's real `A_Tracer` homing (`Projectile.homing`):
+   * turns `headingRad` toward the target's current bearing by at most
+   * `REVENANT_TRACER_TURN_RATE_RAD * dt` (vanilla's own clamped per-call
+   * turn, converted to a continuous rate — see that constant's doc) and
+   * integrates position from the new heading, rather than the fixed
+   * straight-line formula every other projectile uses. Height eases toward
+   * the target's own `TRACER_HOMING_Z_OFFSET`-above-feet point over the
+   * flight's remaining distance, the continuous equivalent of vanilla's
+   * `momz` spring (see that constant's doc) — approaching the right height
+   * by the time the flight ends rather than snapping to it.
+   *
+   * A missing or dead target (vanilla's own `!dest || dest->health<=0`
+   * bail-out in `A_Tracer`) simply leaves the missile on its last heading,
+   * unadjusted, same as vanilla's early return — it doesn't stop, home in on
+   * something else, or fall out of the sky.
+   *
+   * Vanilla's own `P_ZMovement` also explodes a missile outright the instant
+   * it reaches the floor or ceiling of whatever sector it's currently
+   * flying over — every projectile in this engine already flies a path
+   * `shotPath` validated against wall openings at launch, so that's never
+   * been reachable for a straight one, but a homing missile's height eases
+   * toward a target that can be on a very different floor while its `x`/`y`
+   * curves over terrain `shotPath` never re-checked. Without this, easing
+   * toward a lower target's height while still passing over higher ground
+   * visibly sank the sprite into that floor before `maxDist` ever caught up
+   * with it — read as "explodes on the floor mid-air". Forcing `p.traveled`
+   * to `p.maxDist` is what signals arrival to `updateProjectiles`'s own
+   * `p.traveled >= p.maxDist` check, the same way reaching the end of a
+   * straight flight already does.
+   *
+   * Also spawns the trailing smoke puff every `SMOKE_TRAIL_INTERVAL` — see
+   * that constant's doc for why a `homing` object existing at all already
+   * means this shot won its `homingBias` roll and so should trail.
+   */
+  private advanceHomingProjectile(p: Projectile, dt: number): Pos3 {
+    const homing = p.homing!;
+    const step = p.speed * dt;
+    const target: Pos3 | null =
+      homing.targetId === null ? (this.playerDead ? null : this.player) : this.things?.monsterById(homing.targetId) ?? null;
+    if (target) {
+      const bearing = Math.atan2(target.y - homing.y, target.x - homing.x);
+      homing.headingRad = turnToward(homing.headingRad, bearing, REVENANT_TRACER_TURN_RATE_RAD * dt);
+      const remaining = Math.max(p.maxDist - p.traveled, step);
+      homing.z += (target.z + TRACER_HOMING_Z_OFFSET - homing.z) * Math.min(1, step / remaining);
+    }
+    homing.x += Math.cos(homing.headingRad) * step;
+    homing.y += Math.sin(homing.headingRad) * step;
+    p.traveled += step;
+    const floorZ = this.world.floorAt(homing.x, homing.y);
+    const ceilZ = this.world.ceilingAt(homing.x, homing.y);
+    if (homing.z <= floorZ) {
+      homing.z = floorZ;
+      p.traveled = p.maxDist;
+    } else if (homing.z >= ceilZ) {
+      homing.z = ceilZ;
+      p.traveled = p.maxDist;
+    }
+    // The smoke trail — see SMOKE_TRAIL_INTERVAL's doc for why this only
+    // ever runs for a shot that already won the homingBias roll.
+    homing.smokeTimer += dt;
+    if (homing.smokeTimer >= SMOKE_TRAIL_INTERVAL) {
+      homing.smokeTimer -= SMOKE_TRAIL_INTERVAL;
+      const puff = this.spawnEffect('PUFF', SMOKE_TRAIL_FRAMES, SMOKE_TRAIL_FRAME_SECONDS, {
+        x: homing.x,
+        y: homing.y,
+        z: homing.z,
+      });
+      if (puff) this.impacts.push(puff);
+    }
+    return { x: homing.x, y: homing.y, z: homing.z };
   }
 
   /**

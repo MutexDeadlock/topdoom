@@ -73,6 +73,27 @@ export interface MonsterBody extends Pos3 {
   reactionTicks: number;
   /** True while inside an `AttackStats.refire` loop, which re-enters the attack the instant its state sequence ends. */
   refiring: boolean;
+  /**
+   * The revenant's own "guided or unguided" personality (doomwiki.org/wiki/Revenant,
+   * confirmed there against the real fixed-point mechanism rather than
+   * assumed): vanilla's `A_Tracer` only actually turns/climbs *and* trails
+   * smoke on ticks where the global `gametic & 3 == 0`, and because a
+   * revenant's own attack-state cycle keeps a fixed parity relative to that
+   * global counter for as long as nothing disturbs it, every missile a given
+   * revenant fires lands on the *same* side of that gate — so in practice a
+   * revenant is either a "guided" shooter or an "unguided" one, not a
+   * per-shot coin flip, until taking a hit that visibly reacts (a pain
+   * flinch, or its very first wake) reshuffles which side of the gate it's
+   * on. This engine has no discrete tic clock to reproduce that gate exactly
+   * (see `MonsterStats.speed`'s doc on why per-tic accumulation is converted
+   * rather than simulated elsewhere in this file too), so `homingBias` is a
+   * direct stand-in for "which side of the gate this revenant is currently
+   * on": a plain persistent coin flip, unused by every monster whose
+   * `AttackStats.projectile.homing` isn't set, reseeded on spawn
+   * (`things.ts`) and rerolled on wake/pain the same events that can
+   * reshuffle vanilla's own parity — see those call sites' docs.
+   */
+  homingBias: boolean;
 }
 
 export interface AttackStats {
@@ -95,6 +116,23 @@ export interface AttackStats {
   range?: number;
   diceSides: number;
   diceMult: number;
+  /**
+   * Hitscan only — bullets fired per attack, each an independent
+   * `diceSides`/`diceMult` roll summed into one total: vanilla's
+   * `A_SPosAttack` (shotgun guy, and the spider mastermind's own
+   * `A_SPosAttack` calls) fires 3 separate `P_LineAttack`s per call, each
+   * rolling its own `(P_Random()%5+1)*3`, rather than the single pellet every
+   * other hitscan monster (`A_PosAttack`/`A_CPosAttack`) fires. Vanilla also
+   * gives each pellet its own random spread off the aim line
+   * (`weapons.ts`'s `WeaponDef.pellets`/`spreadDeg` is the player-side
+   * equivalent), which this engine's monster hitscans don't model at all —
+   * but with no spread, every pellet travels the identical ray and so either
+   * all hit the same thing or none do, making "N independent rolls at the
+   * same target" and "one roll of N summed dice" the exact same outcome, not
+   * an approximation of it. Absent (the common case) means the ordinary
+   * single roll every other attack already does.
+   */
+  pellets?: number;
   /**
    * Seconds this attack's own state sequence runs for, lifted straight off
    * vanilla's `info.c` state table (the summed tics of the melee/missile
@@ -150,6 +188,18 @@ export interface AttackStats {
    */
   charge?: { speed: number; maxDist: number };
   /**
+   * The pain elemental's real `A_PainAttack`/`A_PainShootSkull`: instead of
+   * firing anything of its own, it spawns a new monster of `type` (always
+   * the lost soul, 3006) just in front of itself and immediately launches it
+   * at whatever the elemental itself was targeting — vanilla's own
+   * `newmobj->target = actor->target; A_SkullAttack(newmobj)`. `game/things.ts`
+   * owns the actual spawning (`spawnLostSoul`) since it alone holds the
+   * `PosedThing` list a new monster has to be added to; `stepMonsterAI` only
+   * reports that a spawn should happen, the same "return what happened, let
+   * the caller realize it" split as every other attack kind here.
+   */
+  spawn?: { type: number };
+  /**
    * Non-null for a ranged attack that actually throws a flying projectile
    * sprite (vanilla's fireball/rocket monsters), rather than resolving as an
    * instant hitscan bolt — see `MONSTER_STATS`'s doc for which monsters get
@@ -181,6 +231,36 @@ export interface AttackStats {
      * straight shot per burst entry.
      */
     pairOffsetsRad?: number[][];
+    /**
+     * Set only for the cyberdemon: its missile is a real `MT_ROCKET` —
+     * `A_CyberAttack` literally calls `P_SpawnMissile(actor, actor->target,
+     * MT_ROCKET)`, the exact same type the player's own rocket launcher
+     * fires — and `MT_ROCKET`'s death state (`S_EXPLODE1`) is the one
+     * monster-projectile death state in the whole game that calls
+     * `A_Explode` (confirmed by checking every monster projectile's own
+     * death state in `info.c`: none of the others — imp/cacodemon/baron/
+     * hell knight/mancubus/arachnotron/revenant fireballs — have any action
+     * on theirs at all, so they never call `P_RadiusAttack` and genuinely
+     * don't splash in vanilla either; this isn't a simplification made
+     * here). `radius`/`damage` are vanilla's own literal
+     * `P_RadiusAttack(thingy, thingy->target, 128)` — the identical numbers
+     * as `weapons.ts`'s `rocketLauncher.splash`, since it's the identical
+     * mechanism.
+     */
+    splash?: { radius: number; damage: number };
+    /**
+     * Set only for the revenant: its missile is `MT_TRACER`, the one
+     * monster projectile in the game with a homing flight state
+     * (`A_Tracer`, confirmed against `p_enemy.c`) — every other monster
+     * projectile flies the fixed straight line this engine already models.
+     * Marks the *type* as homing-capable; whether any one shot actually
+     * homes is `fireAttack`'s `homingBias` param (`MonsterBody.homingBias`'s
+     * doc) — vanilla's own revenant missile isn't unconditionally guided
+     * either, confirmed against doomwiki.org/wiki/Revenant's own writeup of
+     * the underlying fixed-point mechanism. `game.ts`'s `updateProjectiles`
+     * is what actually implements the turn for a shot that wins the roll.
+     */
+    homing?: boolean;
   };
   /**
    * Vanilla's own `P_CheckMissileRange` distance falloff (confirmed against
@@ -316,8 +396,15 @@ export interface MonsterAttack {
    * vanilla's whole reason breaking sight mid-windup saves you from it —
    * without *some* visible warning while it's charging, there'd be nothing
    * for the player to react to in the first place.
+   *
+   * `'spawn'` is the pain elemental's `A_PainAttack` (`AttackStats.spawn`):
+   * fired the instant the attack starts, carrying no damage or projectile of
+   * its own — `angleRad` is the elemental's own facing (`A_FaceTarget`'s
+   * result), which is all `ThingLayer.update`'s `spawnLostSoul` needs to
+   * place the new monster in front of it, same as vanilla's
+   * `A_PainShootSkull(actor, actor->angle)`.
    */
-  kind: 'melee' | 'ranged' | 'resurrect' | 'vileWindup';
+  kind: 'melee' | 'ranged' | 'resurrect' | 'vileWindup' | 'spawn';
   damage: number;
   /** The heading it was fired along (`A_FaceTarget`'s angle) — what a hitscan bolt traces down, so it can hit whatever is actually in the way. */
   angleRad: number;
@@ -330,7 +417,14 @@ export interface MonsterAttack {
    * entry; the mancubus is the one type that fires two at once (see
    * `AttackStats.projectile.pairOffsetsRad`).
    */
-  projectiles?: { sprite: string; speed: number; angleRad: number }[];
+  projectiles?: {
+    sprite: string;
+    speed: number;
+    angleRad: number;
+    /** Carried straight from `AttackStats.projectile.splash`/`homing` — see those fields' docs. */
+    splash?: { radius: number; damage: number };
+    homing?: boolean;
+  }[];
   /** Set only for the arch-vile's real `A_VileAttack` — see `AttackStats.blast`'s doc. `game.ts` applies direct damage plus knockback, then a radius blast, instead of the generic hitscan-tracer path every other non-projectile ranged monster uses. */
   blast?: { knockUpSpeed: number; splashRadius: number; splashDamage: number };
   /** Set only for a `'resurrect'` attack (`AttackStats.resurrects`): the raised corpse's `PosedThing` id — see `ThingLayer.update`, which applies the actual revival since `stepMonsterAI` has no access to the thing list itself. */
@@ -427,31 +521,39 @@ export const MONSTER_FIRE_HEIGHT = 40;
  * bullets (the human gunners, and the spider mastermind's chaingun) — or a
  * real flying projectile sprite (`AttackStats.ranged.projectile`, also
  * `game.ts`) for the ones that genuinely throw a fireball/rocket in vanilla.
- * Two are deliberately left as the hitscan-tracer stand-in despite not
- * matching vanilla exactly: the pain elemental (whose real "attack" is
- * spawning a lost soul, not firing anything — there's no lost-soul-spawning
- * mechanic here to model instead) and the arch-vile (whose real fire attack
- * is a stationary tracking flame summoned *at* the target, not a projectile
- * that flies from the vile to it — a proper implementation needs a whole
- * different mechanism than "spawn sprite, fly toward target"). The lost
- * soul's is a third kind again (`AttackStats.charge`): vanilla's
- * `A_SkullAttack` throws the monster itself rather than anything it carries.
- * Revenant missiles also don't home in on the player the way vanilla's
- * `A_Tracer` makes them — they fly straight, the same simplification as
- * everything else in this file that isn't worth a dedicated behavior for.
+ * Three types get their own dedicated mechanism instead, each because
+ * vanilla's real attack isn't a shot at all: the lost soul (`AttackStats.charge`,
+ * `A_SkullAttack` — it throws *itself*, not anything it carries), the
+ * arch-vile (`AttackStats.blast`, `A_VileAttack` — guaranteed direct damage
+ * plus a radius blast, not a traced or thrown projectile), and the pain
+ * elemental (`AttackStats.spawn`, `A_PainAttack`/`A_PainShootSkull` — it
+ * spawns a lost soul and launches *that* at its target; see
+ * `game/things.ts: spawnLostSoul`). The revenant's own missile
+ * (`AttackStats.projectile.homing`) is the one monster projectile that can
+ * home at all, matching vanilla's `A_Tracer` — every other fireball flies
+ * the fixed straight line `game.ts: updateProjectiles` already models, which
+ * is correct for them, not a simplification (see `homing`'s own doc).
+ * Whether a given revenant shot actually does is `MonsterBody.homingBias`'s
+ * doc — vanilla's own missile isn't unconditionally guided either.
  *
- * **Timing is lifted from vanilla; damage is not.** `speed`,
- * `chaseInterval`, `painChance`, `painDuration` and every `duration`/`shots`/
- * `shotInterval` here are read straight out of `info.c`'s `mobjinfo`/state
- * tables, because all of them are plain constants that survive the trip to a
- * dt-scaled model intact (see `MonsterStats.speed` for the arithmetic).
- * Damage rolls stay tuned for game balance/feel, the same reasoning
- * weapons.ts's fire rates and spread already use — which means a monster's
- * *rhythm* matches vanilla while its bite is deliberately softer. The one
- * damage-adjacent gap left is splash: a monster's own projectile carries
- * none, so a cyberdemon's rocket doesn't blast whatever it lands next to the
- * way the player's does — an honestly-noted gap, like crushers not blocking
- * movers on contact (see CLAUDE.md), not an oversight.
+ * **Both timing and damage are lifted from vanilla, not tuned by feel.**
+ * `speed`, `chaseInterval`, `painChance`, `painDuration` and every
+ * `duration`/`shots`/`shotInterval` here are read straight out of `info.c`'s
+ * `mobjinfo`/state tables, because all of them are plain constants that
+ * survive the trip to a dt-scaled model intact (see `MonsterStats.speed` for
+ * the arithmetic). `diceSides`/`diceMult` are equally exact rather than
+ * tuned for feel the way `weapons.ts`'s fire rates are: a melee attack's dice
+ * are its own `A_*Attack` function's literal roll (confirmed against
+ * `p_enemy.c`), and a projectile's or `MF_SKULLFLY` contact's dice are
+ * vanilla's one universal missile-hit formula, `(rand%8+1)*mobjinfo.damage`
+ * (`p_map.c`'s `PIT_CheckThing`) — which is why every projectile-throwing
+ * monster's `ranged.diceSides` here is 8 regardless of type, only `diceMult`
+ * (that type's own missile's `damage` field) varies. Splash is the one place
+ * this still isn't uniform, and correctly so: only the cyberdemon's missile
+ * is a real `MT_ROCKET` whose death state calls `A_Explode` (`splash`'s own
+ * doc) — every other monster fireball genuinely has no splash in vanilla
+ * either, confirmed by checking each one's own death state in `info.c`, not
+ * a gap left in this engine.
  */
 export const MONSTER_STATS: Record<number, MonsterStats> = {
   3004: {
@@ -459,7 +561,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     chaseInterval: 0.114,
     radius: 20,
     melee: null,
-    ranged: { diceSides: 3, diceMult: 3, duration: 0.743 },
+    // A_PosAttack: (rand%5+1)*3.
+    ranged: { diceSides: 5, diceMult: 3, duration: 0.743 },
     painChance: 0.781,
     painDuration: 0.171,
   }, // POSS zombieman
@@ -468,7 +571,9 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     chaseInterval: 0.086,
     radius: 20,
     melee: null,
-    ranged: { diceSides: 3, diceMult: 5, duration: 0.857 },
+    // A_SPosAttack: 3 separate P_LineAttacks per call, each (rand%5+1)*3 —
+    // see AttackStats.pellets's doc.
+    ranged: { diceSides: 5, diceMult: 3, pellets: 3, duration: 0.857 },
     painChance: 0.664,
     painDuration: 0.171,
   }, // SPOS shotgun guy
@@ -477,16 +582,22 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     chaseInterval: 0.086,
     radius: 20,
     melee: null,
-    ranged: { diceSides: 2, diceMult: 3, duration: 0.257, shots: 2, shotInterval: 0.114, refire: true },
+    // A_CPosAttack: (rand%5+1)*3, once per shots:2 entry — A_CPosRefire
+    // hoses without pause while it can see you.
+    ranged: { diceSides: 5, diceMult: 3, duration: 0.257, shots: 2, shotInterval: 0.114, refire: true },
     painChance: 0.664,
     painDuration: 0.171,
-  }, // CPOS chaingunner — A_CPosRefire hoses without pause while it can see you
+  }, // CPOS chaingunner
   84: {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
     melee: null,
-    ranged: { diceSides: 2, diceMult: 3, duration: 1.0 },
+    // SSWV fires the same A_CPosAttack as the chaingunner, twice (S_SSWV_ATK3/
+    // ATK5, confirmed against info.c) with an A_CPosRefire loop of its own —
+    // shotInterval is the two states between those calls (S_SSWV_ATK4's own
+    // 6 tics + ATK3's own 4) over 35.
+    ranged: { diceSides: 5, diceMult: 3, duration: 1.0, shots: 2, shotInterval: 10 / 35, refire: true },
     painChance: 0.664,
     painDuration: 0.171,
   }, // SSWV Wolfenstein SS
@@ -494,8 +605,11 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
-    melee: { range: MELEE_RANGE, diceSides: 6, diceMult: 3, duration: 0.629 },
-    ranged: { diceSides: 6, diceMult: 3, duration: 0.629, projectile: { sprite: 'BAL1', speed: 500 } },
+    // A_TroopAttack melee: (rand%8+1)*3.
+    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 3, duration: 0.629 },
+    // A direct missile hit is vanilla's universal (rand%8+1)*mobjinfo.damage
+    // (PIT_CheckThing/p_map.c) — TROOPSHOT's own damage field is 3.
+    ranged: { diceSides: 8, diceMult: 3, duration: 0.629, projectile: { sprite: 'BAL1', speed: 500 } },
     painChance: 0.781,
     painDuration: 0.114,
   }, // TROO imp
@@ -503,7 +617,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 175,
     chaseInterval: 0.057,
     radius: 30,
-    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 4, duration: 0.686 },
+    // A_SargAttack: (rand%10+1)*4.
+    melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 4, duration: 0.686 },
     ranged: null,
     painChance: 0.703,
     painDuration: 0.114,
@@ -512,7 +627,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 175,
     chaseInterval: 0.057,
     radius: 30,
-    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 4, duration: 0.686 },
+    melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 4, duration: 0.686 },
     ranged: null,
     painChance: 0.703,
     painDuration: 0.114,
@@ -523,7 +638,10 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     radius: 16,
     melee: null,
     ranged: {
-      diceSides: 4,
+      // MF_SKULLFLY contact damage is the same universal missile-hit
+      // formula as a thrown projectile (PIT_CheckThing's other branch):
+      // (rand%8+1)*mobjinfo.damage, and MT_SKULL's own damage field is 3.
+      diceSides: 8,
       diceMult: 3,
       duration: 0.629,
       rangeFalloffScale: 0.5,
@@ -537,8 +655,10 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 31,
-    melee: { range: MELEE_RANGE, diceSides: 6, diceMult: 6, duration: 0.429 },
-    ranged: { diceSides: 6, diceMult: 5, duration: 0.429, projectile: { sprite: 'BAL2', speed: 500 } },
+    // A_HeadAttack melee: (rand%6+1)*10.
+    melee: { range: MELEE_RANGE, diceSides: 6, diceMult: 10, duration: 0.429 },
+    // Universal missile-hit formula; HEADSHOT's own damage field is 5.
+    ranged: { diceSides: 8, diceMult: 5, duration: 0.429, projectile: { sprite: 'BAL2', speed: 500 } },
     painChance: 0.5,
     painDuration: 0.343,
     flies: true,
@@ -547,8 +667,10 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 24,
-    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 8, duration: 0.686 },
-    ranged: { diceSides: 8, diceMult: 6, duration: 0.686, projectile: { sprite: 'BAL7', speed: 550 } },
+    // A_BruisAttack melee: (rand%8+1)*10.
+    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10, duration: 0.686 },
+    // Universal missile-hit formula; BRUISERSHOT's own damage field is 8.
+    ranged: { diceSides: 8, diceMult: 8, duration: 0.686, projectile: { sprite: 'BAL7', speed: 550 } },
     painChance: 0.195,
     painDuration: 0.114,
   }, // BOSS baron of hell
@@ -556,8 +678,9 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 24,
-    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 6, duration: 0.686 },
-    ranged: { diceSides: 8, diceMult: 5, duration: 0.686, projectile: { sprite: 'BAL7', speed: 550 } },
+    // Baron and hell knight share A_BruisAttack/MT_BRUISERSHOT exactly.
+    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10, duration: 0.686 },
+    ranged: { diceSides: 8, diceMult: 8, duration: 0.686, projectile: { sprite: 'BAL7', speed: 550 } },
     painChance: 0.195,
     painDuration: 0.114,
   }, // BOS2 hell knight — vanilla's hell knight throws the same BAL7 fireball as the baron
@@ -566,21 +689,31 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     chaseInterval: 0.086,
     radius: 31,
     melee: null,
-    ranged: { diceSides: 4, diceMult: 3, duration: 0.429 },
+    // A_PainAttack deals no damage of its own — diceSides/diceMult are unused
+    // (fireAttack is never reached for a `spawn` attack, see
+    // beginRangedAttack) and left at 0 rather than optional so this stays the
+    // same required shape as every other AttackStats. The real bite comes
+    // from whatever the spawned lost soul itself lands (AttackStats.charge on
+    // doomednum 3006, above).
+    ranged: { diceSides: 0, diceMult: 0, duration: 0.429, spawn: { type: 3006 } },
     painChance: 0.5,
     painDuration: 0.343,
     flies: true,
-  }, // PAIN pain elemental (stands in for its unmodeled soul-spawn attack)
+  }, // PAIN pain elemental — A_PainAttack/A_PainShootSkull, spawns a lost soul and launches it at the elemental's own target
   66: {
     speed: 175,
     chaseInterval: 0.057,
     radius: 20,
-    melee: { range: MELEE_RANGE, diceSides: 6, diceMult: 4, duration: 0.514 },
+    // A_SkelFist: (rand%10+1)*6.
+    melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 6, duration: 0.514 },
     ranged: {
-      diceSides: 6,
-      diceMult: 5,
+      // Universal missile-hit formula; TRACER's own damage field is 10.
+      diceSides: 8,
+      diceMult: 10,
       duration: 0.857,
-      projectile: { sprite: 'FATB', speed: 750 },
+      // A_Tracer — the one monster projectile with real homing; see
+      // AttackStats.projectile.homing's doc.
+      projectile: { sprite: 'FATB', speed: 750, homing: true },
       rangeFalloffScale: 0.5,
       minOffsetDist: 196,
     },
@@ -593,8 +726,9 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     radius: 48,
     melee: null,
     ranged: {
+      // Universal missile-hit formula; FATSHOT's own damage field is 8.
       diceSides: 8,
-      diceMult: 6,
+      diceMult: 8,
       duration: 2.286,
       shots: 3,
       shotInterval: 0.571,
@@ -620,7 +754,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     chaseInterval: 0.103,
     radius: 64,
     melee: null,
-    ranged: { diceSides: 3, diceMult: 3, duration: 0.257, refire: true, projectile: { sprite: 'APLS', speed: 900 } },
+    // Universal missile-hit formula; ARACHPLAZ's own damage field is 5.
+    ranged: { diceSides: 8, diceMult: 5, duration: 0.257, refire: true, projectile: { sprite: 'APLS', speed: 900 } },
     painChance: 0.5,
     painDuration: 0.171,
   }, // BSPI arachnotron — A_SpidRefire, same never-let-up loop as the chaingunner
@@ -629,7 +764,19 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     chaseInterval: 0.114,
     radius: 128,
     melee: null,
-    ranged: { diceSides: 3, diceMult: 4, duration: 0.257, shots: 2, shotInterval: 0.114, refire: true, rangeFalloffScale: 0.5 },
+    // Fires A_SPosAttack (the shotgun guy's own 3-pellet, (rand%5+1)*3
+    // hitscan) twice per shots:2 entry — confirmed against info.c's
+    // S_SPID_ATK2/ATK3 — with A_SpidRefire's own looser refire roll.
+    ranged: {
+      diceSides: 5,
+      diceMult: 3,
+      pellets: 3,
+      duration: 0.257,
+      shots: 2,
+      shotInterval: 0.114,
+      refire: true,
+      rangeFalloffScale: 0.5,
+    },
     painChance: 0.156,
     painDuration: 0.171,
   }, // SPID spider mastermind (real hitscan chaingun in vanilla too)
@@ -639,12 +786,18 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     radius: 40,
     melee: null,
     ranged: {
+      // Universal missile-hit formula; ROCKET's own damage field is 20 —
+      // already matched this engine's damage-dice values before this pass.
       diceSides: 8,
       diceMult: 20,
       duration: 1.886,
       shots: 3,
       shotInterval: 0.343,
-      projectile: { sprite: 'MISL', speed: 1100 },
+      // A_CyberAttack spawns a real MT_ROCKET — the same type the player's
+      // own launcher fires, and the one monster projectile whose death
+      // state actually calls A_Explode; see AttackStats.projectile.splash's
+      // doc. radius/damage are vanilla's own literal P_RadiusAttack(...,128).
+      projectile: { sprite: 'MISL', speed: 1100, splash: { radius: 128, damage: 128 } },
       rangeFalloffScale: 0.5,
       rangeFalloffCap: 160,
     },
@@ -979,16 +1132,35 @@ function stepCharge(body: MonsterBody, stats: MonsterStats, dt: number, world: W
  * any) the caller should spawn. `offsetsRad` is one radian offset per
  * projectile this shot spawns — omitted means the ordinary single straight
  * shot every monster but the mancubus fires (see
- * `AttackStats.projectile.pairOffsetsRad`).
+ * `AttackStats.projectile.pairOffsetsRad`). `attack.pellets`, when set, sums
+ * that many independent dice rolls into one total instead of rolling once —
+ * see that field's doc for why summing is exact here, not an approximation.
+ * `homingBias` (only ever meaningful when `projectile.homing` is set, i.e.
+ * only for the revenant) decides whether *this* shot actually gets to home —
+ * see `MonsterBody.homingBias`'s doc.
  */
-function fireAttack(kind: 'melee' | 'ranged', attack: AttackStats, angleRad: number, offsetsRad?: number[]): MonsterAttack {
+function fireAttack(
+  kind: 'melee' | 'ranged',
+  attack: AttackStats,
+  angleRad: number,
+  offsetsRad?: number[],
+  homingBias = false,
+): MonsterAttack {
   const projectile = attack.projectile;
+  let damage = 0;
+  for (let i = 0, n = attack.pellets ?? 1; i < n; i++) damage += rollDamage(attack.diceSides, attack.diceMult);
   return {
     kind,
-    damage: rollDamage(attack.diceSides, attack.diceMult),
+    damage,
     angleRad,
     projectiles: projectile
-      ? (offsetsRad ?? [0]).map((off) => ({ sprite: projectile.sprite, speed: projectile.speed, angleRad: angleRad + off }))
+      ? (offsetsRad ?? [0]).map((off) => ({
+          sprite: projectile.sprite,
+          speed: projectile.speed,
+          angleRad: angleRad + off,
+          splash: projectile.splash,
+          homing: projectile.homing ? homingBias : undefined,
+        }))
       : undefined,
     blast: attack.blast,
   };
@@ -1088,7 +1260,7 @@ export function stepMonsterAI(
       // P_CheckMissileRange already confirmed sight, so re-checking here
       // would be redundant.
       if (!ranged.blast || canSee()) {
-        attack = fireAttack('ranged', ranged, body.angle, ranged.projectile?.pairOffsetsRad?.[shotIndex]);
+        attack = fireAttack('ranged', ranged, body.angle, ranged.projectile?.pairOffsetsRad?.[shotIndex], body.homingBias);
       }
       body.burstLeft -= 1;
       body.burstTimer = ranged.shotInterval ?? 0;
@@ -1142,7 +1314,10 @@ export function stepMonsterAI(
 
 /**
  * Starts a ranged attack: holds the monster still for its state sequence and
- * queues its shots (or launches a charge). Returns null except for the
+ * queues its shots (or launches a charge, or reports a spawn). Returns null
+ * except for the pain elemental's `spawn` attacks, which report a `'spawn'`
+ * event immediately (vanilla's `A_PainAttack` calls `A_PainShootSkull`
+ * directly, with no burst/shot sequence of its own to wait on), and the
  * arch-vile's `blast` attacks, which report a `'vileWindup'` event the
  * instant the windup begins — see `MonsterAttack.kind`'s doc.
  */
@@ -1155,6 +1330,7 @@ function beginRangedAttack(body: MonsterBody, ranged: AttackStats, dx: number, d
     body.chargeAngle = body.angle;
     return null;
   }
+  if (ranged.spawn) return { kind: 'spawn', damage: 0, angleRad: body.angle };
   body.burstLeft = ranged.shots ?? 1;
   body.burstTimer = ranged.startDelaySeconds ?? 0;
   if (ranged.blast) return { kind: 'vileWindup', damage: 0, angleRad: body.angle };

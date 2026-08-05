@@ -818,30 +818,42 @@ const WALL_OVERLAP = 0.25;
  * imp and the imp's fireballs at the player, when vanilla would let both
  * pass straight through.
  *
- * The height test below only applies to a **free** shot, one aimed by the
- * mouse at open floor with no target locked. Such a shot flies flat at the
- * shooter's own height, so a sector whose floor has stepped up to or above
- * `z` — a low platform just a bit taller than the shot is flying — has to
- * stop it, even though a *taller* person could see over it; without this a
- * projectile sailed straight through the riser, since the opening beyond it
- * was tall enough for sight but not for the shot. A **locked-on** shot
- * (`lockedOn`) is the opposite case: the shot is deliberately angled up or
- * down to reach a target it already knows the exact position of, so an
- * intervening step is something it clears rather than hits. Applying the
- * height test there stopped such a shot dead at the near edge of the platform
- * its target stood on — which read as the shot going flat and ignoring the
- * click. `shotPath`'s own `skipHeightTest` parameter controls this
- * separately from whether a `target` was given at all — see its doc for why
- * a monster's own fired shot needs a target (to slope toward the player's
- * height) without inheriting this leniency.
+ * The height test here is the **single-ray** form, used for a shot whose
+ * slope is already fixed: a free shot (flat at the shooter's own height) and
+ * a monster's own fired shot (sloped at its target, but with no auto-aim
+ * latitude to spend). A sector whose floor has stepped up to or above `z` —
+ * a low platform just a bit taller than the shot is flying — has to stop it,
+ * even though a *taller* person could see over it; without this a projectile
+ * sailed straight through the riser, since the opening beyond it was tall
+ * enough for sight but not for the shot.
+ *
+ * A **locked-on** (auto-aimed) shot does not come through here at all: it
+ * gets `shotPath`'s slope *wedge* instead, which is strictly more permissive
+ * than this test — see `shotPath`'s own doc.
  */
-function blocksShot(world: World, lineIndex: number, z: number, lockedOn: boolean): boolean {
+function blocksShot(world: World, lineIndex: number, z: number): boolean {
   const line = world.map.linedefs[lineIndex];
   if (!line || line.left === NO_SIDE || line.right === NO_SIDE) return true;
   const opening = world.openingOf(lineIndex);
   if (!opening || opening.top <= opening.bottom) return true;
-  if (lockedOn) return false;
   return z < opening.bottom || z > opening.top;
+}
+
+/**
+ * Half the vertical extent a locked-on shot may aim within around its target
+ * point, for `shotPath`'s wedge. `game.ts` hands `shotPath` a target `z` of
+ * the monster's floor plus `AIM_HEIGHT_OFFSET` (i.e. roughly mid-body, not
+ * its feet), so a symmetric band of half a body height around that point
+ * approximates the target's own silhouette — the same idea as
+ * `hasLineOfSight` bounding its wedge with `[z2, z2 + PLAYER_HEIGHT]` (feet
+ * to head) rather than a single point, and for the same reason: any slope
+ * that reaches *some* part of the target counts as reaching it.
+ *
+ * Computed inside the function rather than as a module-level `const` for the
+ * `PLAYER_HEIGHT` import-cycle reason documented on `hasLineOfSight`.
+ */
+function shotTargetHalfHeight(): number {
+  return PLAYER_HEIGHT / 2;
 }
 
 /** Where a shot actually ends up: the point it stopped at, the height it was at there, and how far that was. */
@@ -869,14 +881,33 @@ export interface ShotPath extends Pos3 {
  * shooter's own, so a rendered tracer/projectile always starts at the
  * shooter rather than mid-air.
  *
- * `skipHeightTest` (default: true whenever `target` is given) is the
- * player-auto-aim leniency described on `blocksShot` — clearing an
- * intervening step instead of being stopped dead at its near edge — kept as
- * a *separate* parameter from `target` specifically so a monster's own shot
- * can still slope toward the player's height without inheriting it: the
- * player has no such "auto-aim" convenience to justify skipping the height
- * test, so a monster's projectile should be blocked by a low or high step
- * exactly the way a free shot would be, just angled correctly.
+ * `lockedOn` (default: true whenever `target` is given) switches the blocking
+ * test from `blocksShot`'s single fixed ray to a **slope wedge**, vanilla's
+ * own `P_AimLineAttack`: start from the span of slopes that would reach any
+ * part of the target (`shotTargetHalfHeight` around `target.z`), narrow
+ * `[bottomSlope, topSlope]` against every opening the shot crosses in
+ * increasing distance order, and stop the shot at the first line where that
+ * wedge collapses — exactly how `hasLineOfSight` narrows its own sight wedge,
+ * and how vanilla decides whether autoaim can reach a thing at all.
+ *
+ * This is the auto-aim leniency, and it is deliberately *neither* of the two
+ * things it has been in the past. Applying `blocksShot`'s single-ray test to a
+ * locked-on shot is too strict: the one ray from gun to target clips the near
+ * edge of the very platform the target stands on, stopping the shot dead there
+ * — which read as the shot going flat and ignoring the click. But **skipping
+ * the opening test outright** (what this did before) is far too lenient: it
+ * ignores geometry entirely, so a locked-on rocket flew straight through a
+ * 512-unit-tall wall to reach a monster standing on top of it (reproduced on a
+ * synthetic map — the wall's own height made no difference whatsoever, since
+ * nothing about it was ever consulted). The wedge is the middle ground vanilla
+ * itself uses: a genuine wall collapses it, while a step the shot can be angled
+ * over does not, because the wedge is free to pick the slope that clears it.
+ *
+ * The wedge is only for the *auto-aim* case. A monster's own fired shot passes
+ * `lockedOn: false` and keeps the single-ray test — it needs `target` to slope
+ * toward whatever it's shooting at, but it has no "you clicked it" promise to
+ * honor, so it should be stopped by a low or high step exactly like a free shot,
+ * just angled correctly.
  *
  * Used both for a hitscan weapon's tracer endpoint and for how far a fired
  * projectile is allowed to fly (game/weapons.ts, game.ts).
@@ -886,7 +917,7 @@ export function shotPath(
   origin: Pos3,
   angleRad: number,
   target: Pos3 | null = null,
-  skipHeightTest: boolean = target !== null,
+  lockedOn: boolean = target !== null,
 ): ShotPath {
   const { x, y, z } = origin;
   const dx = Math.cos(angleRad);
@@ -897,23 +928,75 @@ export function shotPath(
   const ty = y + dy * maxRange;
   let nearestT = 1;
   let blockingLine: number | null = null;
-  for (const i of world.linesNear(x, y, maxRange)) {
+
+  /** This line's crossing point along the shot, or null — `WALL_OVERLAP`-extended for the corner-leak reason documented on `hasLineOfSight`'s own blocker set. */
+  const crossingT = (i: number): number | null => {
     const line = world.map.linedefs[i];
     const a = world.map.vertexes[line.v1];
     const b = world.map.vertexes[line.v2];
-    if (!a || !b) continue;
+    if (!a || !b) return null;
     const ldx = b.x - a.x;
     const ldy = b.y - a.y;
     const len = Math.hypot(ldx, ldy);
     const ex = len > 0 ? (ldx / len) * WALL_OVERLAP : 0;
     const ey = len > 0 ? (ldy / len) * WALL_OVERLAP : 0;
     const hit = segmentIntersect(x, y, tx, ty, a.x - ex, a.y - ey, b.x + ex, b.y + ey);
-    if (!hit || hit.t >= nearestT) continue;
-    if (blocksShot(world, i, z + (endZ - z) * hit.t, skipHeightTest)) {
-      nearestT = hit.t;
-      blockingLine = i;
+    return hit ? hit.t : null;
+  };
+
+  if (!lockedOn) {
+    for (const i of world.linesNear(x, y, maxRange)) {
+      const t = crossingT(i);
+      if (t === null || t >= nearestT) continue;
+      if (blocksShot(world, i, z + (endZ - z) * t)) {
+        nearestT = t;
+        blockingLine = i;
+      }
+    }
+  } else {
+    // Vanilla's P_AimLineAttack wedge — see this function's doc. Crossings have
+    // to be walked nearest-first for the narrowing to mean anything, so unlike
+    // the single-ray branch above (which can early-out on `nearestT` in any
+    // order) this one collects and sorts first.
+    const crossings: { t: number; i: number }[] = [];
+    for (const i of world.linesNear(x, y, maxRange)) {
+      const t = crossingT(i);
+      if (t !== null) crossings.push({ t, i });
+    }
+    crossings.sort((p, q) => p.t - q.t);
+
+    const half = shotTargetHalfHeight();
+    let bottomSlope = (endZ - half - z) / maxRange;
+    let topSlope = (endZ + half - z) / maxRange;
+    for (const { t, i } of crossings) {
+      const line = world.map.linedefs[i];
+      // A genuinely solid wall or a shut door stops any shot outright, the
+      // same two cases `blocksShot` leads with.
+      if (line.left === NO_SIDE || line.right === NO_SIDE) {
+        nearestT = t;
+        blockingLine = i;
+        break;
+      }
+      const opening = world.openingOf(i);
+      if (!opening || opening.top <= opening.bottom) {
+        nearestT = t;
+        blockingLine = i;
+        break;
+      }
+      const d = maxRange * t;
+      if (d <= 0) continue; // a line the shot starts on contributes no constraint
+      const bottom = (opening.bottom - z) / d;
+      const topOfGap = (opening.top - z) / d;
+      if (bottom > bottomSlope) bottomSlope = bottom;
+      if (topOfGap < topSlope) topSlope = topOfGap;
+      if (topSlope <= bottomSlope) {
+        nearestT = t;
+        blockingLine = i;
+        break;
+      }
     }
   }
+
   const dist = maxRange * nearestT;
   return { x: x + dx * dist, y: y + dy * dist, z: z + (endZ - z) * nearestT, dist, lineIndex: blockingLine };
 }

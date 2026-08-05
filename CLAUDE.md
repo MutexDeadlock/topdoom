@@ -776,16 +776,33 @@ a `target` rather than just an angle:
   `blocksShot`'s doc in `game/world.ts`).
 - **Locked-on shot** (auto-aim target, or a monster's own fired shot at the player): slopes from
   the shooter's fire height to the target's over exactly the distance between them, and stops
-  *at* the target. A separate `skipHeightTest` parameter (default: on whenever a `target` is
-  given, preserving the player auto-aim behavior below) controls whether the height test above
-  still applies on top of that slope — deliberately **skipped** for the player's own auto-aimed
-  shot: it's angled over intervening steps on purpose, and leaving the height test on meant a
-  shot at a monster on a ledge got cut off at the ledge's near edge, which (since the returned
-  height is "wherever it stopped") presented as the shot going flat and ignoring the click
-  entirely. A monster's own fired shot (`game.ts`'s `spawnMonsterProjectile`) needs the same
-  slope-toward-target-height behavior but explicitly passes `skipHeightTest: false`, since the
-  player has no "auto-aim" convenience to justify a monster's fireball clearing a low or high
-  step it shouldn't.
+  *at* the target. A separate `lockedOn` parameter (default: on whenever a `target` is given)
+  switches the blocking test from the single fixed ray above to a **slope wedge** — vanilla's own
+  `P_AimLineAttack`: start from the span of slopes reaching any part of the target
+  (`shotTargetHalfHeight` around its aim point, the same "feet-to-head, any part counts" idea
+  `hasLineOfSight` bounds its own wedge with), narrow `[bottomSlope, topSlope]` against every
+  opening crossed in increasing distance order, and stop at the first line where the wedge
+  collapses. A monster's own fired shot (`game.ts`'s `spawnMonsterProjectile`) passes
+  `lockedOn: false`: it needs the slope-toward-target-height behavior, but has no "you clicked
+  it" promise to honor, so it stays on the strict single ray like a free shot.
+
+  **Both of the other two things this has been are wrong, and the wedge is specifically the fix
+  for the second.** The single-ray test is too *strict* for auto-aim: the one ray from gun to
+  target clips the near edge of the very platform the target stands on, stopping the shot dead
+  there, which (since the returned height is "wherever it stopped") read as the shot going flat
+  and ignoring the click entirely. The reaction to that was to skip the opening test
+  outright for a locked-on shot — which is far too *lenient*, and was a real, shipped bug: it
+  consulted geometry not at all, so a locked-on rocket flew straight through a **512-unit-tall
+  wall** to reach a monster standing on top of it (reproduced on a synthetic map; the wall's
+  height made literally no difference, since nothing about it was ever read). The wedge is
+  vanilla's own middle ground — a genuine wall collapses it, an ordinary step does not, because
+  the wedge is free to pick the slope that clears the step. Verified against the real IWADs
+  (DOOM2 MAP01/03/07, DOOM E1M1/E1M7, ~9,000 shooter/monster pairs sampled from the player start
+  and from each monster's own position): **zero** pairs where a shot reaches a monster
+  `hasLineOfSight` says is not visible, i.e. the shoot-through-walls case is gone outright, with
+  0-1.4% of pairs going the other way (visible but shot-blocked) — expected, since sight samples
+  sector floors/ceilings at discrete points while the wedge narrows against exact line openings,
+  so the two are deliberately not the same test.
 
 Both modes start at the shooter's own height, never the target's — using the target's height for
 the origin made tracers and projectiles visibly begin in mid-air rather than at the gun. Blocking
@@ -1150,7 +1167,24 @@ mid-flight — its arrival is re-checked every frame against both the player's *
 (`MONSTER_PROJECTILE_HIT_RADIUS`/`_HEIGHT`) and every other living monster it might clip along the
 way (`monsterStruckBy`, `sameSpecies`-gated the same as a hitscan bolt), not just the wall-stop
 distance computed at launch, so stepping behind cover or outrunning a slower fireball after it's
-already fired actually works — for whoever it's flying at. Damage dice are the one
+already fired actually works — for whoever it's flying at.
+
+**Both of those live arrival tests are gated on `hasLineOfSight`, and that gate is load-bearing
+rather than a refinement.** The hit test is a fat 2D disc (`MONSTER_PROJECTILE_HIT_RADIUS`, 40
+units) plus a generous ±128 height tolerance, and a projectile's flight *ends* at whatever wall
+`shotPath` found — so on the last frames before it bursts, anyone standing within that disc on the
+**far** side of that wall matched the proximity test and took a full direct hit through it. Monster
+projectiles carry no splash (below), so unlike the rocket/BFG there was no "blast reached around
+the corner" reading that could excuse it: a rocket visibly exploding against the wall in front of
+the player was simply dealing its contact damage through the wall. The trace runs **from the
+player/monster toward the projectile**, not the other way round: by then `at` sits essentially *on*
+the wall, and `hasLineOfSight`'s own `SELF_HIT_MARGIN` (see `world.ts`) would discard that crossing
+as a self-hit and report the very wall it just stopped against as clear. Both checks sit **last** in
+their condition chains, so they only ever run for a candidate the cheap proximity tests already
+accepted — this costs nothing on the ordinary frame where nothing is near a projectile at all, which
+matters given a crowded map can have a thousand of them in the air (see `monstersNear` above).
+
+Damage dice are the one
 thing here still tuned for feel/balance rather than lifted from vanilla's per-monster tables (see
 the timing note at the top of this section for why they're the exception, not the rule) — so a
 monster's *rhythm* is vanilla's while its bite is deliberately softer.
@@ -1241,7 +1275,40 @@ there) and a *second* line-of-sight check at the exact moment the shot would fir
 (`stepMonsterAI`'s burst-fire block, gated on `ranged.blast`) — vanilla's `A_VileAttack` calls
 `P_CheckSight` again right before dealing any of this, so breaking sight during the ~1.9s windup
 makes the whole attack fizzle for nothing, which is the entire reason ducking behind cover saves
-you from it. Getting this delay real (not just cosmetic, unlike the mancubus's near-identical-looking
+you from it.
+
+**That second check is sight-only — there is deliberately no matching distance re-check, and this
+is vanilla's own behavior, confirmed against `A_VileAttack`, not a gap in this engine's version.**
+`checkMissileRange`'s `maxOffsetDist` (896) only gates *starting* the attack; once committed the
+vile is planted for the full 2.686s (`attackPause`) and the eventual `P_CheckSight`-equivalent
+never looks at distance at all, so a target that was close enough to trigger the cast but then
+runs far away during the windup — while staying in sight — still takes the guaranteed hit,
+exactly as vanilla's own infamous long-range vile snipes work. This is what makes NUTS.WAD's own
+vile group so punishing despite `things.ts`'s corpse-grid fix (see there) keeping it playable:
+its arena is 11 sectors, nearly all one continuous open floor (confirmed by marching `sectorAt`
+from the player start straight through the whole vile row — the floor height changes but nothing
+ever closes the opening), so sight measured with `hasLineOfSight` against real map data stays
+connected across enormous distances — thousands of units — wherever the player stays in an open
+lane. It cuts off sharply only close to the vile row itself: sampled every 128 units across the
+map's width, visibility from *any* of the 1,272 arch-viles drops from 107/107 columns exposed at
+the row's own front edge to 0/107 within about 750 units retreating straight back. A player
+running at `RUN_SPEED` (500 u/s) covers roughly 943 units over the 1.886s windup — enough to clear
+that gap in principle, but only if the retreat starts at (or very near) the instant the vile
+commits, which is exactly what the windup flame above exists to signal. Waiting even a fraction of
+a second after being spotted, or retreating at an angle rather than straight down a covered lane,
+easily eats the ~200-unit margin and the shot lands anyway — correctly, per the sight check that
+was actually in effect at the moment it fired. Verified end-to-end against real NUTS.WAD +
+DOOM2.WAD data (not a synthetic map): a vile at the front row's actual position, given a target
+that starts in its sight and retreats to a point independently confirmed sight-blocked well within
+the windup, never fires (`stepMonsterAI` returns no `'ranged'` event) — the mechanic holds up
+exactly as designed, this just isn't the kind of map vanilla's own vile ever had to contend with.
+This does **not** generalize to other monster types: every non-vile ranged attack fires within
+about one frame of its own sight check (no `startDelaySeconds`, or vastly shorter — a mancubus's
+volley spacing is ~0.3s and unlike the vile isn't re-checked per shot either, but that's too short
+a window for a fleeing player to cover meaningful distance in), so there's no comparable gap for
+distance to open up in before the shot resolves.
+
+Getting this delay real (not just cosmetic, unlike the mancubus's near-identical-looking
 timing gap) is what makes that escape mechanism actually work — and is what first exposed a real,
 previously-latent bug in `render/sprites.ts`'s `SpriteAnimator.advance`, unrelated to the arch-vile
 specifically: `animIndex` is one field shared across the death/override/base-cycle domains, and nothing

@@ -1068,6 +1068,10 @@ export class Game {
       if (m.id === p.sourceId) continue;
       if (sameSpecies(p.sourceType, m.type)) continue;
       if (Math.abs(m.z - at.z) > MONSTER_PROJECTILE_HIT_HEIGHT) continue;
+      // Same wall check `reachedPlayer` needs, and for the same reason — see
+      // its comment. Traced from the monster for the same `SELF_HIT_MARGIN`
+      // reason, and last so it only runs on an already-close candidate.
+      if (!hasLineOfSight(this.world, m, at)) continue;
       return m.id;
     }
     return null;
@@ -1160,7 +1164,18 @@ export class Game {
         fromMonster &&
         !this.playerDead &&
         Math.hypot(this.player.x - at.x, this.player.y - at.y) <= MONSTER_PROJECTILE_HIT_RADIUS &&
-        Math.abs(this.player.z - at.z) <= MONSTER_PROJECTILE_HIT_HEIGHT;
+        Math.abs(this.player.z - at.z) <= MONSTER_PROJECTILE_HIT_HEIGHT &&
+        // Proximity alone isn't arrival: the hit radius is a fat 2D disc, so a
+        // projectile stopping against a wall (its `maxDist`) would otherwise
+        // damage anyone standing within it on the *far* side of that wall —
+        // monster projectiles carry no splash, so a rocket visibly bursting on
+        // the wall in front of you was dealing a full direct hit through it.
+        // Traced from the player rather than from `at` deliberately: `at` sits
+        // essentially *on* the wall by then, and `hasLineOfSight`'s own
+        // `SELF_HIT_MARGIN` would skip that crossing as a self-hit and report
+        // the wall it just stopped against as clear. Last in the chain so it
+        // only ever runs once the (cheap) proximity tests already passed.
+        hasLineOfSight(this.world, this.player, at);
       const struck = fromMonster && !reachedPlayer ? this.monsterStruckBy(p, at) : null;
 
       if (reachedPlayer || struck || p.traveled >= p.maxDist) {

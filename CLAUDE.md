@@ -1862,11 +1862,35 @@ on. The turbo-16 stair specials (100/127) are deliberately *not* included, even 
 wiki names them "...and Crush" — the actual vanilla `EV_BuildStairs` source (p_floor.c) never
 sets a crush flag on the floor movers it spawns, so real vanilla turbo stairs don't crush either;
 caught by checking the source directly after the wiki's naming turned out misleading, same
-discipline as the 174/58/40 catches elsewhere in this file. This is a real behavior gap from vanilla,
-noted deliberately rather than missed: nothing here actually *blocks* a mover on contact (no
-thing/mover collision check exists), so a crusher never stops, reverses early, or gets "stuck" —
-it just keeps hurting whoever's in the way every interval until they leave or die, which is the
-part of the vanilla feel that actually matters for a crusher reading as a hazard.
+discipline as the 174/58/40 catches elsewhere in this file. Nothing *blocks* a genuine crusher on
+contact, matching vanilla's own `crush==true` branch of `T_MovePlane` exactly: it just keeps
+hurting whoever's in the way every interval until they leave or die, rather than stopping,
+reversing early, or getting "stuck" — that grind-through behavior is the part of the vanilla feel
+that actually matters for a crusher reading as a hazard, not a gap to close.
+
+**Every other mover — the vastly more common case — genuinely does stop rather than clip through
+whoever's in its way**, vanilla's own `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule for
+`crush==false`. Checked against the real `linuxdoom-1.10` source rather than assumed: vanilla's
+per-tic mover code reverts that tic's step outright whenever it would leave a thing with
+`ceilingheight - floorheight < thing->height`, and does so unconditionally *unless* `crush==true`
+— which in practice only the crushing-floor family above ever sets. `SpecialsController.tickDoor`
+already had this for a closing door; the exact same rule now also applies to a lowering
+`CeilingMover` (real vanilla never sets `crush=true` for this mover — even 44/72's own "Ceiling
+Crush" name is misleading; see "One-way ceiling movers..." below) and to a rising `LiftMover` or
+`crush: false` `FloorMover` (which covers every ordinary raise, `raiseToTexture`, `lowerAndChange`,
+the donut's ring, and stair builders — stairs never set `crush` either). Two callbacks into
+`game.ts` carry this out — `blocksCeilingLower`/`blocksFloorRise`, both routed through the shared
+`headroomBlocked` helper — the same callback-into-`game.ts` shape as `onCrush`/`onExit`/
+`onTeleport`, since `SpecialsController` mutates sector geometry but has no idea who's standing in
+it. A door reverses direction outright (it already has a `raising` state to fall back into); a
+`CeilingMover`/`FloorMover`/`LiftMover` has none, so it just skips that tick's step and retries the
+next one — reading as the mover stalling in place until the obstruction clears, the same practical
+result as vanilla's own per-tic retry. Deliberately asymmetric, matching vanilla: only the
+direction that closes the gap on someone is ever checked (a closing door/lowering ceiling, a rising
+lift/floor) — the opposite direction (opening, a raising ceiling, an ordinary lowering floor) is
+left unchecked, since vanilla's own `P_ThingHeightClip` rides a grounded thing along with a
+receding floor/ceiling automatically, so that direction essentially never traps anyone in the first
+place.
 
 **Teleporters** (39/97 for either the player or a monster; Doom II's 125/126 for monsters only).
 The destination is the first doomednum-14 landing thing found inside a tag-matched sector
@@ -1930,7 +1954,10 @@ real vanilla. Special 44/72 ("Ceiling Crush", `lowerAndCrush`) is the other user
 `lowerAndCrush` is a separate `case` label positioned just past that assignment, so jumping to it
 directly skips setting the flag — `ceiling->crush` stays at its default `false`. `CeilingMover`
 has no crush/damage handling at all as a result; there's no real vanilla case that would ever
-need it.
+need it. `crush==false` is exactly what makes a lowering `CeilingMover` stop rather than grind
+through the player or a monster underneath it (see "Crushers and teleporters" above) — despite the
+name, 44/72 is a mover that stops on contact, not one of this engine's actual crush-damage
+specials.
 
 **`raiseToTexture` (30/96) and `lowerAndChange` (37/84)** are both plain `FloorMover`s under the
 hood, just with trigger-time logic too specific to fit the neighbor-height `MoveTarget` model
@@ -2333,12 +2360,14 @@ special this engine's own audit against the real source found. `wad/specials.ts`
 comments have the full vanilla-numbers-to-mechanism mapping. Crushers and the crushing floor
 family (55/56/65/94 — not the turbo-16 stairs, which
 never crush even in vanilla) deal periodic damage to the player or any monster caught in their
-sector. A closing door reverses back open rather than crushing through the player or a monster
-standing under it, vanilla's own `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule
-(`SpecialsController`'s `blocksDoorClose` callback into `game.ts: isDoorBlocked`) — but a crusher
-or lift still doesn't detect or stop for a thing in its way the way vanilla does, a separate,
-still-open gap from the thing-vs-thing collision described next, which is about two things walking
-into each other, not a moving sector hitting one. Monsters
+sector and never stop for them, matching vanilla's own `crush==true` behavior exactly. Every
+other mover — a closing door, a lowering non-crusher ceiling mover, a rising lift, a rising
+non-crushing floor mover (including stairs) — reverses or stalls instead of clipping through the
+player or a monster in its way, vanilla's own `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule for
+`crush==false` (`SpecialsController`'s `blocksCeilingLower`/`blocksFloorRise` callbacks into
+`game.ts: headroomBlocked`). This is still a separate, still-open gap from the thing-vs-thing
+collision described next, which is about two things walking into each other, not a moving sector
+hitting one. Monsters
 now wake, chase and attack the player (`game/monsters.ts`, see "Monster AI" above): they use the
 same movement physics as the player (collision, step-up, gravity) but on vanilla's real 8-direction
 `P_NewChaseDir` pathing rather than a beeline, every type keeps closing until it physically runs

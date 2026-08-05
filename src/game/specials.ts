@@ -290,7 +290,16 @@ interface FloorMover {
   arrivalTexture?: { floorTex: string; special: number };
 }
 
-/** A one-way ceiling mover — see `CeilingEffect`'s doc. No hold, no reversal, no crush handling: vanilla has no case that needs any of those for this mover. */
+/**
+ * A one-way ceiling mover — see `CeilingEffect`'s doc. No hold, no reversal
+ * state, no periodic crush *damage*: vanilla has no case that needs any of
+ * those for this mover (real vanilla never sets `crush=true` for it — even
+ * 44/72's "Ceiling Crush" name is misleading, see `EV_DoCeiling`'s source).
+ * It still stalls rather than lowering through someone in its way, though —
+ * `tickCeiling`'s `blocksCeilingLower` check, vanilla's own crush==false
+ * un-crush rule applying unconditionally here since this mover is always
+ * crush==false.
+ */
 interface CeilingMover {
   kind: 'ceiling';
   sectorIndex: number;
@@ -456,10 +465,11 @@ function disposeGroup(group: THREE.Group): void {
  * periodic damage to whoever's caught in their sector via `onCrush`, a
  * callback into `game.ts` — this controller mutates map geometry but has no
  * idea where the player or any monster is standing, the same reason
- * `onExit`/`onTeleport` are callbacks rather than direct calls. Unlike
- * vanilla, nothing here actually *blocks* the mover on contact (no
- * thing/geometry collision check for movers exists), so a crusher never
- * stops or reverses early — it just keeps hurting whoever's in its way every
+ * `onExit`/`onTeleport` are callbacks rather than direct calls. A genuine
+ * crusher (`CrusherMover`, and any `FloorMover`/`CeilingMover` with
+ * `crush: true` — currently only the `raiseFloorCrush` family) never stops
+ * or reverses early, matching vanilla's own `crush==true` branch of
+ * `T_MovePlane` exactly: it just keeps hurting whoever's in its way every
  * `CRUSH_DAMAGE_INTERVAL` until they leave or die, which is the part of the
  * vanilla behavior that actually matters for how a crusher reads as a hazard.
  *
@@ -467,20 +477,37 @@ function disposeGroup(group: THREE.Group): void {
  * `FloorMover` machinery per step — a stair step is just a floor rising to a
  * fixed height — with the chain of sectors to raise discovered once at load
  * time (`computeMovableSectors`) by walking the same texture-matched
- * adjacency the trigger itself uses at runtime.
+ * adjacency the trigger itself uses at runtime. Stairs never set `crush`
+ * (`StairsEffect`'s doc), so a rising step is one of the ordinary movers the
+ * next paragraph blocks on contact, same as any other non-crushing riser.
  *
- * A closing door reverses back open rather than crushing through the player
- * or a monster standing under it — vanilla's `T_MovePlane`/`PIT_ChangeSector`
- * "un-crush" rule, via the `blocksDoorClose` callback (a callback into
- * `game.ts` for the same reason `onCrush` is: this controller mutates map
- * geometry but has no idea who's standing in it). Approximated as 2D sector
- * membership plus a flat headroom check against `PLAYER_HEIGHT`/
- * `MONSTER_HIT_HEIGHT`, the same coarseness `applyCrushDamage` already
- * accepts — and, unlike vanilla, applied uniformly to every door regardless
- * of speed, since this engine has no separate "blazeClose never reverses"
- * door type to hook the one real vanilla exception on. Lifts, floors and
- * crushers still don't detect or stop for a thing in their way at all — see
- * the crusher paragraph above.
+ * Every *non*-crushing mover reverses or stalls rather than clipping through
+ * the player or a monster standing in its way — vanilla's own
+ * `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule for `crush==false`, via
+ * two callbacks into `game.ts` (this controller mutates map geometry but has
+ * no idea who's standing in it, the same reason `onCrush` is a callback too):
+ * `blocksCeilingLower` for a closing door or a lowering `CeilingMover`
+ * (real vanilla never sets `crush=true` for this mover — see the
+ * `lowerAndCrush`/44/72 note in `CeilingMover`'s own doc — so every one of
+ * them genuinely should stop), and `blocksFloorRise` for a rising
+ * `LiftMover` or a `crush: false` `FloorMover`. A door reverses direction
+ * outright (it already has a `raising` state to fall back into); a
+ * `CeilingMover`/`FloorMover`/`LiftMover` has no such state, so it simply
+ * skips that tick's step and retries the next one, which reads as the mover
+ * stalling in place until whoever's in the way clears out — functionally the
+ * same "don't crush through them" result vanilla's own per-tic retry
+ * produces. Approximated as 2D sector membership plus a flat headroom check
+ * against `PLAYER_HEIGHT`/`MONSTER_HIT_HEIGHT`, the same coarseness
+ * `applyCrushDamage` already accepts — and, unlike vanilla, applied uniformly
+ * to every door regardless of speed, since this engine has no separate
+ * "blazeClose never reverses" door type to hook the one real vanilla
+ * exception on. The opposite direction of each of these movers (opening,
+ * raising a ceiling, lowering a non-lift floor) is deliberately left
+ * unchecked, matching vanilla's own asymmetry — `T_MovePlane`'s ceiling-up
+ * and floor-down branches essentially never trap a "standing on the floor"
+ * thing, since `P_ThingHeightClip` rides it along with the floor
+ * automatically; only the direction that closes the gap on someone can ever
+ * actually block them.
  */
 /** A teleport landing spot: where to put the thing, and which way it should face on arrival (radians — see `Placement`). */
 export type TeleportDest = Placement;
@@ -518,7 +545,8 @@ export class SpecialsController {
   private onExit: (secret: boolean) => void;
   private onTeleport: (dest: Placement) => void;
   private onCrush: (sectorIndex: number) => void;
-  private blocksDoorClose: (sectorIndex: number, ceilingHeight: number) => boolean;
+  private blocksCeilingLower: (sectorIndex: number, ceilingHeight: number) => boolean;
+  private blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean;
 
   private movableSectors: Set<number>;
   /** Movable sectors sharing a linedef with a given movable sector — see `rebuildAround`. */
@@ -558,7 +586,8 @@ export class SpecialsController {
     onExit: (secret: boolean) => void,
     onTeleport: (dest: Placement) => void,
     onCrush: (sectorIndex: number) => void,
-    blocksDoorClose: (sectorIndex: number, ceilingHeight: number) => boolean,
+    blocksCeilingLower: (sectorIndex: number, ceilingHeight: number) => boolean,
+    blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean,
     playerX: number,
     playerY: number,
   ) {
@@ -572,7 +601,8 @@ export class SpecialsController {
     this.onExit = onExit;
     this.onTeleport = onTeleport;
     this.onCrush = onCrush;
-    this.blocksDoorClose = blocksDoorClose;
+    this.blocksCeilingLower = blocksCeilingLower;
+    this.blocksFloorRise = blocksFloorRise;
     this.prevX = playerX;
     this.prevY = playerY;
 
@@ -822,7 +852,7 @@ export class SpecialsController {
       if (mover.holdRemaining <= 0) mover.state = 'raising';
     } else if (mover.state === 'lowering') {
       const next = Math.max(mover.closeHeight, sector.ceilHeight - mover.effect.speed * dt);
-      if (this.blocksDoorClose(mover.sectorIndex, next)) {
+      if (this.blocksCeilingLower(mover.sectorIndex, next)) {
         // Vanilla's T_MovePlane/PIT_ChangeSector: closing further would leave
         // whoever's standing under it with no headroom, so the door bounces
         // back open instead of sliding shut through them — this tick's move
@@ -858,7 +888,16 @@ export class SpecialsController {
       mover.holdRemaining -= dt;
       if (mover.holdRemaining <= 0) mover.state = 'raising';
     } else if (mover.state === 'raising') {
-      sector.floorHeight = Math.min(mover.restHeight, sector.floorHeight + mover.effect.speed * dt);
+      const next = Math.min(mover.restHeight, sector.floorHeight + mover.effect.speed * dt);
+      if (this.blocksFloorRise(mover.sectorIndex, next)) {
+        // Vanilla's own floor-up un-crush rule (T_MovePlane: crush==false
+        // reverts the step) — a lift is never a crusher (LiftMover has no
+        // crush flag at all), so rising into someone with no headroom just
+        // stalls at the current height instead of sealing them against the
+        // ceiling; it resumes on its own the instant they clear it.
+        return;
+      }
+      sector.floorHeight = next;
       if (sector.floorHeight >= mover.restHeight) {
         sector.floorHeight = mover.restHeight;
         mover.state = 'rest';
@@ -872,7 +911,16 @@ export class SpecialsController {
     const sector = this.map.sectors[mover.sectorIndex];
     const before = sector.floorHeight;
     const dir = mover.target > sector.floorHeight ? 1 : -1;
-    sector.floorHeight += dir * mover.speed * dt;
+    const next = sector.floorHeight + dir * mover.speed * dt;
+    if (dir > 0 && !mover.crush && this.blocksFloorRise(mover.sectorIndex, next)) {
+      // Same un-crush rule as the lift above — but only while `crush` is
+      // false. Vanilla's own floor-up code only reverts for crush==false;
+      // the raiseFloorCrush family (mover.crush===true — 55/56/65/94) is
+      // vanilla's real exception and keeps grinding through instead, dealing
+      // periodic damage via tickCrush below exactly as it already did.
+      return;
+    }
+    sector.floorHeight = next;
     if ((dir > 0 && sector.floorHeight >= mover.target) || (dir < 0 && sector.floorHeight <= mover.target)) {
       sector.floorHeight = mover.target;
       mover.state = 'done';
@@ -885,13 +933,24 @@ export class SpecialsController {
     if (mover.crush) this.tickCrush(mover.sectorIndex, mover, dt);
   }
 
-  /** One-way ceiling move — see `CeilingMover`'s doc for why there's no hold/reversal/crush handling at all. */
+  /**
+   * One-way ceiling move — see `CeilingMover`'s doc for why there's no
+   * hold/reversal state, unlike a door. A *lowering* move still respects
+   * vanilla's crush=false un-crush rule (`blocksCeilingLower`, the same
+   * callback a closing door uses) — real vanilla never sets `crush=true` for
+   * this mover (see the class doc's `lowerAndCrush` note), so every
+   * `CeilingMover` genuinely should stop rather than grind through. Raising
+   * never blocks, matching vanilla's own ceiling-up code, which never
+   * reverts on contact either.
+   */
   private tickCeiling(mover: CeilingMover, dt: number, dirty: Set<number>): void {
     if (mover.state === 'done') return;
     const sector = this.map.sectors[mover.sectorIndex];
     const before = sector.ceilHeight;
     const dir = mover.target > sector.ceilHeight ? 1 : -1;
-    sector.ceilHeight += dir * mover.speed * dt;
+    const next = sector.ceilHeight + dir * mover.speed * dt;
+    if (dir < 0 && this.blocksCeilingLower(mover.sectorIndex, next)) return;
+    sector.ceilHeight = next;
     if ((dir > 0 && sector.ceilHeight >= mover.target) || (dir < 0 && sector.ceilHeight <= mover.target)) {
       sector.ceilHeight = mover.target;
       mover.state = 'done';

@@ -723,7 +723,8 @@ export class Game {
         this.view.camera.yawDeg = (dest.angle * 180) / Math.PI - 90;
       },
       (sectorIndex) => this.applyCrushDamage(sectorIndex),
-      (sectorIndex, ceilingHeight) => this.isDoorBlocked(sectorIndex, ceilingHeight),
+      (sectorIndex, ceilingHeight) => this.blocksCeilingLower(sectorIndex, ceilingHeight),
+      (sectorIndex, floorHeight) => this.blocksFloorRise(sectorIndex, floorHeight),
       this.player.x,
       this.player.y,
     );
@@ -1546,8 +1547,8 @@ export class Game {
   /**
    * Whether a `radius`-circle centered at (x, y) overlaps `sectorIndex` at
    * all, not just whichever sector its bare center point resolves to.
-   * `isDoorBlocked` originally used a plain `sectorIndexAt` point test and
-   * that missed the common case of the player standing half in a doorway:
+   * `headroomBlocked`'s door-close case originally used a plain `sectorIndexAt`
+   * point test and that missed the common case of the player standing half in a doorway:
    * walking up to a door leaves the collision circle straddling the frame
    * (the same straddling `World.groundFloor` already has to account for),
    * so the player's *center* can still read as the corridor sector's while
@@ -1570,29 +1571,45 @@ export class Game {
   }
 
   /**
-   * `SpecialsController`'s door-close obstruction check, vanilla's
-   * `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule: a closing door reverses
-   * back open the instant lowering it further would leave the player or a
-   * monster with no headroom, rather than sliding shut through them. Uses
-   * `circleOverlapsSector` (above) rather than `applyCrushDamage`'s plain
-   * point test — a crusher's own sector is typically the whole room, where
-   * the point test's blind spot barely matters, but a door's sector is often
-   * no wider than the doorway itself, where it does — plus a flat headroom
-   * test against `PLAYER_HEIGHT`/`MONSTER_HIT_HEIGHT`, this engine has no
-   * per-thing floor/ceiling clip to do better with.
+   * `SpecialsController`'s shared obstruction test, vanilla's
+   * `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule: whoever's standing in
+   * `sectorIndex` doesn't fit in the vertical gap a mover's next step would
+   * leave. Uses `circleOverlapsSector` (above) rather than
+   * `applyCrushDamage`'s plain point test — a crusher's own sector is
+   * typically the whole room, where the point test's blind spot barely
+   * matters, but a door or lift's sector is often no wider than the doorway/
+   * platform itself, where it does — plus a flat headroom test against
+   * `PLAYER_HEIGHT`/`MONSTER_HIT_HEIGHT`, this engine has no per-thing
+   * floor/ceiling clip to do better with. Takes both heights explicitly
+   * (rather than reading `player.z`/`m.z`) because the caller is always
+   * asking about the *prospective* height one of the two boundaries is about
+   * to move to, not whichever value happens to be cached on the thing this
+   * frame — matching vanilla's own `P_ThingHeightClip`, which re-syncs a
+   * grounded thing's `z` to the *new* floor before testing it.
    */
-  private isDoorBlocked(sectorIndex: number, ceilingHeight: number): boolean {
+  private headroomBlocked(sectorIndex: number, floorHeight: number, ceilingHeight: number): boolean {
     if (
       this.circleOverlapsSector(this.player.x, this.player.y, PLAYER_RADIUS, sectorIndex) &&
-      this.player.z + PLAYER_HEIGHT > ceilingHeight
+      floorHeight + PLAYER_HEIGHT > ceilingHeight
     ) {
       return true;
     }
+    // The gap check doesn't depend on which monster it is (unlike the old
+    // per-thing `m.z` version), so one monster in the sector is enough to
+    // decide it for all of them — no need to loop.
+    if (floorHeight + MONSTER_HIT_HEIGHT <= ceilingHeight) return false;
     const sector = this.map.sectors[sectorIndex];
-    for (const m of this.things?.monstersInSector(sector) ?? []) {
-      if (m.z + MONSTER_HIT_HEIGHT > ceilingHeight) return true;
-    }
-    return false;
+    return (this.things?.monstersInSector(sector).length ?? 0) > 0;
+  }
+
+  /** A closing door or a lowering `CeilingMover` — `SpecialsController.blocksCeilingLower`. The sector's floor doesn't move here, so `headroomBlocked` reads it straight off the map. */
+  private blocksCeilingLower(sectorIndex: number, ceilingHeight: number): boolean {
+    return this.headroomBlocked(sectorIndex, this.map.sectors[sectorIndex].floorHeight, ceilingHeight);
+  }
+
+  /** A rising lift or non-crushing `FloorMover` — `SpecialsController.blocksFloorRise`. The sector's ceiling doesn't move here, so `headroomBlocked` reads it straight off the map. */
+  private blocksFloorRise(sectorIndex: number, floorHeight: number): boolean {
+    return this.headroomBlocked(sectorIndex, floorHeight, this.map.sectors[sectorIndex].ceilHeight);
   }
 
   /**

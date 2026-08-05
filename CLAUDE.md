@@ -1482,8 +1482,10 @@ damages `actor->target` directly, not whatever a ray happens to hit first. Its s
 `shouldRetarget`'s existing "nothing retaliates against an arch-vile" rule covers it automatically)
 and, spotted while wiring this up, a real missing vanilla rule that applies to *every* explosion,
 not just this one: `PIT_RadiusAttack` exempts the spider mastermind and cyberdemon from all
-concussion/splash damage, direct hits only — previously unmodeled for the rocket/BFG's own splash
-too. Vanilla's `MT_FIRE` is a real, persistent map object that appears the instant the windup
+concussion/splash damage, direct hits only — previously unmodeled for the rocket's own splash
+too (the BFG's own secondary damage didn't yet exist at the time; today it's `WeaponDef.spray`,
+a completely different per-ray mechanism this exemption doesn't apply to at all — see "Weapons,
+firing and auto-aim" below). Vanilla's `MT_FIRE` is a real, persistent map object that appears the instant the windup
 *starts* (`A_VileTarget`) and tracks 24 units in front of the target for its whole ~1.9s duration —
 not just cosmetic: without a visible warning while the vile is charging, a player has nothing to
 react to and "duck behind cover mid-windup" (the sight re-check's entire reason to exist) isn't a
@@ -1593,8 +1595,10 @@ positions never change mid-flight (no AI), so resolving hit/miss at launch and o
 on arrival is safe and doesn't need a second raycast.
 
 **Splash damage is separate from a direct hit, and reaches everyone nearby regardless of what
-(if anything) was targeted** — a rocket or BFG shot fired at a bare wall still explodes and can
-still hurt a monster standing close by, matching vanilla. `game.ts`'s `applyRadiusDamage` walks
+(if anything) was targeted** — a rocket shot fired at a bare wall still explodes and can
+still hurt a monster standing close by, matching vanilla (the BFG's own secondary damage is a
+completely different mechanism, `WeaponDef.spray` — see below, not this radius-based one).
+`game.ts`'s `applyRadiusDamage` walks
 every living monster `ThingLayer.monstersNear` returns within the blast radius, skips anyone
 `hasLineOfSight` (`game/world.ts`, a straight-line reuse of the sight-blocking test `FogOfWar`
 uses for reveal — not `shotPath`, which models a directed weapon's own blocking rules, not "does
@@ -1689,28 +1693,50 @@ separate from the missile's own `(P_Random()%8+1)*20` contact-damage roll used f
 conflating the two made splash swing with the same small, unreliable random roll as contact
 damage, when vanilla's is always a reliable, fixed 128 units.
 
-**`hitsPlayer` gates whether a splash can hurt the player who fired it, and it's the fix for a
-BFG kill also killing the player standing merely "near" the monster it killed.** The rocket sets
-it `true` — vanilla really does let a rocket's own blast hurt whoever fired it (the classic
-"rocket jump" self-damage), so `applyRadiusDamage` includes the player as a splash candidate the
-same as any monster. The BFG sets it `false`: vanilla's BFG ball never calls `A_Explode` at all —
-its real damage is the "spray" mechanic (`A_BFGSpray`), 40 individually autoaimed hitscans fired
-*from* the shooter at nearby visible things, which by construction can never land back on the
-shooter itself. Implementing that spray exactly is far more code than this milestone justifies,
-so it's approximated as a plain radius splash instead (bigger than the rocket's, to feel
-appropriately devastating for its 40-cell cost) — but `hitsPlayer: false` is what keeps that
-approximation from introducing damage vanilla's own BFG could never actually deal.
+**`hitsPlayer` gates whether a splash can hurt the player who fired it** — `true` for the rocket
+(vanilla really does let a rocket's own blast hurt whoever fired it, the classic "rocket jump"
+self-damage), so `applyRadiusDamage` includes the player as a splash candidate the same as any
+monster. The BFG sets its `splash` to `null` outright: vanilla's BFG ball never calls `A_Explode`
+at all, so it has no radius blast for `hitsPlayer` to gate in the first place — its real secondary
+damage is a completely different mechanism, below.
 
-**`tracers` (also `WeaponDef.splash`, true only for the BFG) draws a thin green line from the
-impact to every monster that splash actually damaged**, reusing `render/tracer.ts`'s `Tracer` —
-the exact same primitive a hitscan weapon's own tracer already is, just a different color
-(`BFG_TRACER_COLOR`) to read as "spray," not "bullet." This isn't vanilla — vanilla's real spray
-rays are pure math, never rendered — but the approximated splash above was otherwise completely
-invisible: nothing on screen showed *which* nearby monsters the blast actually caught, unlike a
-locked hitscan/projectile hit, which always draws something. Giving the BFG's own approximation
-the same "show what a shot hit" treatment this engine already uses everywhere else was a more
-consistent fix than leaving it silent. The rocket leaves `tracers` off; its explosion sprite is
-already vanilla's whole visual for what it hit.
+**The BFG's actual damage is `WeaponDef.spray`, vanilla's real `A_BFGSpray`** (confirmed against
+`linuxdoom-1.10/p_enemy.c`, not approximated) — `game.ts: resolveBfgSpray`, called from
+`updateProjectiles` the instant the ball reaches wherever it's going, the same trigger point the
+old radius-splash stand-in used to fire from. It is nothing like a radius blast: 40 rays fan out
+across a 90° arc (every 2.25°, `arcDeg`/`rays`) centered on the ball's own fixed flight angle
+(`Projectile.angleRad` — the ball never homes), each an independent `ThingLayer.raycastMonster`
+trace out to 1024 units (`16*64`, vanilla's own `P_AimLineAttack` distance) that, if it connects,
+deals a full, undiminished direct hit — the sum of 15 rolls of a d8 (15-120, no distance falloff
+at all, unlike every other splash in this file) — to whatever it lands on. Two things make this
+genuinely different from a radius blast, both load-bearing, not incidental:
+
+- **It's traced from the player's own live position at the moment the ball dies, not from the
+  impact point.** Vanilla's `A_BFGSpray` reads `mo->target` — the shooter, still a live pointer —
+  at that instant; after ~1.5s of the ball's own slow 700u/s flight, the player can be well behind
+  where the ball actually detonated. `resolveBfgSpray` takes only the ball's travel *angle*, not
+  its position, and rebuilds the ray fan from `this.player.x/y/z` fresh each time.
+- **Nothing stops two, or all 40, rays from landing on the same target.** A monster standing
+  directly in front of the player can eat several rays at once, each its own full 15-120 roll —
+  this, not a bigger splash radius, is the actual source of the BFG's reputation as devastating
+  against one big target (a cyberdemon standing in the open can take the majority of the fan).
+
+`resolveBfgSpray` draws no line for the rays themselves — `A_BFGSpray`'s 40 traces are pure math in
+vanilla too, never rendered, and an earlier version of this engine's own approximated splash drew a
+green tracer line to whatever it hit purely to make its damage legible on screen; the real spray
+needs no such compensation, since it has its own real vanilla visual instead. **Every ray that
+connects spawns vanilla's own `MT_EXTRABFG` on the monster it hit** — a small green four-frame
+burst (`BFG_SPRAY_HIT_FRAMES`, `BFE2A0`-`D0`, confirmed against the real `DOOM2.WAD` lump names)
+placed roughly a quarter of the way up the target's body (vanilla's `linetarget->height>>2`; this
+engine has no per-species height table to read that from, so it reuses `MONSTER_FIRE_HEIGHT`'s
+same fixed stand-in). This is spawned once *per connecting ray*, unconditionally, matching
+vanilla's own `P_SpawnMobj` call inside the loop — a target caught by several of the 40 rays gets
+several overlapping bursts, not one, which is exactly the flickering green flash a BFG'd monster
+shows in real vanilla. `BFE1` (the ball's own single impact where it physically stopped, above) and
+`BFE2` are two separate sprites for two separate events; conflating them would either put the
+spray's green flash only at the ball's own landing spot (wrong — it belongs on each hit monster,
+which can be well away from where the ball itself stopped) or skip the ball's own impact sprite
+entirely.
 
 Self-splash, crush damage (see "Crushers and teleporters" below) and monster melee/ranged
 attacks (see "Monster AI" above) are the paths through which the player takes damage. Per-weapon
@@ -2281,8 +2307,8 @@ the player sprite looks the same whatever it holds — though firing and taking 
 each pose it (and a monster) through their own real WAD attack/pain frames, not just the walk
 cycle (`game/thingdefs.ts`'s `MONSTER_ATTACK_FRAMES`/`MONSTER_PAIN_FRAMES`, `game.ts`'s
 `PLAYER_ATTACK_FRAMES`/`PLAYER_PAIN_FRAMES`, `render/sprites.ts: SpriteAnimator.playOnce`). A
-locked-on shot that lands, or anyone caught in a rocket/BFG blast's splash (including the player
-themselves), takes real damage — monster health is vanilla's own, death plays that monster's
+locked-on shot that lands, anyone caught in a rocket blast's splash (including the player
+themselves), or anyone caught by the BFG's real `A_BFGSpray` fan of 40 rays, takes real damage — monster health is vanilla's own, death plays that monster's
 confirmed WAD death animation, and the player's own death freezes the game behind a
 `#death-overlay` until `R` restarts the level
 (`game/thingdefs.ts`, `render/sprites.ts: SpriteActor.die`, `game/inventory.ts: applyDamage`,

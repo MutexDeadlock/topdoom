@@ -63,26 +63,33 @@ export interface WeaponDef {
    * numbers that only look related because this file happens to reuse the
    * same dice for the rocket's direct hit. `hitsPlayer` is true for the
    * rocket — vanilla really does let a rocket's own blast hurt whoever fired
-   * it (the classic "rocket jump" self-damage) — and false for the BFG:
-   * vanilla's BFG ball never calls `A_Explode` at all, its real "spray"
-   * damage is sourced *from* the shooter via individual autoaimed hitscans
-   * and can only ever land on something else, never them. Implementing that
-   * 40-ray spray exactly is far more code than this milestone justifies, so
-   * it's approximated as a monster-only splash instead — bigger than the
-   * rocket's, but never able to hurt the player who fired it. `null` means no
-   * splash at all (plasma, a direct-hit-only bolt in vanilla too).
-   *
-   * `tracers` draws a thin line (`render/tracer.ts`'s `Tracer`, the same primitive
-   * hitscan weapons use) from the impact to every monster the splash actually
-   * hit — true only for the BFG, giving its spray some visible feedback for
-   * what it hit, the same reason a hitscan weapon's tracer exists in the
-   * first place. This isn't vanilla behavior (vanilla's spray rays are pure
-   * math, never rendered at all) but reuses this engine's own established
-   * "show what a shot hit" visual language rather than leaving the BFG's
-   * approximated splash invisible. The rocket leaves this off — its own
-   * explosion sprite is already vanilla's whole visual for it.
+   * it (the classic "rocket jump" self-damage). `null` means no splash at all
+   * (plasma and the BFG, both direct-hit-only bolts as far as `A_Explode` is
+   * concerned — the BFG's own devastating secondary damage is `spray`
+   * below, a completely different mechanism from a radius blast).
    */
-  splash: { radius: number; damage: number; hitsPlayer: boolean; tracers: boolean } | null;
+  splash: { radius: number; damage: number; hitsPlayer: boolean } | null;
+  /**
+   * The BFG ball's real secondary attack, vanilla's `A_BFGSpray` — confirmed
+   * against `linuxdoom-1.10/p_enemy.c` rather than approximated. It is
+   * nothing like a radius splash: `rays` shots fan out across `arcDeg`
+   * (vanilla: 40 rays over 90°, i.e. every 2.25°) centered on the ball's own
+   * flight angle, each one an independent `raycastMonster`-style trace out to
+   * `range` (vanilla: 16*64 = 1024 units) that deals a full, undiminished
+   * direct hit — the sum of `diceRolls` rolls of a d`diceSides` (vanilla: 15
+   * rolls of 1-8, so 15-120 per ray that connects, no distance falloff at
+   * all) — to whatever it lands on, not a shared pool split by distance from
+   * the impact point. Traced from the **player's own current position**, not
+   * the explosion point: vanilla's `A_BFGSpray` reads `mo->target` (the
+   * shooter, still a live pointer) at the moment the ball's death state
+   * fires, which after ~1.5s of a slow 700u/s flight can be well behind
+   * where the ball actually detonated. A monster standing directly in front
+   * of the player can catch several of the 40 rays at once — genuinely more
+   * devastating against one big target than an even radius falloff, which is
+   * the actual source of the BFG's reputation. `null` for every weapon but
+   * the BFG.
+   */
+  spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number } | null;
 }
 
 /** `((rand % sides) + 1) * multiplier` — vanilla's own P_Random damage-roll shape. 0 sides means "always 0". */
@@ -146,6 +153,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     damageDiceSides: 10,
     damageDiceMultiplier: 2,
     splash: null,
+    spray: null,
   },
   chainsaw: {
     ammoType: null,
@@ -164,6 +172,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     damageDiceSides: 10,
     damageDiceMultiplier: 2,
     splash: null,
+    spray: null,
   },
   pistol: {
     ammoType: 'bullets',
@@ -179,6 +188,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     damageDiceSides: 3,
     damageDiceMultiplier: 5,
     splash: null,
+    spray: null,
   },
   shotgun: {
     ammoType: 'shells',
@@ -194,6 +204,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     damageDiceSides: 3,
     damageDiceMultiplier: 5,
     splash: null,
+    spray: null,
   },
   supershotgun: {
     ammoType: 'shells',
@@ -212,6 +223,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     damageDiceSides: 3,
     damageDiceMultiplier: 5,
     splash: null,
+    spray: null,
   },
   chaingun: {
     ammoType: 'bullets',
@@ -228,6 +240,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     damageDiceSides: 3,
     damageDiceMultiplier: 5,
     splash: null,
+    spray: null,
   },
   rocketLauncher: {
     ammoType: 'rockets',
@@ -244,7 +257,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     damageDiceMultiplier: 20,
     // Vanilla's A_Explode: a fixed 128/128 radius attack, independent of the
     // direct-hit roll above.
-    splash: { radius: 128, damage: 128, hitsPlayer: true, tracers: false },
+    splash: { radius: 128, damage: 128, hitsPlayer: true },
+    spray: null,
   },
   plasmaRifle: {
     ammoType: 'cells',
@@ -260,6 +274,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     damageDiceSides: 4,
     damageDiceMultiplier: 5,
     splash: null,
+    spray: null,
   },
   bfg: {
     ammoType: 'cells',
@@ -272,12 +287,13 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     projectileSpeed: 700,
     projectileSprite: 'BFS1',
     iconLump: 'BFUGA0',
-    // See WeaponDef.splash's doc — a monster-only stand-in for vanilla's real
-    // 40-ray spray, sized to feel like the 40-cell cost; hitsPlayer: false is
-    // the actual bug fix (a nearby monster's death shouldn't also kill you).
     damageDiceSides: 8,
     damageDiceMultiplier: 30,
-    splash: { radius: 384, damage: 200, hitsPlayer: false, tracers: true },
+    // A_Explode is never called on the BFG ball in vanilla — see
+    // WeaponDef.splash's doc — its real secondary damage is `spray` below.
+    splash: null,
+    // See WeaponDef.spray's doc — vanilla's real A_BFGSpray numbers.
+    spray: { rays: 40, arcDeg: 90, range: 16 * 64, diceRolls: 15, diceSides: 8 },
   },
 };
 
@@ -295,8 +311,10 @@ export interface ProjectileShot {
   sprite: string;
   /** Direct-hit damage roll, applied on arrival if this shot was locked onto a monster that it actually reached. */
   damage: number;
-  /** Splash to apply at the impact point regardless of what (if anything) was targeted, straight from WeaponDef.splash — null for a non-explosive projectile (plasma). */
-  splash: { radius: number; damage: number; hitsPlayer: boolean; tracers: boolean } | null;
+  /** Splash to apply at the impact point regardless of what (if anything) was targeted, straight from WeaponDef.splash — null for a non-explosive projectile (plasma, BFG). */
+  splash: { radius: number; damage: number; hitsPlayer: boolean } | null;
+  /** The BFG's real secondary attack on arrival, straight from WeaponDef.spray — null for every other projectile. */
+  spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number } | null;
 }
 
 export interface MeleeShot {
@@ -399,6 +417,7 @@ export class WeaponSystem {
         sprite: def.projectileSprite,
         damage: rollDamage(def.damageDiceSides, def.damageDiceMultiplier),
         splash: def.splash,
+        spray: def.spray,
       },
     ];
   }

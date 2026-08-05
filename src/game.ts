@@ -37,7 +37,7 @@ import {
   tickPowers,
   type Inventory,
 } from './game/inventory.ts';
-import { WeaponSystem, type Shot } from './game/weapons.ts';
+import { rollDamage, WeaponSystem, type Shot } from './game/weapons.ts';
 import { Tracer } from './render/tracer.ts';
 import type { Placement, Pos2, Pos3 } from './types.ts';
 import { DEVMODE } from './constants.ts';
@@ -113,9 +113,7 @@ const AIM_HEIGHT_OFFSET = 32;
 
 /** Color of a hitscan tracer line (render/tracer.ts) — a hot yellow-white, like a vanilla muzzle flash. */
 const TRACER_COLOR = 0xfff2a8;
-/** Color of a BFG spray tracer (WeaponDef.splash's `tracers`) — the same green as the BFG's own ball/explosion sprites, distinguishing it from a hitscan's muzzle-flash yellow. */
-const BFG_TRACER_COLOR = 0x66ff33;
-/** Color of a monster's ranged-attack tracer (game/monsters.ts) — a hostile red, distinct from either of the player's own tracer colors above. */
+/** Color of a monster's ranged-attack tracer (game/monsters.ts) — a hostile red, distinct from the player's own tracer color above. */
 const MONSTER_TRACER_COLOR = 0xff4433;
 
 /**
@@ -161,6 +159,9 @@ const IMPACT_FRAME_SECONDS = 4 / 35;
 const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {
   MISL: { sprite: 'MISL', frames: ['B', 'C', 'D'] },
   PLSS: { sprite: 'PLSE', frames: ['A', 'B', 'C', 'D', 'E'] },
+  // BFE1 is the ball's own impact (above); BFE2 is a *separate* sprite for
+  // resolveBfgSpray below — vanilla's MT_EXTRABFG, spawned on every monster a
+  // spray ray actually hits, not on the ball's own landing spot.
   BFS1: { sprite: 'BFE1', frames: ['A', 'B', 'C', 'D', 'E', 'F'] },
   BAL1: { sprite: 'BAL1', frames: ['C', 'D', 'E'] },
   BAL2: { sprite: 'BAL2', frames: ['C', 'D', 'E'] },
@@ -169,6 +170,16 @@ const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {
   APLS: { sprite: 'APBX', frames: ['A', 'B', 'C', 'D', 'E'] },
   FATB: { sprite: 'FBXP', frames: ['A', 'B', 'C'] },
 };
+
+/**
+ * Vanilla's `MT_EXTRABFG` (`S_BFGEXP1`-`4`) — the small green burst
+ * `A_BFGSpray` (`resolveBfgSpray`) spawns on every monster one of its 40 rays
+ * actually connects with, distinct from `BFE1` above (the ball's own single
+ * impact where it physically stopped). `BFE2A0`-`D0` (4 letters, all
+ * rotation-0) confirmed against the real lump names in `DOOM2.WAD` the same
+ * way as every other frame table here.
+ */
+const BFG_SPRAY_HIT_FRAMES = ['A', 'B', 'C', 'D'];
 
 /**
  * The arch-vile's flame, vanilla's `MT_FIRE` (`S_FIRE1`-`S_FIRE30`) — its own
@@ -289,7 +300,9 @@ interface Projectile {
   /** Direct-hit damage, applied to `hitMonsterId` (if any) on arrival. */
   damage: number;
   /** Splash to apply at the impact point regardless of what was targeted, or null for a non-explosive projectile — see weapons.ts's WeaponDef.splash. */
-  splash: { radius: number; damage: number; hitsPlayer: boolean; tracers: boolean } | null;
+  splash: { radius: number; damage: number; hitsPlayer: boolean } | null;
+  /** The BFG's real A_BFGSpray secondary attack, straight from weapons.ts's WeaponDef.spray — null for every projectile but the player's own BFG ball (monsters never fire one). */
+  spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number } | null;
   /** The monster this shot was locked onto *and actually reached* (spawnShot resolves that), or null — a free shot, one that missed a monster it wasn't locked onto, or a locked shot a wall cut short before the target. */
   hitMonsterId: number | null;
   /**
@@ -908,6 +921,7 @@ export class Game {
       sprite: shot.sprite,
       damage: shot.damage,
       splash: shot.splash,
+      spray: shot.spray,
       hitMonsterId,
       sourceId: null,
       sourceType: 0,
@@ -967,7 +981,8 @@ export class Game {
         light,
         sprite: proj.sprite,
         damage: atk.damage,
-        splash: proj.splash ? { radius: proj.splash.radius, damage: proj.splash.damage, hitsPlayer: true, tracers: false } : null,
+        splash: proj.splash ? { radius: proj.splash.radius, damage: proj.splash.damage, hitsPlayer: true } : null,
+        spray: null,
         hitMonsterId: null,
         sourceId: atk.sourceId,
         sourceType: atk.sourceType,
@@ -1014,7 +1029,7 @@ export class Game {
     }
     const offset = this.vileFireOffset(atk, at);
     const fireAt = { x: at.x + offset.x, y: at.y + offset.y, z: at.z };
-    this.applyRadiusDamage(fireAt, atk.blast.splashRadius, atk.blast.splashDamage, true, false, {
+    this.applyRadiusDamage(fireAt, atk.blast.splashRadius, atk.blast.splashDamage, true, {
       id: atk.sourceId,
       type: atk.sourceType,
     });
@@ -1308,10 +1323,12 @@ export class Game {
             p.splash.radius,
             p.splash.damage,
             p.splash.hitsPlayer,
-            p.splash.tracers,
             fromMonster ? { id: p.sourceId!, type: p.sourceType } : undefined,
           );
         }
+        // Only ever set for the player's own BFG ball (spawnMonsterProjectile
+        // always passes spray: null) — see resolveBfgSpray's doc.
+        if (p.spray) this.resolveBfgSpray(p.angleRad, p.spray);
         const impact = IMPACT_EFFECTS[p.sprite];
         if (impact) {
           const effect = this.spawnEffect(impact.sprite, impact.frames, IMPACT_FRAME_SECONDS, at);
@@ -1407,33 +1424,27 @@ export class Game {
    * damage falling off linearly to 0 at the radius edge, matching vanilla's
    * own `P_RadiusAttack` falloff. `hitsPlayer` gates whether the player is
    * even a candidate — true for the rocket, matching vanilla's own
-   * self-splash ("rocket jump") behavior, but false for the BFG, whose real
-   * vanilla damage never reaches the shooter (see `WeaponDef.splash`'s doc);
-   * without this a BFG shot that merely killed a monster *near* the player
-   * also splashed the player itself, which isn't how the original ever
-   * behaves. Self-splash is otherwise the only path through which the player
-   * can currently take damage at all, since there's no monster AI to attack
-   * back. 2D distance only, no height check — matching vanilla's own
-   * `P_RadiusAttack`, which ignores z entirely and relies on line-of-sight
-   * alone to decide whether a floor above/below the blast is protected;
-   * `at.z` is only carried along for `tracers`' visuals, never the falloff math.
-   * `tracers`, when set, draws a `BFG_TRACER_COLOR` line from the impact to
-   * every monster the blast actually damaged — see `WeaponDef.splash`'s doc
-   * on why only the BFG sets it. `source`, when given, attributes the hit for
-   * `ThingLayer.damage`'s own retaliation/infighting rule the same as a
-   * direct hit does — noticed while wiring up the arch-vile's own blast
-   * (`resolveVileBlast`), whose splash needed this to stay exempt from
-   * retaliation like every other hit it deals (`shouldRetarget`'s arch-vile
-   * rule already handles that once a source is actually passed); the
-   * rocket/BFG's own splash calls below don't pass one, matching their
-   * existing behavior exactly.
+   * self-splash ("rocket jump") behavior. The BFG never reaches this method
+   * at all (`WeaponDef.splash` is `null` for it) — its real damage is
+   * `resolveBfgSpray`, a completely different per-ray mechanism with no
+   * radius or falloff. Self-splash is otherwise the only path through which
+   * the player can currently take damage at all, since there's no monster AI
+   * to attack back. 2D distance only, no height check — matching vanilla's
+   * own `P_RadiusAttack`, which ignores z entirely and relies on
+   * line-of-sight alone to decide whether a floor above/below the blast is
+   * protected. `source`, when given, attributes the hit for `ThingLayer.damage`'s own
+   * retaliation/infighting rule the same as a direct hit does — noticed while
+   * wiring up the arch-vile's own blast (`resolveVileBlast`), whose splash
+   * needed this to stay exempt from retaliation like every other hit it deals
+   * (`shouldRetarget`'s arch-vile rule already handles that once a source is
+   * actually passed); the rocket's own splash call below doesn't pass one,
+   * matching its existing behavior exactly.
    */
   private applyRadiusDamage(
     at: Pos3,
     radius: number,
     maxDamage: number,
     hitsPlayer: boolean,
-    tracers: boolean,
     source?: { id: number; type: number },
   ): void {
     for (const m of this.things?.monstersNear(at, radius) ?? []) {
@@ -1443,17 +1454,65 @@ export class Game {
       const dist = Math.hypot(m.x - at.x, m.y - at.y);
       if (dist >= radius || !hasLineOfSight(this.world, at, m)) continue;
       this.things?.damage(m.id, maxDamage * (1 - dist / radius), source);
-      if (tracers) {
-        const tracer = new Tracer(at, m, BFG_TRACER_COLOR);
-        this.scene.add(tracer.line);
-        this.tracers.push(tracer);
-      }
     }
 
     if (!hitsPlayer) return;
     const pdist = Math.hypot(this.player.x - at.x, this.player.y - at.y);
     if (pdist < radius && hasLineOfSight(this.world, at, this.player)) {
       this.damagePlayer(maxDamage * (1 - pdist / radius));
+    }
+  }
+
+  /**
+   * Vanilla's real `A_BFGSpray` (`weapons.ts`'s `WeaponDef.spray`), fired once
+   * when the player's own BFG ball reaches wherever it's going. `travelAngleRad`
+   * is the ball's own fixed flight angle (`Projectile.angleRad` — a BFG ball
+   * never homes) rather than the aim angle at the moment of impact, matching
+   * vanilla's `mo->angle`. Traced from the player's own *current* position —
+   * not the impact point `at` `applyRadiusDamage` uses — since that's what
+   * `mo->target` (the live player pointer `A_BFGSpray` reads) actually is by
+   * the time the ball's slow flight ends; see `WeaponDef.spray`'s doc for why
+   * that distinction is load-bearing rather than a simplification. Each of
+   * the fanned rays is an independent `raycastMonster` trace (the same
+   * approximate single hitbox a free hitscan shot already tests against, and
+   * the same fog-of-war-filtered visibility a player's own shot always
+   * respects) dealing a full, undiminished direct hit with no falloff and no
+   * dedupe against a target multiple rays already caught — vanilla's own
+   * `P_DamageMobj` is called once per ray that connects, with nothing
+   * stopping two, or all 40, from landing on the same body — and each
+   * connecting ray also spawns vanilla's own `MT_EXTRABFG` burst
+   * (`BFG_SPRAY_HIT_FRAMES`) on the monster it hit, the same green flicker a
+   * BFG'd monster gets in real vanilla, once per ray (so a target caught by
+   * several rays flickers with several overlapping bursts, matching vanilla's
+   * own `P_SpawnMobj` call being just as unconditional). A no-op once the
+   * player is dead: there's nothing left to trace from.
+   */
+  private resolveBfgSpray(
+    travelAngleRad: number,
+    spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number },
+  ): void {
+    if (this.playerDead) return;
+    const origin: Pos3 = { x: this.player.x, y: this.player.y, z: this.player.z + AIM_HEIGHT_OFFSET };
+    const arcRad = (spray.arcDeg * Math.PI) / 180;
+    const startRad = travelAngleRad - arcRad / 2;
+    const stepRad = spray.rays > 1 ? arcRad / spray.rays : 0;
+    for (let i = 0; i < spray.rays; i++) {
+      const hit = this.things?.raycastMonster(origin, startRad + stepRad * i, spray.range) ?? null;
+      if (!hit) continue;
+      let damage = 0;
+      for (let j = 0; j < spray.diceRolls; j++) damage += rollDamage(spray.diceSides, 1);
+      this.things?.damage(hit.id, damage);
+      // Vanilla's own MT_EXTRABFG — spawned at roughly a quarter of the
+      // target's own height above its feet (`linetarget->height>>2`); this
+      // engine has no per-species height table to read that from (see
+      // MONSTER_FIRE_HEIGHT's doc for the same stand-in used elsewhere), so
+      // it reuses that same fixed approximate mid-body offset.
+      const effect = this.spawnEffect('BFE2', BFG_SPRAY_HIT_FRAMES, IMPACT_FRAME_SECONDS, {
+        x: hit.x,
+        y: hit.y,
+        z: hit.z + MONSTER_FIRE_HEIGHT,
+      });
+      if (effect) this.impacts.push(effect);
     }
   }
 

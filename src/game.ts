@@ -4,6 +4,7 @@ import { GraphicsBank } from './wad/graphics.ts';
 import { SpriteBank } from './wad/sprites.ts';
 import { loadMap, type DoomMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
+import { AnimatedTextures } from './render/textureanim.ts';
 import { buildMapMesh, doomToWorld, litColor, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from './render/sprites.ts';
 import { SpriteBatch } from './render/spritebatch.ts';
@@ -32,6 +33,7 @@ import {
 } from './wad/specials.ts';
 import { Input } from './game/input.ts';
 import { Hud } from './ui/hud.ts';
+import { Crosshair } from './ui/crosshair.ts';
 import { ProfilerHud } from './ui/profilerhud.ts';
 import { FrameProfiler } from './util/profiler.ts';
 import type { Skill } from './game/skill.ts';
@@ -472,6 +474,7 @@ export class Game {
   private wallFader!: WallFader;
   private flatFader!: FlatFader;
   private textureScroller!: TextureScroller;
+  private animatedTextures!: AnimatedTextures;
   private fogOfWar!: FogOfWar;
   private specials?: SpecialsController;
   private teleportFogs: OneShotEffect[] = [];
@@ -529,6 +532,7 @@ export class Game {
   private wad: Wad;
   private skill: Skill;
   private hud: Hud;
+  private crosshair: Crosshair;
   /**
    * DEVMODE's per-category timing breakdown (top-right overlay). Measurement
    * itself always runs — `performance.now()` calls are cheap enough not to
@@ -578,9 +582,13 @@ export class Game {
 
     const gfx = new GraphicsBank(wad);
     this.materials = new MaterialBank(gfx, view.renderer);
+    // Session-scoped, same as `materials` above — depends only on the WAD
+    // set's own graphics, not on which map is currently loaded.
+    this.animatedTextures = new AnimatedTextures(gfx, this.materials);
     this.spriteBank = new SpriteBank(wad);
     this.spriteMaterials = new SpriteMaterialCache(gfx, view.renderer);
     this.hud = new Hud(gfx);
+    this.crosshair = new Crosshair(view.renderer.domElement);
     this.mapNames = wad.mapNames();
     if (this.mapNames.length === 0) throw new Error('no maps in the selected WADs');
 
@@ -1867,6 +1875,7 @@ export class Game {
     }
     camera.update(dt, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, aim);
     this.hud.update(this.inventory);
+    this.crosshair.update(this.inventory.health);
     this.updatePowerEffects();
     this.updatePainFlash(dt);
 
@@ -1986,6 +1995,10 @@ export class Game {
       // Independent of camera/player position — a scrolling wall animates
       // whether or not it's currently faded or in view.
       this.textureScroller.update(dt);
+      // Same independence, and session-scoped rather than per-map (see its
+      // construction above) — an animated liquid/fire texture keeps cycling
+      // across a level transition exactly as it does within one.
+      this.animatedTextures.update(dt);
       // Door/lift geometry lives in its own meshes (game/specials.ts), so it
       // carries its own faders rather than the two above.
       this.specials?.updateFading(...camArgs, fadeTargets);

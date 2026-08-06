@@ -117,6 +117,28 @@ export class MaterialBank {
     return bmp ? { w: bmp.width, h: bmp.height } : null;
   }
 
+  /** True if `name` already has a live material — i.e. some batch actually uses it. `AnimatedTextures` only bothers swapping frames for names that passed this. */
+  has(kind: SurfaceKind, name: string): boolean {
+    return !!this.materials.get(kind + ':' + name.toUpperCase());
+  }
+
+  /**
+   * Repoints an already-built material at a different bitmap, in place —
+   * `AnimatedTextures` (render/textureanim.ts) calls this once per animation
+   * tic. `alphaTest` is deliberately left as whatever the name's *first*
+   * frame decided: no vanilla animated sequence has holes partway through,
+   * so re-deriving it every swap would only cost a shader recompile for
+   * nothing.
+   */
+  setFrame(kind: SurfaceKind, name: string, frameName: string): void {
+    const mat = this.materials.get(kind + ':' + name.toUpperCase());
+    if (!mat) return;
+    const bmp = kind === 'flat' ? this.gfx.flat(frameName) : this.gfx.texture(frameName);
+    if (!bmp) return;
+    mat.map?.dispose();
+    mat.map = this.toTexture(bmp);
+  }
+
   dispose(): void {
     for (const mat of this.materials.values()) {
       mat?.map?.dispose();

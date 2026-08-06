@@ -329,3 +329,37 @@ also needs to move.
 The accumulated offset is wrapped to `[0, 1)` before being written into the single-precision `uv`
 buffer, purely to avoid float32 precision loss over a long session — `RepeatWrapping` already renders
 an unwrapped UV outside `[0, 1]` correctly, so the wrap isn't needed for correctness.
+
+## Animated textures
+
+`render/textureanim.ts: AnimatedTextures` is the other half of `P_UpdateSpecials` — the "ANIMATE
+FLATS AND TEXTURES GLOBALLY" loop, as opposed to scrolling's line-special loop above. Nukage, lava,
+water and blood flats and the fire/blood/rock wall patterns all cycle through a fixed sequence of
+named frames forever, no trigger, from map load, at 8 tics/frame (`animdefs[]`, `p_spec.c` —
+every entry happens to share that speed).
+
+Vanilla's own comment on that table says the in-between frames are "all the flats/textures between
+the start and end entry, in the order found in the WAD file," not a naming pattern — confirmed
+necessary by entries like `FIREWALA..FIREWALL` and `FIRELAV3..FIRELAVA`, whose start/end names don't
+even sort the way a digit sequence would. `GraphicsBank.textureNamesInOrder`/`flatNamesInOrder`
+expose the same WAD-lump-order lists vanilla's own texture/flat tables are built from
+(`readAllTextures`'s `Map` insertion order, and `flats`'s), so a sequence is resolved once at load
+time by slicing between the start/end indices. A sequence whose start name isn't in the loaded WAD
+set (an episode-exclusive animation in the wrong IWAD) is dropped entirely, matching vanilla's own
+`R_CheckTextureNumForName`/`W_CheckNumForName` skip.
+
+**No geometry work needed.** This engine already keys one material per texture *name*
+(`MaterialBank`), and every quad using that name shares that one material's mesh
+(`mapmesh.ts: BatchSet`) — so animating a name just means repointing its already-built material at a
+different bitmap each tic (`MaterialBank.setFrame`), and every quad using it picks up the new frame
+for free. `MaterialBank.has` gates this to names some batch actually uses, so an animation with no
+on-screen name in the current map costs nothing beyond the initial WAD-order lookup.
+
+**Per-frame offset is counted from the sequence's own start (`i` = 0 at the first name), not
+vanilla's absolute internal texture-table index.** Real vanilla computes `pic = basepic +
+((leveltime/speed + i) % numpics)` with `i` ranging over *absolute* texture indices, so a sequence's
+apparent starting phase depends on where its first texture happens to land in vanilla's internal
+table — a WAD-load-order artifact, not something meaningful to reproduce (this engine doesn't build
+that same absolute index space at all). Using the in-sequence offset instead changes only that
+arbitrary phase, never the cycle rate or frame order, and both are equally arbitrary to a player with
+nothing to compare against.

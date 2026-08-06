@@ -210,6 +210,22 @@ export class GraphicsBank {
     return this.texDefs.has(name.toUpperCase());
   }
 
+  /**
+   * Wall texture names in `TEXTURE1`/`TEXTURE2` definition order — vanilla's
+   * own texture-index order (`r_data.c`'s `textures[]`, built by reading
+   * TEXTURE1 then TEXTURE2 in lump order). `render/textureanim.ts` uses this
+   * to resolve an animdef's start..end name range into the actual in-between
+   * frames, the same way `P_InitPicAnims` does.
+   */
+  textureNamesInOrder(): string[] {
+    return [...this.texDefs.keys()];
+  }
+
+  /** Flat names in `F_START`..`F_END` lump order — same role as `textureNamesInOrder`, for flats. */
+  flatNamesInOrder(): string[] {
+    return [...this.flats.keys()];
+  }
+
   /** Wall texture by name; composes the patches as described by TEXTUREx. */
   texture(name: string): Bitmap | null {
     const key = 'T:' + name.toUpperCase();

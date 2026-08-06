@@ -871,7 +871,7 @@ function shotTargetHalfHeight(): number {
  * null if the step is clear — the per-step counterpart to `shotPath`'s single
  * launch-time trace, for the one projectile whose path isn't straight and so
  * can't have its stopping point resolved up front: the revenant's homing
- * missile (`game.ts: advanceHomingProjectile`, docs/monsters.md § The
+ * missile (`game/projectiles.ts: advanceHoming`, docs/monsters.md § The
  * revenant's homing missile).
  *
  * Blocking is `blocksShot` at the height the step is at where it crosses each

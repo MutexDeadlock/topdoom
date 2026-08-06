@@ -71,7 +71,8 @@ src/render/    BSP polygon reconstruction, mesh building, materials, occlusion f
                sprite billboards + their instanced batching, shot tracers, camera, viewport
 src/game/      spatial queries, collision, player controller, input, thing→sprite table,
                thing/monster world state (AI, pickups, damage), fog of war, inventory/pickups,
-               weapons and firing, damage/death, projectile/effect tables, mover obstruction,
+               weapons and firing, shots in flight + splash, damage/death, projectile/effect
+               tables, transient effects (fog puffs, explosions, tracers), mover obstruction,
                damage floors + secrets
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
                WebAudio playback (channels, attenuation, pan, volume)
@@ -120,7 +121,8 @@ of these, cite where it came from.
 source citation as a comment at the declaration (`g_game.c`'s ticcmd tables, `info.c`'s mobjinfo
 fields, `P_RadiusAttack`'s literal 128). Values tuned by feel say so explicitly — currently
 `GRAVITY` and `ACCELERATION` (`player.ts`), `BRIGHTNESS_LIFT` (`constants.ts`), the weapon fire
-rates and spread (`weapons.ts`), `MONSTER_FADE_RANGE` and the pain-flash alpha (`game.ts`). Never
+rates and spread (`weapons.ts`), `MONSTER_FADE_RANGE` (`render/occlusion.ts`) and the pain-flash
+alpha (`game.ts`). Never
 introduce a third, unmarked category: a bare number with no note is indistinguishable from a
 transcription error.
 

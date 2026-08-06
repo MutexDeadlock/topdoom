@@ -4,7 +4,7 @@ import type { MaterialBank } from './textures.ts';
 import type { DoomMap } from '../wad/map.ts';
 import { pointNearConvexPolygon, segmentIntersect } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
-import { PLAYER_RADIUS } from '../game/player.ts';
+import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../game/player.ts';
 import type { Opening } from '../game/world.ts';
 import type { Pos3 } from '../types.ts';
 import { SCROLL_LINE_SPECIAL, SCROLL_SPEED } from '../wad/specials.ts';
@@ -22,6 +22,42 @@ const SNAP_EPS = 0.004;
 
 /** A point occlusion is tested against — the player, or an awake monster (see `update`'s doc). */
 export type FadeTarget = Pos3;
+
+/**
+ * How far an awake monster can be and still count as a fade target.
+ * **Tuned by feel** to roughly a room's length, not converted from vanilla.
+ * Deliberately a plain distance cap rather than a `hasLineOfSight` gate, which
+ * would make the fade a no-op for the case it exists for — docs/render.md §
+ * Wall occlusion fading.
+ */
+const MONSTER_FADE_RANGE = 768;
+
+/**
+ * Most awake monsters that can be fade targets at once, nearest first. Purely
+ * a cost bound (`WallFader` cost is quads × targets): past a couple of dozen
+ * nearby monsters, every wall any of them stands behind is already faded by a
+ * nearer one. See docs/monsters.md § Spatial indexing.
+ */
+const MAX_FADE_TARGETS = 48;
+
+/**
+ * The player plus the awake monsters near enough to fade walls for, nearest
+ * first and capped at `MAX_FADE_TARGETS`. A wall/flat hiding a monster only
+ * fades once that monster is alerted — an unseen sleeping one is supposed to
+ * stay hidden — so the caller passes `ThingLayer.awakeMonsters()`, not every
+ * monster. Both reuse `PLAYER_HEIGHT / 2` as the target height, same as
+ * `hasLineOfSight`, there being no per-species table.
+ */
+export function collectFadeTargets(player: Pos3, awakeMonsters: readonly Pos3[]): FadeTarget[] {
+  const nearby = awakeMonsters
+    .map((m) => ({ m, d: Math.hypot(m.x - player.x, m.y - player.y) }))
+    .filter((e) => e.d <= MONSTER_FADE_RANGE);
+  nearby.sort((a, b) => a.d - b.d);
+  return [
+    { x: player.x, y: player.y, z: player.z + PLAYER_HEIGHT / 2 },
+    ...nearby.slice(0, MAX_FADE_TARGETS).map((e) => ({ x: e.m.x, y: e.m.y, z: e.m.z + PLAYER_HEIGHT / 2 })),
+  ];
+}
 
 /**
  * Fades the specific wall quad(s) currently between the camera and the

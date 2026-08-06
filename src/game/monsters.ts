@@ -146,7 +146,7 @@ export interface AttackStats {
     /**
      * Revenant only: `MT_TRACER`, the one monster projectile with a homing
      * flight state. Marks the *type* as homing-capable; whether a given shot
-     * homes is `MonsterBody.homingBias`. `game.ts`'s `advanceHomingProjectile`
+     * homes is `MonsterBody.homingBias`. `game/projectiles.ts`'s `advanceHoming`
      * implements the turn.
      */
     homing?: boolean;
@@ -368,7 +368,7 @@ const CHASE_AXIS_EPSILON = 10;
 
 /**
  * Height above a monster's feet a ranged attack's tracer is drawn from — the
- * monster's own equivalent of `game.ts`'s `AIM_HEIGHT_OFFSET`.
+ * monster's own equivalent of `game/player.ts`'s `AIM_HEIGHT_OFFSET`.
  */
 export const MONSTER_FIRE_HEIGHT = 40;
 
@@ -837,7 +837,7 @@ export function commitTarget(body: MonsterBody): void {
  * zombiemen really do gun each other down.
  *
  * **This is not a pass-through** — the missile stops dead on a same-species
- * body. `game.ts: monsterStruckBy` owns that distinction; docs/monsters.md §
+ * body. `game/projectiles.ts: monsterStruckBy` owns that distinction; docs/monsters.md §
  * Infighting has why it decides whole fights on a crowded map.
  */
 export function sameSpecies(shooterType: number, victimType: number): boolean {

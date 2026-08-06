@@ -1,6 +1,17 @@
 import { hasPower, type AmmoType, type Inventory, type WeaponId } from './inventory.ts';
 import type { Input } from './input.ts';
-import type { SfxId } from '../audio/sfx.ts';
+import type { AudioEngine } from '../audio/audio.ts';
+import { PLAYER_ORIGIN, type SfxId } from '../audio/sfx.ts';
+import type { Pos3 } from '../types.ts';
+
+/**
+ * How often the chainsaw's idle rattle restarts while it's the ready weapon:
+ * vanilla's `S_SAW` state holds 4 tics and `A_WeaponReady` plays `sawidl` every
+ * time it loops, each start cutting off the last (they share the player's
+ * origin). That restart *is* the engine note — the lump is longer than the
+ * interval, so only its first fraction is ever heard.
+ */
+const SAW_IDLE_INTERVAL = 4 / 35;
 
 /**
  * Vanilla's `MELEERANGE`: how far `A_Punch`/`A_Saw` trace out from the
@@ -375,6 +386,13 @@ export interface MeleeShot {
   range: number;
   /** This swing's damage roll, already scaled by berserk where it applies. */
   damage: number;
+  /**
+   * Carried from `WeaponDef.hitSound`/`missSound` so whoever resolves the
+   * swing doesn't have to look the weapon back up to know what it sounds like
+   * — the same reason a `ProjectileShot` carries its own sprite and splash.
+   */
+  hitSound: SfxId | null;
+  missSound: SfxId | null;
 }
 
 export type Shot = HitscanShot | ProjectileShot | MeleeShot;
@@ -396,6 +414,61 @@ export type Shot = HitscanShot | ProjectileShot | MeleeShot;
  */
 export class WeaponSystem {
   private cooldownRemaining = 0;
+  /**
+   * Which weapon was selected as of the previous frame, so bringing the
+   * chainsaw up can play `sawup` — a switch can come from a key, the wheel
+   * *or* a pickup, so this is compared once a frame rather than at each of
+   * those. See `updateSounds`.
+   */
+  private lastWeapon: WeaponId = 'pistol';
+  /** Counts down to the chainsaw's next idle rattle — see `SAW_IDLE_INTERVAL`. */
+  private sawIdleTimer = 0;
+
+  /**
+   * Resyncs the switch tracking to whatever is selected as a level starts, so
+   * carrying the chainsaw through a level transition doesn't announce it as if
+   * it had just been brought up.
+   */
+  beginLevel(inv: Inventory): void {
+    this.lastWeapon = inv.currentWeapon;
+    this.sawIdleTimer = 0;
+  }
+
+  /**
+   * The two weapon sounds that aren't tied to firing: the chainsaw announcing
+   * itself as it comes up (`P_BringUpWeapon`, which does this for no other
+   * weapon) and its idle rattle while it's the ready weapon and the trigger is
+   * released (`A_WeaponReady`, see `SAW_IDLE_INTERVAL`). `at` is the player's
+   * own position, which both are attenuated from.
+   */
+  updateSounds(dt: number, firing: boolean, inv: Inventory, audio: AudioEngine, at: Pos3): void {
+    const weapon = inv.currentWeapon;
+    const justSwitched = weapon !== this.lastWeapon;
+    if (justSwitched) {
+      this.lastWeapon = weapon;
+      // Checked once a frame rather than at each switch, since a pickup can
+      // select a weapon too (`applyPickup`), exactly as vanilla's own
+      // `pendingweapon` path does.
+      if (weapon === 'chainsaw') audio.play('sawup', at, PLAYER_ORIGIN);
+    }
+    if (weapon !== 'chainsaw' || firing) {
+      this.sawIdleTimer = 0;
+      return;
+    }
+    // A fresh switch skips straight to a full interval rather than falling
+    // into the countdown below: `sawIdleTimer` is left at 0 from whatever
+    // weapon was selected before, so falling through would fire `sawidl` in
+    // this same call and cut off the `sawup` that just played above — both
+    // share the player's origin (see this method's own doc).
+    if (justSwitched) {
+      this.sawIdleTimer = SAW_IDLE_INTERVAL;
+      return;
+    }
+    this.sawIdleTimer -= dt;
+    if (this.sawIdleTimer > 0) return;
+    this.sawIdleTimer = SAW_IDLE_INTERVAL;
+    audio.play('sawidl', at, PLAYER_ORIGIN);
+  }
 
   /** Applies this frame's number-key and mouse-wheel weapon switches. */
   handleSwitching(input: Input, inv: Inventory, wheelDelta: number): void {
@@ -441,6 +514,8 @@ export class WeaponSystem {
           angleRad: aimAngleRad,
           range: def.meleeRange,
           damage: rollDamage(def.damageDiceSides, def.damageDiceMultiplier) * (berserk ? BERSERK_FIST_MULTIPLIER : 1),
+          hitSound: def.hitSound,
+          missSound: def.missSound,
         },
       ];
     }

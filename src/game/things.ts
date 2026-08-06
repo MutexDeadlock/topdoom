@@ -1466,7 +1466,7 @@ export function buildThingSprites(
     },
     monstersNear(pos: Pos2, radius: number): MonsterRef[] {
       // Grid-backed, not a scan of every thing. This is called once per
-      // in-flight projectile per frame (`game.ts`'s `monsterStruckBy`), and a
+      // in-flight projectile per frame (`game/projectiles.ts`'s `monsterStruckBy`), and a
       // crowded map can have well over a thousand projectiles in the air at
       // once — as a linear scan that alone measured ~138 ms/frame on NUTS.WAD,
       // more than everything else in the frame put together.

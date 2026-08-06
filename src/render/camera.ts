@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { Input } from '../game/input.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 
 export interface TopDownCameraOptions {
@@ -14,6 +15,13 @@ export interface TopDownCameraOptions {
 
 /** How fast `yawDeg` catches up to a `stepYaw` target, as a lerp-per-second rate. */
 const YAW_STEP_SMOOTH_RATE = 18;
+
+/** Camera-orbit degrees per pixel of right-mouse drag. */
+const YAW_SENSITIVITY = 0.15;
+/** Degrees Q/E snap the camera per press — a keyboard alternative to right-drag. */
+const KEY_YAW_STEP = 45;
+/** Seconds between auto-repeated Q/E steps while the key stays held, after the initial tap. */
+const KEY_YAW_REPEAT_INTERVAL = 0.26;
 
 /**
  * A camera hanging above the player, tilted slightly off vertical so walls
@@ -34,6 +42,9 @@ export class TopDownCamera {
   private target = new THREE.Vector3();
   private smoothed = new THREE.Vector3();
   private initialised = false;
+  /** Seconds Q/E has been continuously held, for auto-repeat — see `applyYawInput`. */
+  private qHoldTime = 0;
+  private eHoldTime = 0;
 
   constructor(aspect: number, options: TopDownCameraOptions = {}) {
     this.tiltDeg = options.tiltDeg ?? 60;
@@ -67,6 +78,35 @@ export class TopDownCamera {
    */
   stepYaw(deltaDeg: number): void {
     this.targetYawDeg += deltaDeg;
+  }
+
+  /**
+   * This frame's orbit input: right-drag, plus the Q/E 45° snaps and their
+   * auto-repeat. See docs/render.md § Camera orbit for why the drag assignment
+   * is guarded on a nonzero delta.
+   */
+  applyYawInput(input: Input, dt: number): void {
+    // Guarded on a nonzero delta: a plain `yawDeg` assignment (even a no-op
+    // "-= 0" one) goes through the setter, which snaps `targetYawDeg` back to
+    // the current value — running it unconditionally every frame would cancel
+    // a Q/E stepYaw animation after just one frame of smoothing.
+    const dragYaw = input.consumeDragYaw();
+    if (dragYaw !== 0) this.yawDeg -= dragYaw * YAW_SENSITIVITY;
+    // Signs match right-drag: E rotates the same way as dragging right, Q as dragging left.
+    // stepYaw (not a plain assignment) is what makes this animate smoothly instead of
+    // snapping. Holding the key auto-repeats the same step every KEY_YAW_REPEAT_INTERVAL,
+    // roughly how long one step's smoothing takes to settle, so a hold reads as continuous
+    // rotation made of chained 45° steps rather than a single tap.
+    this.qHoldTime = input.held('KeyQ') ? this.qHoldTime + dt : 0;
+    this.eHoldTime = input.held('KeyE') ? this.eHoldTime + dt : 0;
+    if (input.pressed('KeyQ') || this.qHoldTime >= KEY_YAW_REPEAT_INTERVAL) {
+      this.stepYaw(KEY_YAW_STEP);
+      this.qHoldTime = 0;
+    }
+    if (input.pressed('KeyE') || this.eHoldTime >= KEY_YAW_REPEAT_INTERVAL) {
+      this.stepYaw(-KEY_YAW_STEP);
+      this.eHoldTime = 0;
+    }
   }
 
   /**

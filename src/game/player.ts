@@ -9,6 +9,15 @@ export const PLAYER_HEIGHT = 56;
 export const PLAYER_MASS = 100;
 
 /**
+ * Height above the feet a weapon fires from, and the plane the mouse cursor
+ * is projected onto for aiming (`game.ts`'s `camera.pointerToPlane`) — the two
+ * have to match, or a tracer/projectile would visibly start from a different
+ * height than where the crosshair appears to be. A monster's own equivalent is
+ * `game/monsters.ts`'s `MONSTER_FIRE_HEIGHT`.
+ */
+export const AIM_HEIGHT_OFFSET = 32;
+
+/**
  * Vanilla's own ticcmd move tables (`g_game.c`'s `forwardmove`/`sidemove`),
  * indexed `[walk, run]`, and its `MAXPLMOVE` clamp. Everything below is
  * expressed in these units and scaled once by `MOVE_UNIT_SPEED`, rather than

@@ -1,6 +1,6 @@
 # Monster AI
 
-`src/game/monsters.ts`, `src/game/things.ts`
+`src/game/monsters.ts`, `src/game/things.ts`, `src/game/projectiles.ts`
 
 Every `MONSTER_TYPES` entry except Commander Keen (72) and the boss brain (88) wakes, chases and
 attacks — neither of those two attacks or moves in vanilla either.
@@ -151,7 +151,7 @@ Four details are load-bearing:
 
 **The same grid backs `monstersNear` and `raycastMonster`**, and neither can afford to be the linear
 scan it started as, because both are called *per shot in flight*, not per frame: `monstersNear` runs
-once per airborne projectile per frame (`game.ts`'s `monsterStruckBy`) and a crowded map can have
+once per airborne projectile per frame (`game/projectiles.ts`'s `monsterStruckBy`) and a crowded map can have
 over a thousand in the air; `raycastMonster` runs once per monster hitscan. `raycastMonster`'s query
 is a ray rather than a box, so `forEachMonsterAlongRay` steps the ray by half a cell and sweeps each
 step's 3×3 cell neighbourhood — deliberately simpler than `World.forEachLineAlongSegment`'s exact
@@ -167,7 +167,8 @@ stresses it (NUTS.WAD has 1,272 of them, and the scan cost most of the frame onc
 alerted). Unlike the queries above, indexed from the start because their cost was obvious on paper,
 this one shipped on an assumption that didn't hold.
 
-For the same reason, `game.ts` caps occlusion-fade targets at `MAX_FADE_TARGETS` (nearest first):
+For the same reason, `collectFadeTargets` (render/occlusion.ts) caps them at `MAX_FADE_TARGETS`
+(nearest first):
 `WallFader`/`FlatFader` cost is quads × targets. It's purely a cost bound — past a couple of dozen
 nearby monsters, every wall any of them stands behind is already faded by a nearer one.
 
@@ -226,8 +227,8 @@ it hits something.
 
 ## Hitscan vs. projectile
 
-Which one a type uses matches vanilla (`AttackStats.ranged.projectile`, `game.ts`'s
-`spawnMonsterProjectile`/`PROJECTILE_FRAMES`/`IMPACT_EFFECTS`). The human gunners (zombieman,
+Which one a type uses matches vanilla (`AttackStats.ranged.projectile`, `game/projectiles.ts`'s
+`spawnMonsterShot`, plus `PROJECTILE_FRAMES`/`IMPACT_EFFECTS`). The human gunners (zombieman,
 shotgun guy, chaingunner, Wolfenstein SS) and the spider mastermind fire real hitscan bullets and
 keep the tracer, coloured red to read as hostile and distinct from either of the player's own. The
 imp (`BAL1`), cacodemon (`BAL2`), baron/hell knight (`BAL7`), mancubus (`MANF`), arachnotron
@@ -291,7 +292,7 @@ existing exemption.
 
 ## The revenant's homing missile
 
-`AttackStats.projectile.homing`, `game.ts`'s `advanceHomingProjectile` — vanilla's `A_Tracer`, the
+`AttackStats.projectile.homing`, `game/projectiles.ts`'s `advanceHoming` — vanilla's `A_Tracer`, the
 one monster projectile with a homing flight state. Every other fireball's fixed straight line is
 correct for it, not a shared simplification.
 
@@ -307,7 +308,7 @@ revenant, seeded on spawn and rerolled on wake and on a pain flinch, threaded in
 `Projectile.homing` — and so both the turning and the smoke — only ever attaches to a shot that won
 the roll; a shot that loses it is a plain `FATB` flying the ordinary straight line.
 
-`advanceHomingProjectile` turns the heading toward the target's *current* bearing by at most
+`advanceHoming` turns the heading toward the target's *current* bearing by at most
 `REVENANT_TRACER_TURN_RATE_RAD` per second (vanilla's clamped `TRACEANGLE`, 16.875° every 4th tic,
 converted to a continuous rate — a smooth curve either way, unlike the AI clock where discreteness
 is load-bearing) and eases height toward the target's `TRACER_HOMING_Z_OFFSET`-above-feet point over
@@ -324,7 +325,7 @@ toward a target that sidestepped, which *is* the mechanic — so the wall the la
 nothing about where it ends up; spending its distance against that budget detonated it mid-air,
 typically mid-turn on the way back around. Vanilla puts no lifetime or range limit on a missile
 either (`P_TryMove` tests each move against the lines it actually crosses), so
-`advanceHomingProjectile` checks each frame's step against the geometry that step really crossed
+`advanceHoming` checks each frame's step against the geometry that step really crossed
 (`world.ts: projectileStepBlocker`, the per-step counterpart to `shotPath`'s launch-time trace,
 reusing the identical `blocksShot` predicate at the height the step is at) and stops there, updating
 `Projectile.lineIndex` so a shoot-triggered special still fires on the right line. No safety cap
@@ -344,7 +345,7 @@ forcing is the only thing that ends a homing flight short of reaching a body.
 
 **A guided missile trails smoke; an unguided one doesn't** — the wiki's "the homing missiles can be
 distinguished by a gray smoke trail" is the entire visible tell, and gating it on
-`Projectile.homing` falls out for free. `advanceHomingProjectile` spawns vanilla's `MT_SMOKE` (which
+`Projectile.homing` falls out for free. `advanceHoming` spawns vanilla's `MT_SMOKE` (which
 reuses the plain bullet-puff sprite `PUFF`, frames `B,C,B,C,D` per `S_SMOKE1`-`5`) every
 `SMOKE_TRAIL_INTERVAL`, the same 4-tic cadence `A_Tracer` gates the turn with. Vanilla also spawns a
 second, redundant `MT_PUFF` one step further behind at the same moment — cosmetically near-identical
@@ -352,7 +353,7 @@ smoke from the same sprite, so reproducing only one loses nothing.
 
 ## Monster projectiles in flight
 
-A monster projectile reuses the same `Projectile`/`updateProjectiles` machinery the player's own
+A monster projectile reuses the same `Projectile`/`ProjectileLayer.update` machinery the player's own
 rocket/plasma/BFG shots use, distinguished by a non-null `sourceId` (with the doomednum along as
 `sourceType` for the species check). It's launched via `shotPath` like a player's locked-on shot
 (stopped early only by a real wall), aimed at whichever target the monster fired at — the player, or
@@ -554,10 +555,10 @@ player can use. `beginRangedAttack` reports a fourth, purely-cosmetic `MonsterAt
 `'vileWindup'` rather than at the blast landing, matching vanilla's timing (`S_VILE_ATK1`-`ATK10`
 play across the entire missilestate chain).
 
-`game.ts: spawnVileWindupFire` reuses the ordinary one-shot `spawnEffect`/`impacts` machinery with
+`game.ts: spawnVileWindupFire` reuses `EffectLayer`'s ordinary one-shot `spawn`/`addImpact` machinery with
 two differences: its `lifetime` is overridden to `VILE_WINDUP_TRACK_SECONDS` (read from
 `MONSTER_STATS` rather than duplicated) instead of one pass through its frames, and `OneShotEffect`
-gained `followTargetId`/`vileSourceId` — `updateEffects` re-derives `x`/`y`/`z` every frame from
+gained `followTargetId`/`vileSourceId` — `EffectLayer` re-derives `x`/`y`/`z` every frame from
 `vileFireFrontOf(target)` (vanilla's `dest->x + 24*cos(dest->angle)` etc., keyed off the *target's*
 own `MonsterRef.angle`/`Player.angle`), but only while `World.hasLineOfSight(vile, target)` holds —
 matching `A_Fire`'s own `P_CheckSight` gate including its failure behavior: the flame freezes where

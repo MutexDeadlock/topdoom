@@ -1,7 +1,8 @@
 # Sound
 
 `src/audio/sfx.ts`, `src/audio/audio.ts`, `src/wad/sound.ts`, plus the emitter calls in
-`game.ts`, `game/things.ts`, `game/monsters.ts` and `game/specials.ts`
+`game.ts`, `game/things.ts`, `game/monsters.ts`, `game/specials.ts`, `game/weapons.ts` and
+`game/effects.ts`
 
 Every sound comes out of the loaded WAD, and every sound's *timing and choice* comes from
 `linuxdoom-1.10` — `sounds.c`'s `S_sfx[]` table, `info.c`'s `mobjinfo` fields, and the
@@ -88,7 +89,9 @@ emitter, so a headless script or a browser with no `AudioContext` needs no branc
 | `game/monsters.ts` | The idle grunt, the melee swing, a hitscan shot, an attack windup, footsteps |
 | `game/things.ts` | Waking, pain, death (and a barrel's explosion, and a resurrection) |
 | `game/specials.ts` | Doors, lifts, floors, ceilings, crushers, switches, a locked door's grunt |
-| `game.ts` | Weapons, projectile launches and impacts, the player's own pain/death/landing, pickups, teleports, the arch-vile's blast |
+| `game/weapons.ts` | The chainsaw's bring-up and idle rattle (`updateSounds`) |
+| `game/effects.ts` | `telept`, on both fog puffs of every teleport |
+| `game.ts` | Weapon fire, projectile launches and impacts, the player's own pain/death/landing, pickups, the arch-vile's blast |
 
 ## Monsters
 
@@ -140,11 +143,13 @@ oddities in that table are vanilla's and are kept: every fireball bursts with `f
 the rocket and the revenant's tracer use the **barrel** explosion, and the BFG ball's
 `rxplod` is a sound nothing else in the game reaches.
 
-Melee is the one weapon sound that depends on the outcome, resolved in `spawnShot`: the
+Melee is the one weapon sound that depends on the outcome, resolved in `spawnPlayerShot`: the
 chainsaw revs (`sawful`) on air and bites (`sawhit`) on contact, the fist's `punch` plays only
 on a hit — `A_Punch` is silent on a miss. Bringing the chainsaw up plays `sawup`
 (`P_BringUpWeapon` does this for no other weapon), and while it is the ready weapon and the
-trigger is released, `sawidl` restarts every 4 tics (`SAW_IDLE_INTERVAL`).
+trigger is released, `sawidl` restarts every 4 tics (`SAW_IDLE_INTERVAL`). Those two are the only
+weapon sounds not tied to firing, and are raised by `WeaponSystem.updateSounds` rather than from the
+fire path.
 
 Launch sounds carry **no origin**: every shot is its own mobj in vanilla, so a burst of plasma
 layers rather than cutting itself off. Weapon fire sounds carry the player's origin, so a held
@@ -180,7 +185,7 @@ the sector's linedefs (`P_GroupLines`), not a polygon centroid — computed lazi
   instead, since reproducing that bug would put the click anywhere on the map.
 - **A locked door** grunts `oof` at full volume. With no message line in this engine, that
   grunt is the entire feedback that a key is missing.
-- **Teleports** play `telept` at both ends, from `game.ts`'s `spawnTeleportFog` — the one
+- **Teleports** play `telept` at both ends, from `EffectLayer.spawnTeleportFog` — the one
   place both puffs are created, for a monster's trip as much as the player's.
 
 Not implemented: vanilla's `noway`, the grunt for using a wall that isn't a door.

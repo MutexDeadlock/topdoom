@@ -5,50 +5,28 @@ import { SpriteBank } from './wad/sprites.ts';
 import { loadMap, type DoomMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
 import { AnimatedTextures } from './render/textureanim.ts';
-import { buildMapMesh, doomToWorld, litColor, type BuiltMap } from './render/mapmesh.ts';
-import { SpriteActor, SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from './render/sprites.ts';
-import { SpriteBatch } from './render/spritebatch.ts';
+import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
+import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import type { Viewport } from './render/viewport.ts';
-import {
-  BARREL_SPLASH_DAMAGE,
-  BARREL_SPLASH_RADIUS,
-  buildThingSprites,
-  type BarrelExplosion,
-  type MonsterAttackEvent,
-  type ThingLayer,
-} from './game/things.ts';
-import { MONSTER_FIRE_HEIGHT, sameSpecies, thrustSpeed } from './game/monsters.ts';
-import { FlatFader, type FadeTarget, TextureScroller, WallFader } from './render/occlusion.ts';
-import { World, hasLineOfSight, projectileStepBlocker, shotPath } from './game/world.ts';
-import { GRAVITY, Player, PLAYER_HEIGHT, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
+import { buildThingSprites, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
+import { MONSTER_FIRE_HEIGHT, thrustSpeed } from './game/monsters.ts';
+import { collectFadeTargets, FlatFader, TextureScroller, WallFader } from './render/occlusion.ts';
+import { World, hasLineOfSight, shotPath } from './game/world.ts';
+import { AIM_HEIGHT_OFFSET, GRAVITY, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
+import { applyBarrelExplosion, applyRadiusDamage, type CombatContext } from './game/combat.ts';
+import { EffectLayer } from './game/effects.ts';
+import { ProjectileLayer } from './game/projectiles.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
 import { blocksCeilingLower, blocksFloorRise } from './game/moverblocking.ts';
 import { SectorEffects } from './game/sectoreffects.ts';
 import {
-  BFG_SPRAY_HIT_FRAMES,
-  IMPACT_EFFECTS,
   IMPACT_FRAME_SECONDS,
-  MONSTER_PROJECTILE_HIT_HEIGHT,
-  MONSTER_PROJECTILE_HIT_RADIUS,
   MONSTER_TRACER_COLOR,
-  PROJECTILE_FRAMES,
-  PROJECTILE_SOUNDS,
-  REVENANT_TRACER_TURN_RATE_RAD,
-  SMOKE_TRAIL_FRAMES,
-  SMOKE_TRAIL_FRAME_SECONDS,
-  SMOKE_TRAIL_INTERVAL,
-  TFOG_FRAMES,
-  TFOG_FRAME_SECONDS,
   TFOG_SPAWN_OFFSET,
-  TRACER_COLOR,
-  TRACER_HOMING_Z_OFFSET,
-  turnToward,
   VILE_FIRE_FRAMES,
   VILE_FIRE_OFFSET,
   VILE_WINDUP_TRACK_SECONDS,
-  type OneShotEffect,
-  type Projectile,
 } from './game/effectdefs.ts';
 import { CRUSH_DAMAGE } from './wad/specials.ts';
 import { Hud } from './ui/hud.ts';
@@ -68,10 +46,8 @@ import {
   pickupSound,
   tickPowers,
   type Inventory,
-  type WeaponId,
 } from './game/inventory.ts';
-import { rollDamage, WEAPONS, WeaponSystem, type Shot } from './game/weapons.ts';
-import { Tracer } from './render/tracer.ts';
+import { WEAPONS, WeaponSystem } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
 import { PLAYER_ORIGIN, monsterOrigin } from './audio/sfx.ts';
 import { SoundBank } from './wad/sound.ts';
@@ -79,21 +55,6 @@ import type { Placement, Pos2, Pos3 } from './types.ts';
 
 /** Combined radius (map units) within which an item is close enough to pick up. */
 const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
-
-/** Camera-orbit degrees per pixel of right-mouse drag. */
-const YAW_SENSITIVITY = 0.15;
-/** Degrees Q/E snap the camera per press — a keyboard alternative to right-drag. */
-const KEY_YAW_STEP = 45;
-/** Seconds between auto-repeated Q/E steps while the key stays held, after the initial tap. */
-const KEY_YAW_REPEAT_INTERVAL = 0.26;
-
-/**
- * Height above the feet a weapon fires from, and the plane the mouse cursor
- * is projected onto for aiming (`camera.pointerToPlane` below) — the two
- * have to match, or a tracer/projectile would visibly start from a different
- * height than where the crosshair appears to be.
- */
-const AIM_HEIGHT_OFFSET = 32;
 
 /**
  * Player death frames, confirmed against `PLAY`'s lump names: its
@@ -125,37 +86,11 @@ const PLAYER_ACTION_FRAME_SECONDS = 3 / 35;
 const HARD_LANDING_SPEED = Math.sqrt(2 * GRAVITY * 32);
 
 /**
- * How often the chainsaw's idle rattle restarts while it's the ready weapon:
- * vanilla's `S_SAW` state holds 4 tics and `A_WeaponReady` plays `sawidl` every
- * time it loops, each start cutting off the last (they share the player's
- * origin). That restart *is* the engine note — the lump is longer than the
- * interval, so only its first fraction is ever heard.
- */
-const SAW_IDLE_INTERVAL = 4 / 35;
-
-/**
  * Slack added to the player's radius when testing a monster's hitscan bolt,
  * which is fired along a stale facing here — docs/monsters.md § Hitscan vs.
  * projectile.
  */
 const MONSTER_BULLET_SLOP = 12;
-
-/**
- * How far an awake monster can be and still count as an occlusion-fade target.
- * **Tuned by feel** to roughly a room's length, not converted from vanilla.
- * Deliberately a plain distance cap rather than a `hasLineOfSight` gate, which
- * would make the fade a no-op for the case it exists for — docs/render.md §
- * Wall occlusion fading.
- */
-const MONSTER_FADE_RANGE = 768;
-
-/**
- * Most awake monsters that can be fade targets at once, nearest first. Purely
- * a cost bound (`WallFader` cost is quads × targets): past a couple of dozen
- * nearby monsters, every wall any of them stands behind is already faded by a
- * nearer one. See docs/monsters.md § Spatial indexing.
- */
-const MAX_FADE_TARGETS = 48;
 
 /**
  * Vanilla's `A_FaceTarget`: aiming at an `MF_SHADOW` thing (here only ever the
@@ -186,22 +121,13 @@ export class Game {
   private animatedTextures!: AnimatedTextures;
   private fogOfWar!: FogOfWar;
   private specials?: SpecialsController;
-  private teleportFogs: OneShotEffect[] = [];
-  private impacts: OneShotEffect[] = [];
-  /**
-   * Every non-map-thing sprite this class draws — projectiles in flight,
-   * impact explosions, teleport-fog puffs, the smoke trail, the vile's flame —
-   * batched into one `InstancedMesh` per lump. The player is deliberately
-   * *not* in here: it needs `SpriteActor.setOpacity`, which has no
-   * per-instance equivalent in a batch. See docs/combat.md § Effects and their
-   * batching.
-   */
-  private effectBatch = new SpriteBatch();
-  /** Scratch for `doomToWorld`, reused across every batched sprite — same reason `game/things.ts` keeps one. */
-  private batchPos = new THREE.Vector3();
+  /** Teleport fog, impact explosions, the smoke trail, the vile's flame and hitscan tracers — see game/effects.ts. */
+  private effects: EffectLayer;
+  /** Everything in flight, player's and monsters' alike — see game/projectiles.ts. */
+  private projectiles: ProjectileLayer;
+  /** The live-level view `projectiles` and the splash helpers read this class through — see game/combat.ts. */
+  private combat: CombatContext;
   private weaponSystem = new WeaponSystem();
-  private tracers: Tracer[] = [];
-  private projectiles: Projectile[] = [];
   /**
    * Set by the exit trigger and consumed right after `specials.update()`
    * returns in `frame` — **never** loaded from inside the callback itself.
@@ -223,21 +149,9 @@ export class Game {
 
   private running = false;
   private lastTime = 0;
-  /** Seconds Q/E has been continuously held, for auto-repeat — see `frame`. */
-  private qHoldTime = 0;
-  private eHoldTime = 0;
 
   private view: Viewport;
   private audio: AudioEngine;
-  /**
-   * Which weapon was selected as of the previous frame, so bringing the
-   * chainsaw up can play `sawup` (vanilla's `P_BringUpWeapon`, the only weapon
-   * that announces itself) — a switch can come from a key, the wheel *or* a
-   * pickup, so this is compared once a frame rather than at each of those.
-   */
-  private lastWeapon: WeaponId = 'pistol';
-  /** Counts down to the chainsaw's next idle rattle — see `SAW_IDLE_INTERVAL`. */
-  private sawIdleTimer = 0;
   private wad: Wad;
   private skill: Skill;
   private hud: Hud;
@@ -297,7 +211,38 @@ export class Game {
     // frame A (this list's first entry) until the player is actually moving.
     this.playerActor = new SpriteActor(this.spriteBank, this.spriteMaterials, 'PLAY', ['A', 'B', 'C', 'D']);
     this.scene.add(this.playerActor.mesh);
-    this.scene.add(this.effectBatch.group);
+    // The vile-flame resolver stays here rather than in EffectLayer: where the
+    // flame belongs depends on live monster/player state (and on A_Fire's
+    // sightline rule), which is this class's business, not the batch's.
+    this.effects = new EffectLayer(this.scene, this.spriteBank, this.spriteMaterials, audio, (vileId, targetId) => {
+      const vile = this.things?.monsterById(vileId);
+      const target = targetId === null ? this.player : this.things?.monsterById(targetId);
+      if (!vile || !target || !hasLineOfSight(this.world, vile, target)) return null;
+      return this.vileFireFrontOf(target);
+    });
+    // `world`/`things`/`player`/`inventory` are all replaced on a map load (and
+    // `inventory` again on restart), so the context reads them back off this
+    // instance every time rather than capturing them — hence the getters, and
+    // the alias, since an object literal's own `this` is the literal.
+    const game = this;
+    this.combat = {
+      get world() {
+        return game.world;
+      },
+      get things() {
+        return game.things;
+      },
+      get player() {
+        return game.player;
+      },
+      get playerDead() {
+        return game.playerDead;
+      },
+      damagePlayer: (amount, fromX, fromY) => this.damagePlayer(amount, fromX, fromY),
+      triggerShot: (lineIndex, byMonster) => this.specials?.triggerShot(lineIndex, this.inventory.keys, byMonster),
+    };
+    this.projectiles = new ProjectileLayer(this.combat, this.effects, this.spriteBank, this.spriteMaterials, audio);
+
     // Bound once rather than per frame: `playerActor` is never reassigned.
     this.screen = new ScreenEffects(view.renderer, (opacity) => this.playerActor.setOpacity(opacity));
 
@@ -315,7 +260,7 @@ export class Game {
     // Whatever was still ringing belongs to the level being torn down — a door
     // closing, a monster's death cry — and its origins are about to be reused.
     this.audio.stopAll();
-    this.lastWeapon = this.inventory.currentWeapon;
+    this.weaponSystem.beginLevel(this.inventory);
     // A fresh map always starts with a living player — covers both a normal
     // level transition (which can't happen while dead; movement is frozen)
     // and `restart`'s "reload the same map" call, defensively in one place
@@ -339,20 +284,6 @@ export class Game {
       this.things.dispose();
     }
     this.specials?.dispose();
-    // A fog puff or impact explosion mid-animation when the map changes (e.g.
-    // a teleporter onto an exit line) would otherwise keep animating over the
-    // new level. Dropping the list is the whole of it now that these are
-    // batched (`effectBatch`) rather than owning a mesh each: nothing is added
-    // to the batch for an effect that isn't in one of these lists.
-    this.teleportFogs = [];
-    this.impacts = [];
-    // Same reasoning for a tracer/projectile still in flight when the map changes.
-    for (const t of this.tracers) {
-      this.scene.remove(t.line);
-      t.dispose();
-    }
-    this.tracers = [];
-    this.projectiles = [];
 
     const t0 = performance.now();
     const map = loadMap(this.wad, name);
@@ -360,6 +291,10 @@ export class Game {
     this.sectorEffects = new SectorEffects(map);
     this.levelTime = 0;
     this.world = new World(map);
+    // Both drop whatever was still in flight or mid-animation in the level
+    // being torn down, which would otherwise carry over into the new one.
+    this.effects.beginLevel(this.world);
+    this.projectiles.beginLevel();
     // Sectors a door/lift/floor mover will drive are pulled out of the static
     // batches up front — SpecialsController owns their geometry instead (see
     // render/mapmesh.ts's MapMeshOptions doc for why).
@@ -397,9 +332,9 @@ export class Game {
         // Matches vanilla P_Teleport: a fog puff where the player stood, and
         // another just ahead of the landing spot along the direction it
         // faces — captured before/after teleportTo moves the player.
-        this.spawnTeleportFog(this.player);
+        this.effects.spawnTeleportFog(this.player);
         this.player.teleportTo(dest);
-        this.spawnTeleportFog({
+        this.effects.spawnTeleportFog({
           x: this.player.x + Math.cos(dest.angle) * TFOG_SPAWN_OFFSET,
           y: this.player.y + Math.sin(dest.angle) * TFOG_SPAWN_OFFSET,
           z: this.player.z,
@@ -472,215 +407,12 @@ export class Game {
     this.built?.group.traverse((obj) => {
       if (obj instanceof THREE.Mesh) obj.geometry.dispose();
     });
-    // Tracers own per-instance geometry/material (unlike sprite actors, whose
-    // geometry/material come from the shared, disposed-below SpriteMaterialCache).
-    for (const t of this.tracers) t.dispose();
     // Both sprite batches' instance buffers and cloned materials are their
     // own; the geometry/textures behind them are spriteMaterials'.
     this.things?.dispose();
-    this.effectBatch.dispose();
+    this.effects.dispose();
     this.materials.dispose();
     this.spriteMaterials.dispose();
-  }
-
-  /**
-   * Spawns a one-shot sprite animation (teleport fog, impact explosion, smoke
-   * puff) and returns it, or null if the sprite has no art — checked here,
-   * once, by resolving the first frame, so `updateEffects` never has to carry
-   * a "this one turned out to have no lump" case through every frame.
-   */
-  private spawnEffect(sprite: string, frames: string[], frameSeconds: number, at: Pos3): OneShotEffect | null {
-    const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, sprite, frames, frameSeconds);
-    if (!anim.resolve(0, VIEWER_ANGLE_DEG)) return null;
-    const light = this.world.sectorAt(at.x, at.y)?.light ?? 128;
-    return { anim, x: at.x, y: at.y, z: at.z, light, elapsed: 0, lifetime: frames.length * frameSeconds };
-  }
-
-  /** Queues one already-advanced sprite into `effectBatch` at a DOOM-space point. */
-  private batchSprite(anim: SpriteAnimator, at: Pos3, facingDeg: number, light: number, viewerAngleDeg: number): void {
-    const cached = anim.resolve(facingDeg, viewerAngleDeg);
-    if (!cached) return;
-    doomToWorld(at.x, at.y, at.z, this.batchPos);
-    this.effectBatch.add(cached, this.batchPos.x, this.batchPos.y, this.batchPos.z, 1, litColor(light), 0);
-  }
-
-  /** Advances a one-shot effect list in place and drops the ones that finished, matching every other list's remaining-array pattern here. */
-  private updateEffects(list: OneShotEffect[], dt: number, viewerAngleDeg: number): OneShotEffect[] {
-    if (list.length === 0) return list;
-    const remaining: OneShotEffect[] = [];
-    for (const e of list) {
-      e.elapsed += dt;
-      if (e.elapsed >= e.lifetime) continue;
-      if (e.followTargetId !== undefined && e.vileSourceId !== undefined) {
-        const vile = this.things?.monsterById(e.vileSourceId);
-        const target = e.followTargetId === null ? this.player : this.things?.monsterById(e.followTargetId);
-        // Vanilla's own A_Fire: "don't move it if the vile lost sight" — a
-        // broken sightline (or a dead/stale vile or target) just leaves the
-        // flame exactly where it last was, matching A_Fire's early return,
-        // rather than hiding it or popping it early. It's about to expire on
-        // its own anyway if the shot fizzles (see spawnVileWindupFire).
-        if (vile && target && hasLineOfSight(this.world, vile, target)) {
-          const front = this.vileFireFrontOf(target);
-          e.x = front.x;
-          e.y = front.y;
-          e.z = front.z;
-        }
-      }
-      e.anim.advance(dt, true);
-      this.batchSprite(e.anim, e, 0, e.light, viewerAngleDeg);
-      remaining.push(e);
-    }
-    return remaining;
-  }
-
-  private spawnTeleportFog(at: Pos3): void {
-    // Vanilla starts `telept` on each of the two fog puffs it spawns, so a
-    // teleport is heard at both ends — and this is the one place both are
-    // created, for the player's own trip and a monster's alike.
-    this.audio.play('telept', at);
-    const effect = this.spawnEffect('TFOG', TFOG_FRAMES, TFOG_FRAME_SECONDS, at);
-    if (effect) this.teleportFogs.push(effect);
-  }
-
-  /**
-   * Turns one fired `Shot` (game/weapons.ts) into a tracer line or a flying
-   * projectile sprite. Always starts at the player's own fire height and
-   * slopes toward a locked-on monster's height; `shotPath` resolves where it
-   * actually gets to. Hit-or-miss on `targetId` is settled **here**, not on
-   * arrival. See docs/combat.md § How a shot deals damage.
-   */
-  private spawnShot(shot: Shot, startZ: number, target: Pos3 | null, targetId: number | null): void {
-    const origin: Pos3 = { x: this.player.x, y: this.player.y, z: startZ };
-
-    // A swing never travels, so it skips shotPath entirely — vanilla's
-    // A_Punch/A_Saw just trace MELEERANGE along the facing. Aim already points
-    // at a hovered monster, so the ray finds a locked-on target with no
-    // separate case, and can't reach one past the swing's own range.
-    if (shot.kind === 'melee') {
-      const swung = this.things?.raycastMonster(origin, shot.angleRad, shot.range) ?? null;
-      if (swung) this.things?.damage(swung.id, shot.damage, undefined, undefined, origin.x, origin.y);
-      // A_Punch/A_Saw both key their sound off whether they found a target: the
-      // chainsaw revs on air and bites on contact, the fist is silent on a miss.
-      const melee = WEAPONS[this.inventory.currentWeapon];
-      const sound = swung ? melee.hitSound : melee.missSound;
-      if (sound) this.audio.play(sound, origin, PLAYER_ORIGIN);
-      return;
-    }
-
-    const path = shotPath(this.world, origin, shot.angleRad, target);
-
-    let hitMonsterId: number | null = null;
-    let endX = path.x;
-    let endY = path.y;
-    let endDist = path.dist;
-
-    if (target !== null && targetId !== null) {
-      // A locked shot connects only if nothing stopped it short of the target.
-      const wantDist = Math.hypot(target.x - origin.x, target.y - origin.y);
-      if (path.dist >= wantDist - 1) hitMonsterId = targetId;
-    } else {
-      // No locked target: still test the path against every monster's body, so
-      // one standing between the player and the wall they're shooting at isn't
-      // invisible to the shot. Only ever shortens it, never past `path.dist`.
-      const monsterHit = this.things?.raycastMonster(origin, shot.angleRad, path.dist) ?? null;
-      if (monsterHit) {
-        hitMonsterId = monsterHit.id;
-        endX = monsterHit.x;
-        endY = monsterHit.y;
-        endDist = monsterHit.dist;
-      }
-    }
-
-    // A shoot-triggered special only fires if the shot reached the wall rather
-    // than being absorbed by a monster first. A hitscan pellet resolves this
-    // frame so it fires here; a projectile's is deferred to arrival (see
-    // `Projectile.lineIndex`).
-    if (shot.kind === 'hitscan') {
-      if (hitMonsterId !== null) this.things?.damage(hitMonsterId, shot.damage, undefined, undefined, origin.x, origin.y);
-      else this.specials?.triggerShot(path.lineIndex, this.inventory.keys);
-      const tracer = new Tracer(origin, { x: endX, y: endY, z: path.z }, TRACER_COLOR);
-      this.scene.add(tracer.line);
-      this.tracers.push(tracer);
-      return;
-    }
-
-    const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, shot.sprite, PROJECTILE_FRAMES[shot.sprite]);
-    const light = this.world.sectorAt(origin.x, origin.y)?.light ?? 128;
-    if (!anim.resolve((shot.angleRad * 180) / Math.PI, VIEWER_ANGLE_DEG)) return;
-    // The missile's own seesound, with no origin: every shot is its own mobj in
-    // vanilla, so a burst of plasma layers rather than cutting itself off.
-    const launch = PROJECTILE_SOUNDS[shot.sprite]?.launch;
-    if (launch) this.audio.play(launch, origin);
-    this.projectiles.push({
-      anim,
-      originX: origin.x,
-      originY: origin.y,
-      startZ,
-      endZ: path.z,
-      angleRad: shot.angleRad,
-      speed: shot.speed,
-      maxDist: endDist,
-      traveled: 0,
-      light,
-      sprite: shot.sprite,
-      damage: shot.damage,
-      splash: shot.splash,
-      spray: shot.spray,
-      hitMonsterId,
-      sourceId: null,
-      sourceType: 0,
-      lineIndex: hitMonsterId === null ? path.lineIndex : null,
-    });
-  }
-
-  /**
-   * Turns a monster's fired ranged `MonsterAttackEvent` into a flying
-   * `Projectile`, aimed at whichever target it fired at (`atk.targetId`,
-   * resolved live). Launched via `shotPath` with `lockedOn: false`, and unlike
-   * a player's shot the flight doesn't resolve hit-or-miss up front — see
-   * docs/monsters.md § Monster projectiles in flight.
-   */
-  private spawnMonsterProjectile(atk: MonsterAttackEvent): void {
-    if (!atk.projectiles) return;
-    const victim = atk.targetId === null ? null : this.things?.monsterById(atk.targetId);
-    const target = victim
-      ? { x: victim.x, y: victim.y, z: victim.z + MONSTER_FIRE_HEIGHT }
-      : { x: this.player.x, y: this.player.y, z: this.player.z + AIM_HEIGHT_OFFSET };
-    const light = this.world.sectorAt(atk.x, atk.y)?.light ?? 128;
-    // Almost always one entry; the mancubus fires two per volley (see
-    // MonsterAttack.projectiles's doc) — each resolved and spawned
-    // independently, since a fanned-out fireball flies its own path and can
-    // miss on its own.
-    for (const proj of atk.projectiles) {
-      const path = shotPath(this.world, atk, proj.angleRad, target, false);
-      const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, proj.sprite, PROJECTILE_FRAMES[proj.sprite]);
-      if (!anim.resolve((proj.angleRad * 180) / Math.PI, VIEWER_ANGLE_DEG)) continue;
-      const launch = PROJECTILE_SOUNDS[proj.sprite]?.launch;
-      if (launch) this.audio.play(launch, atk);
-      this.projectiles.push({
-        anim,
-        originX: atk.x,
-        originY: atk.y,
-        startZ: atk.z,
-        endZ: path.z,
-        angleRad: proj.angleRad,
-        speed: proj.speed,
-        maxDist: path.dist,
-        traveled: 0,
-        light,
-        sprite: proj.sprite,
-        damage: atk.damage,
-        splash: proj.splash ? { radius: proj.splash.radius, damage: proj.splash.damage, hitsPlayer: true } : null,
-        spray: null,
-        hitMonsterId: null,
-        sourceId: atk.sourceId,
-        sourceType: atk.sourceType,
-        lineIndex: path.lineIndex,
-        homing: proj.homing
-          ? { targetId: atk.targetId, x: atk.x, y: atk.y, z: atk.z, headingRad: proj.angleRad, smokeTimer: 0 }
-          : undefined,
-      });
-    }
   }
 
   /**
@@ -732,17 +464,16 @@ export class Game {
     this.audio.play('barexp', atk, monsterOrigin(atk.sourceId));
     const offset = this.vileFireOffset(atk, at);
     const fireAt = { x: at.x + offset.x, y: at.y + offset.y, z: at.z };
-    this.applyRadiusDamage(fireAt, atk.blast.splashRadius, atk.blast.splashDamage, true, {
+    applyRadiusDamage(this.combat, fireAt, atk.blast.splashRadius, atk.blast.splashDamage, true, {
       id: atk.sourceId,
       type: atk.sourceType,
     });
-    const effect = this.spawnEffect('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, fireAt);
-    if (effect) this.impacts.push(effect);
+    this.effects.spawnImpact('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, fireAt);
   }
 
   /**
    * The arch-vile's warning flame, spawned when its windup starts — vanilla's
-   * `MT_FIRE`. Reuses `spawnEffect` but overrides the lifetime to the windup's
+   * `MT_FIRE`. Reuses `EffectLayer.spawn` but overrides the lifetime to the windup's
    * own length, so `resolveVileBlast`'s burst (or nothing, if the shot
    * fizzles) takes over with no explicit hand-off. Positioned up front, as
    * `A_VileTarget` calls `A_Fire` immediately after spawning. See
@@ -755,12 +486,12 @@ export class Game {
     // A_StartFire, on the flame itself (`vilatk` comes from the vile at the same
     // moment, via MonsterSounds.windup) — the two together are the warning.
     this.audio.play('flamst', front);
-    const effect = this.spawnEffect('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, front);
+    const effect = this.effects.spawn('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, front);
     if (!effect) return;
     effect.lifetime = VILE_WINDUP_TRACK_SECONDS;
     effect.followTargetId = atk.targetId;
     effect.vileSourceId = atk.sourceId;
-    this.impacts.push(effect);
+    this.effects.addImpact(effect);
   }
 
   /**
@@ -843,39 +574,7 @@ export class Game {
       // can only actually do anything for a 46 line, never 24/47.
       this.specials?.triggerShot(path.lineIndex, this.inventory.keys, true);
     }
-    const tracer = new Tracer(atk, { x: endX, y: endY, z: endZ }, MONSTER_TRACER_COLOR);
-    this.scene.add(tracer.line);
-    this.tracers.push(tracer);
-  }
-
-  /**
-   * What a still-flying monster projectile has just run into, or null if it
-   * hit nothing this frame. A non-null result always ends the flight; `id` is
-   * who takes the direct damage, or **null for a same-species body that stops
-   * the missile without being hurt by it**. Candidates resolve nearest first.
-   * See docs/monsters.md § Infighting.
-   */
-  private monsterStruckBy(p: Projectile, at: Pos3): { id: number | null } | null {
-    if (p.sourceId === null) return null;
-    let nearest: { id: number | null } | null = null;
-    let nearestSq = Infinity;
-    for (const m of this.things?.monstersNear(at, MONSTER_PROJECTILE_HIT_RADIUS) ?? []) {
-      // Vanilla's `thing == tmthing->target`: a missile never collides with
-      // whoever fired it, so it can leave its own shooter's body.
-      if (m.id === p.sourceId) continue;
-      // Vanilla's own "see if it went over / under" test, which really is a
-      // pass-through — the missile is simply at the wrong height.
-      if (Math.abs(m.z - at.z) > MONSTER_PROJECTILE_HIT_HEIGHT) continue;
-      const dSq = (m.x - at.x) ** 2 + (m.y - at.y) ** 2;
-      if (dSq >= nearestSq) continue;
-      // Same wall check `reachedPlayer` needs, and for the same reason — see
-      // its comment. Traced from the monster for the same `SELF_HIT_MARGIN`
-      // reason, and last so it only runs on an already-close candidate.
-      if (!hasLineOfSight(this.world, m, at)) continue;
-      nearestSq = dSq;
-      nearest = { id: sameSpecies(p.sourceType, m.type) ? null : m.id };
-    }
-    return nearest;
+    this.effects.addTracer(atk, { x: endX, y: endY, z: endZ }, MONSTER_TRACER_COLOR);
   }
 
   /**
@@ -888,268 +587,13 @@ export class Game {
   private monsterCrossedLines(prev: Pos2, pos: Pos2): Placement | null {
     const dest = this.specials?.crossMonster(prev, pos, this.inventory.keys);
     if (!dest) return null;
-    this.spawnTeleportFog({ x: pos.x, y: pos.y, z: this.world.groundFloor(pos.x, pos.y, 0) });
-    this.spawnTeleportFog({
+    this.effects.spawnTeleportFog({ x: pos.x, y: pos.y, z: this.world.groundFloor(pos.x, pos.y, 0) });
+    this.effects.spawnTeleportFog({
       x: dest.x + Math.cos(dest.angle) * TFOG_SPAWN_OFFSET,
       y: dest.y + Math.sin(dest.angle) * TFOG_SPAWN_OFFSET,
       z: this.world.groundFloor(dest.x, dest.y, 0),
     });
     return dest;
-  }
-
-  /** Advances every active hitscan tracer and drops the ones whose flash finished. */
-  private updateTracers(dt: number): void {
-    if (this.tracers.length === 0) return;
-    const remaining: Tracer[] = [];
-    for (const t of this.tracers) {
-      if (t.update(dt)) {
-        remaining.push(t);
-      } else {
-        this.scene.remove(t.line);
-        t.dispose();
-      }
-    }
-    this.tracers = remaining;
-  }
-
-  /**
-   * Advances every in-flight projectile along the fixed straight line
-   * `spawnShot` resolved for it — sloped from `startZ` to `endZ` — and, on
-   * reaching `maxDist`, removes it and plays its `IMPACT_EFFECTS` explosion in
-   * place. Arriving isn't itself a hit (`p.hitMonsterId` carries that answer),
-   * but the impact point applies `p.splash` either way. A monster's own shot
-   * instead re-checks two live arrival tests every frame — see
-   * docs/monsters.md § Monster projectiles in flight.
-   */
-  private updateProjectiles(dt: number, viewerAngleDeg: number): void {
-    if (this.projectiles.length === 0) return;
-    const remaining: Projectile[] = [];
-    for (const p of this.projectiles) {
-      let at: Pos3;
-      if (p.homing) {
-        at = this.advanceHomingProjectile(p, dt);
-      } else {
-        p.traveled += p.speed * dt;
-        const clamped = Math.min(p.traveled, p.maxDist);
-        const frac = p.maxDist > 0 ? clamped / p.maxDist : 1;
-        at = {
-          x: p.originX + Math.cos(p.angleRad) * clamped,
-          y: p.originY + Math.sin(p.angleRad) * clamped,
-          z: p.startZ + (p.endZ - p.startZ) * frac,
-        };
-      }
-
-      // A monster's shot re-tests what it has reached every frame (see
-      // Projectile.sourceId); a player's already knows.
-      const fromMonster = p.sourceId !== null;
-      const reachedPlayer =
-        fromMonster &&
-        !this.playerDead &&
-        Math.hypot(this.player.x - at.x, this.player.y - at.y) <= MONSTER_PROJECTILE_HIT_RADIUS &&
-        Math.abs(this.player.z - at.z) <= MONSTER_PROJECTILE_HIT_HEIGHT &&
-        // Proximity alone isn't arrival, and the trace runs player→projectile,
-        // not the other way round — docs/monsters.md § Monster projectiles in
-        // flight. Last in the chain so it only runs once the cheap proximity
-        // tests already passed.
-        hasLineOfSight(this.world, this.player, at);
-      const struck = fromMonster && !reachedPlayer ? this.monsterStruckBy(p, at) : null;
-
-      if (reachedPlayer || struck || p.traveled >= p.maxDist) {
-        if (fromMonster) {
-          if (reachedPlayer) this.damagePlayer(p.damage, at.x, at.y);
-          // `struck.id === null` is the same-species fizzle: the body stopped
-          // the missile but takes no damage from it (see monsterStruckBy).
-          else if (struck) {
-            if (struck.id !== null)
-              this.things?.damage(struck.id, p.damage, { id: p.sourceId!, type: p.sourceType }, undefined, at.x, at.y);
-          }
-          // A clean miss (reached maxDist without hitting a body) means it
-          // arrived at whatever wall shotPath found at launch — fire its
-          // shoot special now, at actual arrival, not back when it launched.
-          else this.specials?.triggerShot(p.lineIndex, this.inventory.keys, true);
-        } else if (p.hitMonsterId !== null) {
-          this.things?.damage(p.hitMonsterId, p.damage, undefined, undefined, at.x, at.y);
-        } else {
-          this.specials?.triggerShot(p.lineIndex, this.inventory.keys);
-        }
-        if (p.splash) {
-          // Attributed to the firing monster (if any), the same as a direct
-          // hit already is — a cyberdemon's own rocket splash should start
-          // an infight exactly like one of its direct hits would.
-          this.applyRadiusDamage(
-            at,
-            p.splash.radius,
-            p.splash.damage,
-            p.splash.hitsPlayer,
-            fromMonster ? { id: p.sourceId!, type: p.sourceType } : undefined,
-          );
-        }
-        // Only ever set for the player's own BFG ball (spawnMonsterProjectile
-        // always passes spray: null) — see resolveBfgSpray's doc.
-        if (p.spray) this.resolveBfgSpray(p.angleRad, p.spray);
-        // P_ExplodeMissile's own deathsound, wherever the flight actually ended.
-        const explode = PROJECTILE_SOUNDS[p.sprite]?.explode;
-        if (explode) this.audio.play(explode, at);
-        const impact = IMPACT_EFFECTS[p.sprite];
-        if (impact) {
-          const effect = this.spawnEffect(impact.sprite, impact.frames, IMPACT_FRAME_SECONDS, at);
-          if (effect) this.impacts.push(effect);
-        }
-        continue;
-      }
-      // A homing missile's sprite tracks its live, turning heading rather
-      // than the fixed launch angle every other projectile keeps.
-      const poseAngleRad = p.homing?.headingRad ?? p.angleRad;
-      p.anim.advance(dt, true);
-      this.batchSprite(p.anim, at, (poseAngleRad * 180) / Math.PI, p.light, viewerAngleDeg);
-      remaining.push(p);
-    }
-    this.projectiles = remaining;
-  }
-
-  /**
-   * One frame of the revenant's `A_Tracer` homing (`Projectile.homing`): turns
-   * `headingRad` toward the target's current bearing, integrates position from
-   * it, eases height toward the target and spawns the smoke trail. **A homing
-   * missile has no flight-distance budget** — each step is checked against the
-   * geometry it actually crossed (`projectileStepBlocker`), and forcing
-   * `p.traveled` to `p.maxDist` is how arrival is signalled to
-   * `updateProjectiles`. See docs/monsters.md § The revenant's homing missile.
-   */
-  private advanceHomingProjectile(p: Projectile, dt: number): Pos3 {
-    const homing = p.homing!;
-    const step = p.speed * dt;
-    const target: Pos3 | null =
-      homing.targetId === null ? (this.playerDead ? null : this.player) : this.things?.monsterById(homing.targetId) ?? null;
-    if (target) {
-      const bearing = Math.atan2(target.y - homing.y, target.x - homing.x);
-      homing.headingRad = turnToward(homing.headingRad, bearing, REVENANT_TRACER_TURN_RATE_RAD * dt);
-      // Paced by the live distance still to cover, as vanilla's own momz spring
-      // is (`P_AproxDistance(dest - actor) / speed`) — not by a launch-time
-      // budget this flight no longer has.
-      const remaining = Math.max(Math.hypot(target.x - homing.x, target.y - homing.y), step);
-      homing.z += (target.z + TRACER_HOMING_Z_OFFSET - homing.z) * Math.min(1, step / remaining);
-    }
-    const fromX = homing.x;
-    const fromY = homing.y;
-    const fromZ = homing.z;
-    homing.x += Math.cos(homing.headingRad) * step;
-    homing.y += Math.sin(homing.headingRad) * step;
-    const wall = projectileStepBlocker(
-      this.world,
-      { x: fromX, y: fromY, z: fromZ },
-      { x: homing.x, y: homing.y, z: homing.z },
-    );
-    if (wall) {
-      homing.x = wall.x;
-      homing.y = wall.y;
-      homing.z = wall.z;
-      p.lineIndex = wall.lineIndex;
-      p.traveled = p.maxDist;
-      return { x: homing.x, y: homing.y, z: homing.z };
-    }
-    // One sector lookup rather than floorAt + ceilingAt, which are two
-    // wrappers around the same BSP walk — this runs per missile per frame,
-    // and a crowded map can have thousands of them in the air.
-    const sector = this.world.sectorAt(homing.x, homing.y);
-    if (sector && homing.z <= sector.floorHeight) {
-      homing.z = sector.floorHeight;
-      p.traveled = p.maxDist;
-    } else if (sector && homing.z >= sector.ceilHeight) {
-      homing.z = sector.ceilHeight;
-      p.traveled = p.maxDist;
-    }
-    // The smoke trail — see SMOKE_TRAIL_INTERVAL's doc for why this only
-    // ever runs for a shot that already won the homingBias roll.
-    homing.smokeTimer += dt;
-    if (homing.smokeTimer >= SMOKE_TRAIL_INTERVAL) {
-      homing.smokeTimer -= SMOKE_TRAIL_INTERVAL;
-      const puff = this.spawnEffect('PUFF', SMOKE_TRAIL_FRAMES, SMOKE_TRAIL_FRAME_SECONDS, {
-        x: homing.x,
-        y: homing.y,
-        z: homing.z,
-      });
-      if (puff) this.impacts.push(puff);
-    }
-    return { x: homing.x, y: homing.y, z: homing.z };
-  }
-
-  /**
-   * An explosion's blast — vanilla's `P_RadiusAttack`: every living monster
-   * within `radius` with an unobstructed line to the impact point takes damage
-   * falling off linearly to 0 at the edge. `hitsPlayer` gates self-splash
-   * ("rocket jump"); `source`, when given, attributes the hit for
-   * `ThingLayer.damage`'s retaliation rule. **2D distance only, no height
-   * check**, as in vanilla. See docs/combat.md § Splash and the BFG.
-   */
-  private applyRadiusDamage(
-    at: Pos3,
-    radius: number,
-    maxDamage: number,
-    hitsPlayer: boolean,
-    source?: { id: number; type: number },
-  ): void {
-    for (const m of this.things?.monstersNear(at, radius) ?? []) {
-      // Vanilla's PIT_RadiusAttack: the spider mastermind and cyberdemon take
-      // no concussion/splash damage at all, direct hits only.
-      if (m.type === 7 || m.type === 16) continue;
-      const dist = Math.hypot(m.x - at.x, m.y - at.y);
-      if (dist >= radius || !hasLineOfSight(this.world, at, m)) continue;
-      this.things?.damage(m.id, maxDamage * (1 - dist / radius), source, undefined, at.x, at.y);
-    }
-
-    if (!hitsPlayer) return;
-    const pdist = Math.hypot(this.player.x - at.x, this.player.y - at.y);
-    if (pdist < radius && hasLineOfSight(this.world, at, this.player)) {
-      this.damagePlayer(maxDamage * (1 - pdist / radius), at.x, at.y);
-    }
-  }
-
-  /**
-   * A barrel's `A_Explode` — vanilla's literal `P_RadiusAttack(thingy,
-   * thingy->target, 128)`, the same shape as the rocket's splash with
-   * `exp.source` standing in for `thingy->target`. Barrels are in
-   * `monstersNear`, so a second one caught in the blast chains through the
-   * ordinary damage path (docs/combat.md § Exploding barrels).
-   */
-  private applyBarrelExplosion(exp: BarrelExplosion): void {
-    this.applyRadiusDamage(exp, BARREL_SPLASH_RADIUS, BARREL_SPLASH_DAMAGE, true, exp.source);
-  }
-
-  /**
-   * Vanilla's `A_BFGSpray`, fired once when the player's BFG ball arrives.
-   * `travelAngleRad` is the ball's fixed flight angle, and the rays trace from
-   * the player's **current** position rather than the impact point. Each ray
-   * is an independent, undiminished hit with no dedupe against a body several
-   * rays already caught, and each spawns an `MT_EXTRABFG` burst. No-op once
-   * the player is dead. See docs/combat.md § Splash and the BFG.
-   */
-  private resolveBfgSpray(
-    travelAngleRad: number,
-    spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number },
-  ): void {
-    if (this.playerDead) return;
-    const origin: Pos3 = { x: this.player.x, y: this.player.y, z: this.player.z + AIM_HEIGHT_OFFSET };
-    const arcRad = (spray.arcDeg * Math.PI) / 180;
-    const startRad = travelAngleRad - arcRad / 2;
-    const stepRad = spray.rays > 1 ? arcRad / spray.rays : 0;
-    for (let i = 0; i < spray.rays; i++) {
-      const hit = this.things?.raycastMonster(origin, startRad + stepRad * i, spray.range) ?? null;
-      if (!hit) continue;
-      let damage = 0;
-      for (let j = 0; j < spray.diceRolls; j++) damage += rollDamage(spray.diceSides, 1);
-      // Vanilla's inflictor is the ball itself, by then far from the player;
-      // this engine doesn't track where it stopped, so `origin` stands in.
-      this.things?.damage(hit.id, damage, undefined, undefined, origin.x, origin.y);
-      // MT_EXTRABFG spawns at `linetarget->height>>2`; with no per-species
-      // height table, `MONSTER_FIRE_HEIGHT` is the same stand-in used elsewhere.
-      const effect = this.spawnEffect('BFE2', BFG_SPRAY_HIT_FRAMES, IMPACT_FRAME_SECONDS, {
-        x: hit.x,
-        y: hit.y,
-        z: hit.z + MONSTER_FIRE_HEIGHT,
-      });
-      if (effect) this.impacts.push(effect);
-    }
   }
 
   /**
@@ -1228,31 +672,6 @@ export class Game {
     if (atk.projectiles) for (const proj of atk.projectiles) proj.angleRad += off;
   }
 
-  /**
-   * The two weapon sounds that aren't tied to firing: the chainsaw announcing
-   * itself as it comes up (`P_BringUpWeapon`, which does this for no other
-   * weapon) and its idle rattle while it's the ready weapon and the trigger is
-   * released (`A_WeaponReady`, see `SAW_IDLE_INTERVAL`).
-   */
-  private updateWeaponSounds(dt: number, firing: boolean): void {
-    const weapon = this.inventory.currentWeapon;
-    if (weapon !== this.lastWeapon) {
-      this.lastWeapon = weapon;
-      // Checked once a frame rather than at each switch, since a pickup can
-      // select a weapon too (`applyPickup`), exactly as vanilla's own
-      // `pendingweapon` path does.
-      if (weapon === 'chainsaw') this.audio.play('sawup', this.player, PLAYER_ORIGIN);
-    }
-    if (weapon !== 'chainsaw' || firing) {
-      this.sawIdleTimer = 0;
-      return;
-    }
-    this.sawIdleTimer -= dt;
-    if (this.sawIdleTimer > 0) return;
-    this.sawIdleTimer = SAW_IDLE_INTERVAL;
-    this.audio.play('sawidl', this.player, PLAYER_ORIGIN);
-  }
-
   /** `R`, while dead: a fresh inventory and a reload of the current map — `loadMapByIndex` resets the player/world/specials/fog and, via the doc on its own top, `playerDead`/the death overlay/`playerActor` too. */
   private restart(): void {
     this.inventory = createInventory();
@@ -1278,27 +697,7 @@ export class Game {
     // settles in `camera.update`, at the end) — a frame of smoothing lag on the
     // pan axis, which is inaudible.
     this.audio.setListener(this.player, camera.viewerAngleDeg + 180);
-    // Guarded on a nonzero delta: a plain `yawDeg` assignment (even a no-op
-    // "-= 0" one) goes through the setter, which snaps `targetYawDeg` back to
-    // the current value — running it unconditionally every frame would cancel
-    // a Q/E stepYaw animation after just one frame of smoothing.
-    const dragYaw = input.consumeDragYaw();
-    if (dragYaw !== 0) camera.yawDeg -= dragYaw * YAW_SENSITIVITY;
-    // Signs match right-drag: E rotates the same way as dragging right, Q as dragging left.
-    // stepYaw (not a plain assignment) is what makes this animate smoothly instead of
-    // snapping. Holding the key auto-repeats the same step every KEY_YAW_REPEAT_INTERVAL,
-    // roughly how long one step's smoothing takes to settle, so a hold reads as continuous
-    // rotation made of chained 45° steps rather than a single tap.
-    this.qHoldTime = input.held('KeyQ') ? this.qHoldTime + dt : 0;
-    this.eHoldTime = input.held('KeyE') ? this.eHoldTime + dt : 0;
-    if (input.pressed('KeyQ') || this.qHoldTime >= KEY_YAW_REPEAT_INTERVAL) {
-      camera.stepYaw(KEY_YAW_STEP);
-      this.qHoldTime = 0;
-    }
-    if (input.pressed('KeyE') || this.eHoldTime >= KEY_YAW_REPEAT_INTERVAL) {
-      camera.stepYaw(-KEY_YAW_STEP);
-      this.eHoldTime = 0;
-    }
+    camera.applyYawInput(input, dt);
 
     // Runs before player.update so a lift/door the player is standing on has
     // already moved this frame by the time groundFloor is sampled below.
@@ -1367,13 +766,13 @@ export class Game {
           // One shot sound per trigger pull, not per pellet (see
           // `WeaponDef.fireSound`), on the player's own origin — so a held
           // chaingun trigger keeps cutting itself off instead of stacking up.
-          // A melee swing's own sound comes later, from `spawnShot`, which is
+          // A melee swing's own sound comes later, from `spawnPlayerShot`, which is
           // the only place that knows whether it connected.
           const fire = WEAPONS[this.inventory.currentWeapon].fireSound;
           if (fire) this.audio.play(fire, this.player, PLAYER_ORIGIN);
         }
         for (const shot of shots) {
-          this.spawnShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
+          this.projectiles.spawnPlayerShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
         }
       });
 
@@ -1396,7 +795,7 @@ export class Game {
       // Hard landings and the chainsaw's two ambient sounds, both of which
       // belong to a living player only.
       if (this.player.landingSpeed > HARD_LANDING_SPEED) this.audio.play('oof', this.player, PLAYER_ORIGIN);
-      this.updateWeaponSounds(dt, input.mouseDown);
+      this.weaponSystem.updateSounds(dt, input.mouseDown, this.inventory, this.audio, this.player);
     } else if (input.pressed('KeyR')) {
       this.restart();
       input.endFrame();
@@ -1454,9 +853,9 @@ export class Game {
         // A monster with a real flying projectile (game/monsters.ts's
         // MONSTER_STATS, e.g. the imp's fireball) launches one instead of
         // resolving as an instant hit — damage lands later, on arrival
-        // (updateProjectiles), not here.
+        // (ProjectileLayer.update), not here.
         if (atk.kind === 'ranged' && atk.projectiles) {
-          this.spawnMonsterProjectile(atk);
+          this.projectiles.spawnMonsterShot(atk);
         } else if (atk.kind === 'ranged' && atk.blast) {
           // The arch-vile's real attack — guaranteed damage plus knockback
           // and a radius blast, not a traced hitscan bolt. See
@@ -1476,43 +875,28 @@ export class Game {
       }
       // A barrel's own A_Explode, become due this frame (game/things.ts's
       // update() ticks the delay; see applyBarrelExplosion's doc). No visual
-      // spawnEffect is needed here the way every other explosion needs one —
+      // spawned effect is needed here the way every other explosion needs one —
       // the barrel's own PosedThing is already drawing its BEXP death
       // animation at exactly this spot.
-      for (const exp of thingUpdate.barrelExplosions) this.applyBarrelExplosion(exp);
+      for (const exp of thingUpdate.barrelExplosions) applyBarrelExplosion(this.combat, exp);
     });
     this.profiler.time('Effects', () => {
       // One begin/end pair around all four lists, the same per-frame rebuild
-      // `game/things.ts` does — and it has to enclose `updateProjectiles`,
-      // which pushes this frame's new impact explosions and smoke puffs onto
-      // `impacts` for the pass right after it to draw.
-      this.effectBatch.begin(camera.viewerAngleDeg);
-      this.teleportFogs = this.updateEffects(this.teleportFogs, dt, camera.viewerAngleDeg);
-      this.updateTracers(dt);
-      this.updateProjectiles(dt, camera.viewerAngleDeg);
-      this.impacts = this.updateEffects(this.impacts, dt, camera.viewerAngleDeg);
-      this.effectBatch.end();
+      // `game/things.ts` does — and it has to enclose `ProjectileLayer.update`,
+      // which both draws through the batch and pushes this frame's new impact
+      // explosions and smoke puffs on for `updateImpacts` to draw.
+      this.effects.beginFrame(camera.viewerAngleDeg);
+      this.effects.updateTeleportFogs(dt);
+      this.effects.updateTracers(dt);
+      this.projectiles.update(dt);
+      this.effects.updateImpacts(dt);
+      this.effects.endFrame();
     });
 
     this.profiler.time('Fading', () => {
       const camPos = camera.camera.position;
       const camArgs = [dt, camPos.x, -camPos.z, camPos.y] as const;
-      // A wall/floor hiding a monster only fades once that monster is alerted
-      // — an unseen sleeping one is supposed to stay hidden — and within
-      // MONSTER_FADE_RANGE. Monsters reuse PLAYER_HEIGHT/2 as their target
-      // height, same as hasLineOfSight, there being no per-species table.
-      const nearby = (this.things?.awakeMonsters() ?? [])
-        .map((m) => ({ m, d: Math.hypot(m.x - this.player.x, m.y - this.player.y) }))
-        .filter((e) => e.d <= MONSTER_FADE_RANGE);
-      // Nearest first, then capped — see MAX_FADE_TARGETS for why dropping the
-      // rest costs nothing visually.
-      nearby.sort((a, b) => a.d - b.d);
-      const fadeTargets: FadeTarget[] = [
-        { x: this.player.x, y: this.player.y, z: this.player.z + PLAYER_HEIGHT / 2 },
-        ...nearby
-          .slice(0, MAX_FADE_TARGETS)
-          .map((e) => ({ x: e.m.x, y: e.m.y, z: e.m.z + PLAYER_HEIGHT / 2 })),
-      ];
+      const fadeTargets = collectFadeTargets(this.player, this.things?.awakeMonsters() ?? []);
       const openingOf = (line: number) => this.world.openingOf(line);
       this.wallFader.update(...camArgs, fadeTargets, openingOf);
       this.flatFader.update(...camArgs, fadeTargets);

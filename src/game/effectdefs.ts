@@ -175,7 +175,7 @@ export interface Projectile {
   anim: SpriteAnimator;
   originX: number;
   originY: number;
-  /** Fire height at launch (the player's) — see spawnShot's doc for why this is never the target's own height. */
+  /** Fire height at launch (the player's) — see spawnPlayerShot's doc for why this is never the target's own height. */
   startZ: number;
   /** shotPath's actual stopping height — the target's height if unobstructed, or wherever it got blocked short of that. */
   endZ: number;
@@ -193,7 +193,7 @@ export interface Projectile {
   splash: { radius: number; damage: number; hitsPlayer: boolean } | null;
   /** The BFG's real A_BFGSpray secondary attack, straight from weapons.ts's WeaponDef.spray — null for every projectile but the player's own BFG ball (monsters never fire one). */
   spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number } | null;
-  /** The monster this shot was locked onto *and actually reached* (spawnShot resolves that), or null — a free shot, one that missed a monster it wasn't locked onto, or a locked shot a wall cut short before the target. */
+  /** The monster this shot was locked onto *and actually reached* (spawnPlayerShot resolves that), or null — a free shot, one that missed a monster it wasn't locked onto, or a locked shot a wall cut short before the target. */
   hitMonsterId: number | null;
   /**
    * The monster that fired this, or `null` for one of the player's own shots.
@@ -208,7 +208,7 @@ export interface Projectile {
    * The wall `shotPath` found blocking this flight at launch, or null. Carried
    * through so a shoot-triggered special fires on *arrival*, not on launch.
    * Only matters for the flying-sprite case; a hitscan pellet triggers
-   * immediately in `spawnShot`. See docs/combat.md § Shoot-triggered specials.
+   * immediately in `spawnPlayerShot`. See docs/combat.md § Shoot-triggered specials.
    */
   lineIndex: number | null;
   /**

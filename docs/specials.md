@@ -143,7 +143,7 @@ unrelated lines along the way. `lastTeleport` is set inside `trigger` and consum
 Vanilla also spawns a one-shot `MT_TFOG` puff at both ends (where the player stood, and 20 units ahead
 of the landing spot along its facing). That isn't a real map `Thing`, so it isn't modeled through
 `ThingLayer` — `game.ts` owns a small list of transient `OneShotEffect`s instead (drawn through
-`effectBatch`), each playing through the `TFOG` sprite's frames (`A`-`J`, confirmed against the actual
+`EffectLayer`, game/effects.ts), each playing through the `TFOG` sprite's frames (`A`-`J`, confirmed against the actual
 lump names, all rotation-0 so no facing logic is needed) once before removing itself. Map transitions
 clear any still-active puffs explicitly, since a teleport onto an exit line could otherwise leave one
 animating over the next level.

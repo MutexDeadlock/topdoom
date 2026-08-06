@@ -1,6 +1,7 @@
 # Weapons, shots, damage and death
 
-`src/game/weapons.ts`, `src/game/world.ts: shotPath`/`hasLineOfSight`, `src/render/tracer.ts`,
+`src/game/weapons.ts`, `src/game/projectiles.ts`, `src/game/combat.ts`,
+`src/game/world.ts: shotPath`/`hasLineOfSight`, `src/render/tracer.ts`, `src/game/effects.ts`,
 `src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/inventory.ts`, `src/game/effectdefs.ts`,
 `src/game.ts`
 
@@ -8,16 +9,23 @@
 
 `WeaponSystem` owns weapon selection and fire timing/ammo, and **deliberately knows nothing about
 three.js**: `update` returns a list of `Shot`s describing what was fired this frame (one per hitscan
-pellet, one per projectile launched, one per melee swing), and `game.ts` turns those into tracer
-lines and flying sprites. Same split as `specials.ts`'s line triggers vs. `game.ts`'s teleport fog,
-and it's what lets fire rates and ammo costs be tested headlessly against a synthetic map.
+pellet, one per projectile launched, one per melee swing), and `ProjectileLayer`
+(`game/projectiles.ts`) turns those into tracer lines and flying sprites. Same split as
+`specials.ts`'s line triggers vs. `game.ts`'s teleport fog, and it's what lets fire rates and ammo
+costs be tested headlessly against a synthetic map.
+
+`ProjectileLayer` is the mirror image: it knows nothing about ammo, cooldowns or AI, only about
+geometry and bodies, and it serves the player's shots and a monster's identically
+(`spawnPlayerShot`/`spawnMonsterShot`). It reads the live level through a `CombatContext`
+(`game/combat.ts`) rather than holding `World`/`ThingLayer` references of its own — those are
+replaced on every map load, so the context is all getters.
 
 Fire rates and spread are tuned by feel rather than converted from vanilla's tic-based weapon state
 tables — same reasoning as `player.ts`'s `GRAVITY`. Ammo-per-shot has no such problem and is lifted
 straight from vanilla, since it decides how long a pickup's ammo lasts, as are the damage dice,
 including the fist's and chainsaw's shared 2-20 (`(P_Random()%10+1)<<1`).
 
-**A melee swing is resolved entirely differently from every other shot**: `spawnShot` returns before
+**A melee swing is resolved entirely differently from every other shot**: `spawnPlayerShot` returns before
 `shotPath` even runs and just raycasts `PLAYER_MELEE_RANGE` (vanilla's `MELEERANGE`, 64) along the
 aim angle. A swing doesn't travel, so it needs none of `shotPath`'s wall/step blocking, matching
 `A_Punch`/`A_Saw`. It needs no lock-on case either: `player.angle` is already set from the same `aim`
@@ -86,9 +94,9 @@ slip between them.
 **`shotPath`'s returned `lineIndex` — whichever line stopped the shot, or null if it reached its
 target/`WEAPON_RANGE` — drives `wad/specials.ts`'s three impact specials, 24/46/47**
 (`SpecialsController.triggerShot`, vanilla's `P_ShootSpecialLine`). A hitscan pellet's trigger fires
-immediately in `spawnShot`/`resolveMonsterHitscan` (resolved and gone within the same frame, matching
+immediately in `spawnPlayerShot`/`resolveMonsterHitscan` (resolved and gone within the same frame, matching
 `PTR_ShootTraverse`), but a projectile's is deferred to the frame it actually *arrives* at that wall
-in `updateProjectiles` — vanilla calls `P_ShootSpecialLine` for a missile from `PIT_CheckLine`, which
+in `ProjectileLayer.update` — vanilla calls `P_ShootSpecialLine` for a missile from `PIT_CheckLine`, which
 only runs once the missile reaches the line. `Projectile.lineIndex` carries the line found at launch
 forward (safe to resolve early, same as `maxDist` itself: static geometry doesn't move mid-flight).
 Either way, the special only fires if nothing closer — a monster's body, or the player — absorbed the
@@ -119,13 +127,20 @@ cursor unconditionally; the lock has to follow the same rule to stay continuous.
 
 ## Effects and their batching
 
-Impact explosions and the teleport-fog puff share one mechanism in `game.ts`
-(`OneShotEffect`/`spawnEffect`/`updateEffects`): a transient sprite animation playing once at a fixed
+Impact explosions and the teleport-fog puff share one mechanism, `EffectLayer` (`game/effects.ts`,
+`OneShotEffect`/`spawn`/`spawnImpact`): a transient sprite animation playing once at a fixed
 spot, outside `ThingLayer` since neither is a real map `Thing`. `IMPACT_EFFECTS` maps a projectile's
 flight sprite to its explosion — vanilla reuses `MISL` frames B–D for the rocket's blast, while the
-plasma bolt and BFG ball explode into dedicated `PLSE`/`BFE1` sprites.
+plasma bolt and BFG ball explode into dedicated `PLSE`/`BFE1` sprites. Hitscan `Tracer` lines live
+there too: not sprites, but the same spawn-animate-drop lifecycle and the same wholesale clear on a
+level change (`beginLevel`).
 
-Those effects and projectiles in flight are drawn through `Game.effectBatch`, a second `SpriteBatch`
+`EffectLayer` only draws and ages what it is handed; who spawns what, and every rule about *why*
+(`A_Fire`'s sightline, `A_VileAttack`'s reposition) stays with the system that owns the mechanic —
+the arch-vile's flame tracks its target through a `VileFlameResolver` callback `game.ts` supplies,
+rather than the layer reaching into monster state.
+
+Those effects and projectiles in flight are drawn through `EffectLayer`'s batch, a second `SpriteBatch`
 alongside `ThingLayer`'s, so an `OneShotEffect`/`Projectile` holds a bare `SpriteAnimator` and owns
 no `THREE.Object3D`, exactly like `PosedThing`. They were a `SpriteActor` each until the revenant's
 homing missile got its real vanilla flight: a missile that flies until it hits something lives far
@@ -139,7 +154,7 @@ screen (all `PUFF`) took the tint of whichever was posed last.
 ## How a shot deals damage
 
 **Two different ways, depending on whether one was locked on.** A locked-on shot resolves
-hit-or-miss against that exact target: `spawnShot` compares `shotPath`'s returned distance against
+hit-or-miss against that exact target: `spawnPlayerShot` compares `shotPath`'s returned distance against
 the straight-line distance to the target to know whether a wall cut the shot short. A *free* shot
 instead tests its straight flight path against every monster's body (`ThingLayer.raycastMonster`),
 the way any real hitscan trace would, so a monster standing between the player and the wall they're
@@ -151,12 +166,13 @@ monster's real, quite varied (16-128 units) vanilla radius — modelling that ac
 per-species size table for a check this approximate to begin with.
 
 For a hitscan pellet damage is applied immediately (an instant line has no travel time); for a
-projectile it's carried on the `Projectile` and applied in `updateProjectiles` once the sprite
+projectile it's carried on the `Projectile` and applied in `ProjectileLayer.update` once the sprite
 visually reaches its `maxDist`.
 
 **Splash damage is separate from a direct hit and reaches everyone nearby regardless of what was
 targeted** — a rocket fired at a bare wall still explodes and can hurt a monster standing close by.
-`applyRadiusDamage` walks every living monster `ThingLayer.monstersNear` returns within the blast
+`applyRadiusDamage` (`game/combat.ts`, shared by projectile splash, the barrel and the arch-vile's
+blast) walks every living monster `ThingLayer.monstersNear` returns within the blast
 radius, skips anyone `hasLineOfSight` says is blocked, and falls off linearly to 0 at the radius
 edge, matching `P_RadiusAttack`. It uses `hasLineOfSight`, deliberately not `shotPath` — that models
 a directed weapon's own blocking rules, not "does this omnidirectional blast reach that point".
@@ -264,7 +280,7 @@ with the same small random roll as contact damage.
 ball never calls `A_Explode` at all, so there's no radius blast to gate.
 
 **The BFG's actual damage is `WeaponDef.spray`, vanilla's real `A_BFGSpray`** (`resolveBfgSpray`,
-called from `updateProjectiles` the instant the ball reaches wherever it's going). It is nothing like
+called from `ProjectileLayer.update` the instant the ball reaches wherever it's going). It is nothing like
 a radius blast: 40 rays fan out across a 90° arc (every 2.25°) centered on the ball's own fixed
 flight angle (`Projectile.angleRad` — the ball never homes), each an independent
 `ThingLayer.raycastMonster` trace out to 1024 units (`16*64`, `P_AimLineAttack`'s own distance) that,

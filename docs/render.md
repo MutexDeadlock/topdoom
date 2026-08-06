@@ -87,8 +87,9 @@ frame and fades the ones that cross it, rather than the coarser fix of drawing t
 everything, which would also show it through walls that genuinely separate it from the camera.
 
 `WallFader.update`/`FlatFader.update` take a *list* of sightline targets (`FadeTarget[]`), not just
-the player — `game.ts` passes the player plus every currently-**awake** monster
-(`ThingLayer.awakeMonsters`) within `MONSTER_FADE_RANGE` (a plain 2D distance cap, tuned by feel to
+the player — `collectFadeTargets` (same file, called from `game.ts` with `ThingLayer.awakeMonsters`)
+returns the player plus every currently-**awake** monster
+within `MONSTER_FADE_RANGE` (a plain 2D distance cap, tuned by feel to
 roughly a room/corridor's length), and a quad fades if it sits on any one of those sightlines. Both
 gates matter: a sleeping monster isn't being tracked yet, so there's no reason for a wall to reveal
 it early; and without the range cap, an alerted monster dead-reckoning toward the player from across
@@ -154,12 +155,13 @@ A `stepYaw` call (Q/E) queues its step as a `targetYawDeg` for `update` to anima
 (`YAW_STEP_SMOOTH_RATE`) rather than jumping. Plain assignment (`camera.yawDeg = ...`, used for the
 instant reorient on spawn/teleport, and by right-drag) still jumps immediately: the `yawDeg` setter
 keeps `targetYawDeg` in lockstep so nothing left over from a prior Q/E animates after an instant set.
-**`game.ts`'s drag-handling line only assigns `camera.yawDeg` when `Input.consumeDragYaw()` is
+**`applyYawInput`'s drag-handling line only assigns `yawDeg` when `Input.consumeDragYaw()` is
 actually nonzero** — calling the setter unconditionally every frame, even as a no-op `-= 0`, would
 snap `targetYawDeg` back to the current (still mid-animation) value and cancel a Q/E step after one
 frame of smoothing.
 
-Holding Q/E auto-repeats the same 45° `stepYaw` every `KEY_YAW_REPEAT_INTERVAL` — `qHoldTime`/
+All of that input handling lives in `TopDownCamera.applyYawInput`, which `game.ts` calls once a
+frame. Holding Q/E auto-repeats the same 45° `stepYaw` every `KEY_YAW_REPEAT_INTERVAL` — `qHoldTime`/
 `eHoldTime` accumulate `dt` while `Input.held` is true and fire+reset once the interval is reached,
 alongside the immediate step fired on `Input.pressed`. The interval is tuned to roughly the time one
 step's smoothing takes to settle, so a hold reads as continuous rotation made of chained steps.
@@ -228,8 +230,8 @@ material) lookup with **no `THREE.Object3D` of its own**. `SpriteActor` wraps on
 for the **player**, now the only sprite that genuinely wants one: there is exactly one of it, and it
 needs `setOpacity` (partial invisibility), which has no per-instance equivalent in a batch.
 Everything else holds a bare `SpriteAnimator` and feeds a `SpriteBatch` — `PosedThing` for map things,
-and `game.ts`'s `effectBatch` for projectiles, impact explosions, teleport fog and the revenant's
-smoke trail. Because a batched thing has no mesh of its own, `PosedThing.visible` replaces what used
+and `EffectLayer`'s batch (`game/effects.ts`) for projectiles, impact explosions, teleport fog and
+the revenant's smoke trail. Because a batched thing has no mesh of its own, `PosedThing.visible` replaces what used
 to be read off `mesh.visible`, and `ThingLayer.pickMonster` routes its auto-aim raycast through
 `SpriteBatch.raycast`, which maps an `instanceId` hit back to the owning thing. That raycast skips
 (rather than being blocked by) instances its predicate rejects, so a decoration standing in front of

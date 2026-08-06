@@ -115,6 +115,15 @@ Both dynamically-built panels `replaceChildren()` before filling themselves: `Hu
 `Game` against the *same* static `#game-hud` element, so a second game started from the menu would
 otherwise stack a second full set of icons on the first's.
 
+**The mouse cursor is the health readout too.** `src/ui/crosshair.ts`'s `Crosshair` sets the game
+canvas's OS cursor to a plus-shaped reticle (an inline SVG data URI, since the built-in `crosshair`
+keyword can't be recolored) whose color reports health at a glance: blue above 100, sliding from
+green at 100 through yellow down to red at 0 below that. This is TopDoom's own convention, not a
+vanilla one — vanilla's status bar has a `%`; the cursor doubles as the aim reticle here (`game.ts`'s
+mouse-aim raycast), so there's screen real estate to spend on it that vanilla never had. `update()`
+skips rebuilding the cursor image when the computed color hasn't changed, since it's called every
+frame from the same `Game.frame` loop as `Hud.update`.
+
 ## Powerups and the backpack
 
 `Inventory.powers` holds seconds remaining per `PowerId`, ticked by `tickPowers`, which `game.ts`

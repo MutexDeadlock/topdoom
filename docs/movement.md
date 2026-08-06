@@ -25,6 +25,19 @@ the circle actually straddles it (`crossesLine`); solid walls (`isSolidWall`: on
 direction. Conflating "near" with "straddling" for passable openings is exactly what causes the
 deadlock above.
 
+**Thing-vs-thing collision has the same class of deadlock, and the same shape of fix.**
+`blockedByThings` (used by both `circleBlocked` and `blockingLineAt`) takes an optional `from`, the
+mover's current position: a blocker already overlapped there only refuses the move if it presses
+*further* in (Euclidean distance to that blocker's centre goes down), not merely for the destination
+still overlapping. Without this, two bodies that end up touching — map placement, or a knockback
+that skips this same check (`ThingLayer.applyKnockback`) — can never separate again: a single
+frame's step is a few units against a reach (`radius + radius`) of tens, so requiring the
+*destination* to already be fully clear is unreachable in one step, and both sides see the other as
+permanently solid. `tryWalk`, the per-frame monster walk step, and `slideMove` (both its wall
+projection and its per-axis fallback) all pass their mover's own position as `from`. A blocker not
+yet touched at `from` is unaffected — this only lets an already-overlapping pair work free, it never
+lets a mover approach a thing it wasn't already touching.
+
 **`groundCeiling`** mirrors `groundFloor`: the local sector's ceiling, lowered to the top of any
 straddled two-sided opening. It exists for the flip side of the same straddling bug — standing half
 on a rising lift/floor and half in a static neighbor sector with a lower ceiling, `groundFloor`

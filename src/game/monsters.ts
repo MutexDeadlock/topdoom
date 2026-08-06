@@ -894,7 +894,7 @@ function tryWalk(body: MonsterBody, stats: MonsterStats, world: World, dir: numb
   const step = stats.speed * stats.chaseInterval;
   const nx = body.x + DIR_X[dir] * step;
   const ny = body.y + DIR_Y[dir] * step;
-  if (circleBlocked(world, nx, ny, stats.radius, body.z, true, !stats.flies, blockers)) return false;
+  if (circleBlocked(world, nx, ny, stats.radius, body.z, true, !stats.flies, blockers, body)) return false;
   body.movedir = dir;
   body.movecount = Math.floor(Math.random() * 16);
   return true;
@@ -1140,7 +1140,7 @@ export function stepMonsterAI(
     const step = stats.speed * dt;
     const nx = body.x + DIR_X[body.movedir] * step;
     const ny = body.y + DIR_Y[body.movedir] * step;
-    if (circleBlocked(world, nx, ny, stats.radius, body.z, true, !stats.flies, blockers)) {
+    if (circleBlocked(world, nx, ny, stats.radius, body.z, true, !stats.flies, blockers, body)) {
       body.moveBlocked = true;
     } else {
       body.x = nx;

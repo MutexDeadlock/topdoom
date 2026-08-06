@@ -640,12 +640,27 @@ export interface ThingBlocker extends Pos2 {
  * vanilla's `PIT_CheckThing` overlap test, an axis-aligned **box** check on
  * the summed radii, not the circle test the rest of this file uses. Boxy on
  * purpose (docs/monsters.md § Movement).
+ *
+ * `from`, when given, is where the mover currently stands. A blocker already
+ * overlapped there only refuses the move if it presses further in (`newDist <
+ * oldDist` to that blocker's centre) — otherwise two bodies that ended up
+ * touching (map placement, or a knockback that skips this same check — see
+ * `ThingLayer.applyKnockback`) can still work their way apart one frame at a
+ * time instead of freezing both forever: every frame's step is a few units
+ * against a reach of tens, so requiring the *destination* to already be fully
+ * clear is unreachable in one step. A blocker not yet touched at `from` is
+ * unaffected — you still can't walk into a thing you weren't already
+ * overlapping.
  */
-function blockedByThings(x: number, y: number, radius: number, blockers: readonly ThingBlocker[] | undefined): boolean {
+function blockedByThings(x: number, y: number, radius: number, blockers: readonly ThingBlocker[] | undefined, from?: Pos2): boolean {
   if (!blockers) return false;
   for (const b of blockers) {
     const reach = radius + b.radius;
-    if (Math.abs(b.x - x) < reach && Math.abs(b.y - y) < reach) return true;
+    if (Math.abs(b.x - x) >= reach || Math.abs(b.y - y) >= reach) continue;
+    if (from && Math.abs(b.x - from.x) < reach && Math.abs(b.y - from.y) < reach) {
+      if (Math.hypot(b.x - x, b.y - y) >= Math.hypot(b.x - from.x, b.y - from.y)) continue;
+    }
+    return true;
   }
   return false;
 }
@@ -660,6 +675,9 @@ function blockedByThings(x: number, y: number, radius: number, blockers: readonl
  * `P_TryMove`. Exempting a thing from it is the caller's job here rather than
  * an `MF_DROPOFF`/`MF_FLOAT` check; the player never passes it, since falling
  * off a ledge is deliberate (docs/movement.md § Vertical physics).
+ *
+ * `from` — see `blockedByThings`: the mover's current position, so a body
+ * already touching one of `blockers` can still move away from it.
  */
 export function circleBlocked(
   world: World,
@@ -670,8 +688,9 @@ export function circleBlocked(
   forMonster = false,
   avoidDropoff = false,
   blockers?: readonly ThingBlocker[],
+  from?: Pos2,
 ): boolean {
-  if (blockedByThings(x, y, radius, blockers)) return true;
+  if (blockedByThings(x, y, radius, blockers, from)) return true;
   if (avoidDropoff && world.groundFloor(x, y, radius, forMonster) - world.dropoffFloor(x, y, radius) > MAX_STEP_UP) return true;
   const rSq = radius * radius;
   for (const i of world.linesNear(x, y, radius + 1)) {
@@ -703,6 +722,8 @@ export const SOLID_BODY = -1;
  * Separate from `circleBlocked` on purpose (that one is hot and returns on the
  * first blocker; this one weighs all of them and the nearest wins). See
  * docs/movement.md § slideMove.
+ *
+ * `from` — see `blockedByThings`.
  */
 export function blockingLineAt(
   world: World,
@@ -713,8 +734,9 @@ export function blockingLineAt(
   forMonster = false,
   avoidDropoff = false,
   blockers?: readonly ThingBlocker[],
+  from?: Pos2,
 ): number | null {
-  if (blockedByThings(x, y, radius, blockers)) return SOLID_BODY;
+  if (blockedByThings(x, y, radius, blockers, from)) return SOLID_BODY;
   if (avoidDropoff && world.groundFloor(x, y, radius, forMonster) - world.dropoffFloor(x, y, radius) > MAX_STEP_UP) return SOLID_BODY;
   const rSq = radius * radius;
   let best: number | null = null;
@@ -772,7 +794,7 @@ export function slideMove(
   let lastHit = null as number | null;
   for (let attempt = 0; attempt < SLIDE_ATTEMPTS; attempt++) {
     if (mx === 0 && my === 0) break;
-    const hit = blockingLineAt(world, x + mx, y + my, radius, z, forMonster, avoidDropoff, blockers);
+    const hit = blockingLineAt(world, x + mx, y + my, radius, z, forMonster, avoidDropoff, blockers, from);
     if (hit === null) return { x: x + mx, y: y + my };
     // A body/dropoff has no wall direction, and hitting the same wall twice
     // means the projection made no progress (the circle already overlaps it) —
@@ -796,9 +818,9 @@ export function slideMove(
   // circle already overlapping the wall it's trying to slide along.
   let nx = x;
   let ny = y;
-  if (dx !== 0 && !circleBlocked(world, x + dx, y, radius, z, forMonster, avoidDropoff, blockers)) nx = x + dx;
-  if (dy !== 0 && !circleBlocked(world, nx, y + dy, radius, z, forMonster, avoidDropoff, blockers)) ny = y + dy;
-  if (ny === y && dy !== 0 && nx !== x && !circleBlocked(world, nx, y + dy, radius, z, forMonster, avoidDropoff, blockers)) ny = y + dy;
+  if (dx !== 0 && !circleBlocked(world, x + dx, y, radius, z, forMonster, avoidDropoff, blockers, from)) nx = x + dx;
+  if (dy !== 0 && !circleBlocked(world, nx, y + dy, radius, z, forMonster, avoidDropoff, blockers, from)) ny = y + dy;
+  if (ny === y && dy !== 0 && nx !== x && !circleBlocked(world, nx, y + dy, radius, z, forMonster, avoidDropoff, blockers, from)) ny = y + dy;
   return { x: nx, y: ny };
 }
 

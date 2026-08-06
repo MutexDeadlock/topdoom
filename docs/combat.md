@@ -182,16 +182,38 @@ player stood in plain view.
 
 `SIGHT_EYE_HEIGHT` (`3/4` of `PLAYER_HEIGHT`, vanilla's own fraction — this engine has no per-species
 heights, so both ends reuse the player's) fixes the origin at `z1 + SIGHT_EYE_HEIGHT` instead of
-sliding it toward `z2`, and narrows `[bottomSlope, topSlope]` against each sampled sector's
-floor/ceiling the way vanilla narrows its wedge crossing each line's opening. The target bound uses
-the full `[z2, z2 + PLAYER_HEIGHT]` span rather than a single point, so any part of that range
-clearing every sampled opening is enough. This is still coarser than the real thing — vanilla walks
-the BSP and narrows at every actual line crossing, this samples discrete points — but the *shape* of
-the check now matches.
+sliding it toward `z2`. The target bound uses the full `[z2, z2 + PLAYER_HEIGHT]` span rather than a
+single point, so any part of that range clearing every opening crossed is enough.
 
-**It is the most performance-sensitive query in the engine**, and two things keep it affordable. Both
-were verified to produce **bit-identical results** to the straightforward version across 21,240
-sightline pairs on six maps — this is pure optimization, not an approximation traded for speed:
+**The wedge narrows at two different things, and both are load-bearing.** The primary one walks the
+same line candidates `forEachLineAlongSegment` already finds for the wall-blocking test and, for
+every *open* two-sided line among them (skipping a flat pass-through — equal floors and equal
+ceilings on both sides can't narrow anything, matching `P_SightTraverse`'s own
+frontsector/backsector inequality guards), narrows `[bottomSlope, topSlope]` against that line's real
+opening (`World.openingOf`: min ceiling, max floor of its two sides) at the exact distance it's
+crossed — this *is* vanilla's own `P_SightTraverse`, not an approximation of it. A **periodic
+fallback** additionally samples `sectorAt` every `SIGHT_HEIGHT_SAMPLE_STEP` map units (capped at
+`SIGHT_MAX_HEIGHT_SAMPLES` samples total) and narrows against whatever sector each sample lands in,
+for the one thing a line-crossing walk can't see: two points whose straight 2D path never crosses a
+two-sided line at all yet still cross between differently-elevated footprints (the classic "monster
+under a ledge" fake-3D construction) — the reason this doc originally gave for the check existing.
+Both narrow the same wedge monotonically, so running both is always at least as strict as either
+alone, never more permissive.
+
+**The line-crossing narrowing is the one that makes melee range work at all.** `MELEE_RANGE`/vanilla's
+own `MELEERANGE` (64-72 map units) is well inside `SIGHT_HEIGHT_SAMPLE_STEP` (64), so the periodic
+sampler alone never places a single interior sample on a short sightline — `Math.ceil(72/64)` is `1`,
+and the loop that walks samples `1..steps-1` never runs. Before the line-crossing narrowing existed,
+that meant a monster standing at the base of *any* ledge more than `MAX_STEP_UP` (24 units) tall, close
+enough to be in melee range, always passed `hasLineOfSight` regardless of the ledge between it and its
+target — a demon could bite straight through the drop. `public/wads/pwad/pinky_test.wad` MAP01
+reproduces it directly: two sectors sharing one line, floors 0 and 88, a demon on the high side and the
+player on the low side just below it.
+
+**It is the most performance-sensitive query in the engine**, and two things keep the base cost
+affordable. Both were verified to produce **bit-identical results** to the straightforward version
+across 21,240 sightline pairs on six maps — this is pure optimization, not an approximation traded for
+speed:
 
 - **Wall candidates come from `World.forEachLineAlongSegment`, not `linesNear`.** `linesNear` takes a
   *radius*, so covering a sightline with it means a box half the line's length on a side — O(dist²)

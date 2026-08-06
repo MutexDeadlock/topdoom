@@ -411,24 +411,50 @@ const SIGHT_MAX_HEIGHT_SAMPLES = 32;
  */
 export function hasLineOfSight(world: World, from: Pos3, to: Pos3): boolean {
   const dist = Math.hypot(to.x - from.x, to.y - from.y);
-  // Walks only the cells the sightline crosses; `linesNear`'s radius query is
-  // O(dist²) in cells here — see `World.forEachLineAlongSegment`.
-  let blocked = false;
-  world.forEachLineAlongSegment(from.x, from.y, to.x, to.y, (i) => {
-    if (!world.blocksSight(i)) return;
-    const line = world.map.linedefs[i];
-    const a = world.map.vertexes[line.v1];
-    const b = world.map.vertexes[line.v2];
-    if (!a || !b) return;
-    const hit = segmentIntersect(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
-    if (hit && hit.t * dist > SELF_HIT_MARGIN) return (blocked = true);
-  });
-  if (blocked) return false;
   if (dist === 0) return true;
 
   const eyeZ = from.z + PLAYER_HEIGHT * 0.75;
   let topSlope = (to.z + PLAYER_HEIGHT - eyeZ) / dist;
   let bottomSlope = (to.z - eyeZ) / dist;
+
+  // Walks only the cells the sightline crosses; `linesNear`'s radius query is
+  // O(dist²) in cells here — see `World.forEachLineAlongSegment`. A fully
+  // blocking line stops the trace outright; an open two-sided one narrows the
+  // sight wedge at its real opening, matching `P_SightTraverse` — the reason
+  // this exists alongside the periodic sampling below is docs/combat.md §
+  // hasLineOfSight.
+  let blocked = false;
+  world.forEachLineAlongSegment(from.x, from.y, to.x, to.y, (i) => {
+    const line = world.map.linedefs[i];
+    const a = world.map.vertexes[line.v1];
+    const b = world.map.vertexes[line.v2];
+    if (!a || !b) return;
+    if (world.blocksSight(i)) {
+      const hit = segmentIntersect(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
+      if (hit && hit.t * dist > SELF_HIT_MARGIN) return (blocked = true);
+      return;
+    }
+    // Two-sided and open. Skip the segment math entirely for a flat
+    // pass-through (equal floors and equal ceilings on both sides) — it
+    // can't narrow the wedge, and it's most of a level's connective tissue —
+    // mirroring `P_SightTraverse`'s own frontsector/backsector inequality
+    // guards.
+    const front = world.map.sectors[world.map.sidedefs[line.right]?.sector ?? -1];
+    const back = world.map.sectors[world.map.sidedefs[line.left]?.sector ?? -1];
+    if (!front || !back) return;
+    if (front.floorHeight === back.floorHeight && front.ceilHeight === back.ceilHeight) return;
+    const hit = segmentIntersect(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
+    if (!hit || hit.t * dist <= SELF_HIT_MARGIN) return;
+    const crossDist = hit.t * dist;
+    const bottomOpen = Math.max(front.floorHeight, back.floorHeight);
+    const topOpen = Math.min(front.ceilHeight, back.ceilHeight);
+    const crossBottomSlope = (bottomOpen - eyeZ) / crossDist;
+    const crossTopSlope = (topOpen - eyeZ) / crossDist;
+    if (crossBottomSlope > bottomSlope) bottomSlope = crossBottomSlope;
+    if (crossTopSlope < topSlope) topSlope = crossTopSlope;
+    if (topSlope <= bottomSlope) return (blocked = true);
+  });
+  if (blocked) return false;
 
   const steps = Math.min(
     SIGHT_MAX_HEIGHT_SAMPLES,

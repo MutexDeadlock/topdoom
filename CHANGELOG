@@ -7,17 +7,18 @@ Features and improvements
       Ogg/WAV/FLAC; a sound the WAD set lacks is silent rather than substituted
     - volume slider on the start menu (remembered between sessions), M mutes
   - player movement more like vanilla
-    - straferunning works
+    - straferunning
     - the player slides along angled walls instead of sticking to them
     - improved auto-aim
     - optional "Autorun" (Main Menu -> Settings)
   - implemented per-map boss-death specials
-  - completed mancubus, arch-vile, revenant and pain elemental attacks
+  - improved monsters
+    - completed mancubus, arch-vile, revenant and pain elemental attacks
     - monster melee/ranged damage now matches vanilla's real dice instead of a
       softer tuned approximation
-  - the cyberdemon's rocket splashes like the player's own
-  - monster projectile speeds are vanilla's own now instead of eyeballed
-  - monsters keep infighting when the player dies
+    - the cyberdemon's rocket splashes like the player's own
+    - monster projectile speeds are vanilla's own now instead of eyeballed
+    - monsters keep infighting when the player dies
   - the BFG now deals its real vanilla damage instead of a plain radius
     splash, complete with the green flash on whatever each ray hits
   - projectiles, explosions, teleport fog and the revenant's smoke trail are
@@ -39,6 +40,9 @@ Fixed bugs
   - fixed monster projectiles damaging through walls
   - fixed dead lost souls/pain elementals leaving a permanent floating corpse
     instead of vanishing
+  - fixed monsters melee-attacking straight through the height gap of a raised
+    ledge, since line-of-sight's floor/ceiling check sampled too coarsely to
+    ever catch a step at melee range
 
 ===============================================================================
 

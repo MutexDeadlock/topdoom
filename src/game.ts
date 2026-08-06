@@ -8,33 +8,53 @@ import { AnimatedTextures } from './render/textureanim.ts';
 import { buildMapMesh, doomToWorld, litColor, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from './render/sprites.ts';
 import { SpriteBatch } from './render/spritebatch.ts';
+import type { Viewport } from './render/viewport.ts';
 import {
   BARREL_SPLASH_DAMAGE,
   BARREL_SPLASH_RADIUS,
   buildThingSprites,
-  MONSTER_HIT_HEIGHT,
   type BarrelExplosion,
   type MonsterAttackEvent,
   type ThingLayer,
 } from './game/things.ts';
-import { MONSTER_FIRE_HEIGHT, MONSTER_STATS, sameSpecies, thrustSpeed } from './game/monsters.ts';
+import { MONSTER_FIRE_HEIGHT, sameSpecies, thrustSpeed } from './game/monsters.ts';
 import { FlatFader, type FadeTarget, TextureScroller, WallFader } from './render/occlusion.ts';
-import { TopDownCamera } from './render/camera.ts';
 import { World, hasLineOfSight, projectileStepBlocker, shotPath } from './game/world.ts';
 import { GRAVITY, Player, PLAYER_HEIGHT, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
+import { blocksCeilingLower, blocksFloorRise } from './game/moverblocking.ts';
+import { SectorEffects } from './game/sectoreffects.ts';
 import {
-  CRUSH_DAMAGE,
-  DAMAGE_FLOOR_INTERVAL,
-  SECTOR_DAMAGE_SPECIALS,
-  SUIT_LEAK_CHANCE,
-  type DamageFloorEffect,
-} from './wad/specials.ts';
-import { Input } from './game/input.ts';
+  BFG_SPRAY_HIT_FRAMES,
+  IMPACT_EFFECTS,
+  IMPACT_FRAME_SECONDS,
+  MONSTER_PROJECTILE_HIT_HEIGHT,
+  MONSTER_PROJECTILE_HIT_RADIUS,
+  MONSTER_TRACER_COLOR,
+  PROJECTILE_FRAMES,
+  PROJECTILE_SOUNDS,
+  REVENANT_TRACER_TURN_RATE_RAD,
+  SMOKE_TRAIL_FRAMES,
+  SMOKE_TRAIL_FRAME_SECONDS,
+  SMOKE_TRAIL_INTERVAL,
+  TFOG_FRAMES,
+  TFOG_FRAME_SECONDS,
+  TFOG_SPAWN_OFFSET,
+  TRACER_COLOR,
+  TRACER_HOMING_Z_OFFSET,
+  turnToward,
+  VILE_FIRE_FRAMES,
+  VILE_FIRE_OFFSET,
+  VILE_WINDUP_TRACK_SECONDS,
+  type OneShotEffect,
+  type Projectile,
+} from './game/effectdefs.ts';
+import { CRUSH_DAMAGE } from './wad/specials.ts';
 import { Hud } from './ui/hud.ts';
 import { Crosshair } from './ui/crosshair.ts';
-import { ProfilerHud } from './ui/profilerhud.ts';
+import { DebugHud, handleHotkeys } from './ui/debughud.ts';
+import { ScreenEffects } from './ui/screeneffects.ts';
 import { FrameProfiler } from './util/profiler.ts';
 import type { Skill } from './game/skill.ts';
 import {
@@ -53,15 +73,12 @@ import {
 import { rollDamage, WEAPONS, WeaponSystem, type Shot } from './game/weapons.ts';
 import { Tracer } from './render/tracer.ts';
 import type { AudioEngine } from './audio/audio.ts';
-import { PLAYER_ORIGIN, monsterOrigin, type SfxId } from './audio/sfx.ts';
+import { PLAYER_ORIGIN, monsterOrigin } from './audio/sfx.ts';
 import { SoundBank } from './wad/sound.ts';
 import type { Placement, Pos2, Pos3 } from './types.ts';
-import { DEVMODE } from './constants.ts';
 
 /** Combined radius (map units) within which an item is close enough to pick up. */
 const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
-
-const hudEl = document.getElementById('hud')!;
 
 /** Camera-orbit degrees per pixel of right-mouse drag. */
 const YAW_SENSITIVITY = 0.15;
@@ -71,181 +88,12 @@ const KEY_YAW_STEP = 45;
 const KEY_YAW_REPEAT_INTERVAL = 0.26;
 
 /**
- * Teleport-fog puff (vanilla's `MT_TFOG`): a one-shot animation, not a real
- * thing, so it lives outside `ThingLayer`. Rotation-0 only, confirmed against
- * DOOM2.WAD's lump names (TFOGA0..TFOGJ0).
- */
-const TFOG_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-const TFOG_FRAME_SECONDS = 6 / 35; // vanilla's S_TFOG* states hold each frame 6 tics
-/** Vanilla spawns the destination fog 20 units ahead of the landing spot, along the direction it faces. */
-const TFOG_SPAWN_OFFSET = 20;
-
-/**
- * A transient, one-shot sprite animation: plays through `frames` once at a
- * fixed spot and then removes itself. Used for both the teleport-fog puff
- * and a projectile's impact explosion below — neither is a real map `Thing`,
- * so neither goes through `ThingLayer`.
- */
-interface OneShotEffect extends Pos3 {
-  /** A bare `SpriteAnimator` drawn through `Game.effectBatch`, no `THREE.Object3D` of its own — same arrangement as `PosedThing`. */
-  anim: SpriteAnimator;
-  light: number;
-  elapsed: number;
-  lifetime: number;
-  /**
-   * Set only for the arch-vile's windup flame (`spawnVileWindupFire`,
-   * vanilla's `MT_FIRE`/`A_Fire`): position is re-derived every frame from
-   * this target's live position and facing rather than staying fixed. `null`
-   * means the player; absent (the common case) skips this. See
-   * docs/monsters.md § The arch-vile.
-   */
-  followTargetId?: number | null;
-  /** The arch-vile that spawned this flame — `updateEffects` re-checks sight from it before repositioning (`A_Fire`'s `P_CheckSight` gate). Always set alongside `followTargetId`. */
-  vileSourceId?: number;
-}
-
-/**
  * Height above the feet a weapon fires from, and the plane the mouse cursor
  * is projected onto for aiming (`camera.pointerToPlane` below) — the two
  * have to match, or a tracer/projectile would visibly start from a different
  * height than where the crosshair appears to be.
  */
 const AIM_HEIGHT_OFFSET = 32;
-
-/** Color of a hitscan tracer line (render/tracer.ts) — a hot yellow-white, like a vanilla muzzle flash. */
-const TRACER_COLOR = 0xfff2a8;
-/** Color of a monster's ranged-attack tracer (game/monsters.ts) — a hostile red, distinct from the player's own tracer color above. */
-const MONSTER_TRACER_COLOR = 0xff4433;
-
-/**
- * Frame letters an in-flight projectile sprite cycles through. Confirmed
- * against `DOOM2.WAD`'s actual lump names and frame/rotation counts. `MISL`
- * (rocket) is absent deliberately: only its frame A is flight art, B-D are the
- * explosion (see `IMPACT_EFFECTS`). Anything unlisted holds a single frame.
- */
-const PROJECTILE_FRAMES: Record<string, string[]> = {
-  PLSS: ['A', 'B'],
-  BFS1: ['A', 'B'],
-  BAL1: ['A', 'B'], // imp fireball
-  BAL2: ['A', 'B'], // cacodemon fireball
-  BAL7: ['A', 'B'], // baron/hell knight fireball
-  MANF: ['A', 'B'], // mancubus fireball
-  APLS: ['A', 'B'], // arachnotron plasma ball
-  FATB: ['A', 'B'], // revenant missile
-};
-
-/** Vanilla's own explosion states run at 4 tics/frame. */
-const IMPACT_FRAME_SECONDS = 4 / 35;
-
-/**
- * A projectile's impact explosion, keyed by its flight sprite — from
- * `linuxdoom-1.10`'s `info.c` state tables. `MANF` exploding into the
- * *rocket's* `MISL` frames is a genuine vanilla oddity, not a simplification
- * here (docs/monsters.md § Hitscan vs. projectile).
- *
- * Purely cosmetic: this plays where a shot reached `shotPath`'s distance;
- * what it actually damaged is resolved separately below.
- */
-const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {
-  MISL: { sprite: 'MISL', frames: ['B', 'C', 'D'] },
-  PLSS: { sprite: 'PLSE', frames: ['A', 'B', 'C', 'D', 'E'] },
-  // BFE1 is the ball's own impact (above); BFE2 is a *separate* sprite for
-  // resolveBfgSpray below — vanilla's MT_EXTRABFG, spawned on every monster a
-  // spray ray actually hits, not on the ball's own landing spot.
-  BFS1: { sprite: 'BFE1', frames: ['A', 'B', 'C', 'D', 'E', 'F'] },
-  BAL1: { sprite: 'BAL1', frames: ['C', 'D', 'E'] },
-  BAL2: { sprite: 'BAL2', frames: ['C', 'D', 'E'] },
-  BAL7: { sprite: 'BAL7', frames: ['C', 'D', 'E'] },
-  MANF: { sprite: 'MISL', frames: ['B', 'C', 'D'] },
-  APLS: { sprite: 'APBX', frames: ['A', 'B', 'C', 'D', 'E'] },
-  FATB: { sprite: 'FBXP', frames: ['A', 'B', 'C'] },
-};
-
-/**
- * Each projectile's launch and impact sound, keyed by flight sprite the same way
- * `IMPACT_EFFECTS` above is — and from the same source: the missile type's own
- * `mobjinfo.seesound` (played by `P_SpawnMissile` as it spawns) and
- * `deathsound` (played by `P_ExplodeMissile` where it lands).
- *
- * This is why the rocket launcher and plasma rifle have no weapon fire sound of
- * their own (`WeaponDef.fireSound`): what you hear is the missile. `BFS1` is the
- * exception at launch — `MT_BFG`'s seesound is 0 and the weapon plays `bfg`
- * itself. Two vanilla oddities here are real and deliberately kept: every
- * fireball bursts with `firxpl` while the rocket and the revenant's tracer use
- * the *barrel* explosion, and the BFG ball's `rxplod` is a sound nothing else in
- * the game reaches.
- */
-const PROJECTILE_SOUNDS: Record<string, { launch: SfxId | null; explode: SfxId | null }> = {
-  MISL: { launch: 'rlaunc', explode: 'barexp' },
-  PLSS: { launch: 'plasma', explode: 'firxpl' },
-  BFS1: { launch: null, explode: 'rxplod' },
-  BAL1: { launch: 'firsht', explode: 'firxpl' }, // imp
-  BAL2: { launch: 'firsht', explode: 'firxpl' }, // cacodemon
-  BAL7: { launch: 'firsht', explode: 'firxpl' }, // baron/hell knight
-  MANF: { launch: 'firsht', explode: 'firxpl' }, // mancubus
-  APLS: { launch: 'plasma', explode: 'firxpl' }, // arachnotron
-  FATB: { launch: 'skeatk', explode: 'barexp' }, // revenant
-};
-
-/**
- * Vanilla's `MT_EXTRABFG` (`S_BFGEXP1`-`4`) — the green burst `A_BFGSpray`
- * spawns on every monster a spray ray connects with, distinct from `BFE1`
- * above (the ball's own impact). `BFE2A0`-`D0` confirmed against `DOOM2.WAD`.
- */
-const BFG_SPRAY_HIT_FRAMES = ['A', 'B', 'C', 'D'];
-
-/**
- * The arch-vile's flame, vanilla's `MT_FIRE` (`S_FIRE1`-`S_FIRE30`) — its own
- * sprite rather than an impact effect, since `resolveVileBlast` has no flying
- * projectile to key off. `FIREA0`-`FIREH0` confirmed against `DOOM2.WAD`;
- * vanilla's 30-state loop revisits letters to flicker (`A,B,A,B,C,B,C,…`),
- * not worth reproducing exactly for a cosmetic one-shot.
- */
-const VILE_FIRE_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-
-/** Vanilla's own 24-unit offset (`A_VileAttack`'s `FixedMul(24*FRACUNIT, ...)`) — see `resolveVileBlast`'s doc. */
-const VILE_FIRE_OFFSET = 24;
-
-/**
- * How long the windup flame tracks its target — read from the arch-vile's own
- * `startDelaySeconds` rather than duplicated, so the flame can't drift away
- * from the moment the real shot lands or fizzles.
- */
-const VILE_WINDUP_TRACK_SECONDS = MONSTER_STATS[64].ranged?.startDelaySeconds ?? 0;
-
-/**
- * The revenant missile's turn rate — vanilla's `A_Tracer` turns by `TRACEANGLE`
- * (`0xc000000`, 16.875°) every 4th tic. Converted to a continuous rate, the
- * same conversion `MonsterStats.speed` makes; a missile's turn is a smooth
- * curve either way, unlike the AI clock's cadence, where discreteness gates
- * real probability rolls.
- */
-const REVENANT_TRACER_TURN_RATE_RAD = (16.875 * Math.PI) / 180 / (4 / 35);
-
-/** `A_Tracer`'s vertical aim point, `dest->z + 40*FRACUNIT` — chest height, not the target's feet. */
-const TRACER_HOMING_Z_OFFSET = 40;
-
-/**
- * The revenant missile's trailing smoke (vanilla's `MT_SMOKE`, spawned inside
- * `A_Tracer`) — the only visible difference between a guided and an unguided
- * shot, so only shots that won the `homingBias` roll trail it. `MT_SMOKE`
- * reuses the `PUFF` sprite; frames B,C,B,C,D (`S_SMOKE1`-`5`) from `info.c`,
- * each held 4 tics, the same cadence `A_Tracer` gates the turn with. See
- * docs/monsters.md § The revenant's homing missile.
- */
-const SMOKE_TRAIL_FRAMES = ['B', 'C', 'B', 'C', 'D'];
-const SMOKE_TRAIL_FRAME_SECONDS = 4 / 35;
-const SMOKE_TRAIL_INTERVAL = 4 / 35;
-
-/**
- * Turns `from` toward `to` (radians) by at most `maxDelta`, the short way
- * around — the continuous equivalent of `A_Tracer`'s own clamped per-call
- * turn (see `REVENANT_TRACER_TURN_RATE_RAD`).
- */
-function turnToward(from: number, to: number, maxDelta: number): number {
-  const diff = Math.atan2(Math.sin(to - from), Math.cos(to - from));
-  return from + Math.max(-maxDelta, Math.min(maxDelta, diff));
-}
 
 /**
  * Player death frames, confirmed against `PLAY`'s lump names: its
@@ -264,61 +112,6 @@ const PLAYER_DEATH_FRAME_SECONDS = 6 / 35;
 const PLAYER_ATTACK_FRAMES = ['E', 'F'];
 const PLAYER_PAIN_FRAMES = ['G'];
 const PLAYER_ACTION_FRAME_SECONDS = 3 / 35;
-
-interface Projectile {
-  /** Drawn through `Game.effectBatch`, same as `OneShotEffect.anim` — see that field's doc. */
-  anim: SpriteAnimator;
-  originX: number;
-  originY: number;
-  /** Fire height at launch (the player's) — see spawnShot's doc for why this is never the target's own height. */
-  startZ: number;
-  /** shotPath's actual stopping height — the target's height if unobstructed, or wherever it got blocked short of that. */
-  endZ: number;
-  angleRad: number;
-  speed: number;
-  /** Distance (map units) to where shotPath says this shot's flight ends. */
-  maxDist: number;
-  traveled: number;
-  light: number;
-  /** SpriteBank name (PROJECTILE_FRAMES's key), so the impact explosion can look it up in IMPACT_EFFECTS. */
-  sprite: string;
-  /** Direct-hit damage, applied to `hitMonsterId` (if any) on arrival. */
-  damage: number;
-  /** Splash to apply at the impact point regardless of what was targeted, or null for a non-explosive projectile — see weapons.ts's WeaponDef.splash. */
-  splash: { radius: number; damage: number; hitsPlayer: boolean } | null;
-  /** The BFG's real A_BFGSpray secondary attack, straight from weapons.ts's WeaponDef.spray — null for every projectile but the player's own BFG ball (monsters never fire one). */
-  spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number } | null;
-  /** The monster this shot was locked onto *and actually reached* (spawnShot resolves that), or null — a free shot, one that missed a monster it wasn't locked onto, or a locked shot a wall cut short before the target. */
-  hitMonsterId: number | null;
-  /**
-   * The monster that fired this, or `null` for one of the player's own shots.
-   * A monster's shot re-tests arrival every frame against live positions
-   * instead of resolving hit-or-miss up front the way `spawnShot` does for a
-   * player's — docs/monsters.md § Monster projectiles in flight.
-   */
-  sourceId: number | null;
-  /** The firing monster's doomednum, for `sameSpecies` — vanilla's "don't hit same species as originator" rule on projectiles. */
-  sourceType: number;
-  /**
-   * The wall `shotPath` found blocking this flight at launch, or null. Carried
-   * through so a shoot-triggered special fires on *arrival*, not on launch —
-   * vanilla runs `P_ShootSpecialLine` from `PIT_CheckLine` when the missile
-   * reaches the line. Only matters for the flying-sprite case; a hitscan
-   * pellet triggers immediately in `spawnShot`. See docs/combat.md §
-   * Shoot-triggered specials.
-   */
-  lineIndex: number | null;
-  /**
-   * Present only for the revenant's missile (`MT_TRACER`/`A_Tracer`), whose
-   * path isn't the fixed origin+angle+distance line every other projectile
-   * flies, so it carries its own live position/heading. `targetId` is `null`
-   * for the player, matching `MonsterAttackEvent.targetId`. A `homing` object
-   * existing at all means this shot won its `homingBias` roll, which is why
-   * `smokeTimer` can pace the trail unconditionally. See docs/monsters.md §
-   * The revenant's homing missile.
-   */
-  homing?: { targetId: number | null; x: number; y: number; z: number; headingRad: number; smokeTimer: number };
-}
 
 /**
  * How fast a fall has to end to knock the wind out of the player. Vanilla's
@@ -347,11 +140,6 @@ const SAW_IDLE_INTERVAL = 4 / 35;
  */
 const MONSTER_BULLET_SLOP = 12;
 
-/** How close a monster projectile has to get to the player's live position before it's treated as a hit — see `Projectile.sourceId`'s doc. */
-const MONSTER_PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + 24;
-/** Vertical companion to `MONSTER_PROJECTILE_HIT_RADIUS` — the same overhead/underneath tolerance `ThingLayer.tryPickup`'s own gate already uses for picking an item up through a window onto a floor above/below. */
-const MONSTER_PROJECTILE_HIT_HEIGHT = 128;
-
 /**
  * How far an awake monster can be and still count as an occlusion-fade target.
  * **Tuned by feel** to roughly a room's length, not converted from vanilla.
@@ -370,91 +158,12 @@ const MONSTER_FADE_RANGE = 768;
 const MAX_FADE_TARGETS = 48;
 
 /**
- * How solid the player sprite draws under partial invisibility. Vanilla's
- * `fuzz` colormap is a software-renderer trick with no equivalent here; plain
- * translucency is the stand-in (docs/items.md § Powerups and the backpack).
- */
-const INVISIBILITY_OPACITY = 0.35;
-
-/**
- * `toneMappingExposure` while the light visor is held — a flat multiply, as
- * close as this gets to vanilla forcing the brightest colormap row without
- * rebuilding every surface's baked vertex lighting (docs/items.md § Powerups and the backpack).
- */
-const LIGHT_VISOR_EXPOSURE = 2.5;
-
-/**
  * Vanilla's `A_FaceTarget`: aiming at an `MF_SHADOW` thing (here only ever the
  * player under partial invisibility) throws the facing off by
  * `(P_Random()-P_Random())<<21` BAM, ±255/2048 of a full turn. That is the
  * entire blur-sphere mechanic — it never touches sight or waking.
  */
 const SHADOW_AIM_SPREAD_DEG = (255 / 2048) * 360;
-
-/**
- * The red damage flash, echoing `ST_doPaletteStuff`'s `damagecount`: raw damage
- * into a counter clamped to 100, ticked down 1/tic. `MAX_DAMAGE` is that clamp
- * and `FADE_SECONDS` is 100 tics over 35. `MAX_ALPHA` has no vanilla analogue
- * (there it's a palette swap, not an overlay) and is **tuned by feel**.
- */
-const PAIN_FLASH_MAX_DAMAGE = 100;
-const PAIN_FLASH_FADE_SECONDS = 100 / 35;
-const PAIN_FLASH_MAX_ALPHA = 0.5;
-
-/**
- * When a timed powerup's screen effect starts blinking as an expiry warning,
- * and how fast. **Tuned by feel** — vanilla blinks a HUD number (`cnt & 8` in
- * `ST_Ticker`), not a screen effect. See docs/items.md § Screen effects.
- */
-const POWER_BLINK_WARNING_SECONDS = 3;
-const POWER_BLINK_HZ = 4;
-
-/**
- * Whether a powerup's screen effect should currently show, given its
- * remaining seconds (`Inventory.powers[id]`). Once inside the warning
- * window, `floor(secs * Hz) % 2` alternates every `1/Hz` seconds as `secs`
- * counts down — a plain on/off square wave ending exactly at 0, no separate
- * blink-phase timer to track.
- */
-function powerBlinkVisible(secondsLeft: number): boolean {
-  return (
-    secondsLeft > 0 &&
-    (secondsLeft > POWER_BLINK_WARNING_SECONDS || Math.floor(secondsLeft * POWER_BLINK_HZ) % 2 === 0)
-  );
-}
-
-/**
- * Renderer, canvas, camera and input live for the whole session — a new level
- * must not cost a new WebGL context.
- */
-export class Viewport {
-  readonly renderer: THREE.WebGLRenderer;
-  readonly camera: TopDownCamera;
-  readonly input: Input;
-
-  constructor(container: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    // Set once, here, rather than switched on and off with the light visor:
-    // changing `toneMapping` itself recompiles every material's shader, while
-    // `toneMappingExposure` is a plain uniform. `LinearToneMapping` at the
-    // default exposure of 1 is `saturate(color)` — bit-identical to
-    // `NoToneMapping` for anything already in range, so this costs nothing
-    // until `LIGHT_VISOR_EXPOSURE` actually turns it up.
-    this.renderer.toneMapping = THREE.LinearToneMapping;
-    container.appendChild(this.renderer.domElement);
-
-    this.camera = new TopDownCamera(window.innerWidth / window.innerHeight);
-    this.input = new Input(this.renderer.domElement);
-
-    window.addEventListener('resize', () => {
-      this.renderer.setSize(window.innerWidth, window.innerHeight);
-      this.camera.setAspect(window.innerWidth / window.innerHeight);
-    });
-  }
-}
 
 /** One loaded WAD set, playing one level at a time. */
 export class Game {
@@ -481,15 +190,11 @@ export class Game {
   private impacts: OneShotEffect[] = [];
   /**
    * Every non-map-thing sprite this class draws — projectiles in flight,
-   * impact explosions, teleport-fog puffs, the revenant's smoke trail, the
-   * arch-vile's windup flame — batched into one `InstancedMesh` per lump, the
-   * same machinery `game/things.ts` draws map things with. One `SpriteActor`
-   * each hits a draw-call wall once homing missiles trail smoke at scale; see
-   * docs/combat.md § Effects and their batching.
-   *
-   * The player is deliberately *not* in here: it's one sprite, and it needs
-   * `SpriteActor.setOpacity` (partial invisibility), which has no per-instance
-   * equivalent in a batch.
+   * impact explosions, teleport-fog puffs, the smoke trail, the vile's flame —
+   * batched into one `InstancedMesh` per lump. The player is deliberately
+   * *not* in here: it needs `SpriteActor.setOpacity`, which has no
+   * per-instance equivalent in a batch. See docs/combat.md § Effects and their
+   * batching.
    */
   private effectBatch = new SpriteBatch();
   /** Scratch for `doomToWorld`, reused across every batched sprite — same reason `game/things.ts` keeps one. */
@@ -506,12 +211,8 @@ export class Game {
    * old map's mover mesh to the new map's scene, with nothing to clean it up.
    */
   private pendingExit = false;
-  /** Counts down to the next damage-floor tick while the player stands on one — see `updatePlayerSector`. Reset (not merely paused) whenever they aren't, so re-entering a hazard always gives the same brief grace period rather than resuming mid-countdown from a stale visit. */
-  private damageFloorTimer = DAMAGE_FLOOR_INTERVAL;
-  /** Vanilla `totalsecret` — sectors with `special === 9`, counted once per level load. See `updatePlayerSector`. */
-  private totalSecrets = 0;
-  /** Vanilla `player->secretcount` — see `updatePlayerSector`. */
-  private secretsFound = 0;
+  /** Damage floors and the secret counter for the current map — see game/sectoreffects.ts. */
+  private sectorEffects!: SectorEffects;
   /**
    * Seconds spent in the current level, shown on the HUD as hh:mm:ss. Advanced below in `frame`,
    * gated the same way `tickPowers` is: frozen once `playerDead`. Never advances on the frame a
@@ -525,9 +226,6 @@ export class Game {
   /** Seconds Q/E has been continuously held, for auto-repeat — see `frame`. */
   private qHoldTime = 0;
   private eHoldTime = 0;
-  private fpsAccum = 0;
-  private fpsFrames = 0;
-  private fps = 0;
 
   private view: Viewport;
   private audio: AudioEngine;
@@ -545,22 +243,14 @@ export class Game {
   private hud: Hud;
   private crosshair: Crosshair;
   /**
-   * DEVMODE's per-category timing breakdown (top-right overlay). Measurement
-   * itself always runs — `performance.now()` calls are cheap enough not to
-   * bother gating, matching how `fps` below is always computed regardless of
-   * DEVMODE — only the DOM panel's visibility (toggled once, in the
-   * constructor) and `updateHud`'s decision to push samples to it are gated.
+   * Measurement itself always runs — `performance.now()` calls are cheap enough
+   * not to bother gating; only `DebugHud`'s decision to render the samples is
+   * DEVMODE-gated.
    */
   private profiler = new FrameProfiler();
-  private profilerHud = new ProfilerHud();
+  private debugHud = new DebugHud();
+  private screen: ScreenEffects;
   private inventory: Inventory = createInventory();
-  private deathOverlay = document.getElementById('death-overlay')!;
-  /** Full-screen colour overlay for the powerups that recolour the view — see `updatePowerEffects`. */
-  private screenTint = document.getElementById('screen-tint')!;
-  /** Full-screen red damage flash, separate from `screenTint` — see `PAIN_FLASH_MAX_DAMAGE`'s doc. */
-  private painFlashEl = document.getElementById('pain-flash')!;
-  /** Current intensity of the damage flash, 0-1, bumped in `damagePlayer` and decayed in `updatePainFlash`. */
-  private painFlash = 0;
   /** True once the player's health has hit 0 — freezes movement/aim/firing/pickups (see `frame`) until `restart`. */
   private playerDead = false;
   readonly title: string;
@@ -608,9 +298,8 @@ export class Game {
     this.playerActor = new SpriteActor(this.spriteBank, this.spriteMaterials, 'PLAY', ['A', 'B', 'C', 'D']);
     this.scene.add(this.playerActor.mesh);
     this.scene.add(this.effectBatch.group);
-
-    // DEVMODE never changes at runtime, so this is set once rather than every frame.
-    document.getElementById('profiler-hud')!.classList.toggle('visible', DEVMODE);
+    // Bound once rather than per frame: `playerActor` is never reassigned.
+    this.screen = new ScreenEffects(view.renderer, (opacity) => this.playerActor.setOpacity(opacity));
 
     const wanted = this.mapNames.indexOf(startMap.toUpperCase());
     this.loadMapByIndex(wanted >= 0 ? wanted : 0);
@@ -632,9 +321,7 @@ export class Game {
     // and `restart`'s "reload the same map" call, defensively in one place
     // rather than duplicated at each caller.
     this.playerDead = false;
-    this.deathOverlay.classList.add('hidden');
-    this.painFlash = 0;
-    this.painFlashEl.style.opacity = '0';
+    this.screen.clearDeath();
     this.playerActor.revive();
     this.mapIndex = (index + this.mapNames.length) % this.mapNames.length;
     const name = this.mapNames[this.mapIndex];
@@ -670,10 +357,7 @@ export class Game {
     const t0 = performance.now();
     const map = loadMap(this.wad, name);
     this.map = map;
-    // Vanilla P_SpawnSpecials' own `case 9: totalsecret++` — see `updatePlayerSector`.
-    this.totalSecrets = 0;
-    for (const sector of map.sectors) if (sector.special === 9) this.totalSecrets++;
-    this.secretsFound = 0;
+    this.sectorEffects = new SectorEffects(map);
     this.levelTime = 0;
     this.world = new World(map);
     // Sectors a door/lift/floor mover will drive are pulled out of the static
@@ -685,7 +369,6 @@ export class Game {
     this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
     this.flatFader = new FlatFader(this.built.flatSurfaces, this.built.flatMeshes);
     this.textureScroller = new TextureScroller(map, this.built.occluders, this.built.wallMeshes, this.materials);
-    this.damageFloorTimer = DAMAGE_FLOOR_INTERVAL;
     this.player = new Player(this.world);
     // Applied before fog of war is seeded, so an explicit start position reveals
     // exactly what is visible from there and nothing from the map's real spawn.
@@ -727,8 +410,10 @@ export class Game {
         this.view.camera.yawDeg = (dest.angle * 180) / Math.PI - 90;
       },
       (sectorIndex) => this.applyCrushDamage(sectorIndex),
-      (sectorIndex, ceilingHeight) => this.blocksCeilingLower(sectorIndex, ceilingHeight),
-      (sectorIndex, floorHeight) => this.blocksFloorRise(sectorIndex, floorHeight),
+      (sectorIndex, ceilingHeight) =>
+        blocksCeilingLower(this.world, this.map, this.things, this.player, sectorIndex, ceilingHeight),
+      (sectorIndex, floorHeight) =>
+        blocksFloorRise(this.world, this.map, this.things, this.player, sectorIndex, floorHeight),
       this.player.x,
       this.player.y,
       this.audio,
@@ -781,13 +466,7 @@ export class Game {
     // The engine is session-level and the next Game sets its own bank; this
     // only makes sure nothing from this level is left holding a channel.
     this.audio.stopAll();
-    // The Viewport (renderer) and the overlay elements outlive this Game, so
-    // anything updatePowerEffects turned on has to be turned back off here —
-    // otherwise the menu, and the next level started from it, inherit whatever
-    // powerup happened to be running when this one ended.
-    this.screenTint.classList.remove('invulnerable', 'suited');
-    this.painFlashEl.style.opacity = '0';
-    this.view.renderer.toneMappingExposure = 1;
+    this.screen.reset();
     this.playerActor.dispose();
     this.specials?.dispose();
     this.built?.group.traverse((obj) => {
@@ -865,15 +544,10 @@ export class Game {
 
   /**
    * Turns one fired `Shot` (game/weapons.ts) into a tracer line or a flying
-   * projectile sprite. Always starts at the player's own fire height, and
-   * slopes toward a locked-on monster's height rather than flying flat past
-   * it; `shotPath` resolves where it actually gets to.
-   *
-   * Hit-or-miss on `targetId` is settled **here**, not on arrival: comparing
-   * `shotPath`'s blocked distance against the target's says whether it got
-   * there. A hitscan pellet's damage applies immediately; a projectile's
-   * carries through to `updateProjectiles` and applies when the sprite
-   * arrives. See docs/combat.md § How a shot deals damage.
+   * projectile sprite. Always starts at the player's own fire height and
+   * slopes toward a locked-on monster's height; `shotPath` resolves where it
+   * actually gets to. Hit-or-miss on `targetId` is settled **here**, not on
+   * arrival. See docs/combat.md § How a shot deals damage.
    */
   private spawnShot(shot: Shot, startZ: number, target: Pos3 | null, targetId: number | null): void {
     const origin: Pos3 = { x: this.player.x, y: this.player.y, z: startZ };
@@ -961,16 +635,10 @@ export class Game {
 
   /**
    * Turns a monster's fired ranged `MonsterAttackEvent` into a flying
-   * `Projectile`. `atk.targetId` is the player when `null`, another monster
-   * (an infight) otherwise, resolved live rather than trusted from when the
-   * attack started — a shot with real flight time shouldn't aim at where its
-   * target *used to be*.
-   *
-   * Launched via `shotPath` like a player's locked-on shot, but with
-   * `lockedOn: false`: a monster has no auto-aim leniency to justify its
-   * fireball clearing a step it shouldn't. And unlike a player's shot the
-   * flight doesn't resolve hit-or-miss up front — see docs/monsters.md §
-   * Monster projectiles in flight.
+   * `Projectile`, aimed at whichever target it fired at (`atk.targetId`,
+   * resolved live). Launched via `shotPath` with `lockedOn: false`, and unlike
+   * a player's shot the flight doesn't resolve hit-or-miss up front — see
+   * docs/monsters.md § Monster projectiles in flight.
    */
   private spawnMonsterProjectile(atk: MonsterAttackEvent): void {
     if (!atk.projectiles) return;
@@ -1074,12 +742,11 @@ export class Game {
 
   /**
    * The arch-vile's warning flame, spawned when its windup starts — vanilla's
-   * `MT_FIRE`, which tracks the target for the whole ~1.9s and is what the
-   * player reacts to. Reuses `spawnEffect` but overrides the lifetime to the
-   * windup's own length, so `resolveVileBlast`'s burst (or nothing, if the
-   * shot fizzles) takes over as this runs out with no explicit hand-off.
-   * Positioned up front for the reason `A_VileTarget` calls `A_Fire`
-   * immediately after spawning: the raw spawn point is never seen uncorrected.
+   * `MT_FIRE`. Reuses `spawnEffect` but overrides the lifetime to the windup's
+   * own length, so `resolveVileBlast`'s burst (or nothing, if the shot
+   * fizzles) takes over with no explicit hand-off. Positioned up front, as
+   * `A_VileTarget` calls `A_Fire` immediately after spawning. See
+   * docs/monsters.md § The arch-vile.
    */
   private spawnVileWindupFire(atk: MonsterAttackEvent): void {
     const target = atk.targetId === null ? this.player : this.things?.monsterById(atk.targetId);
@@ -1185,14 +852,8 @@ export class Game {
    * What a still-flying monster projectile has just run into, or null if it
    * hit nothing this frame. A non-null result always ends the flight; `id` is
    * who takes the direct damage, or **null for a same-species body that stops
-   * the missile without being hurt by it** — `PIT_CheckThing`'s "explode, but
-   * do no damage", a stop and not a pass-through. Only the direct hit is
-   * skipped in that case: `updateProjectiles` applies `p.splash` regardless,
-   * as `P_ExplodeMissile` runs the death state either way.
-   *
-   * Candidates resolve **nearest first**, since with the fizzle case in play
-   * that decides between two very different outcomes. See docs/monsters.md §
-   * Infighting.
+   * the missile without being hurt by it**. Candidates resolve nearest first.
+   * See docs/monsters.md § Infighting.
    */
   private monsterStruckBy(p: Projectile, at: Pos3): { id: number | null } | null {
     if (p.sourceId === null) return null;
@@ -1253,16 +914,11 @@ export class Game {
 
   /**
    * Advances every in-flight projectile along the fixed straight line
-   * `spawnShot` resolved for it — sloped from `startZ` to `endZ` so an
-   * auto-aimed shot visibly rises or dips — and, on reaching `maxDist`,
-   * removes it and plays its `IMPACT_EFFECTS` explosion in place. Arriving
-   * isn't itself a hit (`p.hitMonsterId` carries that answer), but the impact
-   * point applies `p.splash` either way, as a rocket bursting on a bare wall
-   * does in vanilla.
-   *
-   * A monster's own shot instead has two live arrival tests re-checked every
-   * frame — the player's current position, and any other monster it passes —
-   * so stepping behind cover or outrunning a slow fireball works. See
+   * `spawnShot` resolved for it — sloped from `startZ` to `endZ` — and, on
+   * reaching `maxDist`, removes it and plays its `IMPACT_EFFECTS` explosion in
+   * place. Arriving isn't itself a hit (`p.hitMonsterId` carries that answer),
+   * but the impact point applies `p.splash` either way. A monster's own shot
+   * instead re-checks two live arrival tests every frame — see
    * docs/monsters.md § Monster projectiles in flight.
    */
   private updateProjectiles(dt: number, viewerAngleDeg: number): void {
@@ -1291,15 +947,10 @@ export class Game {
         !this.playerDead &&
         Math.hypot(this.player.x - at.x, this.player.y - at.y) <= MONSTER_PROJECTILE_HIT_RADIUS &&
         Math.abs(this.player.z - at.z) <= MONSTER_PROJECTILE_HIT_HEIGHT &&
-        // Proximity alone isn't arrival: the hit radius is a fat 2D disc, so a
-        // projectile stopping against a wall (its `maxDist`) would otherwise
-        // damage anyone standing within it on the *far* side of that wall,
-        // dealing a full direct hit through it. Traced from the player
-        // rather than from `at` deliberately: `at` sits essentially *on*
-        // the wall by then, and `hasLineOfSight`'s own
-        // `SELF_HIT_MARGIN` would skip that crossing as a self-hit and report
-        // the wall it just stopped against as clear. Last in the chain so it
-        // only ever runs once the (cheap) proximity tests already passed.
+        // Proximity alone isn't arrival, and the trace runs player→projectile,
+        // not the other way round — docs/monsters.md § Monster projectiles in
+        // flight. Last in the chain so it only runs once the cheap proximity
+        // tests already passed.
         hasLineOfSight(this.world, this.player, at);
       const struck = fromMonster && !reachedPlayer ? this.monsterStruckBy(p, at) : null;
 
@@ -1358,22 +1009,12 @@ export class Game {
 
   /**
    * One frame of the revenant's `A_Tracer` homing (`Projectile.homing`): turns
-   * `headingRad` toward the target's current bearing by at most
-   * `REVENANT_TRACER_TURN_RATE_RAD * dt` and integrates position from the new
-   * heading, instead of the fixed straight-line formula every other projectile
-   * uses. Height eases toward `TRACER_HOMING_Z_OFFSET` above the target's feet
-   * over the remaining distance — the continuous form of vanilla's `momz`
-   * spring. A missing or dead target leaves the missile on its last heading,
-   * matching `A_Tracer`'s own early return.
-   *
-   * **A homing missile has no flight-distance budget** — it curves away from
-   * the launch ray, so `shotPath`'s `maxDist` says nothing about where it ends
-   * up. Each step is checked against the geometry it actually crossed
-   * (`projectileStepBlocker`) instead, and forcing `p.traveled` to `p.maxDist`
-   * is how this signals arrival to `updateProjectiles` — the only thing that
-   * ends a homing flight short of a body. Also spawns the smoke trail every
-   * `SMOKE_TRAIL_INTERVAL`. See docs/monsters.md § The revenant's homing
-   * missile.
+   * `headingRad` toward the target's current bearing, integrates position from
+   * it, eases height toward the target and spawns the smoke trail. **A homing
+   * missile has no flight-distance budget** — each step is checked against the
+   * geometry it actually crossed (`projectileStepBlocker`), and forcing
+   * `p.traveled` to `p.maxDist` is how arrival is signalled to
+   * `updateProjectiles`. See docs/monsters.md § The revenant's homing missile.
    */
   private advanceHomingProjectile(p: Projectile, dt: number): Pos3 {
     const homing = p.homing!;
@@ -1383,11 +1024,9 @@ export class Game {
     if (target) {
       const bearing = Math.atan2(target.y - homing.y, target.x - homing.x);
       homing.headingRad = turnToward(homing.headingRad, bearing, REVENANT_TRACER_TURN_RATE_RAD * dt);
-      // Paced by the live distance still to cover, not by what's left of a
-      // launch-time budget this flight no longer has (see this method's
-      // doc) — which is also what vanilla's own `A_Tracer` momz spring uses
-      // (`P_AproxDistance(dest - actor) / speed`), so it stays correct for a
-      // missile that has curved right past its target and is coming back.
+      // Paced by the live distance still to cover, as vanilla's own momz spring
+      // is (`P_AproxDistance(dest - actor) / speed`) — not by a launch-time
+      // budget this flight no longer has.
       const remaining = Math.max(Math.hypot(target.x - homing.x, target.y - homing.y), step);
       homing.z += (target.z + TRACER_HOMING_Z_OFFSET - homing.z) * Math.min(1, step / remaining);
     }
@@ -1439,13 +1078,9 @@ export class Game {
    * An explosion's blast — vanilla's `P_RadiusAttack`: every living monster
    * within `radius` with an unobstructed line to the impact point takes damage
    * falling off linearly to 0 at the edge. `hitsPlayer` gates self-splash
-   * ("rocket jump"). **2D distance only, no height check** — vanilla ignores z
-   * entirely here and leans on line-of-sight alone to decide whether a floor
-   * above or below the blast is protected.
-   *
-   * `source`, when given, attributes the hit for `ThingLayer.damage`'s
-   * retaliation/infighting rule the same way a direct hit does. See
-   * docs/combat.md § Splash and the BFG.
+   * ("rocket jump"); `source`, when given, attributes the hit for
+   * `ThingLayer.damage`'s retaliation rule. **2D distance only, no height
+   * check**, as in vanilla. See docs/combat.md § Splash and the BFG.
    */
   private applyRadiusDamage(
     at: Pos3,
@@ -1483,16 +1118,11 @@ export class Game {
 
   /**
    * Vanilla's `A_BFGSpray`, fired once when the player's BFG ball arrives.
-   * `travelAngleRad` is the ball's fixed flight angle (`mo->angle`), not the
-   * aim angle at impact, and the rays trace from the player's **current**
-   * position rather than the impact point — that's what `mo->target` is by the
-   * time the slow ball lands, and the distinction is load-bearing.
-   *
-   * Each ray is an independent trace dealing a full, undiminished hit: no
-   * falloff, and no dedupe against a body several rays already caught, since
-   * `P_DamageMobj` is called once per connecting ray. Each also spawns an
-   * `MT_EXTRABFG` burst. No-op once the player is dead. See docs/combat.md §
-   * Splash and the BFG.
+   * `travelAngleRad` is the ball's fixed flight angle, and the rays trace from
+   * the player's **current** position rather than the impact point. Each ray
+   * is an independent, undiminished hit with no dedupe against a body several
+   * rays already caught, and each spawns an `MT_EXTRABFG` burst. No-op once
+   * the player is dead. See docs/combat.md § Splash and the BFG.
    */
   private resolveBfgSpray(
     travelAngleRad: number,
@@ -1524,18 +1154,13 @@ export class Game {
 
   /**
    * Applies armor-mitigated damage (`applyDamage`) to the player, transitioning to the death
-   * animation once health hits 0. A no-op once already dead, or once `applyDamage` reports
-   * invulnerability blocked the hit outright — no double death, and no pain flash/flinch for a
-   * hit that did nothing.
+   * animation once health hits 0. `fromX`/`fromY`, when both given, are where the damage
+   * physically came from — same omitted-for-damage-floors-and-crushers convention as
+   * `ThingLayer.damage`'s own params — and drive vanilla's `P_DamageMobj` knockback.
    *
-   * `fromX`/`fromY`, when both given, are where the damage physically came from — same meaning
-   * and same omitted-for-damage-floors-and-crushers convention as `ThingLayer.damage`'s own
-   * params — and drive vanilla's `P_DamageMobj` horizontal knockback (`thrustSpeed`, `PLAYER_MASS`)
-   * via `Player.applyKnockback`.
-   *
-   * Returns whether the hit actually landed — `false` covers both a no-op corpse hit and
-   * invulnerability blocking it outright, so a caller with its own follow-up effect (e.g.
-   * `resolveVileBlast`'s knockup) can gate on this instead of re-deriving "was this a no-op" itself.
+   * Returns whether the hit actually landed; `false` covers both a no-op corpse hit and
+   * invulnerability blocking it outright, so a caller with a follow-up effect (e.g.
+   * `resolveVileBlast`'s knockup) can gate on it. See docs/combat.md § Player death.
    */
   private damagePlayer(amount: number, fromX?: number, fromY?: number): boolean {
     if (this.playerDead || amount <= 0) return false;
@@ -1556,7 +1181,7 @@ export class Game {
       const speed = thrustSpeed(amount, PLAYER_MASS);
       this.player.applyKnockback(dx * speed, dy * speed);
     }
-    this.painFlash = Math.min(1, this.painFlash + amount / PAIN_FLASH_MAX_DAMAGE);
+    this.screen.addPain(amount);
     if (this.inventory.health <= 0) {
       this.playerDead = true;
       // A_PlayerScream: the drawn-out `pdiehi` for a death that overkilled by
@@ -1567,7 +1192,7 @@ export class Game {
       // between the two cries.
       this.audio.play(amount > healthBefore + 50 ? 'pdiehi' : 'pldeth', this.player, PLAYER_ORIGIN);
       this.playerActor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
-      this.deathOverlay.classList.remove('hidden');
+      this.screen.showDeath();
       return true;
     }
     this.audio.play('plpain', this.player, PLAYER_ORIGIN);
@@ -1588,118 +1213,6 @@ export class Game {
   }
 
   /**
-   * Whether a `radius`-circle at (x, y) overlaps `sectorIndex` at all, not
-   * just whichever sector its bare center point resolves to — a rim-sample
-   * ring, the same approximation `FogOfWar` uses. A plain point test misses
-   * the player standing half in a doorway; see docs/specials.md § Every other
-   * mover stops instead.
-   */
-  private circleOverlapsSector(x: number, y: number, radius: number, sectorIndex: number): boolean {
-    if (this.world.sectorIndexAt(x, y) === sectorIndex) return true;
-    const RIM_SAMPLES = 8;
-    for (let i = 0; i < RIM_SAMPLES; i++) {
-      const angle = (i / RIM_SAMPLES) * Math.PI * 2;
-      const sx = x + Math.cos(angle) * radius;
-      const sy = y + Math.sin(angle) * radius;
-      if (this.world.sectorIndexAt(sx, sy) === sectorIndex) return true;
-    }
-    return false;
-  }
-
-  /**
-   * `SpecialsController`'s shared obstruction test, vanilla's
-   * `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule: whoever's standing in
-   * `sectorIndex` doesn't fit in the vertical gap a mover's next step would
-   * leave. A flat headroom test against `PLAYER_HEIGHT`/`MONSTER_HIT_HEIGHT`,
-   * this engine having no per-thing floor/ceiling clip to do better with. See
-   * docs/specials.md § Every other mover stops instead for why membership goes
-   * through `circleOverlapsSector` and why the heights are parameters.
-   */
-  private headroomBlocked(sectorIndex: number, floorHeight: number, ceilingHeight: number): boolean {
-    if (
-      this.circleOverlapsSector(this.player.x, this.player.y, PLAYER_RADIUS, sectorIndex) &&
-      floorHeight + PLAYER_HEIGHT > ceilingHeight
-    ) {
-      return true;
-    }
-    // The gap check doesn't depend on which monster it is (unlike the old
-    // per-thing `m.z` version), so one monster in the sector is enough to
-    // decide it for all of them — no need to loop.
-    if (floorHeight + MONSTER_HIT_HEIGHT <= ceilingHeight) return false;
-    const sector = this.map.sectors[sectorIndex];
-    return (this.things?.monstersInSector(sector).length ?? 0) > 0;
-  }
-
-  /** A closing door or a lowering `CeilingMover` — `SpecialsController.blocksCeilingLower`. The sector's floor doesn't move here, so `headroomBlocked` reads it straight off the map. */
-  private blocksCeilingLower(sectorIndex: number, ceilingHeight: number): boolean {
-    return this.headroomBlocked(sectorIndex, this.map.sectors[sectorIndex].floorHeight, ceilingHeight);
-  }
-
-  /**
-   * A rising lift or non-crushing `FloorMover` — `SpecialsController.blocksFloorRise`.
-   * The sector's ceiling doesn't move here, so `headroomBlocked` reads it straight off
-   * the map for the monster fallback. The player additionally gets `groundCeiling`'s
-   * straddle-aware overhead: standing half on the rising sector and half in a
-   * lower-ceilinged neighbor, `groundFloor` already pins the player's `z` to this
-   * sector's rising floor, so the neighbor's own (unmoving) ceiling — not this
-   * sector's — is what would actually crush them; `headroomBlocked` alone only checks
-   * this sector's own ceiling and misses that. Without this, the player could be
-   * carried up into the neighbor's ceiling/upper wall.
-   */
-  private blocksFloorRise(sectorIndex: number, floorHeight: number): boolean {
-    if (this.headroomBlocked(sectorIndex, floorHeight, this.map.sectors[sectorIndex].ceilHeight)) return true;
-    if (this.circleOverlapsSector(this.player.x, this.player.y, PLAYER_RADIUS, sectorIndex)) {
-      const ceiling = this.world.groundCeiling(this.player.x, this.player.y, PLAYER_RADIUS);
-      if (floorHeight + PLAYER_HEIGHT > ceiling) return true;
-    }
-    return false;
-  }
-
-  /**
-   * Vanilla's `P_PlayerInSpecialSector`, run directly here rather than through
-   * `SpecialsController` — this switch has no mover, just `sector.special`
-   * and the player's position. Player-only, matching vanilla. Gated on
-   * `player.z === sector.floorHeight` (vanilla's `mo->z != floorheight`), read
-   * off the local sector rather than `World.groundFloor`; see docs/specials.md
-   * § Damage floors and § Secret sectors.
-   */
-  private updatePlayerSector(dt: number): void {
-    const sector = this.world.sectorAt(this.player.x, this.player.y);
-    if (!sector || this.player.z !== sector.floorHeight) {
-      this.damageFloorTimer = DAMAGE_FLOOR_INTERVAL;
-      return;
-    }
-    if (sector.special === 9) {
-      // Vanilla's `case 9: player->secretcount++; sector->special = 0;` — clearing it here means
-      // the switch below never matches 9 again, so this can't double-count on a later frame.
-      this.secretsFound++;
-      sector.special = 0;
-    }
-    const effect = SECTOR_DAMAGE_SPECIALS[sector.special];
-    if (!effect) {
-      this.damageFloorTimer = DAMAGE_FLOOR_INTERVAL;
-      return;
-    }
-    this.damageFloorTimer -= dt;
-    if (this.damageFloorTimer > 0) return;
-    // The interval keeps running even when a suit blocks the hit, matching
-    // vanilla's own global `leveltime&0x1f` clock: the suit skips the damage,
-    // it doesn't bank it up for the moment it expires.
-    this.damageFloorTimer += DAMAGE_FLOOR_INTERVAL;
-    if (this.suitBlocks(effect)) return;
-    this.damagePlayer(effect.amount);
-    if (effect.exitBelowHealth !== undefined && this.inventory.health > 0 && this.inventory.health <= effect.exitBelowHealth) {
-      this.pendingExit = true;
-    }
-  }
-
-  /** Whether a worn radiation suit stops this damage floor's hit — see `DamageFloorEffect.suit` for why the three types differ. */
-  private suitBlocks(effect: DamageFloorEffect): boolean {
-    if (effect.suit === 'ignored' || !hasPower(this.inventory, 'radiationSuit')) return false;
-    return effect.suit === 'blocks' || Math.random() >= SUIT_LEAK_CHANCE;
-  }
-
-  /**
    * Throws a monster's ranged shot off-aim while the player holds partial
    * invisibility — `A_FaceTarget`'s fuzz, applied per shot so each bullet of a
    * burst goes its own way. Player-aimed shots only (nothing else carries
@@ -1713,27 +1226,6 @@ export class Game {
     const off = ((Math.random() - Math.random()) * SHADOW_AIM_SPREAD_DEG * Math.PI) / 180;
     atk.angleRad += off;
     if (atk.projectiles) for (const proj of atk.projectiles) proj.angleRad += off;
-  }
-
-  /**
-   * Pushes the powerups whose effect is a *view* change out to where they
-   * happen: the two screen tints (CSS `#screen-tint`), the light visor's
-   * exposure lift, the player sprite's translucency. Driven off inventory
-   * state every frame rather than toggled on pickup/expiry, so a level change
-   * or restart clearing the powers needs no teardown path of its own.
-   */
-  private updatePowerEffects(): void {
-    const inv = this.inventory;
-    this.screenTint.classList.toggle('invulnerable', powerBlinkVisible(inv.powers.invulnerability));
-    this.screenTint.classList.toggle('suited', powerBlinkVisible(inv.powers.radiationSuit));
-    this.view.renderer.toneMappingExposure = hasPower(inv, 'lightVisor') ? LIGHT_VISOR_EXPOSURE : 1;
-    this.playerActor.setOpacity(powerBlinkVisible(inv.powers.invisibility) ? INVISIBILITY_OPACITY : 1);
-  }
-
-  /** Decays `painFlash` (bumped in `damagePlayer`) and writes it to `painFlashEl`'s opacity — see `PAIN_FLASH_MAX_DAMAGE`'s doc for the vanilla numbers behind the fade rate. */
-  private updatePainFlash(dt: number): void {
-    this.painFlash = Math.max(0, this.painFlash - dt / PAIN_FLASH_FADE_SECONDS);
-    this.painFlashEl.style.opacity = String(this.painFlash * PAIN_FLASH_MAX_ALPHA);
   }
 
   /**
@@ -1771,18 +1263,16 @@ export class Game {
     if (!this.running) return;
     // rawDt is the real elapsed wall-clock time; dt clamps it so physics/AI
     // never take a giant step after a stall (tab backgrounded, a slow map
-    // load). The fps counter below must use rawDt, not dt — using the
-    // clamped value made a genuine slideshow (e.g. real frame times of
-    // ~500ms, a true 2fps) under-detect itself as ~20fps, since 10 frames'
-    // worth of clamped 0.05s deltas hits the accumulator's 0.5s threshold
-    // long before 10 * 500ms of real time actually has.
+    // load). `DebugHud` gets rawDt, not dt — a clamped delta makes a genuine
+    // slideshow under-detect itself, since ten clamped 0.05s steps reach the
+    // fps accumulator's 0.5s threshold long before ten real frames have.
     const rawDt = (now - this.lastTime) / 1000;
     const dt = Math.min(0.05, rawDt);
     this.lastTime = now;
     this.profiler.beginFrame();
 
     const { input, camera } = this.view;
-    this.handleHotkeys();
+    handleHotkeys(input, camera, this.audio, (delta) => this.loadMapByIndex(this.mapIndex + delta));
     // Set before any system runs, since specials/monsters/weapons all raise
     // sounds during the update below. The camera's yaw is last frame's (it
     // settles in `camera.update`, at the end) — a frame of smoothing lag on the
@@ -1839,15 +1329,11 @@ export class Game {
       // matching vanilla: powers age in `P_PlayerThink`, which hands off to
       // `P_DeathThink` and returns before reaching them once health hits 0.
       tickPowers(this.inventory, dt);
-      // The cursor hovering over a monster locks aim onto its actual
-      // position — and height — instead of wherever the mouse's flat
-      // floor-plane projection lands underneath the cursor. This has to
-      // apply on hover, the same as regular mouse-aim always has
-      // (player.angle is set from `aim` unconditionally below, click or
-      // no), not just while the trigger is held: gating the lock to
-      // mouseDown made both the player's facing and the camera's aim-lead
-      // below jump the instant a click landed — which read as the camera
-      // lurching backward right as you fired.
+      // The cursor hovering over a monster locks aim onto its actual position
+      // and height. **On hover, not on click** — `aim` drives `player.angle`
+      // and the camera's lead unconditionally, so gating the lock to
+      // `mouseDown` makes both jump the instant a click lands. See
+      // docs/combat.md § Auto-aim.
       const monster = this.profiler.time('Player', () => {
         const m = this.things?.pickMonster(camera.raycasterFor(input.pointer.x, input.pointer.y)) ?? null;
         aim = m ?? camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
@@ -1901,7 +1387,10 @@ export class Game {
           if (taken) this.audio.play(pickupSound(type));
           return taken;
         });
-        this.updatePlayerSector(dt);
+        const exit = this.sectorEffects.update(dt, this.world, this.player, this.inventory, (amount) =>
+          this.damagePlayer(amount),
+        );
+        if (exit) this.pendingExit = true;
       });
 
       // Hard landings and the chainsaw's two ambient sounds, both of which
@@ -1921,29 +1410,21 @@ export class Game {
       totalKills: this.things?.stats.totalKills ?? 0,
       items: this.things?.stats.items ?? 0,
       totalItems: this.things?.stats.totalItems ?? 0,
-      secrets: this.secretsFound,
-      totalSecrets: this.totalSecrets,
+      secrets: this.sectorEffects.secretsFound,
+      totalSecrets: this.sectorEffects.totalSecrets,
       elapsedSeconds: this.levelTime,
     });
     this.crosshair.update(this.inventory.health);
-    this.updatePowerEffects();
-    this.updatePainFlash(dt);
+    this.screen.update(dt, this.inventory);
 
     this.profiler.time('Fog of War', () => this.fogOfWar.update(dt, this.player.x, this.player.y));
     const fog = this.fogOfWar;
     const fogAlphaOf = (subsector: number) => fog.alphaOf(subsector);
-    // `null` once the player is dead — matching vanilla's own `P_KillMobj`,
-    // which strips the player's `MF_SHOOTABLE`/`MF_SOLID` right on death.
-    // `ThingLayer.update` uses this to stop anyone from *newly* targeting the
-    // corpse, but a monster already alerted keeps stepping regardless: mid
-    // infight, it fights on; out of other targets, `resolveTarget` there
-    // reports it and the monster reverts to idle the same frame, exactly
-    // vanilla's "no shootable target" A_Chase branch. Only `frame`'s own
-    // input-driven branch above (movement/aim/firing/pickups) freezes
-    // outright on death; pose/animation and fog visibility keep ticking for
-    // everyone. Every attack a monster fired this frame comes back for us to
-    // actually apply/render, the same "system returns data, caller realizes
-    // it" split as WeaponSystem.update's Shot[].
+    // `null` once the player is dead, matching `P_KillMobj` stripping the
+    // player's `MF_SHOOTABLE`/`MF_SOLID` — docs/combat.md § Player death for
+    // what that does and doesn't freeze in the AI. Every attack a monster
+    // fired this frame comes back for us to apply/render, the same "system
+    // returns data, caller realizes it" split as `WeaponSystem.update`.
     const thingUpdate = this.profiler.time(
       'Monsters',
       () =>
@@ -2016,13 +1497,10 @@ export class Game {
     this.profiler.time('Fading', () => {
       const camPos = camera.camera.position;
       const camArgs = [dt, camPos.x, -camPos.z, camPos.y] as const;
-      // A wall/floor hiding a monster only fades once that monster is actually
-      // alerted (ThingLayer.awakeMonsters) — an unseen sleeping monster is
-      // supposed to stay hidden, same as before this list existed — and within
-      // MONSTER_FADE_RANGE (see its doc for why that's a distance cap and not
-      // a `hasLineOfSight` check). Monsters reuse PLAYER_HEIGHT/2 for their own
-      // target height, same as hasLineOfSight does, since there's no
-      // per-species height table.
+      // A wall/floor hiding a monster only fades once that monster is alerted
+      // — an unseen sleeping one is supposed to stay hidden — and within
+      // MONSTER_FADE_RANGE. Monsters reuse PLAYER_HEIGHT/2 as their target
+      // height, same as hasLineOfSight, there being no per-species table.
       const nearby = (this.things?.awakeMonsters() ?? [])
         .map((m) => ({ m, d: Math.hypot(m.x - this.player.x, m.y - this.player.y) }))
         .filter((e) => e.d <= MONSTER_FADE_RANGE);
@@ -2075,50 +1553,24 @@ export class Game {
     this.profiler.time('Render', () => this.view.renderer.render(this.scene, camera.camera));
     this.profiler.endFrame();
 
-    this.fpsAccum += rawDt;
-    this.fpsFrames++;
-    if (this.fpsAccum >= 0.5) {
-      this.fps = Math.round(this.fpsFrames / this.fpsAccum);
-      this.fpsAccum = 0;
-      this.fpsFrames = 0;
-    }
-    this.updateHud();
+    this.debugHud.update(rawDt, this.profiler, (fps) => this.debugLines(fps));
 
     input.endFrame();
     requestAnimationFrame(this.frame);
   };
 
-  private handleHotkeys(): void {
-    const { input, camera } = this.view;
-    // Mute is a player-facing control, so it sits ahead of the DEVMODE gate.
-    if (input.pressed('KeyM')) this.audio.toggleMute();
-    // Level switching, zoom and tilt are dev/debug conveniences, gated the
-    // same as the debug HUD below (see DEVMODE).
-    if (!DEVMODE) return;
-    if (input.pressed('KeyN')) this.loadMapByIndex(this.mapIndex + 1);
-    if (input.pressed('KeyP')) this.loadMapByIndex(this.mapIndex - 1);
-    if (input.held('Equal', 'NumpadAdd')) camera.distance = Math.max(200, camera.distance - 8);
-    if (input.held('Minus', 'NumpadSubtract')) camera.distance = Math.min(2400, camera.distance + 8);
-    if (input.held('BracketLeft')) camera.tiltDeg = Math.max(0, camera.tiltDeg - 0.5);
-    if (input.held('BracketRight')) camera.tiltDeg = Math.min(70, camera.tiltDeg + 0.5);
-  }
-
-  private updateHud(): void {
-    if (!DEVMODE) {
-      hudEl.textContent = `${this.fps} fps`;
-      return;
-    }
+  /** DEVMODE's status text. Only ever called while the panel is shown — see `DebugHud.update`. */
+  private debugLines(fps: number): string[] {
     const { camera } = this.view;
     const sector = this.world.sectorIndexAt(this.player.x, this.player.y);
-    hudEl.textContent = [
+    return [
       `${this.currentMap}   ${this.title}`,
-      `${this.fps} fps   ${this.built?.triangles ?? 0} tris   monsters awake ${this.things?.awakeMonsterCount() ?? 0}`,
+      `${fps} fps   ${this.built?.triangles ?? 0} tris   monsters awake ${this.things?.awakeMonsterCount() ?? 0}`,
       `pos ${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}   z ${this.player.z.toFixed(0)}   sector ${sector}`,
       `cam ${camera.distance.toFixed(0)}u ${camera.tiltDeg.toFixed(0)}°tilt ${camera.yawDeg.toFixed(0)}°yaw`,
       '',
       'WASD move  Shift run  mouse aim/fire  1-7/wheel weapon  Q-E/drag cam  Space use',
       'N/P map  +/- zoom  [/] tilt  R restart  M mute  Esc menu',
-    ].join('\n');
-    this.profilerHud.update(this.profiler.samples(), this.profiler.totalMs);
+    ];
   }
 }

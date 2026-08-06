@@ -336,7 +336,8 @@ vanilla, but never reachable for this engine's other projectiles, whose height i
 interpolation between two points already validated at launch. A homing missile's height *eases*
 toward a target that can sit on a very different floor while its `x`/`y` curves over terrain
 `shotPath` never re-checked; without this, easing toward a lower target while passing over higher
-ground visibly sank the sprite into that floor. Checked every frame via `World.floorAt`/`ceilingAt`;
+ground visibly sank the sprite into that floor. Checked every frame via a single `World.sectorAt`
+lookup (one BSP walk rather than `floorAt` plus `ceilingAt`, which are two);
 hitting either clamps `z` and forces `p.traveled = p.maxDist`, the same signal a straight flight
 sends on running out of budget — and, since this branch never accumulates `traveled` itself, that
 forcing is the only thing that ends a homing flight short of reaching a body.

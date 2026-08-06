@@ -1,6 +1,7 @@
 # Pickups, inventory, HUD and powerups
 
-`src/game/inventory.ts`, `src/ui/hud.ts`, `src/game/things.ts: ThingLayer.tryPickup`, `src/game.ts`
+`src/game/inventory.ts`, `src/ui/hud.ts`, `src/game/things.ts: ThingLayer.tryPickup`,
+`src/ui/screeneffects.ts`, `src/game/sectoreffects.ts`, `src/game.ts`
 
 ## Inventory
 
@@ -143,7 +144,7 @@ always lands exactly on center; `#hud-levelstats` sits in the left track, right-
   the flag in vanilla (the backpack not counting toward item% is a well-known vanilla quirk this
   reproduces on purpose, not an oversight). `totalItems` is counted the same spawn pass as
   `totalKills`; `items` increments in `ThingLayer.tryPickup`'s success branch.
-- **Secrets** — `sector.special === 9` is vanilla's "SECRET SECTOR". `Game.updatePlayerSector`
+- **Secrets** — `sector.special === 9` is vanilla's "SECRET SECTOR". `SectorEffects.update`
   (`game.ts`) is this repo's direct reimplementation of vanilla's `P_PlayerInSpecialSector`,
   covering both this case and the damage-floor cases below it in the same switch, gated by the same
   `player.z === sector.floorHeight` vanilla itself checks. Entering the sector increments
@@ -240,7 +241,7 @@ arithmetic:
   unlike every other ammo pickup.
 - **Invulnerability** is checked in `applyDamage`, in the same place and with the same `damage < 1000`
   threshold `P_DamageMobj` uses.
-- **Radiation suit** gates `updateDamageFloor` through `suitBlocks`, and vanilla is deliberately not
+- **Radiation suit** gates `SectorEffects.update`'s damage through `suitBlocks`, and vanilla is deliberately not
   uniform here: `DamageFloorEffect.suit` is per sector type — nukage/hellslime are blocked outright,
   the two 20-damage slimes share a `case` reading `!pw_ironfeet || (P_Random()<5)` so a suit still
   leaks `SUIT_LEAK_CHANCE` of hits, and E1M8's finale type (11) never consults the suit at all. The
@@ -263,7 +264,8 @@ arithmetic:
   because the player drank something. Melee is deliberately unaffected, matching vanilla, whose melee
   lands on `P_CheckMeleeRange` rather than the fuzzed angle.
 - **Light amplification visor** rides `WebGLRenderer.toneMappingExposure` (`LIGHT_VISOR_EXPOSURE`).
-  `Viewport` sets `toneMapping = LinearToneMapping` **once**, at construction: changing `toneMapping`
+  `render/viewport.ts`'s `Viewport` sets `toneMapping = LinearToneMapping` **once**, at construction:
+  changing `toneMapping`
   itself recompiles every material's shader, while the exposure is a plain uniform, and
   `LinearToneMapping` at exposure 1 is `saturate(color)` — bit-identical to `NoToneMapping` for
   anything already in range, so it costs nothing until the visor turns it up. A flat multiply is an
@@ -276,9 +278,11 @@ The two screen tints (`#screen-tint`, `menu.css`) are CSS on the composited fram
 anything in the render pipeline. Invulnerability uses `backdrop-filter: grayscale(1) invert(1)` —
 vanilla's `INVULNERABILITYMAP` really is a *grayscale* inverse of the palette, not a colour inversion
 — and the suit a flat green wash. The element sits at `z-index: 5`: above the canvas, below every HUD
-layer (10+), so the world recolours and the readouts over it don't. **`Game.dispose` has to clear
-both classes and reset the exposure**, since the `Viewport` and these overlay elements outlive a
-`Game` — otherwise the menu, and the next level started from it, inherit whatever powerup was running.
+layer (10+), so the world recolours and the readouts over it don't. Everything in this section lives
+in `ui/screeneffects.ts`, driven off inventory state every frame rather than toggled on
+pickup/expiry, so clearing the powers needs no teardown path of its own. **`Game.dispose` has to call
+`ScreenEffects.reset`**, since the `Viewport` and these overlay elements outlive a `Game` —
+otherwise the menu, and the next level started from it, inherit whatever powerup was running.
 
 **Invulnerability's tint, the suit's tint and invisibility's sprite translucency all blink for their
 last `POWER_BLINK_WARNING_SECONDS` (3s)**, via the shared `powerBlinkVisible(secondsLeft)`. Not a
@@ -290,8 +294,8 @@ since a flickering exposure would look broken rather than read as a warning.
 on/off square wave with no separate phase timer, so it needs nothing reset on pickup or level change.
 
 **A red damage flash (`#pain-flash`, its own element rather than a third `#screen-tint` class)** echoes
-vanilla's palette-shift pain flash (`ST_doPaletteStuff`'s `damagecount`), applied in
-`Game.damagePlayer`. Vanilla adds the raw damage to a counter clamped to 100 and ticks it down by 1
+vanilla's palette-shift pain flash (`ST_doPaletteStuff`'s `damagecount`), raised from
+`Game.damagePlayer` via `ScreenEffects.addPain`. Vanilla adds the raw damage to a counter clamped to 100 and ticks it down by 1
 per tic; this mirrors that as a normalized `painFlash` (0-1, `+= amount / PAIN_FLASH_MAX_DAMAGE`,
 clamped) decayed every frame by `dt / PAIN_FLASH_FADE_SECONDS` (100 tics over 35, vanilla's own
 full-to-zero time) and written to the element's `opacity` (scaled by `PAIN_FLASH_MAX_ALPHA`, tuned by

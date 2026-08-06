@@ -1,6 +1,7 @@
 # Line and sector specials
 
-`src/wad/specials.ts`, `src/game/specials.ts`, `src/game.ts`, `src/render/occlusion.ts`
+`src/wad/specials.ts`, `src/game/specials.ts`, `src/game/moverblocking.ts`,
+`src/game/sectoreffects.ts`, `src/game.ts`, `src/render/occlusion.ts`
 
 The vanilla-only line special table is confirmed against the Doom wiki's linedef type table **and,
 where the two disagree, against the real `linuxdoom-1.10` source** — after a first pass briefly (and
@@ -55,9 +56,9 @@ which in practice only the crushing-floor family sets.
 `tickDoor` already had this for a closing door; the same rule now also applies to a lowering
 `CeilingMover` (real vanilla never sets `crush=true` for this mover) and to a rising `LiftMover` or
 `crush: false` `FloorMover` (covering every ordinary raise, `raiseToTexture`, `lowerAndChange`, the
-donut's ring, and stair builders — stairs never set `crush` either). Two callbacks into `game.ts`
-carry this out — `blocksCeilingLower`/`blocksFloorRise`, both routed through the shared
-`headroomBlocked` helper.
+donut's ring, and stair builders — stairs never set `crush` either). Two callbacks carry this out —
+`game/moverblocking.ts`'s `blocksCeilingLower`/`blocksFloorRise`, both routed through the shared
+`headroomBlocked` helper there.
 
 A door reverses direction outright (it already has a `raising` state to fall back into); a
 `CeilingMover`/`FloorMover` has none, so it skips that tick's step and retries the next — reading as
@@ -252,7 +253,7 @@ plus E1M8's finale special (11, 20 HP, which also ends the level once it drops t
 below — vanilla's inline `G_ExitLevel()` in that same case).
 
 **Player-only**, matching vanilla, which passes a `player_t*` and never damages monsters this way.
-Dealt directly in `game.ts: updatePlayerSector` rather than through `SpecialsController` — a damage
+Dealt directly in `game/sectoreffects.ts: SectorEffects.update` rather than through `SpecialsController` — a damage
 floor has no mover, nothing for that machinery to own, just `sector.special` plus the player's live
 position, so it's checked once a frame off `World.sectorAt`. That same method also covers special 9
 (§ Secret sectors below) — both are cases of the one vanilla switch this method reimplements.
@@ -267,7 +268,7 @@ fast strobe sector type 2 gets and then explicitly restores `sector->special = 4
 still sees it. This engine never clears `sector.special` after seeding a light pattern in the first
 place, so 4 living in both tables works without reproducing that restore step.
 
-A radiation suit gates the damage per type (`DamageFloorEffect.suit`, `game.ts: suitBlocks`) exactly as
+A radiation suit gates the damage per type (`DamageFloorEffect.suit`, `game/sectoreffects.ts: suitBlocks`) exactly as
 `P_PlayerInSpecialSector` does — see the powerups doc for why the five types don't all treat it the
 same.
 
@@ -278,11 +279,11 @@ once the player steps down into it.
 ## Secret sectors
 
 `sector.special === 9` is vanilla's "SECRET SECTOR" — handled in the same `case` statement as the
-damage floors above, by the same `game.ts: updatePlayerSector`, under the same
-`player.z === sector.floorHeight` guard. Entering it increments `Game.secretsFound` and clears
+damage floors above, by the same `game/sectoreffects.ts: SectorEffects.update`, under the same
+`player.z === sector.floorHeight` guard. Entering it increments `SectorEffects.secretsFound` and clears
 `sector.special` back to 0, matching vanilla's own `case 9: player->secretcount++; sector->special =
 0;` exactly — the clear is also what prevents a second frame from double-counting, no separate
-"already found" flag needed. `Game.totalSecrets` is counted once per level load, straight off
+"already found" flag needed. `SectorEffects.totalSecrets` is counted once per level load, straight off
 `map.sectors`, mirroring vanilla `P_SpawnSpecials`' own `case 9: totalsecret++`. See docs/items.md §
 Level stats for where these numbers surface on screen.
 

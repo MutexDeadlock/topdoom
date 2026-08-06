@@ -1,7 +1,8 @@
 import { Wad } from './wad/wad.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
 import { Menu, type Selection } from './ui/menu.ts';
-import { Game, Viewport } from './game.ts';
+import { Game } from './game.ts';
+import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';
 import type { Pos2 } from './types.ts';
 

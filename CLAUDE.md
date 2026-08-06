@@ -68,13 +68,14 @@ geometry makes results hard to interpret. Scratch scripts go in the scratchpad, 
 ```
 src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite + sound decoding
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
-               sprite billboards + their instanced batching, shot tracers, camera
+               sprite billboards + their instanced batching, shot tracers, camera, viewport
 src/game/      spatial queries, collision, player controller, input, thing→sprite table,
                thing/monster world state (AI, pickups, damage), fog of war, inventory/pickups,
-               weapons and firing, damage/death
+               weapons and firing, damage/death, projectile/effect tables, mover obstruction,
+               damage floors + secrets
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
                WebAudio playback (channels, attenuation, pan, volume)
-src/ui/        start menu, HUD, DEVMODE profiling overlay
+src/ui/        start menu, HUD, screen tints/pain flash, DEVMODE hud + profiling overlay
 src/util/      small helpers shared across layers (2D geometry, damped-lerp smoothing,
                per-frame profiling)
 src/constants.ts   genuinely cross-cutting values only (VERSION, DEVMODE, BRIGHTNESS_LIFT)

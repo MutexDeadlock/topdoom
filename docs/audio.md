@@ -131,7 +131,7 @@ action functions play, mapped onto the moments this engine has for them. Rules w
 `WeaponDef.fireSound` is played **once per trigger pull, not per pellet** — `A_FireShotgun`
 plays `shotgn` once for all seven. It is `null` for the rocket launcher and plasma rifle,
 which have no weapon sound in vanilla at all: the launch sound is the missile's own
-`mobjinfo.seesound`, from `game.ts`'s `PROJECTILE_SOUNDS`, keyed by flight sprite exactly as
+`mobjinfo.seesound`, from `game/effectdefs.ts`'s `PROJECTILE_SOUNDS`, keyed by flight sprite as
 `IMPACT_EFFECTS` is. The BFG is the one projectile weapon with its own sound (`MT_BFG`'s
 seesound is 0; `A_BFGsound` is a separate state action).
 

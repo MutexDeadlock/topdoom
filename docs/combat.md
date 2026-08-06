@@ -1,7 +1,8 @@
 # Weapons, shots, damage and death
 
 `src/game/weapons.ts`, `src/game/world.ts: shotPath`/`hasLineOfSight`, `src/render/tracer.ts`,
-`src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/inventory.ts`, `src/game.ts`
+`src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/inventory.ts`, `src/game/effectdefs.ts`,
+`src/game.ts`
 
 ## WeaponSystem
 
@@ -375,7 +376,7 @@ reporting no target the very next frame and reverts to idle right there — `p.a
 through to `P_SetMobjState(spawnstate)`. It only wakes again via `damage`'s unconditional re-alert
 (getting caught in someone else's infight), same path any other dormant monster uses. A rocket or vile
 blast already in flight still lands and can still deal splash (or, for the vile's knockup, do nothing
-beyond the first killing blow — see `resolveVileBlast`'s `wasDead` guard, and
+beyond the first killing blow — `resolveVileBlast` gates its knockup on `damagePlayer`'s return, and
 `resolveMonsterHitscan`'s `!playerDead` guard for the hitscan equivalent) — a dead player can still be
 "hit" for nothing to happen, matching `damagePlayer`'s own early return. The death itself shows a
 `#death-overlay` div. `R` calls `restart`: a fresh `Inventory`

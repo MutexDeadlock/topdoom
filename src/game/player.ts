@@ -49,6 +49,27 @@ const FRICTION = 0.90625;
 /** Below this, `knockVelX`/`knockVelY` snap to exactly 0 rather than crawling on forever — see `game/things.ts`'s identical constant. */
 const KNOCKBACK_STOP_SPEED = 1;
 
+const AUTORUN_STORAGE_KEY = 'topdoom.autorun';
+
+/**
+ * Whether Shift *walks* (autorun on, the default) rather than *runs* (vanilla's
+ * own sense). Module-level rather than a `Player` field since it's a session
+ * preference set from the menu's Settings tab and must apply immediately even
+ * when a `Player` is mid-level, and `Player` itself is recreated every map
+ * load (`game.ts: loadMapByIndex`) so an instance field would go stale between
+ * toggling it and the next level. Persisted like `AudioEngine`'s volume.
+ */
+let autorunEnabled = globalThis.localStorage?.getItem(AUTORUN_STORAGE_KEY) !== 'false';
+
+export function getAutorun(): boolean {
+  return autorunEnabled;
+}
+
+export function setAutorun(enabled: boolean): void {
+  autorunEnabled = enabled;
+  globalThis.localStorage?.setItem(AUTORUN_STORAGE_KEY, String(enabled));
+}
+
 export class Player implements Pos3 {
   x: number;
   y: number;
@@ -195,7 +216,8 @@ export class Player implements Pos3 {
     blockers?: readonly ThingBlocker[],
   ): void {
     this.landingSpeed = 0;
-    const run = input.held('ShiftLeft', 'ShiftRight') ? 1 : 0;
+    const shiftHeld = input.held('ShiftLeft', 'ShiftRight');
+    const run = (getAutorun() ? !shiftHeld : shiftHeld) ? 1 : 0;
     const forwardMove = FORWARD_MOVE[run];
     const sideMove = SIDE_MOVE[run];
 

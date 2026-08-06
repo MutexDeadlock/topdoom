@@ -7,6 +7,7 @@ import {
   type WadSource,
 } from '../wad/library.ts';
 import { DEFAULT_SKILL, SKILL_NAMES, type Skill } from '../game/skill.ts';
+import { getAutorun, setAutorun } from '../game/player.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import { VERSION } from '../constants.ts';
 
@@ -26,13 +27,17 @@ export interface MenuDefaults {
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+type Tab = 'files' | 'settings';
+
+const SKILL_STORAGE_KEY = 'topdoom.skill';
+
 /**
  * The start screen: pick a game WAD, stack any add-ons on top, choose a level.
  * WADs come either from public/wads/ or straight off the user's disk.
  */
 export class Menu {
   private root = el<HTMLDivElement>('menu');
-  private iwadList = el<HTMLDivElement>('iwad-list');
+  private iwadSelect = el<HTMLSelectElement>('iwad-select');
   private pwadList = el<HTMLDivElement>('pwad-list');
   private levelSelect = el<HTMLSelectElement>('level-select');
   private difficultySelect = el<HTMLSelectElement>('difficulty-select');
@@ -41,6 +46,15 @@ export class Menu {
   private fileInput = el<HTMLInputElement>('file-input');
   private volumeSlider = el<HTMLInputElement>('volume-slider');
   private volumeValue = el<HTMLSpanElement>('volume-value');
+  private autorunCheckbox = el<HTMLInputElement>('autorun-checkbox');
+  private tabButtons = {
+    files: el<HTMLButtonElement>('tab-button-files'),
+    settings: el<HTMLButtonElement>('tab-button-settings'),
+  };
+  private tabPanels = {
+    files: el<HTMLDivElement>('tab-files'),
+    settings: el<HTMLDivElement>('tab-settings'),
+  };
 
   private sources: WadSource[] = [];
   private selectedIwad: WadSource | null = null;
@@ -49,21 +63,26 @@ export class Menu {
   /** Where an upload should land once the file dialog returns. */
   private uploadTarget: 'IWAD' | 'PWAD' = 'IWAD';
 
-  private onStart: (selection: Selection) => void;
+  private onStart: (selection: Selection) => void | Promise<void>;
   private audio: AudioEngine;
 
-  constructor(onStart: (selection: Selection) => void, audio: AudioEngine) {
+  constructor(onStart: (selection: Selection) => void | Promise<void>, audio: AudioEngine) {
     this.onStart = onStart;
     this.audio = audio;
 
     el<HTMLButtonElement>('iwad-upload').addEventListener('click', () => this.pickFile('IWAD'));
     el<HTMLButtonElement>('pwad-upload').addEventListener('click', () => this.pickFile('PWAD'));
+    this.iwadSelect.addEventListener('change', () => this.selectIwad());
     this.fileInput.addEventListener('change', () => void this.onFilesChosen());
     this.levelSelect.addEventListener('change', () => this.refreshStartButton());
     this.startButton.addEventListener('click', () => this.start());
+    for (const tab of Object.keys(this.tabButtons) as Tab[]) {
+      this.tabButtons[tab].addEventListener('click', () => this.setTab(tab));
+    }
     this.installDropTarget();
     this.renderDifficulties();
     this.installVolume();
+    this.installAutorun();
     el<HTMLDivElement>('menu-version').textContent = `v${VERSION}`;
   }
 
@@ -87,15 +106,18 @@ export class Menu {
     this.render();
     if (defaults.map) this.selectLevel(defaults.map);
 
-    this.setStatus(
-      this.sources.length === 0
-        ? 'No WADs found on the server — load one from disk.'
-        : `${this.sources.length} WAD${this.sources.length === 1 ? '' : 's'} available`,
-    );
+    this.setStatus(this.sources.length === 0 ? 'No WADs found on the server — load one from disk.' : '');
   }
 
-  open(): void {
+  /**
+   * `returning` distinguishes the first-ever open (before any level has been
+   * played) from coming back via Escape mid-session: the former lands on
+   * "Game Files" since there's nothing to pick yet, the latter on "Settings"
+   * since the WAD/level choice is already made.
+   */
+  open(returning = false): void {
     this.root.classList.remove('hidden');
+    this.setTab(returning ? 'settings' : 'files');
     this.refreshStartButton();
   }
 
@@ -105,6 +127,13 @@ export class Menu {
 
   get isOpen(): boolean {
     return !this.root.classList.contains('hidden');
+  }
+
+  private setTab(tab: Tab): void {
+    for (const key of Object.keys(this.tabButtons) as Tab[]) {
+      this.tabButtons[key].classList.toggle('active', key === tab);
+      this.tabPanels[key].classList.toggle('hidden', key !== tab);
+    }
   }
 
   /**
@@ -128,6 +157,14 @@ export class Menu {
     });
   }
 
+  /** Autorun defaults to on (`getAutorun`'s own default); Shift walks instead of runs while it's set. */
+  private installAutorun(): void {
+    this.autorunCheckbox.checked = getAutorun();
+    this.autorunCheckbox.addEventListener('change', () => {
+      setAutorun(this.autorunCheckbox.checked);
+    });
+  }
+
   /** True once a level can actually be started. */
   get isReady(): boolean {
     return this.selectedIwad !== null && this.levelSelect.value !== '';
@@ -145,19 +182,36 @@ export class Menu {
   }
 
   private renderIwads(): void {
-    this.iwadList.replaceChildren();
-    for (const source of this.sources) {
-      if (source.type !== 'IWAD') continue;
-      const selected = source === this.selectedIwad;
-      this.iwadList.append(
-        this.makeRow('radio', source, selected, () => {
-          this.selectedIwad = source;
-          this.selectedPwads = this.selectedPwads.filter((p) => p !== source);
-          this.pruneIncompatiblePwads();
-          this.render();
-        }),
-      );
+    this.iwadSelect.replaceChildren();
+    const iwads = this.sources.filter((s) => s.type === 'IWAD');
+
+    if (iwads.length === 0) {
+      const option = document.createElement('option');
+      option.value = '';
+      option.textContent = 'No game WADs found — load one from disk.';
+      this.iwadSelect.append(option);
+      this.iwadSelect.disabled = true;
+      return;
     }
+
+    this.iwadSelect.disabled = false;
+    for (const source of iwads) {
+      const option = document.createElement('option');
+      option.value = source.key;
+      option.textContent = `${source.label}  —  ${describeSource(source)}`;
+      this.iwadSelect.append(option);
+    }
+    if (this.selectedIwad) this.iwadSelect.value = this.selectedIwad.key;
+  }
+
+  /** Fired when the game-WAD select changes; mirrors the old radio-row callback. */
+  private selectIwad(): void {
+    const source = this.sources.find((s) => s.key === this.iwadSelect.value);
+    if (!source) return;
+    this.selectedIwad = source;
+    this.selectedPwads = this.selectedPwads.filter((p) => p !== source);
+    this.pruneIncompatiblePwads();
+    this.render();
   }
 
   private renderPwads(): void {
@@ -173,7 +227,6 @@ export class Menu {
       const incompatible = iwadStyle !== null && style !== null && style !== iwadStyle;
       const index = this.selectedPwads.indexOf(source);
       const row = this.makeRow(
-        'checkbox',
         source,
         index >= 0,
         () => {
@@ -204,7 +257,6 @@ export class Menu {
   }
 
   private makeRow(
-    kind: 'radio' | 'checkbox',
     source: WadSource,
     selected: boolean,
     onPick: () => void,
@@ -214,10 +266,9 @@ export class Menu {
     row.className = 'row' + (selected ? ' selected' : '') + (disabled ? ' disabled' : '');
 
     const input = document.createElement('input');
-    input.type = kind;
+    input.type = 'checkbox';
     input.checked = selected;
     input.disabled = disabled;
-    if (kind === 'radio') input.name = 'iwad';
     input.addEventListener('change', onPick);
 
     const name = document.createElement('span');
@@ -283,7 +334,16 @@ export class Menu {
       option.textContent = SKILL_NAMES[skill];
       this.difficultySelect.append(option);
     }
-    this.difficultySelect.value = String(DEFAULT_SKILL);
+    this.difficultySelect.value = String(this.storedSkill());
+    this.difficultySelect.addEventListener('change', () => {
+      globalThis.localStorage?.setItem(SKILL_STORAGE_KEY, this.difficultySelect.value);
+    });
+  }
+
+  /** Reads back the last skill picked; falls back to vanilla's own default when unset or invalid. */
+  private storedSkill(): Skill {
+    const stored = Number(globalThis.localStorage?.getItem(SKILL_STORAGE_KEY));
+    return stored >= 1 && stored <= 5 ? (stored as Skill) : DEFAULT_SKILL;
   }
 
   private selectLevel(name: string): void {
@@ -367,11 +427,14 @@ export class Menu {
 
   private start(): void {
     if (!this.selectedIwad || !this.isReady) return;
-    this.onStart({
-      iwad: this.selectedIwad,
-      pwads: [...this.selectedPwads],
-      map: this.levelSelect.value,
-      skill: Number(this.difficultySelect.value) as Skill,
-    });
+    this.startButton.disabled = true;
+    void Promise.resolve(
+      this.onStart({
+        iwad: this.selectedIwad,
+        pwads: [...this.selectedPwads],
+        map: this.levelSelect.value,
+        skill: Number(this.difficultySelect.value) as Skill,
+      }),
+    ).finally(() => this.refreshStartButton());
   }
 }

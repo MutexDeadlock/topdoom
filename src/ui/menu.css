@@ -400,6 +400,56 @@ canvas {
   color: #7f7a74;
 }
 
+#menu .tabs {
+  display: flex;
+  gap: 24px;
+  border-bottom: 1px solid #2a2a32;
+  margin-bottom: 20px;
+}
+
+#menu .tab {
+  font: inherit;
+  font-size: 12px;
+  font-weight: normal;
+  text-transform: uppercase;
+  cursor: pointer;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: #7f7a74;
+  padding: 0 2px 10px;
+  margin-bottom: -1px;
+  letter-spacing: 2px;
+}
+
+#menu .tab:hover {
+  color: #d8d0c0;
+}
+
+#menu .tab.active {
+  color: #fff;
+  border-bottom-color: #c0392b;
+}
+
+/*
+ * Both panels are stacked in the same grid cell (rather than one being
+ * display:none) so the panel container's height is always the taller of
+ * the two — switching tabs changes what's visible, not the menu's size.
+ */
+#menu .tab-panels {
+  display: grid;
+}
+
+#menu .tab-panel {
+  grid-area: 1 / 1;
+  min-width: 0;
+}
+
+#menu .tab-panel.hidden {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 #menu section {
   margin-bottom: 20px;
 }
@@ -480,6 +530,18 @@ canvas {
 
 #menu .row.selected .meta {
   color: #a08e88;
+}
+
+#menu .checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+
+#menu .checkbox-row input {
+  accent-color: #c0392b;
+  margin: 0;
 }
 
 #menu .slider {

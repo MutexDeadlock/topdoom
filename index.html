@@ -65,35 +65,54 @@
           <p class="sub">Top-down DOOM on the original IWADs</p>
         </header>
 
-        <section>
-          <h2>Game WAD</h2>
-          <div class="list" id="iwad-list"></div>
-          <button class="ghost" id="iwad-upload">Load IWAD from disk…</button>
-        </section>
+        <div class="tabs">
+          <button class="tab" id="tab-button-files" data-tab="files">Game Files</button>
+          <button class="tab" id="tab-button-settings" data-tab="settings">Settings</button>
+        </div>
 
-        <section>
-          <h2>Add-ons <span class="hint">optional, applied in order</span></h2>
-          <div class="list" id="pwad-list"></div>
-          <button class="ghost" id="pwad-upload">Add PWAD from disk…</button>
-        </section>
+        <div class="tab-panels">
+          <div class="tab-panel" id="tab-files">
+            <section>
+              <h2>Game WAD</h2>
+              <select id="iwad-select"></select>
+              <button class="ghost" id="iwad-upload">Load IWAD from disk…</button>
+            </section>
 
-        <section>
-          <h2>Level</h2>
-          <select id="level-select"></select>
-        </section>
+            <section>
+              <h2>Add-ons <span class="hint">optional, applied in order</span></h2>
+              <div class="list" id="pwad-list"></div>
+              <button class="ghost" id="pwad-upload">Add PWAD from disk…</button>
+            </section>
 
-        <section>
-          <h2>Difficulty</h2>
-          <select id="difficulty-select"></select>
-        </section>
-
-        <section>
-          <h2>Sound <span class="hint">M mutes in game</span></h2>
-          <div class="slider">
-            <input type="range" id="volume-slider" min="0" max="100" step="1" />
-            <span class="value" id="volume-value"></span>
+            <section>
+              <h2>Level</h2>
+              <select id="level-select"></select>
+            </section>
           </div>
-        </section>
+
+          <div class="tab-panel" id="tab-settings">
+            <section>
+              <h2>Difficulty</h2>
+              <select id="difficulty-select"></select>
+            </section>
+
+            <section>
+              <h2>Sound <span class="hint">M mutes in game</span></h2>
+              <div class="slider">
+                <input type="range" id="volume-slider" min="0" max="100" step="1" />
+                <span class="value" id="volume-value"></span>
+              </div>
+            </section>
+
+            <section>
+              <h2>Movement</h2>
+              <label class="checkbox-row">
+                <input type="checkbox" id="autorun-checkbox" />
+                <span>Autorun <span class="hint">hold Shift to walk</span></span>
+              </label>
+            </section>
+          </div>
+        </div>
 
         <footer>
           <button class="primary" id="start-button">Start</button>

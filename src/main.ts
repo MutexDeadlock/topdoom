@@ -69,6 +69,7 @@ async function boot(): Promise<void> {
       game?.dispose();
       game = new Game(view, audio, wad, selection.map, titleOf(selection.iwad, selection.pwads), selection.skill, startPos);
 
+      menu.setStatus('');
       menu.close();
       game.resume();
     } catch (err) {
@@ -77,7 +78,7 @@ async function boot(): Promise<void> {
     }
   };
 
-  const menu: Menu = new Menu((selection) => void startLevel(selection), audio);
+  const menu: Menu = new Menu((selection) => startLevel(selection), audio);
 
   // A `?map=` deep link starts a level without the player ever clicking
   // anything, so no gesture has unlocked audio by then — the first one that
@@ -91,7 +92,7 @@ async function boot(): Promise<void> {
     if (e.code !== 'Escape') return;
     if (!menu.isOpen) {
       game?.pause();
-      menu.open();
+      menu.open(game !== null);
     } else if (game) {
       menu.close();
       game.resume();

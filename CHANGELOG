@@ -10,6 +10,7 @@ Features and improvements
     - straferunning works
     - the player slides along angled walls instead of sticking to them
     - improved auto-aim
+    - optional "Autorun" (Main Menu -> Settings)
   - implemented per-map boss-death specials
   - completed mancubus, arch-vile, revenant and pain elemental attacks
     - monster melee/ranged damage now matches vanilla's real dice instead of a
@@ -21,6 +22,7 @@ Features and improvements
     splash, complete with the green flash on whatever each ray hits
   - projectiles, explosions, teleport fog and the revenant's smoke trail are
     batched like map things now instead of one draw call each
+  - some main menu polish
   - add error message if WebGL2 is not available / unable to initialize
 
 Fixed bugs

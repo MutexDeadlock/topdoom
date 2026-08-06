@@ -6,36 +6,21 @@ import type { Pos3 } from '../types.ts';
 
 /**
  * The mutable chase/attack state `stepMonsterAI` reads and writes, kept alive
- * across frames on the caller's own object. `game/things.ts`'s
- * `PosedThing` structurally satisfies this — it carries these fields plus a
- * pile of rendering-only ones (`actor`, `light`, `dead`, ...) this function
- * never touches, so it's passed in directly rather than copied in and out.
- *
- * This function is only ever called once a monster is alerted — waking up is
- * `tryWake`'s job below, called from `game/things.ts`'s `ThingLayer.update`
- * throttled to roughly vanilla's own "look" cadence rather than every frame;
- * see that file's `LOOK_INTERVAL`.
+ * across frames on the caller's object. `PosedThing` (`game/things.ts`)
+ * structurally satisfies this, so it's passed in directly rather than copied
+ * in and out. Only ever stepped once a monster is alerted; waking is
+ * `tryWake`'s job. See docs/monsters.md.
  */
 export interface MonsterBody extends Pos3 {
   velZ: number;
   /** Facing/movement direction, radians — same convention as `Player.angle`. */
   angle: number;
-  /**
-   * >0 while this monster is still playing out the attack it already started,
-   * during which it holds position — vanilla's attack states run for a fixed
-   * number of tics and never call `A_Chase`, so a monster genuinely stops
-   * walking to shoot or swing. No chase call runs while it is nonzero.
-   */
+  /** >0 while playing out an attack, during which the monster holds position and no chase call runs — docs/monsters.md § Attacking. */
   attackPause: number;
   /** Shots left in the attack currently being played out, and the countdown to the next one (`AttackStats.shots`). */
   burstLeft: number;
   burstTimer: number;
-  /**
-   * >0 while a charging monster (`AttackStats.charge` — the lost soul's
-   * `A_SkullAttack`) is in flight; it travels along `chargeAngle` at the
-   * charge speed, ignoring both its normal walk speed and `attackPause`,
-   * until it reaches the player or slams into geometry.
-   */
+  /** >0 while a lost soul's `A_SkullAttack` charge is in flight, travelling `chargeAngle` at charge speed until it connects or hits geometry. */
   chargeTimer: number;
   chargeAngle: number;
   /** >0 while staggered by a recent hit; movement and attacks pause until it drops to 0 (see `reactToDamage`). */
@@ -45,12 +30,7 @@ export interface MonsterBody extends Pos3 {
   // is measured in *chase calls*, not seconds, exactly as vanilla measures it;
   // `chaseTimer` is the only thing that converts between the two. ---
 
-  /**
-   * Which of vanilla's eight movement directions this monster is walking,
-   * `DI_NODIR` (8) when it has nowhere to go. Monsters move on this 8-way
-   * grid rather than straight at the target, which is what produces DOOM's
-   * characteristic zig-zag approach.
-   */
+  /** Which of vanilla's eight movement directions it walks, `DI_NODIR` (8) when it has nowhere to go — the 8-way grid behind DOOM's zig-zag approach. */
   movedir: number;
   /** Chase calls left before `newChaseDir` re-routes — vanilla's `movecount`, reseeded to `P_Random() & 15`. */
   movecount: number;
@@ -58,12 +38,7 @@ export interface MonsterBody extends Pos3 {
   chaseTimer: number;
   /** Set when a frame's move was refused; the next chase call re-routes, the way vanilla reacts to `P_Move` returning false. */
   moveBlocked: boolean;
-  /**
-   * Chase calls of target commitment left — vanilla's `threshold`, seeded to
-   * `BASETHRESHOLD` when something hurts this monster. While it's nonzero the
-   * monster won't be pulled onto a different attacker, which is what keeps an
-   * infight from thrashing between targets every time a stray shot lands.
-   */
+  /** Chase calls of target commitment left — vanilla's `threshold`, seeded to `BASETHRESHOLD` on being hurt. Keeps an infight from thrashing between targets. */
   threshold: number;
   /** Vanilla's `MF_JUSTHIT` — "the target just hit the enemy, so fight back": the next missile check fires regardless of the range roll. */
   justHit: boolean;
@@ -74,375 +49,173 @@ export interface MonsterBody extends Pos3 {
   /** True while inside an `AttackStats.refire` loop, which re-enters the attack the instant its state sequence ends. */
   refiring: boolean;
   /**
-   * The revenant's own "guided or unguided" personality (doomwiki.org/wiki/Revenant,
-   * confirmed there against the real fixed-point mechanism rather than
-   * assumed): vanilla's `A_Tracer` only actually turns/climbs *and* trails
-   * smoke on ticks where the global `gametic & 3 == 0`, and because a
-   * revenant's own attack-state cycle keeps a fixed parity relative to that
-   * global counter for as long as nothing disturbs it, every missile a given
-   * revenant fires lands on the *same* side of that gate — so in practice a
-   * revenant is either a "guided" shooter or an "unguided" one, not a
-   * per-shot coin flip, until taking a hit that visibly reacts (a pain
-   * flinch, or its very first wake) reshuffles which side of the gate it's
-   * on. This engine has no discrete tic clock to reproduce that gate exactly
-   * (see `MonsterStats.speed`'s doc on why per-tic accumulation is converted
-   * rather than simulated elsewhere in this file too), so `homingBias` is a
-   * direct stand-in for "which side of the gate this revenant is currently
-   * on": a plain persistent coin flip, unused by every monster whose
-   * `AttackStats.projectile.homing` isn't set, reseeded on spawn
-   * (`things.ts`) and rerolled on wake/pain the same events that can
-   * reshuffle vanilla's own parity — see those call sites' docs.
+   * A persistent coin flip standing in for which side of `A_Tracer`'s
+   * `gametic & 3` gate this revenant sits on — vanilla's revenant is a guided
+   * or an unguided shooter, not a per-shot roll. Unused unless
+   * `AttackStats.projectile.homing` is set; reseeded on spawn and rerolled on
+   * wake/pain, the events that reshuffle vanilla's parity. See
+   * docs/monsters.md § The revenant's homing missile.
    */
   homingBias: boolean;
 }
 
 export interface AttackStats {
   /**
-   * Map units, **melee only** — vanilla's ~64-unit `MELEERANGE` plus a little
-   * slack for this engine's coarser per-frame distance sampling (see
-   * `MELEE_RANGE`).
-   *
-   * A ranged attack has no range field at all, because vanilla gives it none:
-   * `P_CheckMissileRange` never rejects a shot for being too far (only the
-   * arch-vile's `maxOffsetDist` and the revenant's `minOffsetDist` below are
-   * real distance gates), and a hitscan attack reaches `WEAPON_RANGE`
-   * (`MISSILERANGE`) while a projectile simply flies until it hits something.
-   * What actually makes distant monsters rarely shoot is the probability
-   * falloff in `checkMissileRange`, not a cutoff — an earlier version's
-   * hand-picked 1000-2400 unit caps were a stand-in for that falloff, and
-   * with the falloff modelled properly they only made monsters stop firing at
-   * a distance vanilla is still perfectly willing to shoot from.
+   * Map units, **melee only** — `MELEERANGE` plus slack for this engine's
+   * coarser per-frame sampling. A ranged attack deliberately has no range
+   * field: vanilla gives it none, and giving it one was a real bug. See
+   * docs/monsters.md § Attacking.
    */
   range?: number;
   diceSides: number;
   diceMult: number;
   /**
-   * Hitscan only — bullets fired per attack, each an independent
-   * `diceSides`/`diceMult` roll summed into one total: vanilla's
-   * `A_SPosAttack` (shotgun guy, and the spider mastermind's own
-   * `A_SPosAttack` calls) fires 3 separate `P_LineAttack`s per call, each
-   * rolling its own `(P_Random()%5+1)*3`, rather than the single pellet every
-   * other hitscan monster (`A_PosAttack`/`A_CPosAttack`) fires. Vanilla also
-   * gives each pellet its own random spread off the aim line
-   * (`weapons.ts`'s `WeaponDef.pellets`/`spreadDeg` is the player-side
-   * equivalent), which this engine's monster hitscans don't model at all —
-   * but with no spread, every pellet travels the identical ray and so either
-   * all hit the same thing or none do, making "N independent rolls at the
-   * same target" and "one roll of N summed dice" the exact same outcome, not
-   * an approximation of it. Absent (the common case) means the ordinary
-   * single roll every other attack already does.
+   * Hitscan only — bullets per attack, each an independent roll summed into
+   * one total (`A_SPosAttack`'s 3 `P_LineAttack`s). Monster hitscans model no
+   * per-pellet spread, so N rolls at one target and one N-dice roll are the
+   * same outcome, not an approximation. Absent means the ordinary single roll.
    */
   pellets?: number;
-  /**
-   * Seconds this attack's own state sequence runs for, lifted straight off
-   * vanilla's `info.c` state table (the summed tics of the melee/missile
-   * state chain, divided by 35) rather than tuned by feel. Unlike this
-   * file's `speed`-adjacent values, an attack's length converts cleanly:
-   * it's a fixed tic count that never depends on frame rate. The monster
-   * holds position for exactly this long (`MonsterBody.attackPause`), which
-   * is what makes a mancubus plant itself for its volley and a zombieman
-   * stop walking to raise its pistol, instead of firing while still sliding
-   * toward the player.
-   */
+  /** Seconds the attack's state sequence runs — its summed `info.c` tics over 35. The monster holds position exactly this long (docs/monsters.md § Attacking). */
   duration: number;
-  /**
-   * How many separate shots this one attack fires, and how far apart —
-   * vanilla's multi-shot attack states (the cyberdemon's three rockets, the
-   * mancubus's three volleys, the chaingunner/spider's paired bullets),
-   * where every shot comes out of a single `missilestate` entry rather than
-   * a fresh `A_Chase` decision. Defaults to a single shot at the moment the
-   * attack starts.
-   */
+  /** Shots fired from this one `missilestate` and how far apart, rather than a fresh `A_Chase` decision per shot. Defaults to a single shot at attack start. */
   shots?: number;
   shotInterval?: number;
   /**
-   * Seconds after this attack starts before its (first) shot actually
-   * fires — every other monster's burst timer starts at 0 (fires on the
-   * very next tick), an accepted timing simplification since the windup
-   * itself has no mechanical consequence for them. The arch-vile is the one
-   * exception: vanilla's `A_VileAttack` doesn't fire until 66 tics into its
-   * `missilestate` sequence, and re-checks line of sight at that exact
-   * moment (`AttackStats.blast`'s doc) — breaking sight during the windup is
-   * the entire reason ducking behind cover saves you from it, so unlike the
-   * mancubus's timing this delay has to be real, not merely cosmetic.
+   * Seconds before the first shot fires. Every other monster starts at 0 (an
+   * accepted simplification — their windup has no mechanical consequence);
+   * the arch-vile's 66 tics is real, because it re-checks sight at that exact
+   * moment and that is why cover saves you. docs/monsters.md § The arch-vile.
    */
   startDelaySeconds?: number;
-  /**
-   * Vanilla's `A_CPosRefire`/`A_SpidRefire` loop (the chaingunner, spider
-   * mastermind and arachnotron): the attack state jumps straight back to
-   * itself and only breaks out when the target is no longer visible, never
-   * re-rolling `P_CheckMissileRange`. So these three hose continuously — and
-   * stand still doing it — for as long as they can see the player, instead
-   * of paying the movecount/probability wait every other monster does.
-   */
+  /** Vanilla's `A_CPosRefire`/`A_SpidRefire` loop: the attack state re-enters itself until the target stops being visible, never re-rolling `P_CheckMissileRange`. */
   refire?: boolean;
   /**
-   * The lost soul's `A_SkullAttack`: instead of throwing anything, the
-   * monster launches *itself* at the player at `speed` map units/sec
-   * (vanilla's `SKULLSPEED`, 20 units/tic) and deals this attack's damage on
-   * contact, stopping when it connects or slams into geometry. Its ordinary
-   * `MonsterStats.speed` is the slow drift it uses the rest of the time.
-   * `maxDist` has no vanilla counterpart — vanilla's skull keeps its momentum
-   * until something stops it — it's just a bound so a charge launched across
-   * an unbounded stretch of open floor eventually gives up.
+   * The lost soul's `A_SkullAttack` — it launches *itself* at `SKULLSPEED`
+   * and damages on contact. `maxDist` has no vanilla counterpart (vanilla's
+   * skull keeps its momentum); it just bounds a charge across open floor.
+   * See docs/monsters.md § The lost soul: a charge, not a projectile.
    */
   charge?: { speed: number; maxDist: number };
   /**
-   * The pain elemental's real `A_PainAttack`/`A_PainShootSkull`: instead of
-   * firing anything of its own, it spawns a new monster of `type` (always
-   * the lost soul, 3006) just in front of itself and immediately launches it
-   * at whatever the elemental itself was targeting — vanilla's own
-   * `newmobj->target = actor->target; A_SkullAttack(newmobj)`. `game/things.ts`
-   * owns the actual spawning (`spawnLostSoul`) since it alone holds the
-   * `PosedThing` list a new monster has to be added to; `stepMonsterAI` only
-   * reports that a spawn should happen, the same "return what happened, let
-   * the caller realize it" split as every other attack kind here.
+   * The pain elemental's `A_PainAttack`/`A_PainShootSkull`: spawns a lost soul
+   * in front of itself and launches it at the elemental's own target.
+   * `game/things.ts` owns the spawning since it holds the `PosedThing` list;
+   * `stepMonsterAI` only reports that one should happen, the same split as
+   * every other attack kind. docs/monsters.md § The pain elemental.
    */
   spawn?: { type: number };
   /**
-   * Non-null for a ranged attack that actually throws a flying projectile
-   * sprite (vanilla's fireball/rocket monsters), rather than resolving as an
-   * instant hitscan bolt — see `MONSTER_STATS`'s doc for which monsters get
-   * one and why the rest don't. `sprite` is confirmed against the real
-   * `DOOM2.WAD` lump names (each has its own 2-frame omnidirectional-or-
-   * directional flight pulse — dumped from the actual IWAD — and, per the
-   * real `linuxdoom-1.10` `info.c` mobjinfo/state tables, its own 3-5-frame
-   * explosion, except the mancubus's `MANF`, which explodes using the
-   * rocket's own `MISL` frames instead of dedicated art of its own — a real
-   * vanilla oddity, not a simplification here).
-   *
-   * `speed` (map units/sec) is that missile type's own `mobjinfo.speed`,
-   * which for a missile is plain fracunits *per tic*, so the conversion is
-   * just `× 35` — the same "a plain constant that survives conversion out of
-   * tics intact" case as `MonsterStats.speed`/`chaseInterval`, not one of
-   * this file's tuned-by-feel values. Getting these eyeballed instead was a
-   * real, shipped bug, worst on the revenant (750 against vanilla's own 350):
-   * a missile faster than the player's own 500-unit/sec run
-   * (`player.ts: FORWARD_MOVE`) simply cannot be outrun, which took away
-   * both halves of what a revenant missile is supposed to be — a shot you
-   * *can* outpace, and which then loops back around and keeps coming.
+   * Non-null for a ranged attack that throws a flying projectile sprite rather
+   * than resolving as an instant hitscan bolt. `sprite` is confirmed against
+   * `DOOM2.WAD`'s lump names; `speed` is that missile's own `mobjinfo.speed`
+   * (fracunits per tic, so `× 35`), **not** a tuned value — eyeballing them
+   * was a shipped bug. See docs/monsters.md § Hitscan vs. projectile.
    */
   projectile?: {
     sprite: string;
     speed: number;
     /**
-     * The mancubus-only case: vanilla's `A_FatAttack1/2/3` each spawn *two*
-     * `MT_FATSHOT`s rather than one, fanned around the aim line by
-     * `FATSPREAD` (confirmed against the real `linuxdoom-1.10` `p_enemy.c`) —
-     * one array entry per shot in the burst (`AttackStats.shots`), each
-     * listing that shot's projectiles as offsets in radians from the
-     * straight-at-target angle. `P_SpawnMissile` computes its own angle
-     * straight at the target and ignores the firing actor's facing, so only
-     * the *second* missile of `A_FatAttack1`/`A_FatAttack2` is actually
-     * deflected (by `+FATSPREAD`/`-2*FATSPREAD`); `A_FatAttack3`'s pair
-     * straddles the aim line evenly instead (`±FATSPREAD/2`) — a real vanilla
-     * asymmetry, not a transcription slip. Omitted (implicitly `[0]` per
-     * shot) for every other projectile-throwing monster, which fires one
-     * straight shot per burst entry.
+     * Mancubus only — `A_FatAttack1/2/3` each spawn *two* `MT_FATSHOT`s fanned
+     * by `FATSPREAD`. One entry per burst shot, listing that shot's radian
+     * offsets from straight-at-target. Omitted (implicitly `[0]`) everywhere
+     * else. See docs/monsters.md § Hitscan vs. projectile.
      */
     pairOffsetsRad?: number[][];
     /**
-     * Set only for the cyberdemon: its missile is a real `MT_ROCKET` —
-     * `A_CyberAttack` literally calls `P_SpawnMissile(actor, actor->target,
-     * MT_ROCKET)`, the exact same type the player's own rocket launcher
-     * fires — and `MT_ROCKET`'s death state (`S_EXPLODE1`) is the one
-     * monster-projectile death state in the whole game that calls
-     * `A_Explode` (confirmed by checking every monster projectile's own
-     * death state in `info.c`: none of the others — imp/cacodemon/baron/
-     * hell knight/mancubus/arachnotron/revenant fireballs — have any action
-     * on theirs at all, so they never call `P_RadiusAttack` and genuinely
-     * don't splash in vanilla either; this isn't a simplification made
-     * here). `radius`/`damage` are vanilla's own literal
-     * `P_RadiusAttack(thingy, thingy->target, 128)` — the identical numbers
-     * as `weapons.ts`'s `rocketLauncher.splash`, since it's the identical
-     * mechanism.
+     * Cyberdemon only: its missile is a real `MT_ROCKET`, whose death state is
+     * the one monster-projectile death state that calls `A_Explode`. Every
+     * other monster fireball genuinely has no splash in vanilla either — this
+     * isn't a simplification. docs/monsters.md § Hitscan vs. projectile.
      */
     splash?: { radius: number; damage: number };
     /**
-     * Set only for the revenant: its missile is `MT_TRACER`, the one
-     * monster projectile in the game with a homing flight state
-     * (`A_Tracer`, confirmed against `p_enemy.c`) — every other monster
-     * projectile flies the fixed straight line this engine already models.
-     * Marks the *type* as homing-capable; whether any one shot actually
-     * homes is `fireAttack`'s `homingBias` param (`MonsterBody.homingBias`'s
-     * doc) — vanilla's own revenant missile isn't unconditionally guided
-     * either, confirmed against doomwiki.org/wiki/Revenant's own writeup of
-     * the underlying fixed-point mechanism. `game.ts`'s `updateProjectiles`
-     * is what actually implements the turn for a shot that wins the roll.
+     * Revenant only: `MT_TRACER`, the one monster projectile with a homing
+     * flight state. Marks the *type* as homing-capable; whether a given shot
+     * homes is `MonsterBody.homingBias`. `game.ts`'s `advanceHomingProjectile`
+     * implements the turn.
      */
     homing?: boolean;
   };
   /**
-   * Vanilla's own `P_CheckMissileRange` distance falloff (confirmed against
-   * the real `linuxdoom-1.10` source), converted from a per-check miss
-   * *chance* into a deterministic cooldown *multiplier* — see
-   * `stepMonsterAI`'s doc for why. `rangeFalloffScale` (default 1) shrinks
-   * distance before capping; vanilla halves it (0.5) for exactly three
-   * types — cyberdemon, spider mastermind, revenant — making them
-   * noticeably more willing to fire from far away than everything else.
-   * `rangeFalloffCap` (default 200 map units) is vanilla's own clamp, except
-   * the cyberdemon's own extra-tight 160.
+   * `P_CheckMissileRange`'s distance falloff. `rangeFalloffScale` (default 1)
+   * shrinks distance before capping — vanilla halves it for the types it
+   * special-cases; `rangeFalloffCap` (default 200) is its clamp, except the
+   * cyberdemon's tighter 160. docs/monsters.md § Attacking.
    */
   rangeFalloffScale?: number;
   rangeFalloffCap?: number;
-  /**
-   * Vanilla's revenant-only rule (`MT_UNDEAD` in `P_CheckMissileRange`):
-   * refuses to fire its missile within this distance at all, preferring to
-   * close to melee range instead rather than lobbing one from just out of
-   * fist's reach. Compared against the **offset** distance (after
-   * `P_CheckMissileRange`'s own -64/-192 subtraction), which is where vanilla
-   * applies it, not against the raw separation.
-   */
+  /** Revenant-only (`MT_UNDEAD`): won't fire inside this distance, preferring to close to melee. Measured on the **offset** distance, as vanilla does. */
   minOffsetDist?: number;
-  /**
-   * Vanilla's arch-vile-only rule (`MT_VILE` in `P_CheckMissileRange`): won't
-   * fire beyond `14*64` map units. The one genuine long-range cutoff in the
-   * game — everything else relies purely on the probability falloff. Also
-   * measured on the offset distance.
-   */
+  /** Arch-vile-only (`MT_VILE`): won't fire beyond `14*64`. The one genuine long-range cutoff in the game; also measured on the offset distance. */
   maxOffsetDist?: number;
   /**
-   * Set only for the arch-vile's real ranged attack (`A_VileAttack`) —
-   * replaces the ordinary hitscan-tracer stand-in every other non-projectile
-   * ranged monster still uses (see `MONSTER_STATS`'s doc) with vanilla's
-   * actual mechanic: guaranteed direct damage (`diceSides:1, diceMult:20`
-   * encodes vanilla's literal, unrolled `20` — no roll at all) plus an
-   * upward launch on the target, then a separate radius blast (vanilla's own
-   * flat `P_RadiusAttack(fire, actor, 70)`) centered near the victim rather
-   * than the vile itself. Only actually applied if the second sight check at
-   * fire time passes — see `startDelaySeconds` and `stepMonsterAI`'s
-   * burst-fire block.
+   * Arch-vile only (`A_VileAttack`), replacing the hitscan-tracer stand-in:
+   * guaranteed direct damage (`diceSides:1, diceMult:20` encodes vanilla's
+   * unrolled literal) plus an upward launch, then a radius blast centred near
+   * the victim rather than the vile. Applied only if the sight check at fire
+   * time passes. docs/monsters.md § The arch-vile.
    */
   blast?: { knockUpSpeed: number; splashRadius: number; splashDamage: number };
 }
 
 export interface MonsterStats {
   /**
-   * Map units/sec while chasing, **derived from vanilla, not tuned by feel**
-   * — unlike `player.ts`'s `GRAVITY` or `weapons.ts`'s fire rates, this one
-   * does convert cleanly. Vanilla moves a monster exactly `mobjinfo.speed`
-   * units per `A_Chase` call, and `A_Chase` fires once per state of the
-   * monster's own `seestate` walk loop, so units/sec is just
-   * `speed × (A_Chase states in the loop) × 35 / (tics in the loop)` — no
-   * fixed-point or per-tic accumulation to lose in translation. (The
-   * per-loop state count matters: the arachnotron and spider mastermind
-   * spend 2-3 of their 12 walk states on footstep-sound actions that don't
-   * move them at all, and the cyberdemon 2 of 8.) An earlier version tuned
-   * these by feel at roughly 2-3× vanilla, which flattened the difference
-   * between a shambling zombieman and a charging demon and let almost
-   * everything keep pace with a running player — in vanilla nothing except
-   * a charging lost soul can, since the fastest monster alive (the arch-vile
-   * at 262 units/sec) is still barely half the player's own run speed.
+   * Map units/sec while chasing, **derived from vanilla, not tuned by feel**:
+   * `speed × (A_Chase states in the walk loop) × 35 / (tics in the loop)`,
+   * with no per-tic accumulation to lose in translation. See docs/monsters.md
+   * § Timings and damage come from vanilla, not from feel.
    */
   speed: number;
   /**
-   * Seconds between `A_Chase` calls for this monster — the walk loop's tics
-   * divided by the number of `A_Chase` states in it, over 35. Vanilla's
-   * whole AI clock is quantized to this: it's how often a monster gets to
-   * reconsider attacking, how fast `reactiontime` drains, and the unit
-   * `runChaseCall` fires on. Derived alongside
-   * `speed` above from the same state loop.
+   * Seconds between `A_Chase` calls — the walk loop's tics over its `A_Chase`
+   * state count, over 35. **Vanilla's whole AI clock is quantized to this**:
+   * how often attacking is reconsidered, how fast `reactiontime` drains, and
+   * the unit `runChaseCall` fires on.
    */
   chaseInterval: number;
-  /**
-   * Movement/collision circle radius. A single approximate value per type
-   * rather than vanilla's real (and for some monsters very different,
-   * 16-128 unit) per-species radius — the same simplification
-   * `game/things.ts`'s `MONSTER_HIT_RADIUS` already makes for being shot.
-   */
+  /** Movement/collision circle radius — one approximate value per type rather than vanilla's real 16-128 unit per-species range, as `MONSTER_HIT_RADIUS` already is. */
   radius: number;
   /**
-   * Vanilla's own `mobjinfo.mass`, confirmed against `linuxdoom-1.10/info.c`
-   * rather than assumed — unlike `radius` above, this isn't a single
-   * approximate value standing in for real per-species variation, it's the
-   * genuine figure for every type (100 for most, up to 1000 for a baron/hell
-   * knight/mancubus/spider mastermind/cyberdemon, 400 for a demon/cacodemon/
-   * pain elemental, 50 for the lost soul, 500 for a revenant/arch-vile). Feeds
-   * `thrustSpeed` — `P_DamageMobj`'s horizontal knockback (`game.ts`'s
-   * `damageFromMonster`/`ThingLayer.damage`) — so a heavy monster like a
-   * cyberdemon barely budges from a hit that would send a zombieman
-   * staggering. The arch-vile's own separate *vertical* launch
-   * (`VILE_KNOCKUP_SPEED` below) still uses a flat default-100 approximation
-   * rather than this table — a pre-existing, independently-accepted
-   * simplification this addition doesn't touch.
+   * Vanilla's `mobjinfo.mass`, the genuine per-type figure (not an
+   * approximation like `radius`). Feeds `thrustSpeed`, `P_DamageMobj`'s
+   * horizontal knockback, so a cyberdemon barely budges from a hit that
+   * staggers a zombieman. The arch-vile's separate *vertical* launch
+   * (`VILE_KNOCKUP_SPEED`) still uses a flat 100. docs/movement.md § Knockback.
    */
   mass: number;
   melee: AttackStats | null;
   ranged: AttackStats | null;
-  /**
-   * Probability a hit staggers this monster into a brief pause
-   * (`reactToDamage`) instead of continuing whatever it was doing —
-   * vanilla's own `mobjinfo.painchance` over 256, lifted exactly rather than
-   * approximated, the same as `MONSTER_HEALTH` already is. It's a plain
-   * constant in the same table health comes from, so there was never
-   * anything to convert; an earlier eyeballed set had the imp and demon
-   * shrugging off roughly half the hits that stagger them in vanilla.
-   */
+  /** Chance a hit staggers this monster (`reactToDamage`) — `mobjinfo.painchance` over 256, lifted exactly. */
   painChance: number;
-  /**
-   * Seconds a stagger lasts — the summed tics of this monster's `painstate`
-   * chain over 35, from the same state table `AttackStats.duration` comes
-   * from. Ranges from 4 tics (the imp, demon and baron barely flinch) to 12
-   * (the cacodemon and pain elemental recoil visibly), which an earlier
-   * single shared constant flattened away.
-   */
+  /** Seconds a stagger lasts — the `painstate` chain's summed tics over 35, 4 (imp, demon, baron) to 12 (cacodemon, pain elemental). */
   painDuration: number;
   /**
-   * Vanilla's `MF_FLOAT` — exempts this monster from the dropoff check
-   * `stepMonsterAI` otherwise applies (`World.circleBlocked`'s
-   * `avoidDropoff`), matching vanilla's own `P_TryMove` exemption for
-   * floating monsters. Set only for the cacodemon, lost soul and pain
-   * elemental — vanilla's actual hoverers/fliers. This engine doesn't model
-   * real flight/hover height for them at all (they walk the floor like
-   * everything else), but they should still be willing to cross a ledge a
-   * grounded monster wouldn't dare step off, matching the one part of their
-   * vanilla flight behavior that's cheap to keep even without modeling the
-   * rest of it.
+   * Vanilla's `MF_FLOAT` — exempts this monster from `circleBlocked`'s
+   * `avoidDropoff`, matching `P_TryMove`. Cacodemon, lost soul and pain
+   * elemental only. Real hover height isn't modelled (they walk the floor),
+   * but they should still cross a ledge a grounded monster wouldn't.
    */
   flies?: boolean;
-  /**
-   * Vanilla's `A_VileChase` corpse-resurrection check — set only for the
-   * arch-vile. `runChaseCall` tries this (via the caller-supplied
-   * `resurrect` callback) before anything else on every chase call it has a
-   * `movedir`, exactly like vanilla, which runs the corpse search *instead
-   * of* `A_Chase` and only falls through to the ordinary attack/walk
-   * decision once no raisable corpse is found nearby.
-   */
+  /** Vanilla's `A_VileChase` corpse search, arch-vile only — tried before anything else on a chase call, falling through to the ordinary decision only if no corpse is raisable. */
   resurrects?: boolean;
 }
 
 export interface MonsterAttack {
   /**
-   * `'vileWindup'` is a fourth, purely-cosmetic kind: fired once, the instant
-   * a `blast` attack (the arch-vile's `A_VileAttack`) *starts* rather than
-   * when it actually lands — see `beginRangedAttack`'s doc. Everything else
-   * about this event (`damage`/`angleRad`) is unused; `game.ts` reads only
-   * `targetId`/the shooter's position (from `MonsterAttackEvent`) to spawn
-   * and track a warning flame near the target for the windup's duration,
-   * vanilla's whole reason breaking sight mid-windup saves you from it —
-   * without *some* visible warning while it's charging, there'd be nothing
-   * for the player to react to in the first place.
+   * `'vileWindup'` is purely cosmetic: fired when a `blast` attack *starts*,
+   * so `game.ts` can show the warning flame the player reacts to. Its
+   * `damage`/`angleRad` are unused.
    *
-   * `'spawn'` is the pain elemental's `A_PainAttack` (`AttackStats.spawn`):
-   * fired the instant the attack starts, carrying no damage or projectile of
-   * its own — `angleRad` is the elemental's own facing (`A_FaceTarget`'s
-   * result), which is all `ThingLayer.update`'s `spawnLostSoul` needs to
-   * place the new monster in front of it, same as vanilla's
-   * `A_PainShootSkull(actor, actor->angle)`.
+   * `'spawn'` is the pain elemental's `A_PainAttack`, also fired at attack
+   * start and carrying no damage of its own — `angleRad` is the elemental's
+   * facing, all `spawnLostSoul` needs to place the new monster.
    */
   kind: 'melee' | 'ranged' | 'resurrect' | 'vileWindup' | 'spawn';
   damage: number;
   /** The heading it was fired along (`A_FaceTarget`'s angle) — what a hitscan bolt traces down, so it can hit whatever is actually in the way. */
   angleRad: number;
-  /**
-   * Set only for a `'ranged'` attack fired by a monster whose `AttackStats.ranged.projectile`
-   * is configured — the caller (`game.ts`) spawns one flying projectile
-   * sprite per entry instead of an instant hitscan tracer. Absent means the
-   * ordinary hitscan-style bolt this engine already used for every ranged
-   * monster before real projectiles existed. Almost always exactly one
-   * entry; the mancubus is the one type that fires two at once (see
-   * `AttackStats.projectile.pairOffsetsRad`).
-   */
+  /** One flying projectile sprite per entry instead of an instant hitscan tracer. Almost always one entry; only the mancubus fires two at once (`pairOffsetsRad`). */
   projectiles?: {
     sprite: string;
     speed: number;
@@ -471,32 +244,19 @@ export const MELEE_RANGE = 72;
 const FATSPREAD = Math.PI / 2 / 8;
 
 /**
- * Vanilla's `A_VileAttack` launch: `target->momz = 1000*FRACUNIT/target->info->mass`.
- * Deliberately still uses vanilla's own default mass (100, `MT_PLAYER`'s and
- * most monsters' value) for every victim rather than `MonsterStats.mass`
- * below, even though that table now exists — this is shipped, working
- * behavior, and the vile launch is rare enough (one monster type, one attack)
- * that swapping it to the real per-victim mass wasn't worth the extra risk
- * of this pass. `thrustSpeed` below, added alongside the mass table for the
- * *horizontal* knockback every hit now deals, does use it. `momz` is added
- * once per *tic* in vanilla, so ×35 converts it to this engine's units/sec.
+ * Vanilla's `A_VileAttack` launch, `momz = 1000*FRACUNIT/mass` (`× 35` for
+ * per-tic → units/sec). Deliberately uses vanilla's *default* mass 100 for
+ * every victim rather than `MonsterStats.mass`, unlike `thrustSpeed` below —
+ * an accepted approximation for one attack on one monster type.
  */
 const VILE_KNOCKUP_SPEED = (1000 / 100) * 35;
 
 /**
- * Vanilla's `P_DamageMobj` horizontal knockback (`p_inter.c`): every hit that
- * has a real inflictor position (a shot, an explosion, a melee swing — not a
- * damage floor or crusher, which vanilla calls with a null inflictor and so
- * never thrusts) pushes the victim directly away from it. The vanilla
- * formula is `thrust = damage*(FRACUNIT>>3)*100/mass`, added once per *tic*
- * to `momx`/`momy` — `× 35` converts that to this engine's units/sec, the
- * same conversion `MonsterStats.speed` already makes for vanilla's own
- * per-tic movement. `game/things.ts`'s `ThingLayer.damage` (monsters and
- * barrels) and `game.ts`'s `damagePlayer` both call this with the victim's
- * own real mass (`MonsterStats.mass`, `BARREL_MASS`, `PLAYER_MASS`), then
- * apply the result as an impulse along the away-from-source direction and
- * integrate/decay it every frame like any other momentum — see
- * `game/things.ts`'s `applyKnockback`.
+ * Vanilla's `P_DamageMobj` horizontal knockback: `damage*(FRACUNIT>>3)*100/mass`
+ * per tic, `× 35` for units/sec. Callers pass the victim's real mass and apply
+ * the result as an impulse away from the source. A hit with no inflictor
+ * position (a damage floor, a crusher) never thrusts, matching vanilla's null
+ * inflictor. See docs/movement.md § Knockback.
  */
 export function thrustSpeed(damage: number, mass: number): number {
   return (damage / 8) * (100 / mass) * 35;
@@ -506,23 +266,15 @@ export function thrustSpeed(damage: number, mass: number): number {
 const VILE_HEAL_DURATION = 30 / 35;
 
 /**
- * Vanilla's `mobjinfo.reactiontime`, which is 8 for every monster in the
- * game — a freshly-woken monster starts moving toward its target at once,
- * but `A_Chase` decrements this counter 8 times before `P_CheckMissileRange`
- * will let it shoot. Counted in chase calls, exactly as vanilla counts it, so
- * a zombieman's beat of hesitation (8 × 0.114s) really is twice a demon's
- * (8 × 0.057s). Melee is deliberately *not* gated by it: vanilla reads
- * `reactiontime` nowhere except `P_CheckMissileRange`, so a demon woken at
- * arm's length bites on the spot.
+ * Vanilla's `mobjinfo.reactiontime`, 8 for every monster. Counted in chase
+ * calls as vanilla counts it, so a zombieman's hesitation really is twice a
+ * demon's. **Melee is deliberately not gated by it** — vanilla reads it
+ * nowhere but `P_CheckMissileRange`, so a demon woken at arm's length bites
+ * on the spot.
  */
 const REACTION_CHASES = 8;
 
-/**
- * Vanilla's `BASETHRESHOLD` — how many chase calls a monster stays committed
- * to whoever last hurt it before another attacker can pull it away. Without
- * it an infight in a crowded room degenerates into everyone re-targeting on
- * every stray hit and nobody ever landing a second blow.
- */
+/** Vanilla's `BASETHRESHOLD` — chase calls a monster stays committed to whoever last hurt it. Without it a crowded infight thrashes and nobody lands a second blow. */
 const BASE_THRESHOLD = 100;
 
 /**
@@ -558,49 +310,17 @@ export const MONSTER_FIRE_HEIGHT = 40;
 /**
  * Per-doomednum combat stats, covering every `MONSTER_TYPES` entry except
  * Commander Keen (72) and the boss brain (88) — neither attacks or moves in
- * vanilla either (Keen's "death" is a pain cascade with no real combat
- * state, the boss brain is a stationary cube-spawner with no player-facing
- * attack this engine models), so both stay exactly as decorative/passive as
- * they were before monster AI existed.
- *
- * Ranged attacks are either an instant hitscan-style bolt (a tracer, drawn
- * by `game.ts`) — for the monsters that really do fire vanilla hitscan
- * bullets (the human gunners, and the spider mastermind's chaingun) — or a
- * real flying projectile sprite (`AttackStats.ranged.projectile`, also
- * `game.ts`) for the ones that genuinely throw a fireball/rocket in vanilla.
- * Three types get their own dedicated mechanism instead, each because
- * vanilla's real attack isn't a shot at all: the lost soul (`AttackStats.charge`,
- * `A_SkullAttack` — it throws *itself*, not anything it carries), the
- * arch-vile (`AttackStats.blast`, `A_VileAttack` — guaranteed direct damage
- * plus a radius blast, not a traced or thrown projectile), and the pain
- * elemental (`AttackStats.spawn`, `A_PainAttack`/`A_PainShootSkull` — it
- * spawns a lost soul and launches *that* at its target; see
- * `game/things.ts: spawnLostSoul`). The revenant's own missile
- * (`AttackStats.projectile.homing`) is the one monster projectile that can
- * home at all, matching vanilla's `A_Tracer` — every other fireball flies
- * the fixed straight line `game.ts: updateProjectiles` already models, which
- * is correct for them, not a simplification (see `homing`'s own doc).
- * Whether a given revenant shot actually does is `MonsterBody.homingBias`'s
- * doc — vanilla's own missile isn't unconditionally guided either.
+ * vanilla either, so both stay as passive as they were before monster AI
+ * existed.
  *
  * **Both timing and damage are lifted from vanilla, not tuned by feel.**
  * `speed`, `chaseInterval`, `painChance`, `painDuration` and every
- * `duration`/`shots`/`shotInterval` here are read straight out of `info.c`'s
- * `mobjinfo`/state tables, because all of them are plain constants that
- * survive the trip to a dt-scaled model intact (see `MonsterStats.speed` for
- * the arithmetic). `diceSides`/`diceMult` are equally exact rather than
- * tuned for feel the way `weapons.ts`'s fire rates are: a melee attack's dice
- * are its own `A_*Attack` function's literal roll (confirmed against
- * `p_enemy.c`), and a projectile's or `MF_SKULLFLY` contact's dice are
- * vanilla's one universal missile-hit formula, `(rand%8+1)*mobjinfo.damage`
- * (`p_map.c`'s `PIT_CheckThing`) — which is why every projectile-throwing
- * monster's `ranged.diceSides` here is 8 regardless of type, only `diceMult`
- * (that type's own missile's `damage` field) varies. Splash is the one place
- * this still isn't uniform, and correctly so: only the cyberdemon's missile
- * is a real `MT_ROCKET` whose death state calls `A_Explode` (`splash`'s own
- * doc) — every other monster fireball genuinely has no splash in vanilla
- * either, confirmed by checking each one's own death state in `info.c`, not
- * a gap left in this engine.
+ * `duration`/`shots`/`shotInterval` come from `info.c`'s `mobjinfo`/state
+ * tables; `diceSides`/`diceMult` are each attack's own literal roll from
+ * `p_enemy.c`, or `PIT_CheckThing`'s universal missile formula. Splash is
+ * correctly non-uniform — only the cyberdemon's `MT_ROCKET` explodes in
+ * vanilla. See docs/monsters.md § Timings and damage come from vanilla, not
+ * from feel, and § Hitscan vs. projectile for which types get which attack.
  */
 export const MONSTER_STATS: Record<number, MonsterStats> = {
   3004: {
@@ -895,15 +615,9 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
 };
 
 /**
- * Vanilla's own field-of-view gate on `P_LookForPlayers`: a monster only
- * notices the player within roughly its forward 180°, unless the player is
- * close enough to sense regardless (vanilla's `MELEERANGE` exception) — a
- * monster facing away doesn't magically notice someone behind it just
- * because the line between them happens to be clear. `tryWake` only calls
- * this for the initial wake-up check; once alerted, a monster tracks/attacks
- * the player regardless of which way it's currently facing, matching
- * vanilla's own `A_Chase`, which never re-applies the FOV gate to an
- * already-hunting monster.
+ * `P_LookForPlayers`'s field-of-view gate: the forward ~180°, unless the
+ * player is within `MELEERANGE`. Initial wake-up only — `A_Chase` never
+ * re-applies it to an already-hunting monster. docs/monsters.md § Waking up.
  */
 export function canSpotPlayer(facingDeg: number, monsterX: number, monsterY: number, playerX: number, playerY: number): boolean {
   const dist = Math.hypot(playerX - monsterX, playerY - monsterY);
@@ -922,21 +636,13 @@ export interface WakeCheckBody extends Pos3 {
 }
 
 /**
- * Vanilla's own idle `A_Look`: called from `game/things.ts`'s `ThingLayer.update`
- * once per unalerted monster, throttled there to that file's `LOOK_INTERVAL`
- * rather than every frame (matching vanilla's own idle checks, which run
- * every 10 tics, not continuously). A sound-alerted sector (`World.noiseAlert`,
- * fired on player gunshots) wakes a monster with no sight check at all — unless
- * it's "ambush"/deaf (`game/skill.ts: isAmbush`), which still needs to actually
- * see the source, just without the usual forward-FOV restriction. Either way, a
- * monster that isn't woken by sound still falls through to the ordinary
- * FOV+sight check (`canSpotPlayer` + `hasLineOfSight`) every monster gets,
- * sound-alerted sector or not.
+ * Vanilla's idle `A_Look`, called once per unalerted monster on
+ * `ThingLayer.update`'s `LOOK_INTERVAL` throttle. Sound, ambush/deaf things
+ * and the ordinary FOV+sight path are all handled here — docs/monsters.md §
+ * Waking up.
  *
- * On success, mutates `body.alerted` and seeds `reactionTicks` with
- * `REACTION_CHASES` (see that constant's doc) — the same "mutate the body, report what happened" shape as
- * `stepMonsterAI`. Returns whether it woke, in case the caller wants to react
- * to that moment itself.
+ * On success mutates `body.alerted` and seeds `reactionTicks`, the same
+ * "mutate the body, report what happened" shape as `stepMonsterAI`.
  */
 export function tryWake(body: WakeCheckBody, world: World, sector: Sector | undefined, player: Pos3): boolean {
   const heardIt = !!sector && world.isSoundAlerted(sector);
@@ -976,20 +682,10 @@ export function reactToDamage(body: MonsterBody, stats: MonsterStats): void {
 const VILE_TYPE = 64;
 
 /**
- * Vanilla's target-switch rule out of `P_DamageMobj`: whoever hurts a monster
- * normally becomes its new target, which is the entire mechanism behind
- * infighting — nothing about it is specific to the player, so a stray imp
- * fireball that clips a baron turns the baron on the imp exactly as it does
- * in DOOM.
- *
- * Two carve-outs, both vanilla's:
- * - **A monster already committed to a target ignores new attackers** until
- *   its `threshold` runs out, so a brawl doesn't degenerate into everyone
- *   spinning to face the last stray hit and nobody landing a second blow.
- *   An arch-vile is exempt and re-targets immediately regardless.
- * - **Nothing ever retaliates against an arch-vile.** Vanilla does this so
- *   its resurrect/flame behavior can't start a fight with the monsters it's
- *   meant to be helping.
+ * Vanilla's target-switch rule out of `P_DamageMobj` — the whole mechanism
+ * behind infighting, with two carve-outs: a monster still inside its
+ * `threshold` ignores new attackers (an arch-vile is exempt), and nothing
+ * ever retaliates against an arch-vile. docs/monsters.md § Infighting.
  *
  * On a true result the caller reseeds `threshold`; that's `commitTarget`.
  */
@@ -1006,19 +702,14 @@ export function commitTarget(body: MonsterBody): void {
 
 /**
  * Whether a monster-fired *projectile* deals no damage to `victimType` —
- * vanilla's `PIT_CheckThing` "don't hit same species as originator" rule,
- * which is why a room full of imps can't wipe itself out with crossfire.
- * Barons and hell knights count as the same species in both directions,
- * vanilla's one hardcoded cross-type pairing. Note it applies to projectiles
- * only: hitscan attacks (`P_LineAttack`) have no species check at all, so
- * zombiemen really do gun each other down in vanilla, and do here.
+ * `PIT_CheckThing`'s "don't hit same species as originator". Barons and hell
+ * knights are one species in both directions, vanilla's one hardcoded
+ * cross-type pairing. Projectiles only: hitscan has no species check, so
+ * zombiemen really do gun each other down.
  *
- * **This is not a pass-through.** Vanilla's branch returns `false` — "explode,
- * but do no damage" in its own comment — so the missile *stops dead* on a
- * same-species body and detonates there; only the shooter's own body is
- * genuinely passed through (`thing == tmthing->target`). Reading it as a
- * pass-through was a real, shipped bug — see `game.ts: monsterStruckBy`, which
- * owns that distinction, for why it decided whole fights on a crowded map.
+ * **This is not a pass-through** — the missile stops dead on a same-species
+ * body. `game.ts: monsterStruckBy` owns that distinction; docs/monsters.md §
+ * Infighting has why it decides whole fights on a crowded map.
  */
 export function sameSpecies(shooterType: number, victimType: number): boolean {
   if (shooterType === victimType) return true;
@@ -1040,23 +731,11 @@ function settleVertical(body: MonsterBody, world: World, radius: number, dt: num
 }
 
 /**
- * Vanilla's `P_CheckMissileRange`, run once per chase call — not converted
- * into a cooldown, but the real per-attempt roll, now that `runChaseCall`
- * ticks at vanilla's own cadence and so can afford to sample it the same
- * number of times vanilla does.
- *
- * The shape that matters: the roll `P_Random() < dist` *suppresses* the shot,
- * so the fire chance is `(256 - dist) / 256` and shrinks as the target gets
- * further away — a monster across a room fails this many times in a row
- * before it ever gets one off, which is what makes distant monsters
- * occasional rather than constant. `rangeFalloffScale`/`Cap` are vanilla's
- * per-type halving and clamp (halved for exactly the types it special-cases —
- * cyberdemon, spider mastermind, revenant, lost soul — making them
- * noticeably more willing to fire from far away; the cyberdemon alone gets an
- * extra-tight 160 cap on top).
- *
- * `MF_JUSTHIT` short-circuits the whole thing: a monster that just took a hit
- * fires back immediately regardless of distance.
+ * Vanilla's `P_CheckMissileRange`, run as the real per-attempt roll once per
+ * chase call rather than converted into a cooldown — `runChaseCall` ticks at
+ * vanilla's cadence, so it can afford to sample it as often as vanilla does.
+ * The roll *suppresses* the shot, so fire chance is `(256 - dist) / 256`.
+ * `MF_JUSTHIT` short-circuits all of it. docs/monsters.md § Attacking.
  */
 function checkMissileRange(body: MonsterBody, stats: MonsterStats, dist: number, canSee: () => boolean): boolean {
   const ranged = stats.ranged;
@@ -1077,12 +756,10 @@ function checkMissileRange(body: MonsterBody, stats: MonsterStats, dist: number,
 }
 
 /**
- * Whether this monster could take a full chase step in `dir` from where it
- * stands — vanilla's `P_TryWalk`, minus the part where it also performs the
- * move (movement here is interpolated per frame instead, see
- * `stepMonsterAI`). Committing to a direction reseeds `movecount` to
- * `P_Random() & 15` exactly as `P_TryWalk` does, which is what paces both
- * re-routing and the missile gate.
+ * Whether this monster could take a full chase step in `dir` — vanilla's
+ * `P_TryWalk` minus the part that performs the move (movement is interpolated
+ * per frame here). Committing reseeds `movecount` to `P_Random() & 15` as
+ * `P_TryWalk` does, which paces both re-routing and the missile gate.
  */
 function tryWalk(body: MonsterBody, stats: MonsterStats, world: World, dir: number, blockers?: readonly ThingBlocker[]): boolean {
   const step = stats.speed * stats.chaseInterval;
@@ -1095,19 +772,11 @@ function tryWalk(body: MonsterBody, stats: MonsterStats, world: World, dir: numb
 }
 
 /**
- * Vanilla's `P_NewChaseDir`, reproduced step for step: try the diagonal that
- * closes both axes at once, then the two cardinals (in an order that's
- * randomized ~22% of the time, and always leads with the *longer* axis
- * otherwise), then the previous heading, then a full scan of all eight
- * directions from a randomly chosen end, and only as a last resort the
- * about-face it has been avoiding all along.
- *
- * The refusal to turn around unless nothing else works is what stops a
- * blocked monster oscillating in place, and the random scan direction is what
- * makes two monsters wedged in the same doorway eventually resolve it. This
- * replaces an earlier "if it hasn't moved in half a second, blend in a random
- * lateral angle" heuristic, which produced a visibly different gait — a
- * drifting curve into the wall rather than DOOM's flat commit-and-re-route.
+ * Vanilla's `P_NewChaseDir`, reproduced step for step: the both-axes diagonal,
+ * then the two cardinals, then the previous heading, then a full eight-way
+ * scan from a randomly chosen end, and the about-face only as a last resort.
+ * That last-resort ordering and the random scan direction are both
+ * load-bearing — docs/monsters.md § Movement.
  */
 function newChaseDir(
   body: MonsterBody,
@@ -1160,19 +829,13 @@ function newChaseDir(
 }
 
 /**
- * One frame of a charging monster's flight (`AttackStats.charge` — vanilla's
- * `A_SkullAttack`, the lost soul hurling itself). It travels straight along
- * the heading it launched on, at the charge speed rather than its ordinary
- * drift, and stops the moment it either reaches the player — dealing the
- * attack's damage on contact, the way vanilla resolves an `MF_SKULLFLY`
- * collision in `PIT_CheckThing` — or slams into geometry, which vanilla
- * likewise treats as the end of the charge (`P_XYMovement` zeroes the
- * momentum and drops the monster back to its spawn state).
+ * One frame of a charging monster's flight — `A_SkullAttack`. Travels straight
+ * along its launch heading and stops on reaching the player (contact damage,
+ * `MF_SKULLFLY` in `PIT_CheckThing`) or on hitting geometry.
  *
- * Deliberately **not** `slideMove`, unlike every other movement in this
- * file: a charge that rounded corners would track the player instead of
- * committing to one heading, and being able to sidestep a committed lost
- * soul is the entire reason the attack is fair.
+ * Deliberately **not** `slideMove`, unlike every other movement here: a charge
+ * that rounded corners would track the player, and sidestepping a committed
+ * lost soul is what makes the attack fair. docs/monsters.md § The lost soul.
  */
 function stepCharge(body: MonsterBody, stats: MonsterStats, dt: number, world: World, distToPlayer: number): MonsterAttack | null {
   const charge = stats.ranged?.charge;
@@ -1200,16 +863,11 @@ function stepCharge(body: MonsterBody, stats: MonsterStats, dt: number, world: W
 }
 
 /**
- * Rolls one instance of `attack`'s damage, tagged with the projectile(s) (if
- * any) the caller should spawn. `offsetsRad` is one radian offset per
- * projectile this shot spawns — omitted means the ordinary single straight
- * shot every monster but the mancubus fires (see
- * `AttackStats.projectile.pairOffsetsRad`). `attack.pellets`, when set, sums
- * that many independent dice rolls into one total instead of rolling once —
- * see that field's doc for why summing is exact here, not an approximation.
- * `homingBias` (only ever meaningful when `projectile.homing` is set, i.e.
- * only for the revenant) decides whether *this* shot actually gets to home —
- * see `MonsterBody.homingBias`'s doc.
+ * Rolls one instance of `attack`'s damage, tagged with the projectile(s) the
+ * caller should spawn. `offsetsRad` is one radian offset per projectile
+ * (omitted = the single straight shot everything but the mancubus fires);
+ * `attack.pellets` sums that many rolls; `homingBias` decides whether this
+ * particular shot homes. See those fields' docs.
  */
 function fireAttack(
   kind: 'melee' | 'ranged',
@@ -1240,38 +898,18 @@ function fireAttack(
 
 /**
  * Advances one already-alerted monster by `dt`: re-routes and closes on
- * `target`, fires whichever attack (melee preferred, since a melee-capable
- * monster always tries to close all the way in) is in range and off cooldown,
- * and returns that attack for the caller to actually apply/render — the same
- * "return what happened, let the caller realize it" split as
- * `WeaponSystem.update`'s `Shot[]`. `target` is usually the player, but a
- * monster that has been hurt by another monster chases *it* instead
- * (`game/things.ts` resolves which), and nothing in here needs to know the
- * difference.
+ * `target`, fires whichever attack is in range and off cooldown, and returns
+ * it for the caller to apply/render — the same "return what happened, let the
+ * caller realize it" split as `WeaponSystem.update`'s `Shot[]`. `target` is
+ * usually the player, but a monster hurt by another chases *it* instead, and
+ * nothing here needs to know the difference.
  *
- * **Decisions run on vanilla's clock, movement runs on the frame's.**
- * `A_Chase` is a discrete thing that happens once per state of the walk loop
- * (`MonsterStats.chaseInterval`), and every counter it touches — `movecount`,
- * `reactiontime`, `threshold` — is measured in those calls, so `runChaseCall`
- * below fires on that cadence and nothing else. What *doesn't* happen on that
- * cadence is the actual walking: vanilla jumps a monster a full `speed` units
- * per call, which at 35fps reads as continuous but at this engine's frame
- * rate would visibly stutter, so the position is interpolated per frame along
- * whatever `movedir` the last chase call settled on. Same distance covered,
- * same 8-way pathing, no stutter.
- *
- * A monster keeps closing distance until it is genuinely adjacent to its
- * target, matching vanilla, which has no "keep your distance" instinct at
- * all: a ranged monster like the zombieman or cyberdemon walks right up to
- * you if nothing stops it, firing along the way. What stops it is no longer a
- * `MELEE_RANGE` stand-in but the real thing — `blockers` makes bodies
- * physically collide, so a monster stops because it has run into you.
- *
- * **Walking and attacking are mutually exclusive.** An attack is a state
- * sequence of its own, and `A_Chase` — the only thing that ever calls
- * `P_Move` — doesn't run again until that sequence ends. So a monster plants
- * itself for `AttackStats.duration`, and a `refire` monster keeps planting
- * itself for as long as it can see you.
+ * **Decisions run on vanilla's clock, movement runs on the frame's.** Every
+ * counter `A_Chase` touches is measured in chase calls, so `runChaseCall`
+ * fires on `chaseInterval` and nothing else; position is interpolated per
+ * frame along the `movedir` the last chase call settled on, since vanilla's
+ * full-`speed` jump per call would visibly stutter here. Same distance, same
+ * 8-way pathing, no stutter. See docs/monsters.md § Movement and § Attacking.
  */
 export function stepMonsterAI(
   body: MonsterBody,
@@ -1293,15 +931,12 @@ export function stepMonsterAI(
   const dy = target.y - body.y;
   const dist = Math.hypot(dx, dy);
   /**
-   * Sight, resolved **on demand and at most once per call**. It's only ever
-   * consumed by the refire loop and by `runChaseCall`, both of which run far
-   * less often than this function does — the chase call is quantized to
-   * `chaseInterval` (~0.11-0.29s), while this runs every rendered frame — so
-   * evaluating it eagerly meant a full sightline trace per monster per frame
-   * whose answer was usually thrown away. Vanilla has the same structure for
-   * the same reason: `P_CheckSight` is called from inside `A_Chase`, not once
-   * per tic for every thinker. This was measured as the single largest cost in
-   * the engine on a crowded map (see `World.forEachLineAlongSegment`).
+   * Sight, resolved **on demand and at most once per call** — only the refire
+   * loop and `runChaseCall` consume it, and both run far less often than this
+   * function does, so evaluating it eagerly meant a sightline trace per
+   * monster per frame whose answer was usually discarded. Vanilla has the same
+   * structure: `P_CheckSight` is called from inside `A_Chase`, not per tic per
+   * thinker. Measured as the engine's largest single cost on a crowded map.
    */
   let sightCached: boolean | null = null;
   const canSee = (): boolean => {

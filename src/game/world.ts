@@ -116,27 +116,14 @@ export class World {
 
   /**
    * Every linedef bucketed into a grid cell the segment (x1, y1)-(x2, y2)
-   * passes through, each visited at most once.
+   * passes through, each visited at most once. The visitor may return `true`
+   * to stop the walk early, the way a `break` would.
    *
-   * This is the query a **sightline** wants, and `linesNear` is badly wrong
-   * for it: that one takes a radius, so covering a segment with it means a box
-   * half the sightline's length on a side — O(dist²) grid cells for what is a
-   * thin line. On a big open map that is the single most expensive thing the
-   * engine does. Measured on NUTS.WAD, whose monsters have a median sightline
-   * of ~4400 units and a p90 of ~11700: the box query scans up to ~8300 cells
-   * where the segment itself only crosses ~90, and `hasLineOfSight` across all
-   * of that map's monsters cost 177 ms per frame before this existed.
-   *
-   * Sound because of how `buildGrid` buckets: a line is registered in every
-   * cell its *bounding box* touches, so if a line genuinely crosses this
-   * segment, their intersection point lies in some cell that the segment
-   * passes through and that the line's bounding box covers — hence the line is
-   * in that cell's bucket, and the walk below visits it.
-   *
-   * Allocation-free by design (a stamp array instead of a per-call `Set`, and
-   * a callback instead of a returned array), since this runs thousands of
-   * times per frame. The visitor may return `true` to stop the walk early,
-   * the way a `break` would in the loop this replaces.
+   * This is the query a **sightline** wants; `linesNear`'s radius box is
+   * O(dist²) in cells for a thin line and was the engine's biggest single cost
+   * on a crowded map. Allocation-free by design (stamp array, callback), since
+   * it runs thousands of times per frame. docs/combat.md § hasLineOfSight
+   * covers why this is both sound and necessary.
    */
   forEachLineAlongSegment(
     x1: number,
@@ -236,13 +223,10 @@ export class World {
   /**
    * The height a body of this radius should rest at, standing here: the local
    * sector's floor, raised to the bottom of any two-sided opening its circle
-   * is currently straddling. DOOM keeps a mover pinned to a ledge's high side
-   * for as long as its collision circle still spans that ledge's line (see
-   * `thing->floorz` in P_TryMove) — only once fully clear of it does the
-   * floor, and so z, drop to the low side. Using the bare point-sampled floor
-   * instead would make falling off a ledge deadlock: the very next frame's
-   * step-up test would compare the now-low z against the still-high opening
-   * bottom and block every further move near that edge, forever.
+   * is currently straddling — vanilla's `thing->floorz` in `P_TryMove`, which
+   * keeps a mover pinned to a ledge's high side while its circle still spans
+   * that ledge's line. Point-sampling the floor instead deadlocks a fall off a
+   * ledge; see docs/movement.md § Collision.
    */
   groundFloor(x: number, y: number, radius: number, forMonster = false): number {
     let floor = this.floorAt(x, y);
@@ -262,13 +246,9 @@ export class World {
   }
 
   /**
-   * The lowest floor this circle's footprint touches — vanilla's own
-   * `tmdropoffz`, the mirror image of `groundFloor`'s `tmfloorz` (highest
-   * touched floor instead of lowest). `circleBlocked`'s dropoff check
-   * compares the two: a mover that would rest somewhere `groundFloor` puts it
-   * well above this — i.e. it's still straddling a ledge whose far side drops
-   * away sharply — is standing over a dropoff, matching vanilla's own
-   * `P_TryMove` rule.
+   * The lowest floor this circle's footprint touches — vanilla's `tmdropoffz`,
+   * the mirror of `groundFloor`'s `tmfloorz`. `circleBlocked`'s dropoff check
+   * compares the two.
    */
   dropoffFloor(x: number, y: number, radius: number): number {
     let floor = this.floorAt(x, y);
@@ -307,20 +287,10 @@ export class World {
   /**
    * True if this line stops a line of sight through it (game/fogofwar.ts).
    *
-   * Deliberately *not* `isSolidWall`, in both directions:
-   * - A **closed door** is a two-sided line whose sectors leave no vertical gap
-   *   (the door sector's ceiling is winched down to its floor). Vanilla never
-   *   flags those `BLOCKING` — it can't, they have to become passable when the
-   *   door opens — so `isSolidWall` says "not solid" and sight sails straight
-   *   through into the room beyond. Every one of DOOM2 MAP01's 24 openingless
-   *   two-sided lines is unflagged, which is exactly why the room behind the
-   *   locked door showed up from the corridor.
-   * - Conversely a **window or railing** is two-sided *and* `BLOCKING`: it stops
-   *   a body but not an eye. Treating it as sight-blocking would black out a
-   *   courtyard the player is plainly looking into over a fence.
-   *
-   * So the test is the vertical opening, matching what vanilla's own
-   * `P_CheckSight` keys off, rather than the movement-blocking rules.
+   * The test is the vertical opening, what vanilla's `P_CheckSight` keys off —
+   * deliberately *not* `isSolidWall`, which is wrong in both directions here
+   * (a closed door isn't `BLOCKING`; a window/railing is). docs/fogofwar.md
+   * has both cases.
    */
   blocksSight(lineIndex: number): boolean {
     const line = this.map.linedefs[lineIndex];
@@ -347,16 +317,9 @@ export class World {
   /**
    * Player 1 start (thing type 1); falls back to the map centre.
    *
-   * Uses the *last* doomednum-1 thing in the map, not the first. Vanilla's
-   * `P_SpawnMapThing` calls `P_SpawnPlayer` for every player-1 thing it
-   * encounters, and each call overwrites `players[0].mo` — so whichever one
-   * comes last in the thing list is where the player actually ends up;
-   * every earlier one becomes an orphaned "voodoo doll" mobj still sitting
-   * on the map (a mapping trick for scripted effects like crusher-triggered
-   * linedefs). Picking the first one instead spawns the player on top of a
-   * voodoo doll — confirmed against oku2v31.wad's MAP01, which has 27
-   * doomednum-1 things: 26 of them a voodoo-doll row and the 27th (last)
-   * the real start.
+   * The **last** doomednum-1 thing, not the first — every earlier one is a
+   * voodoo doll, and spawning on top of one is a real bug. See docs/wad.md §
+   * Player start.
    */
   playerStart(): Placement {
     const starts = this.thingsOfType(1);
@@ -368,22 +331,14 @@ export class World {
 
   /**
    * Floods a noise outward from the sector at (x, y) through every two-sided
-   * line, matching vanilla's `P_NoiseAlert`/`P_RecursiveSound` (confirmed
-   * against the actual `linuxdoom-1.10` source rather than assumed, the same
-   * rigor as the line-special tables elsewhere in this codebase): a line
-   * whose vertical opening is fully closed (a shut door) stops the flood
-   * outright, a `LF.BLOCK_SOUND` line softens it once (crossable, but a
-   * *second* `BLOCK_SOUND` crossing on the same path stops it), and every
-   * other two-sided line passes it through unchanged. Marked sectors
-   * (`isSoundAlerted`) stay marked for the rest of the level — vanilla's own
-   * `sector->soundtarget` is never cleared either — so a monster that only
-   * wanders into an already-noisy sector later still wakes, not just
-   * whichever monster happened to be standing there at the moment of the
-   * shot. The state-space search tracks `(sector, hasCrossedABlockLine)`
-   * pairs rather than just sectors, so a sector reached first via a
-   * sound-blocked path can still be re-entered (and propagate further) via a
-   * later, unblocked path — exactly the nuance vanilla's own
-   * `soundtraversed <= soundblocks+1` guard preserves.
+   * line — vanilla's `P_NoiseAlert`/`P_RecursiveSound`. Marked sectors stay
+   * marked for the rest of the level (`sector->soundtarget` is never cleared
+   * either). See docs/monsters.md § Waking up for the propagation rules.
+   *
+   * The search state is a `(sector, hasCrossedABlockLine)` pair, not just a
+   * sector, so one reached first via a sound-blocked path can still be
+   * re-entered and propagate further via a later unblocked one — vanilla's
+   * `soundtraversed <= soundblocks+1` guard.
    */
   noiseAlert(x: number, y: number): void {
     const start = this.sectorIndexAt(x, y);
@@ -418,95 +373,46 @@ export class World {
 }
 
 /**
- * A blast's own impact point routinely sits exactly on the wall it hit (a
- * rocket exploding against a wall, rather than on a monster out in the open)
- * — without this margin, a splash-damage ray leaving from that point would
- * immediately register a self-intersection with that very wall at its own
- * origin (t≈0) and `hasLineOfSight` would report every direction blocked,
- * including straight out into the open room the explosion is plainly in.
- * Skipping a crossing this close to the ray's start is the same "nudge off
- * the geometry you're standing on" idea `WALL_OVERLAP`/`BLOCKER_OVERLAP` use
- * elsewhere, just applied to the *near* end of the ray instead of extending
- * its target.
+ * A ray whose origin sits essentially *on* a wall (a rocket exploding against
+ * one) would otherwise register a self-intersection with it at t≈0 and report
+ * every direction blocked. Crossings closer than this to the ray's start are
+ * skipped — the near-end counterpart to `WALL_OVERLAP`/`BLOCKER_OVERLAP`.
  */
 const SELF_HIT_MARGIN = 1;
 
-/**
- * How far apart (map units) to sample intervening sectors' floor/ceiling
- * along a sightline — see `hasLineOfSight`'s doc for why this exists at all.
- * Fine enough to catch a typical ledge/mezzanine overhang, coarse enough
- * that a long sightline doesn't cost dozens of BSP walks.
- */
+/** How far apart (map units) to sample sector floor/ceiling along a sightline. */
 const SIGHT_HEIGHT_SAMPLE_STEP = 64;
 
 /**
- * Ceiling on how many floor/ceiling samples one sightline may take, whatever
- * its length — the step above stretches past `SIGHT_HEIGHT_SAMPLE_STEP` rather
- * than the sample count growing without bound.
- *
- * 32 is chosen so nothing within `WEAPON_RANGE` (2048, vanilla's own
- * `MISSILERANGE` and the furthest anything in this engine can actually shoot)
- * changes at all: 2048/64 is exactly 32 samples, so every sightline that can
- * end in a shot keeps the full 64-unit precision, and only sightlines longer
- * than any weapon's reach get coarser. Without the cap, a monster 12,000 units
- * away — routine on a big open map like NUTS.WAD — cost ~180 BSP walks per
- * frame just to decide a sight question that no attack could act on anyway.
+ * Cap on floor/ceiling samples per sightline, whatever its length — the step
+ * stretches instead of the count growing. 32 keeps full precision within
+ * `WEAPON_RANGE` (2048/64 = 32) so nothing that can end in a shot changes;
+ * see docs/combat.md § hasLineOfSight.
  */
 const SIGHT_MAX_HEIGHT_SAMPLES = 32;
 
 /**
- * True if a straight 3D line between two points isn't crossed by any
- * sight-blocking *line* (`World.blocksSight`, e.g. a closed door) **and**
- * has an unbroken sight wedge through the floor/ceiling of every sector it
- * travels over/under along the way.
+ * True if a straight 3D line between two points is crossed by no
+ * sight-blocking line (`World.blocksSight`) **and** keeps an unbroken sight
+ * wedge through the floor/ceiling of every sector along the way.
  *
- * The line-crossing half is the same test FogOfWar's own player-to-sample
- * rays use for reveal, factored out here so splash/radius damage (game.ts's
- * `applyRadiusDamage`) and monster AI (game/monsters.ts) can ask "does this
- * reach that point" without duplicating the raycast. The floor/ceiling half
- * exists because that test alone only ever finds a *wall* between two
- * points — it has no idea a solid floor could separate them with no wall in
- * the way at all: a monster standing in a room genuinely underneath a ledge
- * the player is standing on, with no shared two-sided line anywhere near the
- * straight 2D path between them, registered as fully visible (and
- * shootable) purely because nothing in `linesNear` ever blocked it.
- *
- * That half is a **sight wedge from a fixed eye height**, narrowed through
- * every sampled sector's floor/ceiling — `3/4` of `PLAYER_HEIGHT` above
- * `z1` (vanilla's own `sightzstart` fraction — this engine has no
- * per-species heights to draw on, so both ends reuse the player's), matching
- * vanilla's own `P_CheckSight` (`sightzstart`/`topslope`/`bottomslope`), not
- * a naive straight line interpolated from `z1` to `z2`. That distinction is
- * load-bearing: with a plain interpolated line, two points on *different
- * floor heights* — a monster on a raised 24-unit platform and the player one
- * step below it, in an otherwise completely open room — produce a line that
- * dips below the platform's own floor almost immediately, since it's heading
- * toward the lower end over the *entire* distance, not just at the actual
- * step. That reported the platform's own floor as blocking sight to the
- * monster standing on it, which broke waking monsters on any raised nook or
- * landing (confirmed against DOOM.WAD's E1M1: a pair of zombiemen on a
- * 24-unit platform, one step up from the connecting room, never woke no
- * matter how long the player stood in plain view). A fixed eye-height origin
- * doesn't have this problem — the wedge only narrows where an actual floor
- * rises into it or ceiling drops into it, not wherever the straight line to
- * the target's *feet* happens to be sloping through on its way there. The
- * wedge's target bound uses `[z2, z2 + PLAYER_HEIGHT]` (feet to head) rather
- * than a single point for the same reason vanilla does: any part of that
- * range clearing every sampled opening is enough.
+ * The wedge starts from a *fixed eye height* (`3/4` of `PLAYER_HEIGHT`,
+ * vanilla's `sightzstart` fraction) rather than interpolating toward `z2` —
+ * vanilla's `P_CheckSight` (`sightzstart`/`topslope`/`bottomslope`). Both the
+ * fixed origin and the floor/ceiling half are load-bearing, and this is the
+ * engine's most performance-sensitive query: docs/combat.md § hasLineOfSight
+ * covers why, and what keeps it affordable.
  *
  * The eye-height fraction is computed inline rather than as a module-level
- * constant, deliberately: `world.ts` and `player.ts` import from each other,
- * and a top-level `const` evaluated at module load (rather than deferred
- * inside a function body, the way every other `PLAYER_HEIGHT` use in this
- * file already is) hit the import cycle's initialization order and threw
- * "Cannot access 'PLAYER_HEIGHT' before initialization" on page load.
+ * const: `world.ts` and `player.ts` import from each other, and a top-level
+ * const evaluated at module load (rather than deferred inside a function body,
+ * as every other `PLAYER_HEIGHT` use in this file is) hits the cycle's
+ * initialization order — "Cannot access 'PLAYER_HEIGHT' before initialization".
  */
 export function hasLineOfSight(world: World, from: Pos3, to: Pos3): boolean {
   const dist = Math.hypot(to.x - from.x, to.y - from.y);
-  // Walks only the grid cells the sightline actually crosses. Using
-  // `linesNear`'s radius query here instead is O(dist²) in cells and was, on
-  // its own, the engine's single biggest cost on a crowded map — see
-  // `World.forEachLineAlongSegment`'s doc.
+  // Walks only the cells the sightline crosses; `linesNear`'s radius query is
+  // O(dist²) in cells here — see `World.forEachLineAlongSegment`.
   let blocked = false;
   world.forEachLineAlongSegment(from.x, from.y, to.x, to.y, (i) => {
     if (!world.blocksSight(i)) return;
@@ -560,15 +466,10 @@ function neighborSectors(map: DoomMap, sectorIndex: number): Sector[] {
 }
 
 /**
- * Neighbor-height queries a specials mover needs to resolve a target height
- * (`P_FindLowestFloorSurrounding` and friends in vanilla). Each falls back to
- * the sector's own current height only when it has no two-sided neighbors at
- * all — never leaves a mover with nowhere to go. That fallback must not
- * apply just because the sector's own height happens to already be the most
- * extreme value: a closed door's sector has floor == ceiling, so seeding a
- * *lowest* reduction with its own (already-lowest-possible) ceiling would
- * make every real neighbor lose to it, pinning the door's "open" target at
- * its own closed height instead of the corridor's actual ceiling.
+ * Neighbor-height queries a specials mover needs to resolve a target height —
+ * vanilla's `P_FindLowestFloorSurrounding` family. The `found` flag (rather
+ * than seeding with the sector's own height) is load-bearing; see
+ * docs/specials.md § Neighbor-height queries.
  */
 export function lowestNeighborFloor(map: DoomMap, sectorIndex: number): number {
   const sector = map.sectors[sectorIndex];
@@ -656,13 +557,10 @@ export function darkestNeighborLight(map: DoomMap, sectorIndex: number): number 
 
 /**
  * True if a circle centred at (x, y) reaches across the infinite extension of
- * segment a-b, rather than sitting entirely on one side of it. A two-sided
- * opening (step height, headroom) should only gate movement while the mover
- * is actually straddling the line — exactly what DOOM's own P_BoxOnLineSide
- * check achieves for the player's bounding box. Without this, merely being
- * within radius of a ledge's linedef after already having fallen down it
- * would re-trigger the step-height test forever, using the far (higher)
- * side's floor, and permanently trap the player at the edge.
+ * segment a-b, rather than sitting entirely on one side of it — DOOM's
+ * `P_BoxOnLineSide`. A two-sided opening only gates movement while the mover
+ * actually straddles the line; without this the player gets trapped at a ledge
+ * edge (docs/movement.md § Collision).
  */
 function crossesLine(x: number, y: number, radius: number, ax: number, ay: number, bx: number, by: number): boolean {
   const dx = bx - ax;
@@ -678,12 +576,9 @@ function crossesLine(x: number, y: number, radius: number, ax: number, ay: numbe
  * vanilla's `MF_SOLID` things, tested by `PIT_CheckThing`. Callers pass the
  * set of *other* bodies; nothing here filters out the mover itself.
  *
- * There is deliberately no height on this, because vanilla has none either:
- * `PIT_CheckThing`'s solid-blocking path returns before any z comparison, so
- * a DOOM actor blocks over its **entire** vertical extent regardless of how
- * far above or below the mover it actually is — the "infinitely tall actors"
- * behavior. Adding a height check here would be a quiet deviation, not a fix;
- * mappers routinely (if accidentally) rely on the vanilla rule.
+ * **No height field, deliberately** — `PIT_CheckThing` returns before any z
+ * comparison, so a DOOM actor blocks over its entire vertical extent
+ * ("infinitely tall actors"). Adding a height check is a deviation, not a fix.
  */
 export interface ThingBlocker extends Pos2 {
   radius: number;
@@ -691,12 +586,9 @@ export interface ThingBlocker extends Pos2 {
 
 /**
  * True if a body of `radius` standing at (x, y) overlaps one of `blockers` —
- * vanilla's `PIT_CheckThing` overlap test, which is an axis-aligned **box**
- * check on the summed radii (`abs(dx) < r1+r2 && abs(dy) < r1+r2`), not the
- * circle test the rest of this file's collision uses. Kept boxy on purpose:
- * it's why squeezing past a DOOM monster in a doorway behaves the way it
- * does, and rounding it off would change contact ranges everywhere by up to
- * ~40% on the diagonal.
+ * vanilla's `PIT_CheckThing` overlap test, an axis-aligned **box** check on
+ * the summed radii, not the circle test the rest of this file uses. Boxy on
+ * purpose (docs/monsters.md § Movement).
  */
 function blockedByThings(x: number, y: number, radius: number, blockers: readonly ThingBlocker[] | undefined): boolean {
   if (!blockers) return false;
@@ -708,20 +600,15 @@ function blockedByThings(x: number, y: number, radius: number, blockers: readonl
 }
 
 /**
- * True if a circle at (x, y) overlaps any line that blocks it. `forMonster`
- * — see `World.isSolidWall`. `avoidDropoff`, when true, also rejects this
- * position if it stands over a dropoff — `groundFloor`'s rest height sits
- * more than `MAX_STEP_UP` above `dropoffFloor`'s lowest touched floor —
- * matching vanilla's own `P_TryMove`, which uses the identical 24-unit
- * threshold for both the step-up allowance and this dropoff rule. Vanilla
- * exempts `MF_DROPOFF`/`MF_FLOAT` things (notably its floating monsters);
- * here that's the caller's job (`game/monsters.ts` never passes true for a
- * flying monster type) — the player's own movement never passes it at all,
- * since walking off a ledge and falling under gravity is this engine's own
- * deliberate, already-shipped player feature (see player.ts's own doc).
- * `blockers` are the other solid bodies in the way (see `ThingBlocker`);
- * omitting them means only geometry blocks, which is what every caller did
- * before monsters could bump into anything.
+ * True if a circle at (x, y) overlaps any line that blocks it. `forMonster` —
+ * see `World.isSolidWall`. `blockers` are the other solid bodies in the way
+ * (see `ThingBlocker`); omitting them means only geometry blocks.
+ *
+ * `avoidDropoff` also rejects a position standing over a dropoff
+ * (`groundFloor` more than `MAX_STEP_UP` above `dropoffFloor`) — vanilla's
+ * `P_TryMove`. Exempting a thing from it is the caller's job here rather than
+ * an `MF_DROPOFF`/`MF_FLOAT` check; the player never passes it, since falling
+ * off a ledge is deliberate (docs/movement.md § Vertical physics).
  */
 export function circleBlocked(
   world: World,
@@ -751,11 +638,9 @@ export function circleBlocked(
 
 /**
  * `blockingLineAt`'s answer when something other than a linedef stopped the
- * circle — a solid body, or a dropoff. There's no wall direction to slide
- * along in that case, so `slideMove` falls back to its per-axis attempt,
- * which happens to be exactly the right slide for a body anyway: vanilla's
- * `PIT_CheckThing` blocker is an axis-aligned **box** (see `blockedByThings`),
- * so its faces run along the axes.
+ * circle — a solid body, or a dropoff. No wall direction to slide along, so
+ * `slideMove` falls back to its per-axis attempt, which is the right slide for
+ * a body anyway: `PIT_CheckThing`'s blocker is an axis-aligned box.
  */
 export const SOLID_BODY = -1;
 
@@ -764,13 +649,9 @@ export const SOLID_BODY = -1;
  * `circleBlocked`'s answer plus the identity of the blocker, which is what
  * `slideMove` needs to project a move onto the wall it ran into.
  *
- * Kept separate from `circleBlocked` rather than folded into it because the
- * two want opposite things: `circleBlocked` is the hot one (every monster's
- * `tryWalk` probe, every dropoff test) and returns on the *first* blocker it
- * finds, while this one has to look at all of them to pick the right wall.
- * Where several block at once (an inside corner) the nearest to (x, y) wins:
- * that's the one the circle is furthest inside, i.e. the wall it's actually
- * pressed against rather than one it merely grazes.
+ * Separate from `circleBlocked` on purpose (that one is hot and returns on the
+ * first blocker; this one weighs all of them and the nearest wins). See
+ * docs/movement.md § slideMove.
  */
 export function blockingLineAt(
   world: World,
@@ -817,29 +698,12 @@ const SLIDE_EPSILON = 1e-6;
  * else calls this at all (vanilla's `P_SlideMove` is the player's alone —
  * monsters get `P_Move`'s all-or-nothing step, see `game/monsters.ts`).
  *
- * This is vanilla's `P_HitSlideLine`: the move that got refused is
- * **projected onto the blocking line's own direction** and retried, so what
- * survives is the component running along the wall and what's lost is the
- * component pushing into it. Up to `SLIDE_ATTEMPTS` walls are clipped against
- * in turn, which is what lets an inside corner shed one wall's component and
- * then the next's.
- *
- * It used to try the two axes separately instead, and that only ever worked
- * for an **axis-aligned** wall — for those, and only those, the axes happen to
- * be the wall's own tangent and normal. Against anything diagonal it stopped
- * the player dead: pushing due north into a 45° wall gives dx = 0, so there
- * was no second axis left to move on at all and the player stuck fast (against
- * a 5.6° wall — the shallow kind real maps are full of — a full second of
- * running covered 33 units instead of ~500). Rounding a convex corner, the one
- * case the axis split was written for, still works: the projection there is
- * the same slide, arrived at from the wall's geometry rather than from the
- * coordinate system's.
- *
- * The move is projected from the circle's *current* position rather than first
- * advancing it to the contact point the way vanilla does. At this engine's
- * frame rate a move step is a few map units, so the skipped fraction is far
- * below anything visible — and the perpendicular distance to the wall is
- * preserved by the projection either way, so the circle never creeps into it.
+ * This is vanilla's `P_HitSlideLine`: the refused move is **projected onto the
+ * blocking line's own direction** and retried, up to `SLIDE_ATTEMPTS` walls in
+ * turn. See docs/movement.md § slideMove for why the projection (and not the
+ * per-axis split it replaced) is the only thing that works on a diagonal wall,
+ * and why projecting from the current position rather than vanilla's contact
+ * point is safe here.
  */
 export function slideMove(
   world: World,
@@ -887,60 +751,26 @@ export function slideMove(
   return { x: nx, y: ny };
 }
 
-/**
- * How far a hitscan shot or a projectile travels before it's treated as
- * having reached its target, in map units — vanilla's own `MISSILERANGE`
- * (`32*64`), which every one of its hitscan attacks passes to `P_LineAttack`,
- * player and monster alike. A pure distance with no time component, so unlike
- * player.ts's `GRAVITY` there was never anything to convert.
- */
+/** Vanilla's `MISSILERANGE` (`32*64`), what every hitscan attack passes to `P_LineAttack`. */
 export const WEAPON_RANGE = 2048;
 
 /**
- * Each candidate wall is extended this far past both its own endpoints
- * before the ray is tested against it — the same fix and the same distance
- * as FogOfWar's `BLOCKER_OVERLAP`. Two walls meeting exactly at a shared
- * vertex (a corner, a door frame) otherwise let a ray aimed right at that
- * point pass just outside the end of both and hit neither, so a shot fired
- * straight at a corner would sail through the gap instead of stopping.
+ * Each candidate wall is extended this far past both endpoints before the ray
+ * is tested against it — same fix and distance as FogOfWar's `BLOCKER_OVERLAP`.
+ * Two walls meeting at a shared vertex otherwise let a ray aimed right at that
+ * point pass outside the end of both and hit neither.
  */
 const WALL_OVERLAP = 0.25;
 
 /**
- * True if this line should stop a shot passing through it at height `z` —
- * `z` being wherever *this particular* shot's line (which may be sloped, see
- * `shotPath`) is when it crosses this line, not a single height for the whole
- * flight.
+ * True if this line stops a shot passing through it at height `z` — wherever
+ * *this* shot's (possibly sloped) line is when it crosses, not one height for
+ * the whole flight. The **single-ray** form, for a shot whose slope is already
+ * fixed; a locked-on shot gets `shotPath`'s wedge instead.
  *
- * Deliberately **not** `isSolidWall`: a shot is never stopped by the
- * `BLOCKING` flag alone, only by a line with no opening at all — either a
- * genuinely one-sided wall, or a two-sided line whose opening has closed
- * (a shut door). Vanilla's own hitscan/projectile traversal
- * (`PTR_ShootTraverse` in `p_map.c`) only ever checks whether a line is
- * two-sided and whether its vertical opening clears the shot; it never reads
- * `ML_BLOCKING` at all, which only ever gates *movement*
- * (`PIT_CheckLine`/`P_CheckPosition`). A two-sided `BLOCKING` line — a barred
- * window or railing, the exact same kind of thing `blocksSight` already
- * treats as sight-passable — stops a *walking* thing but not a bullet or
- * fireball, precisely like a real window: you can shoot through bars you
- * can't walk through. Reusing `isSolidWall` here was wrong, and was exactly
- * why DOOM2 MAP01's east imp closet (sector 38, whose fence is a real
- * `BLOCKING` two-sided line) blocked *both* the player's own shots at the
- * imp and the imp's fireballs at the player, when vanilla would let both
- * pass straight through.
- *
- * The height test here is the **single-ray** form, used for a shot whose
- * slope is already fixed: a free shot (flat at the shooter's own height) and
- * a monster's own fired shot (sloped at its target, but with no auto-aim
- * latitude to spend). A sector whose floor has stepped up to or above `z` —
- * a low platform just a bit taller than the shot is flying — has to stop it,
- * even though a *taller* person could see over it; without this a projectile
- * sailed straight through the riser, since the opening beyond it was tall
- * enough for sight but not for the shot.
- *
- * A **locked-on** (auto-aimed) shot does not come through here at all: it
- * gets `shotPath`'s slope *wedge* instead, which is strictly more permissive
- * than this test — see `shotPath`'s own doc.
+ * Deliberately **not** `isSolidWall` — `PTR_ShootTraverse` never reads
+ * `ML_BLOCKING`, so a shot passes through bars it can't walk through. See
+ * docs/combat.md § shotPath.
  */
 function blocksShot(world: World, lineIndex: number, z: number): boolean {
   const line = world.map.linedefs[lineIndex];
@@ -952,45 +782,29 @@ function blocksShot(world: World, lineIndex: number, z: number): boolean {
 
 /**
  * Half the vertical extent a locked-on shot may aim within around its target
- * point, for `shotPath`'s wedge. `game.ts` hands `shotPath` a target `z` of
- * the monster's floor plus `AIM_HEIGHT_OFFSET` (i.e. roughly mid-body, not
- * its feet), so a symmetric band of half a body height around that point
- * approximates the target's own silhouette — the same idea as
- * `hasLineOfSight` bounding its wedge with `[z2, z2 + PLAYER_HEIGHT]` (feet
- * to head) rather than a single point, and for the same reason: any slope
- * that reaches *some* part of the target counts as reaching it.
+ * point, for `shotPath`'s wedge — `game.ts` passes a target `z` of roughly
+ * mid-body, so a symmetric half-body band approximates the silhouette. Same
+ * "any part counts" idea as `hasLineOfSight`'s `[z2, z2 + PLAYER_HEIGHT]`.
  *
- * Computed inside the function rather than as a module-level `const` for the
- * `PLAYER_HEIGHT` import-cycle reason documented on `hasLineOfSight`.
+ * A function rather than a module-level const for the `PLAYER_HEIGHT`
+ * import-cycle reason documented on `hasLineOfSight`.
  */
 function shotTargetHalfHeight(): number {
   return PLAYER_HEIGHT / 2;
 }
 
 /**
- * Where one frame's worth of a *curving* projectile's flight ran into
- * geometry, or null if that step is clear — the per-step counterpart to
- * `shotPath`'s single launch-time trace, for the one projectile whose path
- * isn't a straight line and so can't have its stopping point resolved up
- * front: the revenant's homing missile (`game.ts:
- * advanceHomingProjectile`).
+ * Where one frame of a *curving* projectile's flight ran into geometry, or
+ * null if the step is clear — the per-step counterpart to `shotPath`'s single
+ * launch-time trace, for the one projectile whose path isn't straight and so
+ * can't have its stopping point resolved up front: the revenant's homing
+ * missile (`game.ts: advanceHomingProjectile`, docs/monsters.md § The
+ * revenant's homing missile).
  *
- * A straight shot's whole flight lies on the ray `shotPath` already traced,
- * so its stopping distance is known the moment it launches. A homing missile
- * curves away from that ray — it can loop right around and come back — so
- * the launch ray says nothing at all about where it will actually meet a
- * wall, and using that ray's own distance as a flight budget instead simply
- * detonated it in mid-air after that many units of curving travel. This is
- * vanilla's own arrangement rather than a workaround: `P_TryMove` tests each
- * of a missile's moves against the lines it crosses (`PIT_CheckLine`) as it
- * makes them, and a vanilla missile has no distance budget or lifetime of
- * any kind — it flies until it hits something.
- *
- * Blocking is `blocksShot` at the height the step is actually at where it
- * crosses each line, the same test a straight shot's launch trace uses. A
- * crossing within `SELF_HIT_MARGIN` of the step's own start is skipped for
- * the same reason `hasLineOfSight` skips one: a missile that just passed
- * through a line's opening starts the next step sitting essentially on it.
+ * Blocking is `blocksShot` at the height the step is at where it crosses each
+ * line. A crossing within `SELF_HIT_MARGIN` of the step's start is skipped for
+ * the reason `hasLineOfSight` skips one: a missile that just passed through an
+ * opening starts the next step sitting essentially on it.
  */
 export function projectileStepBlocker(
   world: World,
@@ -1036,53 +850,22 @@ export interface ShotPath extends Pos3 {
 }
 
 /**
- * Traces a shot fired from `origin` along `angleRad` and returns
- * where it ends up, stopped at the nearest line that blocks it
- * (`blocksShot`, tested at that line's own height along the shot's slope).
+ * Traces a shot fired from `origin` along `angleRad` and returns where it ends
+ * up, stopped at the nearest line that blocks it. Used both for a hitscan
+ * weapon's tracer endpoint and for how far a projectile may fly
+ * (game/weapons.ts, game.ts).
  *
- * With no `target` this is a free shot: flat at `origin.z`, out to `WEAPON_RANGE`,
- * stopped by walls and by floor/ceiling steps it can't clear.
+ * With no `target` this is a free shot: flat at `origin.z`, out to
+ * `WEAPON_RANGE`. With one, it slopes from `origin.z` to the target's height
+ * over exactly the distance to it and stops *at* the target — the origin stays
+ * the shooter's own height so a rendered tracer never starts mid-air.
  *
- * With a `target` — auto-aim's locked-on monster (game.ts), or a monster's
- * own fired shot aimed at whatever it's hunting, player or another monster
- * (game.ts's `spawnMonsterProjectile`/`resolveMonsterHitscan`) — it instead
- * runs from `origin.z` to the target's own height over exactly the
- * distance to it, so it angles toward a target standing higher or lower
- * rather than flying flat past it, and stops *at* the target instead of
- * continuing to whatever is behind. The origin height stays `origin.z`, the
- * shooter's own, so a rendered tracer/projectile always starts at the
- * shooter rather than mid-air.
- *
- * `lockedOn` (default: true whenever `target` is given) switches the blocking
- * test from `blocksShot`'s single fixed ray to a **slope wedge**, vanilla's
- * own `P_AimLineAttack`: start from the span of slopes that would reach any
- * part of the target (`shotTargetHalfHeight` around `target.z`), narrow
- * `[bottomSlope, topSlope]` against every opening the shot crosses in
- * increasing distance order, and stop the shot at the first line where that
- * wedge collapses — exactly how `hasLineOfSight` narrows its own sight wedge,
- * and how vanilla decides whether autoaim can reach a thing at all.
- *
- * This is the auto-aim leniency, and it is deliberately *neither* of the two
- * things it has been in the past. Applying `blocksShot`'s single-ray test to a
- * locked-on shot is too strict: the one ray from gun to target clips the near
- * edge of the very platform the target stands on, stopping the shot dead there
- * — which read as the shot going flat and ignoring the click. But **skipping
- * the opening test outright** (what this did before) is far too lenient: it
- * ignores geometry entirely, so a locked-on rocket flew straight through a
- * 512-unit-tall wall to reach a monster standing on top of it (reproduced on a
- * synthetic map — the wall's own height made no difference whatsoever, since
- * nothing about it was ever consulted). The wedge is the middle ground vanilla
- * itself uses: a genuine wall collapses it, while a step the shot can be angled
- * over does not, because the wedge is free to pick the slope that clears it.
- *
- * The wedge is only for the *auto-aim* case. A monster's own fired shot passes
- * `lockedOn: false` and keeps the single-ray test — it needs `target` to slope
- * toward whatever it's shooting at, but it has no "you clicked it" promise to
- * honor, so it should be stopped by a low or high step exactly like a free shot,
- * just angled correctly.
- *
- * Used both for a hitscan weapon's tracer endpoint and for how far a fired
- * projectile is allowed to fly (game/weapons.ts, game.ts).
+ * `lockedOn` (default: true whenever `target` is given) switches blocking from
+ * `blocksShot`'s single fixed ray to a **slope wedge**, vanilla's
+ * `P_AimLineAttack` — the auto-aim leniency, and neither of the two things it
+ * has been in the past. A monster's own fired shot passes `lockedOn: false`:
+ * it needs `target` to aim, but has no "you clicked it" promise to honor. See
+ * docs/combat.md § shotPath.
  */
 export function shotPath(
   world: World,

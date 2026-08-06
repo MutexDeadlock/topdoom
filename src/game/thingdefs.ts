@@ -139,19 +139,13 @@ export const MONSTER_HEALTH: Record<number, number> = {
 };
 
 /**
- * Regular-death sprite frame letters, one entry per doomednum that shares its
- * sprite's DIE (not gib/XDIE) sequence — confirmed against the actual lump
- * names in DOOM.WAD/DOOM2.WAD rather than guessed. Death art in vanilla is
- * rotation-0 (omnidirectional) only, so the point where a sprite's
- * directional (rotation 1-8) frames stop and its rotation-0 tail begins marks
- * exactly where movement/attack/pain art ends and death art starts; DIE is
- * the *front* portion of that tail — the back portion is XDIE (see
- * `MONSTER_XDEATH_FRAMES` below), vanilla's own extra-gib animation, played
- * instead of this one when a killing blow overkills by a wide enough margin.
- * Commander Keen (72, a pain-cascade "death" with no distinct DIE state) and
- * the boss brain (88, only 2 sprite frames total, no death art at all) are
- * deliberately absent; `ThingLayer.damage` falls back to just hiding a
- * killed monster with no entry here.
+ * Regular-death sprite frame letters per doomednum — confirmed against the
+ * real DOOM.WAD/DOOM2.WAD lump names, and cross-checked against `info.c`.
+ * Death art is rotation-0 only, so where a sprite's directional frames stop
+ * marks where death art starts; DIE is the front of that tail, XDIE the back.
+ * Commander Keen and the boss brain are deliberately absent (no DIE state and
+ * no death art respectively) — `ThingLayer.damage` just hides them.
+ * docs/monsters.md § Pain, and attack/pain poses.
  */
 export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
   3004: ['H', 'I', 'J', 'K', 'L'], // POSS
@@ -159,10 +153,7 @@ export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
   3001: ['I', 'J', 'K', 'L', 'M'], // TROO
   3002: ['I', 'J', 'K', 'L', 'M', 'N'], // SARG
   58: ['I', 'J', 'K', 'L', 'M', 'N'], // SARG (spectre)
-  // SKUL: was ['G',...] missing DIE1='F' — info.c's S_SKULL_DIE1 uses frame F
-  // (2 walk + 2 attack + 1 pain frame before it: A,B/C,D/E), confirmed against
-  // the real WAD, which has SKULF0 alongside G0-K0. The 5-entry table this
-  // replaced silently dropped the animation's very first frame.
+  // Starts at F, not G: S_SKULL_DIE1 follows 2 walk + 2 attack + 1 pain (A-E).
   3006: ['F', 'G', 'H', 'I', 'J', 'K'], // SKUL
   3005: ['G', 'H', 'I', 'J', 'K', 'L'], // HEAD
   3003: ['I', 'J', 'K', 'L', 'M', 'N', 'O'], // BOSS
@@ -170,123 +161,68 @@ export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
   7: ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S'], // SPID
   16: ['H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'], // CYBR
   71: ['H', 'I', 'J', 'K', 'L', 'M'], // PAIN
-  // CPOS: was ['H','I','J','K','L'], missing DIE6/DIE7 ('M','N') — info.c has
-  // seven CPOS death states (H-N) before the XDEATH tail starts at 'O', not
-  // five; the WAD's own CPOSM0/CPOSN0 lumps exist and were going unused.
+  // Seven death states (H-N) before XDEATH starts at O, not five.
   65: ['H', 'I', 'J', 'K', 'L', 'M', 'N'], // CPOS
-  // SKEL: was ['M',...] missing DIE1='L' — info.c's S_SKEL_DIE1 reuses the
-  // exact same frame letter as S_SKEL_PAIN/PAIN2 (a genuine vanilla quirk,
-  // not a transcription slip), so the WAD-confirmed rotation-0 tail (L-Q)
-  // starts one letter earlier than the previous table had it.
+  // Starts at L: S_SKEL_DIE1 reuses S_SKEL_PAIN's own letter — a real info.c
+  // quirk, so the rotation-0 tail starts one letter earlier than it looks.
   66: ['L', 'M', 'N', 'O', 'P', 'Q'], // SKEL
   67: ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'], // FATT
   68: ['J', 'K', 'L', 'M', 'N', 'O', 'P'], // BSPI
-  // VILE: was ['R',...] missing DIE1='Q' — same shared pain/DIE1 letter quirk
-  // as SKEL above (S_VILE_DIE1 reuses S_VILE_PAIN's frame Q).
+  // Starts at Q: same shared pain/DIE1 letter quirk as SKEL above.
   64: ['Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'], // VILE
   84: ['I', 'J', 'K', 'L', 'M'], // SSWV
 };
 
 /**
- * Gib (XDeath) sprite frame letters — the back portion of the same
- * rotation-0 tail `MONSTER_DEATH_FRAMES` takes its front portion from, also
- * confirmed against the real WAD lump names. Only five monster types in
- * stock DOOM actually have one at all: the human grunts (zombieman, shotgun
- * guy, chaingunner, Wolfenstein SS) and the imp — every other monster,
- * including ones that are otherwise similarly sized (the demon, for
- * instance), simply has no `xdeathstate` in vanilla's own `mobjinfo` and
- * always plays its plain death. `ThingLayer.damage` picks between this and
- * `MONSTER_DEATH_FRAMES` the same way vanilla's `P_KillMobj` does: gib only
- * if overkill damage pushed health below *minus* the monster's own max
- * health (`MONSTER_HEALTH`), and only if an entry exists here at all.
+ * Gib (XDeath) frame letters — the back of the same rotation-0 tail
+ * `MONSTER_DEATH_FRAMES` takes its front from. **Only five stock types have
+ * one at all** (the human grunts and the imp); everything else has no
+ * `xdeathstate` in `mobjinfo` and always plays its plain death.
+ * `ThingLayer.damage` picks between the two by `P_KillMobj`'s overkill rule —
+ * docs/combat.md § Monster death.
  */
 export const MONSTER_XDEATH_FRAMES: Record<number, string[]> = {
   3004: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // POSS
   9: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // SPOS
   3001: ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // TROO
-  // CPOS: was ['M',...] wrongly overlapping MONSTER_DEATH_FRAMES' own 'M'/'N'
-  // — with the DEATH table above now correctly running through 'N', XDEATH
-  // starts right after it at 'O', not two letters early.
+  // Starts at O, right after the DEATH table's own N — the two must not overlap.
   65: ['O', 'P', 'Q', 'R', 'S', 'T'], // CPOS
   84: ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V'], // SSWV
 };
 
 /**
- * Flat per-frame duration for a monster's death animation, regular or gib
- * alike. Vanilla's actual death/xdeath states each hold for their own tic
- * count rather than one uniform rate; collapsing that to a single constant
- * is the same simplification player.ts's GRAVITY and weapons.ts's fire rates
- * already make for anything that doesn't survive a dt-scaled model cleanly.
+ * Flat per-frame duration for a death animation, regular or gib. Vanilla's
+ * states each hold their own tic count; collapsing that to one constant is an
+ * accepted simplification, same as `GRAVITY` and the weapon fire rates.
  */
 export const MONSTER_DEATH_FRAME_SECONDS = 6 / 35;
 
 /**
  * The two monster types whose corpse doesn't stay on screen once its death
- * animation finishes — confirmed against the real `linuxdoom-1.10` `info.c`:
- * every monster's *final* death state has `tics: -1` (vanilla's "hold this
- * state forever", which is what makes a corpse a permanent fixture) except
- * `S_SKULL_DIE6` (lost soul, `tics: 6`) and `S_PAIN_DIE6` (pain elemental,
- * `tics: 8`), both of which instead expire normally and fall through to
- * `S_NULL` — and `P_SetMobjState` transitioning *to* `S_NULL` is what calls
- * `P_RemoveMobj`, i.e. the object is deleted outright rather than left
- * standing. `ThingLayer.update` hides (`hidden = true`) either type's corpse
- * once `deadTime` reaches the end of its death animation
- * (`deathFrameCount * MONSTER_DEATH_FRAME_SECONDS`, the same threshold
- * `findRaisableCorpse` already uses for "done settling") instead of letting
- * `SpriteAnimator.die`'s ordinary hold-last-frame behavior leave a floating
- * corpse on screen forever, which is what every *other* monster's corpse
- * correctly does and what a first version of this wrongly did for these two
- * as well. Both are exactly the game's two floating (`MonsterStats.flies`)
- * monster types, which tracks thematically — there's no ground for a solid
- * body to visibly settle onto — though nothing here special-cases "flying"
- * directly, only the two real doomednums confirmed above.
+ * animation finishes. Every monster's final death state holds at `tics: -1`
+ * except `S_SKULL_DIE6` and `S_PAIN_DIE6`, which expire into `S_NULL` and so
+ * get `P_RemoveMobj`'d outright.
  *
- * This has a second, easy-to-miss consequence for the pain elemental
- * specifically: its mobjinfo *does* carry a real `raisestate`
- * (`S_PAIN_RAISE1`, hence its entry in `MONSTER_RAISE_FRAMES` below), but
- * vanilla's own resurrection check (`PIT_VileCheck`'s `if (thing->tics != -1)
- * return true; // not lying still yet`) requires the corpse to *already* be
- * sitting in a permanent, `tics == -1` hold state — which a pain elemental's
- * corpse never reaches before `P_RemoveMobj` deletes it. So despite the
- * mobjinfo entry looking raisable, a dead pain elemental can never actually
- * be resurrected in real vanilla either, a genuine dead-data quirk rather
- * than an oversight in this table. This engine reproduces the same net
- * result the same structural way, without special-casing the doomednum a
- * second time: `rebuildBlockerGrid` never buckets a `hidden` corpse into
- * `corpseGrid`, and a pain elemental's corpse is always hidden by the time
- * `findRaisableCorpse`'s own "finished settling" gate would otherwise start
- * accepting it (both are keyed off the exact same `deadTime` threshold), so
- * the two correctly-modeled mechanisms combine into the same unreachability
- * vanilla has, rather than needing a third rule that says so directly.
+ * This also makes a dead pain elemental unresurrectable despite its real
+ * `raisestate` — a genuine vanilla dead-data quirk, reproduced here without a
+ * second special case because `rebuildBlockerGrid` never buckets a `hidden`
+ * corpse. See docs/combat.md § Monster death.
  */
 export const MONSTER_CORPSE_VANISHES = new Set([3006, 71]); // SKUL, PAIN
 
 /**
- * Attack sprite frame letters, one entry per doomednum — unlike the death
- * tables above, these aren't structurally derivable from the WAD (attack
- * frames sit among ordinary rotation 1-8 art, indistinguishable by structure
- * from walk frames the way the rotation-0-only death tail is), so guessing
- * them risked silently wrong art, which is why `game/things.ts`'s
- * `MONSTER_WALK_FRAMES` doc long treated attack/pain as out of scope. This
- * table is instead lifted directly from vanilla's own `info.c` `missilestate`
- * chains (`linuxdoom-1.10/info.c`, `S_*_ATK*`) and cross-checked letter-by-
- * letter against the real DOOM.WAD/DOOM2.WAD sprite lumps via
- * `SpriteBank` — every monster's total frame-letter count (walk + attack +
- * pain + death \[+ xdeath\]) matches its WAD-confirmed rotation-1..8 letter
- * range exactly, the same discipline `MONSTER_DEATH_FRAMES` already holds
- * itself to (and the cross-check is what surfaced the four death-table bugs
- * fixed above). Only the letters distinct from the monster's own walk cycle
- * and from each other are kept — vanilla repeats some attack frames
- * mid-sequence (e.g. POSS's `E,F,E`) purely to hold a pose longer, which
- * would be a no-op here since `SpriteAnimator.playOnce` already holds each
- * frame for a flat duration. `SPID`/`BSPI`'s own first attack frame
- * (`A_FaceTarget`) reuses their idle letter `A` outright and is dropped
- * entirely for the same reason. `SKEL`'s five letters cover both of its
- * distinct attack kinds (melee fist `G,H,I` and missile `J,K`) as one
- * sequence — vanilla itself has no separate "which attack is this" signal
- * available to key off of at the sprite layer, only the monster's own AI
- * decision (`game/monsters.ts`) knows that, and by the time a `MonsterAttack`
- * comes back out of it the sprite pose is just "attacking".
+ * Attack sprite frame letters per doomednum. Unlike the death tables these
+ * aren't structurally derivable from the WAD, so they're lifted from `info.c`'s
+ * `missilestate` chains and cross-checked letter-by-letter against the real
+ * sprite lumps — the discipline that surfaced the four death-table bugs above.
+ * docs/monsters.md § Pain, and attack/pain poses.
+ *
+ * Only letters distinct from the walk cycle and from each other are kept:
+ * vanilla repeats frames mid-sequence purely to hold a pose, a no-op against
+ * `playOnce`'s flat per-frame duration, and `SPID`/`BSPI`'s `A_FaceTarget`
+ * frame reuses their idle letter. `SKEL`'s five letters cover *both* its
+ * attack kinds as one sequence — the sprite layer has no "which attack" signal
+ * to key off, only the AI knows, and by then the pose is just "attacking".
  */
 export const MONSTER_ATTACK_FRAMES: Record<number, string[]> = {
   3004: ['E', 'F'], // POSS
@@ -350,37 +286,18 @@ export const MONSTER_PAIN_FRAMES: Record<number, string[]> = {
 export const MONSTER_ACTION_FRAME_SECONDS = 3 / 35;
 
 /**
- * Resurrection sprite frame letters — vanilla's `mobjinfo.raisestate`, the
- * arch-vile's `A_VileChase`/`PIT_VileCheck` target (`game/monsters.ts`'s
- * `MonsterStats.resurrects`, `game/things.ts`'s `ThingLayer`). Only 13 of the
- * game's monster types have a real `raisestate` at all — every boss (spider
- * mastermind, cyberdemon), the lost soul, the arch-vile itself, Commander
- * Keen and the boss brain are absent from vanilla's own table and so absent
- * here too, meaning `findRaisableCorpse` naturally never considers them
- * (no entry means "not raisable", the same convention `MONSTER_XDEATH_FRAMES`
- * already uses for "no gib art").
+ * Resurrection frame letters — `mobjinfo.raisestate`, the arch-vile's
+ * `A_VileChase` target. Only 13 types have one at all; no entry means "not
+ * raisable", the same convention `MONSTER_XDEATH_FRAMES` uses.
  *
- * These letters are **not** simply the reverse of `MONSTER_DEATH_FRAMES` —
- * that was tried first and is wrong: vanilla's raise sequences are hand-authored
- * per type and don't share one derivation rule (compare zombieman, 3 states
- * reversed from its death sequence's *middle* frames, against shotgun guy, 4
- * states reversed from its *entire* death sequence including the final
- * settled frame, despite both sprites sharing the exact same death letter
- * range H-L). Every letter below is instead read directly off the real
- * `linuxdoom-1.10/info.c` `S_*_RAISE*` state table, the same rigor
- * `MONSTER_ATTACK_FRAMES`/`MONSTER_PAIN_FRAMES` already hold themselves to —
- * and, as a sanity check, every one of them does fall inside its type's own
- * WAD-confirmed `MONSTER_DEATH_FRAMES` range, which a transcription error
- * would likely have broken.
+ * **Not simply the reverse of `MONSTER_DEATH_FRAMES`** — that was tried and is
+ * wrong, since vanilla's raise sequences are hand-authored per type with no
+ * shared derivation rule. Every letter is read off `info.c`'s `S_*_RAISE*`
+ * table directly. docs/monsters.md § The arch-vile.
  *
- * Played via `SpriteAnimator.playOnce` after `revive()` undoes `die()` (see
- * `ThingLayer`'s `reviveCorpse`) — the same one-shot-then-hand-back-to-the-
- * alive-cycle mechanism attack/pain animations already use, just running in
- * the "backwards" direction from dead to alive instead of interrupting a
- * living pose. Uses `MONSTER_DEATH_FRAME_SECONDS`'s same flat per-frame rate
- * rather than a dedicated constant — vanilla's own raise states hold 5-8
- * tics, squarely inside death's own 5-8 tic range, so there's nothing this
- * would tune differently.
+ * Played via `playOnce` after `revive()` undoes `die()`, reusing
+ * `MONSTER_DEATH_FRAME_SECONDS` — vanilla's raise states hold 5-8 tics,
+ * squarely inside death's own range, so a dedicated constant would tune nothing.
  */
 export const MONSTER_RAISE_FRAMES: Record<number, string[]> = {
   3004: ['K', 'J', 'I'], // POSS

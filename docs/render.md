@@ -1,0 +1,280 @@
+# Rendering
+
+`src/render/` — BSP reconstruction, mesh building, lighting, occlusion fading, camera, sprites
+
+## BSP polygon reconstruction (`bsp.ts`)
+
+`SEGS` only stores edges that lie on real linedefs — the edges created by BSP splits aren't in the
+WAD. `buildSubSectorPolys` rebuilds each subsector by taking a quad covering the whole map and
+clipping it (Sutherland-Hodgman) against every partition line on the path from the BSP root down to
+that leaf, then against the subsector's own segs. The result is convex, so a triangle fan is enough.
+Traversal is iterative (stack-based), not recursive — some maps have deep BSP trees.
+`sectorOfSubSector` resolves a subsector's sector via its first seg → linedef → sidedef.
+
+## Mesh building (`mapmesh.ts`)
+
+Walls are built per linedef from sidedefs: one-sided lines get their middle texture over the full
+sector height; two-sided lines get upper/lower steps plus an optional masked middle, following DOOM's
+pegging rules (`UPPER_UNPEGGED`/`LOWER_UNPEGGED`) for vertical alignment. Walls are drawn
+single-sided (facing DOOM's defined front), which is what culls walls between the camera and the
+player and produces the open dollhouse look — no extra logic needed. `F_SKY1` flats are skipped.
+
+Coordinates: DOOM's `(x, y, z)` becomes three.js `(x, z, -y)`, so the map plane is XZ and Y is up.
+
+Ceilings are never rendered — `buildMapMesh`'s `renderCeilings` option still exists and is always
+`false`. From directly above, a rendered ceiling would hide everything under it; this is a permanent
+view choice, not a debug convenience.
+
+## Sector lighting (`mapmesh.ts: lightToColor`)
+
+Walls, flats and sprites are all tinted by their sector's light level through this one function, so
+it decides how the whole game reads. Two things about it are easy to get wrong, and both were shipped
+bugs.
+
+**The ramp is vanilla's own `COLORMAP`, measured from the lump rather than modelled.** Vanilla never
+multiplies a colour by the light level: it picks one of `COLORMAP`'s 32 rows and remaps every palette
+index through it, and that ramp is nothing like linear in light level. `COLORMAP_GAIN` is the mean
+linear-luminance ratio of each row, measured across the PLAYPAL colours — the same "confirm it
+against the real lump" discipline as the sprite and death-frame tables. DOOM.WAD's and DOOM2.WAD's
+COLORMAPs are byte-identical and Freedoom's is within 0.003, so one baked table serves all three;
+per-colour spread is ~12% of the mean (the ramp desaturates slightly as it darkens), close enough for
+a single scalar per row. An earlier hand-tuned curve (`pow(l, 0.85) * 0.9 + 0.1`) was both far too
+bright and far too flat.
+
+Vanilla builds the row index as `startmap - scale/DISTMAP` (`r_main.c`), where
+`startmap = (15 - lightnum) * 4` and the subtracted term grows as a surface gets *closer* — so in
+vanilla the light level really sets how fast a surface falls off with distance, not a flat
+brightness. This engine has no distance lighting (the camera hangs at a near-constant distance from
+everything it draws), so the ramp is sampled once at a fixed reference distance: **`REFERENCE_STEPS`
+is that subtracted term, and it is the knob to turn if the game reads too dark or too bright.** 4
+(≈ a 300-unit viewing distance) puts a uniform ~0.12 of display brightness between adjacent light
+segments across light 112-208, which is 88% of every sector in the stock IWADs. Both ends necessarily
+saturate — vanilla spends 4 rows per light segment, so its 16 segments want 64 rows where only 32
+exist. That is vanilla's ramp rather than a shortcut; it just never shows up in vanilla, where
+distance fills the range back in.
+
+**Light is quantized to DOOM's own 16 segments (`light >> 4`)**, so two sectors whose levels differ by
+less than 16 are genuinely identical on screen, as in vanilla. Every stock map's sector lights are
+multiples of 16 anyway. This is also what makes the fake-contrast offset work out: `addWall` passes
+±16, which after the shift is exactly the ±1 *segment* nudge vanilla applies (`lightnum--`/
+`lightnum++`). Vanilla **darkens** east-west walls and **brightens** north-south ones (`r_segs.c:
+R_StoreWallRange`) so corners stay legible under flat sector lighting — this engine had that sign
+inverted for a long time.
+
+**The returned value is linear-light, not a display value.** Vertex colours (and
+`material.color.setScalar`, for non-batched sprites) are consumed as-is by the shader, and the
+renderer's `outputColorSpace` (`SRGBColorSpace`) encodes the final fragment to sRGB on the way out.
+Returning a display-space value gets it gamma-encoded a second time, which disproportionately
+brightens the dark end.
+
+**A vanilla-exact ramp is still too dark for this camera, so there's a fixed brightness lift on top,
+`BRIGHTNESS_LIFT` in `constants.ts`.** Vanilla's ramp assumes a first-person view a few dozen units
+from what it's lighting, broken up by nearby bright surfaces and real depth cues; this camera looks
+down on an entire dim room at once with neither. `applyBrightnessLift(linear, lift)` pushes a value
+toward 1 by a fraction `lift` of its remaining headroom `(1 - linear)`, so black brightens by the
+full amount and already-bright surfaces barely move — brighten the dark end, taper toward the bright
+end, not a flat multiply. `lightToColor` itself is left untouched (still pure, still exactly
+vanilla); `litColor` is `lightToColor` plus `BRIGHTNESS_LIFT` and is what every real draw call uses.
+`BRIGHTNESS_LIFT` was found by feel, and lives in `constants.ts` because it's the one number in this
+scheme meant to be hand-retuned later.
+
+## Wall occlusion fading (`occlusion.ts`, `textures.ts`)
+
+Single-sided back-face culling only removes walls facing away from the camera; it does nothing about
+a wall that legitimately faces the camera but sits directly on the camera→player sightline (a pillar
+in front of the player). `WallFader` tests every wall quad's 2D footprint against that sightline each
+frame and fades the ones that cross it, rather than the coarser fix of drawing the player on top of
+everything, which would also show it through walls that genuinely separate it from the camera.
+
+`WallFader.update`/`FlatFader.update` take a *list* of sightline targets (`FadeTarget[]`), not just
+the player — `game.ts` passes the player plus every currently-**awake** monster
+(`ThingLayer.awakeMonsters`) within `MONSTER_FADE_RANGE` (a plain 2D distance cap, tuned by feel to
+roughly a room/corridor's length), and a quad fades if it sits on any one of those sightlines. Both
+gates matter: a sleeping monster isn't being tracked yet, so there's no reason for a wall to reveal
+it early; and without the range cap, an alerted monster dead-reckoning toward the player from across
+the level would fade every wall along that line. The range cap is deliberately a plain distance, not
+a `hasLineOfSight` check — an earlier version required unobstructed line of sight, which made the
+fade a no-op for exactly the case it exists for (a wall genuinely hiding a nearby monster also means
+`hasLineOfSight` is false, so the monster never became a fade target and the wall stopped fading).
+`SpecialsController.updateFading` (doors, lifts) takes the same target list, reusing the identical
+machinery for its own meshes.
+
+`WallFader.update` also takes an `openingOf` callback (`World.openingOf`, threaded through so this
+class needs no `World` reference) and skips fading any quad whose own `[botH, topH]` sits *inside*
+its line's vertical opening — a masked middle texture (grate, fence, barred window) is built to span
+exactly that opening, so a quad living inside it is the passable gap itself: a shot and a look
+already pass straight through it, so fading it has nothing left to reveal. This has to be a
+**per-quad** check, not a per-*line* one — an earlier version gated on `World.blocksSight(line)` for
+the whole line, which wrongly also suppressed fading for that line's upper/lower step quads (they sit
+*outside* the opening — the riser exposed where the neighbouring floor/ceiling falls short — and are
+genuinely solid regardless). DOOM2 MAP01's east imp closet (sector 38) is the concrete case: its
+fence's masked-middle quad used to fade to near-invisible the moment the imp inside woke, reading as
+the closet wall vanishing rather than "you can see the imp through the bars." `FlatFader` has no
+equivalent gate — floors have no comparable "visually-solid-but-actually-passable" case.
+
+**`awakeMonsters` only returns monsters fog of war is actually drawing** (`p.actor.mesh.visible`,
+which `ThingLayer.update` sets from `fogAlphaOf` earlier in the same frame). A monster in a subsector
+the player has never had sight of isn't rendered at all, so fading the wall in front of it reveals an
+empty dark room and nothing else — concretely, a MAP01 secret compartment's wall dithered away
+whenever the imps sealed inside woke, with the imps still invisible. This is also why
+`WallFader.update` needs no "only fade if this is the *sole* wall in the way" rule: whether fading
+reveals anything is settled here, upstream. A blocker-counting version was written first for this
+same symptom and fixed nothing — that wall had only one blocker; its monsters simply weren't drawn.
+
+**The fade is a dithered discard, not real alpha blending.** Wall quads are batched one mesh per
+texture across the whole map, three.js sorts transparent objects back-to-front per mesh, and with a
+mesh spanning the entire level that order is meaningless — plus both meshes still write depth by
+default, so whichever draws first can win the depth test and blank out the other. `MaterialBank`
+instead injects a fragment-shader snippet (`onBeforeCompile`) that discards a per-pixel fraction of
+fragments using interleaved-gradient-noise dithering, keyed off a per-vertex alpha `WallFader` writes
+into the (otherwise unused) 4th colour channel. That keeps walls in the ordinary opaque,
+depth-tested/written pass — no batching or sort-order concerns, just fewer pixels drawn. `holes`
+textures (masked middles) already alpha-test on the *combined* texture × vertex alpha, so a faded
+grate discards outright instead of dithering.
+
+Fade amount is exponentially smoothed (`FADE_SPEED`) so walls don't pop, but a pure exponential lerp
+never actually reaches its target — `update` snaps once the remaining gap drops below a threshold,
+otherwise a wall settles a hair short of fully opaque forever and shows a permanent faint speckle
+(the dither test is a strict `<`).
+
+## Camera orbit and camera-relative movement (`camera.ts`, `game/input.ts`, `game/player.ts`)
+
+`TopDownCamera.yawDeg` lets the camera orbit around the followed point on right-mouse drag
+(`Input.consumeDragYaw`, accumulated via `pointermove` with `setPointerCapture` so the drag survives
+leaving the canvas mid-move) or by pressing `Q`/`E` (`KEY_YAW_STEP`, a 45° step per press, signed to
+match the same rotation direction as dragging left/right). Tilt and distance are unaffected, so the
+camera always stays the same amount off vertical.
+
+`viewerAngleDeg` (`yawDeg - 90`) is the DOOM-space bearing from the followed point to the camera, and
+is what sprite rendering and player movement both key off — at the default `yawDeg = 0` it's `-90`,
+matching the old fixed south-facing camera exactly, so nothing downstream needed a special case for
+"not yet orbited."
+
+A `stepYaw` call (Q/E) queues its step as a `targetYawDeg` for `update` to animate `yawDeg` towards
+(`YAW_STEP_SMOOTH_RATE`) rather than jumping. Plain assignment (`camera.yawDeg = ...`, used for the
+instant reorient on spawn/teleport, and by right-drag) still jumps immediately: the `yawDeg` setter
+keeps `targetYawDeg` in lockstep so nothing left over from a prior Q/E animates after an instant set.
+**`game.ts`'s drag-handling line only assigns `camera.yawDeg` when `Input.consumeDragYaw()` is
+actually nonzero** — calling the setter unconditionally every frame, even as a no-op `-= 0`, would
+snap `targetYawDeg` back to the current (still mid-animation) value and cancel a Q/E step after one
+frame of smoothing.
+
+Holding Q/E auto-repeats the same 45° `stepYaw` every `KEY_YAW_REPEAT_INTERVAL` — `qHoldTime`/
+`eHoldTime` accumulate `dt` while `Input.held` is true and fire+reset once the interval is reached,
+alongside the immediate step fired on `Input.pressed`. The interval is tuned to roughly the time one
+step's smoothing takes to settle, so a hold reads as continuous rotation made of chained steps.
+
+Movement (`Player.update`'s `forwardDeg`, passed as `camera.viewerAngleDeg + 180`) is camera-relative
+rather than DOOM-axis-relative: `W` always moves the player away from the camera *on screen*,
+regardless of orbit. `game.ts` recomputes this every frame from the live camera angle.
+
+## Things as sprites (`wad/sprites.ts`, `render/sprites.ts`, `game/things.ts`, `game/thingdefs.ts`)
+
+`SpriteBank` (`wad/sprites.ts`) indexes `S_START`/`S_END` lumps by sprite name + frame letter,
+resolving DOOM's `SSSSFR` / `SSSSFRfr` naming (a frame can list a second frame+rotation meaning "this
+same lump, mirrored, is also that rotation" — the usual way DOOM halves the art needed for symmetric
+actors). `thingdefs.ts` maps THING doomednums to their sprite name; a type absent from that table
+renders nothing, same as DOOM's own invisible spawn markers (player starts, deathmatch spots,
+teleport landings).
+
+**The split between `render/sprites.ts` and `game/things.ts` follows the same rendering/game divide as
+the rest of the tree.** `render/sprites.ts` only knows how to turn a (sprite name, frame letter,
+viewer angle) into a posed plane — `SpriteAnimator`/`SpriteActor`/`SpriteMaterialCache`, no knowledge
+of maps, AI, health or pickups. `game/things.ts` owns `ThingLayer`/`PosedThing`/`buildThingSprites`:
+which map things exist, their per-instance game state, and the update loop that ticks monster AI,
+applies pickups/damage and drives drops.
+
+### Batching
+
+**Map things are drawn batched, not one mesh each** (`spritebatch.ts: SpriteBatch`), and this is a
+hard performance requirement rather than a refinement. A stress-test map like NUTS.WAD has 10,696
+things in a single 69-subsector open arena, so essentially all of them are on screen and
+fog-of-war-revealed at once; one `THREE.Mesh` each meant ~10k draw calls per frame and a ~2fps
+slideshow. `SpriteBatch` keys one `InstancedMesh` per cached (lump, mirrored) pair and rebuilds the
+instance buffers every frame — on that map, all ~10.7k sprites in 19 draw calls.
+
+Rebuilding wholesale each frame rather than maintaining instances incrementally is deliberate: which
+lump a thing uses changes constantly (every monster re-picks its rotation frame as the camera orbits
+*and* as its own facing changes, with its walk cycle advancing on top), so batch membership isn't
+stable across frames and there's nothing worth preserving. Two properties keep the per-sprite write
+cheap enough to do unconditionally:
+
+- **Every sprite shares one rotation.** The planes never tilt and all track the same camera yaw, so
+  the yaw's sin/cos are computed once per frame in `begin` and each instance matrix is written as
+  plain scalars — no per-sprite `Matrix4`/`Quaternion` allocation or `compose` call. (Verified
+  against three.js's own `compose` on all of NUTS.WAD's things: worst element error 1e-8, i.e.
+  float32 rounding.)
+- **Sector light rides along as a per-instance colour**, which *fixes* a pre-existing bug rather than
+  merely preserving behavior: the one-mesh-each path tints by mutating the lump's **shared**
+  material, so wherever several things shared a lump the last one posed each frame decided the light
+  for all of them.
+
+That per-instance colour needs one non-obvious thing. three.js's fragment shader only multiplies
+`vColor` in under `USE_COLOR` — i.e. `material.vertexColors` — while `USE_INSTANCING_COLOR` alone
+populates `vColor` in the *vertex* shader and is then ignored downstream. So the batch's materials are
+clones with `vertexColors: true` and a white base colour, and `SpriteMaterialCache` gives every
+sprite geometry an all-white `color` attribute, without which WebGL's default (0,0,0) generic
+attribute would render every batched sprite black. The non-instanced material ignores that attribute
+entirely.
+
+The batches set `frustumCulled = false`: a batch's instances are scattered across the whole map, so
+culling it as one object could only ever cull nothing while costing a per-frame bounds recompute to
+decide that — off-screen instances are clipped by the GPU for the price of a 4-vertex vertex shader
+instead. That in turn means the bounding sphere three.js lazily computes and caches for *raycasting*
+would go stale as instances move, so `end()` nulls it each frame.
+
+`SpriteAnimator` is what makes both paths possible: it owns the frame cycle and the state→(geometry,
+material) lookup with **no `THREE.Object3D` of its own**. `SpriteActor` wraps one in a `THREE.Mesh`
+for the **player**, now the only sprite that genuinely wants one: there is exactly one of it, and it
+needs `setOpacity` (partial invisibility), which has no per-instance equivalent in a batch.
+Everything else holds a bare `SpriteAnimator` and feeds a `SpriteBatch` — `PosedThing` for map things,
+and `game.ts`'s `effectBatch` for projectiles, impact explosions, teleport fog and the revenant's
+smoke trail. Because a batched thing has no mesh of its own, `PosedThing.visible` replaces what used
+to be read off `mesh.visible`, and `ThingLayer.pickMonster` routes its auto-aim raycast through
+`SpriteBatch.raycast`, which maps an `instanceId` hit back to the owning thing. That raycast skips
+(rather than being blocked by) instances its predicate rejects, so a decoration standing in front of
+a monster still doesn't make it untargetable.
+
+### Which things spawn
+
+**`game/skill.ts: isMultiplayerOnly`** filters out things carrying THING flag bit `0x10` before
+`buildThingSprites` poses them — vanilla's `P_SpawnMapThing` reads
+`if (!netgame && (options & 16)) return NULL;`, i.e. the bit hides a thing whenever no other players
+are present. This engine has no multiplayer, so the bit always applies. Mappers use it to stash
+deathmatch-only weapons/ammo without cluttering single-player — E1M1 has two `SHOT` things; only the
+one *without* the bit is the real single-player pickup.
+
+### Why upright planes, not `THREE.Sprite`
+
+- **Planes turn to face the camera's yaw, but never tilt.** `TopDownCamera` orbits in yaw but only
+  ever tilts a fixed amount off vertical — it never pitches. So a plane only needs to rotate around
+  its vertical axis to track `camera.viewerAngleDeg` (`setPose`'s `viewerAngleDeg`, passed every
+  frame); it never needs a true billboard rotation. `VIEWER_ANGLE_DEG` is just the fallback for
+  callers that don't pass a live angle. A `THREE.Sprite`'s full camera-facing rotation would be both
+  wasted work and actively wrong: it tips flat as the camera tilts toward straight-down, making
+  standing figures read as lying on the floor.
+- **`DataTexture` can't use `flipY`.** WAD bitmaps start at their top row; a plane's default UVs put
+  `v=0` at the bottom, so art arrives upside down. Setting `texture.flipY` does nothing — WebGL only
+  honours `UNPACK_FLIP_Y_WEBGL` for image-source uploads, not the typed array every `DataTexture`
+  uses — so the V axis is inverted through `texture.repeat`/`offset` instead. (Wall/flat UVs in
+  `mapmesh.ts` dodge this differently: they're built by hand with V running downward.)
+- **The patch's `top` hotspot is not trusted for floor placement.** DOOM anchors a sprite at
+  `thing.z + top` and gets away with the slack because its software renderer floor-clips every column
+  and the camera sits near floor height. Neither safety net exists in an unclipped 3D top-down view,
+  so a patch whose `top` is less than its full height (common, worst on small pickups) would draw
+  with its feet below the floor. The bottom edge is anchored to the floor outright; `left` is still
+  used as-is for horizontal centring.
+- **Rotation frame (which of the 8 sprite angles) is picked from the live viewer angle** every frame
+  (`pickRotationDigit`), same as the plane's own yaw.
+- **Ammo/health/armor/keys/powerups/decorations render `PICKUP_SCALE` (1.4×) larger than their native
+  WAD pixel size; monsters and weapons don't.** Vanilla's 1:1 unit-per-pixel sizing suits a
+  ground-level view; from this far, tilted camera small collectibles get lost, while monsters are
+  already large enough to read and weapons already stand out. Applied as `mesh.scale.setScalar(...)`
+  rather than baked into the shared per-lump geometry, since scale varies by thing type even when two
+  types reuse art. It composes safely with floor-anchoring: geometry is translated so the plane's
+  bottom-center sits at local `(0, 0)` *before* `scale` is applied, so scaling stretches the plane
+  upward and outward from that point instead of moving its anchor.
+
+Animation (`setPose`'s `animFrames`/`animating`) is a plain frame-letter cycle with no separate idle
+art, matching DOOM itself: the player's `PLAY` sprite reuses `A,B,C,D` as its walk cycle and holds `A`
+while not moving.

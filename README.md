@@ -161,6 +161,12 @@ monster nearby, and, if another barrel is close enough, setting that one off too
 far as the barrels reach. You can also lock onto a barrel with the cursor the same way as a
 monster.
 
+**Anything that takes damage from a real source gets shoved a little.** A shot, an explosion or
+a punch pushes its target directly away from wherever it came from — the player included, so a
+rocket at your own feet knocks you back as well as hurting you. Heavier monsters barely budge;
+a zombieman staggers noticeably, a cyberdemon almost doesn't move. Damage from a floor hazard or
+a crusher doesn't push at all, matching the original.
+
 **Monsters wake, hunt and shoot back.** One notices the player by sight — only within roughly its
 forward 180°, so a monster facing away doesn't spot you behind its back — or by hearing gunfire,
 which spreads room to room the way the original's does, stopped by closed doors and softened by
@@ -196,21 +202,20 @@ press `R` to restart it, with a clean inventory.
 
 ## Layout
 
-```
-src/wad/       WAD files, merged lump directory, map lumps, graphics decoding
-src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
-               sprites, shot tracers, camera
-src/game/      spatial queries, collision, player controller, input, inventory/pickups,
-               weapons and shooting
-src/ui/        start menu, HUD
-src/constants.ts   cross-cutting constants (VERSION, DEVMODE)
-plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
-scripts/       headless WAD inspection (node scripts/inspect-wad.ts)
-```
+[CLAUDE.md](CLAUDE.md) has the source tree and the project-wide conventions. For how any one
+part actually works under the hood, `docs/` documents each subsystem in depth:
 
-For how any of this actually works under the hood — WAD merging rules, BSP polygon
-reconstruction, occlusion fading, collision, fog of war, shot/damage resolution, and so on —
-see [CLAUDE.md](CLAUDE.md), which documents the implementation in depth.
+| Doc | Covers |
+|---|---|
+| [docs/wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD overrides, the start menu |
+| [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, occlusion fading, camera, sprites |
+| [docs/movement.md](docs/movement.md) | Collision, wall sliding, straferunning, falling, knockback |
+| [docs/combat.md](docs/combat.md) | Weapons, shot resolution, auto-aim, line of sight, damage and death |
+| [docs/monsters.md](docs/monsters.md) | Waking, chase pathing, attacks, infighting, per-type quirks |
+| [docs/items.md](docs/items.md) | Pickups, inventory, keys, the HUD, powerups |
+| [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, damage floors |
+| [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal and sight blocking |
+| [docs/devmode.md](docs/devmode.md) | Dev-mode gating and the profiling overlay |
 
 ## Checking a WAD without a browser
 

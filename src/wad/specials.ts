@@ -1,65 +1,21 @@
 /**
  * Vanilla DOOM linedef/sector special numbers this engine understands, as a
- * flat data table rather than per-type code. Not exhaustive — a curated set
- * covering doors, lifts, generic floor movers, lights and level exits, which
- * is what `game/specials.ts` drives off. Timings/speeds approximate vanilla
- * (`VDOORSPEED`/`PLATSPEED`/`FLOORSPEED` etc.) rather than reproducing it
- * tic-for-tic.
+ * flat data table rather than per-type code. Timings/speeds approximate vanilla
+ * (`VDOORSPEED`/`PLATSPEED`/`FLOORSPEED`) rather than reproducing it
+ * tic-for-tic; `game/specials.ts` drives off this table.
  *
- * Keyed door numbers (26-28, 32-34, 99, 133-137) carry a `requiredKey` on
- * their `DoorEffect`, checked against the player's collected keys in
- * `game/specials.ts` before the door is allowed to trigger — same per-special
- * card/skull checks vanilla's `P_UseSpecialLine` does. 26-34 are manual (D1),
- * like their unkeyed siblings 1/31/117/118; 99 and 133-137 are switches
- * (S1/SR) that target sectors by tag like any other remote door, *not*
- * manual, despite being use-triggered same as the manual ones — confirmed by
- * scanning every stock DOOM/DOOM2 map: every 99/133-137 linedef shares its
- * exact tag with the sector(s) it's supposed to open (e.g. DOOM2 MAP04's
- * blue door is a pair of 99s both tagged 6), while 26-34's occasional
- * nonzero tag is leftover map-editor noise vanilla's manual-door code never
- * reads. Getting this wrong silently no-ops the door: MAP04's special 99
- * wasn't in this table at all until this fix, so its blue-locked door never
- * opened regardless of whether the player had the key.
+ * **Every vanilla DOOM/DOOM2 special is covered, and nothing beyond** — the
+ * scope, the audit behind it, and why Boom numbers are excluded are in
+ * docs/specials.md. Two mechanisms sit outside `LINE_SPECIALS` because neither
+ * is a triggerable linedef effect: `SECTOR_DAMAGE_SPECIALS` (a sustained
+ * per-tic hazard, dispatched straight from `game.ts`) and `SCROLL_LINE_SPECIAL`
+ * (an always-on animation with no trigger of its own).
  *
- * Crushers, teleporters and stair builders are modeled too (see the tables
- * below), including crush damage now that a damage/death pipeline exists
- * (`game/inventory.ts: applyDamage`, `ThingLayer.damage` — see CLAUDE.md's
- * "Damage, monster death and player death"). Boom/MBF-only special numbers
- * (e.g. the S1/SR teleports at 174/195, or the "silent" crusher at 150) are
- * out of scope — this table only covers the vanilla DOOM/DOOM2 special
- * numbers, confirmed against the Doom wiki's linedef type table rather than
- * assumed, since a plausible-looking Boom number slipped in on the first
- * pass here (174 was briefly, wrongly, listed as a vanilla S1 teleport).
- *
- * This table's own gaps against *vanilla* (not Boom) were audited directly
- * against `linuxdoom-1.10`'s `p_spec.c`/`p_switch.c`/`p_floor.c`/`p_plats.c`/
- * `p_ceilng.c`/`p_doors.c`/`p_lights.c` rather than assumed — every case in
- * `P_CrossSpecialLine`/`P_UseSpecialLine` was diffed against this table's
- * keys. That audit turned up several vanilla specials needing a genuinely new
- * mechanism, all now modeled: `raiseToTexture` (30/96 — target is the
- * shortest sidedef bottom-texture height among the sector's neighboring
- * lines, resolved via `MaterialBank.textureHeight`, not a neighbor-floor/
- * ceiling height); `lowerAndChange` (37/84 — copies texture from whichever
- * neighbor sector's floor sits *at the destination height*, applied only on
- * arrival, not at trigger time like this table's existing `changeTexture`);
- * a one-way, non-cyclic ceiling mover (`CeilingEffect`, 40's `raiseToHighest`
- * and 44/72's `lowerAndCrush` — the latter, despite its name, never actually
- * deals crush damage in real vanilla, see `game/specials.ts`); delayed door
- * variants that auto-close/-open after a real time delay (16/76, and sector
- * types 10/14, `SECTOR_DOOR_SPECIALS`); switch/walkover-triggered instant
- * light changes or strobe-starts (`LightChangeEffect`,
- * 12/13/17/35/79-81/104/138/139); and the donut effect (`DonutEffect`, 9).
- *
- * Two more vanilla mechanisms — outside this table's own `LINE_SPECIALS`
- * record, since neither is a triggerable linedef effect — are modeled too:
- * damage-floor sector specials (`SECTOR_DAMAGE_SPECIALS`, a *sustained*
- * per-tic hazard like nukage/lava, dispatched directly in `game.ts` rather
- * than through `SpecialsController` since no mover is involved) and
- * continuously scrolling wall textures (`SCROLL_LINE_SPECIAL`,
- * `render/occlusion.ts: TextureScroller`, an always-on per-tic animation
- * with no trigger of its own). This closes out every vanilla (non-Boom)
- * linedef/sector special this engine's own audit against the real source
- * found; nothing vanilla-scoped remains deliberately unmodeled.
+ * Keyed door numbers (26-28, 32-34, 99, 133-137) carry a `requiredKey` checked
+ * in `game/specials.ts`. 26-34 are manual (D1) and open their own back sector;
+ * 99 and 133-137 are switches targeting sectors by tag despite also being
+ * use-triggered — see docs/items.md § Locked doors and use triggers, which has
+ * the evidence and the shipped bug that came of getting it wrong.
  */
 
 /** Map units/second. Vanilla speeds are per-tic at 35 tics/s. */
@@ -292,40 +248,23 @@ export interface RaiseToTextureEffect {
 
 /**
  * Vanilla's `lowerAndChange` (37/84): lowers to the lowest neighboring floor,
- * same target as the plain `lowestNeighborFloor` family, but additionally
- * searches the sector's own two-sided neighbors (in the same order
- * `lowestNeighborFloor` itself walks them) for the first one whose floor
- * already sits exactly at that destination height, and — only once the move
- * *arrives*, not at trigger time — copies that neighbor's floor texture and
- * `special` onto the moved sector (confirmed against `p_floor.c`'s
- * `T_MoveFloor`, which applies `floor->texture`/`newspecial` only in its
- * `pastdest` branch). No match found: texture/special are left untouched,
- * the sane reading of vanilla's own fallback (`floor->texture` defaults to
- * the sector's own already-current floorpic, i.e. a no-op copy) rather than
- * the uninitialized `newspecial` real vanilla would otherwise carry in that
- * case. This is a genuinely different texture-source rule from
- * `FloorEffect.changeTexture`'s "triggering line's own front sector" model.
+ * then copies the texture and `special` of whichever neighbor already sits at
+ * that height — **on arrival, not at trigger time** (`T_MoveFloor`'s `pastdest`
+ * branch). A genuinely different texture-source rule from
+ * `FloorEffect.changeTexture`'s. See docs/specials.md § raiseToTexture,
+ * lowerAndChange.
  */
 export interface LowerAndChangeEffect {
   kind: 'lowerAndChange';
 }
 
 /**
- * Vanilla's `EV_DoDonut` (special 9, only ever a switch/S1 in vanilla): the
- * tagged sector (the "hole") lowers while a second sector (the "ring") that
- * surrounds it rises, both toward a *third* sector's floor height — the ring
- * additionally takes that third sector's floor texture on arrival, same
- * deferred-copy timing as `LowerAndChangeEffect`. Both the ring and the outer
- * sector are discovered dynamically at trigger time by walking neighbors
- * outward from the hole (`SpecialsController.triggerDonut`), not read from
- * the table — vanilla's own search is exactly this arbitrary (whichever
- * neighbor happens to be first in the sector's own line list), including a
- * real, well-known vanilla bug in how it excludes the line leading back to
- * the hole (an `!x & FLAG` operator-precedence bug in the original C that
- * makes the intended two-sided check silently never fire). This engine
- * deliberately does the two-sided check *correctly* instead of reproducing
- * that bug, which in real vanilla can dereference a one-sided line's absent
- * back sector — a crash risk not worth reproducing for a special this rare.
+ * Vanilla's `EV_DoDonut` (special 9): the tagged "hole" lowers while the
+ * surrounding "ring" rises, both toward a third sector's floor height, the ring
+ * also taking its texture on arrival. Ring and outer sector are discovered at
+ * trigger time, as arbitrarily as vanilla's own search. This engine does
+ * vanilla's two-sided check *correctly* rather than reproducing its
+ * operator-precedence bug. docs/specials.md § The donut.
  */
 export interface DonutEffect {
   kind: 'donut';
@@ -466,31 +405,12 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   115: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED_FAST, 'openOnly') },
   116: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED_FAST, 'closeOnly') },
 
-  // Shoot-triggered ("impact") specials — vanilla's `P_ShootSpecialLine`,
-  // called from `PTR_ShootTraverse`/`PIT_CheckLine`'s missile branch when a
-  // hitscan trace or a projectile is stopped by a line carrying one of these
-  // three numbers (confirmed against the real `p_spec.c`/`p_switch.c` source
-  // rather than assumed — this table's usual discipline). None of the three
-  // are `manual`: all tag-target sectors like the remote doors/floors above,
-  // via `EV_DoDoor`/`EV_DoFloor`/`EV_DoPlat` reading `line->tag`, same as
-  // their non-shoot-triggered siblings below. Repeatability comes from each
-  // case's own `P_ChangeSwitchTexture(line, useAgain)` call — `useAgain`
-  // controls whether `line->special` survives the trigger, *not* whether the
-  // switch texture flashes back — and reading that argument backwards is a
-  // real mistake this table briefly made for 46 (shipped as non-repeatable
-  // before this fix): 24 and 47 pass `0` (special cleared, G1/one-shot), 46
-  // passes `1` (special kept, GR/repeatable).
-  //
-  // `monsterCanTrigger` reproduces `P_ShootSpecialLine`'s own
-  // `if (!thing->player)` gate, which rejects every one of these three
-  // *except* 46 — a hardcoded per-number exception in vanilla itself, not a
-  // property of shoot-triggers generally (see `SpecialDef.monsterCanTrigger`'s
-  // doc). 24 is vanilla's plain `raiseFloor` — the same target as the
-  // walk/switch quad below (5/64/91/101: own-ceiling-clamped lowest
-  // neighboring ceiling, normal speed). 47 is vanilla's
-  // `raiseToNearestAndChange`, the same mechanism as the walk/switch quad
-  // further below (20/68/22/95): half floor speed, plus the triggering
-  // line's own front-sector floor texture copied onto the target sector.
+  // Shoot-triggered ("impact") specials — vanilla's `P_ShootSpecialLine`.
+  // None are `manual`: all tag-target sectors like the remote doors/floors
+  // above. 24 is plain `raiseFloor` (same target as 5/64/91/101 below); 47 is
+  // `raiseToNearestAndChange` (same as 20/68/22/95). Repeatability and 46's
+  // monster exception are both per-number quirks of vanilla itself — see
+  // docs/combat.md § Shoot-triggered specials.
   24: { trigger: 'shoot', repeatable: false, effect: floor('lowestNeighborCeiling') },
   46: { trigger: 'shoot', repeatable: true, monsterCanTrigger: true, effect: door(DOOR_SPEED, 'openOnly') },
   47: { trigger: 'shoot', repeatable: false, effect: floor('nextHigherFloor', FLOOR_SPEED_HALF, { changeTexture: true }) },
@@ -539,14 +459,10 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   132: { trigger: 'use', repeatable: true, effect: floor('nextHigherFloor', FLOOR_SPEED_FAST) },
 
   // "Raise to next highest floor and change texture" quad (S1/SR/W1/WR) —
-  // vanilla's `raiseToNearestAndChange`, confirmed against the actual id
-  // Software source (p_switch.c/p_spec.c case 20/68/22/95) rather than a wiki
-  // summary, since this behavior (mutating floor texture + sector special,
-  // not just height) isn't the kind of thing a summary reliably captures. See
-  // `FloorEffect.changeTexture`'s doc for what "change" means here. 47 is the
-  // fifth vanilla member (G1, gun-fired) — see the shoot-triggered specials
-  // block above, which needs its own repeatability rule (G1/GR don't map onto
-  // W1/WR/S1/SR the same way) so it's kept out of this literal quad.
+  // vanilla's `raiseToNearestAndChange` (p_switch.c/p_spec.c case 20/68/22/95).
+  // See `FloorEffect.changeTexture` for what "change" means. 47 is the fifth
+  // vanilla member (G1) but lives in the shoot-triggered block above, whose
+  // repeatability rule doesn't map onto W1/WR/S1/SR.
   20: { trigger: 'use', repeatable: false, effect: floor('nextHigherFloor', FLOOR_SPEED_HALF, { changeTexture: true }) },
   68: { trigger: 'use', repeatable: true, effect: floor('nextHigherFloor', FLOOR_SPEED_HALF, { changeTexture: true }) },
   22: { trigger: 'walk', repeatable: false, effect: floor('nextHigherFloor', FLOOR_SPEED_HALF, { changeTexture: true }) },
@@ -714,26 +630,14 @@ export const SECTOR_LIGHT_SPECIALS: Record<number, LightPattern> = {
 };
 
 /**
- * Vanilla `P_PlayerInSpecialSector`'s damage-floor cases — a sustained
- * per-tic hazard (nukage, lava, hellslime) rather than a mover's periodic
- * crush hit. Player-only: vanilla passes a `player_t*`, and monsters never
- * take sector damage in real vanilla either. `amount` is dealt every
- * `DAMAGE_FLOOR_INTERVAL` while the player is actually resting on that
- * sector's own floor (vanilla's `mo->z != sector->floorheight` guard skips a
- * player still falling into the sector).
+ * Vanilla `P_PlayerInSpecialSector`'s damage-floor cases — a sustained per-tic
+ * hazard, not a mover's crush hit. Player-only, as in vanilla.
  *
- * `suit` is how a radiation suit (`game/inventory.ts`'s `radiationSuit`
- * power, vanilla's `pw_ironfeet`) interacts with each type, and vanilla is
- * deliberately not uniform about it: nukage and hellslime are blocked
- * outright (`'blocks'`), the two 20-damage slimes share a `case` whose
- * condition is `!pw_ironfeet || (P_Random()<5)` so a suit still leaks
- * `SUIT_LEAK_CHANCE` of hits through (`'leaks'`), and E1M8's finale type
- * never consults the suit at all (`'ignored'`) — it's scripted to end the
- * level, not a hazard to survive. `exitBelowHealth` is vanilla's E1M8 finale
- * quirk (type 11): once this damage drops the player at or below that health,
- * the level ends, matching vanilla's own `G_ExitLevel()` call inline in the
- * same switch case (its `cheats &= ~CF_GODMODE` line has nothing to clear
- * here — this engine has no godmode cheat).
+ * **`suit` is deliberately not uniform**, matching vanilla: blocked outright,
+ * leaking `SUIT_LEAK_CHANCE` of hits, or ignored entirely for E1M8's finale
+ * type, which is scripted to end the level rather than survived.
+ * `exitBelowHealth` is that same finale quirk. See docs/specials.md § Damage
+ * floors.
  */
 export interface DamageFloorEffect {
   amount: number;
@@ -753,13 +657,10 @@ export const SUIT_LEAK_CHANCE = 5 / 256;
 export const DAMAGE_FLOOR_INTERVAL = 32 / 35;
 
 /**
- * Vanilla's `P_UpdateSpecials`: a linedef carrying this special scrolls its
- * *front* sidedef's texture offset continuously, `SCROLL_SPEED` (vanilla's
- * `FRACUNIT`/tic) map units per second, forever — no trigger, no tag, active
- * on every line with this special from the moment the map loads. Purely
- * cosmetic (a texture offset, not real geometry), so — unlike everything
- * else in this file — it isn't dispatched through `SpecialsController`'s
- * mover/trigger machinery at all; see `render/occlusion.ts: TextureScroller`.
+ * Vanilla's `P_UpdateSpecials`: scrolls the line's *front* sidedef texture
+ * offset forever — no trigger, no tag. Purely cosmetic, so unlike everything
+ * else here it bypasses `SpecialsController` entirely (`TextureScroller`).
+ * docs/specials.md § Scrolling textures.
  */
 export const SCROLL_LINE_SPECIAL = 48;
 export const SCROLL_SPEED = 35;
@@ -767,14 +668,10 @@ export const SCROLL_SPEED = 35;
 export type SectorDoorTimer = 'closeIn30' | 'raiseIn5Min';
 
 /**
- * `Sector.special` values that spawn a one-shot delayed door mover directly
- * at map load, rather than animating light or waiting for a linedef trigger
- * — vanilla's `P_SpawnDoorCloseIn30`/`P_SpawnDoorRaiseIn5Mins`. `closeIn30`
- * assumes the sector is already open in the map data and closes it once,
- * `DOOR_CLOSE_WAIT_SECONDS` after the level starts; `raiseIn5Min` assumes
- * it's already closed and opens it once, `DOOR_RAISE_WAIT_SECONDS` in, then
- * runs one ordinary open-wait-close cycle before settling shut for good
- * (vanilla's own `door->type = normal;` switch once the wait elapses).
+ * `Sector.special` values spawning a one-shot delayed door at map load rather
+ * than waiting for a linedef trigger — `P_SpawnDoorCloseIn30`/
+ * `P_SpawnDoorRaiseIn5Mins`. Each assumes the sector starts in the opposite
+ * state. docs/specials.md § Delayed doors.
  */
 export const SECTOR_DOOR_SPECIALS: Record<number, SectorDoorTimer> = {
   10: 'closeIn30',

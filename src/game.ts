@@ -64,13 +64,9 @@ const KEY_YAW_STEP = 45;
 const KEY_YAW_REPEAT_INTERVAL = 0.26;
 
 /**
- * Teleport-fog puff (vanilla's MT_TFOG): a one-shot animation, not a real
- * thing, so it lives outside `ThingLayer` — no pickup/fog-of-war/skill
- * filtering applies, it just plays through its frames once and disappears.
- * `TFOG` has only rotation-0 (omnidirectional) art, confirmed against
- * DOOM2.WAD's lump names (TFOGA0..TFOGJ0, no per-angle variants), matching
- * how blood/explosion-style effect sprites are drawn in vanilla regardless of
- * viewing angle.
+ * Teleport-fog puff (vanilla's `MT_TFOG`): a one-shot animation, not a real
+ * thing, so it lives outside `ThingLayer`. Rotation-0 only, confirmed against
+ * DOOM2.WAD's lump names (TFOGA0..TFOGJ0).
  */
 const TFOG_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 const TFOG_FRAME_SECONDS = 6 / 35; // vanilla's S_TFOG* states hold each frame 6 tics
@@ -84,38 +80,20 @@ const TFOG_SPAWN_OFFSET = 20;
  * so neither goes through `ThingLayer`.
  */
 interface OneShotEffect extends Pos3 {
-  /**
-   * A bare `SpriteAnimator`, drawn through `Game.effectBatch` — no
-   * `THREE.Object3D` of its own, the same arrangement `PosedThing`
-   * (`game/things.ts`) uses and for the same reason. See `effectBatch`'s doc
-   * for why these stopped being one `SpriteActor` (i.e. one mesh, one draw
-   * call) each.
-   */
+  /** A bare `SpriteAnimator` drawn through `Game.effectBatch`, no `THREE.Object3D` of its own — same arrangement as `PosedThing`. */
   anim: SpriteAnimator;
   light: number;
   elapsed: number;
   lifetime: number;
   /**
-   * Set only for the arch-vile's windup flame (`spawnVileWindupFire`):
-   * vanilla's real `MT_FIRE`/`A_Fire` — `x`/`y`/`z` are re-derived every
-   * frame from this target's *live* position **and current facing**
-   * (`updateEffects`, matching `A_Fire`'s own `dest->angle`-based offset)
-   * instead of staying fixed like every other one-shot effect, so the flame
-   * visibly repositions itself in front of wherever the target is currently
-   * looking. `null` means the player. Absent (the common case) skips this
-   * entirely.
+   * Set only for the arch-vile's windup flame (`spawnVileWindupFire`,
+   * vanilla's `MT_FIRE`/`A_Fire`): position is re-derived every frame from
+   * this target's live position and facing rather than staying fixed. `null`
+   * means the player; absent (the common case) skips this. See
+   * docs/monsters.md § The arch-vile.
    */
   followTargetId?: number | null;
-  /**
-   * The arch-vile that spawned this flame — `updateEffects` re-checks sight
-   * from *this* monster to `followTargetId` every frame
-   * (`World.hasLineOfSight`) before repositioning, matching `A_Fire`'s own
-   * `P_CheckSight` gate ("don't move it if the vile lost sight"): losing
-   * sight freezes the flame exactly where it last was rather than hiding it
-   * or continuing to chase the target, since vanilla's `A_Fire` simply
-   * returns early and touches nothing when sight is blocked. Always set
-   * alongside `followTargetId`.
-   */
+  /** The arch-vile that spawned this flame — `updateEffects` re-checks sight from it before repositioning (`A_Fire`'s `P_CheckSight` gate). Always set alongside `followTargetId`. */
   vileSourceId?: number;
 }
 
@@ -133,16 +111,10 @@ const TRACER_COLOR = 0xfff2a8;
 const MONSTER_TRACER_COLOR = 0xff4433;
 
 /**
- * Frame letters an in-flight projectile sprite cycles through while flying.
- * `MISL` (rocket, also the cyberdemon's own rocket — see game/monsters.ts's
- * `MONSTER_STATS`) only has directional flight art on frame A — B-D are its
- * explosion frames, played separately (see IMPACT_EFFECTS) once it lands —
- * while every other entry here is a 2-frame pulse (omnidirectional for
- * `PLSS`/`BFS1`/`BAL1`/`BAL2`/`MANF`/`APLS`, directional for `BAL7`/`FATB`),
- * confirmed against the actual lump names and frame/rotation counts in
- * `DOOM2.WAD` — dumped directly from the IWAD rather than assumed, the same
- * rigor as `MONSTER_DEATH_FRAMES`. Falls back to a single held frame for
- * anything not listed.
+ * Frame letters an in-flight projectile sprite cycles through. Confirmed
+ * against `DOOM2.WAD`'s actual lump names and frame/rotation counts. `MISL`
+ * (rocket) is absent deliberately: only its frame A is flight art, B-D are the
+ * explosion (see `IMPACT_EFFECTS`). Anything unlisted holds a single frame.
  */
 const PROJECTILE_FRAMES: Record<string, string[]> = {
   PLSS: ['A', 'B'],
@@ -159,18 +131,13 @@ const PROJECTILE_FRAMES: Record<string, string[]> = {
 const IMPACT_FRAME_SECONDS = 4 / 35;
 
 /**
- * A projectile's impact explosion, keyed by its flight sprite. Confirmed
- * against the real `linuxdoom-1.10` `info.c` mobjinfo/state tables (not
- * assumed): most fireballs explode into their own trailing frames on the
- * *same* sprite (`BAL1`/`BAL2`/`BAL7`'s own `C`-`E`, `APLS`'s dedicated
- * `APBX`, `FATB`'s dedicated `FBXP`) the same way `MISL` reuses its own
- * `B`-`D` for the rocket's blast — except the mancubus's `MANF`, which has
- * no explosion frames of its own at all and explodes using the *rocket's*
- * `MISL` frames instead, a genuine vanilla oddity rather than a
- * simplification made here. Purely cosmetic — it plays where a shot reached
- * shotPath's distance; whether (and what) it actually damaged is resolved
- * separately, in `spawnShot`/`spawnMonsterProjectile`/`updateProjectiles`/
- * `applyRadiusDamage` below.
+ * A projectile's impact explosion, keyed by its flight sprite — from
+ * `linuxdoom-1.10`'s `info.c` state tables. `MANF` exploding into the
+ * *rocket's* `MISL` frames is a genuine vanilla oddity, not a simplification
+ * here (docs/monsters.md § Hitscan vs. projectile).
+ *
+ * Purely cosmetic: this plays where a shot reached `shotPath`'s distance;
+ * what it actually damaged is resolved separately below.
  */
 const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {
   MISL: { sprite: 'MISL', frames: ['B', 'C', 'D'] },
@@ -188,24 +155,18 @@ const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {
 };
 
 /**
- * Vanilla's `MT_EXTRABFG` (`S_BFGEXP1`-`4`) — the small green burst
- * `A_BFGSpray` (`resolveBfgSpray`) spawns on every monster one of its 40 rays
- * actually connects with, distinct from `BFE1` above (the ball's own single
- * impact where it physically stopped). `BFE2A0`-`D0` (4 letters, all
- * rotation-0) confirmed against the real lump names in `DOOM2.WAD` the same
- * way as every other frame table here.
+ * Vanilla's `MT_EXTRABFG` (`S_BFGEXP1`-`4`) — the green burst `A_BFGSpray`
+ * spawns on every monster a spray ray connects with, distinct from `BFE1`
+ * above (the ball's own impact). `BFE2A0`-`D0` confirmed against `DOOM2.WAD`.
  */
 const BFG_SPRAY_HIT_FRAMES = ['A', 'B', 'C', 'D'];
 
 /**
  * The arch-vile's flame, vanilla's `MT_FIRE` (`S_FIRE1`-`S_FIRE30`) — its own
- * sprite, not an impact effect keyed off a flight sprite like the table
- * above, since `resolveVileBlast` has no flying projectile to key off in the
- * first place. `FIREA0`-`FIREH0` (8 letters, all rotation-0/omnidirectional)
- * confirmed against the real `DOOM2.WAD` lump names; vanilla's own 30-state
- * loop revisits earlier letters to flicker rather than climbing monotonically
- * (`A,B,A,B,C,B,C,...`), which is just randomized flicker on top of a rising
- * baseline and not worth reproducing exactly for a purely cosmetic one-shot.
+ * sprite rather than an impact effect, since `resolveVileBlast` has no flying
+ * projectile to key off. `FIREA0`-`FIREH0` confirmed against `DOOM2.WAD`;
+ * vanilla's 30-state loop revisits letters to flicker (`A,B,A,B,C,B,C,…`),
+ * not worth reproducing exactly for a cosmetic one-shot.
  */
 const VILE_FIRE_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
@@ -213,51 +174,31 @@ const VILE_FIRE_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 const VILE_FIRE_OFFSET = 24;
 
 /**
- * How long the windup flame (`spawnVileWindupFire`) tracks its target —
- * exactly the arch-vile's own `startDelaySeconds` (`MONSTER_STATS`), read
- * from there rather than duplicated so the two can't drift apart: the flame
- * should disappear right around the same moment the real shot either lands
- * (`resolveVileBlast`'s own burst effect takes over) or fizzles (sight lost),
- * not before or long after.
+ * How long the windup flame tracks its target — read from the arch-vile's own
+ * `startDelaySeconds` rather than duplicated, so the flame can't drift away
+ * from the moment the real shot lands or fizzles.
  */
 const VILE_WINDUP_TRACK_SECONDS = MONSTER_STATS[64].ranged?.startDelaySeconds ?? 0;
 
 /**
- * The revenant missile's real turn rate (`AttackStats.projectile.homing`,
- * `updateProjectiles`) — vanilla's `A_Tracer` turns by a fixed `TRACEANGLE`
- * (`0xc000000`, 16.875° of a 32-bit `angle_t`) every 4th tic, i.e. every
- * 4/35s. Converted to a continuous rate (16.875° / (4/35s)) rather than
- * reproduced as a discrete every-4th-tic snap, the same conversion
- * `MonsterStats.speed` already makes for vanilla's own per-tic movement —
- * unlike the AI clock's chase-call cadence (which gates real probability
- * rolls, so discreteness is load-bearing there), a missile's turn is a smooth
- * visual curve either way, and a continuous version at the same average rate
- * is indistinguishable from vanilla's stepped one at any real flight time.
+ * The revenant missile's turn rate — vanilla's `A_Tracer` turns by `TRACEANGLE`
+ * (`0xc000000`, 16.875°) every 4th tic. Converted to a continuous rate, the
+ * same conversion `MonsterStats.speed` makes; a missile's turn is a smooth
+ * curve either way, unlike the AI clock's cadence, where discreteness gates
+ * real probability rolls.
  */
 const REVENANT_TRACER_TURN_RATE_RAD = (16.875 * Math.PI) / 180 / (4 / 35);
 
-/**
- * Vanilla's `A_Tracer`'s own vertical aim point — `dest->z + 40*FRACUNIT`,
- * i.e. roughly chest height above the target's feet rather than its exact
- * floor position, so a homing missile aims at where the target actually is,
- * not the ground under it.
- */
+/** `A_Tracer`'s vertical aim point, `dest->z + 40*FRACUNIT` — chest height, not the target's feet. */
 const TRACER_HOMING_Z_OFFSET = 40;
 
 /**
- * The revenant missile's trailing smoke puff (vanilla's `MT_SMOKE`, spawned
- * from inside `A_Tracer` itself) — the *only* visible difference between a
- * guided and an unguided shot per doomwiki.org/wiki/Revenant ("The homing
- * missiles can be distinguished by a gray smoke trail"), so it's spawned
- * only for shots that actually won the `homingBias` roll
- * (`advanceHomingProjectile`), at the same `gametic & 3` cadence — every 4
- * tics — vanilla gates the turn itself with. `MT_SMOKE` reuses the plain
- * bullet-puff sprite (`PUFF`) rather than art of its own; frames B,C,B,C,D
- * (`S_SMOKE1`-`5`) confirmed against `info.c`, each held the same 4 tics.
- * Vanilla also spawns a second, redundant `P_SpawnPuff` (`MT_PUFF`) one step
- * further behind at the same cadence — cosmetically near-identical smoke,
- * from the same sprite, so reproducing only one of the two loses nothing
- * worth the extra bookkeeping.
+ * The revenant missile's trailing smoke (vanilla's `MT_SMOKE`, spawned inside
+ * `A_Tracer`) — the only visible difference between a guided and an unguided
+ * shot, so only shots that won the `homingBias` roll trail it. `MT_SMOKE`
+ * reuses the `PUFF` sprite; frames B,C,B,C,D (`S_SMOKE1`-`5`) from `info.c`,
+ * each held 4 tics, the same cadence `A_Tracer` gates the turn with. See
+ * docs/monsters.md § The revenant's homing missile.
  */
 const SMOKE_TRAIL_FRAMES = ['B', 'C', 'B', 'C', 'D'];
 const SMOKE_TRAIL_FRAME_SECONDS = 4 / 35;
@@ -274,24 +215,18 @@ function turnToward(from: number, to: number, maxDelta: number): number {
 }
 
 /**
- * Player death animation frame letters, confirmed against the actual `PLAY`
- * lump names in DOOM.WAD/DOOM2.WAD the same way game/thingdefs.ts's
- * MONSTER_DEATH_FRAMES were: PLAY's rotation-0-only tail runs H through W
- * (16 letters), split as DIE1-7 (H-N, this sequence) then XDIE1-9 (O-W, the
- * gib variant this engine doesn't model — see MONSTER_DEATH_FRAMES's doc).
+ * Player death frames, confirmed against `PLAY`'s lump names: its
+ * rotation-0-only tail runs H-W, split as DIE1-7 (H-N, this sequence) then
+ * XDIE1-9 (O-W, the gib variant this engine doesn't model).
  */
 const PLAYER_DEATH_FRAMES = ['H', 'I', 'J', 'K', 'L', 'M', 'N'];
 const PLAYER_DEATH_FRAME_SECONDS = 6 / 35;
 
 /**
- * Player attack/pain sprite frame letters — derived and WAD-cross-checked
- * the same way `game/thingdefs.ts`'s `MONSTER_ATTACK_FRAMES`/
- * `MONSTER_PAIN_FRAMES` are (see that doc): vanilla's `info.c` puts
- * `S_PLAY_ATK1`/`ATK2` at `E`/`F` and `S_PLAY_PAIN`/`PAIN2` at `G`, right
- * before the confirmed `PLAYER_DEATH_FRAMES` tail starts at `H` — 4 walk +
- * 2 attack + 1 pain, exactly accounting for the gap. Played via
- * `SpriteAnimator.playOnce`, not `die`: unlike death, both hand back to the
- * ordinary walk/idle cycle once they finish.
+ * Player attack/pain frames — `info.c` puts `S_PLAY_ATK1`/`ATK2` at `E`/`F`
+ * and `S_PLAY_PAIN`/`PAIN2` at `G`, right before `PLAYER_DEATH_FRAMES` starts
+ * at `H`. Played via `SpriteAnimator.playOnce`, not `die`: both hand back to
+ * the walk/idle cycle when they finish.
  */
 const PLAYER_ATTACK_FRAMES = ['E', 'F'];
 const PLAYER_PAIN_FRAMES = ['G'];
@@ -324,58 +259,38 @@ interface Projectile {
   hitMonsterId: number | null;
   /**
    * The monster that fired this, or `null` for one of the player's own shots.
-   *
-   * A monster's projectile resolves its hit completely differently from a
-   * player's. A player shot's target (a monster) doesn't move meaningfully
-   * mid-flight, so `spawnShot` settles hit-or-miss up front and this only
-   * carries the answer (`hitMonsterId`). A monster's shot has to keep asking:
-   * every frame it re-tests proximity against the player's *live* position
-   * and against every living monster it passes, so stepping behind cover or
-   * just outrunning a slow fireball actually works — and so a fireball aimed
-   * at the player that clips a demon on the way hits the demon, which is what
-   * starts most infights.
+   * A monster's shot re-tests arrival every frame against live positions
+   * instead of resolving hit-or-miss up front the way `spawnShot` does for a
+   * player's — docs/monsters.md § Monster projectiles in flight.
    */
   sourceId: number | null;
   /** The firing monster's doomednum, for `sameSpecies` — vanilla's "don't hit same species as originator" rule on projectiles. */
   sourceType: number;
   /**
-   * The wall `shotPath` found blocking this projectile's flight at launch
-   * (null if it flew unobstructed to `target`/`WEAPON_RANGE`), carried
-   * through to `updateProjectiles` so a shoot-triggered special (24/46/47)
-   * fires at actual arrival rather than the instant the shot is launched —
-   * vanilla's `P_ShootSpecialLine` for a missile runs from `PIT_CheckLine`
-   * when the projectile's own movement reaches the line, not when it's
-   * fired. A hitscan pellet has no such delay (it's resolved and gone in the
-   * same frame), so its trigger fires immediately in `spawnShot` instead —
-   * this field only matters for the flying-sprite case.
+   * The wall `shotPath` found blocking this flight at launch, or null. Carried
+   * through so a shoot-triggered special fires on *arrival*, not on launch —
+   * vanilla runs `P_ShootSpecialLine` from `PIT_CheckLine` when the missile
+   * reaches the line. Only matters for the flying-sprite case; a hitscan
+   * pellet triggers immediately in `spawnShot`. See docs/combat.md §
+   * Shoot-triggered specials.
    */
   lineIndex: number | null;
   /**
-   * Present only for the revenant's missile (`AttackStats.projectile.homing`
-   * — vanilla's `MT_TRACER`/`A_Tracer`), absent for every other projectile,
-   * player and monster alike, which fly the fixed straight line the
-   * `originX`/`Y`/`angleRad`/`traveled` fields above already describe.
-   * A homing missile's path isn't fixed, so it needs its own live, mutable
-   * position/heading instead of that closed-form origin+angle+distance
-   * formula — `updateProjectiles` turns `headingRad` toward `targetId`'s
-   * *current* bearing at vanilla's own turn rate and integrates `x`/`y`/`z`
-   * from it every frame. `targetId` is `null` for the player, matching
-   * `MonsterAttackEvent.targetId`'s own convention. `smokeTimer` paces the
-   * trailing smoke puffs (`SMOKE_TRAIL_INTERVAL`) that are this missile's
-   * only visible "guided" tell, per doomwiki.org/wiki/Revenant — an unguided
-   * shot never gets a `homing` object at all, so it never trails either.
+   * Present only for the revenant's missile (`MT_TRACER`/`A_Tracer`), whose
+   * path isn't the fixed origin+angle+distance line every other projectile
+   * flies, so it carries its own live position/heading. `targetId` is `null`
+   * for the player, matching `MonsterAttackEvent.targetId`. A `homing` object
+   * existing at all means this shot won its `homingBias` roll, which is why
+   * `smokeTimer` can pace the trail unconditionally. See docs/monsters.md §
+   * The revenant's homing missile.
    */
   homing?: { targetId: number | null; x: number; y: number; z: number; headingRad: number; smokeTimer: number };
 }
 
 /**
- * Slack added to the player's own radius when testing whether a monster's
- * hitscan bolt passes through them. Vanilla resolves this against the
- * player's real 16-unit box with an aim that was computed against their exact
- * position the same tic; here the bolt is fired along the angle the monster
- * faced when its attack *started*, up to a whole attack-state earlier, so
- * without a little tolerance a strafing player would be missed by shots that
- * vanilla would land.
+ * Slack added to the player's radius when testing a monster's hitscan bolt,
+ * which is fired along a stale facing here — docs/monsters.md § Hitscan vs.
+ * projectile.
  */
 const MONSTER_BULLET_SLOP = 12;
 
@@ -385,93 +300,58 @@ const MONSTER_PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + 24;
 const MONSTER_PROJECTILE_HIT_HEIGHT = 128;
 
 /**
- * How far (2D, from the player) an awake monster can be and still count as an
- * occlusion-fade target (see the `fadeTargets` build below). Deliberately a
- * plain distance cap rather than requiring unobstructed `hasLineOfSight`: the
- * whole point of fading is to reveal a monster a wall is currently hiding, so
- * gating on "already has line of sight" made the fade a no-op for exactly the
- * case it exists for — an earlier version did this and a zombieman one wall
- * away in a corridor stopped fading the wall in front of it. A distance cap
- * still bounds the original concern (an alerted monster dead-reckoning from
- * clear across the level shouldn't fade every wall along that long a
- * straight line) without reintroducing that contradiction. Tuned by feel to
- * roughly a room-or-corridor's length, not converted from anything vanilla.
+ * How far an awake monster can be and still count as an occlusion-fade target.
+ * **Tuned by feel** to roughly a room's length, not converted from vanilla.
+ * Deliberately a plain distance cap rather than a `hasLineOfSight` gate, which
+ * would make the fade a no-op for the case it exists for — docs/render.md §
+ * Wall occlusion fading.
  */
 const MONSTER_FADE_RANGE = 768;
 
 /**
- * Most awake monsters that can act as occlusion-fade targets at once, nearest
- * first. `WallFader`/`FlatFader` cost is quads × targets, so an unbounded list
- * turns into a real per-frame cost on a map that can have hundreds of monsters
- * awake inside `MONSTER_FADE_RANGE` at the same time (NUTS.WAD's arena being
- * the extreme case). Purely a cost bound, not a behavior choice: past a couple
- * of dozen nearby monsters, every wall any of them stands behind is already
- * being faded by one of the nearer ones, so the ones dropped here have nothing
- * left to reveal.
+ * Most awake monsters that can be fade targets at once, nearest first. Purely
+ * a cost bound (`WallFader` cost is quads × targets): past a couple of dozen
+ * nearby monsters, every wall any of them stands behind is already faded by a
+ * nearer one. See docs/monsters.md § Spatial indexing.
  */
 const MAX_FADE_TARGETS = 48;
 
 /**
- * How solid the player sprite draws while partial invisibility is held
- * (`game/inventory.ts`'s `PINS` powerup). Vanilla draws a shadowed thing
- * through its own `fuzz` colormap — a per-column smear of the pixels behind
- * it, which is a software-renderer trick with no direct equivalent here.
- * Plain translucency is the honest stand-in: it reads as "hard to see"
- * without leaving the player unable to find themselves on screen, which
- * matters more here than in vanilla (there the invisible thing is *you*,
- * seen from your own eyes; here it's a sprite you have to keep track of).
+ * How solid the player sprite draws under partial invisibility. Vanilla's
+ * `fuzz` colormap is a software-renderer trick with no equivalent here; plain
+ * translucency is the stand-in (docs/items.md § Powerups and the backpack).
  */
 const INVISIBILITY_OPACITY = 0.35;
 
 /**
- * `WebGLRenderer.toneMappingExposure` while the light amplification visor is
- * held — a flat multiply over the whole frame (`LinearToneMapping`, see
- * `Viewport`), which is as close as this engine gets to vanilla's own visor
- * without rebuilding every surface's baked vertex lighting. Vanilla forces
- * the *brightest* colormap row everywhere, i.e. full bright regardless of
- * sector light; a multiply keeps some of the level's own shading while
- * lifting a dark room to plainly readable, and lets already-bright rooms
- * saturate out the way vanilla's does.
+ * `toneMappingExposure` while the light visor is held — a flat multiply, as
+ * close as this gets to vanilla forcing the brightest colormap row without
+ * rebuilding every surface's baked vertex lighting (docs/items.md § Powerups and the backpack).
  */
 const LIGHT_VISOR_EXPOSURE = 2.5;
 
 /**
- * Vanilla's `A_FaceTarget`: a monster aiming at something carrying
- * `MF_SHADOW` — which, in this engine, only ever means the player under
- * partial invisibility — throws its facing off by
- * `(P_Random()-P_Random())<<21` BAM, i.e. up to ±255/2048 of a full turn.
- * That is the *entire* mechanic behind the blur sphere in vanilla: it doesn't
- * touch sight, waking, or a monster's willingness to attack at all, it just
- * makes them shoot wide.
+ * Vanilla's `A_FaceTarget`: aiming at an `MF_SHADOW` thing (here only ever the
+ * player under partial invisibility) throws the facing off by
+ * `(P_Random()-P_Random())<<21` BAM, ±255/2048 of a full turn. That is the
+ * entire blur-sphere mechanic — it never touches sight or waking.
  */
 const SHADOW_AIM_SPREAD_DEG = (255 / 2048) * 360;
 
 /**
- * The red screen flash on taking damage, echoing vanilla's own palette shift
- * (`ST_doPaletteStuff`'s `damagecount`): vanilla adds the raw damage taken to
- * a counter clamped to 100 and ticks it down by 1 every tic (35/sec), so a
- * big hit flashes hard and a level's steady chip damage keeps a faint red
- * edge lit rather than ever fully clearing. `PAIN_FLASH_MAX_DAMAGE` is that
- * same 100-point clamp and `PAIN_FLASH_FADE_SECONDS` is 100 tics over 35 —
- * vanilla's own full-to-zero decay time. `PAIN_FLASH_MAX_ALPHA` has no
- * vanilla analogue (there it's a straight palette swap, not a translucent
- * overlay) and is tuned by feel, same honesty as `BRIGHTNESS_LIFT`.
+ * The red damage flash, echoing `ST_doPaletteStuff`'s `damagecount`: raw damage
+ * into a counter clamped to 100, ticked down 1/tic. `MAX_DAMAGE` is that clamp
+ * and `FADE_SECONDS` is 100 tics over 35. `MAX_ALPHA` has no vanilla analogue
+ * (there it's a palette swap, not an overlay) and is **tuned by feel**.
  */
 const PAIN_FLASH_MAX_DAMAGE = 100;
 const PAIN_FLASH_FADE_SECONDS = 100 / 35;
 const PAIN_FLASH_MAX_ALPHA = 0.5;
 
 /**
- * How long before a timed powerup expires that its screen effect starts
- * blinking on/off as a warning, and how fast — there's no direct vanilla
- * analogue for a *screen effect* blinking (vanilla's own low-on-something
- * blink, `cnt & 8` in `ST_Ticker`, flickers a HUD number instead), so this
- * borrows just the idea: an unmissable "about to wear off" cue for every
- * timed powerup with a screen effect to blink — invulnerability, the suit
- * and invisibility all matter to play right up to the moment they expire
- * (walking back into a hazard, or back into plain sight, a second early is
- * costly), unlike the light visor, which has no screen effect of its own to
- * blink (a flickering `toneMappingExposure` would just look broken).
+ * When a timed powerup's screen effect starts blinking as an expiry warning,
+ * and how fast. **Tuned by feel** — vanilla blinks a HUD number (`cnt & 8` in
+ * `ST_Ticker`), not a screen effect. See docs/items.md § Screen effects.
  */
 const POWER_BLINK_WARNING_SECONDS = 3;
 const POWER_BLINK_HZ = 4;
@@ -548,27 +428,14 @@ export class Game {
   /**
    * Every non-map-thing sprite this class draws — projectiles in flight,
    * impact explosions, teleport-fog puffs, the revenant's smoke trail, the
-   * arch-vile's windup flame — batched into one `InstancedMesh` per lump,
-   * the same machinery `game/things.ts` already draws map things with.
+   * arch-vile's windup flame — batched into one `InstancedMesh` per lump, the
+   * same machinery `game/things.ts` draws map things with. One `SpriteActor`
+   * each hits a draw-call wall once homing missiles trail smoke at scale; see
+   * docs/combat.md § Effects and their batching.
    *
-   * These used to be a `SpriteActor` (its own `THREE.Mesh`, its own draw
-   * call) each, on the reasoning that only a dozen are ever alive at once.
-   * That stopped being true the moment the revenant's homing missile got its
-   * real vanilla flight (`advanceHomingProjectile`): a missile that flies
-   * until it hits something lives far longer than one detonating on a
-   * launch-time distance budget, and it spawns a smoke puff every 4 tics for
-   * the whole of that flight. On NUTS.WAD — 1,758 revenants, the single most
-   * common thing on that map — 2,000 missiles in the air work out to ~10,000
-   * live smoke puffs on top, i.e. ~12,000 meshes and draw calls per frame,
-   * which is the exact draw-call wall `SpriteBatch` was written for in the
-   * first place (see its doc). The CPU-side flight work for those same 2,000
-   * missiles measures well under a millisecond, so the meshes really were
-   * all of it. Batched, the whole population costs one draw call per
-   * distinct lump on screen.
-   *
-   * The player is deliberately *not* in here: it's genuinely one sprite, and
-   * it needs `SpriteActor.setOpacity` (partial invisibility), which has no
-   * per-instance equivalent in a batch.
+   * The player is deliberately *not* in here: it's one sprite, and it needs
+   * `SpriteActor.setOpacity` (partial invisibility), which has no per-instance
+   * equivalent in a batch.
    */
   private effectBatch = new SpriteBatch();
   /** Scratch for `doomToWorld`, reused across every batched sprite — same reason `game/things.ts` keeps one. */
@@ -578,14 +445,11 @@ export class Game {
   private projectiles: Projectile[] = [];
   /**
    * Set by the exit trigger and consumed right after `specials.update()`
-   * returns in `frame` — never loaded from inside the callback itself. The
-   * exit line is found by `SpecialsController.handleWalkTriggers`, partway
-   * through its own `update()`; a mover ticked dirty earlier that same call
-   * (e.g. a lift mid-move) is only rebuilt afterwards, by `rebuildAround`.
-   * Tearing down the scene synchronously inside the callback would run that
-   * still-pending rebuild on an already-disposed, orphaned `SpecialsController`
-   * — it would rebuild the old map's mover mesh from stale data and `add` it
-   * to the *new* map's scene, with nothing left to ever clean it up.
+   * returns in `frame` — **never** loaded from inside the callback itself.
+   * `handleWalkTriggers` runs partway through that `update()`, and a mover
+   * ticked dirty earlier in the same call is only rebuilt afterwards; tearing
+   * the scene down synchronously would leave that pending rebuild to `add` the
+   * old map's mover mesh to the new map's scene, with nothing to clean it up.
    */
   private pendingExit = false;
   /** Counts down to the next damage-floor tick while the player stands on one — see `updateDamageFloor`. Reset (not merely paused) whenever they aren't, so re-entering a hazard always gives the same brief grace period rather than resuming mid-countdown from a stale visit. */
@@ -881,34 +745,24 @@ export class Game {
   }
 
   /**
-   * Turns one fired Shot (game/weapons.ts) into a tracer line or a flying
-   * projectile sprite. Always starts at the player's own fire height
-   * (`startZ`) — never mid-air — and, when `target` is auto-aim's locked-on
-   * monster, slopes toward that monster's height by the time it arrives
-   * instead of flying flat past it. `shotPath` resolves where it actually
-   * gets to (short of the target if a wall is in the way), which is what both
-   * the tracer/projectile's endpoint and — once it lands — its impact
-   * explosion use.
+   * Turns one fired `Shot` (game/weapons.ts) into a tracer line or a flying
+   * projectile sprite. Always starts at the player's own fire height, and
+   * slopes toward a locked-on monster's height rather than flying flat past
+   * it; `shotPath` resolves where it actually gets to.
    *
-   * Whether this shot actually *lands* on `targetId` is resolved here too:
-   * `shotPath` returns wherever it got blocked, so comparing that distance
-   * against the target's own distance is how "did it get there" is known. A
-   * hitscan pellet's damage applies immediately (it's an instant line, same
-   * as its tracer); a projectile's carries through to `updateProjectiles`,
-   * applied once the sprite visually arrives rather than the instant it's
-   * fired — monster positions never change mid-flight, so resolving hit/miss
-   * now and only *applying* it later is safe.
+   * Hit-or-miss on `targetId` is settled **here**, not on arrival: comparing
+   * `shotPath`'s blocked distance against the target's says whether it got
+   * there. A hitscan pellet's damage applies immediately; a projectile's
+   * carries through to `updateProjectiles` and applies when the sprite
+   * arrives. See docs/combat.md § How a shot deals damage.
    */
   private spawnShot(shot: Shot, startZ: number, target: Pos3 | null, targetId: number | null): void {
     const origin: Pos3 = { x: this.player.x, y: this.player.y, z: startZ };
 
-    // A swing never travels, so it needs none of shotPath's wall/step
-    // blocking: vanilla's A_Punch/A_Saw just trace MELEERANGE along the
-    // player's facing and damage the first thing there. Aim is already
-    // pointing at a hovered monster (player.angle is set from the same `aim`
-    // the lock-on uses), so the ray finds a locked-on target without a
-    // separate case for it — it simply can't reach one further off than the
-    // swing's own range, the same as vanilla.
+    // A swing never travels, so it skips shotPath entirely — vanilla's
+    // A_Punch/A_Saw just trace MELEERANGE along the facing. Aim already points
+    // at a hovered monster, so the ray finds a locked-on target with no
+    // separate case, and can't reach one past the swing's own range.
     if (shot.kind === 'melee') {
       const swung = this.things?.raycastMonster(origin, shot.angleRad, shot.range) ?? null;
       if (swung) this.things?.damage(swung.id, shot.damage, undefined, undefined, origin.x, origin.y);
@@ -923,18 +777,13 @@ export class Game {
     let endDist = path.dist;
 
     if (target !== null && targetId !== null) {
-      // A locked shot only actually connects if nothing stopped it short of
-      // the target — shotPath returns wherever it got blocked, so comparing
-      // that distance against the target's own is how "did this land" is known.
+      // A locked shot connects only if nothing stopped it short of the target.
       const wantDist = Math.hypot(target.x - origin.x, target.y - origin.y);
       if (path.dist >= wantDist - 1) hitMonsterId = targetId;
     } else {
-      // No locked target: still test the straight path itself against every
-      // monster's body (`ThingLayer.raycastMonster`), the way any real
-      // hitscan/projectile trace would — a monster standing between the
-      // player and a wall they're shooting at shouldn't be invisible to the
-      // shot just because it wasn't clicked. Only ever shortens the shot
-      // (never past `path.dist`, the wall/step it would have hit anyway).
+      // No locked target: still test the path against every monster's body, so
+      // one standing between the player and the wall they're shooting at isn't
+      // invisible to the shot. Only ever shortens it, never past `path.dist`.
       const monsterHit = this.things?.raycastMonster(origin, shot.angleRad, path.dist) ?? null;
       if (monsterHit) {
         hitMonsterId = monsterHit.id;
@@ -944,13 +793,10 @@ export class Game {
       }
     }
 
-    // A shoot-triggered special (24/46/47) only fires if the shot actually
-    // reached the wall it's mounted on rather than being absorbed by a
-    // monster body first — a `hitMonsterId` (something closer stopped it)
-    // means this shot never got there. A hitscan pellet is resolved and gone
-    // this same frame, so it fires immediately here, same as vanilla's
-    // instant `PTR_ShootTraverse`; a projectile's is deferred to actual
-    // arrival in `updateProjectiles` (see `Projectile.lineIndex`'s doc).
+    // A shoot-triggered special only fires if the shot reached the wall rather
+    // than being absorbed by a monster first. A hitscan pellet resolves this
+    // frame so it fires here; a projectile's is deferred to arrival (see
+    // `Projectile.lineIndex`).
     if (shot.kind === 'hitscan') {
       if (hitMonsterId !== null) this.things?.damage(hitMonsterId, shot.damage, undefined, undefined, origin.x, origin.y);
       else this.specials?.triggerShot(path.lineIndex, this.inventory.keys);
@@ -986,27 +832,17 @@ export class Game {
   }
 
   /**
-   * Turns a monster's fired ranged `MonsterAttackEvent` (`game/monsters.ts`,
-   * via `game/things.ts`'s `ThingLayer.update`) into a flying `Projectile`,
-   * for the monster types whose `AttackStats.ranged.projectile` is
-   * configured — the caller (`frame`) only reaches here after already
-   * checking that field is set. `atk.targetId` says what it was actually
-   * aimed at — the player when `null`, another monster (an infight)
-   * otherwise — resolved live via `ThingLayer.monsterById` rather than
-   * trusted from whenever the attack started, since a projectile with real
-   * flight time shouldn't aim at where its target *used to be*. Reuses
-   * `shotPath` similarly to a player's own locked-on shot (`spawnShot`'s
-   * doc): a straight line from the monster to its target's position *at the
-   * moment it fired*, angled from the monster's own height to the target's,
-   * stopped early only by a real wall or shut door — explicitly passing
-   * `skipHeightTest: false`, unlike a player's own locked shot, since the
-   * player has no "auto-aim" leniency to justify a monster's fireball
-   * clearing a low or high step it shouldn't (see `shotPath`'s doc). Unlike a
-   * player's shot, though, the flight doesn't resolve hit-or-miss up front —
-   * its target can keep moving after the shot leaves, so `updateProjectiles`
-   * re-tests proximity to live positions every frame instead (the player's
-   * always; other monsters' only if this shot is `sourceId`-tagged as
-   * someone's own — see `Projectile.sourceId`'s doc and `monsterStruckBy`).
+   * Turns a monster's fired ranged `MonsterAttackEvent` into a flying
+   * `Projectile`. `atk.targetId` is the player when `null`, another monster
+   * (an infight) otherwise, resolved live rather than trusted from when the
+   * attack started — a shot with real flight time shouldn't aim at where its
+   * target *used to be*.
+   *
+   * Launched via `shotPath` like a player's locked-on shot, but with
+   * `lockedOn: false`: a monster has no auto-aim leniency to justify its
+   * fireball clearing a step it shouldn't. And unlike a player's shot the
+   * flight doesn't resolve hit-or-miss up front — see docs/monsters.md §
+   * Monster projectiles in flight.
    */
   private spawnMonsterProjectile(atk: MonsterAttackEvent): void {
     if (!atk.projectiles) return;
@@ -1069,16 +905,11 @@ export class Game {
   }
 
   /**
-   * The arch-vile's real `A_VileAttack` (`atk.blast` — see
-   * `AttackStats.blast`'s doc in `game/monsters.ts`): unlike every other
-   * non-projectile ranged monster, this isn't a traced hitscan bolt — vanilla
-   * damages `actor->target` directly (guaranteed, no roll, no trace to miss
-   * along) and launches it upward, then blasts a radius around it. No tracer
-   * or projectile sprite is drawn for the shot itself; the transient `FIRE`
-   * sprite spawned here is vanilla's own `MT_FIRE` reaching the end of its
-   * life — `spawnVileWindupFire` already spawned and has been tracking the
-   * real one since the windup started, so this just plays its final burst in
-   * place at wherever that one last was.
+   * The arch-vile's `A_VileAttack` (`atk.blast`): not a traced bolt at all —
+   * vanilla damages `actor->target` directly (guaranteed, nothing to miss
+   * along), launches it upward, then blasts a radius. No tracer or projectile
+   * sprite; the `FIRE` spawned here is `MT_FIRE`'s final burst, taking over
+   * from `spawnVileWindupFire`'s. See docs/monsters.md § The arch-vile.
    */
   private resolveVileBlast(atk: MonsterAttackEvent): void {
     if (!atk.blast) return;
@@ -1108,23 +939,13 @@ export class Game {
   }
 
   /**
-   * The arch-vile's warning flame, spawned the instant its windup starts
-   * (`atk.kind === 'vileWindup'`, fired once from `beginRangedAttack`) —
-   * vanilla's real `MT_FIRE` exists for this entire ~1.9s stretch, tracking
-   * the target the whole time, and losing sight of it during that window is
-   * the whole reason `resolveVileBlast`'s attack can fizzle. Without
-   * *something* visible while it's charging, there'd be nothing for the
-   * player to actually react to. Reuses `spawnEffect`'s one-shot machinery
-   * but overrides its lifetime to the windup's own length and marks it to
-   * track the target (`OneShotEffect.followTargetId`/`vileSourceId`,
-   * resolved every frame in `updateEffects` via vanilla's own `A_Fire`
-   * formula, not a frozen offset) — `resolveVileBlast`'s own burst effect
-   * (or nothing, if the shot fizzles) takes over right around when this
-   * one's lifetime naturally runs out, so no explicit hand-off between the
-   * two is needed. Placed at `vileFireFrontOf` up front for the same reason
-   * vanilla's own `A_VileTarget` calls `A_Fire` immediately after spawning
-   * `MT_FIRE` — the fresh spawn point is never a frame the player actually
-   * sees uncorrected.
+   * The arch-vile's warning flame, spawned when its windup starts — vanilla's
+   * `MT_FIRE`, which tracks the target for the whole ~1.9s and is what the
+   * player reacts to. Reuses `spawnEffect` but overrides the lifetime to the
+   * windup's own length, so `resolveVileBlast`'s burst (or nothing, if the
+   * shot fizzles) takes over as this runs out with no explicit hand-off.
+   * Positioned up front for the reason `A_VileTarget` calls `A_Fire`
+   * immediately after spawning: the raw spawn point is never seen uncorrected.
    */
   private spawnVileWindupFire(atk: MonsterAttackEvent): void {
     const target = atk.targetId === null ? this.player : this.things?.monsterById(atk.targetId);
@@ -1138,12 +959,9 @@ export class Game {
   }
 
   /**
-   * Vanilla's own `A_Fire`: `dest->x + 24*cos(dest->angle)`/`sin`, `dest->z`
-   * — a fixed 24 units directly in front of wherever the target is
-   * *currently facing*, not toward the vile (contrast `vileFireOffset`,
-   * `A_VileAttack`'s different, vile-facing-based final reposition).
-   * `updateEffects` calls this every frame the windup flame still has sight
-   * of its target; `spawnVileWindupFire` calls it once up front.
+   * Vanilla's `A_Fire`: 24 units in front of wherever the target is *currently
+   * facing*, not toward the vile — contrast `vileFireOffset`, which is
+   * `A_VileAttack`'s genuinely different final reposition.
    */
   private vileFireFrontOf(target: Pos3 & { angle: number }): Pos3 {
     return {
@@ -1154,17 +972,11 @@ export class Game {
   }
 
   /**
-   * `resolveVileBlast`'s one-time final reposition, at the moment the shot
-   * actually lands — vanilla moves the fire 24 units from its target back
-   * toward the shooter (`A_VileAttack`'s
-   * `fire->x = target->x - 24*cos(actor->angle)`, symmetrically for y), a
-   * *different* formula from the windup's own target-facing-based one
-   * (`updateEffects`) — vanilla genuinely uses two different offsets for the
-   * two moments, not an inconsistency here. Not cosmetic slop either way:
-   * `atk.x`/`atk.y` is the vile's own position (see `MonsterAttackEvent`'s
-   * doc), and without this offset the fire sprite would spawn at the exact
-   * same x/y/z as the target's own sprite, both anchored billboards, and be
-   * effectively invisible sitting behind/inside it.
+   * `resolveVileBlast`'s one-time final reposition — `A_VileAttack` moves the
+   * fire 24 units from the target back toward the shooter, a genuinely
+   * different formula from the windup's target-facing one, not an
+   * inconsistency here. The offset also keeps the flame from spawning at the
+   * target's exact x/y/z, where two anchored billboards hide each other.
    */
   private vileFireOffset(atk: MonsterAttackEvent, targetPos: Pos2): Pos2 {
     const towardVile = Math.atan2(atk.y - targetPos.y, atk.x - targetPos.x);
@@ -1172,34 +984,23 @@ export class Game {
   }
 
   /**
-   * Traces a monster's hitscan bolt and damages the first thing it actually
-   * reaches. Three things can stop it and the nearest wins: a wall
-   * (`shotPath`), another monster standing in the line of fire
-   * (`raycastMonster`, minus the shooter itself), or the player. Vanilla's
-   * `P_LineAttack` works exactly this way — it damages whatever the trace
-   * first runs into, with no notion of an intended target and no species
-   * check, which is why a zombieman firing past another zombieman starts a
-   * fight.
-   *
-   * The tracer is drawn to wherever the bolt stopped rather than to the
-   * target, so a shot that hits an unintended body visibly ends there.
+   * Traces a monster's hitscan bolt and damages the first thing it reaches —
+   * nearest of a wall, another monster in the line of fire, or the player
+   * wins. `P_LineAttack` has no notion of an intended target and no species
+   * check, which is why one zombieman firing past another starts a fight. The
+   * tracer is drawn to where the bolt stopped, not to the target.
    */
   private resolveMonsterHitscan(atk: MonsterAttackEvent): void {
-    // Aimed at whatever it was shooting at, sloped from the monster's own fire
-    // height to the target's — vanilla's P_AimLineAttack works out that slope
-    // before P_LineAttack traces it, which is what lets a zombieman on a ledge
-    // shoot down at you. shotPath caps the flight at the target's distance and
-    // shortens it further if a wall gets in the way first.
+    // Sloped from the monster's fire height to the target's, the way
+    // P_AimLineAttack works out a slope before P_LineAttack traces it — what
+    // lets a zombieman on a ledge shoot down at you.
     const victim = atk.targetId === null ? null : this.things?.monsterById(atk.targetId);
     const aim = victim
       ? { x: victim.x, y: victim.y, z: victim.z + MONSTER_FIRE_HEIGHT }
       : { x: this.player.x, y: this.player.y, z: this.player.z + AIM_HEIGHT_OFFSET };
     const path = shotPath(this.world, atk, atk.angleRad, aim, false);
 
-    // Whatever the shot was aimed at, the trace damages the first body it
-    // reaches — vanilla's PTR_ShootTraverse has no notion of an intended
-    // target and no species check at all, which is why one zombieman firing
-    // past another starts a fight.
+    // The trace damages the first body it reaches, whatever it was aimed at.
     const blocker = this.things?.raycastMonster(atk, atk.angleRad, path.dist, {
       ignoreId: atk.sourceId,
       includeHidden: true,
@@ -1245,49 +1046,15 @@ export class Game {
   /**
    * What a still-flying monster projectile has just run into, or null if it
    * hit nothing this frame. A non-null result always ends the flight; `id` is
-   * who takes the direct damage, or **null for a body that stops the missile
-   * without being hurt by it**.
+   * who takes the direct damage, or **null for a same-species body that stops
+   * the missile without being hurt by it** — `PIT_CheckThing`'s "explode, but
+   * do no damage", a stop and not a pass-through. Only the direct hit is
+   * skipped in that case: `updateProjectiles` applies `p.splash` regardless,
+   * as `P_ExplodeMissile` runs the death state either way.
    *
-   * That second case is vanilla's `PIT_CheckThing` species rule, and it is
-   * genuinely a *stop*, not a pass-through — the distinction this engine had
-   * backwards, and it matters enormously on a crowded map. Vanilla's branch
-   * reads, in full:
-   *
-   * ```c
-   * // Don't hit same species as originator.
-   * if (thing == tmthing->target) return true;
-   * if (thing->type != MT_PLAYER) {
-   *     // Explode, but do no damage.
-   *     return false;
-   * }
-   * ```
-   *
-   * `return true` means "keep going" and `return false` means "stop moving",
-   * which for a missile is `P_TryMove` failing and `P_XYMovement` calling
-   * `P_ExplodeMissile` on the spot. So only the **shooter itself** is passed
-   * through; any *other* monster of the same species detonates the missile
-   * harmlessly the instant it touches it. This engine instead `continue`d
-   * past every same-species body and kept flying until it found something it
-   * could hurt, which quietly turned a fizzle into a guaranteed eventual kill
-   * on whatever else was downrange.
-   *
-   * On NUTS.WAD that inversion decides the whole fight. Its 1,758 revenants —
-   * the most common thing on the map — stand shoulder to shoulder, so in
-   * vanilla nearly every revenant missile dies on a neighbouring revenant
-   * within a few units of being fired, and only the few with a clear lane
-   * ever reach anything. Passing through them instead let every single
-   * missile fly on and find a baron, which is why the barons were losing a
-   * fight they win in vanilla.
-   *
-   * The blast is unaffected: vanilla's `P_ExplodeMissile` runs the missile's
-   * own death state either way, so a cyberdemon rocket that fizzles on
-   * another cyberdemon still calls `A_Explode` and still splashes whatever is
-   * nearby. Only the direct hit is skipped — `updateProjectiles` applies
-   * `p.splash` regardless of which case this returns.
-   *
-   * Candidates are resolved **nearest first**, since with the fizzle case in
-   * play this now decides between two very different outcomes when a missile
-   * arrives among several bodies at once.
+   * Candidates resolve **nearest first**, since with the fizzle case in play
+   * that decides between two very different outcomes. See docs/monsters.md §
+   * Infighting.
    */
   private monsterStruckBy(p: Projectile, at: Pos3): { id: number | null } | null {
     if (p.sourceId === null) return null;
@@ -1347,37 +1114,18 @@ export class Game {
   }
 
   /**
-   * Advances every in-flight projectile along its fixed straight line —
-   * sloped from `startZ` to `endZ` (see spawnShot's doc) rather than flat,
-   * so an auto-aimed shot visibly rises or dips toward its target instead of
-   * the sprite floating at a constant height mismatched with the line it's
-   * travelling along — and, once one reaches `maxDist` (the same
-   * wall-stopping distance a hitscan tracer would have ended at,
-   * shotPath, computed once at launch in spawnShot rather than
-   * re-raycast every frame), removes it and plays its impact explosion
-   * (IMPACT_EFFECTS) at `endZ` in its place. "Reached its target" doesn't by
-   * itself mean it hit anything — `p.hitMonsterId` is only set when this shot
-   * was locked onto a monster it actually got to (spawnShot resolves that up
-   * front) — but the impact point always applies splash (`p.splash`)
-   * regardless, the same as a rocket exploding against a bare wall still
-   * hurts anyone standing nearby in vanilla.
+   * Advances every in-flight projectile along the fixed straight line
+   * `spawnShot` resolved for it — sloped from `startZ` to `endZ` so an
+   * auto-aimed shot visibly rises or dips — and, on reaching `maxDist`,
+   * removes it and plays its `IMPACT_EFFECTS` explosion in place. Arriving
+   * isn't itself a hit (`p.hitMonsterId` carries that answer), but the impact
+   * point applies `p.splash` either way, as a rocket bursting on a bare wall
+   * does in vanilla.
    *
-   * A monster's own shot (`p.sourceId !== null`, `spawnMonsterProjectile`)
-   * has two earlier ways to arrive, checked every frame instead of resolved
-   * once at launch: proximity to the player's *live* position
-   * (`MONSTER_PROJECTILE_HIT_RADIUS`/`_HEIGHT`, `reachedPlayer`), and — since
-   * a monster can just as well be shooting at another monster, or clip one
-   * on the way to its actual target — proximity to any other living monster
-   * along the way (`monsterStruckBy`, gated by `sameSpecies` the same way
-   * `PIT_CheckThing` gates missile-vs-missile-originator collisions). A
-   * player shot's target (a monster) never moves mid-flight, so resolving
-   * that one up front is safe (see spawnShot's doc), but anything a monster
-   * fires at can, and should be able to step behind cover or just outrun a
-   * slower fireball after it's already been fired rather than always eating
-   * the hit once the projectile reaches wherever its target used to be.
-   * Reaching the wall-stop distance without having gotten close to either is
-   * a clean miss for a monster's shot — no damage, just the impact
-   * sprite/splash as usual.
+   * A monster's own shot instead has two live arrival tests re-checked every
+   * frame — the player's current position, and any other monster it passes —
+   * so stepping behind cover or outrunning a slow fireball works. See
+   * docs/monsters.md § Monster projectiles in flight.
    */
   private updateProjectiles(dt: number, viewerAngleDeg: number): void {
     if (this.projectiles.length === 0) return;
@@ -1468,57 +1216,23 @@ export class Game {
   }
 
   /**
-   * One frame of the revenant's real `A_Tracer` homing (`Projectile.homing`):
-   * turns `headingRad` toward the target's current bearing by at most
-   * `REVENANT_TRACER_TURN_RATE_RAD * dt` (vanilla's own clamped per-call
-   * turn, converted to a continuous rate — see that constant's doc) and
-   * integrates position from the new heading, rather than the fixed
-   * straight-line formula every other projectile uses. Height eases toward
-   * the target's own `TRACER_HOMING_Z_OFFSET`-above-feet point over the
-   * flight's remaining distance, the continuous equivalent of vanilla's
-   * `momz` spring (see that constant's doc) — approaching the right height
-   * by the time the flight ends rather than snapping to it.
+   * One frame of the revenant's `A_Tracer` homing (`Projectile.homing`): turns
+   * `headingRad` toward the target's current bearing by at most
+   * `REVENANT_TRACER_TURN_RATE_RAD * dt` and integrates position from the new
+   * heading, instead of the fixed straight-line formula every other projectile
+   * uses. Height eases toward `TRACER_HOMING_Z_OFFSET` above the target's feet
+   * over the remaining distance — the continuous form of vanilla's `momz`
+   * spring. A missing or dead target leaves the missile on its last heading,
+   * matching `A_Tracer`'s own early return.
    *
-   * A missing or dead target (vanilla's own `!dest || dest->health<=0`
-   * bail-out in `A_Tracer`) simply leaves the missile on its last heading,
-   * unadjusted, same as vanilla's early return — it doesn't stop, home in on
-   * something else, or fall out of the sky.
-   *
-   * **A homing missile has no flight-distance budget** — unlike every
-   * straight projectile here, which stops at the `maxDist` `shotPath` traced
-   * for it at launch. It can't: it curves away from that launch ray (looping
-   * right back around toward a target that sidestepped it, which is the
-   * whole point of the mechanic), so the wall that ray found says nothing
-   * about where this missile actually ends up, and spending its distance
-   * against that budget just detonated it in mid-air a fixed distance out —
-   * typically while it was still mid-turn, coming back around. That budget
-   * *plus* an over-vanilla speed was why the revenant's missile read as
-   * unavoidable-then-gone rather than vanilla's outrun-it-and-it-keeps-
-   * coming. Vanilla has no lifetime or range limit on a missile either: it
-   * flies until it hits something, so this checks each frame's step against
-   * the geometry it actually crossed (`projectileStepBlocker`, the per-step
-   * counterpart to `shotPath` — see its doc) and stops there, updating
-   * `lineIndex` to whatever wall it really met so a shoot-triggered special
-   * still fires on the right line.
-   *
-   * Vanilla's own `P_ZMovement` also explodes a missile outright the instant
-   * it reaches the floor or ceiling of whatever sector it's currently
-   * flying over — every projectile in this engine already flies a path
-   * `shotPath` validated against wall openings at launch, so that's never
-   * been reachable for a straight one, but a homing missile's height eases
-   * toward a target that can be on a very different floor while its `x`/`y`
-   * curves over terrain `shotPath` never re-checked. Without this, easing
-   * toward a lower target's height while still passing over higher ground
-   * visibly sank the sprite into that floor — read as "explodes on the floor
-   * mid-air". Forcing `p.traveled` to `p.maxDist` is what signals arrival to
-   * `updateProjectiles`'s own `p.traveled >= p.maxDist` check, the same way
-   * reaching the end of a straight flight already does — and, since this
-   * branch never accumulates `traveled` itself, it is now the *only* thing
-   * that ever ends a homing missile's flight short of hitting a body.
-   *
-   * Also spawns the trailing smoke puff every `SMOKE_TRAIL_INTERVAL` — see
-   * that constant's doc for why a `homing` object existing at all already
-   * means this shot won its `homingBias` roll and so should trail.
+   * **A homing missile has no flight-distance budget** — it curves away from
+   * the launch ray, so `shotPath`'s `maxDist` says nothing about where it ends
+   * up. Each step is checked against the geometry it actually crossed
+   * (`projectileStepBlocker`) instead, and forcing `p.traveled` to `p.maxDist`
+   * is how this signals arrival to `updateProjectiles` — the only thing that
+   * ends a homing flight short of a body. Also spawns the smoke trail every
+   * `SMOKE_TRAIL_INTERVAL`. See docs/monsters.md § The revenant's homing
+   * missile.
    */
   private advanceHomingProjectile(p: Projectile, dt: number): Pos3 {
     const homing = p.homing!;
@@ -1581,26 +1295,16 @@ export class Game {
   }
 
   /**
-   * An explosion's blast: every living monster within `radius` of the impact
-   * point that has an unobstructed line to it (`hasLineOfSight`) takes
-   * damage falling off linearly to 0 at the radius edge, matching vanilla's
-   * own `P_RadiusAttack` falloff. `hitsPlayer` gates whether the player is
-   * even a candidate — true for the rocket, matching vanilla's own
-   * self-splash ("rocket jump") behavior. The BFG never reaches this method
-   * at all (`WeaponDef.splash` is `null` for it) — its real damage is
-   * `resolveBfgSpray`, a completely different per-ray mechanism with no
-   * radius or falloff. Self-splash is otherwise the only path through which
-   * the player can currently take damage at all, since there's no monster AI
-   * to attack back. 2D distance only, no height check — matching vanilla's
-   * own `P_RadiusAttack`, which ignores z entirely and relies on
-   * line-of-sight alone to decide whether a floor above/below the blast is
-   * protected. `source`, when given, attributes the hit for `ThingLayer.damage`'s own
-   * retaliation/infighting rule the same as a direct hit does — noticed while
-   * wiring up the arch-vile's own blast (`resolveVileBlast`), whose splash
-   * needed this to stay exempt from retaliation like every other hit it deals
-   * (`shouldRetarget`'s arch-vile rule already handles that once a source is
-   * actually passed); the rocket's own splash call below doesn't pass one,
-   * matching its existing behavior exactly.
+   * An explosion's blast — vanilla's `P_RadiusAttack`: every living monster
+   * within `radius` with an unobstructed line to the impact point takes damage
+   * falling off linearly to 0 at the edge. `hitsPlayer` gates self-splash
+   * ("rocket jump"). **2D distance only, no height check** — vanilla ignores z
+   * entirely here and leans on line-of-sight alone to decide whether a floor
+   * above or below the blast is protected.
+   *
+   * `source`, when given, attributes the hit for `ThingLayer.damage`'s
+   * retaliation/infighting rule the same way a direct hit does. See
+   * docs/combat.md § Splash and the BFG.
    */
   private applyRadiusDamage(
     at: Pos3,
@@ -1626,44 +1330,28 @@ export class Game {
   }
 
   /**
-   * A barrel's own `A_Explode` — vanilla's literal `P_RadiusAttack(thingy,
-   * thingy->target, 128)`, identical shape to the rocket's own splash
-   * (`applyRadiusDamage`), just with `exp.source` (captured at the moment
-   * the barrel died — `ThingLayer.damage`'s `PosedThing.explodeSource`)
-   * standing in for `thingy->target`. Since `ThingLayer.monstersNear` (which
-   * `applyRadiusDamage` walks) now includes barrels alongside monsters, a
-   * second barrel caught in the blast takes damage through the exact same
-   * `ThingLayer.damage` call any monster would — which, if it kills that
-   * barrel too, captures this same `source` onto it and queues its own
-   * `A_Explode` a frame later, exactly like vanilla's own chain reaction.
+   * A barrel's `A_Explode` — vanilla's literal `P_RadiusAttack(thingy,
+   * thingy->target, 128)`, the same shape as the rocket's splash with
+   * `exp.source` standing in for `thingy->target`. Barrels are in
+   * `monstersNear`, so a second one caught in the blast chains through the
+   * ordinary damage path (docs/combat.md § Exploding barrels).
    */
   private applyBarrelExplosion(exp: BarrelExplosion): void {
     this.applyRadiusDamage(exp, BARREL_SPLASH_RADIUS, BARREL_SPLASH_DAMAGE, true, exp.source);
   }
 
   /**
-   * Vanilla's real `A_BFGSpray` (`weapons.ts`'s `WeaponDef.spray`), fired once
-   * when the player's own BFG ball reaches wherever it's going. `travelAngleRad`
-   * is the ball's own fixed flight angle (`Projectile.angleRad` — a BFG ball
-   * never homes) rather than the aim angle at the moment of impact, matching
-   * vanilla's `mo->angle`. Traced from the player's own *current* position —
-   * not the impact point `at` `applyRadiusDamage` uses — since that's what
-   * `mo->target` (the live player pointer `A_BFGSpray` reads) actually is by
-   * the time the ball's slow flight ends; see `WeaponDef.spray`'s doc for why
-   * that distinction is load-bearing rather than a simplification. Each of
-   * the fanned rays is an independent `raycastMonster` trace (the same
-   * approximate single hitbox a free hitscan shot already tests against, and
-   * the same fog-of-war-filtered visibility a player's own shot always
-   * respects) dealing a full, undiminished direct hit with no falloff and no
-   * dedupe against a target multiple rays already caught — vanilla's own
-   * `P_DamageMobj` is called once per ray that connects, with nothing
-   * stopping two, or all 40, from landing on the same body — and each
-   * connecting ray also spawns vanilla's own `MT_EXTRABFG` burst
-   * (`BFG_SPRAY_HIT_FRAMES`) on the monster it hit, the same green flicker a
-   * BFG'd monster gets in real vanilla, once per ray (so a target caught by
-   * several rays flickers with several overlapping bursts, matching vanilla's
-   * own `P_SpawnMobj` call being just as unconditional). A no-op once the
-   * player is dead: there's nothing left to trace from.
+   * Vanilla's `A_BFGSpray`, fired once when the player's BFG ball arrives.
+   * `travelAngleRad` is the ball's fixed flight angle (`mo->angle`), not the
+   * aim angle at impact, and the rays trace from the player's **current**
+   * position rather than the impact point — that's what `mo->target` is by the
+   * time the slow ball lands, and the distinction is load-bearing.
+   *
+   * Each ray is an independent trace dealing a full, undiminished hit: no
+   * falloff, and no dedupe against a body several rays already caught, since
+   * `P_DamageMobj` is called once per connecting ray. Each also spawns an
+   * `MT_EXTRABFG` burst. No-op once the player is dead. See docs/combat.md §
+   * Splash and the BFG.
    */
   private resolveBfgSpray(
     travelAngleRad: number,
@@ -1679,16 +1367,11 @@ export class Game {
       if (!hit) continue;
       let damage = 0;
       for (let j = 0; j < spray.diceRolls; j++) damage += rollDamage(spray.diceSides, 1);
-      // Vanilla's own inflictor for A_BFGSpray is the ball itself, by then far
-      // from the player — this engine doesn't track where each ray's ball
-      // physically stopped, so `origin` (the player's own position, which the
-      // rays are traced from — see this method's own doc) stands in.
+      // Vanilla's inflictor is the ball itself, by then far from the player;
+      // this engine doesn't track where it stopped, so `origin` stands in.
       this.things?.damage(hit.id, damage, undefined, undefined, origin.x, origin.y);
-      // Vanilla's own MT_EXTRABFG — spawned at roughly a quarter of the
-      // target's own height above its feet (`linetarget->height>>2`); this
-      // engine has no per-species height table to read that from (see
-      // MONSTER_FIRE_HEIGHT's doc for the same stand-in used elsewhere), so
-      // it reuses that same fixed approximate mid-body offset.
+      // MT_EXTRABFG spawns at `linetarget->height>>2`; with no per-species
+      // height table, `MONSTER_FIRE_HEIGHT` is the same stand-in used elsewhere.
       const effect = this.spawnEffect('BFE2', BFG_SPRAY_HIT_FRAMES, IMPACT_FRAME_SECONDS, {
         x: hit.x,
         y: hit.y,
@@ -1737,12 +1420,10 @@ export class Game {
   }
 
   /**
-   * `SpecialsController`'s `onCrush` callback: it owns the moving geometry
-   * but has no idea who's standing in it, so it hands back just the sector
-   * index and leaves finding out to us. 2D sector membership only — matching
-   * `applyRadiusDamage`'s own choice to ignore z, and this engine doesn't
-   * model a mover actually blocking on contact anyway (see `SpecialsController`'s
-   * class doc), so there's no finer "did it actually reach you" test to make.
+   * `SpecialsController`'s `onCrush` callback: it owns the moving geometry but
+   * has no idea who's standing in it, so it hands back a sector index. 2D
+   * membership only, like `applyRadiusDamage` — see docs/specials.md §
+   * Crushers.
    */
   private applyCrushDamage(sectorIndex: number): void {
     if (this.world.sectorIndexAt(this.player.x, this.player.y) === sectorIndex) this.damagePlayer(CRUSH_DAMAGE);
@@ -1751,18 +1432,11 @@ export class Game {
   }
 
   /**
-   * Whether a `radius`-circle centered at (x, y) overlaps `sectorIndex` at
-   * all, not just whichever sector its bare center point resolves to.
-   * `headroomBlocked`'s door-close case originally used a plain `sectorIndexAt`
-   * point test and that missed the common case of the player standing half in a doorway:
-   * walking up to a door leaves the collision circle straddling the frame
-   * (the same straddling `World.groundFloor` already has to account for),
-   * so the player's *center* can still read as the corridor sector's while
-   * the door sector — the one actually about to close on them — never gets
-   * checked at all. Approximated the same way `FogOfWar`'s own polygon
-   * sampling is: a ring of points around the circle's rim rather than an
-   * exact circle/polygon intersection, which is more than enough precision
-   * for a doorway-sized sector.
+   * Whether a `radius`-circle at (x, y) overlaps `sectorIndex` at all, not
+   * just whichever sector its bare center point resolves to — a rim-sample
+   * ring, the same approximation `FogOfWar` uses. A plain point test misses
+   * the player standing half in a doorway; see docs/specials.md § Every other
+   * mover stops instead.
    */
   private circleOverlapsSector(x: number, y: number, radius: number, sectorIndex: number): boolean {
     if (this.world.sectorIndexAt(x, y) === sectorIndex) return true;
@@ -1780,18 +1454,10 @@ export class Game {
    * `SpecialsController`'s shared obstruction test, vanilla's
    * `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule: whoever's standing in
    * `sectorIndex` doesn't fit in the vertical gap a mover's next step would
-   * leave. Uses `circleOverlapsSector` (above) rather than
-   * `applyCrushDamage`'s plain point test — a crusher's own sector is
-   * typically the whole room, where the point test's blind spot barely
-   * matters, but a door or lift's sector is often no wider than the doorway/
-   * platform itself, where it does — plus a flat headroom test against
-   * `PLAYER_HEIGHT`/`MONSTER_HIT_HEIGHT`, this engine has no per-thing
-   * floor/ceiling clip to do better with. Takes both heights explicitly
-   * (rather than reading `player.z`/`m.z`) because the caller is always
-   * asking about the *prospective* height one of the two boundaries is about
-   * to move to, not whichever value happens to be cached on the thing this
-   * frame — matching vanilla's own `P_ThingHeightClip`, which re-syncs a
-   * grounded thing's `z` to the *new* floor before testing it.
+   * leave. A flat headroom test against `PLAYER_HEIGHT`/`MONSTER_HIT_HEIGHT`,
+   * this engine having no per-thing floor/ceiling clip to do better with. See
+   * docs/specials.md § Every other mover stops instead for why membership goes
+   * through `circleOverlapsSector` and why the heights are parameters.
    */
   private headroomBlocked(sectorIndex: number, floorHeight: number, ceilingHeight: number): boolean {
     if (
@@ -1819,17 +1485,12 @@ export class Game {
   }
 
   /**
-   * Vanilla's `P_PlayerInSpecialSector`, run directly here rather than
-   * through `SpecialsController` — a damage floor isn't driven by any mover,
-   * just `sector.special` plus the player's own position, none of which
-   * needs `SpecialsController`'s machinery (see `SECTOR_DAMAGE_SPECIALS`'s
-   * doc). Player-only, matching vanilla, which never damages monsters this
-   * way. Gated on `player.z === sector.floorHeight` — vanilla's own
-   * `mo->z != sector->floorheight` check, skipping a player still falling
-   * into the sector rather than actually resting on its floor; comparing
-   * against the *local* 2D-position sector's own floor height (not
-   * `World.groundFloor`, which can read a straddled ledge's higher side) is
-   * what keeps this from firing early while still up on an adjacent ledge.
+   * Vanilla's `P_PlayerInSpecialSector`, run directly here rather than through
+   * `SpecialsController` — a damage floor has no mover, just `sector.special`
+   * and the player's position. Player-only, matching vanilla. Gated on
+   * `player.z === sector.floorHeight` (vanilla's `mo->z != floorheight`), read
+   * off the local sector rather than `World.groundFloor`; see docs/specials.md
+   * § Damage floors.
    */
   private updateDamageFloor(dt: number): void {
     const sector = this.world.sectorAt(this.player.x, this.player.y);
@@ -1859,16 +1520,10 @@ export class Game {
 
   /**
    * Throws a monster's ranged shot off-aim while the player holds partial
-   * invisibility — vanilla's `A_FaceTarget` fuzz (see `SHADOW_AIM_SPREAD_DEG`),
-   * applied per shot, so each bullet of a chaingunner's burst goes its own way
-   * rather than the whole burst sharing one offset. Deliberately only for a
-   * shot aimed at the *player* (`targetId === null`): nothing else in this
-   * engine ever carries `MF_SHADOW`, and an infight between two monsters
-   * shouldn't suddenly go wide because the player drank something.
-   *
-   * Ranged only, matching vanilla: a melee swing lands on a range check
-   * (`P_CheckMeleeRange`), never on the fuzzed angle, so a demon still bites
-   * an invisible player just fine.
+   * invisibility — `A_FaceTarget`'s fuzz, applied per shot so each bullet of a
+   * burst goes its own way. Player-aimed shots only (nothing else carries
+   * `MF_SHADOW`), and ranged only: a melee swing lands on `P_CheckMeleeRange`,
+   * never on the fuzzed angle. See docs/items.md § Powerups and the backpack.
    */
   private applyShadowAim(atk: MonsterAttackEvent): void {
     if (atk.kind !== 'ranged' || atk.targetId !== null || !hasPower(this.inventory, 'invisibility')) return;
@@ -1880,14 +1535,11 @@ export class Game {
   }
 
   /**
-   * Pushes the three powerups whose effect is a *view* change rather than a
-   * rule change out to where they actually happen: the invulnerability and
-   * radiation-suit screen tints (CSS, `#screen-tint` — see menu.css for why
-   * they're done on the composited frame instead of in the lighting), the
-   * light visor's exposure lift, and the player sprite's own translucency
-   * under partial invisibility. Driven off inventory state every frame rather
-   * than toggled on pickup/expiry, so a level change or a restart clearing the
-   * powers takes effect without needing its own teardown path.
+   * Pushes the powerups whose effect is a *view* change out to where they
+   * happen: the two screen tints (CSS `#screen-tint`), the light visor's
+   * exposure lift, the player sprite's translucency. Driven off inventory
+   * state every frame rather than toggled on pickup/expiry, so a level change
+   * or restart clearing the powers needs no teardown path of its own.
    */
   private updatePowerEffects(): void {
     const inv = this.inventory;

@@ -43,6 +43,7 @@ Fixed bugs
   - fixed monsters melee-attacking straight through the height gap of a raised
     ledge, since line-of-sight's floor/ceiling check sampled too coarsely to
     ever catch a step at melee range
+  - fixed severe frame drops on larger maps related to fog of war
 
 ===============================================================================
 

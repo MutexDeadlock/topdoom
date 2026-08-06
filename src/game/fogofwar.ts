@@ -12,6 +12,24 @@ const FADE_SPEED = 3;
 const SNAP_EPS = 0.004;
 
 /**
+ * Cap on how many not-yet-explored subsectors get their sample rays tested in
+ * one `update` call. Tuned by feel against freedoom2 MAP03 (315 sectors, 2855
+ * linedefs, 1531 subsectors): with no cap, the initial reveal sweep — every
+ * unexplored subsector's sample points against every blocker within
+ * `SIGHT_RADIUS` — measured 8.6ms/frame with the player standing still at
+ * spawn, over half a 60fps budget before rendering runs at all, vs. ~0.3-0.4ms
+ * on DOOM2 MAP02/E1M1. The cap turns that one-frame spike into a sweep spread
+ * over several frames (`scanCursor` picks up where the last call left off,
+ * round-robin), which is invisible: reveal already fades in over `FADE_SPEED`
+ * seconds, so a few frames' delay before a subsector's fade even starts is
+ * well under the threshold of "late". A subsector that fails every sample
+ * this frame (out of range, or blocked) is simply retried on the next pass
+ * through the array — no state is lost, `pending` just shrinks slower on a
+ * level big enough to need the cap at all.
+ */
+const MAX_SIGHT_TESTS_PER_FRAME = 200;
+
+/**
  * How far a wall's probe point is pushed off its own face, so it lands inside
  * the subsector that wall bounds rather than exactly on the boundary.
  */
@@ -78,6 +96,9 @@ export class FogOfWar {
 
   /** Sight-blocking lines near the player, refreshed each frame as x1,y1,x2,y2 runs. */
   private blockers: number[] = [];
+
+  /** Round-robin resume point into `sights` for `update`'s budgeted scan — see `MAX_SIGHT_TESTS_PER_FRAME`. */
+  private scanCursor = 0;
 
   constructor(world: World, occluders: WallOccluder[], startX: number, startY: number) {
     this.world = world;
@@ -155,12 +176,15 @@ export class FogOfWar {
     }
 
     // Seed the spawn's surroundings fully revealed instead of fading up from
-    // black on frame one — a large dt drives the lerp below straight to target.
-    this.update(10, startX, startY);
+    // black on frame one — a large dt drives the lerp below straight to
+    // target, and `Infinity` bypasses `MAX_SIGHT_TESTS_PER_FRAME` so this one
+    // call still reveals everything visible from spawn instead of leaving
+    // some of it to fade in over the first few real frames.
+    this.update(10, startX, startY, Infinity);
   }
 
   /** Player position in DOOM (x, y) coordinates. */
-  update(dt: number, playerX: number, playerY: number): void {
+  update(dt: number, playerX: number, playerY: number, sightTestBudget = MAX_SIGHT_TESTS_PER_FRAME): void {
     const currentSS = this.world.subsectorAt(playerX, playerY);
     if (currentSS >= 0 && currentSS < this.explored.length && !this.explored[currentSS]) {
       this.explored[currentSS] = 1;
@@ -170,20 +194,26 @@ export class FogOfWar {
     if (this.pending > 0) {
       this.refreshBlockers(playerX, playerY);
 
-      for (let ss = 0; ss < this.sights.length; ss++) {
-        if (this.explored[ss]) continue;
-        const s = this.sights[ss];
-        if (!s) continue;
-        if (Math.hypot(s.cx - playerX, s.cy - playerY) - s.radius > SIGHT_RADIUS) continue;
-
-        for (let i = 0; i < s.samples.length; i += 2) {
-          if (this.sightClear(playerX, playerY, s.samples[i], s.samples[i + 1])) {
-            this.explored[ss] = 1;
-            this.pending--;
-            break;
+      const n = this.sights.length;
+      let budget = sightTestBudget;
+      let ss = this.scanCursor;
+      for (let steps = 0; steps < n && budget > 0; steps++) {
+        if (!this.explored[ss]) {
+          const s = this.sights[ss];
+          if (s && !(Math.hypot(s.cx - playerX, s.cy - playerY) - s.radius > SIGHT_RADIUS)) {
+            budget--;
+            for (let i = 0; i < s.samples.length; i += 2) {
+              if (this.sightClear(playerX, playerY, s.samples[i], s.samples[i + 1])) {
+                this.explored[ss] = 1;
+                this.pending--;
+                break;
+              }
+            }
           }
         }
+        ss = ss + 1 < n ? ss + 1 : 0;
       }
+      this.scanCursor = ss;
     }
 
     for (let ss = 0; ss < this.alpha.length; ss++) {

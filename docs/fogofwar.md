@@ -62,7 +62,22 @@ opening; going to a half unit starts clipping sight that legitimately grazes alo
 further leak closed.
 
 Explored subsectors are skipped forever after, so the per-frame cost falls as a level is explored; the
-worst case (nothing explored yet) measures ~0.5 ms on DOOM2 MAP02.
+worst case (nothing explored yet) measures ~0.4 ms on DOOM2 MAP02.
+
+**The sight-sampling sweep is budgeted, not run to completion every frame** — `MAX_SIGHT_TESTS_PER_FRAME`
+(200, tuned by feel) caps how many not-yet-explored subsectors get their sample rays tested per `update`
+call; `scanCursor` remembers where the round-robin left off so the next frame picks up there rather than
+restarting from subsector 0. Without this, cost is `unexplored subsectors × samples per subsector ×
+blockers within SIGHT_RADIUS`, and on a level big enough that all three factors are large at once —
+freedoom2 MAP03 (315 sectors, 2855 linedefs, 1531 subsectors) — that measured 8.6 ms/frame with the player
+standing still at spawn, over half a 60fps budget before rendering even runs. The cap turns the map's
+one-time reveal sweep into several frames' worth of work instead of one frame's spike, which is invisible:
+reveal already fades in over `FADE_SPEED` seconds, so a subsector's fade starting a few frames later than
+strictly necessary reads the same as starting immediately. Measured fix on the same map/scenario: 8.6 ms/
+frame → ~2 ms worst-case, ~1 ms average during active exploration. The constructor's one-time spawn seed
+(`this.update(10, startX, startY, Infinity)`) passes an unbounded budget deliberately — it has to reveal
+everything visible from spawn in that single call, since that's what makes the large `dt` drive the fade
+straight to target instead of the surroundings visibly fading up from black on frame one.
 
 ## How reveal reaches the geometry
 

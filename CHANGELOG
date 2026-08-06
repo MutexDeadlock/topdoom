@@ -1,3 +1,44 @@
+v0.9.0
+
+Features and improvements
+  - SOUND! every sound effect comes out of the loaded WAD, with the original's
+    own attenuation, stereo panning, channel priorities and random pitch wobble
+    - add-ons can replace individual sounds, in the original DMX format or as
+      Ogg/WAV/FLAC; a sound the WAD set lacks is silent rather than substituted
+    - volume slider on the start menu (remembered between sessions), M mutes
+  - player movement more like vanilla
+    - straferunning works
+    - the player slides along angled walls instead of sticking to them
+    - improved auto-aim
+  - completed mancubus, arch-vile, revenant and pain elemental attacks
+    - monster melee/ranged damage now matches vanilla's real dice instead of a
+      softer tuned approximation
+  - the cyberdemon's rocket splashes like the player's own
+  - monster projectile speeds are vanilla's own now instead of eyeballed
+  - monsters keep infighting when the player dies
+  - the BFG now deals its real vanilla damage instead of a plain radius
+    splash, complete with the green flash on whatever each ray hits
+  - projectiles, explosions, teleport fog and the revenant's smoke trail are
+    batched like map things now instead of one draw call each
+  - add error message if WebGL2 is not available / unable to initialize
+
+Fixed bugs
+  - fixed monster fireballs flying straight through their own species instead
+    of harmlessly exploding on it
+  - fixed closing doors could trap the player (or a monster) underneath instead
+    of bumping back open
+  - lifts, rising floors (including stairs) and non-crushing ceiling movers now
+    stop instead of clipping through the player or a monster
+  - explosions no longer damage the spider mastermind or cyberdemon
+  - fixed a crash (frozen game) whenever a monster's attack-pose animation was
+    still playing at the moment it resumed walking — only reachable by the
+    arch-vile so far, but the underlying bug was in the shared sprite animator
+  - fixed monster projectiles damaging through walls
+  - fixed dead lost souls/pain elementals leaving a permanent floating corpse
+    instead of vanishing
+
+===============================================================================
+
 v0.8.0
 Gameplay
   - all powerups work now: invulnerability, berserk, partial invisibility,
@@ -22,6 +63,7 @@ UI / HUD
   - more accurate FPS counter
   - DEVMODE: add simple profiler overlay
 
+===============================================================================
 
 v0.7.0
 - Q and E rotate camera by 45deg
@@ -36,6 +78,7 @@ v0.7.0
 - fixed lift speed/s
 - cleaned up debug infos, and add "monsters awake" counter
 
+===============================================================================
 
 v0.6.0
 - first internal release

@@ -2,6 +2,7 @@ import type { Sector } from '../wad/map.ts';
 import { circleBlocked, hasLineOfSight, WEAPON_RANGE, type ThingBlocker, type World } from './world.ts';
 import { GRAVITY } from './player.ts';
 import { rollDamage } from './weapons.ts';
+import { monsterOrigin, SILENT, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
 import type { Pos3 } from '../types.ts';
 
 /**
@@ -12,6 +13,12 @@ import type { Pos3 } from '../types.ts';
  * `tryWake`'s job. See docs/monsters.md.
  */
 export interface MonsterBody extends Pos3 {
+  /**
+   * Stable per-monster handle (`PosedThing.id`), read here only to key its
+   * sounds' origin (`audio/sfx.ts: monsterOrigin`) so one monster's own sounds
+   * cut each other off the way vanilla's per-mobj channel rule has them do.
+   */
+  id: number;
   velZ: number;
   /** Facing/movement direction, radians — same convention as `Player.angle`. */
   angle: number;
@@ -57,6 +64,13 @@ export interface MonsterBody extends Pos3 {
    * docs/monsters.md § The revenant's homing missile.
    */
   homingBias: boolean;
+  /**
+   * Seconds of *walking* since this monster's last footstep sound, and which
+   * of `MonsterSounds.walk`'s sounds comes next. Both inert for every type
+   * without footsteps (all but the three heavy ones) — see that field's doc.
+   */
+  walkSoundTimer: number;
+  walkSoundStep: number;
 }
 
 export interface AttackStats {
@@ -159,6 +173,55 @@ export interface AttackStats {
   blast?: { knockUpSpeed: number; splashRadius: number; splashDamage: number };
 }
 
+/**
+ * One monster type's sounds. The first four are its `mobjinfo` fields verbatim;
+ * the rest are the sounds vanilla's own action functions play, mapped onto the
+ * moments *this* engine has for them (its attacks are single events, not state
+ * chains). Every field is optional because vanilla leaves plenty of them at
+ * `sfx_None`. See docs/audio.md § Monsters.
+ */
+export interface MonsterSounds {
+  /** `mobjinfo.seesound`, played by `A_Look` on waking. The two randomized families resolve through `randomVariant` at play time. */
+  see?: SfxId;
+  /** `mobjinfo.activesound` — the idle grunt `A_Chase` plays on a 3-in-256 roll per chase call. */
+  active?: SfxId;
+  /** `mobjinfo.painsound` (`A_Pain`), played only by a hit that actually staggers. */
+  pain?: SfxId;
+  /** `mobjinfo.deathsound` (`A_Scream`); a gibbed death plays `slop` instead, matching `A_XScream`. */
+  death?: SfxId;
+  /**
+   * The one sound this engine's single melee moment plays. Vanilla splits that
+   * moment in two — `A_Chase` plays `mobjinfo.attacksound` on *entering*
+   * `meleestate` (the demon's `sgtatk`), the melee action itself plays its own
+   * on connecting (`A_TroopAttack`/`A_BruisAttack`'s `claw`, `A_SkelFist`'s
+   * `skepch`) — and no type but the revenant actually has both, so this is
+   * whichever one that type owns, the connecting one where it owns two.
+   */
+  melee?: SfxId;
+  /**
+   * A hitscan attack's own shot sound: `A_PosAttack`'s `pistol`,
+   * `A_SPosAttack`/`A_CPosAttack`'s `shotgn`. Doubles as the lost soul's
+   * `A_SkullAttack` charge launch (`mobjinfo.attacksound`, `sklatk`), the same
+   * "the attack fires now" moment. A projectile-thrower has none: the missile's
+   * own launch sound covers it (`game.ts`'s `PROJECTILE_SOUNDS`), exactly as in
+   * vanilla.
+   */
+  attack?: SfxId;
+  /** Played when a ranged attack's windup *begins* — `A_FatRaise`'s `manatk`, `A_VileStart`'s `vilatk`. */
+  windup?: SfxId;
+  /**
+   * Footsteps, and how far apart. Only the three heavy monsters have any
+   * (`A_Hoof`/`A_Metal`/`A_BabyMetal` sit on individual walk states), and they
+   * matter more here than in vanilla: a wide top-down view still can't show
+   * what is stomping toward you from the next room. Vanilla's cyberdemon
+   * alternates `hoof` and `metal` at an uneven 18/6-tic spacing within its
+   * 24-tic run loop; `sounds` cycling on one even interval is the accepted
+   * simplification, since this engine interpolates the walk instead of stepping
+   * a state chain.
+   */
+  walk?: { sounds: readonly SfxId[]; interval: number };
+}
+
 export interface MonsterStats {
   /**
    * Map units/sec while chasing, **derived from vanilla, not tuned by feel**:
@@ -186,6 +249,8 @@ export interface MonsterStats {
   mass: number;
   melee: AttackStats | null;
   ranged: AttackStats | null;
+  /** This type's vanilla sounds — see `MonsterSounds`. */
+  sounds: MonsterSounds;
   /** Chance a hit staggers this monster (`reactToDamage`) — `mobjinfo.painchance` over 256, lifted exactly. */
   painChance: number;
   /** Seconds a stagger lasts — the `painstate` chain's summed tics over 35, 4 (imp, demon, baron) to 12 (cacodemon, pain elemental). */
@@ -333,6 +398,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     ranged: { diceSides: 5, diceMult: 3, duration: 0.743 },
     painChance: 0.781,
     painDuration: 0.171,
+    sounds: { see: 'posit1', active: 'posact', pain: 'popain', death: 'podth1', attack: 'pistol' },
   }, // POSS zombieman
   9: {
     speed: 93.3,
@@ -345,6 +411,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     ranged: { diceSides: 5, diceMult: 3, pellets: 3, duration: 0.857 },
     painChance: 0.664,
     painDuration: 0.171,
+    sounds: { see: 'posit2', active: 'posact', pain: 'popain', death: 'podth2', attack: 'shotgn' },
   }, // SPOS shotgun guy
   65: {
     speed: 93.3,
@@ -357,6 +424,10 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     ranged: { diceSides: 5, diceMult: 3, duration: 0.257, shots: 2, shotInterval: 0.114, refire: true },
     painChance: 0.664,
     painDuration: 0.171,
+    // `attack` really is the shotgun's: `A_CPosAttack` plays `sfx_shotgn`, not
+    // the pistol shot its single-bullet roll would suggest — a vanilla oddity
+    // (p_enemy.c), and the chaingunner's own `mobjinfo.attacksound` is 0.
+    sounds: { see: 'posit2', active: 'posact', pain: 'popain', death: 'podth2', attack: 'shotgn' },
   }, // CPOS chaingunner
   84: {
     speed: 93.3,
@@ -371,6 +442,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     ranged: { diceSides: 5, diceMult: 3, duration: 1.0, shots: 2, shotInterval: 10 / 35, refire: true },
     painChance: 0.664,
     painDuration: 0.171,
+    sounds: { see: 'sssit', active: 'posact', pain: 'popain', death: 'ssdth', attack: 'shotgn' },
   }, // SSWV Wolfenstein SS
   3001: {
     speed: 93.3,
@@ -384,6 +456,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     ranged: { diceSides: 8, diceMult: 3, duration: 0.629, projectile: { sprite: 'BAL1', speed: 350 } },
     painChance: 0.781,
     painDuration: 0.114,
+    sounds: { see: 'bgsit1', active: 'bgact', pain: 'popain', death: 'bgdth1', melee: 'claw' },
   }, // TROO imp
   3002: {
     speed: 175,
@@ -395,6 +468,9 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     ranged: null,
     painChance: 0.703,
     painDuration: 0.114,
+    // `A_SargAttack` itself is silent — the bite's sound is the `attacksound`
+    // `A_Chase` plays on entering meleestate. See `MonsterSounds.melee`.
+    sounds: { see: 'sgtsit', active: 'dmact', pain: 'dmpain', death: 'sgtdth', melee: 'sgtatk' },
   }, // SARG demon
   58: {
     speed: 175,
@@ -405,6 +481,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     ranged: null,
     painChance: 0.703,
     painDuration: 0.114,
+    sounds: { see: 'sgtsit', active: 'dmact', pain: 'dmpain', death: 'sgtdth', melee: 'sgtatk' },
   }, // SARG spectre (same as demon; no invisibility rendering)
   3006: {
     speed: 46.7,
@@ -424,6 +501,10 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     },
     painChance: 1,
     painDuration: 0.171,
+    // No sight sound at all (`mobjinfo.seesound` is 0), and its death sound is
+    // the *fireball* explosion `firxpl` rather than a scream. `attack` is
+    // `A_SkullAttack`'s own `sklatk`, played as the charge launches.
+    sounds: { active: 'dmact', pain: 'dmpain', death: 'firxpl', attack: 'sklatk' },
     flies: true,
   }, // SKUL lost soul — drifts slowly, then hurls itself (A_SkullAttack, SKULLSPEED = 20 units/tic)
   3005: {
@@ -437,6 +518,9 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     ranged: { diceSides: 8, diceMult: 5, duration: 0.429, projectile: { sprite: 'BAL2', speed: 350 } },
     painChance: 0.5,
     painDuration: 0.343,
+    // `A_HeadAttack`'s bite has no sound of its own and the cacodemon's
+    // `attacksound` is 0, so its melee really is silent in vanilla too.
+    sounds: { see: 'cacsit', active: 'dmact', pain: 'dmpain', death: 'cacdth' },
     flies: true,
   }, // HEAD cacodemon — one attack state that bites up close and spits a fireball otherwise (A_HeadAttack)
   3003: {
@@ -450,6 +534,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     ranged: { diceSides: 8, diceMult: 8, duration: 0.686, projectile: { sprite: 'BAL7', speed: 525 } },
     painChance: 0.195,
     painDuration: 0.114,
+    sounds: { see: 'brssit', active: 'dmact', pain: 'dmpain', death: 'brsdth', melee: 'claw' },
   }, // BOSS baron of hell
   69: {
     speed: 93.3,
@@ -461,6 +546,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     ranged: { diceSides: 8, diceMult: 8, duration: 0.686, projectile: { sprite: 'BAL7', speed: 525 } },
     painChance: 0.195,
     painDuration: 0.114,
+    sounds: { see: 'kntsit', active: 'dmact', pain: 'dmpain', death: 'kntdth', melee: 'claw' },
   }, // BOS2 hell knight — vanilla's hell knight throws the same BAL7 fireball as the baron
   71: {
     speed: 93.3,
@@ -477,6 +563,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     ranged: { diceSides: 0, diceMult: 0, duration: 0.429, spawn: { type: 3006 } },
     painChance: 0.5,
     painDuration: 0.343,
+    // `A_PainAttack` is silent; the lost soul it spawns brings its own `sklatk`.
+    sounds: { see: 'pesit', active: 'dmact', pain: 'pepain', death: 'pedth' },
     flies: true,
   }, // PAIN pain elemental — A_PainAttack/A_PainShootSkull, spawns a lost soul and launches it at the elemental's own target
   66: {
@@ -499,6 +587,11 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     },
     painChance: 0.391,
     painDuration: 0.286,
+    // The one type with two melee sounds in vanilla — `A_SkelWhoosh`'s `skeswg`
+    // during the windup, then `A_SkelFist`'s `skepch` on connecting. This
+    // engine's melee is one moment, so it takes the punch. Its pain sound is
+    // the *human* `popain`, which is vanilla's own `mobjinfo`, not a slip.
+    sounds: { see: 'skesit', active: 'skeact', pain: 'popain', death: 'skedth', melee: 'skepch' },
   }, // SKEL revenant
   67: {
     speed: 70,
@@ -529,6 +622,10 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     },
     painChance: 0.313,
     painDuration: 0.171,
+    // `windup` is `A_FatRaise`'s own `manatk`, on the first frame of the
+    // missilestate chain — the tell that a triple volley is coming. The
+    // fireballs themselves are `firsht`, from the missile, not from here.
+    sounds: { see: 'mansit', active: 'posact', pain: 'mnpain', death: 'mandth', windup: 'manatk' },
   }, // FATT mancubus — A_FatAttack1/2/3, three volleys out of one 80-tic attack state, each firing a pair of fireballs
   68: {
     speed: 116.7,
@@ -540,6 +637,14 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     ranged: { diceSides: 8, diceMult: 5, duration: 0.257, refire: true, projectile: { sprite: 'APLS', speed: 875 } },
     painChance: 0.5,
     painDuration: 0.171,
+    // `A_BabyMetal` sits on 2 of its 12 3-tic run states — every 18 tics.
+    sounds: {
+      see: 'bspsit',
+      active: 'bspact',
+      pain: 'dmpain',
+      death: 'bspdth',
+      walk: { sounds: ['bspwlk'], interval: 18 / 35 },
+    },
   }, // BSPI arachnotron — A_SpidRefire, same never-let-up loop as the chaingunner
   7: {
     speed: 105,
@@ -562,6 +667,15 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     },
     painChance: 0.156,
     painDuration: 0.171,
+    // `A_Metal` sits on 3 of its 12 3-tic run states — every 12 tics.
+    sounds: {
+      see: 'spisit',
+      active: 'dmact',
+      pain: 'dmpain',
+      death: 'spidth',
+      attack: 'shotgn',
+      walk: { sounds: ['metal'], interval: 12 / 35 },
+    },
   }, // SPID spider mastermind (real hitscan chaingun in vanilla too)
   16: {
     speed: 140,
@@ -587,6 +701,17 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     },
     painChance: 0.078,
     painDuration: 0.286,
+    // `A_Hoof` on run state 1 and `A_Metal` on run state 7 of an 8-state,
+    // 3-tic loop — 24 tics for the pair, evened out to one every 12 (see
+    // `MonsterSounds.walk`). Its sight and death roars are unattenuated in
+    // vanilla, which `ThingLayer` applies by type (`BOSS_TYPES`).
+    sounds: {
+      see: 'cybsit',
+      active: 'dmact',
+      pain: 'dmpain',
+      death: 'cybdth',
+      walk: { sounds: ['hoof', 'metal'], interval: 12 / 35 },
+    },
   }, // CYBR cyberdemon — three rockets per volley, the same MISL sprite the player's own launcher fires
   // VILE arch-vile: vanilla's own P_CheckMissileRange refuses to fire beyond 14*64=896 map units
   // for this type specifically (MT_VILE), tighter than the generic 200-unit falloff cap below.
@@ -610,6 +735,10 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     },
     painChance: 0.039,
     painDuration: 0.286,
+    // `windup` is `A_VileStart`'s `vilatk`, at the same moment the warning
+    // flame appears (`game.ts` adds the flame's own `flamst`); the blast
+    // itself is `A_VileAttack`'s `barexp`, played from there.
+    sounds: { see: 'vilsit', active: 'vilact', pain: 'vipain', death: 'vildth', windup: 'vilatk' },
     resurrects: true,
   }, // VILE arch-vile
 };
@@ -919,6 +1048,7 @@ export function stepMonsterAI(
   target: Pos3,
   blockers?: readonly ThingBlocker[],
   resurrect?: (x: number, y: number, vileRadius: number) => RaiseCandidate | null,
+  sfx: SoundEmitter = SILENT,
 ): MonsterAttack | null {
   if (body.painTimer > 0) {
     body.painTimer = Math.max(0, body.painTimer - dt);
@@ -968,6 +1098,10 @@ export function stepMonsterAI(
       // would be redundant.
       if (!ranged.blast || canSee()) {
         attack = fireAttack('ranged', ranged, body.angle, ranged.projectile?.pairOffsetsRad?.[shotIndex], body.homingBias);
+        // A hitscan attack's own shot sound. A projectile-thrower has none —
+        // its missile brings one (see `MonsterSounds.attack`) — and the
+        // arch-vile's blast plays `barexp` from `game.ts` instead.
+        if (stats.sounds.attack) sfx.play(stats.sounds.attack, body, monsterOrigin(body.id));
       }
       body.burstLeft -= 1;
       body.burstTimer = ranged.shotInterval ?? 0;
@@ -984,7 +1118,7 @@ export function stepMonsterAI(
   // cadence and every gate on it. It breaks only on losing sight.
   if (!attack && body.refiring) {
     if (ranged && canSee()) {
-      attack = beginRangedAttack(body, ranged, dx, dy);
+      attack = beginRangedAttack(body, stats, dx, dy, sfx);
     } else {
       body.refiring = false;
     }
@@ -994,7 +1128,7 @@ export function stepMonsterAI(
     body.chaseTimer += dt;
     if (body.chaseTimer >= stats.chaseInterval) {
       body.chaseTimer -= stats.chaseInterval;
-      attack = runChaseCall(body, stats, world, target, dist, dx, dy, canSee, blockers, resurrect);
+      attack = runChaseCall(body, stats, world, target, dist, dx, dy, canSee, blockers, resurrect, sfx);
     }
   }
 
@@ -1012,6 +1146,19 @@ export function stepMonsterAI(
       body.x = nx;
       body.y = ny;
       body.angle = Math.atan2(DIR_Y[body.movedir], DIR_X[body.movedir]);
+      // Footsteps are paced by *walking*, not by wall-clock time: a monster
+      // held still by an attack or stuck against a wall stops stomping, the way
+      // vanilla's own walk-state chain stops advancing. Only the three heavy
+      // types have any (`MonsterSounds.walk`).
+      const walk = stats.sounds.walk;
+      if (walk) {
+        body.walkSoundTimer += dt;
+        if (body.walkSoundTimer >= walk.interval) {
+          body.walkSoundTimer -= walk.interval;
+          sfx.play(walk.sounds[body.walkSoundStep % walk.sounds.length], body, monsterOrigin(body.id));
+          body.walkSoundStep++;
+        }
+      }
     }
   }
 
@@ -1028,11 +1175,25 @@ export function stepMonsterAI(
  * arch-vile's `blast` attacks, which report a `'vileWindup'` event the
  * instant the windup begins — see `MonsterAttack.kind`'s doc.
  */
-function beginRangedAttack(body: MonsterBody, ranged: AttackStats, dx: number, dy: number): MonsterAttack | null {
+function beginRangedAttack(
+  body: MonsterBody,
+  stats: MonsterStats,
+  dx: number,
+  dy: number,
+  sfx: SoundEmitter,
+): MonsterAttack | null {
+  const ranged = stats.ranged;
+  if (!ranged) return null;
   body.angle = Math.atan2(dy, dx); // A_FaceTarget
   body.attackPause = ranged.duration;
   body.refiring = !!ranged.refire;
+  // The windup's own sound, on the missilestate chain's first frame — the
+  // mancubus's `manatk` and the arch-vile's `vilatk`.
+  if (stats.sounds.windup) sfx.play(stats.sounds.windup, body, monsterOrigin(body.id));
   if (ranged.charge) {
+    // `A_SkullAttack` plays the lost soul's `sklatk` as it launches itself,
+    // not on contact — the charge is the attack firing.
+    if (stats.sounds.attack) sfx.play(stats.sounds.attack, body, monsterOrigin(body.id));
     body.chargeTimer = ranged.charge.maxDist / ranged.charge.speed;
     body.chargeAngle = body.angle;
     return null;
@@ -1059,8 +1220,9 @@ function runChaseCall(
   dx: number,
   dy: number,
   canSee: () => boolean,
-  blockers?: readonly ThingBlocker[],
-  resurrect?: (x: number, y: number, vileRadius: number) => RaiseCandidate | null,
+  blockers: readonly ThingBlocker[] | undefined,
+  resurrect: ((x: number, y: number, vileRadius: number) => RaiseCandidate | null) | undefined,
+  sfx: SoundEmitter,
 ): MonsterAttack | null {
   // A_VileChase: try to raise a corpse instead of taking this chase call's
   // ordinary turn, matching vanilla exactly — a tic that finds one replaces
@@ -1095,6 +1257,7 @@ function runChaseCall(
   if (stats.melee && dist <= (stats.melee.range ?? MELEE_RANGE) && canSee()) {
     body.angle = Math.atan2(dy, dx); // A_FaceTarget
     body.attackPause = stats.melee.duration;
+    if (stats.sounds.melee) sfx.play(stats.sounds.melee, body, monsterOrigin(body.id));
     // Melee has no P_CheckMissileRange equivalent: A_Chase swings whenever the
     // target is in reach, so the swing's own length is the entire wait.
     return fireAttack('melee', stats.melee, body.angle);
@@ -1102,12 +1265,16 @@ function runChaseCall(
 
   if (stats.ranged && body.movecount === 0 && checkMissileRange(body, stats, dist, canSee)) {
     body.justAttacked = true;
-    return beginRangedAttack(body, stats.ranged, dx, dy);
+    return beginRangedAttack(body, stats, dx, dy, sfx);
   }
 
   if (--body.movecount < 0 || body.moveBlocked || body.movedir === DI_NODIR) {
     newChaseDir(body, stats, world, target.x, target.y, blockers);
   }
   body.moveBlocked = false;
+  // Vanilla's own tail of A_Chase: the idle grunt, on a 3-in-256 roll per chase
+  // call — which is why a monster hunting you mutters every few seconds rather
+  // than on a timer.
+  if (stats.sounds.active && Math.random() * 256 < 3) sfx.play(stats.sounds.active, body, monsterOrigin(body.id));
   return null;
 }

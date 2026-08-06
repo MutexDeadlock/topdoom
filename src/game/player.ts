@@ -78,6 +78,14 @@ export class Player implements Pos3 {
    */
   private knockVelX = 0;
   private knockVelY = 0;
+  /**
+   * How fast the player was falling (map units/sec, positive) at the moment
+   * this frame's fall ended, or 0 if it didn't end in one. Vanilla's
+   * `P_ZMovement` grunts and dips the view for a landing harder than 8
+   * units/tic; `game.ts` reads this for the grunt (`HARD_LANDING_SPEED`).
+   * Reset at the top of every `update`, so it only ever describes this frame.
+   */
+  landingSpeed = 0;
 
   private world: World;
 
@@ -186,6 +194,7 @@ export class Player implements Pos3 {
     forwardDeg: number,
     blockers?: readonly ThingBlocker[],
   ): void {
+    this.landingSpeed = 0;
     const run = input.held('ShiftLeft', 'ShiftRight') ? 1 : 0;
     const forwardMove = FORWARD_MOVE[run];
     const sideMove = SIDE_MOVE[run];
@@ -271,7 +280,10 @@ export class Player implements Pos3 {
       // floor once reached rather than overshooting through it.
       this.velZ -= GRAVITY * dt;
       this.z = Math.max(groundZ, this.z + this.velZ * dt);
-      if (this.z === groundZ) this.velZ = 0;
+      if (this.z === groundZ) {
+        this.landingSpeed = -this.velZ;
+        this.velZ = 0;
+      }
     } else {
       // On the ground, or stepping up onto a higher tread within MAX_STEP_UP
       // (already enforced by circleBlocked/blocksMovement above). Vanilla

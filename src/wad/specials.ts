@@ -185,6 +185,13 @@ export interface ExitEffect {
 export interface CrusherEffect {
   kind: 'crusher';
   speed: number;
+  /**
+   * Vanilla's `silentCrushAndRaise` (141): no grinding `stnmov` while it moves,
+   * just a `pstop` clack at each end (`p_ceilng.c`'s own `switch` on the ceiling
+   * type, in both directions). The only thing that distinguishes it from 25 —
+   * which is the whole point of the type, so it can't be folded in.
+   */
+  silent: boolean;
 }
 
 /** Freezes whatever crusher is currently active on the targeted sector(s) wherever it is. */
@@ -534,12 +541,12 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
 
   // Crushers — vanilla numbers confirmed against the Doom wiki's linedef type
   // table (57/74 stop crushers, not 58, which is an unrelated "floor up 24").
-  6: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST } },
-  25: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED } },
-  49: { trigger: 'use', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED } },
-  73: { trigger: 'walk', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED } },
-  77: { trigger: 'walk', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST } },
-  141: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED } },
+  6: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST, silent: false } },
+  25: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: false } },
+  49: { trigger: 'use', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: false } },
+  73: { trigger: 'walk', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: false } },
+  77: { trigger: 'walk', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST, silent: false } },
+  141: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: true } },
   57: { trigger: 'walk', repeatable: false, effect: { kind: 'crusherStop' } },
   74: { trigger: 'walk', repeatable: true, effect: { kind: 'crusherStop' } },
 

@@ -1,5 +1,6 @@
 import { hasPower, type AmmoType, type Inventory, type WeaponId } from './inventory.ts';
 import type { Input } from './input.ts';
+import type { SfxId } from '../audio/sfx.ts';
 
 /**
  * Vanilla's `MELEERANGE`: how far `A_Punch`/`A_Saw` trace out from the
@@ -55,6 +56,22 @@ export interface WeaponDef {
    */
   damageDiceSides: number;
   damageDiceMultiplier: number;
+  /**
+   * The sound one trigger pull makes — **once per pull, not per pellet**
+   * (`A_FireShotgun` plays `shotgn` once for all seven). `null` where the shot's
+   * sound comes from somewhere else: the rocket launcher and plasma rifle have
+   * no weapon sound of their own in vanilla, the missile they spawn brings its
+   * `mobjinfo.seesound` with it (`game.ts`'s `PROJECTILE_SOUNDS`), and a melee
+   * swing's sound depends on whether it connected.
+   */
+  fireSound: SfxId | null;
+  /**
+   * Melee only: the swing's sound on connecting and on missing — `A_Punch`'s
+   * `punch` (silent on a miss, hence a null `missSound`), `A_Saw`'s
+   * `sawhit`/`sawful`. Both null for everything else.
+   */
+  hitSound: SfxId | null;
+  missSound: SfxId | null;
   /**
    * Splash a projectile's impact also applies, independent of its own
    * randomized direct-hit roll above — vanilla's rocket explosion
@@ -149,6 +166,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     projectileSpeed: 0,
     projectileSprite: '',
     iconLump: 'PUNGA0',
+    fireSound: null,
+    hitSound: 'punch',
+    missSound: null,
     // Vanilla A_Punch: (P_Random()%10+1)<<1, i.e. 2-20, times 10 with berserk.
     damageDiceSides: 10,
     damageDiceMultiplier: 2,
@@ -166,6 +186,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     projectileSpeed: 0,
     projectileSprite: '',
     iconLump: 'CSAWA0',
+    fireSound: null,
+    hitSound: 'sawhit',
+    missSound: 'sawful',
     // Vanilla A_Saw rolls the same 2-20 as the punch — the chainsaw's advantage
     // is its fire rate (`cooldown`), not a bigger bite, and berserk never
     // touches it (see BERSERK_FIST_MULTIPLIER).
@@ -185,6 +208,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     projectileSpeed: 0,
     projectileSprite: '',
     iconLump: 'PISGA0',
+    fireSound: 'pistol',
+    hitSound: null,
+    missSound: null,
     damageDiceSides: 3,
     damageDiceMultiplier: 5,
     splash: null,
@@ -201,6 +227,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     projectileSpeed: 0,
     projectileSprite: '',
     iconLump: 'SHOTA0',
+    fireSound: 'shotgn',
+    hitSound: null,
+    missSound: null,
     damageDiceSides: 3,
     damageDiceMultiplier: 5,
     splash: null,
@@ -217,6 +246,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     projectileSpeed: 0,
     projectileSprite: '',
     iconLump: 'SGN2A0',
+    fireSound: 'dshtgn',
+    hitSound: null,
+    missSound: null,
     // Same per-pellet formula as the shotgun (vanilla's SSG damage is close
     // enough to it that the 20-vs-7 pellet count alone already accounts for
     // the SSG's real advantage) rather than a second, separately-tuned roll.
@@ -236,6 +268,12 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     projectileSpeed: 0,
     projectileSprite: '',
     iconLump: 'MGUNA0',
+    // A_FireCGun plays the *pistol* shot, not the `chgun` lump that shares its
+    // name with the weapon — `chgun` is in vanilla's sound table and reached by
+    // nothing at all.
+    fireSound: 'pistol',
+    hitSound: null,
+    missSound: null,
     // Vanilla's chaingun reuses the pistol's own damage roll.
     damageDiceSides: 3,
     damageDiceMultiplier: 5,
@@ -253,6 +291,10 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     projectileSpeed: 1000,
     projectileSprite: 'MISL',
     iconLump: 'LAUNA0',
+    // `rlaunc` comes from MT_ROCKET itself — see fireSound's doc.
+    fireSound: null,
+    hitSound: null,
+    missSound: null,
     damageDiceSides: 8,
     damageDiceMultiplier: 20,
     // Vanilla's A_Explode: a fixed 128/128 radius attack, independent of the
@@ -271,6 +313,10 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     projectileSpeed: 1600,
     projectileSprite: 'PLSS',
     iconLump: 'PLASA0',
+    // As with the rocket: `plasma` is MT_PLASMA's own seesound.
+    fireSound: null,
+    hitSound: null,
+    missSound: null,
     damageDiceSides: 4,
     damageDiceMultiplier: 5,
     splash: null,
@@ -287,6 +333,11 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     projectileSpeed: 700,
     projectileSprite: 'BFS1',
     iconLump: 'BFUGA0',
+    // The one projectile weapon with a sound of its own: MT_BFG's seesound is 0
+    // and `A_BFGsound` is a separate state action that plays this.
+    fireSound: 'bfg',
+    hitSound: null,
+    missSound: null,
     damageDiceSides: 8,
     damageDiceMultiplier: 30,
     // A_Explode is never called on the BFG ball in vanilla — see

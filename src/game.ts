@@ -20,7 +20,7 @@ import { MONSTER_FIRE_HEIGHT, MONSTER_STATS, sameSpecies, thrustSpeed } from './
 import { FlatFader, type FadeTarget, TextureScroller, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
 import { World, hasLineOfSight, projectileStepBlocker, shotPath } from './game/world.ts';
-import { Player, PLAYER_HEIGHT, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
+import { GRAVITY, Player, PLAYER_HEIGHT, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
 import {
@@ -43,11 +43,16 @@ import {
   finishLevel,
   hasPower,
   ITEM_PICKUP_RADIUS,
+  pickupSound,
   tickPowers,
   type Inventory,
+  type WeaponId,
 } from './game/inventory.ts';
-import { rollDamage, WeaponSystem, type Shot } from './game/weapons.ts';
+import { rollDamage, WEAPONS, WeaponSystem, type Shot } from './game/weapons.ts';
 import { Tracer } from './render/tracer.ts';
+import type { AudioEngine } from './audio/audio.ts';
+import { PLAYER_ORIGIN, monsterOrigin, type SfxId } from './audio/sfx.ts';
+import { SoundBank } from './wad/sound.ts';
 import type { Placement, Pos2, Pos3 } from './types.ts';
 import { DEVMODE } from './constants.ts';
 
@@ -152,6 +157,32 @@ const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {
   MANF: { sprite: 'MISL', frames: ['B', 'C', 'D'] },
   APLS: { sprite: 'APBX', frames: ['A', 'B', 'C', 'D', 'E'] },
   FATB: { sprite: 'FBXP', frames: ['A', 'B', 'C'] },
+};
+
+/**
+ * Each projectile's launch and impact sound, keyed by flight sprite the same way
+ * `IMPACT_EFFECTS` above is — and from the same source: the missile type's own
+ * `mobjinfo.seesound` (played by `P_SpawnMissile` as it spawns) and
+ * `deathsound` (played by `P_ExplodeMissile` where it lands).
+ *
+ * This is why the rocket launcher and plasma rifle have no weapon fire sound of
+ * their own (`WeaponDef.fireSound`): what you hear is the missile. `BFS1` is the
+ * exception at launch — `MT_BFG`'s seesound is 0 and the weapon plays `bfg`
+ * itself. Two vanilla oddities here are real and deliberately kept: every
+ * fireball bursts with `firxpl` while the rocket and the revenant's tracer use
+ * the *barrel* explosion, and the BFG ball's `rxplod` is a sound nothing else in
+ * the game reaches.
+ */
+const PROJECTILE_SOUNDS: Record<string, { launch: SfxId | null; explode: SfxId | null }> = {
+  MISL: { launch: 'rlaunc', explode: 'barexp' },
+  PLSS: { launch: 'plasma', explode: 'firxpl' },
+  BFS1: { launch: null, explode: 'rxplod' },
+  BAL1: { launch: 'firsht', explode: 'firxpl' }, // imp
+  BAL2: { launch: 'firsht', explode: 'firxpl' }, // cacodemon
+  BAL7: { launch: 'firsht', explode: 'firxpl' }, // baron/hell knight
+  MANF: { launch: 'firsht', explode: 'firxpl' }, // mancubus
+  APLS: { launch: 'plasma', explode: 'firxpl' }, // arachnotron
+  FATB: { launch: 'skeatk', explode: 'barexp' }, // revenant
 };
 
 /**
@@ -286,6 +317,26 @@ interface Projectile {
    */
   homing?: { targetId: number | null; x: number; y: number; z: number; headingRad: number; smokeTimer: number };
 }
+
+/**
+ * How fast a fall has to end to knock the wind out of the player. Vanilla's
+ * `P_ZMovement` grunts below `momz < -8` units/tic, which under *its* gravity of
+ * 1 unit/tic² is reached by a drop of 32 units — so the threshold is derived
+ * from that drop height under this engine's own (feel-tuned, stronger)
+ * `GRAVITY` rather than copying the speed. Matching the speed instead would
+ * make shallower ledges grunt than vanilla's do, and 24 units — DOOM's most
+ * common step height — sits right at that boundary.
+ */
+const HARD_LANDING_SPEED = Math.sqrt(2 * GRAVITY * 32);
+
+/**
+ * How often the chainsaw's idle rattle restarts while it's the ready weapon:
+ * vanilla's `S_SAW` state holds 4 tics and `A_WeaponReady` plays `sawidl` every
+ * time it loops, each start cutting off the last (they share the player's
+ * origin). That restart *is* the engine note — the lump is longer than the
+ * interval, so only its first fraction is ever heard.
+ */
+const SAW_IDLE_INTERVAL = 4 / 35;
 
 /**
  * Slack added to the player's radius when testing a monster's hitscan bolt,
@@ -465,6 +516,16 @@ export class Game {
   private fps = 0;
 
   private view: Viewport;
+  private audio: AudioEngine;
+  /**
+   * Which weapon was selected as of the previous frame, so bringing the
+   * chainsaw up can play `sawup` (vanilla's `P_BringUpWeapon`, the only weapon
+   * that announces itself) — a switch can come from a key, the wheel *or* a
+   * pickup, so this is compared once a frame rather than at each of those.
+   */
+  private lastWeapon: WeaponId = 'pistol';
+  /** Counts down to the chainsaw's next idle rattle — see `SAW_IDLE_INTERVAL`. */
+  private sawIdleTimer = 0;
   private wad: Wad;
   private skill: Skill;
   private hud: Hud;
@@ -494,6 +555,7 @@ export class Game {
 
   constructor(
     view: Viewport,
+    audio: AudioEngine,
     wad: Wad,
     startMap: string,
     title: string,
@@ -501,6 +563,7 @@ export class Game {
     startPos: Pos2 | null = null,
   ) {
     this.view = view;
+    this.audio = audio;
     this.wad = wad;
     this.title = title;
     this.skill = skill;
@@ -508,6 +571,10 @@ export class Game {
 
     this.scene.background = new THREE.Color(0x05050a);
     this.scene.fog = new THREE.Fog(0x05050a, 2100, 3900);
+
+    // The WAD set's own sound lumps, for as long as this Game owns the level.
+    // The engine itself (and its AudioContext) outlives us — see AudioEngine.
+    audio.setBank(new SoundBank(wad));
 
     const gfx = new GraphicsBank(wad);
     this.materials = new MaterialBank(gfx, view.renderer);
@@ -537,6 +604,10 @@ export class Game {
   private loadMapByIndex(index: number): void {
     // Keys don't survive a level transition in vanilla DOOM; health/armor/ammo do.
     finishLevel(this.inventory);
+    // Whatever was still ringing belongs to the level being torn down — a door
+    // closing, a monster's death cry — and its origins are about to be reused.
+    this.audio.stopAll();
+    this.lastWeapon = this.inventory.currentWeapon;
     // A fresh map always starts with a living player — covers both a normal
     // level transition (which can't happen while dead; movement is frozen)
     // and `restart`'s "reload the same map" call, defensively in one place
@@ -636,9 +707,10 @@ export class Game {
       (sectorIndex, floorHeight) => this.blocksFloorRise(sectorIndex, floorHeight),
       this.player.x,
       this.player.y,
+      this.audio,
     );
 
-    this.things = buildThingSprites(map, this.world, this.spriteBank, this.spriteMaterials, this.skill);
+    this.things = buildThingSprites(map, this.world, this.spriteBank, this.spriteMaterials, this.skill, this.audio);
     this.scene.add(this.things.group);
 
     const provider = this.wad.providerOf(name)?.name ?? '?';
@@ -654,6 +726,9 @@ export class Game {
 
   resume(): void {
     if (this.running) return;
+    // Reached from the Start button or Esc, i.e. from a real user gesture —
+    // which is the only way a browser lets an AudioContext start.
+    this.audio.resume();
     this.running = true;
     this.lastTime = performance.now();
     this.view.input.reset();
@@ -662,10 +737,14 @@ export class Game {
 
   pause(): void {
     this.running = false;
+    this.audio.suspend();
   }
 
   dispose(): void {
     this.pause();
+    // The engine is session-level and the next Game sets its own bank; this
+    // only makes sure nothing from this level is left holding a channel.
+    this.audio.stopAll();
     // The Viewport (renderer) and the overlay elements outlive this Game, so
     // anything updatePowerEffects turned on has to be turned back off here —
     // otherwise the menu, and the next level started from it, inherit whatever
@@ -740,6 +819,10 @@ export class Game {
   }
 
   private spawnTeleportFog(at: Pos3): void {
+    // Vanilla starts `telept` on each of the two fog puffs it spawns, so a
+    // teleport is heard at both ends — and this is the one place both are
+    // created, for the player's own trip and a monster's alike.
+    this.audio.play('telept', at);
     const effect = this.spawnEffect('TFOG', TFOG_FRAMES, TFOG_FRAME_SECONDS, at);
     if (effect) this.teleportFogs.push(effect);
   }
@@ -766,6 +849,11 @@ export class Game {
     if (shot.kind === 'melee') {
       const swung = this.things?.raycastMonster(origin, shot.angleRad, shot.range) ?? null;
       if (swung) this.things?.damage(swung.id, shot.damage, undefined, undefined, origin.x, origin.y);
+      // A_Punch/A_Saw both key their sound off whether they found a target: the
+      // chainsaw revs on air and bites on contact, the fist is silent on a miss.
+      const melee = WEAPONS[this.inventory.currentWeapon];
+      const sound = swung ? melee.hitSound : melee.missSound;
+      if (sound) this.audio.play(sound, origin, PLAYER_ORIGIN);
       return;
     }
 
@@ -809,6 +897,10 @@ export class Game {
     const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, shot.sprite, PROJECTILE_FRAMES[shot.sprite]);
     const light = this.world.sectorAt(origin.x, origin.y)?.light ?? 128;
     if (!anim.resolve((shot.angleRad * 180) / Math.PI, VIEWER_ANGLE_DEG)) return;
+    // The missile's own seesound, with no origin: every shot is its own mobj in
+    // vanilla, so a burst of plasma layers rather than cutting itself off.
+    const launch = PROJECTILE_SOUNDS[shot.sprite]?.launch;
+    if (launch) this.audio.play(launch, origin);
     this.projectiles.push({
       anim,
       originX: origin.x,
@@ -859,6 +951,8 @@ export class Game {
       const path = shotPath(this.world, atk, proj.angleRad, target, false);
       const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, proj.sprite, PROJECTILE_FRAMES[proj.sprite]);
       if (!anim.resolve((proj.angleRad * 180) / Math.PI, VIEWER_ANGLE_DEG)) continue;
+      const launch = PROJECTILE_SOUNDS[proj.sprite]?.launch;
+      if (launch) this.audio.play(launch, atk);
       this.projectiles.push({
         anim,
         originX: atk.x,
@@ -928,6 +1022,9 @@ export class Game {
         atk.y,
       );
     }
+    // A_VileAttack's own sound is the barrel/rocket explosion, played on the
+    // vile rather than on the flame it just placed.
+    this.audio.play('barexp', atk, monsterOrigin(atk.sourceId));
     const offset = this.vileFireOffset(atk, at);
     const fireAt = { x: at.x + offset.x, y: at.y + offset.y, z: at.z };
     this.applyRadiusDamage(fireAt, atk.blast.splashRadius, atk.blast.splashDamage, true, {
@@ -950,7 +1047,11 @@ export class Game {
   private spawnVileWindupFire(atk: MonsterAttackEvent): void {
     const target = atk.targetId === null ? this.player : this.things?.monsterById(atk.targetId);
     if (!target) return;
-    const effect = this.spawnEffect('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, this.vileFireFrontOf(target));
+    const front = this.vileFireFrontOf(target);
+    // A_StartFire, on the flame itself (`vilatk` comes from the vile at the same
+    // moment, via MonsterSounds.windup) — the two together are the warning.
+    this.audio.play('flamst', front);
+    const effect = this.spawnEffect('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, front);
     if (!effect) return;
     effect.lifetime = VILE_WINDUP_TRACK_SECONDS;
     effect.followTargetId = atk.targetId;
@@ -1198,6 +1299,9 @@ export class Game {
         // Only ever set for the player's own BFG ball (spawnMonsterProjectile
         // always passes spray: null) — see resolveBfgSpray's doc.
         if (p.spray) this.resolveBfgSpray(p.angleRad, p.spray);
+        // P_ExplodeMissile's own deathsound, wherever the flight actually ended.
+        const explode = PROJECTILE_SOUNDS[p.sprite]?.explode;
+        if (explode) this.audio.play(explode, at);
         const impact = IMPACT_EFFECTS[p.sprite];
         if (impact) {
           const effect = this.spawnEffect(impact.sprite, impact.frames, IMPACT_FRAME_SECONDS, at);
@@ -1393,7 +1497,9 @@ export class Game {
    * via `Player.applyKnockback`.
    */
   private damagePlayer(amount: number, fromX?: number, fromY?: number): void {
-    if (this.playerDead || amount <= 0 || !applyDamage(this.inventory, amount)) return;
+    if (this.playerDead || amount <= 0) return;
+    const healthBefore = this.inventory.health;
+    if (!applyDamage(this.inventory, amount)) return;
     if (fromX !== undefined && fromY !== undefined) {
       let dx = this.player.x - fromX;
       let dy = this.player.y - fromY;
@@ -1412,10 +1518,18 @@ export class Game {
     this.painFlash = Math.min(1, this.painFlash + amount / PAIN_FLASH_MAX_DAMAGE);
     if (this.inventory.health <= 0) {
       this.playerDead = true;
+      // A_PlayerScream: the drawn-out `pdiehi` for a death that overkilled by
+      // more than 50, the ordinary `pldeth` otherwise. Vanilla tests the
+      // *post-hit* health, which goes negative there; `applyDamage` clamps it at
+      // 0, so the overkill is reconstructed from the hit instead — off by
+      // however much armor absorbed, which only shifts a few borderline deaths
+      // between the two cries.
+      this.audio.play(amount > healthBefore + 50 ? 'pdiehi' : 'pldeth', this.player, PLAYER_ORIGIN);
       this.playerActor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
       this.deathOverlay.classList.remove('hidden');
       return;
     }
+    this.audio.play('plpain', this.player, PLAYER_ORIGIN);
     this.playerActor.playOnce(PLAYER_PAIN_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
   }
 
@@ -1555,6 +1669,31 @@ export class Game {
     this.painFlashEl.style.opacity = String(this.painFlash * PAIN_FLASH_MAX_ALPHA);
   }
 
+  /**
+   * The two weapon sounds that aren't tied to firing: the chainsaw announcing
+   * itself as it comes up (`P_BringUpWeapon`, which does this for no other
+   * weapon) and its idle rattle while it's the ready weapon and the trigger is
+   * released (`A_WeaponReady`, see `SAW_IDLE_INTERVAL`).
+   */
+  private updateWeaponSounds(dt: number, firing: boolean): void {
+    const weapon = this.inventory.currentWeapon;
+    if (weapon !== this.lastWeapon) {
+      this.lastWeapon = weapon;
+      // Checked once a frame rather than at each switch, since a pickup can
+      // select a weapon too (`applyPickup`), exactly as vanilla's own
+      // `pendingweapon` path does.
+      if (weapon === 'chainsaw') this.audio.play('sawup', this.player, PLAYER_ORIGIN);
+    }
+    if (weapon !== 'chainsaw' || firing) {
+      this.sawIdleTimer = 0;
+      return;
+    }
+    this.sawIdleTimer -= dt;
+    if (this.sawIdleTimer > 0) return;
+    this.sawIdleTimer = SAW_IDLE_INTERVAL;
+    this.audio.play('sawidl', this.player, PLAYER_ORIGIN);
+  }
+
   /** `R`, while dead: a fresh inventory and a reload of the current map — `loadMapByIndex` resets the player/world/specials/fog and, via the doc on its own top, `playerDead`/the death overlay/`playerActor` too. */
   private restart(): void {
     this.inventory = createInventory();
@@ -1577,6 +1716,11 @@ export class Game {
 
     const { input, camera } = this.view;
     this.handleHotkeys();
+    // Set before any system runs, since specials/monsters/weapons all raise
+    // sounds during the update below. The camera's yaw is last frame's (it
+    // settles in `camera.update`, at the end) — a frame of smoothing lag on the
+    // pan axis, which is inaudible.
+    this.audio.setListener(this.player, camera.viewerAngleDeg + 180);
     // Guarded on a nonzero delta: a plain `yawDeg` assignment (even a no-op
     // "-= 0" one) goes through the setter, which snaps `targetYawDeg` back to
     // the current value — running it unconditionally every frame would cancel
@@ -1667,6 +1811,13 @@ export class Game {
         if (shots.length > 0) {
           this.world.noiseAlert(this.player.x, this.player.y);
           this.playerActor.playOnce(PLAYER_ATTACK_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
+          // One shot sound per trigger pull, not per pellet (see
+          // `WeaponDef.fireSound`), on the player's own origin — so a held
+          // chaingun trigger keeps cutting itself off instead of stacking up.
+          // A melee swing's own sound comes later, from `spawnShot`, which is
+          // the only place that knows whether it connected.
+          const fire = WEAPONS[this.inventory.currentWeapon].fireSound;
+          if (fire) this.audio.play(fire, this.player, PLAYER_ORIGIN);
         }
         for (const shot of shots) {
           this.spawnShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
@@ -1679,10 +1830,17 @@ export class Game {
           // The computer area map's whole effect lives outside the inventory
           // struct — see COMPUTER_MAP_TYPE's doc.
           if (taken && type === COMPUTER_MAP_TYPE) this.fogOfWar.revealAll();
+          // Unattenuated, as vanilla plays every pickup: you're standing on it.
+          if (taken) this.audio.play(pickupSound(type));
           return taken;
         });
         this.updateDamageFloor(dt);
       });
+
+      // Hard landings and the chainsaw's two ambient sounds, both of which
+      // belong to a living player only.
+      if (this.player.landingSpeed > HARD_LANDING_SPEED) this.audio.play('oof', this.player, PLAYER_ORIGIN);
+      this.updateWeaponSounds(dt, input.mouseDown);
     } else if (input.pressed('KeyR')) {
       this.restart();
       input.endFrame();
@@ -1845,6 +2003,8 @@ export class Game {
 
   private handleHotkeys(): void {
     const { input, camera } = this.view;
+    // Mute is a player-facing control, so it sits ahead of the DEVMODE gate.
+    if (input.pressed('KeyM')) this.audio.toggleMute();
     // Level switching, zoom and tilt are dev/debug conveniences, gated the
     // same as the debug HUD below (see DEVMODE).
     if (!DEVMODE) return;
@@ -1870,7 +2030,7 @@ export class Game {
       `cam ${camera.distance.toFixed(0)}u ${camera.tiltDeg.toFixed(0)}°tilt ${camera.yawDeg.toFixed(0)}°yaw`,
       '',
       'WASD move  Shift run  mouse aim/fire  1-7/wheel weapon  Q-E/drag cam  Space use',
-      'N/P map  +/- zoom  [/] tilt  R restart  Esc menu',
+      'N/P map  +/- zoom  [/] tilt  R restart  M mute  Esc menu',
     ].join('\n');
     this.profilerHud.update(this.profiler.samples(), this.profiler.totalMs);
   }

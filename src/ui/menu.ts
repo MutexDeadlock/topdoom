@@ -7,6 +7,7 @@ import {
   type WadSource,
 } from '../wad/library.ts';
 import { DEFAULT_SKILL, SKILL_NAMES, type Skill } from '../game/skill.ts';
+import type { AudioEngine } from '../audio/audio.ts';
 import { VERSION } from '../constants.ts';
 
 export interface Selection {
@@ -38,6 +39,8 @@ export class Menu {
   private startButton = el<HTMLButtonElement>('start-button');
   private statusEl = el<HTMLSpanElement>('menu-status');
   private fileInput = el<HTMLInputElement>('file-input');
+  private volumeSlider = el<HTMLInputElement>('volume-slider');
+  private volumeValue = el<HTMLSpanElement>('volume-value');
 
   private sources: WadSource[] = [];
   private selectedIwad: WadSource | null = null;
@@ -47,9 +50,11 @@ export class Menu {
   private uploadTarget: 'IWAD' | 'PWAD' = 'IWAD';
 
   private onStart: (selection: Selection) => void;
+  private audio: AudioEngine;
 
-  constructor(onStart: (selection: Selection) => void) {
+  constructor(onStart: (selection: Selection) => void, audio: AudioEngine) {
     this.onStart = onStart;
+    this.audio = audio;
 
     el<HTMLButtonElement>('iwad-upload').addEventListener('click', () => this.pickFile('IWAD'));
     el<HTMLButtonElement>('pwad-upload').addEventListener('click', () => this.pickFile('PWAD'));
@@ -58,6 +63,7 @@ export class Menu {
     this.startButton.addEventListener('click', () => this.start());
     this.installDropTarget();
     this.renderDifficulties();
+    this.installVolume();
     el<HTMLDivElement>('menu-version').textContent = `v${VERSION}`;
   }
 
@@ -99,6 +105,27 @@ export class Menu {
 
   get isOpen(): boolean {
     return !this.root.classList.contains('hidden');
+  }
+
+  /**
+   * The sfx volume slider. Dragging it is itself a user gesture, so the engine
+   * can start its context and preview the change right here rather than waiting
+   * for the level to start — which is the only way to set volume by ear.
+   */
+  private installVolume(): void {
+    const show = (v: number) => {
+      this.volumeSlider.value = String(Math.round(v * 100));
+      this.volumeValue.textContent = `${Math.round(v * 100)}%`;
+    };
+    show(this.audio.volume);
+    this.volumeSlider.addEventListener('input', () => {
+      const v = Number(this.volumeSlider.value) / 100;
+      this.audio.setVolume(v);
+      show(v);
+      this.audio.resume();
+      // The pickup blip: short, unmissable, and the sound a player hears most.
+      this.audio.play('itemup');
+    });
   }
 
   /** True once a level can actually be started. */

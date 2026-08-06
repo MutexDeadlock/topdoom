@@ -11,6 +11,8 @@ import { GraphicsBank } from '../src/wad/graphics.ts';
 import { loadMap } from '../src/wad/map.ts';
 import { buildSubSectorPolys } from '../src/render/bsp.ts';
 import { World, circleBlocked } from '../src/game/world.ts';
+import { SoundBank } from '../src/wad/sound.ts';
+import { SFX_NAMES } from '../src/audio/sfx.ts';
 import { PLAYER_RADIUS } from '../src/game/player.ts';
 
 function readWad(path: string): WadFile {
@@ -56,6 +58,28 @@ for (const s of map.sectors) {
   }
 }
 console.log(`\nmissing textures: ${missing.size === 0 ? 'none' : [...missing].join(', ')}`);
+
+// --- sounds: which of vanilla's sfx this set can actually play ---
+// A missing lump is silent rather than substituted (see SoundBank), so this is
+// the way to tell a WAD set that simply has fewer sounds (shareware DOOM1.WAD
+// carries 49 of the 108) from a decoding bug.
+const bank = new SoundBank(wad);
+const encoded = bank.encodedNames(SFX_NAMES);
+const missingSounds = SFX_NAMES.filter((n) => !bank.has(n));
+let pcmSounds = 0;
+let sampleSeconds = 0;
+for (const name of SFX_NAMES) {
+  const lump = bank.get(name);
+  if (lump?.kind !== 'pcm') continue;
+  pcmSounds++;
+  sampleSeconds += lump.samples.length / lump.sampleRate;
+}
+console.log(
+  `sounds: ${pcmSounds} DMX (${sampleSeconds.toFixed(1)}s total)` +
+    `${encoded.length > 0 ? `, ${encoded.length} in a browser container (${encoded.join(' ')})` : ''}` +
+    `, ${missingSounds.length} of ${SFX_NAMES.length} absent` +
+    `${missingSounds.length > 0 ? `: ${missingSounds.join(' ')}` : ''}`,
+);
 
 // --- subsector polygons ---
 const polys = buildSubSectorPolys(map);

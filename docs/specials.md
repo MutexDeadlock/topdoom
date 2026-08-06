@@ -8,6 +8,10 @@ wrongly) listed 174 as a vanilla S1 teleport, which is Boom-only. Same story for
 looks like it could be a third stop-crusher alongside 57/74, but is an unrelated "floor up 24".
 `wad/specials.ts`'s own table comments carry the full numbers-to-mechanism mapping.
 
+Every mover here also makes noise, and *which* noise is part of the mechanism: docs/audio.md §
+Specials has the per-mover rules, including the shared 8-tic grind clock and the silent crusher
+(141), whose sound is the only thing distinguishing it from 25.
+
 **Scope: every vanilla DOOM/DOOM2 linedef and sector special, and nothing beyond.** The table's gaps
 were closed by diffing every case in `P_CrossSpecialLine`/`P_UseSpecialLine` against its keys,
 directly against `p_spec.c`/`p_switch.c`/`p_floor.c`/`p_plats.c`/`p_ceilng.c`/`p_doors.c`/

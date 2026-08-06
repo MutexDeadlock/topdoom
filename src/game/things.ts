@@ -33,6 +33,7 @@ import {
   type RaiseCandidate,
 } from './monsters.ts';
 import { circleBlocked, type ThingBlocker } from './world.ts';
+import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import { SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
@@ -194,6 +195,9 @@ interface PosedThing extends Pos3 {
   refiring: boolean;
   /** Only meaningful for the revenant (see `MonsterBody.homingBias`'s doc); seeded/rerolled below regardless of type, the same as every other inert-elsewhere AI field. */
   homingBias: boolean;
+  /** Footstep pacing — only the three heavy monsters have any (`MonsterSounds.walk`); inert for everything else, like the AI fields above. */
+  walkSoundTimer: number;
+  walkSoundStep: number;
   /**
    * Seconds since this monster's last idle look-around. Separate from the AI
    * timers above because it only ticks *before* the monster wakes, and
@@ -436,6 +440,15 @@ export interface ThingLayer {
 const MONSTER_HIT_RADIUS = 24;
 export const MONSTER_HIT_HEIGHT = 64;
 
+/**
+ * The two types whose sight and death sounds vanilla plays **unattenuated**,
+ * from nowhere in particular (`A_Look`/`A_Scream`'s own
+ * `if (actor->type==MT_SPIDER || actor->type == MT_CYBORG) S_StartSound(NULL, …)`)
+ * — you hear a cyberdemon wake up anywhere on the map. Nothing else about their
+ * sounds is special: their pain, footsteps and shots all attenuate normally.
+ */
+const BOSS_TYPES = new Set([7, 16]);
+
 /** The lost soul's doomednum — what the pain elemental's `A_PainShootSkull` spawns (see `spawnLostSoul`). */
 const LOST_SOUL_TYPE = 3006;
 /** The pain elemental's own doomednum — `damage()`'s death branch checks this for its `A_PainDie` triple-spawn. */
@@ -537,6 +550,7 @@ export function buildThingSprites(
   bank: SpriteBank,
   materials: SpriteMaterialCache,
   skill: Skill,
+  sfx: SoundEmitter = SILENT,
 ): ThingLayer {
   const batch = new SpriteBatch();
   const group = batch.group;
@@ -615,6 +629,8 @@ export function buildThingSprites(
       reactionTicks: 0,
       refiring: false,
       homingBias: Math.random() < 0.5,
+      walkSoundTimer: 0,
+      walkSoundStep: 0,
       lookTimer: 0,
       prev: { x, y },
       targetId: null,
@@ -686,6 +702,8 @@ export function buildThingSprites(
       reactionTicks: 0,
       refiring: false,
       homingBias: Math.random() < 0.5,
+      walkSoundTimer: 0,
+      walkSoundStep: 0,
       lookTimer: 0,
       prev: { x, y },
       targetId: null,
@@ -782,6 +800,8 @@ export function buildThingSprites(
       reactionTicks: 0,
       refiring: false,
       homingBias: Math.random() < 0.5,
+      walkSoundTimer: 0,
+      walkSoundStep: 0,
       lookTimer: 0,
       prev: { x, y },
       targetId: origin.targetId,
@@ -1133,6 +1153,10 @@ export function buildThingSprites(
     p.chargeTimer = 0;
     p.painTimer = 0;
     p.attackPause = (p.raiseFrames?.length ?? 0) * MONSTER_DEATH_FRAME_SECONDS;
+    // Vanilla's A_VileChase plays `slop` on the corpse as it comes back up —
+    // the same sound a gib death makes, which is why a resurrection sounds
+    // like one played backwards.
+    sfx.play('slop', p, monsterOrigin(p.id));
     p.anim.revive();
     if (p.raiseFrames) p.anim.playOnce(p.raiseFrames, MONSTER_DEATH_FRAME_SECONDS);
   }
@@ -1220,14 +1244,20 @@ export function buildThingSprites(
               // Waking is one of the two events that can reshuffle a
               // revenant's guided/unguided personality — see
               // MonsterBody.homingBias's doc. A no-op for every other type.
-              if (tryWake(p, world, p.sector, player)) p.homingBias = Math.random() < 0.5;
+              if (tryWake(p, world, p.sector, player)) {
+                p.homingBias = Math.random() < 0.5;
+                // A_Look's sight sound, randomized within its family (the
+                // zombieman/imp groups) and unattenuated for the two bosses.
+                const see = stats.sounds.see;
+                if (see) sfx.play(randomVariant(see), BOSS_TYPES.has(p.type) ? null : p, monsterOrigin(p.id));
+              }
             }
           }
           if (p.alerted) {
             const beforeX = p.x;
             const beforeY = p.y;
             const target = resolveTarget(p, player);
-            const result = stepMonsterAI(p, stats, dt, world, target, blockersFor(p, player), findRaisableCorpse);
+            const result = stepMonsterAI(p, stats, dt, world, target, blockersFor(p, player), findRaisableCorpse, sfx);
             // Vanilla's own momentum-driven displacement, additive on top of
             // the AI walk step just above — see applyKnockback's doc.
             if (p.velX !== 0 || p.velY !== 0) applyKnockback(p, dt);
@@ -1459,6 +1489,9 @@ export function buildThingSprites(
         // hit that fails the roll alerts/retargets the monster same as any
         // other, but shouldn't flinch it on screen.
         if (p.painFrames && p.painTimer > 0) p.anim.playOnce(p.painFrames, MONSTER_ACTION_FRAME_SECONDS);
+        // A_Pain sits on the painstate itself, so the yelp is gated on the same
+        // stagger roll as the flinch pose above, not on merely being hit.
+        if (p.painTimer > 0 && stats?.sounds.pain) sfx.play(stats.sounds.pain, p, monsterOrigin(p.id));
         // The other event that can reshuffle a revenant's guided/unguided
         // personality (MonsterBody.homingBias's doc) — a real pain flinch,
         // same gate as the pose line just above. A no-op for every other
@@ -1490,6 +1523,11 @@ export function buildThingSprites(
         p.explodeSource = source ?? null;
         p.deathFrameCount = BARREL_DEATH_FRAMES.length;
         p.anim.die(BARREL_DEATH_FRAMES, BARREL_DEATH_FRAME_SECONDS, BARREL_DEATH_SPRITE);
+        // MT_BARREL's own deathsound. Vanilla's A_Scream sits on S_BEXP2, one
+        // 5-tic frame into the explosion rather than on death itself; played
+        // here on death, since a fifth of a second of silent fireball reads as
+        // a bug and the blast (BARREL_EXPLODE_DELAY_SECONDS) is later still.
+        sfx.play('barexp', p, monsterOrigin(p.id));
         return;
       }
       // Matches vanilla's P_KillMobj: gib only if this killing blow overkilled
@@ -1499,6 +1537,15 @@ export function buildThingSprites(
       const gibbed = p.health < -maxHealth && MONSTER_XDEATH_FRAMES[p.type];
       const frames = gibbed || MONSTER_DEATH_FRAMES[p.type];
       p.deathFrameCount = frames ? frames.length : 0;
+      // A_Scream's own death cry — randomized within its family, unattenuated
+      // for the two bosses — or A_XScream's wet `slop` for a gib, which the
+      // xdeathstate chain plays *instead*, not on top.
+      // `MONSTER_STATS` re-read rather than reused: the `stats` above is scoped
+      // to the survived-the-hit branch this one is the alternative to.
+      const death = gibbed ? 'slop' : MONSTER_STATS[p.type]?.sounds.death;
+      if (death) {
+        sfx.play(randomVariant(death), BOSS_TYPES.has(p.type) ? null : p, monsterOrigin(p.id));
+      }
       if (frames) p.anim.die(frames, MONSTER_DEATH_FRAME_SECONDS);
       else {
         p.hidden = true;

@@ -66,12 +66,14 @@ geometry makes results hard to interpret. Scratch scripts go in the scratchpad, 
 ## Architecture
 
 ```
-src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite decoding
+src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite + sound decoding
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards + their instanced batching, shot tracers, camera
 src/game/      spatial queries, collision, player controller, input, thing→sprite table,
                thing/monster world state (AI, pickups, damage), fog of war, inventory/pickups,
                weapons and firing, damage/death
+src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
+               WebAudio playback (channels, attenuation, pan, volume)
 src/ui/        start menu, HUD, DEVMODE profiling overlay
 src/util/      small helpers shared across layers (2D geometry, damped-lerp smoothing,
                per-frame profiling)
@@ -97,6 +99,7 @@ several record rules that look like accidents and aren't.
 | [docs/items.md](docs/items.md) | Pickups, inventory, keys/locked doors, the HUD, powerups, screen effects |
 | [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, the donut, damage floors, scrolling textures |
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
+| [docs/audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |
 | [docs/devmode.md](docs/devmode.md) | `DEVMODE` gating, debug hotkeys, the profiling overlay |
 
 For what is and isn't implemented, see [README.md](README.md#state) and [CHANGELOG](CHANGELOG).

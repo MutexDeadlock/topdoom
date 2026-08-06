@@ -12,6 +12,12 @@ or whether it woke). `ThingLayer.update` (`things.ts`) is where that state lives
 turns a returned attack into damage and, for a ranged one, a tracer. Same split as
 `WeaponSystem`/`SpecialsController`.
 
+**Sounds are the one exception to that split**: `stepMonsterAI` and `ThingLayer` raise them
+directly through a `SoundEmitter`, since several of vanilla's sit at moments that produce no event
+(`A_Chase`'s 3-in-256 idle grunt). Which sound each type plays when — and why melee compresses
+vanilla's two sounds into one — is docs/audio.md § Monsters; `MonsterStats.sounds` holds the
+table.
+
 ## Waking up
 
 A monster stays inert until it spots the player, checked on a throttle (`LOOK_INTERVAL`, ~0.3s)

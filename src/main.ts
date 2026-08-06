@@ -2,6 +2,7 @@ import { Wad } from './wad/wad.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
 import { Menu, type Selection } from './ui/menu.ts';
 import { Game, Viewport } from './game.ts';
+import { AudioEngine } from './audio/audio.ts';
 import type { Pos2 } from './types.ts';
 
 /** A short label naming the WAD set, for the HUD. */
@@ -49,16 +50,24 @@ async function boot(): Promise<void> {
     return;
   }
   const startPos = parsePos(new URLSearchParams(location.search).get('pos'));
+  // Session-level, like the Viewport: one AudioContext for every level and WAD
+  // set that follows (see AudioEngine). Constructing it starts nothing — the
+  // context itself waits for the first `resume`, i.e. for a user gesture.
+  const audio = new AudioEngine();
   let game: Game | null = null;
 
   const startLevel = async (selection: Selection): Promise<void> => {
+    // Synchronously, before the first `await`: this call is still inside the
+    // Start button's own click handler, which is the safest moment a browser
+    // will let an AudioContext start.
+    audio.resume();
     menu.setStatus('Loading …');
     try {
       const files = await loadWadFiles(selection.iwad, selection.pwads);
       const wad = new Wad(files);
 
       game?.dispose();
-      game = new Game(view, wad, selection.map, titleOf(selection.iwad, selection.pwads), selection.skill, startPos);
+      game = new Game(view, audio, wad, selection.map, titleOf(selection.iwad, selection.pwads), selection.skill, startPos);
 
       menu.close();
       game.resume();
@@ -68,7 +77,14 @@ async function boot(): Promise<void> {
     }
   };
 
-  const menu: Menu = new Menu((selection) => void startLevel(selection));
+  const menu: Menu = new Menu((selection) => void startLevel(selection), audio);
+
+  // A `?map=` deep link starts a level without the player ever clicking
+  // anything, so no gesture has unlocked audio by then — the first one that
+  // arrives does it. Idempotent, and `once` keeps it off the hot path.
+  const unlockAudio = () => audio.resume();
+  window.addEventListener('pointerdown', unlockAudio, { once: true });
+  window.addEventListener('keydown', unlockAudio, { once: true });
 
   // Esc toggles between playing and the menu; the level survives the trip.
   window.addEventListener('keydown', (e) => {

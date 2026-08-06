@@ -77,6 +77,7 @@ Without it those hotkeys are simply inert. `C` (ceiling toggle) always works eit
 | `+` / `-` | camera distance *(dev mode only)* |
 | `[` / `]` | camera tilt *(dev mode only)* |
 | `R` | restart the level (once dead) |
+| `M` | mute / unmute |
 | `Esc` | menu / resume |
 
 Ceilings are off by default — from above they would hide everything underneath. See
@@ -85,6 +86,20 @@ Ceilings are off by default — from above they would hide everything underneath
 Forward and sideways are separate speeds that are never blended into one, exactly as in
 vanilla — so **straferunning works**. Running forward and sideways at once (`W`+`D`+`Shift`)
 moves you faster than either alone: SR40, 1.28× plain running, matching vanilla's ratio.
+
+## Sound
+
+Sound effects are decoded from the loaded WAD, so they match whichever set is in use — and an
+add-on that replaces individual `DS*` lumps replaces those sounds, including modern
+Ogg/WAV/FLAC ones, not just the original DMX format. What plays when, how loud and how it pans
+follows the original engine's own mixer (see [docs/audio.md](docs/audio.md)); the two
+deliberate differences are that panning follows the *camera* rather than the player's facing,
+and that a sound the WAD lacks is silent instead of being replaced by a pistol shot the way the
+original does. Shareware `DOOM1.WAD` only carries 49 of the 108 sounds, so parts of it are
+quiet.
+
+Volume lives on the start menu and is remembered between sessions; `M` mutes in game. There is
+no music yet.
 
 ## HUD
 

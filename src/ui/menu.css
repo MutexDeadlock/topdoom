@@ -482,6 +482,23 @@ canvas {
   color: #a08e88;
 }
 
+#menu .slider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#menu .slider input[type='range'] {
+  flex: 1;
+  accent-color: #c0392b;
+}
+
+#menu .slider .value {
+  min-width: 4ch;
+  text-align: right;
+  color: #7f7a74;
+}
+
 #menu select {
   width: 100%;
   padding: 8px 10px;

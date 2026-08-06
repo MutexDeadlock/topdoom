@@ -1,3 +1,5 @@
+import type { SfxId } from '../audio/sfx.ts';
+
 /** The four ammo classes DOOM tracks; matches vanilla's `ammotype_t`. */
 export const AMMO_TYPES = ['bullets', 'shells', 'rockets', 'cells'] as const;
 export type AmmoType = (typeof AMMO_TYPES)[number];
@@ -134,6 +136,9 @@ const HEALTH_PICKUPS: Record<number, { amount: number; bonus: boolean }> = {
   2014: { amount: 1, bonus: true }, // Health bonus
   2013: { amount: 100, bonus: true }, // Soulsphere
 };
+
+/** Doomednum of the soulsphere — the one health pickup with the powerup jingle rather than the item blip (`pickupSound`). */
+const SOULSPHERE = 2013;
 
 const ARMOR_PICKUPS: Record<number, { amount: number; armorType: 1 | 2 }> = {
   2018: { amount: 100, armorType: 1 }, // Green armor
@@ -307,6 +312,22 @@ export function applyPickup(inv: Inventory, type: number, dropped = false): bool
   }
 
   return false;
+}
+
+/**
+ * The sound a collected item makes — vanilla's `P_TouchSpecialThing`, which
+ * starts from `itemup` and overrides it per sprite: `getpow` for the six
+ * powerups plus the soulsphere and megasphere (the two health items that push
+ * past 100), `wpnup` for the seven weapons. Everything else — health, armor,
+ * ammo, keys, the backpack — keeps the plain `itemup` blip.
+ *
+ * Played **unattenuated** by the caller, as vanilla's own
+ * `S_StartSound(NULL, sound)` does: you are standing on it.
+ */
+export function pickupSound(type: number): SfxId {
+  if (type === MEGASPHERE || type === SOULSPHERE || POWERUP_PICKUPS[type]) return 'getpow';
+  if (WEAPON_PICKUPS[type]) return 'wpnup';
+  return 'itemup';
 }
 
 /**

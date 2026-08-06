@@ -5,6 +5,7 @@ import {
   SECTOR_LIGHT_SPECIALS,
   SECTOR_DOOR_SPECIALS,
   DOOR_SPEED,
+  DOOR_SPEED_FAST,
   DOOR_WAIT,
   DOOR_OPEN_GAP,
   DOOR_CLOSE_WAIT_SECONDS,
@@ -56,9 +57,30 @@ import type { Placement, Pos2 } from '../types.ts';
 import type { MaterialBank } from '../render/textures.ts';
 import { FlatFader, type FadeTarget, WallFader } from '../render/occlusion.ts';
 import { segmentIntersect } from '../util/geom.ts';
+import { sectorOrigin, SILENT, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
 
 /** How far ahead of the player a `use` press reaches, in map units. */
 const USE_RANGE = 64;
+
+/**
+ * Vanilla's own moving-floor/ceiling grind (`sfx_stnmov`) is retriggered on a
+ * global `leveltime & 7` clock, not per mover — so every plane in motion
+ * anywhere on the map emits in the *same* tic, which is why a room full of
+ * rising stairs sounds like one machine rather than a dozen. `moveSoundDue`
+ * below reproduces that shared clock.
+ */
+const MOVE_SOUND_INTERVAL = 8 / 35;
+
+/**
+ * A door's sounds, by whether it's one of the "blazing" (4x speed) types —
+ * vanilla picks `bdopn`/`bdcls` over `doropn`/`dorcls` per special number
+ * (`p_doors.c`), which maps exactly onto `DOOR_SPEED_FAST` here since those are
+ * the same specials.
+ */
+const DOOR_SOUNDS: Record<'normal' | 'fast', { open: SfxId; close: SfxId }> = {
+  normal: { open: 'doropn', close: 'dorcls' },
+  fast: { open: 'bdopn', close: 'bdcls' },
+};
 
 /** Which sectors a special's linedef affects: the line's own back sector for manual doors, tag matches otherwise. */
 function resolveTargets(map: DoomMap, line: LineDef, def: SpecialDef): number[] {
@@ -317,6 +339,8 @@ interface CrusherMover {
   topHeight: number;
   bottomHeight: number;
   state: CrusherState;
+  /** Vanilla's `silentCrushAndRaise` (special 141) — see `CrusherEffect.silent`. */
+  silent: boolean;
   /** Counts down to the next `onCrush` call; reset to `CRUSH_DAMAGE_INTERVAL` each time it fires, matching vanilla's every-4-tics cadence. */
   crushTimer: number;
 }
@@ -547,6 +571,15 @@ export class SpecialsController {
   private onCrush: (sectorIndex: number) => void;
   private blocksCeilingLower: (sectorIndex: number, ceilingHeight: number) => boolean;
   private blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean;
+  private sfx: SoundEmitter;
+  /**
+   * Vanilla's `sector->soundorg` — where a sector's own sounds come from,
+   * computed lazily per sector and cached (`soundOrigin`).
+   */
+  private sectorOrigins = new Map<number, Pos2>();
+  /** Counts down to the next `stnmov` grind, and whether one is due this frame — see `MOVE_SOUND_INTERVAL`. */
+  private moveSoundTimer = MOVE_SOUND_INTERVAL;
+  private moveSoundDue = false;
 
   private movableSectors: Set<number>;
   /** Movable sectors sharing a linedef with a given movable sector — see `rebuildAround`. */
@@ -590,6 +623,7 @@ export class SpecialsController {
     blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean,
     playerX: number,
     playerY: number,
+    sfx: SoundEmitter = SILENT,
   ) {
     this.map = map;
     this.world = world;
@@ -603,6 +637,7 @@ export class SpecialsController {
     this.onCrush = onCrush;
     this.blocksCeilingLower = blocksCeilingLower;
     this.blocksFloorRise = blocksFloorRise;
+    this.sfx = sfx;
     this.prevX = playerX;
     this.prevY = playerY;
 
@@ -728,6 +763,10 @@ export class SpecialsController {
     ownedKeys: ReadonlySet<KeyColor>,
   ): void {
     const dirty = new Set<number>();
+    // One shared clock for every mover's grind — see MOVE_SOUND_INTERVAL.
+    this.moveSoundTimer -= dt;
+    this.moveSoundDue = this.moveSoundTimer <= 0;
+    if (this.moveSoundDue) this.moveSoundTimer += MOVE_SOUND_INTERVAL;
     this.tickMovers(dt, dirty);
     this.lastTeleport = null;
     this.handleUseTrigger(playerX, playerY, playerAngle, input, ownedKeys);
@@ -820,6 +859,63 @@ export class SpecialsController {
 
   // ---- Movers ----------------------------------------------------------
 
+  /**
+   * Where a sector's own sounds come from — vanilla's `sector->soundorg`, the
+   * centre of the bounding box of the sector's linedefs (`P_GroupLines`), not a
+   * polygon centroid. A door heard from the wrong end of a long corridor sector
+   * is the difference this makes, so it's worth being the same point vanilla
+   * uses. Cached: a lift emits one of these every 8 tics for as long as it runs.
+   */
+  private soundOrigin(sectorIndex: number): Pos2 {
+    const cached = this.sectorOrigins.get(sectorIndex);
+    if (cached) return cached;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const line of this.map.linedefs) {
+      const front = line.right !== NO_SIDE ? this.map.sidedefs[line.right]?.sector : undefined;
+      const back = line.left !== NO_SIDE ? this.map.sidedefs[line.left]?.sector : undefined;
+      if (front !== sectorIndex && back !== sectorIndex) continue;
+      for (const v of [this.map.vertexes[line.v1], this.map.vertexes[line.v2]]) {
+        if (!v) continue;
+        if (v.x < minX) minX = v.x;
+        if (v.x > maxX) maxX = v.x;
+        if (v.y < minY) minY = v.y;
+        if (v.y > maxY) maxY = v.y;
+      }
+    }
+    // A sector with no lines at all (malformed map) would leave the box empty;
+    // the origin then sits at 0,0, which is as good as anything for a sector
+    // that can't be entered.
+    const origin: Pos2 =
+      minX === Infinity ? { x: 0, y: 0 } : { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+    this.sectorOrigins.set(sectorIndex, origin);
+    return origin;
+  }
+
+  /** One sector-sound shorthand: vanilla's `S_StartSound(&sector->soundorg, id)`. */
+  private playSector(sectorIndex: number, id: SfxId): void {
+    this.sfx.play(id, this.soundOrigin(sectorIndex), sectorOrigin(sectorIndex));
+  }
+
+  /**
+   * Where a switch's click comes from: the linedef's own midpoint, i.e. the
+   * wall panel the player is standing at. A deliberate divergence —
+   * `P_ChangeSwitchTexture` passes `buttonlist->soundorg`, which is
+   * `buttonlist[0]`'s and is only filled in by `P_StartButton` *after* the
+   * sound plays, so vanilla emits the click from whatever stale button slot 0
+   * last held. Reproducing that bug would put the click on the far side of the
+   * map at random.
+   */
+  private switchOrigin(lineIndex: number): Pos2 {
+    const line = this.map.linedefs[lineIndex];
+    const a = this.map.vertexes[line.v1];
+    const b = this.map.vertexes[line.v2];
+    if (!a || !b) return { x: 0, y: 0 };
+    return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+
   private tickMovers(dt: number, dirty: Set<number>): void {
     for (const mover of this.movers.values()) {
       if (mover.kind === 'door') this.tickDoor(mover, dt, dirty);
@@ -846,10 +942,18 @@ export class SpecialsController {
       }
     } else if (mover.state === 'hold') {
       mover.holdRemaining -= dt;
-      if (mover.holdRemaining <= 0) mover.state = 'lowering';
+      if (mover.holdRemaining <= 0) {
+        mover.state = 'lowering';
+        // T_VerticalDoor's own topcountdown branch: the close is announced when
+        // the wait runs out, not when the door was opened.
+        this.playSector(mover.sectorIndex, this.doorSounds(mover.effect).close);
+      }
     } else if (mover.state === 'holdClosed') {
       mover.holdRemaining -= dt;
-      if (mover.holdRemaining <= 0) mover.state = 'raising';
+      if (mover.holdRemaining <= 0) {
+        mover.state = 'raising';
+        this.playSector(mover.sectorIndex, this.doorSounds(mover.effect).open);
+      }
     } else if (mover.state === 'lowering') {
       const next = Math.max(mover.closeHeight, sector.ceilHeight - mover.effect.speed * dt);
       if (this.blocksCeilingLower(mover.sectorIndex, next)) {
@@ -858,6 +962,11 @@ export class SpecialsController {
         // back open instead of sliding shut through them — this tick's move
         // is skipped outright, not merely reverted after applying it.
         mover.state = 'raising';
+        // The bump is audible, which is what tells you the door found you
+        // underneath — and it is the *slow* door's `doropn` even for a blazing
+        // one, since T_VerticalDoor's `res == crushed` branch names the sound
+        // literally rather than switching on the door type.
+        this.playSector(mover.sectorIndex, 'doropn');
       } else {
         sector.ceilHeight = next;
         if (sector.ceilHeight <= mover.closeHeight) {
@@ -867,6 +976,12 @@ export class SpecialsController {
             mover.holdRemaining = DOOR_CLOSE_WAIT_SECONDS;
           } else {
             mover.state = 'closed';
+            // A blazing door clacks a *second* `bdcls` as it lands — vanilla
+            // plays one when the close starts (above) and one here, in
+            // T_VerticalDoor's own `pastdest` branch, which is where the fast
+            // door's double thud comes from. A normal door is silent on
+            // arrival.
+            if (mover.effect.speed >= DOOR_SPEED_FAST) this.playSector(mover.sectorIndex, 'bdcls');
           }
         }
       }
@@ -883,10 +998,16 @@ export class SpecialsController {
         sector.floorHeight = mover.downHeight;
         mover.state = 'hold';
         mover.holdRemaining = mover.effect.waitSeconds;
+        // T_PlatRaise: `pstop` at either end of the travel, `pstart` whenever it
+        // sets off again — a lift is silent while it moves, unlike a floor.
+        this.playSector(mover.sectorIndex, 'pstop');
       }
     } else if (mover.state === 'hold') {
       mover.holdRemaining -= dt;
-      if (mover.holdRemaining <= 0) mover.state = 'raising';
+      if (mover.holdRemaining <= 0) {
+        mover.state = 'raising';
+        this.playSector(mover.sectorIndex, 'pstart');
+      }
     } else if (mover.state === 'raising') {
       const next = Math.min(mover.restHeight, sector.floorHeight + mover.effect.speed * dt);
       if (this.blocksFloorRise(mover.sectorIndex, next)) {
@@ -901,6 +1022,7 @@ export class SpecialsController {
       if (sector.floorHeight >= mover.restHeight) {
         sector.floorHeight = mover.restHeight;
         mover.state = 'rest';
+        this.playSector(mover.sectorIndex, 'pstop');
       }
     }
     if (sector.floorHeight !== before) dirty.add(mover.sectorIndex);
@@ -921,9 +1043,13 @@ export class SpecialsController {
       return;
     }
     sector.floorHeight = next;
+    // T_MoveFloor grinds on the shared 8-tic clock the whole time it moves, and
+    // clacks `pstop` once on arrival.
+    if (this.moveSoundDue) this.playSector(mover.sectorIndex, 'stnmov');
     if ((dir > 0 && sector.floorHeight >= mover.target) || (dir < 0 && sector.floorHeight <= mover.target)) {
       sector.floorHeight = mover.target;
       mover.state = 'done';
+      this.playSector(mover.sectorIndex, 'pstop');
       if (mover.arrivalTexture) {
         sector.floorTex = mover.arrivalTexture.floorTex;
         sector.special = mover.arrivalTexture.special;
@@ -951,6 +1077,10 @@ export class SpecialsController {
     const next = sector.ceilHeight + dir * mover.speed * dt;
     if (dir < 0 && this.blocksCeilingLower(mover.sectorIndex, next)) return;
     sector.ceilHeight = next;
+    // T_MoveCeiling grinds on the same shared clock, in both directions. It has
+    // no arrival sound: only vanilla's *silent* crusher gets a `pstop` at an end
+    // (see tickCrusher), which is exactly the type that stays quiet in between.
+    if (this.moveSoundDue) this.playSector(mover.sectorIndex, 'stnmov');
     if ((dir > 0 && sector.ceilHeight >= mover.target) || (dir < 0 && sector.ceilHeight <= mover.target)) {
       sector.ceilHeight = mover.target;
       mover.state = 'done';
@@ -968,14 +1098,20 @@ export class SpecialsController {
       if (sector.ceilHeight <= mover.bottomHeight) {
         sector.ceilHeight = mover.bottomHeight;
         mover.state = 'raising';
+        // The silent crusher's one sound, at each end of its travel — the exact
+        // inverse of every other crusher, which grinds throughout and is quiet
+        // at the turns (see CrusherEffect.silent).
+        if (mover.silent) this.playSector(mover.sectorIndex, 'pstop');
       }
     } else {
       sector.ceilHeight = Math.min(mover.topHeight, sector.ceilHeight + mover.speed * dt);
       if (sector.ceilHeight >= mover.topHeight) {
         sector.ceilHeight = mover.topHeight;
         mover.state = 'lowering';
+        if (mover.silent) this.playSector(mover.sectorIndex, 'pstop');
       }
     }
+    if (!mover.silent && this.moveSoundDue) this.playSector(mover.sectorIndex, 'stnmov');
     if (sector.ceilHeight !== before) dirty.add(mover.sectorIndex);
     this.tickCrush(mover.sectorIndex, mover, dt);
   }
@@ -988,8 +1124,14 @@ export class SpecialsController {
     timer.crushTimer += CRUSH_DAMAGE_INTERVAL;
   }
 
+  /** Which pair of door sounds this door uses — see `DOOR_SOUNDS`. */
+  private doorSounds(effect: DoorEffect): { open: SfxId; close: SfxId } {
+    return DOOR_SOUNDS[effect.speed >= DOOR_SPEED_FAST ? 'fast' : 'normal'];
+  }
+
   private triggerDoor(sectorIndex: number, effect: DoorEffect): void {
     const existing = this.movers.get(sectorIndex);
+    const sounds = this.doorSounds(effect);
     if (!existing || existing.kind !== 'door') {
       const sector = this.map.sectors[sectorIndex];
       const closeThenOpen = effect.mode === 'closeThenOpen';
@@ -1008,20 +1150,38 @@ export class SpecialsController {
         state: closeThenOpen ? 'lowering' : 'raising',
         holdRemaining: 0,
       });
+      // EV_DoDoor's own per-direction sound. Vanilla suppresses the *opening*
+      // one for a door already at its target height (`if (door->topheight !=
+      // sec->ceilingheight)`); that case can't reach here, since a door with
+      // nothing to open is one this engine gives no mover at all.
+      this.playSector(sectorIndex, closeThenOpen ? sounds.close : sounds.open);
       return;
     }
     const mover = existing;
     if (effect.mode === 'closeOnly' || effect.mode === 'closeThenOpen') {
       mover.state = 'lowering';
+      this.playSector(sectorIndex, sounds.close);
       return;
     }
     if (effect.mode === 'openOnly') {
-      if (mover.state === 'closed' || mover.state === 'lowering') mover.state = 'raising';
+      if (mover.state === 'closed' || mover.state === 'lowering') {
+        mover.state = 'raising';
+        this.playSector(sectorIndex, sounds.open);
+      }
       return;
     }
-    if (mover.state === 'closed' || mover.state === 'open') mover.state = 'raising';
-    else if (mover.state === 'hold') mover.holdRemaining = effect.waitSeconds;
-    else if (mover.state === 'lowering') mover.state = 'raising';
+    // Retriggering an open door only resets its wait — no sound, matching
+    // vanilla, which just writes `door->topcountdown` and never reaches
+    // EV_DoDoor's sound switch for an already-running thinker.
+    if (mover.state === 'closed' || mover.state === 'open') {
+      mover.state = 'raising';
+      this.playSector(sectorIndex, sounds.open);
+    } else if (mover.state === 'hold') {
+      mover.holdRemaining = effect.waitSeconds;
+    } else if (mover.state === 'lowering') {
+      mover.state = 'raising';
+      this.playSector(sectorIndex, sounds.open);
+    }
   }
 
   private triggerLift(sectorIndex: number, effect: LiftEffect): void {
@@ -1038,9 +1198,13 @@ export class SpecialsController {
         state: 'lowering',
         holdRemaining: 0,
       });
+      this.playSector(sectorIndex, 'pstart'); // EV_DoPlat's own downWaitUpStay sound
       return;
     }
-    if (existing.state === 'rest') existing.state = 'lowering';
+    if (existing.state === 'rest') {
+      existing.state = 'lowering';
+      this.playSector(sectorIndex, 'pstart');
+    }
   }
 
   private triggerFloor(sectorIndex: number, effect: FloorEffect, line: LineDef): void {
@@ -1098,6 +1262,7 @@ export class SpecialsController {
       topHeight: sector.ceilHeight,
       bottomHeight: sector.floorHeight + EIGHT_UNIT_GAP,
       state: 'lowering',
+      silent: effect.silent,
       crushTimer: CRUSH_DAMAGE_INTERVAL,
     });
   }
@@ -1306,7 +1471,13 @@ export class SpecialsController {
     // the player can walk off, find the key, and try the same line again —
     // matching vanilla, which just prints "you need the X key" and does
     // nothing else.
-    if (def.effect.kind === 'door' && def.effect.requiredKey && !ownedKeys.has(def.effect.requiredKey)) return null;
+    if (def.effect.kind === 'door' && def.effect.requiredKey && !ownedKeys.has(def.effect.requiredKey)) {
+      // Vanilla prints "you need the X key" and plays `oof` at full volume
+      // (`S_StartSound(NULL, sfx_oof)`) — with no message line in this engine,
+      // the grunt is the entire feedback that the door is locked.
+      this.sfx.play('oof');
+      return null;
+    }
 
     this.flashSwitch(lineIndex);
 
@@ -1483,6 +1654,13 @@ export class SpecialsController {
   private flashSwitch(lineIndex: number): void {
     const entries = this.switchTextures.get(lineIndex);
     if (!entries || entries.length === 0) return;
+    // `P_ChangeSwitchTexture` plays this from inside its switchlist match, so a
+    // line whose textures aren't a switch pair is silent — the same condition
+    // the early return above already encodes. It is always `swtchn`: vanilla's
+    // `swtchx` for the exit switch is unreachable, since `line->special` is
+    // zeroed for a one-shot switch *before* the `special == 11` test that would
+    // pick it (p_switch.c). Faithful, including the dead sound.
+    this.sfx.play('swtchn', this.switchOrigin(lineIndex), sectorOrigin(entries[0].sectorIndex));
     const dirty = new Set<number>();
     for (const e of entries) {
       this.map.sidedefs[e.sideIndex][e.slot] = e.onTexture;

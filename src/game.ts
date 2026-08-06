@@ -1619,9 +1619,24 @@ export class Game {
     return this.headroomBlocked(sectorIndex, this.map.sectors[sectorIndex].floorHeight, ceilingHeight);
   }
 
-  /** A rising lift or non-crushing `FloorMover` — `SpecialsController.blocksFloorRise`. The sector's ceiling doesn't move here, so `headroomBlocked` reads it straight off the map. */
+  /**
+   * A rising lift or non-crushing `FloorMover` — `SpecialsController.blocksFloorRise`.
+   * The sector's ceiling doesn't move here, so `headroomBlocked` reads it straight off
+   * the map for the monster fallback. The player additionally gets `groundCeiling`'s
+   * straddle-aware overhead: standing half on the rising sector and half in a
+   * lower-ceilinged neighbor, `groundFloor` already pins the player's `z` to this
+   * sector's rising floor, so the neighbor's own (unmoving) ceiling — not this
+   * sector's — is what would actually crush them; `headroomBlocked` alone only checks
+   * this sector's own ceiling and misses that. Without this, the player could be
+   * carried up into the neighbor's ceiling/upper wall.
+   */
   private blocksFloorRise(sectorIndex: number, floorHeight: number): boolean {
-    return this.headroomBlocked(sectorIndex, floorHeight, this.map.sectors[sectorIndex].ceilHeight);
+    if (this.headroomBlocked(sectorIndex, floorHeight, this.map.sectors[sectorIndex].ceilHeight)) return true;
+    if (this.circleOverlapsSector(this.player.x, this.player.y, PLAYER_RADIUS, sectorIndex)) {
+      const ceiling = this.world.groundCeiling(this.player.x, this.player.y, PLAYER_RADIUS);
+      if (floorHeight + PLAYER_HEIGHT > ceiling) return true;
+    }
+    return false;
   }
 
   /**

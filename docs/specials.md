@@ -60,9 +60,19 @@ carry this out — `blocksCeilingLower`/`blocksFloorRise`, both routed through t
 `headroomBlocked` helper.
 
 A door reverses direction outright (it already has a `raising` state to fall back into); a
-`CeilingMover`/`FloorMover`/`LiftMover` has none, so it skips that tick's step and retries the next —
-reading as the mover stalling until the obstruction clears, the same practical result as vanilla's
-per-tic retry.
+`CeilingMover`/`FloorMover` has none, so it skips that tick's step and retries the next — reading as
+the mover stalling until the obstruction clears, the same practical result as vanilla's per-tic retry.
+That covers `T_MoveFloor`/`T_MoveCeiling`, neither of which does anything with a `crushed` result
+beyond letting the next tic retry.
+
+**`LiftMover` is the one exception, and it does reverse**: `T_PlatRaise`'s own `res == crushed &&
+!plat->crush` branch sets `plat->status = down` (and plays `pstart`) the instant a rise is blocked,
+rather than stalling — confirmed against `p_plats.c`. `tickLift`'s `'raising'` branch mirrors this
+exactly: on `blocksFloorRise`, it flips `state` to `'lowering'` and plays `pstart`, so a lift a player
+is standing under (or half-straddling into a lower-ceilinged neighbor — see docs/movement.md §
+Collision's `groundCeiling`) backs off immediately instead of waiting at the ceiling for them to move.
+A lowering `CeilingMover`/closing door stopped at their *own* obstruction check still just stalls —
+this asymmetry (reverse vs. stall) is vanilla's own, not a simplification here.
 
 **Deliberately asymmetric, matching vanilla**: only the direction that closes the gap on someone is
 ever checked (a closing door/lowering ceiling, a rising lift/floor). The opposite direction is left
@@ -81,6 +91,12 @@ room, where the blind spot barely matters.
 Both take prospective heights as explicit parameters rather than reading `player.z`/`m.z`: the caller
 is always asking about the height a boundary is *about* to move to, matching `P_ThingHeightClip`
 re-syncing a grounded thing's `z` to the new floor before testing it.
+
+**`blocksFloorRise` also checks `World.groundCeiling` at the player's position**, beyond
+`headroomBlocked`'s own-sector-only test — straddling half onto a rising lift/floor and half into a
+static neighbor sector with a lower ceiling is a case `headroomBlocked` alone misses, since it only
+compares against the *rising* sector's own ceiling and the neighbor's lower one never enters the
+check. See docs/movement.md § Collision for `groundCeiling` itself.
 
 ## Neighbor-height queries
 

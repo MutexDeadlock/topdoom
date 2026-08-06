@@ -1066,11 +1066,14 @@ export class SpecialsController {
     } else if (mover.state === 'raising') {
       const next = Math.min(mover.restHeight, sector.floorHeight + mover.effect.speed * dt);
       if (this.blocksFloorRise(mover.sectorIndex, next)) {
-        // Vanilla's own floor-up un-crush rule (T_MovePlane: crush==false
-        // reverts the step) — a lift is never a crusher (LiftMover has no
-        // crush flag at all), so rising into someone with no headroom just
-        // stalls at the current height instead of sealing them against the
-        // ceiling; it resumes on its own the instant they clear it.
+        // T_PlatRaise's own `res == crushed && !plat->crush` branch: unlike a
+        // plain rising FloorMover/CeilingMover, which just stalls in place
+        // (T_MoveFloor/T_MoveCeiling have no such branch), a lift immediately
+        // reverses back down instead of waiting for the obstruction to clear —
+        // confirmed against p_plats.c. A lift is never a crusher (LiftMover
+        // has no crush flag at all), so this fires unconditionally.
+        mover.state = 'lowering';
+        this.playSector(mover.sectorIndex, 'pstart');
         return;
       }
       sector.floorHeight = next;

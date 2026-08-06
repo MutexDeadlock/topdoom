@@ -25,6 +25,17 @@ the circle actually straddles it (`crossesLine`); solid walls (`isSolidWall`: on
 direction. Conflating "near" with "straddling" for passable openings is exactly what causes the
 deadlock above.
 
+**`groundCeiling`** mirrors `groundFloor`: the local sector's ceiling, lowered to the top of any
+straddled two-sided opening. It exists for the flip side of the same straddling bug — standing half
+on a rising lift/floor and half in a static neighbor sector with a lower ceiling, `groundFloor`
+correctly pins the player's `z` to the rising sector's floor, but a rise-blocking check that only
+compares against *that sector's own* ceiling (`game.ts: blocksFloorRise`) never notices the lower
+neighbor and lets the floor carry the player up into the neighbor's ceiling/upper wall — they end up
+visibly stuck inside geometry. `blocksFloorRise` additionally checks the prospective floor height
+against `groundCeiling` at the player's actual position, gated the same way `headroomBlocked` gates
+sector membership (`circleOverlapsSector`), so the neighbor's real ceiling stops the rise before it
+gets that far. See docs/specials.md § Every other mover stops instead.
+
 ### slideMove
 
 `slideMove` is vanilla's `P_SlideMove`/`P_HitSlideLine`: a refused move is **projected onto the

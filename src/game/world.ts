@@ -246,6 +246,31 @@ export class World {
   }
 
   /**
+   * The lowest ceiling a body of this radius must clear, standing here — the
+   * mirror of `groundFloor`: the local sector's ceiling, lowered to the top
+   * of any two-sided opening its circle is currently straddling. Exists so a
+   * rising floor's headroom check (`game.ts: blocksFloorRise`) can see a
+   * lower-ceilinged neighbor sector the player's circle still overlaps, not
+   * just the rising sector's own ceiling — see docs/movement.md § Collision.
+   */
+  groundCeiling(x: number, y: number, radius: number, forMonster = false): number {
+    let ceiling = this.ceilingAt(x, y);
+    const rSq = radius * radius;
+    for (const i of this.linesNear(x, y, radius)) {
+      if (this.isSolidWall(i, forMonster)) continue;
+      const line = this.map.linedefs[i];
+      const a = this.map.vertexes[line.v1];
+      const b = this.map.vertexes[line.v2];
+      if (!a || !b) continue;
+      if (distSqToSegment(x, y, a.x, a.y, b.x, b.y) >= rSq) continue;
+      if (!crossesLine(x, y, radius, a.x, a.y, b.x, b.y)) continue;
+      const opening = this.openingOf(i);
+      if (opening) ceiling = Math.min(ceiling, opening.top);
+    }
+    return ceiling;
+  }
+
+  /**
    * The lowest floor this circle's footprint touches — vanilla's `tmdropoffz`,
    * the mirror of `groundFloor`'s `tmfloorz`. `circleBlocked`'s dropoff check
    * compares the two.

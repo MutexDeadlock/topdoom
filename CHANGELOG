@@ -1,10 +1,14 @@
-v0.9.1
+v0.9.1 (2026-08-??)
 
 - animated textures
-- mouse cursor is now a proper crosshair, which also reflects the  players healt
+- mouse cursor is now a proper crosshair, which color 
+  also reflects the players healt
+- a lift blocked by someone's headroom now backs down again
+  immediately instead of stalling at the ceiling
 
+===============================================================================
 
-v0.9.0
+v0.9.0 (2026-08-06)
 
 Features and improvements
   - SOUND! every sound effect comes out of the loaded WAD, with the original's
@@ -53,7 +57,8 @@ Fixed bugs
 
 ===============================================================================
 
-v0.8.0
+v0.8.0 (2026-08-04)
+
 Gameplay
   - all powerups work now: invulnerability, berserk, partial invisibility,
     radiation suit, computer area map and light amp visor, on vanilla's timers
@@ -79,7 +84,7 @@ UI / HUD
 
 ===============================================================================
 
-v0.7.0
+v0.7.0 (2026-08-03)
 - Q and E rotate camera by 45deg
 - initial COMBAT \o/
     - weapon shooting/switching/aiming
@@ -94,5 +99,6 @@ v0.7.0
 
 ===============================================================================
 
-v0.6.0
+v0.6.0 (2026-08-02)
+
 - first internal release

@@ -114,6 +114,18 @@ export const MONSTER_TYPES = new Set([
 /** Doomednums of the "Weapons" block above — kept out of `game/things.ts`'s pickup up-scale, see there for why. */
 export const WEAPON_TYPES = new Set([2001, 82, 2002, 2003, 2004, 2005, 2006]);
 
+/**
+ * The five monster types real vanilla's `A_BossDeath` (`p_enemy.c`) can fire for — confirmed
+ * against `info.c`'s `mobjinfo` doomednums. See docs/specials.md § Boss death.
+ */
+export const BOSS_DEATH_TYPES = {
+  baron: 3003,
+  cyberdemon: 16,
+  spiderMastermind: 7,
+  mancubus: 67,
+  arachnotron: 68,
+} as const;
+
 /** Vanilla `mobjinfo` spawn health, confirmed against the Doom Wiki's monster table. */
 export const MONSTER_HEALTH: Record<number, number> = {
   3004: 20, // POSS zombieman

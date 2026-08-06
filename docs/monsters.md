@@ -468,6 +468,11 @@ from anything AI-related. `ThingLayer.damage`'s death branch calls `spawnLostSou
 fanned 90°/180°/270° around the elemental's last facing, subject to the same placement and cap rules.
 This is what makes killing one at melee range reliably worse than shooting it from a distance.
 
+`ThingLayer.damage`'s death branch checks one other thing right after: whether the monster that just
+died was the last living one of a doomednum `A_BossDeath` cares about, which on the right map fires a
+level-wide special (a lowering floor, an exit) rather than anything AI-related — see docs/specials.md
+§ Boss death.
+
 ## The arch-vile
 
 Both signature mechanics are modeled, confirmed against `p_enemy.c`/`info.c`.

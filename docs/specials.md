@@ -254,6 +254,58 @@ A radiation suit gates the damage per type (`DamageFloorEffect.suit`, `game.ts: 
 `P_PlayerInSpecialSector` does — see the powerups doc for why the five types don't all treat it the
 same.
 
+E1M8's finale is actually two mechanisms working together: § Boss death below is what lowers the
+tag-666 floor that exposes this special-11 pit in the first place; this section is just what happens
+once the player steps down into it.
+
+## Boss death
+
+`A_BossDeath` (`p_enemy.c`) is the one special this engine drives from a monster's death rather than
+a linedef or a sector type: once every monster of a specific doomednum is dead **and** on a specific
+map, it fires a level-wide action. Confirmed directly against the real source (fetched from
+`raw.githubusercontent.com/id-Software/DOOM`) rather than assumed, tracing both the top-of-function
+map/type gate and the victory-section action switch:
+
+| Map (lump name) | Dies | Action |
+|---|---|---|
+| E1M8 | Baron (3003) | tag 666, `lowerFloorToLowest` |
+| E2M8 | Cyberdemon (16) | exit level |
+| E3M8 | Spider Mastermind (7) | exit level |
+| E4M6 | Cyberdemon (16) | tag 666, blaze-open door |
+| E4M8 | Spider Mastermind (7) | tag 666, `lowerFloorToLowest` |
+| MAP07 | Mancubus (67) | tag 666, `lowerFloorToLowest` |
+| MAP07 | Arachnotron (68) | tag 667, `raiseToTexture` |
+| any other episode's map 8 (e.g. SIGIL's E5M8) | any of the above five | exit level |
+| every other map | — | nothing |
+
+The last row is real, not a guess: vanilla's `switch(gameepisode)` has a `default` case with no
+per-type check at all, only `if (gamemap != 8) return;` — an unrecognized episode's map 8 exits on
+whichever of the five boss types happens to die last. `bossDeathTriggersFor` (`game/specials.ts`) is a
+pure function of `map.name` (`E1M8`, `MAP07`, …) that reproduces this whole table, gating on the map's
+own lump name rather than which WAD supplied it — a PWAD's own MAP07 gets DOOM2's exact Mancubus/
+Arachnotron triggers, matching vanilla, which only ever looks at `gamemap`.
+
+**Split across three files, the same "system reports, `game.ts` realizes" shape as
+`onCrush`/`onExit`/`crossLines`:**
+
+- `game/things.ts`'s `damage()` death branch is the only place that can answer "is this the last
+  living one of its type" — it already has `posed` in scope, the same array the pain elemental's
+  triple-spawn special-case reads. It reproduces vanilla's own thinker scan (`posed.every(q => q.type
+  !== p.type || q.dead)`) and, if true, calls the optional `onBossDeath` callback `buildThingSprites`
+  was given — the same "callback bundle" shape `sfx: SoundEmitter` already uses there, not a return
+  value threaded back through `ThingUpdateResult`, since a death can happen from any of `game.ts`'s
+  many `things.damage()` call sites, not just inside `update()`.
+- `game/specials.ts`'s `SpecialsController.notifyBossDeath` owns the actual per-map table
+  (`bossDeathTriggers`, resolved once from `map.name` in the constructor) and dispatches to either
+  `onExit(false)` or a new `triggerTag(tag, kind)`. `triggerTag` reuses the existing
+  `triggerFloor`/`triggerRaiseToTexture`/`triggerDoor` movers exactly as a linedef special would,
+  scanning `map.sectors` for the tag directly since there's no triggering linedef to run
+  `resolveTargets` on. `triggerFloor`'s `line` parameter is optional for exactly this caller — it's
+  only ever dereferenced for `changeTexture`, which a boss-death `lowerFloorToLowest` never sets.
+- `game.ts` holds the player-alive gate (vanilla's "make sure there is a player alive for victory"),
+  since `playerDead` is `Game`'s own state — the callback passed into `buildThingSprites` just checks
+  `!this.playerDead` before calling `this.specials.notifyBossDeath(type)`.
+
 ## Scrolling textures
 
 `SCROLL_LINE_SPECIAL` = 48 (`occlusion.ts: TextureScroller`) is vanilla's `P_UpdateSpecials`: a linedef

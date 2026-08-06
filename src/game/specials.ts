@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { NO_SIDE, type DoomMap, type LineDef } from '../wad/map.ts';
+import { BOSS_DEATH_TYPES } from './thingdefs.ts';
 import {
   LINE_SPECIALS,
   SECTOR_LIGHT_SPECIALS,
@@ -94,6 +95,57 @@ function resolveTargets(map: DoomMap, line: LineDef, def: SpecialDef): number[] 
     if (map.sectors[i].tag === line.tag) out.push(i);
   }
   return out;
+}
+
+type BossDeathAction =
+  | { kind: 'exit' }
+  | { kind: 'lowerFloorToLowest' | 'raiseToTexture' | 'blazeOpen'; tag: number };
+
+interface BossDeathTrigger {
+  type: number;
+  action: BossDeathAction;
+}
+
+/**
+ * Vanilla's `A_BossDeath` (`p_enemy.c`), confirmed against source — see docs/specials.md §
+ * Boss death for the full table. Pure function of the map's own lump name: vanilla gates on
+ * `gameepisode`/`gamemap`, not on which WAD supplied the map, so a PWAD's own MAP07 gets the
+ * same Mancubus/Arachnotron triggers the IWAD's does.
+ */
+function bossDeathTriggersFor(mapName: string): BossDeathTrigger[] {
+  const commercial = /^MAP(\d+)$/i.exec(mapName);
+  if (commercial) {
+    if (Number(commercial[1]) !== 7) return [];
+    return [
+      { type: BOSS_DEATH_TYPES.mancubus, action: { kind: 'lowerFloorToLowest', tag: 666 } },
+      { type: BOSS_DEATH_TYPES.arachnotron, action: { kind: 'raiseToTexture', tag: 667 } },
+    ];
+  }
+  const episodic = /^E(\d+)M(\d+)$/i.exec(mapName);
+  if (!episodic) return [];
+  const episode = Number(episodic[1]);
+  const map = Number(episodic[2]);
+  switch (episode) {
+    case 1:
+      return map === 8
+        ? [{ type: BOSS_DEATH_TYPES.baron, action: { kind: 'lowerFloorToLowest', tag: 666 } }]
+        : [];
+    case 2:
+      return map === 8 ? [{ type: BOSS_DEATH_TYPES.cyberdemon, action: { kind: 'exit' } }] : [];
+    case 3:
+      return map === 8 ? [{ type: BOSS_DEATH_TYPES.spiderMastermind, action: { kind: 'exit' } }] : [];
+    case 4:
+      if (map === 6) return [{ type: BOSS_DEATH_TYPES.cyberdemon, action: { kind: 'blazeOpen', tag: 666 } }];
+      if (map === 8)
+        return [{ type: BOSS_DEATH_TYPES.spiderMastermind, action: { kind: 'lowerFloorToLowest', tag: 666 } }];
+      return [];
+    default:
+      // Vanilla's own `default:` case has no per-type check, only `gamemap != 8` — any
+      // recognized boss type dying on map 8 of an unlisted episode (e.g. SIGIL's E5M8) exits.
+      return map === 8
+        ? Object.values(BOSS_DEATH_TYPES).map((type) => ({ type, action: { kind: 'exit' as const } }))
+        : [];
+  }
 }
 
 /**
@@ -572,6 +624,8 @@ export class SpecialsController {
   private blocksCeilingLower: (sectorIndex: number, ceilingHeight: number) => boolean;
   private blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean;
   private sfx: SoundEmitter;
+  /** `A_BossDeath`'s per-map table, resolved once from `map.name` — see `notifyBossDeath`. */
+  private bossDeathTriggers: BossDeathTrigger[];
   /**
    * Vanilla's `sector->soundorg` — where a sector's own sounds come from,
    * computed lazily per sector and cached (`soundOrigin`).
@@ -638,6 +692,7 @@ export class SpecialsController {
     this.blocksCeilingLower = blocksCeilingLower;
     this.blocksFloorRise = blocksFloorRise;
     this.sfx = sfx;
+    this.bossDeathTriggers = bossDeathTriggersFor(map.name);
     this.prevX = playerX;
     this.prevY = playerY;
 
@@ -1207,10 +1262,12 @@ export class SpecialsController {
     }
   }
 
-  private triggerFloor(sectorIndex: number, effect: FloorEffect, line: LineDef): void {
+  private triggerFloor(sectorIndex: number, effect: FloorEffect, line?: LineDef): void {
     const existing = this.movers.get(sectorIndex);
     if (existing && existing.kind === 'floor' && existing.state === 'moving') return;
-    if (effect.changeTexture) this.applyFloorChange(sectorIndex, line);
+    // `line` is only actually needed for `changeTexture` — the only caller without a real
+    // linedef (`triggerTag`, for a boss-death `lowerFloorToLowest`) never sets that flag.
+    if (effect.changeTexture && line) this.applyFloorChange(sectorIndex, line);
     const target = resolveFloorTarget(this.map, sectorIndex, effect.target);
     this.movers.set(sectorIndex, {
       kind: 'floor',
@@ -1584,6 +1641,43 @@ export class SpecialsController {
       if (dest) return dest;
     }
     return null;
+  }
+
+  /**
+   * Vanilla's `A_BossDeath` — see docs/specials.md § Boss death. `game.ts` calls this once per
+   * monster death that leaves none of its type alive on the level (`ThingLayer`'s own doomednum
+   * check), already gated on the player being alive, matching vanilla's own check.
+   */
+  notifyBossDeath(type: number): void {
+    for (const t of this.bossDeathTriggers) {
+      if (t.type !== type) continue;
+      if (t.action.kind === 'exit') this.onExit(false);
+      else this.triggerTag(t.action.tag, t.action.kind);
+    }
+  }
+
+  /** The tag-matched half of `notifyBossDeath` — no triggering linedef exists, so this scans sector tags directly rather than going through `resolveTargets`/`trigger`. */
+  private triggerTag(tag: number, kind: 'lowerFloorToLowest' | 'raiseToTexture' | 'blazeOpen'): void {
+    for (let i = 0; i < this.map.sectors.length; i++) {
+      if (this.map.sectors[i].tag !== tag) continue;
+      switch (kind) {
+        case 'lowerFloorToLowest':
+          this.triggerFloor(i, {
+            kind: 'floor',
+            speed: FLOOR_SPEED,
+            target: 'lowestNeighborFloor',
+            changeTexture: false,
+            crush: false,
+          });
+          break;
+        case 'raiseToTexture':
+          this.triggerRaiseToTexture(i);
+          break;
+        case 'blazeOpen':
+          this.triggerDoor(i, { kind: 'door', speed: DOOR_SPEED_FAST, waitSeconds: DOOR_WAIT, mode: 'openOnly' });
+          break;
+      }
+    }
   }
 
   /**

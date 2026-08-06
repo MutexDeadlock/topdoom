@@ -710,7 +710,19 @@ export class Game {
       this.audio,
     );
 
-    this.things = buildThingSprites(map, this.world, this.spriteBank, this.spriteMaterials, this.skill, this.audio);
+    this.things = buildThingSprites(
+      map,
+      this.world,
+      this.spriteBank,
+      this.spriteMaterials,
+      this.skill,
+      this.audio,
+      // A_BossDeath — see docs/specials.md § Boss death. Player-alive gate is vanilla's own
+      // "make sure there is a player alive for victory" check.
+      (type) => {
+        if (!this.playerDead) this.specials?.notifyBossDeath(type);
+      },
+    );
     this.scene.add(this.things.group);
 
     const provider = this.wad.providerOf(name)?.name ?? '?';

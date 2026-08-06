@@ -4,6 +4,7 @@ import type { SpriteBank } from '../wad/sprites.ts';
 import type { World } from './world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import {
+  BOSS_DEATH_TYPES,
   MONSTER_ACTION_FRAME_SECONDS,
   MONSTER_ATTACK_FRAMES,
   MONSTER_CORPSE_VANISHES,
@@ -449,6 +450,14 @@ export const MONSTER_HIT_HEIGHT = 64;
  */
 const BOSS_TYPES = new Set([7, 16]);
 
+/**
+ * The set of `BOSS_DEATH_TYPES` (`A_BossDeath`'s five candidate types) — distinct from
+ * `BOSS_TYPES` above, which is only about unattenuated sound. `damage()`'s death branch checks
+ * membership here to decide whether it's worth scanning `posed` for "any others of this type
+ * still alive" at all. See docs/specials.md § Boss death.
+ */
+const BOSS_DEATH_TYPE_SET: Set<number> = new Set(Object.values(BOSS_DEATH_TYPES));
+
 /** The lost soul's doomednum — what the pain elemental's `A_PainShootSkull` spawns (see `spawnLostSoul`). */
 const LOST_SOUL_TYPE = 3006;
 /** The pain elemental's own doomednum — `damage()`'s death branch checks this for its `A_PainDie` triple-spawn. */
@@ -551,6 +560,12 @@ export function buildThingSprites(
   materials: SpriteMaterialCache,
   skill: Skill,
   sfx: SoundEmitter = SILENT,
+  /**
+   * Fired from `damage()`'s death branch the instant a monster dies leaving none of its own type
+   * alive — vanilla's `A_BossDeath` gate, see docs/specials.md § Boss death. Just the doomednum:
+   * whether/how it matters is entirely `SpecialsController`'s per-map table to decide.
+   */
+  onBossDeath?: (type: number) => void,
 ): ThingLayer {
   const batch = new SpriteBatch();
   const group = batch.group;
@@ -1595,6 +1610,13 @@ export function buildThingSprites(
         spawnLostSoul(p, p.angle + Math.PI / 2);
         spawnLostSoul(p, p.angle + Math.PI);
         spawnLostSoul(p, p.angle + (3 * Math.PI) / 2);
+      }
+
+      // A_BossDeath's own thinker scan: "if any other of this type is still alive, do nothing."
+      // Only worth walking `posed` at all for the five types a map's own trigger table could
+      // possibly care about — see docs/specials.md § Boss death.
+      if (BOSS_DEATH_TYPE_SET.has(p.type) && posed.every((q) => q.type !== p.type || q.dead)) {
+        onBossDeath?.(p.type);
       }
     },
     raycastMonster(

@@ -10,6 +10,7 @@ Features and improvements
     - straferunning works
     - the player slides along angled walls instead of sticking to them
     - improved auto-aim
+  - implemented per-map boss-death specials
   - completed mancubus, arch-vile, revenant and pain elemental attacks
     - monster melee/ranged damage now matches vanilla's real dice instead of a
       softer tuned approximation

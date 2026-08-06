@@ -837,13 +837,18 @@ export function buildThingSprites(
   }
 
   /**
-   * Where a monster should currently be heading. `targetId` is non-null only
-   * after something other than the player hurt it (`damage` → `shouldRetarget`),
-   * and a target that dies hands attention straight back to the player —
-   * vanilla's `A_Chase` does the same via `P_LookForPlayers` once
-   * `target->health <= 0`, since there is nobody else for a monster to want.
+   * Where a monster should currently be heading, or `null` if it has nobody
+   * left to want. `targetId` is non-null only after something other than the
+   * player hurt it (`damage` → `shouldRetarget`), and a target that dies hands
+   * attention straight back to the player — vanilla's `A_Chase` does the same
+   * via `P_LookForPlayers` once `target->health <= 0`. `player` is itself
+   * `null` once the player is dead (`ThingLayer.update`'s caller), matching
+   * `P_LookForPlayers`'s own `player->health <= 0` skip — vanilla's
+   * `P_KillMobj` also strips the player's `MF_SHOOTABLE`, so a monster with no
+   * *other* target finds nobody and reports `null` here the same as if
+   * `P_LookForPlayers` had failed.
    */
-  function resolveTarget(p: PosedThing, player: Pos3): Pos3 {
+  function resolveTarget(p: PosedThing, player: Pos3 | null): Pos3 | null {
     if (p.targetId === null) return player;
     const other = posed[p.targetId];
     if (!other || other.dead) {
@@ -1039,7 +1044,7 @@ export function buildThingSprites(
    * and only the cells it covers are scanned. The single hottest thing in
    * monster AI; see docs/monsters.md § Spatial indexing.
    */
-  function blockersFor(p: PosedThing, player: Pos3): readonly ThingBlocker[] {
+  function blockersFor(p: PosedThing, player: Pos3 | null): readonly ThingBlocker[] {
     blockerScratch.length = 0;
     const ownRadius = p.blockRadius;
     // `blockedByThings` only ever reports an overlap inside `r1 + r2`, so
@@ -1048,9 +1053,14 @@ export function buildThingSprites(
     // 320-unit box collected ~145 candidates per monster on a map of 20-unit
     // grunts, which profiled as half of all monster-AI time.
     const reach = ownRadius + maxBlockerRadius + BLOCKER_MARGIN;
-    const playerReach = ownRadius + PLAYER_RADIUS + BLOCKER_MARGIN;
-    if (Math.abs(player.x - p.x) <= playerReach && Math.abs(player.y - p.y) <= playerReach) {
-      pushBlocker(player.x, player.y, PLAYER_RADIUS);
+    // `null` once the player is dead — vanilla's `P_KillMobj` clears the
+    // player's `MF_SOLID` right alongside `MF_SHOOTABLE`, so a corpse is no
+    // more an obstacle than it is a target.
+    if (player) {
+      const playerReach = ownRadius + PLAYER_RADIUS + BLOCKER_MARGIN;
+      if (Math.abs(player.x - p.x) <= playerReach && Math.abs(player.y - p.y) <= playerReach) {
+        pushBlocker(player.x, player.y, PLAYER_RADIUS);
+      }
     }
     const c0 = blockerCol(p.x - reach);
     const c1 = blockerCol(p.x + reach);
@@ -1233,8 +1243,15 @@ export function buildThingSprites(
 
         let animating = p.type === BARREL_TYPE;
         const stats = !p.dead ? MONSTER_STATS[p.type] : undefined;
-        if (stats && player) {
-          if (!p.alerted) {
+        if (stats) {
+          // Only the wake check itself needs a living player — vanilla's
+          // `P_LookForPlayers` (which `A_Look`/idle monsters call) explicitly
+          // skips `player->health <= 0`, so a dead player can't rouse anyone
+          // new. An already-alerted monster's own stepping keeps running
+          // either way: it may be mid-infight with another monster, and
+          // resolveTarget below is what actually decides whether *it* still
+          // has anyone to want.
+          if (!p.alerted && player) {
             // Throttled the same way vanilla's own idle A_Look is — see LOOK_INTERVAL.
             // The actual wake decision (FOV/sight/sound/ambush rules) lives in
             // game/monsters.ts's tryWake; this loop only owns the throttle.
@@ -1254,73 +1271,87 @@ export function buildThingSprites(
             }
           }
           if (p.alerted) {
-            const beforeX = p.x;
-            const beforeY = p.y;
             const target = resolveTarget(p, player);
-            const result = stepMonsterAI(p, stats, dt, world, target, blockersFor(p, player), findRaisableCorpse, sfx);
-            // Vanilla's own momentum-driven displacement, additive on top of
-            // the AI walk step just above — see applyKnockback's doc.
-            if (p.velX !== 0 || p.velY !== 0) applyKnockback(p, dt);
-            // Walk triggers this monster crossed on the way (teleports,
-            // and the handful of doors/lifts vanilla lets a monster open).
-            const dest = crossLines?.(p.prev, p);
-            if (dest) {
-              p.x = dest.x;
-              p.y = dest.y;
-              p.angle = dest.angle;
-              p.velZ = 0;
-              // Re-route from scratch: the heading it had is meaningless on
-              // the far side of the map.
+            if (!target) {
+              // vanilla's own `A_Chase`: `!(actor->target->flags&MF_SHOOTABLE)`
+              // (the player's flag `P_KillMobj` strips on death) with nobody
+              // else to fall back on sends the monster straight to
+              // `P_SetMobjState(actor->info->spawnstate)` — it gives up and
+              // idles, exactly like a monster that never woke. It only gets
+              // going again via `damage`'s own unconditional re-alert (infight
+              // splash, friendly fire), same as any other dormant monster.
+              p.alerted = false;
               p.movedir = DI_NODIR;
               p.movecount = 0;
-            }
-            p.prev.x = p.x;
-            p.prev.y = p.y;
-            p.sector = world.sectorAt(p.x, p.y);
-            p.subsector = world.subsectorAt(p.x, p.y);
-            if (p.sector) p.light = p.sector.light;
-            p.facingDeg = (p.angle * 180) / Math.PI;
-            animating = p.x !== beforeX || p.y !== beforeY;
-            if (result?.kind === 'resurrect') {
-              // Applied directly here rather than reported through `attacks`
-              // — a resurrection isn't damage for `game.ts` to realize, it's
-              // pure AI-state that only `ThingLayer` (which owns the corpse's
-              // `PosedThing`) can actually carry out. No attack pose either:
-              // the vile has no distinct WAD art for this (see
-              // `MONSTER_RAISE_FRAMES`'s doc on vanilla's own S_VILE_HEAL
-              // quirk) — its ordinary held idle frame during `attackPause`
-              // is the stand-in.
-              const corpse = result.resurrectId !== undefined ? posed[result.resurrectId] : undefined;
-              if (corpse?.dead) reviveCorpse(corpse);
-            } else if (result?.kind === 'spawn') {
-              // Same reasoning as 'resurrect' above: spawning a monster is
-              // pure AI-state only ThingLayer's own `posed` array can carry
-              // out, not damage for `game.ts` to realize, so this never goes
-              // through `attacks`. The elemental's own attack pose still
-              // plays, unlike 'resurrect' — A_PainAttack has real dedicated
-              // art (MONSTER_ATTACK_FRAMES[71]), unlike the vile's raise.
-              spawnLostSoul(p, result.angleRad);
-              if (p.attackFrames) p.anim.playOnce(p.attackFrames, MONSTER_ACTION_FRAME_SECONDS);
-            } else if (result) {
-              attacks.push({
-                ...result,
-                x: p.x,
-                y: p.y,
-                z: p.z + MONSTER_FIRE_HEIGHT,
-                sourceId: p.id,
-                sourceType: p.type,
-                targetId: p.targetId,
-              });
-              // The arch-vile's own attack pose starts here, at the windup's
-              // *beginning* ('vileWindup', vanilla's real cast timing —
-              // MONSTER_ATTACK_FRAMES plays through the whole missilestate
-              // chase, not just the instant the flame lands) rather than at
-              // the blast actually landing (kind 'ranged' with .blast set) —
-              // re-triggering playOnce there would snap the pose back to its
-              // first frame right as the explosion hits, instead of letting
-              // it finish naturally.
-              const alreadyPosedAtWindup = result.kind === 'ranged' && result.blast;
-              if (p.attackFrames && !alreadyPosedAtWindup) p.anim.playOnce(p.attackFrames, MONSTER_ACTION_FRAME_SECONDS);
+              p.z = p.sector?.floorHeight ?? p.z;
+            } else {
+              const beforeX = p.x;
+              const beforeY = p.y;
+              const result = stepMonsterAI(p, stats, dt, world, target, blockersFor(p, player), findRaisableCorpse, sfx);
+              // Vanilla's own momentum-driven displacement, additive on top of
+              // the AI walk step just above — see applyKnockback's doc.
+              if (p.velX !== 0 || p.velY !== 0) applyKnockback(p, dt);
+              // Walk triggers this monster crossed on the way (teleports,
+              // and the handful of doors/lifts vanilla lets a monster open).
+              const dest = crossLines?.(p.prev, p);
+              if (dest) {
+                p.x = dest.x;
+                p.y = dest.y;
+                p.angle = dest.angle;
+                p.velZ = 0;
+                // Re-route from scratch: the heading it had is meaningless on
+                // the far side of the map.
+                p.movedir = DI_NODIR;
+                p.movecount = 0;
+              }
+              p.prev.x = p.x;
+              p.prev.y = p.y;
+              p.sector = world.sectorAt(p.x, p.y);
+              p.subsector = world.subsectorAt(p.x, p.y);
+              if (p.sector) p.light = p.sector.light;
+              p.facingDeg = (p.angle * 180) / Math.PI;
+              animating = p.x !== beforeX || p.y !== beforeY;
+              if (result?.kind === 'resurrect') {
+                // Applied directly here rather than reported through `attacks`
+                // — a resurrection isn't damage for `game.ts` to realize, it's
+                // pure AI-state that only `ThingLayer` (which owns the corpse's
+                // `PosedThing`) can actually carry out. No attack pose either:
+                // the vile has no distinct WAD art for this (see
+                // `MONSTER_RAISE_FRAMES`'s doc on vanilla's own S_VILE_HEAL
+                // quirk) — its ordinary held idle frame during `attackPause`
+                // is the stand-in.
+                const corpse = result.resurrectId !== undefined ? posed[result.resurrectId] : undefined;
+                if (corpse?.dead) reviveCorpse(corpse);
+              } else if (result?.kind === 'spawn') {
+                // Same reasoning as 'resurrect' above: spawning a monster is
+                // pure AI-state only ThingLayer's own `posed` array can carry
+                // out, not damage for `game.ts` to realize, so this never goes
+                // through `attacks`. The elemental's own attack pose still
+                // plays, unlike 'resurrect' — A_PainAttack has real dedicated
+                // art (MONSTER_ATTACK_FRAMES[71]), unlike the vile's raise.
+                spawnLostSoul(p, result.angleRad);
+                if (p.attackFrames) p.anim.playOnce(p.attackFrames, MONSTER_ACTION_FRAME_SECONDS);
+              } else if (result) {
+                attacks.push({
+                  ...result,
+                  x: p.x,
+                  y: p.y,
+                  z: p.z + MONSTER_FIRE_HEIGHT,
+                  sourceId: p.id,
+                  sourceType: p.type,
+                  targetId: p.targetId,
+                });
+                // The arch-vile's own attack pose starts here, at the windup's
+                // *beginning* ('vileWindup', vanilla's real cast timing —
+                // MONSTER_ATTACK_FRAMES plays through the whole missilestate
+                // chase, not just the instant the flame lands) rather than at
+                // the blast actually landing (kind 'ranged' with .blast set) —
+                // re-triggering playOnce there would snap the pose back to its
+                // first frame right as the explosion hits, instead of letting
+                // it finish naturally.
+                const alreadyPosedAtWindup = result.kind === 'ranged' && result.blast;
+                if (p.attackFrames && !alreadyPosedAtWindup) p.anim.playOnce(p.attackFrames, MONSTER_ACTION_FRAME_SECONDS);
+              }
             }
           } else {
             p.z = p.sector?.floorHeight ?? p.z;
@@ -1333,9 +1364,9 @@ export function buildThingSprites(
         } else {
           p.z = p.sector?.floorHeight ?? p.z;
           // Barrels have no AI movement of their own, so this is their only
-          // source of horizontal motion; a monster lands here too whenever
-          // the player is dead (frozen — see `update`'s own doc), and can
-          // still be finishing off a knockback from just before that happened.
+          // source of horizontal motion; a freshly-dead monster (stats
+          // undefined above) lands here too, finishing off whatever knockback
+          // it had at the moment it died.
           if (!p.dead && (p.velX !== 0 || p.velY !== 0)) applyKnockback(p, dt);
         }
 

@@ -1010,8 +1010,9 @@ export class Game {
     const victim = atk.targetId === null ? null : this.things?.monsterById(atk.targetId);
     const at = victim ? { x: victim.x, y: victim.y, z: victim.z } : { x: this.player.x, y: this.player.y, z: this.player.z };
     if (atk.targetId === null) {
-      this.damagePlayer(atk.damage, atk.x, atk.y);
-      this.player.launchUpward(atk.blast.knockUpSpeed);
+      // A no-op hit (already dead, or invulnerable) reports false — see
+      // damagePlayer's doc — and skips the knockup along with it.
+      if (this.damagePlayer(atk.damage, atk.x, atk.y)) this.player.launchUpward(atk.blast.knockUpSpeed);
     } else {
       this.things?.damage(
         atk.targetId,
@@ -1495,11 +1496,15 @@ export class Game {
    * and same omitted-for-damage-floors-and-crushers convention as `ThingLayer.damage`'s own
    * params — and drive vanilla's `P_DamageMobj` horizontal knockback (`thrustSpeed`, `PLAYER_MASS`)
    * via `Player.applyKnockback`.
+   *
+   * Returns whether the hit actually landed — `false` covers both a no-op corpse hit and
+   * invulnerability blocking it outright, so a caller with its own follow-up effect (e.g.
+   * `resolveVileBlast`'s knockup) can gate on this instead of re-deriving "was this a no-op" itself.
    */
-  private damagePlayer(amount: number, fromX?: number, fromY?: number): void {
-    if (this.playerDead || amount <= 0) return;
+  private damagePlayer(amount: number, fromX?: number, fromY?: number): boolean {
+    if (this.playerDead || amount <= 0) return false;
     const healthBefore = this.inventory.health;
-    if (!applyDamage(this.inventory, amount)) return;
+    if (!applyDamage(this.inventory, amount)) return false;
     if (fromX !== undefined && fromY !== undefined) {
       let dx = this.player.x - fromX;
       let dy = this.player.y - fromY;
@@ -1527,10 +1532,11 @@ export class Game {
       this.audio.play(amount > healthBefore + 50 ? 'pdiehi' : 'pldeth', this.player, PLAYER_ORIGIN);
       this.playerActor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
       this.deathOverlay.classList.remove('hidden');
-      return;
+      return true;
     }
     this.audio.play('plpain', this.player, PLAYER_ORIGIN);
     this.playerActor.playOnce(PLAYER_PAIN_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
+    return true;
   }
 
   /**
@@ -1855,12 +1861,18 @@ export class Game {
     this.profiler.time('Fog of War', () => this.fogOfWar.update(dt, this.player.x, this.player.y));
     const fog = this.fogOfWar;
     const fogAlphaOf = (subsector: number) => fog.alphaOf(subsector);
-    // Monsters freeze in place while the player is dead (nothing to chase) —
-    // passing null skips their AI entirely without touching pose/animation/fog
-    // visibility, which keep updating normally. Every attack a still-living
-    // monster fired this frame comes back for us to actually apply/render,
-    // the same "system returns data, caller realizes it" split as
-    // WeaponSystem.update's Shot[].
+    // `null` once the player is dead — matching vanilla's own `P_KillMobj`,
+    // which strips the player's `MF_SHOOTABLE`/`MF_SOLID` right on death.
+    // `ThingLayer.update` uses this to stop anyone from *newly* targeting the
+    // corpse, but a monster already alerted keeps stepping regardless: mid
+    // infight, it fights on; out of other targets, `resolveTarget` there
+    // reports it and the monster reverts to idle the same frame, exactly
+    // vanilla's "no shootable target" A_Chase branch. Only `frame`'s own
+    // input-driven branch above (movement/aim/firing/pickups) freezes
+    // outright on death; pose/animation and fog visibility keep ticking for
+    // everyone. Every attack a monster fired this frame comes back for us to
+    // actually apply/render, the same "system returns data, caller realizes
+    // it" split as WeaponSystem.update's Shot[].
     const thingUpdate = this.profiler.time(
       'Monsters',
       () =>

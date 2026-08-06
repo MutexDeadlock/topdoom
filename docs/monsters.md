@@ -416,7 +416,10 @@ Three vanilla rules keep it from degenerating:
   it as no hit.
 
 A target that dies hands attention straight back to the player (`resolveTarget`), matching
-`A_Chase`'s fallback to `P_LookForPlayers` once `target->health <= 0`.
+`A_Chase`'s fallback to `P_LookForPlayers` once `target->health <= 0` — unless the player is dead too,
+in which case `resolveTarget` reports no target at all and the monster reverts to idle instead of
+turning on the corpse (`game/things.ts`'s per-frame update loop, docs/combat.md § Player death). A
+monster already infighting someone else is unaffected by the player's death and fights on regardless.
 
 ## The lost soul: a charge, not a projectile
 

@@ -341,9 +341,22 @@ returns whether the hit actually landed, `false` while invulnerability blocked i
 for a hit that did nothing, which a first version didn't check, so an invulnerable player flashed red
 on every hit that was landing on nothing.
 
-Health hitting 0 sets `Game.playerDead`, which freezes movement/aim/firing/pickups in `frame` — fog
-of war, effects, faders and rendering all keep ticking, so a rocket already in flight still lands and
-can still deal splash — and shows a `#death-overlay` div. `R` calls `restart`: a fresh `Inventory`
+Health hitting 0 sets `Game.playerDead`, which freezes only the input-driven half of `frame` —
+movement/aim/firing/pickups. Everything else keeps running: fog of war, effects, faders and
+rendering, and monster AI — but AI follows vanilla's own rule for it, not a blanket freeze.
+`P_KillMobj` strips the player's `MF_SHOOTABLE`/`MF_SOLID` on death, so `Game.frame` passes
+`ThingLayer.update` `null` for the player once `playerDead` (`game/things.ts`'s `resolveTarget` and
+`blockersFor` both take the `Pos3 | null` this produces). A monster already mid-infight with another
+monster is unaffected and keeps fighting; one whose only target *was* the player finds `resolveTarget`
+reporting no target the very next frame and reverts to idle right there — `p.alerted = false`,
+`movedir`/`movecount` cleared — the same as `A_Chase`'s own "no shootable target" branch falling
+through to `P_SetMobjState(spawnstate)`. It only wakes again via `damage`'s unconditional re-alert
+(getting caught in someone else's infight), same path any other dormant monster uses. A rocket or vile
+blast already in flight still lands and can still deal splash (or, for the vile's knockup, do nothing
+beyond the first killing blow — see `resolveVileBlast`'s `wasDead` guard, and
+`resolveMonsterHitscan`'s `!playerDead` guard for the hitscan equivalent) — a dead player can still be
+"hit" for nothing to happen, matching `damagePlayer`'s own early return. The death itself shows a
+`#death-overlay` div. `R` calls `restart`: a fresh `Inventory`
 and a `loadMapByIndex` reload of the current map, which already resets player/world/specials/fog for
 a normal transition and, via its own top-of-function reset, `playerDead`/the overlay/`playerActor`'s
 animation state too. Restart isn't a special case, just the ordinary map-load path with a clean

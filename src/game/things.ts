@@ -5,6 +5,8 @@ import type { World } from './world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import {
   BOSS_DEATH_TYPES,
+  COUNTITEM_TYPES,
+  COUNTKILL_TYPES,
   MONSTER_ACTION_FRAME_SECONDS,
   MONSTER_ATTACK_FRAMES,
   MONSTER_CORPSE_VANISHES,
@@ -310,9 +312,23 @@ export interface MonsterRef extends Pos3 {
   angle: number;
 }
 
+/**
+ * Live kill/item totals for the level, vanilla's own `totalkills`/`killcount` and
+ * `totalitems`/`itemcount` — `total*` set once at spawn (`COUNTKILL_TYPES`/`COUNTITEM_TYPES`),
+ * `kills`/`items` incremented as the level is played. docs/items.md § Level stats.
+ */
+export interface LevelKillItemStats {
+  totalKills: number;
+  kills: number;
+  totalItems: number;
+  items: number;
+}
+
 export interface ThingLayer {
   group: THREE.Group;
   count: number;
+  /** See `LevelKillItemStats`'s own doc. */
+  stats: LevelKillItemStats;
   /** Releases the instanced meshes/materials this layer owns; call when the map is unloaded. Shared geometry and textures belong to `SpriteMaterialCache`, which outlives a level. */
   dispose(): void;
   /** Every living monster and still-standing barrel near (x, y) as a solid body the *player* walks around — both are `MF_SOLID` in vanilla. Monsters get `blockersFor` instead. */
@@ -571,6 +587,7 @@ export function buildThingSprites(
   const group = batch.group;
   group.name = 'things';
   const posed: PosedThing[] = [];
+  const stats: LevelKillItemStats = { totalKills: 0, kills: 0, totalItems: 0, items: 0 };
   /** Scratch for `doomToWorld`, reused across every sprite — this runs per thing per frame. */
   const worldPos = new THREE.Vector3();
 
@@ -595,6 +612,12 @@ export function buildThingSprites(
     // Skips a thing whose art the WAD doesn't actually carry, same as before —
     // resolving once here is what the old build-time `setPose` call was for.
     if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) continue;
+    // Vanilla's own `P_SpawnMapThing` totals — incremented only for a thing that actually spawns
+    // (past every filter above), matching `if (mobj->flags & MF_COUNTKILL) totalkills++` /
+    // `MF_COUNTITEM` in `info.c`. Fixed for the level: only the runtime kill/pickup counters
+    // below change after this.
+    if (COUNTKILL_TYPES.has(t.type)) stats.totalKills++;
+    else if (COUNTITEM_TYPES.has(t.type)) stats.totalItems++;
     posed.push({
       id: posed.length,
       anim,
@@ -1193,6 +1216,7 @@ export function buildThingSprites(
   return {
     group,
     count: posed.length,
+    stats,
     solidBodies(pos: Pos2): ThingBlocker[] {
       const out: ThingBlocker[] = [];
       for (const p of posed) {
@@ -1419,6 +1443,9 @@ export function buildThingSprites(
           p.picked = true;
           p.hidden = true;
           p.visible = false;
+          // Vanilla P_TouchSpecialThing's `if (special->flags & MF_COUNTITEM) player->itemcount++`.
+          // A monster drop never matches (ammo/weapons aren't COUNTITEM), so no `dropped` guard needed.
+          if (COUNTITEM_TYPES.has(p.type)) stats.items++;
         }
       }
     },
@@ -1559,6 +1586,11 @@ export function buildThingSprites(
       }
       p.dead = true;
       p.deadTime = 0;
+      // Vanilla P_KillMobj's unconditional `if (target->flags & MF_COUNTKILL) ... killcount++` —
+      // no "already counted" guard, so an arch-vile-resurrected monster killed again legitimately
+      // counts twice, matching vanilla's own >100%-kills quirk. Barrels never match (not in
+      // COUNTKILL_TYPES), so this sits before the barrel branch without needing its own guard.
+      if (COUNTKILL_TYPES.has(p.type)) stats.kills++;
       if (isBarrel) {
         // BEXP, not BAR1 — see BARREL_DEATH_SPRITE's doc. The splash itself
         // fires later, once BARREL_EXPLODE_DELAY_SECONDS elapses (see

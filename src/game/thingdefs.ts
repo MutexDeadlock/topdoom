@@ -115,6 +115,25 @@ export const MONSTER_TYPES = new Set([
 export const WEAPON_TYPES = new Set([2001, 82, 2002, 2003, 2004, 2005, 2006]);
 
 /**
+ * `MONSTER_TYPES` entries that carry vanilla's `MF_COUNTKILL` flag — every monster except the
+ * lost soul (3006) and the Icon of Sin's brain (88), neither of which does in `info.c`'s
+ * `mobjinfo` table. `MONSTER_TYPES` exists for targeting/AI and isn't the same list vanilla uses
+ * for the level's kill total.
+ */
+export const COUNTKILL_TYPES = new Set([
+  3004, 9, 3001, 3002, 58, 3005, 3003, 69, 7, 16, 71, 65, 66, 67, 68, 64, 84, 72,
+]);
+
+/**
+ * Doomednums with vanilla's `MF_COUNTITEM` flag, confirmed against `info.c`'s `mobjinfo` table —
+ * health/armor bonus, soulsphere, invulnerability, berserk, invisibility, computer map, light
+ * visor, megasphere. Deliberately excludes keys, the backpack, weapons, ammo, and the radiation
+ * suit (2025): none of those carry the flag in vanilla, matching the well-known behavior that the
+ * backpack doesn't count toward a level's item percentage.
+ */
+export const COUNTITEM_TYPES = new Set([2014, 2015, 2013, 2022, 2023, 2024, 2026, 2045, 83]);
+
+/**
  * The five monster types real vanilla's `A_BossDeath` (`p_enemy.c`) can fire for — confirmed
  * against `info.c`'s `mobjinfo` doomednums. See docs/specials.md § Boss death.
  */

@@ -11,6 +11,33 @@ import {
   type WeaponId,
 } from '../game/inventory.ts';
 import { WEAPON_CYCLE, WEAPONS } from '../game/weapons.ts';
+import { WadFont } from './wadfont.ts';
+
+/**
+ * The kill/item/secret totals the level-stats strip shows — see `WadFont`'s doc and
+ * docs/items.md § Level stats.
+ */
+export interface LevelStats {
+  kills: number;
+  totalKills: number;
+  items: number;
+  totalItems: number;
+  secrets: number;
+  totalSecrets: number;
+  /** Wall-clock seconds spent in the level so far — see `Hud.drawTimer`'s doc for when this stops advancing. */
+  elapsedSeconds: number;
+}
+
+/** Sampled from `STYSNUM1` — vanilla's own status-bar yellow, reused as `WadFont`'s recolor for the strip's numbers. */
+const LEVEL_STATS_YELLOW: readonly [number, number, number] = [255, 255, 115];
+
+/**
+ * Sampled from `ARM1A0` (the green armor pickup) — there's no vanilla precedent for
+ * highlighting a *completed* kill/item/secret category (vanilla's intermission screen prints
+ * every percentage in the same font/color regardless of value), so this is a UI addition tuned
+ * by feel; only the choice of color is WAD-derived, for the same reason the yellow above is.
+ */
+const LEVEL_STATS_GREEN: readonly [number, number, number] = [111, 239, 103];
 
 const AMMO_ICONS: Record<AmmoType, string> = {
   bullets: 'CLIPA0',
@@ -68,12 +95,24 @@ function drawIcon(canvas: HTMLCanvasElement, gfx: GraphicsBank, lump: string): v
 }
 
 /**
- * The in-game status readout: health, armor, ammo and collected keys. Static
- * markup lives in index.html (`#game-hud`); this class only draws the WAD
- * icons once per level load and pushes numbers/visibility on every frame.
+ * The in-game status readout: health, armor, ammo, collected keys, and the kill/item/secret
+ * strip. Static markup lives in index.html (`#hud-bar`, containing `#hud-levelstats` and
+ * `#game-hud` as siblings — the strip sits outside `#game-hud`'s own bordered box); this class
+ * only draws the WAD icons once per level load and pushes numbers/visibility on every frame.
  */
 export class Hud {
   private root = document.getElementById('game-hud')!;
+  private redFont: WadFont;
+  private yellowFont: WadFont;
+  private greenFont: WadFont;
+  private labelColumnWidth: number;
+  /** Sits outside `#game-hud`'s own bordered box — a plain sibling immediately to its left inside `#hud-bar` — so it isn't `this.root`-scoped like everything else here. */
+  private levelStatsRoot = document.getElementById('hud-levelstats')!;
+  private killsCanvas = this.levelStatsRoot.querySelector<HTMLCanvasElement>('.line-kills')!;
+  private itemsCanvas = this.levelStatsRoot.querySelector<HTMLCanvasElement>('.line-items')!;
+  private secretsCanvas = this.levelStatsRoot.querySelector<HTMLCanvasElement>('.line-secrets')!;
+  /** Mirrors `levelStatsRoot`: a plain sibling of `#game-hud` inside `#hud-bar`, on its right this time. */
+  private timerCanvas = document.getElementById('hud-timer') as HTMLCanvasElement;
   private healthValue = this.root.querySelector<HTMLElement>('.hud-health .value')!;
   private healthIconNormal = this.root.querySelector<HTMLCanvasElement>('.hud-health .icon-normal')!;
   private healthIconBerserk = this.root.querySelector<HTMLCanvasElement>('.hud-health .icon-berserk')!;
@@ -90,6 +129,13 @@ export class Hud {
   private backpackRow: HTMLElement;
 
   constructor(gfx: GraphicsBank) {
+    this.redFont = new WadFont(gfx);
+    this.yellowFont = new WadFont(gfx, LEVEL_STATS_YELLOW);
+    this.greenFont = new WadFont(gfx, LEVEL_STATS_GREEN);
+    // The widest of the three labels ("M: "/"I: "/"S: ", proportionally spaced) — every line's
+    // number starts here rather than right after its own label, so the numbers form a flush
+    // column instead of each starting wherever its own (differently-wide) label happens to end.
+    this.labelColumnWidth = Math.max(this.redFont.measure('M: '), this.redFont.measure('I: '), this.redFont.measure('S: '));
     drawIcon(this.healthIconNormal, gfx, 'MEDIA0');
     drawIcon(this.healthIconBerserk, gfx, POWER_ICONS.berserk);
     drawIcon(this.armorIconGreen, gfx, 'ARM1A0');
@@ -148,7 +194,47 @@ export class Hud {
     return { row, value };
   }
 
-  update(inv: Inventory): void {
+  /**
+   * Composes one `hud-levelstats` line — a red `"<label>: "` run, then a `"<found>/<total>"` run
+   * starting at `labelColumnWidth` rather than wherever this line's own (proportionally-spaced,
+   * so differently-wide) label happens to end, so the three lines' numbers form a flush column
+   * instead of drifting with each label's width. The number run switches from yellow to green
+   * once `found` reaches `total` — a hit-your-goal cue with no vanilla equivalent (see
+   * `LEVEL_STATS_GREEN`'s doc). Same "canvas sized to its content, CSS scales it" pattern
+   * `drawIcon` uses for a WAD picture lump.
+   */
+  private drawStatLine(canvas: HTMLCanvasElement, label: string, found: number, total: number): void {
+    const redText = `${label}: `;
+    const numberText = `${found}/${total}`;
+    const numberFont = found >= total ? this.greenFont : this.yellowFont;
+    canvas.width = this.labelColumnWidth + numberFont.measure(numberText);
+    canvas.height = Math.max(this.redFont.height, numberFont.height);
+    const ctx = canvas.getContext('2d')!;
+    this.redFont.draw(ctx, 0, 0, redText);
+    numberFont.draw(ctx, this.labelColumnWidth, 0, numberText);
+  }
+
+  /**
+   * Draws the level clock, right of `#game-hud`, in the same native STCFN red as the strip's
+   * labels. `elapsedSeconds` is `Game`'s to freeze (on death or level completion) — this method
+   * only ever formats whatever it's handed.
+   */
+  private drawTimer(elapsedSeconds: number): void {
+    const total = Math.max(0, Math.floor(elapsedSeconds));
+    const hh = String(Math.floor(total / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+    const ss = String(total % 60).padStart(2, '0');
+    const text = `${hh}:${mm}:${ss}`;
+    this.timerCanvas.width = this.redFont.measure(text);
+    this.timerCanvas.height = this.redFont.height;
+    this.redFont.draw(this.timerCanvas.getContext('2d')!, 0, 0, text);
+  }
+
+  update(inv: Inventory, stats: LevelStats): void {
+    this.drawStatLine(this.killsCanvas, 'M', stats.kills, stats.totalKills);
+    this.drawStatLine(this.itemsCanvas, 'I', stats.items, stats.totalItems);
+    this.drawStatLine(this.secretsCanvas, 'S', stats.secrets, stats.totalSecrets);
+    this.drawTimer(stats.elapsedSeconds);
     this.healthValue.textContent = String(Math.max(0, Math.round(inv.health)));
     const berserk = hasPower(inv, 'berserk');
     this.healthIconNormal.classList.toggle('hidden', berserk);
@@ -165,6 +251,8 @@ export class Hud {
       this.weaponIcons[inv.currentWeapon].classList.remove('hidden');
       this.currentWeaponShown = inv.currentWeapon;
     }
+    const currentAmmoType = WEAPONS[inv.currentWeapon].ammoType;
+    for (const t of AMMO_TYPES) this.ammoValues[t].classList.toggle('current', t === currentAmmoType);
 
     let anyPower = inv.backpack;
     for (const p of STRIP_POWER_IDS) {

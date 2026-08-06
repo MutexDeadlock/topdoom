@@ -1,12 +1,20 @@
 v0.9.1 (2026-08-??)
 
-- animated textures
-- mouse cursor is now a proper crosshair, which color
-  also reflects the players healt
-- a lift blocked by someone's headroom now backs down again
-  immediately instead of stalling at the ceiling
-- the player and a monster (or two monsters) that end up touching no longer
-  freeze in place forever — they can now work their way apart again
+Features and improvements
+  - animated textures
+  - mouse cursor is now a proper crosshair, which color also 
+    reflects the players healt
+  - improved HUD
+    - show current level stats (kills/items/secrets) and time
+    - moved the current weapon between armor and ammo
+    - highlight ammo type for the current weapon
+
+Fixed bugs
+  - a lift blocked by someone's headroom now backs down again
+    immediately instead of stalling at the ceiling
+  - the player and a monster (or two monsters) that end up touching no longer
+    freeze in place forever — they can now work their way apart again
+
 
 ===============================================================================
 
@@ -57,6 +65,7 @@ Fixed bugs
     ever catch a step at melee range
   - fixed severe frame drops on larger maps related to fog of war
 
+
 ===============================================================================
 
 v0.8.0 (2026-08-04)
@@ -84,6 +93,7 @@ UI / HUD
   - more accurate FPS counter
   - DEVMODE: add simple profiler overlay
 
+
 ===============================================================================
 
 v0.7.0 (2026-08-03)
@@ -98,6 +108,7 @@ v0.7.0 (2026-08-03)
 - crushers should hurt/kill now
 - fixed lift speed/s
 - cleaned up debug infos, and add "monsters awake" counter
+
 
 ===============================================================================
 

@@ -115,6 +115,97 @@ Both dynamically-built panels `replaceChildren()` before filling themselves: `Hu
 `Game` against the *same* static `#game-hud` element, so a second game started from the menu would
 otherwise stack a second full set of icons on the first's.
 
+## Level stats (kills / items / secrets)
+
+`#hud-levelstats` — a plain sibling of `#game-hud`'s own bordered box, both inside `#hud-bar`, sitting
+immediately to its left rather than inside it — shows vanilla's classic three ratios —
+`M: kills/totalKills`, `I: items/totalItems`, `S: secrets/totalSecrets` — confirmed against
+`linuxdoom-1.10/info.c`'s `mobjinfo` table rather than assumed from doomednum lists that exist for
+other purposes.
+
+`#hud-bar` lays the pair out as a three-column grid (`1fr auto 1fr`), not a centered flex row: a
+centered flex row centers the *pair's combined* bounding box, which would push `#game-hud` off the
+true viewport center by half of `#hud-levelstats`'s own width. With the grid, the two `1fr` outer
+tracks stay equal width regardless of what's in them, so the middle `auto` column — `#game-hud` —
+always lands exactly on center; `#hud-levelstats` sits in the left track, right-aligned
+(`justify-self: end`) so it's flush against `#game-hud`'s own left edge.
+
+- **Kills** — `thingdefs.ts`'s `COUNTKILL_TYPES` is `MONSTER_TYPES` minus the lost soul (3006) and
+  the Icon of Sin's brain (88), neither of which carries vanilla's `MF_COUNTKILL`. `totalKills` is
+  counted once, at map load, in `things.ts`'s `buildThingSprites` spawn loop (mirrors
+  `P_SpawnMapThing`'s own `if (mobj->flags & MF_COUNTKILL) totalkills++`); `kills` increments in
+  `ThingLayer.damage`'s death branch with **no** "already counted" guard, matching vanilla's
+  `P_KillMobj` exactly — an arch-vile-resurrected monster killed a second time legitimately counts
+  twice, the same reason vanilla's own kill percentage can read over 100%.
+- **Items** — `COUNTITEM_TYPES` is the doomednums with vanilla's `MF_COUNTITEM` flag: health/armor
+  bonus, soulsphere, invulnerability, berserk, invisibility, computer map, light visor, megasphere.
+  Keys, the backpack, weapons, ammo and the radiation suit are deliberately excluded — none carry
+  the flag in vanilla (the backpack not counting toward item% is a well-known vanilla quirk this
+  reproduces on purpose, not an oversight). `totalItems` is counted the same spawn pass as
+  `totalKills`; `items` increments in `ThingLayer.tryPickup`'s success branch.
+- **Secrets** — `sector.special === 9` is vanilla's "SECRET SECTOR". `Game.updatePlayerSector`
+  (`game.ts`) is this repo's direct reimplementation of vanilla's `P_PlayerInSpecialSector`,
+  covering both this case and the damage-floor cases below it in the same switch, gated by the same
+  `player.z === sector.floorHeight` vanilla itself checks. Entering the sector increments
+  `secretsFound` and clears `sector.special` to 0, exactly like vanilla — which is also what stops a
+  second frame in the same sector from double-counting, no separate guard needed. `totalSecrets` is
+  counted once at map load (`sector.special === 9` across `map.sectors`), the direct analog of
+  vanilla `P_SpawnSpecials`' `case 9: totalsecret++`.
+
+Both counts and the `Game.hud.update` stat object are assembled fresh every frame — cheap integer
+reads, not worth caching.
+
+Once a line's `found` reaches its `total`, `Hud.drawStatLine` switches that line's number run from
+yellow to a green `WadFont` (sampled from `ARM1A0`, the green armor pickup). Vanilla has no
+equivalent — its intermission screen prints every percentage in the same color regardless of
+value — so this is a UI addition, not a fidelity reproduction; only the choice of *which* WAD asset
+to sample the color from follows the same convention the yellow recolor already established.
+
+### Level timer
+
+`#hud-timer`, the third column of `#hud-bar`'s grid (mirroring `#hud-levelstats` on the opposite
+side, flush against `#game-hud`'s right edge via `justify-self: start`), shows time spent in the
+level as `hh:mm:ss`, drawn with the same `WadFont` used for the strip's labels (native STCFN red,
+no recolor). `Game.levelTime` accumulates `dt` in `frame`, gated the same way `tickPowers` is —
+frozen once `playerDead` — and reset to 0 in `loadMapByIndex`. It also never advances on the frame
+an exit trigger fires: that frame already returns early once `pendingExit` is set (see that field's
+own doc in `game.ts`), before reaching the increment, so no separate "level complete" check is
+needed on top of the death check. This repo has no intermission screen, so that frozen instant isn't
+currently visible — the very next frame loads the next map with a fresh zeroed timer — but the
+behavior is in place for if one is added later.
+
+### `WadFont` (`src/ui/wadfont.ts`)
+
+The strip is drawn with the IWAD's own font graphics rather than DOM text, and built as a reusable
+primitive rather than a one-off, since more WAD-font text is expected later. `WadFont` wraps
+`STCFN033`-`STCFN095` (`'!'`-`'_'`, vanilla's `hu_stuff.h` `HU_FONTSTART`/`HU_FONTEND` — the same
+lumps vanilla's own on-screen messages use). In its default proportional mode, layout matches
+`hu_lib.c`'s `HUlib_drawTextLine` exactly: each glyph advances by its own patch width with zero
+kerning, a space or unknown character advances a flat 4px, text is uppercased first (the font has no
+lowercase glyphs). `measure()`/`draw()` let a caller compose multiple runs (different colors, even
+different `WadFont` instances) onto one canvas — `draw()` returns the cursor x just past the last
+glyph, so a second call can continue from there.
+
+STCFN's own pixels are already vanilla's HUD-message red, so the red `"M: "`/`"I: "`/`"S: "` labels
+need no recoloring. There is no full-charset yellow font in vanilla WADs (`WINUM`/`STYSNUM` are
+digits-only, and mixing font families within one line would visibly mismatch STCFN's glyph height),
+so the strip's numbers instead recolor STCFN itself — `WadFont`'s optional `recolor` — tinted to
+`STYSNUM1`'s own sampled yellow (`255,255,115`), so the color still comes from the WAD rather than
+being invented. Recoloring is **not** a flat fill: each opaque pixel is scaled by its own brightness
+(`max(r,g,b)/255`) before tinting, so STCFN's anti-aliased edges (its glyphs shade from a dark red
+core out to a brighter edge) still shade from a dark tint to a bright one rather than flattening to
+one solid color — a flat fill was tried first and read as illegible pixel mush. This repo has no
+palette-translation-table mechanism (`GraphicsBank` always blits through the one loaded palette),
+which is why a second color needs this recolor path at all rather than a second baked-color lump set.
+
+The font itself stays proportional (STCFN's own per-glyph widths, matching vanilla) rather than
+monospacing every glyph to a fixed cell — a full-font monospace was tried first and read as too
+sparse for a font this narrow. Instead, `Hud.drawStatLine` aligns just the *columns* that need to
+line up: `labelColumnWidth` (the constructor's `Math.max` over all three labels' proportional
+widths) is where every line's yellow run starts, regardless of how wide that line's own red label
+measured — so "M: ", "I: " and "S: " each keep their natural width and stay flush left, while the
+three numbers still form a flush column starting at the same x.
+
 **The mouse cursor is the health readout too.** `src/ui/crosshair.ts`'s `Crosshair` sets the game
 canvas's OS cursor to a plus-shaped reticle (an inline SVG data URI, since the built-in `crosshair`
 keyword can't be recolored) whose color reports health at a glance: blue above 100, sliding from

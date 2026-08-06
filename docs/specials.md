@@ -252,9 +252,10 @@ plus E1M8's finale special (11, 20 HP, which also ends the level once it drops t
 below — vanilla's inline `G_ExitLevel()` in that same case).
 
 **Player-only**, matching vanilla, which passes a `player_t*` and never damages monsters this way.
-Dealt directly in `game.ts: updateDamageFloor` rather than through `SpecialsController` — a damage
+Dealt directly in `game.ts: updatePlayerSector` rather than through `SpecialsController` — a damage
 floor has no mover, nothing for that machinery to own, just `sector.special` plus the player's live
-position, so it's checked once a frame off `World.sectorAt`.
+position, so it's checked once a frame off `World.sectorAt`. That same method also covers special 9
+(§ Secret sectors below) — both are cases of the one vanilla switch this method reimplements.
 
 Gated on `player.z === sector.floorHeight` (vanilla's `mo->z != sector->floorheight` guard, skipping a
 player still falling in) — deliberately the *local* 2D-position sector's own floor, **not**
@@ -273,6 +274,17 @@ same.
 E1M8's finale is actually two mechanisms working together: § Boss death below is what lowers the
 tag-666 floor that exposes this special-11 pit in the first place; this section is just what happens
 once the player steps down into it.
+
+## Secret sectors
+
+`sector.special === 9` is vanilla's "SECRET SECTOR" — handled in the same `case` statement as the
+damage floors above, by the same `game.ts: updatePlayerSector`, under the same
+`player.z === sector.floorHeight` guard. Entering it increments `Game.secretsFound` and clears
+`sector.special` back to 0, matching vanilla's own `case 9: player->secretcount++; sector->special =
+0;` exactly — the clear is also what prevents a second frame from double-counting, no separate
+"already found" flag needed. `Game.totalSecrets` is counted once per level load, straight off
+`map.sectors`, mirroring vanilla `P_SpawnSpecials`' own `case 9: totalsecret++`. See docs/items.md §
+Level stats for where these numbers surface on screen.
 
 ## Boss death
 

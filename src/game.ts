@@ -506,8 +506,19 @@ export class Game {
    * old map's mover mesh to the new map's scene, with nothing to clean it up.
    */
   private pendingExit = false;
-  /** Counts down to the next damage-floor tick while the player stands on one — see `updateDamageFloor`. Reset (not merely paused) whenever they aren't, so re-entering a hazard always gives the same brief grace period rather than resuming mid-countdown from a stale visit. */
+  /** Counts down to the next damage-floor tick while the player stands on one — see `updatePlayerSector`. Reset (not merely paused) whenever they aren't, so re-entering a hazard always gives the same brief grace period rather than resuming mid-countdown from a stale visit. */
   private damageFloorTimer = DAMAGE_FLOOR_INTERVAL;
+  /** Vanilla `totalsecret` — sectors with `special === 9`, counted once per level load. See `updatePlayerSector`. */
+  private totalSecrets = 0;
+  /** Vanilla `player->secretcount` — see `updatePlayerSector`. */
+  private secretsFound = 0;
+  /**
+   * Seconds spent in the current level, shown on the HUD as hh:mm:ss. Advanced below in `frame`,
+   * gated the same way `tickPowers` is: frozen once `playerDead`. Never advances on the frame a
+   * level-exit trigger fires either, without any extra check here — that frame already returns
+   * early (see `pendingExit`'s doc) before reaching the increment.
+   */
+  private levelTime = 0;
 
   private running = false;
   private lastTime = 0;
@@ -659,6 +670,11 @@ export class Game {
     const t0 = performance.now();
     const map = loadMap(this.wad, name);
     this.map = map;
+    // Vanilla P_SpawnSpecials' own `case 9: totalsecret++` — see `updatePlayerSector`.
+    this.totalSecrets = 0;
+    for (const sector of map.sectors) if (sector.special === 9) this.totalSecrets++;
+    this.secretsFound = 0;
+    this.levelTime = 0;
     this.world = new World(map);
     // Sectors a door/lift/floor mover will drive are pulled out of the static
     // batches up front — SpecialsController owns their geometry instead (see
@@ -1641,16 +1657,26 @@ export class Game {
 
   /**
    * Vanilla's `P_PlayerInSpecialSector`, run directly here rather than through
-   * `SpecialsController` — a damage floor has no mover, just `sector.special`
+   * `SpecialsController` — this switch has no mover, just `sector.special`
    * and the player's position. Player-only, matching vanilla. Gated on
    * `player.z === sector.floorHeight` (vanilla's `mo->z != floorheight`), read
    * off the local sector rather than `World.groundFloor`; see docs/specials.md
-   * § Damage floors.
+   * § Damage floors and § Secret sectors.
    */
-  private updateDamageFloor(dt: number): void {
+  private updatePlayerSector(dt: number): void {
     const sector = this.world.sectorAt(this.player.x, this.player.y);
-    const effect = sector ? SECTOR_DAMAGE_SPECIALS[sector.special] : undefined;
-    if (!sector || !effect || this.player.z !== sector.floorHeight) {
+    if (!sector || this.player.z !== sector.floorHeight) {
+      this.damageFloorTimer = DAMAGE_FLOOR_INTERVAL;
+      return;
+    }
+    if (sector.special === 9) {
+      // Vanilla's `case 9: player->secretcount++; sector->special = 0;` — clearing it here means
+      // the switch below never matches 9 again, so this can't double-count on a later frame.
+      this.secretsFound++;
+      sector.special = 0;
+    }
+    const effect = SECTOR_DAMAGE_SPECIALS[sector.special];
+    if (!effect) {
       this.damageFloorTimer = DAMAGE_FLOOR_INTERVAL;
       return;
     }
@@ -1875,7 +1901,7 @@ export class Game {
           if (taken) this.audio.play(pickupSound(type));
           return taken;
         });
-        this.updateDamageFloor(dt);
+        this.updatePlayerSector(dt);
       });
 
       // Hard landings and the chainsaw's two ambient sounds, both of which
@@ -1888,8 +1914,17 @@ export class Game {
       requestAnimationFrame(this.frame);
       return;
     }
+    if (!this.playerDead) this.levelTime += dt;
     camera.update(dt, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, aim);
-    this.hud.update(this.inventory);
+    this.hud.update(this.inventory, {
+      kills: this.things?.stats.kills ?? 0,
+      totalKills: this.things?.stats.totalKills ?? 0,
+      items: this.things?.stats.items ?? 0,
+      totalItems: this.things?.stats.totalItems ?? 0,
+      secrets: this.secretsFound,
+      totalSecrets: this.totalSecrets,
+      elapsedSeconds: this.levelTime,
+    });
     this.crosshair.update(this.inventory.health);
     this.updatePowerEffects();
     this.updatePainFlash(dt);

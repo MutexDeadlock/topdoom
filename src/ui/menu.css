@@ -102,24 +102,39 @@ canvas {
 
 /* ---------- game HUD ---------- */
 
-#game-hud {
+/*
+ * A three-column grid rather than a centered flex row: the outer two `1fr` tracks are always
+ * equal width, so the middle (`auto`-sized) column — `#game-hud` — lands exactly on the viewport
+ * center regardless of how wide `#hud-levelstats` is, instead of the *pair's combined* bounding
+ * box being centered (which would push `#game-hud` off-center by half the stats block's width).
+ * `#hud-levelstats` lives in the left track, right-aligned so it sits flush against `#game-hud`.
+ */
+#hud-bar {
   position: fixed;
-  left: 50%;
+  left: 0;
+  right: 0;
   bottom: 14px;
-  transform: translateX(-50%);
   z-index: 10;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  column-gap: 16px;
+  pointer-events: none;
+  color: #d8d0c0;
+}
+
+#hud-bar.hidden {
+  display: none;
+}
+
+#game-hud {
+  grid-column: 2;
   display: flex;
   align-items: center;
   gap: 22px;
   padding: 8px 20px;
   background: rgba(13, 13, 16, 0.85);
   border: 1px solid #2a2a32;
-  pointer-events: none;
-  color: #d8d0c0;
-}
-
-#game-hud.hidden {
-  display: none;
 }
 
 #game-hud .icon {
@@ -169,6 +184,11 @@ canvas {
   min-width: 1.6em;
 }
 
+#game-hud .hud-ammo .value.current {
+  font-weight: bold;
+  color: #fff;
+}
+
 #game-hud .hud-keys {
   display: flex;
   gap: 6px;
@@ -191,6 +211,32 @@ canvas {
 
 #game-hud .hud-weapon .icon {
   height: 32px;
+}
+
+#hud-levelstats {
+  grid-column: 1;
+  justify-self: end;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+
+#hud-levelstats canvas {
+  image-rendering: pixelated;
+  height: 14px;
+  width: auto;
+  display: block;
+}
+
+/* Mirrors #hud-levelstats on the grid's other side — flush against #game-hud's right edge. */
+#hud-timer {
+  grid-column: 3;
+  justify-self: start;
+  image-rendering: pixelated;
+  height: 14px;
+  width: auto;
+  display: block;
 }
 
 #game-hud .hud-stat.hidden {

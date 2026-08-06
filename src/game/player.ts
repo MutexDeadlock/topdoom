@@ -5,6 +5,8 @@ import type { Placement, Pos2, Pos3 } from '../types.ts';
 /** Vanilla DOOM values, in map units. */
 export const PLAYER_RADIUS = 16;
 export const PLAYER_HEIGHT = 56;
+/** Vanilla `MT_PLAYER`'s own `mobjinfo.mass` — feeds `game.ts`'s use of `game/monsters.ts: thrustSpeed` for the knockback `Player.applyKnockback` receives. */
+export const PLAYER_MASS = 100;
 
 /**
  * Vanilla's own ticcmd move tables (`g_game.c`'s `forwardmove`/`sidemove`),
@@ -36,6 +38,17 @@ const EYE_HEIGHT = 41;
  */
 export const GRAVITY = 1600;
 
+/**
+ * Vanilla's own per-tic XY friction, `FRICTION = 0xE800/0x10000` — see
+ * `game/things.ts`'s identical constant (that file can't import this one
+ * without a circular dependency, since `game/monsters.ts` already imports
+ * `GRAVITY` from here) for the full doc on why `applyKnockback` raises it to
+ * the `dt*35` power rather than converting it to a continuous rate.
+ */
+const FRICTION = 0.90625;
+/** Below this, `knockVelX`/`knockVelY` snap to exactly 0 rather than crawling on forever — see `game/things.ts`'s identical constant. */
+const KNOCKBACK_STOP_SPEED = 1;
+
 export class Player implements Pos3 {
   x: number;
   y: number;
@@ -48,6 +61,23 @@ export class Player implements Pos3 {
   velY = 0;
   /** Vertical velocity, map units/sec. Otherwise only ever negative — there's no jump input, only gravity once a step drops out from under the player — except `launchUpward`'s arch-vile knockback, the one thing that ever sets it positive. */
   private velZ = 0;
+  /**
+   * Vanilla's `P_DamageMobj` horizontal knockback (`momx`/`momy`), map
+   * units/sec — kept entirely separate from `velX`/`velY` above rather than
+   * added into them, since those track the player's own held-key input via
+   * an exponential approach to a target velocity (`update`'s `k`), and
+   * folding a knockback impulse into that model would just have it absorbed
+   * or fought by whatever the player is currently pressing within a frame or
+   * two. This instead integrates and decays (`FRICTION`) on its own, as a
+   * displacement genuinely additive to ordinary movement — matching vanilla,
+   * where the momentum-driven and input-driven parts of a player's motion
+   * are two separate contributions summed into the same `momx`/`momy`, only
+   * split apart here because this engine's own input model isn't itself
+   * momentum-based (see `update`'s doc on why forward/side are targets, not
+   * thrusts).
+   */
+  private knockVelX = 0;
+  private knockVelY = 0;
 
   private world: World;
 
@@ -77,6 +107,8 @@ export class Player implements Pos3 {
     this.velX = 0;
     this.velY = 0;
     this.velZ = 0;
+    this.knockVelX = 0;
+    this.knockVelY = 0;
     this.z = this.world.groundFloor(pos.x, pos.y, PLAYER_RADIUS);
   }
 
@@ -99,6 +131,19 @@ export class Player implements Pos3 {
   launchUpward(speed: number): void {
     this.velZ = speed;
     this.z += 1;
+  }
+
+  /**
+   * Vanilla's `P_DamageMobj` horizontal knockback: adds an impulse (`vx, vy`
+   * — `game.ts`'s own `thrustSpeed`-derived vector, already pointed away
+   * from whatever dealt the hit) onto `knockVelX`/`knockVelY` rather than
+   * setting them, so a quick follow-up hit stacks on top of a knockback
+   * still playing out instead of replacing it, matching vanilla's own
+   * `momx += ...`. `update` integrates and decays the result every frame.
+   */
+  applyKnockback(vx: number, vy: number): void {
+    this.knockVelX += vx;
+    this.knockVelY += vy;
   }
 
   /**
@@ -181,6 +226,34 @@ export class Player implements Pos3 {
       }
       this.x = moved.x;
       this.y = moved.y;
+    }
+
+    // A knockback impulse (`applyKnockback`) is a fully separate displacement
+    // from the input-driven movement above — see `knockVelX`'s own doc for
+    // why the two aren't combined — but still slides along walls through the
+    // same `slideMove`, matching vanilla: the player always gets
+    // `P_SlideMove`, whether the momentum came from a hit or from the
+    // player's own thrust. Decayed by vanilla's real per-tic `FRICTION`
+    // (`Math.pow` rather than a continuous-rate conversion, for the same
+    // "survives conversion out of tics intact" reason `game/things.ts`'s
+    // identical decay does), unlike `velX`/`velY`'s own feel-tuned
+    // `ACCELERATION` model.
+    if (Math.abs(this.knockVelX) > KNOCKBACK_STOP_SPEED || Math.abs(this.knockVelY) > KNOCKBACK_STOP_SPEED) {
+      const moved = slideMove(this.world, this, this.knockVelX * dt, this.knockVelY * dt, PLAYER_RADIUS, false, false, blockers);
+      if (dt > 0) {
+        this.knockVelX = (moved.x - this.x) / dt;
+        this.knockVelY = (moved.y - this.y) / dt;
+      }
+      this.x = moved.x;
+      this.y = moved.y;
+      const decay = Math.pow(FRICTION, dt * 35);
+      this.knockVelX *= decay;
+      this.knockVelY *= decay;
+      if (Math.abs(this.knockVelX) < KNOCKBACK_STOP_SPEED) this.knockVelX = 0;
+      if (Math.abs(this.knockVelY) < KNOCKBACK_STOP_SPEED) this.knockVelY = 0;
+    } else {
+      this.knockVelX = 0;
+      this.knockVelY = 0;
     }
 
     // groundFloor (not the bare sector floor) keeps the resting height pinned to

@@ -16,11 +16,11 @@ import {
   type MonsterAttackEvent,
   type ThingLayer,
 } from './game/things.ts';
-import { MONSTER_FIRE_HEIGHT, MONSTER_STATS, sameSpecies } from './game/monsters.ts';
+import { MONSTER_FIRE_HEIGHT, MONSTER_STATS, sameSpecies, thrustSpeed } from './game/monsters.ts';
 import { FlatFader, type FadeTarget, TextureScroller, WallFader } from './render/occlusion.ts';
 import { TopDownCamera } from './render/camera.ts';
 import { World, hasLineOfSight, projectileStepBlocker, shotPath } from './game/world.ts';
-import { Player, PLAYER_HEIGHT, PLAYER_RADIUS } from './game/player.ts';
+import { Player, PLAYER_HEIGHT, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
 import {
@@ -911,7 +911,7 @@ export class Game {
     // swing's own range, the same as vanilla.
     if (shot.kind === 'melee') {
       const swung = this.things?.raycastMonster(origin, shot.angleRad, shot.range) ?? null;
-      if (swung) this.things?.damage(swung.id, shot.damage);
+      if (swung) this.things?.damage(swung.id, shot.damage, undefined, undefined, origin.x, origin.y);
       return;
     }
 
@@ -952,7 +952,7 @@ export class Game {
     // instant `PTR_ShootTraverse`; a projectile's is deferred to actual
     // arrival in `updateProjectiles` (see `Projectile.lineIndex`'s doc).
     if (shot.kind === 'hitscan') {
-      if (hitMonsterId !== null) this.things?.damage(hitMonsterId, shot.damage);
+      if (hitMonsterId !== null) this.things?.damage(hitMonsterId, shot.damage, undefined, undefined, origin.x, origin.y);
       else this.specials?.triggerShot(path.lineIndex, this.inventory.keys);
       const tracer = new Tracer(origin, { x: endX, y: endY, z: path.z }, TRACER_COLOR);
       this.scene.add(tracer.line);
@@ -1053,11 +1053,19 @@ export class Game {
    * Applies a monster's damage to whatever it landed on — the player when
    * `targetId` is null, otherwise another monster, tagged with who did it so
    * `ThingLayer.damage` can run vanilla's retaliation rule and start an
-   * infight.
+   * infight. `fromX`/`fromY` are the attacking monster's own position, for
+   * the knockback thrust both `damagePlayer` and `ThingLayer.damage` derive.
    */
-  private damageFromMonster(targetId: number | null, damage: number, sourceId: number, sourceType: number): void {
-    if (targetId === null) this.damagePlayer(damage);
-    else this.things?.damage(targetId, damage, { id: sourceId, type: sourceType });
+  private damageFromMonster(
+    targetId: number | null,
+    damage: number,
+    sourceId: number,
+    sourceType: number,
+    fromX: number,
+    fromY: number,
+  ): void {
+    if (targetId === null) this.damagePlayer(damage, fromX, fromY);
+    else this.things?.damage(targetId, damage, { id: sourceId, type: sourceType }, undefined, fromX, fromY);
   }
 
   /**
@@ -1077,10 +1085,17 @@ export class Game {
     const victim = atk.targetId === null ? null : this.things?.monsterById(atk.targetId);
     const at = victim ? { x: victim.x, y: victim.y, z: victim.z } : { x: this.player.x, y: this.player.y, z: this.player.z };
     if (atk.targetId === null) {
-      this.damagePlayer(atk.damage);
+      this.damagePlayer(atk.damage, atk.x, atk.y);
       this.player.launchUpward(atk.blast.knockUpSpeed);
     } else {
-      this.things?.damage(atk.targetId, atk.damage, { id: atk.sourceId, type: atk.sourceType }, atk.blast.knockUpSpeed);
+      this.things?.damage(
+        atk.targetId,
+        atk.damage,
+        { id: atk.sourceId, type: atk.sourceType },
+        atk.blast.knockUpSpeed,
+        atk.x,
+        atk.y,
+      );
     }
     const offset = this.vileFireOffset(atk, at);
     const fireAt = { x: at.x + offset.x, y: at.y + offset.y, z: at.z };
@@ -1206,12 +1221,12 @@ export class Game {
     let endY = atk.y + dirY * path.dist;
     let endZ = path.z;
     if (blocker && (!playerInPath || blocker.dist <= playerAlong)) {
-      this.things?.damage(blocker.id, atk.damage, { id: atk.sourceId, type: atk.sourceType });
+      this.things?.damage(blocker.id, atk.damage, { id: atk.sourceId, type: atk.sourceType }, undefined, atk.x, atk.y);
       endX = blocker.x;
       endY = blocker.y;
       endZ = blocker.z + MONSTER_FIRE_HEIGHT;
     } else if (playerInPath) {
-      this.damagePlayer(atk.damage);
+      this.damagePlayer(atk.damage, atk.x, atk.y);
       endX = this.player.x;
       endY = this.player.y;
       endZ = this.player.z + AIM_HEIGHT_OFFSET;
@@ -1404,18 +1419,19 @@ export class Game {
 
       if (reachedPlayer || struck || p.traveled >= p.maxDist) {
         if (fromMonster) {
-          if (reachedPlayer) this.damagePlayer(p.damage);
+          if (reachedPlayer) this.damagePlayer(p.damage, at.x, at.y);
           // `struck.id === null` is the same-species fizzle: the body stopped
           // the missile but takes no damage from it (see monsterStruckBy).
           else if (struck) {
-            if (struck.id !== null) this.things?.damage(struck.id, p.damage, { id: p.sourceId!, type: p.sourceType });
+            if (struck.id !== null)
+              this.things?.damage(struck.id, p.damage, { id: p.sourceId!, type: p.sourceType }, undefined, at.x, at.y);
           }
           // A clean miss (reached maxDist without hitting a body) means it
           // arrived at whatever wall shotPath found at launch — fire its
           // shoot special now, at actual arrival, not back when it launched.
           else this.specials?.triggerShot(p.lineIndex, this.inventory.keys, true);
         } else if (p.hitMonsterId !== null) {
-          this.things?.damage(p.hitMonsterId, p.damage);
+          this.things?.damage(p.hitMonsterId, p.damage, undefined, undefined, at.x, at.y);
         } else {
           this.specials?.triggerShot(p.lineIndex, this.inventory.keys);
         }
@@ -1599,13 +1615,13 @@ export class Game {
       if (m.type === 7 || m.type === 16) continue;
       const dist = Math.hypot(m.x - at.x, m.y - at.y);
       if (dist >= radius || !hasLineOfSight(this.world, at, m)) continue;
-      this.things?.damage(m.id, maxDamage * (1 - dist / radius), source);
+      this.things?.damage(m.id, maxDamage * (1 - dist / radius), source, undefined, at.x, at.y);
     }
 
     if (!hitsPlayer) return;
     const pdist = Math.hypot(this.player.x - at.x, this.player.y - at.y);
     if (pdist < radius && hasLineOfSight(this.world, at, this.player)) {
-      this.damagePlayer(maxDamage * (1 - pdist / radius));
+      this.damagePlayer(maxDamage * (1 - pdist / radius), at.x, at.y);
     }
   }
 
@@ -1663,7 +1679,11 @@ export class Game {
       if (!hit) continue;
       let damage = 0;
       for (let j = 0; j < spray.diceRolls; j++) damage += rollDamage(spray.diceSides, 1);
-      this.things?.damage(hit.id, damage);
+      // Vanilla's own inflictor for A_BFGSpray is the ball itself, by then far
+      // from the player — this engine doesn't track where each ray's ball
+      // physically stopped, so `origin` (the player's own position, which the
+      // rays are traced from — see this method's own doc) stands in.
+      this.things?.damage(hit.id, damage, undefined, undefined, origin.x, origin.y);
       // Vanilla's own MT_EXTRABFG — spawned at roughly a quarter of the
       // target's own height above its feet (`linetarget->height>>2`); this
       // engine has no per-species height table to read that from (see
@@ -1678,9 +1698,34 @@ export class Game {
     }
   }
 
-  /** Applies armor-mitigated damage (`applyDamage`) to the player, transitioning to the death animation once health hits 0. A no-op once already dead, or once `applyDamage` reports invulnerability blocked the hit outright — no double death, and no pain flash/flinch for a hit that did nothing. */
-  private damagePlayer(amount: number): void {
+  /**
+   * Applies armor-mitigated damage (`applyDamage`) to the player, transitioning to the death
+   * animation once health hits 0. A no-op once already dead, or once `applyDamage` reports
+   * invulnerability blocked the hit outright — no double death, and no pain flash/flinch for a
+   * hit that did nothing.
+   *
+   * `fromX`/`fromY`, when both given, are where the damage physically came from — same meaning
+   * and same omitted-for-damage-floors-and-crushers convention as `ThingLayer.damage`'s own
+   * params — and drive vanilla's `P_DamageMobj` horizontal knockback (`thrustSpeed`, `PLAYER_MASS`)
+   * via `Player.applyKnockback`.
+   */
+  private damagePlayer(amount: number, fromX?: number, fromY?: number): void {
     if (this.playerDead || amount <= 0 || !applyDamage(this.inventory, amount)) return;
+    if (fromX !== undefined && fromY !== undefined) {
+      let dx = this.player.x - fromX;
+      let dy = this.player.y - fromY;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1) {
+        // Same degenerate-same-position fallback as ThingLayer.damage.
+        dx = Math.cos(this.player.angle);
+        dy = Math.sin(this.player.angle);
+      } else {
+        dx /= dist;
+        dy /= dist;
+      }
+      const speed = thrustSpeed(amount, PLAYER_MASS);
+      this.player.applyKnockback(dx * speed, dy * speed);
+    }
     this.painFlash = Math.min(1, this.painFlash + amount / PAIN_FLASH_MAX_DAMAGE);
     if (this.inventory.health <= 0) {
       this.playerDead = true;
@@ -2052,7 +2097,7 @@ export class Game {
           this.resolveMonsterHitscan(atk);
         } else {
           // Melee lands on whatever it swung at, no trace involved.
-          this.damageFromMonster(atk.targetId, atk.damage, atk.sourceId, atk.sourceType);
+          this.damageFromMonster(atk.targetId, atk.damage, atk.sourceId, atk.sourceType, atk.x, atk.y);
         }
       }
       // A barrel's own A_Explode, become due this frame (game/things.ts's

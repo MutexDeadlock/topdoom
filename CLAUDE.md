@@ -2004,6 +2004,91 @@ already resets the player/world/specials/fog for a normal level transition and, 
 top-of-function reset, `playerDead`/the overlay/`playerActor`'s animation state too — restart
 isn't a special case, just the ordinary map-load path with a clean inventory.
 
+### Knockback (`src/game/monsters.ts`, `src/game/things.ts`, `src/game/player.ts`, `src/game.ts`)
+
+Every hit that has a real physical source — a shot, an explosion, a melee swing — also shoves its
+victim, vanilla's `P_DamageMobj` horizontal thrust (`p_inter.c`, confirmed against
+`linuxdoom-1.10` rather than assumed): `thrust = damage*(FRACUNIT>>3)*100/mass`, added to
+`momx`/`momy` and pointed directly away from the inflictor's position. This was entirely absent
+from this engine until a player noticed a shot barrel not moving the way it does in vanilla — the
+only knockback that existed before this was the arch-vile's own *vertical* launch
+(`Player.launchUpward`, `AttackStats.blast.knockUpSpeed`), which is a completely different vanilla
+mechanic (`A_VileAttack`'s explicit `momz` set) that this addition doesn't touch. Vanilla calls
+`P_DamageMobj` with a null inflictor for damage floors and crushers, which skips the whole thrust
+block outright — reproduced here simply by never passing a `fromX`/`fromY` at those two call sites
+(`game.ts`'s `applyCrushDamage`/`updateDamageFloor`), rather than a special-cased exemption.
+
+**`game/monsters.ts`'s `thrustSpeed(damage, mass)`** is the shared formula (`(damage/8) *
+(100/mass) * 35` — the `×35` the same "vanilla's own per-tic figure survives conversion out of
+tics intact" reasoning `MonsterStats.speed` already relies on), fed a real per-species `mass`
+now added to `MonsterStats` — confirmed against `info.c`'s `mobjinfo` table for all 18 monster
+types, not approximated: mostly 100, but 400 for a demon/cacodemon/pain elemental, 500 for a
+revenant/arch-vile, 600 for an arachnotron, 1000 for a baron/hell knight/mancubus/spider
+mastermind/cyberdemon, and 50 for the lost soul — so a cyberdemon barely budges from a hit that
+sends a zombieman staggering, rather than every monster type flying back identically. `BARREL_MASS`
+(`game/things.ts`) and `PLAYER_MASS` (`game/player.ts`) are the same real figure for those two
+(both happen to be vanilla's own default, 100). The arch-vile's separate vertical launch
+deliberately keeps its own pre-existing flat-100-mass approximation (`VILE_KNOCKUP_SPEED`) rather
+than switching to this table — shipped, working behavior for one rare attack, not worth the extra
+risk of touching it in the same pass that added the table for a different purpose.
+
+**Where the impulse gets computed is centralized to the two places all damage already flows
+through** — `ThingLayer.damage` (monsters and barrels) and `game.ts`'s own `damagePlayer` — rather
+than at each of the dozen-plus call sites that deal damage in the first place. Both take optional
+trailing `fromX`/`fromY`; when given, they compute the away-from-source unit vector (falling back
+to the victim's own current facing in the degenerate case where attacker and victim occupy
+essentially the same point, e.g. point-blank melee — vanilla's own `R_PointToAngle2(0,0,0,0)`
+returns angle 0 for the same reason, this is just a more sensible-looking stand-in for it) and add
+`thrustSpeed(amount, mass)` along it onto the victim's own knockback velocity. Every real call site
+threads its own natural "inflictor" position through: the player's own position for a hitscan
+pellet or melee swing, the projectile's live position at the moment it lands for a rocket/fireball
+(matching vanilla's inflictor being the missile itself), and the explosion's own center for splash
+(`applyRadiusDamage`'s `at`, exactly vanilla's `P_RadiusAttack(spot, source, damage)` passing
+`spot` as inflictor) — which is also why a barrel's own chain-reaction explosion
+(`applyBarrelExplosion`) gets correct knockback for free, with no extra wiring: it's just another
+`applyRadiusDamage` call. The one approximation is the BFG spray (`resolveBfgSpray`): vanilla's
+real inflictor there is the ball itself, wherever it physically stopped, which this engine doesn't
+track for that code path, so the player's own position (which the 40 rays are already traced from)
+stands in instead.
+
+**Integrating and decaying the resulting velocity is a second, separate step from computing the
+impulse**, and deliberately not the same velocity a monster/barrel/player already tracks for its
+own ordinary movement — `PosedThing.velX`/`velY` (new fields, always 0 for anything `damage` never
+touches) and `Player`'s own `knockVelX`/`knockVelY` are dedicated knockback-only state, decayed
+every frame by vanilla's real per-tic `FRICTION` (`0.90625`) raised to the `dt*35` power — the same
+"reproduce the exact discrete per-tic recurrence at any frame rate" approach used throughout this
+file rather than converting to a continuous rate first, which would only approximate it. Below
+`KNOCKBACK_STOP_SPEED` (1 u/s) the velocity snaps to exactly 0 rather than crawling forever, the
+same reasoning `WallFader`'s own fade snap already documents.
+
+- **`ThingLayer`'s `applyKnockback`** integrates a monster or barrel's `velX`/`velY` as a plain
+  displacement, blocked by ordinary wall/step collision (`circleBlocked`, `forMonster: true` —
+  vanilla's `ML_BLOCKMONSTERS` stops *any* non-player thing, not just an AI-driven one, so this is
+  the correct flag even for a barrel). Unlike the player, a blocked monster or barrel simply stops
+  dead and drops the remaining velocity rather than sliding — matching vanilla's own `P_XYMovement`
+  zeroing `momx`/`momy` outright for a blocked non-missile, non-player mobj. It runs **additively,
+  on top of** whatever AI-driven movement (`stepMonsterAI`) or floor-following already happened
+  that same frame, matching vanilla's real ordering: the momentum-driven `P_XYMovement` displacement
+  happens before `A_Chase`'s own walk step within the same tic, so the two genuinely sum rather than
+  one overriding the other. A barrel has no AI movement of its own, so this is its *only* source of
+  horizontal motion — which is what actually answers the original bug report: a shot barrel that
+  used to sit frozen in place now visibly slides a few units away from the shot, exactly like
+  vanilla. Deliberately skips `blockersFor`'s thing-vs-thing check (a knockback nudge is small,
+  transient and rare enough that two shoved bodies briefly overlapping isn't worth the extra query).
+  A dead thing's `velX`/`velY` is left as inert, unread data rather than cleared — nothing ever
+  integrates it again — **except** `ThingLayer.reviveCorpse`, which now also zeroes it, the exact
+  same "stale velocity from however it died could otherwise sit unused and then jump on revival"
+  bug the arch-vile's resurrection fix already caught for `velZ` before this addition existed.
+- **`Player.applyKnockback`** is kept entirely separate from the player's own `velX`/`velY`
+  (input-driven, an exponential approach toward a *target* velocity — see "Movement speed and
+  straferunning" above) rather than added into them: folding an impulse into that model would have
+  it absorbed or fought by whatever the player happens to be pressing within a frame or two, which
+  isn't how vanilla's momentum-based player movement behaves at all. `knockVelX`/`knockVelY` instead
+  get their own `slideMove` call and their own `FRICTION` decay, run as an additional displacement
+  right after the ordinary movement block in `Player.update` — still sliding along walls rather than
+  stopping dead, since the player is the one thing in vanilla that always gets `P_SlideMove`
+  regardless of what set its momentum in motion.
+
 ### Exploding barrels (`src/game/things.ts`, `src/render/sprites.ts`, `src/game.ts`)
 
 Vanilla's `MT_BARREL` has no AI at all — it's a plain `MF_SOLID|MF_SHOOTABLE` prop, not a
@@ -2641,6 +2726,9 @@ Exploding barrels work too (`game/things.ts`, see "Exploding barrels" above): so
 by anything that can hit a monster (hitscan, projectiles, melee, splash, even a monster's own
 stray shot), auto-aim-lockable the same as a monster, and — vanilla's `A_Explode`, firing partway
 through the death animation rather than instantly — chain-reacting into any other barrel caught in
-the blast, with the original attacker propagated all the way down the chain. Not yet implemented:
-actual audio (the noise-alert *mechanic* above works off vanilla's sound-propagation rules, but
-nothing in this engine plays a sound yet).
+the blast, with the original attacker propagated all the way down the chain. Every hit that has a
+real physical source now also shoves its victim (see "Knockback" above) — vanilla's own
+`P_DamageMobj` thrust, scaled by the victim's real mass so a cyberdemon barely moves next to a
+staggering zombieman, applied uniformly to the player, every monster and every barrel. Not yet
+implemented: actual audio (the noise-alert *mechanic* above works off vanilla's sound-propagation
+rules, but nothing in this engine plays a sound yet).

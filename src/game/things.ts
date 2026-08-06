@@ -27,6 +27,7 @@ import {
   reactToDamage,
   shouldRetarget,
   stepMonsterAI,
+  thrustSpeed,
   tryWake,
   type MonsterAttack,
   type RaiseCandidate,
@@ -149,6 +150,18 @@ interface PosedThing extends Pos3 {
    */
   explodeSource: { id: number; type: number } | null;
   /**
+   * Vanilla's `P_DamageMobj` horizontal knockback (`momx`/`momy`), map
+   * units/sec — an impulse `damage` adds to in `ThingLayer.damage` (via
+   * `thrustSpeed`), then `applyKnockback` integrates and decays every frame
+   * on top of whatever movement (AI-driven, for a monster) already happened
+   * this frame, exactly as vanilla's own `P_XYMovement` momentum displaces a
+   * mobj independently of, and before, `A_Chase`'s own walk step in the same
+   * tic. Meaningless for anything `ThingLayer.damage` never touches (every
+   * non-monster, non-barrel thing) — always 0 there.
+   */
+  velX: number;
+  velY: number;
+  /**
    * True for an item `ThingLayer.damage` spawned itself (`MONSTER_DROPS`) rather than
    * one the map placed — threaded through to `applyPickup`'s own `dropped` param, which halves the ammo it grants.
    */
@@ -233,6 +246,23 @@ const BLOCKER_GRID_CELL = 128;
 
 /** `game.ts`'s own per-frame `dt` clamp; the most simulated time one frame can ever represent. */
 const MAX_FRAME_DT = 0.05;
+
+/**
+ * Vanilla's own per-tic XY friction, `FRICTION = 0xE800/0x10000` — applied as
+ * a straight multiplicative decay every tic in `P_XYMovement`. `applyKnockback`
+ * raises this to the `dt*35` power rather than converting it to a continuous
+ * rate first, which reproduces the exact discrete per-tic recurrence at any
+ * frame rate (the same "survives conversion out of tics intact" reasoning
+ * `MonsterStats.speed` already relies on) rather than approximating it.
+ */
+const FRICTION = 0.90625;
+/**
+ * Below this, a decaying knockback velocity is snapped to exactly 0 rather
+ * than crawling on forever — the same "a pure exponential decay never
+ * actually reaches its target" reasoning `WallFader`'s own fade snap
+ * (`render/occlusion.ts`) already documents.
+ */
+const KNOCKBACK_STOP_SPEED = 1;
 
 /**
  * Slack added to every blocker search, so that tightening the search to the
@@ -442,14 +472,31 @@ export interface ThingLayer {
    * caller since it's the same `PosedThing.z`/`velZ` fields `stepMonsterAI`'s
    * own gravity integration already owns.
    *
+   * `fromX`/`fromY`, when both given, are where the damage physically came
+   * from — the shooter, the exploding thing, whatever `P_DamageMobj` would
+   * call the inflictor — and drive vanilla's own horizontal knockback
+   * (`thrustSpeed`): the victim is shoved directly away from that point,
+   * scaled by `amount` and its own mass (`MonsterStats.mass`/`BARREL_MASS`),
+   * same formula and same `PosedThing.velX`/`velY` fields a barrel's own
+   * chain-reaction splash uses. Omitted entirely by damage floors and
+   * crushers, matching vanilla's own null-inflictor call there, which never
+   * thrusts either.
+   *
    * A barrel (`id` referring to a `BARREL_TYPE` instance, not a
-   * `MONSTER_TYPES` one) takes this same call but follows none of the above:
-   * no pain state (vanilla's `MT_BARREL` has no `painstate`/`painchance` at
-   * all), no infighting retarget, and death switches its sprite to `BEXP`
-   * (not its own idle `BAR1`) rather than picking from `MONSTER_DEATH_FRAMES`
-   * — see `BARREL_TYPE`'s doc.
+   * `MONSTER_TYPES` one) takes this same call but follows none of the above
+   * apart from the knockback: no pain state (vanilla's `MT_BARREL` has no
+   * `painstate`/`painchance` at all), no infighting retarget, and death
+   * switches its sprite to `BEXP` (not its own idle `BAR1`) rather than
+   * picking from `MONSTER_DEATH_FRAMES` — see `BARREL_TYPE`'s doc.
    */
-  damage(id: number, amount: number, source?: { id: number; type: number }, knockUpSpeed?: number): void;
+  damage(
+    id: number,
+    amount: number,
+    source?: { id: number; type: number },
+    knockUpSpeed?: number,
+    fromX?: number,
+    fromY?: number,
+  ): void;
   /**
    * Nearest living monster whose body the ray from (x, y, z) along `angleRad`
    * crosses within `maxDist`, or null. Backs a *free* shot (no locked-on
@@ -509,6 +556,8 @@ const BARREL_HEALTH = 20;
  * `MONSTER_STATS` entry, which a barrel otherwise is.
  */
 const BARREL_RADIUS = 10;
+/** Vanilla `MT_BARREL`'s own `mass` — confirmed against `linuxdoom-1.10/info.c`, feeds `thrustSpeed`. */
+const BARREL_MASS = 100;
 /** `S_BAR1`/`S_BAR2` — a two-frame idle sway, each vanilla frame held 6 tics. */
 const BARREL_IDLE_FRAMES = ['A', 'B'];
 const BARREL_IDLE_FRAME_SECONDS = 6 / 35;
@@ -626,6 +675,8 @@ export function buildThingSprites(
       deathFrameCount: 0,
       barrelExploded: false,
       explodeSource: null,
+      velX: 0,
+      velY: 0,
       visible: true,
       hidden: false,
       queryStamp: 0,
@@ -695,6 +746,8 @@ export function buildThingSprites(
       deathFrameCount: 0,
       barrelExploded: false,
       explodeSource: null,
+      velX: 0,
+      velY: 0,
       visible: true,
       hidden: false,
       queryStamp: 0,
@@ -797,6 +850,8 @@ export function buildThingSprites(
       deathFrameCount: 0,
       barrelExploded: false,
       explodeSource: null,
+      velX: 0,
+      velY: 0,
       visible: true,
       hidden: false,
       queryStamp: 0,
@@ -841,6 +896,46 @@ export function buildThingSprites(
       prev: { x, y },
       targetId: origin.targetId,
     });
+  }
+
+  /**
+   * Integrates one frame of a knocked-back thing's own momentum
+   * (`PosedThing.velX`/`velY`) — vanilla's `P_XYMovement` applied to the
+   * horizontal thrust `ThingLayer.damage` imparts, run every frame on top of
+   * (and independent from) whatever AI/floor-following movement already
+   * happened this frame, matching vanilla's own ordering (the momentum move
+   * runs before `A_Chase`'s walk step in the same tic, so the two really are
+   * additive rather than one overriding the other).
+   *
+   * Blocked by ordinary wall/step collision (`circleBlocked`, `forMonster:
+   * true` — vanilla's `ML_BLOCKMONSTERS` stops any non-player thing, not
+   * just an AI-driven one); unlike the player (`Player.update`, which always
+   * gets `P_SlideMove`), a blocked monster or barrel simply stops dead and
+   * drops the remaining velocity, matching vanilla's own `P_XYMovement`
+   * zeroing `momx`/`momy` outright for a blocked non-missile, non-player
+   * mobj rather than sliding it along the wall.
+   *
+   * Deliberately does **not** check other things (`blockersFor`) the way
+   * ordinary AI movement does — a knockback nudge is small, transient, and
+   * rare enough that two shoved bodies briefly overlapping isn't worth the
+   * extra query, the same kind of scope cut `applyRadiusDamage`'s 2D-only
+   * distance check already accepts elsewhere.
+   */
+  function applyKnockback(p: PosedThing, dt: number): void {
+    const nx = p.x + p.velX * dt;
+    const ny = p.y + p.velY * dt;
+    if (circleBlocked(world, nx, ny, p.blockRadius, p.z, true)) {
+      p.velX = 0;
+      p.velY = 0;
+      return;
+    }
+    p.x = nx;
+    p.y = ny;
+    const decay = Math.pow(FRICTION, dt * 35);
+    p.velX *= decay;
+    p.velY *= decay;
+    if (Math.abs(p.velX) < KNOCKBACK_STOP_SPEED) p.velX = 0;
+    if (Math.abs(p.velY) < KNOCKBACK_STOP_SPEED) p.velY = 0;
   }
 
   /**
@@ -1185,7 +1280,12 @@ export function buildThingSprites(
     p.dead = false;
     p.health = MONSTER_HEALTH[p.type] ?? p.health;
     p.hidden = false;
-    p.velZ = 0; // clears any stale knockback velocity from however it died — dead things never integrate it, so it could otherwise sit unused for the rest of the level and then jump on revival
+    // Clears any stale knockback velocity from however it died — dead things
+    // never integrate velX/velY/velZ, so it could otherwise sit unused for
+    // the rest of the level and then jump (or slide) on revival.
+    p.velX = 0;
+    p.velY = 0;
+    p.velZ = 0;
     p.alerted = true; // vanilla's raisestate falls straight through to RUN1 — already chasing, not dormant again
     p.targetId = null; // vanilla's corpsehit->target = NULL; resolveTarget falls back to the player
     p.movedir = DI_NODIR;
@@ -1297,6 +1397,9 @@ export function buildThingSprites(
             const beforeY = p.y;
             const target = resolveTarget(p, player);
             const result = stepMonsterAI(p, stats, dt, world, target, blockersFor(p, player), findRaisableCorpse);
+            // Vanilla's own momentum-driven displacement, additive on top of
+            // the AI walk step just above — see applyKnockback's doc.
+            if (p.velX !== 0 || p.velY !== 0) applyKnockback(p, dt);
             // Walk triggers this monster crossed on the way (teleports,
             // and the handful of doors/lifts vanilla lets a monster open).
             const dest = crossLines?.(p.prev, p);
@@ -1360,9 +1463,19 @@ export function buildThingSprites(
             }
           } else {
             p.z = p.sector?.floorHeight ?? p.z;
+            // A not-yet-alerted monster can still be knocked back — a hit
+            // always sets velX/velY in `damage`, though in practice it also
+            // always alerts the monster in that same call, so this mostly
+            // guards the same-frame ordering rather than a state that lingers.
+            if (p.velX !== 0 || p.velY !== 0) applyKnockback(p, dt);
           }
         } else {
           p.z = p.sector?.floorHeight ?? p.z;
+          // Barrels have no AI movement of their own, so this is their only
+          // source of horizontal motion; a monster lands here too whenever
+          // the player is dead (frozen — see `update`'s own doc), and can
+          // still be finishing off a knockback from just before that happened.
+          if (!p.dead && (p.velX !== 0 || p.velY !== 0)) applyKnockback(p, dt);
         }
 
         p.visible = !fogAlphaOf || fogAlphaOf(p.subsector) > 0.5;
@@ -1462,7 +1575,14 @@ export function buildThingSprites(
       }
       return out;
     },
-    damage(id: number, amount: number, source?: { id: number; type: number }, knockUpSpeed?: number): void {
+    damage(
+      id: number,
+      amount: number,
+      source?: { id: number; type: number },
+      knockUpSpeed?: number,
+      fromX?: number,
+      fromY?: number,
+    ): void {
       const p = posed[id];
       const isBarrel = !!p && p.type === BARREL_TYPE;
       if (!p || p.dead || amount <= 0 || !(isBarrel || MONSTER_TYPES.has(p.type))) return;
@@ -1473,6 +1593,28 @@ export function buildThingSprites(
         // (z > groundFloor) engages next frame instead of the ground-snap
         // branch zeroing velZ straight back out before it ever takes effect.
         p.z += 1;
+      }
+      if (fromX !== undefined && fromY !== undefined) {
+        // Vanilla's P_DamageMobj horizontal thrust — see thrustSpeed's doc.
+        const mass = isBarrel ? BARREL_MASS : MONSTER_STATS[p.type]?.mass ?? 100;
+        const speed = thrustSpeed(amount, mass);
+        let dx = p.x - fromX;
+        let dy = p.y - fromY;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 1) {
+          // Degenerate same-position case (attacker and victim essentially
+          // coincide, e.g. point-blank melee) — vanilla's own
+          // R_PointToAngle2(0,0,0,0) falls back to angle 0 here rather than
+          // an undefined direction; pushing along the victim's current
+          // facing reads more sensibly than always due east.
+          dx = Math.cos(p.angle);
+          dy = Math.sin(p.angle);
+        } else {
+          dx /= dist;
+          dy /= dist;
+        }
+        p.velX += dx * speed;
+        p.velY += dy * speed;
       }
       if (p.health > 0) {
         // Vanilla's MT_BARREL has no painstate/painchance at all — a barrel

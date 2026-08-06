@@ -351,6 +351,22 @@ export interface MonsterStats {
    * `game/things.ts`'s `MONSTER_HIT_RADIUS` already makes for being shot.
    */
   radius: number;
+  /**
+   * Vanilla's own `mobjinfo.mass`, confirmed against `linuxdoom-1.10/info.c`
+   * rather than assumed — unlike `radius` above, this isn't a single
+   * approximate value standing in for real per-species variation, it's the
+   * genuine figure for every type (100 for most, up to 1000 for a baron/hell
+   * knight/mancubus/spider mastermind/cyberdemon, 400 for a demon/cacodemon/
+   * pain elemental, 50 for the lost soul, 500 for a revenant/arch-vile). Feeds
+   * `thrustSpeed` — `P_DamageMobj`'s horizontal knockback (`game.ts`'s
+   * `damageFromMonster`/`ThingLayer.damage`) — so a heavy monster like a
+   * cyberdemon barely budges from a hit that would send a zombieman
+   * staggering. The arch-vile's own separate *vertical* launch
+   * (`VILE_KNOCKUP_SPEED` below) still uses a flat default-100 approximation
+   * rather than this table — a pre-existing, independently-accepted
+   * simplification this addition doesn't touch.
+   */
+  mass: number;
   melee: AttackStats | null;
   ranged: AttackStats | null;
   /**
@@ -456,14 +472,35 @@ const FATSPREAD = Math.PI / 2 / 8;
 
 /**
  * Vanilla's `A_VileAttack` launch: `target->momz = 1000*FRACUNIT/target->info->mass`.
- * This engine has no per-species mass table, so this uses vanilla's own
- * default mass (100, `MT_PLAYER`'s and most monsters' value) for every
- * victim rather than the real, sometimes very different, per-type figure —
- * the same single-value simplification `MonsterStats.radius` already makes.
- * `momz` is added once per *tic* in vanilla, so ×35 converts it to this
- * engine's units/sec.
+ * Deliberately still uses vanilla's own default mass (100, `MT_PLAYER`'s and
+ * most monsters' value) for every victim rather than `MonsterStats.mass`
+ * below, even though that table now exists — this is shipped, working
+ * behavior, and the vile launch is rare enough (one monster type, one attack)
+ * that swapping it to the real per-victim mass wasn't worth the extra risk
+ * of this pass. `thrustSpeed` below, added alongside the mass table for the
+ * *horizontal* knockback every hit now deals, does use it. `momz` is added
+ * once per *tic* in vanilla, so ×35 converts it to this engine's units/sec.
  */
 const VILE_KNOCKUP_SPEED = (1000 / 100) * 35;
+
+/**
+ * Vanilla's `P_DamageMobj` horizontal knockback (`p_inter.c`): every hit that
+ * has a real inflictor position (a shot, an explosion, a melee swing — not a
+ * damage floor or crusher, which vanilla calls with a null inflictor and so
+ * never thrusts) pushes the victim directly away from it. The vanilla
+ * formula is `thrust = damage*(FRACUNIT>>3)*100/mass`, added once per *tic*
+ * to `momx`/`momy` — `× 35` converts that to this engine's units/sec, the
+ * same conversion `MonsterStats.speed` already makes for vanilla's own
+ * per-tic movement. `game/things.ts`'s `ThingLayer.damage` (monsters and
+ * barrels) and `game.ts`'s `damagePlayer` both call this with the victim's
+ * own real mass (`MonsterStats.mass`, `BARREL_MASS`, `PLAYER_MASS`), then
+ * apply the result as an impulse along the away-from-source direction and
+ * integrate/decay it every frame like any other momentum — see
+ * `game/things.ts`'s `applyKnockback`.
+ */
+export function thrustSpeed(damage: number, mass: number): number {
+  return (damage / 8) * (100 / mass) * 35;
+}
 
 /** Vanilla's S_VILE_HEAL1-3: the arch-vile holds still for 30 tics while the corpse it just found rises. */
 const VILE_HEAL_DURATION = 30 / 35;
@@ -570,6 +607,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 70,
     chaseInterval: 0.114,
     radius: 20,
+    mass: 100,
     melee: null,
     // A_PosAttack: (rand%5+1)*3.
     ranged: { diceSides: 5, diceMult: 3, duration: 0.743 },
@@ -580,6 +618,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
+    mass: 100,
     melee: null,
     // A_SPosAttack: 3 separate P_LineAttacks per call, each (rand%5+1)*3 —
     // see AttackStats.pellets's doc.
@@ -591,6 +630,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
+    mass: 100,
     melee: null,
     // A_CPosAttack: (rand%5+1)*3, once per shots:2 entry — A_CPosRefire
     // hoses without pause while it can see you.
@@ -602,6 +642,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
+    mass: 100,
     melee: null,
     // SSWV fires the same A_CPosAttack as the chaingunner, twice (S_SSWV_ATK3/
     // ATK5, confirmed against info.c) with an A_CPosRefire loop of its own —
@@ -615,6 +656,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
+    mass: 100,
     // A_TroopAttack melee: (rand%8+1)*3.
     melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 3, duration: 0.629 },
     // A direct missile hit is vanilla's universal (rand%8+1)*mobjinfo.damage
@@ -627,6 +669,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 175,
     chaseInterval: 0.057,
     radius: 30,
+    mass: 400,
     // A_SargAttack: (rand%10+1)*4.
     melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 4, duration: 0.686 },
     ranged: null,
@@ -637,6 +680,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 175,
     chaseInterval: 0.057,
     radius: 30,
+    mass: 400,
     melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 4, duration: 0.686 },
     ranged: null,
     painChance: 0.703,
@@ -646,6 +690,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 46.7,
     chaseInterval: 0.171,
     radius: 16,
+    mass: 50,
     melee: null,
     ranged: {
       // MF_SKULLFLY contact damage is the same universal missile-hit
@@ -665,6 +710,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 31,
+    mass: 400,
     // A_HeadAttack melee: (rand%6+1)*10.
     melee: { range: MELEE_RANGE, diceSides: 6, diceMult: 10, duration: 0.429 },
     // Universal missile-hit formula; HEADSHOT's own damage field is 5.
@@ -677,6 +723,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 24,
+    mass: 1000,
     // A_BruisAttack melee: (rand%8+1)*10.
     melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10, duration: 0.686 },
     // Universal missile-hit formula; BRUISERSHOT's own damage field is 8.
@@ -688,6 +735,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 24,
+    mass: 1000,
     // Baron and hell knight share A_BruisAttack/MT_BRUISERSHOT exactly.
     melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10, duration: 0.686 },
     ranged: { diceSides: 8, diceMult: 8, duration: 0.686, projectile: { sprite: 'BAL7', speed: 525 } },
@@ -698,6 +746,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 31,
+    mass: 400,
     melee: null,
     // A_PainAttack deals no damage of its own — diceSides/diceMult are unused
     // (fireAttack is never reached for a `spawn` attack, see
@@ -714,6 +763,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 175,
     chaseInterval: 0.057,
     radius: 20,
+    mass: 500,
     // A_SkelFist: (rand%10+1)*6.
     melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 6, duration: 0.514 },
     ranged: {
@@ -734,6 +784,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 70,
     chaseInterval: 0.114,
     radius: 48,
+    mass: 1000,
     melee: null,
     ranged: {
       // Universal missile-hit formula; FATSHOT's own damage field is 8.
@@ -763,6 +814,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 116.7,
     chaseInterval: 0.103,
     radius: 64,
+    mass: 600,
     melee: null,
     // Universal missile-hit formula; ARACHPLAZ's own damage field is 5.
     ranged: { diceSides: 8, diceMult: 5, duration: 0.257, refire: true, projectile: { sprite: 'APLS', speed: 875 } },
@@ -773,6 +825,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 105,
     chaseInterval: 0.114,
     radius: 128,
+    mass: 1000,
     melee: null,
     // Fires A_SPosAttack (the shotgun guy's own 3-pellet, (rand%5+1)*3
     // hitscan) twice per shots:2 entry — confirmed against info.c's
@@ -794,6 +847,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 140,
     chaseInterval: 0.114,
     radius: 40,
+    mass: 1000,
     melee: null,
     ranged: {
       // Universal missile-hit formula; ROCKET's own damage field is 20 —
@@ -820,6 +874,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 262.5,
     chaseInterval: 0.057,
     radius: 20,
+    mass: 500,
     melee: null,
     ranged: {
       maxOffsetDist: 896,

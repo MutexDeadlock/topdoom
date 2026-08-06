@@ -1,12 +1,9 @@
-TEST - Item pickups / "Inventory" / HUD
-TEST - "Physik"
-TEST - Enemy "AI"
 NEXT - UX
 
 TODO - Sound
 
 IDEE!
-"Overlay" über die bestehenden Maps, die (dann fixe) Kamerawinkel, Zoom, FoW etc. ein-/umstellen.
+"Extra Data" für die bestehenden Maps, die (dann fixe) Kamerawinkel, Zoom, FoW etc. ein-/umstellen.
 Spieler braucht sich dann nicht mehr um Kamera kümmern.
 Wirkt vllt sogar "cinematisch", uj!
 Lump Name z.B. "E1M1/TOPDOOMEXTRA".

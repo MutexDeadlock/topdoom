@@ -5,6 +5,7 @@ import type { World } from './world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import {
   BOSS_DEATH_TYPES,
+  CEILING_HUNG_HEIGHT,
   COUNTITEM_TYPES,
   COUNTKILL_TYPES,
   MONSTER_ACTION_FRAME_SECONDS,
@@ -19,6 +20,7 @@ import {
   MONSTER_TYPES,
   MONSTER_XDEATH_FRAMES,
   SOLID_DECORATION_RADIUS,
+  SOLID_DECORATION_RADIUS_OVERRIDE,
   SOLID_DECORATION_TYPES,
   THING_ANIM_FRAMES,
   THING_SPRITES,
@@ -669,7 +671,10 @@ export function buildThingSprites(
     const y = t.y;
     const facingDeg = t.angle;
     const light = sector?.light ?? 128;
-    const z = sector?.floorHeight ?? 0;
+    // MF_SPAWNCEILING things (ceiling-hung gore) measure z down from the ceiling instead of up
+    // from the floor — see CEILING_HUNG_HEIGHT's doc.
+    const hangHeight = CEILING_HUNG_HEIGHT[t.type];
+    const z = hangHeight !== undefined ? (sector?.ceilHeight ?? 0) - hangHeight : (sector?.floorHeight ?? 0);
     const isMonster = MONSTER_TYPES.has(t.type);
     const isBarrel = t.type === BARREL_TYPE;
     const itemAnim = THING_ANIM_FRAMES[t.type];
@@ -693,7 +698,7 @@ export function buildThingSprites(
       blockRadius: isBarrel
         ? BARREL_RADIUS
         : SOLID_DECORATION_TYPES.has(t.type)
-          ? SOLID_DECORATION_RADIUS
+          ? (SOLID_DECORATION_RADIUS_OVERRIDE[t.type] ?? SOLID_DECORATION_RADIUS)
           : MONSTER_STATS[t.type]?.radius ?? MONSTER_HIT_RADIUS,
       attackFrames: MONSTER_ATTACK_FRAMES[t.type],
       painFrames: MONSTER_PAIN_FRAMES[t.type],
@@ -1487,7 +1492,10 @@ export function buildThingSprites(
             if (p.velX !== 0 || p.velY !== 0) applyKnockback(p, dt);
           }
         } else {
-          p.z = p.sector?.floorHeight ?? p.z;
+          // Ceiling-hung gore rides a moving ceiling (crusher, closing door) the same way
+          // everything else here rides a moving floor — see CEILING_HUNG_HEIGHT's doc.
+          const hangHeight = CEILING_HUNG_HEIGHT[p.type];
+          p.z = hangHeight !== undefined ? (p.sector?.ceilHeight ?? p.z + hangHeight) - hangHeight : (p.sector?.floorHeight ?? p.z);
           // Barrels have no AI movement of their own, so this is their only
           // source of horizontal motion; a freshly-dead monster (stats
           // undefined above) lands here too, finishing off whatever knockback

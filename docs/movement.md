@@ -39,17 +39,26 @@ yet touched at `from` is unaffected — this only lets an already-overlapping pa
 lets a mover approach a thing it wasn't already touching.
 
 **Solid decorations.** `game/thingdefs.ts`'s `SOLID_DECORATION_TYPES` is every doomednum from the
-"Obstacles & decorations" block of `THING_SPRITES` that carries vanilla's `MF_SOLID` flag —
-confirmed per-type against `linuxdoom-1.10/info.c`'s `mobjinfo` table: the column, candelabra, all
-six pillars, the evil eye, skull rock, all six torches, the stalagmite, the tech pillar, the
-burning barrel, and both techno lamps, all at vanilla's shared 16-unit radius
-(`SOLID_DECORATION_RADIUS`). The plain candle (doomednum 34) is the one exception in that block —
-`flags: 0` in vanilla — and is
-deliberately left out, same as the exploding barrel's own `MF_SOLID` (doomednum 2035) is handled by
-its pre-existing `BARREL_TYPE` special-case rather than being folded into this set. `things.ts`'s
-`rebuildBlockerGrid` and `solidBodies` both admit `SOLID_DECORATION_TYPES` alongside
-`MONSTER_TYPES`/`BARREL_TYPE`, so a solid decoration blocks the player (`solidBodies`) and monster
-movement (`blockersFor`) exactly like a monster does.
+"Obstacles & decorations" and "Gore & corpses" blocks of `THING_SPRITES` that carries vanilla's
+`MF_SOLID` flag — confirmed per-type against `linuxdoom-1.10/info.c`'s `mobjinfo` table: the
+column, candelabra, all six pillars, the evil eye, skull rock, all six torches, the stalagmite, the
+tech pillar, the burning barrel, both techno lamps, both trees, the five pole/skull decorations,
+the solid "hanging victim" quintet and DOOM II's six `HDB*` body bags. Every entry shares vanilla's
+16-unit radius (`SOLID_DECORATION_RADIUS`) except the big tree (doomednum 54), which is 32 —
+`SOLID_DECORATION_RADIUS_OVERRIDE` is the one-key exception table for it. The plain candle
+(doomednum 34, `flags: 0`) and every dead-monster/blood-pool prop are the decorations genuinely
+**not** solid in vanilla and are deliberately left out, same as the exploding barrel's own
+`MF_SOLID` (doomednum 2035) is handled by its pre-existing `BARREL_TYPE` special-case rather than
+being folded into this set. `things.ts`'s `rebuildBlockerGrid` and `solidBodies` both admit
+`SOLID_DECORATION_TYPES` alongside `MONSTER_TYPES`/`BARREL_TYPE`, so a solid decoration blocks the
+player (`solidBodies`) and monster movement (`blockersFor`) exactly like a monster does.
+
+**Ceiling-hung gore.** `CEILING_HUNG_HEIGHT` holds vanilla's `MF_SPAWNCEILING` doomednums (the
+"hanging victim" props and DOOM II's body bags, solid and non-solid alike) mapped to their real
+`mobjinfo.height`. `buildThingSprites` and `ThingLayer.update` both measure `z` down from the
+sector's own `ceilHeight` instead of up from `floorHeight` for these — the same per-frame "ride a
+mover" trick a floor decoration already gets, just off the opposite surface, so a crusher or
+closing door carries a hanging corpse along too.
 
 **They must not become shootable in the process.** `blockerGrid` also backs `raycastMonster` and
 `monstersNear` (hitscans and projectile splash), and those two explicitly skip

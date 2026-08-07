@@ -3,8 +3,10 @@ v0.9.x (2026-08-??)
 Features and improvements
   - bullets and melee hits now splash blood
   - bullets now leave the original's puff on walls (and on barrels)
-  - add missing idle animations to some items and decorations
-    - added the two techno lamps, which weren't rendered at all before
+  - hopefully completed THINGs
+    - add missing idle animations to some items and decorations
+    - added the two techno lamps and all gore decorations, which weren't 
+      rendered at all before
   - main menu overhaul
     - opens over the paused level instead of hiding it, and got a
       "Return to game" button next to it

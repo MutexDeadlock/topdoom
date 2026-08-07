@@ -313,7 +313,11 @@ while not moving.
 Monsters gate `animating` on whether they actually stepped this frame (`ThingLayer.update`), the same
 motion-driven cycle as the player. Every non-monster thing (barrel sway, decoration flicker, item/key/
 powerup blink) instead animates unconditionally — vanilla's own idle art loops regardless of motion,
-there being none to gate on. Which doomednums get more than the single held frame `buildThingSprites`
-defaults to, and their frame letters/timing, is data in `game/thingdefs.ts`'s `THING_ANIM_FRAMES`
-(cross-checked against `info.c`'s `states[]`, not the wiki) — a doomednum absent from that table has
-vanilla `tics: -1` and is genuinely static (ammo, weapons, STIM/MEDI, the plain column).
+there being none to gate on. Which doomednums get more than the single held `'A'` frame
+`buildThingSprites` defaults to, and their frame letters/timing, is data in `game/thingdefs.ts`'s
+`THING_ANIM_FRAMES` (cross-checked against `info.c`'s `states[]`, not the wiki). The same table also
+covers the opposite case — a corpse/gib prop (the "Dead …"/"Bloody mess" doomednums) whose vanilla
+`spawnstate` is a fixed frame that *isn't* `'A'` — with a single-element `frames` array naming that
+letter, so it holds correctly instead of drawing the sprite's first (unrelated) frame. A doomednum
+absent from the table either has vanilla `tics: -1` (genuinely static — ammo, weapons, STIM/MEDI, the
+plain column) or spawns at the literal `'A'` frame already, and needs neither case.

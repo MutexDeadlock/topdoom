@@ -98,6 +98,46 @@ export const THING_SPRITES: Record<number, string> = {
   70: 'FCAN',
   85: 'TLMP',
   86: 'TLP2',
+  43: 'TRE1',
+  54: 'TRE2',
+  25: 'POL1',
+  26: 'POL6',
+  27: 'POL4',
+  28: 'POL2',
+  29: 'POL3',
+
+  // Gore & corpses — floor-standing, non-solid unless noted
+  10: 'PLAY', // Bloody mess
+  12: 'PLAY', // Bloody mess (vanilla places the same art under two editor numbers)
+  15: 'PLAY', // Dead player
+  18: 'POSS', // Dead former human
+  19: 'SPOS', // Dead former sergeant
+  20: 'TROO', // Dead imp
+  21: 'SARG', // Dead demon
+  22: 'HEAD', // Dead cacodemon
+  23: 'SKUL', // Dead lost soul (invisible in vanilla — no MF_SOLID/MF_NOBLOCKMAP either)
+  24: 'POL5', // Pool of blood and flesh
+  79: 'POB1', // Colon gibs
+  80: 'POB2', // Small pool of blood
+  81: 'BRS1', // Brain stem
+
+  // Gore — hangs from the ceiling (MF_SPAWNCEILING); solid variants block, "Hanging …" ones don't
+  49: 'GOR1',
+  50: 'GOR2',
+  51: 'GOR3',
+  52: 'GOR4',
+  53: 'GOR5',
+  59: 'GOR2',
+  60: 'GOR4',
+  61: 'GOR3',
+  62: 'GOR5',
+  63: 'GOR1',
+  73: 'HDB1',
+  74: 'HDB2',
+  75: 'HDB3',
+  76: 'HDB4',
+  77: 'HDB5',
+  78: 'HDB6',
 };
 
 /**
@@ -117,21 +157,64 @@ export const MONSTER_TYPES = new Set([
 export const WEAPON_TYPES = new Set([2001, 82, 2002, 2003, 2004, 2005, 2006]);
 
 /**
- * Doomednums from the "Obstacles & decorations" block above that carry vanilla's `MF_SOLID` flag,
- * confirmed against `linuxdoom-1.10/info.c`'s `mobjinfo` table: the column, candelabra, all six
- * pillars, the evil eye, skull rock, all six torches, the stalagmite, the tech pillar, the burning
- * barrel, and both techno lamps. The exploding barrel (2035, `MT_BARREL`) is solid too but already
- * has its own `BARREL_TYPE` handling in `game/things.ts` and is deliberately not repeated here. The
- * plain candle (34, `MT_MISC49`) is the one decoration in this block that is genuinely **not**
- * solid in vanilla (`flags: 0`, unlike every other entry's `MF_SOLID`) and is excluded on purpose —
- * see docs/movement.md § Solid decorations.
+ * Doomednums from the "Obstacles & decorations" and "Gore & corpses" blocks above that carry
+ * vanilla's `MF_SOLID` flag, confirmed against `linuxdoom-1.10/info.c`'s `mobjinfo` table: the
+ * column, candelabra, all six pillars, the evil eye, skull rock, all six torches, the stalagmite,
+ * the tech pillar, the burning barrel, both techno lamps, both trees, the five pole/skull
+ * decorations, the solid "hanging victim" quintet (49/50/51/52/53) and DOOM II's six solid `HDB*`
+ * body bags (73-78) — `CEILING_HUNG_HEIGHT`'s other five entries (59/60/61/62/63) reuse the same
+ * `GOR*` sprites at vanilla's genuinely non-solid, wider-radius placement and are deliberately not
+ * in this set. The exploding barrel (2035, `MT_BARREL`) is solid too but already has its own
+ * `BARREL_TYPE` handling in `game/things.ts` and is deliberately not repeated here. Two decorations
+ * in these blocks are
+ * genuinely **not** solid in vanilla and are excluded on purpose: the plain candle (34,
+ * `MT_MISC49`, `flags: 0`) and every dead-monster/blood-pool prop (10-24, 79-81) — see
+ * docs/movement.md § Solid decorations.
  */
 export const SOLID_DECORATION_TYPES = new Set([
-  2028, 30, 31, 32, 33, 35, 36, 37, 41, 42, 44, 45, 46, 47, 48, 55, 56, 57, 70, 85, 86,
+  2028, 30, 31, 32, 33, 35, 36, 37, 41, 42, 44, 45, 46, 47, 48, 55, 56, 57, 70, 85, 86, 43, 54, 25,
+  26, 27, 28, 29, 49, 50, 51, 52, 53, 73, 74, 75, 76, 77, 78,
 ]);
 
-/** Vanilla `mobjinfo` radius shared by every entry in `SOLID_DECORATION_TYPES` — confirmed against `info.c`. */
+/** Vanilla `mobjinfo` radius shared by every entry in `SOLID_DECORATION_TYPES` except `SOLID_DECORATION_RADIUS_OVERRIDE`'s keys — confirmed against `info.c`. */
 export const SOLID_DECORATION_RADIUS = 16;
+
+/**
+ * The one `SOLID_DECORATION_TYPES` entry whose real vanilla radius isn't the shared 16 units: the
+ * big tree (54, `MT_MISC76`) is 32 in `info.c`. Every other entry in the set genuinely does share
+ * the 16-unit radius, so this stays a single-key override rather than promoting every entry to a
+ * per-type table.
+ */
+export const SOLID_DECORATION_RADIUS_OVERRIDE: Record<number, number> = { 54: 32 };
+
+/**
+ * Doomednums carrying vanilla's `MF_SPAWNCEILING` — every ceiling-hung gore prop, the five
+ * vanilla "hanging victim" doomednums (both the solid and the non-solid, wider-radius reuse of
+ * the same sprites) plus DOOM II's six `HDB*` body bags. Presence in this table means
+ * `buildThingSprites`/`ThingLayer.update` measure `z` down from the sector's own `ceilHeight`
+ * instead of up from `floorHeight` — the value is vanilla `mobjinfo.height`, confirmed against
+ * `info.c`, i.e. exactly far enough that the sprite's bottom-anchored plane touches the ceiling.
+ * A moving ceiling (crusher, closing door) carries these along every frame the same way a solid
+ * decoration already rides a moving floor — see docs/movement.md § Solid decorations.
+ */
+export const CEILING_HUNG_HEIGHT: Record<number, number> = {
+  49: 68, // GOR1 (solid) hanging victim, twitching
+  50: 84, // GOR2 (solid) hanging victim, guts removed
+  51: 84, // GOR3 (solid) hanging victim, guts and brain removed
+  52: 68, // GOR4 (solid) hanging torso, looking down
+  53: 52, // GOR5 (solid) hanging torso, open skull
+  59: 84, // GOR2 (non-solid) hanging pair of legs
+  60: 68, // GOR4 (non-solid) hanging victim, 1-legged
+  61: 52, // GOR3 (non-solid) hanging victim, arms out
+  62: 52, // GOR5 (non-solid) hanging leg
+  63: 68, // GOR1 (non-solid) hanging victim, twitching
+  73: 88, // HDB1
+  74: 88, // HDB2
+  75: 64, // HDB3
+  76: 64, // HDB4
+  77: 64, // HDB5
+  78: 64, // HDB6
+};
 
 /**
  * `MONSTER_TYPES` entries that carry vanilla's `MF_COUNTKILL` flag — every monster except the
@@ -385,20 +468,30 @@ export const MONSTER_DROPS: Record<number, number> = {
 };
 
 /**
- * Idle animation for non-monster, non-barrel things (decorations, health/armor,
- * keys, powerups) — every doomednum from `THING_SPRITES`'s "Health & armor",
- * "Keys", "Powerups" and "Obstacles & decorations" blocks whose vanilla
- * `mobjinfo` state cycle holds more than one frame, confirmed letter-by-letter
- * against `linuxdoom-1.10/info.c`'s `states[]` table (not the wiki). A
- * doomednum absent from this table has `tics: -1` in vanilla — genuinely
- * static, e.g. STIM/MEDI, the plain column, both candles, ammo and weapon
- * pickups — and keeps `buildThingSprites`'s single-frame default.
+ * Per-doomednum sprite frame(s) for non-monster, non-barrel things, overriding
+ * `buildThingSprites`'s single-held-`'A'`-frame default. Two distinct reasons a
+ * doomednum ends up here, confirmed letter-by-letter against
+ * `linuxdoom-1.10/info.c`'s `states[]` table (not the wiki):
+ *
+ * - **Idle animation** — decorations, health/armor, keys, powerups whose vanilla
+ *   `mobjinfo` state cycle loops through more than one frame (`frames.length > 1`).
+ * - **A corpse/gib prop's fixed art isn't frame `'A'`** — the "Dead …" and "Bloody
+ *   mess" doomednums (10, 12, 15, 18-23) spawn vanilla's own already-mid-death-cycle
+ *   `spawnstate`, e.g. `S_HEAD_DIE6` for the dead cacodemon prop — a single-element
+ *   `frames` array naming that exact letter, which `SpriteAnimator` then holds
+ *   forever the same way it holds `'A'` for anything with no entry at all.
+ *
+ * A doomednum absent from this table either has vanilla `tics: -1` (genuinely
+ * static — STIM/MEDI, the plain column, both candles, ammo/weapon pickups) or
+ * spawns at its sprite's literal `'A'` frame (most solid decorations, blood
+ * pools, hanging corpses) — both cases already match `buildThingSprites`'s
+ * default and don't need an entry.
  *
  * `frameSeconds` is one flat rate per entry standing in for vanilla's own
  * per-state tic counts, the same accepted simplification `BARREL_IDLE_FRAME_SECONDS`
  * and `MONSTER_DEATH_FRAME_SECONDS` already make (ARM1's real A/B split is 6/7
  * tics, not perfectly even, but a second constant for one doomednum would tune
- * nothing anyone could see).
+ * nothing anyone could see); meaningless for a single-frame entry, which never animates.
  */
 export const THING_ANIM_FRAMES: Record<number, { frames: string[]; frameSeconds: number }> = {
   // Health & armor
@@ -436,4 +529,21 @@ export const THING_ANIM_FRAMES: Record<number, { frames: string[]; frameSeconds:
   70: { frames: ['A', 'B', 'C'], frameSeconds: 4 / 35 }, // FCAN burning barrel
   85: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // TLMP tall techno lamp
   86: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // TLP2 large techno lamp
+  26: { frames: ['A', 'B'], frameSeconds: 7 / 35 }, // POL6 twitching impaled human — real split is 6/8 tics
+  29: { frames: ['A', 'B'], frameSeconds: 6 / 35 }, // POL3 pile of skulls and candles
+
+  // Gore & corpses — fixed art at a non-'A' death-cycle frame, held forever (see doc above)
+  10: { frames: ['W'], frameSeconds: 6 / 35 }, // PLAY bloody mess (S_PLAY_XDIE9)
+  12: { frames: ['W'], frameSeconds: 6 / 35 }, // PLAY bloody mess (S_PLAY_XDIE9)
+  15: { frames: ['N'], frameSeconds: 6 / 35 }, // PLAY dead player (S_PLAY_DIE7)
+  18: { frames: ['L'], frameSeconds: 6 / 35 }, // POSS dead former human (S_POSS_DIE5)
+  19: { frames: ['L'], frameSeconds: 6 / 35 }, // SPOS dead former sergeant (S_SPOS_DIE5)
+  20: { frames: ['M'], frameSeconds: 6 / 35 }, // TROO dead imp (S_TROO_DIE5)
+  21: { frames: ['N'], frameSeconds: 6 / 35 }, // SARG dead demon (S_SARG_DIE6)
+  22: { frames: ['L'], frameSeconds: 6 / 35 }, // HEAD dead cacodemon (S_HEAD_DIE6)
+  23: { frames: ['K'], frameSeconds: 6 / 35 }, // SKUL dead lost soul (S_SKULL_DIE6)
+
+  // Gore — ceiling-hung, 'A,B,C,B' twitch loop (both the solid and non-solid GOR1 placements)
+  49: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 / 35 }, // GOR1 — real cycle is 10/15/8/6 tics
+  63: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 / 35 }, // GOR1 — same cycle, non-blocking placement
 };

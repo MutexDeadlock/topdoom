@@ -14,8 +14,8 @@ Features and improvements
 Fixed bugs
   - a lift blocked by someone's headroom now backs down again
     immediately instead of stalling at the ceiling
-  - the player and a monster (or two monsters) that end up touching no longer
-    freeze in place forever — they can now work their way apart again
+  - moveable objects that end up touching no longer freeze
+    in place forever - they can now work their way apart again
   - fixed crushers
 
 

@@ -18,6 +18,8 @@ import {
   MONSTER_RAISE_FRAMES,
   MONSTER_TYPES,
   MONSTER_XDEATH_FRAMES,
+  SOLID_DECORATION_RADIUS,
+  SOLID_DECORATION_TYPES,
   THING_SPRITES,
   WEAPON_TYPES,
 } from './thingdefs.ts';
@@ -331,7 +333,7 @@ export interface ThingLayer {
   stats: LevelKillItemStats;
   /** Releases the instanced meshes/materials this layer owns; call when the map is unloaded. Shared geometry and textures belong to `SpriteMaterialCache`, which outlives a level. */
   dispose(): void;
-  /** Every living monster and still-standing barrel near (x, y) as a solid body the *player* walks around — both are `MF_SOLID` in vanilla. Monsters get `blockersFor` instead. */
+  /** Every living monster, still-standing barrel, and solid decoration near (x, y) as a solid body the *player* walks around — all `MF_SOLID` in vanilla. Monsters get `blockersFor` instead. */
   solidBodies(pos: Pos2): ThingBlocker[];
   /**
    * Re-poses every thing at the camera's viewer angle and, for a living
@@ -633,7 +635,11 @@ export function buildThingSprites(
       id: posed.length,
       anim,
       scale: pickupScaleFor(t.type),
-      blockRadius: isBarrel ? BARREL_RADIUS : MONSTER_STATS[t.type]?.radius ?? MONSTER_HIT_RADIUS,
+      blockRadius: isBarrel
+        ? BARREL_RADIUS
+        : SOLID_DECORATION_TYPES.has(t.type)
+          ? SOLID_DECORATION_RADIUS
+          : MONSTER_STATS[t.type]?.radius ?? MONSTER_HIT_RADIUS,
       attackFrames: MONSTER_ATTACK_FRAMES[t.type],
       painFrames: MONSTER_PAIN_FRAMES[t.type],
       raiseFrames: MONSTER_RAISE_FRAMES[t.type],
@@ -1043,12 +1049,15 @@ export function buildThingSprites(
         cell.push(p);
         continue;
       }
-      // A living barrel is exactly as solid as a monster — vanilla's own
-      // MF_SOLID — so it joins the same grid: it blocks the player
-      // (`solidBodies`), blocks a monster's own movement (`blockersFor`), and
-      // is found by `raycastMonster`/`monstersNear`, all for free through the
-      // machinery already built for monsters.
-      if (!MONSTER_TYPES.has(p.type) && p.type !== BARREL_TYPE) continue;
+      // A living barrel, and any `SOLID_DECORATION_TYPES` prop, is exactly as
+      // solid as a monster — vanilla's own MF_SOLID — so both join the same
+      // grid: they block the player (`solidBodies`) and a monster's own
+      // movement (`blockersFor`) for free through the machinery already built
+      // for monsters. Unlike the barrel, a plain decoration isn't
+      // `MF_SHOOTABLE` — `raycastMonster`/`monstersNear` explicitly filter
+      // `SOLID_DECORATION_TYPES` back out below, so it still doesn't stop a
+      // shot.
+      if (!MONSTER_TYPES.has(p.type) && p.type !== BARREL_TYPE && !SOLID_DECORATION_TYPES.has(p.type)) continue;
       if (p.blockRadius > maxBlockerRadius) maxBlockerRadius = p.blockRadius;
       const i = blockerRow(p.y) * blockerCols + blockerCol(p.x);
       let cell = blockerGrid[i];
@@ -1084,8 +1093,9 @@ export function buildThingSprites(
   }
 
   /**
-   * The solid bodies near `p` it can bump into — every other living monster
-   * plus the player, all `MF_SOLID` in vanilla. `p` itself is excluded.
+   * The solid bodies near `p` it can bump into — every other living monster,
+   * the player, and any solid decoration/barrel, all `MF_SOLID` in vanilla.
+   * `p` itself is excluded.
    *
    * **The returned array is reused** — see `blockerScratch`.
    *
@@ -1231,7 +1241,7 @@ export function buildThingSprites(
     solidBodies(pos: Pos2): ThingBlocker[] {
       const out: ThingBlocker[] = [];
       for (const p of posed) {
-        if (p.dead || (!MONSTER_TYPES.has(p.type) && p.type !== BARREL_TYPE)) continue;
+        if (p.dead || (!MONSTER_TYPES.has(p.type) && p.type !== BARREL_TYPE && !SOLID_DECORATION_TYPES.has(p.type))) continue;
         if (Math.abs(p.x - pos.x) > BLOCKER_SEARCH_RADIUS || Math.abs(p.y - pos.y) > BLOCKER_SEARCH_RADIUS) continue;
         out.push({ x: p.x, y: p.y, radius: p.blockRadius });
       }
@@ -1484,7 +1494,9 @@ export function buildThingSprites(
       const out: MonsterRef[] = [];
       const rSq = radius * radius;
       forEachMonsterNear(pos.x, pos.y, radius, (p) => {
-        if (p.dead) return;
+        // blockerGrid also carries SOLID_DECORATION_TYPES now (movement only) — not MF_SHOOTABLE
+        // in vanilla, so a projectile must not strike one.
+        if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
         const dx = p.x - pos.x;
         const dy = p.y - pos.y;
         if (dx * dx + dy * dy >= rSq) return;
@@ -1683,7 +1695,9 @@ export function buildThingSprites(
       // Grid-backed rather than a scan of every thing: this runs once per
       // monster hitscan, which a crowded map fires dozens of times a frame.
       forEachMonsterAlongRay(origin.x, origin.y, dx, dy, maxDist, (p) => {
-        if (p.dead) return;
+        // blockerGrid also carries SOLID_DECORATION_TYPES now (movement only) — not MF_SHOOTABLE
+        // in vanilla, so a hitscan must pass through one rather than stopping on it.
+        if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
         if (p.id === opts?.ignoreId) return;
         // Fog of war is a *player*-facing conceit; a monster shooting another
         // monster in an unrevealed room must still connect.

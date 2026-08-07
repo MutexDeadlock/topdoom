@@ -2,6 +2,7 @@ v0.9.1 (2026-08-??)
 
 Features and improvements
   - animated textures
+  - decorative THINGs are now blocking
   - improved HUD
     - show current level stats (kills/items/secrets) and time
     - moved the current weapon between armor and ammo

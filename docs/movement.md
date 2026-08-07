@@ -38,6 +38,25 @@ projection and its per-axis fallback) all pass their mover's own position as `fr
 yet touched at `from` is unaffected — this only lets an already-overlapping pair work free, it never
 lets a mover approach a thing it wasn't already touching.
 
+**Solid decorations.** `game/thingdefs.ts`'s `SOLID_DECORATION_TYPES` is every doomednum from the
+"Obstacles & decorations" block of `THING_SPRITES` that carries vanilla's `MF_SOLID` flag —
+confirmed per-type against `linuxdoom-1.10/info.c`'s `mobjinfo` table: the column, candelabra, all
+six pillars, the evil eye, skull rock, all six torches, the stalagmite, the tech pillar, and the
+burning barrel, all at vanilla's shared 16-unit radius (`SOLID_DECORATION_RADIUS`). The plain
+candle (doomednum 34) is the one exception in that block — `flags: 0` in vanilla — and is
+deliberately left out, same as the exploding barrel's own `MF_SOLID` (doomednum 2035) is handled by
+its pre-existing `BARREL_TYPE` special-case rather than being folded into this set. `things.ts`'s
+`rebuildBlockerGrid` and `solidBodies` both admit `SOLID_DECORATION_TYPES` alongside
+`MONSTER_TYPES`/`BARREL_TYPE`, so a solid decoration blocks the player (`solidBodies`) and monster
+movement (`blockersFor`) exactly like a monster does.
+
+**They must not become shootable in the process.** `blockerGrid` also backs `raycastMonster` and
+`monstersNear` (hitscans and projectile splash), and those two explicitly skip
+`SOLID_DECORATION_TYPES` — vanilla's `PIT_ShootTraverse`/`PIT_RadiusAttack` only test
+`MF_SHOOTABLE`, which no decoration in this set carries (unlike the barrel, which is both
+`MF_SOLID` and `MF_SHOOTABLE`). Movement blocking and shot blocking read the same grid but are two
+different filters for exactly this reason — see `things.ts`'s `rebuildBlockerGrid` doc.
+
 **`groundCeiling`** mirrors `groundFloor`: the local sector's ceiling, lowered to the top of any
 straddled two-sided opening. It exists for the flip side of the same straddling bug — standing half
 on a rising lift/floor and half in a static neighbor sector with a lower ceiling, `groundFloor`

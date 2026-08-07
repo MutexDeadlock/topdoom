@@ -413,7 +413,11 @@ only check `MF_SHOOTABLE`/`MF_SOLID`. This engine's equivalent generic layer is 
 `blockerGrid`, so a barrel joins that grid alongside every `MONSTER_TYPES` thing
 (`rebuildBlockerGrid`, `solidBodies`, `pickMonster`) rather than needing a parallel set of spatial
 queries — `raycastMonster`/`monstersNear` become barrel-aware for free, which is what lets a rocket,
-a stray pellet, a monster's own fireball or another barrel's blast all hit one.
+a stray pellet, a monster's own fireball or another barrel's blast all hit one. The purely-solid
+decorations (`SOLID_DECORATION_TYPES`, docs/movement.md § Solid decorations) join the same grid for
+movement but are explicitly filtered back out of `raycastMonster`/`monstersNear` — unlike the
+barrel, none of them carry vanilla's `MF_SHOOTABLE`, so a shot must pass through one rather than
+stop on it.
 
 **Only `ThingLayer.damage`'s death/pain behavior is special-cased**, gated on `BARREL_TYPE` (2035):
 no painstate (`MT_BARREL` has `painchance = 0`), no alerting, no infighting retarget (it has no AI),

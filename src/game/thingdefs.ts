@@ -115,6 +115,21 @@ export const MONSTER_TYPES = new Set([
 export const WEAPON_TYPES = new Set([2001, 82, 2002, 2003, 2004, 2005, 2006]);
 
 /**
+ * Doomednums from the "Obstacles & decorations" block above that carry vanilla's `MF_SOLID` flag,
+ * confirmed against `linuxdoom-1.10/info.c`'s `mobjinfo` table: the column, candelabra, all six
+ * pillars, the evil eye, skull rock, all six torches, the stalagmite, the tech pillar, and the
+ * burning barrel. The exploding barrel (2035, `MT_BARREL`) is solid too but already has its own
+ * `BARREL_TYPE` handling in `game/things.ts` and is deliberately not repeated here. The plain
+ * candle (34, `MT_MISC49`) is the one decoration in this block that is genuinely **not** solid in
+ * vanilla (`flags: 0`, unlike every other entry's `MF_SOLID`) and is excluded on purpose — see
+ * docs/movement.md § Solid decorations.
+ */
+export const SOLID_DECORATION_TYPES = new Set([2028, 30, 31, 32, 33, 35, 36, 37, 41, 42, 44, 45, 46, 47, 48, 55, 56, 57, 70]);
+
+/** Vanilla `mobjinfo` radius shared by every entry in `SOLID_DECORATION_TYPES` — confirmed against `info.c`. */
+export const SOLID_DECORATION_RADIUS = 16;
+
+/**
  * `MONSTER_TYPES` entries that carry vanilla's `MF_COUNTKILL` flag — every monster except the
  * lost soul (3006) and the Icon of Sin's brain (88), neither of which does in `info.c`'s
  * `mobjinfo` table. `MONSTER_TYPES` exists for targeting/AI and isn't the same list vanilla uses

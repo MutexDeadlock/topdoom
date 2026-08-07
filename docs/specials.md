@@ -29,12 +29,44 @@ return to the sector's *own* start height (not neighbor-derived, unlike a door's
 forever, with no hold/rest state.
 
 They — and the vanilla `raiseFloorCrush` floor family (55/56/65/94) — deal `CRUSH_DAMAGE` every
-`CRUSH_DAMAGE_INTERVAL` (vanilla's 10 HP every 4 tics) to the player or any monster standing in their
-sector, via `SpecialsController`'s `onCrush` callback into `game.ts: applyCrushDamage` — the same
-callback-into-`game.ts` pattern as `onExit`/`onTeleport`, since `SpecialsController` mutates geometry
-but has no idea where anyone is standing. `ThingLayer.monstersInSector` finds candidates by comparing
-against the exact same mutable `Sector` object reference `PosedThing.sector` was seeded from, the same
-trick `tryPickup`'s live-height read relies on.
+`CRUSH_DAMAGE_INTERVAL` (vanilla's 10 HP every 4 tics) to the player or any monster in their sector
+that the current headroom doesn't fit (`sector.ceilHeight - sector.floorHeight` against
+`PLAYER_HEIGHT`/`MONSTER_HIT_HEIGHT`), via `SpecialsController`'s `onCrush` callback into
+`game.ts: applyCrushDamage` — the same callback-into-`game.ts` pattern as `onExit`/`onTeleport`, since
+`SpecialsController` mutates geometry but has no idea where anyone is standing. `ThingLayer.
+monstersInSector` finds candidates by comparing against the exact same mutable `Sector` object
+reference `PosedThing.sector` was seeded from, the same trick `tryPickup`'s live-height read relies
+on. The headroom gate matters even for someone in the mover's own sector footprint: standing under a
+crusher parked at the top of its swing, or before it's descended far enough to reach you, must not
+deal damage — `PIT_ChangeSector` (`p_map.c`) only damages a thing `P_ThingHeightClip` reports as not
+fitting, never everyone the sector's blockmap iteration happens to touch.
+
+**A barrel takes the same crush damage as a monster**, via `crushablesInSector` (`monstersInSector`
+plus any living barrel in the sector) — vanilla's `PIT_ChangeSector` doesn't distinguish `MT_BARREL`
+from any other `MF_SHOOTABLE` mobj, so a barrel under a crusher dies and explodes exactly as if it'd
+been shot (docs/combat.md § Exploding barrels covers the death→explode delay itself). The
+headroom-blocked check other movers use (`game/moverblocking.ts`) deliberately stays on
+`monstersInSector` alone — whether a barrel should also stall a closing door is a separate question
+this change doesn't touch.
+
+**Only a *lowering* `CrusherMover` deals damage, matching `T_MoveCeiling`** (`p_ceilng.c`): its raise
+call always passes a hardcoded `crush=false` to `T_MovePlane` regardless of the mover's own crush
+flag, so `P_ChangeSector`'s `crushchange` is false and the damage branch never runs on the way back
+up, even while the gap is still too small. `tickCrusher` captures its direction before the tick's
+move (and any end-of-travel state flip) and only calls `tickCrush` when that was `'lowering'`. The
+`raiseFloorCrush` floor family has no such asymmetry — `T_MoveFloor` always passes the mover's real
+`crush` flag regardless of direction, and a floor crusher only ever moves one way (up) per trigger
+anyway — so `tickFloor` calls `tickCrush` unconditionally while `mover.crush` is set and moving.
+
+**The damage pulse itself is one clock shared by every crushing mover on the map, not a per-mover
+countdown** — `SpecialsController.crushDamageTimer`/`crushDamageDue`, computed once in `update` the
+same way `moveSoundDue` already is for the shared grind sound (§ above this one, `MOVE_SOUND_INTERVAL`).
+This reproduces vanilla's literal `leveltime&3` — one level-wide clock every crusher's
+`PIT_ChangeSector` call checks, so two crushers running at once always pulse on the same tic. A
+per-mover countdown, reset to `CRUSH_DAMAGE_INTERVAL` on each fire, was tried first and drifts out of
+phase with the level's real tic count over a long-running crusher — caught by testing
+`crusher_test.wad`'s WR fast crusher against GZDoom side by side, which came out one `CRUSH_DAMAGE` hit
+lower than this engine over the same run.
 
 The turbo-16 stair specials (100/127) are deliberately *not* included, even though the wiki names them
 "...and Crush" — the actual `EV_BuildStairs` source never sets a crush flag on the floor movers it

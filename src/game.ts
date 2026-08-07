@@ -8,11 +8,11 @@ import { AnimatedTextures } from './render/textureanim.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import type { Viewport } from './render/viewport.ts';
-import { buildThingSprites, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
+import { buildThingSprites, MONSTER_HIT_HEIGHT, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
 import { MONSTER_FIRE_HEIGHT, thrustSpeed } from './game/monsters.ts';
 import { collectFadeTargets, FlatFader, TextureScroller, WallFader } from './render/occlusion.ts';
 import { World, hasLineOfSight, shotPath } from './game/world.ts';
-import { AIM_HEIGHT_OFFSET, GRAVITY, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
+import { AIM_HEIGHT_OFFSET, GRAVITY, Player, PLAYER_HEIGHT, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { applyBarrelExplosion, applyRadiusDamage, type CombatContext } from './game/combat.ts';
 import { EffectLayer } from './game/effects.ts';
 import { ProjectileLayer } from './game/projectiles.ts';
@@ -648,12 +648,23 @@ export class Game {
    * `SpecialsController`'s `onCrush` callback: it owns the moving geometry but
    * has no idea who's standing in it, so it hands back a sector index. 2D
    * membership only, like `applyRadiusDamage` — see docs/specials.md §
-   * Crushers.
+   * Crushers. Gated on `PIT_ChangeSector`'s actual "doesn't fit" test (the
+   * sector's current headroom against `PLAYER_HEIGHT`/`MONSTER_HIT_HEIGHT`),
+   * not merely standing in the sector — a crusher parked at the top of its
+   * travel, or one that hasn't reached someone yet, must not deal damage.
+   * Monsters and barrels share one loop (`crushablesInSector`): vanilla's
+   * `PIT_ChangeSector` treats any shootable mobj the same way, so a barrel
+   * dies and explodes exactly like it would from gunfire.
    */
   private applyCrushDamage(sectorIndex: number): void {
-    if (this.world.sectorIndexAt(this.player.x, this.player.y) === sectorIndex) this.damagePlayer(CRUSH_DAMAGE);
     const sector = this.map.sectors[sectorIndex];
-    for (const m of this.things?.monstersInSector(sector) ?? []) this.things?.damage(m.id, CRUSH_DAMAGE);
+    const gap = sector.ceilHeight - sector.floorHeight;
+    if (gap < PLAYER_HEIGHT && this.world.sectorIndexAt(this.player.x, this.player.y) === sectorIndex) {
+      this.damagePlayer(CRUSH_DAMAGE);
+    }
+    if (gap < MONSTER_HIT_HEIGHT) {
+      for (const m of this.things?.crushablesInSector(sector) ?? []) this.things?.damage(m.id, CRUSH_DAMAGE);
+    }
   }
 
   /**

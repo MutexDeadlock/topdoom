@@ -2,18 +2,19 @@ v0.9.1 (2026-08-??)
 
 Features and improvements
   - animated textures
-  - mouse cursor is now a proper crosshair, which color also 
-    reflects the players healt
   - improved HUD
     - show current level stats (kills/items/secrets) and time
     - moved the current weapon between armor and ammo
     - highlight ammo type for the current weapon
+    - mouse cursor is now a proper crosshair, which color also 
+      reflects the players healt
 
 Fixed bugs
   - a lift blocked by someone's headroom now backs down again
     immediately instead of stalling at the ceiling
   - the player and a monster (or two monsters) that end up touching no longer
     freeze in place forever — they can now work their way apart again
+  - fixed crushers
 
 
 ===============================================================================

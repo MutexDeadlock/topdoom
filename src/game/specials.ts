@@ -351,8 +351,6 @@ interface FloorMover {
   target: number;
   state: 'moving' | 'done';
   crush: boolean;
-  /** Counts down to the next `onCrush` call while `crush` is set and `state === 'moving'`; see `CrusherMover.crushTimer`. */
-  crushTimer: number;
   /**
    * Texture/special applied only once this mover reaches `target`, never at
    * trigger time — vanilla's `lowerAndChange` and the donut's ring riser
@@ -393,8 +391,6 @@ interface CrusherMover {
   state: CrusherState;
   /** Vanilla's `silentCrushAndRaise` (special 141) — see `CrusherEffect.silent`. */
   silent: boolean;
-  /** Counts down to the next `onCrush` call; reset to `CRUSH_DAMAGE_INTERVAL` each time it fires, matching vanilla's every-4-tics cadence. */
-  crushTimer: number;
 }
 
 type Mover = DoorMover | LiftMover | FloorMover | CrusherMover | CeilingMover;
@@ -634,6 +630,9 @@ export class SpecialsController {
   /** Counts down to the next `stnmov` grind, and whether one is due this frame — see `MOVE_SOUND_INTERVAL`. */
   private moveSoundTimer = MOVE_SOUND_INTERVAL;
   private moveSoundDue = false;
+  /** Counts down to the next crush-damage pulse, and whether one is due this frame — see `tickCrush`. */
+  private crushDamageTimer = CRUSH_DAMAGE_INTERVAL;
+  private crushDamageDue = false;
 
   private movableSectors: Set<number>;
   /** Movable sectors sharing a linedef with a given movable sector — see `rebuildAround`. */
@@ -822,6 +821,10 @@ export class SpecialsController {
     this.moveSoundTimer -= dt;
     this.moveSoundDue = this.moveSoundTimer <= 0;
     if (this.moveSoundDue) this.moveSoundTimer += MOVE_SOUND_INTERVAL;
+    // Same reasoning, one shared clock for every crusher's damage pulse — see tickCrush.
+    this.crushDamageTimer -= dt;
+    this.crushDamageDue = this.crushDamageTimer <= 0;
+    if (this.crushDamageDue) this.crushDamageTimer += CRUSH_DAMAGE_INTERVAL;
     this.tickMovers(dt, dirty);
     this.lastTeleport = null;
     this.handleUseTrigger(playerX, playerY, playerAngle, input, ownedKeys);
@@ -1114,7 +1117,7 @@ export class SpecialsController {
       }
     }
     if (sector.floorHeight !== before) dirty.add(mover.sectorIndex);
-    if (mover.crush) this.tickCrush(mover.sectorIndex, mover, dt);
+    if (mover.crush) this.tickCrush(mover.sectorIndex);
   }
 
   /**
@@ -1151,6 +1154,11 @@ export class SpecialsController {
     if (mover.state === 'stopped') return;
     const sector = this.map.sectors[mover.sectorIndex];
     const before = sector.ceilHeight;
+    // T_MoveCeiling hardcodes crush=false for the UP call regardless of the
+    // mover's own crush flag (confirmed against p_ceilng.c) — only a
+    // lowering crusher ever deals damage, so this tick's direction (before
+    // any end-of-travel flip below) decides whether tickCrush fires.
+    const wasLowering = mover.state === 'lowering';
     if (mover.state === 'lowering') {
       sector.ceilHeight = Math.max(mover.bottomHeight, sector.ceilHeight - mover.speed * dt);
       if (sector.ceilHeight <= mover.bottomHeight) {
@@ -1171,15 +1179,20 @@ export class SpecialsController {
     }
     if (!mover.silent && this.moveSoundDue) this.playSector(mover.sectorIndex, 'stnmov');
     if (sector.ceilHeight !== before) dirty.add(mover.sectorIndex);
-    this.tickCrush(mover.sectorIndex, mover, dt);
+    if (wasLowering) this.tickCrush(mover.sectorIndex);
   }
 
-  /** Fires `onCrush` for `sectorIndex` every `CRUSH_DAMAGE_INTERVAL`, matching vanilla's every-4-tics crush-damage cadence. */
-  private tickCrush(sectorIndex: number, timer: { crushTimer: number }, dt: number): void {
-    timer.crushTimer -= dt;
-    if (timer.crushTimer > 0) return;
-    this.onCrush(sectorIndex);
-    timer.crushTimer += CRUSH_DAMAGE_INTERVAL;
+  /**
+   * Fires `onCrush` for `sectorIndex` on the shared `crushDamageDue` clock —
+   * vanilla's `leveltime&3` is one clock for the whole level, not a per-mover
+   * countdown, so every crushing mover anywhere pulses on the same tic
+   * (exactly `moveSoundDue`'s reasoning, applied to damage instead of sound).
+   * A per-mover countdown reset on each fire drifts out of phase with that
+   * global tic and can rack up an extra hit a real vanilla/GZDoom crusher
+   * wouldn't have — this replaced that approach for exactly that reason.
+   */
+  private tickCrush(sectorIndex: number): void {
+    if (this.crushDamageDue) this.onCrush(sectorIndex);
   }
 
   /** Which pair of door sounds this door uses — see `DOOR_SOUNDS`. */
@@ -1279,7 +1292,6 @@ export class SpecialsController {
       target,
       state: 'moving',
       crush: effect.crush,
-      crushTimer: CRUSH_DAMAGE_INTERVAL,
     });
   }
 
@@ -1323,7 +1335,6 @@ export class SpecialsController {
       bottomHeight: sector.floorHeight + EIGHT_UNIT_GAP,
       state: 'lowering',
       silent: effect.silent,
-      crushTimer: CRUSH_DAMAGE_INTERVAL,
     });
   }
 
@@ -1374,7 +1385,6 @@ export class SpecialsController {
       target,
       state: 'moving',
       crush: false,
-      crushTimer: CRUSH_DAMAGE_INTERVAL,
     });
   }
 
@@ -1402,7 +1412,6 @@ export class SpecialsController {
       target,
       state: 'moving',
       crush: false,
-      crushTimer: CRUSH_DAMAGE_INTERVAL,
       arrivalTexture,
     });
   }
@@ -1433,7 +1442,6 @@ export class SpecialsController {
       target: outer.floorHeight,
       state: 'moving',
       crush: false,
-      crushTimer: CRUSH_DAMAGE_INTERVAL,
       arrivalTexture: { floorTex: outer.floorTex, special: 0 },
     });
     this.movers.set(holeIndex, {
@@ -1443,7 +1451,6 @@ export class SpecialsController {
       target: outer.floorHeight,
       state: 'moving',
       crush: false,
-      crushTimer: CRUSH_DAMAGE_INTERVAL,
     });
   }
 
@@ -1504,7 +1511,6 @@ export class SpecialsController {
         // Despite the wiki naming 100/127 "...and Crush", real vanilla
         // stairs never set a crush flag — see StairsEffect's doc.
         crush: false,
-        crushTimer: CRUSH_DAMAGE_INTERVAL,
       });
     }
   }

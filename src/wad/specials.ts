@@ -55,6 +55,15 @@ export const STAIR_STEP = 8;
 export const STAIR_STEP_TURBO = 16;
 /** Vanilla: a mover with `crush` set deals this much damage every `CRUSH_DAMAGE_INTERVAL` while something is caught in its sector. */
 export const CRUSH_DAMAGE = 10;
+/**
+ * Vanilla's `leveltime&3` (4 tics at 35 tics/sec) — one clock shared by every
+ * crushing mover on the map, not a per-mover countdown (`SpecialsController`'s
+ * `crushDamageTimer`/`crushDamageDue`, the same shared-clock shape
+ * `MOVE_SOUND_INTERVAL` already uses for the grind sound). A per-mover
+ * countdown reset on each fire drifts out of phase with the level's real tic
+ * count and can add an extra hit a real vanilla/GZDoom crusher wouldn't have
+ * dealt — confirmed the difference testing `crusher_test.wad` against GZDoom.
+ */
 export const CRUSH_DAMAGE_INTERVAL = 4 / 35;
 
 /** Gap vanilla leaves between an open door's ceiling and the lowest neighboring ceiling. */
@@ -179,8 +188,10 @@ export interface ExitEffect {
 /**
  * Ceiling repeatedly lowers to floor+`EIGHT_UNIT_GAP`, then returns to its
  * start height, forever, dealing `CRUSH_DAMAGE` every `CRUSH_DAMAGE_INTERVAL`
- * to anyone caught in its sector the whole time (not just while lowering —
- * vanilla's own crusher thinker doesn't gate damage by direction either).
+ * to anyone it doesn't leave room for — only while lowering: `T_MoveCeiling`
+ * (`p_ceilng.c`) hardcodes `crush=false` for the raise call regardless of the
+ * mover's own crush flag, so real vanilla never deals crush damage on the way
+ * back up either.
  */
 export interface CrusherEffect {
   kind: 'crusher';
@@ -660,7 +671,13 @@ export const SECTOR_DAMAGE_SPECIALS: Record<number, DamageFloorEffect> = {
 };
 /** Vanilla's `P_Random() < 5`: the chance a `'leaks'` damage floor hurts anyway despite a radiation suit. */
 export const SUIT_LEAK_CHANCE = 5 / 256;
-/** Not vanilla's literal `leveltime&0x1f` (every 32 tics since level start, a global clock) — a plain independent countdown instead, same simplification `CRUSH_DAMAGE_INTERVAL` already makes. 32 tics at 35 tics/sec. */
+/**
+ * Not vanilla's literal `leveltime&0x1f` (every 32 tics since level start, a
+ * global clock) — a plain independent countdown instead. Unlike
+ * `CRUSH_DAMAGE_INTERVAL`, this one genuinely can stay per-instance: there's
+ * only ever one player, so there's no second simultaneous instance for an
+ * unsynced phase to drift against. 32 tics at 35 tics/sec.
+ */
 export const DAMAGE_FLOOR_INTERVAL = 32 / 35;
 
 /**

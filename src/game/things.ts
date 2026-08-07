@@ -406,6 +406,17 @@ export interface ThingLayer {
    */
   monstersInSector(sector: Sector): MonsterRef[];
   /**
+   * `monstersInSector` plus any still-standing barrel in `sector` — vanilla's
+   * `PIT_ChangeSector` treats a barrel exactly like a monster for crushing
+   * (any `MF_SHOOTABLE` mobj with health left takes the same periodic
+   * damage), so a barrel under a crusher dies and, after its usual
+   * `BARREL_EXPLODE_DELAY_SECONDS`, explodes the same as if it'd been shot.
+   * Crush damage's own caller (`game.ts`'s `applyCrushDamage`) is the only
+   * user — the headroom-blocked check other movers use deliberately stays on
+   * `monstersInSector` alone, unrelated to this task.
+   */
+  crushablesInSector(sector: Sector): MonsterRef[];
+  /**
    * Applies `amount` damage to `id`, switching to the death animation at 0 —
    * gibbed or plain per `P_KillMobj`'s overkill rule (docs/combat.md § Monster
    * death). A no-op if `id` is stale, already dead, or the amount is
@@ -1505,6 +1516,15 @@ export function buildThingSprites(
       const out: MonsterRef[] = [];
       for (const p of posed) {
         if (p.dead || !MONSTER_TYPES.has(p.type) || p.sector !== sector) continue;
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle });
+      }
+      return out;
+    },
+    crushablesInSector(sector: Sector): MonsterRef[] {
+      const out: MonsterRef[] = [];
+      for (const p of posed) {
+        if (p.dead || p.sector !== sector) continue;
+        if (!MONSTER_TYPES.has(p.type) && p.type !== BARREL_TYPE) continue;
         out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle });
       }
       return out;

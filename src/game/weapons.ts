@@ -193,7 +193,11 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     kind: 'melee',
     pellets: 0,
     spreadDeg: 0,
-    meleeRange: PLAYER_MELEE_RANGE,
+    // `A_Saw` really traces MELEERANGE+1, with vanilla's own comment saying
+    // why: "use meleerange + 1 se the puff doesn't skip the flash". The extra
+    // unit of reach is incidental; the puff is what it's for (effectdefs.ts's
+    // PUFF_MELEE_FRAMES).
+    meleeRange: PLAYER_MELEE_RANGE + 1,
     projectileSpeed: 0,
     projectileSprite: '',
     iconLump: 'CSAWA0',

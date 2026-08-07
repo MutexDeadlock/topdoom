@@ -2,6 +2,14 @@ import type { Wad } from './wad.ts';
 
 export const NO_SIDE = 0xffff;
 
+/**
+ * DOOM's sky flat. A sector using it as its ceiling texture renders no ceiling
+ * at all, and vanilla's own "don't shoot the sky" rule keys off the same name
+ * (`World.hitsSky`), which is why this lives with the map rather than with the
+ * renderer that draws it.
+ */
+export const SKY_FLAT = 'F_SKY1';
+
 export interface Vertex {
   x: number;
   y: number;

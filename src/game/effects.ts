@@ -6,7 +6,17 @@ import { Tracer } from '../render/tracer.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import type { World } from './world.ts';
-import { TFOG_FRAMES, TFOG_FRAME_SECONDS, type OneShotEffect } from './effectdefs.ts';
+import {
+  BLOOD_FRAME_SECONDS,
+  bloodFrames,
+  HIT_Z_JITTER,
+  PUFF_FRAMES,
+  PUFF_FRAME_SECONDS,
+  PUFF_MELEE_FRAMES,
+  TFOG_FRAMES,
+  TFOG_FRAME_SECONDS,
+  type OneShotEffect,
+} from './effectdefs.ts';
 import type { Pos3 } from '../types.ts';
 
 /**
@@ -19,10 +29,10 @@ export type VileFlameResolver = (vileId: number, targetId: number | null) => Pos
 
 /**
  * Every transient visual the game spawns and forgets: teleport-fog puffs,
- * impact explosions, the revenant's smoke trail, the arch-vile's flame, and
- * hitscan tracer lines. All of them share one lifecycle — spawned by some
- * other system, animated here for a fixed time, dropped when they finish, and
- * cleared wholesale on a level change.
+ * impact explosions, blood splashes, bullet puffs, the revenant's smoke trail, the
+ * arch-vile's flame, and hitscan tracer lines. All of them share one
+ * lifecycle — spawned by some other system, animated here for a fixed time,
+ * dropped when they finish, and cleared wholesale on a level change.
  *
  * The one-shot sprites are drawn through a single `SpriteBatch` (one
  * `InstancedMesh` per lump); tracers own a `THREE.Line` each. The player is
@@ -115,6 +125,34 @@ export class EffectLayer {
   spawnImpact(sprite: string, frames: string[], frameSeconds: number, at: Pos3): void {
     const effect = this.spawn(sprite, frames, frameSeconds, at);
     if (effect) this.impacts.push(effect);
+  }
+
+  /**
+   * Vanilla's `P_SpawnBlood`: the splash a hitscan or melee hit leaves on a
+   * body, scattered ±`HIT_Z_JITTER` vertically and playing fewer frames the
+   * weaker the hit was. Silent — `MT_BLOOD` has no sound of its own. The
+   * caller owns the `MF_NOBLOOD` question (`ThingLayer.bleeds`); by the time
+   * it gets here the hit is known to bleed. See docs/combat.md § Blood.
+   */
+  spawnBlood(at: Pos3, damage: number): void {
+    this.spawnImpact('BLUD', bloodFrames(damage), BLOOD_FRAME_SECONDS, { x: at.x, y: at.y, z: this.jitter(at.z) });
+  }
+
+  /**
+   * Vanilla's `P_SpawnPuff`: the little cloud a bullet leaves where it stopped
+   * — a wall, or a body carrying `MF_NOBLOOD` (only the barrel). `sparkless`
+   * is the punch's own case, starting two frames in. Silent, like the blood.
+   * The caller places it; nothing here knows what was hit. See docs/combat.md
+   * § Bullet puffs.
+   */
+  spawnPuff(at: Pos3, sparkless = false): void {
+    const frames = sparkless ? PUFF_MELEE_FRAMES : PUFF_FRAMES;
+    this.spawnImpact('PUFF', frames, PUFF_FRAME_SECONDS, { x: at.x, y: at.y, z: this.jitter(at.z) });
+  }
+
+  /** `P_SpawnBlood`/`P_SpawnPuff`'s shared opening line — the same P_Random - P_Random triangular draw `game/weapons.ts` uses for hitscan spread. */
+  private jitter(z: number): number {
+    return z + (Math.random() - Math.random()) * HIT_Z_JITTER;
   }
 
   spawnTeleportFog(at: Pos3): void {

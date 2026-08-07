@@ -1,4 +1,4 @@
-import { LF, NO_SIDE, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
+import { LF, NO_SIDE, SKY_FLAT, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
 import { sectorOfSubSector } from '../render/bsp.ts';
 import { distSqToSegment, segmentIntersect } from '../util/geom.ts';
 import { PLAYER_HEIGHT } from './player.ts';
@@ -204,6 +204,27 @@ export class World {
 
   ceilingAt(x: number, y: number): number {
     return this.sectorAt(x, y)?.ceilHeight ?? 0;
+  }
+
+  /**
+   * Whether a shot stopping on this line at height `z` ran into sky rather
+   * than something that can show an impact — vanilla's "don't shoot the sky"
+   * pair of tests in `PTR_ShootTraverse`, both keyed off the *front* sector
+   * (the linedef's own `right` side, whichever direction the shot came from,
+   * as `line_t.frontsector` is). Only the bullet puff reads this: vanilla runs
+   * `P_ShootSpecialLine` before the test, so a shoot-trigger on a sky wall
+   * still fires. See docs/combat.md § Bullet puffs.
+   */
+  hitsSky(lineIndex: number, z: number): boolean {
+    const line = this.map.linedefs[lineIndex];
+    if (!line) return false;
+    const front = this.map.sectors[this.map.sidedefs[line.right]?.sector];
+    if (!front || front.ceilTex !== SKY_FLAT) return false;
+    if (z > front.ceilHeight) return true;
+    // The sky-hack wall: a two-sided line with sky on both sides is the seam
+    // between two open-air sectors, not a surface anything can splash on.
+    if (line.left === NO_SIDE) return false;
+    return this.map.sectors[this.map.sidedefs[line.left]?.sector]?.ceilTex === SKY_FLAT;
   }
 
   /** Gap a two-sided line leaves free, or null if the line is impassable. */

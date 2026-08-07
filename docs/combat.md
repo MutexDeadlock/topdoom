@@ -26,7 +26,8 @@ straight from vanilla, since it decides how long a pickup's ammo lasts, as are t
 including the fist's and chainsaw's shared 2-20 (`(P_Random()%10+1)<<1`).
 
 **A melee swing is resolved entirely differently from every other shot**: `spawnPlayerShot` returns before
-`shotPath` even runs and just raycasts `PLAYER_MELEE_RANGE` (vanilla's `MELEERANGE`, 64) along the
+`shotPath` even runs and just raycasts `WeaponDef.meleeRange` (vanilla's `MELEERANGE`, 64 — the
+chainsaw's own `+1` is about its puff, § Bullet puffs) along the
 aim angle. A swing doesn't travel, so it needs none of `shotPath`'s wall/step blocking, matching
 `A_Punch`/`A_Saw`. It needs no lock-on case either: `player.angle` is already set from the same `aim`
 the lock uses, so the ray finds a hovered monster on its own and simply can't reach one further off
@@ -127,9 +128,9 @@ cursor unconditionally; the lock has to follow the same rule to stay continuous.
 
 ## Effects and their batching
 
-Impact explosions and the teleport-fog puff share one mechanism, `EffectLayer` (`game/effects.ts`,
-`OneShotEffect`/`spawn`/`spawnImpact`): a transient sprite animation playing once at a fixed
-spot, outside `ThingLayer` since neither is a real map `Thing`. `IMPACT_EFFECTS` maps a projectile's
+Impact explosions, blood splashes, bullet puffs and the teleport-fog puff share one mechanism, `EffectLayer`
+(`game/effects.ts`, `OneShotEffect`/`spawn`/`spawnImpact`): a transient sprite animation playing
+once at a fixed spot, outside `ThingLayer` since none of them is a real map `Thing`. `IMPACT_EFFECTS` maps a projectile's
 flight sprite to its explosion — vanilla reuses `MISL` frames B–D for the rocket's blast, while the
 plasma bolt and BFG ball explode into dedicated `PLSE`/`BFE1` sprites. Hitscan `Tracer` lines live
 there too: not sprites, but the same spawn-animate-drop lifecycle and the same wholesale clear on a
@@ -176,6 +177,74 @@ blast) walks every living monster `ThingLayer.monstersNear` returns within the b
 radius, skips anyone `hasLineOfSight` says is blocked, and falls off linearly to 0 at the radius
 edge, matching `P_RadiusAttack`. It uses `hasLineOfSight`, deliberately not `shotPath` — that models
 a directed weapon's own blocking rules, not "does this omnidirectional blast reach that point".
+
+## Blood
+
+**Blood is spawned by a trace hitting a body, not by damage** — vanilla puts `P_SpawnBlood` in
+`PTR_ShootTraverse`, i.e. only on the `P_LineAttack` path. So the player's hitscan pellets
+(`spawnPlayerShot`), the fist/chainsaw swing (its melee branch) and a monster's hitscan bolt
+(`game.ts: resolveMonsterHitscan`) all splash, and everything reaching `P_DamageMobj` by another
+route does not: a projectile's direct hit, splash, the BFG spray (`A_BFGSpray` damages and spawns
+`MT_EXTRABFG` itself, never blood), a crusher, a damage floor. Don't "fix" the missing cases — a
+rocket that made a monster bleed would be wrong.
+
+`EffectLayer.spawnBlood` is one `OneShotEffect` like any other. Two details are vanilla's and look
+arbitrary: the frame letters run **backwards** (`S_BLOOD1`-`3` are `BLUD` C, B, A at 8 tics each),
+and the hit's damage picks which state the splash *starts* in (`bloodFrames`: under 9 shows only
+`A`, 9-12 `B`→`A`, above 12 all three) — so weapon power reads off the size of the splash. The
+±4-unit `HIT_Z_JITTER` is `P_SpawnBlood`'s own `(P_Random()-P_Random())<<10` (`P_SpawnPuff` opens
+with the identical line), and is what keeps a shotgun's pellets from stacking their splashes into
+one sprite. `MT_BLOOD`'s brief upward hop (`momz = 2` falling back under gravity) is deliberately
+**not** reproduced: it peaks about 3 units in a top-down view, and every other `OneShotEffect` is
+fixed in place.
+
+**`ThingLayer.bleeds` is vanilla's `MF_NOBLOOD` flag**, which in all of stock DOOM exactly one thing
+carries — `MT_BARREL`, which takes a bullet puff instead. It is keyed by id rather than type because a
+locked-on shot only ever knows the id it hit, and it deliberately ignores `dead`, so the killing
+blow still bleeds regardless of which side of `damage` the caller asks from. The player has no
+`MF_NOBLOOD` either and bleeds on a monster's bolt, before the armor calculation and unaffected by
+it — `PTR_ShootTraverse` spawns blood ahead of its `P_DamageMobj` call, so an invulnerable player
+still splashes.
+
+## Bullet puffs
+
+**The puff is blood's other half, from the same two lines of `PTR_ShootTraverse`**: a hitscan trace
+that stops on a body spawns one or the other (`ThingLayer.bleeds`), and one that stops on *geometry*
+always spawns a puff. So the same three shooters that can splash blood — the player's pellets, the
+fist/chainsaw swing, a monster's bolt — are the only sources, and `MT_PUFF`'s four `PUFF` frames run
+forwards at 4 tics each (`S_PUFF1`-`4`), unlike the blood's backwards three.
+
+`spawnWallPuff` (`game/projectiles.ts`, shared by the player's pellet and `resolveMonsterHitscan`)
+owns the geometry case and **skips two things vanilla also skips**:
+
+- A shot that ran out of range without crossing a blocking line (`ShotPath.lineIndex === null`).
+  Vanilla only reaches `P_SpawnPuff` from the `hitline` label, never from the trace simply ending.
+- Sky (`World.hitsSky`, vanilla's "don't shoot the sky!"): the shot is above a sky ceiling, or the
+  line is a two-sided *sky-hack wall* with sky on both sides — the seam between two open-air
+  sectors, which is a wall to a shot but nothing to draw an impact on. Confirmed reachable: on
+  DOOM2 MAP01, 9 of the 36 sky-hack lines stop a flat shot fired at them, and its 11 zero-height
+  sky "pillars" (floor == ceiling, e.g. lines 200-205) put every shot above their ceiling. The
+  shoot-triggered special still fires either way — `P_ShootSpecialLine` runs *before* this test.
+
+The wall puff sits `PUFF_WALL_OFFSET` (4 units, vanilla's `frac - 4/attackrange`) back along the
+shot so the sprite doesn't straddle the wall it marks. The 10-unit pullback vanilla applies to a
+*body* hit is deliberately not reproduced for either puff or blood: `raycastMonster` returns the
+hitbox's centre-projection rather than vanilla's exact crossing, so pulling back 10 there would walk
+the sprite off the front of the body instead of onto it.
+
+**The fist doesn't spark and the chainsaw does**, which is a real vanilla mechanism rather than a
+per-weapon flag: `P_SpawnPuff` skips to `S_PUFF3` (`PUFF_MELEE_FRAMES`) when `attackrange ==
+MELEERANGE`, and `A_Saw` therefore traces `MELEERANGE+1` — with its own comment saying so — purely
+to dodge that test. `WEAPONS.chainsaw.meleeRange` carries the `+1` and `spawnPlayerShot` compares
+`shot.range` against `PLAYER_MELEE_RANGE`, so the mechanism is reproduced, not the outcome. In this
+engine it only ever shows on a barrel: a melee swing never traces geometry at all (§ WeaponSystem),
+so unlike vanilla it can't puff against a wall.
+
+`S_PUFF1`'s `FF_FULLBRIGHT` is not reproduced — an `OneShotEffect` takes one sector light for its
+whole life, the same simplification every explosion here already makes. `A_Tracer`'s own
+`P_SpawnPuff` (vanilla spawns a puff *and* an `MT_SMOKE` behind the revenant's missile every 4th
+tic) is also left out: it would double the trail's live sprite count, which docs/monsters.md §
+The revenant's homing missile records as the reason the batch exists at all.
 
 ## hasLineOfSight
 

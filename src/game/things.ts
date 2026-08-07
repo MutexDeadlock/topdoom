@@ -386,6 +386,15 @@ export interface ThingLayer {
   monstersNear(pos: Pos2, radius: number): MonsterRef[];
   /** This exact monster's live position and type, or null if the id is stale or it has since died. Lets a shot fired at a monster keep tracking it across frames. */
   monsterById(id: number): MonsterRef | null;
+  /**
+   * Whether a shot landing on this thing splashes blood — vanilla's
+   * `MF_NOBLOOD`, which in all of stock DOOM exactly one thing carries
+   * (`MT_BARREL`; `PTR_ShootTraverse` spawns a puff there instead). Keyed by
+   * id and deliberately blind to whether the thing is already dead, so the
+   * killing blow still bleeds no matter which side of `damage` the caller
+   * asks from. See docs/combat.md § Blood.
+   */
+  bleeds(id: number): boolean;
   /** Count of living monsters currently alerted (chasing/attacking, or mid-reaction-delay) — for the debug HUD. */
   awakeMonsterCount(): number;
   /**
@@ -1570,6 +1579,10 @@ export function buildThingSprites(
       const p = posed[id];
       if (!p || p.dead || !MONSTER_TYPES.has(p.type)) return null;
       return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle };
+    },
+    bleeds(id: number): boolean {
+      const p = posed[id];
+      return !!p && p.type !== BARREL_TYPE;
     },
     awakeMonsterCount(): number {
       let n = 0;

@@ -2,11 +2,11 @@ import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../r
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import { PLAYER_ORIGIN } from '../audio/sfx.ts';
-import { hasLineOfSight, projectileStepBlocker, shotPath } from './world.ts';
+import { hasLineOfSight, projectileStepBlocker, shotPath, type ShotPath, type World } from './world.ts';
 import { AIM_HEIGHT_OFFSET } from './player.ts';
 import { MONSTER_FIRE_HEIGHT, sameSpecies } from './monsters.ts';
 import type { MonsterAttackEvent } from './things.ts';
-import { rollDamage, type Shot } from './weapons.ts';
+import { PLAYER_MELEE_RANGE, rollDamage, type Shot } from './weapons.ts';
 import { applyRadiusDamage, type CombatContext } from './combat.ts';
 import type { EffectLayer } from './effects.ts';
 import {
@@ -17,6 +17,7 @@ import {
   MONSTER_PROJECTILE_HIT_RADIUS,
   PROJECTILE_FRAMES,
   PROJECTILE_SOUNDS,
+  PUFF_WALL_OFFSET,
   REVENANT_TRACER_TURN_RATE_RAD,
   SMOKE_TRAIL_FRAMES,
   SMOKE_TRAIL_FRAME_SECONDS,
@@ -27,6 +28,23 @@ import {
   type Projectile,
 } from './effectdefs.ts';
 import type { Pos3 } from '../types.ts';
+
+/**
+ * The bullet puff a hitscan shot leaves where it stopped against geometry —
+ * `PTR_ShootTraverse`'s `hitline` branch, shared by the player's pellets and a
+ * monster's bolt (`game.ts: resolveMonsterHitscan`). Nothing is drawn for a
+ * shot that simply ran out of range (`lineIndex === null`) or for one that hit
+ * sky. See docs/combat.md § Bullet puffs.
+ */
+export function spawnWallPuff(effects: EffectLayer, world: World, path: ShotPath, angleRad: number): void {
+  if (path.lineIndex === null || world.hitsSky(path.lineIndex, path.z)) return;
+  // Backed off the wall plane it marks, vanilla's own "position a bit closer".
+  effects.spawnPuff({
+    x: path.x - Math.cos(angleRad) * PUFF_WALL_OFFSET,
+    y: path.y - Math.sin(angleRad) * PUFF_WALL_OFFSET,
+    z: path.z,
+  });
+}
 
 /**
  * Every shot in flight, from launch to whatever it lands on: the player's own
@@ -85,7 +103,16 @@ export class ProjectileLayer {
     // separate case, and can't reach one past the swing's own range.
     if (shot.kind === 'melee') {
       const swung = things?.raycastMonster(origin, shot.angleRad, shot.range) ?? null;
-      if (swung) things?.damage(swung.id, shot.damage, undefined, undefined, origin.x, origin.y);
+      if (swung) {
+        // At the swing's own flat height, not the target's feet: a melee trace
+        // never slopes, so the fire height *is* where it crossed the body.
+        const hitAt = { x: swung.x, y: swung.y, z: origin.z };
+        if (things?.bleeds(swung.id)) this.effects.spawnBlood(hitAt, shot.damage);
+        // A fist swing traces exactly MELEERANGE and so takes the sparkless
+        // puff; the chainsaw's own +1 is what buys it the spark back.
+        else this.effects.spawnPuff(hitAt, shot.range === PLAYER_MELEE_RANGE);
+        things?.damage(swung.id, shot.damage, undefined, undefined, origin.x, origin.y);
+      }
       // A_Punch/A_Saw both key their sound off whether they found a target: the
       // chainsaw revs on air and bites on contact, the fist is silent on a miss.
       const sound = swung ? shot.hitSound : shot.missSound;
@@ -122,8 +149,18 @@ export class ProjectileLayer {
     // frame so it fires here; a projectile's is deferred to arrival (see
     // `Projectile.lineIndex`).
     if (shot.kind === 'hitscan') {
-      if (hitMonsterId !== null) things?.damage(hitMonsterId, shot.damage, undefined, undefined, origin.x, origin.y);
-      else this.ctx.triggerShot(path.lineIndex);
+      if (hitMonsterId !== null) {
+        // Where the tracer stops is where the bolt met the body, so the same
+        // point is the splash's — `PTR_ShootTraverse` spawns blood on the
+        // trace, a touch short of the thing it hit.
+        const hitAt = { x: endX, y: endY, z: path.z };
+        if (things?.bleeds(hitMonsterId)) this.effects.spawnBlood(hitAt, shot.damage);
+        else this.effects.spawnPuff(hitAt);
+        things?.damage(hitMonsterId, shot.damage, undefined, undefined, origin.x, origin.y);
+      } else {
+        this.ctx.triggerShot(path.lineIndex);
+        spawnWallPuff(this.effects, world, path, shot.angleRad);
+      }
       this.effects.addTracer(origin, { x: endX, y: endY, z: path.z }, TRACER_COLOR);
       return;
     }

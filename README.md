@@ -154,7 +154,9 @@ follows the cursor rather than waiting for the click, so the aim doesn't jump th
 fire. Real walls and closed doors still stop a shot short and explode it there.
 
 **A shot that lands deals real damage**, using monster health values and the same random damage
-rolls as vanilla; a monster's health hitting 0 plays its own confirmed WAD death animation and it
+rolls as vanilla, and marks where it landed — blood on a body, and the original's little bullet
+puff on a wall or on something that doesn't bleed (bullets and the fist/chainsaw only, exactly as in
+the original, and the harder the hit the bigger the blood splash); a monster's health hitting 0 plays its own confirmed WAD death animation and it
 stops being targetable. Overkill it by enough — vanilla's own rule, only for the handful of
 monster types (the human grunts and the imp) that actually have gib art — and it gibs instead of
 dying normally. Three monster types drop something when killed, matching vanilla exactly: the

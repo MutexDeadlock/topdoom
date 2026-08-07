@@ -1,11 +1,10 @@
 import * as THREE from 'three';
-import { LF, NO_SIDE, type DoomMap, type LineDef, type SideDef, type Sector } from '../wad/map.ts';
+import { LF, NO_SIDE, SKY_FLAT, type DoomMap, type LineDef, type SideDef, type Sector } from '../wad/map.ts';
 import { buildSubSectorPolys, type SubSectorPoly } from './bsp.ts';
 import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
 import type { Pos2 } from '../types.ts';
 import { BRIGHTNESS_LIFT } from '../constants.ts';
 
-export const SKY_FLAT = 'F_SKY1';
 /** DOOM's sentinel for "no texture assigned" in a sidedef texture slot — also used by `game/specials.ts`'s `raiseToTexture` to skip unset bottom textures. */
 export const NO_TEXTURE = '-';
 

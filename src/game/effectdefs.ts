@@ -7,8 +7,8 @@ import { PLAYER_RADIUS } from './player.ts';
 /**
  * The sprite/sound/timing tables and the two record shapes behind everything
  * `game.ts` draws that isn't a map `Thing`: projectiles in flight, their impact
- * explosions, teleport-fog puffs, the revenant's smoke trail and the
- * arch-vile's flame. Data and pure helpers only — the simulation that reads
+ * explosions, blood splashes, bullet puffs, teleport-fog puffs, the revenant's
+ * smoke trail and the arch-vile's flame. Data and pure helpers only — the simulation that reads
  * them lives in `game.ts`. See docs/combat.md § Effects and their batching.
  */
 
@@ -112,6 +112,61 @@ export const PROJECTILE_SOUNDS: Record<string, { launch: SfxId | null; explode: 
   APLS: { launch: 'plasma', explode: 'firxpl' }, // arachnotron
   FATB: { launch: 'skeatk', explode: 'barexp' }, // revenant
 };
+
+/**
+ * Blood splashed by a shot that hits a body — vanilla's `MT_BLOOD`
+ * (`P_SpawnBlood`). `BLUDA0`-`C0` confirmed against `DOOM.WAD`/`DOOM2.WAD`;
+ * rotation-0 only, like every other one-shot here. `S_BLOOD1`-`3` hold 8 tics
+ * each and run *backwards* through the frame letters (C→B→A).
+ * See docs/combat.md § Blood.
+ */
+export const BLOOD_FRAME_SECONDS = 8 / 35;
+
+/**
+ * Vanilla's own `z += (P_Random()-P_Random())<<10`, the identical first line of
+ * both `P_SpawnBlood` and `P_SpawnPuff` — ±4 map units of scatter on where an
+ * impact appears, so several pellets landing together don't stack into a
+ * single sprite.
+ */
+export const HIT_Z_JITTER = 4;
+
+/**
+ * Which of `MT_BLOOD`'s three states the splash starts in, from the damage the
+ * hit dealt: `P_SpawnBlood` skips straight to `S_BLOOD2`/`S_BLOOD3` for a
+ * weaker hit, so a pistol shot shows one frame of blood and a shotgun blast at
+ * point-blank range the full three.
+ */
+export function bloodFrames(damage: number): string[] {
+  if (damage < 9) return ['A'];
+  if (damage <= 12) return ['B', 'A'];
+  return ['C', 'B', 'A'];
+}
+
+/**
+ * The bullet puff a shot leaves on a wall, or on a body that doesn't bleed —
+ * vanilla's `MT_PUFF` (`P_SpawnPuff`). `PUFFA0`-`D0` confirmed against
+ * `DOOM.WAD`/`DOOM2.WAD`; `S_PUFF1`-`4` hold 4 tics each. `S_PUFF1`'s frame
+ * carries `FF_FULLBRIGHT` (`info.c`'s `32768`), which this engine has no
+ * per-frame equivalent for — every effect here takes its sector's light.
+ */
+export const PUFF_FRAMES = ['A', 'B', 'C', 'D'];
+export const PUFF_FRAME_SECONDS = 4 / 35;
+
+/**
+ * `P_SpawnPuff`'s own "don't make punches spark on the wall": a trace of
+ * exactly `MELEERANGE` skips to `S_PUFF3`, dropping the muzzle spark. Which
+ * is why vanilla's `A_Saw` traces `MELEERANGE+1` (`WEAPONS.chainsaw`'s
+ * `meleeRange`) — with its own comment saying so — and sparks where the fist
+ * doesn't.
+ */
+export const PUFF_MELEE_FRAMES = ['C', 'D'];
+
+/**
+ * How far back along the shot a wall puff sits (`PTR_ShootTraverse`'s
+ * "position a bit closer", `frac - 4/attackrange`) — without it the sprite
+ * straddles the wall plane it's marking.
+ */
+export const PUFF_WALL_OFFSET = 4;
 
 /**
  * Vanilla's `MT_EXTRABFG` (`S_BFGEXP1`-`4`) — the green burst `A_BFGSpray`

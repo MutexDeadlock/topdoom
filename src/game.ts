@@ -15,7 +15,7 @@ import { World, hasLineOfSight, shotPath } from './game/world.ts';
 import { AIM_HEIGHT_OFFSET, GRAVITY, Player, PLAYER_HEIGHT, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { applyBarrelExplosion, applyRadiusDamage, type CombatContext } from './game/combat.ts';
 import { EffectLayer } from './game/effects.ts';
-import { ProjectileLayer } from './game/projectiles.ts';
+import { ProjectileLayer, spawnWallPuff } from './game/projectiles.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
 import { blocksCeilingLower, blocksFloorRise } from './game/moverblocking.ts';
@@ -562,17 +562,26 @@ export class Game {
       endX = blocker.x;
       endY = blocker.y;
       endZ = blocker.z + MONSTER_FIRE_HEIGHT;
+      const hitAt = { x: endX, y: endY, z: endZ };
+      if (this.things?.bleeds(blocker.id)) this.effects.spawnBlood(hitAt, atk.damage);
+      else this.effects.spawnPuff(hitAt);
     } else if (playerInPath) {
       this.damagePlayer(atk.damage, atk.x, atk.y);
       endX = this.player.x;
       endY = this.player.y;
       endZ = this.player.z + AIM_HEIGHT_OFFSET;
+      // The player carries no MF_NOBLOOD either, so a bolt that reaches them
+      // splashes exactly as one landing on a monster does — and unlike the
+      // pain flash this isn't gated on the damage actually landing, matching
+      // `PTR_ShootTraverse` spawning blood before it calls `P_DamageMobj`.
+      this.effects.spawnBlood({ x: endX, y: endY, z: endZ }, atk.damage);
     } else {
       // Nothing living stopped it — whatever's left is a wall, the only thing
       // `shotPath` itself could have blocked it on. `triggerShot`'s
       // `byMonster` gate reproduces vanilla's own hardcoded exception: this
       // can only actually do anything for a 46 line, never 24/47.
       this.specials?.triggerShot(path.lineIndex, this.inventory.keys, true);
+      spawnWallPuff(this.effects, this.world, path, atk.angleRad);
     }
     this.effects.addTracer(atk, { x: endX, y: endY, z: endZ }, MONSTER_TRACER_COLOR);
   }

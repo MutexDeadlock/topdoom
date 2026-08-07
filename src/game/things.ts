@@ -20,6 +20,7 @@ import {
   MONSTER_XDEATH_FRAMES,
   SOLID_DECORATION_RADIUS,
   SOLID_DECORATION_TYPES,
+  THING_ANIM_FRAMES,
   THING_SPRITES,
   WEAPON_TYPES,
 } from './thingdefs.ts';
@@ -671,9 +672,11 @@ export function buildThingSprites(
     const z = sector?.floorHeight ?? 0;
     const isMonster = MONSTER_TYPES.has(t.type);
     const isBarrel = t.type === BARREL_TYPE;
+    const itemAnim = THING_ANIM_FRAMES[t.type];
 
-    const animFrames = isMonster ? MONSTER_WALK_FRAMES : isBarrel ? BARREL_IDLE_FRAMES : ['A'];
-    const anim = new SpriteAnimator(bank, materials, spriteName, animFrames, isBarrel ? BARREL_IDLE_FRAME_SECONDS : undefined);
+    const animFrames = isMonster ? MONSTER_WALK_FRAMES : isBarrel ? BARREL_IDLE_FRAMES : itemAnim ? itemAnim.frames : ['A'];
+    const frameSeconds = isBarrel ? BARREL_IDLE_FRAME_SECONDS : itemAnim ? itemAnim.frameSeconds : undefined;
+    const anim = new SpriteAnimator(bank, materials, spriteName, animFrames, frameSeconds);
     // Skips a thing whose art the WAD doesn't actually carry, same as before —
     // resolving once here is what the old build-time `setPose` call was for.
     if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) continue;
@@ -1358,7 +1361,12 @@ export function buildThingSprites(
           }
         }
 
-        let animating = p.type === BARREL_TYPE;
+        // Every non-monster (barrel sway, decoration flicker, item/key/powerup
+        // blink) always cycles — vanilla's idle art loops unconditionally, it's
+        // not tied to motion the way a monster's walk cycle is. A monster
+        // starts false and only the stats branch below turns it on, based on
+        // whether it actually stepped this frame.
+        let animating = !MONSTER_TYPES.has(p.type);
         const stats = !p.dead ? MONSTER_STATS[p.type] : undefined;
         if (stats) {
           // Only the wake check itself needs a living player — vanilla's

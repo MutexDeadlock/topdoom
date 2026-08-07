@@ -41,9 +41,10 @@ lets a mover approach a thing it wasn't already touching.
 **Solid decorations.** `game/thingdefs.ts`'s `SOLID_DECORATION_TYPES` is every doomednum from the
 "Obstacles & decorations" block of `THING_SPRITES` that carries vanilla's `MF_SOLID` flag —
 confirmed per-type against `linuxdoom-1.10/info.c`'s `mobjinfo` table: the column, candelabra, all
-six pillars, the evil eye, skull rock, all six torches, the stalagmite, the tech pillar, and the
-burning barrel, all at vanilla's shared 16-unit radius (`SOLID_DECORATION_RADIUS`). The plain
-candle (doomednum 34) is the one exception in that block — `flags: 0` in vanilla — and is
+six pillars, the evil eye, skull rock, all six torches, the stalagmite, the tech pillar, the
+burning barrel, and both techno lamps, all at vanilla's shared 16-unit radius
+(`SOLID_DECORATION_RADIUS`). The plain candle (doomednum 34) is the one exception in that block —
+`flags: 0` in vanilla — and is
 deliberately left out, same as the exploding barrel's own `MF_SOLID` (doomednum 2035) is handled by
 its pre-existing `BARREL_TYPE` special-case rather than being folded into this set. `things.ts`'s
 `rebuildBlockerGrid` and `solidBodies` both admit `SOLID_DECORATION_TYPES` alongside

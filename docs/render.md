@@ -309,3 +309,11 @@ one *without* the bit is the real single-player pickup.
 Animation (`setPose`'s `animFrames`/`animating`) is a plain frame-letter cycle with no separate idle
 art, matching DOOM itself: the player's `PLAY` sprite reuses `A,B,C,D` as its walk cycle and holds `A`
 while not moving.
+
+Monsters gate `animating` on whether they actually stepped this frame (`ThingLayer.update`), the same
+motion-driven cycle as the player. Every non-monster thing (barrel sway, decoration flicker, item/key/
+powerup blink) instead animates unconditionally — vanilla's own idle art loops regardless of motion,
+there being none to gate on. Which doomednums get more than the single held frame `buildThingSprites`
+defaults to, and their frame letters/timing, is data in `game/thingdefs.ts`'s `THING_ANIM_FRAMES`
+(cross-checked against `info.c`'s `states[]`, not the wiki) — a doomednum absent from that table has
+vanilla `tics: -1` and is genuinely static (ammo, weapons, STIM/MEDI, the plain column).

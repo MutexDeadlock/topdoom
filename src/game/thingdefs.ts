@@ -96,6 +96,8 @@ export const THING_SPRITES: Record<number, string> = {
   47: 'SMIT',
   48: 'ELEC',
   70: 'FCAN',
+  85: 'TLMP',
+  86: 'TLP2',
 };
 
 /**
@@ -117,14 +119,16 @@ export const WEAPON_TYPES = new Set([2001, 82, 2002, 2003, 2004, 2005, 2006]);
 /**
  * Doomednums from the "Obstacles & decorations" block above that carry vanilla's `MF_SOLID` flag,
  * confirmed against `linuxdoom-1.10/info.c`'s `mobjinfo` table: the column, candelabra, all six
- * pillars, the evil eye, skull rock, all six torches, the stalagmite, the tech pillar, and the
- * burning barrel. The exploding barrel (2035, `MT_BARREL`) is solid too but already has its own
- * `BARREL_TYPE` handling in `game/things.ts` and is deliberately not repeated here. The plain
- * candle (34, `MT_MISC49`) is the one decoration in this block that is genuinely **not** solid in
- * vanilla (`flags: 0`, unlike every other entry's `MF_SOLID`) and is excluded on purpose — see
- * docs/movement.md § Solid decorations.
+ * pillars, the evil eye, skull rock, all six torches, the stalagmite, the tech pillar, the burning
+ * barrel, and both techno lamps. The exploding barrel (2035, `MT_BARREL`) is solid too but already
+ * has its own `BARREL_TYPE` handling in `game/things.ts` and is deliberately not repeated here. The
+ * plain candle (34, `MT_MISC49`) is the one decoration in this block that is genuinely **not**
+ * solid in vanilla (`flags: 0`, unlike every other entry's `MF_SOLID`) and is excluded on purpose —
+ * see docs/movement.md § Solid decorations.
  */
-export const SOLID_DECORATION_TYPES = new Set([2028, 30, 31, 32, 33, 35, 36, 37, 41, 42, 44, 45, 46, 47, 48, 55, 56, 57, 70]);
+export const SOLID_DECORATION_TYPES = new Set([
+  2028, 30, 31, 32, 33, 35, 36, 37, 41, 42, 44, 45, 46, 47, 48, 55, 56, 57, 70, 85, 86,
+]);
 
 /** Vanilla `mobjinfo` radius shared by every entry in `SOLID_DECORATION_TYPES` — confirmed against `info.c`. */
 export const SOLID_DECORATION_RADIUS = 16;
@@ -378,4 +382,58 @@ export const MONSTER_DROPS: Record<number, number> = {
   84: 2007, // SSWV wolfenstein SS -> CLIP
   9: 2001, // SPOS shotgun guy -> SHOTGUN
   65: 2002, // CPOS chaingunner -> CHAINGUN
+};
+
+/**
+ * Idle animation for non-monster, non-barrel things (decorations, health/armor,
+ * keys, powerups) — every doomednum from `THING_SPRITES`'s "Health & armor",
+ * "Keys", "Powerups" and "Obstacles & decorations" blocks whose vanilla
+ * `mobjinfo` state cycle holds more than one frame, confirmed letter-by-letter
+ * against `linuxdoom-1.10/info.c`'s `states[]` table (not the wiki). A
+ * doomednum absent from this table has `tics: -1` in vanilla — genuinely
+ * static, e.g. STIM/MEDI, the plain column, both candles, ammo and weapon
+ * pickups — and keeps `buildThingSprites`'s single-frame default.
+ *
+ * `frameSeconds` is one flat rate per entry standing in for vanilla's own
+ * per-state tic counts, the same accepted simplification `BARREL_IDLE_FRAME_SECONDS`
+ * and `MONSTER_DEATH_FRAME_SECONDS` already make (ARM1's real A/B split is 6/7
+ * tics, not perfectly even, but a second constant for one doomednum would tune
+ * nothing anyone could see).
+ */
+export const THING_ANIM_FRAMES: Record<number, { frames: string[]; frameSeconds: number }> = {
+  // Health & armor
+  2013: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 / 35 }, // SOUL soulsphere
+  2014: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 / 35 }, // BON1 health bonus
+  2015: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 / 35 }, // BON2 armor bonus
+  2018: { frames: ['A', 'B'], frameSeconds: 6 / 35 }, // ARM1 green armor
+  2019: { frames: ['A', 'B'], frameSeconds: 6 / 35 }, // ARM2 blue armor
+  83: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 / 35 }, // MEGA megasphere
+
+  // Keys — all six blink identically (S_*KEY <-> S_*KEY2)
+  5: { frames: ['A', 'B'], frameSeconds: 10 / 35 }, // BKEY blue keycard
+  40: { frames: ['A', 'B'], frameSeconds: 10 / 35 }, // BSKU blue skull key
+  13: { frames: ['A', 'B'], frameSeconds: 10 / 35 }, // RKEY red keycard
+  38: { frames: ['A', 'B'], frameSeconds: 10 / 35 }, // RSKU red skull key
+  6: { frames: ['A', 'B'], frameSeconds: 10 / 35 }, // YKEY yellow keycard
+  39: { frames: ['A', 'B'], frameSeconds: 10 / 35 }, // YSKU yellow skull key
+
+  // Powerups
+  2022: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 / 35 }, // PINV invulnerability
+  2024: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 / 35 }, // PINS partial invisibility
+  2026: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 / 35 }, // PMAP computer area map
+  2045: { frames: ['A', 'B'], frameSeconds: 6 / 35 }, // PVIS light amp. visor
+
+  // Obstacles & decorations
+  41: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 6 / 35 }, // CEYE evil eye
+  42: { frames: ['A', 'B', 'C'], frameSeconds: 6 / 35 }, // FSKU floating skull-rock
+  36: { frames: ['A', 'B'], frameSeconds: 14 / 35 }, // COL5 heart column
+  44: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // TBLU tall blue firestick
+  45: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // TGRN tall green torch
+  46: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // TRED tall red torch
+  55: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // SMBT short blue torch
+  56: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // SMGT short green torch
+  57: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // SMRT short red torch
+  70: { frames: ['A', 'B', 'C'], frameSeconds: 4 / 35 }, // FCAN burning barrel
+  85: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // TLMP tall techno lamp
+  86: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // TLP2 large techno lamp
 };

@@ -153,8 +153,52 @@ export const MONSTER_TYPES = new Set([
   3004, 9, 3001, 3002, 58, 3006, 3005, 3003, 69, 7, 16, 71, 65, 66, 67, 68, 64, 84, 72, 88,
 ]);
 
-/** Doomednums of the "Weapons" block above — kept out of `game/things.ts`'s pickup up-scale, see there for why. */
-export const WEAPON_TYPES = new Set([2001, 82, 2002, 2003, 2004, 2005, 2006]);
+/**
+ * Doomednums of the "Ammo", "Health & armor", "Keys" and "Powerups" blocks above — the small
+ * collectibles `game/things.ts`'s `pickupScaleFor` draws at `PICKUP_SCALE` (1.4×) their native WAD
+ * pixel size, since those are what actually suffer from this engine's far, tilted top-down camera
+ * (see that constant's own doc). A whitelist rather than "everything but monsters/weapons": solid
+ * decorations, gore props and the barrel are large enough on their own, and inflating them by 40%
+ * on top of vanilla's own size reads as oversized rather than more readable.
+ */
+export const PICKUP_SCALE_TYPES = new Set([
+  // Ammo
+  2007, // CLIP clip
+  2048, // AMMO box of bullets
+  2010, // ROCK rocket
+  2046, // BROK box of rockets
+  2047, // CELL cell
+  17, // CELP cell pack
+  2008, // SHEL shells
+  2049, // SBOX box of shells
+  8, // BPAK backpack
+
+  // Health & armor
+  2011, // STIM stimpack
+  2012, // MEDI medikit
+  2013, // SOUL soulsphere
+  2014, // BON1 health bonus
+  2015, // BON2 armor bonus
+  2018, // ARM1 green armor
+  2019, // ARM2 blue armor
+  83, // MEGA megasphere
+
+  // Keys
+  5, // BKEY blue keycard
+  40, // BSKU blue skull key
+  13, // RKEY red keycard
+  38, // RSKU red skull key
+  6, // YKEY yellow keycard
+  39, // YSKU yellow skull key
+
+  // Powerups
+  2022, // PINV invulnerability
+  2023, // PSTR berserk
+  2024, // PINS partial invisibility
+  2025, // SUIT radiation suit
+  2026, // PMAP computer area map
+  2045, // PVIS light amp. visor
+]);
 
 /**
  * Doomednums from the "Obstacles & decorations" and "Gore & corpses" blocks above that carry

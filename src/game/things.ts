@@ -19,12 +19,12 @@ import {
   MONSTER_RAISE_FRAMES,
   MONSTER_TYPES,
   MONSTER_XDEATH_FRAMES,
+  PICKUP_SCALE_TYPES,
   SOLID_DECORATION_RADIUS,
   SOLID_DECORATION_RADIUS_OVERRIDE,
   SOLID_DECORATION_TYPES,
   THING_ANIM_FRAMES,
   THING_SPRITES,
-  WEAPON_TYPES,
 } from './thingdefs.ts';
 import { isAmbush, isMultiplayerOnly, spawnsAtSkill, type Skill } from './skill.ts';
 import {
@@ -578,19 +578,18 @@ export interface ThingUpdateResult {
 }
 
 /**
- * Non-monster, non-weapon things (ammo, health/armor, keys, powerups,
- * decorations) are drawn at vanilla's native patch size times this factor.
- * The far, tilted top-down camera reads a lot worse than DOOM's own
- * ground-level first-person view at the same pixel size, and small
- * collectibles like a clip or a shell box are the ones that suffer most —
- * monsters are already large enough to read fine, and weapons already stand
- * out, so both are left at their native size instead.
+ * `PICKUP_SCALE_TYPES` (ammo, health/armor, keys, powerups) draw at vanilla's native patch size
+ * times this factor. The far, tilted top-down camera reads a lot worse than DOOM's own
+ * ground-level first-person view at the same pixel size, and small collectibles like a clip or a
+ * shell box are the ones that suffer most — monsters are already large enough to read fine,
+ * weapons already stand out, and solid decorations/gore props are already sized to fill a room or
+ * a body rather than sit in a hand, so none of those three get it.
  */
 const PICKUP_SCALE = 1.4;
 
-/** Whether `type` gets the up-scale above — everything except monsters and weapons. */
+/** Whether `type` gets the up-scale above — see `PICKUP_SCALE_TYPES`'s doc for why this is a whitelist, not "everything but monsters/weapons". */
 function pickupScaleFor(type: number): number {
-  return MONSTER_TYPES.has(type) || WEAPON_TYPES.has(type) ? 1 : PICKUP_SCALE;
+  return PICKUP_SCALE_TYPES.has(type) ? PICKUP_SCALE : 1;
 }
 
 /**

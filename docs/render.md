@@ -297,14 +297,18 @@ one *without* the bit is the real single-player pickup.
   used as-is for horizontal centring.
 - **Rotation frame (which of the 8 sprite angles) is picked from the live viewer angle** every frame
   (`pickRotationDigit`), same as the plane's own yaw.
-- **Ammo/health/armor/keys/powerups/decorations render `PICKUP_SCALE` (1.4×) larger than their native
-  WAD pixel size; monsters and weapons don't.** Vanilla's 1:1 unit-per-pixel sizing suits a
-  ground-level view; from this far, tilted camera small collectibles get lost, while monsters are
-  already large enough to read and weapons already stand out. Applied as `mesh.scale.setScalar(...)`
-  rather than baked into the shared per-lump geometry, since scale varies by thing type even when two
-  types reuse art. It composes safely with floor-anchoring: geometry is translated so the plane's
-  bottom-center sits at local `(0, 0)` *before* `scale` is applied, so scaling stretches the plane
-  upward and outward from that point instead of moving its anchor.
+- **Ammo/health/armor/keys/powerups render `PICKUP_SCALE` (1.4×) larger than their native WAD pixel
+  size; nothing else does.** Vanilla's 1:1 unit-per-pixel sizing suits a ground-level view; from this
+  far, tilted camera small collectibles get lost. `game/thingdefs.ts`'s `PICKUP_SCALE_TYPES` is a
+  whitelist of exactly those four doomednum blocks, not "everything but monsters/weapons" —
+  monsters are already large enough to read, weapons already stand out, and solid decorations/gore
+  props (torches, columns, trees, corpses) are already sized to fill a room or a body, so blowing
+  them up another 40% on top of vanilla's own size reads as oversized rather than more readable.
+  Applied as `mesh.scale.setScalar(...)` rather than baked into the shared per-lump geometry, since
+  scale varies by thing type even when two types reuse art. It composes safely with floor-anchoring:
+  geometry is translated so the plane's bottom-center sits at local `(0, 0)` *before* `scale` is
+  applied, so scaling stretches the plane upward and outward from that point instead of moving its
+  anchor.
 
 Animation (`setPose`'s `animFrames`/`animating`) is a plain frame-letter cycle with no separate idle
 art, matching DOOM itself: the player's `PLAY` sprite reuses `A,B,C,D` as its walk cycle and holds `A`

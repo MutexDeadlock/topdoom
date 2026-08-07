@@ -5,8 +5,10 @@ Features and improvements
   - bullets now leave the original's puff on walls (and on barrels)
   - hopefully completed THINGs
     - add missing idle animations to some items and decorations
-    - added the two techno lamps and all gore decorations, which weren't 
+    - added the two techno lamps and all gore decorations, which weren't
       rendered at all before
+    - the 1.4x size boost now only applies to pickups
+      (ammo/health/armor/keys/powerups)
   - main menu overhaul
     - opens over the paused level instead of hiding it, and got a
       "Return to game" button next to it

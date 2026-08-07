@@ -581,6 +581,38 @@ function pickupScaleFor(type: number): number {
   return MONSTER_TYPES.has(type) || WEAPON_TYPES.has(type) ? 1 : PICKUP_SCALE;
 }
 
+/**
+ * How far off the floor a monster's death drop is *drawn* (map units), and how
+ * far it bobs either side of that over `DROP_BOB_SECONDS`. Purely cosmetic —
+ * nothing in `tryPickup` reads the drawn height — and it applies to drops
+ * alone because they're the only items that land on top of something else: a
+ * drop spawns at exactly the corpse's own position, so at floor level the two
+ * sprite planes are coplanar and the item is buried in the corpse art.
+ * Lifting it clears the corpse's silhouette, which is mostly ground-hugging.
+ * All three tuned by feel; docs/items.md § Making monster drops readable.
+ */
+const DROP_HOVER = 13;
+const DROP_BOB = 3;
+const DROP_BOB_SECONDS = 1.8;
+
+/**
+ * A drop also fades in and out between these two opacities over
+ * `DROP_PULSE_SECONDS`, so what catches the eye is the *change* rather than
+ * any added brightness. Tuned by feel; the low end stays well clear of
+ * invisible, since a drop that blinks out entirely reads as a rendering fault
+ * rather than a highlight.
+ */
+const DROP_OPACITY_MIN = 0.45;
+const DROP_OPACITY_MAX = 1;
+const DROP_PULSE_SECONDS = 1.8;
+
+/**
+ * Depth-buffer units the drop batch biases itself toward the camera — see
+ * `SpriteBatch`'s constructor. Enough to settle a coplanar tie against the
+ * corpse underneath, far too little to reach through real geometry.
+ */
+const DROP_DEPTH_BIAS = 16;
+
 /** One static upright plane per map THING whose type is a known, visible sprite. */
 export function buildThingSprites(
   map: DoomMap,
@@ -597,8 +629,19 @@ export function buildThingSprites(
   onBossDeath?: (type: number) => void,
 ): ThingLayer {
   const batch = new SpriteBatch();
-  const group = batch.group;
+  /**
+   * Monster death drops draw through their own batch, which is what lets them
+   * carry `DROP_DEPTH_BIAS` and a pulsing batch-wide opacity that the rest of
+   * the map's things must not get. No extra draw calls: batching is per-lump
+   * anyway and a drop never shares a lump with a monster. Not raycast
+   * (`pickMonster` wants monsters).
+   */
+  const dropBatch = new SpriteBatch({ depthBias: DROP_DEPTH_BIAS, translucent: true });
+  const group = new THREE.Group();
   group.name = 'things';
+  group.add(batch.group, dropBatch.group);
+  /** Level time in seconds, driving the drop bob/pulse — see `DROP_HOVER`. */
+  let clock = 0;
   const posed: PosedThing[] = [];
   const stats: LevelKillItemStats = { totalKills: 0, kills: 0, totalItems: 0, items: 0 };
   /** Scratch for `doomToWorld`, reused across every sprite — this runs per thing per frame. */
@@ -700,9 +743,10 @@ export function buildThingSprites(
    * marked `dropped: true` (see `PosedThing`'s doc) so `tryPickup` grants it
    * at vanilla's halved dropped-item rate rather than a map-placed one's.
    */
-  function spawnDrop(x: number, y: number, sector: Sector | undefined, facingDeg: number, type: number): void {
+  function spawnDrop(at: Pos2, sector: Sector | undefined, facingDeg: number, type: number): void {
     const spriteName = THING_SPRITES[type];
     if (!spriteName) return;
+    const { x, y } = at;
     const light = sector?.light ?? 128;
     const z = sector?.floorHeight ?? 0;
     const subsector = world.subsectorAt(x, y);
@@ -1259,7 +1303,11 @@ export function buildThingSprites(
       // Once per frame, ahead of any blockersFor call below — see its doc for
       // why a frame-granular grid is accurate enough for contact.
       rebuildBlockerGrid();
+      clock += dt;
       batch.begin(viewerAngleDeg);
+      dropBatch.begin(viewerAngleDeg);
+      const pulse = Math.sin((clock / DROP_PULSE_SECONDS) * Math.PI * 2) * 0.5 + 0.5;
+      dropBatch.setOpacity(DROP_OPACITY_MIN + (DROP_OPACITY_MAX - DROP_OPACITY_MIN) * pulse);
       for (const p of posed) {
         if (p.hidden) {
           p.visible = false;
@@ -1438,14 +1486,28 @@ export function buildThingSprites(
         if (!p.visible) continue;
         const cached = p.anim.resolve(p.facingDeg, viewerAngleDeg);
         if (!cached) continue;
-        doomToWorld(p.x, p.y, p.z, worldPos);
-        batch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, litColor(p.light), p.id);
+        // Everything the map itself placed draws plainly, at its own height:
+        // only a drop lands on top of a corpse, and only a drop is worth
+        // singling out (docs/items.md § Making monster drops readable).
+        if (!p.dropped) {
+          doomToWorld(p.x, p.y, p.z, worldPos);
+          batch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, litColor(p.light), p.id);
+          continue;
+        }
+        // Phase-shifted per instance (`p.id`), so two drops side by side
+        // ripple instead of bobbing in unison. The opacity pulse can't do the
+        // same — it's batch-wide, see `SpriteBatch.setOpacity`.
+        const bob = Math.sin((clock / DROP_BOB_SECONDS + p.id * 0.7) * Math.PI * 2) * DROP_BOB;
+        doomToWorld(p.x, p.y, p.z + DROP_HOVER + bob, worldPos);
+        dropBatch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, litColor(p.light), p.id);
       }
       batch.end();
+      dropBatch.end();
       return { attacks, barrelExplosions };
     },
     dispose(): void {
       batch.dispose();
+      dropBatch.dispose();
     },
     tryPickup(pos: Pos3, radius: number, consume: (type: number, dropped: boolean) => boolean): void {
       const rSq = radius * radius;
@@ -1663,7 +1725,7 @@ export function buildThingSprites(
       }
 
       const dropType = MONSTER_DROPS[p.type];
-      if (dropType) spawnDrop(p.x, p.y, p.sector, p.facingDeg, dropType);
+      if (dropType) spawnDrop(p, p.sector, p.facingDeg, dropType);
 
       // A_PainDie: three more lost souls, fanned 90/180/270 degrees around
       // the elemental's own last facing — vanilla's own

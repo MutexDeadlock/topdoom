@@ -1,6 +1,7 @@
 v0.9.1 (2026-08-??)
 
 Features and improvements
+  - drops of dead monsters are better visible (or, at all)
   - animated textures
   - decorative THINGs are now blocking
   - improved HUD

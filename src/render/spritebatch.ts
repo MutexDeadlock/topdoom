@@ -55,9 +55,41 @@ export class SpriteBatch {
   private materials = new Map<CachedSprite, THREE.MeshBasicMaterial>();
   private cos = 1;
   private sin = 0;
+  private depthBias: number;
+  private translucent: boolean;
+  private opacity = 1;
 
-  constructor() {
+  /**
+   * `depthBias` biases every fragment this batch draws toward the camera by
+   * that many depth-buffer units (`polygonOffset`), so it wins the depth test
+   * against anything drawn at the *same* depth. Meant for exactly that case —
+   * two upright sprite planes standing at the same map position, which are
+   * coplanar and would otherwise resolve by draw order (docs/items.md §
+   * Making monster drops readable). It is deliberately far too small to push a
+   * sprite through geometry genuinely in front of it.
+   *
+   * `translucent` builds this batch's materials for `setOpacity` — see there.
+   */
+  constructor(options: { depthBias?: number; translucent?: boolean } = {}) {
     this.group.name = 'sprite-batches';
+    this.depthBias = options.depthBias ?? 0;
+    this.translucent = options.translucent ?? false;
+  }
+
+  /**
+   * Fades everything this batch draws to `opacity` (1 = fully opaque). Batch-
+   * wide, not per-instance: three.js's `instanceColor` has no alpha channel,
+   * so a per-sprite fade would need a custom shader — every sprite in a
+   * `translucent` batch fades together.
+   *
+   * Only meaningful on a `translucent` batch, whose materials are built
+   * transparent from the start so this is a plain uniform write. Flipping
+   * `transparent`/`alphaTest` on a live material instead would force a shader
+   * recompile, and this is called every frame.
+   */
+  setOpacity(opacity: number): void {
+    this.opacity = opacity;
+    for (const m of this.materials.values()) m.opacity = opacity;
   }
 
   /** Starts a frame: drops last frame's instances and fixes the shared yaw every sprite is drawn at. */
@@ -200,6 +232,26 @@ export class SpriteBatch {
     const material = cached.material.clone();
     material.vertexColors = true;
     material.color.setScalar(1);
+    if (this.depthBias !== 0) {
+      material.polygonOffset = true;
+      material.polygonOffsetUnits = -this.depthBias;
+      // Sprite planes all face the camera at the same yaw, so their depth
+      // slopes match and a slope-scaled term can't separate them; the constant
+      // `units` term is what does the work here.
+      material.polygonOffsetFactor = 0;
+    }
+    if (this.translucent) {
+      material.transparent = true;
+      material.opacity = this.opacity;
+      // The shared material alpha-tests at 0.5 against `texture.a * opacity`,
+      // which would discard the whole sprite at any opacity below that. WAD
+      // sprite alpha is binary (0 or 255, never blended — NearestFilter), so
+      // any threshold under the lowest opacity used cuts the same silhouette.
+      material.alphaTest = 0.01;
+      // One translucent plane among opaque geometry: not writing depth keeps
+      // it from punching a hole in whatever draws after it.
+      material.depthWrite = false;
+    }
     this.materials.set(cached, material);
     return material;
   }

@@ -219,6 +219,13 @@ sprite geometry an all-white `color` attribute, without which WebGL's default (0
 attribute would render every batched sprite black. The non-instanced material ignores that attribute
 entirely.
 
+A batch takes an optional **`depthBias`**, which sets `polygonOffset` on its cloned materials so
+every fragment it draws is nudged that many depth-buffer units toward the camera. Only the
+`polygonOffsetUnits` term is used: every sprite plane faces the camera at the same yaw, so their
+depth *slopes* match and a slope-scaled term can't separate them. `ThingLayer` uses this for one
+thing — drawing a monster's death drop on top of the corpse it's lying on (docs/items.md § Making
+monster drops readable) — and it is sized to settle a coplanar tie and nothing more.
+
 The batches set `frustumCulled = false`: a batch's instances are scattered across the whole map, so
 culling it as one object could only ever cull nothing while costing a per-frame bounds recompute to
 decide that — off-screen instances are clipped by the GPU for the price of a 4-vertex vertex shader
@@ -236,6 +243,14 @@ to be read off `mesh.visible`, and `ThingLayer.pickMonster` routes its auto-aim 
 `SpriteBatch.raycast`, which maps an `instanceId` hit back to the owning thing. That raycast skips
 (rather than being blocked by) instances its predicate rejects, so a decoration standing in front of
 a monster still doesn't make it untargetable.
+
+`ThingLayer` owns **two** batches under one `things` group: ordinary things, and monster death drops
+— which are depth-biased (above) and `translucent`, so `setOpacity` can pulse them (docs/items.md §
+Making monster drops readable). A `translucent` batch builds its material clones transparent, with
+the alpha test dropped to 0.01 and `depthWrite` off, from the start: `setOpacity` runs every frame,
+and flipping `transparent`/`alphaTest` on a live material would recompile its shader each time,
+whereas `opacity` alone is a uniform write. The fade is per *batch*, not per instance —
+`instanceColor` carries no alpha, so a per-sprite fade would need a custom shader.
 
 ### Which things spawn
 

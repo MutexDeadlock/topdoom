@@ -51,6 +51,37 @@ instead of a frozen `z`, and both `ThingLayer.update` and `tryPickup` read `sect
 every call. Without this, an item on a lift would hang frozen in its original position while the
 floor moved past it, and stay permanently out of reach even after the pillar carrying it lowered.
 
+## Making monster drops readable
+
+A monster's death drop (`MONSTER_DROPS`) was nearly invisible, because it spawns at *exactly* the
+corpse's own position: the two upright sprite planes are coplanar, so the depth test resolves them
+by draw order and the clip ends up buried inside the corpse art. Three things fix it together
+(`game/things.ts`, all tuned by feel), and each covers a case the others don't:
+
+- **A drop is drawn hovering `DROP_HOVER` above the floor, bobbing `DROP_BOB` either side of it.** A
+  corpse's silhouette is ground-hugging, so lifting the item clears most of it geometrically — and
+  where the item does overlap, it mostly overlaps *transparent* corpse pixels, which alpha-test away
+  without writing depth. This is **render-only**: `tryPickup` and everything else still work off the
+  thing's real `z`, so hovering can't put an item out of reach.
+- **Drops draw through their own `SpriteBatch`, constructed with `DROP_DEPTH_BIAS`** — a
+  `polygonOffset` that pulls their fragments a few depth-buffer units toward the camera. That is what
+  settles the coplanar tie above, deterministically and in the item's favour. It is deliberately far
+  too small to punch through geometry genuinely in front of the item; **don't raise it** to solve a
+  different problem, or drops start showing through walls. It matters *more* now that drops are
+  translucent: a transparent material draws after all opaque geometry but is still depth-tested, and
+  an exact tie fails a `LESS` test outright. Costs no extra draw calls either way — batching is
+  per-lump anyway and a drop never shares a lump with a monster.
+- **A drop pulses in and out**, fading between `DROP_OPACITY_MIN` and `DROP_OPACITY_MAX` over
+  `DROP_PULSE_SECONDS` (`SpriteBatch.setOpacity`). What catches the eye is the *change*, so nothing
+  has to be brightened or recoloured and the item still looks like its own art. The fade is
+  **batch-wide, not per-instance** — `instanceColor` has no alpha channel, so per-sprite opacity
+  would need a custom shader — meaning every drop on screen pulses in step. The hover bob is
+  per-instance phased, which keeps two drops side by side from looking like one object.
+
+**Only drops get any of this** — `PosedThing.dropped` is the whole test. Items the map placed sit
+where the mapper put them, unlit and unmoved: nothing is lying underneath them, and singling out
+every clip and health bonus in the level reads as noise rather than information.
+
 ## Locked doors and use triggers
 
 **Locked doors check the matching key** (`specials.ts: SpecialsController.trigger`).

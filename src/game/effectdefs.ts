@@ -239,7 +239,6 @@ export interface Projectile {
   /** Distance (map units) to where shotPath says this shot's flight ends. */
   maxDist: number;
   traveled: number;
-  light: number;
   /** SpriteBank name (PROJECTILE_FRAMES's key), so the impact explosion can look it up in IMPACT_EFFECTS. */
   sprite: string;
   /** Direct-hit damage, applied to `hitMonsterId` (if any) on arrival. */

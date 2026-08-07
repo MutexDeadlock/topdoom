@@ -79,6 +79,20 @@ vanilla); `litColor` is `lightToColor` plus `BRIGHTNESS_LIFT` and is what every 
 `BRIGHTNESS_LIFT` was found by feel, and lives in `constants.ts` because it's the one number in this
 scheme meant to be hand-retuned later.
 
+**Every sprite reads its light live, never a cached snapshot.** Sector light is mutable at runtime
+(blinking/strobing/glowing sectors, switch-triggered changes — `game/specials.ts`'s
+`SectorSpecialsController`), and geometry always reflects that immediately via `recolorSector`. A
+sprite must match: `game/things.ts`'s `PosedThing` has no `light` field precisely so nothing can cache
+one — every map thing (items, decorations, corpses, barrels, monster drops, dormant or actively
+chasing monsters alike) reads `p.sector?.light` at the moment it's batched, not at spawn time. The
+same discipline applies to anything that moves through space across a frame: `ProjectileLayer.update`
+re-resolves `world.sectorAt` at the projectile's *current* position every frame rather than reusing
+its launch-sector light, and the arch-vile's warning flame (`EffectLayer`'s `followTargetId` case)
+re-resolves it every time it re-derives its position from the target it's tracking. A stationary
+one-shot effect (blood, puffs, teleport fog, impact explosions) only needs the single lookup `spawn`
+already does, since it never moves and its lifetime is short enough that a mid-flight relight isn't
+worth chasing.
+
 ## Wall occlusion fading (`occlusion.ts`, `textures.ts`)
 
 Single-sided back-face culling only removes walls facing away from the camera; it does nothing about

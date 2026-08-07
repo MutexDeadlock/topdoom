@@ -18,6 +18,13 @@ Features and improvements
       between sessions
     - reopening the menu keeps you on the tab you were last on
 
+Fixed bugs
+  - fixed THINGs were shaded by whatever their sector's light was at spawn
+    instead of tracking it live, so they went stale in any blinking,
+    strobing or switch-triggered sector
+    - in-flight projectiles and the arch-vile's warning flame had the 
+      same bug while moving between differently-lit sectors
+
 
 ===============================================================================
 

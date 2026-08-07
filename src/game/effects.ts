@@ -237,6 +237,7 @@ export class EffectLayer {
           e.x = front.x;
           e.y = front.y;
           e.z = front.z;
+          e.light = this.world.sectorAt(e.x, e.y)?.light ?? e.light;
         }
       }
       e.anim.advance(dt, true);

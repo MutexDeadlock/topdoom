@@ -166,7 +166,6 @@ export class ProjectileLayer {
     }
 
     const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, shot.sprite, PROJECTILE_FRAMES[shot.sprite]);
-    const light = world.sectorAt(origin.x, origin.y)?.light ?? 128;
     if (!anim.resolve((shot.angleRad * 180) / Math.PI, VIEWER_ANGLE_DEG)) return;
     // The missile's own seesound, with no origin: every shot is its own mobj in
     // vanilla, so a burst of plasma layers rather than cutting itself off.
@@ -182,7 +181,6 @@ export class ProjectileLayer {
       speed: shot.speed,
       maxDist: endDist,
       traveled: 0,
-      light,
       sprite: shot.sprite,
       damage: shot.damage,
       splash: shot.splash,
@@ -208,7 +206,6 @@ export class ProjectileLayer {
     const target = victim
       ? { x: victim.x, y: victim.y, z: victim.z + MONSTER_FIRE_HEIGHT }
       : { x: player.x, y: player.y, z: player.z + AIM_HEIGHT_OFFSET };
-    const light = world.sectorAt(atk.x, atk.y)?.light ?? 128;
     // Almost always one entry; the mancubus fires two per volley (see
     // MonsterAttack.projectiles's doc) — each resolved and spawned
     // independently, since a fanned-out fireball flies its own path and can
@@ -229,7 +226,6 @@ export class ProjectileLayer {
         speed: proj.speed,
         maxDist: path.dist,
         traveled: 0,
-        light,
         sprite: proj.sprite,
         damage: atk.damage,
         splash: proj.splash ? { radius: proj.splash.radius, damage: proj.splash.damage, hitsPlayer: true } : null,
@@ -337,7 +333,10 @@ export class ProjectileLayer {
       // than the fixed launch angle every other projectile keeps.
       const poseAngleRad = p.homing?.headingRad ?? p.angleRad;
       p.anim.advance(dt, true);
-      this.effects.batchSprite(p.anim, at, (poseAngleRad * 180) / Math.PI, p.light);
+      // Re-read every frame, not just at launch — a missile flying between
+      // differently-lit sectors should shade like everything else does.
+      const light = world.sectorAt(at.x, at.y)?.light ?? 128;
+      this.effects.batchSprite(p.anim, at, (poseAngleRad * 180) / Math.PI, light);
       remaining.push(p);
     }
     this.projectiles = remaining;

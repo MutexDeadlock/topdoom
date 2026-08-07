@@ -110,7 +110,6 @@ interface PosedThing extends Pos3 {
    */
   sector: Sector | undefined;
   facingDeg: number;
-  light: number;
   subsector: number;
   type: number;
   /** Set once a pickup consumes this instance; it then stays permanently hidden (see ThingLayer.update). */
@@ -669,7 +668,6 @@ export function buildThingSprites(
     const x = t.x;
     const y = t.y;
     const facingDeg = t.angle;
-    const light = sector?.light ?? 128;
     // MF_SPAWNCEILING things (ceiling-hung gore) measure z down from the ceiling instead of up
     // from the floor — see CEILING_HUNG_HEIGHT's doc.
     const hangHeight = CEILING_HUNG_HEIGHT[t.type];
@@ -716,7 +714,6 @@ export function buildThingSprites(
       z,
       sector,
       facingDeg,
-      light,
       subsector,
       type: t.type,
       picked: false,
@@ -763,7 +760,6 @@ export function buildThingSprites(
     const spriteName = THING_SPRITES[type];
     if (!spriteName) return;
     const { x, y } = at;
-    const light = sector?.light ?? 128;
     const z = sector?.floorHeight ?? 0;
     const subsector = world.subsectorAt(x, y);
     const anim = new SpriteAnimator(bank, materials, spriteName);
@@ -790,7 +786,6 @@ export function buildThingSprites(
       z,
       sector,
       facingDeg,
-      light,
       subsector,
       type,
       picked: false,
@@ -883,7 +878,6 @@ export function buildThingSprites(
       z,
       sector,
       facingDeg,
-      light: sector?.light ?? 128,
       subsector,
       type: LOST_SOUL_TYPE,
       picked: false,
@@ -1437,7 +1431,6 @@ export function buildThingSprites(
               p.prev.y = p.y;
               p.sector = world.sectorAt(p.x, p.y);
               p.subsector = world.subsectorAt(p.x, p.y);
-              if (p.sector) p.light = p.sector.light;
               p.facingDeg = (p.angle * 180) / Math.PI;
               animating = p.x !== beforeX || p.y !== beforeY;
               if (result?.kind === 'resurrect') {
@@ -1513,9 +1506,12 @@ export function buildThingSprites(
         // Everything the map itself placed draws plainly, at its own height:
         // only a drop lands on top of a corpse, and only a drop is worth
         // singling out (docs/items.md § Making monster drops readable).
+        // Read live off the sector rather than caching a `light` field on the
+        // thing — see docs/render.md § Sector lighting on why every sprite must.
+        const light = litColor(p.sector?.light ?? 128);
         if (!p.dropped) {
           doomToWorld(p.x, p.y, p.z, worldPos);
-          batch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, litColor(p.light), p.id);
+          batch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light, p.id);
           continue;
         }
         // Phase-shifted per instance (`p.id`), so two drops side by side
@@ -1523,7 +1519,7 @@ export function buildThingSprites(
         // same — it's batch-wide, see `SpriteBatch.setOpacity`.
         const bob = Math.sin((clock / DROP_BOB_SECONDS + p.id * 0.7) * Math.PI * 2) * DROP_BOB;
         doomToWorld(p.x, p.y, p.z + DROP_HOVER + bob, worldPos);
-        dropBatch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, litColor(p.light), p.id);
+        dropBatch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light, p.id);
       }
       batch.end();
       dropBatch.end();

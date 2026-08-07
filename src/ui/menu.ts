@@ -19,7 +19,7 @@ export interface Selection {
 }
 
 export interface MenuDefaults {
-  /** Preselect by file name, as given in ?wad= / ?pwad=. */
+  /** Preselect by file name, as given in ?wad= / ?pwad=. Wins over the stored selection. */
   iwad?: string | null;
   pwads?: string[];
   map?: string | null;
@@ -30,18 +30,29 @@ const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as
 type Tab = 'files' | 'settings';
 
 const SKILL_STORAGE_KEY = 'topdoom.skill';
+const SELECTION_STORAGE_KEY = 'topdoom.selection';
+
+/** What `saveSelection` writes: `WadSource.key`s plus the level, all server-side. */
+interface StoredSelection {
+  iwad: string;
+  pwads: string[];
+  map: string;
+}
 
 /**
  * The start screen: pick a game WAD, stack any add-ons on top, choose a level.
- * WADs come either from public/wads/ or straight off the user's disk.
+ * WADs come either from public/wads/ or straight off the user's disk. It doubles
+ * as the pause screen once a level is running — see `open` and docs/menu.md.
  */
 export class Menu {
   private root = el<HTMLDivElement>('menu');
   private iwadSelect = el<HTMLSelectElement>('iwad-select');
   private pwadList = el<HTMLDivElement>('pwad-list');
   private levelSelect = el<HTMLSelectElement>('level-select');
-  private difficultySelect = el<HTMLSelectElement>('difficulty-select');
   private startButton = el<HTMLButtonElement>('start-button');
+  private resumeButton = el<HTMLButtonElement>('resume-button');
+  private skillDialog = el<HTMLDivElement>('skill-dialog');
+  private skillList = el<HTMLDivElement>('skill-list');
   private statusEl = el<HTMLSpanElement>('menu-status');
   private fileInput = el<HTMLInputElement>('file-input');
   private volumeSlider = el<HTMLInputElement>('volume-slider');
@@ -64,29 +75,43 @@ export class Menu {
   private uploadTarget: 'IWAD' | 'PWAD' = 'IWAD';
 
   private onStart: (selection: Selection) => void | Promise<void>;
+  private onResume: () => void;
   private audio: AudioEngine;
 
-  constructor(onStart: (selection: Selection) => void | Promise<void>, audio: AudioEngine) {
+  constructor(
+    onStart: (selection: Selection) => void | Promise<void>,
+    onResume: () => void,
+    audio: AudioEngine,
+  ) {
     this.onStart = onStart;
+    this.onResume = onResume;
     this.audio = audio;
 
     el<HTMLButtonElement>('iwad-upload').addEventListener('click', () => this.pickFile('IWAD'));
     el<HTMLButtonElement>('pwad-upload').addEventListener('click', () => this.pickFile('PWAD'));
     this.iwadSelect.addEventListener('change', () => this.selectIwad());
     this.fileInput.addEventListener('change', () => void this.onFilesChosen());
-    this.levelSelect.addEventListener('change', () => this.refreshStartButton());
-    this.startButton.addEventListener('click', () => this.start());
+    this.levelSelect.addEventListener('change', () => {
+      this.refreshButtons();
+      this.saveSelection();
+    });
+    this.startButton.addEventListener('click', () => this.newGame());
+    this.resumeButton.addEventListener('click', () => this.onResume());
     for (const tab of Object.keys(this.tabButtons) as Tab[]) {
       this.tabButtons[tab].addEventListener('click', () => this.setTab(tab));
     }
     this.installDropTarget();
-    this.renderDifficulties();
+    this.installSkillDialog();
     this.installVolume();
     this.installAutorun();
+    this.setTab('files');
     el<HTMLDivElement>('menu-version').textContent = `v${VERSION}`;
   }
 
-  /** Reads the server library and applies whatever the URL asked for. */
+  /**
+   * Reads the server library, then resolves the selection: the URL wins, the
+   * stored selection is next, and failing both the first game WAD on offer.
+   */
   async init(defaults: MenuDefaults): Promise<void> {
     this.setStatus('Scanning public/wads/ …');
     this.sources = await fetchLibrary();
@@ -94,34 +119,43 @@ export class Menu {
     const byKey = (name: string) =>
       this.sources.find((s) => s.key.toLowerCase() === name.toLowerCase());
 
+    const stored = this.loadSelection();
+
     this.selectedIwad =
       (defaults.iwad ? byKey(defaults.iwad) : undefined) ??
+      (stored ? byKey(stored.iwad) : undefined) ??
       this.sources.find((s) => s.type === 'IWAD') ??
       null;
 
-    this.selectedPwads = (defaults.pwads ?? [])
+    const wantedPwads = defaults.pwads?.length ? defaults.pwads : (stored?.pwads ?? []);
+    this.selectedPwads = wantedPwads
       .map(byKey)
       .filter((s): s is WadSource => s !== undefined && s !== this.selectedIwad);
+    // Restored add-ons can disagree with a game WAD that came from ?wad=.
+    this.pruneIncompatiblePwads();
 
     this.render();
-    if (defaults.map) this.selectLevel(defaults.map);
+    const wantedMap = defaults.map ?? stored?.map ?? null;
+    if (wantedMap) this.selectLevel(wantedMap);
 
     this.setStatus(this.sources.length === 0 ? 'No WADs found on the server — load one from disk.' : '');
   }
 
   /**
-   * `returning` distinguishes the first-ever open (before any level has been
-   * played) from coming back via Escape mid-session: the former lands on
-   * "Game Files" since there's nothing to pick yet, the latter on "Settings"
-   * since the WAD/level choice is already made.
+   * `inGame` says a level is loaded and paused behind the menu: the backdrop
+   * turns translucent and "Return to game" appears. The active tab is whatever
+   * the player last picked — reopening mid-level must not throw away the tab
+   * they were on.
    */
-  open(returning = false): void {
+  open(inGame = false): void {
     this.root.classList.remove('hidden');
-    this.setTab(returning ? 'settings' : 'files');
-    this.refreshStartButton();
+    this.root.classList.toggle('ingame', inGame);
+    this.resumeButton.classList.toggle('hidden', !inGame);
+    this.refreshButtons();
   }
 
   close(): void {
+    this.dismissDialog();
     this.root.classList.add('hidden');
   }
 
@@ -212,6 +246,7 @@ export class Menu {
     this.selectedPwads = this.selectedPwads.filter((p) => p !== source);
     this.pruneIncompatiblePwads();
     this.render();
+    this.saveSelection();
   }
 
   private renderPwads(): void {
@@ -233,6 +268,7 @@ export class Menu {
           if (index >= 0) this.selectedPwads.splice(index, 1);
           else this.selectedPwads.push(source);
           this.render();
+          this.saveSelection();
         },
         incompatible,
       );
@@ -289,7 +325,7 @@ export class Menu {
 
     if (!this.selectedIwad) {
       this.levelSelect.disabled = true;
-      this.refreshStartButton();
+      this.refreshButtons();
       return;
     }
 
@@ -323,21 +359,48 @@ export class Menu {
     }
 
     if (previous && maps.some((m) => m.name === previous)) this.levelSelect.value = previous;
-    this.refreshStartButton();
+    this.refreshButtons();
   }
 
-  /** Static, independent of the selected WADs — populated once and left alone. */
-  private renderDifficulties(): void {
+  /**
+   * The difficulty prompt "New game" opens. Each skill is a button that starts
+   * the level straight away — there is no confirm step, since picking a
+   * difficulty *is* the decision. The last one played is highlighted and focused,
+   * so Enter repeats it. Static, independent of the selected WADs: built once
+   * here and only shown/hidden afterwards.
+   */
+  private installSkillDialog(): void {
+    const current = this.storedSkill();
     for (const skill of [1, 2, 3, 4, 5] as const) {
-      const option = document.createElement('option');
-      option.value = String(skill);
-      option.textContent = SKILL_NAMES[skill];
-      this.difficultySelect.append(option);
+      const row = document.createElement('button');
+      row.className = 'row' + (skill === current ? ' selected' : '');
+      row.textContent = SKILL_NAMES[skill];
+      row.addEventListener('click', () => {
+        globalThis.localStorage?.setItem(SKILL_STORAGE_KEY, String(skill));
+        for (const other of this.skillList.children) {
+          other.classList.toggle('selected', other === row);
+        }
+        this.dismissDialog();
+        this.startWithSkill(skill);
+      });
+      this.skillList.append(row);
     }
-    this.difficultySelect.value = String(this.storedSkill());
-    this.difficultySelect.addEventListener('change', () => {
-      globalThis.localStorage?.setItem(SKILL_STORAGE_KEY, this.difficultySelect.value);
+
+    el<HTMLButtonElement>('skill-cancel').addEventListener('click', () => this.dismissDialog());
+    // Only a click on the backdrop itself, not one that bubbled out of the panel.
+    this.skillDialog.addEventListener('click', (e) => {
+      if (e.target === this.skillDialog) this.dismissDialog();
     });
+  }
+
+  /**
+   * Hides the difficulty prompt, reporting whether it was open — that answer is
+   * what lets Escape close the prompt without also resuming the game.
+   */
+  dismissDialog(): boolean {
+    const wasOpen = !this.skillDialog.classList.contains('hidden');
+    this.skillDialog.classList.add('hidden');
+    return wasOpen;
   }
 
   /** Reads back the last skill picked; falls back to vanilla's own default when unset or invalid. */
@@ -346,16 +409,62 @@ export class Menu {
     return stored >= 1 && stored <= 5 ? (stored as Skill) : DEFAULT_SKILL;
   }
 
+  /**
+   * Remembers the WAD set and level for the next visit. Called from the places
+   * the *player* changes something, deliberately not from `render`: `init`
+   * renders while restoring, and would write back a level select that hasn't
+   * caught up with the stored map yet.
+   *
+   * Only server-side files are stored: an upload's bytes are gone after a
+   * reload, so persisting its key would restore a selection that can never load
+   * — better to leave the last restorable one in place. That also means a
+   * missing manifest (every source gone, `selectedIwad` null) can't wipe a good
+   * stored value.
+   */
+  private saveSelection(): void {
+    if (!this.selectedIwad || this.selectedIwad.origin !== 'server') return;
+    const stored: StoredSelection = {
+      iwad: this.selectedIwad.key,
+      pwads: this.selectedPwads.filter((p) => p.origin === 'server').map((p) => p.key),
+      map: this.levelSelect.value,
+    };
+    globalThis.localStorage?.setItem(SELECTION_STORAGE_KEY, JSON.stringify(stored));
+  }
+
+  /**
+   * The stored selection, or null if there is none or it isn't parseable. The
+   * keys themselves aren't validated here — `init` resolves each against the
+   * current library and drops whatever no longer exists.
+   */
+  private loadSelection(): StoredSelection | null {
+    const raw = globalThis.localStorage?.getItem(SELECTION_STORAGE_KEY);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as Partial<StoredSelection>;
+      if (typeof parsed?.iwad !== 'string') return null;
+      return {
+        iwad: parsed.iwad,
+        pwads: Array.isArray(parsed.pwads) ? parsed.pwads.filter((p) => typeof p === 'string') : [],
+        map: typeof parsed.map === 'string' ? parsed.map : '',
+      };
+    } catch {
+      return null;
+    }
+  }
+
   private selectLevel(name: string): void {
     const upper = name.toUpperCase();
     if ([...this.levelSelect.options].some((o) => o.value === upper)) {
       this.levelSelect.value = upper;
-      this.refreshStartButton();
+      this.refreshButtons();
     }
   }
 
-  private refreshStartButton(): void {
+  private refreshButtons(): void {
     this.startButton.disabled = !this.isReady;
+    // Only ever disabled for the duration of a start (see `startWithSkill`);
+    // whether it's *shown* is `open`'s call.
+    this.resumeButton.disabled = false;
   }
 
   private pickFile(target: 'IWAD' | 'PWAD'): void {
@@ -399,6 +508,7 @@ export class Menu {
 
     if (added.length > 0) {
       this.render();
+      this.saveSelection();
       this.setStatus(`Added ${added.join(', ')}`);
     }
   }
@@ -420,21 +530,36 @@ export class Menu {
     });
   }
 
-  /** Starts with whatever is currently selected — used by ?map= deep links. */
+  /**
+   * Starts with whatever is currently selected — used by ?map= deep links,
+   * which skip the menu entirely and so must not stop at the difficulty prompt:
+   * they run at the last skill picked.
+   */
   submit(): void {
-    this.start();
+    this.startWithSkill(this.storedSkill());
   }
 
-  private start(): void {
+  /** "New game": the difficulty is asked for here, not carried in the settings. */
+  private newGame(): void {
+    if (!this.isReady) return;
+    this.skillDialog.classList.remove('hidden');
+    // Focus the last skill played, so Enter starts at it without a second click.
+    this.skillList.querySelector<HTMLButtonElement>('.row.selected')?.focus();
+  }
+
+  private startWithSkill(skill: Skill): void {
     if (!this.selectedIwad || !this.isReady) return;
     this.startButton.disabled = true;
+    // The level being replaced is disposed part-way through this, so there is
+    // nothing to return to until it either resolves or fails.
+    this.resumeButton.disabled = true;
     void Promise.resolve(
       this.onStart({
         iwad: this.selectedIwad,
         pwads: [...this.selectedPwads],
         map: this.levelSelect.value,
-        skill: Number(this.difficultySelect.value) as Skill,
+        skill,
       }),
-    ).finally(() => this.refreshStartButton());
+    ).finally(() => this.refreshButtons());
   }
 }

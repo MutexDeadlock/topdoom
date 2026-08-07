@@ -3,6 +3,14 @@ v0.9.x (2026-08-??)
 Features and improvements
   - bullets and melee hits now splash blood
   - bullets now leave the original's puff on walls (and on barrels)
+  - main menu overhaul
+    - opens over the paused level instead of hiding it, and got a
+      "Return to game" button next to it
+    - "Start" is now "New game" and asks for the difficulty, which
+      left the Settings tab
+    - the game WAD, add-ons and level you picked are remembered
+      between sessions
+    - reopening the menu keeps you on the tab you were last on
 
 
 ===============================================================================

@@ -93,7 +93,8 @@ several record rules that look like accidents and aren't.
 
 | Doc | Covers |
 |---|---|
-| [docs/wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD override rules, the start menu |
+| [docs/wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD override rules, the `public/wads/` manifest |
+| [docs/menu.md](docs/menu.md) | The menu as launcher and pause screen, difficulty prompt, persisted settings, URL parameters, `main.ts`'s session lifecycle |
 | [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, wall occlusion fading, camera orbit, sprites and their batching |
 | [docs/movement.md](docs/movement.md) | Collision, `groundFloor`, `slideMove`, straferunning, gravity/falling, knockback |
 | [docs/combat.md](docs/combat.md) | Weapons, `shotPath`, auto-aim, `hasLineOfSight`, splash, the BFG, monster/player death, barrels |

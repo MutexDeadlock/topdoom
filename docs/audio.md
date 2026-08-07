@@ -209,9 +209,9 @@ everything else — all **unattenuated**, as vanilla plays them, since you are s
 
 ## Volume, mute, and the context
 
-`M` toggles mute in game; the start menu has a volume slider, and the value is persisted in
-`localStorage` under `topdoom.sfxVolume`. Default is vanilla's own starting `snd_SfxVolume`,
-8 of 15.
+`M` toggles mute in game; the menu's Settings tab has a volume slider, and the value is persisted in
+`localStorage` under `topdoom.sfxVolume` (docs/menu.md § Persisted settings covers the shared
+pattern). Default is vanilla's own starting `snd_SfxVolume`, 8 of 15.
 
 The slider previews itself (`itemup`) as you drag — but only once a WAD set's sounds are
 loaded, i.e. from the first Esc back to the menu onward. On the very first visit there is no
@@ -220,7 +220,7 @@ worse.
 
 The `AudioContext` is **session-level** — one for every level and WAD set, like `Viewport`'s
 renderer — and is created lazily on the first `resume()`, since browsers only start one off a
-user gesture. Three places reach it: the Start button's handler (synchronously, before
+user gesture. Three places reach it: `startLevel` (synchronously, before
 `loadWadFiles`' first `await`), the volume slider, and a one-shot `pointerdown`/`keydown`
 listener in `main.ts` that covers a `?map=` deep link, which starts a level with no click at
 all. `Game.pause()` suspends it and `resume()` wakes it, so Esc to the menu is silent; a

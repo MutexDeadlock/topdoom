@@ -1,6 +1,7 @@
-# WAD loading, merging and the start menu
+# WAD loading and merging
 
-`src/wad/`, `src/ui/menu.ts`, `src/wad/library.ts`, `plugins/wad-manifest.ts`
+`src/wad/`, `src/wad/library.ts`, `plugins/wad-manifest.ts` — the menu that drives all this is
+docs/menu.md
 
 ## Loading and merging
 
@@ -35,39 +36,20 @@ trick for scripted effects like crusher-triggered linedefs). Picking the first o
 player on top of a voodoo doll — repro: oku2v31.wad MAP01 has 27 doomednum-1 things, 26 of them a
 voodoo-doll row and the 27th the real start.
 
-## Start menu
+## The `public/wads/` manifest
 
 The Vite plugin scans `public/wads/{iwad,pwad}/`, reading each file's header and directory (a few KB
 even for a 14 MB IWAD) and serving it as `/wads/index.json` (dev middleware and build-time `emitFile`),
-so the menu can list types/sizes/map counts without downloading anything. **The folder a file sits in
-decides how it's served, regardless of its own IWAD/PWAD signature** — a mod placed in `wads/iwad/`
-becomes a selectable game WAD (useful for a PWAD that carries its own maps); the plugin warns on
-mismatch but still serves it.
+so the menu can list types/sizes/map counts without downloading anything. Bytes are only fetched when
+a level actually starts, and `library.ts: serverSource` memoizes them, so restarting the same WAD set
+costs no download.
 
-Menu semantics worth knowing before touching `menu.ts`:
+**The folder a file sits in decides how it's served, regardless of its own IWAD/PWAD signature** — a
+mod placed in `wads/iwad/` becomes a selectable game WAD (useful for a PWAD that carries its own
+maps); the plugin warns on mismatch but still serves it.
 
-- **Game WAD** list (`renderIwads`) only offers sources with `type === 'IWAD'`. A PWAD mapset can still
-  be *played* as the game WAD (via file upload through the IWAD picker, or `?wad=`), but it no longer
-  appears in this list to pick from directly.
-- **Add-ons** list (`renderPwads`) excludes anything of `type === 'IWAD'` and whichever source is
-  currently selected as the game WAD (even a PWAD-typed one uploaded through the IWAD picker) —
-  otherwise it would show up twice.
-- Files dropped/uploaded from disk are parsed in the browser and behave identically to server-side
-  ones; a file uploaded via the "game WAD" picker becomes the game WAD regardless of its declared type,
-  a file uploaded via "add-on" is added as an add-on.
-- `?wad=&pwad=&map=` preselect and skip the menu entirely. `?pos=x,y` additionally drops the player at
-  those DOOM map coordinates instead of the map's own player start, applied *before* fog of war is
-  seeded so the reveal shows exactly what is visible from there. **That is the practical way to check a
-  specific spot in a level** — the room with MAP01's big window is several rooms away from the spawn, so
-  scripting a walk to it is far more work than `?map=MAP01&pos=800,600`.
-- **Add-ons are filtered by game** (`library.ts: mapStyle`): a WAD's own maps say which game it belongs
-  to (`ExMy` → DOOM 1, `MAPxx` → DOOM II; the two never mix within one game), and an add-on whose style
-  conflicts with the selected game WAD is rendered **disabled** rather than hidden — a mapset that's
-  simply for the other game is still worth seeing in the list, just not pickable. Switching the game WAD
-  calls `pruneIncompatiblePwads` to drop any already-ticked add-on that no longer matches, so the merged
-  map list (`mergedMaps`) never silently mixes an E1M1 with a MAP01 mapset. An add-on with no maps of
-  its own (textures, sounds, …) has no style and stays selectable regardless — `describeSource` shows
-  its lump count instead of a map count, so it doesn't read as an empty file.
-
-`VERSION` (`constants.ts`) is shown bottom-right on the menu, prefixed with `v`; a static credit sits
-bottom-left in `index.html`/`menu.css`.
+**A WAD's own maps say which game it belongs to** (`library.ts: mapStyle`): `ExMy` → DOOM 1,
+`MAPxx` → DOOM II, and the two never mix within one game. A WAD with no maps of its own (textures,
+sounds, …) has no style and fits either — `describeSource` shows its lump count instead of a map
+count so it doesn't read as an empty file. What the menu *does* with that is docs/menu.md
+§ Picking a WAD set.

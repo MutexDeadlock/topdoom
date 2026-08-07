@@ -67,7 +67,13 @@ async function boot(): Promise<void> {
       const files = await loadWadFiles(selection.iwad, selection.pwads);
       const wad = new Wad(files);
 
-      game?.dispose();
+      // Cleared before the old level is torn down, so a constructor that throws
+      // (a WAD with no maps, a mesh build failure) can't leave `game` pointing at
+      // a disposed instance — the menu's "Return to game" and the Esc handler
+      // both key off it being null.
+      const previous = game;
+      game = null;
+      previous?.dispose();
       game = new Game(view, audio, wad, selection.map, titleOf(selection.iwad, selection.pwads), selection.skill, startPos);
 
       menu.setStatus('');
@@ -75,11 +81,20 @@ async function boot(): Promise<void> {
       game.resume();
     } catch (err) {
       menu.setStatus((err as Error).message, true);
+      // The previous level is gone by now, so re-sync the menu: with nothing
+      // left to return to, it must stop offering it.
+      menu.open(game !== null);
       console.error(err);
     }
   };
 
-  const menu: Menu = new Menu((selection) => startLevel(selection), audio);
+  const resumeGame = (): void => {
+    if (!game) return;
+    menu.close();
+    game.resume();
+  };
+
+  const menu: Menu = new Menu((selection) => startLevel(selection), resumeGame, audio);
 
   // A `?map=` deep link starts a level without the player ever clicking
   // anything, so no gesture has unlocked audio by then — the first one that
@@ -88,16 +103,17 @@ async function boot(): Promise<void> {
   window.addEventListener('pointerdown', unlockAudio, { once: true });
   window.addEventListener('keydown', unlockAudio, { once: true });
 
-  // Esc toggles between playing and the menu; the level survives the trip.
+  // Esc toggles between playing and the menu; the level survives the trip. It
+  // unwinds one layer at a time: difficulty prompt, then menu, then the game.
   window.addEventListener('keydown', (e) => {
     if (e.code !== 'Escape') return;
     if (!menu.isOpen) {
       game?.pause();
       menu.open(game !== null);
-    } else if (game) {
-      menu.close();
-      game.resume();
+      return;
     }
+    if (menu.dismissDialog()) return;
+    resumeGame();
   });
 
   const params = new URLSearchParams(location.search);

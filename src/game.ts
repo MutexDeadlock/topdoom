@@ -149,6 +149,9 @@ export class Game {
 
   private running = false;
   private lastTime = 0;
+  /** Paused, not stopped: the level is frozen but still being drawn — see `stillFrame`. */
+  private paused = false;
+  private lastStill = 0;
 
   private view: Viewport;
   private audio: AudioEngine;
@@ -385,19 +388,46 @@ export class Game {
     // Reached from the Start button or Esc, i.e. from a real user gesture —
     // which is the only way a browser lets an AudioContext start.
     this.audio.resume();
+    this.paused = false;
     this.running = true;
     this.lastTime = performance.now();
     this.view.input.reset();
     requestAnimationFrame(this.frame);
   }
 
-  pause(): void {
+  /** Stops both loops. `dispose` uses this rather than `pause` — see `stillFrame`. */
+  private stop(): void {
     this.running = false;
+    this.paused = false;
     this.audio.suspend();
   }
 
+  pause(): void {
+    if (this.paused) return; // a second call would leave two `stillFrame` loops running
+    this.stop();
+    this.paused = true;
+    requestAnimationFrame(this.stillFrame);
+  }
+
+  /**
+   * Keeps redrawing the frozen level while paused, so the menu can sit over it
+   * (see docs/render.md § Pausing). Nothing is advanced here — no dt, no input,
+   * no profiling — only `render`, and only every ~50 ms, since a static scene
+   * has no reason to cost 60 fps. `dispose` must go through `stop`, never
+   * `pause`, or this would keep drawing a scene whose geometry and materials
+   * are already released.
+   */
+  private stillFrame = (now: number) => {
+    if (!this.paused) return;
+    if (now - this.lastStill >= 50) {
+      this.lastStill = now;
+      this.view.renderer.render(this.scene, this.view.camera.camera);
+    }
+    requestAnimationFrame(this.stillFrame);
+  };
+
   dispose(): void {
-    this.pause();
+    this.stop();
     // The engine is session-level and the next Game sets its own bank; this
     // only makes sure nothing from this level is left holding a channel.
     this.audio.stopAll();

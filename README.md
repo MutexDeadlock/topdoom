@@ -35,6 +35,9 @@ without downloading anything. The same manifest is baked into the output on `npm
   map count so they don't read as empty.
 - **Level** — every map in the resulting set, grouped by episode for DOOM 1.
 
+**New game** asks for the difficulty — one click on a skill starts the level. Your game WAD, add-ons and level are
+remembered for the next visit (files loaded from disk aren't — the browser doesn't keep them).
+
 The folder a file sits in decides how it's served, regardless of its own IWAD/PWAD
 signature — a mod placed in `wads/iwad/` becomes a selectable game WAD, matching the "PWAD
 carrying maps" case above. The dev server logs a warning if a file's signature disagrees
@@ -44,7 +47,8 @@ Files outside `public/wads/` go through *Load from disk* or by dropping them on 
 they are parsed in the browser and behave exactly like server-side ones. A file that
 declares itself an IWAD becomes the game WAD, a PWAD is added as an add-on.
 
-`Esc` returns to the menu and pauses; `Esc` again resumes where you left off.
+`Esc` pauses and brings up the menu over the level; **Return to game** or `Esc` again resumes where
+you left off. While the difficulty prompt is up, `Esc` closes just that.
 
 `?wad=DOOM2.WAD&pwad=SCYTHE.WAD&map=MAP05` preselects and skips the menu.
 
@@ -224,7 +228,8 @@ part actually works under the hood, `docs/` documents each subsystem in depth:
 
 | Doc | Covers |
 |---|---|
-| [docs/wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD overrides, the start menu |
+| [docs/wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD overrides, the `public/wads/` manifest |
+| [docs/menu.md](docs/menu.md) | The menu, settings persistence, URL parameters, session lifecycle |
 | [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, occlusion fading, camera, sprites |
 | [docs/movement.md](docs/movement.md) | Collision, wall sliding, straferunning, falling, knockback |
 | [docs/combat.md](docs/combat.md) | Weapons, shot resolution, auto-aim, line of sight, damage and death |

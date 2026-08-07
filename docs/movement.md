@@ -139,8 +139,8 @@ speed, which makes every direction equally fast and takes SR40 away with it.
 off, Shift runs exactly as above (vanilla's own sense); on — the default — the player runs and Shift
 walks instead. It's module-level state in `player.ts` rather than a `Player` field, because `Player` is
 recreated every map load (`game.ts: loadMapByIndex`) and the setting must take effect immediately for a
-level already in progress, not just the next one. Persisted to `localStorage` the same way
-`AudioEngine`'s volume is.
+level already in progress, not just the next one. Persisted as `topdoom.autorun` — docs/menu.md
+§ Persisted settings.
 
 `ACCELERATION` (the exponential approach toward the target velocity) is deliberately **not**
 vanilla-derived and is the one thing here still tuned by feel, same as `GRAVITY`: vanilla reaches its

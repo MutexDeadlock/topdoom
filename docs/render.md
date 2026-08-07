@@ -1,6 +1,7 @@
 # Rendering
 
-`src/render/` — BSP reconstruction, mesh building, lighting, occlusion fading, camera, sprites
+`src/render/` — BSP reconstruction, mesh building, lighting, occlusion fading, camera, sprites, plus
+the frame loop's two modes (`game.ts`)
 
 ## BSP polygon reconstruction (`bsp.ts`)
 
@@ -169,6 +170,19 @@ step's smoothing takes to settle, so a hold reads as continuous rotation made of
 Movement (`Player.update`'s `forwardDeg`, passed as `camera.viewerAngleDeg + 180`) is camera-relative
 rather than DOOM-axis-relative: `W` always moves the player away from the camera *on screen*,
 regardless of orbit. `game.ts` recomputes this every frame from the live camera angle.
+
+## Pausing (`game.ts: pause`, `stillFrame`, `stop`)
+
+A paused level is frozen but **still being drawn**: `pause` stops the simulation loop and starts
+`stillFrame`, which only calls `renderer.render` — no `dt`, no input, no profiling — and only every
+~50 ms, since a static scene has no reason to cost 60 fps. Without it the canvas would just be
+showing its last composited frame, which goes stale the moment anything invalidates it (a window
+resize resizes the canvas, a DPR change, a tab restore), and the menu now draws *over* the level
+(`ui/menu.css: #menu.ingame`) instead of hiding it, so a stale or blank backdrop is visible.
+
+**`dispose` calls `stop`, not `pause`.** Both clear `running`, but `pause` sets `paused` and schedules
+`stillFrame`; going through it from `dispose` would leave that loop redrawing a scene whose geometry
+and materials have just been released.
 
 ## Things as sprites (`wad/sprites.ts`, `render/sprites.ts`, `game/things.ts`, `game/thingdefs.ts`)
 

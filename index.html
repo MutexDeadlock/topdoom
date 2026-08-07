@@ -100,11 +100,6 @@
 
           <div class="tab-panel" id="tab-settings">
             <section>
-              <h2>Difficulty</h2>
-              <select id="difficulty-select"></select>
-            </section>
-
-            <section>
               <h2>Sound <span class="hint">M mutes in game</span></h2>
               <div class="slider">
                 <input type="range" id="volume-slider" min="0" max="100" step="1" />
@@ -123,10 +118,22 @@
         </div>
 
         <footer>
-          <button class="primary" id="start-button">Start</button>
+          <button class="primary" id="start-button">New game</button>
           <span id="menu-status"></span>
+          <button id="resume-button" class="hidden">Return to game</button>
         </footer>
       </div>
+
+      <div id="skill-dialog" class="hidden">
+        <div class="panel">
+          <h2>Difficulty</h2>
+          <div class="list" id="skill-list"></div>
+          <footer>
+            <button id="skill-cancel">Cancel</button>
+          </footer>
+        </div>
+      </div>
+
       <input type="file" id="file-input" accept=".wad,.WAD" hidden />
       <div id="menu-credit">by @fauler420</div>
       <div id="menu-version"></div>

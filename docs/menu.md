@@ -4,7 +4,7 @@
 
 The menu is plain DOM: every element is static markup in `index.html`, looked up by id in `Menu`'s
 field initializers, so **an id renamed in the HTML fails at construction**, not lazily. Only the WAD
-lists, the level list and the difficulty rows are built in JS.
+lists, the level list and the difficulty options are built in JS.
 
 ## One screen, two jobs
 
@@ -15,20 +15,18 @@ lists, the level list and the difficulty rows are built in JS.
   reveals **Return to game**. Both are off before any level is loaded: there is nothing behind the
   menu then but the static HUD markup with placeholder values, which the opaque gradient exists to
   hide.
-- The active tab is *not* reset on open — it's whichever the player last clicked (`files` on the
+- The active tab is *not* reset on open — it's whichever the player last clicked (`newgame` on the
   first open, set in the constructor). Reopening mid-level to change one setting must not throw away
   the tab they were on.
 - Both tab panels are stacked in **one CSS grid cell** and hidden with `visibility`, not
   `display: none`, so the panel's height is always the taller of the two and switching tabs doesn't
   resize the menu under the cursor.
 
-`Esc` unwinds one layer per press: difficulty prompt → menu → game. `main.ts`'s handler asks
-`dismissDialog()` first, which reports whether it actually had a dialog to close. With the menu open
-and no level loaded, `Esc` does nothing — there is nothing to return to.
+`Esc` toggles between the menu and the game. With the menu open and no level loaded it does nothing
+— there is nothing to return to.
 
 Overlay stacking (`menu.css`): screen tint / pain flash `5`, HUD `10`, `#death-overlay` `15`,
-`#menu` `20`, `#skill-dialog` `21`, `#fatal-error` `30`. The dialog's own backdrop is what makes the
-panel behind it unclickable, so nothing else needs disabling.
+`#menu` `20`, `#fatal-error` `30`.
 
 `VERSION` (`constants.ts`) is shown bottom-right, prefixed with `v`; a static credit sits
 bottom-left.
@@ -57,19 +55,19 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
 - The **Level** list groups DOOM 1's `ExMy` maps by episode and names the provider only when an
   add-on took a map over.
 
-## Difficulty prompt
+## Difficulty
 
-**Difficulty is asked at New game, not kept in Settings.** `#skill-dialog` is a modal over the panel
-and each skill is a **button that starts the level directly** — no confirm step, since picking a
-difficulty is the decision. The click writes `topdoom.skill`, which is what the prompt highlights and
-focuses next time, so Enter repeats the last skill played.
+**Difficulty lives at the bottom of the New Game tab, not in Settings** — it belongs with the WAD
+and level, the other two things a start is composed of, and unlike volume and autorun it can't apply
+live: skill only takes effect where things are spawned (`game/things.ts: buildThingSprites`), so
+changing it mid-level would silently do nothing until the next load.
 
-`submit()` (the `?map=` deep-link path) goes straight to `startWithSkill(storedSkill())` — a link
-that skips the menu must not stop at a prompt.
-
-Difficulty is the only setting handled this way. Volume and autorun apply live from the Settings tab;
-skill can't, because it only takes effect where things are spawned (`game/things.ts:
-buildThingSprites`), so it would silently do nothing until the next level load.
+`#skill-select` is filled once from `SKILL_NAMES` and seeded from `topdoom.skill`; a change writes
+that key back, so the next visit opens on the last skill played. **What a start actually runs at is
+`currentSkill()`, read off the select, not off storage** — where `localStorage` is unavailable the
+write goes nowhere and reading it back would silently ignore the player's pick. `submit()` (the
+`?map=` deep-link path) reads the same getter, which is the stored skill there since nothing has
+touched the control.
 
 ## Persisted settings
 
@@ -83,7 +81,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 |---|---|---|
 | `topdoom.sfxVolume` | `audio/audio.ts` | docs/audio.md § Volume, mute, and the context |
 | `topdoom.autorun` | `game/player.ts` (`getAutorun`/`setAutorun`) | docs/movement.md § Movement speed and straferunning |
-| `topdoom.skill` | `ui/menu.ts` | § Difficulty prompt above |
+| `topdoom.skill` | `ui/menu.ts` | § Difficulty above |
 | `topdoom.selection` | `ui/menu.ts` | § Remembered selection below |
 
 ## Remembered selection

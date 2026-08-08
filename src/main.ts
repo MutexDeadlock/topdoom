@@ -103,8 +103,7 @@ async function boot(): Promise<void> {
   window.addEventListener('pointerdown', unlockAudio, { once: true });
   window.addEventListener('keydown', unlockAudio, { once: true });
 
-  // Esc toggles between playing and the menu; the level survives the trip. It
-  // unwinds one layer at a time: difficulty prompt, then menu, then the game.
+  // Esc toggles between playing and the menu; the level survives the trip.
   window.addEventListener('keydown', (e) => {
     if (e.code !== 'Escape') return;
     if (!menu.isOpen) {
@@ -112,7 +111,6 @@ async function boot(): Promise<void> {
       menu.open(game !== null);
       return;
     }
-    if (menu.dismissDialog()) return;
     resumeGame();
   });
 

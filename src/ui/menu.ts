@@ -27,7 +27,7 @@ export interface MenuDefaults {
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-type Tab = 'files' | 'settings';
+type Tab = 'newgame' | 'settings';
 
 const SKILL_STORAGE_KEY = 'topdoom.skill';
 const SELECTION_STORAGE_KEY = 'topdoom.selection';
@@ -49,21 +49,20 @@ export class Menu {
   private iwadSelect = el<HTMLSelectElement>('iwad-select');
   private pwadList = el<HTMLDivElement>('pwad-list');
   private levelSelect = el<HTMLSelectElement>('level-select');
+  private skillSelect = el<HTMLSelectElement>('skill-select');
   private startButton = el<HTMLButtonElement>('start-button');
   private resumeButton = el<HTMLButtonElement>('resume-button');
-  private skillDialog = el<HTMLDivElement>('skill-dialog');
-  private skillList = el<HTMLDivElement>('skill-list');
   private statusEl = el<HTMLSpanElement>('menu-status');
   private fileInput = el<HTMLInputElement>('file-input');
   private volumeSlider = el<HTMLInputElement>('volume-slider');
   private volumeValue = el<HTMLSpanElement>('volume-value');
   private autorunCheckbox = el<HTMLInputElement>('autorun-checkbox');
   private tabButtons = {
-    files: el<HTMLButtonElement>('tab-button-files'),
+    newgame: el<HTMLButtonElement>('tab-button-newgame'),
     settings: el<HTMLButtonElement>('tab-button-settings'),
   };
   private tabPanels = {
-    files: el<HTMLDivElement>('tab-files'),
+    newgame: el<HTMLDivElement>('tab-newgame'),
     settings: el<HTMLDivElement>('tab-settings'),
   };
 
@@ -95,16 +94,16 @@ export class Menu {
       this.refreshButtons();
       this.saveSelection();
     });
-    this.startButton.addEventListener('click', () => this.newGame());
+    this.startButton.addEventListener('click', () => this.startWithSkill(this.currentSkill()));
     this.resumeButton.addEventListener('click', () => this.onResume());
     for (const tab of Object.keys(this.tabButtons) as Tab[]) {
       this.tabButtons[tab].addEventListener('click', () => this.setTab(tab));
     }
     this.installDropTarget();
-    this.installSkillDialog();
+    this.installSkillSelect();
     this.installVolume();
     this.installAutorun();
-    this.setTab('files');
+    this.setTab('newgame');
     el<HTMLDivElement>('menu-version').textContent = `v${VERSION}`;
   }
 
@@ -155,7 +154,6 @@ export class Menu {
   }
 
   close(): void {
-    this.dismissDialog();
     this.root.classList.add('hidden');
   }
 
@@ -363,50 +361,38 @@ export class Menu {
   }
 
   /**
-   * The difficulty prompt "New game" opens. Each skill is a button that starts
-   * the level straight away — there is no confirm step, since picking a
-   * difficulty *is* the decision. The last one played is highlighted and focused,
-   * so Enter repeats it. Static, independent of the selected WADs: built once
-   * here and only shown/hidden afterwards.
+   * The difficulty select, at the bottom of the New Game tab. Static,
+   * independent of the selected WADs: built once here. Picking a skill writes it
+   * straight to storage, so the next visit — and any ?map= deep link, which
+   * never passes the menu — starts at whatever was played last.
    */
-  private installSkillDialog(): void {
-    const current = this.storedSkill();
+  private installSkillSelect(): void {
     for (const skill of [1, 2, 3, 4, 5] as const) {
-      const row = document.createElement('button');
-      row.className = 'row' + (skill === current ? ' selected' : '');
-      row.textContent = SKILL_NAMES[skill];
-      row.addEventListener('click', () => {
-        globalThis.localStorage?.setItem(SKILL_STORAGE_KEY, String(skill));
-        for (const other of this.skillList.children) {
-          other.classList.toggle('selected', other === row);
-        }
-        this.dismissDialog();
-        this.startWithSkill(skill);
-      });
-      this.skillList.append(row);
+      const option = document.createElement('option');
+      option.value = String(skill);
+      option.textContent = SKILL_NAMES[skill];
+      this.skillSelect.append(option);
     }
-
-    el<HTMLButtonElement>('skill-cancel').addEventListener('click', () => this.dismissDialog());
-    // Only a click on the backdrop itself, not one that bubbled out of the panel.
-    this.skillDialog.addEventListener('click', (e) => {
-      if (e.target === this.skillDialog) this.dismissDialog();
+    this.skillSelect.value = String(this.storedSkill());
+    this.skillSelect.addEventListener('change', () => {
+      globalThis.localStorage?.setItem(SKILL_STORAGE_KEY, this.skillSelect.value);
     });
-  }
-
-  /**
-   * Hides the difficulty prompt, reporting whether it was open — that answer is
-   * what lets Escape close the prompt without also resuming the game.
-   */
-  dismissDialog(): boolean {
-    const wasOpen = !this.skillDialog.classList.contains('hidden');
-    this.skillDialog.classList.add('hidden');
-    return wasOpen;
   }
 
   /** Reads back the last skill picked; falls back to vanilla's own default when unset or invalid. */
   private storedSkill(): Skill {
     const stored = Number(globalThis.localStorage?.getItem(SKILL_STORAGE_KEY));
     return stored >= 1 && stored <= 5 ? (stored as Skill) : DEFAULT_SKILL;
+  }
+
+  /**
+   * What a start runs at: the select, which `installSkillSelect` seeded from
+   * storage. Reading the control rather than storage keeps the pick working
+   * where `localStorage` is unavailable and the write silently went nowhere.
+   */
+  private currentSkill(): Skill {
+    const value = Number(this.skillSelect.value);
+    return value >= 1 && value <= 5 ? (value as Skill) : DEFAULT_SKILL;
   }
 
   /**
@@ -532,19 +518,10 @@ export class Menu {
 
   /**
    * Starts with whatever is currently selected — used by ?map= deep links,
-   * which skip the menu entirely and so must not stop at the difficulty prompt:
-   * they run at the last skill picked.
+   * which skip the menu entirely and so run at the last skill picked.
    */
   submit(): void {
-    this.startWithSkill(this.storedSkill());
-  }
-
-  /** "New game": the difficulty is asked for here, not carried in the settings. */
-  private newGame(): void {
-    if (!this.isReady) return;
-    this.skillDialog.classList.remove('hidden');
-    // Focus the last skill played, so Enter starts at it without a second click.
-    this.skillList.querySelector<HTMLButtonElement>('.row.selected')?.focus();
+    this.startWithSkill(this.currentSkill());
   }
 
   private startWithSkill(skill: Skill): void {

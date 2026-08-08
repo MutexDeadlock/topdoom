@@ -19,7 +19,8 @@ WADs are not part of the repo.
 
 ## Start menu
 
-Everything under `public/wads/iwad/` and `public/wads/pwad/` shows up on the menu automatically:
+Everything under `public/wads/iwad/` and `public/wads/pwad/` shows up on the **New Game** tab
+automatically:
 
 - **Game WAD** — offered from `public/wads/iwad/`. Normally an IWAD, but a PWAD carrying maps
   works too if you put it there.
@@ -27,9 +28,9 @@ Everything under `public/wads/iwad/` and `public/wads/pwad/` shows up on the men
   ticked. An add-on whose maps clash with the selected game WAD's naming scheme is disabled
   automatically; ones with no maps of their own (textures, sounds, ...) always stay selectable.
 - **Level** — every map in the resulting set, grouped by episode for DOOM 1.
+- **Difficulty** — the five vanilla skills; **Start new game** runs the level at the one picked.
 
-**New game** asks for the difficulty — one click on a skill starts the level. Your game WAD,
-add-ons and level are remembered for the next visit. Files outside `public/wads/` go through
+Your game WAD, add-ons, level and difficulty are remembered for the next visit. Files outside `public/wads/` go through
 *Load from disk* or by dropping them on the window.
 
 `Esc` pauses and brings up the menu over the level; **Return to game** or `Esc` again resumes

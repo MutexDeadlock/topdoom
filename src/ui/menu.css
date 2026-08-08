@@ -682,68 +682,6 @@ canvas {
   display: none;
 }
 
-/*
- * Sits above the menu panel (z 20) and below #fatal-error (30). Its own
- * backdrop is what makes the panel behind it unclickable while it's open, so
- * nothing else has to be disabled.
- */
-#skill-dialog {
-  position: fixed;
-  inset: 0;
-  z-index: 21;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(0, 0, 0, 0.6);
-}
-
-#skill-dialog.hidden {
-  display: none;
-}
-
-#skill-dialog .panel {
-  max-width: 340px;
-}
-
-#skill-dialog h2 {
-  margin-bottom: 12px;
-}
-
-/*
- * The skills are buttons that start the game, so they need `#menu button`'s
- * chrome stripped back to the plain list-row look the add-on list uses. These
- * rules come after `#menu .row` and match it in specificity, so they win.
- */
-#skill-list .row {
-  width: 100%;
-  border: none;
-  border-bottom: 1px solid #1b1b21;
-  background: none;
-  color: inherit;
-  text-align: left;
-  letter-spacing: 0;
-}
-
-#skill-list .row:last-child {
-  border-bottom: none;
-}
-
-#skill-list .row:hover,
-#skill-list .row:focus-visible {
-  background: #17171c;
-  color: #fff;
-}
-
-#skill-list .row.selected {
-  background: #241417;
-  color: #fff;
-}
-
-#skill-dialog footer {
-  justify-content: flex-end;
-}
-
 #menu-status {
   color: #7f7a74;
 }

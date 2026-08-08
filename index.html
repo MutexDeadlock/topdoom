@@ -74,12 +74,12 @@
         </header>
 
         <div class="tabs">
-          <button class="tab" id="tab-button-files" data-tab="files">Game Files</button>
+          <button class="tab" id="tab-button-newgame" data-tab="newgame">New Game</button>
           <button class="tab" id="tab-button-settings" data-tab="settings">Settings</button>
         </div>
 
         <div class="tab-panels">
-          <div class="tab-panel" id="tab-files">
+          <div class="tab-panel" id="tab-newgame">
             <section>
               <h2>Game WAD</h2>
               <select id="iwad-select"></select>
@@ -95,6 +95,11 @@
             <section>
               <h2>Level</h2>
               <select id="level-select"></select>
+            </section>
+
+            <section>
+              <h2>Difficulty</h2>
+              <select id="skill-select"></select>
             </section>
           </div>
 
@@ -118,20 +123,10 @@
         </div>
 
         <footer>
-          <button class="primary" id="start-button">New game</button>
+          <button class="primary" id="start-button">Start new game</button>
           <span id="menu-status"></span>
           <button id="resume-button" class="hidden">Return to game</button>
         </footer>
-      </div>
-
-      <div id="skill-dialog" class="hidden">
-        <div class="panel">
-          <h2>Difficulty</h2>
-          <div class="list" id="skill-list"></div>
-          <footer>
-            <button id="skill-cancel">Cancel</button>
-          </footer>
-        </div>
       </div>
 
       <input type="file" id="file-input" accept=".wad,.WAD" hidden />

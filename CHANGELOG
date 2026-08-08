@@ -14,7 +14,7 @@ Features and improvements
   - main menu overhaul
     - opens over the paused level instead of hiding it, and got a
       "Return to game" button next to it
-    - "Start" is now "New game" and asks for the difficulty, which
+    - "Gamre files" is now "New game" and asks for the difficulty, which
       left the Settings tab
     - the game WAD, add-ons and level you picked are remembered
       between sessions

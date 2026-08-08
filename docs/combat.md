@@ -127,16 +127,7 @@ what made every monster shot detonate on the spot the player had been standing a
 sites then had to fake a far-away aim point to undo it, which is the shape this parameter replaces.
 See docs/monsters.md § Hitscan vs. projectile.
 
-**`WEAPON_RANGE` (`MISSILERANGE`, 2048) bounds bullets only; a missile passes `World.mapSpan`.**
-`MISSILERANGE` appears in vanilla exactly three times, all of them `P_AimLineAttack`/`P_LineAttack`
-calls in `p_enemy.c` — `P_SpawnMissile` gives a missile momentum and no distance budget at all, and
-it flies until `P_XYMovement`, `P_ZMovement` or `PIT_CheckThing` stops it. Capping a missile at 2048
-made every rocket, fireball and plasma ball burst harmlessly in mid-air on any map with sightlines
-longer than that: on NUTS.WAD MAP01, 21 of 36 directions traced from the player start ran out at
-exactly 2048 with no wall in front of them (the walls are 2764–8563 units out), which is why the
-arachnotrons' plasma appeared to have a range. `mapSpan` — the map's bounding-box diagonal — is the
-shortest trace length that can never itself be what ends a flight; the engine needs *some* finite
-number, and any in-map wall is nearer than that.
+What each caller actually passes is § Range below.
 
 **Free shot** (no target): flat at the shooter's fire height, out to that range. Blocked by a line
 with no opening at all (a genuinely one-sided wall, or a two-sided line whose opening has closed,
@@ -187,6 +178,40 @@ under `hasLineOfSight` below — and here it is load-bearing rather than merely 
 range is the whole map, and `linesNear`'s radius box would gather every line in it on every shot.
 Measured on NUTS.WAD MAP01: a full-span walk beats even the old 2048-radius box (7 candidate lines
 vs 19), while a box at map span costs 17× the walk.
+
+## Range
+
+Three different bounds reach `shotPath`'s `range`, and which one a shot gets depends on who fired it
+and what kind of shot it is.
+
+**A missile passes `World.mapSpan` — it has no range budget in vanilla at all.** `MISSILERANGE`
+appears in `linuxdoom-1.10` exactly three times, all of them `P_AimLineAttack`/`P_LineAttack` calls
+in `p_enemy.c`; `P_SpawnMissile` gives a missile momentum and nothing else, and it flies until
+`P_XYMovement`, `P_ZMovement` or `PIT_CheckThing` stops it. Capping a missile at 2048 made every
+rocket, fireball and plasma ball burst harmlessly in mid-air on any map with sightlines longer than
+that: on NUTS.WAD MAP01, 21 of 36 directions traced from the player start ran out at exactly 2048
+with no wall in front of them (the walls are 2764–8563 units out), which is why the arachnotrons'
+plasma appeared to have a range. `mapSpan` — the map's bounding-box diagonal — is the shortest trace
+length that can never itself be what ends a flight; the engine needs *some* finite number, and any
+in-map wall is nearer than that.
+
+**A monster's bullet passes `WEAPON_RANGE` (`MISSILERANGE`, 2048), a player's free bullet the longer
+`PLAYER_WEAPON_RANGE` (8192).** This split is **the one place this engine follows ZDoom over
+`linuxdoom-1.10`**, and it is deliberate: ZDoom made the same change for the same reason, defining
+`PLAYERMISSILERANGE` (`src/playsim/p_local.h`) and defaulting `A_FireBullets`'s `range` to it
+(`wadsrc/static/zscript/actors/inventory/stateprovider.zs`) while leaving every monster attack on
+`MISSILERANGE`. Vanilla shares 2048 between the two, and in a first-person view a target that far
+out is a few pixels tall; the dollhouse camera frames roughly 5,000 map units ahead of the player
+(docs/fogofwar.md § Reveal radius), so 2048 put a hard wall in the middle of the visible playfield —
+bullets stopped dead in mid-air at a monster the player could plainly see and had a clear line to.
+Repro: a 3,648-unit corridor with a chaingunner at the far end (3,584 units out) is unwinnable at
+2048 and plays correctly at 8192, matching GZDoom, where the asymmetry is the point — the
+chaingunner's own bullets still expire at 2048, so it cannot shoot back.
+
+**A locked-on shot ignores all three and stops at its target**, which is `range`'s default whenever
+`target` is given — see § shotPath for why aim and distance are separate parameters at all. Note this
+makes the lock, not `PLAYER_WEAPON_RANGE`, the real bound on a clicked shot; the cursor can only lock
+what the camera draws, so it never reaches further than the player can see.
 
 ## Shoot-triggered specials
 
@@ -438,7 +463,8 @@ speed:
   NUTS.WAD this one change took `hasLineOfSight` from dominating the frame to a small fraction of it.
 - **`SIGHT_MAX_HEIGHT_SAMPLES` caps the floor/ceiling sampling** so the step stretches past
   `SIGHT_HEIGHT_SAMPLE_STEP` instead of the sample count growing without bound. 32 is chosen so
-  nothing within `WEAPON_RANGE` (2048, the furthest anything can shoot) changes at all — 2048/64 is
+  nothing within `WEAPON_RANGE` (2048, the furthest a monster can shoot, and no player shot's
+  outcome is decided here — `shotPath` walks openings itself) changes at all — 2048/64 is
   exactly 32 — while a monster 12,000 units away stops costing ~180 BSP walks per frame to answer a
   question no attack could act on.
 

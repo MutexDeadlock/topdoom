@@ -4,8 +4,19 @@ import { dampen } from '../util/damping.ts';
 import type { WallOccluder } from '../render/mapmesh.ts';
 import type { World } from './world.ts';
 
-/** How far the player can reveal, in map units. Roughly what the camera frames. */
-const SIGHT_RADIUS = 3000;
+/**
+ * How far the player can reveal, in map units — derived from what the camera
+ * actually frames, not tuned by feel. With `TopDownCamera`'s defaults the eye
+ * sits `cos(60°)·480 = 240` above the followed point and `sin(60°)·480 = 416`
+ * behind it, looking 30° below horizontal; the top edge of a 55° vertical FOV
+ * is then 2.5° below horizontal and meets the floor `240/tan(2.5°) ≈ 5500`
+ * out, i.e. ~5080 past the player. A radius shorter than that leaves geometry
+ * the player is plainly looking at sitting in the dark — and, because
+ * `ThingLayer` gates both rendering and shootability on fog alpha, a monster
+ * standing in it is invisible *and* unhittable while it shoots back.
+ * See docs/fogofwar.md § Reveal radius.
+ */
+const SIGHT_RADIUS = 5100;
 /** Exponential smoothing rate (1/seconds) for the reveal, gentler than wall occlusion. */
 const FADE_SPEED = 3;
 /** Snap-to-target threshold for `dampen` — see its doc for why this matters. */

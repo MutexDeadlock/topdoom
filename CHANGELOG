@@ -31,13 +31,19 @@ Fixed bugs
       only sets the shot's slope, so every pellet of a shotgun blast now
       flies its own spread angle and hits or misses on its own
     - every weapon number is now vanilla's own
+    - fixed your bullets dying in mid-air 2048 units out; your bullets
+      now reach 8192 like GZDoom's, while monster bullets keep vanilla's
+      2048 and so still can't reach that far back
+  - fixed the fog of war stopping 3000 units out when the camera frames
+    about 5000, so anything between the two sat in the dark - a monster
+    there was invisible, un-targetable and unhittable while shooting at you
   - fixed THINGs were shaded by whatever their sector's light was at spawn
     instead of tracking it live, so they went stale in any blinking,
     strobing or switch-triggered sector
     - in-flight projectiles and the arch-vile's warning flame had the 
       same bug while moving between differently-lit sectors
   - fixed a sector moved only by a boss death was left in the static render
-    batch, so it was drawn twice once its mover mesh appeared
+    batch, so it was drawn twice once its mover mesh appeared (should fix E1M8)
   - fixed triggering a second mover on a sector that already had one running
     hijacked it instead of being ignored
 

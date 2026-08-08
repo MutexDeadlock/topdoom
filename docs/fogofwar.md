@@ -46,6 +46,26 @@ player plainly had. What actually hides a secret is geometry, and `blocksSight` 
 across DOOM E1M1–E1M8 and DOOM2 MAP01–MAP10, **none of the 197 secret subsectors is visible from the
 player start**.
 
+## Reveal radius
+
+**`SIGHT_RADIUS` (5100) is derived from what the camera frames, not tuned by feel**, and it has to
+cover the *furthest* thing on screen rather than a comfortable average. With `TopDownCamera`'s
+defaults (`tiltDeg` 60, `distance` 480, 55° vertical FOV) the eye sits `cos(60°)·480 = 240` above the
+followed point and `sin(60°)·480 = 416` behind it, looking 30° below horizontal; the top edge of the
+frustum is then 2.5° below horizontal and meets the floor `240/tan(2.5°) ≈ 5500` units out, i.e.
+~5080 past the player. It is a radius rather than a frustum test because the camera yaws freely, so
+any direction can become the forward one.
+
+**Anything inside that distance and outside `SIGHT_RADIUS` is a black hole in the middle of a view
+the player plainly has** — and it is not only cosmetic: `ThingLayer` gates rendering, `pickMonster`
+and `raycastMonster` all on fog alpha, so a monster standing there is invisible, un-lockable *and*
+unhittable while it shoots back. The radius was 3000 and a chaingunner 3,584 units down a straight
+corridor was exactly that: audible, firing, and impossible to see or shoot. The cost of covering the
+real frame is small, because on real geometry it is walls and not the radius that bound reveal —
+measured 3000 → 5100 with the player standing at spawn: freedoom2 MAP03 1.98 → 2.23 ms/frame average
+(70 subsectors revealed either way), DOOM2 MAP13 0.48 → 0.51 ms (78 → 79), DOOM2 MAP01 and MAP29
+unchanged in both time and count.
+
 Each subsector is sampled at its centroid first (one ray settles the common case, and the search stops
 at the first sample that comes back clear, so the rest cost nothing usually), then at every corner
 *and every edge midpoint*, each pulled slightly inward. **Corners alone leave holes**: a long subsector

@@ -441,8 +441,9 @@ const SIGHT_HEIGHT_SAMPLE_STEP = 64;
 /**
  * Cap on floor/ceiling samples per sightline, whatever its length — the step
  * stretches instead of the count growing. 32 keeps full precision within
- * `WEAPON_RANGE` (2048/64 = 32) so nothing that can end in a shot changes;
- * see docs/combat.md § hasLineOfSight.
+ * `WEAPON_RANGE` (2048/64 = 32) so nothing that can end in a monster's shot
+ * changes; a player's longer shot never consults this function at all.
+ * See docs/combat.md § hasLineOfSight.
  */
 const SIGHT_MAX_HEIGHT_SAMPLES = 32;
 
@@ -854,8 +855,16 @@ export function slideMove(
   return { x: nx, y: ny };
 }
 
-/** Vanilla's `MISSILERANGE` (`32*64`), what every hitscan attack passes to `P_LineAttack`. */
+/** Vanilla's `MISSILERANGE` (`32*64`), what every *monster* hitscan attack passes to `P_LineAttack`. */
 export const WEAPON_RANGE = 2048;
+
+/**
+ * What a **player's** free hitscan is bounded by instead. ZDoom's
+ * `PLAYERMISSILERANGE` (`p_local.h`, `A_FireBullets`'s `range` default), not
+ * vanilla's shared `MISSILERANGE` — the one place this engine follows ZDoom
+ * over `linuxdoom-1.10`, for the reason recorded in docs/combat.md § Range.
+ */
+export const PLAYER_WEAPON_RANGE = 8192;
 
 /**
  * Each candidate wall is extended this far past both endpoints before the ray
@@ -966,10 +975,10 @@ export interface ShotPath extends Pos3 {
  * it defaults to stopping *at* the target (a player's locked-on shot, whose
  * target can't move mid-flight) but a caller can pass its own, because a shot
  * keeps going down the aimed slope whether or not the target is still there. A
- * monster's bullet passes `WEAPON_RANGE` (`P_LineAttack`'s `MISSILERANGE`); a
- * missile has no range budget in vanilla at all and passes `World.mapSpan` —
- * see docs/monsters.md § Hitscan vs. projectile and § Monster projectiles in
- * flight.
+ * monster's bullet passes `WEAPON_RANGE` (`P_LineAttack`'s `MISSILERANGE`), a
+ * player's free bullet the longer `PLAYER_WEAPON_RANGE`, and a missile — which
+ * has no range budget in vanilla at all — `World.mapSpan`. See docs/combat.md
+ * § Range and docs/monsters.md § Hitscan vs. projectile.
  *
  * `lockedOn` (default: true whenever `target` is given) switches blocking from
  * `blocksShot`'s single fixed ray to a **slope wedge**, vanilla's

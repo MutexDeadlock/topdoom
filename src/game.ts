@@ -8,28 +8,26 @@ import { AnimatedTextures } from './render/textureanim.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import type { Viewport } from './render/viewport.ts';
-import { buildThingSprites, MONSTER_HIT_HEIGHT, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
-import { MONSTER_FIRE_HEIGHT, thrustSpeed } from './game/monsters.ts';
+import { buildThingSprites, type ThingLayer } from './game/things.ts';
+import {
+  PLAYER_ACTION_FRAME_SECONDS,
+  PLAYER_ATTACK_FRAMES,
+  PLAYER_DEATH_FRAME_SECONDS,
+  PLAYER_DEATH_FRAMES,
+  PLAYER_PAIN_FRAMES,
+} from './game/thingdefs.ts';
+import { MonsterAttacks, thrustSpeed } from './game/monsters.ts';
 import { collectFadeTargets, FlatFader, TextureScroller, WallFader } from './render/occlusion.ts';
-import { World, WEAPON_RANGE, hasLineOfSight, shotPath } from './game/world.ts';
-import { AIM_HEIGHT_OFFSET, GRAVITY, Player, PLAYER_HEIGHT, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
-import { applyBarrelExplosion, applyRadiusDamage, type CombatContext } from './game/combat.ts';
+import { World } from './game/world.ts';
+import { AIM_HEIGHT_OFFSET, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
+import { applyBarrelExplosion, type CombatContext } from './game/combat.ts';
 import { EffectLayer } from './game/effects.ts';
-import { ProjectileLayer, spawnWallPuff } from './game/projectiles.ts';
+import { ProjectileLayer } from './game/projectiles.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
 import { IconOfSin } from './game/icon.ts';
-import { blocksCeilingLower, blocksFloorRise } from './game/moverblocking.ts';
+import { applyCrushDamage, blocksCeilingLower, blocksFloorRise } from './game/moverblocking.ts';
 import { SectorEffects } from './game/sectoreffects.ts';
-import {
-  IMPACT_FRAME_SECONDS,
-  MONSTER_TRACER_COLOR,
-  TFOG_SPAWN_OFFSET,
-  VILE_FIRE_FRAMES,
-  VILE_FIRE_OFFSET,
-  VILE_WINDUP_TRACK_SECONDS,
-} from './game/effectdefs.ts';
-import { CRUSH_DAMAGE } from './wad/specials.ts';
 import { Hud } from './ui/hud.ts';
 import { Crosshair } from './ui/crosshair.ts';
 import { CenterMessage } from './ui/message.ts';
@@ -49,67 +47,14 @@ import {
   tickPowers,
   type Inventory,
 } from './game/inventory.ts';
-import { WEAPONS, WeaponSystem, triangularSpread } from './game/weapons.ts';
+import { WEAPONS, WeaponSystem } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
-import { PLAYER_ORIGIN, monsterOrigin } from './audio/sfx.ts';
+import { PLAYER_ORIGIN } from './audio/sfx.ts';
 import { SoundBank } from './wad/sound.ts';
-import type { Placement, Pos2, Pos3 } from './types.ts';
-import { DOOM_TIC } from './constants.ts';
+import type { Placement, Pos2 } from './types.ts';
 
 /** Combined radius (map units) within which an item is close enough to pick up. */
 const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
-
-/**
- * Player death frames, confirmed against `PLAY`'s lump names: its
- * rotation-0-only tail runs H-W, split as DIE1-7 (H-N, this sequence) then
- * XDIE1-9 (O-W, the gib variant this engine doesn't model).
- */
-const PLAYER_DEATH_FRAMES = ['H', 'I', 'J', 'K', 'L', 'M', 'N'];
-const PLAYER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
-
-/**
- * Player attack/pain frames — `info.c` puts `S_PLAY_ATK1`/`ATK2` at `E`/`F`
- * and `S_PLAY_PAIN`/`PAIN2` at `G`, right before `PLAYER_DEATH_FRAMES` starts
- * at `H`. Played via `SpriteAnimator.playOnce`, not `die`: both hand back to
- * the walk/idle cycle when they finish.
- */
-const PLAYER_ATTACK_FRAMES = ['E', 'F'];
-const PLAYER_PAIN_FRAMES = ['G'];
-const PLAYER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;
-
-/**
- * How fast a fall has to end to knock the wind out of the player. Vanilla's
- * `P_ZMovement` grunts below `momz < -8` units/tic, which under *its* gravity of
- * 1 unit/tic² is reached by a drop of 32 units — so the threshold is derived
- * from that drop height under this engine's own (feel-tuned, stronger)
- * `GRAVITY` rather than copying the speed. Matching the speed instead would
- * make shallower ledges grunt than vanilla's do, and 24 units — DOOM's most
- * common step height — sits right at that boundary.
- */
-const HARD_LANDING_SPEED = Math.sqrt(2 * GRAVITY * 32);
-
-/**
- * How far off-aim each monster bullet is thrown — `p_enemy.c`'s
- * `(P_Random()-P_Random())<<20` BAM, ±255/4096 of a full turn, triangular.
- * Why it is the difference between a survivable gunner and a lethal one:
- * docs/monsters.md § Hitscan vs. projectile.
- */
-const MONSTER_BULLET_SPREAD_DEG = (255 / 4096) * 360;
-
-/**
- * Slack added to the player's radius when testing a monster's hitscan bolt —
- * it makes a circle present the same average target as vanilla's 32-unit
- * *box*, and covers nothing else. docs/monsters.md § Hitscan vs. projectile.
- */
-const MONSTER_BULLET_SLOP = 4;
-
-/**
- * Vanilla's `A_FaceTarget`: aiming at an `MF_SHADOW` thing (here only ever the
- * player under partial invisibility) throws the facing off by
- * `(P_Random()-P_Random())<<21` BAM, ±255/2048 of a full turn. That is the
- * entire blur-sphere mechanic — it never touches sight or waking.
- */
-const SHADOW_AIM_SPREAD_DEG = (255 / 2048) * 360;
 
 /**
  * Shown center-screen (`ui/message.ts`) with `radio` — vanilla's `DSRADIO`, which it uses for
@@ -149,7 +94,9 @@ export class Game {
   private effects: EffectLayer;
   /** Everything in flight, player's and monsters' alike — see game/projectiles.ts. */
   private projectiles: ProjectileLayer;
-  /** The live-level view `projectiles` and the splash helpers read this class through — see game/combat.ts. */
+  /** Turns the attacks `ThingLayer.update` reports into damage, tracers and effects — see game/monsters.ts § Attack resolution. */
+  private monsterAttacks: MonsterAttacks;
+  /** The live-level view `projectiles`, `monsterAttacks` and the splash helpers read this class through — see game/combat.ts. */
   private combat: CombatContext;
   private weaponSystem = new WeaponSystem();
   /**
@@ -241,15 +188,13 @@ export class Game {
     // frame A (this list's first entry) until the player is actually moving.
     this.playerActor = new SpriteActor(this.spriteBank, this.spriteMaterials, 'PLAY', ['A', 'B', 'C', 'D']);
     this.scene.add(this.playerActor.mesh);
-    // The vile-flame resolver stays here rather than in EffectLayer: where the
-    // flame belongs depends on live monster/player state (and on A_Fire's
-    // sightline rule), which is this class's business, not the batch's.
-    this.effects = new EffectLayer(this.scene, this.spriteBank, this.spriteMaterials, audio, (vileId, targetId) => {
-      const vile = this.things?.monsterById(vileId);
-      const target = targetId === null ? this.player : this.things?.monsterById(targetId);
-      if (!vile || !target || !hasLineOfSight(this.world, vile, target)) return null;
-      return this.vileFireFrontOf(target);
-    });
+    // The vile-flame resolver is `monsterAttacks`', not the batch's — where the
+    // flame belongs depends on live monster/player state. Reached through a
+    // closure because `monsterAttacks` needs `effects` to exist first, and is
+    // only ever called from a frame, long after both are built.
+    this.effects = new EffectLayer(this.scene, this.spriteBank, this.spriteMaterials, audio, (vileId, targetId) =>
+      this.monsterAttacks.vileFlameFor(vileId, targetId),
+    );
     // `world`/`things`/`player`/`inventory` are all replaced on a map load (and
     // `inventory` again on restart), so the context reads them back off this
     // instance every time rather than capturing them — hence the getters, and
@@ -272,6 +217,9 @@ export class Game {
       triggerShot: (lineIndex, byMonster) => this.specials?.triggerShot(lineIndex, this.inventory.keys, byMonster),
     };
     this.projectiles = new ProjectileLayer(this.combat, this.effects, this.spriteBank, this.spriteMaterials, audio);
+    this.monsterAttacks = new MonsterAttacks(this.combat, this.effects, this.projectiles, audio, () =>
+      hasPower(this.inventory, 'invisibility'),
+    );
 
     // Bound once rather than per frame: `playerActor` is never reassigned.
     this.screen = new ScreenEffects(view.renderer, (opacity) => this.playerActor.setOpacity(opacity));
@@ -360,22 +308,21 @@ export class Game {
         this.pendingExit = true;
       },
       (dest) => {
-        // Matches vanilla P_Teleport: a fog puff where the player stood, and
-        // another just ahead of the landing spot along the direction it
-        // faces — captured before/after teleportTo moves the player.
-        this.effects.spawnTeleportFog(this.player);
+        // The origin puff's position has to be captured before teleportTo
+        // overwrites it; the landing `z` only exists after. See
+        // EffectLayer.spawnTeleportPair for the pair itself.
+        const from = { x: this.player.x, y: this.player.y, z: this.player.z };
         this.player.teleportTo(dest);
-        this.effects.spawnTeleportFog({
-          x: this.player.x + Math.cos(dest.angle) * TFOG_SPAWN_OFFSET,
-          y: this.player.y + Math.sin(dest.angle) * TFOG_SPAWN_OFFSET,
-          z: this.player.z,
-        });
+        this.effects.spawnTeleportPair(from, dest, this.player.z);
         // Snap the camera to face the same way the player now does, same as
         // the initial spawn — a teleport should reorient the view instantly,
         // not leave it aimed at wherever the old spot happened to be.
         this.view.camera.yawDeg = (dest.angle * 180) / Math.PI - 90;
       },
-      (sectorIndex) => this.applyCrushDamage(sectorIndex),
+      (sectorIndex) =>
+        applyCrushDamage(this.world, this.map, this.things, this.player, sectorIndex, (amount) =>
+          this.damagePlayer(amount),
+        ),
       (sectorIndex, ceilingHeight) =>
         blocksCeilingLower(this.world, this.map, this.things, this.player, sectorIndex, ceilingHeight),
       (sectorIndex, floorHeight) =>
@@ -495,192 +442,6 @@ export class Game {
   }
 
   /**
-   * Applies a monster's damage to whatever it landed on — the player when
-   * `targetId` is null, otherwise another monster, tagged with who did it so
-   * `ThingLayer.damage` can run vanilla's retaliation rule and start an
-   * infight. `fromX`/`fromY` are the attacking monster's own position, for
-   * the knockback thrust both `damagePlayer` and `ThingLayer.damage` derive.
-   */
-  private damageFromMonster(
-    targetId: number | null,
-    damage: number,
-    sourceId: number,
-    sourceType: number,
-    fromX: number,
-    fromY: number,
-  ): void {
-    if (targetId === null) this.damagePlayer(damage, fromX, fromY);
-    else this.things?.damage(targetId, damage, { id: sourceId, type: sourceType }, undefined, fromX, fromY);
-  }
-
-  /**
-   * The arch-vile's `A_VileAttack` (`atk.blast`): not a traced bolt at all —
-   * vanilla damages `actor->target` directly (guaranteed, nothing to miss
-   * along), launches it upward, then blasts a radius. No tracer or projectile
-   * sprite; the `FIRE` spawned here is `MT_FIRE`'s final burst, taking over
-   * from `spawnVileWindupFire`'s. See docs/monsters.md § The arch-vile.
-   */
-  private resolveVileBlast(atk: MonsterAttackEvent): void {
-    if (!atk.blast) return;
-    const victim = atk.targetId === null ? null : this.things?.monsterById(atk.targetId);
-    const at = victim ? { x: victim.x, y: victim.y, z: victim.z } : { x: this.player.x, y: this.player.y, z: this.player.z };
-    if (atk.targetId === null) {
-      // A no-op hit (already dead, or invulnerable) reports false — see
-      // damagePlayer's doc — and skips the knockup along with it.
-      if (this.damagePlayer(atk.damage, atk.x, atk.y)) this.player.launchUpward(atk.blast.knockUpSpeed);
-    } else {
-      this.things?.damage(
-        atk.targetId,
-        atk.damage,
-        { id: atk.sourceId, type: atk.sourceType },
-        atk.blast.knockUpSpeed,
-        atk.x,
-        atk.y,
-      );
-    }
-    // A_VileAttack's own sound is the barrel/rocket explosion, played on the
-    // vile rather than on the flame it just placed.
-    this.audio.play('barexp', atk, monsterOrigin(atk.sourceId));
-    const offset = this.vileFireOffset(atk, at);
-    const fireAt = { x: at.x + offset.x, y: at.y + offset.y, z: at.z };
-    applyRadiusDamage(this.combat, fireAt, atk.blast.splashRadius, atk.blast.splashDamage, true, {
-      id: atk.sourceId,
-      type: atk.sourceType,
-    });
-    this.effects.spawnImpact('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, fireAt);
-  }
-
-  /**
-   * The arch-vile's warning flame, spawned when its windup starts — vanilla's
-   * `MT_FIRE`. Reuses `EffectLayer.spawn` but overrides the lifetime to the windup's
-   * own length, so `resolveVileBlast`'s burst (or nothing, if the shot
-   * fizzles) takes over with no explicit hand-off. Positioned up front, as
-   * `A_VileTarget` calls `A_Fire` immediately after spawning. See
-   * docs/monsters.md § The arch-vile.
-   */
-  private spawnVileWindupFire(atk: MonsterAttackEvent): void {
-    const target = atk.targetId === null ? this.player : this.things?.monsterById(atk.targetId);
-    if (!target) return;
-    const front = this.vileFireFrontOf(target);
-    // A_StartFire, on the flame itself (`vilatk` comes from the vile at the same
-    // moment, via MonsterSounds.windup) — the two together are the warning.
-    this.audio.play('flamst', front);
-    const effect = this.effects.spawn('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, front);
-    if (!effect) return;
-    effect.lifetime = VILE_WINDUP_TRACK_SECONDS;
-    effect.followTargetId = atk.targetId;
-    effect.vileSourceId = atk.sourceId;
-    this.effects.addImpact(effect);
-  }
-
-  /**
-   * Vanilla's `A_Fire`: 24 units in front of wherever the target is *currently
-   * facing*, not toward the vile — contrast `vileFireOffset`, which is
-   * `A_VileAttack`'s genuinely different final reposition.
-   */
-  private vileFireFrontOf(target: Pos3 & { angle: number }): Pos3 {
-    return {
-      x: target.x + Math.cos(target.angle) * VILE_FIRE_OFFSET,
-      y: target.y + Math.sin(target.angle) * VILE_FIRE_OFFSET,
-      z: target.z,
-    };
-  }
-
-  /**
-   * `resolveVileBlast`'s one-time final reposition — `A_VileAttack` moves the
-   * fire 24 units from the target back toward the shooter, a genuinely
-   * different formula from the windup's target-facing one, not an
-   * inconsistency here. The offset also keeps the flame from spawning at the
-   * target's exact x/y/z, where two anchored billboards hide each other.
-   */
-  private vileFireOffset(atk: MonsterAttackEvent, targetPos: Pos2): Pos2 {
-    const towardVile = Math.atan2(atk.y - targetPos.y, atk.x - targetPos.x);
-    return { x: Math.cos(towardVile) * VILE_FIRE_OFFSET, y: Math.sin(towardVile) * VILE_FIRE_OFFSET };
-  }
-
-  /**
-   * Fires every bullet of a monster's hitscan attack: one traced bolt per
-   * `MonsterAttack.bullets` entry, each thrown off by its own
-   * `MONSTER_BULLET_SPREAD_DEG` draw and carrying its own damage roll, so a
-   * shotgun guy's three pellets land independently. All of them share the one
-   * aim slope, matching `A_SPosAttack` computing `slope` once before its loop.
-   */
-  private resolveMonsterHitscan(atk: MonsterAttackEvent): void {
-    // Sloped from the monster's fire height to the target's, the way
-    // P_AimLineAttack works out a slope before P_LineAttack traces it — what
-    // lets a zombieman on a ledge shoot down at you.
-    const victim = atk.targetId === null ? null : this.things?.monsterById(atk.targetId);
-    const aim = victim
-      ? { x: victim.x, y: victim.y, z: victim.z + MONSTER_FIRE_HEIGHT }
-      : { x: this.player.x, y: this.player.y, z: this.player.z + AIM_HEIGHT_OFFSET };
-    for (const damage of atk.bullets)
-      this.resolveMonsterBullet(atk, atk.angleRad + triangularSpread(MONSTER_BULLET_SPREAD_DEG), damage, aim);
-  }
-
-  /**
-   * One bullet of that volley: it damages the first thing it reaches —
-   * nearest of a wall, another monster in the line of fire, or the player
-   * wins. `P_LineAttack` has no notion of an intended target and no species
-   * check, which is why one zombieman firing past another starts a fight. The
-   * tracer is drawn to where the bolt stopped, not to the target.
-   */
-  private resolveMonsterBullet(atk: MonsterAttackEvent, angleRad: number, damage: number, aim: Pos3): void {
-    // `WEAPON_RANGE` rather than the distance to `aim`: a bullet the spread
-    // threw wide keeps flying, and can still find a wall or another monster
-    // behind whoever it was fired at. `P_LineAttack(..., MISSILERANGE, ...)`.
-    const path = shotPath(this.world, atk, angleRad, aim, WEAPON_RANGE, false);
-
-    // The trace damages the first body it reaches, whatever it was aimed at.
-    const blocker = this.things?.raycastMonster(atk, angleRad, path.dist, {
-      ignoreId: atk.sourceId,
-      includeHidden: true,
-    });
-    const dirX = Math.cos(angleRad);
-    const dirY = Math.sin(angleRad);
-    const relX = this.player.x - atk.x;
-    const relY = this.player.y - atk.y;
-    const playerAlong = relX * dirX + relY * dirY;
-    const perpX = relX - dirX * playerAlong;
-    const perpY = relY - dirY * playerAlong;
-    const playerInPath =
-      !this.playerDead &&
-      playerAlong >= 0 &&
-      playerAlong <= path.dist &&
-      Math.hypot(perpX, perpY) <= PLAYER_RADIUS + MONSTER_BULLET_SLOP;
-
-    let endX = atk.x + dirX * path.dist;
-    let endY = atk.y + dirY * path.dist;
-    let endZ = path.z;
-    if (blocker && (!playerInPath || blocker.dist <= playerAlong)) {
-      this.things?.damage(blocker.id, damage, { id: atk.sourceId, type: atk.sourceType }, undefined, atk.x, atk.y);
-      endX = blocker.x;
-      endY = blocker.y;
-      endZ = blocker.z + MONSTER_FIRE_HEIGHT;
-      const hitAt = { x: endX, y: endY, z: endZ };
-      if (this.things?.bleeds(blocker.id)) this.effects.spawnBlood(hitAt, damage);
-      else this.effects.spawnPuff(hitAt);
-    } else if (playerInPath) {
-      this.damagePlayer(damage, atk.x, atk.y);
-      endX = this.player.x;
-      endY = this.player.y;
-      endZ = this.player.z + AIM_HEIGHT_OFFSET;
-      // The player carries no MF_NOBLOOD either, so a bolt that reaches them
-      // splashes exactly as one landing on a monster does — and unlike the
-      // pain flash this isn't gated on the damage actually landing, matching
-      // `PTR_ShootTraverse` spawning blood before it calls `P_DamageMobj`.
-      this.effects.spawnBlood({ x: endX, y: endY, z: endZ }, damage);
-    } else {
-      // Nothing living stopped it — whatever's left is a wall, the only thing
-      // `shotPath` itself could have blocked it on. `triggerShot`'s
-      // `byMonster` gate reproduces vanilla's own hardcoded exception: this
-      // can only actually do anything for a 46 line, never 24/47.
-      this.specials?.triggerShot(path.lineIndex, this.inventory.keys, true);
-      spawnWallPuff(this.effects, this.world, path, angleRad);
-    }
-    this.effects.addTracer(atk, { x: endX, y: endY, z: endZ }, MONSTER_TRACER_COLOR);
-  }
-
-  /**
    * Runs the walk triggers a monster crossed this frame
    * (`SpecialsController.crossMonster` — teleports plus the few door/lift
    * types vanilla lets a monster activate). A teleport gets the same `TFOG`
@@ -690,12 +451,8 @@ export class Game {
   private monsterCrossedLines(prev: Pos2, pos: Pos2): Placement | null {
     const dest = this.specials?.crossMonster(prev, pos, this.inventory.keys);
     if (!dest) return null;
-    this.effects.spawnTeleportFog({ x: pos.x, y: pos.y, z: this.world.groundFloor(pos.x, pos.y, 0) });
-    this.effects.spawnTeleportFog({
-      x: dest.x + Math.cos(dest.angle) * TFOG_SPAWN_OFFSET,
-      y: dest.y + Math.sin(dest.angle) * TFOG_SPAWN_OFFSET,
-      z: this.world.groundFloor(dest.x, dest.y, 0),
-    });
+    const from = { x: pos.x, y: pos.y, z: this.world.groundFloor(pos.x, pos.y, 0) };
+    this.effects.spawnTeleportPair(from, dest, this.world.groundFloor(dest.x, dest.y, 0));
     return dest;
   }
 
@@ -714,19 +471,7 @@ export class Game {
     const healthBefore = this.inventory.health;
     if (!applyDamage(this.inventory, amount)) return false;
     if (fromX !== undefined && fromY !== undefined) {
-      let dx = this.player.x - fromX;
-      let dy = this.player.y - fromY;
-      const dist = Math.hypot(dx, dy);
-      if (dist < 1) {
-        // Same degenerate-same-position fallback as ThingLayer.damage.
-        dx = Math.cos(this.player.angle);
-        dy = Math.sin(this.player.angle);
-      } else {
-        dx /= dist;
-        dy /= dist;
-      }
-      const speed = thrustSpeed(amount, PLAYER_MASS);
-      this.player.applyKnockback(dx * speed, dy * speed);
+      this.player.applyDamageThrust(thrustSpeed(amount, PLAYER_MASS), fromX, fromY);
     }
     this.screen.addPain(amount);
     if (this.inventory.health <= 0) {
@@ -745,46 +490,6 @@ export class Game {
     this.audio.play('plpain', this.player, PLAYER_ORIGIN);
     this.playerActor.playOnce(PLAYER_PAIN_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
     return true;
-  }
-
-  /**
-   * `SpecialsController`'s `onCrush` callback: it owns the moving geometry but
-   * has no idea who's standing in it, so it hands back a sector index. 2D
-   * membership only, like `applyRadiusDamage` — see docs/specials.md §
-   * Crushers. Gated on `PIT_ChangeSector`'s actual "doesn't fit" test (the
-   * sector's current headroom against `PLAYER_HEIGHT`/`MONSTER_HIT_HEIGHT`),
-   * not merely standing in the sector — a crusher parked at the top of its
-   * travel, or one that hasn't reached someone yet, must not deal damage.
-   * Monsters and barrels share one loop (`crushablesInSector`): vanilla's
-   * `PIT_ChangeSector` treats any shootable mobj the same way, so a barrel
-   * dies and explodes exactly like it would from gunfire.
-   */
-  private applyCrushDamage(sectorIndex: number): void {
-    const sector = this.map.sectors[sectorIndex];
-    const gap = sector.ceilHeight - sector.floorHeight;
-    if (gap < PLAYER_HEIGHT && this.world.sectorIndexAt(this.player.x, this.player.y) === sectorIndex) {
-      this.damagePlayer(CRUSH_DAMAGE);
-    }
-    if (gap < MONSTER_HIT_HEIGHT) {
-      for (const m of this.things?.crushablesInSector(sector) ?? []) this.things?.damage(m.id, CRUSH_DAMAGE);
-    }
-  }
-
-  /**
-   * Throws a monster's ranged shot off-aim while the player holds partial
-   * invisibility — `A_FaceTarget`'s fuzz, applied once per fired shot so each
-   * shot of a burst goes its own way. It fuzzes the *aim* the volley is built
-   * on, which is why it lands here rather than per bullet: vanilla fuzzes
-   * `actor->angle`, and `A_SPosAttack`'s pellets all spread off that one
-   * fuzzed `bangle`. Player-aimed shots only (nothing else carries
-   * `MF_SHADOW`), and ranged only: a melee swing lands on `P_CheckMeleeRange`,
-   * never on the fuzzed angle. See docs/items.md § Powerups and the backpack.
-   */
-  private applyShadowAim(atk: MonsterAttackEvent): void {
-    if (atk.kind !== 'ranged' || atk.targetId !== null || !hasPower(this.inventory, 'invisibility')) return;
-    const off = triangularSpread(SHADOW_AIM_SPREAD_DEG);
-    atk.angleRad += off;
-    if (atk.projectiles) for (const proj of atk.projectiles) proj.angleRad += off;
   }
 
   /** `R`, while dead: a fresh inventory and a reload of the current map — `loadMapByIndex` resets the player/world/specials/fog and, via the doc on its own top, `playerDead`/the death overlay/`playerActor` too. */
@@ -956,44 +661,8 @@ export class Game {
           (prev, pos) => this.monsterCrossedLines(prev, pos),
         ) ?? { attacks: [], barrelExplosions: [] },
     );
-    const monsterAttacks = thingUpdate.attacks;
     this.profiler.time('Monsters', () => {
-      for (const atk of monsterAttacks) {
-        // Applied here rather than inside game/monsters.ts because whether the
-        // player is currently shadowed is inventory state, which the AI has no
-        // reason to know about — the same "systems report, game.ts realizes"
-        // split every other attack effect on this loop follows.
-        this.applyShadowAim(atk);
-        // The arch-vile's windup warning — see spawnVileWindupFire's doc.
-        // Purely cosmetic (no damage, no trace), so it's handled before
-        // (and separately from) every other kind below.
-        if (atk.kind === 'vileWindup') {
-          this.spawnVileWindupFire(atk);
-          continue;
-        }
-        // A monster with a real flying projectile (game/monsters.ts's
-        // MONSTER_STATS, e.g. the imp's fireball) launches one instead of
-        // resolving as an instant hit — damage lands later, on arrival
-        // (ProjectileLayer.update), not here.
-        if (atk.kind === 'ranged' && atk.projectiles) {
-          this.projectiles.spawnMonsterShot(atk);
-        } else if (atk.kind === 'ranged' && atk.blast) {
-          // The arch-vile's real attack — guaranteed damage plus knockback
-          // and a radius blast, not a traced hitscan bolt. See
-          // resolveVileBlast's doc for why this needs its own path.
-          this.resolveVileBlast(atk);
-        } else if (atk.kind === 'ranged') {
-          // A hitscan bolt (the human gunners, the spider mastermind) traces
-          // its actual flight and damages the first thing in the way, which
-          // need not be what it aimed at — vanilla's P_LineAttack has no
-          // species check whatsoever, so monsters really do gun each other
-          // down when one walks through another's line of fire.
-          this.resolveMonsterHitscan(atk);
-        } else {
-          // Melee lands on whatever it swung at, no trace involved.
-          this.damageFromMonster(atk.targetId, atk.damage, atk.sourceId, atk.sourceType, atk.x, atk.y);
-        }
-      }
+      this.monsterAttacks.resolve(thingUpdate.attacks);
       // A barrel's own A_Explode, become due this frame (game/things.ts's
       // update() ticks the delay; see applyBarrelExplosion's doc). No visual
       // spawned effect is needed here the way every other explosion needs one —

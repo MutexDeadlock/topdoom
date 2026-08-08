@@ -32,8 +32,9 @@ They — and the vanilla `raiseFloorCrush` floor family (55/56/65/94) — deal `
 `CRUSH_DAMAGE_INTERVAL` (vanilla's 10 HP every 4 tics) to the player or any monster in their sector
 that the current headroom doesn't fit (`sector.ceilHeight - sector.floorHeight` against
 `PLAYER_HEIGHT`/`MONSTER_HIT_HEIGHT`), via `SpecialsController`'s `onCrush` callback into
-`game.ts: applyCrushDamage` — the same callback-into-`game.ts` pattern as `onExit`/`onTeleport`, since
-`SpecialsController` mutates geometry but has no idea where anyone is standing. `ThingLayer.
+`moverblocking.ts: applyCrushDamage` — the same "hand back a sector index, let someone else work out
+who is standing in it" split as the two obstruction callbacks beside it, since `SpecialsController`
+mutates geometry but has no idea where anyone is. `ThingLayer.
 monstersInSector` finds candidates by comparing against the exact same mutable `Sector` object
 reference `PosedThing.sector` was seeded from, the same trick `tryPickup`'s live-height read relies
 on. The headroom gate matters even for someone in the mover's own sector footprint: standing under a
@@ -118,8 +119,8 @@ the same straddling `World.groundFloor` accounts for — so the player's *center
 corridor's sector while the door sector, the one actually about to close on them, is never checked at
 all. A plain point test was the original bug here. The overlap is approximated the way `FogOfWar`
 samples polygons: a ring of points around the circle's rim, ample for a doorway-sized sector.
-`applyCrushDamage` keeps the cheap point test on purpose — a crusher's sector is typically the whole
-room, where the blind spot barely matters.
+`applyCrushDamage`, in the same file and directly below it, keeps the cheap point test on purpose —
+a crusher's sector is typically the whole room, where the blind spot barely matters.
 
 Both take prospective heights as explicit parameters rather than reading `player.z`/`m.z`: the caller
 is always asking about the height a boundary is *about* to move to, matching `P_ThingHeightClip`
@@ -196,8 +197,10 @@ unrelated lines along the way. `lastTeleport` is set inside `trigger` and consum
 
 Vanilla also spawns a one-shot `MT_TFOG` puff at both ends (where the player stood, and 20 units ahead
 of the landing spot along its facing). That isn't a real map `Thing`, so it isn't modeled through
-`ThingLayer` — `game.ts` owns a small list of transient `OneShotEffect`s instead (drawn through
-`EffectLayer`, game/effects.ts), each playing through the `TFOG` sprite's frames (`A`-`J`, confirmed against the actual
+`ThingLayer` — the pair comes from `EffectLayer.spawnTeleportPair` (game/effects.ts), which owns the
+20-unit offset so the player's trip and a monster's can't drift apart; only the landing `z` differs
+between the two callers, and each passes its own. Each puff is a transient `OneShotEffect` playing
+through the `TFOG` sprite's frames (`A`-`J`, confirmed against the actual
 lump names, all rotation-0 so no facing logic is needed) once before removing itself. Map transitions
 clear any still-active puffs explicitly, since a teleport onto an exit line could otherwise leave one
 animating over the next level.

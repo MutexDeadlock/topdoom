@@ -216,6 +216,13 @@ case where attacker and victim occupy essentially the same point, e.g. point-bla
 `R_PointToAngle2(0,0,0,0)` returns angle 0 for the same reason) and add `thrustSpeed(amount, mass)`
 along it onto the victim's knockback velocity.
 
+The player's half of that arithmetic is `Player.applyDamageThrust(speed, fromX, fromY)`, beside the
+`applyKnockback` it feeds; `ThingLayer.damage` keeps its own copy inline because it is already
+iterating per-body with a per-type `mass`. **The magnitude stays with the caller** either way — a
+victim's `mass` (`MonsterStats.mass`, `BARREL_MASS`, `PLAYER_MASS`) is not something `Player` has any
+reason to know, and importing `thrustSpeed` into `player.ts` would be a cycle besides, since
+`monsters.ts` imports `player.ts`.
+
 Every call site threads its own natural inflictor position: the player's position for a hitscan pellet
 or melee swing, the projectile's live position at the moment it lands for a rocket/fireball (matching
 vanilla's inflictor being the missile itself), and the explosion's centre for splash

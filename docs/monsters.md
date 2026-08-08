@@ -8,9 +8,15 @@ attacks — neither of those two attacks or moves in vanilla either.
 **Layering.** `monsters.ts`'s `stepMonsterAI` (chasing/attacking) and `tryWake` are pure functions
 that read/write a monster's own mutable state and return *what happened* (a fired `MonsterAttack`,
 or whether it woke). `ThingLayer.update` (`things.ts`) is where that state lives — each
-`PosedThing` carries its AI fields — and owns the throttle that calls `tryWake`. `Game.frame`
-turns a returned attack into damage and, for a ranged one, a tracer. Same split as
-`WeaponSystem`/`SpecialsController`.
+`PosedThing` carries its AI fields — and owns the throttle that calls `tryWake`. `MonsterAttacks`
+(same file, § Resolving an attack) turns a returned attack into damage and, for a ranged one, a
+tracer or a projectile. Same split as `WeaponSystem`/`SpecialsController`.
+
+**`monsters.ts` therefore has two halves with very different dependencies.** The AI half above
+touches nothing but a `MonsterBody`, a `World` and a `SoundEmitter`, which is what keeps it
+testable headlessly. `MonsterAttacks` at the bottom of the file needs the thing list, the effect
+and projectile layers and the audio engine, and reads the live level through the same
+`CombatContext` `ProjectileLayer` does. Keep new code on the correct side of that line.
 
 **Sounds are the one exception to that split**: `stepMonsterAI` and `ThingLayer` raise them
 directly through a `SoundEmitter`, since several of vanilla's sit at moments that produce no event
@@ -172,6 +178,51 @@ For the same reason, `collectFadeTargets` (render/occlusion.ts) caps them at `MA
 `WallFader`/`FlatFader` cost is quads × targets. It's purely a cost bound — past a couple of dozen
 nearby monsters, every wall any of them stands behind is already faded by a nearer one.
 
+## Melee reach
+
+`runChaseCall`'s melee gate is three tests: 2D distance against `MELEE_RANGE`, a vertical-overlap
+check (`meleeReachesVertically`), and `hasLineOfSight`.
+
+**The vertical check is a deliberate deviation from vanilla, and the only one in the attack path.**
+`P_CheckMeleeRange` (`p_enemy.c`) tests `P_AproxDistance` and `P_CheckSight` and *nothing else* — so
+a vanilla pinky standing in a pit really can bite someone on the lip above it, and one on a ledge can
+bite someone below. ZDoom added a guard for this and gates it behind `MF5_NOVERTICALMELEERANGE`
+(`p_enemy.cpp`, commented "Don't melee things too far above or below actor"):
+
+```c
+if (pl->Z() > actor->Top())  return false;
+if (pl->Top() < actor->Z())  return false;
+```
+
+This engine follows ZDoom, because vanilla's version reads as a bug to anyone who has played a
+source port. Both comparisons are **strict**, so bodies that exactly touch still connect. Heights
+are this engine's approximate boxes, not per-type `mobjinfo.height`: `MONSTER_HIT_HEIGHT` for the
+attacker, and the target's own — `PLAYER_HEIGHT` when `ThingLayer` resolved the target to the
+player, `MONSTER_HIT_HEIGHT` for an infight — threaded in as `stepMonsterAI`'s `targetHeight`.
+
+Repro maps, committed as fixtures: `tests/fixtures/wads/pinky_{below,above}_test.wad`, covered by
+`tests/regression/pinky-vertical-melee.test.ts`. `above` is the sharper of the two — standing at the
+wall the sight wedge is already clipped by the ledge lip, so the missing check only showed once the
+player backed off far enough to see over it.
+
+**The threshold is vanilla's own formula, not a flat range**: `meleeThreshold` is
+`MELEERANGE - 20 + target->info->radius` (`p_enemy.c`, with `MELEERANGE` 64 from `p_local.h`), so a
+swing reaches **60** units at the player (radius 16) and further at a wider victim in an infight —
+74 at a demon, 84 at a cyberdemon. GZDoom arrives at the same number from the other side, storing
+the shortened 44 as `AActor::meleerange` and comparing `dist >= meleerange + pl->radius`. The
+comparison is **exclusive** both places (vanilla returns false on `>=`).
+
+A flat `MELEE_RANGE = 72` stood in for all of that until the pinky maps were tested, which made
+every melee monster reach ~20% further than either vanilla or GZDoom and ignored the victim's width
+entirely. Distance itself is a real `hypot`, not `P_AproxDistance`'s octagonal approximation — that
+exists only to dodge a fixed-point square root.
+
+`MELEE_RANGE` (now the vanilla 64) is also `P_LookForPlayers`' own "if real close, react anyway"
+exemption to the 180° wake-up gate (`canSpotPlayer`), which uses **bare `MELEERANGE`** with no bias
+and no radius term. The lost soul's charge does *not* use it: `A_SkullAttack` damages whatever its
+moving box overlaps, so its contact test is `SKULL_CONTACT_RANGE`, marked at its declaration as this
+engine's own anti-tunnelling approximation rather than a vanilla figure.
+
 ## Attacking
 
 **Walking and attacking are mutually exclusive: a monster plants itself for the whole length of its
@@ -224,6 +275,31 @@ one from just outside fist's reach), and the arch-vile won't fire beyond `14*64`
 once it was, all they did was stop monsters firing from distances vanilla shoots from happily. A
 hitscan attack otherwise reaches `WEAPON_RANGE` (`MISSILERANGE`, 2048) and a projectile flies until
 it hits something.
+
+## Resolving an attack
+
+`ThingLayer.update` reports a `MonsterAttackEvent` per attack fired this frame and applies none of
+them. `MonsterAttacks.resolve` (bottom of `monsters.ts`) is what realizes them: melee lands
+directly, a hitscan volley traces bolt by bolt (`resolveHitscan`/`resolveBullet`), a projectile
+attack is handed to `ProjectileLayer.spawnMonsterShot`, and the arch-vile's blast takes its own
+path. It also answers `EffectLayer`'s `VileFlameResolver`, since where the vile's flame belongs
+depends on live monster/player state the effect batch has no reason to know.
+
+**`monsters.ts` must reach its collaborators without a runtime import cycle**, because both
+`things.ts` and `projectiles.ts` import *it* for values. Three rules hold that open, and breaking
+any one of them reintroduces a cycle:
+
+- `ProjectileLayer` and `ThingLayer` are imported **`import type`** only. Both are used purely as
+  parameter/field types, and `verbatimModuleSyntax` guarantees a type import is erased.
+- `combat.ts` imports `things.ts` **`import type` only** — its `BARREL_SPLASH_RADIUS`/`_DAMAGE`
+  live in `thingdefs.ts` (a leaf) precisely so that stays true. This is what lets `monsters.ts`
+  call `applyRadiusDamage` as a real value.
+- `effectdefs.ts` imports **nothing** from `monsters.ts`. `VILE_WINDUP_TRACK_SECONDS`, which is
+  derived from `MONSTER_STATS`, lives in `monsters.ts` for that reason rather than beside the other
+  `VILE_FIRE_*` values.
+
+`EffectLayer.spawnWallPuff` is on the effect layer rather than in `projectiles.ts` for the same
+reason — a monster's bolt needs it, and reaching into `projectiles.ts` for a value would cycle.
 
 ## Hitscan vs. projectile
 
@@ -292,7 +368,7 @@ earlier version of this table had every monster's dice tuned softer.
 **Two monsters fire more than one pellet per call**: the shotgun guy's `A_SPosAttack` fires three
 `(rand%5+1)*3` pellets, and the spider mastermind fires the same function twice (`pellets: 3` on top
 of `shots: 2`). Each pellet is a genuinely separate traced bolt (`MonsterAttack.bullets` carries one
-damage roll per bullet, and `game.ts: resolveMonsterHitscan` gives each its own spread draw), so a
+damage roll per bullet, and `MonsterAttacks.resolveHitscan` gives each its own spread draw), so a
 burst lands partially. Summing them into one roll on one ray — which this engine used to do — is
 only equivalent while there is no spread, and with spread it is wrong in a way worse than the
 average suggests: it turns a shotgun blast into all-or-nothing 27 damage.
@@ -425,8 +501,9 @@ their condition chains, so they only run for a candidate the cheap proximity tes
 **Monsters fight each other**, by exactly vanilla's mechanism: nothing about being hurt is
 player-specific. `ThingLayer.damage` takes an optional `source`, and a monster hit by another
 re-points its `targetId` at the attacker (`shouldRetarget`/`commitTarget`); `stepMonsterAI` takes a
-plain `target` position and never learns whether it's chasing the player or a baron. `game.ts` is
-where a shot finds out who it hit — `resolveMonsterHitscan` damages the first body along the bolt
+plain `target` position and never learns whether it's chasing the player or a baron.
+`MonsterAttacks` is where a shot finds out who it hit — `resolveHitscan` damages the first body
+along the bolt
 (`PTR_ShootTraverse` has no notion of an intended target and no species check, which is why one
 zombieman firing past another starts a fight), and `monsterStruckBy` does the same per frame for a
 projectile.
@@ -492,7 +569,7 @@ already models. `AttackStats.spawn` marks the elemental's `ranged` entry as this
 `beginRangedAttack` reports a `'spawn'` event the instant the attack starts, and
 `things.ts: spawnLostSoul` carries it out, since only `ThingLayer` (which owns the `posed` array) can
 add one. It's applied directly inside `ThingLayer.update` rather than reported through
-`MonsterAttackEvent` — spawning a monster isn't damage for `game.ts` to apply.
+`MonsterAttackEvent` — spawning a monster isn't damage for `MonsterAttacks` to apply.
 
 Two vanilla details reproduced exactly: the spawn point is `4 + 1.5×(elemental radius + lost soul
 radius)` map units in front along the elemental's facing (`4*FRACUNIT + 3*(actor->info->radius +
@@ -697,7 +774,7 @@ near the start of `duration`, so `attackPause` always outlasts the pose — but 
 stale index (routinely past a 4-letter walk cycle) for `resolve` to index `animFrames` with, a real
 crash. `advance` now clamps `animIndex` into range unconditionally at the top of that branch.
 
-`game.ts: resolveVileBlast` is a dedicated path rather than reusing `resolveMonsterHitscan`, since
+`resolveVileBlast` is a dedicated path rather than reusing `resolveHitscan`, since
 there's no trace to run — vanilla damages `actor->target` directly, not whatever a ray hits first.
 Its splash reuses `applyRadiusDamage`, extended with an optional `source` (attributed to the vile,
 so the "nothing retaliates against an arch-vile" rule covers it) and — spotted while wiring this up
@@ -713,11 +790,11 @@ player can use. `beginRangedAttack` reports a fourth, purely-cosmetic `MonsterAt
 `'vileWindup'` rather than at the blast landing, matching vanilla's timing (`S_VILE_ATK1`-`ATK10`
 play across the entire missilestate chain).
 
-`game.ts: spawnVileWindupFire` reuses `EffectLayer`'s ordinary one-shot `spawn`/`addImpact` machinery with
+`MonsterAttacks.spawnWindupFire` reuses `EffectLayer`'s ordinary one-shot `spawn`/`addImpact` machinery with
 two differences: its `lifetime` is overridden to `VILE_WINDUP_TRACK_SECONDS` (read from
 `MONSTER_STATS` rather than duplicated) instead of one pass through its frames, and `OneShotEffect`
 gained `followTargetId`/`vileSourceId` — `EffectLayer` re-derives `x`/`y`/`z` every frame from
-`vileFireFrontOf(target)` (vanilla's `dest->x + 24*cos(dest->angle)` etc., keyed off the *target's*
+`fireFrontOf(target)` (vanilla's `dest->x + 24*cos(dest->angle)` etc., keyed off the *target's*
 own `MonsterRef.angle`/`Player.angle`), but only while `World.hasLineOfSight(vile, target)` holds —
 matching `A_Fire`'s own `P_CheckSight` gate including its failure behavior: the flame freezes where
 it last was rather than disappearing or continuing to chase, since `A_Fire` just returns early.
@@ -725,7 +802,7 @@ it last was rather than disappearing or continuing to chase, since `A_Fire` just
 An earlier version froze a single offset vector *toward the vile* at spawn and re-applied it to the
 target's live position — the wrong formula (vanilla's windup offset is based on the *target's*
 facing, not the vile's position) and missing the sight gate, so the flame slid around behind a
-moving player instead of staying in front of whichever way they were looking. `vileFireOffset` (the
+moving player instead of staying in front of whichever way they were looking. `vileBlastOffset` (the
 *different*, vile-facing-based formula `A_VileAttack` uses for its one-time final reposition once
 the shot lands) is untouched — vanilla genuinely uses two different offsets for the two moments.
 
@@ -778,6 +855,6 @@ which has no queueing either.
 fired attack, and the pain pose inside `damage()` right after `reactToDamage` — gated on
 `p.painTimer > 0` rather than every non-lethal hit, since `reactToDamage` only sets it when the hit
 rolls past the monster's `painChance` (a failed roll still alerts and retargets, just doesn't
-stagger). The player's own letters (`game.ts`'s `PLAYER_ATTACK_FRAMES`/`PLAYER_PAIN_FRAMES`, derived
+stagger). The player's own letters (`thingdefs.ts`'s `PLAYER_ATTACK_FRAMES`/`PLAYER_PAIN_FRAMES`, derived
 and WAD-checked the same way) trigger analogously: attack whenever `WeaponSystem.update` returns a
 nonempty `Shot[]`, pain inside `damagePlayer` whenever the player survives a hit.

@@ -1,10 +1,17 @@
-v0.10.1 (2026-08-08)
+v0.10.1 (2026-08-0?)
 
 Fixed bugs
   - fixed a sector that both changes light and moves never showing its light
     on its own floor and walls - only the player and the THINGs standing in
     it were lit correctly, and the geometry caught up only while the sector
     happened to be moving
+  - monster melee fixes (again...)
+    - monsters no longer melee across a height gap: a demon in a pit could bite
+      you standing on the lip above it, and one on a ledge could bite you from
+      below. Vanilla really does allow this (P_CheckMeleeRange tests distance
+      and sight only); this now follows GZDoom, which refuses a swing when the
+      two bodies don't overlap vertically at all
+    - melee reach now uses vanilla's real formula instead of a flat 72 units
 
 
 ===============================================================================

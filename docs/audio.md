@@ -1,8 +1,8 @@
 # Sound
 
 `src/audio/sfx.ts`, `src/audio/audio.ts`, `src/wad/sound.ts`, plus the emitter calls in
-`game.ts`, `game/things.ts`, `game/monsters.ts`, `game/specials.ts`, `game/weapons.ts` and
-`game/effects.ts`
+`game.ts`, `game/things.ts`, `game/monsters.ts`, `game/specials.ts`, `game/weapons.ts`,
+`game/projectiles.ts` and `game/effects.ts`
 
 Every sound comes out of the loaded WAD, and every sound's *timing and choice* comes from
 `linuxdoom-1.10` — `sounds.c`'s `S_sfx[]` table, `info.c`'s `mobjinfo` fields, and the
@@ -78,20 +78,21 @@ player's, as in vanilla.
 ## Who plays what
 
 Sound is the one effect systems raise directly (through `SoundEmitter`) instead of reporting
-back for `game.ts` to realize, unlike damage (`ThingLayer.update`'s attacks) or shots
-(`WeaponSystem.update`'s `Shot[]`). Two reasons: it changes no game state, and several of
+back for someone else to realize, unlike damage (`ThingLayer.update`'s attacks, applied by
+`MonsterAttacks`) or shots (`WeaponSystem.update`'s `Shot[]`). Two reasons: it changes no game state, and several of
 vanilla's sounds sit at moments that have no observable event to hang off — `A_Chase`'s
 3-in-256 idle grunt is inside the chase call, not a result of it. `SILENT` is the no-op
 emitter, so a headless script or a browser with no `AudioContext` needs no branches.
 
 | Where | Plays |
 |---|---|
-| `game/monsters.ts` | The idle grunt, the melee swing, a hitscan shot, an attack windup, footsteps |
+| `game/monsters.ts` | The idle grunt, the melee swing, a hitscan shot, an attack windup, footsteps; and from `MonsterAttacks`, the arch-vile's `flamst` warning flame and `barexp` blast |
 | `game/things.ts` | Waking, pain, death (and a barrel's explosion, and a resurrection) |
 | `game/specials.ts` | Doors, lifts, floors, ceilings, crushers, switches, a locked door's grunt |
 | `game/weapons.ts` | The chainsaw's bring-up and idle rattle (`updateSounds`) |
 | `game/effects.ts` | `telept`, on both fog puffs of every teleport |
-| `game.ts` | Weapon fire, projectile launches and impacts, the player's own pain/death/landing, pickups, entering a secret, the arch-vile's blast |
+| `game.ts` | Weapon fire, the player's own pain/death/landing, pickups, entering a secret |
+| `game/projectiles.ts` | Projectile launches and impacts |
 
 ## Monsters
 
@@ -185,8 +186,9 @@ the sector's linedefs (`P_GroupLines`), not a polygon centroid — computed lazi
   instead, since reproducing that bug would put the click anywhere on the map.
 - **A locked door** grunts `oof` at full volume. With no message line in this engine, that
   grunt is the entire feedback that a key is missing.
-- **Teleports** play `telept` at both ends, from `EffectLayer.spawnTeleportFog` — the one
-  place both puffs are created, for a monster's trip as much as the player's.
+- **Teleports** play `telept` at both ends, from `EffectLayer.spawnTeleportFog` — which
+  `spawnTeleportPair` calls twice, so every teleport is heard at both ends whether it was a
+  monster's trip or the player's.
 
 Not implemented: vanilla's `noway`, the grunt for using a wall that isn't a door.
 `handleUseTrigger` only scans lines that *have* a special, so there is nothing to hang it on
@@ -200,8 +202,8 @@ more than 50, `A_PlayerScream`'s own split. Vanilla tests post-hit health, which
 there; `applyDamage` clamps at 0, so the overkill is reconstructed from the hit and is off by
 whatever armor absorbed, which only moves a few borderline deaths between the two cries.
 
-`oof` on a landing harder than vanilla's `momz < -8` units/tic (`HARD_LANDING_SPEED`), read
-off `Player.landingSpeed`.
+`oof` on a landing harder than vanilla's `momz < -8` units/tic (`HARD_LANDING_SPEED`,
+`game/player.ts`), read off `Player.landingSpeed`.
 
 Pickups follow `P_TouchSpecialThing` (`inventory.ts: pickupSound`): `getpow` for the six
 powerups plus the soulsphere and megasphere, `wpnup` for the seven weapons, `itemup` for

@@ -34,13 +34,15 @@ import {
   DI_NODIR,
   INERT_SHOOTABLE,
   MONSTER_FIRE_HEIGHT,
+  MONSTER_HIT_HEIGHT,
+  MONSTER_HIT_RADIUS,
   MONSTER_STATS,
   reactToDamage,
   shouldRetarget,
   stepMonsterAI,
   thrustSpeed,
   tryWake,
-  type MonsterAttack,
+  type MonsterAttackEvent,
   type RaiseCandidate,
 } from './monsters.ts';
 import { circleBlocked, type ThingBlocker } from './world.ts';
@@ -49,7 +51,7 @@ import { SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from '../render
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
-import { DOOM_TIC } from '../constants.ts';
+import { DOOM_TIC, PICKUP_SCALE } from '../constants.ts';
 
 interface PosedThing extends Pos3 {
   /**
@@ -223,19 +225,6 @@ interface PosedThing extends Pos3 {
    * `shouldRetarget`) — the mechanism behind infighting — and reset to the
    * player once that target dies.
    */
-  targetId: number | null;
-}
-
-/**
- * A monster's fired attack, plus who fired it and at what — `game.ts` turns a
- * `'ranged'` one into a tracer or projectile and applies `damage` to whatever
- * it actually reaches.
- */
-export interface MonsterAttackEvent extends MonsterAttack, Pos3 {
-  /** The firing monster's own id and doomednum, so a shot that lands on another monster can be attributed (and species-checked) correctly. */
-  sourceId: number;
-  sourceType: number;
-  /** What it was aimed at: `null` for the player, otherwise another monster's id. */
   targetId: number | null;
 }
 
@@ -477,8 +466,7 @@ export interface ThingLayer {
   /**
    * Nearest living monster the ray crosses within `maxDist`, or null — the
    * "didn't click anything, but something's in the path anyway" case for a
-   * free shot. `MONSTER_HIT_RADIUS`/`_HEIGHT` are one approximate hitbox
-   * rather than vanilla's 16-128 unit per-species radius.
+   * free shot, tested against `monsters.ts`'s `MONSTER_HIT_RADIUS`/`_HEIGHT`.
    *
    * `opts` serves a *monster's* own hitscan: `ignoreId` excludes the shooter
    * from its own trace, `includeHidden` skips the fog-of-war filter, since fog
@@ -493,14 +481,6 @@ export interface ThingLayer {
   ): (MonsterRef & { dist: number }) | null;
 }
 
-/**
- * Single approximate hitbox `ThingLayer.raycastMonster` tests a free shot's
- * ray against — see that method's doc for why this isn't per-species. Shared
- * with `spawnPlayerShot`'s locked-on test, so a spread pellet misses the
- * clicked monster at exactly the width any other bullet would.
- */
-export const MONSTER_HIT_RADIUS = 24;
-export const MONSTER_HIT_HEIGHT = 64;
 
 /**
  * The two types whose sight and death sounds vanilla plays **unattenuated**,
@@ -585,13 +565,6 @@ const BARREL_DEATH_FRAME_SECONDS = 5 * DOOM_TIC;
  * `S_BEXP1`/`S_BEXP2` durations (5 tics each) rather than assumed.
  */
 const BARREL_EXPLODE_DELAY_SECONDS = 2 * BARREL_DEATH_FRAME_SECONDS;
-/**
- * Vanilla's own literal `A_Explode` call — `P_RadiusAttack(thingy,
- * thingy->target, 128)` — identical radius and damage to the rocket
- * launcher's own splash (`weapons.ts`'s `rocketLauncher.splash`).
- */
-export const BARREL_SPLASH_RADIUS = 128;
-export const BARREL_SPLASH_DAMAGE = 128;
 
 /**
  * A barrel's `A_Explode` becoming due (`BARREL_EXPLODE_DELAY_SECONDS` after
@@ -611,17 +584,7 @@ export interface ThingUpdateResult {
   barrelExplosions: BarrelExplosion[];
 }
 
-/**
- * `PICKUP_SCALE_TYPES` (ammo, health/armor, keys, powerups) draw at vanilla's native patch size
- * times this factor. The far, tilted top-down camera reads a lot worse than DOOM's own
- * ground-level first-person view at the same pixel size, and small collectibles like a clip or a
- * shell box are the ones that suffer most — monsters are already large enough to read fine,
- * weapons already stand out, and solid decorations/gore props are already sized to fill a room or
- * a body rather than sit in a hand, so none of those three get it.
- */
-const PICKUP_SCALE = 1.4;
-
-/** Whether `type` gets the up-scale above — see `PICKUP_SCALE_TYPES`'s doc for why this is a whitelist, not "everything but monsters/weapons". */
+/** Whether `type` gets `PICKUP_SCALE` — see `PICKUP_SCALE_TYPES`'s doc for why this is a whitelist, not "everything but monsters/weapons". */
 function pickupScaleFor(type: number): number {
   return PICKUP_SCALE_TYPES.has(type) ? PICKUP_SCALE : 1;
 }
@@ -1563,7 +1526,26 @@ export function buildThingSprites(
             } else {
               const beforeX = p.x;
               const beforeY = p.y;
-              const result = stepMonsterAI(p, stats, dt, world, target, blockersFor(p, player), findRaisableCorpse, sfx);
+              // The melee gate's `pl->info->radius`/height. The target is the
+              // player exactly when `resolveTarget` fell back to it; anything
+              // else is another `PosedThing`, whose `blockRadius` is already
+              // this type's own resolved radius (see that field's doc), sized
+              // vertically by the one approximate monster box.
+              const victim = target === player ? null : (posed[p.targetId!] ?? null);
+              const targetRadius = victim ? victim.blockRadius : PLAYER_RADIUS;
+              const targetHeight = victim ? MONSTER_HIT_HEIGHT : PLAYER_HEIGHT;
+              const result = stepMonsterAI(
+                p,
+                stats,
+                dt,
+                world,
+                target,
+                targetRadius,
+                targetHeight,
+                blockersFor(p, player),
+                findRaisableCorpse,
+                sfx,
+              );
               // Vanilla's own momentum-driven displacement, additive on top of
               // the AI walk step just above — see applyKnockback's doc.
               if (p.velX !== 0 || p.velY !== 0) applyKnockback(p, dt);

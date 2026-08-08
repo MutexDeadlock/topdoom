@@ -5,7 +5,7 @@ import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import { Tracer } from '../render/tracer.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
-import type { World } from './world.ts';
+import type { ShotPath, World } from './world.ts';
 import { triangularDraw } from './weapons.ts';
 import {
   BLOOD_FRAME_SECONDS,
@@ -14,11 +14,13 @@ import {
   PUFF_FRAMES,
   PUFF_FRAME_SECONDS,
   PUFF_MELEE_FRAMES,
+  PUFF_WALL_OFFSET,
   TFOG_FRAMES,
   TFOG_FRAME_SECONDS,
+  TFOG_SPAWN_OFFSET,
   type OneShotEffect,
 } from './effectdefs.ts';
-import type { Pos3 } from '../types.ts';
+import type { Placement, Pos3 } from '../types.ts';
 
 /**
  * Where the arch-vile's warning flame should sit this frame, or null if it
@@ -151,6 +153,23 @@ export class EffectLayer {
     this.spawnImpact('PUFF', frames, PUFF_FRAME_SECONDS, { x: at.x, y: at.y, z: this.jitter(at.z) });
   }
 
+  /**
+   * The bullet puff a hitscan shot leaves where it stopped against geometry —
+   * `PTR_ShootTraverse`'s `hitline` branch, shared by the player's pellets and
+   * a monster's bolt. Nothing is drawn for a shot that simply ran out of range
+   * (`lineIndex === null`) or for one that hit sky. See docs/combat.md §
+   * Bullet puffs.
+   */
+  spawnWallPuff(path: ShotPath, angleRad: number): void {
+    if (path.lineIndex === null || this.world.hitsSky(path.lineIndex, path.z)) return;
+    // Backed off the wall plane it marks, vanilla's own "position a bit closer".
+    this.spawnPuff({
+      x: path.x - Math.cos(angleRad) * PUFF_WALL_OFFSET,
+      y: path.y - Math.sin(angleRad) * PUFF_WALL_OFFSET,
+      z: path.z,
+    });
+  }
+
   /** `P_SpawnBlood`/`P_SpawnPuff`'s shared opening line — the same triangular draw every other random fuzz in the game uses. */
   private jitter(z: number): number {
     return z + triangularDraw(HIT_Z_JITTER);
@@ -163,6 +182,23 @@ export class EffectLayer {
     this.audio.play('telept', at);
     const effect = this.spawn('TFOG', TFOG_FRAMES, TFOG_FRAME_SECONDS, at);
     if (effect) this.teleportFogs.push(effect);
+  }
+
+  /**
+   * Vanilla `P_Teleport`'s pair: a puff where the thing stood, and another
+   * `TFOG_SPAWN_OFFSET` ahead of where it lands along the direction it now
+   * faces. Vanilla spawns these for any thing that teleports, so the player's
+   * own trip and a monster's go through here alike — `destZ` is the landing
+   * floor, which only the caller can resolve (the player's own `z` after
+   * `teleportTo`, a `groundFloor` sample for a monster).
+   */
+  spawnTeleportPair(from: Pos3, dest: Placement, destZ: number): void {
+    this.spawnTeleportFog(from);
+    this.spawnTeleportFog({
+      x: dest.x + Math.cos(dest.angle) * TFOG_SPAWN_OFFSET,
+      y: dest.y + Math.sin(dest.angle) * TFOG_SPAWN_OFFSET,
+      z: destZ,
+    });
   }
 
   addTracer(from: Pos3, to: Pos3, color: number): void {

@@ -145,10 +145,22 @@ declaration-time option, since presence is a static fact:
 test('…', { skip: existsSync(p) ? false : `${p} not present` }, () => { … });
 ```
 
-`tests/fixtures/wads/long_corridor_with_chaingunner.wad` is the 930-byte map both chaingunner
-regressions were reported on: a 3648-unit corridor with a chaingunner 3584 units from the player
-start. It carries its own `MAP01` and loads with no IWAD; `tests/fixtures/corridor.ts` wraps the
-loading. Load fixture WADs through
+Three tiny purpose-built maps live in `tests/fixtures/wads/`, each carrying its own `MAP01` and
+loading with **no IWAD**, with a loader beside it in `tests/fixtures/`:
+
+| WAD | Geometry | Loader | Covers |
+|---|---|---|---|
+| `long_corridor_with_chaingunner.wad` | 3648-unit corridor, chaingunner 3584 out | `corridor.ts` | both chaingunner regressions |
+| `pinky_below_test.wad` | two rooms split at `y=128`, far floor **-72** (pit) | `pinky.ts` | vertical melee reach |
+| `pinky_above_test.wad` | same, far floor **+88** (ledge) | `pinky.ts` | vertical melee reach |
+
+The pinky pair are the maps a demon-bites-through-a-height-gap report was made on, checked against
+GZDoom (docs/monsters.md § Melee reach). `pinky.ts` also builds a ready-to-step `MonsterBody`, so the
+tests drive the real `stepMonsterAI` rather than re-implementing its melee gate — worth copying: a
+test that restates the condition it is checking passes for the wrong reason. Both were confirmed to
+fail with the fix reverted before being committed.
+
+Load fixture WADs through
 `new URL('./wads/…', import.meta.url)` so the suite is cwd-independent, and keep
 `inspect-wad.ts`'s `file.buffer.slice(file.byteOffset, …)` step: `readFileSync` returns a view into
 a pooled `ArrayBuffer`, and passing `.buffer` raw hands `WadFile` the whole pool.

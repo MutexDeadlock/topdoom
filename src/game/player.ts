@@ -48,6 +48,17 @@ const EYE_HEIGHT = 41;
 export const GRAVITY = 1600;
 
 /**
+ * How fast a fall has to end to knock the wind out of the player (`landingSpeed`
+ * above it plays `oof`). Vanilla's `P_ZMovement` grunts below `momz < -8`
+ * units/tic, which under *its* gravity of 1 unit/tic² is reached by a drop of 32
+ * units — so the threshold is derived from that drop height under this engine's
+ * own (feel-tuned, stronger) `GRAVITY` rather than copying the speed. Matching
+ * the speed instead would make shallower ledges grunt than vanilla's do, and 24
+ * units — DOOM's most common step height — sits right at that boundary.
+ */
+export const HARD_LANDING_SPEED = Math.sqrt(2 * GRAVITY * 32);
+
+/**
  * Vanilla's own per-tic XY friction, `FRICTION = 0xE800/0x10000` — see
  * `game/things.ts`'s identical constant (that file can't import this one
  * without a circular dependency, since `game/monsters.ts` already imports
@@ -112,7 +123,7 @@ export class Player implements Pos3 {
    * How fast the player was falling (map units/sec, positive) at the moment
    * this frame's fall ended, or 0 if it didn't end in one. Vanilla's
    * `P_ZMovement` grunts and dips the view for a landing harder than 8
-   * units/tic; `game.ts` reads this for the grunt (`HARD_LANDING_SPEED`).
+   * units/tic; the grunt's own threshold is `HARD_LANDING_SPEED` above.
    * Reset at the top of every `update`, so it only ever describes this frame.
    */
   landingSpeed = 0;
@@ -172,16 +183,43 @@ export class Player implements Pos3 {
   }
 
   /**
-   * Vanilla's `P_DamageMobj` horizontal knockback: adds an impulse (`vx, vy`
-   * — `game.ts`'s own `thrustSpeed`-derived vector, already pointed away
-   * from whatever dealt the hit) onto `knockVelX`/`knockVelY` rather than
-   * setting them, so a quick follow-up hit stacks on top of a knockback
-   * still playing out instead of replacing it, matching vanilla's own
-   * `momx += ...`. `update` integrates and decays the result every frame.
+   * Vanilla's `P_DamageMobj` horizontal knockback: adds an impulse (`vx, vy`,
+   * already pointed away from whatever dealt the hit) onto
+   * `knockVelX`/`knockVelY` rather than setting them, so a quick follow-up hit
+   * stacks on top of a knockback still playing out instead of replacing it,
+   * matching vanilla's own `momx += ...`. `update` integrates and decays the
+   * result every frame.
    */
   applyKnockback(vx: number, vy: number): void {
     this.knockVelX += vx;
     this.knockVelY += vy;
+  }
+
+  /**
+   * `applyKnockback`'s direction half: points `speed` away from (`fromX`,
+   * `fromY`) and applies it. The caller supplies the magnitude, since that
+   * comes from `monsters.ts: thrustSpeed` against a per-victim `mass` this
+   * class has no business knowing — `ThingLayer.damage` is the monster/barrel
+   * twin of this, doing the identical arithmetic for its own bodies. See
+   * docs/movement.md § Knockback.
+   */
+  applyDamageThrust(speed: number, fromX: number, fromY: number): void {
+    let dx = this.x - fromX;
+    let dy = this.y - fromY;
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1) {
+      // Degenerate same-position case (attacker and victim essentially
+      // coincide, e.g. point-blank melee) — vanilla's own
+      // R_PointToAngle2(0,0,0,0) falls back to angle 0 here rather than an
+      // undefined direction; pushing along the victim's current facing reads
+      // more sensibly than always due east. Same fallback as ThingLayer.damage.
+      dx = Math.cos(this.angle);
+      dy = Math.sin(this.angle);
+    } else {
+      dx /= dist;
+      dy /= dist;
+    }
+    this.applyKnockback(dx * speed, dy * speed);
   }
 
   /**

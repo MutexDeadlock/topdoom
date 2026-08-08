@@ -2,10 +2,15 @@ import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../r
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import { PLAYER_ORIGIN } from '../audio/sfx.ts';
-import { hasLineOfSight, playerShotRange, projectileStepBlocker, shotPath, type ShotPath, type World } from './world.ts';
+import { hasLineOfSight, playerShotRange, projectileStepBlocker, shotPath } from './world.ts';
 import { AIM_HEIGHT_OFFSET } from './player.ts';
-import { MONSTER_FIRE_HEIGHT, sameSpecies } from './monsters.ts';
-import { MONSTER_HIT_HEIGHT, MONSTER_HIT_RADIUS, type MonsterAttackEvent } from './things.ts';
+import {
+  MONSTER_FIRE_HEIGHT,
+  MONSTER_HIT_HEIGHT,
+  MONSTER_HIT_RADIUS,
+  sameSpecies,
+  type MonsterAttackEvent,
+} from './monsters.ts';
 import { PLAYER_MELEE_RANGE, rollDamage, type Shot } from './weapons.ts';
 import { applyRadiusDamage, type CombatContext } from './combat.ts';
 import type { EffectLayer } from './effects.ts';
@@ -17,7 +22,6 @@ import {
   MONSTER_PROJECTILE_HIT_RADIUS,
   PROJECTILE_FRAMES,
   PROJECTILE_SOUNDS,
-  PUFF_WALL_OFFSET,
   REVENANT_TRACER_TURN_RATE_RAD,
   SMOKE_TRAIL_FRAMES,
   SMOKE_TRAIL_FRAME_SECONDS,
@@ -28,23 +32,6 @@ import {
   type Projectile,
 } from './effectdefs.ts';
 import type { Pos3 } from '../types.ts';
-
-/**
- * The bullet puff a hitscan shot leaves where it stopped against geometry —
- * `PTR_ShootTraverse`'s `hitline` branch, shared by the player's pellets and a
- * monster's bolt (`game.ts: resolveMonsterHitscan`). Nothing is drawn for a
- * shot that simply ran out of range (`lineIndex === null`) or for one that hit
- * sky. See docs/combat.md § Bullet puffs.
- */
-export function spawnWallPuff(effects: EffectLayer, world: World, path: ShotPath, angleRad: number): void {
-  if (path.lineIndex === null || world.hitsSky(path.lineIndex, path.z)) return;
-  // Backed off the wall plane it marks, vanilla's own "position a bit closer".
-  effects.spawnPuff({
-    x: path.x - Math.cos(angleRad) * PUFF_WALL_OFFSET,
-    y: path.y - Math.sin(angleRad) * PUFF_WALL_OFFSET,
-    z: path.z,
-  });
-}
 
 /**
  * Every shot in flight, from launch to whatever it lands on: the player's own
@@ -192,7 +179,7 @@ export class ProjectileLayer {
         things?.damage(hitMonsterId, shot.damage, undefined, undefined, origin.x, origin.y);
       } else {
         this.ctx.triggerShot(path.lineIndex);
-        spawnWallPuff(this.effects, world, path, shot.angleRad);
+        this.effects.spawnWallPuff(path, shot.angleRad);
       }
       this.effects.addTracer(origin, { x: endX, y: endY, z: path.z }, TRACER_COLOR);
       return;

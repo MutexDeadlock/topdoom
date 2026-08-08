@@ -2,8 +2,8 @@
 
 `src/game/weapons.ts`, `src/game/projectiles.ts`, `src/game/combat.ts`,
 `src/game/world.ts: shotPath`/`hasLineOfSight`, `src/render/tracer.ts`, `src/game/effects.ts`,
-`src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/inventory.ts`, `src/game/effectdefs.ts`,
-`src/game.ts`
+`src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/monsters.ts: MonsterAttacks`,
+`src/game/inventory.ts`, `src/game/effectdefs.ts`, `src/game.ts`
 
 ## WeaponSystem
 
@@ -223,7 +223,7 @@ the layer's five collaborators. `tests/regression/player-shot-range.test.ts` gua
 **`shotPath`'s returned `lineIndex` — whichever line stopped the shot, or null if it reached its
 target or ran out its range — drives `wad/specials.ts`'s three impact specials, 24/46/47**
 (`SpecialsController.triggerShot`, vanilla's `P_ShootSpecialLine`). A hitscan pellet's trigger fires
-immediately in `spawnPlayerShot`/`resolveMonsterHitscan` (resolved and gone within the same frame, matching
+immediately in `spawnPlayerShot`/`MonsterAttacks.resolveHitscan` (resolved and gone within the same frame, matching
 `PTR_ShootTraverse`), but a projectile's is deferred to the frame it actually *arrives* at that wall
 in `ProjectileLayer.update` — vanilla calls `P_ShootSpecialLine` for a missile from `PIT_CheckLine`, which
 only runs once the missile reaches the line. `Projectile.lineIndex` carries the line found at launch
@@ -277,8 +277,8 @@ level change (`beginLevel`).
 
 `EffectLayer` only draws and ages what it is handed; who spawns what, and every rule about *why*
 (`A_Fire`'s sightline, `A_VileAttack`'s reposition) stays with the system that owns the mechanic —
-the arch-vile's flame tracks its target through a `VileFlameResolver` callback `game.ts` supplies,
-rather than the layer reaching into monster state.
+the arch-vile's flame tracks its target through a `VileFlameResolver` callback `MonsterAttacks`
+supplies (`game/monsters.ts`), rather than the layer reaching into monster state.
 
 Those effects and projectiles in flight are drawn through `EffectLayer`'s batch, a second `SpriteBatch`
 alongside `ThingLayer`'s, so an `OneShotEffect`/`Projectile` holds a bare `SpriteAnimator` and owns
@@ -342,7 +342,7 @@ a directed weapon's own blocking rules, not "does this omnidirectional blast rea
 **Blood is spawned by a trace hitting a body, not by damage** — vanilla puts `P_SpawnBlood` in
 `PTR_ShootTraverse`, i.e. only on the `P_LineAttack` path. So the player's hitscan pellets
 (`spawnPlayerShot`), the fist/chainsaw swing (its melee branch) and a monster's hitscan bolt
-(`game.ts: resolveMonsterHitscan`) all splash, and everything reaching `P_DamageMobj` by another
+(`game/monsters.ts: MonsterAttacks.resolveHitscan`) all splash, and everything reaching `P_DamageMobj` by another
 route does not: a projectile's direct hit, splash, the BFG spray (`A_BFGSpray` damages and spawns
 `MT_EXTRABFG` itself, never blood), a crusher, a damage floor. Don't "fix" the missing cases — a
 rocket that made a monster bleed would be wrong.
@@ -373,7 +373,7 @@ always spawns a puff. So the same three shooters that can splash blood — the p
 fist/chainsaw swing, a monster's bolt — are the only sources, and `MT_PUFF`'s four `PUFF` frames run
 forwards at 4 tics each (`S_PUFF1`-`4`), unlike the blood's backwards three.
 
-`spawnWallPuff` (`game/projectiles.ts`, shared by the player's pellet and `resolveMonsterHitscan`)
+`EffectLayer.spawnWallPuff` (`game/effects.ts`, shared by the player's pellet and `resolveHitscan`)
 owns the geometry case and **skips two things vanilla also skips**:
 
 - A shot that ran out of range without crossing a blocking line (`ShotPath.lineIndex === null`).
@@ -620,7 +620,8 @@ spawn spot a real way to die.
 
 **Reuses the exact same mechanism** on `game.ts`'s single persistent `playerActor`:
 `PLAYER_DEATH_FRAMES` (`H`-`N`) is `PLAY`'s own confirmed DIE half, derived the same way as the
-monster tables.
+monster tables — and living beside them in `game/thingdefs.ts`, not in `game/player.ts`, which owns
+no sprite.
 
 `Inventory.applyDamage` is vanilla's `P_DamageMobj` armor formula — green armor absorbs a third of
 the damage, blue half, spending armor points 1-for-1 with whatever it absorbed and falling back to
@@ -643,7 +644,7 @@ through to `P_SetMobjState(spawnstate)`. It only wakes again via `damage`'s unco
 (getting caught in someone else's infight), same path any other dormant monster uses. A rocket or vile
 blast already in flight still lands and can still deal splash (or, for the vile's knockup, do nothing
 beyond the first killing blow — `resolveVileBlast` gates its knockup on `damagePlayer`'s return, and
-`resolveMonsterHitscan`'s `!playerDead` guard for the hitscan equivalent) — a dead player can still be
+`resolveBullet`'s `!playerDead` guard for the hitscan equivalent) — a dead player can still be
 "hit" for nothing to happen, matching `damagePlayer`'s own early return. The death itself shows a
 `#death-overlay` div. `R` calls `restart`: a fresh `Inventory`
 and a `loadMapByIndex` reload of the current map, which already resets player/world/specials/fog for
@@ -681,9 +682,10 @@ argument for exactly this; every other caller still omits it.
 `2 * BARREL_DEATH_FRAME_SECONDS` (a flat per-frame rate standing in for vanilla's uneven 5/5/5/10/10,
 the same simplification `MONSTER_DEATH_FRAME_SECONDS` makes). `ThingLayer.update` ticks this off the
 same `deadTime` clock it already ticks for every dead thing and reports it back as a
-`BarrelExplosion` (`{x, y, z, source}`) once due — the same "system reports, `game.ts` realizes"
-split as `MonsterAttackEvent`, bundled alongside it in `ThingUpdateResult` rather than folded into
-the same array. No separate visual effect is spawned: the barrel's own `PosedThing` is already
+`BarrelExplosion` (`{x, y, z, source}`) once due — the same "the layer reports, someone else
+realizes" split as `MonsterAttackEvent`, bundled alongside it in `ThingUpdateResult` rather than
+folded into the same array. `game.ts` realizes this one (`applyBarrelExplosion`); `MonsterAttacks`
+realizes the attacks. No separate visual effect is spawned: the barrel's own `PosedThing` is already
 playing `BEXP` at exactly that position. `S_BEXP5` falls through to `S_NULL`, i.e. the debris is
 removed once the animation finishes, the same rule `MONSTER_CORPSE_VANISHES` reproduces — a barrel
 just isn't a `MONSTER_TYPES` member, so it gets its own copy of the check.

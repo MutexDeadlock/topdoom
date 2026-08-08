@@ -557,6 +557,27 @@ export const MONSTER_RAISE_FRAMES: Record<number, string[]> = {
 };
 
 /**
+ * The player's own frame letters, the `PLAY`-lump counterparts of the
+ * `MONSTER_*_FRAMES` tables above — scalars rather than doomednum-keyed
+ * records, there being exactly one player. They live here, with every other
+ * sprite-frame table, rather than in `game/player.ts`: that file is the
+ * movement/collision controller and owns no sprite at all.
+ *
+ * Death is confirmed against `PLAY`'s lump names: its rotation-0-only tail runs
+ * H-W, split as DIE1-7 (H-N, this sequence) then XDIE1-9 (O-W, the gib variant
+ * this engine doesn't model). Attack and pain come from `info.c`, which puts
+ * `S_PLAY_ATK1`/`ATK2` at `E`/`F` and `S_PLAY_PAIN`/`PAIN2` at `G`, right
+ * before the death sequence starts at `H`. The two action frames play via
+ * `SpriteAnimator.playOnce`, not `die`: both hand back to the walk/idle cycle
+ * when they finish. docs/combat.md § Player death.
+ */
+export const PLAYER_DEATH_FRAMES = ['H', 'I', 'J', 'K', 'L', 'M', 'N'];
+export const PLAYER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
+export const PLAYER_ATTACK_FRAMES = ['E', 'F'];
+export const PLAYER_PAIN_FRAMES = ['G'];
+export const PLAYER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;
+
+/**
  * Item a monster leaves behind on death (doomednum of the pickup to spawn),
  * lifted straight from vanilla's `P_KillMobj` — only three `switch` cases
  * exist there at all, so only three monster types actually drop anything:
@@ -654,3 +675,14 @@ export const THING_ANIM_FRAMES: Record<number, { frames: string[]; frameSeconds:
   49: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 * DOOM_TIC }, // GOR1 — real cycle is 10/15/8/6 tics
   63: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 * DOOM_TIC }, // GOR1 — same cycle, non-blocking placement
 };
+
+/**
+ * The exploding barrel's own `A_Explode` — vanilla's literal
+ * `P_RadiusAttack(thingy, thingy->target, 128)`, identical radius and damage to
+ * the rocket launcher's own splash (`weapons.ts`'s `rocketLauncher.splash`).
+ * Table data, so it lives here rather than with the barrel's runtime state in
+ * `things.ts`: that keeps `combat.ts`'s import of `things.ts` type-only, which
+ * is what lets `monsters.ts` reach `applyRadiusDamage` without a cycle.
+ */
+export const BARREL_SPLASH_RADIUS = 128;
+export const BARREL_SPLASH_DAMAGE = 128;

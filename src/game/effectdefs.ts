@@ -1,7 +1,6 @@
 import type { SpriteAnimator } from '../render/sprites.ts';
 import type { SfxId } from '../audio/sfx.ts';
 import type { Pos3 } from '../types.ts';
-import { MONSTER_STATS } from './monsters.ts';
 import { PLAYER_RADIUS } from './player.ts';
 import { DOOM_TIC } from '../constants.ts';
 
@@ -188,12 +187,6 @@ export const VILE_FIRE_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 /** Vanilla's own 24-unit offset (`A_VileAttack`'s `FixedMul(24*FRACUNIT, ...)`) — see `resolveVileBlast`'s doc. */
 export const VILE_FIRE_OFFSET = 24;
 
-/**
- * How long the windup flame tracks its target — read from the arch-vile's own
- * `startDelaySeconds` rather than duplicated, so the flame can't drift away
- * from the moment the real shot lands or fizzles.
- */
-export const VILE_WINDUP_TRACK_SECONDS = MONSTER_STATS[64].ranged?.startDelaySeconds ?? 0;
 
 /**
  * The revenant missile's turn rate — vanilla's `A_Tracer` turns by `TRACEANGLE`

@@ -311,8 +311,8 @@ one *without* the bit is the real single-player pickup.
   used as-is for horizontal centring.
 - **Rotation frame (which of the 8 sprite angles) is picked from the live viewer angle** every frame
   (`pickRotationDigit`), same as the plane's own yaw.
-- **Ammo/health/armor/keys/powerups render `PICKUP_SCALE` (1.4×) larger than their native WAD pixel
-  size; nothing else does.** Vanilla's 1:1 unit-per-pixel sizing suits a ground-level view; from this
+- **Ammo/health/armor/keys/powerups render `PICKUP_SCALE` (1.4×, `src/constants.ts`) larger than
+  their native WAD pixel size; nothing else does.** Vanilla's 1:1 unit-per-pixel sizing suits a ground-level view; from this
   far, tilted camera small collectibles get lost. `game/thingdefs.ts`'s `PICKUP_SCALE_TYPES` is a
   whitelist of exactly those four doomednum blocks, not "everything but monsters/weapons" —
   monsters are already large enough to read, weapons already stand out, and solid decorations/gore

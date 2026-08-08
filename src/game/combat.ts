@@ -1,7 +1,11 @@
 import { hasLineOfSight, type World } from './world.ts';
 import type { Player } from './player.ts';
+// Type-only, deliberately: a value import here would put `things.ts` — and so
+// `monsters.ts`, which it imports — in the runtime graph of everything that
+// resolves damage, `monsters.ts` itself included. Its splash constants live in
+// `thingdefs.ts` to keep that true. docs/monsters.md § Resolving an attack.
 import type { BarrelExplosion, ThingLayer } from './things.ts';
-import { BARREL_SPLASH_DAMAGE, BARREL_SPLASH_RADIUS } from './things.ts';
+import { BARREL_SPLASH_DAMAGE, BARREL_SPLASH_RADIUS } from './thingdefs.ts';
 import type { Pos3 } from '../types.ts';
 
 /**

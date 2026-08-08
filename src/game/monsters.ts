@@ -1,9 +1,17 @@
 import type { Sector } from '../wad/map.ts';
-import { circleBlocked, hasLineOfSight, WEAPON_RANGE, type ThingBlocker, type World } from './world.ts';
-import { GRAVITY } from './player.ts';
-import { rollDamage } from './weapons.ts';
+import { circleBlocked, hasLineOfSight, shotPath, WEAPON_RANGE, type ThingBlocker, type World } from './world.ts';
+import { AIM_HEIGHT_OFFSET, GRAVITY, PLAYER_RADIUS } from './player.ts';
+import { rollDamage, triangularSpread } from './weapons.ts';
+import { applyRadiusDamage, type CombatContext } from './combat.ts';
+import type { EffectLayer } from './effects.ts';
+// Type-only on purpose: `projectiles.ts` and `things.ts` both import *this*
+// file for values, so a value import either way round would be a runtime cycle.
+// docs/monsters.md § Resolving an attack.
+import type { ProjectileLayer } from './projectiles.ts';
+import { IMPACT_FRAME_SECONDS, MONSTER_TRACER_COLOR, VILE_FIRE_FRAMES, VILE_FIRE_OFFSET } from './effectdefs.ts';
+import type { AudioEngine } from '../audio/audio.ts';
 import { monsterOrigin, SILENT, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
-import type { Pos3 } from '../types.ts';
+import type { Pos2, Pos3 } from '../types.ts';
 import { DOOM_TIC } from '../constants.ts';
 
 /**
@@ -76,10 +84,11 @@ export interface MonsterBody extends Pos3 {
 
 export interface AttackStats {
   /**
-   * Map units, **melee only** — `MELEERANGE` plus slack for this engine's
-   * coarser per-frame sampling. A ranged attack deliberately has no range
+   * Map units, **melee only** — this monster's own `MELEERANGE`, which
+   * `meleeThreshold` turns into the actual reach against a given target. Every
+   * stock type uses the vanilla 64. A ranged attack deliberately has no range
    * field: vanilla gives it none, and giving it one was a real bug. See
-   * docs/monsters.md § Attacking.
+   * docs/monsters.md § Melee reach.
    */
   range?: number;
   diceSides: number;
@@ -304,6 +313,21 @@ export interface MonsterAttack {
   resurrectId?: number;
 }
 
+/**
+ * A fired `MonsterAttack`, plus who fired it and at what — what
+ * `ThingLayer.update` hands back for the caller to realize (a tracer, a
+ * projectile, `damage` on whatever it actually reached). Lives here rather than
+ * with `ThingLayer`: everything it adds to `MonsterAttack` is a plain id or
+ * coordinate, so it carries no dependency on the thing storage at all.
+ */
+export interface MonsterAttackEvent extends MonsterAttack, Pos3 {
+  /** The firing monster's own id and doomednum, so a shot that lands on another monster can be attributed (and species-checked) correctly. */
+  sourceId: number;
+  sourceType: number;
+  /** What it was aimed at: `null` for the player, otherwise another monster's id. */
+  targetId: number | null;
+}
+
 /** One corpse `ThingLayer`'s `findRaisableCorpse` found eligible for the arch-vile to raise — just enough for `runChaseCall` to face it and report which one. */
 export interface RaiseCandidate {
   id: number;
@@ -311,8 +335,65 @@ export interface RaiseCandidate {
   y: number;
 }
 
-/** Vanilla's own MELEERANGE, plus a little slack for this engine's coarser per-frame (rather than per-tic) distance sampling. */
-export const MELEE_RANGE = 72;
+/** Vanilla's `MELEERANGE` (`p_local.h`: `64*FRACUNIT`). Not the melee threshold itself — see `meleeThreshold`. */
+export const MELEE_RANGE = 64;
+
+/**
+ * `P_CheckMeleeRange`'s own bias. Vanilla tests
+ * `dist >= MELEERANGE - 20*FRACUNIT + pl->info->radius` — it shortens
+ * `MELEERANGE` by 20 and adds the **target's** radius back, so a swing reaches
+ * further at a wide monster than at the player. GZDoom stores the shortened
+ * value directly (`AActor::meleerange`, default 44) and compares
+ * `dist >= meleerange + pl->radius`; identical threshold either way.
+ */
+const MELEE_RANGE_BIAS = 20;
+
+/**
+ * The 2D distance inside which a melee swing connects — 60 against the player
+ * (radius 16), more against a wider victim in an infight. **Exclusive**:
+ * vanilla returns false on `>=`. Distance itself is a real `hypot` rather than
+ * `P_AproxDistance`'s octagonal approximation, which exists only to dodge a
+ * fixed-point square root (the same call docs/audio.md § The mixer model makes).
+ */
+export function meleeThreshold(meleeRange: number, targetRadius: number): number {
+  return meleeRange - MELEE_RANGE_BIAS + targetRadius;
+}
+
+/**
+ * How close a charging lost soul has to get to land its `A_SkullAttack` hit.
+ * **This engine's own, not vanilla**, which has no range test here at all: the
+ * skull is `MF_SKULLFLY` and damages whatever its moving bounding box overlaps
+ * in `PIT_CheckThing`, i.e. a true `radius + target radius` (32 against the
+ * player) resolved by the movement code. This engine has no swept collision for
+ * the charge, so a box that tight is tunnelled straight through at charge speed;
+ * the value is the pre-formula `MELEE_RANGE` this test used to share, kept
+ * unchanged so tightening the melee threshold didn't silently retune the lost
+ * soul too. See docs/monsters.md § The lost soul.
+ */
+const SKULL_CONTACT_RANGE = 72;
+
+/**
+ * Whether attacker and target overlap vertically enough for a melee swing to
+ * connect: refused once the target's feet clear the attacker's head, or the
+ * target's head sits below the attacker's feet.
+ *
+ * **Deliberately not vanilla.** `P_CheckMeleeRange` (`p_enemy.c`) tests 2D
+ * `P_AproxDistance` and `P_CheckSight` and nothing else, so a vanilla pinky
+ * standing in a pit really can bite someone on the lip above it. This
+ * reproduces ZDoom's guard instead — `p_enemy.cpp`'s `MF5_NOVERTICALMELEERANGE`
+ * block, commented there "Don't melee things too far above or below actor" —
+ * which is what GZDoom players see. See docs/monsters.md § Melee reach.
+ */
+export function meleeReachesVertically(
+  attackerZ: number,
+  attackerHeight: number,
+  targetZ: number,
+  targetHeight: number,
+): boolean {
+  if (targetZ > attackerZ + attackerHeight) return false;
+  if (targetZ + targetHeight < attackerZ) return false;
+  return true;
+}
 
 /** Vanilla's own `FATSPREAD` (`ANG90/8`) — the mancubus's fireball-pair fan angle, see `AttackStats.projectile.pairOffsetsRad`. */
 const FATSPREAD = Math.PI / 2 / 8;
@@ -380,6 +461,15 @@ const CHASE_AXIS_EPSILON = 10;
  * monster's own equivalent of `game/player.ts`'s `AIM_HEIGHT_OFFSET`.
  */
 export const MONSTER_FIRE_HEIGHT = 40;
+
+/**
+ * Single approximate hitbox every shot's ray is tested against
+ * (`ThingLayer.raycastMonster`, and `spawnPlayerShot`'s locked-on test) — one
+ * shared box, not `MonsterStats.radius`'s per-type value, so a spread pellet
+ * misses the clicked monster at exactly the width any other bullet would.
+ */
+export const MONSTER_HIT_RADIUS = 24;
+export const MONSTER_HIT_HEIGHT = 64;
 
 /**
  * The two `MONSTER_TYPES` members with no entry in `MONSTER_STATS` below.
@@ -776,6 +866,16 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
 };
 
 /**
+ * How long the arch-vile's windup flame tracks its target — read off the
+ * vile's own `startDelaySeconds` rather than duplicated, so the flame can't
+ * drift away from the moment the real shot lands or fizzles. Lives here, with
+ * the table it is derived from, rather than in `effectdefs.ts` beside the other
+ * `VILE_FIRE_*` values: that file is otherwise free of `MONSTER_STATS`, and
+ * keeping it that way is what lets this file import it.
+ */
+export const VILE_WINDUP_TRACK_SECONDS = MONSTER_STATS[64].ranged?.startDelaySeconds ?? 0;
+
+/**
  * `P_LookForPlayers`'s field-of-view gate: the forward ~180°, unless the
  * player is within `MELEERANGE`. Initial wake-up only — `A_Chase` never
  * re-applies it to an already-hunting monster. docs/monsters.md § Waking up.
@@ -1005,7 +1105,7 @@ function stepCharge(body: MonsterBody, stats: MonsterStats, dt: number, world: W
     return null;
   }
   body.chargeTimer = Math.max(0, body.chargeTimer - dt);
-  if (distToPlayer <= MELEE_RANGE) {
+  if (distToPlayer <= SKULL_CONTACT_RANGE) {
     body.chargeTimer = 0;
     // Contact damage, so 'melee' — the caller draws no tracer and spawns no
     // projectile for it, which is right: the monster itself was the missile.
@@ -1085,6 +1185,14 @@ export function stepMonsterAI(
   dt: number,
   world: World,
   target: Pos3,
+  /**
+   * The target's own `info->radius` and body height, which only the melee gate
+   * reads (`meleeThreshold`, `meleeReachesVertically`). Two scalars rather than
+   * one object deliberately: this runs per monster per frame, and CLAUDE.md's
+   * position-type rule keeps hot paths allocation-free.
+   */
+  targetRadius: number,
+  targetHeight: number,
   blockers?: readonly ThingBlocker[],
   resurrect?: (x: number, y: number, vileRadius: number) => RaiseCandidate | null,
   sfx: SoundEmitter = SILENT,
@@ -1167,7 +1275,7 @@ export function stepMonsterAI(
     body.chaseTimer += dt;
     if (body.chaseTimer >= stats.chaseInterval) {
       body.chaseTimer -= stats.chaseInterval;
-      attack = runChaseCall(body, stats, world, target, dist, dx, dy, canSee, blockers, resurrect, sfx);
+      attack = runChaseCall(body, stats, world, target, targetRadius, targetHeight, dist, dx, dy, canSee, blockers, resurrect, sfx);
     }
   }
 
@@ -1255,6 +1363,8 @@ function runChaseCall(
   stats: MonsterStats,
   world: World,
   target: Pos3,
+  targetRadius: number,
+  targetHeight: number,
   dist: number,
   dx: number,
   dy: number,
@@ -1293,7 +1403,12 @@ function runChaseCall(
     return null;
   }
 
-  if (stats.melee && dist <= (stats.melee.range ?? MELEE_RANGE) && canSee()) {
+  if (
+    stats.melee &&
+    dist < meleeThreshold(stats.melee.range ?? MELEE_RANGE, targetRadius) &&
+    meleeReachesVertically(body.z, MONSTER_HIT_HEIGHT, target.z, targetHeight) &&
+    canSee()
+  ) {
     body.angle = Math.atan2(dy, dx); // A_FaceTarget
     body.attackPause = stats.melee.duration;
     if (stats.sounds.melee) sfx.play(stats.sounds.melee, body, monsterOrigin(body.id));
@@ -1316,4 +1431,321 @@ function runChaseCall(
   // than on a timer.
   if (stats.sounds.active && Math.random() * 256 < 3) sfx.play(stats.sounds.active, body, monsterOrigin(body.id));
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Attack resolution
+//
+// Everything above decides *that* a monster attacks and reports a
+// `MonsterAttackEvent`; everything below works out what that attack actually
+// does to the world. The two halves are kept apart by their dependencies: the
+// AI above touches nothing but a `MonsterBody`, while `MonsterAttacks` needs
+// the thing list, the effect and projectile layers, and the audio engine.
+// docs/monsters.md § Resolving an attack.
+// ---------------------------------------------------------------------------
+
+/**
+ * How far off-aim each monster bullet is thrown — `p_enemy.c`'s
+ * `(P_Random()-P_Random())<<20` BAM, ±255/4096 of a full turn, triangular.
+ * Why it is the difference between a survivable gunner and a lethal one:
+ * docs/monsters.md § Hitscan vs. projectile.
+ */
+const MONSTER_BULLET_SPREAD_DEG = (255 / 4096) * 360;
+
+/**
+ * Slack added to the player's radius when testing a monster's hitscan bolt —
+ * it makes a circle present the same average target as vanilla's 32-unit
+ * *box*, and covers nothing else. docs/monsters.md § Hitscan vs. projectile.
+ */
+const MONSTER_BULLET_SLOP = 4;
+
+/**
+ * Vanilla's `A_FaceTarget`: aiming at an `MF_SHADOW` thing (here only ever the
+ * player under partial invisibility) throws the facing off by
+ * `(P_Random()-P_Random())<<21` BAM, ±255/2048 of a full turn. That is the
+ * entire blur-sphere mechanic — it never touches sight or waking.
+ */
+const SHADOW_AIM_SPREAD_DEG = (255 / 2048) * 360;
+
+/**
+ * Realizes the attacks `ThingLayer.update` reported this frame: a melee swing
+ * lands, a hitscan volley traces bolt by bolt, a projectile is launched, the
+ * arch-vile's blast and warning flame are applied. Nothing here decides to
+ * attack — that already happened in `stepMonsterAI`.
+ *
+ * The counterpart for shots that take time to arrive is `ProjectileLayer`
+ * (game/projectiles.ts), which this hands the flying ones to. Both read the
+ * live level through the same `CombatContext`.
+ */
+export class MonsterAttacks {
+  private ctx: CombatContext;
+  private effects: EffectLayer;
+  private projectiles: ProjectileLayer;
+  private audio: AudioEngine;
+  private isPlayerShadowed: () => boolean;
+
+  /**
+   * `isPlayerShadowed` is a callback rather than an `Inventory` reference:
+   * whether the player currently holds partial invisibility is inventory
+   * state, and nothing else in this file has any reason to reach that far.
+   */
+  constructor(
+    ctx: CombatContext,
+    effects: EffectLayer,
+    projectiles: ProjectileLayer,
+    audio: AudioEngine,
+    isPlayerShadowed: () => boolean,
+  ) {
+    this.ctx = ctx;
+    this.effects = effects;
+    this.projectiles = projectiles;
+    this.audio = audio;
+    this.isPlayerShadowed = isPlayerShadowed;
+  }
+
+  /** Applies every attack fired this frame, in the order they were reported. */
+  resolve(attacks: readonly MonsterAttackEvent[]): void {
+    for (const atk of attacks) {
+      this.applyShadowAim(atk);
+      // The arch-vile's windup warning — see `spawnWindupFire`. Purely
+      // cosmetic (no damage, no trace), so it's handled before every other
+      // kind below and separately from them.
+      if (atk.kind === 'vileWindup') {
+        this.spawnWindupFire(atk);
+        continue;
+      }
+      // A monster with a real flying projectile (`MONSTER_STATS`, e.g. the
+      // imp's fireball) launches one instead of resolving as an instant hit —
+      // damage lands later, on arrival (`ProjectileLayer.update`), not here.
+      if (atk.kind === 'ranged' && atk.projectiles) {
+        this.projectiles.spawnMonsterShot(atk);
+      } else if (atk.kind === 'ranged' && atk.blast) {
+        this.resolveVileBlast(atk);
+      } else if (atk.kind === 'ranged') {
+        this.resolveHitscan(atk);
+      } else {
+        // Melee lands on whatever it swung at, no trace involved.
+        this.applyDirectDamage(atk.targetId, atk.damage, atk.sourceId, atk.sourceType, atk.x, atk.y);
+      }
+    }
+  }
+
+  /**
+   * `EffectLayer`'s `VileFlameResolver`: where the arch-vile's flame belongs
+   * this frame, or null if it should stay put. Lives here rather than in the
+   * effect layer because the answer depends on live monster/player state (and
+   * on `A_Fire`'s sightline rule) that the batch has no reason to know.
+   */
+  vileFlameFor(vileId: number, targetId: number | null): Pos3 | null {
+    const vile = this.ctx.things?.monsterById(vileId);
+    const target = targetId === null ? this.ctx.player : this.ctx.things?.monsterById(targetId);
+    if (!vile || !target || !hasLineOfSight(this.ctx.world, vile, target)) return null;
+    return fireFrontOf(target);
+  }
+
+  /**
+   * Applies a monster's damage to whatever it landed on — the player when
+   * `targetId` is null, otherwise another monster, tagged with who did it so
+   * `ThingLayer.damage` can run vanilla's retaliation rule and start an
+   * infight. `fromX`/`fromY` are the attacking monster's own position, for the
+   * knockback thrust both sides derive.
+   */
+  private applyDirectDamage(
+    targetId: number | null,
+    damage: number,
+    sourceId: number,
+    sourceType: number,
+    fromX: number,
+    fromY: number,
+  ): void {
+    if (targetId === null) this.ctx.damagePlayer(damage, fromX, fromY);
+    else this.ctx.things?.damage(targetId, damage, { id: sourceId, type: sourceType }, undefined, fromX, fromY);
+  }
+
+  /**
+   * Throws a monster's ranged shot off-aim while the player holds partial
+   * invisibility — `A_FaceTarget`'s fuzz, applied once per fired shot so each
+   * shot of a burst goes its own way. It fuzzes the *aim* the volley is built
+   * on, which is why it lands here rather than per bullet: vanilla fuzzes
+   * `actor->angle`, and `A_SPosAttack`'s pellets all spread off that one fuzzed
+   * `bangle`. Player-aimed shots only (nothing else carries `MF_SHADOW`), and
+   * ranged only: a melee swing lands on `P_CheckMeleeRange`, never on the
+   * fuzzed angle. See docs/items.md § Powerups and the backpack.
+   */
+  private applyShadowAim(atk: MonsterAttackEvent): void {
+    if (atk.kind !== 'ranged' || atk.targetId !== null || !this.isPlayerShadowed()) return;
+    const off = triangularSpread(SHADOW_AIM_SPREAD_DEG);
+    atk.angleRad += off;
+    if (atk.projectiles) for (const proj of atk.projectiles) proj.angleRad += off;
+  }
+
+  /**
+   * The arch-vile's `A_VileAttack` (`atk.blast`): not a traced bolt at all —
+   * vanilla damages `actor->target` directly (guaranteed, nothing to miss
+   * along), launches it upward, then blasts a radius. No tracer or projectile
+   * sprite; the `FIRE` spawned here is `MT_FIRE`'s final burst, taking over
+   * from `spawnWindupFire`'s. See docs/monsters.md § The arch-vile.
+   */
+  private resolveVileBlast(atk: MonsterAttackEvent): void {
+    if (!atk.blast) return;
+    const player = this.ctx.player;
+    const victim = atk.targetId === null ? null : this.ctx.things?.monsterById(atk.targetId);
+    const at = victim ? { x: victim.x, y: victim.y, z: victim.z } : { x: player.x, y: player.y, z: player.z };
+    if (atk.targetId === null) {
+      // A no-op hit (already dead, or invulnerable) reports false — see
+      // `CombatContext.damagePlayer` — and skips the knockup along with it.
+      if (this.ctx.damagePlayer(atk.damage, atk.x, atk.y)) player.launchUpward(atk.blast.knockUpSpeed);
+    } else {
+      this.ctx.things?.damage(
+        atk.targetId,
+        atk.damage,
+        { id: atk.sourceId, type: atk.sourceType },
+        atk.blast.knockUpSpeed,
+        atk.x,
+        atk.y,
+      );
+    }
+    // A_VileAttack's own sound is the barrel/rocket explosion, played on the
+    // vile rather than on the flame it just placed.
+    this.audio.play('barexp', atk, monsterOrigin(atk.sourceId));
+    const offset = vileBlastOffset(atk, at);
+    const fireAt = { x: at.x + offset.x, y: at.y + offset.y, z: at.z };
+    applyRadiusDamage(this.ctx, fireAt, atk.blast.splashRadius, atk.blast.splashDamage, true, {
+      id: atk.sourceId,
+      type: atk.sourceType,
+    });
+    this.effects.spawnImpact('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, fireAt);
+  }
+
+  /**
+   * The arch-vile's warning flame, spawned when its windup starts — vanilla's
+   * `MT_FIRE`. Reuses `EffectLayer.spawn` but overrides the lifetime to the
+   * windup's own length, so `resolveVileBlast`'s burst (or nothing, if the shot
+   * fizzles) takes over with no explicit hand-off. Positioned up front, as
+   * `A_VileTarget` calls `A_Fire` immediately after spawning. See
+   * docs/monsters.md § The arch-vile.
+   */
+  private spawnWindupFire(atk: MonsterAttackEvent): void {
+    const target = atk.targetId === null ? this.ctx.player : this.ctx.things?.monsterById(atk.targetId);
+    if (!target) return;
+    const front = fireFrontOf(target);
+    // A_StartFire, on the flame itself (`vilatk` comes from the vile at the same
+    // moment, via MonsterSounds.windup) — the two together are the warning.
+    this.audio.play('flamst', front);
+    const effect = this.effects.spawn('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, front);
+    if (!effect) return;
+    effect.lifetime = VILE_WINDUP_TRACK_SECONDS;
+    effect.followTargetId = atk.targetId;
+    effect.vileSourceId = atk.sourceId;
+    this.effects.addImpact(effect);
+  }
+
+  /**
+   * Fires every bullet of a monster's hitscan attack: one traced bolt per
+   * `MonsterAttack.bullets` entry, each thrown off by its own
+   * `MONSTER_BULLET_SPREAD_DEG` draw and carrying its own damage roll, so a
+   * shotgun guy's three pellets land independently. All of them share the one
+   * aim slope, matching `A_SPosAttack` computing `slope` once before its loop.
+   */
+  private resolveHitscan(atk: MonsterAttackEvent): void {
+    // Sloped from the monster's fire height to the target's, the way
+    // P_AimLineAttack works out a slope before P_LineAttack traces it — what
+    // lets a zombieman on a ledge shoot down at you.
+    const player = this.ctx.player;
+    const victim = atk.targetId === null ? null : this.ctx.things?.monsterById(atk.targetId);
+    const aim = victim
+      ? { x: victim.x, y: victim.y, z: victim.z + MONSTER_FIRE_HEIGHT }
+      : { x: player.x, y: player.y, z: player.z + AIM_HEIGHT_OFFSET };
+    for (const damage of atk.bullets)
+      this.resolveBullet(atk, atk.angleRad + triangularSpread(MONSTER_BULLET_SPREAD_DEG), damage, aim);
+  }
+
+  /**
+   * One bullet of that volley: it damages the first thing it reaches — nearest
+   * of a wall, another monster in the line of fire, or the player wins.
+   * `P_LineAttack` has no notion of an intended target and no species check,
+   * which is why one zombieman firing past another starts a fight. The tracer
+   * is drawn to where the bolt stopped, not to the target.
+   */
+  private resolveBullet(atk: MonsterAttackEvent, angleRad: number, damage: number, aim: Pos3): void {
+    const { world, things, player } = this.ctx;
+    // `WEAPON_RANGE` rather than the distance to `aim`: a bullet the spread
+    // threw wide keeps flying, and can still find a wall or another monster
+    // behind whoever it was fired at. `P_LineAttack(..., MISSILERANGE, ...)`.
+    const path = shotPath(world, atk, angleRad, aim, WEAPON_RANGE, false);
+
+    // The trace damages the first body it reaches, whatever it was aimed at.
+    const blocker = things?.raycastMonster(atk, angleRad, path.dist, {
+      ignoreId: atk.sourceId,
+      includeHidden: true,
+    });
+    const dirX = Math.cos(angleRad);
+    const dirY = Math.sin(angleRad);
+    const relX = player.x - atk.x;
+    const relY = player.y - atk.y;
+    const playerAlong = relX * dirX + relY * dirY;
+    const perpX = relX - dirX * playerAlong;
+    const perpY = relY - dirY * playerAlong;
+    const playerInPath =
+      !this.ctx.playerDead &&
+      playerAlong >= 0 &&
+      playerAlong <= path.dist &&
+      Math.hypot(perpX, perpY) <= PLAYER_RADIUS + MONSTER_BULLET_SLOP;
+
+    let endX = atk.x + dirX * path.dist;
+    let endY = atk.y + dirY * path.dist;
+    let endZ = path.z;
+    if (blocker && (!playerInPath || blocker.dist <= playerAlong)) {
+      things?.damage(blocker.id, damage, { id: atk.sourceId, type: atk.sourceType }, undefined, atk.x, atk.y);
+      endX = blocker.x;
+      endY = blocker.y;
+      endZ = blocker.z + MONSTER_FIRE_HEIGHT;
+      const hitAt = { x: endX, y: endY, z: endZ };
+      if (things?.bleeds(blocker.id)) this.effects.spawnBlood(hitAt, damage);
+      else this.effects.spawnPuff(hitAt);
+    } else if (playerInPath) {
+      this.ctx.damagePlayer(damage, atk.x, atk.y);
+      endX = player.x;
+      endY = player.y;
+      endZ = player.z + AIM_HEIGHT_OFFSET;
+      // The player carries no MF_NOBLOOD either, so a bolt that reaches them
+      // splashes exactly as one landing on a monster does — and unlike the
+      // pain flash this isn't gated on the damage actually landing, matching
+      // `PTR_ShootTraverse` spawning blood before it calls `P_DamageMobj`.
+      this.effects.spawnBlood({ x: endX, y: endY, z: endZ }, damage);
+    } else {
+      // Nothing living stopped it — whatever's left is a wall, the only thing
+      // `shotPath` itself could have blocked it on. `triggerShot`'s `byMonster`
+      // gate reproduces vanilla's own hardcoded exception: this can only
+      // actually do anything for a 46 line, never 24/47.
+      this.ctx.triggerShot(path.lineIndex, true);
+      this.effects.spawnWallPuff(path, angleRad);
+    }
+    this.effects.addTracer(atk, { x: endX, y: endY, z: endZ }, MONSTER_TRACER_COLOR);
+  }
+}
+
+/**
+ * Vanilla's `A_Fire`: 24 units in front of wherever the target is *currently
+ * facing*, not toward the vile — contrast `vileBlastOffset`, which is
+ * `A_VileAttack`'s genuinely different final reposition.
+ */
+function fireFrontOf(target: Pos3 & { angle: number }): Pos3 {
+  return {
+    x: target.x + Math.cos(target.angle) * VILE_FIRE_OFFSET,
+    y: target.y + Math.sin(target.angle) * VILE_FIRE_OFFSET,
+    z: target.z,
+  };
+}
+
+/**
+ * `resolveVileBlast`'s one-time final reposition — `A_VileAttack` moves the
+ * fire 24 units from the target back toward the shooter, a genuinely different
+ * formula from the windup's target-facing one, not an inconsistency here. The
+ * offset also keeps the flame from spawning at the target's exact x/y/z, where
+ * two anchored billboards hide each other.
+ */
+function vileBlastOffset(atk: MonsterAttackEvent, targetPos: Pos2): Pos2 {
+  const towardVile = Math.atan2(atk.y - targetPos.y, atk.x - targetPos.x);
+  return { x: Math.cos(towardVile) * VILE_FIRE_OFFSET, y: Math.sin(towardVile) * VILE_FIRE_OFFSET };
 }

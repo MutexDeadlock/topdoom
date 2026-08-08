@@ -1,15 +1,18 @@
 import type { DoomMap } from '../wad/map.ts';
 import type { Pos2 } from '../types.ts';
 import type { World } from './world.ts';
-import { MONSTER_HIT_HEIGHT, type ThingLayer } from './things.ts';
+import type { ThingLayer } from './things.ts';
+import { MONSTER_HIT_HEIGHT } from './monsters.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
+import { CRUSH_DAMAGE } from '../wad/specials.ts';
 
 /**
- * `SpecialsController`'s two obstruction callbacks. It owns the moving
- * geometry but has no idea who is standing in it, so it hands back a sector
- * index and the height its next step would put the plane at, and these answer
- * whether that step has to be refused. See docs/specials.md § Every other
- * mover stops instead.
+ * `SpecialsController`'s three "who is standing in this mover" callbacks. It
+ * owns the moving geometry but has no idea who is in it, so it hands back a
+ * sector index — plus, for the two obstruction tests, the height its next step
+ * would put the plane at — and these answer whether that step has to be
+ * refused, or who a crusher just caught. See docs/specials.md § Every other
+ * mover stops instead and § Crushers.
  */
 
 /**
@@ -96,4 +99,33 @@ export function blocksFloorRise(
     if (floorHeight + PLAYER_HEIGHT > ceiling) return true;
   }
   return false;
+}
+
+/**
+ * `SpecialsController`'s `onCrush` callback: deals `CRUSH_DAMAGE` to the player
+ * and to every crushable thing in `sectorIndex` that the sector's current
+ * headroom doesn't fit. Gated on `PIT_ChangeSector`'s actual "doesn't fit"
+ * test, not merely standing in the sector — a crusher parked at the top of its
+ * travel, or one that hasn't reached anyone yet, must not deal damage.
+ * Monsters and barrels share one loop, matching `PIT_ChangeSector` treating
+ * any shootable mobj the same. 2D membership only; the deliberately cheap
+ * point test is docs/specials.md § Crushers, which also says why it isn't
+ * `circleOverlapsSector`.
+ */
+export function applyCrushDamage(
+  world: World,
+  map: DoomMap,
+  things: ThingLayer | null,
+  player: Pos2,
+  sectorIndex: number,
+  damagePlayer: (amount: number) => void,
+): void {
+  const sector = map.sectors[sectorIndex];
+  const gap = sector.ceilHeight - sector.floorHeight;
+  if (gap < PLAYER_HEIGHT && world.sectorIndexAt(player.x, player.y) === sectorIndex) {
+    damagePlayer(CRUSH_DAMAGE);
+  }
+  if (gap < MONSTER_HIT_HEIGHT) {
+    for (const m of things?.crushablesInSector(sector) ?? []) things?.damage(m.id, CRUSH_DAMAGE);
+  }
 }

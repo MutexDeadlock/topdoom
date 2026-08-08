@@ -64,16 +64,18 @@ src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite + 
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards + their instanced batching, shot tracers, camera, viewport
 src/game/      spatial queries, collision, player controller, input, thing→sprite table,
-               thing/monster world state (AI, pickups, damage), fog of war, inventory/pickups,
+               thing/monster world state (AI + attack resolution, pickups, damage), fog of war,
+               inventory/pickups,
                weapons and firing, shots in flight + splash, damage/death, projectile/effect
-               tables, transient effects (fog puffs, explosions, tracers), mover obstruction,
-               damage floors + secrets, the Icon of Sin's cube spitter
+               tables, transient effects (fog puffs, explosions, tracers), mover obstruction
+               + crush damage, damage floors + secrets, the Icon of Sin's cube spitter
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
                WebAudio playback (channels, attenuation, pan, volume)
 src/ui/        start menu, HUD, screen tints/pain flash, DEVMODE hud + profiling overlay
 src/util/      small helpers shared across layers (2D geometry, damped-lerp smoothing,
                per-frame profiling)
-src/constants.ts   genuinely cross-cutting values only (VERSION, DEVMODE, DOOM_TIC, BRIGHTNESS_LIFT)
+src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
+                   BRIGHTNESS_LIFT, PICKUP_SCALE)
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
 scripts/       headless WAD inspection (node scripts/inspect-wad.ts)
@@ -113,10 +115,18 @@ Crush" naming all needed the source to settle), and not from what seems reasonab
 bugs came from eyeballing a table that could have been read off `info.c`. When you add or change one
 of these, cite where it came from.
 
+**A deliberate deviation is fine; an undocumented one is not.** Where this engine knowingly departs
+from vanilla, the departure says so at the declaration, names what it follows instead, and explains
+why — `meleeReachesVertically` (`game/monsters.ts`, follows ZDoom's `MF5_NOVERTICALMELEERANGE`
+rather than vanilla's no-vertical-check melee), `PLAYER_WEAPON_RANGE`, `CHANNELS` = 16, and a
+missing sound lump being silent rather than `DSPISTOL`. The rule above bans *guessing* at vanilla,
+not choosing against it on purpose.
+
 **Constants fall into exactly two marked categories.** Values derived from vanilla carry their
 source citation as a comment at the declaration (`g_game.c`'s ticcmd tables, `info.c`'s mobjinfo
 fields, `P_RadiusAttack`'s literal 128). Values tuned by feel say so explicitly — currently
-`GRAVITY` and `ACCELERATION` (`player.ts`), `BRIGHTNESS_LIFT` (`constants.ts`),
+`GRAVITY` and `ACCELERATION` (`player.ts`), `BRIGHTNESS_LIFT` and `PICKUP_SCALE`
+(`constants.ts`),
 `MONSTER_FADE_RANGE` (`render/occlusion.ts`) and the pain-flash alpha (`game.ts`). `weapons.ts`
 was on that list and no longer is: fire rates, spread, damage and projectile speed all have exact
 vanilla sources (docs/combat.md § Fire rates), and "it doesn't translate to a dt-scaled model" was
@@ -124,11 +134,15 @@ hiding numbers that were simply wrong. Never
 introduce a third, unmarked category: a bare number with no note is indistinguishable from a
 transcription error.
 
-**`constants.ts` stays small.** A constant used in more than two files that isn't otherwise
-identity-coupled to one module is the bar. `PLAYER_RADIUS`/`PLAYER_HEIGHT` and `NO_SIDE`/`LF`/
-`SUBSECTOR_BIT` briefly lived there during a consolidation pass and were moved back to
-`game/player.ts` and `wad/map.ts` once it was clear they belong with the code that owns their
-meaning. Don't re-add constants there just because they're imported in two or three places.
+**`constants.ts` stays small**, and admits a constant on exactly one of two grounds. Either it is
+used in more than two files and isn't identity-coupled to any one module (`DOOM_TIC`), or it is a
+**feel dial** — a tuned-by-feel presentation number deliberately parked somewhere obvious so it
+stays easy to find and retune, however few files read it (`BRIGHTNESS_LIFT`, used only by
+`render/mapmesh.ts`; `PICKUP_SCALE`, only by `game/things.ts`). Nothing else:
+`PLAYER_RADIUS`/`PLAYER_HEIGHT` and `NO_SIDE`/`LF`/`SUBSECTOR_BIT` briefly lived there during a
+consolidation pass and were moved back to `game/player.ts` and `wad/map.ts` once it was clear they
+belong with the code that owns their meaning. Don't re-add constants there just because they're
+imported in two or three places.
 
 **Position types (`src/types.ts`).** `Pos2` (`{x, y}`), `Pos3` (`+z`) and `Placement`
 (`{x, y, angle}`) are **structural**, and always **DOOM map space** (x east, y north, z up = feet

@@ -11,6 +11,13 @@ export const VERSION = '0.9.1';
 export const DEVMODE = import.meta.env?.VITE_DEVMODE === 'true';
 
 /**
+ * One vanilla tic in seconds. DOOM's whole game clock runs at 35 Hz, so every duration lifted from
+ * `info.c`'s state tables, `p_pspr.c`'s weapon chains or `p_spec.c`'s wait counts is quoted in tics
+ * and reaches this engine's dt-scaled model as `<tics> * DOOM_TIC`.
+ */
+export const DOOM_TIC = 1 / 35;
+
+/**
  * How much `render/mapmesh.ts: litColor` brightens dark sectors above vanilla's own ramp
  * (`lightToColor`), which is accurate to vanilla but reads too dark for this game's top-down
  * camera — vanilla assumes a first-person view a few dozen units from what it's lighting,

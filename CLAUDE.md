@@ -71,7 +71,7 @@ src/audio/     vanilla's sound table, the emitter game systems raise sounds thro
 src/ui/        start menu, HUD, screen tints/pain flash, DEVMODE hud + profiling overlay
 src/util/      small helpers shared across layers (2D geometry, damped-lerp smoothing,
                per-frame profiling)
-src/constants.ts   genuinely cross-cutting values only (VERSION, DEVMODE, BRIGHTNESS_LIFT)
+src/constants.ts   genuinely cross-cutting values only (VERSION, DEVMODE, DOOM_TIC, BRIGHTNESS_LIFT)
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
 scripts/       headless WAD inspection (node scripts/inspect-wad.ts)

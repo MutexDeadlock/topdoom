@@ -3,9 +3,7 @@ import type { Input } from './input.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import { PLAYER_ORIGIN, type SfxId } from '../audio/sfx.ts';
 import type { Pos3 } from '../types.ts';
-
-/** One vanilla tic in seconds — the unit every weapon timing below is counted in (`info.c`'s state tables run at 35 Hz). */
-const TIC = 1 / 35;
+import { DOOM_TIC } from '../constants.ts';
 
 /**
  * How often the chainsaw's idle rattle restarts while it's the ready weapon:
@@ -14,7 +12,7 @@ const TIC = 1 / 35;
  * origin). That restart *is* the engine note — the lump is longer than the
  * interval, so only its first fraction is ever heard.
  */
-const SAW_IDLE_INTERVAL = 4 * TIC;
+const SAW_IDLE_INTERVAL = 4 * DOOM_TIC;
 
 /**
  * Vanilla's `MELEERANGE`: how far `A_Punch`/`A_Saw` trace out from the
@@ -231,7 +229,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     ammoType: null,
     ammoPerShot: 0,
     // S_PUNCH1-4 (4+4+5+4); S_PUNCH5 carries A_ReFire.
-    cooldown: 17 * TIC,
+    cooldown: 17 * DOOM_TIC,
     kind: 'melee',
     pellets: 0,
     // A_Punch throws the *swing* off by the same <<18 draw a bullet gets. It
@@ -258,7 +256,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     ammoPerShot: 0,
     // S_SAW1 and S_SAW2 *both* call A_Saw, 4 tics each, and S_SAW3's A_ReFire
     // costs nothing — so one bite per 4 tics, not per pass through the chain.
-    cooldown: 4 * TIC,
+    cooldown: 4 * DOOM_TIC,
     kind: 'melee',
     pellets: 0,
     // A_Saw's own <<18 swing spread, identical to A_Punch's.
@@ -288,7 +286,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     ammoType: 'bullets',
     ammoPerShot: 1,
     // S_PISTOL1-3 (4+6+4); S_PISTOL4 carries A_ReFire.
-    cooldown: 14 * TIC,
+    cooldown: 14 * DOOM_TIC,
     kind: 'hitscan',
     pellets: 1,
     // P_GunShot's `(P_Random()-P_Random())<<18` — 255<<18 of a 2^32 turn.
@@ -311,7 +309,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     ammoType: 'shells',
     ammoPerShot: 1,
     // S_SGUN1-8 (3+7+5+5+4+5+5+3); S_SGUN9 carries A_ReFire.
-    cooldown: 37 * TIC,
+    cooldown: 37 * DOOM_TIC,
     kind: 'hitscan',
     pellets: 7,
     // A_FireShotgun calls P_GunShot(mo, false) seven times: the same <<18 as
@@ -335,7 +333,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     ammoType: 'shells',
     ammoPerShot: 2,
     // S_DSGUN1-9 (3+7+7+7+7+7+7+6+6); S_DSGUN10 carries A_ReFire.
-    cooldown: 57 * TIC,
+    cooldown: 57 * DOOM_TIC,
     kind: 'hitscan',
     pellets: 20,
     // A_FireShotgun2 doesn't go through P_GunShot at all: its own loop uses
@@ -364,7 +362,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     ammoPerShot: 1,
     // S_CHAIN1 and S_CHAIN2 both call A_FireCGun, 4 tics each, and S_CHAIN3's
     // A_ReFire holds 0 — one bullet per 4 tics, the chainsaw's own structure.
-    cooldown: 4 * TIC,
+    cooldown: 4 * DOOM_TIC,
     kind: 'hitscan',
     pellets: 1,
     spreadDeg: 5.6,
@@ -393,7 +391,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     ammoPerShot: 1,
     // S_MISSILE2 (12, A_FireMissile) + S_MISSILE1 (8, the flash); S_MISSILE3
     // carries A_ReFire. The 8-tic lead-in is vanilla's own launch delay.
-    cooldown: 20 * TIC,
+    cooldown: 20 * DOOM_TIC,
     kind: 'projectile',
     pellets: 0,
     spreadDeg: 0,
@@ -421,7 +419,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     // S_PLASMA1 alone (3, A_FirePlasma) — S_PLASMA2's 20 tics carry A_ReFire
     // and are only ever spent on *releasing* the trigger, which is what makes
     // the plasma rifle the fastest weapon in the game rather than a slow one.
-    cooldown: 3 * TIC,
+    cooldown: 3 * DOOM_TIC,
     kind: 'projectile',
     pellets: 0,
     spreadDeg: 0,
@@ -450,7 +448,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     // A_ReFire. Those first two states are also vanilla's charge-up *before*
     // the ball leaves, which this engine doesn't reproduce — see
     // docs/combat.md § Fire rates.
-    cooldown: 40 * TIC,
+    cooldown: 40 * DOOM_TIC,
     kind: 'projectile',
     pellets: 0,
     spreadDeg: 0,

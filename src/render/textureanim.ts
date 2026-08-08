@@ -1,5 +1,6 @@
 import type { GraphicsBank } from '../wad/graphics.ts';
 import type { MaterialBank, SurfaceKind } from './textures.ts';
+import { DOOM_TIC } from '../constants.ts';
 
 /**
  * `animdefs[]`, `p_spec.c` (linuxdoom-1.10), verbatim: every flat and wall
@@ -81,7 +82,7 @@ export class AnimatedTextures {
       this.sequences.push({
         kind: def.kind,
         names: names.slice(startIdx, endIdx + 1),
-        speedSeconds: def.speedTics / 35,
+        speedSeconds: def.speedTics * DOOM_TIC,
         lastTic: -1,
       });
     }

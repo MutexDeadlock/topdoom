@@ -53,6 +53,7 @@ import type { AudioEngine } from './audio/audio.ts';
 import { PLAYER_ORIGIN, monsterOrigin } from './audio/sfx.ts';
 import { SoundBank } from './wad/sound.ts';
 import type { Placement, Pos2, Pos3 } from './types.ts';
+import { DOOM_TIC } from './constants.ts';
 
 /** Combined radius (map units) within which an item is close enough to pick up. */
 const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
@@ -63,7 +64,7 @@ const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
  * XDIE1-9 (O-W, the gib variant this engine doesn't model).
  */
 const PLAYER_DEATH_FRAMES = ['H', 'I', 'J', 'K', 'L', 'M', 'N'];
-const PLAYER_DEATH_FRAME_SECONDS = 6 / 35;
+const PLAYER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
 
 /**
  * Player attack/pain frames — `info.c` puts `S_PLAY_ATK1`/`ATK2` at `E`/`F`
@@ -73,7 +74,7 @@ const PLAYER_DEATH_FRAME_SECONDS = 6 / 35;
  */
 const PLAYER_ATTACK_FRAMES = ['E', 'F'];
 const PLAYER_PAIN_FRAMES = ['G'];
-const PLAYER_ACTION_FRAME_SECONDS = 3 / 35;
+const PLAYER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;
 
 /**
  * How fast a fall has to end to knock the wind out of the player. Vanilla's

@@ -59,6 +59,7 @@ import type { MaterialBank } from '../render/textures.ts';
 import { FlatFader, type FadeTarget, WallFader } from '../render/occlusion.ts';
 import { segmentIntersect } from '../util/geom.ts';
 import { sectorOrigin, SILENT, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
+import { DOOM_TIC } from '../constants.ts';
 
 /** How far ahead of the player a `use` press reaches, in map units. */
 const USE_RANGE = 64;
@@ -70,7 +71,7 @@ const USE_RANGE = 64;
  * rising stairs sounds like one machine rather than a dozen. `moveSoundDue`
  * below reproduces that shared clock.
  */
-const MOVE_SOUND_INTERVAL = 8 / 35;
+const MOVE_SOUND_INTERVAL = 8 * DOOM_TIC;
 
 /**
  * A door's sounds, by whether it's one of the "blazing" (4x speed) types —
@@ -443,9 +444,9 @@ interface LightState {
 }
 
 /** Blink/flicker periods in seconds, matching vanilla's STROBEBRIGHT/FASTDARK/SLOWDARK tic counts. */
-const BLINK_BRIGHT_TIME = 5 / 35;
-const BLINK_05_DARK = 15 / 35;
-const BLINK_1_DARK = 35 / 35;
+const BLINK_BRIGHT_TIME = 5 * DOOM_TIC;
+const BLINK_05_DARK = 15 * DOOM_TIC;
+const BLINK_1_DARK = 35 * DOOM_TIC;
 const GLOW_HALF_CYCLE = 1.3;
 
 function makeLightState(pattern: LightPattern, baseLight: number, darkLight: number): LightState {

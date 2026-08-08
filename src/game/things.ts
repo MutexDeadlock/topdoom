@@ -49,6 +49,7 @@ import { SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from '../render
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
+import { DOOM_TIC } from '../constants.ts';
 
 interface PosedThing extends Pos3 {
   /**
@@ -559,7 +560,7 @@ const BARREL_RADIUS = 10;
 const BARREL_MASS = 100;
 /** `S_BAR1`/`S_BAR2` — a two-frame idle sway, each vanilla frame held 6 tics. */
 const BARREL_IDLE_FRAMES = ['A', 'B'];
-const BARREL_IDLE_FRAME_SECONDS = 6 / 35;
+const BARREL_IDLE_FRAME_SECONDS = 6 * DOOM_TIC;
 /**
  * A barrel's death art is a genuinely different sprite lump from its own idle
  * art (`BEXP`, not `BAR1`) — unlike every monster, whose death states reuse
@@ -576,7 +577,7 @@ const BARREL_DEATH_FRAMES = ['A', 'B', 'C', 'D', 'E'];
  * rate of the first three frames, which is the one that actually matters:
  * `BARREL_EXPLODE_DELAY_SECONDS` below is timed off it.
  */
-const BARREL_DEATH_FRAME_SECONDS = 5 / 35;
+const BARREL_DEATH_FRAME_SECONDS = 5 * DOOM_TIC;
 /**
  * Vanilla's own `A_Explode` fires on entering `S_BEXP3` — the death
  * animation's third frame, i.e. two frames after the barrel actually died,

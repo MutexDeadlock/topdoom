@@ -11,9 +11,7 @@ import type { EffectLayer } from './effects.ts';
 import { SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import type { Skill } from './skill.ts';
 import type { Pos3 } from '../types.ts';
-
-/** Vanilla's tic, the unit every duration below is quoted in (`info.c` state `tics`). */
-const TIC = 1 / 35;
+import { DOOM_TIC } from '../constants.ts';
 
 /**
  * `MT_BOSSSPIT`'s doomednum — the invisible eye that does the spitting, and the *only* thing that
@@ -40,15 +38,15 @@ const SHOOTER_SIGHT_Z = 32 - (32 >> 2);
 const PLAYER_EYE_LIFT = PLAYER_HEIGHT * 0.75;
 
 /** `S_BRAINEYESEE`'s own 181 tics: how long after waking the eye takes to spit the first cube. */
-const FIRST_SPIT_DELAY = 181 * TIC;
+const FIRST_SPIT_DELAY = 181 * DOOM_TIC;
 /** `S_BRAINEYE1` loops on itself every 150 tics, one `A_BrainSpit` per pass. */
-const SPIT_INTERVAL = 150 * TIC;
+const SPIT_INTERVAL = 150 * DOOM_TIC;
 
 /** `MT_SPAWNSHOT`'s `mobjinfo.speed` of 10 map units per tic. */
 const CUBE_SPEED = 10 * 35;
 /** `S_SPAWN1`-`S_SPAWN4` — four fullbright `BOSF` frames, 3 tics each. */
 const CUBE_FRAMES = ['A', 'B', 'C', 'D'];
-const CUBE_FRAME_SECONDS = 3 * TIC;
+const CUBE_FRAME_SECONDS = 3 * DOOM_TIC;
 /**
  * `A_SpawnSound` sits on `S_SPAWN1` alone and that four-state chain loops, so `boscub` restarts
  * once per full cycle rather than once per frame — the cube's audible whoosh as it crosses the room.
@@ -62,7 +60,7 @@ const FULLBRIGHT = 255;
 
 /** `MT_SPAWNFIRE`: `S_SPAWNFIRE1`-`8`, eight fullbright `FIRE` frames at 4 tics. */
 const SPAWN_FIRE_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-const SPAWN_FIRE_FRAME_SECONDS = 4 * TIC;
+const SPAWN_FIRE_FRAME_SECONDS = 4 * DOOM_TIC;
 
 /**
  * The radius the *player* is telefragged against when a cube lands. Every type in
@@ -77,7 +75,7 @@ const PLAYER_TELEFRAG_RADIUS = 32;
  * `S_BRAIN_DIE1`-`4` add up to 120 tics between the brain dying and `A_BrainDie` calling
  * `G_ExitLevel` — the pause the explosion cascade fills.
  */
-const BRAIN_DEATH_TO_EXIT = (100 + 10 + 10) * TIC;
+const BRAIN_DEATH_TO_EXIT = (100 + 10 + 10) * DOOM_TIC;
 /**
  * `A_BrainScream`'s literals: a row of explosions from `x - 196` to `x + 320` in steps of 8, all at
  * `y - 320`, each at a height of `128 + rnd(0..255) * 2`.
@@ -95,7 +93,7 @@ const EXPLODE_X_SPREAD = 510;
  * `IMPACT_FRAME_SECONDS` every other explosion in the game runs at.
  */
 const EXPLODE_FRAMES = ['B', 'C', 'D'];
-const EXPLODE_FRAME_SECONDS = 10 * TIC;
+const EXPLODE_FRAME_SECONDS = 10 * DOOM_TIC;
 /**
  * How often the death cascade re-fires while the exit is pending, and how many bursts each pass
  * spawns. Vanilla's chain is genuinely unbounded — every `A_BrainExplode` spawns another rocket

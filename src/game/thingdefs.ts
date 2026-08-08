@@ -1,3 +1,5 @@
+import { DOOM_TIC } from '../constants.ts';
+
 /**
  * DOOM thing type (doomednum) to the sprite it spawns with, covering
  * monsters, weapons, ammo, health/armor, keys, powerups and common
@@ -427,7 +429,7 @@ export const MONSTER_XDEATH_FRAMES: Record<number, string[]> = {
  * states each hold their own tic count; collapsing that to one constant is an
  * accepted simplification, same as `GRAVITY` and the weapon fire rates.
  */
-export const MONSTER_DEATH_FRAME_SECONDS = 6 / 35;
+export const MONSTER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
 
 /**
  * The two monster types whose corpse doesn't stay on screen once its death
@@ -521,7 +523,7 @@ export const MONSTER_PAIN_FRAMES: Record<number, string[]> = {
  * pain states mostly hold 3-10 tics (vs. death's 5-8), and a flinch or a
  * punch/muzzle-flash reads as snappier than a death collapse regardless.
  */
-export const MONSTER_ACTION_FRAME_SECONDS = 3 / 35;
+export const MONSTER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;
 
 /**
  * Resurrection frame letters — `mobjinfo.raisestate`, the arch-vile's
@@ -600,55 +602,55 @@ export const MONSTER_DROPS: Record<number, number> = {
  */
 export const THING_ANIM_FRAMES: Record<number, { frames: string[]; frameSeconds: number }> = {
   // Health & armor
-  2013: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 / 35 }, // SOUL soulsphere
-  2014: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 / 35 }, // BON1 health bonus
-  2015: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 / 35 }, // BON2 armor bonus
-  2018: { frames: ['A', 'B'], frameSeconds: 6 / 35 }, // ARM1 green armor
-  2019: { frames: ['A', 'B'], frameSeconds: 6 / 35 }, // ARM2 blue armor
-  83: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 / 35 }, // MEGA megasphere
+  2013: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC }, // SOUL soulsphere
+  2014: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC }, // BON1 health bonus
+  2015: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC }, // BON2 armor bonus
+  2018: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC }, // ARM1 green armor
+  2019: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC }, // ARM2 blue armor
+  83: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 * DOOM_TIC }, // MEGA megasphere
 
   // Keys — all six blink identically (S_*KEY <-> S_*KEY2)
-  5: { frames: ['A', 'B'], frameSeconds: 10 / 35 }, // BKEY blue keycard
-  40: { frames: ['A', 'B'], frameSeconds: 10 / 35 }, // BSKU blue skull key
-  13: { frames: ['A', 'B'], frameSeconds: 10 / 35 }, // RKEY red keycard
-  38: { frames: ['A', 'B'], frameSeconds: 10 / 35 }, // RSKU red skull key
-  6: { frames: ['A', 'B'], frameSeconds: 10 / 35 }, // YKEY yellow keycard
-  39: { frames: ['A', 'B'], frameSeconds: 10 / 35 }, // YSKU yellow skull key
+  5: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC }, // BKEY blue keycard
+  40: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC }, // BSKU blue skull key
+  13: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC }, // RKEY red keycard
+  38: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC }, // RSKU red skull key
+  6: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC }, // YKEY yellow keycard
+  39: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC }, // YSKU yellow skull key
 
   // Powerups
-  2022: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 / 35 }, // PINV invulnerability
-  2024: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 / 35 }, // PINS partial invisibility
-  2026: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 / 35 }, // PMAP computer area map
-  2045: { frames: ['A', 'B'], frameSeconds: 6 / 35 }, // PVIS light amp. visor
+  2022: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 * DOOM_TIC }, // PINV invulnerability
+  2024: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 * DOOM_TIC }, // PINS partial invisibility
+  2026: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC }, // PMAP computer area map
+  2045: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC }, // PVIS light amp. visor
 
   // Obstacles & decorations
-  41: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 6 / 35 }, // CEYE evil eye
-  42: { frames: ['A', 'B', 'C'], frameSeconds: 6 / 35 }, // FSKU floating skull-rock
-  36: { frames: ['A', 'B'], frameSeconds: 14 / 35 }, // COL5 heart column
-  44: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // TBLU tall blue firestick
-  45: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // TGRN tall green torch
-  46: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // TRED tall red torch
-  55: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // SMBT short blue torch
-  56: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // SMGT short green torch
-  57: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // SMRT short red torch
-  70: { frames: ['A', 'B', 'C'], frameSeconds: 4 / 35 }, // FCAN burning barrel
-  85: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // TLMP tall techno lamp
-  86: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 / 35 }, // TLP2 large techno lamp
-  26: { frames: ['A', 'B'], frameSeconds: 7 / 35 }, // POL6 twitching impaled human — real split is 6/8 tics
-  29: { frames: ['A', 'B'], frameSeconds: 6 / 35 }, // POL3 pile of skulls and candles
+  41: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 6 * DOOM_TIC }, // CEYE evil eye
+  42: { frames: ['A', 'B', 'C'], frameSeconds: 6 * DOOM_TIC }, // FSKU floating skull-rock
+  36: { frames: ['A', 'B'], frameSeconds: 14 * DOOM_TIC }, // COL5 heart column
+  44: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // TBLU tall blue firestick
+  45: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // TGRN tall green torch
+  46: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // TRED tall red torch
+  55: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // SMBT short blue torch
+  56: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // SMGT short green torch
+  57: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // SMRT short red torch
+  70: { frames: ['A', 'B', 'C'], frameSeconds: 4 * DOOM_TIC }, // FCAN burning barrel
+  85: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // TLMP tall techno lamp
+  86: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // TLP2 large techno lamp
+  26: { frames: ['A', 'B'], frameSeconds: 7 * DOOM_TIC }, // POL6 twitching impaled human — real split is 6/8 tics
+  29: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC }, // POL3 pile of skulls and candles
 
   // Gore & corpses — fixed art at a non-'A' death-cycle frame, held forever (see doc above)
-  10: { frames: ['W'], frameSeconds: 6 / 35 }, // PLAY bloody mess (S_PLAY_XDIE9)
-  12: { frames: ['W'], frameSeconds: 6 / 35 }, // PLAY bloody mess (S_PLAY_XDIE9)
-  15: { frames: ['N'], frameSeconds: 6 / 35 }, // PLAY dead player (S_PLAY_DIE7)
-  18: { frames: ['L'], frameSeconds: 6 / 35 }, // POSS dead former human (S_POSS_DIE5)
-  19: { frames: ['L'], frameSeconds: 6 / 35 }, // SPOS dead former sergeant (S_SPOS_DIE5)
-  20: { frames: ['M'], frameSeconds: 6 / 35 }, // TROO dead imp (S_TROO_DIE5)
-  21: { frames: ['N'], frameSeconds: 6 / 35 }, // SARG dead demon (S_SARG_DIE6)
-  22: { frames: ['L'], frameSeconds: 6 / 35 }, // HEAD dead cacodemon (S_HEAD_DIE6)
-  23: { frames: ['K'], frameSeconds: 6 / 35 }, // SKUL dead lost soul (S_SKULL_DIE6)
+  10: { frames: ['W'], frameSeconds: 6 * DOOM_TIC }, // PLAY bloody mess (S_PLAY_XDIE9)
+  12: { frames: ['W'], frameSeconds: 6 * DOOM_TIC }, // PLAY bloody mess (S_PLAY_XDIE9)
+  15: { frames: ['N'], frameSeconds: 6 * DOOM_TIC }, // PLAY dead player (S_PLAY_DIE7)
+  18: { frames: ['L'], frameSeconds: 6 * DOOM_TIC }, // POSS dead former human (S_POSS_DIE5)
+  19: { frames: ['L'], frameSeconds: 6 * DOOM_TIC }, // SPOS dead former sergeant (S_SPOS_DIE5)
+  20: { frames: ['M'], frameSeconds: 6 * DOOM_TIC }, // TROO dead imp (S_TROO_DIE5)
+  21: { frames: ['N'], frameSeconds: 6 * DOOM_TIC }, // SARG dead demon (S_SARG_DIE6)
+  22: { frames: ['L'], frameSeconds: 6 * DOOM_TIC }, // HEAD dead cacodemon (S_HEAD_DIE6)
+  23: { frames: ['K'], frameSeconds: 6 * DOOM_TIC }, // SKUL dead lost soul (S_SKULL_DIE6)
 
   // Gore — ceiling-hung, 'A,B,C,B' twitch loop (both the solid and non-solid GOR1 placements)
-  49: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 / 35 }, // GOR1 — real cycle is 10/15/8/6 tics
-  63: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 / 35 }, // GOR1 — same cycle, non-blocking placement
+  49: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 * DOOM_TIC }, // GOR1 — real cycle is 10/15/8/6 tics
+  63: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 * DOOM_TIC }, // GOR1 — same cycle, non-blocking placement
 };

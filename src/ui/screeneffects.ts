@@ -1,5 +1,6 @@
 import type * as THREE from 'three';
 import { hasPower, type Inventory } from '../game/inventory.ts';
+import { DOOM_TIC } from '../constants.ts';
 
 /**
  * Every powerup or damage effect whose whole result is a *view* change: the
@@ -29,7 +30,7 @@ const LIGHT_VISOR_EXPOSURE = 2.5;
  * (there it's a palette swap, not an overlay) and is **tuned by feel**.
  */
 const PAIN_FLASH_MAX_DAMAGE = 100;
-const PAIN_FLASH_FADE_SECONDS = 100 / 35;
+const PAIN_FLASH_FADE_SECONDS = 100 * DOOM_TIC;
 const PAIN_FLASH_MAX_ALPHA = 0.5;
 
 /**

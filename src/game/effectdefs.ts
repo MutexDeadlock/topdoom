@@ -3,6 +3,7 @@ import type { SfxId } from '../audio/sfx.ts';
 import type { Pos3 } from '../types.ts';
 import { MONSTER_STATS } from './monsters.ts';
 import { PLAYER_RADIUS } from './player.ts';
+import { DOOM_TIC } from '../constants.ts';
 
 /**
  * The sprite/sound/timing tables and the two record shapes behind everything
@@ -18,7 +19,7 @@ import { PLAYER_RADIUS } from './player.ts';
  * DOOM2.WAD's lump names (TFOGA0..TFOGJ0).
  */
 export const TFOG_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
-export const TFOG_FRAME_SECONDS = 6 / 35; // vanilla's S_TFOG* states hold each frame 6 tics
+export const TFOG_FRAME_SECONDS = 6 * DOOM_TIC; // vanilla's S_TFOG* states hold each frame 6 tics
 /** Vanilla spawns the destination fog 20 units ahead of the landing spot, along the direction it faces. */
 export const TFOG_SPAWN_OFFSET = 20;
 
@@ -68,7 +69,7 @@ export const PROJECTILE_FRAMES: Record<string, string[]> = {
 };
 
 /** Vanilla's own explosion states run at 4 tics/frame. */
-export const IMPACT_FRAME_SECONDS = 4 / 35;
+export const IMPACT_FRAME_SECONDS = 4 * DOOM_TIC;
 
 /**
  * A projectile's impact explosion, keyed by its flight sprite — from
@@ -120,7 +121,7 @@ export const PROJECTILE_SOUNDS: Record<string, { launch: SfxId | null; explode: 
  * each and run *backwards* through the frame letters (C→B→A).
  * See docs/combat.md § Blood.
  */
-export const BLOOD_FRAME_SECONDS = 8 / 35;
+export const BLOOD_FRAME_SECONDS = 8 * DOOM_TIC;
 
 /**
  * Vanilla's own `z += (P_Random()-P_Random())<<10`, the identical first line of
@@ -150,7 +151,7 @@ export function bloodFrames(damage: number): string[] {
  * per-frame equivalent for — every effect here takes its sector's light.
  */
 export const PUFF_FRAMES = ['A', 'B', 'C', 'D'];
-export const PUFF_FRAME_SECONDS = 4 / 35;
+export const PUFF_FRAME_SECONDS = 4 * DOOM_TIC;
 
 /**
  * `P_SpawnPuff`'s own "don't make punches spark on the wall": a trace of
@@ -199,7 +200,7 @@ export const VILE_WINDUP_TRACK_SECONDS = MONSTER_STATS[64].ranged?.startDelaySec
  * (`0xc000000`, 16.875°) every 4th tic, converted to a continuous rate. See
  * docs/monsters.md § The revenant's homing missile.
  */
-export const REVENANT_TRACER_TURN_RATE_RAD = (16.875 * Math.PI) / 180 / (4 / 35);
+export const REVENANT_TRACER_TURN_RATE_RAD = (16.875 * Math.PI) / 180 / (4 * DOOM_TIC);
 
 /** `A_Tracer`'s vertical aim point, `dest->z + 40*FRACUNIT` — chest height, not the target's feet. */
 export const TRACER_HOMING_Z_OFFSET = 40;
@@ -212,8 +213,8 @@ export const TRACER_HOMING_Z_OFFSET = 40;
  * missile.
  */
 export const SMOKE_TRAIL_FRAMES = ['B', 'C', 'B', 'C', 'D'];
-export const SMOKE_TRAIL_FRAME_SECONDS = 4 / 35;
-export const SMOKE_TRAIL_INTERVAL = 4 / 35;
+export const SMOKE_TRAIL_FRAME_SECONDS = 4 * DOOM_TIC;
+export const SMOKE_TRAIL_INTERVAL = 4 * DOOM_TIC;
 
 /**
  * Turns `from` toward `to` (radians) by at most `maxDelta`, the short way

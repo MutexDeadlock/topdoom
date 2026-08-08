@@ -17,11 +17,12 @@
  * use-triggered — see docs/items.md § Locked doors and use triggers, which has
  * the evidence and the shipped bug that came of getting it wrong.
  */
+import { DOOM_TIC } from '../constants.ts';
 
 /** Map units/second. Vanilla speeds are per-tic at 35 tics/s. */
 export const DOOR_SPEED = 70; // 2 u/tic
 export const DOOR_SPEED_FAST = 280; // 8 u/tic
-export const DOOR_WAIT = 150 / 35; // seconds a door stays open
+export const DOOR_WAIT = 150 * DOOM_TIC; // seconds a door stays open
 export const FLOOR_SPEED = 35;
 // Vanilla's `downWaitUpStay`/`blazeDWUS` plat types run at PLATSPEED*4/*8 (and
 // PLATSPEED == FLOORSPEED), not *1/*4 — confirmed against the actual source
@@ -30,7 +31,7 @@ export const FLOOR_SPEED = 35;
 // the *normal* speed, and "normal" ran 4x too slow).
 export const LIFT_SPEED = FLOOR_SPEED * 4; // 4 u/tic
 export const LIFT_SPEED_FAST = FLOOR_SPEED * 8; // 8 u/tic
-export const LIFT_WAIT = 105 / 35; // seconds a lift stays down
+export const LIFT_WAIT = 105 * DOOM_TIC; // seconds a lift stays down
 /** Vanilla turboLower: FLOORSPEED*4, same fast-quad scaling as doors/lifts above. */
 export const FLOOR_SPEED_FAST = FLOOR_SPEED * 4;
 /** Vanilla's "AndChange" plat family (raiseToNearestAndChange) runs at PLATSPEED/2, and PLATSPEED == FLOORSPEED. */
@@ -64,7 +65,7 @@ export const CRUSH_DAMAGE = 10;
  * count and can add an extra hit a real vanilla/GZDoom crusher wouldn't have
  * dealt — confirmed the difference testing `crusher_test.wad` against GZDoom.
  */
-export const CRUSH_DAMAGE_INTERVAL = 4 / 35;
+export const CRUSH_DAMAGE_INTERVAL = 4 * DOOM_TIC;
 
 /** Gap vanilla leaves between an open door's ceiling and the lowest neighboring ceiling. */
 export const DOOR_OPEN_GAP = 4;
@@ -82,7 +83,7 @@ export const DOOR_CLOSE_WAIT_SECONDS = 30;
 export const DOOR_RAISE_WAIT_SECONDS = 5 * 60;
 
 /** Vanilla BUTTONTIME: seconds a used switch shows its "pressed" texture before reverting. */
-export const SWITCH_FLASH_SECONDS = 35 / 35;
+export const SWITCH_FLASH_SECONDS = 35 * DOOM_TIC;
 
 /**
  * Vanilla switch textures always come in SW1xxxx/SW2xxxx pairs sharing a
@@ -678,7 +679,7 @@ export const SUIT_LEAK_CHANCE = 5 / 256;
  * only ever one player, so there's no second simultaneous instance for an
  * unsynced phase to drift against. 32 tics at 35 tics/sec.
  */
-export const DAMAGE_FLOOR_INTERVAL = 32 / 35;
+export const DAMAGE_FLOOR_INTERVAL = 32 * DOOM_TIC;
 
 /**
  * Vanilla's `P_UpdateSpecials`: scrolls the line's *front* sidedef texture

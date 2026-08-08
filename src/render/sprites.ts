@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { GraphicsBank } from '../wad/graphics.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import { doomToWorld, litColor } from './mapmesh.ts';
+import { DOOM_TIC } from '../constants.ts';
 
 /**
  * Default viewer angle (DOOM-space, 0 = east, 90 = north, counter-clockwise):
@@ -137,9 +138,6 @@ export class SpriteMaterialCache {
     this.cache.clear();
   }
 }
-
-/** Vanilla DOOM runs its state machine at 35 tics/second. */
-const DOOM_TIC = 1 / 35;
 
 /**
  * A one-shot frame sequence, either holding on its last frame forever once

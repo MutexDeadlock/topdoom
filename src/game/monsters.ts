@@ -4,6 +4,7 @@ import { GRAVITY } from './player.ts';
 import { rollDamage } from './weapons.ts';
 import { monsterOrigin, SILENT, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
 import type { Pos3 } from '../types.ts';
+import { DOOM_TIC } from '../constants.ts';
 
 /**
  * The mutable chase/attack state `stepMonsterAI` reads and writes, kept alive
@@ -336,7 +337,7 @@ export function thrustSpeed(damage: number, mass: number): number {
 }
 
 /** Vanilla's S_VILE_HEAL1-3: the arch-vile holds still for 30 tics while the corpse it just found rises. */
-const VILE_HEAL_DURATION = 30 / 35;
+const VILE_HEAL_DURATION = 30 * DOOM_TIC;
 
 /**
  * Vanilla's `mobjinfo.reactiontime`, 8 for every monster. Counted in chase
@@ -470,7 +471,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     // ATK5, confirmed against info.c) with an A_CPosRefire loop of its own —
     // shotInterval is the two states between those calls (S_SSWV_ATK4's own
     // 6 tics + ATK3's own 4) over 35.
-    ranged: { diceSides: 5, diceMult: 3, duration: 1.0, shots: 2, shotInterval: 10 / 35, refire: true },
+    ranged: { diceSides: 5, diceMult: 3, duration: 1.0, shots: 2, shotInterval: 10 * DOOM_TIC, refire: true },
     painChance: 0.664,
     painDuration: 0.171,
     sounds: { see: 'sssit', active: 'posact', pain: 'popain', death: 'ssdth', attack: 'shotgn' },
@@ -674,7 +675,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       active: 'bspact',
       pain: 'dmpain',
       death: 'bspdth',
-      walk: { sounds: ['bspwlk'], interval: 18 / 35 },
+      walk: { sounds: ['bspwlk'], interval: 18 * DOOM_TIC },
     },
   }, // BSPI arachnotron — A_SpidRefire, same never-let-up loop as the chaingunner
   7: {
@@ -705,7 +706,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       pain: 'dmpain',
       death: 'spidth',
       attack: 'shotgn',
-      walk: { sounds: ['metal'], interval: 12 / 35 },
+      walk: { sounds: ['metal'], interval: 12 * DOOM_TIC },
     },
   }, // SPID spider mastermind (real hitscan chaingun in vanilla too)
   16: {
@@ -741,7 +742,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       active: 'dmact',
       pain: 'dmpain',
       death: 'cybdth',
-      walk: { sounds: ['hoof', 'metal'], interval: 12 / 35 },
+      walk: { sounds: ['hoof', 'metal'], interval: 12 * DOOM_TIC },
     },
   }, // CYBR cyberdemon — three rockets per volley, the same MISL sprite the player's own launcher fires
   // VILE arch-vile: vanilla's own P_CheckMissileRange refuses to fire beyond 14*64=896 map units
@@ -761,7 +762,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       duration: 2.686,
       // A_VileAttack doesn't fire until 66 tics into the missilestate chain
       // (ATK1..ATK9's summed tics) — see AttackStats.startDelaySeconds's doc.
-      startDelaySeconds: 66 / 35,
+      startDelaySeconds: 66 * DOOM_TIC,
       blast: { knockUpSpeed: VILE_KNOCKUP_SPEED, splashRadius: 70, splashDamage: 70 },
     },
     painChance: 0.039,

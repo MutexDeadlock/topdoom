@@ -20,10 +20,84 @@ geometry and bodies, and it serves the player's shots and a monster's identicall
 (`game/combat.ts`) rather than holding `World`/`ThingLayer` references of its own — those are
 replaced on every map load, so the context is all getters.
 
-Fire rates and spread are tuned by feel rather than converted from vanilla's tic-based weapon state
-tables — same reasoning as `player.ts`'s `GRAVITY`. Ammo-per-shot has no such problem and is lifted
-straight from vanilla, since it decides how long a pickup's ammo lasts, as are the damage dice,
-including the fist's and chainsaw's shared 2-20 (`(P_Random()%10+1)<<1`).
+**Nothing in `WEAPONS` is tuned by feel** — fire rates come from `info.c`'s state chains (§ Fire
+rates), spread from `p_pspr.c`'s shift constants (§ Spread), damage from `P_GunShot` and
+`PIT_CheckThing` (§ Damage rolls), ammo cost from `P_FireWeapon`, projectile speed from `mobjinfo`.
+The top-down camera changes how a weapon is *aimed*; it doesn't change how fast one shoots or how
+hard it hits, so there is nothing here a feel-tuned number would be buying.
+
+## Fire rates
+
+**A weapon's cooldown is its own vanilla state chain, and the `A_ReFire` state's tics are not part of
+it.** `A_ReFire` runs on *entry* to its state and, while the trigger is still down, calls
+`P_FireWeapon` immediately — `P_SetPsprite`'s loop then leaves the psprite sitting in the fire
+chain's first state with that state's own tics, so the `A_ReFire` state's tics are only ever spent
+when you *release*. Summing a weapon's whole state list therefore overstates its held-trigger rate;
+the shipped numbers were up to 1.7× off in both directions before this was worked out.
+
+| weapon | states counted | tics | seconds |
+|---|---|---|---|
+| fist | `S_PUNCH1`-`4` | 17 | 0.486 |
+| chainsaw | `S_SAW1` **or** `S_SAW2` | 4 | 0.114 |
+| pistol | `S_PISTOL1`-`3` | 14 | 0.400 |
+| shotgun | `S_SGUN1`-`8` | 37 | 1.057 |
+| super shotgun | `S_DSGUN1`-`9` | 57 | 1.629 |
+| chaingun | `S_CHAIN1` **or** `S_CHAIN2` | 4 | 0.114 |
+| rocket launcher | `S_MISSILE2` + `S_MISSILE1` | 20 | 0.571 |
+| plasma rifle | `S_PLASMA1` | 3 | 0.086 |
+| BFG | `S_BFG3` + `S_BFG1` + `S_BFG2` | 40 | 1.143 |
+
+Two shapes in that table are easy to get wrong. The **chainsaw and chaingun fire twice per pass**
+(`S_SAW1`/`S_SAW2` both call `A_Saw`, `S_CHAIN1`/`S_CHAIN2` both call `A_FireCGun`), so their rate is
+one state's tics, not the chain's. The **plasma rifle's** `S_PLASMA2` holds 20 tics but carries
+`A_ReFire`, so a held trigger never spends them — which is what makes it the fastest weapon in the
+game rather than a middling one.
+
+**Two vanilla delays are deliberately not reproduced.** The rocket launcher's 8-tic flash state and
+the BFG's 30 tics of charge-up both sit *before* their fire action, so in vanilla the shot leaves
+that long after the trigger; here every weapon fires on the frame you click and the delay is folded
+into the interval instead. Reproducing them needs a pending-shot timer in `WeaponSystem` and is the
+one place this engine's weapons still differ in timing.
+
+## Spread
+
+Every random fuzz in the game is one distribution — vanilla's `P_Random() - P_Random()`, two uniform
+draws subtracted, giving a triangular spread centred on the true aim (`triangularDraw`, and
+`triangularSpread` for the angular cases). The per-weapon widths are the BAM shift constants in
+`p_pspr.c`, converted as `255 << shift` of a `2^32` turn:
+
+- `<<18` = **5.6°** — `P_GunShot`'s bullet spread, so the pistol, chaingun and each of the shotgun's
+  7 pellets, *and* `A_Punch`/`A_Saw`'s swing angle. A melee swing's own share barely matters (~6
+  units of arc at `MELEERANGE`, against a 24-unit hit radius), but it is the same draw.
+- `<<19` = **11.2°** — the super shotgun's 20 pellets, twice the shotgun's cone. `A_FireShotgun2`
+  never calls `P_GunShot`; it has its own loop, which is why its numbers differ.
+- `<<5` on the *slope* (`WeaponDef.slopeSpread`, ±0.1245 rise per unit ≈ ±7°) — also super shotgun
+  only, and the only vertical scatter in the game. `HitscanShot.slopeOffset` carries it, applied by
+  moving the aim point up or down at the target's distance, since that is what `shotPath` derives a
+  slope from.
+
+**The first shot of a held pistol or chaingun has no spread at all.** `A_FirePistol` and `A_FireCGun`
+pass `P_GunShot(mo, !player->refire)`; `A_FireShotgun` hardcodes `false`. `WeaponSystem` mirrors
+`player->refire` with a counter reset whenever the trigger comes up or the weapon changes
+(`A_ReFire`'s else branch), and `WeaponDef.accurateFirstShot` marks the two weapons that read it. Tap
+for accuracy, hold for volume — without this, the auto-aim fix below makes a tapped long-range
+chaingun shot miss ~27% of the time for no reason vanilla would recognize.
+
+## Damage rolls
+
+**Two vanilla formulas, one `((rand % sides) + 1) * multiplier` shape.** A *bullet's* roll is written
+out at each call site (`5*(P_Random()%3+1)` in both `P_GunShot` and `A_FireShotgun2`: 5/10/15 per
+pellet, and the super shotgun's is identical to the shotgun's — the 20-vs-7 pellet count is its whole
+advantage). A *missile's* is not in the weapon code at all: `PIT_CheckThing` rolls
+`((P_Random()%8)+1) * mobjinfo.damage` for whatever hit something, so every projectile weapon has 8
+sides and takes its multiplier from `info.c` — rocket 20 (20-160), plasma **5 (5-40)**, BFG ball
+**100 (100-800)** before `A_BFGSpray` adds anything. The plasma bolt shipped as a 4-sided roll and
+the BFG ball as `8×30`; both were transcription guesses, and reading `mobjinfo` settles them. Fist
+and chainsaw share `(P_Random()%10+1)<<1` (2-20), the fist ×10 under berserk.
+
+Projectile *speeds* come from the same `mobjinfo` rows, × 35 for units/sec exactly as
+`game/monsters.ts` converts a monster's: rocket 700, plasma 875, BFG 875. The player's rocket used to
+fly at 1000 while the cyberdemon's — already converted correctly — flew at 700.
 
 **A melee swing is resolved entirely differently from every other shot**: `spawnPlayerShot` returns before
 `shotPath` even runs and just raycasts `WeaponDef.meleeRange` (vanilla's `MELEERANGE`, 64 — the
@@ -31,8 +105,7 @@ chainsaw's own `+1` is about its puff, § Bullet puffs) along the
 aim angle. A swing doesn't travel, so it needs none of `shotPath`'s wall/step blocking, matching
 `A_Punch`/`A_Saw`. It needs no lock-on case either: `player.angle` is already set from the same `aim`
 the lock uses, so the ray finds a hovered monster on its own and simply can't reach one further off
-than the swing's range. Hitscan spread uses vanilla's `P_Random - P_Random` trick (two uniform draws
-subtracted → triangular distribution centred on the aim line).
+than the swing's range.
 
 **Slot keys toggle within a slot, they don't select "the best".** `WEAPON_SLOTS` lists each digit's
 weapons best-first, but pressing a digit already showing one of that slot's weapons advances to the
@@ -46,7 +119,26 @@ which presented as "shotgun and super shotgun are the same weapon".
 fly. It has two modes, and the difference is the whole reason it takes a `target` rather than just
 an angle.
 
-**Free shot** (no target): flat at the player's fire height, out to `WEAPON_RANGE`. Blocked by a line
+**`target` supplies the slope; `range` supplies the distance, and the two are separate parameters
+on purpose.** `range` defaults to stopping at the target, which is what a player's locked-on shot
+wants — its target cannot move mid-flight. Anything else keeps going down the aimed slope whether or
+not the target is still standing there. Folding the two together (deriving range from the target) is
+what made every monster shot detonate on the spot the player had been standing at launch; both call
+sites then had to fake a far-away aim point to undo it, which is the shape this parameter replaces.
+See docs/monsters.md § Hitscan vs. projectile.
+
+**`WEAPON_RANGE` (`MISSILERANGE`, 2048) bounds bullets only; a missile passes `World.mapSpan`.**
+`MISSILERANGE` appears in vanilla exactly three times, all of them `P_AimLineAttack`/`P_LineAttack`
+calls in `p_enemy.c` — `P_SpawnMissile` gives a missile momentum and no distance budget at all, and
+it flies until `P_XYMovement`, `P_ZMovement` or `PIT_CheckThing` stops it. Capping a missile at 2048
+made every rocket, fireball and plasma ball burst harmlessly in mid-air on any map with sightlines
+longer than that: on NUTS.WAD MAP01, 21 of 36 directions traced from the player start ran out at
+exactly 2048 with no wall in front of them (the walls are 2764–8563 units out), which is why the
+arachnotrons' plasma appeared to have a range. `mapSpan` — the map's bounding-box diagonal — is the
+shortest trace length that can never itself be what ends a flight; the engine needs *some* finite
+number, and any in-map wall is nearer than that.
+
+**Free shot** (no target): flat at the shooter's fire height, out to that range. Blocked by a line
 with no opening at all (a genuinely one-sided wall, or a two-sided line whose opening has closed,
 like a shut door) **and** by a two-sided line whose vertical opening the shot's height doesn't fit
 through. Neither test alone is enough — `blocksSight` alone lets a shot through a shut door (vanilla
@@ -90,10 +182,16 @@ Candidate lines are extended `WALL_OVERLAP` past both ends for the same reason `
 its sight blockers: two walls meeting at a shared vertex otherwise let a shot aimed at that corner
 slip between them.
 
+Candidates come from `World.forEachLineAlongSegment`, not `linesNear`, for the reason spelled out
+under `hasLineOfSight` below — and here it is load-bearing rather than merely faster: a missile's
+range is the whole map, and `linesNear`'s radius box would gather every line in it on every shot.
+Measured on NUTS.WAD MAP01: a full-span walk beats even the old 2048-radius box (7 candidate lines
+vs 19), while a box at map span costs 17× the walk.
+
 ## Shoot-triggered specials
 
 **`shotPath`'s returned `lineIndex` — whichever line stopped the shot, or null if it reached its
-target/`WEAPON_RANGE` — drives `wad/specials.ts`'s three impact specials, 24/46/47**
+target or ran out its range — drives `wad/specials.ts`'s three impact specials, 24/46/47**
 (`SpecialsController.triggerShot`, vanilla's `P_ShootSpecialLine`). A hitscan pellet's trigger fires
 immediately in `spawnPlayerShot`/`resolveMonsterHitscan` (resolved and gone within the same frame, matching
 `PTR_ShootTraverse`), but a projectile's is deferred to the frame it actually *arrives* at that wall
@@ -118,7 +216,9 @@ G1).
 at that one" is expressible directly. `ThingLayer.pickMonster` raycasts the cursor against monster
 sprite meshes (`MONSTER_TYPES`, filtered to currently-`visible` ones so a fog-of-war-hidden monster
 can't be targeted through the geometry hiding it) and returns the hit monster's position *and* its
-sector's live floor height. `game.ts` uses that as both the aim point and the shot's end height.
+sector's live floor height. `game.ts` uses that as both the aim point and the shot's end height. It supplies the shot's aim
+*direction and slope* only — whether any one pellet lands is still resolved geometrically against the
+target's body, so a spread weapon spreads (§ How a shot deals damage).
 
 **`NO_AUTO_AIM_TYPES` (`game/thingdefs.ts`) holds the one thing the cursor refuses to lock onto**:
 the Icon of Sin's brain (88). Its recess (DOOM2 MAP30 sector 8, floor 288) opens onto the arena only
@@ -164,12 +264,32 @@ screen (all `PUFF`) took the tint of whichever was posed last.
 ## How a shot deals damage
 
 **Two different ways, depending on whether one was locked on.** A locked-on shot resolves
-hit-or-miss against that exact target: `spawnPlayerShot` compares `shotPath`'s returned distance against
-the straight-line distance to the target to know whether a wall cut the shot short. A *free* shot
+hit-or-miss against that exact target, and needs **both** halves: `spawnPlayerShot` compares
+`shotPath`'s returned distance against the distance to the target to know whether a wall cut the shot
+short, *and* tests this shot's own line against the target's body — perpendicular offset within
+`MONSTER_HIT_RADIUS` (the same width `raycastMonster` uses) and, for a pellet carrying a
+`slopeOffset`, vertical miss within half of `MONSTER_HIT_HEIGHT` at the body's distance. A *free* shot
 instead tests its straight flight path against every monster's body (`ThingLayer.raycastMonster`),
 the way any real hitscan trace would, so a monster standing between the player and the wall they're
 shooting at still gets hit even though it was never clicked; only the nearer of "a wall/step"
 (`shotPath`) and "a monster in the way" (`raycastMonster`) stops the shot.
+
+**The lateral test is what keeps the lock from being homing.** `WeaponSystem` offsets each hitscan
+pellet by its own spread angle, but the lock is per *trigger pull* — all of a shotgun's pellets carry
+the same `target`/`targetId`. Without the lateral test a distance comparison alone said "connected"
+for every one of them, so firing either shotgun at a monster dealt all 7 (or 20) pellets' damage no
+matter how wide the spread threw them. This is vanilla's own split: `P_BulletSlope` finds the aim
+slope once and `A_FireShotgun` then traces each pellet at its own angle, so the auto-aim decides the
+*slope* and never the hit. A pellet that fails the test falls through to the free-shot branch above
+and can still hit whatever it did fly through. Zero-spread weapons are unaffected — `player.angle` is
+set from the same lock (`Math.atan2` toward `aim`, at the end of `Player.update`, after the frame's
+movement), so their perpendicular offset is exactly 0.
+
+The vertical half of the test only ever fires for the super shotgun, the one weapon with a
+`slopeSpread` (§ Spread), and only on the locked-on path: the free-shot `raycastMonster` is a 2D ray
+with a crude height band and models no slope at all, so a wide pellet's *vertical* miss is not
+reproduced once it falls through to that branch. Accepted as the same order of approximation as the
+single shared hitbox.
 
 `raycastMonster` tests a single approximate hitbox (`MONSTER_HIT_RADIUS`/`_HEIGHT`) rather than each
 monster's real, quite varied (16-128 units) vanilla radius — modelling that accurately would need a

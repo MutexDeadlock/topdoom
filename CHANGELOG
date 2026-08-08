@@ -1,4 +1,4 @@
-v0.9.x (2026-08-??)
+v0.10.0 (2026-08-??)
 
 Features and improvements
   - the Icon of Sin (DOOM2 MAP30) works
@@ -21,6 +21,16 @@ Features and improvements
     - reopening the menu keeps you on the tab you were last on
 
 Fixed bugs
+  - massive combat fixes
+    - fixed monster missiles detonating at the spot you stood when they were
+      fired, instead of flying on until they hit something
+    - fixed every missile - yours and theirs - dying in mid-air 2048 units
+      out; that cap is vanilla's bullet range, and a missile has none
+    - fixed monster bullets never missing
+    - fixed your bullets never missing a monster the cursor was on: auto-aim
+      only sets the shot's slope, so every pellet of a shotgun blast now
+      flies its own spread angle and hits or misses on its own
+    - every weapon number is now vanilla's own
   - fixed THINGs were shaded by whatever their sector's light was at spawn
     instead of tracking it live, so they went stale in any blinking,
     strobing or switch-triggered sector
@@ -29,10 +39,7 @@ Fixed bugs
   - fixed a sector moved only by a boss death was left in the static render
     batch, so it was drawn twice once its mover mesh appeared
   - fixed triggering a second mover on a sector that already had one running
-    hijacked it instead of being ignored (vanilla's sec->specialdata) — most
-    visibly on DOOM2 MAP30, where using the central pillar as a lift while
-    the switch's slow 512-unit rise was still going stranded it partway up
-    and it never reached the brain
+    hijacked it instead of being ignored
 
 
 ===============================================================================

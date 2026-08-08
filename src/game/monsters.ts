@@ -84,10 +84,10 @@ export interface AttackStats {
   diceSides: number;
   diceMult: number;
   /**
-   * Hitscan only — bullets per attack, each an independent roll summed into
-   * one total (`A_SPosAttack`'s 3 `P_LineAttack`s). Monster hitscans model no
-   * per-pellet spread, so N rolls at one target and one N-dice roll are the
-   * same outcome, not an approximation. Absent means the ordinary single roll.
+   * Hitscan only — bullets per attack (`A_SPosAttack`'s 3 `P_LineAttack`s).
+   * Each is traced as its own bolt, with its own spread angle and its own
+   * damage roll, so a burst can land partially. Absent means the ordinary
+   * single bullet. See docs/monsters.md § Hitscan vs. projectile.
    */
   pellets?: number;
   /** Seconds the attack's state sequence runs — its summed `info.c` tics over 35. The monster holds position exactly this long (docs/monsters.md § Attacking). */
@@ -278,6 +278,14 @@ export interface MonsterAttack {
    */
   kind: 'melee' | 'ranged' | 'resurrect' | 'vileWindup' | 'spawn';
   damage: number;
+  /**
+   * The individual rolls making up `damage` — one per bullet
+   * (`AttackStats.pellets`). A hitscan attack traces each separately, since
+   * each flies its own spread angle and hits or misses on its own; every other
+   * kind reads the `damage` sum and ignores these. Empty for the attacks that
+   * roll nothing at all (`spawn`, `vileWindup`, `resurrect`).
+   */
+  bullets: number[];
   /** The heading it was fired along (`A_FaceTarget`'s angle) — what a hitscan bolt traces down, so it can hit whatever is actually in the way. */
   angleRad: number;
   /** One flying projectile sprite per entry instead of an instant hitscan tracer. Almost always one entry; only the mancubus fires two at once (`pairOffsetsRad`). */
@@ -1018,8 +1026,9 @@ function stepCharge(body: MonsterBody, stats: MonsterStats, dt: number, world: W
  * Rolls one instance of `attack`'s damage, tagged with the projectile(s) the
  * caller should spawn. `offsetsRad` is one radian offset per projectile
  * (omitted = the single straight shot everything but the mancubus fires);
- * `attack.pellets` sums that many rolls; `homingBias` decides whether this
- * particular shot homes. See those fields' docs.
+ * `attack.pellets` rolls that many bullets, kept separate in `bullets` as well
+ * as summed into `damage`; `homingBias` decides whether this particular shot
+ * homes. See those fields' docs.
  */
 function fireAttack(
   kind: 'melee' | 'ranged',
@@ -1029,11 +1038,17 @@ function fireAttack(
   homingBias = false,
 ): MonsterAttack {
   const projectile = attack.projectile;
+  const bullets: number[] = [];
   let damage = 0;
-  for (let i = 0, n = attack.pellets ?? 1; i < n; i++) damage += rollDamage(attack.diceSides, attack.diceMult);
+  for (let i = 0, n = attack.pellets ?? 1; i < n; i++) {
+    const roll = rollDamage(attack.diceSides, attack.diceMult);
+    bullets.push(roll);
+    damage += roll;
+  }
   return {
     kind,
     damage,
+    bullets,
     angleRad,
     projectiles: projectile
       ? (offsetsRad ?? [0]).map((off) => ({
@@ -1221,10 +1236,10 @@ function beginRangedAttack(
     body.chargeAngle = body.angle;
     return null;
   }
-  if (ranged.spawn) return { kind: 'spawn', damage: 0, angleRad: body.angle };
+  if (ranged.spawn) return { kind: 'spawn', damage: 0, bullets: [], angleRad: body.angle };
   body.burstLeft = ranged.shots ?? 1;
   body.burstTimer = ranged.startDelaySeconds ?? 0;
-  if (ranged.blast) return { kind: 'vileWindup', damage: 0, angleRad: body.angle };
+  if (ranged.blast) return { kind: 'vileWindup', damage: 0, bullets: [], angleRad: body.angle };
   return null;
 }
 
@@ -1263,7 +1278,7 @@ function runChaseCall(
     if (found) {
       body.angle = Math.atan2(found.y - body.y, found.x - body.x); // A_FaceTarget at the corpse
       body.attackPause = VILE_HEAL_DURATION;
-      return { kind: 'resurrect', damage: 0, angleRad: body.angle, resurrectId: found.id };
+      return { kind: 'resurrect', damage: 0, bullets: [], angleRad: body.angle, resurrectId: found.id };
     }
   }
 

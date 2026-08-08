@@ -6,6 +6,7 @@ import { Tracer } from '../render/tracer.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import type { World } from './world.ts';
+import { triangularDraw } from './weapons.ts';
 import {
   BLOOD_FRAME_SECONDS,
   bloodFrames,
@@ -150,9 +151,9 @@ export class EffectLayer {
     this.spawnImpact('PUFF', frames, PUFF_FRAME_SECONDS, { x: at.x, y: at.y, z: this.jitter(at.z) });
   }
 
-  /** `P_SpawnBlood`/`P_SpawnPuff`'s shared opening line — the same P_Random - P_Random triangular draw `game/weapons.ts` uses for hitscan spread. */
+  /** `P_SpawnBlood`/`P_SpawnPuff`'s shared opening line — the same triangular draw every other random fuzz in the game uses. */
   private jitter(z: number): number {
-    return z + (Math.random() - Math.random()) * HIT_Z_JITTER;
+    return z + triangularDraw(HIT_Z_JITTER);
   }
 
   spawnTeleportFog(at: Pos3): void {

@@ -113,9 +113,11 @@ of these, cite where it came from.
 **Constants fall into exactly two marked categories.** Values derived from vanilla carry their
 source citation as a comment at the declaration (`g_game.c`'s ticcmd tables, `info.c`'s mobjinfo
 fields, `P_RadiusAttack`'s literal 128). Values tuned by feel say so explicitly — currently
-`GRAVITY` and `ACCELERATION` (`player.ts`), `BRIGHTNESS_LIFT` (`constants.ts`), the weapon fire
-rates and spread (`weapons.ts`), `MONSTER_FADE_RANGE` (`render/occlusion.ts`) and the pain-flash
-alpha (`game.ts`). Never
+`GRAVITY` and `ACCELERATION` (`player.ts`), `BRIGHTNESS_LIFT` (`constants.ts`),
+`MONSTER_FADE_RANGE` (`render/occlusion.ts`) and the pain-flash alpha (`game.ts`). `weapons.ts`
+was on that list and no longer is: fire rates, spread, damage and projectile speed all have exact
+vanilla sources (docs/combat.md § Fire rates), and "it doesn't translate to a dt-scaled model" was
+hiding numbers that were simply wrong. Never
 introduce a third, unmarked category: a bare number with no note is indistinguishable from a
 transcription error.
 

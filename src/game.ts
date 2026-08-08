@@ -11,7 +11,7 @@ import type { Viewport } from './render/viewport.ts';
 import { buildThingSprites, MONSTER_HIT_HEIGHT, type MonsterAttackEvent, type ThingLayer } from './game/things.ts';
 import { MONSTER_FIRE_HEIGHT, thrustSpeed } from './game/monsters.ts';
 import { collectFadeTargets, FlatFader, TextureScroller, WallFader } from './render/occlusion.ts';
-import { World, hasLineOfSight, shotPath } from './game/world.ts';
+import { World, WEAPON_RANGE, hasLineOfSight, shotPath } from './game/world.ts';
 import { AIM_HEIGHT_OFFSET, GRAVITY, Player, PLAYER_HEIGHT, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { applyBarrelExplosion, applyRadiusDamage, type CombatContext } from './game/combat.ts';
 import { EffectLayer } from './game/effects.ts';
@@ -48,7 +48,7 @@ import {
   tickPowers,
   type Inventory,
 } from './game/inventory.ts';
-import { WEAPONS, WeaponSystem } from './game/weapons.ts';
+import { WEAPONS, WeaponSystem, triangularSpread } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
 import { PLAYER_ORIGIN, monsterOrigin } from './audio/sfx.ts';
 import { SoundBank } from './wad/sound.ts';
@@ -87,11 +87,19 @@ const PLAYER_ACTION_FRAME_SECONDS = 3 / 35;
 const HARD_LANDING_SPEED = Math.sqrt(2 * GRAVITY * 32);
 
 /**
- * Slack added to the player's radius when testing a monster's hitscan bolt,
- * which is fired along a stale facing here — docs/monsters.md § Hitscan vs.
- * projectile.
+ * How far off-aim each monster bullet is thrown — `p_enemy.c`'s
+ * `(P_Random()-P_Random())<<20` BAM, ±255/4096 of a full turn, triangular.
+ * Why it is the difference between a survivable gunner and a lethal one:
+ * docs/monsters.md § Hitscan vs. projectile.
  */
-const MONSTER_BULLET_SLOP = 12;
+const MONSTER_BULLET_SPREAD_DEG = (255 / 4096) * 360;
+
+/**
+ * Slack added to the player's radius when testing a monster's hitscan bolt —
+ * it makes a circle present the same average target as vanilla's 32-unit
+ * *box*, and covers nothing else. docs/monsters.md § Hitscan vs. projectile.
+ */
+const MONSTER_BULLET_SLOP = 4;
 
 /**
  * Vanilla's `A_FaceTarget`: aiming at an `MF_SHADOW` thing (here only ever the
@@ -574,11 +582,11 @@ export class Game {
   }
 
   /**
-   * Traces a monster's hitscan bolt and damages the first thing it reaches —
-   * nearest of a wall, another monster in the line of fire, or the player
-   * wins. `P_LineAttack` has no notion of an intended target and no species
-   * check, which is why one zombieman firing past another starts a fight. The
-   * tracer is drawn to where the bolt stopped, not to the target.
+   * Fires every bullet of a monster's hitscan attack: one traced bolt per
+   * `MonsterAttack.bullets` entry, each thrown off by its own
+   * `MONSTER_BULLET_SPREAD_DEG` draw and carrying its own damage roll, so a
+   * shotgun guy's three pellets land independently. All of them share the one
+   * aim slope, matching `A_SPosAttack` computing `slope` once before its loop.
    */
   private resolveMonsterHitscan(atk: MonsterAttackEvent): void {
     // Sloped from the monster's fire height to the target's, the way
@@ -588,15 +596,30 @@ export class Game {
     const aim = victim
       ? { x: victim.x, y: victim.y, z: victim.z + MONSTER_FIRE_HEIGHT }
       : { x: this.player.x, y: this.player.y, z: this.player.z + AIM_HEIGHT_OFFSET };
-    const path = shotPath(this.world, atk, atk.angleRad, aim, false);
+    for (const damage of atk.bullets)
+      this.resolveMonsterBullet(atk, atk.angleRad + triangularSpread(MONSTER_BULLET_SPREAD_DEG), damage, aim);
+  }
+
+  /**
+   * One bullet of that volley: it damages the first thing it reaches —
+   * nearest of a wall, another monster in the line of fire, or the player
+   * wins. `P_LineAttack` has no notion of an intended target and no species
+   * check, which is why one zombieman firing past another starts a fight. The
+   * tracer is drawn to where the bolt stopped, not to the target.
+   */
+  private resolveMonsterBullet(atk: MonsterAttackEvent, angleRad: number, damage: number, aim: Pos3): void {
+    // `WEAPON_RANGE` rather than the distance to `aim`: a bullet the spread
+    // threw wide keeps flying, and can still find a wall or another monster
+    // behind whoever it was fired at. `P_LineAttack(..., MISSILERANGE, ...)`.
+    const path = shotPath(this.world, atk, angleRad, aim, WEAPON_RANGE, false);
 
     // The trace damages the first body it reaches, whatever it was aimed at.
-    const blocker = this.things?.raycastMonster(atk, atk.angleRad, path.dist, {
+    const blocker = this.things?.raycastMonster(atk, angleRad, path.dist, {
       ignoreId: atk.sourceId,
       includeHidden: true,
     });
-    const dirX = Math.cos(atk.angleRad);
-    const dirY = Math.sin(atk.angleRad);
+    const dirX = Math.cos(angleRad);
+    const dirY = Math.sin(angleRad);
     const relX = this.player.x - atk.x;
     const relY = this.player.y - atk.y;
     const playerAlong = relX * dirX + relY * dirY;
@@ -612,15 +635,15 @@ export class Game {
     let endY = atk.y + dirY * path.dist;
     let endZ = path.z;
     if (blocker && (!playerInPath || blocker.dist <= playerAlong)) {
-      this.things?.damage(blocker.id, atk.damage, { id: atk.sourceId, type: atk.sourceType }, undefined, atk.x, atk.y);
+      this.things?.damage(blocker.id, damage, { id: atk.sourceId, type: atk.sourceType }, undefined, atk.x, atk.y);
       endX = blocker.x;
       endY = blocker.y;
       endZ = blocker.z + MONSTER_FIRE_HEIGHT;
       const hitAt = { x: endX, y: endY, z: endZ };
-      if (this.things?.bleeds(blocker.id)) this.effects.spawnBlood(hitAt, atk.damage);
+      if (this.things?.bleeds(blocker.id)) this.effects.spawnBlood(hitAt, damage);
       else this.effects.spawnPuff(hitAt);
     } else if (playerInPath) {
-      this.damagePlayer(atk.damage, atk.x, atk.y);
+      this.damagePlayer(damage, atk.x, atk.y);
       endX = this.player.x;
       endY = this.player.y;
       endZ = this.player.z + AIM_HEIGHT_OFFSET;
@@ -628,14 +651,14 @@ export class Game {
       // splashes exactly as one landing on a monster does — and unlike the
       // pain flash this isn't gated on the damage actually landing, matching
       // `PTR_ShootTraverse` spawning blood before it calls `P_DamageMobj`.
-      this.effects.spawnBlood({ x: endX, y: endY, z: endZ }, atk.damage);
+      this.effects.spawnBlood({ x: endX, y: endY, z: endZ }, damage);
     } else {
       // Nothing living stopped it — whatever's left is a wall, the only thing
       // `shotPath` itself could have blocked it on. `triggerShot`'s
       // `byMonster` gate reproduces vanilla's own hardcoded exception: this
       // can only actually do anything for a 46 line, never 24/47.
       this.specials?.triggerShot(path.lineIndex, this.inventory.keys, true);
-      spawnWallPuff(this.effects, this.world, path, atk.angleRad);
+      spawnWallPuff(this.effects, this.world, path, angleRad);
     }
     this.effects.addTracer(atk, { x: endX, y: endY, z: endZ }, MONSTER_TRACER_COLOR);
   }
@@ -732,16 +755,17 @@ export class Game {
 
   /**
    * Throws a monster's ranged shot off-aim while the player holds partial
-   * invisibility — `A_FaceTarget`'s fuzz, applied per shot so each bullet of a
-   * burst goes its own way. Player-aimed shots only (nothing else carries
+   * invisibility — `A_FaceTarget`'s fuzz, applied once per fired shot so each
+   * shot of a burst goes its own way. It fuzzes the *aim* the volley is built
+   * on, which is why it lands here rather than per bullet: vanilla fuzzes
+   * `actor->angle`, and `A_SPosAttack`'s pellets all spread off that one
+   * fuzzed `bangle`. Player-aimed shots only (nothing else carries
    * `MF_SHADOW`), and ranged only: a melee swing lands on `P_CheckMeleeRange`,
    * never on the fuzzed angle. See docs/items.md § Powerups and the backpack.
    */
   private applyShadowAim(atk: MonsterAttackEvent): void {
     if (atk.kind !== 'ranged' || atk.targetId !== null || !hasPower(this.inventory, 'invisibility')) return;
-    // Vanilla's own P_Random-P_Random shape: a triangular spread centred on
-    // the true aim, the same trick weapons.ts uses for pellet spread.
-    const off = ((Math.random() - Math.random()) * SHADOW_AIM_SPREAD_DEG * Math.PI) / 180;
+    const off = triangularSpread(SHADOW_AIM_SPREAD_DEG);
     atk.angleRad += off;
     if (atk.projectiles) for (const proj of atk.projectiles) proj.angleRad += off;
   }

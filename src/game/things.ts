@@ -494,9 +494,11 @@ export interface ThingLayer {
 
 /**
  * Single approximate hitbox `ThingLayer.raycastMonster` tests a free shot's
- * ray against — see that method's doc for why this isn't per-species.
+ * ray against — see that method's doc for why this isn't per-species. Shared
+ * with `spawnPlayerShot`'s locked-on test, so a spread pellet misses the
+ * clicked monster at exactly the width any other bullet would.
  */
-const MONSTER_HIT_RADIUS = 24;
+export const MONSTER_HIT_RADIUS = 24;
 export const MONSTER_HIT_HEIGHT = 64;
 
 /**

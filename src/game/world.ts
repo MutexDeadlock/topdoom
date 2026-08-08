@@ -40,9 +40,18 @@ export class World {
 
   readonly map: DoomMap;
 
+  /**
+   * The map's bounding-box diagonal: the longest straight line that fits inside
+   * it, and so a trace length no in-map flight can be cut short by. What a
+   * missile passes to `shotPath`, which needs *some* finite range for a thing
+   * vanilla gives no range budget at all — see docs/combat.md § shotPath.
+   */
+  readonly mapSpan: number;
+
   constructor(map: DoomMap) {
     this.map = map;
     const { minX, minY, maxX, maxY } = map.bounds;
+    this.mapSpan = Math.hypot(maxX - minX, maxY - minY);
     this.gridMinX = minX;
     this.gridMinY = minY;
     this.gridCols = Math.max(1, Math.ceil((maxX - minX) / GRID_CELL) + 1);
@@ -939,7 +948,7 @@ export function projectileStepBlocker(
 /** Where a shot actually ends up: the point it stopped at, the height it was at there, and how far that was. */
 export interface ShotPath extends Pos3 {
   dist: number;
-  /** The line that actually stopped it short (a wall, a shut door), or null if it reached `target`/`WEAPON_RANGE` unobstructed — the shoot-triggered specials (`game/specials.ts: triggerShot`) key off this. */
+  /** The line that actually stopped it short (a wall, a shut door), or null if it ran out its range unobstructed — the shoot-triggered specials (`game/specials.ts: triggerShot`) key off this. */
   lineIndex: number | null;
 }
 
@@ -949,10 +958,18 @@ export interface ShotPath extends Pos3 {
  * weapon's tracer endpoint and for how far a projectile may fly
  * (game/weapons.ts, game.ts).
  *
- * With no `target` this is a free shot: flat at `origin.z`, out to
- * `WEAPON_RANGE`. With one, it slopes from `origin.z` to the target's height
- * over exactly the distance to it and stops *at* the target — the origin stays
- * the shooter's own height so a rendered tracer never starts mid-air.
+ * `target` supplies the **slope** — the trace rises or falls from `origin.z`
+ * toward the target's height, and the origin stays the shooter's own height so
+ * a rendered tracer never starts mid-air. With no target the shot is flat.
+ *
+ * `range` is how far it flies, and is deliberately **separate from the aim**:
+ * it defaults to stopping *at* the target (a player's locked-on shot, whose
+ * target can't move mid-flight) but a caller can pass its own, because a shot
+ * keeps going down the aimed slope whether or not the target is still there. A
+ * monster's bullet passes `WEAPON_RANGE` (`P_LineAttack`'s `MISSILERANGE`); a
+ * missile has no range budget in vanilla at all and passes `World.mapSpan` —
+ * see docs/monsters.md § Hitscan vs. projectile and § Monster projectiles in
+ * flight.
  *
  * `lockedOn` (default: true whenever `target` is given) switches blocking from
  * `blocksShot`'s single fixed ray to a **slope wedge**, vanilla's
@@ -966,13 +983,18 @@ export function shotPath(
   origin: Pos3,
   angleRad: number,
   target: Pos3 | null = null,
+  range?: number,
   lockedOn: boolean = target !== null,
 ): ShotPath {
   const { x, y, z } = origin;
   const dx = Math.cos(angleRad);
   const dy = Math.sin(angleRad);
-  const maxRange = target ? Math.hypot(target.x - x, target.y - y) : WEAPON_RANGE;
-  const endZ = target ? target.z : z;
+  const toTarget = target ? Math.hypot(target.x - x, target.y - y) : 0;
+  const maxRange = range ?? (target ? toTarget : WEAPON_RANGE);
+  // Held for the whole trace, so a `range` past the target keeps climbing or
+  // falling at the rate the aim set — `P_LineAttack`'s `slope`, `momz`.
+  const slope = target && toTarget > 0 ? (target.z - z) / toTarget : 0;
+  const endZ = z + slope * maxRange;
   const tx = x + dx * maxRange;
   const ty = y + dy * maxRange;
   let nearestT = 1;
@@ -994,24 +1016,27 @@ export function shotPath(
   };
 
   if (!lockedOn) {
-    for (const i of world.linesNear(x, y, maxRange)) {
+    // Walked along the trace, not gathered from a radius box around its start:
+    // a missile's `range` is the whole map (see `World.mapSpan`), and
+    // `linesNear` is O(range²) in cells for what is one thin line.
+    world.forEachLineAlongSegment(x, y, tx, ty, (i) => {
       const t = crossingT(i);
-      if (t === null || t >= nearestT) continue;
+      if (t === null || t >= nearestT) return;
       if (blocksShot(world, i, z + (endZ - z) * t)) {
         nearestT = t;
         blockingLine = i;
       }
-    }
+    });
   } else {
     // Vanilla's P_AimLineAttack wedge — see this function's doc. Crossings have
     // to be walked nearest-first for the narrowing to mean anything, so unlike
     // the single-ray branch above (which can early-out on `nearestT` in any
     // order) this one collects and sorts first.
     const crossings: { t: number; i: number }[] = [];
-    for (const i of world.linesNear(x, y, maxRange)) {
+    world.forEachLineAlongSegment(x, y, tx, ty, (i) => {
       const t = crossingT(i);
       if (t !== null) crossings.push({ t, i });
-    }
+    });
     crossings.sort((p, q) => p.t - q.t);
 
     const half = shotTargetHalfHeight();

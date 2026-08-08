@@ -5,6 +5,7 @@ import { hasLineOfSight } from './world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import { SPAWN_CUBE_MONSTERS } from './thingdefs.ts';
 import { TELEFRAG_DAMAGE } from './things.ts';
+import { triangularDraw } from './weapons.ts';
 import type { CombatContext } from './combat.ts';
 import type { EffectLayer } from './effects.ts';
 import { SILENT, type SoundEmitter } from '../audio/sfx.ts';
@@ -361,7 +362,7 @@ export class IconOfSin {
     const brain = this.brainPos();
     if (!brain) return;
     for (let i = 0; i < EXPLODE_CHAIN_COUNT; i++) {
-      this.explodeAt(brain.x + (Math.random() - Math.random()) * EXPLODE_X_SPREAD, brain.y + SCREAM_Y_OFFSET);
+      this.explodeAt(brain.x + triangularDraw(EXPLODE_X_SPREAD), brain.y + SCREAM_Y_OFFSET);
     }
   }
 

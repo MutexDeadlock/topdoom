@@ -4,6 +4,9 @@ import type { AudioEngine } from '../audio/audio.ts';
 import { PLAYER_ORIGIN, type SfxId } from '../audio/sfx.ts';
 import type { Pos3 } from '../types.ts';
 
+/** One vanilla tic in seconds — the unit every weapon timing below is counted in (`info.c`'s state tables run at 35 Hz). */
+const TIC = 1 / 35;
+
 /**
  * How often the chainsaw's idle rattle restarts while it's the ready weapon:
  * vanilla's `S_SAW` state holds 4 tics and `A_WeaponReady` plays `sawidl` every
@@ -11,7 +14,7 @@ import type { Pos3 } from '../types.ts';
  * origin). That restart *is* the engine note — the lump is longer than the
  * interval, so only its first fraction is ever heard.
  */
-const SAW_IDLE_INTERVAL = 4 / 35;
+const SAW_IDLE_INTERVAL = 4 * TIC;
 
 /**
  * Vanilla's `MELEERANGE`: how far `A_Punch`/`A_Saw` trace out from the
@@ -30,22 +33,56 @@ export const PLAYER_MELEE_RANGE = 64;
  */
 const BERSERK_FIST_MULTIPLIER = 10;
 
+/**
+ * The super shotgun's per-pellet slope jitter (`WeaponDef.slopeSpread`), out
+ * of vanilla's 16.16 fixed point: `A_FireShotgun2` traces each pellet at
+ * `bulletslope + ((P_Random()-P_Random())<<5)`, so the extremes are
+ * ±(255<<5)/FRACUNIT of rise per unit travelled — about ±7°, or ±32 units of
+ * height at 256 units out.
+ */
+const SSG_SLOPE_SPREAD = (255 * 32) / 65536;
+
 export type WeaponKind = 'melee' | 'hitscan' | 'projectile';
 
 export interface WeaponDef {
   /** Ammo class this weapon spends, or null for the ammo-less melee weapons. */
   ammoType: AmmoType | null;
   ammoPerShot: number;
-  /** Seconds between shots while the trigger is held. */
+  /**
+   * Seconds between shots while the trigger is held — **vanilla's own state
+   * chain, not tuned by feel**: the tic counts of every state from the one
+   * carrying the fire action up to (not including) the one carrying
+   * `A_ReFire`, plus the lead-in states before the fire action. `A_ReFire`
+   * runs on *entry* to its state and re-enters the fire chain immediately
+   * while the trigger is down, so its own tics are never spent on a held
+   * trigger — which is why a weapon's listed states add up to more than this.
+   * See docs/combat.md § Fire rates.
+   */
   cooldown: number;
   kind: WeaponKind;
   /** Hitscan only: bullets/pellets fired per trigger pull. */
   pellets: number;
-  /** Hitscan only: each pellet's random spread off the aim line, in degrees. */
+  /** Each pellet's (or melee swing's) random spread off the aim line, in degrees. */
   spreadDeg: number;
+  /**
+   * Per-pellet random jitter of the *aim slope*, in vanilla's own slope units
+   * (dz per unit travelled) — only the super shotgun has one, and it is the
+   * one weapon in the game whose pellets scatter vertically as well as
+   * horizontally. 0 everywhere else, which keeps every other weapon's pellets
+   * exactly on the slope auto-aim resolved.
+   */
+  slopeSpread: number;
+  /**
+   * Whether the **first** shot of a held trigger ignores `spreadDeg` entirely
+   * — `P_GunShot(mo, !player->refire)`, passed by `A_FirePistol` and
+   * `A_FireCGun` and by nothing else (`A_FireShotgun` hardcodes `false`). It
+   * is what makes a tapped pistol/chaingun shot dead accurate at any range
+   * while a held burst walks off target.
+   */
+  accurateFirstShot: boolean;
   /** Melee only: how far in front of the player the swing reaches (`PLAYER_MELEE_RANGE`); 0 for everything else. */
   meleeRange: number;
-  /** Projectile only: travel speed, map units/sec. */
+  /** Projectile only: travel speed, map units/sec — the spawned missile's own `mobjinfo.speed` (units per tic) × 35, the same conversion `game/monsters.ts` applies to theirs. */
   projectileSpeed: number;
   /** Projectile only: SpriteBank name the flying shot is drawn as. */
   projectileSprite: string;
@@ -58,12 +95,17 @@ export interface WeaponDef {
   iconLump: string;
   /**
    * A direct/pellet hit's damage roll is `((rand % damageDiceSides) + 1) *
-   * damageDiceMultiplier` — vanilla's own P_Random-based per-weapon formula
-   * (pistol/chaingun/shotgun pellets: 5,10,15; plasma bolt: 5,10,15,20;
-   * rocket: 20-160 in steps of 20; fist and chainsaw: 2-20), lifted rather
-   * than tuned by feel since it decides how tough a fight actually is, the
-   * same reasoning ammo-per-shot already used. The fist's roll is additionally
-   * scaled while berserk is held — see `BERSERK_FIST_MULTIPLIER`.
+   * damageDiceMultiplier` — vanilla's own P_Random-based per-weapon formula,
+   * lifted rather than tuned by feel since it decides how tough a fight
+   * actually is, the same reasoning ammo-per-shot already used. Two different
+   * vanilla formulas land in this one shape: a *bullet's* is written out in
+   * `P_GunShot`/`A_FireShotgun2` (`5*(P_Random()%3+1)`, i.e. 5/10/15 per
+   * pellet), while a *missile's* is `PIT_CheckThing`'s single
+   * `((P_Random()%8)+1) * mobjinfo.damage` applied to whatever it hit — so
+   * every projectile has 8 sides and its multiplier is its `info.c` damage
+   * field (rocket 20, plasma 5, BFG ball 100). Fist and chainsaw roll
+   * `(P_Random()%10+1)<<1`, 2-20; the fist's is additionally scaled while
+   * berserk is held — see `BERSERK_FIST_MULTIPLIER`.
    */
   damageDiceSides: number;
   damageDiceMultiplier: number;
@@ -126,6 +168,25 @@ export function rollDamage(sides: number, multiplier: number): number {
 }
 
 /**
+ * Vanilla's `P_Random()-P_Random()` shape: a triangular draw centred on 0 and
+ * `width` wide at its extremes, in whatever unit the caller counts in. Every
+ * random fuzz in the game is this one distribution.
+ */
+export function triangularDraw(width: number): number {
+  return (Math.random() - Math.random()) * width;
+}
+
+/**
+ * `triangularDraw` in degrees, returned as radians off-aim — the angular half
+ * of it: the player's pellet spread and melee swing, a monster bullet's
+ * `<<20`, `A_FaceTarget`'s `MF_SHADOW` `<<21`. The super shotgun's *slope*
+ * jitter (`WeaponDef.slopeSpread`) is the one that isn't an angle.
+ */
+export function triangularSpread(deg: number): number {
+  return (triangularDraw(deg) * Math.PI) / 180;
+}
+
+/**
  * Keyboard slot 1-7 → the weapons in it, best (most upgraded) first. A digit
  * key not already selecting a weapon from this slot jumps to the best one
  * owned; pressed again (matching vanilla's own slot-sharing for fist/chainsaw
@@ -158,21 +219,27 @@ export const WEAPON_CYCLE: WeaponId[] = [
 ];
 
 /**
- * Fire rates and spread are tuned by feel rather than converted from
- * vanilla's tic-based weapon states, the same reasoning as player.ts's
- * GRAVITY — they don't translate cleanly to a dt-scaled model. Ammo-per-shot
- * costs have no such conversion problem and are lifted straight from
- * vanilla's `P_FireWeapon` table, since they're what determines how long a
- * pickup's ammo actually lasts.
+ * **Every number in this table is vanilla's** — fire rates from `info.c`'s
+ * weapon state chains (`WeaponDef.cooldown`), spread from the `<<18`/`<<19`
+ * shifts in `p_pspr.c`, damage from `P_GunShot`/`PIT_CheckThing`, ammo cost
+ * from `P_FireWeapon`, projectile speed from `mobjinfo`. Nothing here is tuned
+ * by feel; a top-down camera changes how a weapon is *aimed*, not how fast it
+ * shoots or how hard it hits. See docs/combat.md § Fire rates.
  */
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
   fist: {
     ammoType: null,
     ammoPerShot: 0,
-    cooldown: 0.25,
+    // S_PUNCH1-4 (4+4+5+4); S_PUNCH5 carries A_ReFire.
+    cooldown: 17 * TIC,
     kind: 'melee',
     pellets: 0,
-    spreadDeg: 0,
+    // A_Punch throws the *swing* off by the same <<18 draw a bullet gets. It
+    // matters far less than a bullet's: at MELEERANGE that is ~6 units of arc
+    // against `MONSTER_HIT_RADIUS`.
+    spreadDeg: 5.6,
+    slopeSpread: 0,
+    accurateFirstShot: false,
     meleeRange: PLAYER_MELEE_RANGE,
     projectileSpeed: 0,
     projectileSprite: '',
@@ -189,10 +256,15 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   chainsaw: {
     ammoType: null,
     ammoPerShot: 0,
-    cooldown: 0.1,
+    // S_SAW1 and S_SAW2 *both* call A_Saw, 4 tics each, and S_SAW3's A_ReFire
+    // costs nothing — so one bite per 4 tics, not per pass through the chain.
+    cooldown: 4 * TIC,
     kind: 'melee',
     pellets: 0,
-    spreadDeg: 0,
+    // A_Saw's own <<18 swing spread, identical to A_Punch's.
+    spreadDeg: 5.6,
+    slopeSpread: 0,
+    accurateFirstShot: false,
     // `A_Saw` really traces MELEERANGE+1, with vanilla's own comment saying
     // why: "use meleerange + 1 se the puff doesn't skip the flash". The extra
     // unit of reach is incidental; the puff is what it's for (effectdefs.ts's
@@ -215,10 +287,14 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   pistol: {
     ammoType: 'bullets',
     ammoPerShot: 1,
-    cooldown: 0.35,
+    // S_PISTOL1-3 (4+6+4); S_PISTOL4 carries A_ReFire.
+    cooldown: 14 * TIC,
     kind: 'hitscan',
     pellets: 1,
+    // P_GunShot's `(P_Random()-P_Random())<<18` — 255<<18 of a 2^32 turn.
     spreadDeg: 5.6,
+    slopeSpread: 0,
+    accurateFirstShot: true,
     meleeRange: 0,
     projectileSpeed: 0,
     projectileSprite: '',
@@ -234,10 +310,15 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   shotgun: {
     ammoType: 'shells',
     ammoPerShot: 1,
-    cooldown: 0.65,
+    // S_SGUN1-8 (3+7+5+5+4+5+5+3); S_SGUN9 carries A_ReFire.
+    cooldown: 37 * TIC,
     kind: 'hitscan',
     pellets: 7,
+    // A_FireShotgun calls P_GunShot(mo, false) seven times: the same <<18 as
+    // the pistol, and never the accurate first shot.
     spreadDeg: 5.6,
+    slopeSpread: 0,
+    accurateFirstShot: false,
     meleeRange: 0,
     projectileSpeed: 0,
     projectileSprite: '',
@@ -253,10 +334,16 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   supershotgun: {
     ammoType: 'shells',
     ammoPerShot: 2,
-    cooldown: 0.95,
+    // S_DSGUN1-9 (3+7+7+7+7+7+7+6+6); S_DSGUN10 carries A_ReFire.
+    cooldown: 57 * TIC,
     kind: 'hitscan',
     pellets: 20,
-    spreadDeg: 8.4,
+    // A_FireShotgun2 doesn't go through P_GunShot at all: its own loop uses
+    // `<<19`, twice the shotgun's cone, and is the only spread in the game
+    // that also jitters the slope.
+    spreadDeg: 11.2,
+    slopeSpread: SSG_SLOPE_SPREAD,
+    accurateFirstShot: false,
     meleeRange: 0,
     projectileSpeed: 0,
     projectileSprite: '',
@@ -264,9 +351,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     fireSound: 'dshtgn',
     hitSound: null,
     missSound: null,
-    // Same per-pellet formula as the shotgun (vanilla's SSG damage is close
-    // enough to it that the 20-vs-7 pellet count alone already accounts for
-    // the SSG's real advantage) rather than a second, separately-tuned roll.
+    // Vanilla's own per-pellet roll, not an approximation: `A_FireShotgun2`
+    // inlines the identical `5*(P_Random()%3+1)` `P_GunShot` uses, so the
+    // 20-vs-7 pellet count is the SSG's whole advantage.
     damageDiceSides: 3,
     damageDiceMultiplier: 5,
     splash: null,
@@ -275,10 +362,16 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   chaingun: {
     ammoType: 'bullets',
     ammoPerShot: 1,
-    cooldown: 0.1,
+    // S_CHAIN1 and S_CHAIN2 both call A_FireCGun, 4 tics each, and S_CHAIN3's
+    // A_ReFire holds 0 — one bullet per 4 tics, the chainsaw's own structure.
+    cooldown: 4 * TIC,
     kind: 'hitscan',
     pellets: 1,
     spreadDeg: 5.6,
+    slopeSpread: 0,
+    // A_FireCGun passes !player->refire exactly as A_FirePistol does, so a
+    // tapped chaingun shot is dead accurate and a held burst is not.
+    accurateFirstShot: true,
     meleeRange: 0,
     projectileSpeed: 0,
     projectileSprite: '',
@@ -298,12 +391,17 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   rocketLauncher: {
     ammoType: 'rockets',
     ammoPerShot: 1,
-    cooldown: 0.6,
+    // S_MISSILE2 (12, A_FireMissile) + S_MISSILE1 (8, the flash); S_MISSILE3
+    // carries A_ReFire. The 8-tic lead-in is vanilla's own launch delay.
+    cooldown: 20 * TIC,
     kind: 'projectile',
     pellets: 0,
     spreadDeg: 0,
+    slopeSpread: 0,
+    accurateFirstShot: false,
     meleeRange: 0,
-    projectileSpeed: 1000,
+    // MT_ROCKET's mobjinfo speed, 20 units/tic.
+    projectileSpeed: 20 * 35,
     projectileSprite: 'MISL',
     iconLump: 'LAUNA0',
     // `rlaunc` comes from MT_ROCKET itself — see fireSound's doc.
@@ -320,19 +418,27 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   plasmaRifle: {
     ammoType: 'cells',
     ammoPerShot: 1,
-    cooldown: 0.15,
+    // S_PLASMA1 alone (3, A_FirePlasma) — S_PLASMA2's 20 tics carry A_ReFire
+    // and are only ever spent on *releasing* the trigger, which is what makes
+    // the plasma rifle the fastest weapon in the game rather than a slow one.
+    cooldown: 3 * TIC,
     kind: 'projectile',
     pellets: 0,
     spreadDeg: 0,
+    slopeSpread: 0,
+    accurateFirstShot: false,
     meleeRange: 0,
-    projectileSpeed: 1600,
+    // MT_PLASMA's mobjinfo speed, 25 units/tic.
+    projectileSpeed: 25 * 35,
     projectileSprite: 'PLSS',
     iconLump: 'PLASA0',
     // As with the rocket: `plasma` is MT_PLASMA's own seesound.
     fireSound: null,
     hitSound: null,
     missSound: null,
-    damageDiceSides: 4,
+    // MT_PLASMA's mobjinfo damage is 5, rolled by PIT_CheckThing's shared
+    // ((P_Random()%8)+1) — 5-40, not the 5-20 an earlier 4-sided roll gave.
+    damageDiceSides: 8,
     damageDiceMultiplier: 5,
     splash: null,
     spray: null,
@@ -340,12 +446,19 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   bfg: {
     ammoType: 'cells',
     ammoPerShot: 40,
-    cooldown: 1,
+    // S_BFG3 (10, A_FireBFG) + S_BFG1 (20) + S_BFG2 (10); S_BFG4 carries
+    // A_ReFire. Those first two states are also vanilla's charge-up *before*
+    // the ball leaves, which this engine doesn't reproduce — see
+    // docs/combat.md § Fire rates.
+    cooldown: 40 * TIC,
     kind: 'projectile',
     pellets: 0,
     spreadDeg: 0,
+    slopeSpread: 0,
+    accurateFirstShot: false,
     meleeRange: 0,
-    projectileSpeed: 700,
+    // MT_BFG's mobjinfo speed, 25 units/tic — the same as a plasma bolt's.
+    projectileSpeed: 25 * 35,
     projectileSprite: 'BFS1',
     iconLump: 'BFUGA0',
     // The one projectile weapon with a sound of its own: MT_BFG's seesound is 0
@@ -353,8 +466,10 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     fireSound: 'bfg',
     hitSound: null,
     missSound: null,
+    // MT_BFG's own mobjinfo damage is 100, so the ball's *contact* hit alone
+    // is 100-800 before `spray` adds anything.
     damageDiceSides: 8,
-    damageDiceMultiplier: 30,
+    damageDiceMultiplier: 100,
     // A_Explode is never called on the BFG ball in vanilla — see
     // WeaponDef.splash's doc — its real secondary damage is `spray` below.
     splash: null,
@@ -366,7 +481,14 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
 export interface HitscanShot {
   kind: 'hitscan';
   angleRad: number;
-  /** This pellet's own damage roll (WeaponDef.damageDiceSides/Multiplier) — only applied if it actually lands on the locked-on target (game.ts). */
+  /**
+   * This pellet's own jitter off the shot's aim *slope* (`WeaponDef.slopeSpread`),
+   * as rise per unit travelled — non-zero only for the super shotgun. Applied
+   * by moving the aim point up or down at the target's distance, since that is
+   * what `shotPath` derives its slope from.
+   */
+  slopeOffset: number;
+  /** This pellet's own damage roll (WeaponDef.damageDiceSides/Multiplier) — applied only if this pellet's own `angleRad`, spread included, lands on a body (game/projectiles.ts: spawnPlayerShot). */
   damage: number;
 }
 
@@ -427,6 +549,15 @@ export class WeaponSystem {
   private lastWeapon: WeaponId = 'pistol';
   /** Counts down to the chainsaw's next idle rattle — see `SAW_IDLE_INTERVAL`. */
   private sawIdleTimer = 0;
+  /**
+   * Vanilla's `player->refire`: how many shots the trigger has already fired
+   * without coming up. Only `WeaponDef.accurateFirstShot` reads it, and only
+   * for "is this shot the first of the burst" — `A_ReFire` zeroes it the
+   * moment the button is released or a weapon switch is pending, which
+   * `update` reproduces by comparing against `refireWeapon`.
+   */
+  private refire = 0;
+  private refireWeapon: WeaponId | null = null;
 
   /**
    * Resyncs the switch tracking to whatever is selected as a level starts, so
@@ -436,6 +567,8 @@ export class WeaponSystem {
   beginLevel(inv: Inventory): void {
     this.lastWeapon = inv.currentWeapon;
     this.sawIdleTimer = 0;
+    this.refire = 0;
+    this.refireWeapon = null;
   }
 
   /**
@@ -499,14 +632,28 @@ export class WeaponSystem {
    * `MeleeShot` per swing. Empty whenever nothing fired.
    */
   update(dt: number, firing: boolean, inv: Inventory, aimAngleRad: number): Shot[] {
-    this.cooldownRemaining = Math.max(0, this.cooldownRemaining - dt);
+    // Floored at *minus one frame*, not at 0, so the overshoot past the
+    // cooldown is carried into the next one rather than dropped: a cooldown
+    // that isn't a whole number of frames otherwise rounds up to the frame
+    // time, which cost the plasma rifle (3 tics = 0.086s) 14% of its rate on a
+    // 60Hz display. One frame is also the cap, so a long stall can't bank a
+    // burst of instant shots.
+    this.cooldownRemaining = Math.max(-dt, this.cooldownRemaining - dt);
+    // A_ReFire's else branch: letting the trigger up — or having a weapon
+    // switch pending — resets the burst, so the next shot counts as its first.
+    if (!firing || inv.currentWeapon !== this.refireWeapon) this.refire = 0;
     if (!firing || this.cooldownRemaining > 0) return [];
 
     const def = WEAPONS[inv.currentWeapon];
     if (def.ammoType && inv.ammo[def.ammoType] < def.ammoPerShot) return [];
 
-    this.cooldownRemaining = def.cooldown;
+    this.cooldownRemaining += def.cooldown;
     if (def.ammoType) inv.ammo[def.ammoType] -= def.ammoPerShot;
+    // `!player->refire` is read *before* A_ReFire bumps it, so the opening
+    // shot of a hold is the accurate one.
+    const accurate = def.accurateFirstShot && this.refire === 0;
+    this.refire++;
+    this.refireWeapon = inv.currentWeapon;
 
     if (def.kind === 'melee') {
       // Berserk scales the fist only, exactly as vanilla's A_Punch/A_Saw split
@@ -515,7 +662,8 @@ export class WeaponSystem {
       return [
         {
           kind: 'melee',
-          angleRad: aimAngleRad,
+          // A_Punch/A_Saw fuzz the swing angle just like a bullet's.
+          angleRad: aimAngleRad + triangularSpread(def.spreadDeg),
           range: def.meleeRange,
           damage: rollDamage(def.damageDiceSides, def.damageDiceMultiplier) * (berserk ? BERSERK_FIST_MULTIPLIER : 1),
           hitSound: def.hitSound,
@@ -527,12 +675,14 @@ export class WeaponSystem {
     if (def.kind === 'hitscan') {
       const shots: Shot[] = [];
       for (let i = 0; i < def.pellets; i++) {
-        // Matches vanilla's own P_Random-P_Random trick: two uniform draws
-        // subtracted gives a triangular distribution centred on the aim line.
-        const spread = def.spreadDeg > 0 ? ((Math.random() - Math.random()) * def.spreadDeg * Math.PI) / 180 : 0;
+        // Each pellet draws its own angle and (super shotgun only) its own
+        // slope, exactly as vanilla's per-pellet loops do — one aim, many
+        // independent bullets. `accurate` is the pistol/chaingun's first shot.
+        const spread = accurate ? 0 : triangularSpread(def.spreadDeg);
         shots.push({
           kind: 'hitscan',
           angleRad: aimAngleRad + spread,
+          slopeOffset: accurate ? 0 : triangularDraw(def.slopeSpread),
           damage: rollDamage(def.damageDiceSides, def.damageDiceMultiplier),
         });
       }

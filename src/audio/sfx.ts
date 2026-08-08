@@ -12,7 +12,7 @@ import type { Pos2 } from '../types.ts';
  * so nothing ever takes `S_StartSoundAtVolume`'s link branch.
  *
  * Listed in full — including sounds nothing here plays yet (the boss brain's,
- * `chgun`, `radio`) — because it *is* vanilla's table, and a partial copy would
+ * `chgun`) — because it *is* vanilla's table, and a partial copy would
  * silently drift the moment another hook is added. Each name is a `DS`-prefixed
  * lump in the WAD (`wad/sound.ts`).
  */

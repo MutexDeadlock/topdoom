@@ -32,6 +32,7 @@ import {
 import { CRUSH_DAMAGE } from './wad/specials.ts';
 import { Hud } from './ui/hud.ts';
 import { Crosshair } from './ui/crosshair.ts';
+import { CenterMessage } from './ui/message.ts';
 import { DebugHud, handleHotkeys } from './ui/debughud.ts';
 import { ScreenEffects } from './ui/screeneffects.ts';
 import { FrameProfiler } from './util/profiler.ts';
@@ -110,6 +111,14 @@ const MONSTER_BULLET_SLOP = 4;
  */
 const SHADOW_AIM_SPREAD_DEG = (255 / 2048) * 360;
 
+/**
+ * Shown center-screen (`ui/message.ts`) with `radio` — vanilla's `DSRADIO`, which it uses for
+ * DOOM 2's inter-level radio chatter, not for secrets, so both the message and the sound are this
+ * engine's own. Vanilla announces a secret nowhere at all: the status bar's `S` count just ticks
+ * up. docs/items.md § Center messages.
+ */
+const SECRET_MESSAGE = 'You found a secret area';
+
 /** One loaded WAD set, playing one level at a time. */
 export class Game {
   private scene = new THREE.Scene();
@@ -174,6 +183,8 @@ export class Game {
   private skill: Skill;
   private hud: Hud;
   private crosshair: Crosshair;
+  /** Center-screen text — currently only the secret-found line (see `SECRET_MESSAGE`). */
+  private message: CenterMessage;
   /**
    * Measurement itself always runs — `performance.now()` calls are cheap enough
    * not to bother gating; only `DebugHud`'s decision to render the samples is
@@ -221,6 +232,7 @@ export class Game {
     this.spriteBank = new SpriteBank(wad);
     this.spriteMaterials = new SpriteMaterialCache(gfx, view.renderer);
     this.hud = new Hud(gfx);
+    this.message = new CenterMessage(gfx);
     this.crosshair = new Crosshair(view.renderer.domElement);
     this.mapNames = wad.mapNames();
     if (this.mapNames.length === 0) throw new Error('no maps in the selected WADs');
@@ -285,6 +297,7 @@ export class Game {
     // rather than duplicated at each caller.
     this.playerDead = false;
     this.screen.clearDeath();
+    this.message.clear();
     this.playerActor.revive();
     this.mapIndex = (index + this.mapNames.length) % this.mapNames.length;
     const name = this.mapNames[this.mapIndex];
@@ -465,6 +478,9 @@ export class Game {
     // only makes sure nothing from this level is left holding a channel.
     this.audio.stopAll();
     this.screen.reset();
+    // Like `screen`, this element outlives the Game that drove it — without
+    // this the menu (and the next level started from it) inherits the line.
+    this.message.clear();
     this.playerActor.dispose();
     this.specials?.dispose();
     this.built?.group.traverse((obj) => {
@@ -885,10 +901,15 @@ export class Game {
           if (taken) this.audio.play(pickupSound(type));
           return taken;
         });
-        const exit = this.sectorEffects.update(dt, this.world, this.player, this.inventory, (amount) =>
+        const sectorEffect = this.sectorEffects.update(dt, this.world, this.player, this.inventory, (amount) =>
           this.damagePlayer(amount),
         );
-        if (exit) this.pendingExit = true;
+        if (sectorEffect.secretFound) {
+          this.message.show(SECRET_MESSAGE);
+          // Unattenuated, like a pickup: it's an announcement to the player, not a sound in the world.
+          this.audio.play('radio');
+        }
+        if (sectorEffect.exit) this.pendingExit = true;
       });
 
       // Hard landings and the chainsaw's two ambient sounds, both of which
@@ -913,6 +934,7 @@ export class Game {
       elapsedSeconds: this.levelTime,
     });
     this.crosshair.update(this.inventory.health);
+    this.message.update(dt);
     this.screen.update(dt, this.inventory);
 
     this.profiler.time('Fog of War', () => this.fogOfWar.update(dt, this.player.x, this.player.y));

@@ -206,6 +206,27 @@ needed on top of the death check. This repo has no intermission screen, so that 
 currently visible — the very next frame loads the next map with a fresh zeroed timer — but the
 behavior is in place for if one is added later.
 
+### Center messages
+
+`src/ui/message.ts`'s `CenterMessage` draws one short line of `WadFont` text over the middle of the
+view (`#hud-message`, horizontally centered, 40% down so it clears the player sprite the camera
+holds at dead center), for 3 seconds. Currently the only caller is the secret announcement —
+`Game.frame` shows `SECRET_MESSAGE` and plays `radio` on the frame `SectorEffects.update` reports
+`secretFound`.
+
+Both halves are this engine's own, not vanilla reproductions: vanilla announces a secret nowhere at
+all (its status bar's `S` count just ticks up), prints what messages it does have in the top-left in
+STCFN's native red, and uses `DSRADIO` for DOOM 2's inter-level radio chatter. This one is
+center-screen in `COLOR_YELLOW`, where a top-down player is already looking, and 3 seconds rather than
+vanilla's 4-second `HU_MSGTIMEOUT` because text in the middle of the view outstays its welcome
+faster than text in a corner. Its CSS size (`13px` glyph height, roughly the level-stats strip's
+own) and `opacity: 0.75` are **tuned by feel** — it sits over the playfield, so it reads as an
+overlay rather than competing with what's under it.
+
+The timeout is ticked from `Game.frame`'s `dt`, so a paused game doesn't burn a message's display
+time behind the menu; `loadMapByIndex` and `dispose` both `clear()` it, since the element is static
+markup that outlives any one `Game` (the same reason `Hud`'s panels `replaceChildren()`).
+
 ### `WadFont` (`src/ui/wadfont.ts`)
 
 The strip is drawn with the IWAD's own font graphics rather than DOM text, and built as a reusable
@@ -222,8 +243,9 @@ STCFN's own pixels are already vanilla's HUD-message red, so the red `"M: "`/`"I
 need no recoloring. There is no full-charset yellow font in vanilla WADs (`WINUM`/`STYSNUM` are
 digits-only, and mixing font families within one line would visibly mismatch STCFN's glyph height),
 so the strip's numbers instead recolor STCFN itself — `WadFont`'s optional `recolor` — tinted to
-`STYSNUM1`'s own sampled yellow (`255,255,115`), so the color still comes from the WAD rather than
-being invented. Recoloring is **not** a flat fill: each opaque pixel is scaled by its own brightness
+`STYSNUM1`'s own sampled yellow (`COLOR_YELLOW`, `255,255,115`, exported from `wadfont.ts` since the
+center message recolors to it too), so the color still comes from the WAD rather than being
+invented. Recoloring is **not** a flat fill: each opaque pixel is scaled by its own brightness
 (`max(r,g,b)/255`) before tinting, so STCFN's anti-aliased edges (its glyphs shade from a dark red
 core out to a brighter edge) still shade from a dark tint to a bright one rather than flattening to
 one solid color — a flat fill was tried first and read as illegible pixel mush. This repo has no

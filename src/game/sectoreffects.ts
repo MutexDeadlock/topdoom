@@ -9,6 +9,14 @@ import {
   type DamageFloorEffect,
 } from '../wad/specials.ts';
 
+/** What one frame's `SectorEffects.update` did, for the caller to realize (sound, message, level exit). */
+export interface SectorEffectResult {
+  /** An `exitBelowHealth` floor just dropped the player to its threshold — end the level. */
+  exit: boolean;
+  /** The player just entered a secret sector, on that single frame only (`sector.special` is cleared with it). */
+  secretFound: boolean;
+}
+
 /**
  * Vanilla's `P_PlayerInSpecialSector` — the sector specials that need no mover
  * at all, just `sector.special` and where the player is standing: damage
@@ -36,37 +44,47 @@ export class SectorEffects {
   }
 
   /**
-   * Runs this frame's specials for the sector the player is standing in and
-   * reports whether one of them ends the level (a `exitBelowHealth` floor).
+   * Runs this frame's specials for the sector the player is standing in and reports what they did
+   * — a secret being entered, and whether one of them ends the level (an `exitBelowHealth` floor).
    * Gated on `player.z === sector.floorHeight` (vanilla's `mo->z != floorheight`),
    * read off the local sector rather than `World.groundFloor`.
    */
-  update(dt: number, world: World, player: Pos3, inv: Inventory, damage: (amount: number) => void): boolean {
+  update(
+    dt: number,
+    world: World,
+    player: Pos3,
+    inv: Inventory,
+    damage: (amount: number) => void,
+  ): SectorEffectResult {
     const sector = world.sectorAt(player.x, player.y);
     if (!sector || player.z !== sector.floorHeight) {
       this.timer = DAMAGE_FLOOR_INTERVAL;
-      return false;
+      return { exit: false, secretFound: false };
     }
+    let secretFound = false;
     if (sector.special === 9) {
       // Vanilla's `case 9: player->secretcount++; sector->special = 0;` — clearing it here means
       // the lookup below never matches 9 again, so this can't double-count on a later frame.
       this.secretsFound++;
       sector.special = 0;
+      secretFound = true;
     }
     const effect = SECTOR_DAMAGE_SPECIALS[sector.special];
     if (!effect) {
       this.timer = DAMAGE_FLOOR_INTERVAL;
-      return false;
+      return { exit: false, secretFound };
     }
     this.timer -= dt;
-    if (this.timer > 0) return false;
+    if (this.timer > 0) return { exit: false, secretFound };
     // The interval keeps running even when a suit blocks the hit, matching
     // vanilla's own global `leveltime&0x1f` clock: the suit skips the damage,
     // it doesn't bank it up for the moment it expires.
     this.timer += DAMAGE_FLOOR_INTERVAL;
-    if (suitBlocks(effect, inv)) return false;
+    if (suitBlocks(effect, inv)) return { exit: false, secretFound };
     damage(effect.amount);
-    return effect.exitBelowHealth !== undefined && inv.health > 0 && inv.health <= effect.exitBelowHealth;
+    const exit =
+      effect.exitBelowHealth !== undefined && inv.health > 0 && inv.health <= effect.exitBelowHealth;
+    return { exit, secretFound };
   }
 }
 

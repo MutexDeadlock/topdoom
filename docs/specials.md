@@ -341,6 +341,10 @@ damage floors above, by the same `game/sectoreffects.ts: SectorEffects.update`, 
 `map.sectors`, mirroring vanilla `P_SpawnSpecials`' own `case 9: totalsecret++`. See docs/items.md §
 Level stats for where these numbers surface on screen.
 
+`update` reports the entry back to `game.ts` (`SectorEffectResult.secretFound`, true on that one
+frame only) rather than just bumping the counter, because finding a secret also announces itself —
+a center-screen message and `radio`, neither of which vanilla does. docs/items.md § Center messages.
+
 ## Boss death
 
 `A_BossDeath` (`p_enemy.c`) is the one special this engine drives from a monster's death rather than

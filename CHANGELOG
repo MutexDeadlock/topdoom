@@ -3,6 +3,7 @@ v0.10.0 (2026-08-08)
 Features and improvements
   - the Icon of Sin (DOOM2 MAP30) works
   - Commander Keen (DOOM2 MAP32) works
+  - add "You found a secret area" message
   - bullets and melee hits now splash blood
   - bullets now leave the original's puff on walls (and on barrels)
   - hopefully completed THINGs

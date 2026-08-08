@@ -11,7 +11,7 @@ import {
   type WeaponId,
 } from '../game/inventory.ts';
 import { WEAPON_CYCLE, WEAPONS } from '../game/weapons.ts';
-import { WadFont } from './wadfont.ts';
+import { WadFont, COLOR_YELLOW } from './wadfont.ts';
 
 /**
  * The kill/item/secret totals the level-stats strip shows — see `WadFont`'s doc and
@@ -28,14 +28,11 @@ export interface LevelStats {
   elapsedSeconds: number;
 }
 
-/** Sampled from `STYSNUM1` — vanilla's own status-bar yellow, reused as `WadFont`'s recolor for the strip's numbers. */
-const LEVEL_STATS_YELLOW: readonly [number, number, number] = [255, 255, 115];
-
 /**
  * Sampled from `ARM1A0` (the green armor pickup) — there's no vanilla precedent for
  * highlighting a *completed* kill/item/secret category (vanilla's intermission screen prints
  * every percentage in the same font/color regardless of value), so this is a UI addition tuned
- * by feel; only the choice of color is WAD-derived, for the same reason the yellow above is.
+ * by feel; only the choice of color is WAD-derived, for the same reason `COLOR_YELLOW` is.
  */
 const LEVEL_STATS_GREEN: readonly [number, number, number] = [111, 239, 103];
 
@@ -130,7 +127,7 @@ export class Hud {
 
   constructor(gfx: GraphicsBank) {
     this.redFont = new WadFont(gfx);
-    this.yellowFont = new WadFont(gfx, LEVEL_STATS_YELLOW);
+    this.yellowFont = new WadFont(gfx, COLOR_YELLOW);
     this.greenFont = new WadFont(gfx, LEVEL_STATS_GREEN);
     // The widest of the three labels ("M: "/"I: "/"S: ", proportionally spaced) — every line's
     // number starts here rather than right after its own label, so the numbers form a flush

@@ -23,6 +23,13 @@ interface Glyph {
 export type WadFontRecolor = readonly [number, number, number];
 
 /**
+ * Sampled from `STYSNUM1` — vanilla's own status-bar yellow. Lives here rather than with either
+ * consumer because both the level-stats numbers (`ui/hud.ts`) and the center message
+ * (`ui/message.ts`) recolor to the same WAD-derived yellow.
+ */
+export const COLOR_YELLOW: WadFontRecolor = [255, 255, 115];
+
+/**
  * Draws text with the IWAD's own status-bar font (`STCFN033`-`STCFN095`, the same lumps
  * vanilla's on-screen messages use), proportionally spaced exactly like `hu_lib.c`'s
  * `HUlib_drawTextLine`: each glyph advances by its own patch width with no kerning, a space or

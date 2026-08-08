@@ -91,7 +91,7 @@ emitter, so a headless script or a browser with no `AudioContext` needs no branc
 | `game/specials.ts` | Doors, lifts, floors, ceilings, crushers, switches, a locked door's grunt |
 | `game/weapons.ts` | The chainsaw's bring-up and idle rattle (`updateSounds`) |
 | `game/effects.ts` | `telept`, on both fog puffs of every teleport |
-| `game.ts` | Weapon fire, projectile launches and impacts, the player's own pain/death/landing, pickups, the arch-vile's blast |
+| `game.ts` | Weapon fire, projectile launches and impacts, the player's own pain/death/landing, pickups, entering a secret, the arch-vile's blast |
 
 ## Monsters
 
@@ -206,6 +206,12 @@ off `Player.landingSpeed`.
 Pickups follow `P_TouchSpecialThing` (`inventory.ts: pickupSound`): `getpow` for the six
 powerups plus the soulsphere and megasphere, `wpnup` for the seven weapons, `itemup` for
 everything else — all **unattenuated**, as vanilla plays them, since you are standing on it.
+
+Entering a secret sector plays `radio`, also unattenuated, alongside the center-screen message.
+Vanilla plays no sound for a secret at all and uses `DSRADIO` for DOOM 2's inter-level chatter, so
+this is a deliberate addition, not a fidelity reproduction — docs/items.md § Center messages. Not
+every WAD set has the lump (the shareware `DOOM1.WAD` doesn't); `bufferFor` returning null there
+means the message simply shows silently, which is the same way every other missing lump degrades.
 
 ## Volume, mute, and the context
 

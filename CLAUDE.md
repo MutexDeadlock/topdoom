@@ -11,14 +11,6 @@ entirely new — none of vanilla DOOM's game code is ported.
 
 ## Commands
 
-```bash
-npm install
-npm run dev         # vite dev server, http://localhost:5173
-npm run typecheck   # tsc --noEmit
-npm run build       # tsc --noEmit && vite build
-npm run preview     # serve the production build
-```
-
 There is no test suite (`npm test` is an unset placeholder). Validate changes with
 `npm run typecheck` and, for anything touching WAD parsing/geometry/collision, the headless
 inspector below.

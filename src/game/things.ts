@@ -51,9 +51,9 @@ import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
 
 interface PosedThing extends Pos3 {
-  /** 
+  /**
    * Index into the `posed` array itself.
-   * A stable handle callers (game.ts) can hold onto across frames to target 
+   * A stable handle callers (game.ts) can hold onto across frames to target
    * this exact instance with `ThingLayer.damage`.
    */
   id: number;
@@ -108,8 +108,8 @@ interface PosedThing extends Pos3 {
    */
   z: number;
   /**
-   * Its containing sector — the live reference `z` is read from while 
-   * not an alerted monster; reassigned each frame by `update()` once a monster starts moving. 
+   * Its containing sector — the live reference `z` is read from while
+   * not an alerted monster; reassigned each frame by `update()` once a monster starts moving.
    */
   sector: Sector | undefined;
   facingDeg: number;
@@ -117,10 +117,10 @@ interface PosedThing extends Pos3 {
   type: number;
   /** Set once a pickup consumes this instance; it then stays permanently hidden (see ThingLayer.update). */
   picked: boolean;
-  /** 
-   * Remaining hit points; 
+  /**
+   * Remaining hit points;
    * only meaningful for a `MONSTER_TYPES` thing (see `MONSTER_HEALTH`).
-   * everything else stays at `Infinity` and can never die. 
+   * everything else stays at `Infinity` and can never die.
    */
   health: number;
   /** Set once `health` reaches 0; see `ThingLayer.damage`. */
@@ -181,9 +181,9 @@ interface PosedThing extends Pos3 {
   // --- Monster AI (game/monsters.ts) — inert defaults for every non-monster PosedThing. ---
   /** True once this monster has spotted the player and started chasing (`update`'s throttled wake check, LOOK_INTERVAL). */
   alerted: boolean;
-  /** 
+  /**
    * The map thing's "ambush"/deaf flag (`game/skill.ts: isAmbush`) .
-   * Gates whether a sound-alerted sector alone can wake this monster; see `update`'s wake check. 
+   * Gates whether a sound-alerted sector alone can wake this monster; see `update`'s wake check.
    */
   ambush: boolean;
   velZ: number;
@@ -293,9 +293,9 @@ const BLOCKER_MARGIN =
   Object.values(MONSTER_STATS).reduce((max, s) => Math.max(max, s.speed * s.chaseInterval), 0) +
   Object.values(MONSTER_STATS).reduce((max, s) => Math.max(max, s.speed), 0) * MAX_FRAME_DT;
 
-/** 
- * How often an unalerted monster re-checks line of sight to the player — 
- * vanilla's own idle `A_Look` calls run every 10 tics (~0.29s), not every tic. 
+/**
+ * How often an unalerted monster re-checks line of sight to the player —
+ * vanilla's own idle `A_Look` calls run every 10 tics (~0.29s), not every tic.
  */
 const LOOK_INTERVAL = 0.3;
 

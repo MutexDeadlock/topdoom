@@ -45,7 +45,7 @@ export const SFX_NAMES = Object.keys(SFX) as SfxId[];
  * nothing at all for `itemup` and `tink`, and `±16` for everything else.
  * Playback rate is `pitch / NORM_PITCH`, so a shot's length varies with it
  * exactly as it does in vanilla's own mixer.
- * 
+ *
  * Vanilla: 128 | Topdoom: 192 (more subtle)
  */
 const NORM_PITCH = 192;

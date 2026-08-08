@@ -274,9 +274,31 @@ light on demand.
 
 Because any of these can target a sector that was never a light-pattern sector, `indexLightGeometry` —
 previously scoped to just the load-time blink sectors — now indexes every sector's static-batch
-occluders/flats unconditionally, a one-time load cost. **Still static-batch only**, the same
-pre-existing limitation the blink feature had: a sector that's also a mover has its geometry in its own
-per-mover mesh, out of `recolorSector`'s reach.
+occluders/flats unconditionally, a one-time load cost.
+
+### Relighting mover geometry
+
+`recolorSector` rewrites the RGB of every surface lit by a sector, in two places: the static batches
+(`sectorOccluders`/`sectorFlats`) and, via `recolorMoverGeometry`, any mover mesh holding that sector's
+geometry. Both are needed because a mover mesh carries its own sector's flats **plus** wall quads from
+*both* sides of every bordering line — so a sector that moves, and a static sector next to one, each
+have geometry that `indexLightGeometry` cannot see. `moverLightTargets` (filled in `createMoverMesh`
+from each quad's/fan's own `sector` field) is the sector → owning-mover-meshes index that makes the
+second pass cheap; a rebuild never changes which sectors a mesh covers, so it only grows once.
+
+The invariant: **a sector's light must reach its geometry whether or not that geometry is currently in
+a mover mesh.** Without the mover pass a strobing lift only relights while it happens to be *moving* —
+a height change rebuilds the mesh from the live `sector.light` anyway, which is exactly what masked the
+bug. Repro: DOOM1 E1M5 sectors 2 and 32, the tag-1 strobing lifts (also E1M5 sector 91, tag 2), covered
+by `tests/regression/strobing-lift-light.test.ts`.
+
+This covers **every** light effect, since `updateLights` (all the sector-type patterns) and
+`triggerLightChange` (the runtime line specials above) both funnel through `recolorSector` — and the
+combination is not rare: 7 maps in DOOM1.WAD, 18 in DOOM2.WAD, 14 in Freedoom 2 and 8 in SCYTHE.WAD
+have at least one light-driven mover, `glow` being the most common by a wide margin.
+
+Only RGB is written (`setXYZ`); vertex alpha belongs to `WallFader`/`FlatFader` (render/occlusion.ts)
+and the two must not clobber each other.
 
 ## The donut
 
@@ -432,9 +454,9 @@ UV math.
 `WallOccluder` gained `line`/`frontSide` fields (threaded through `mapmesh.ts`'s
 `processLine`/`addTwoSidedSide`/`addWall`) so `TextureScroller` can find exactly the linedef's *front*
 (vanilla's `sidenum[0]`) quad — the only side vanilla ever scrolls — among the batched geometry.
-**Static-batch geometry only**, the same limitation `recolorSector`'s light changes accept. In practice
-this never excludes anything real: a mapper only puts 48 on a decorative wall, never one whose sector
-also needs to move.
+**Static-batch geometry only** — unlike `recolorSector`, which also reaches mover meshes (§ Relighting
+mover geometry), `TextureScroller` indexes the static batch alone. In practice this never excludes
+anything real: a mapper only puts 48 on a decorative wall, never one whose sector also needs to move.
 
 The accumulated offset is wrapped to `[0, 1)` before being written into the single-precision `uv`
 buffer, purely to avoid float32 precision loss over a long session — `RepeatWrapping` already renders

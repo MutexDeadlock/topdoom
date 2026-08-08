@@ -289,9 +289,9 @@ interface ScrollingWall {
  * **Static-batch geometry only.** A scroll-48 line whose sector also happens
  * to be a specials mover has its geometry rebuilt wholesale by
  * `SpecialsController` instead of living in the shared static batch this
- * class indexes — the same pre-existing limitation already accepted for
- * `SpecialsController.recolorSector`'s light changes (see its doc), not a
- * new one. In practice this never actually excludes anything: a mapper only
+ * class indexes. (`SpecialsController.recolorSector` no longer accepts that
+ * limitation for light changes — see docs/specials.md § Relighting mover
+ * geometry.) In practice this never actually excludes anything: a mapper only
  * has a reason to put 48 on a *static* wall — it's a decorative treatment
  * (waterfalls, lava streams, conveyor-look walls), never a line whose own
  * sector also needs to move.

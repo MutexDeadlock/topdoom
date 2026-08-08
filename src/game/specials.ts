@@ -329,11 +329,10 @@ export function computeMovableSectors(map: DoomMap): Set<number> {
     ) {
       // Exit doesn't move geometry; teleport's tag match is a destination
       // lookup, not a mover — the target sector's own height never changes.
-      // A pure light change never moves geometry either, and deliberately
-      // stays out of the movable set: `recolorSector` only ever rewrites
-      // static-batch geometry (see its doc), so pulling a lightChange-only
-      // sector's geometry into a mover-mesh would just make it unreachable
-      // from there instead.
+      // A pure light change never moves geometry either, so it stays out of
+      // the movable set: `recolorSector` reaches static and mover geometry
+      // alike, and a sector whose height never changes has no reason to pay
+      // for a mesh of its own.
       for (const sectorIndex of resolveTargets(map, line, def)) out.add(sectorIndex);
     }
     for (const e of findSwitchEntries(map, line)) out.add(e.sectorIndex);
@@ -686,6 +685,8 @@ export class SpecialsController {
   private lightStates = new Map<number, LightState>();
   private sectorOccluders = new Map<number, BuiltMap['occluders']>();
   private sectorFlats = new Map<number, BuiltMap['flatSurfaces']>();
+  /** Which mover meshes hold geometry coloured from a given sector's light — see `recolorSector`. */
+  private moverLightTargets = new Map<number, Set<number>>();
 
   private prevX: number;
   private prevY: number;
@@ -814,11 +815,9 @@ export class SpecialsController {
    * (`lightStates`), but the `lightChange` line specials
    * (`triggerLightChange`) can recolor *any* tag-matched sector on demand,
    * not just ones with an ongoing pattern, so this indexes every sector
-   * unconditionally now — a one-time, load-only cost. Static-batch-only, same
-   * as `recolorSector` itself: a sector that's also a mover (in
-   * `movableSectors`) has its geometry in its own `moverMeshes` entry
-   * instead, out of reach here — an existing limitation the blink-pattern
-   * feature already had, not a new one.
+   * unconditionally now — a one-time, load-only cost. Static batches only:
+   * geometry living in a mover mesh is reached by `moverLightTargets`
+   * instead — see docs/specials.md § Relighting mover geometry.
    */
   private indexLightGeometry(): void {
     this.sectorOccluders.clear();
@@ -907,6 +906,18 @@ export class SpecialsController {
       walls: new WallFader(mesh.wallQuads, mesh.meshes),
       flats: new FlatFader(mesh.flatFans, mesh.meshes),
     });
+    // A mover mesh holds its own sector's flats plus wall quads from *both*
+    // sides of every bordering line, so the sectors it must be relit for are
+    // not just `sectorIndex` — see `recolorSector`. Rebuilding a mesh never
+    // changes which sectors those are, so the sets only ever grow once.
+    for (const q of mesh.wallQuads) this.trackMoverLight(q.sector, sectorIndex);
+    for (const f of mesh.flatFans) this.trackMoverLight(f.sector, sectorIndex);
+  }
+
+  private trackMoverLight(sectorIndex: number, moverIndex: number): void {
+    const set = this.moverLightTargets.get(sectorIndex) ?? new Set<number>();
+    set.add(moverIndex);
+    this.moverLightTargets.set(sectorIndex, set);
   }
 
   private rebuildMoverMesh(sectorIndex: number): void {
@@ -1877,6 +1888,13 @@ export class SpecialsController {
     }
   }
 
+  /**
+   * Rewrites the vertex colours of every surface lit by `sectorIndex` to that
+   * sector's current `light` — both the static batches (indexed once by
+   * `indexLightGeometry`) and any mover meshes holding its geometry. Only the
+   * RGB channels are touched; alpha belongs to the faders (render/occlusion.ts).
+   * See docs/specials.md § Light changes.
+   */
   private recolorSector(sectorIndex: number): void {
     const sector = this.map.sectors[sectorIndex];
     const dirty = new Set<string>();
@@ -1901,6 +1919,48 @@ export class SpecialsController {
         | THREE.BufferAttribute
         | undefined;
       if (attr) attr.needsUpdate = true;
+    }
+
+    this.recolorMoverGeometry(sectorIndex, sector.light);
+  }
+
+  /**
+   * `recolorSector`'s mover-mesh half. A sector that is *also* a mover (a
+   * strobing lift — DOOM1 E1M5 sectors 2 and 32) has its flats and walls in
+   * its own `moverMeshes` entry rather than the static batch, and a static
+   * sector bordering a mover has its side of the shared line built there too,
+   * so neither is reachable through `sectorOccluders`/`sectorFlats`. Without
+   * this pass such a sector only ever picked up its light while it happened
+   * to be moving, since a height change rebuilds the mesh from the live
+   * `sector.light` anyway.
+   */
+  private recolorMoverGeometry(sectorIndex: number, light: number): void {
+    for (const moverIndex of this.moverLightTargets.get(sectorIndex) ?? []) {
+      const g = this.moverMeshes.get(moverIndex);
+      if (!g) continue;
+      const dirty = new Set<string>();
+
+      for (const q of g.mesh.wallQuads) {
+        if (q.sector !== sectorIndex) continue;
+        const attr = g.mesh.meshes.get(q.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+        if (!attr) continue;
+        const c = litColor(light, wallContrast(q.ax, q.ay, q.bx, q.by));
+        for (let v = 0; v < q.vertexCount; v++) attr.setXYZ(q.vertexStart + v, c, c, c);
+        dirty.add(q.key);
+      }
+      for (const f of g.mesh.flatFans) {
+        if (f.sector !== sectorIndex) continue;
+        const attr = g.mesh.meshes.get(f.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+        if (!attr) continue;
+        const c = litColor(light);
+        for (let v = 0; v < f.vertexCount; v++) attr.setXYZ(f.vertexStart + v, c, c, c);
+        dirty.add(f.key);
+      }
+
+      for (const key of dirty) {
+        const attr = g.mesh.meshes.get(key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
+        if (attr) attr.needsUpdate = true;
+      }
     }
   }
 

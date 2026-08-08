@@ -1,3 +1,14 @@
+v0.10.1 (2026-08-08)
+
+Fixed bugs
+  - fixed a sector that both changes light and moves never showing its light
+    on its own floor and walls - only the player and the THINGs standing in
+    it were lit correctly, and the geometry caught up only while the sector
+    happened to be moving
+
+
+===============================================================================
+
 v0.10.0 (2026-08-08)
 
 Features and improvements

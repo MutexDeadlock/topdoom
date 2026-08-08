@@ -99,7 +99,7 @@ function resolveTargets(map: DoomMap, line: LineDef, def: SpecialDef): number[] 
 
 type BossDeathAction =
   | { kind: 'exit' }
-  | { kind: 'lowerFloorToLowest' | 'raiseToTexture' | 'blazeOpen'; tag: number };
+  | { kind: 'lowerFloorToLowest' | 'raiseToTexture' | 'blazeOpen' | 'open'; tag: number };
 
 interface BossDeathTrigger {
   type: number;
@@ -107,45 +107,81 @@ interface BossDeathTrigger {
 }
 
 /**
+ * Commander Keen's doomednum, and the door his death opens. `A_KeenDie` (`p_enemy.c`) is **not**
+ * gated on `gameepisode`/`gamemap` the way `A_BossDeath` is — it builds a synthetic `line_t` with
+ * `tag = 666` and calls `EV_DoDoor(&junk, open)` on any map at all, which is why this trigger is
+ * appended to every table below rather than living in the per-map switch. `open` is `EV_DoDoor`'s
+ * ordinary `VDOORSPEED` open-and-stay, not the blaze speed E4M6 uses.
+ */
+const KEEN_TYPE = 72;
+const KEEN_DOOR_TAG = 666;
+
+/**
  * Vanilla's `A_BossDeath` (`p_enemy.c`), confirmed against source — see docs/specials.md §
  * Boss death for the full table. Pure function of the map's own lump name: vanilla gates on
  * `gameepisode`/`gamemap`, not on which WAD supplied the map, so a PWAD's own MAP07 gets the
  * same Mancubus/Arachnotron triggers the IWAD's does.
+ *
+ * Commander Keen's own trigger is appended to every map's table, for the reason at `KEEN_TYPE`
+ * above. The Icon of Sin has no entry here at all: `A_BrainDie` exits the level directly rather
+ * than through a tag, and `game/icon.ts` owns it.
  */
 function bossDeathTriggersFor(mapName: string): BossDeathTrigger[] {
+  const keen: BossDeathTrigger = { type: KEEN_TYPE, action: { kind: 'open', tag: KEEN_DOOR_TAG } };
   const commercial = /^MAP(\d+)$/i.exec(mapName);
   if (commercial) {
-    if (Number(commercial[1]) !== 7) return [];
+    if (Number(commercial[1]) !== 7) return [keen];
     return [
       { type: BOSS_DEATH_TYPES.mancubus, action: { kind: 'lowerFloorToLowest', tag: 666 } },
       { type: BOSS_DEATH_TYPES.arachnotron, action: { kind: 'raiseToTexture', tag: 667 } },
+      keen,
     ];
   }
   const episodic = /^E(\d+)M(\d+)$/i.exec(mapName);
-  if (!episodic) return [];
+  if (!episodic) return [keen];
   const episode = Number(episodic[1]);
   const map = Number(episodic[2]);
   switch (episode) {
     case 1:
       return map === 8
-        ? [{ type: BOSS_DEATH_TYPES.baron, action: { kind: 'lowerFloorToLowest', tag: 666 } }]
-        : [];
+        ? [{ type: BOSS_DEATH_TYPES.baron, action: { kind: 'lowerFloorToLowest', tag: 666 } }, keen]
+        : [keen];
     case 2:
-      return map === 8 ? [{ type: BOSS_DEATH_TYPES.cyberdemon, action: { kind: 'exit' } }] : [];
+      return map === 8 ? [{ type: BOSS_DEATH_TYPES.cyberdemon, action: { kind: 'exit' } }, keen] : [keen];
     case 3:
-      return map === 8 ? [{ type: BOSS_DEATH_TYPES.spiderMastermind, action: { kind: 'exit' } }] : [];
+      return map === 8 ? [{ type: BOSS_DEATH_TYPES.spiderMastermind, action: { kind: 'exit' } }, keen] : [keen];
     case 4:
-      if (map === 6) return [{ type: BOSS_DEATH_TYPES.cyberdemon, action: { kind: 'blazeOpen', tag: 666 } }];
+      if (map === 6) return [{ type: BOSS_DEATH_TYPES.cyberdemon, action: { kind: 'blazeOpen', tag: 666 } }, keen];
       if (map === 8)
-        return [{ type: BOSS_DEATH_TYPES.spiderMastermind, action: { kind: 'lowerFloorToLowest', tag: 666 } }];
-      return [];
+        return [{ type: BOSS_DEATH_TYPES.spiderMastermind, action: { kind: 'lowerFloorToLowest', tag: 666 } }, keen];
+      return [keen];
     default:
       // Vanilla's own `default:` case has no per-type check, only `gamemap != 8` — any
       // recognized boss type dying on map 8 of an unlisted episode (e.g. SIGIL's E5M8) exits.
       return map === 8
-        ? Object.values(BOSS_DEATH_TYPES).map((type) => ({ type, action: { kind: 'exit' as const } }))
-        : [];
+        ? [...Object.values(BOSS_DEATH_TYPES).map((type) => ({ type, action: { kind: 'exit' as const } })), keen]
+        : [keen];
   }
+}
+
+/**
+ * Every sector a map's boss-death table can move — the tags in `bossDeathTriggersFor`, resolved
+ * against `map.sectors`. **Load-bearing for `computeMovableSectors`:** these sectors are driven by
+ * `triggerTag`, which has no triggering linedef, so nothing else in that scan can find them. MAP32's
+ * Keen door (sector 16, tag 666) and MAP07's Arachnotron platform (sector 1, tag 667) both have no
+ * linedef carrying their tag at all; without this they stay in the static batch and get drawn a
+ * second time the moment their mover mesh appears. See docs/specials.md § Boss death.
+ */
+function bossDeathSectors(map: DoomMap): number[] {
+  const tags = new Set<number>();
+  for (const t of bossDeathTriggersFor(map.name)) {
+    if (t.action.kind !== 'exit') tags.add(t.action.tag);
+  }
+  const out: number[] = [];
+  for (let i = 0; i < map.sectors.length; i++) {
+    if (tags.has(map.sectors[i].tag)) out.push(i);
+  }
+  return out;
 }
 
 /**
@@ -301,6 +337,8 @@ export function computeMovableSectors(map: DoomMap): Set<number> {
     }
     for (const e of findSwitchEntries(map, line)) out.add(e.sectorIndex);
   }
+  // A boss-death tag has no triggering linedef for the loop above to find — see bossDeathSectors.
+  for (const sectorIndex of bossDeathSectors(map)) out.add(sectorIndex);
   return out;
 }
 
@@ -1195,6 +1233,37 @@ export class SpecialsController {
     if (this.crushDamageDue) this.onCrush(sectorIndex);
   }
 
+  /**
+   * Vanilla's `sec->specialdata`: this sector already has a mover thinker running on it, so a fresh
+   * trigger of *any* kind must do nothing at all. `EV_DoFloor`, `EV_DoPlat`, `EV_DoCeiling`,
+   * `EV_DoDonut` and `EV_BuildStairs` all `continue` past such a sector.
+   *
+   * A mover that has finished is **not** active — vanilla removes its thinker and clears
+   * `specialdata` the moment it stops, freeing the sector to be triggered again. This engine keeps
+   * the finished record in `movers` instead (a lift re-triggers off its own `restHeight`), so the
+   * state has to be read rather than mere presence.
+   *
+   * The two re-triggers vanilla does honor are handled by their own callers *before* asking this: a
+   * door reverses (`EV_VerticalDoor`) and a stopped crusher restarts (`P_ActivateInStasis`).
+   *
+   * See docs/specials.md § One mover per sector — DOOM2 MAP30's central pillar is the repro.
+   */
+  private sectorActive(sectorIndex: number): boolean {
+    const mover = this.movers.get(sectorIndex);
+    if (!mover) return false;
+    switch (mover.kind) {
+      case 'floor':
+      case 'ceiling':
+        return mover.state === 'moving';
+      case 'lift':
+        return mover.state !== 'rest';
+      case 'crusher':
+        return mover.state !== 'stopped';
+      case 'door':
+        return mover.state !== 'open' && mover.state !== 'closed';
+    }
+  }
+
   /** Which pair of door sounds this door uses — see `DOOR_SOUNDS`. */
   private doorSounds(effect: DoorEffect): { open: SfxId; close: SfxId } {
     return DOOR_SOUNDS[effect.speed >= DOOR_SPEED_FAST ? 'fast' : 'normal'];
@@ -1204,6 +1273,7 @@ export class SpecialsController {
     const existing = this.movers.get(sectorIndex);
     const sounds = this.doorSounds(effect);
     if (!existing || existing.kind !== 'door') {
+      if (this.sectorActive(sectorIndex)) return;
       const sector = this.map.sectors[sectorIndex];
       const closeThenOpen = effect.mode === 'closeThenOpen';
       // A closeThenOpen door is authored already open, and reopens to
@@ -1258,6 +1328,7 @@ export class SpecialsController {
   private triggerLift(sectorIndex: number, effect: LiftEffect): void {
     const existing = this.movers.get(sectorIndex);
     if (!existing || existing.kind !== 'lift') {
+      if (this.sectorActive(sectorIndex)) return;
       const restHeight = this.map.sectors[sectorIndex].floorHeight;
       const downHeight = lowestNeighborFloor(this.map, sectorIndex);
       this.movers.set(sectorIndex, {
@@ -1279,8 +1350,7 @@ export class SpecialsController {
   }
 
   private triggerFloor(sectorIndex: number, effect: FloorEffect, line?: LineDef): void {
-    const existing = this.movers.get(sectorIndex);
-    if (existing && existing.kind === 'floor' && existing.state === 'moving') return;
+    if (this.sectorActive(sectorIndex)) return;
     // `line` is only actually needed for `changeTexture` — the only caller without a real
     // linedef (`triggerTag`, for a boss-death `lowerFloorToLowest`) never sets that flag.
     if (effect.changeTexture && line) this.applyFloorChange(sectorIndex, line);
@@ -1326,6 +1396,7 @@ export class SpecialsController {
       if (existing.state === 'stopped') existing.state = 'lowering';
       return;
     }
+    if (this.sectorActive(sectorIndex)) return;
     const sector = this.map.sectors[sectorIndex];
     this.movers.set(sectorIndex, {
       kind: 'crusher',
@@ -1345,7 +1416,7 @@ export class SpecialsController {
 
   /** Vanilla's own `sec->specialdata` guard: a sector already driven by *any* mover ignores this — unlike doors/lifts/floors above, there's no interactive re-trigger behavior worth having for a one-way move. */
   private triggerCeiling(sectorIndex: number, effect: CeilingEffect): void {
-    if (this.movers.has(sectorIndex)) return;
+    if (this.sectorActive(sectorIndex)) return;
     const target = resolveCeilingTarget(this.map, sectorIndex, effect.target);
     this.movers.set(sectorIndex, { kind: 'ceiling', sectorIndex, speed: effect.speed, target, state: 'moving' });
   }
@@ -1362,8 +1433,7 @@ export class SpecialsController {
    * texture at all), which no real map actually does.
    */
   private triggerRaiseToTexture(sectorIndex: number): void {
-    const existing = this.movers.get(sectorIndex);
-    if (existing && existing.kind === 'floor' && existing.state === 'moving') return;
+    if (this.sectorActive(sectorIndex)) return;
     let minHeight = Infinity;
     for (const line of this.map.linedefs) {
       const front = line.right !== NO_SIDE ? this.map.sidedefs[line.right]?.sector : undefined;
@@ -1394,8 +1464,7 @@ export class SpecialsController {
    * (`arrivalTexture`, applied by `tickFloor`).
    */
   private triggerLowerAndChange(sectorIndex: number): void {
-    const existing = this.movers.get(sectorIndex);
-    if (existing && existing.kind === 'floor' && existing.state === 'moving') return;
+    if (this.sectorActive(sectorIndex)) return;
     const target = lowestNeighborFloor(this.map, sectorIndex);
     let arrivalTexture: { floorTex: string; special: number } | undefined;
     for (const neighborIndex of neighborSectorIndices(this.map, sectorIndex)) {
@@ -1424,7 +1493,7 @@ export class SpecialsController {
    * overwriting its mover.
    */
   private triggerDonut(holeIndex: number): void {
-    if (this.movers.has(holeIndex)) return;
+    if (this.sectorActive(holeIndex)) return;
     const ringIndex = neighborSectorIndices(this.map, holeIndex)[0];
     if (ringIndex === undefined) return;
     let outerIndex: number | undefined;
@@ -1499,9 +1568,9 @@ export class SpecialsController {
    * step is exactly a floor rising to a fixed target height.
    */
   private triggerStairs(startSectorIndex: number, effect: StairsEffect): void {
-    if (this.movers.has(startSectorIndex)) return; // vanilla's sec->specialdata guard
+    if (this.sectorActive(startSectorIndex)) return; // vanilla's sec->specialdata guard
     for (const step of findStairChain(this.map, startSectorIndex, effect.stepHeight)) {
-      if (this.movers.has(step.sectorIndex)) continue;
+      if (this.sectorActive(step.sectorIndex)) continue; // EV_BuildStairs' own per-step `tsec->specialdata` skip
       this.movers.set(step.sectorIndex, {
         kind: 'floor',
         sectorIndex: step.sectorIndex,
@@ -1666,7 +1735,7 @@ export class SpecialsController {
   }
 
   /** The tag-matched half of `notifyBossDeath` — no triggering linedef exists, so this scans sector tags directly rather than going through `resolveTargets`/`trigger`. */
-  private triggerTag(tag: number, kind: 'lowerFloorToLowest' | 'raiseToTexture' | 'blazeOpen'): void {
+  private triggerTag(tag: number, kind: 'lowerFloorToLowest' | 'raiseToTexture' | 'blazeOpen' | 'open'): void {
     for (let i = 0; i < this.map.sectors.length; i++) {
       if (this.map.sectors[i].tag !== tag) continue;
       switch (kind) {
@@ -1684,6 +1753,10 @@ export class SpecialsController {
           break;
         case 'blazeOpen':
           this.triggerDoor(i, { kind: 'door', speed: DOOR_SPEED_FAST, waitSeconds: DOOR_WAIT, mode: 'openOnly' });
+          break;
+        case 'open':
+          // A_KeenDie's `EV_DoDoor(&junk, open)` — ordinary VDOORSPEED, opens and stays.
+          this.triggerDoor(i, { kind: 'door', speed: DOOR_SPEED, waitSeconds: DOOR_WAIT, mode: 'openOnly' });
           break;
       }
     }

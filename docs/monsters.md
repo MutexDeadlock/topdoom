@@ -475,6 +475,117 @@ died was the last living one of a doomednum `A_BossDeath` cares about, which on 
 level-wide special (a lowering floor, an exit) rather than anything AI-related — see docs/specials.md
 § Boss death.
 
+## Commander Keen
+
+`MT_KEEN` (doomednum 72) and `MT_BOSSBRAIN` (88) are the two `MONSTER_TYPES` members with **no
+`MONSTER_STATS` entry**, and that is not an omission: neither has a `seestate`, `meleestate` or
+`missilestate` in `info.c`, so neither wakes, moves, chases or attacks in vanilla either. They are
+`MF_SOLID|MF_SHOOTABLE` targets that stand still, flinch and die. `monsters.ts`'s `INERT_SHOOTABLE`
+holds what a `MonsterStats` would otherwise carry for them — the real `mobjinfo.radius` (16 for both,
+not the 24-unit `MONSTER_HIT_RADIUS` fallback) and the two sounds `A_Pain`/`A_Scream` play — and
+`ThingLayer.damage` has a matching branch that skips pain rolls, retargeting, knockback and
+infighting wholesale.
+
+The flinch is **unconditional** for both, which is exact rather than a simplification: Keen's
+`painchance` is 256 and the brain's 255, so vanilla stagger them on every hit or all but one in 256.
+There is deliberately no `painChance` field in `INERT_SHOOTABLE` for that reason.
+
+Keen is `MF_SPAWNCEILING`, so it hangs — `CEILING_HUNG_HEIGHT[72] = 72` (its own `mobjinfo.height`),
+the same table the gore props use, and because it never enters the AI branch of `ThingLayer.update`
+it keeps measuring `z` down from the live `ceilHeight` even as a corpse. Its death is the long
+12-frame `S_COMMKEEN` chain (`KEEN A`-`L`) and its pain frame is `KEEN M`, both off `info.c`'s state
+table rather than the rotation-0-tail derivation the other death tables use — Keen's whole sprite is
+rotation-0, so that derivation has nothing to key on.
+
+**`A_KeenDie` is the payoff**: once every Keen on the level is dead it opens the tag-666 door. Unlike
+every `A_BossDeath` case it is *not* gated on `gamemap`, which is why `bossDeathTriggersFor` appends
+Keen's trigger to every map's table rather than putting it in the per-map switch — docs/specials.md §
+Boss death. One accepted simplification: vanilla runs it on the eleventh death frame, this engine
+fires it at the death instant. The delay is purely cosmetic here, unlike the barrel's `A_Explode`
+delay, which is gameplay-relevant and *is* modelled.
+
+## The Icon of Sin
+
+Three doomednums and a new module, `game/icon.ts`. **Nothing about it is gated on the map's name** —
+vanilla's only gate is that the things exist, so a PWAD placing them gets identical behavior and
+every other map builds an inert `IconOfSin` whose `update` returns immediately.
+
+- **88, `MT_BOSSBRAIN`** — the shootable brain, an ordinary `PosedThing` handled by the
+  `INERT_SHOOTABLE` path above (250 health, `bospn`/`bosdth`, both **unattenuated**: its
+  `A_BrainPain`/`A_BrainScream` call `S_StartSound(NULL, …)`, so it is heard from anywhere on the
+  map). It is the one `MONSTER_TYPES` member deliberately *not* in `COUNTKILL_TYPES`, matching
+  `info.c`. Its "death frames" are the single held `BBRN A`: `S_BRAIN_DIE1`-`4` never change frame,
+  they just burn 120 tics while the cascade runs.
+- **89, `MT_BOSSSPIT`** — the invisible eye that does the spitting.
+- **87, `MT_BOSSTARGET`** — the spawn spots cubes fly to.
+
+87 and 89 are `MF_NOBLOCKMAP|MF_NOSECTOR` with no sprite, so both stay out of `THING_SPRITES` and are
+read straight off `map.things`, the same way `SpecialsController.findTeleportDestination` reads
+teleport landings.
+
+The sequence, all timings off `info.c`'s `states[]`: the eye wakes (`eyeNotices`, below), collects
+every type-87 thing into `braintargets` in map order and shouts `bossit`. 181 tics later it
+spits its first cube, then one every 150 tics, cycling `braintargeton` round-robin through the spots.
+`A_BrainSpit`'s `easy` toggle is reproduced: on skills 1-2 (vanilla's `sk_baby`/`sk_easy`) every
+other spit is skipped, halving the rate.
+
+### Waking the eye
+
+`eyeNotices` stands in for idle `A_Look`, since an `MF_NOSECTOR` thing with no `PosedThing` has
+nothing for `tryWake` to run on. Both of `A_Look`'s paths are reproduced: its sector's sound target
+(`World.isSoundAlerted`, checked first because it is a Set lookup) and line of sight. No FOV cone,
+though vanilla's `A_Look` passes `allaround == false` — gating the whole boss on the facing angle a
+mapper happened to give a thing that draws nothing is not worth reproducing.
+
+**The sight origin must be `MT_BOSSSPIT`'s own, not a player-shaped one.** `hasLineOfSight` lifts
+whatever `z` it is handed by `PLAYER_HEIGHT * 0.75`, which is the right approximation everywhere
+else in the game. The eye is 32 tall standing on a floor at 384 under a ceiling at 416, so that lift
+sights it from 426 — *above its own ceiling*, with the wedge out of the slot pinched shut against
+almost the whole arena. `SHOOTER_SIGHT_Z` (`height - (height >> 2)`, `P_CheckSight`'s own
+`sightzstart`) minus that lift cancels it back out and puts the origin at 408, inside the slot.
+
+The difference is the entire boss fight, measured on MAP30: from 426 the eye sees only the northern
+half of the pit, so it woke on sound or on a player riding a lift up to slot height. From 408 it sees
+the map's one teleport landing (2880, 352) and 12 of the 13 spawn spots, i.e. it wakes the moment the
+player arrives, which is what vanilla does.
+
+### The spawn cube
+
+`MT_SPAWNSHOT` flies at 350 units/sec (`mobjinfo.speed` of 10 per tic) and is
+`MF_NOBLOCKMAP|MF_NOCLIP|MF_NOGRAVITY` — it passes through all geometry and collides with nothing.
+That is exactly why it is **not** a `ProjectileLayer` projectile: that layer exists to resolve
+wall-blocked flight and damage, and a cube does neither. It is a local record in `icon.ts` with its
+own `SpriteAnimator`, drawn through `EffectLayer.batchSprite` the same way `ProjectileLayer.update`
+draws a missile, at full light (vanilla's fullbright frame bit). `boscub` replays once per four-frame
+cycle, since `A_SpawnSound` sits on the looping `S_SPAWN1` alone.
+
+One divergence: vanilla decides arrival by a launch-time tic countdown computed from the **y** delta
+only (`(targ->y - mo->y) / momy / state tics`), a quirk that happens to work on MAP30's layout.
+Flying to the target point and arriving when the distance runs out is equivalent there and robust
+anywhere else.
+
+On arrival, `A_SpawnFly` spawns the `MT_SPAWNFIRE` puff (`FIRE A`-`H`), plays `telept`, and rolls one
+`P_Random()` against `thingdefs.ts`'s `SPAWN_CUBE_MONSTERS` — eleven ordered upper bounds summing to
+exactly 256, transcribed from `p_enemy.c`'s if/else chain. The weights are deliberately lopsided (an
+imp is 50/256, an arch-vile 2/256) and stay that way. `ThingLayer.spawnMonster` creates the monster
+already alerted and **telefrags** whatever was standing there, so a spawn spot is lethal to stand on
+— docs/combat.md § Telefrag.
+
+A cube-spawned monster increments `stats.kills` when killed but never `stats.totalKills`, which is
+fixed at load by the map-thing loop. **Kills can exceed 100% on MAP30**; that is vanilla, whose
+`totalkills` comes from `P_SpawnMapThing` alone, and the same quirk arch-vile resurrections already
+produce.
+
+### Dying
+
+`A_BrainScream` fires on the brain's death: `bosdth` unattenuated, plus a row of explosions from
+`x-196` to `x+320` in steps of 8 at `y-320`, each at `128 + rnd*2` above the floor, drawn as the
+rocket's own `MISL B`-`D` at 10 tics a frame. `A_BrainExplode`'s follow-up bursts (±510 random x)
+re-fire on a timer until the exit lands — vanilla's chain is genuinely unbounded and only stops
+because the level ends underneath it, so bounding it on the same timer is how that is reproduced
+without an ever-growing effect list. 120 tics after death `A_BrainDie` calls `G_ExitLevel`, which
+reaches the same `onExit` callback every other exit in the engine uses.
+
 ## The arch-vile
 
 Both signature mechanics are modeled, confirmed against `p_enemy.c`/`info.c`.

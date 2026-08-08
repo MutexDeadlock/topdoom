@@ -73,7 +73,7 @@ src/game/      spatial queries, collision, player controller, input, thing→spr
                thing/monster world state (AI, pickups, damage), fog of war, inventory/pickups,
                weapons and firing, shots in flight + splash, damage/death, projectile/effect
                tables, transient effects (fog puffs, explosions, tracers), mover obstruction,
-               damage floors + secrets
+               damage floors + secrets, the Icon of Sin's cube spitter
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
                WebAudio playback (channels, attenuation, pan, volume)
 src/ui/        start menu, HUD, screen tints/pain flash, DEVMODE hud + profiling overlay

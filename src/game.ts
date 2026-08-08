@@ -18,6 +18,7 @@ import { EffectLayer } from './game/effects.ts';
 import { ProjectileLayer, spawnWallPuff } from './game/projectiles.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
+import { IconOfSin } from './game/icon.ts';
 import { blocksCeilingLower, blocksFloorRise } from './game/moverblocking.ts';
 import { SectorEffects } from './game/sectoreffects.ts';
 import {
@@ -121,6 +122,11 @@ export class Game {
   private animatedTextures!: AnimatedTextures;
   private fogOfWar!: FogOfWar;
   private specials?: SpecialsController;
+  /**
+   * The Icon of Sin's cube spitter, rebuilt per level like `specials` — inert on every map with no
+   * `MT_BOSSSPIT` thing, which is all of them but MAP30. See game/icon.ts.
+   */
+  private icon?: IconOfSin;
   /** Teleport fog, impact explosions, the smoke trail, the vile's flame and hitscan tracers — see game/effects.ts. */
   private effects: EffectLayer;
   /** Everything in flight, player's and monsters' alike — see game/projectiles.ts. */
@@ -365,12 +371,30 @@ export class Game {
       this.skill,
       this.audio,
       // A_BossDeath — see docs/specials.md § Boss death. Player-alive gate is vanilla's own
-      // "make sure there is a player alive for victory" check.
+      // "make sure there is a player alive for victory" check. Fanned out to both owners: the
+      // tag-driven actions (including Commander Keen's door) belong to `specials`, the Icon of
+      // Sin's own `A_BrainDie` to `icon`; each ignores the doomednums it doesn't handle.
       (type) => {
-        if (!this.playerDead) this.specials?.notifyBossDeath(type);
+        if (this.playerDead) return;
+        this.specials?.notifyBossDeath(type);
+        this.icon?.notifyBossDeath(type);
       },
     );
     this.scene.add(this.things.group);
+
+    // Built after `things`, which its cube spawns and telefrags go through.
+    this.icon = new IconOfSin(
+      map,
+      this.combat,
+      this.effects,
+      this.spriteBank,
+      this.spriteMaterials,
+      this.skill,
+      () => {
+        this.pendingExit = true;
+      },
+      this.audio,
+    );
 
     const provider = this.wad.providerOf(name)?.name ?? '?';
     console.info(
@@ -939,6 +963,9 @@ export class Game {
       this.effects.updateTeleportFogs(dt);
       this.effects.updateTracers(dt);
       this.projectiles.update(dt);
+      // Inside the pair for the same reason as projectiles: a spawn cube draws
+      // through the batch, and the fire and explosions it spawns are impacts.
+      this.icon?.update(dt);
       this.effects.updateImpacts(dt);
       this.effects.endFrame();
     });

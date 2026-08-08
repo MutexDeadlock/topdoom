@@ -131,6 +131,28 @@ static neighbor sector with a lower ceiling is a case `headroomBlocked` alone mi
 compares against the *rising* sector's own ceiling and the neighbor's lower one never enters the
 check. See docs/movement.md § Collision for `groundCeiling` itself.
 
+## One mover per sector
+
+**A sector already running a mover refuses every new trigger** — `SpecialsController.sectorActive`,
+vanilla's `sec->specialdata`. `EV_DoFloor`, `EV_DoPlat`, `EV_DoCeiling`, `EV_DoDonut` and
+`EV_BuildStairs` all `continue` past such a sector, so the second trigger does nothing at all rather
+than replacing what's running. Every `trigger*` method asks before creating a mover.
+
+"Active" is about *state*, not presence. Vanilla removes a thinker and clears `specialdata` the
+instant it stops; this engine keeps the finished record in `movers` (a lift re-triggers off its own
+`restHeight`), so `sectorActive` reads the state: a `'done'` floor/ceiling, a `'rest'` lift, a
+`'stopped'` crusher and an `'open'`/`'closed'` door are all free to be triggered again. The two
+re-triggers vanilla *does* honor are handled by their own callers before this is consulted — a door
+reverses (`EV_VerticalDoor`) and a stopped crusher restarts (`P_ActivateInStasis`).
+
+**Repro: DOOM2 MAP30's central pillar (sector 12, tag 2).** It carries two specials — a one-shot S1
+switch (140, `plus512`) that raises it from −96 to 416 over 14.6 s, and its own four sides (62), a
+repeatable lift. Using the lift while the switch's slow rise was still running replaced the
+`FloorMover` with a `LiftMover` whose `restHeight` was captured from the *current* height, so the
+pillar was stranded at whatever it had reached — around 128, the ledge with the radiation suits, for
+a player who walks straight over after pressing the switch. The guard was previously per-mover-kind
+and inconsistent: `triggerFloor` only refused another *floor*, and `triggerLift` refused nothing.
+
 ## Neighbor-height queries
 
 `world.ts`'s `lowestNeighborFloor`/`highestNeighborFloor`/`nextHigher`/`nextLowerFloor`/
@@ -337,14 +359,35 @@ map/type gate and the victory-section action switch:
 | MAP07 | Mancubus (67) | tag 666, `lowerFloorToLowest` |
 | MAP07 | Arachnotron (68) | tag 667, `raiseToTexture` |
 | any other episode's map 8 (e.g. SIGIL's E5M8) | any of the above five | exit level |
+| **any map at all** | **Commander Keen (72)** | **tag 666, `open`** |
 | every other map | — | nothing |
 
-The last row is real, not a guess: vanilla's `switch(gameepisode)` has a `default` case with no
-per-type check at all, only `if (gamemap != 8) return;` — an unrecognized episode's map 8 exits on
-whichever of the five boss types happens to die last. `bossDeathTriggersFor` (`game/specials.ts`) is a
-pure function of `map.name` (`E1M8`, `MAP07`, …) that reproduces this whole table, gating on the map's
-own lump name rather than which WAD supplied it — a PWAD's own MAP07 gets DOOM2's exact Mancubus/
-Arachnotron triggers, matching vanilla, which only ever looks at `gamemap`.
+The last row before Keen's is real, not a guess: vanilla's `switch(gameepisode)` has a `default` case
+with no per-type check at all, only `if (gamemap != 8) return;` — an unrecognized episode's map 8
+exits on whichever of the five boss types happens to die last. `bossDeathTriggersFor`
+(`game/specials.ts`) is a pure function of `map.name` (`E1M8`, `MAP07`, …) that reproduces this whole
+table, gating on the map's own lump name rather than which WAD supplied it — a PWAD's own MAP07 gets
+DOOM2's exact Mancubus/Arachnotron triggers, matching vanilla, which only ever looks at `gamemap`.
+
+**Commander Keen's row is deliberately not part of that switch.** `A_KeenDie` is a *separate action
+function* from `A_BossDeath`, and it has no `gamemap` check at all — it builds a synthetic `line_t`
+with `tag = 666` and calls `EV_DoDoor(&junk, open)` wherever the last Keen happens to die. So
+`bossDeathTriggersFor` appends it to every map's table rather than listing it per map, and 72 is
+added to `things.ts`'s `DEATH_NOTIFY_TYPES` rather than to `BOSS_DEATH_TYPES` — the latter's values
+are what the `default` branch maps over to build the "any of the five exits on map 8" row, which must
+not pick Keen up. The `open` kind is `EV_DoDoor`'s ordinary `VDOORSPEED` open-and-stay, distinct from
+E4M6's `blazeOpen`. The Icon of Sin (88) is in `DEATH_NOTIFY_TYPES` too but has no row here at all:
+`A_BrainDie` exits the level directly rather than through a tag, and `game/icon.ts` owns it — see
+docs/monsters.md § The Icon of Sin.
+
+**A boss-death tag has no triggering linedef, and `computeMovableSectors` has to be told.** That
+function builds the set of sectors pulled out of the static render batch by scanning sector specials
+10/14 and *linedef* specials — neither of which can see a sector that only ever moves via
+`triggerTag`. Without `bossDeathSectors` feeding it the tags from this table, such a sector stays in
+the static batch and is then drawn a *second* time the moment `rebuildMoverMesh` gives it a mover
+mesh, leaving the old geometry frozen at its original height underneath. Two stock cases have no
+linedef carrying their tag at all and hit this: DOOM2 MAP32's Keen door (sector 16, tag 666) and
+MAP07's Arachnotron platform (sector 1, tag 667).
 
 **Split across three files, the same "system reports, `game.ts` realizes" shape as
 `onCrush`/`onExit`/`crossLines`:**
@@ -364,8 +407,10 @@ Arachnotron triggers, matching vanilla, which only ever looks at `gamemap`.
   `resolveTargets` on. `triggerFloor`'s `line` parameter is optional for exactly this caller — it's
   only ever dereferenced for `changeTexture`, which a boss-death `lowerFloorToLowest` never sets.
 - `game.ts` holds the player-alive gate (vanilla's "make sure there is a player alive for victory"),
-  since `playerDead` is `Game`'s own state — the callback passed into `buildThingSprites` just checks
-  `!this.playerDead` before calling `this.specials.notifyBossDeath(type)`.
+  since `playerDead` is `Game`'s own state — the callback passed into `buildThingSprites` checks
+  `!this.playerDead` and then fans the doomednum out to **both** owners,
+  `this.specials.notifyBossDeath(type)` and `this.icon.notifyBossDeath(type)`. Each ignores the types
+  it doesn't handle, so neither needs to know the other's table.
 
 ## Scrolling textures
 

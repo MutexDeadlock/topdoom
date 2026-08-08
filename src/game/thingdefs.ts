@@ -143,7 +143,8 @@ export const THING_SPRITES: Record<number, string> = {
 /**
  * Doomednums of the "Monsters" block above — the things auto-aim (game/weapons.ts's
  * click-to-target, wired up in game.ts's `ThingLayer.pickMonster`) is willing to
- * snap a shot onto, and the set `game/monsters.ts`'s AI ticks. This table only
+ * snap a shot onto, minus `NO_AUTO_AIM_TYPES` below, and the set
+ * `game/monsters.ts`'s AI ticks. This table only
  * decides which doomednums count as a monster at all (for targeting, AI, and
  * every other `MONSTER_TYPES.has(...)` check across the game/ tree) — the AI
  * behavior itself (waking, chasing, attacking, infighting) lives in
@@ -152,6 +153,14 @@ export const THING_SPRITES: Record<number, string> = {
 export const MONSTER_TYPES = new Set([
   3004, 9, 3001, 3002, 58, 3006, 3005, 3003, 69, 7, 16, 71, 65, 66, 67, 68, 64, 84, 72, 88,
 ]);
+
+/**
+ * `MONSTER_TYPES` members auto-aim refuses to lock onto — everything else about them is unchanged.
+ * Only the Icon of Sin's brain (88), which sits in a recess whose one opening is *above* its whole
+ * body, so a locked-on shot can never reach it and the lock only steals the player's aim. See
+ * docs/combat.md § Auto-aim.
+ */
+export const NO_AUTO_AIM_TYPES = new Set([88]);
 
 /**
  * Doomednums of the "Ammo", "Health & armor", "Keys" and "Powerups" blocks above — the small
@@ -258,7 +267,44 @@ export const CEILING_HUNG_HEIGHT: Record<number, number> = {
   76: 64, // HDB4
   77: 64, // HDB5
   78: 64, // HDB6
+  72: 72, // KEEN commander keen — MF_SPAWNCEILING like the gore above, just shootable
 };
+
+/**
+ * Spawn-frame letters for the `MONSTER_TYPES` members whose `mobjinfo.spawnstate` **isn't** a walk
+ * cycle, overriding `buildThingSprites`'s shared `MONSTER_WALK_FRAMES` default. Only the two types
+ * with no AI qualify: `S_KEENSTND` and `S_BRAIN` are both single held frames (`tics: -1`), and for
+ * both of them the letters `MONSTER_WALK_FRAMES` would otherwise cycle through are death art.
+ *
+ * Load-bearing even though neither type's animator currently advances: `animating` is only ever
+ * turned on by the AI branch in `update()`, which these two never enter, so today they hold frame 0
+ * by accident rather than by rule. docs/monsters.md § Commander Keen.
+ */
+export const MONSTER_IDLE_FRAMES: Record<number, string[]> = {
+  72: ['A'], // KEEN, S_KEENSTND
+  88: ['A'], // BBRN, S_BRAIN
+};
+
+/**
+ * `A_SpawnFly`'s monster lottery — the type an Icon of Sin spawn cube turns into on arrival, as
+ * ordered upper bounds on one `P_Random()` roll (0-255): the first entry the roll falls under wins,
+ * and the last is the `else`. Transcribed from `p_enemy.c`'s own if/else chain, with each `MT_*`
+ * resolved to its `info.c` doomednum. The weights are deliberately lopsided and stay that way — an
+ * arch-vile is 2/256 where an imp is 50/256. docs/monsters.md § The spawn cube.
+ */
+export const SPAWN_CUBE_MONSTERS: readonly { below: number; type: number }[] = [
+  { below: 50, type: 3001 }, // MT_TROOP imp
+  { below: 90, type: 3002 }, // MT_SERGEANT demon
+  { below: 120, type: 58 }, // MT_SHADOWS spectre
+  { below: 130, type: 71 }, // MT_PAIN pain elemental
+  { below: 160, type: 3005 }, // MT_HEAD cacodemon
+  { below: 162, type: 64 }, // MT_VILE arch-vile
+  { below: 172, type: 66 }, // MT_UNDEAD revenant
+  { below: 192, type: 68 }, // MT_BABY arachnotron
+  { below: 222, type: 67 }, // MT_FATSO mancubus
+  { below: 246, type: 69 }, // MT_KNIGHT hell knight
+  { below: 256, type: 3003 }, // MT_BRUISER baron of hell
+];
 
 /**
  * `MONSTER_TYPES` entries that carry vanilla's `MF_COUNTKILL` flag — every monster except the
@@ -320,8 +366,8 @@ export const MONSTER_HEALTH: Record<number, number> = {
  * real DOOM.WAD/DOOM2.WAD lump names, and cross-checked against `info.c`.
  * Death art is rotation-0 only, so where a sprite's directional frames stop
  * marks where death art starts; DIE is the front of that tail, XDIE the back.
- * Commander Keen and the boss brain are deliberately absent (no DIE state and
- * no death art respectively) — `ThingLayer.damage` just hides them.
+ * That derivation doesn't reach the two AI-less types at the bottom, whose
+ * whole sprite is rotation-0 — theirs come straight off `info.c`'s own chains.
  * docs/monsters.md § Pain, and attack/pain poses.
  */
 export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
@@ -348,6 +394,15 @@ export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
   // Starts at Q: same shared pain/DIE1 letter quirk as SKEL above.
   64: ['Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'], // VILE
   84: ['I', 'J', 'K', 'L', 'M'], // SSWV
+  // S_COMMKEEN..S_COMMKEEN12 — twelve frames starting at A, the same letter
+  // S_KEENSTND holds (see MONSTER_IDLE_FRAMES). The corpse keeps hanging: Keen
+  // is MF_SPAWNCEILING, so `update()` goes on measuring its z off the ceiling.
+  72: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'], // KEEN
+  // S_BRAIN_DIE1-4 all hold BBRN frame 0 — the brain has no death art at all,
+  // it just sits there for 120 tics while A_BrainScream detonates around it.
+  // Listed anyway so `damage()` holds the sprite instead of hiding it, and so
+  // `deathFrameCount` is 1 rather than 0. game/icon.ts owns the rest.
+  88: ['A'], // BBRN
 };
 
 /**
@@ -451,6 +506,12 @@ export const MONSTER_PAIN_FRAMES: Record<number, string[]> = {
   68: ['I'], // BSPI
   64: ['Q'], // VILE
   84: ['H'], // SSWV
+  // The two AI-less types. Both have a real painstate and effectively always
+  // enter it (painchance 256 and 255 of 256), but neither has `MONSTER_STATS`
+  // to roll against — `ThingLayer.damage`'s `INERT_SHOOTABLE` branch flinches
+  // them unconditionally instead. docs/monsters.md § Commander Keen.
+  72: ['M'], // KEEN, S_KEENPAIN
+  88: ['B'], // BBRN, S_BRAIN_PAIN
 };
 
 /**

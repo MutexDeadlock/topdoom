@@ -120,6 +120,15 @@ sprite meshes (`MONSTER_TYPES`, filtered to currently-`visible` ones so a fog-of
 can't be targeted through the geometry hiding it) and returns the hit monster's position *and* its
 sector's live floor height. `game.ts` uses that as both the aim point and the shot's end height.
 
+**`NO_AUTO_AIM_TYPES` (`game/thingdefs.ts`) holds the one thing the cursor refuses to lock onto**:
+the Icon of Sin's brain (88). Its recess (DOOM2 MAP30 sector 8, floor 288) opens onto the arena only
+through the 32-unit slot at 384–416 that the eye watches through, and the brain's `BBRN` sprite is 87
+units tall, so its whole body sits *below* that opening. Measured over 4,891 standable sample
+positions on MAP30, a locked-on shot reaches it from four — all of them inside the recess. The
+top-down camera looks over the wall and shows you the brain anyway, so hovering it grabbed the aim
+and sent every shot into the wall below the slot. Everything else about the brain is unchanged: it is
+an ordinary `MONSTER_TYPES` member, still shootable by a free shot, and still counted as a kill.
+
 **The lock applies on hover, not on click.** Gating it to `input.mouseDown` made `aim` — which drives
 `player.angle` *and* the camera's aim-lead — switch sources the instant a click landed, and since a
 monster is normally much nearer than the cursor's floor-plane projection, the camera's lead offset
@@ -434,6 +443,27 @@ matching vanilla dropping from that one function regardless of cause. Each `Pose
 `consume` callback into `applyPickup`'s `dropped` param — vanilla's `P_GiveAmmo`/`P_GiveWeapon` give
 a dropped pickup's ammo at half the rate of a map-placed one (a dropped clip's 5 bullets vs. 10, a
 dropped shotgun's 4 shells vs. 8).
+
+`spawnDrop`, `spawnLostSoul`, `spawnMonster` and the map-load loop all build their `PosedThing`
+through one shared `pushThing` helper. That is worth naming because the alternative was four copies
+of a ~60-field object literal, three of which already existed and had begun to drift — `spawnDrop`'s
+copy, for instance, had no `INERT_SHOOTABLE` radius lookup because it predated one.
+
+## Telefrag
+
+Vanilla's `P_TeleportMove` kills everything standing where a body lands, for a flat `10000` damage.
+This engine reaches it from exactly one place: `ThingLayer.spawnMonster`, the tail of the Icon of
+Sin's `A_SpawnFly` (docs/monsters.md § The spawn cube). There is no player teleport that can land on
+an occupied spot here, so no other caller exists.
+
+The kill is **deliberately unattributed** — no `source` is passed to `damageThing`. A telefrag is the
+teleport's doing, not an attack, and naming the newly spawned monster as the source would start an
+infight it never picked.
+
+It is split across two files for the usual reason: `ThingLayer` has no player reference, so it
+telefrags every overlapping `PosedThing` itself and returns the new body, and `game/icon.ts` does the
+player half against `PLAYER_RADIUS` and calls `damagePlayer`. That is what makes standing on a MAP30
+spawn spot a real way to die.
 
 ## Player death
 

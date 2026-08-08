@@ -15,10 +15,12 @@ import {
   MONSTER_DEATH_FRAMES,
   MONSTER_DROPS,
   MONSTER_HEALTH,
+  MONSTER_IDLE_FRAMES,
   MONSTER_PAIN_FRAMES,
   MONSTER_RAISE_FRAMES,
   MONSTER_TYPES,
   MONSTER_XDEATH_FRAMES,
+  NO_AUTO_AIM_TYPES,
   PICKUP_SCALE_TYPES,
   SOLID_DECORATION_RADIUS,
   SOLID_DECORATION_RADIUS_OVERRIDE,
@@ -30,6 +32,7 @@ import { isAmbush, isMultiplayerOnly, spawnsAtSkill, type Skill } from './skill.
 import {
   commitTarget,
   DI_NODIR,
+  INERT_SHOOTABLE,
   MONSTER_FIRE_HEIGHT,
   MONSTER_STATS,
   reactToDamage,
@@ -456,6 +459,21 @@ export interface ThingLayer {
     fromY?: number,
   ): void;
   /**
+   * Creates a fresh, already-awake monster of `type` at `at` and telefrags
+   * whatever was standing there (`TELEFRAG_DAMAGE` to every overlapping body),
+   * returning it — or null if the WAD carries no art for that doomednum.
+   * Vanilla's `A_SpawnFly` tail; the Icon of Sin's spawn cube (`game/icon.ts`)
+   * is the only caller.
+   *
+   * Only the *monster* half of the telefrag happens here: this layer has no
+   * player reference, so the caller tests the returned position against the
+   * player itself. The new monster counts toward `stats.kills` when killed but
+   * never toward `totalKills`, matching vanilla's fixed `P_SpawnMapThing`
+   * total — kills can legitimately exceed 100% on MAP30. docs/monsters.md §
+   * The spawn cube.
+   */
+  spawnMonster(type: number, at: Pos3, angleRad: number): MonsterRef | null;
+  /**
    * Nearest living monster the ray crosses within `maxDist`, or null — the
    * "didn't click anything, but something's in the path anyway" case for a
    * free shot. `MONSTER_HIT_RADIUS`/`_HEIGHT` are one approximate hitbox
@@ -491,12 +509,26 @@ export const MONSTER_HIT_HEIGHT = 64;
 const BOSS_TYPES = new Set([7, 16]);
 
 /**
- * The set of `BOSS_DEATH_TYPES` (`A_BossDeath`'s five candidate types) — distinct from
- * `BOSS_TYPES` above, which is only about unattenuated sound. `damage()`'s death branch checks
- * membership here to decide whether it's worth scanning `posed` for "any others of this type
- * still alive" at all. See docs/specials.md § Boss death.
+ * Every type whose death can drive level logic, and so the set `damageThing`'s death branch checks
+ * before it's worth scanning `posed` for "any others of this type still alive" at all. Distinct
+ * from `BOSS_TYPES` above, which is only about unattenuated sound.
+ *
+ * `BOSS_DEATH_TYPES` is `A_BossDeath`'s own five candidates; Commander Keen (72, `A_KeenDie`) and
+ * the boss brain (88, `A_BrainDie`) are added *here* rather than to that table because vanilla
+ * reaches them through their own separate action functions. In particular neither is gated on
+ * `gamemap`, and `bossDeathTriggersFor`'s `default` branch maps over `BOSS_DEATH_TYPES` to make
+ * every member exit on an unlisted episode's map 8 — which must not apply to these two. See
+ * docs/specials.md § Boss death.
  */
-const BOSS_DEATH_TYPE_SET: Set<number> = new Set(Object.values(BOSS_DEATH_TYPES));
+const DEATH_NOTIFY_TYPES: Set<number> = new Set([...Object.values(BOSS_DEATH_TYPES), 72, 88]);
+
+/**
+ * Vanilla's own `P_TeleportMove` telefrag damage — the literal `10000` it deals to everything
+ * standing where a body lands. Only `spawnMonster` (the Icon of Sin's spawn cube) reaches it here;
+ * this engine has no player teleport that can land on an occupied spot. See docs/combat.md §
+ * Telefrag.
+ */
+export const TELEFRAG_DAMAGE = 10000;
 
 /** The lost soul's doomednum — what the pain elemental's `A_PainShootSkull` spawns (see `spawnLostSoul`). */
 const LOST_SOUL_TYPE = 3006;
@@ -657,118 +689,56 @@ export function buildThingSprites(
   /** Scratch for `doomToWorld`, reused across every sprite — this runs per thing per frame. */
   const worldPos = new THREE.Vector3();
 
-  for (const t of map.things) {
-    const spriteName = THING_SPRITES[t.type];
-    if (!spriteName) continue;
-    if (isMultiplayerOnly(t.flags)) continue;
-    if (!spawnsAtSkill(t.flags, skill)) continue;
-
-    const subsector = world.subsectorAt(t.x, t.y);
-    const sector = world.sectorAt(t.x, t.y);
-    const x = t.x;
-    const y = t.y;
-    const facingDeg = t.angle;
-    // MF_SPAWNCEILING things (ceiling-hung gore) measure z down from the ceiling instead of up
-    // from the floor — see CEILING_HUNG_HEIGHT's doc.
-    const hangHeight = CEILING_HUNG_HEIGHT[t.type];
-    const z = hangHeight !== undefined ? (sector?.ceilHeight ?? 0) - hangHeight : (sector?.floorHeight ?? 0);
-    const isMonster = MONSTER_TYPES.has(t.type);
-    const isBarrel = t.type === BARREL_TYPE;
-    const itemAnim = THING_ANIM_FRAMES[t.type];
-
-    const animFrames = isMonster ? MONSTER_WALK_FRAMES : isBarrel ? BARREL_IDLE_FRAMES : itemAnim ? itemAnim.frames : ['A'];
+  /**
+   * Builds and appends one `PosedThing`, returning it — the single place that
+   * ~60-field literal is written. Every spawn path goes through here: the
+   * map-load loop below, `spawnDrop`, `spawnLostSoul` and `spawnMonster`. Only
+   * the handful of fields those four genuinely disagree on are parameters;
+   * everything else is either fixed for a fresh thing (all the `MonsterBody`
+   * state, zeroed) or derivable from `type` and the position.
+   *
+   * Returns null when the WAD carries no art for the type, which is the
+   * "silently don't spawn" every caller already wanted. Deliberately does
+   * **not** touch `stats.totalKills`/`totalItems`: those are
+   * `P_SpawnMapThing`'s own level totals, so only the map-load loop increments
+   * them (docs/items.md § Level stats).
+   */
+  function pushThing(
+    type: number,
+    at: Pos3,
+    facingDeg: number,
+    opts?: { ambush?: boolean; dropped?: boolean; alerted?: boolean; targetId?: number | null },
+  ): PosedThing | null {
+    const spriteName = THING_SPRITES[type];
+    if (!spriteName) return null;
+    const isBarrel = type === BARREL_TYPE;
+    const itemAnim = THING_ANIM_FRAMES[type];
+    // A monster walks, a barrel sways, an item blinks — and the two AI-less
+    // monsters hold a spawnstate frame of their own (see MONSTER_IDLE_FRAMES).
+    const animFrames = MONSTER_TYPES.has(type)
+      ? (MONSTER_IDLE_FRAMES[type] ?? MONSTER_WALK_FRAMES)
+      : isBarrel
+        ? BARREL_IDLE_FRAMES
+        : itemAnim
+          ? itemAnim.frames
+          : ['A'];
     const frameSeconds = isBarrel ? BARREL_IDLE_FRAME_SECONDS : itemAnim ? itemAnim.frameSeconds : undefined;
     const anim = new SpriteAnimator(bank, materials, spriteName, animFrames, frameSeconds);
     // Skips a thing whose art the WAD doesn't actually carry, same as before —
     // resolving once here is what the old build-time `setPose` call was for.
-    if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) continue;
-    // Vanilla's own `P_SpawnMapThing` totals — incremented only for a thing that actually spawns
-    // (past every filter above), matching `if (mobj->flags & MF_COUNTKILL) totalkills++` /
-    // `MF_COUNTITEM` in `info.c`. Fixed for the level: only the runtime kill/pickup counters
-    // below change after this.
-    if (COUNTKILL_TYPES.has(t.type)) stats.totalKills++;
-    else if (COUNTITEM_TYPES.has(t.type)) stats.totalItems++;
-    posed.push({
-      id: posed.length,
-      anim,
-      scale: pickupScaleFor(t.type),
-      blockRadius: isBarrel
-        ? BARREL_RADIUS
-        : SOLID_DECORATION_TYPES.has(t.type)
-          ? (SOLID_DECORATION_RADIUS_OVERRIDE[t.type] ?? SOLID_DECORATION_RADIUS)
-          : MONSTER_STATS[t.type]?.radius ?? MONSTER_HIT_RADIUS,
-      attackFrames: MONSTER_ATTACK_FRAMES[t.type],
-      painFrames: MONSTER_PAIN_FRAMES[t.type],
-      raiseFrames: MONSTER_RAISE_FRAMES[t.type],
-      deadTime: 0,
-      deathFrameCount: 0,
-      barrelExploded: false,
-      explodeSource: null,
-      velX: 0,
-      velY: 0,
-      visible: true,
-      hidden: false,
-      queryStamp: 0,
-      x,
-      y,
-      z,
-      sector,
-      facingDeg,
-      subsector,
-      type: t.type,
-      picked: false,
-      health: isBarrel ? BARREL_HEALTH : MONSTER_HEALTH[t.type] ?? Infinity,
-      dead: false,
-      dropped: false,
-      alerted: false,
-      ambush: isAmbush(t.flags),
-      velZ: 0,
-      angle: (facingDeg * Math.PI) / 180,
-      attackPause: 0,
-      burstLeft: 0,
-      burstTimer: 0,
-      chargeTimer: 0,
-      chargeAngle: 0,
-      painTimer: 0,
-      movedir: DI_NODIR,
-      movecount: 0,
-      chaseTimer: 0,
-      moveBlocked: false,
-      threshold: 0,
-      justHit: false,
-      justAttacked: false,
-      reactionTicks: 0,
-      refiring: false,
-      homingBias: Math.random() < 0.5,
-      walkSoundTimer: 0,
-      walkSoundStep: 0,
-      lookTimer: 0,
-      prev: { x, y },
-      targetId: null,
-    });
-  }
-
-  /**
-   * Spawns a monster's death drop (`MONSTER_DROPS`) at its own position —
-   * called from `damage` below, the only place a `PosedThing` is ever added
-   * after the initial map-load loop above. Mirrors that loop's own
-   * pose/push, just for one instance instead of every map THING, and always
-   * marked `dropped: true` (see `PosedThing`'s doc) so `tryPickup` grants it
-   * at vanilla's halved dropped-item rate rather than a map-placed one's.
-   */
-  function spawnDrop(at: Pos2, sector: Sector | undefined, facingDeg: number, type: number): void {
-    const spriteName = THING_SPRITES[type];
-    if (!spriteName) return;
-    const { x, y } = at;
-    const z = sector?.floorHeight ?? 0;
-    const subsector = world.subsectorAt(x, y);
-    const anim = new SpriteAnimator(bank, materials, spriteName);
-    if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) return;
-    posed.push({
+    if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) return null;
+    const { x, y, z } = at;
+    const thing: PosedThing = {
       id: posed.length,
       anim,
       scale: pickupScaleFor(type),
-      blockRadius: MONSTER_STATS[type]?.radius ?? MONSTER_HIT_RADIUS,
+      blockRadius: isBarrel
+        ? BARREL_RADIUS
+        : SOLID_DECORATION_TYPES.has(type)
+          ? (SOLID_DECORATION_RADIUS_OVERRIDE[type] ?? SOLID_DECORATION_RADIUS)
+          : // INERT_SHOOTABLE before the fallback: Keen and the brain have a real
+            // mobjinfo radius of 16, they just have no MONSTER_STATS to carry it.
+            MONSTER_STATS[type]?.radius ?? INERT_SHOOTABLE[type]?.radius ?? MONSTER_HIT_RADIUS,
       attackFrames: MONSTER_ATTACK_FRAMES[type],
       painFrames: MONSTER_PAIN_FRAMES[type],
       raiseFrames: MONSTER_RAISE_FRAMES[type],
@@ -784,16 +754,16 @@ export function buildThingSprites(
       x,
       y,
       z,
-      sector,
+      sector: world.sectorAt(x, y),
       facingDeg,
-      subsector,
+      subsector: world.subsectorAt(x, y),
       type,
       picked: false,
-      health: Infinity,
+      health: isBarrel ? BARREL_HEALTH : opts?.dropped ? Infinity : MONSTER_HEALTH[type] ?? Infinity,
       dead: false,
-      dropped: true,
-      alerted: false,
-      ambush: false,
+      dropped: opts?.dropped ?? false,
+      alerted: opts?.alerted ?? false,
+      ambush: opts?.ambush ?? false,
       velZ: 0,
       angle: (facingDeg * Math.PI) / 180,
       attackPause: 0,
@@ -816,8 +786,40 @@ export function buildThingSprites(
       walkSoundStep: 0,
       lookTimer: 0,
       prev: { x, y },
-      targetId: null,
-    });
+      targetId: opts?.targetId ?? null,
+    };
+    posed.push(thing);
+    return thing;
+  }
+
+  for (const t of map.things) {
+    if (!THING_SPRITES[t.type]) continue;
+    if (isMultiplayerOnly(t.flags)) continue;
+    if (!spawnsAtSkill(t.flags, skill)) continue;
+
+    // MF_SPAWNCEILING things (ceiling-hung gore, Commander Keen) measure z down from the ceiling
+    // instead of up from the floor — see CEILING_HUNG_HEIGHT's doc.
+    const sector = world.sectorAt(t.x, t.y);
+    const hangHeight = CEILING_HUNG_HEIGHT[t.type];
+    const z = hangHeight !== undefined ? (sector?.ceilHeight ?? 0) - hangHeight : (sector?.floorHeight ?? 0);
+    if (!pushThing(t.type, { x: t.x, y: t.y, z }, t.angle, { ambush: isAmbush(t.flags) })) continue;
+    // Vanilla's own `P_SpawnMapThing` totals — incremented only for a thing that actually spawns
+    // (past every filter above, art included), matching `if (mobj->flags & MF_COUNTKILL)
+    // totalkills++` / `MF_COUNTITEM` in `info.c`. Fixed for the level: only the runtime kill/pickup
+    // counters change after this, which is why a cube-spawned monster (`spawnMonster`) can push
+    // the kill count past 100%.
+    if (COUNTKILL_TYPES.has(t.type)) stats.totalKills++;
+    else if (COUNTITEM_TYPES.has(t.type)) stats.totalItems++;
+  }
+
+  /**
+   * Spawns a monster's death drop (`MONSTER_DROPS`) at its own position —
+   * called from `damageThing` below. Always marked `dropped: true` (see
+   * `PosedThing`'s doc) so `tryPickup` grants it at vanilla's halved
+   * dropped-item rate rather than a map-placed one's.
+   */
+  function spawnDrop(at: Pos2, sector: Sector | undefined, facingDeg: number, type: number): void {
+    pushThing(type, { x: at.x, y: at.y, z: sector?.floorHeight ?? 0 }, facingDeg, { dropped: true });
   }
 
   /**
@@ -849,72 +851,220 @@ export function buildThingSprites(
     const z = origin.z + 8;
     if (circleBlocked(world, x, y, skullRadius, z, true)) return;
 
-    const spriteName = THING_SPRITES[LOST_SOUL_TYPE];
-    if (!spriteName) return;
-    const sector = world.sectorAt(x, y);
-    const subsector = world.subsectorAt(x, y);
-    const facingDeg = (angleRad * 180) / Math.PI;
-    const anim = new SpriteAnimator(bank, materials, spriteName, MONSTER_WALK_FRAMES);
-    if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) return;
-    posed.push({
-      id: posed.length,
-      anim,
-      scale: pickupScaleFor(LOST_SOUL_TYPE),
-      blockRadius: skullRadius,
-      attackFrames: MONSTER_ATTACK_FRAMES[LOST_SOUL_TYPE],
-      painFrames: MONSTER_PAIN_FRAMES[LOST_SOUL_TYPE],
-      raiseFrames: MONSTER_RAISE_FRAMES[LOST_SOUL_TYPE],
-      deadTime: 0,
-      deathFrameCount: 0,
-      barrelExploded: false,
-      explodeSource: null,
-      velX: 0,
-      velY: 0,
-      visible: true,
-      hidden: false,
-      queryStamp: 0,
-      x,
-      y,
-      z,
-      sector,
-      facingDeg,
-      subsector,
-      type: LOST_SOUL_TYPE,
-      picked: false,
-      health: MONSTER_HEALTH[LOST_SOUL_TYPE] ?? Infinity,
-      dead: false,
-      dropped: false,
-      // Already alerted, with reactionTicks/movecount pre-zeroed so its very
-      // first chase call is free to roll straight into checkMissileRange
-      // (and so straight into its own charge) rather than first walking a
-      // step and waiting out a reaction delay it never had in vanilla —
-      // there `A_SkullAttack` fires synchronously in the same tic it spawns.
+    // Already alerted, with reactionTicks/movecount pre-zeroed (pushThing's own
+    // defaults) so its very first chase call is free to roll straight into
+    // checkMissileRange — and so straight into its own charge — rather than
+    // first walking a step and waiting out a reaction delay it never had in
+    // vanilla, where `A_SkullAttack` fires in the same tic it spawns.
+    pushThing(LOST_SOUL_TYPE, { x, y, z }, (angleRad * 180) / Math.PI, {
       alerted: true,
-      ambush: false,
-      velZ: 0,
-      angle: angleRad,
-      attackPause: 0,
-      burstLeft: 0,
-      burstTimer: 0,
-      chargeTimer: 0,
-      chargeAngle: 0,
-      painTimer: 0,
-      movedir: DI_NODIR,
-      movecount: 0,
-      chaseTimer: 0,
-      moveBlocked: false,
-      threshold: 0,
-      justHit: false,
-      justAttacked: false,
-      reactionTicks: 0,
-      refiring: false,
-      homingBias: Math.random() < 0.5,
-      walkSoundTimer: 0,
-      walkSoundStep: 0,
-      lookTimer: 0,
-      prev: { x, y },
       targetId: origin.targetId,
     });
+  }
+
+  /**
+   * `A_SpawnFly`'s own monster creation: drops a fresh, already-awake `type` at
+   * `at` and telefrags whatever was standing there, returning the new body (or
+   * null if the WAD has no art for it). The Icon of Sin's spawn cube is the
+   * only caller — `game/icon.ts` owns the rest of that sequence, including the
+   * fire puff, the `telept` sound and the *player* half of the telefrag, which
+   * this layer holds no reference to.
+   *
+   * Vanilla ends `A_SpawnFly` with `P_TeleportMove`, which is what makes a
+   * spawn spot lethal to stand on: everything overlapping the new body takes
+   * `TELEFRAG_DAMAGE` rather than the spawn being blocked or skipped. That is
+   * also why there's no `circleBlocked` guard here, unlike `spawnLostSoul`.
+   * docs/monsters.md § The spawn cube.
+   */
+  function spawnMonster(type: number, at: Pos3, angleRad: number): PosedThing | null {
+    const spawned = pushThing(type, at, (angleRad * 180) / Math.PI, { alerted: true });
+    if (!spawned) return null;
+    for (const q of posed) {
+      if (q === spawned || q.dead || q.hidden) continue;
+      if (!MONSTER_TYPES.has(q.type) && q.type !== BARREL_TYPE) continue;
+      const reach = spawned.blockRadius + q.blockRadius;
+      if ((q.x - spawned.x) ** 2 + (q.y - spawned.y) ** 2 > reach * reach) continue;
+      // Deliberately unattributed: a telefrag is `P_TeleportMove`'s doing, not
+      // an attack, and naming the spawned body as the source would start an
+      // infight it never picked.
+      damageThing(q, TELEFRAG_DAMAGE);
+    }
+    return spawned;
+  }
+
+  /**
+   * `P_DamageMobj`/`P_KillMobj` for one body — the whole of `ThingLayer.damage`
+   * (see that method's doc for the parameters and the caller-facing contract).
+   * Split out from it so `spawnMonster`'s telefrag above can kill through the
+   * same path rather than reaching for an id it would have to look back up.
+   */
+  function damageThing(
+    p: PosedThing,
+    amount: number,
+    source?: { id: number; type: number },
+    knockUpSpeed?: number,
+    fromX?: number,
+    fromY?: number,
+  ): void {
+    const isBarrel = p.type === BARREL_TYPE;
+    if (p.dead || amount <= 0 || !(isBarrel || MONSTER_TYPES.has(p.type))) return;
+    // The two AI-less shootables: no stats to roll pain against, no target to
+    // retarget, and nothing that reacts to knockback — so they take the health
+    // subtraction and their own A_Pain/A_Scream, and skip everything else.
+    const inert = INERT_SHOOTABLE[p.type];
+    p.health -= amount;
+    if (inert) {
+      if (p.health > 0) {
+        // Unconditional, unlike every other monster's: vanilla's painchance is
+        // 256 (Keen) and 255 (the brain), i.e. always or all but always.
+        if (p.painFrames) p.anim.playOnce(p.painFrames, MONSTER_ACTION_FRAME_SECONDS);
+        sfx.play(inert.painSound, inert.unattenuated ? null : p, monsterOrigin(p.id));
+        return;
+      }
+      p.dead = true;
+      p.deadTime = 0;
+      if (COUNTKILL_TYPES.has(p.type)) stats.kills++;
+      const deathFrames = MONSTER_DEATH_FRAMES[p.type];
+      p.deathFrameCount = deathFrames ? deathFrames.length : 0;
+      sfx.play(inert.deathSound, inert.unattenuated ? null : p, monsterOrigin(p.id));
+      if (deathFrames) p.anim.die(deathFrames, MONSTER_DEATH_FRAME_SECONDS);
+      // A_KeenDie's tag-666 door and A_BrainDie's level exit both hang off the
+      // same all-of-this-type-are-dead scan the ordinary death branch ends with.
+      if (DEATH_NOTIFY_TYPES.has(p.type) && posed.every((q) => q.type !== p.type || q.dead)) {
+        onBossDeath?.(p.type);
+      }
+      return;
+    }
+
+    if (knockUpSpeed) {
+      p.velZ = knockUpSpeed;
+      // Nudges z off the floor so stepMonsterAI's own airborne check
+      // (z > groundFloor) engages next frame instead of the ground-snap
+      // branch zeroing velZ straight back out before it ever takes effect.
+      p.z += 1;
+    }
+    if (fromX !== undefined && fromY !== undefined) {
+      // Vanilla's P_DamageMobj horizontal thrust — see thrustSpeed's doc.
+      const mass = isBarrel ? BARREL_MASS : MONSTER_STATS[p.type]?.mass ?? 100;
+      const speed = thrustSpeed(amount, mass);
+      let dx = p.x - fromX;
+      let dy = p.y - fromY;
+      const dist = Math.hypot(dx, dy);
+      if (dist < 1) {
+        // Degenerate same-position case (attacker and victim essentially
+        // coincide, e.g. point-blank melee) — vanilla's own
+        // R_PointToAngle2(0,0,0,0) falls back to angle 0 here rather than
+        // an undefined direction; pushing along the victim's current
+        // facing reads more sensibly than always due east.
+        dx = Math.cos(p.angle);
+        dy = Math.sin(p.angle);
+      } else {
+        dx /= dist;
+        dy /= dist;
+      }
+      p.velX += dx * speed;
+      p.velY += dy * speed;
+    }
+    if (p.health > 0) {
+      // Vanilla's MT_BARREL has no painstate/painchance at all — a barrel
+      // that survives a hit just sits there, no flinch, no wake, no
+      // infighting (it has no AI to alert or retarget in the first place).
+      if (isBarrel) return;
+      const stats = MONSTER_STATS[p.type];
+      if (stats) reactToDamage(p, stats);
+      // reactToDamage only actually sets painTimer if the stagger roll
+      // (stats.painChance) passed and the monster wasn't mid-charge — a
+      // hit that fails the roll alerts/retargets the monster same as any
+      // other, but shouldn't flinch it on screen.
+      if (p.painFrames && p.painTimer > 0) p.anim.playOnce(p.painFrames, MONSTER_ACTION_FRAME_SECONDS);
+      // A_Pain sits on the painstate itself, so the yelp is gated on the same
+      // stagger roll as the flinch pose above, not on merely being hit.
+      if (p.painTimer > 0 && stats?.sounds.pain) sfx.play(stats.sounds.pain, p, monsterOrigin(p.id));
+      // The other event that can reshuffle a revenant's guided/unguided
+      // personality (MonsterBody.homingBias's doc) — a real pain flinch,
+      // same gate as the pose line just above. A no-op for every other
+      // type, and a hit that failed the stagger roll doesn't reroll it
+      // either, matching "if the damage causes a pain state".
+      if (p.painTimer > 0) p.homingBias = Math.random() < 0.5;
+      // Being hurt always wakes a monster, sight or no — vanilla's
+      // P_DamageMobj sets the target unconditionally.
+      p.alerted = true;
+      // ...and re-points it at whoever did it, which is the whole of
+      // vanilla's infighting: a monster hit by another monster's stray shot
+      // turns on the shooter exactly as it would on the player. `source`
+      // absent means the player, who is already the default target.
+      if (source && source.id !== p.id && stats && shouldRetarget(p, p.type, source.type)) {
+        p.targetId = source.id;
+        commitTarget(p);
+      }
+      return;
+    }
+    p.dead = true;
+    p.deadTime = 0;
+    // Vanilla P_KillMobj's unconditional `if (target->flags & MF_COUNTKILL) ... killcount++` —
+    // no "already counted" guard, so an arch-vile-resurrected monster killed again legitimately
+    // counts twice, matching vanilla's own >100%-kills quirk. Barrels never match (not in
+    // COUNTKILL_TYPES), so this sits before the barrel branch without needing its own guard.
+    if (COUNTKILL_TYPES.has(p.type)) stats.kills++;
+    if (isBarrel) {
+      // BEXP, not BAR1 — see BARREL_DEATH_SPRITE's doc. The splash itself
+      // fires later, once BARREL_EXPLODE_DELAY_SECONDS elapses (see
+      // update()) — `source` is captured now so it can still be attributed
+      // correctly then, and propagated to any barrel that blast itself
+      // kills (see PosedThing.explodeSource's doc).
+      p.barrelExploded = false;
+      p.explodeSource = source ?? null;
+      p.deathFrameCount = BARREL_DEATH_FRAMES.length;
+      p.anim.die(BARREL_DEATH_FRAMES, BARREL_DEATH_FRAME_SECONDS, BARREL_DEATH_SPRITE);
+      // MT_BARREL's own deathsound. Vanilla's A_Scream sits on S_BEXP2, one
+      // 5-tic frame into the explosion rather than on death itself; played
+      // here on death, since a fifth of a second of silent fireball reads as
+      // a bug and the blast (BARREL_EXPLODE_DELAY_SECONDS) is later still.
+      sfx.play('barexp', p, monsterOrigin(p.id));
+      return;
+    }
+    // Matches vanilla's P_KillMobj: gib only if this killing blow overkilled
+    // by more than the monster's own max health, and only if it actually has
+    // gib art (most don't — see MONSTER_XDEATH_FRAMES's doc).
+    const maxHealth = MONSTER_HEALTH[p.type] ?? 0;
+    const gibbed = p.health < -maxHealth && MONSTER_XDEATH_FRAMES[p.type];
+    const frames = gibbed || MONSTER_DEATH_FRAMES[p.type];
+    p.deathFrameCount = frames ? frames.length : 0;
+    // A_Scream's own death cry — randomized within its family, unattenuated
+    // for the two bosses — or A_XScream's wet `slop` for a gib, which the
+    // xdeathstate chain plays *instead*, not on top.
+    // `MONSTER_STATS` re-read rather than reused: the `stats` above is scoped
+    // to the survived-the-hit branch this one is the alternative to.
+    const death = gibbed ? 'slop' : MONSTER_STATS[p.type]?.sounds.death;
+    if (death) {
+      sfx.play(randomVariant(death), BOSS_TYPES.has(p.type) ? null : p, monsterOrigin(p.id));
+    }
+    if (frames) p.anim.die(frames, MONSTER_DEATH_FRAME_SECONDS);
+    else {
+      p.hidden = true;
+      p.visible = false;
+    }
+
+    const dropType = MONSTER_DROPS[p.type];
+    if (dropType) spawnDrop(p, p.sector, p.facingDeg, dropType);
+
+    // A_PainDie: three more lost souls, fanned 90/180/270 degrees around
+    // the elemental's own last facing — vanilla's own
+    // `A_PainShootSkull(actor, actor->angle+ANG90/180/270)`, fired
+    // unconditionally on death regardless of what attack (if any) was
+    // under way when it died.
+    if (p.type === PAIN_ELEMENTAL_TYPE) {
+      spawnLostSoul(p, p.angle + Math.PI / 2);
+      spawnLostSoul(p, p.angle + Math.PI);
+      spawnLostSoul(p, p.angle + (3 * Math.PI) / 2);
+    }
+
+    // A_BossDeath's own thinker scan: "if any other of this type is still alive, do nothing."
+    // Only worth walking `posed` at all for the types a map's own trigger table could possibly
+    // care about — see docs/specials.md § Boss death.
+    if (DEATH_NOTIFY_TYPES.has(p.type) && posed.every((q) => q.type !== p.type || q.dead)) {
+      onBossDeath?.(p.type);
+    }
   }
 
   /**
@@ -1561,7 +1711,9 @@ export function buildThingSprites(
       // see pickMonster's own doc for why.
       const id = batch.raycast(raycaster, (owner) => {
         const p = posed[owner];
-        return !!p && !p.picked && !p.dead && p.visible && (MONSTER_TYPES.has(p.type) || p.type === BARREL_TYPE);
+        if (!p || p.picked || p.dead || !p.visible) return false;
+        if (NO_AUTO_AIM_TYPES.has(p.type)) return false;
+        return MONSTER_TYPES.has(p.type) || p.type === BARREL_TYPE;
       });
       if (id === null) return null;
       const p = posed[id];
@@ -1636,138 +1788,11 @@ export function buildThingSprites(
       fromY?: number,
     ): void {
       const p = posed[id];
-      const isBarrel = !!p && p.type === BARREL_TYPE;
-      if (!p || p.dead || amount <= 0 || !(isBarrel || MONSTER_TYPES.has(p.type))) return;
-      p.health -= amount;
-      if (knockUpSpeed) {
-        p.velZ = knockUpSpeed;
-        // Nudges z off the floor so stepMonsterAI's own airborne check
-        // (z > groundFloor) engages next frame instead of the ground-snap
-        // branch zeroing velZ straight back out before it ever takes effect.
-        p.z += 1;
-      }
-      if (fromX !== undefined && fromY !== undefined) {
-        // Vanilla's P_DamageMobj horizontal thrust — see thrustSpeed's doc.
-        const mass = isBarrel ? BARREL_MASS : MONSTER_STATS[p.type]?.mass ?? 100;
-        const speed = thrustSpeed(amount, mass);
-        let dx = p.x - fromX;
-        let dy = p.y - fromY;
-        const dist = Math.hypot(dx, dy);
-        if (dist < 1) {
-          // Degenerate same-position case (attacker and victim essentially
-          // coincide, e.g. point-blank melee) — vanilla's own
-          // R_PointToAngle2(0,0,0,0) falls back to angle 0 here rather than
-          // an undefined direction; pushing along the victim's current
-          // facing reads more sensibly than always due east.
-          dx = Math.cos(p.angle);
-          dy = Math.sin(p.angle);
-        } else {
-          dx /= dist;
-          dy /= dist;
-        }
-        p.velX += dx * speed;
-        p.velY += dy * speed;
-      }
-      if (p.health > 0) {
-        // Vanilla's MT_BARREL has no painstate/painchance at all — a barrel
-        // that survives a hit just sits there, no flinch, no wake, no
-        // infighting (it has no AI to alert or retarget in the first place).
-        if (isBarrel) return;
-        const stats = MONSTER_STATS[p.type];
-        if (stats) reactToDamage(p, stats);
-        // reactToDamage only actually sets painTimer if the stagger roll
-        // (stats.painChance) passed and the monster wasn't mid-charge — a
-        // hit that fails the roll alerts/retargets the monster same as any
-        // other, but shouldn't flinch it on screen.
-        if (p.painFrames && p.painTimer > 0) p.anim.playOnce(p.painFrames, MONSTER_ACTION_FRAME_SECONDS);
-        // A_Pain sits on the painstate itself, so the yelp is gated on the same
-        // stagger roll as the flinch pose above, not on merely being hit.
-        if (p.painTimer > 0 && stats?.sounds.pain) sfx.play(stats.sounds.pain, p, monsterOrigin(p.id));
-        // The other event that can reshuffle a revenant's guided/unguided
-        // personality (MonsterBody.homingBias's doc) — a real pain flinch,
-        // same gate as the pose line just above. A no-op for every other
-        // type, and a hit that failed the stagger roll doesn't reroll it
-        // either, matching "if the damage causes a pain state".
-        if (p.painTimer > 0) p.homingBias = Math.random() < 0.5;
-        // Being hurt always wakes a monster, sight or no — vanilla's
-        // P_DamageMobj sets the target unconditionally.
-        p.alerted = true;
-        // ...and re-points it at whoever did it, which is the whole of
-        // vanilla's infighting: a monster hit by another monster's stray shot
-        // turns on the shooter exactly as it would on the player. `source`
-        // absent means the player, who is already the default target.
-        if (source && source.id !== p.id && stats && shouldRetarget(p, p.type, source.type)) {
-          p.targetId = source.id;
-          commitTarget(p);
-        }
-        return;
-      }
-      p.dead = true;
-      p.deadTime = 0;
-      // Vanilla P_KillMobj's unconditional `if (target->flags & MF_COUNTKILL) ... killcount++` —
-      // no "already counted" guard, so an arch-vile-resurrected monster killed again legitimately
-      // counts twice, matching vanilla's own >100%-kills quirk. Barrels never match (not in
-      // COUNTKILL_TYPES), so this sits before the barrel branch without needing its own guard.
-      if (COUNTKILL_TYPES.has(p.type)) stats.kills++;
-      if (isBarrel) {
-        // BEXP, not BAR1 — see BARREL_DEATH_SPRITE's doc. The splash itself
-        // fires later, once BARREL_EXPLODE_DELAY_SECONDS elapses (see
-        // update()) — `source` is captured now so it can still be attributed
-        // correctly then, and propagated to any barrel that blast itself
-        // kills (see PosedThing.explodeSource's doc).
-        p.barrelExploded = false;
-        p.explodeSource = source ?? null;
-        p.deathFrameCount = BARREL_DEATH_FRAMES.length;
-        p.anim.die(BARREL_DEATH_FRAMES, BARREL_DEATH_FRAME_SECONDS, BARREL_DEATH_SPRITE);
-        // MT_BARREL's own deathsound. Vanilla's A_Scream sits on S_BEXP2, one
-        // 5-tic frame into the explosion rather than on death itself; played
-        // here on death, since a fifth of a second of silent fireball reads as
-        // a bug and the blast (BARREL_EXPLODE_DELAY_SECONDS) is later still.
-        sfx.play('barexp', p, monsterOrigin(p.id));
-        return;
-      }
-      // Matches vanilla's P_KillMobj: gib only if this killing blow overkilled
-      // by more than the monster's own max health, and only if it actually has
-      // gib art (most don't — see MONSTER_XDEATH_FRAMES's doc).
-      const maxHealth = MONSTER_HEALTH[p.type] ?? 0;
-      const gibbed = p.health < -maxHealth && MONSTER_XDEATH_FRAMES[p.type];
-      const frames = gibbed || MONSTER_DEATH_FRAMES[p.type];
-      p.deathFrameCount = frames ? frames.length : 0;
-      // A_Scream's own death cry — randomized within its family, unattenuated
-      // for the two bosses — or A_XScream's wet `slop` for a gib, which the
-      // xdeathstate chain plays *instead*, not on top.
-      // `MONSTER_STATS` re-read rather than reused: the `stats` above is scoped
-      // to the survived-the-hit branch this one is the alternative to.
-      const death = gibbed ? 'slop' : MONSTER_STATS[p.type]?.sounds.death;
-      if (death) {
-        sfx.play(randomVariant(death), BOSS_TYPES.has(p.type) ? null : p, monsterOrigin(p.id));
-      }
-      if (frames) p.anim.die(frames, MONSTER_DEATH_FRAME_SECONDS);
-      else {
-        p.hidden = true;
-        p.visible = false;
-      }
-
-      const dropType = MONSTER_DROPS[p.type];
-      if (dropType) spawnDrop(p, p.sector, p.facingDeg, dropType);
-
-      // A_PainDie: three more lost souls, fanned 90/180/270 degrees around
-      // the elemental's own last facing — vanilla's own
-      // `A_PainShootSkull(actor, actor->angle+ANG90/180/270)`, fired
-      // unconditionally on death regardless of what attack (if any) was
-      // under way when it died.
-      if (p.type === PAIN_ELEMENTAL_TYPE) {
-        spawnLostSoul(p, p.angle + Math.PI / 2);
-        spawnLostSoul(p, p.angle + Math.PI);
-        spawnLostSoul(p, p.angle + (3 * Math.PI) / 2);
-      }
-
-      // A_BossDeath's own thinker scan: "if any other of this type is still alive, do nothing."
-      // Only worth walking `posed` at all for the five types a map's own trigger table could
-      // possibly care about — see docs/specials.md § Boss death.
-      if (BOSS_DEATH_TYPE_SET.has(p.type) && posed.every((q) => q.type !== p.type || q.dead)) {
-        onBossDeath?.(p.type);
-      }
+      if (p) damageThing(p, amount, source, knockUpSpeed, fromX, fromY);
+    },
+    spawnMonster(type: number, at: Pos3, angleRad: number): MonsterRef | null {
+      const p = spawnMonster(type, at, angleRad);
+      return p ? { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle } : null;
     },
     raycastMonster(
       origin: Pos3,

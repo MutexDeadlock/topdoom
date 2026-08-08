@@ -373,10 +373,33 @@ const CHASE_AXIS_EPSILON = 10;
 export const MONSTER_FIRE_HEIGHT = 40;
 
 /**
- * Per-doomednum combat stats, covering every `MONSTER_TYPES` entry except
- * Commander Keen (72) and the boss brain (88) — neither attacks or moves in
- * vanilla either, so both stay as passive as they were before monster AI
- * existed.
+ * The two `MONSTER_TYPES` members with no entry in `MONSTER_STATS` below.
+ * `MT_KEEN` and `MT_BOSSBRAIN` are `MF_SOLID|MF_SHOOTABLE` with no seestate,
+ * meleestate or missilestate at all, so neither wakes, moves or attacks in
+ * vanilla either. What a monster normally reads off `MonsterStats` that still
+ * applies to something which only stands there and dies lives here instead: its
+ * real `mobjinfo.radius`, and the two sounds `A_Pain`/`A_Scream` play.
+ *
+ * `unattenuated` is the brain's `A_BrainPain`/`A_BrainScream` calling
+ * `S_StartSound(NULL, …)` — the Icon of Sin is heard flinching and dying from
+ * anywhere on the map, the same rule `things.ts`'s `BOSS_TYPES` applies to the
+ * cyberdemon and spider mastermind. Keen's own are ordinary positional calls.
+ *
+ * `ThingLayer.damage` is the only consumer. No pain *chance* here: neither type
+ * has one worth rolling (256 and 255 of 256), so the flinch is unconditional.
+ * docs/monsters.md § Commander Keen.
+ */
+export const INERT_SHOOTABLE: Record<
+  number,
+  { radius: number; painSound: SfxId; deathSound: SfxId; unattenuated: boolean }
+> = {
+  72: { radius: 16, painSound: 'keenpn', deathSound: 'keendt', unattenuated: false }, // KEEN
+  88: { radius: 16, painSound: 'bospn', deathSound: 'bosdth', unattenuated: true }, // BBRN
+};
+
+/**
+ * Per-doomednum combat stats, covering every `MONSTER_TYPES` entry except the
+ * two in `INERT_SHOOTABLE` above.
  *
  * **Both timing and damage are lifted from vanilla, not tuned by feel.**
  * `speed`, `chaseInterval`, `painChance`, `painDuration` and every

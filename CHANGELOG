@@ -1,6 +1,8 @@
 v0.9.x (2026-08-??)
 
 Features and improvements
+  - the Icon of Sin (DOOM2 MAP30) works
+  - Commander Keen (DOOM2 MAP32) works
   - bullets and melee hits now splash blood
   - bullets now leave the original's puff on walls (and on barrels)
   - hopefully completed THINGs
@@ -24,6 +26,13 @@ Fixed bugs
     strobing or switch-triggered sector
     - in-flight projectiles and the arch-vile's warning flame had the 
       same bug while moving between differently-lit sectors
+  - fixed a sector moved only by a boss death was left in the static render
+    batch, so it was drawn twice once its mover mesh appeared
+  - fixed triggering a second mover on a sector that already had one running
+    hijacked it instead of being ignored (vanilla's sec->specialdata) — most
+    visibly on DOOM2 MAP30, where using the central pillar as a lift while
+    the switch's slow 512-unit rise was still going stranded it partway up
+    and it never reached the brain
 
 
 ===============================================================================

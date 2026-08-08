@@ -271,6 +271,9 @@ other — see [Weapons](#weapons) above for the full rundown. Locked-on shots, e
 splash and monster attacks all deal real damage, killing monsters (with their own confirmed
 WAD death animation) and the player, whose armor absorbs part of any hit first; health
 hitting 0 shows a death screen `R` restarts from. Crushers and the crushing-floor family
-also hurt anyone caught underneath, matching the original. Not yet: sound (the
+also hurt anyone caught underneath, matching the original. Every stock monster is in, including
+both DOOM II oddities: Commander Keen hangs from the ceiling and opens the tag-666 door when the
+last one dies, and the Icon of Sin spits spawn cubes that telefrag a monster onto a spawn spot,
+then ends the level when its brain is destroyed. Not yet: sound (the
 sound-propagation rules that alert monsters to gunfire are modeled, but nothing actually plays
 audio).

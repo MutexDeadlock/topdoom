@@ -867,6 +867,22 @@ export const WEAPON_RANGE = 2048;
 export const PLAYER_WEAPON_RANGE = 8192;
 
 /**
+ * How far one of the *player's* shots flies. A locked-on shot ends at its
+ * target (`undefined` lets `shotPath` stop there); a free one needs its own
+ * bound, and neither kind takes `shotPath`'s `WEAPON_RANGE` default — that is a
+ * *monster's* bullet. A missile crosses the whole map, a bullet reaches
+ * `PLAYER_WEAPON_RANGE`. See docs/combat.md § Range.
+ */
+export function playerShotRange(
+  kind: 'hitscan' | 'projectile',
+  target: Pos3 | null,
+  mapSpan: number,
+): number | undefined {
+  if (target !== null) return undefined;
+  return kind === 'projectile' ? mapSpan : PLAYER_WEAPON_RANGE;
+}
+
+/**
  * Each candidate wall is extended this far past both endpoints before the ray
  * is tested against it — same fix and distance as FogOfWar's `BLOCKER_OVERLAP`.
  * Two walls meeting at a shared vertex otherwise let a ray aimed right at that

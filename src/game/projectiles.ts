@@ -2,7 +2,7 @@ import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../r
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import { PLAYER_ORIGIN } from '../audio/sfx.ts';
-import { hasLineOfSight, PLAYER_WEAPON_RANGE, projectileStepBlocker, shotPath, type ShotPath, type World } from './world.ts';
+import { hasLineOfSight, playerShotRange, projectileStepBlocker, shotPath, type ShotPath, type World } from './world.ts';
 import { AIM_HEIGHT_OFFSET } from './player.ts';
 import { MONSTER_FIRE_HEIGHT, sameSpecies } from './monsters.ts';
 import { MONSTER_HIT_HEIGHT, MONSTER_HIT_RADIUS, type MonsterAttackEvent } from './things.ts';
@@ -120,13 +120,7 @@ export class ProjectileLayer {
       return;
     }
 
-    // A locked-on shot ends at its target, whose hit was settled above. A free
-    // one — no auto-aim lock — needs a range of its own, and neither kind takes
-    // `shotPath`'s `WEAPON_RANGE` default: that is the bound on a *monster's*
-    // bullet. A missile flies the whole map and a bullet `PLAYER_WEAPON_RANGE`;
-    // see docs/combat.md § Range.
-    const range =
-      target !== null ? undefined : shot.kind === 'projectile' ? world.mapSpan : PLAYER_WEAPON_RANGE;
+    const range = playerShotRange(shot.kind, target, world.mapSpan);
     // The super shotgun's per-pellet slope jitter (`HitscanShot.slopeOffset`)
     // rides on the aim point rather than on the trace: `shotPath` takes its
     // slope from the target, so raising or lowering that point by the jitter

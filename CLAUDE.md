@@ -11,13 +11,14 @@ entirely new — none of vanilla DOOM's game code is ported.
 
 ## Commands
 
-There is no test suite (`npm test` is an unset placeholder). Validate changes with
-`npm run typecheck` and, for anything touching WAD parsing/geometry/collision, the headless
-inspector below.
+`npm test` (Node's own runner, no deps) and `npm run typecheck` are the two gates; both must be
+clean. For anything touching WAD parsing/geometry/collision, also use the headless inspector below.
+See [docs/testing.md](docs/testing.md) for what is covered, the ASCII-grid map fixture, and how to
+add a test.
 
-WADs are not part of the repo. Place game WADs in `public/wads/iwad/` and add-ons in
-`public/wads/pwad/` (both gitignored except `.gitkeep`) — see [docs/wad.md](docs/wad.md) for why
-the folder matters.
+`DOOM.WAD` and `DOOM2.WAD` are gitignored; every other WAD under `public/wads/` is committed. Place
+game WADs in `public/wads/iwad/` and add-ons in `public/wads/pwad/` — see
+[docs/wad.md](docs/wad.md) for why the folder matters.
 
 ### Headless WAD inspection
 
@@ -33,9 +34,10 @@ whether the player start is walkable. This is the fastest way to sanity-check a 
 WAD parser, texture merging, or BSP reconstruction, and the way to reproduce a bug against a
 specific real-world WAD without spinning up a browser.
 
-For collision/movement logic bugs, prefer writing a small throwaway synthetic-map script (a
-hand-built `DoomMap` with a couple of sectors) over probing a real map, where nearby unrelated
-geometry makes results hard to interpret. Scratch scripts go in the scratchpad, never in `src/`.
+For collision/movement logic bugs, prefer synthetic geometry over probing a real map, where nearby
+unrelated geometry makes results hard to interpret: `tests/fixtures/gridmap.ts` builds a real
+`DoomMap` from ASCII art. A throwaway script is still the right tool for a one-off investigation —
+those go in the scratchpad, never in `src/`.
 
 ## Toolchain constraints
 
@@ -96,6 +98,7 @@ several record rules that look like accidents and aren't.
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
 | [docs/audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |
 | [docs/devmode.md](docs/devmode.md) | `DEVMODE` gating, debug hotkeys, the profiling overlay |
+| [docs/testing.md](docs/testing.md) | The test suite: runner, the ASCII-grid map fixture, which WADs are committed |
 
 For what is and isn't implemented, see [README.md](README.md#state) and [CHANGELOG](CHANGELOG).
 

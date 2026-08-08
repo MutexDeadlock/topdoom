@@ -1,4 +1,4 @@
-v0.10.0 (2026-08-??)
+v0.10.0 (2026-08-08)
 
 Features and improvements
   - the Icon of Sin (DOOM2 MAP30) works
@@ -9,7 +9,7 @@ Features and improvements
     - add missing idle animations to some items and decorations
     - added the two techno lamps and all gore decorations, which weren't
       rendered at all before
-    - the 1.4x size boost now only applies to pickups
+    - the 1.4x size increase now only applies to pickups
       (ammo/health/armor/keys/powerups)
   - main menu overhaul
     - opens over the paused level instead of hiding it, and got a
@@ -19,6 +19,10 @@ Features and improvements
     - the game WAD, add-ons and level you picked are remembered
       between sessions
     - reopening the menu keeps you on the tab you were last on
+
+Testing
+  - there are unit tests now ("npm test", Node's own runner, no dependencies):
+    see docs/testing.md
 
 Fixed bugs
   - massive combat fixes

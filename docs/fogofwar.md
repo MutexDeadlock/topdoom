@@ -66,6 +66,10 @@ measured 3000 → 5100 with the player standing at spawn: freedoom2 MAP03 1.98 �
 (70 subsectors revealed either way), DOOM2 MAP13 0.48 → 0.51 ms (78 → 79), DOOM2 MAP01 and MAP29
 unchanged in both time and count.
 
+`SIGHT_RADIUS` is module-private, so `tests/regression/fog-reveal-radius.test.ts` brackets it from both
+sides instead: revealed at 5120 units, dark at 5248. Changing what the camera frames means updating
+those two numbers, not dropping the test — see docs/testing.md § Private constants.
+
 Each subsector is sampled at its centroid first (one ray settles the common case, and the search stops
 at the first sample that comes back clear, so the rest cost nothing usually), then at every corner
 *and every edge midpoint*, each pulled slightly inward. **Corners alone leave holes**: a long subsector

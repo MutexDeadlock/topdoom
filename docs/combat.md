@@ -213,6 +213,11 @@ chaingunner's own bullets still expire at 2048, so it cannot shoot back.
 makes the lock, not `PLAYER_WEAPON_RANGE`, the real bound on a clicked shot; the cursor can only lock
 what the camera draws, so it never reaches further than the player can see.
 
+Which of the three a player's shot gets is `world.ts: playerShotRange` — its own function rather
+than an expression inside `ProjectileLayer.spawnPlayerShot` so that the choice is testable without
+the layer's five collaborators. `tests/regression/player-shot-range.test.ts` guards both it and the
+2048/8192 split, on the corridor from the repro above.
+
 ## Shoot-triggered specials
 
 **`shotPath`'s returned `lineIndex` — whichever line stopped the shot, or null if it reached its

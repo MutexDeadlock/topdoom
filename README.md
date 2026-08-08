@@ -154,6 +154,16 @@ Reports lump and map counts, which file a map came from, any textures it referen
 WAD set lacks, how many subsector polygons came out degenerate, and whether the player start
 is walkable.
 
+## Running the tests
+
+```bash
+npm test
+npm run typecheck
+```
+
+Both must be clean. The suite uses Node's built-in test runner — no extra dependencies, no
+browser. See [docs/testing.md](docs/testing.md).
+
 ## State
 
 Playable as a walkable level viewer you can fight in: geometry, textures, sector lighting,

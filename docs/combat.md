@@ -1,9 +1,9 @@
 # Weapons, shots, damage and death
 
 `src/game/weapons.ts`, `src/game/projectiles.ts`, `src/game/combat.ts`,
-`src/game/world.ts: shotPath`/`hasLineOfSight`, `src/render/tracer.ts`, `src/game/effects.ts`,
-`src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/monsters.ts: MonsterAttacks`,
-`src/game/inventory.ts`, `src/game/effectdefs.ts`, `src/game.ts`
+`src/game/world.ts: shotPath`/`hasLineOfSight`, `src/render/tracer.ts`, `src/game/spritefx.ts`,
+`src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/monsters/attacks.ts`,
+`src/game/inventory.ts`, `src/game/spritefxdefs.ts`, `src/game.ts`
 
 ## WeaponSystem
 
@@ -96,7 +96,7 @@ the BFG ball as `8×30`; both were transcription guesses, and reading `mobjinfo`
 and chainsaw share `(P_Random()%10+1)<<1` (2-20), the fist ×10 under berserk.
 
 Projectile *speeds* come from the same `mobjinfo` rows, × 35 for units/sec exactly as
-`game/monsters.ts` converts a monster's: rocket 700, plasma 875, BFG 875. The player's rocket used to
+`game/monsters/defs.ts` converts a monster's: rocket 700, plasma 875, BFG 875. The player's rocket used to
 fly at 1000 while the cyberdemon's — already converted correctly — flew at 700.
 
 **A melee swing is resolved entirely differently from every other shot**: `spawnPlayerShot` returns before
@@ -125,7 +125,7 @@ wants — its target cannot move mid-flight. Anything else keeps going down the 
 not the target is still standing there. Folding the two together (deriving range from the target) is
 what made every monster shot detonate on the spot the player had been standing at launch; both call
 sites then had to fake a far-away aim point to undo it, which is the shape this parameter replaces.
-See docs/monsters.md § Hitscan vs. projectile.
+See docs/monsterattacks.md § Hitscan vs. projectile.
 
 What each caller actually passes is § Range below.
 
@@ -267,20 +267,20 @@ cursor unconditionally; the lock has to follow the same rule to stay continuous.
 
 ## Effects and their batching
 
-Impact explosions, blood splashes, bullet puffs and the teleport-fog puff share one mechanism, `EffectLayer`
-(`game/effects.ts`, `OneShotEffect`/`spawn`/`spawnImpact`): a transient sprite animation playing
+Impact explosions, blood splashes, bullet puffs and the teleport-fog puff share one mechanism, `SpriteFxLayer`
+(`game/spritefx.ts`, `OneShotEffect`/`spawn`/`spawnImpact`): a transient sprite animation playing
 once at a fixed spot, outside `ThingLayer` since none of them is a real map `Thing`. `IMPACT_EFFECTS` maps a projectile's
 flight sprite to its explosion — vanilla reuses `MISL` frames B–D for the rocket's blast, while the
 plasma bolt and BFG ball explode into dedicated `PLSE`/`BFE1` sprites. Hitscan `Tracer` lines live
 there too: not sprites, but the same spawn-animate-drop lifecycle and the same wholesale clear on a
 level change (`beginLevel`).
 
-`EffectLayer` only draws and ages what it is handed; who spawns what, and every rule about *why*
+`SpriteFxLayer` only draws and ages what it is handed; who spawns what, and every rule about *why*
 (`A_Fire`'s sightline, `A_VileAttack`'s reposition) stays with the system that owns the mechanic —
 the arch-vile's flame tracks its target through a `VileFlameResolver` callback `MonsterAttacks`
-supplies (`game/monsters.ts`), rather than the layer reaching into monster state.
+supplies (`game/monsters/attacks.ts`), rather than the layer reaching into monster state.
 
-Those effects and projectiles in flight are drawn through `EffectLayer`'s batch, a second `SpriteBatch`
+Those effects and projectiles in flight are drawn through `SpriteFxLayer`'s batch, a second `SpriteBatch`
 alongside `ThingLayer`'s, so an `OneShotEffect`/`Projectile` holds a bare `SpriteAnimator` and owns
 no `THREE.Object3D`, exactly like `PosedThing`. They were a `SpriteActor` each until the revenant's
 homing missile got its real vanilla flight: a missile that flies until it hits something lives far
@@ -342,12 +342,12 @@ a directed weapon's own blocking rules, not "does this omnidirectional blast rea
 **Blood is spawned by a trace hitting a body, not by damage** — vanilla puts `P_SpawnBlood` in
 `PTR_ShootTraverse`, i.e. only on the `P_LineAttack` path. So the player's hitscan pellets
 (`spawnPlayerShot`), the fist/chainsaw swing (its melee branch) and a monster's hitscan bolt
-(`game/monsters.ts: MonsterAttacks.resolveHitscan`) all splash, and everything reaching `P_DamageMobj` by another
+(`game/monsters/attacks.ts: MonsterAttacks.resolveHitscan`) all splash, and everything reaching `P_DamageMobj` by another
 route does not: a projectile's direct hit, splash, the BFG spray (`A_BFGSpray` damages and spawns
 `MT_EXTRABFG` itself, never blood), a crusher, a damage floor. Don't "fix" the missing cases — a
 rocket that made a monster bleed would be wrong.
 
-`EffectLayer.spawnBlood` is one `OneShotEffect` like any other. Two details are vanilla's and look
+`SpriteFxLayer.spawnBlood` is one `OneShotEffect` like any other. Two details are vanilla's and look
 arbitrary: the frame letters run **backwards** (`S_BLOOD1`-`3` are `BLUD` C, B, A at 8 tics each),
 and the hit's damage picks which state the splash *starts* in (`bloodFrames`: under 9 shows only
 `A`, 9-12 `B`→`A`, above 12 all three) — so weapon power reads off the size of the splash. The
@@ -373,7 +373,7 @@ always spawns a puff. So the same three shooters that can splash blood — the p
 fist/chainsaw swing, a monster's bolt — are the only sources, and `MT_PUFF`'s four `PUFF` frames run
 forwards at 4 tics each (`S_PUFF1`-`4`), unlike the blood's backwards three.
 
-`EffectLayer.spawnWallPuff` (`game/effects.ts`, shared by the player's pellet and `resolveHitscan`)
+`SpriteFxLayer.spawnWallPuff` (`game/spritefx.ts`, shared by the player's pellet and `resolveHitscan`)
 owns the geometry case and **skips two things vanilla also skips**:
 
 - A shot that ran out of range without crossing a blocking line (`ShotPath.lineIndex === null`).
@@ -612,7 +612,7 @@ teleport's doing, not an attack, and naming the newly spawned monster as the sou
 infight it never picked.
 
 It is split across two files for the usual reason: `ThingLayer` has no player reference, so it
-telefrags every overlapping `PosedThing` itself and returns the new body, and `game/icon.ts` does the
+telefrags every overlapping `PosedThing` itself and returns the new body, and `game/iconofsin.ts` does the
 player half against `PLAYER_RADIUS` and calls `damagePlayer`. That is what makes standing on a MAP30
 spawn spot a real way to die.
 

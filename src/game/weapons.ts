@@ -16,7 +16,7 @@ const SAW_IDLE_INTERVAL = 4 * DOOM_TIC;
 
 /**
  * Vanilla's `MELEERANGE`: how far `A_Punch`/`A_Saw` trace out from the
- * player's own centre. `game/monsters.ts` keeps its own, slightly longer
+ * player's own centre. `game/monsters/defs.ts` keeps its own, slightly longer
  * `MELEE_RANGE` for the *monster* side of the same idea — that one is a
  * body-to-body distance sampled per frame rather than per tic and carries
  * slack for it; this is a plain trace length, so it's vanilla's number as-is.
@@ -80,7 +80,7 @@ export interface WeaponDef {
   accurateFirstShot: boolean;
   /** Melee only: how far in front of the player the swing reaches (`PLAYER_MELEE_RANGE`); 0 for everything else. */
   meleeRange: number;
-  /** Projectile only: travel speed, map units/sec — the spawned missile's own `mobjinfo.speed` (units per tic) × 35, the same conversion `game/monsters.ts` applies to theirs. */
+  /** Projectile only: travel speed, map units/sec — the spawned missile's own `mobjinfo.speed` (units per tic) × 35, the same conversion `game/monsters/defs.ts` applies to theirs. */
   projectileSpeed: number;
   /** Projectile only: SpriteBank name the flying shot is drawn as. */
   projectileSprite: string;
@@ -265,7 +265,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     accurateFirstShot: false,
     // `A_Saw` really traces MELEERANGE+1, with vanilla's own comment saying
     // why: "use meleerange + 1 se the puff doesn't skip the flash". The extra
-    // unit of reach is incidental; the puff is what it's for (effectdefs.ts's
+    // unit of reach is incidental; the puff is what it's for (spritefxdefs.ts's
     // PUFF_MELEE_FRAMES).
     meleeRange: PLAYER_MELEE_RANGE + 1,
     projectileSpeed: 0,
@@ -527,7 +527,7 @@ export type Shot = HitscanShot | ProjectileShot | MeleeShot;
  * was fired this frame (one `Shot` per hitscan pellet or per projectile
  * launched), and `game.ts` turns those into tracer lines / flying projectile
  * sprites — the same split as `game/specials.ts`'s line triggers vs.
- * `game.ts`'s teleport-fog puffs, and `game/monsters.ts`'s own `MonsterAttack`
+ * `game.ts`'s teleport-fog puffs, and `game/monsters/defs.ts`'s own `MonsterAttack`
  * return value for a monster's fired shot.
  *
  * A `Shot` doesn't know *what* it's aimed at beyond the angle/damage numbers

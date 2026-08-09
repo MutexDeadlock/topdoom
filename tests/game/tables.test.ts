@@ -9,9 +9,9 @@ import {
   SPAWN_CUBE_MONSTERS,
   THING_SPRITES,
 } from '../../src/game/thingdefs.ts';
-import { INERT_SHOOTABLE, MONSTER_STATS } from '../../src/game/monsters.ts';
+import { INERT_SHOOTABLE, MONSTER_STATS } from '../../src/game/monsters/defs.ts';
 import { WEAPONS, WEAPON_CYCLE, WEAPON_SLOTS } from '../../src/game/weapons.ts';
-import { IMPACT_EFFECTS, PROJECTILE_SOUNDS } from '../../src/game/effectdefs.ts';
+import { IMPACT_EFFECTS, PROJECTILE_SOUNDS } from '../../src/game/spritefxdefs.ts';
 import { SFX_NAMES } from '../../src/audio/sfx.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import type { SfxId } from '../../src/audio/sfx.ts';

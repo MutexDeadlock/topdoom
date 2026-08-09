@@ -16,16 +16,17 @@ import {
   PLAYER_DEATH_FRAMES,
   PLAYER_PAIN_FRAMES,
 } from './game/thingdefs.ts';
-import { MonsterAttacks, thrustSpeed } from './game/monsters.ts';
+import { thrustSpeed } from './game/monsters/defs.ts';
+import { MonsterAttacks } from './game/monsters/attacks.ts';
 import { collectFadeTargets, FlatFader, TextureScroller, WallFader } from './render/occlusion.ts';
 import { World } from './game/world.ts';
 import { AIM_HEIGHT_OFFSET, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { applyBarrelExplosion, type CombatContext } from './game/combat.ts';
-import { EffectLayer } from './game/effects.ts';
+import { SpriteFxLayer } from './game/spritefx.ts';
 import { ProjectileLayer } from './game/projectiles.ts';
 import { FogOfWar } from './game/fogofwar.ts';
 import { SpecialsController, computeMovableSectors } from './game/specials.ts';
-import { IconOfSin } from './game/icon.ts';
+import { IconOfSin } from './game/iconofsin.ts';
 import { applyCrushDamage, blocksCeilingLower, blocksFloorRise } from './game/moverblocking.ts';
 import { SectorEffects } from './game/sectoreffects.ts';
 import { Hud } from './ui/hud.ts';
@@ -87,14 +88,14 @@ export class Game {
   private specials?: SpecialsController;
   /**
    * The Icon of Sin's cube spitter, rebuilt per level like `specials` — inert on every map with no
-   * `MT_BOSSSPIT` thing, which is all of them but MAP30. See game/icon.ts.
+   * `MT_BOSSSPIT` thing, which is all of them but MAP30. See game/iconofsin.ts.
    */
   private icon?: IconOfSin;
-  /** Teleport fog, impact explosions, the smoke trail, the vile's flame and hitscan tracers — see game/effects.ts. */
-  private effects: EffectLayer;
+  /** Teleport fog, impact explosions, the smoke trail, the vile's flame and hitscan tracers — see game/spritefx.ts. */
+  private effects: SpriteFxLayer;
   /** Everything in flight, player's and monsters' alike — see game/projectiles.ts. */
   private projectiles: ProjectileLayer;
-  /** Turns the attacks `ThingLayer.update` reports into damage, tracers and effects — see game/monsters.ts § Attack resolution. */
+  /** Turns the attacks `ThingLayer.update` reports into damage, tracers and effects — see game/monsters/attacks.ts. */
   private monsterAttacks: MonsterAttacks;
   /** The live-level view `projectiles`, `monsterAttacks` and the splash helpers read this class through — see game/combat.ts. */
   private combat: CombatContext;
@@ -192,7 +193,7 @@ export class Game {
     // flame belongs depends on live monster/player state. Reached through a
     // closure because `monsterAttacks` needs `effects` to exist first, and is
     // only ever called from a frame, long after both are built.
-    this.effects = new EffectLayer(this.scene, this.spriteBank, this.spriteMaterials, audio, (vileId, targetId) =>
+    this.effects = new SpriteFxLayer(this.scene, this.spriteBank, this.spriteMaterials, audio, (vileId, targetId) =>
       this.monsterAttacks.vileFlameFor(vileId, targetId),
     );
     // `world`/`things`/`player`/`inventory` are all replaced on a map load (and
@@ -310,7 +311,7 @@ export class Game {
       (dest) => {
         // The origin puff's position has to be captured before teleportTo
         // overwrites it; the landing `z` only exists after. See
-        // EffectLayer.spawnTeleportPair for the pair itself.
+        // SpriteFxLayer.spawnTeleportPair for the pair itself.
         const from = { x: this.player.x, y: this.player.y, z: this.player.z };
         this.player.teleportTo(dest);
         this.effects.spawnTeleportPair(from, dest, this.player.z);

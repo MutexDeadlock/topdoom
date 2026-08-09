@@ -1,22 +1,29 @@
 # Monster AI
 
-`src/game/monsters.ts`, `src/game/things.ts`, `src/game/projectiles.ts`
+`src/game/monsters/ai.ts`, `src/game/monsters/defs.ts`, `src/game/monsters/vile.ts`,
+`src/game/things.ts`
 
 Every `MONSTER_TYPES` entry except Commander Keen (72) and the boss brain (88) wakes, chases and
 attacks — neither of those two attacks or moves in vanilla either.
 
-**Layering.** `monsters.ts`'s `stepMonsterAI` (chasing/attacking) and `tryWake` are pure functions
-that read/write a monster's own mutable state and return *what happened* (a fired `MonsterAttack`,
-or whether it woke). `ThingLayer.update` (`things.ts`) is where that state lives — each
-`PosedThing` carries its AI fields — and owns the throttle that calls `tryWake`. `MonsterAttacks`
-(same file, § Resolving an attack) turns a returned attack into damage and, for a ranged one, a
-tracer or a projectile. Same split as `WeaponSystem`/`SpecialsController`.
+**Layering.** `ai.ts`'s `stepMonsterAI` (chasing/attacking) and `tryWake` are pure functions that
+read/write a monster's own mutable state and return *what happened* (a fired `MonsterAttack`, or
+whether it woke). `ThingLayer.update` (`things.ts`) is where that state lives — each `PosedThing`
+carries its AI fields — and owns the throttle that calls `tryWake`. `MonsterAttacks`
+(`monsters/attacks.ts`, docs/monsterattacks.md) turns a returned attack into damage and, for a
+ranged one, a tracer or a projectile. Same split as `WeaponSystem`/`SpecialsController`.
 
-**`monsters.ts` therefore has two halves with very different dependencies.** The AI half above
-touches nothing but a `MonsterBody`, a `World` and a `SoundEmitter`, which is what keeps it
-testable headlessly. `MonsterAttacks` at the bottom of the file needs the thing list, the effect
-and projectile layers and the audio engine, and reads the live level through the same
-`CombatContext` `ProjectileLayer` does. Keep new code on the correct side of that line.
+**That is why the AI and the resolver are separate files, and the dependency gap is the reason.**
+`ai.ts` touches nothing but a `MonsterBody`, a `World` and a `SoundEmitter`, which is what keeps it
+testable headlessly. `attacks.ts` needs the thing list, the effect and projectile layers and the
+audio engine, and reads the live level through the same `CombatContext` `ProjectileLayer` does.
+Keep new code on the correct side of that line.
+
+**The four files.** `defs.ts` holds the record shapes, `MONSTER_STATS`/`INERT_SHOOTABLE` and the
+pure vanilla helpers, and imports nothing from the other three — the `things.ts`/`thingdefs.ts`
+pattern. `ai.ts` and `attacks.ts` are the two halves above. `vile.ts` is the arch-vile, the one
+type whose behavior does not fit the data-driven model the rest are expressed in; both halves call
+into it (§ The arch-vile).
 
 **Sounds are the one exception to that split**: `stepMonsterAI` and `ThingLayer` raise them
 directly through a `SoundEmitter`, since several of vanilla's sit at moments that produce no event
@@ -276,226 +283,6 @@ once it was, all they did was stop monsters firing from distances vanilla shoots
 hitscan attack otherwise reaches `WEAPON_RANGE` (`MISSILERANGE`, 2048) and a projectile flies until
 it hits something.
 
-## Resolving an attack
-
-`ThingLayer.update` reports a `MonsterAttackEvent` per attack fired this frame and applies none of
-them. `MonsterAttacks.resolve` (bottom of `monsters.ts`) is what realizes them: melee lands
-directly, a hitscan volley traces bolt by bolt (`resolveHitscan`/`resolveBullet`), a projectile
-attack is handed to `ProjectileLayer.spawnMonsterShot`, and the arch-vile's blast takes its own
-path. It also answers `EffectLayer`'s `VileFlameResolver`, since where the vile's flame belongs
-depends on live monster/player state the effect batch has no reason to know.
-
-**`monsters.ts` must reach its collaborators without a runtime import cycle**, because both
-`things.ts` and `projectiles.ts` import *it* for values. Three rules hold that open, and breaking
-any one of them reintroduces a cycle:
-
-- `ProjectileLayer` and `ThingLayer` are imported **`import type`** only. Both are used purely as
-  parameter/field types, and `verbatimModuleSyntax` guarantees a type import is erased.
-- `combat.ts` imports `things.ts` **`import type` only** — its `BARREL_SPLASH_RADIUS`/`_DAMAGE`
-  live in `thingdefs.ts` (a leaf) precisely so that stays true. This is what lets `monsters.ts`
-  call `applyRadiusDamage` as a real value.
-- `effectdefs.ts` imports **nothing** from `monsters.ts`. `VILE_WINDUP_TRACK_SECONDS`, which is
-  derived from `MONSTER_STATS`, lives in `monsters.ts` for that reason rather than beside the other
-  `VILE_FIRE_*` values.
-
-`EffectLayer.spawnWallPuff` is on the effect layer rather than in `projectiles.ts` for the same
-reason — a monster's bolt needs it, and reaching into `projectiles.ts` for a value would cycle.
-
-## Hitscan vs. projectile
-
-Which one a type uses matches vanilla (`AttackStats.ranged.projectile`, `game/projectiles.ts`'s
-`spawnMonsterShot`, plus `PROJECTILE_FRAMES`/`IMPACT_EFFECTS`). The human gunners (zombieman,
-shotgun guy, chaingunner, Wolfenstein SS) and the spider mastermind fire real hitscan bullets and
-keep the tracer, coloured red to read as hostile and distinct from either of the player's own. The
-imp (`BAL1`), cacodemon (`BAL2`), baron/hell knight (`BAL7`), mancubus (`MANF`), arachnotron
-(`APLS`), revenant (`FATB`) and cyberdemon (`MISL`, the same sprite the player's rocket launcher
-uses) throw a real projectile. Sprite names and frame counts were confirmed by dumping the actual
-`DOOM2.WAD` lumps and cross-checked against `info.c` — including the mancubus's genuine vanilla
-oddity of exploding with the *rocket's* `MISL` frames, since `MANF` has no explosion frames at all.
-The lost soul, arch-vile and pain elemental's ranged attacks are none of these — see below.
-
-**The mancubus fires its shots in pairs** (`AttackStats.projectile.pairOffsetsRad`): each of
-`A_FatAttack1/2/3` spawns *two* `MT_FATSHOT`s, fanned around the aim line by `FATSPREAD`
-(`p_enemy.c`). The array holds one entry per shot in the burst, each listing that shot's projectiles
-as radian offsets from straight-at-target. `P_SpawnMissile` computes its own angle at the target and
-ignores the firing actor's facing, so only the *second* missile of `A_FatAttack1`/`2` is deflected
-(`+FATSPREAD` / `-2*FATSPREAD`) while `A_FatAttack3`'s pair straddles the aim line evenly
-(`±FATSPREAD/2`) — a real vanilla asymmetry, not a transcription slip. Every other projectile monster
-omits the field and fires one straight shot per burst entry.
-
-**Every monster bullet is thrown off-aim by `MONSTER_BULLET_SPREAD_DEG` — the single most
-load-bearing number in how dangerous the gunners are.** `A_PosAttack`, `A_SPosAttack` and
-`A_CPosAttack` each add `(P_Random()-P_Random())<<20` BAM to the firing angle, ±255/4096 of a full
-turn (±22.4°), triangular. It is *not* an accuracy nicety: it is the only thing that makes range
-matter against a hitscanner, and against the 32-unit player box it costs vanilla's gunners roughly
-65% of their shots at 128 units, 80% at 512 and 90% at 1024. Shipping without it — which this
-engine did — made every monster bullet a guaranteed hit at any distance, so a spider mastermind
-(`pellets: 3` × `shots: 2` per 9 tics) dealt ~210 dmg/s where vanilla deals ~32 at 512 units. The
-top-down camera makes this worse than it would be in vanilla, not better: it opens fights at ranges
-where vanilla's gunners are missing four shots in five.
-
-**A monster's hitscan bolt tests against the player's radius plus `MONSTER_BULLET_SLOP` (4).**
-Vanilla resolves it against the player's 32-unit-wide *axis-aligned box*, which a bullet from an
-arbitrary bearing sees as `perimeter/π ≈ 40.7` units wide on average rather than 32 — a circle of
-radius 20 presents the same average target. The tolerance covers that box-vs-circle difference and
-nothing else; simulated against vanilla's own integer draw it lands within 1.5% of vanilla's hit
-rate from 64 to 1536 units. (It used to be 12, covering a stale firing angle. The angle isn't
-stale — `A_FaceTarget` re-runs on every burst shot, so it is at most one frame old — and the
-spread now dwarfs a frame's worth of error anyway.)
-
-**Flight speed is that missile type's own `mobjinfo.speed`.** For a missile that field is plain
-fracunits *per tic*, so the conversion is `× 35`: imp/cacodemon 350, baron/hell knight 525, mancubus
-700, arachnotron 875, revenant's `MT_TRACER` 350, cyberdemon's `MT_ROCKET` 700, lost soul's
-`SKULLSPEED` 700. Having these eyeballed was a shipped bug across the whole table, worst on the
-revenant: 750 against vanilla's 350, i.e. **faster than the player's own 500-unit/sec run**. A
-missile faster than the thing it's chasing cannot be evaded at all, which took away both halves of
-what a revenant missile is — a shot you *can* outpace, which then curves back and keeps coming.
-
-(The player's own `weapons.ts: WeaponDef.projectileSpeed` values take the same `mobjinfo.speed × 35`
-conversion — rocket 700, plasma 875, BFG 875. They were hand-picked once, which had the player's
-rocket flying at 1000 while the cyberdemon's identical `MT_ROCKET`, already converted here, flew at
-700.)
-
-**Direct-hit damage is one universal formula** (`PIT_CheckThing`): `(rand%8+1) × that missile type's
-own `mobjinfo.damage``. So `diceSides` is `8` for every projectile monster and only `diceMult`
-varies — imp 3, cacodemon 5, baron/hell knight 8, mancubus 8, arachnotron 5, revenant 10, cyberdemon
-20. The lost soul's `MF_SKULLFLY` contact damage (`AttackStats.charge`) is the same formula through
-the same code path with `MT_SKULL`'s own damage field (3). Melee dice are each monster's own
-`A_*Attack` roll instead: `A_TroopAttack` `(rand%8+1)*3`, `A_SargAttack` `(rand%10+1)*4`,
-`A_HeadAttack` `(rand%6+1)*10`, `A_BruisAttack` `(rand%8+1)*10`, `A_SkelFist` `(rand%10+1)*6`. An
-earlier version of this table had every monster's dice tuned softer.
-
-**Two monsters fire more than one pellet per call**: the shotgun guy's `A_SPosAttack` fires three
-`(rand%5+1)*3` pellets, and the spider mastermind fires the same function twice (`pellets: 3` on top
-of `shots: 2`). Each pellet is a genuinely separate traced bolt (`MonsterAttack.bullets` carries one
-damage roll per bullet, and `MonsterAttacks.resolveHitscan` gives each its own spread draw), so a
-burst lands partially. Summing them into one roll on one ray — which this engine used to do — is
-only equivalent while there is no spread, and with spread it is wrong in a way worse than the
-average suggests: it turns a shotgun blast into all-or-nothing 27 damage.
-
-All the pellets of one call do share a single **slope**, computed once from the aim before the
-volley, matching `A_SPosAttack`'s own `slope = P_AimLineAttack(...)` sitting above its loop. The
-same goes for the partial-invisibility fuzz (`applyShadowAim`): vanilla fuzzes `actor->angle` inside
-`A_FaceTarget`, so `bangle` is already fuzzed and every pellet spreads off that one fuzzed aim.
-
-Each bolt is traced out to the full `WEAPON_RANGE` (`shotPath`'s `range` parameter, separate from
-the target it takes its slope from — docs/combat.md § shotPath), not merely to the target, so a
-bullet the spread throws wide keeps going: it can still hit a wall or another monster *behind*
-whoever it was fired at, exactly as `P_LineAttack(..., MISSILERANGE, ...)` does. This is also why
-stray-bullet infighting picked up noticeably — before spread, no monster bullet ever missed.
-
-**Only the cyberdemon's rocket splashes**, confirmed by checking every monster fireball's own death
-state in `info.c` rather than assumed either way. `A_CyberAttack` spawns a real `MT_ROCKET`, whose
-death state `S_EXPLODE1` is the one monster-projectile death state in the game that calls
-`A_Explode`; every other fireball's death state has no action, so none of them ever call
-`P_RadiusAttack`. `AttackStats.projectile.splash` (`{radius: 128, damage: 128}`, vanilla's literal
-`P_RadiusAttack(thingy, thingy->target, 128)`, identical to the player's own rocket) is set only
-there. The splash still can't hurt the cyberdemon or spider mastermind, per `applyRadiusDamage`'s
-existing exemption.
-
-## The revenant's homing missile
-
-`AttackStats.projectile.homing`, `game/projectiles.ts`'s `advanceHoming` — vanilla's `A_Tracer`, the
-one monster projectile with a homing flight state. Every other fireball's fixed straight line is
-correct for it, not a shared simplification.
-
-**Not every revenant missile homes, and that is vanilla's own behavior** (per
-[doomwiki.org/wiki/Revenant](https://doomwiki.org/wiki/Revenant), since it isn't obvious from
-`p_enemy.c` alone): `A_Tracer` only turns and trails smoke on tics where the *global* counter
-`gametic & 3 == 0`, and a revenant's attack-state cycle keeps a fixed parity relative to that
-counter, so every missile a given revenant fires lands on the same side of the gate. A revenant is
-either a guided or an unguided shooter for a stretch of shots, not a fresh coin flip per shot, until
-a staggering hit (or its first wake) reshuffles it. This engine has no discrete tic clock to
-reproduce the gate, so `MonsterBody.homingBias` is a direct stand-in: a persistent coin flip per
-revenant, seeded on spawn and rerolled on wake and on a pain flinch, threaded into `fireAttack`.
-`Projectile.homing` — and so both the turning and the smoke — only ever attaches to a shot that won
-the roll; a shot that loses it is a plain `FATB` flying the ordinary straight line.
-
-`advanceHoming` turns the heading toward the target's *current* bearing by at most
-`REVENANT_TRACER_TURN_RATE_RAD` per second (vanilla's clamped `TRACEANGLE`, 16.875° every 4th tic,
-converted to a continuous rate — a smooth curve either way, unlike the AI clock where discreteness
-is load-bearing) and eases height toward the target's `TRACER_HOMING_Z_OFFSET`-above-feet point over
-the distance still separating them (the continuous equivalent of vanilla's `momz` spring, which
-paces itself off the same live distance and converges the same way without a persisted vertical
-velocity). A dead or missing target (`!dest || dest->health<=0`) leaves the missile on its current
-heading — it doesn't stop, retarget or fall. Because its path isn't the fixed ray every other
-projectile uses, `Projectile.homing` carries its own live `x`/`y`/`z`/`headingRad`.
-
-**A homing missile has no flight-distance budget**, unlike every straight projectile here. A
-straight shot's whole flight lies on the ray `shotPath` traced at launch, so `maxDist` is a correct
-stopping point known up front. A curving one leaves that ray almost immediately — looping back
-toward a target that sidestepped, which *is* the mechanic — so the wall the launch ray found says
-nothing about where it ends up; spending its distance against that budget detonated it mid-air,
-typically mid-turn on the way back around. Vanilla puts no lifetime or range limit on a missile
-either (`P_TryMove` tests each move against the lines it actually crosses), so
-`advanceHoming` checks each frame's step against the geometry that step really crossed
-(`world.ts: projectileStepBlocker`, the per-step counterpart to `shotPath`'s launch-time trace,
-reusing the identical `blocksShot` predicate at the height the step is at) and stops there, updating
-`Projectile.lineIndex` so a shoot-triggered special still fires on the right line. No safety cap
-stands behind that: every real map is enclosed, and capping it would reintroduce the mid-air
-detonation this removes.
-
-`P_ZMovement`'s floor/ceiling hit is **not** decided here — it is `ProjectileLayer.update`'s
-`hitGround`, applied uniformly to every monster missile (see below). A homing one needs it most: its
-height *eases* toward a target that can sit on a very different floor while its `x`/`y` curves over
-terrain `shotPath` never re-checked, so easing toward a lower target while passing over higher ground
-would sink the sprite into that floor. It used to be decided twice, once here and once there, and the
-copies disagreed on whether the far wall's shoot special still fires — it must not, since a missile
-stopped by the floor never reached that wall. Since this branch never accumulates `traveled` itself,
-`hitGround` and the wall check are the only things that end a homing flight short of a body.
-
-**A guided missile trails smoke; an unguided one doesn't** — the wiki's "the homing missiles can be
-distinguished by a gray smoke trail" is the entire visible tell, and gating it on
-`Projectile.homing` falls out for free. `advanceHoming` spawns vanilla's `MT_SMOKE` (which
-reuses the plain bullet-puff sprite `PUFF`, frames `B,C,B,C,D` per `S_SMOKE1`-`5`) every
-`SMOKE_TRAIL_INTERVAL`, the same 4-tic cadence `A_Tracer` gates the turn with. Vanilla also spawns a
-second, redundant `MT_PUFF` one step further behind at the same moment — cosmetically near-identical
-smoke from the same sprite, so reproducing only one loses nothing.
-
-## Monster projectiles in flight
-
-A monster projectile reuses the same `Projectile`/`ProjectileLayer.update` machinery the player's own
-rocket/plasma/BFG shots use, distinguished by a non-null `sourceId` (with the doomednum along as
-`sourceType` for the species check). Its arrival is re-checked every frame against the player's
-*live* position (`MONSTER_PROJECTILE_HIT_RADIUS`/`_HEIGHT`) and every other living monster it might
-clip (`monsterStruckBy`, `sameSpecies`-gated), so stepping behind cover or outrunning a slower
-fireball actually works.
-
-**The target sets the missile's slope and nothing else; the flight ends at a wall.** `P_SpawnMissile`
-fixes `momx`/`momy`/`momz` at launch — from `(dest->z - source->z)` over the launch distance — and
-the thing then flies on under its own momentum until `P_XYMovement`, `P_ZMovement` or
-`PIT_CheckThing` stops it. So `spawnMonsterShot` passes the target to `shotPath` for the slope and
-`World.mapSpan` for the distance — the two are separate parameters precisely so this can be said
-(see docs/combat.md § shotPath). **A missile has no range budget**: `MISSILERANGE` is
-`P_LineAttack`'s bound on a bullet, and lending it to missiles too made them burst in mid-air 2048
-units out, which is what NUTS.WAD's arachnotrons showed. Letting the target set both, as this engine
-earlier did, made `maxDist` the
-launch-time distance to the player, so **every missile burst exactly where the player had been
-standing when it was fired**, whether or not they were still there. With a cyberdemon's
-`{radius: 128, damage: 128}` splash that is a rocket you cannot dodge — it reads as homing, and as
-rockets going off in empty floor space, which is precisely what it was doing. Only the revenant's
-`MT_TRACER` actually homes (`AttackStats.projectile.homing`, `advanceHoming`).
-
-Because the slope now outlives the aim that set it, a monster missile also explodes on meeting the
-floor or ceiling (`ProjectileLayer.update`'s `hitGround`, vanilla's `P_ZMovement`), which is how a
-cyberdemon firing down from a ledge and missing puts its rocket into the ground instead of burrowing
-through it. One stopped that way triggers no shoot special — it never reached the wall whose
-`lineIndex` it carries. The test is one `World.sectorAt` per projectile per frame, shared with the
-sprite's light lookup, and covers homing missiles too rather than leaving them a second copy.
-
-The mancubus's fanned pair shares one slope for the volley — `target` is loop-invariant — and
-deflects only the heading, since `A_FatAttack1/2/3` rewrite `momx`/`momy` from the new angle after
-`P_SpawnMissile` and leave `momz` alone.
-
-**Both live arrival tests are gated on `hasLineOfSight`, and that gate is load-bearing.** The hit
-test is a fat 2D disc (40 units) plus ±128 height tolerance, and a projectile's flight *ends* at
-whatever wall `shotPath` found — so on the last frames before it bursts, anyone within that disc on
-the **far** side of that wall took a full direct hit through it. The trace runs **from the
-player/monster toward the projectile**, not the other way round: by then the impact point sits
-essentially *on* the wall, and `hasLineOfSight`'s own `SELF_HIT_MARGIN` would discard that crossing
-as a self-hit and report the wall it just stopped against as clear. Both checks sit **last** in
-their condition chains, so they only run for a candidate the cheap proximity tests already accepted.
-
 ## Infighting
 
 **Monsters fight each other**, by exactly vanilla's mechanism: nothing about being hurt is
@@ -604,7 +391,7 @@ level-wide special (a lowering floor, an exit) rather than anything AI-related �
 `MT_KEEN` (doomednum 72) and `MT_BOSSBRAIN` (88) are the two `MONSTER_TYPES` members with **no
 `MONSTER_STATS` entry**, and that is not an omission: neither has a `seestate`, `meleestate` or
 `missilestate` in `info.c`, so neither wakes, moves, chases or attacks in vanilla either. They are
-`MF_SOLID|MF_SHOOTABLE` targets that stand still, flinch and die. `monsters.ts`'s `INERT_SHOOTABLE`
+`MF_SOLID|MF_SHOOTABLE` targets that stand still, flinch and die. `monsters/defs.ts`'s `INERT_SHOOTABLE`
 holds what a `MonsterStats` would otherwise carry for them — the real `mobjinfo.radius` (16 for both,
 not the 24-unit `MONSTER_HIT_RADIUS` fallback) and the two sounds `A_Pain`/`A_Scream` play — and
 `ThingLayer.damage` has a matching branch that skips pain rolls, retargeting, knockback and
@@ -628,89 +415,14 @@ Boss death. One accepted simplification: vanilla runs it on the eleventh death f
 fires it at the death instant. The delay is purely cosmetic here, unlike the barrel's `A_Explode`
 delay, which is gameplay-relevant and *is* modelled.
 
-## The Icon of Sin
-
-Three doomednums and a new module, `game/icon.ts`. **Nothing about it is gated on the map's name** —
-vanilla's only gate is that the things exist, so a PWAD placing them gets identical behavior and
-every other map builds an inert `IconOfSin` whose `update` returns immediately.
-
-- **88, `MT_BOSSBRAIN`** — the shootable brain, an ordinary `PosedThing` handled by the
-  `INERT_SHOOTABLE` path above (250 health, `bospn`/`bosdth`, both **unattenuated**: its
-  `A_BrainPain`/`A_BrainScream` call `S_StartSound(NULL, …)`, so it is heard from anywhere on the
-  map). It is the one `MONSTER_TYPES` member deliberately *not* in `COUNTKILL_TYPES`, matching
-  `info.c`. Its "death frames" are the single held `BBRN A`: `S_BRAIN_DIE1`-`4` never change frame,
-  they just burn 120 tics while the cascade runs.
-- **89, `MT_BOSSSPIT`** — the invisible eye that does the spitting.
-- **87, `MT_BOSSTARGET`** — the spawn spots cubes fly to.
-
-87 and 89 are `MF_NOBLOCKMAP|MF_NOSECTOR` with no sprite, so both stay out of `THING_SPRITES` and are
-read straight off `map.things`, the same way `SpecialsController.findTeleportDestination` reads
-teleport landings.
-
-The sequence, all timings off `info.c`'s `states[]`: the eye wakes (`eyeNotices`, below), collects
-every type-87 thing into `braintargets` in map order and shouts `bossit`. 181 tics later it
-spits its first cube, then one every 150 tics, cycling `braintargeton` round-robin through the spots.
-`A_BrainSpit`'s `easy` toggle is reproduced: on skills 1-2 (vanilla's `sk_baby`/`sk_easy`) every
-other spit is skipped, halving the rate.
-
-### Waking the eye
-
-`eyeNotices` stands in for idle `A_Look`, since an `MF_NOSECTOR` thing with no `PosedThing` has
-nothing for `tryWake` to run on. Both of `A_Look`'s paths are reproduced: its sector's sound target
-(`World.isSoundAlerted`, checked first because it is a Set lookup) and line of sight. No FOV cone,
-though vanilla's `A_Look` passes `allaround == false` — gating the whole boss on the facing angle a
-mapper happened to give a thing that draws nothing is not worth reproducing.
-
-**The sight origin must be `MT_BOSSSPIT`'s own, not a player-shaped one.** `hasLineOfSight` lifts
-whatever `z` it is handed by `PLAYER_HEIGHT * 0.75`, which is the right approximation everywhere
-else in the game. The eye is 32 tall standing on a floor at 384 under a ceiling at 416, so that lift
-sights it from 426 — *above its own ceiling*, with the wedge out of the slot pinched shut against
-almost the whole arena. `SHOOTER_SIGHT_Z` (`height - (height >> 2)`, `P_CheckSight`'s own
-`sightzstart`) minus that lift cancels it back out and puts the origin at 408, inside the slot.
-
-The difference is the entire boss fight, measured on MAP30: from 426 the eye sees only the northern
-half of the pit, so it woke on sound or on a player riding a lift up to slot height. From 408 it sees
-the map's one teleport landing (2880, 352) and 12 of the 13 spawn spots, i.e. it wakes the moment the
-player arrives, which is what vanilla does.
-
-### The spawn cube
-
-`MT_SPAWNSHOT` flies at 350 units/sec (`mobjinfo.speed` of 10 per tic) and is
-`MF_NOBLOCKMAP|MF_NOCLIP|MF_NOGRAVITY` — it passes through all geometry and collides with nothing.
-That is exactly why it is **not** a `ProjectileLayer` projectile: that layer exists to resolve
-wall-blocked flight and damage, and a cube does neither. It is a local record in `icon.ts` with its
-own `SpriteAnimator`, drawn through `EffectLayer.batchSprite` the same way `ProjectileLayer.update`
-draws a missile, at full light (vanilla's fullbright frame bit). `boscub` replays once per four-frame
-cycle, since `A_SpawnSound` sits on the looping `S_SPAWN1` alone.
-
-One divergence: vanilla decides arrival by a launch-time tic countdown computed from the **y** delta
-only (`(targ->y - mo->y) / momy / state tics`), a quirk that happens to work on MAP30's layout.
-Flying to the target point and arriving when the distance runs out is equivalent there and robust
-anywhere else.
-
-On arrival, `A_SpawnFly` spawns the `MT_SPAWNFIRE` puff (`FIRE A`-`H`), plays `telept`, and rolls one
-`P_Random()` against `thingdefs.ts`'s `SPAWN_CUBE_MONSTERS` — eleven ordered upper bounds summing to
-exactly 256, transcribed from `p_enemy.c`'s if/else chain. The weights are deliberately lopsided (an
-imp is 50/256, an arch-vile 2/256) and stay that way. `ThingLayer.spawnMonster` creates the monster
-already alerted and **telefrags** whatever was standing there, so a spawn spot is lethal to stand on
-— docs/combat.md § Telefrag.
-
-A cube-spawned monster increments `stats.kills` when killed but never `stats.totalKills`, which is
-fixed at load by the map-thing loop. **Kills can exceed 100% on MAP30**; that is vanilla, whose
-`totalkills` comes from `P_SpawnMapThing` alone, and the same quirk arch-vile resurrections already
-produce.
-
-### Dying
-
-`A_BrainScream` fires on the brain's death: `bosdth` unattenuated, plus a row of explosions from
-`x-196` to `x+320` in steps of 8 at `y-320`, each at `128 + rnd*2` above the floor, drawn as the
-rocket's own `MISL B`-`D` at 10 tics a frame. `A_BrainExplode`'s follow-up bursts (±510 random x)
-re-fire on a timer until the exit lands — vanilla's chain is genuinely unbounded and only stops
-because the level ends underneath it, so bounding it on the same timer is how that is reproduced
-without an ever-growing effect list. 120 tics after death `A_BrainDie` calls `G_ExitLevel`, which
-reaches the same `onExit` callback every other exit in the engine uses.
-
 ## The arch-vile
+
+`src/game/monsters/vile.ts` — the one type with enough of its own behavior to warrant a file. It
+holds `tryRaiseCorpse` (called from `runChaseCall`), `resolveVileBlast`/`spawnWindupFire`/
+`vileFlameFor` (called from `MonsterAttacks`), and the vile's constants. Two exceptions stay out of
+it and say so at the declaration: the fire-time sight recheck and the `'vileWindup'` return remain
+one-line branches in `ai.ts`, and `VILE_KNOCKUP_SPEED` lives in `defs.ts` because `MONSTER_STATS`
+reads it (docs/monsterattacks.md § Resolving an attack).
 
 Both signature mechanics are modeled, confirmed against `p_enemy.c`/`info.c`.
 
@@ -790,10 +502,10 @@ player can use. `beginRangedAttack` reports a fourth, purely-cosmetic `MonsterAt
 `'vileWindup'` rather than at the blast landing, matching vanilla's timing (`S_VILE_ATK1`-`ATK10`
 play across the entire missilestate chain).
 
-`MonsterAttacks.spawnWindupFire` reuses `EffectLayer`'s ordinary one-shot `spawn`/`addImpact` machinery with
+`MonsterAttacks.spawnWindupFire` reuses `SpriteFxLayer`'s ordinary one-shot `spawn`/`addImpact` machinery with
 two differences: its `lifetime` is overridden to `VILE_WINDUP_TRACK_SECONDS` (read from
 `MONSTER_STATS` rather than duplicated) instead of one pass through its frames, and `OneShotEffect`
-gained `followTargetId`/`vileSourceId` — `EffectLayer` re-derives `x`/`y`/`z` every frame from
+gained `followTargetId`/`vileSourceId` — `SpriteFxLayer` re-derives `x`/`y`/`z` every frame from
 `fireFrontOf(target)` (vanilla's `dest->x + 24*cos(dest->angle)` etc., keyed off the *target's*
 own `MonsterRef.angle`/`Player.angle`), but only while `World.hasLineOfSight(vile, target)` holds —
 matching `A_Fire`'s own `P_CheckSight` gate including its failure behavior: the flame freezes where

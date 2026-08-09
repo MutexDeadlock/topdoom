@@ -1,8 +1,8 @@
 # Sound
 
 `src/audio/sfx.ts`, `src/audio/audio.ts`, `src/wad/sound.ts`, plus the emitter calls in
-`game.ts`, `game/things.ts`, `game/monsters.ts`, `game/specials.ts`, `game/weapons.ts`,
-`game/projectiles.ts` and `game/effects.ts`
+`game.ts`, `game/things.ts`, `game/monsters/ai.ts`, `game/monsters/attacks.ts`, `game/specials.ts`, `game/weapons.ts`,
+`game/projectiles.ts` and `game/spritefx.ts`
 
 Every sound comes out of the loaded WAD, and every sound's *timing and choice* comes from
 `linuxdoom-1.10` — `sounds.c`'s `S_sfx[]` table, `info.c`'s `mobjinfo` fields, and the
@@ -86,17 +86,17 @@ emitter, so a headless script or a browser with no `AudioContext` needs no branc
 
 | Where | Plays |
 |---|---|
-| `game/monsters.ts` | The idle grunt, the melee swing, a hitscan shot, an attack windup, footsteps; and from `MonsterAttacks`, the arch-vile's `flamst` warning flame and `barexp` blast |
+| `game/monsters/ai.ts` | The idle grunt, the melee swing, a hitscan shot, an attack windup, footsteps; and from `MonsterAttacks`, the arch-vile's `flamst` warning flame and `barexp` blast |
 | `game/things.ts` | Waking, pain, death (and a barrel's explosion, and a resurrection) |
 | `game/specials.ts` | Doors, lifts, floors, ceilings, crushers, switches, a locked door's grunt |
 | `game/weapons.ts` | The chainsaw's bring-up and idle rattle (`updateSounds`) |
-| `game/effects.ts` | `telept`, on both fog puffs of every teleport |
+| `game/spritefx.ts` | `telept`, on both fog puffs of every teleport |
 | `game.ts` | Weapon fire, the player's own pain/death/landing, pickups, entering a secret |
 | `game/projectiles.ts` | Projectile launches and impacts |
 
 ## Monsters
 
-`MonsterStats.sounds` (`game/monsters.ts`) carries each type's `mobjinfo` sound fields
+`MonsterStats.sounds` (`game/monsters/defs.ts`) carries each type's `mobjinfo` sound fields
 verbatim — `seesound`, `activesound`, `painsound`, `deathsound` — plus the sounds vanilla's
 action functions play, mapped onto the moments this engine has for them. Rules worth knowing:
 
@@ -135,7 +135,7 @@ action functions play, mapped onto the moments this engine has for them. Rules w
 `WeaponDef.fireSound` is played **once per trigger pull, not per pellet** — `A_FireShotgun`
 plays `shotgn` once for all seven. It is `null` for the rocket launcher and plasma rifle,
 which have no weapon sound in vanilla at all: the launch sound is the missile's own
-`mobjinfo.seesound`, from `game/effectdefs.ts`'s `PROJECTILE_SOUNDS`, keyed by flight sprite as
+`mobjinfo.seesound`, from `game/spritefxdefs.ts`'s `PROJECTILE_SOUNDS`, keyed by flight sprite as
 `IMPACT_EFFECTS` is. The BFG is the one projectile weapon with its own sound (`MT_BFG`'s
 seesound is 0; `A_BFGsound` is a separate state action).
 
@@ -186,7 +186,7 @@ the sector's linedefs (`P_GroupLines`), not a polygon centroid — computed lazi
   instead, since reproducing that bug would put the click anywhere on the map.
 - **A locked door** grunts `oof` at full volume. With no message line in this engine, that
   grunt is the entire feedback that a key is missing.
-- **Teleports** play `telept` at both ends, from `EffectLayer.spawnTeleportFog` — which
+- **Teleports** play `telept` at both ends, from `SpriteFxLayer.spawnTeleportFog` — which
   `spawnTeleportPair` calls twice, so every teleport is heard at both ends whether it was a
   monster's trip or the player's.
 

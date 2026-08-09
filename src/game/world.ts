@@ -800,7 +800,7 @@ const SLIDE_EPSILON = 1e-6;
  * position actually reached. `forMonster`/`avoidDropoff` — see
  * `circleBlocked`; the player's own movement never passes either, and nothing
  * else calls this at all (vanilla's `P_SlideMove` is the player's alone —
- * monsters get `P_Move`'s all-or-nothing step, see `game/monsters.ts`).
+ * monsters get `P_Move`'s all-or-nothing step, see `game/monsters/ai.ts`).
  *
  * This is vanilla's `P_HitSlideLine`: the refused move is **projected onto the
  * blocking line's own direction** and retried, up to `SLIDE_ATTEMPTS` walls in
@@ -994,7 +994,7 @@ export interface ShotPath extends Pos3 {
  * monster's bullet passes `WEAPON_RANGE` (`P_LineAttack`'s `MISSILERANGE`), a
  * player's free bullet the longer `PLAYER_WEAPON_RANGE`, and a missile — which
  * has no range budget in vanilla at all — `World.mapSpan`. See docs/combat.md
- * § Range and docs/monsters.md § Hitscan vs. projectile.
+ * § Range and docs/monsterattacks.md § Hitscan vs. projectile.
  *
  * `lockedOn` (default: true whenever `target` is given) switches blocking from
  * `blocksShot`'s single fixed ray to a **slope wedge**, vanilla's

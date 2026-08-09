@@ -87,7 +87,7 @@ one — every map thing (items, decorations, corpses, barrels, monster drops, do
 chasing monsters alike) reads `p.sector?.light` at the moment it's batched, not at spawn time. The
 same discipline applies to anything that moves through space across a frame: `ProjectileLayer.update`
 re-resolves `world.sectorAt` at the projectile's *current* position every frame rather than reusing
-its launch-sector light, and the arch-vile's warning flame (`EffectLayer`'s `followTargetId` case)
+its launch-sector light, and the arch-vile's warning flame (`SpriteFxLayer`'s `followTargetId` case)
 re-resolves it every time it re-derives its position from the target it's tracking. A stationary
 one-shot effect (blood, puffs, teleport fog, impact explosions) only needs the single lookup `spawn`
 already does, since it never moves and its lifetime is short enough that a mid-flight relight isn't
@@ -265,7 +265,7 @@ material) lookup with **no `THREE.Object3D` of its own**. `SpriteActor` wraps on
 for the **player**, now the only sprite that genuinely wants one: there is exactly one of it, and it
 needs `setOpacity` (partial invisibility), which has no per-instance equivalent in a batch.
 Everything else holds a bare `SpriteAnimator` and feeds a `SpriteBatch` — `PosedThing` for map things,
-and `EffectLayer`'s batch (`game/effects.ts`) for projectiles, impact explosions, teleport fog and
+and `SpriteFxLayer`'s batch (`game/spritefx.ts`) for projectiles, impact explosions, teleport fog and
 the revenant's smoke trail. Because a batched thing has no mesh of its own, `PosedThing.visible` replaces what used
 to be read off `mesh.visible`, and `ThingLayer.pickMonster` routes its auto-aim raycast through
 `SpriteBatch.raycast`, which maps an `instanceId` hit back to the owning thing. That raycast skips

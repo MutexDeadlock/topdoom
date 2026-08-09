@@ -19,12 +19,12 @@ import {
   TFOG_FRAME_SECONDS,
   TFOG_SPAWN_OFFSET,
   type OneShotEffect,
-} from './effectdefs.ts';
+} from './spritefxdefs.ts';
 import type { Placement, Pos3 } from '../types.ts';
 
 /**
  * Where the arch-vile's warning flame should sit this frame, or null if it
- * should stay put — see `EffectLayer.updateImpacts`. Resolved by the caller
+ * should stay put — see `SpriteFxLayer.updateImpacts`. Resolved by the caller
  * because it depends on live monster/player state this layer has no reason to
  * know about.
  */
@@ -43,7 +43,7 @@ export type VileFlameResolver = (vileId: number, targetId: number | null) => Pos
  * has no per-instance equivalent. See docs/combat.md § Effects and their
  * batching.
  */
-export class EffectLayer {
+export class SpriteFxLayer {
   private scene: THREE.Scene;
   private spriteBank: SpriteBank;
   private spriteMaterials: SpriteMaterialCache;

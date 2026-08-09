@@ -54,7 +54,7 @@ vanilla-table invariants. Deliberately **not** covered yet, and why:
   and a `FogOfWar`, with the whole mover state machine (`sectorActive`, `tickDoor`, `tickLift`, the
   `trigger*` guards) private. This is the biggest known gap. Reaching it means extracting the
   per-mover tick into pure `(state, dt) → state` functions first.
-- **`ProjectileLayer` / `EffectLayer`** — every `spawn*` short-circuits on `SpriteAnimator.resolve`,
+- **`ProjectileLayer` / `SpriteFxLayer`** — every `spawn*` short-circuits on `SpriteAnimator.resolve`,
   so a stubbed run would test the stubs. Test at `shotPath` level instead; `playerShotRange` exists
   as a separate exported function precisely so the range selection is reachable without the layer.
 - **`src/render/` (anything constructing THREE objects), all of `src/ui/`, `main.ts`, `game.ts`,

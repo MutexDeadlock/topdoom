@@ -5,7 +5,7 @@ import type { Placement, Pos2, Pos3 } from '../types.ts';
 /** Vanilla DOOM values, in map units. */
 export const PLAYER_RADIUS = 16;
 export const PLAYER_HEIGHT = 56;
-/** Vanilla `MT_PLAYER`'s own `mobjinfo.mass` — feeds `game.ts`'s use of `game/monsters.ts: thrustSpeed` for the knockback `Player.applyKnockback` receives. */
+/** Vanilla `MT_PLAYER`'s own `mobjinfo.mass` — feeds `game.ts`'s use of `game/monsters/defs.ts: thrustSpeed` for the knockback `Player.applyKnockback` receives. */
 export const PLAYER_MASS = 100;
 
 /**
@@ -13,7 +13,7 @@ export const PLAYER_MASS = 100;
  * is projected onto for aiming (`game.ts`'s `camera.pointerToPlane`) — the two
  * have to match, or a tracer/projectile would visibly start from a different
  * height than where the crosshair appears to be. A monster's own equivalent is
- * `game/monsters.ts`'s `MONSTER_FIRE_HEIGHT`.
+ * `game/monsters/defs.ts`'s `MONSTER_FIRE_HEIGHT`.
  */
 export const AIM_HEIGHT_OFFSET = 32;
 
@@ -61,7 +61,7 @@ export const HARD_LANDING_SPEED = Math.sqrt(2 * GRAVITY * 32);
 /**
  * Vanilla's own per-tic XY friction, `FRICTION = 0xE800/0x10000` — see
  * `game/things.ts`'s identical constant (that file can't import this one
- * without a circular dependency, since `game/monsters.ts` already imports
+ * without a circular dependency, since `game/monsters/ai.ts` already imports
  * `GRAVITY` from here) for the full doc on why `applyKnockback` raises it to
  * the `dt*35` power rather than converting it to a continuous rate.
  */
@@ -168,7 +168,7 @@ export class Player implements Pos3 {
   }
 
   /**
-   * The arch-vile's knockback (`game/monsters.ts`'s `AttackStats.blast`,
+   * The arch-vile's knockback (`game/monsters/defs.ts`'s `AttackStats.blast`,
    * vanilla's `A_VileAttack` momz launch) — the one way `velZ` ever goes
    * positive. A bare velocity set wouldn't be enough: `update`'s airborne
    * branch only integrates gravity while `z > groundFloor`, and immediately
@@ -198,7 +198,7 @@ export class Player implements Pos3 {
   /**
    * `applyKnockback`'s direction half: points `speed` away from (`fromX`,
    * `fromY`) and applies it. The caller supplies the magnitude, since that
-   * comes from `monsters.ts: thrustSpeed` against a per-victim `mass` this
+   * comes from `monsters/defs.ts: thrustSpeed` against a per-victim `mass` this
    * class has no business knowing — `ThingLayer.damage` is the monster/barrel
    * twin of this, doing the identical arithmetic for its own bodies. See
    * docs/movement.md § Knockback.

@@ -146,11 +146,11 @@ export const THING_SPRITES: Record<number, string> = {
  * Doomednums of the "Monsters" block above — the things auto-aim (game/weapons.ts's
  * click-to-target, wired up in game.ts's `ThingLayer.pickMonster`) is willing to
  * snap a shot onto, minus `NO_AUTO_AIM_TYPES` below, and the set
- * `game/monsters.ts`'s AI ticks. This table only
+ * `game/monsters/ai.ts`'s AI ticks. This table only
  * decides which doomednums count as a monster at all (for targeting, AI, and
  * every other `MONSTER_TYPES.has(...)` check across the game/ tree) — the AI
  * behavior itself (waking, chasing, attacking, infighting) lives in
- * `game/monsters.ts`, not here.
+ * `game/monsters/ai.ts`, not here.
  */
 export const MONSTER_TYPES = new Set([
   3004, 9, 3001, 3002, 58, 3006, 3005, 3003, 69, 7, 16, 71, 65, 66, 67, 68, 64, 84, 72, 88,
@@ -403,7 +403,7 @@ export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
   // S_BRAIN_DIE1-4 all hold BBRN frame 0 — the brain has no death art at all,
   // it just sits there for 120 tics while A_BrainScream detonates around it.
   // Listed anyway so `damage()` holds the sprite instead of hiding it, and so
-  // `deathFrameCount` is 1 rather than 0. game/icon.ts owns the rest.
+  // `deathFrameCount` is 1 rather than 0. game/iconofsin.ts owns the rest.
   88: ['A'], // BBRN
 };
 
@@ -486,7 +486,7 @@ export const MONSTER_ATTACK_FRAMES: Record<number, string[]> = {
  * `S_HEAD_PAIN3` genuinely is a second, distinct recoil frame — confirmed
  * against the WAD, not an accident of the derivation. `ThingLayer.damage`
  * only plays this when a hit actually rolls past the monster's own
- * `painChance` (`game/monsters.ts`) — a hit that fails the roll flinches by
+ * `painChance` (`game/monsters/defs.ts`) — a hit that fails the roll flinches by
  * vanilla rule, not just by art.
  */
 export const MONSTER_PAIN_FRAMES: Record<number, string[]> = {
@@ -682,7 +682,7 @@ export const THING_ANIM_FRAMES: Record<number, { frames: string[]; frameSeconds:
  * the rocket launcher's own splash (`weapons.ts`'s `rocketLauncher.splash`).
  * Table data, so it lives here rather than with the barrel's runtime state in
  * `things.ts`: that keeps `combat.ts`'s import of `things.ts` type-only, which
- * is what lets `monsters.ts` reach `applyRadiusDamage` without a cycle.
+ * is what lets `monsters/vile.ts` reach `applyRadiusDamage` without a cycle.
  */
 export const BARREL_SPLASH_RADIUS = 128;
 export const BARREL_SPLASH_DAMAGE = 128;

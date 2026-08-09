@@ -2,7 +2,7 @@ import type { DoomMap } from '../wad/map.ts';
 import type { Pos2 } from '../types.ts';
 import type { World } from './world.ts';
 import type { ThingLayer } from './things.ts';
-import { MONSTER_HIT_HEIGHT } from './monsters.ts';
+import { MONSTER_HIT_HEIGHT } from './monsters/defs.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import { CRUSH_DAMAGE } from '../wad/specials.ts';
 

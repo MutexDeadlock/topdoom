@@ -1,6 +1,6 @@
 # Movement, collision and physics
 
-`src/game/world.ts`, `src/game/player.ts`, `src/game/monsters.ts`, `src/game/things.ts`
+`src/game/world.ts`, `src/game/player.ts`, `src/game/monsters/ai.ts`, `src/game/things.ts`
 
 ## Collision (`world.ts`)
 
@@ -197,7 +197,7 @@ Vanilla calls `P_DamageMobj` with a null inflictor for damage floors and crusher
 whole thrust block — reproduced here simply by never passing a `fromX`/`fromY` at those two call
 sites (`applyCrushDamage`/`updateDamageFloor`), rather than a special-cased exemption.
 
-**`monsters.ts: thrustSpeed(damage, mass)`** is the shared formula (`(damage/8) * (100/mass) * 35` —
+**`monsters/defs.ts: thrustSpeed(damage, mass)`** is the shared formula (`(damage/8) * (100/mass) * 35` —
 the `×35` the same "vanilla's per-tic figure survives conversion intact" reasoning `MonsterStats.speed`
 relies on), fed a real per-species `mass` from `info.c`'s `mobjinfo` table for all 18 monster types:
 mostly 100, but 400 for a demon/cacodemon/pain elemental, 500 for a revenant/arch-vile, 600 for an
@@ -221,7 +221,7 @@ The player's half of that arithmetic is `Player.applyDamageThrust(speed, fromX, 
 iterating per-body with a per-type `mass`. **The magnitude stays with the caller** either way — a
 victim's `mass` (`MonsterStats.mass`, `BARREL_MASS`, `PLAYER_MASS`) is not something `Player` has any
 reason to know, and importing `thrustSpeed` into `player.ts` would be a cycle besides, since
-`monsters.ts` imports `player.ts`.
+`monsters/ai.ts` imports `player.ts`.
 
 Every call site threads its own natural inflictor position: the player's position for a hitscan pellet
 or melee swing, the projectile's live position at the moment it lands for a rocket/fireball (matching

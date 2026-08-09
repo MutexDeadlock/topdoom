@@ -6,8 +6,8 @@ import {
   MONSTER_STATS,
   meleeReachesVertically,
   meleeThreshold,
-  stepMonsterAI,
-} from '../../src/game/monsters.ts';
+} from '../../src/game/monsters/defs.ts';
+import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { hasLineOfSight } from '../../src/game/world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { loadPinky, type PinkyFixture, type PinkyMap } from '../fixtures/pinky.ts';

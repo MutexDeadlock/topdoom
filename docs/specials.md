@@ -197,7 +197,7 @@ unrelated lines along the way. `lastTeleport` is set inside `trigger` and consum
 
 Vanilla also spawns a one-shot `MT_TFOG` puff at both ends (where the player stood, and 20 units ahead
 of the landing spot along its facing). That isn't a real map `Thing`, so it isn't modeled through
-`ThingLayer` — the pair comes from `EffectLayer.spawnTeleportPair` (game/effects.ts), which owns the
+`ThingLayer` — the pair comes from `SpriteFxLayer.spawnTeleportPair` (game/spritefx.ts), which owns the
 20-unit offset so the player's trip and a monster's can't drift apart; only the landing `z` differs
 between the two callers, and each passes its own. Each puff is a transient `OneShotEffect` playing
 through the `TFOG` sprite's frames (`A`-`J`, confirmed against the actual
@@ -406,8 +406,8 @@ added to `things.ts`'s `DEATH_NOTIFY_TYPES` rather than to `BOSS_DEATH_TYPES` �
 are what the `default` branch maps over to build the "any of the five exits on map 8" row, which must
 not pick Keen up. The `open` kind is `EV_DoDoor`'s ordinary `VDOORSPEED` open-and-stay, distinct from
 E4M6's `blazeOpen`. The Icon of Sin (88) is in `DEATH_NOTIFY_TYPES` too but has no row here at all:
-`A_BrainDie` exits the level directly rather than through a tag, and `game/icon.ts` owns it — see
-docs/monsters.md § The Icon of Sin.
+`A_BrainDie` exits the level directly rather than through a tag, and `game/iconofsin.ts` owns it — see
+docs/iconofsin.md.
 
 **A boss-death tag has no triggering linedef, and `computeMovableSectors` has to be told.** That
 function builds the set of sectors pulled out of the static render batch by scanning sector specials

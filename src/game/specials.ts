@@ -125,7 +125,7 @@ const KEEN_DOOR_TAG = 666;
  *
  * Commander Keen's own trigger is appended to every map's table, for the reason at `KEEN_TYPE`
  * above. The Icon of Sin has no entry here at all: `A_BrainDie` exits the level directly rather
- * than through a tag, and `game/icon.ts` owns it.
+ * than through a tag, and `game/iconofsin.ts` owns it.
  */
 function bossDeathTriggersFor(mapName: string): BossDeathTrigger[] {
   const keen: BossDeathTrigger = { type: KEEN_TYPE, action: { kind: 'open', tag: KEEN_DOOR_TAG } };

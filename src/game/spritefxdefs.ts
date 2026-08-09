@@ -47,7 +47,7 @@ export interface OneShotEffect extends Pos3 {
 
 /** Color of a hitscan tracer line (render/tracer.ts) — a hot yellow-white, like a vanilla muzzle flash. */
 export const TRACER_COLOR = 0xfff2a8;
-/** Color of a monster's ranged-attack tracer (game/monsters.ts) — a hostile red, distinct from the player's own tracer color above. */
+/** Color of a monster's ranged-attack tracer (game/monsters/attacks.ts) — a hostile red, distinct from the player's own tracer color above. */
 export const MONSTER_TRACER_COLOR = 0xff4433;
 
 /**
@@ -74,7 +74,7 @@ export const IMPACT_FRAME_SECONDS = 4 * DOOM_TIC;
  * A projectile's impact explosion, keyed by its flight sprite — from
  * `linuxdoom-1.10`'s `info.c` state tables. `MANF` exploding into the
  * *rocket's* `MISL` frames is a genuine vanilla oddity, not a simplification
- * here (docs/monsters.md § Hitscan vs. projectile). Purely cosmetic: this
+ * here (docs/monsterattacks.md § Hitscan vs. projectile). Purely cosmetic: this
  * plays where a shot reached `shotPath`'s distance; what it actually damaged
  * is resolved separately.
  */
@@ -191,7 +191,7 @@ export const VILE_FIRE_OFFSET = 24;
 /**
  * The revenant missile's turn rate — vanilla's `A_Tracer` turns by `TRACEANGLE`
  * (`0xc000000`, 16.875°) every 4th tic, converted to a continuous rate. See
- * docs/monsters.md § The revenant's homing missile.
+ * docs/monsterattacks.md § The revenant's homing missile.
  */
 export const REVENANT_TRACER_TURN_RATE_RAD = (16.875 * Math.PI) / 180 / (4 * DOOM_TIC);
 
@@ -202,8 +202,8 @@ export const TRACER_HOMING_Z_OFFSET = 40;
  * The revenant missile's trailing smoke (vanilla's `MT_SMOKE`, spawned inside
  * `A_Tracer`), which only a shot that won its `homingBias` roll trails.
  * `MT_SMOKE` reuses the `PUFF` sprite; frames B,C,B,C,D (`S_SMOKE1`-`5`) from
- * `info.c`, each held 4 tics. See docs/monsters.md § The revenant's homing
- * missile.
+ * `info.c`, each held 4 tics. See docs/monsterattacks.md § The revenant's
+ * homing missile.
  */
 export const SMOKE_TRAIL_FRAMES = ['B', 'C', 'B', 'C', 'D'];
 export const SMOKE_TRAIL_FRAME_SECONDS = 4 * DOOM_TIC;
@@ -264,7 +264,7 @@ export interface Projectile {
    * path isn't the fixed origin+angle+distance line every other projectile
    * flies, so it carries its own live position/heading. `targetId` is `null`
    * for the player. A `homing` object existing at all means this shot won its
-   * `homingBias` roll. See docs/monsters.md § The revenant's homing missile.
+   * `homingBias` roll. See docs/monsterattacks.md § The revenant's homing missile.
    */
   homing?: { targetId: number | null; x: number; y: number; z: number; headingRad: number; smokeTimer: number };
 }

@@ -7,7 +7,7 @@ import { SPAWN_CUBE_MONSTERS } from './thingdefs.ts';
 import { TELEFRAG_DAMAGE } from './things.ts';
 import { triangularDraw } from './weapons.ts';
 import type { CombatContext } from './combat.ts';
-import type { EffectLayer } from './effects.ts';
+import type { SpriteFxLayer } from './spritefx.ts';
 import { SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import type { Skill } from './skill.ts';
 import type { Pos3 } from '../types.ts';
@@ -128,12 +128,12 @@ interface SpawnCube extends Pos3 {
  * and death handled by `ThingLayer`'s `INERT_SHOOTABLE` branch. All this class adds is what happens
  * *after* it dies, which arrives through the same `onBossDeath` callback `A_BossDeath` uses.
  *
- * See docs/monsters.md § The Icon of Sin.
+ * See docs/iconofsin.md.
  */
 export class IconOfSin {
   private map: DoomMap;
   private ctx: CombatContext;
-  private effects: EffectLayer;
+  private effects: SpriteFxLayer;
   private spriteBank: SpriteBank;
   private spriteMaterials: SpriteMaterialCache;
   private sfx: SoundEmitter;
@@ -162,7 +162,7 @@ export class IconOfSin {
   constructor(
     map: DoomMap,
     ctx: CombatContext,
-    effects: EffectLayer,
+    effects: SpriteFxLayer,
     spriteBank: SpriteBank,
     spriteMaterials: SpriteMaterialCache,
     skill: Skill,
@@ -194,7 +194,7 @@ export class IconOfSin {
 
   /**
    * One frame of the whole sequence. **Must run inside the caller's
-   * `EffectLayer.beginFrame`/`endFrame` pair**: the cubes draw through that batch, exactly as
+   * `SpriteFxLayer.beginFrame`/`endFrame` pair**: the cubes draw through that batch, exactly as
    * `ProjectileLayer.update` does.
    */
   update(dt: number): void {

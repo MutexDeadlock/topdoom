@@ -63,12 +63,13 @@ those go in the scratchpad, never in `src/`.
 src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite + sound decoding
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards + their instanced batching, shot tracers, camera, viewport
-src/game/      spatial queries, collision, player controller, input, thing→sprite table,
-               thing/monster world state (AI + attack resolution, pickups, damage), fog of war,
-               inventory/pickups,
-               weapons and firing, shots in flight + splash, damage/death, projectile/effect
-               tables, transient effects (fog puffs, explosions, tracers), mover obstruction
-               + crush damage, damage floors + secrets, the Icon of Sin's cube spitter
+src/game/      spatial queries, collision, player controller, input, thing→sprite table, thing
+               world state (pickups, damage), fog of war, inventory/pickups, weapons and firing,
+               shots in flight + splash, damage/death, projectile/effect tables, transient
+               effects (fog puffs, explosions, tracers), mover obstruction + crush damage,
+               damage floors + secrets, the Icon of Sin's cube spitter
+src/game/monsters/   tables + record shapes (defs), chase/attack decisions (ai), attack resolution
+               (attacks), the arch-vile (vile)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
                WebAudio playback (channels, attenuation, pan, volume)
 src/ui/        start menu, HUD, screen tints/pain flash, DEVMODE hud + profiling overlay
@@ -94,7 +95,9 @@ several record rules that look like accidents and aren't.
 | [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, wall occlusion fading, camera orbit, sprites and their batching |
 | [docs/movement.md](docs/movement.md) | Collision, `groundFloor`, `slideMove`, straferunning, gravity/falling, knockback |
 | [docs/combat.md](docs/combat.md) | Weapons, `shotPath`, auto-aim, `hasLineOfSight`, splash, the BFG, monster/player death, barrels |
-| [docs/monsters.md](docs/monsters.md) | Waking, chase pathing, attacks, infighting, per-type quirks, spatial indexing |
+| [docs/monsters.md](docs/monsters.md) | Waking, chase pathing, the decision to attack, infighting, per-type quirks, spatial indexing |
+| [docs/monsterattacks.md](docs/monsterattacks.md) | Realizing a fired attack: hitscan vs. projectile, monster missiles in flight, the revenant's homing |
+| [docs/iconofsin.md](docs/iconofsin.md) | MAP30's boss: the spitter, the spawn cube, the brain's death |
 | [docs/items.md](docs/items.md) | Pickups, inventory, keys/locked doors, the HUD, powerups, screen effects |
 | [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, the donut, damage floors, scrolling textures |
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
@@ -117,7 +120,7 @@ of these, cite where it came from.
 
 **A deliberate deviation is fine; an undocumented one is not.** Where this engine knowingly departs
 from vanilla, the departure says so at the declaration, names what it follows instead, and explains
-why — `meleeReachesVertically` (`game/monsters.ts`, follows ZDoom's `MF5_NOVERTICALMELEERANGE`
+why — `meleeReachesVertically` (`game/monsters/defs.ts`, follows ZDoom's `MF5_NOVERTICALMELEERANGE`
 rather than vanilla's no-vertical-check melee), `PLAYER_WEAPON_RANGE`, `CHANNELS` = 16, and a
 missing sound lump being silent rather than `DSPISTOL`. The rule above bans *guessing* at vanilla,
 not choosing against it on purpose.

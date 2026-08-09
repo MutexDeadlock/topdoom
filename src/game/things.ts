@@ -30,21 +30,17 @@ import {
 } from './thingdefs.ts';
 import { isAmbush, isMultiplayerOnly, spawnsAtSkill, type Skill } from './skill.ts';
 import {
-  commitTarget,
   DI_NODIR,
   INERT_SHOOTABLE,
   MONSTER_FIRE_HEIGHT,
   MONSTER_HIT_HEIGHT,
   MONSTER_HIT_RADIUS,
   MONSTER_STATS,
-  reactToDamage,
-  shouldRetarget,
-  stepMonsterAI,
   thrustSpeed,
-  tryWake,
   type MonsterAttackEvent,
   type RaiseCandidate,
-} from './monsters.ts';
+} from './monsters/defs.ts';
+import { commitTarget, reactToDamage, shouldRetarget, stepMonsterAI, tryWake } from './monsters/ai.ts';
 import { circleBlocked, type ThingBlocker } from './world.ts';
 import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import { SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from '../render/sprites.ts';
@@ -181,7 +177,7 @@ interface PosedThing extends Pos3 {
    */
   dropped: boolean;
 
-  // --- Monster AI (game/monsters.ts) — inert defaults for every non-monster PosedThing. ---
+  // --- Monster AI (game/monsters/ai.ts) — inert defaults for every non-monster PosedThing. ---
   /** True once this monster has spotted the player and started chasing (`update`'s throttled wake check, LOOK_INTERVAL). */
   alerted: boolean;
   /**
@@ -214,7 +210,7 @@ interface PosedThing extends Pos3 {
   /**
    * Seconds since this monster's last idle look-around. Separate from the AI
    * timers above because it only ticks *before* the monster wakes, and
-   * `game/monsters.ts` has no business knowing the throttle exists.
+   * `game/monsters/ai.ts` has no business knowing the throttle exists.
    */
   lookTimer: number;
   /** Position at the end of the previous frame, so `crossLines` can test the segment this monster just walked. Mutated in place; never re-allocated. */
@@ -452,7 +448,7 @@ export interface ThingLayer {
    * Creates a fresh, already-awake monster of `type` at `at` and telefrags
    * whatever was standing there (`TELEFRAG_DAMAGE` to every overlapping body),
    * returning it — or null if the WAD carries no art for that doomednum.
-   * Vanilla's `A_SpawnFly` tail; the Icon of Sin's spawn cube (`game/icon.ts`)
+   * Vanilla's `A_SpawnFly` tail; the Icon of Sin's spawn cube (`game/iconofsin.ts`)
    * is the only caller.
    *
    * Only the *monster* half of the telefrag happens here: this layer has no
@@ -466,7 +462,7 @@ export interface ThingLayer {
   /**
    * Nearest living monster the ray crosses within `maxDist`, or null — the
    * "didn't click anything, but something's in the path anyway" case for a
-   * free shot, tested against `monsters.ts`'s `MONSTER_HIT_RADIUS`/`_HEIGHT`.
+   * free shot, tested against `monsters/defs.ts`'s `MONSTER_HIT_RADIUS`/`_HEIGHT`.
    *
    * `opts` serves a *monster's* own hitscan: `ignoreId` excludes the shooter
    * from its own trace, `includeHidden` skips the fog-of-war filter, since fog
@@ -832,7 +828,7 @@ export function buildThingSprites(
    * `A_SpawnFly`'s own monster creation: drops a fresh, already-awake `type` at
    * `at` and telefrags whatever was standing there, returning the new body (or
    * null if the WAD has no art for it). The Icon of Sin's spawn cube is the
-   * only caller — `game/icon.ts` owns the rest of that sequence, including the
+   * only caller — `game/iconofsin.ts` owns the rest of that sequence, including the
    * fire puff, the `telept` sound and the *player* half of the telefrag, which
    * this layer holds no reference to.
    *
@@ -1493,7 +1489,7 @@ export function buildThingSprites(
           if (!p.alerted && player) {
             // Throttled the same way vanilla's own idle A_Look is — see LOOK_INTERVAL.
             // The actual wake decision (FOV/sight/sound/ambush rules) lives in
-            // game/monsters.ts's tryWake; this loop only owns the throttle.
+            // game/monsters/ai.ts's tryWake; this loop only owns the throttle.
             p.lookTimer += dt;
             if (p.lookTimer >= LOOK_INTERVAL) {
               p.lookTimer = 0;

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Wad, WadFile } from '../../src/wad/wad.ts';
 import { loadMap } from '../../src/wad/map.ts';
 import { World } from '../../src/game/world.ts';
-import { MONSTER_STATS, type MonsterBody, type MonsterStats } from '../../src/game/monsters.ts';
+import { MONSTER_STATS, type MonsterBody, type MonsterStats } from '../../src/game/monsters/defs.ts';
 import { PLAYER_RADIUS } from '../../src/game/player.ts';
 import type { Pos3 } from '../../src/types.ts';
 

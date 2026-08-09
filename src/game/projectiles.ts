@@ -10,10 +10,10 @@ import {
   MONSTER_HIT_RADIUS,
   sameSpecies,
   type MonsterAttackEvent,
-} from './monsters.ts';
+} from './monsters/defs.ts';
 import { PLAYER_MELEE_RANGE, rollDamage, type Shot } from './weapons.ts';
 import { applyRadiusDamage, type CombatContext } from './combat.ts';
-import type { EffectLayer } from './effects.ts';
+import type { SpriteFxLayer } from './spritefx.ts';
 import {
   BFG_SPRAY_HIT_FRAMES,
   IMPACT_EFFECTS,
@@ -30,7 +30,7 @@ import {
   TRACER_HOMING_Z_OFFSET,
   turnToward,
   type Projectile,
-} from './effectdefs.ts';
+} from './spritefxdefs.ts';
 import type { Pos3 } from '../types.ts';
 
 /**
@@ -40,15 +40,15 @@ import type { Pos3 } from '../types.ts';
  * damage, splash and the BFG spray.
  *
  * Who *decides* to fire is somebody else's business — `game/weapons.ts`
- * returns a `Shot` per trigger pull and `game/monsters.ts` a
+ * returns a `Shot` per trigger pull and `game/monsters/ai.ts` a
  * `MonsterAttack` per attack, neither knowing what it will hit. This is the
  * other half of that split: it knows nothing about ammo, cooldowns or AI, only
  * about geometry and bodies. See docs/combat.md § How a shot deals damage and
- * docs/monsters.md § Monster projectiles in flight.
+ * docs/monsterattacks.md § Monster projectiles in flight.
  */
 export class ProjectileLayer {
   private ctx: CombatContext;
-  private effects: EffectLayer;
+  private effects: SpriteFxLayer;
   private spriteBank: SpriteBank;
   private spriteMaterials: SpriteMaterialCache;
   private audio: AudioEngine;
@@ -56,7 +56,7 @@ export class ProjectileLayer {
 
   constructor(
     ctx: CombatContext,
-    effects: EffectLayer,
+    effects: SpriteFxLayer,
     spriteBank: SpriteBank,
     spriteMaterials: SpriteMaterialCache,
     audio: AudioEngine,
@@ -218,7 +218,7 @@ export class ProjectileLayer {
    * *slope* and nothing else — `P_SpawnMissile` fixes `momx`/`momy`/`momz` at
    * launch and the thing flies on until something stops it, so the flight ends
    * at a wall, never at where the target happened to be standing. See
-   * docs/monsters.md § Monster projectiles in flight.
+   * docs/monsterattacks.md § Monster projectiles in flight.
    */
   spawnMonsterShot(atk: MonsterAttackEvent): void {
     if (!atk.projectiles) return;
@@ -271,9 +271,9 @@ export class ProjectileLayer {
    * in place. Arriving isn't itself a hit (`p.hitMonsterId` carries that
    * answer), but the impact point applies `p.splash` either way. A monster's
    * own shot instead re-checks two live arrival tests every frame — see
-   * docs/monsters.md § Monster projectiles in flight.
+   * docs/monsterattacks.md § Monster projectiles in flight.
    *
-   * Must run inside the caller's `EffectLayer.beginFrame`/`endFrame` pair: it
+   * Must run inside the caller's `SpriteFxLayer.beginFrame`/`endFrame` pair: it
    * both draws through the batch and pushes this frame's new explosions and
    * smoke puffs on for `updateImpacts` to draw.
    */
@@ -415,7 +415,7 @@ export class ProjectileLayer {
    * missile has no flight-distance budget** — each step is checked against the
    * geometry it actually crossed (`projectileStepBlocker`), and forcing
    * `p.traveled` to `p.maxDist` is how arrival is signalled to `update`. See
-   * docs/monsters.md § The revenant's homing missile.
+   * docs/monsterattacks.md § The revenant's homing missile.
    */
   private advanceHoming(p: Projectile, dt: number): Pos3 {
     const { world, things } = this.ctx;
@@ -452,7 +452,7 @@ export class ProjectileLayer {
     }
     // Meeting the floor or ceiling is deliberately *not* decided here — it is
     // `update`'s `hitGround`, on the sector lookup it already makes. See
-    // docs/monsters.md § Monster projectiles in flight.
+    // docs/monsterattacks.md § Monster projectiles in flight.
 
     // The smoke trail — see SMOKE_TRAIL_INTERVAL's doc for why this only
     // ever runs for a shot that already won the homingBias roll.

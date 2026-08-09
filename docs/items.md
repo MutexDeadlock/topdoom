@@ -211,8 +211,8 @@ behavior is in place for if one is added later.
 `src/ui/message.ts`'s `CenterMessage` draws one short line of `WadFont` text over the middle of the
 view (`#hud-message`, horizontally centered, 40% down so it clears the player sprite the camera
 holds at dead center), for 3 seconds. Currently the only caller is the secret announcement —
-`Game.frame` shows `SECRET_MESSAGE` and plays `radio` on the frame `SectorEffects.update` reports
-`secretFound`.
+`Game.collectPickupsAndSectorEffects` shows `SECRET_MESSAGE` and plays `radio` on the frame
+`SectorEffects.update` reports `secretFound`.
 
 Both halves are this engine's own, not vanilla reproductions: vanilla announces a secret nowhere at
 all (its status bar's `S` count just ticks up), prints what messages it does have in the top-left in

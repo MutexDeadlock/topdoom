@@ -8,7 +8,9 @@ import { AnimatedTextures } from './render/textureanim.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import type { Viewport } from './render/viewport.ts';
-import { buildThingSprites, type ThingLayer } from './game/things.ts';
+import type { TopDownCamera } from './render/camera.ts';
+import type { Input } from './game/input.ts';
+import { buildThingSprites, type MonsterRef, type ThingLayer } from './game/things.ts';
 import {
   PLAYER_ACTION_FRAME_SECONDS,
   PLAYER_ATTACK_FRAMES,
@@ -536,6 +538,15 @@ export class Game {
       return;
     }
 
+    // `R` is the only input a corpse still answers; everything else the player
+    // drives is skipped below instead of branching here.
+    if (this.playerDead && input.pressed('KeyR')) {
+      this.restart();
+      input.endFrame();
+      requestAnimationFrame(this.frame);
+      return;
+    }
+
     // Auto-aim, movement, firing and pickups all freeze once the player is
     // dead — there's nothing to aim/move/fire/collect with a corpse — but
     // fog of war, things, effects, faders and rendering below keep ticking
@@ -543,93 +554,127 @@ export class Game {
     // finishes its flight and can still deal splash damage (including, in a
     // grim-but-correct edge case, to the player's own corpse — damagePlayer
     // is a no-op once already dead, so this can't double-kill).
-    let aim: Pos2 | null = null;
-    if (!this.playerDead) {
-      // Ticked with the rest of the player's own update and not while dead,
-      // matching vanilla: powers age in `P_PlayerThink`, which hands off to
-      // `P_DeathThink` and returns before reaching them once health hits 0.
-      tickPowers(this.inventory, dt);
-      // The cursor hovering over a monster locks aim onto its actual position
-      // and height. **On hover, not on click** — `aim` drives `player.angle`
-      // and the camera's lead unconditionally, so gating the lock to
-      // `mouseDown` makes both jump the instant a click lands. See
-      // docs/combat.md § Auto-aim.
-      const monster = this.profiler.time('Player', () => {
-        const m = this.things?.pickMonster(camera.raycasterFor(input.pointer.x, input.pointer.y)) ?? null;
-        aim = m ?? camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
-        // Monsters are solid: the player walks around them, not through them.
-        this.player.update(dt, input, aim, camera.viewerAngleDeg + 180, this.things?.solidBodies(this.player));
-        return m;
-      });
+    const aim = this.playerDead ? null : this.updateLivingPlayer(dt, input, camera);
 
-      // A shot always *starts* at the player's own fire height — never the
-      // target's, or a tracer/projectile would visibly begin mid-air instead
-      // of at the player. Handing shotPath the locked-on monster as its
-      // target is what makes the shot angle toward *its* height and stop
-      // there; see world.ts's shotPath/blocksShot for why a locked shot is
-      // allowed to clear the floor steps a free one is stopped by.
-      const fireStartZ = this.player.z + AIM_HEIGHT_OFFSET;
-      const fireTarget = monster ? { x: monster.x, y: monster.y, z: monster.z + AIM_HEIGHT_OFFSET } : null;
-
-      this.profiler.time('Weapons', () => {
-        // After player.update so player.angle already reflects this frame's aim.
-        this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
-        const shots = this.weaponSystem.update(dt, input.mouseDown, this.inventory, this.player.angle);
-        // Vanilla's P_FireWeapon calls P_NoiseAlert every time a shot is actually
-        // fired (ammo/cooldown allowed it) — this is what lets a monster with no
-        // line of sight to the player still wake up on gunfire (World.noiseAlert,
-        // game/world.ts). Melee swings count: P_FireWeapon is the same entry
-        // point for every weapon, so swinging a fist in an empty room wakes the
-        // neighbours the same as firing a pistol would.
-        if (shots.length > 0) {
-          this.world.noiseAlert(this.player.x, this.player.y);
-          this.playerActor.playOnce(PLAYER_ATTACK_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
-          // One shot sound per trigger pull, not per pellet (see
-          // `WeaponDef.fireSound`), on the player's own origin — so a held
-          // chaingun trigger keeps cutting itself off instead of stacking up.
-          // A melee swing's own sound comes later, from `spawnPlayerShot`, which is
-          // the only place that knows whether it connected.
-          const fire = WEAPONS[this.inventory.currentWeapon].fireSound;
-          if (fire) this.audio.play(fire, this.player, PLAYER_ORIGIN);
-        }
-        for (const shot of shots) {
-          this.projectiles.spawnPlayerShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
-        }
-      });
-
-      this.profiler.time('Player', () => {
-        this.things?.tryPickup(this.player, PICKUP_RANGE, (type, dropped) => {
-          const taken = applyPickup(this.inventory, type, dropped);
-          // The computer area map's whole effect lives outside the inventory
-          // struct — see COMPUTER_MAP_TYPE's doc.
-          if (taken && type === COMPUTER_MAP_TYPE) this.fogOfWar.revealAll();
-          // Unattenuated, as vanilla plays every pickup: you're standing on it.
-          if (taken) this.audio.play(pickupSound(type));
-          return taken;
-        });
-        const sectorEffect = this.sectorEffects.update(dt, this.world, this.player, this.inventory, (amount) =>
-          this.damagePlayer(amount),
-        );
-        if (sectorEffect.secretFound) {
-          this.message.show(SECRET_MESSAGE);
-          // Unattenuated, like a pickup: it's an announcement to the player, not a sound in the world.
-          this.audio.play('radio');
-        }
-        if (sectorEffect.exit) this.pendingExit = true;
-      });
-
-      // Hard landings and the chainsaw's two ambient sounds, both of which
-      // belong to a living player only.
-      if (this.player.landingSpeed > HARD_LANDING_SPEED) this.audio.play('oof', this.player, PLAYER_ORIGIN);
-      this.weaponSystem.updateSounds(dt, input.mouseDown, this.inventory, this.audio, this.player);
-    } else if (input.pressed('KeyR')) {
-      this.restart();
-      input.endFrame();
-      requestAnimationFrame(this.frame);
-      return;
-    }
     if (!this.playerDead) this.levelTime += dt;
     camera.update(dt, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, aim);
+    this.updateOverlays(dt);
+
+    this.profiler.time('Fog of War', () => this.fogOfWar.update(dt, this.player.x, this.player.y));
+    this.updateThings(dt, camera.viewerAngleDeg);
+    this.updateEffects(dt, camera.viewerAngleDeg);
+    this.updateFading(dt, camera);
+    this.posePlayer(dt, camera.viewerAngleDeg);
+
+    this.profiler.time('Render', () => this.view.renderer.render(this.scene, camera.camera));
+    this.profiler.endFrame();
+
+    this.debugHud.update(rawDt, this.profiler, (fps) => this.debugLines(fps));
+
+    input.endFrame();
+    requestAnimationFrame(this.frame);
+  };
+
+  /**
+   * Everything a *living* player drives in a frame: powers, aim, movement, firing, pickups and the
+   * sector underfoot. Returns the point the camera leads toward — the locked-on monster if the
+   * cursor is over one, otherwise where the cursor meets the aim plane.
+   */
+  private updateLivingPlayer(dt: number, input: Input, camera: TopDownCamera): Pos2 | null {
+    // Ticked with the rest of the player's own update and not while dead,
+    // matching vanilla: powers age in `P_PlayerThink`, which hands off to
+    // `P_DeathThink` and returns before reaching them once health hits 0.
+    tickPowers(this.inventory, dt);
+    // The cursor hovering over a monster locks aim onto its actual position
+    // and height. **On hover, not on click** — `aim` drives `player.angle`
+    // and the camera's lead unconditionally, so gating the lock to
+    // `mouseDown` makes both jump the instant a click lands. See
+    // docs/combat.md § Auto-aim.
+    const { monster, aim } = this.profiler.time('Player', () => {
+      const m = this.things?.pickMonster(camera.raycasterFor(input.pointer.x, input.pointer.y)) ?? null;
+      const at = m ?? camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
+      // Monsters are solid: the player walks around them, not through them.
+      this.player.update(dt, input, at, camera.viewerAngleDeg + 180, this.things?.solidBodies(this.player));
+      return { monster: m, aim: at };
+    });
+
+    this.profiler.time('Weapons', () => this.fireWeapons(dt, input, monster));
+    this.profiler.time('Player', () => this.collectPickupsAndSectorEffects(dt));
+
+    // Hard landings and the chainsaw's two ambient sounds, both of which
+    // belong to a living player only.
+    if (this.player.landingSpeed > HARD_LANDING_SPEED) this.audio.play('oof', this.player, PLAYER_ORIGIN);
+    this.weaponSystem.updateSounds(dt, input.mouseDown, this.inventory, this.audio, this.player);
+    return aim;
+  }
+
+  /**
+   * Weapon switching and this frame's trigger pull, turning each shot `WeaponSystem.update` returns
+   * into a projectile or tracer. `monster` is whatever aim locked onto, which is what lets a shot
+   * angle toward its height — see docs/combat.md § Auto-aim.
+   */
+  private fireWeapons(dt: number, input: Input, monster: MonsterRef | null): void {
+    // A shot always *starts* at the player's own fire height — never the
+    // target's, or a tracer/projectile would visibly begin mid-air instead
+    // of at the player. Handing shotPath the locked-on monster as its
+    // target is what makes the shot angle toward *its* height and stop
+    // there; see world.ts's shotPath/blocksShot for why a locked shot is
+    // allowed to clear the floor steps a free one is stopped by.
+    const fireStartZ = this.player.z + AIM_HEIGHT_OFFSET;
+    const fireTarget = monster ? { x: monster.x, y: monster.y, z: monster.z + AIM_HEIGHT_OFFSET } : null;
+
+    // Called after player.update so player.angle already reflects this frame's aim.
+    this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
+    const shots = this.weaponSystem.update(dt, input.mouseDown, this.inventory, this.player.angle);
+    // Vanilla's P_FireWeapon calls P_NoiseAlert every time a shot is actually
+    // fired (ammo/cooldown allowed it) — this is what lets a monster with no
+    // line of sight to the player still wake up on gunfire (World.noiseAlert,
+    // game/world.ts). Melee swings count: P_FireWeapon is the same entry
+    // point for every weapon, so swinging a fist in an empty room wakes the
+    // neighbours the same as firing a pistol would.
+    if (shots.length > 0) {
+      this.world.noiseAlert(this.player.x, this.player.y);
+      this.playerActor.playOnce(PLAYER_ATTACK_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
+      // One shot sound per trigger pull, not per pellet (see
+      // `WeaponDef.fireSound`), on the player's own origin — so a held
+      // chaingun trigger keeps cutting itself off instead of stacking up.
+      // A melee swing's own sound comes later, from `spawnPlayerShot`, which is
+      // the only place that knows whether it connected.
+      const fire = WEAPONS[this.inventory.currentWeapon].fireSound;
+      if (fire) this.audio.play(fire, this.player, PLAYER_ORIGIN);
+    }
+    for (const shot of shots) {
+      this.projectiles.spawnPlayerShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
+    }
+  }
+
+  /**
+   * The two things the player picks up by standing somewhere: items in reach, and whatever the
+   * sector underfoot does to them (damage floors, secrets, an exit) — see game/sectoreffects.ts.
+   */
+  private collectPickupsAndSectorEffects(dt: number): void {
+    this.things?.tryPickup(this.player, PICKUP_RANGE, (type, dropped) => {
+      const taken = applyPickup(this.inventory, type, dropped);
+      // The computer area map's whole effect lives outside the inventory
+      // struct — see COMPUTER_MAP_TYPE's doc.
+      if (taken && type === COMPUTER_MAP_TYPE) this.fogOfWar.revealAll();
+      // Unattenuated, as vanilla plays every pickup: you're standing on it.
+      if (taken) this.audio.play(pickupSound(type));
+      return taken;
+    });
+    const sectorEffect = this.sectorEffects.update(dt, this.world, this.player, this.inventory, (amount) =>
+      this.damagePlayer(amount),
+    );
+    if (sectorEffect.secretFound) {
+      this.message.show(SECRET_MESSAGE);
+      // Unattenuated, like a pickup: it's an announcement to the player, not a sound in the world.
+      this.audio.play('radio');
+    }
+    if (sectorEffect.exit) this.pendingExit = true;
+  }
+
+  /** The 2D layers over the level: status bar, crosshair, center message, and the screen tints. */
+  private updateOverlays(dt: number): void {
     this.hud.update(this.inventory, {
       kills: this.things?.stats.kills ?? 0,
       totalKills: this.things?.stats.totalKills ?? 0,
@@ -642,23 +687,25 @@ export class Game {
     this.crosshair.update(this.inventory.health);
     this.message.update(dt);
     this.screen.update(dt, this.inventory);
+  }
 
-    this.profiler.time('Fog of War', () => this.fogOfWar.update(dt, this.player.x, this.player.y));
-    const fog = this.fogOfWar;
-    const fogAlphaOf = (subsector: number) => fog.alphaOf(subsector);
-    // `null` once the player is dead, matching `P_KillMobj` stripping the
-    // player's `MF_SHOOTABLE`/`MF_SOLID` — docs/combat.md § Player death for
-    // what that does and doesn't freeze in the AI. Every attack a monster
-    // fired this frame comes back for us to apply/render, the same "system
+  /**
+   * Ticks the thing layer and realizes what it hands back: the monster attacks fired this frame,
+   * and any barrel whose `A_Explode` came due. The player goes in as `null` once dead, matching
+   * `P_KillMobj` stripping the player's `MF_SHOOTABLE`/`MF_SOLID` — docs/combat.md § Player death
+   * for what that does and doesn't freeze in the AI.
+   */
+  private updateThings(dt: number, viewerAngleDeg: number): void {
+    // Every attack a monster fired this frame comes back for us to apply/render, the same "system
     // returns data, caller realizes it" split as `WeaponSystem.update`.
     const thingUpdate = this.profiler.time(
       'Monsters',
       () =>
         this.things?.update(
           dt,
-          camera.viewerAngleDeg,
+          viewerAngleDeg,
           this.playerDead ? null : this.player,
-          fogAlphaOf,
+          (subsector) => this.fogOfWar.alphaOf(subsector),
           (prev, pos) => this.monsterCrossedLines(prev, pos),
         ) ?? { attacks: [], barrelExplosions: [] },
     );
@@ -671,12 +718,16 @@ export class Game {
       // animation at exactly this spot.
       for (const exp of thingUpdate.barrelExplosions) applyBarrelExplosion(this.combat, exp);
     });
+  }
+
+  /** Everything drawn through the sprite-fx batch: teleport fog, tracers, things in flight, the icon's cubes. */
+  private updateEffects(dt: number, viewerAngleDeg: number): void {
     this.profiler.time('Effects', () => {
       // One begin/end pair around all four lists, the same per-frame rebuild
       // `game/things.ts` does — and it has to enclose `ProjectileLayer.update`,
       // which both draws through the batch and pushes this frame's new impact
       // explosions and smoke puffs on for `updateImpacts` to draw.
-      this.effects.beginFrame(camera.viewerAngleDeg);
+      this.effects.beginFrame(viewerAngleDeg);
       this.effects.updateTeleportFogs(dt);
       this.effects.updateTracers(dt);
       this.projectiles.update(dt);
@@ -686,8 +737,12 @@ export class Game {
       this.effects.updateImpacts(dt);
       this.effects.endFrame();
     });
+  }
 
+  /** Occlusion fading of walls and flats, plus the two texture animators — see render/occlusion.ts. */
+  private updateFading(dt: number, camera: TopDownCamera): void {
     this.profiler.time('Fading', () => {
+      const fog = this.fogOfWar;
       const camPos = camera.camera.position;
       const camArgs = [dt, camPos.x, -camPos.z, camPos.y] as const;
       const fadeTargets = collectFadeTargets(this.player, this.things?.awakeMonsters() ?? []);
@@ -697,19 +752,22 @@ export class Game {
       // Walls resolve their own subsector inside FogOfWar (see wallAlpha); flats
       // and things already know theirs, so they go through alphaOf directly.
       this.wallFader.commit((i) => fog.wallAlpha(i));
-      this.flatFader.commit(fogAlphaOf);
+      this.flatFader.commit((i) => fog.alphaOf(i));
       // Independent of camera/player position — a scrolling wall animates
       // whether or not it's currently faded or in view.
       this.textureScroller.update(dt);
       // Same independence, and session-scoped rather than per-map (see its
-      // construction above) — an animated liquid/fire texture keeps cycling
-      // across a level transition exactly as it does within one.
+      // construction in the constructor) — an animated liquid/fire texture keeps
+      // cycling across a level transition exactly as it does within one.
       this.animatedTextures.update(dt);
       // Door/lift geometry lives in its own meshes (game/specials.ts), so it
       // carries its own faders rather than the two above.
       this.specials?.updateFading(...camArgs, fadeTargets);
     });
+  }
 
+  /** Places the player's own billboard: position, facing, sector light and which animation is due. */
+  private posePlayer(dt: number, viewerAngleDeg: number): void {
     const facingDeg = (this.player.angle * 180) / Math.PI;
     const sector = this.world.sectorAt(this.player.x, this.player.y);
     // player.update (and with it, velX/velY) stops running once dead, so
@@ -725,17 +783,9 @@ export class Game {
       sector?.light ?? 128,
       dt,
       walking,
-      camera.viewerAngleDeg,
+      viewerAngleDeg,
     );
-
-    this.profiler.time('Render', () => this.view.renderer.render(this.scene, camera.camera));
-    this.profiler.endFrame();
-
-    this.debugHud.update(rawDt, this.profiler, (fps) => this.debugLines(fps));
-
-    input.endFrame();
-    requestAnimationFrame(this.frame);
-  };
+  }
 
   /** DEVMODE's status text. Only ever called while the panel is shown — see `DebugHud.update`. */
   private debugLines(fps: number): string[] {

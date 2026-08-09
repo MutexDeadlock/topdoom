@@ -634,7 +634,7 @@ on every hit that was landing on nothing.
 Health hitting 0 sets `Game.playerDead`, which freezes only the input-driven half of `frame` —
 movement/aim/firing/pickups. Everything else keeps running: fog of war, effects, faders and
 rendering, and monster AI — but AI follows vanilla's own rule for it, not a blanket freeze.
-`P_KillMobj` strips the player's `MF_SHOOTABLE`/`MF_SOLID` on death, so `Game.frame` passes
+`P_KillMobj` strips the player's `MF_SHOOTABLE`/`MF_SOLID` on death, so `Game.updateThings` passes
 `ThingLayer.update` `null` for the player once `playerDead` (`game/things.ts`'s `resolveTarget` and
 `blockersFor` both take the `Pos3 | null` this produces). A monster already mid-infight with another
 monster is unaffected and keeps fighting; one whose only target *was* the player finds `resolveTarget`

@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isAmbush, isMultiplayerOnly, spawnsAtSkill, type Skill } from '../../src/game/skill.ts';
+import { isAmbush, isMultiplayerOnly, spawnAngleDeg, spawnsAtSkill, type Skill } from '../../src/game/skill.ts';
 
 /**
  * Which THINGs a map spawns at each difficulty. Pure flag arithmetic against
@@ -68,5 +68,29 @@ describe('Game rules · THING skill flags', () => {
     assert.equal(isAmbush(both), true);
     assert.equal(isMultiplayerOnly(both), true);
     assert.equal(spawnsAtSkill(both, 5), true);
+  });
+});
+
+describe('Game rules · THING spawn angle', () => {
+  test('an on-grid angle survives untouched', () => {
+    for (const a of [0, 45, 90, 135, 180, 225, 270, 315]) assert.equal(spawnAngleDeg(a), a);
+  });
+
+  test('an off-grid angle snaps down to the 45° step below it', () => {
+    // `ANG45 * (mthing->angle/45)`: freedoom2.wad's off-grid placements are the
+    // ones this actually moves. 250 -> 225 is the single DOOM2 case.
+    assert.equal(spawnAngleDeg(250), 225);
+    assert.equal(spawnAngleDeg(15), 0);
+    assert.equal(spawnAngleDeg(44), 0);
+    assert.equal(spawnAngleDeg(110), 90);
+    assert.equal(spawnAngleDeg(359), 315);
+  });
+
+  test('a negative angle truncates toward zero, as C integer division does', () => {
+    // The WAD field is a signed short, and Math.floor would send -100 to -135
+    // where vanilla sends it to -90.
+    assert.equal(spawnAngleDeg(-100), -90);
+    assert.equal(spawnAngleDeg(-45), -45);
+    assert.equal(spawnAngleDeg(-44), -0);
   });
 });

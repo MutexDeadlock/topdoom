@@ -190,6 +190,28 @@ function tryWalk(body: MonsterBody, stats: MonsterStats, world: World, dir: numb
 }
 
 /**
+ * True when the monster is standing *inside* something right now but the full
+ * chase step `tryWalk` committed to still lands clear — so the sub-step this
+ * frame wants is on its way out, not into anything new.
+ *
+ * Maps place monsters flush against walls routinely (94 of them across
+ * DOOM/DOOM2/SCYTHE, e.g. DOOM2 MAP02's zombieman at 1056,960), which puts
+ * their spawn point inside their own radius. Vanilla never notices, because
+ * `P_Move` tests only the destination — see docs/monsters.md § Movement for
+ * why the per-frame interpolation here has to be told the same thing.
+ *
+ * Only ever reached from the already-blocked branch below, so an ordinary
+ * monster bumping a wall pays one extra query and a walking one pays none.
+ */
+function escapingOverlap(body: MonsterBody, stats: MonsterStats, world: World, blockers?: readonly ThingBlocker[]): boolean {
+  const blockedAt = (x: number, y: number): boolean =>
+    circleBlocked(world, x, y, stats.radius, body.z, true, !stats.flies, blockers, body);
+  if (!blockedAt(body.x, body.y)) return false;
+  const step = stats.speed * stats.chaseInterval;
+  return !blockedAt(body.x + DIR_X[body.movedir] * step, body.y + DIR_Y[body.movedir] * step);
+}
+
+/**
  * Vanilla's `P_NewChaseDir`, reproduced step for step: the both-axes diagonal,
  * then the two cardinals, then the previous heading, then a full eight-way
  * scan from a randomly chosen end, and the about-face only as a last resort.
@@ -444,7 +466,10 @@ export function stepMonsterAI(
     const step = stats.speed * dt;
     const nx = body.x + DIR_X[body.movedir] * step;
     const ny = body.y + DIR_Y[body.movedir] * step;
-    if (circleBlocked(world, nx, ny, stats.radius, body.z, true, !stats.flies, blockers, body)) {
+    if (
+      circleBlocked(world, nx, ny, stats.radius, body.z, true, !stats.flies, blockers, body) &&
+      !escapingOverlap(body, stats, world, blockers)
+    ) {
       body.moveBlocked = true;
     } else {
       body.x = nx;

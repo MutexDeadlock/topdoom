@@ -51,6 +51,7 @@ import {
   darkestNeighborLight,
 } from './world.ts';
 import { PLAYER_RADIUS } from './player.ts';
+import { spawnAngleDeg } from './skill.ts';
 import type { Input } from './input.ts';
 import type { FogOfWar } from './fogofwar.ts';
 import type { KeyColor } from './inventory.ts';
@@ -1211,7 +1212,10 @@ export class SpecialsController {
     const targets = new Set(sectorIndices);
     for (const t of this.map.things) {
       if (t.type !== TELEPORT_DEST) continue;
-      if (targets.has(this.world.sectorIndexAt(t.x, t.y))) return { x: t.x, y: t.y, angle: (t.angle * Math.PI) / 180 };
+      // Vanilla's `EV_Teleport` copies the destination mobj's own angle, and that mobj came out of
+      // `P_SpawnMapThing` — so the arrival facing is the snapped one, not the raw THING field.
+      if (targets.has(this.world.sectorIndexAt(t.x, t.y)))
+        return { x: t.x, y: t.y, angle: (spawnAngleDeg(t.angle) * Math.PI) / 180 };
     }
     return null;
   }

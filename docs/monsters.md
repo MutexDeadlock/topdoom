@@ -42,6 +42,12 @@ unchanged until it wakes), unless the player is within melee range regardless of
 this, most of a level's population — everything facing away at spawn — attacked the instant an
 unobstructed line existed, which reads exactly backwards.
 
+**The spawn angle that cone is measured from is snapped to 45°** (`game/skill.ts: spawnAngleDeg`,
+vanilla's `ANG45 * (mthing->angle/45)`), and every reader of a map thing's facing goes through it —
+the wake cone, the sprite rotation a still thing shows, the player start, and a teleporter's
+arrival facing. Reading the raw THING field instead swings the cone by up to 44° on any WAD that
+places things off the grid; DOOM/DOOM2 have one such thing between them, `freedoom2.wad` has 22.
+
 Once alerted, a monster is alerted for good and the FOV gate no longer applies, matching `A_Chase`,
 which never re-checks it. There is no "lost the scent" in vanilla either. Taking any damage alerts
 unconditionally (`reactToDamage`, matching `P_DamageMobj` setting `target` regardless of prior
@@ -107,6 +113,20 @@ produces the zig-zag), and the walk is **interpolated per frame** along the last
 `movedir` rather than jumping a full `speed` units per call — same distance and same 8-way path,
 but vanilla's jump only reads as continuous because it renders at 35fps. Everything else
 (`groundFloor`, gravity via `settleVertical`) mirrors `Player.update`.
+
+**The per-frame sub-step must never be stricter than the chase step `tryWalk` already approved**
+(`escapingOverlap`). Vanilla's `P_Move` tests only the *destination* of a full `speed` jump; it
+never asks whether the monster is standing somewhere legal right now. Maps place monsters flush
+against walls all the time — 95 across DOOM/DOOM2/SCYTHE, e.g. DOOM2 MAP02's zombieman at
+(1056, 960) — which puts the spawn point inside the monster's own radius. Re-validating every
+1-unit sub-step as an absolute position then froze those monsters permanently: the 8-unit
+destination was clear, but the first sub-step out of the overlap was not, so they woke, faced the
+player and shot without ever taking a step. A monster already overlapping is therefore allowed to
+walk as long as its committed chase step still lands clear. The escape reaches exactly one chase
+step, which is the same bound vanilla's `P_TryWalk` has: 89 of the 95 recover, and the six that
+don't are wide types (mancubus, spectre) wedged deeper than one step, which vanilla leaves stuck
+too. The extra query is inside the already-blocked branch and measured as free (NUTS.WAD MAP01,
+10,617 chasing monsters: 3.6 ms/frame either way).
 
 Two arguments the player's own movement never sets:
 

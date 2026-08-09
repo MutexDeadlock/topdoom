@@ -42,6 +42,22 @@ export function isMultiplayerOnly(flags: number): boolean {
   return (flags & MULTIPLAYER_ONLY) !== 0;
 }
 
+/**
+ * A map THING's facing as vanilla actually spawns it, in degrees: snapped to a
+ * multiple of 45°. Both `P_SpawnMapThing` and `P_SpawnPlayer` (`p_mobj.c`) do
+ * `mobj->angle = ANG45 * (mthing->angle/45)`, and C's integer division
+ * truncates toward zero — hence `Math.trunc`, not `Math.floor`, since the WAD
+ * field is a signed short. An editor-placed 250° therefore faces 225° in game.
+ *
+ * Every consumer of a spawn angle goes through this: a monster's wake-up cone
+ * reads it unchanged until it wakes (docs/monsters.md § Waking up), and it
+ * also picks the sprite rotation a still thing shows. DOOM/DOOM2 place all but
+ * one thing on the 45° grid; `freedoom2.wad` does not.
+ */
+export function spawnAngleDeg(angle: number): number {
+  return Math.trunc(angle / 45) * 45;
+}
+
 /** THING flag bit marking a thing "ambush" in the editor — vanilla's `MF_AMBUSH`, commonly called "deaf". */
 const AMBUSH = 0x0008;
 

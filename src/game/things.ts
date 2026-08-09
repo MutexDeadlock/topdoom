@@ -60,7 +60,7 @@ import {
   THING_ANIM_FRAMES,
   THING_SPRITES,
 } from './thingdefs.ts';
-import { isAmbush, isMultiplayerOnly, spawnsAtSkill, type Skill } from './skill.ts';
+import { isAmbush, isMultiplayerOnly, spawnAngleDeg, spawnsAtSkill, type Skill } from './skill.ts';
 import {
   DI_NODIR,
   INERT_SHOOTABLE,
@@ -290,7 +290,7 @@ export function buildThingSprites(
     const sector = world.sectorAt(t.x, t.y);
     const hangHeight = CEILING_HUNG_HEIGHT[t.type];
     const z = hangHeight !== undefined ? (sector?.ceilHeight ?? 0) - hangHeight : (sector?.floorHeight ?? 0);
-    if (!pushThing(t.type, { x: t.x, y: t.y, z }, t.angle, { ambush: isAmbush(t.flags) })) continue;
+    if (!pushThing(t.type, { x: t.x, y: t.y, z }, spawnAngleDeg(t.angle), { ambush: isAmbush(t.flags) })) continue;
     // Vanilla's own `P_SpawnMapThing` totals — incremented only for a thing that actually spawns
     // (past every filter above, art included), matching `if (mobj->flags & MF_COUNTKILL)
     // totalkills++` / `MF_COUNTITEM` in `info.c`. Fixed for the level: only the runtime kill/pickup

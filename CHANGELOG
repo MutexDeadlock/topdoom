@@ -1,6 +1,7 @@
 v0.10.2 (2026-08-??)
 
 Features and improvements
+  - increased view distance
   - bundled DOOM1 shareware is now the v1.9 one
   - entering a level now shows "Entering <level name>" on screen.
     - the name is the WAD's own CWILV/WILV graphic where it has one for that

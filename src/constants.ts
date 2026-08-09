@@ -21,6 +21,15 @@ export const DOOM_TIC = 1 / 35;
 export const BRIGHTNESS_LIFT = 0.12;
 
 /**
+ * How far the player can see, in map units: the scene's distance fog (`game.ts`) is fully opaque at
+ * this range, so geometry past it is black no matter what the fog of war has revealed. Measured
+ * from the camera eye, which hangs `TopDownCamera.distance` back from the player, so the view
+ * actually reaches ~480 units less than this out in front. Tuned by feel — it is what keeps a big
+ * open map from reading as a floorplan.
+ */
+export const VIEW_DISTANCE = 12000;
+
+/**
  * `PICKUP_SCALE_TYPES` (ammo, health/armor, keys, powerups) draw at vanilla's native patch size
  * times this factor. Tuned by feel: the far, tilted top-down camera reads a lot worse than DOOM's
  * own ground-level first-person view at the same pixel size, and small collectibles like a clip or

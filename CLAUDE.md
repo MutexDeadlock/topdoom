@@ -81,7 +81,7 @@ src/ui/        start menu, HUD, level card + end-of-level intermission, screen t
 src/util/      small helpers shared across layers (2D geometry, damped-lerp smoothing,
                per-frame profiling)
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
-                   BRIGHTNESS_LIFT, PICKUP_SCALE)
+                   BRIGHTNESS_LIFT, PICKUP_SCALE, VIEW_DISTANCE)
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
 scripts/       headless WAD inspection (node scripts/inspect-wad.ts)
@@ -97,7 +97,7 @@ several record rules that look like accidents and aren't.
 |---|---|
 | [docs/wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD override rules, the `public/wads/` manifest |
 | [docs/menu.md](docs/menu.md) | The menu as launcher and pause screen, difficulty prompt, persisted settings, URL parameters, `main.ts`'s session lifecycle |
-| [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, wall occlusion fading, camera orbit, sprites and their batching |
+| [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, wall occlusion fading, camera orbit, view distance, sprites and their batching |
 | [docs/movement.md](docs/movement.md) | Collision, `groundFloor`, `slideMove`, straferunning, gravity/falling, knockback |
 | [docs/combat.md](docs/combat.md) | Weapons, `shotPath`, auto-aim, `hasLineOfSight`, splash, the BFG, monster/player death, barrels |
 | [docs/monsters.md](docs/monsters.md) | Waking, chase pathing, the decision to attack, infighting, per-type quirks, spatial indexing |
@@ -133,8 +133,8 @@ not choosing against it on purpose.
 **Constants fall into exactly two marked categories.** Values derived from vanilla carry their
 source citation as a comment at the declaration (`g_game.c`'s ticcmd tables, `info.c`'s mobjinfo
 fields, `P_RadiusAttack`'s literal 128). Values tuned by feel say so explicitly — currently
-`GRAVITY` and `ACCELERATION` (`player.ts`), `BRIGHTNESS_LIFT` and `PICKUP_SCALE`
-(`constants.ts`),
+`GRAVITY` and `ACCELERATION` (`player.ts`), `BRIGHTNESS_LIFT`, `PICKUP_SCALE` and
+`VIEW_DISTANCE` (`constants.ts`),
 `MONSTER_FADE_RANGE` (`render/occlusion.ts`) and the pain-flash alpha (`game.ts`). `weapons.ts`
 was on that list and no longer is: fire rates, spread, damage and projectile speed all have exact
 vanilla sources (docs/combat.md § Fire rates), and "it doesn't translate to a dt-scaled model" was
@@ -146,7 +146,8 @@ transcription error.
 used in more than two files and isn't identity-coupled to any one module (`DOOM_TIC`), or it is a
 **feel dial** — a tuned-by-feel presentation number deliberately parked somewhere obvious so it
 stays easy to find and retune, however few files read it (`BRIGHTNESS_LIFT`, used only by
-`render/mapmesh.ts`; `PICKUP_SCALE`, only by `game/things.ts`). Nothing else:
+`render/mapmesh.ts`; `PICKUP_SCALE`, only by `game/things.ts`; `VIEW_DISTANCE`, only by `game.ts`).
+Nothing else:
 `PLAYER_RADIUS`/`PLAYER_HEIGHT` and `NO_SIDE`/`LF`/`SUBSECTOR_BIT` briefly lived there during a
 consolidation pass and were moved back to `game/player.ts` and `wad/map.ts` once it was clear they
 belong with the code that owns their meaning. Don't re-add constants there just because they're

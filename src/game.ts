@@ -59,9 +59,18 @@ import type { AudioEngine } from './audio/audio.ts';
 import { PLAYER_ORIGIN } from './audio/sfx.ts';
 import { SoundBank } from './wad/sound.ts';
 import type { Placement, Pos2 } from './types.ts';
+import { VIEW_DISTANCE } from './constants.ts';
 
 /** Combined radius (map units) within which an item is close enough to pick up. */
 const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
+
+/**
+ * Where the distance fog starts hazing, as a fraction of `VIEW_DISTANCE` (fully opaque at 1.0), so
+ * moving the one dial keeps the fade band in proportion. Tuned by feel: wide enough that distant
+ * geometry dissolves instead of meeting a wall of black, narrow enough that the room the player is
+ * actually fighting in stays at full brightness.
+ */
+const FOG_START_FRACTION = 0.54;
 
 /**
  * Shown center-screen (`ui/message.ts`) with `radio` — vanilla's `DSRADIO`, which it uses for
@@ -193,7 +202,7 @@ export class Game {
     this.startPos = startPos;
 
     this.scene.background = new THREE.Color(0x05050a);
-    this.scene.fog = new THREE.Fog(0x05050a, 2100, 3900);
+    this.scene.fog = new THREE.Fog(0x05050a, VIEW_DISTANCE * FOG_START_FRACTION, VIEW_DISTANCE);
 
     // The WAD set's own sound lumps, for as long as this Game owns the level.
     // The engine itself (and its AudioContext) outlives us — see AudioEngine.

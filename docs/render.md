@@ -187,6 +187,24 @@ Movement (`Player.update`'s `forwardDeg`, passed as `camera.viewerAngleDeg + 180
 rather than DOOM-axis-relative: `W` always moves the player away from the camera *on screen*,
 regardless of orbit. `game.ts` recomputes this every frame from the live camera angle.
 
+## View distance (`constants.ts: VIEW_DISTANCE`, `game.ts`)
+
+How far the player can see is the scene's **distance fog**, not a clipping plane: `game.ts` sets
+`THREE.Fog` to the same near-black as the scene background, hazing in from
+`VIEW_DISTANCE * FOG_START_FRACTION` and fully opaque at `VIEW_DISTANCE` (3900 map units). Geometry
+past it is black however lit or fog-of-war-revealed it happens to be, so **`VIEW_DISTANCE` is the
+one dial for how much of a level is on screen** — the fade start follows it as a fraction rather
+than being its own number.
+
+Fog range is measured from the camera *eye*, which hangs `TopDownCamera.distance` (480) back from
+the player, so the view actually reaches ~480 units less than `VIEW_DISTANCE` out in front.
+
+**Two other ranges have to stay above it**, or one of them becomes the real limit and geometry gets
+clipped or blanked before the fog ever gets to hide it: the camera's far plane (`camera.ts`, 12000)
+and `game/fogofwar.ts: SIGHT_RADIUS` (5100). The second is not a free number — it is derived from
+what the camera frames, and lowering it below what is visible makes monsters standing in the gap
+invisible *and* unhittable (docs/fogofwar.md § Reveal radius).
+
 ## The frame delta (`game.ts: frame`, `resume`)
 
 `dt` is clamped to `[0, 0.05]`; `rawDt` (unclamped, for `DebugHud`'s fps only) is the real

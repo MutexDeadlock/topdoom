@@ -4,7 +4,40 @@ import type { SpriteBank } from '../wad/sprites.ts';
 import type { World } from './world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import {
-  BOSS_DEATH_TYPES,
+  BARREL_DEATH_FRAME_SECONDS,
+  BARREL_DEATH_FRAMES,
+  BARREL_DEATH_SPRITE,
+  BARREL_EXPLODE_DELAY_SECONDS,
+  BARREL_HEALTH,
+  BARREL_IDLE_FRAME_SECONDS,
+  BARREL_IDLE_FRAMES,
+  BARREL_MASS,
+  BARREL_RADIUS,
+  BARREL_TYPE,
+  BOSS_TYPES,
+  DEATH_NOTIFY_TYPES,
+  LOST_SOUL_TYPE,
+  MAX_SKULLS_ON_LEVEL,
+  PAIN_ELEMENTAL_TYPE,
+  pickupScaleFor,
+  TELEFRAG_DAMAGE,
+  type BarrelExplosion,
+  type LevelKillItemStats,
+  type MonsterRef,
+  type PosedThing,
+  type ThingLayer,
+  type ThingUpdateResult,
+} from './things/defs.ts';
+export {
+  // Re-exported so `./things.ts` stays the thing layer's one public entry
+  // point for the rest of the engine — `game.ts` and `combat.ts` have no
+  // reason to know which file inside `things/` a type happens to live in.
+  TELEFRAG_DAMAGE,
+  type BarrelExplosion,
+  type MonsterRef,
+  type ThingLayer,
+} from './things/defs.ts';
+import {
   CEILING_HUNG_HEIGHT,
   COUNTITEM_TYPES,
   COUNTKILL_TYPES,
@@ -21,7 +54,6 @@ import {
   MONSTER_TYPES,
   MONSTER_XDEATH_FRAMES,
   NO_AUTO_AIM_TYPES,
-  PICKUP_SCALE_TYPES,
   SOLID_DECORATION_RADIUS,
   SOLID_DECORATION_RADIUS_OVERRIDE,
   SOLID_DECORATION_TYPES,
@@ -38,214 +70,15 @@ import {
   MONSTER_STATS,
   thrustSpeed,
   type MonsterAttackEvent,
-  type RaiseCandidate,
 } from './monsters/defs.ts';
 import { commitTarget, reactToDamage, shouldRetarget, stepMonsterAI, tryWake } from './monsters/ai.ts';
-import { circleBlocked, type ThingBlocker } from './world.ts';
+import { createThingGrid } from './things/grid.ts';
+import { circleBlocked } from './world.ts';
 import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import { SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
-import { DOOM_TIC, PICKUP_SCALE } from '../constants.ts';
-
-interface PosedThing extends Pos3 {
-  /**
-   * Index into the `posed` array itself.
-   * A stable handle callers (game.ts) can hold onto across frames to target
-   * this exact instance with `ThingLayer.damage`.
-   */
-  id: number;
-  /**
-   * This thing's animation state and current-lump lookup. Deliberately *not*
-   * a `SpriteActor` (which owns a `THREE.Mesh`): every map thing is drawn
-   * through the shared `SpriteBatch` instead, so ten thousand of them cost a
-   * few dozen draw calls rather than ten thousand — see `SpriteBatch`'s doc.
-   */
-  anim: SpriteAnimator;
-  /** Native-size multiplier (`pickupScaleFor`), handed to the batch each frame. */
-  scale: number;
-  /**
-   * Collision radius, resolved once at spawn. `MONSTER_STATS` is a `Record`
-   * with sparse numeric keys, so V8 backs it with a dictionary and every
-   * `MONSTER_STATS[type]` is a hash lookup — fine anywhere it happens once,
-   * but `blockersFor` was doing one per *candidate* per monster per frame
-   * (hundreds of thousands), which cost more than the collision arithmetic it
-   * was feeding.
-   */
-  blockRadius: number;
-  /**
-   * This type's attack/pain WAD frame letters (`MONSTER_ATTACK_FRAMES`/
-   * `MONSTER_PAIN_FRAMES`), resolved once at spawn for the same reason
-   * `blockRadius` is: both tables are sparse-numeric-key `Record`s, so a
-   * lookup on every attack/pain event is a dictionary hash V8 has to do that
-   * a one-time spawn-time resolve avoids. `undefined` for anything without a
-   * table entry (every non-monster, and the few monster types missing one).
-   */
-  attackFrames: string[] | undefined;
-  painFrames: string[] | undefined;
-  /**
-   * Whether this thing is drawn (and so targetable/shootable) right now:
-   * fog of war hasn't revealed its subsector, it was picked up, or it died
-   * with no death art. Replaces reading `mesh.visible` back off a per-thing
-   * mesh, which the batched renderer no longer gives each thing.
-   */
-  visible: boolean;
-  /** Permanently hidden regardless of fog — a consumed pickup, or a corpse with no death animation to play. */
-  hidden: boolean;
-  /** Scratch dedupe marker for `forEachMonsterAlongRay`, whose stepped cell neighbourhoods overlap. Meaningless between queries. */
-  queryStamp: number;
-  /**
-   * Feet height (`Pos3.z`). For anything that never moves (every non-monster, and a
-   * dead or not-yet-alerted monster) this is refreshed every frame straight
-   * from `sector.floorHeight` in `update()`, the same "ride a moving floor
-   * for free" trick as before monsters could move at all. Once a monster is
-   * alerted, `stepMonsterAI` owns it instead (`groundFloor` + gravity, the
-   * same physics `Player.update` uses), since a chasing monster needs to
-   * fall off ledges and cross sector boundaries rather than trust a single
-   * fixed sector reference.
-   */
-  z: number;
-  /**
-   * Its containing sector — the live reference `z` is read from while
-   * not an alerted monster; reassigned each frame by `update()` once a monster starts moving.
-   */
-  sector: Sector | undefined;
-  facingDeg: number;
-  subsector: number;
-  type: number;
-  /** Set once a pickup consumes this instance; it then stays permanently hidden (see ThingLayer.update). */
-  picked: boolean;
-  /**
-   * Remaining hit points;
-   * only meaningful for a `MONSTER_TYPES` thing (see `MONSTER_HEALTH`).
-   * everything else stays at `Infinity` and can never die.
-   */
-  health: number;
-  /** Set once `health` reaches 0; see `ThingLayer.damage`. */
-  dead: boolean;
-  /**
-   * Seconds since `dead` was set. Vanilla's `PIT_VileCheck` refuses to raise
-   * a corpse whose own death animation is still playing (`tics != -1`,
-   * "not lying still yet") — `findRaisableCorpse` compares this against
-   * `deathFrameCount * MONSTER_DEATH_FRAME_SECONDS` for the same gate.
-   */
-  deadTime: number;
-  /** Frame count of whichever death animation (`MONSTER_DEATH_FRAMES` or the gibbed `MONSTER_XDEATH_FRAMES`) `ThingLayer.damage` actually played — set at time of death, read back by `deadTime`'s "still settling" check above. 0 for anything that never died with real death art (see `damage`'s `hidden` fallback). */
-  deathFrameCount: number;
-  /**
-   * This type's resurrection frames (`MONSTER_RAISE_FRAMES`), resolved once
-   * at spawn for the same reason `attackFrames`/`painFrames` are — and
-   * doubles as the arch-vile's own eligibility test: `undefined` means this
-   * type has no vanilla `raisestate` and `findRaisableCorpse` skips it
-   * outright, matching vanilla's `raisestate == S_NULL` check.
-   */
-  raiseFrames: string[] | undefined;
-  /**
-   * Set once a dead barrel's own `A_Explode` has actually fired
-   * (`BARREL_EXPLODE_DELAY_SECONDS` after death, not on death itself — see
-   * that constant's doc), so `update()`'s per-frame `deadTime` check doesn't
-   * re-fire it every subsequent frame. Meaningless for anything else.
-   */
-  barrelExploded: boolean;
-  /**
-   * Who dealt a barrel's killing blow, captured at the moment it died and
-   * carried forward to its own `A_Explode` — vanilla's `P_RadiusAttack`
-   * passes the exploding barrel's own `target` (whoever damaged it) as the
-   * new blast's `bombsource`, which is how a chain of barrels keeps
-   * attributing every link back to whoever set the first one off rather than
-   * to the previous barrel in the chain. `null` means "the player", the same
-   * convention `ThingLayer.damage`'s own `source` parameter already uses.
-   * Meaningless for anything else.
-   */
-  explodeSource: { id: number; type: number } | null;
-  /**
-   * Vanilla's `P_DamageMobj` horizontal knockback (`momx`/`momy`), map
-   * units/sec — an impulse `damage` adds to in `ThingLayer.damage` (via
-   * `thrustSpeed`), then `applyKnockback` integrates and decays every frame
-   * on top of whatever movement (AI-driven, for a monster) already happened
-   * this frame, exactly as vanilla's own `P_XYMovement` momentum displaces a
-   * mobj independently of, and before, `A_Chase`'s own walk step in the same
-   * tic. Meaningless for anything `ThingLayer.damage` never touches (every
-   * non-monster, non-barrel thing) — always 0 there.
-   */
-  velX: number;
-  velY: number;
-  /**
-   * True for an item `ThingLayer.damage` spawned itself (`MONSTER_DROPS`) rather than
-   * one the map placed — threaded through to `applyPickup`'s own `dropped` param, which halves the ammo it grants.
-   */
-  dropped: boolean;
-
-  // --- Monster AI (game/monsters/ai.ts) — inert defaults for every non-monster PosedThing. ---
-  /** True once this monster has spotted the player and started chasing (`update`'s throttled wake check, LOOK_INTERVAL). */
-  alerted: boolean;
-  /**
-   * The map thing's "ambush"/deaf flag (`game/skill.ts: isAmbush`) .
-   * Gates whether a sound-alerted sector alone can wake this monster; see `update`'s wake check.
-   */
-  ambush: boolean;
-  velZ: number;
-  angle: number;
-  attackPause: number;
-  burstLeft: number;
-  burstTimer: number;
-  chargeTimer: number;
-  chargeAngle: number;
-  painTimer: number;
-  movedir: number;
-  movecount: number;
-  chaseTimer: number;
-  moveBlocked: boolean;
-  threshold: number;
-  justHit: boolean;
-  justAttacked: boolean;
-  reactionTicks: number;
-  refiring: boolean;
-  /** Only meaningful for the revenant (see `MonsterBody.homingBias`'s doc); seeded/rerolled below regardless of type, the same as every other inert-elsewhere AI field. */
-  homingBias: boolean;
-  /** Footstep pacing — only the three heavy monsters have any (`MonsterSounds.walk`); inert for everything else, like the AI fields above. */
-  walkSoundTimer: number;
-  walkSoundStep: number;
-  /**
-   * Seconds since this monster's last idle look-around. Separate from the AI
-   * timers above because it only ticks *before* the monster wakes, and
-   * `game/monsters/ai.ts` has no business knowing the throttle exists.
-   */
-  lookTimer: number;
-  /** Position at the end of the previous frame, so `crossLines` can test the segment this monster just walked. Mutated in place; never re-allocated. */
-  prev: Pos2;
-  /**
-   * Who this monster is currently hunting: `null` for the player, otherwise
-   * another `PosedThing`'s id. Set by `damage` when something hurts it (see
-   * `shouldRetarget`) — the mechanism behind infighting — and reset to the
-   * player once that target dies.
-   */
-  targetId: number | null;
-}
-
-/**
- * How far around the *player* to look for bodies they could bump into
- * (`solidBodies`). A fixed worst case is fine here — it must exceed the
- * largest possible contact reach (two spider masterminds, at 128 units of
- * radius each) with room to spare for a frame's movement, and it's paid once
- * per frame for one body. `blockersFor` deliberately does **not** use it: run
- * per monster per frame, a fixed box that assumes the largest monster in the
- * game is exactly the waste that made monster AI the frame's bottleneck.
- */
-const BLOCKER_SEARCH_RADIUS = 320;
-
-/**
- * Cell size of the monster lookup grid (`blockerGrid`). Deliberately much
- * smaller than the worst-case search box: the box is sized *per monster* from
- * its own radius (see `blockersFor`), so small cells are what let an ordinary
- * 20-unit-radius monster scan a handful of candidates instead of everything
- * within the largest radius any monster in the game could need.
- */
-const BLOCKER_GRID_CELL = 128;
-
-/** `game.ts`'s own per-frame `dt` clamp; the most simulated time one frame can ever represent. */
-const MAX_FRAME_DT = 0.05;
 
 /**
  * Vanilla's own per-tic XY friction, `FRICTION = 0xE800/0x10000` — applied as
@@ -265,21 +98,6 @@ const FRICTION = 0.90625;
 const KNOCKBACK_STOP_SPEED = 1;
 
 /**
- * Slack added to every blocker search so narrowing it to the bodies that can
- * actually touch can't miss one — the longest probe step (`tryWalk` reaches a
- * full `P_Move` ahead) plus the worst one-frame grid staleness. Derived from
- * `MONSTER_STATS` rather than hardcoded so it can't drift out of sync.
- *
- * The two maxima are taken **independently and added**, not maximised as a
- * per-type sum: the monster probing and the monster that drifted are different
- * monsters, so nothing requires them to be the same type. See
- * docs/monsters.md § Spatial indexing.
- */
-const BLOCKER_MARGIN =
-  Object.values(MONSTER_STATS).reduce((max, s) => Math.max(max, s.speed * s.chaseInterval), 0) +
-  Object.values(MONSTER_STATS).reduce((max, s) => Math.max(max, s.speed), 0) * MAX_FRAME_DT;
-
-/**
  * How often an unalerted monster re-checks line of sight to the player —
  * vanilla's own idle `A_Look` calls run every 10 tics (~0.29s), not every tic.
  */
@@ -292,298 +110,6 @@ const LOOK_INTERVAL = 0.3;
  * poses.
  */
 const MONSTER_WALK_FRAMES = ['A', 'B', 'C', 'D'];
-
-/**
- * One monster as the rest of the engine sees it: the stable `id`
- * `ThingLayer.damage` takes, live position, doomednum (for the species
- * checks), and current facing — which `game.ts`'s arch-vile flame tracking
- * needs, since `A_Fire` keys off the *target's* facing.
- */
-export interface MonsterRef extends Pos3 {
-  id: number;
-  type: number;
-  angle: number;
-}
-
-/**
- * Live kill/item totals for the level, vanilla's own `totalkills`/`killcount` and
- * `totalitems`/`itemcount` — `total*` set once at spawn (`COUNTKILL_TYPES`/`COUNTITEM_TYPES`),
- * `kills`/`items` incremented as the level is played. docs/items.md § Level stats.
- */
-export interface LevelKillItemStats {
-  totalKills: number;
-  kills: number;
-  totalItems: number;
-  items: number;
-}
-
-export interface ThingLayer {
-  group: THREE.Group;
-  count: number;
-  /** See `LevelKillItemStats`'s own doc. */
-  stats: LevelKillItemStats;
-  /** Releases the instanced meshes/materials this layer owns; call when the map is unloaded. Shared geometry and textures belong to `SpriteMaterialCache`, which outlives a level. */
-  dispose(): void;
-  /** Every living monster, still-standing barrel, and solid decoration near (x, y) as a solid body the *player* walks around — all `MF_SOLID` in vanilla. Monsters get `blockersFor` instead. */
-  solidBodies(pos: Pos2): ThingBlocker[];
-  /**
-   * Re-poses every thing at the camera's viewer angle and, for a living
-   * monster, ticks its AI: unalerted ones re-check sight every
-   * `LOOK_INTERVAL`, alerted ones run `stepMonsterAI` every frame. Gravity and
-   * `groundFloor` mirror `Player.update`, but movement is vanilla's 8-way
-   * `P_NewChaseDir` rather than `slideMove` (docs/monsters.md § Movement).
-   * Returns every attack fired this frame for the caller to apply.
-   *
-   * `player` is `null` while the player is dead, freezing every monster in
-   * place without touching pose/animation/fog-visibility. For anything else,
-   * `z` refreshes from the sector's live `floorHeight` — the "ride a moving
-   * floor for free" trick, so a corpse left on a lift still rides it.
-   *
-   * `fogAlphaOf` hides things in an unrevealed subsector, which would
-   * otherwise spoil a secret room whose geometry is faded out. `crossLines`
-   * gets the segment each alerted monster walked, so the caller can fire walk
-   * triggers (docs/specials.md § Teleporters). Also ticks barrel death clocks
-   * and reports any `A_Explode` due this frame.
-   */
-  update(
-    dt: number,
-    viewerAngleDeg: number,
-    player: Pos3 | null,
-    fogAlphaOf?: (subsector: number) => number,
-    crossLines?: (prev: Pos2, pos: Pos2) => Placement | null,
-  ): ThingUpdateResult;
-  /**
-   * Consumes every not-yet-picked thing within `radius` and vertical reach of
-   * `z` that `consume` accepts, hiding it permanently. This layer owns only
-   * which world instance disappears; `consume` (inventory.ts's `applyPickup`)
-   * owns what picking it up means. Its second argument is the instance's
-   * `dropped` flag. docs/items.md § Collecting things.
-   */
-  tryPickup(pos: Pos3, radius: number, consume: (type: number, dropped: boolean) => boolean): void;
-  /**
-   * The visible monster this ray hits first, or null — auto-aim's lock-on
-   * (docs/combat.md § Auto-aim). Nothing fog of war hides, nothing already
-   * dead. The returned `id` is what `damage` takes, so a shot fired this frame
-   * can land on exactly this instance later without re-picking. Barrels are
-   * lockable too: `P_AimLineAttack` knows only `MF_SHOOTABLE`, not "monster".
-   */
-  pickMonster(raycaster: THREE.Raycaster): MonsterRef | null;
-  /**
-   * Living monsters within `radius` (2D — matching vanilla's own radius-attack
-   * distance test, which ignores height) of (x, y). Candidates for splash
-   * damage (game.ts); the caller still has to check line-of-sight itself,
-   * since that needs the `World` this layer doesn't otherwise touch.
-   */
-  monstersNear(pos: Pos2, radius: number): MonsterRef[];
-  /** This exact monster's live position and type, or null if the id is stale or it has since died. Lets a shot fired at a monster keep tracking it across frames. */
-  monsterById(id: number): MonsterRef | null;
-  /**
-   * Whether a shot landing on this thing splashes blood — vanilla's
-   * `MF_NOBLOOD`, which in all of stock DOOM exactly one thing carries
-   * (`MT_BARREL`; `PTR_ShootTraverse` spawns a puff there instead). Keyed by
-   * id and deliberately blind to whether the thing is already dead, so the
-   * killing blow still bleeds no matter which side of `damage` the caller
-   * asks from. See docs/combat.md § Blood.
-   */
-  bleeds(id: number): boolean;
-  /** Count of living monsters currently alerted (chasing/attacking, or mid-reaction-delay) — for the debug HUD. */
-  awakeMonsterCount(): number;
-  /**
-   * Positions of the alerted monsters `awakeMonsterCount` counts, narrowed to
-   * those actually being rendered — each is an extra occlusion-fade sightline
-   * target alongside the player. Excluding the unalerted and the fog-hidden is
-   * load-bearing (docs/render.md § Wall occlusion fading). **Must be called
-   * after `update` has run**, so `visible` reflects this frame's fog.
-   */
-  awakeMonsters(): Pos3[];
-  /**
-   * Living monsters standing in exactly `sector` — a reference-equality check
-   * against the same mutable `Sector` object `PosedThing.sector` was seeded
-   * from (see that field's doc), not a sector-index lookup this layer has no
-   * way to perform on its own. Backs crush damage (game.ts's `onCrush`
-   * callback into `SpecialsController`) and the headroom-blocked check every
-   * non-crushing mover uses to stop rather than clip through a monster
-   * (`game.ts`'s `headroomBlocked`) — either way, a mover only knows which
-   * sector it's squeezing, not who's standing in it.
-   */
-  monstersInSector(sector: Sector): MonsterRef[];
-  /**
-   * `monstersInSector` plus any still-standing barrel in `sector` — vanilla's
-   * `PIT_ChangeSector` treats a barrel exactly like a monster for crushing
-   * (any `MF_SHOOTABLE` mobj with health left takes the same periodic
-   * damage), so a barrel under a crusher dies and, after its usual
-   * `BARREL_EXPLODE_DELAY_SECONDS`, explodes the same as if it'd been shot.
-   * Crush damage's own caller (`game.ts`'s `applyCrushDamage`) is the only
-   * user — the headroom-blocked check other movers use deliberately stays on
-   * `monstersInSector` alone, unrelated to this task.
-   */
-  crushablesInSector(sector: Sector): MonsterRef[];
-  /**
-   * Applies `amount` damage to `id`, switching to the death animation at 0 —
-   * gibbed or plain per `P_KillMobj`'s overkill rule (docs/combat.md § Monster
-   * death). A no-op if `id` is stale, already dead, or the amount is
-   * non-positive: a projectile can outlive its target, and splash falloff
-   * reaches 0 at the blast edge.
-   *
-   * - `source` — who dealt the hit, absent meaning the player. Drives the
-   *   infighting retarget via `shouldRetarget` (docs/monsters.md § Infighting).
-   * - `knockUpSpeed` — the arch-vile's `A_VileAttack` launch. Applied here
-   *   because it writes the same `z`/`velZ` fields gravity integration owns.
-   * - `fromX`/`fromY` — the inflictor position, driving `thrustSpeed`'s
-   *   horizontal knockback. Omitted by damage floors and crushers, matching
-   *   vanilla's null-inflictor call (docs/movement.md § Knockback).
-   *
-   * A barrel takes this same call but follows none of it except the knockback:
-   * no pain state, no retarget, and death switches its sprite to `BEXP`.
-   */
-  damage(
-    id: number,
-    amount: number,
-    source?: { id: number; type: number },
-    knockUpSpeed?: number,
-    fromX?: number,
-    fromY?: number,
-  ): void;
-  /**
-   * Creates a fresh, already-awake monster of `type` at `at` and telefrags
-   * whatever was standing there (`TELEFRAG_DAMAGE` to every overlapping body),
-   * returning it — or null if the WAD carries no art for that doomednum.
-   * Vanilla's `A_SpawnFly` tail; the Icon of Sin's spawn cube (`game/iconofsin.ts`)
-   * is the only caller.
-   *
-   * Only the *monster* half of the telefrag happens here: this layer has no
-   * player reference, so the caller tests the returned position against the
-   * player itself. The new monster counts toward `stats.kills` when killed but
-   * never toward `totalKills`, matching vanilla's fixed `P_SpawnMapThing`
-   * total — kills can legitimately exceed 100% on MAP30. docs/monsters.md §
-   * The spawn cube.
-   */
-  spawnMonster(type: number, at: Pos3, angleRad: number): MonsterRef | null;
-  /**
-   * Nearest living monster the ray crosses within `maxDist`, or null — the
-   * "didn't click anything, but something's in the path anyway" case for a
-   * free shot, tested against `monsters/defs.ts`'s `MONSTER_HIT_RADIUS`/`_HEIGHT`.
-   *
-   * `opts` serves a *monster's* own hitscan: `ignoreId` excludes the shooter
-   * from its own trace, `includeHidden` skips the fog-of-war filter, since fog
-   * is a player-facing conceit — two monsters fighting in a room the player
-   * hasn't seen must still connect.
-   */
-  raycastMonster(
-    origin: Pos3,
-    angleRad: number,
-    maxDist: number,
-    opts?: { ignoreId?: number; includeHidden?: boolean },
-  ): (MonsterRef & { dist: number }) | null;
-}
-
-
-/**
- * The two types whose sight and death sounds vanilla plays **unattenuated**,
- * from nowhere in particular (`A_Look`/`A_Scream`'s own
- * `if (actor->type==MT_SPIDER || actor->type == MT_CYBORG) S_StartSound(NULL, …)`)
- * — you hear a cyberdemon wake up anywhere on the map. Nothing else about their
- * sounds is special: their pain, footsteps and shots all attenuate normally.
- */
-const BOSS_TYPES = new Set([7, 16]);
-
-/**
- * Every type whose death can drive level logic, and so the set `damageThing`'s death branch checks
- * before it's worth scanning `posed` for "any others of this type still alive" at all. Distinct
- * from `BOSS_TYPES` above, which is only about unattenuated sound.
- *
- * `BOSS_DEATH_TYPES` is `A_BossDeath`'s own five candidates; Commander Keen (72, `A_KeenDie`) and
- * the boss brain (88, `A_BrainDie`) are added *here* rather than to that table because vanilla
- * reaches them through their own separate action functions. In particular neither is gated on
- * `gamemap`, and `bossDeathTriggersFor`'s `default` branch maps over `BOSS_DEATH_TYPES` to make
- * every member exit on an unlisted episode's map 8 — which must not apply to these two. See
- * docs/specials.md § Boss death.
- */
-const DEATH_NOTIFY_TYPES: Set<number> = new Set([...Object.values(BOSS_DEATH_TYPES), 72, 88]);
-
-/**
- * Vanilla's own `P_TeleportMove` telefrag damage — the literal `10000` it deals to everything
- * standing where a body lands. Only `spawnMonster` (the Icon of Sin's spawn cube) reaches it here;
- * this engine has no player teleport that can land on an occupied spot. See docs/combat.md §
- * Telefrag.
- */
-export const TELEFRAG_DAMAGE = 10000;
-
-/** The lost soul's doomednum — what the pain elemental's `A_PainShootSkull` spawns (see `spawnLostSoul`). */
-const LOST_SOUL_TYPE = 3006;
-/** The pain elemental's own doomednum — `damage()`'s death branch checks this for its `A_PainDie` triple-spawn. */
-const PAIN_ELEMENTAL_TYPE = 71;
-/** Vanilla's own hard cap on how many lost souls can exist on a level at once — `A_PainShootSkull`'s "count > 20" guard. */
-const MAX_SKULLS_ON_LEVEL = 20;
-
-/**
- * The exploding barrel's own doomednum (`THING_SPRITES`'s `BAR1` entry) —
- * vanilla `MT_BARREL`. Unlike every monster, a barrel has no AI at all
- * (`MONSTER_STATS` has no entry for it, so it never enters the
- * `if (stats && player)` branch in `update()` below) — it's just a plain
- * `MF_SOLID|MF_SHOOTABLE` prop that happens to deal splash damage on death.
- */
-const BARREL_TYPE = 2035;
-/** Vanilla `mobjinfo` spawnhealth for `MT_BARREL`. */
-const BARREL_HEALTH = 20;
-/**
- * Vanilla `MT_BARREL`'s own `radius` (10 map units) — real and much smaller
- * than `MONSTER_HIT_RADIUS`, the approximate fallback used for a type with no
- * `MONSTER_STATS` entry, which a barrel otherwise is.
- */
-const BARREL_RADIUS = 10;
-/** Vanilla `MT_BARREL`'s own `mass` — confirmed against `linuxdoom-1.10/info.c`, feeds `thrustSpeed`. */
-const BARREL_MASS = 100;
-/** `S_BAR1`/`S_BAR2` — a two-frame idle sway, each vanilla frame held 6 tics. */
-const BARREL_IDLE_FRAMES = ['A', 'B'];
-const BARREL_IDLE_FRAME_SECONDS = 6 * DOOM_TIC;
-/**
- * A barrel's death art is a genuinely different sprite lump from its own idle
- * art (`BEXP`, not `BAR1`) — unlike every monster, whose death states reuse
- * the same sprite name as their walk/attack states. `SpriteAnimator.die`'s
- * optional third argument exists specifically for this.
- */
-const BARREL_DEATH_SPRITE = 'BEXP';
-/** `S_BEXP1`-`S_BEXP5` frame letters. */
-const BARREL_DEATH_FRAMES = ['A', 'B', 'C', 'D', 'E'];
-/**
- * A flat per-frame rate standing in for vanilla's own uneven per-state tic
- * counts (5, 5, 5, 10, 10) — the same "one uniform rate" simplification
- * `MONSTER_DEATH_FRAME_SECONDS` already makes elsewhere. Matches the real
- * rate of the first three frames, which is the one that actually matters:
- * `BARREL_EXPLODE_DELAY_SECONDS` below is timed off it.
- */
-const BARREL_DEATH_FRAME_SECONDS = 5 * DOOM_TIC;
-/**
- * Vanilla's own `A_Explode` fires on entering `S_BEXP3` — the death
- * animation's third frame, i.e. two frames after the barrel actually died,
- * not instantly on death. Confirmed against `linuxdoom-1.10/info.c`'s
- * `S_BEXP1`/`S_BEXP2` durations (5 tics each) rather than assumed.
- */
-const BARREL_EXPLODE_DELAY_SECONDS = 2 * BARREL_DEATH_FRAME_SECONDS;
-
-/**
- * A barrel's `A_Explode` becoming due (`BARREL_EXPLODE_DELAY_SECONDS` after
- * it died, not on death itself), for `game.ts` to turn into
- * `applyRadiusDamage`. `source`, when set, is who dealt the killing blow —
- * see `PosedThing.explodeSource`'s doc for why this is what makes a chain of
- * barrels attribute correctly all the way back to whoever set the first one
- * off.
- */
-export interface BarrelExplosion extends Pos3 {
-  source?: { id: number; type: number };
-}
-
-/** `ThingLayer.update`'s return value — see that method's doc. */
-export interface ThingUpdateResult {
-  attacks: MonsterAttackEvent[];
-  barrelExplosions: BarrelExplosion[];
-}
-
-/** Whether `type` gets `PICKUP_SCALE` — see `PICKUP_SCALE_TYPES`'s doc for why this is a whitelist, not "everything but monsters/weapons". */
-function pickupScaleFor(type: number): number {
-  return PICKUP_SCALE_TYPES.has(type) ? PICKUP_SCALE : 1;
-}
 
 /**
  * How far off the floor a monster's death drop is *drawn* (map units), and how
@@ -1081,276 +607,11 @@ export function buildThingSprites(
   }
 
   /**
-   * Living monsters bucketed by `BLOCKER_GRID_CELL`, rebuilt once per
-   * `update()` and read by `blockersFor` below. Vanilla has the same thing for
-   * the same reason — its blockmap — and this exists because without it
-   * monster-vs-monster collision is O(monsters²) per frame: every alerted
-   * monster scanning every other thing on the map. That is fine at a stock
-   * level's population and catastrophic beyond it (NUTS.WAD's 10,696 things
-   * work out to ~114 million distance checks per frame the moment they all
-   * wake up, which on its own is a multi-hundred-millisecond frame).
-   *
-   * Cells hold `PosedThing`s rather than ids so `blockersFor` needs no second
-   * lookup, and their arrays are emptied and refilled rather than reallocated,
-   * since this runs every frame.
+   * The blocker/corpse spatial index — see things/grid.ts. Built here, after
+   * the map-load spawn loop above, so its first bucketing already holds every
+   * thing the map placed.
    */
-  const blockerCols = Math.max(1, Math.ceil((map.bounds.maxX - map.bounds.minX) / BLOCKER_GRID_CELL) + 1);
-  const blockerRows = Math.max(1, Math.ceil((map.bounds.maxY - map.bounds.minY) / BLOCKER_GRID_CELL) + 1);
-  const blockerGrid: PosedThing[][] = new Array(blockerCols * blockerRows);
-  /** Indices of the cells that actually have anything in them, so a rebuild clears only those instead of walking the whole grid. */
-  const blockerDirty: number[] = [];
-
-  /**
-   * Raisable corpses bucketed into `blockerGrid`'s cell grid, filled in the
-   * same `posed` pass. Backs `findRaisableCorpse`, which was a linear scan on
-   * the unverified assumption that arch-viles are rare — they aren't on every
-   * map, and it cost most of a frame there. docs/monsters.md § Spatial
-   * indexing.
-   */
-  const corpseGrid: PosedThing[][] = new Array(blockerCols * blockerRows);
-  /** Indices of the cells that actually have anything in them, so a rebuild clears only those instead of walking the whole grid. */
-  const corpseDirty: number[] = [];
-  /** Largest collision radius among corpses currently in `corpseGrid`, sizing `findRaisableCorpse`'s search box the same way `maxBlockerRadius` sizes `blockersFor`'s. */
-  let maxCorpseRadius = 0;
-  /** Bumped per `forEachMonsterAlongRay` call; see `PosedThing.queryStamp`. */
-  let monsterQueryStamp = 0;
-  /** Largest collision radius currently in the grid, so `blockersFor` sizes its box to what this map contains rather than to the biggest monster in the game. */
-  let maxBlockerRadius = PLAYER_RADIUS;
-
-  /**
-   * Every living monster in the grid cells covering `radius` around (x, y).
-   * The caller still applies its own exact distance test; this only narrows
-   * the candidates. Padded by `BLOCKER_MARGIN` since the grid buckets each
-   * monster by where it stood at rebuild time.
-   */
-  function forEachMonsterNear(x: number, y: number, radius: number, visit: (p: PosedThing) => void): void {
-    const reach = radius + BLOCKER_MARGIN;
-    const c0 = blockerCol(x - reach);
-    const c1 = blockerCol(x + reach);
-    const r0 = blockerRow(y - reach);
-    const r1 = blockerRow(y + reach);
-    for (let gy = r0; gy <= r1; gy++) {
-      const rowBase = gy * blockerCols;
-      for (let gx = c0; gx <= c1; gx++) {
-        const cell = blockerGrid[rowBase + gx];
-        if (cell === undefined) continue;
-        for (const p of cell) visit(p);
-      }
-    }
-  }
-
-  /**
-   * Every living monster in or beside the cells a ray passes through, each
-   * visited at most once — backs `raycastMonster`, called dozens of times a
-   * frame on a crowded map.
-   *
-   * Deliberately simpler than `forEachLineAlongSegment`'s exact DDA: half-cell
-   * steps with a 3×3 sweep each. Half-cell steps skip no cell on the path, and
-   * the 3×3 sweep clears a full 128 units either side — far more than the ~24
-   * unit hit radius — so it cannot miss a monster the exact ray would hit.
-   * Stamped rather than `Set`-deduped, since consecutive neighbourhoods
-   * overlap heavily. docs/monsters.md § Spatial indexing.
-   */
-  function forEachMonsterAlongRay(
-    x: number,
-    y: number,
-    dirX: number,
-    dirY: number,
-    maxDist: number,
-    visit: (p: PosedThing) => void,
-  ): void {
-    const stamp = ++monsterQueryStamp;
-    const stride = BLOCKER_GRID_CELL / 2;
-    const steps = Math.ceil(maxDist / stride);
-    for (let s = 0; s <= steps; s++) {
-      const t = Math.min(s * stride, maxDist);
-      const cx = blockerCol(x + dirX * t);
-      const cy = blockerRow(y + dirY * t);
-      for (let gy = cy - 1; gy <= cy + 1; gy++) {
-        if (gy < 0 || gy >= blockerRows) continue;
-        const rowBase = gy * blockerCols;
-        for (let gx = cx - 1; gx <= cx + 1; gx++) {
-          if (gx < 0 || gx >= blockerCols) continue;
-          const cell = blockerGrid[rowBase + gx];
-          if (cell === undefined) continue;
-          for (const p of cell) {
-            if (p.queryStamp === stamp) continue;
-            p.queryStamp = stamp;
-            visit(p);
-          }
-        }
-      }
-    }
-  }
-
-  /** Grid column/row for a map coordinate, clamped so a thing outside the map's own bounds still lands in a real cell. */
-  function blockerCol(x: number): number {
-    const c = Math.floor((x - map.bounds.minX) / BLOCKER_GRID_CELL);
-    return c < 0 ? 0 : c >= blockerCols ? blockerCols - 1 : c;
-  }
-
-  function blockerRow(y: number): number {
-    const r = Math.floor((y - map.bounds.minY) / BLOCKER_GRID_CELL);
-    return r < 0 ? 0 : r >= blockerRows ? blockerRows - 1 : r;
-  }
-
-  function rebuildBlockerGrid(): void {
-    for (const i of blockerDirty) blockerGrid[i].length = 0;
-    blockerDirty.length = 0;
-    maxBlockerRadius = PLAYER_RADIUS;
-    for (const i of corpseDirty) corpseGrid[i].length = 0;
-    corpseDirty.length = 0;
-    maxCorpseRadius = 0;
-    for (const p of posed) {
-      if (p.dead) {
-        // A hidden corpse (MONSTER_CORPSE_VANISHES — see that doc) no longer
-        // exists as far as an arch-vile is concerned, matching vanilla's own
-        // P_RemoveMobj: it's simply not there to raise.
-        if (!p.raiseFrames || p.hidden) continue;
-        if (p.blockRadius > maxCorpseRadius) maxCorpseRadius = p.blockRadius;
-        const i = blockerRow(p.y) * blockerCols + blockerCol(p.x);
-        let cell = corpseGrid[i];
-        if (!cell) corpseGrid[i] = cell = [];
-        if (cell.length === 0) corpseDirty.push(i);
-        cell.push(p);
-        continue;
-      }
-      // A living barrel, and any `SOLID_DECORATION_TYPES` prop, is exactly as
-      // solid as a monster — vanilla's own MF_SOLID — so both join the same
-      // grid: they block the player (`solidBodies`) and a monster's own
-      // movement (`blockersFor`) for free through the machinery already built
-      // for monsters. Unlike the barrel, a plain decoration isn't
-      // `MF_SHOOTABLE` — `raycastMonster`/`monstersNear` explicitly filter
-      // `SOLID_DECORATION_TYPES` back out below, so it still doesn't stop a
-      // shot.
-      if (!MONSTER_TYPES.has(p.type) && p.type !== BARREL_TYPE && !SOLID_DECORATION_TYPES.has(p.type)) continue;
-      if (p.blockRadius > maxBlockerRadius) maxBlockerRadius = p.blockRadius;
-      const i = blockerRow(p.y) * blockerCols + blockerCol(p.x);
-      let cell = blockerGrid[i];
-      if (!cell) blockerGrid[i] = cell = [];
-      if (cell.length === 0) blockerDirty.push(i);
-      cell.push(p);
-    }
-  }
-
-  /**
-   * Reused storage for `blockersFor`'s result — `blockerPool` owns the objects
-   * and only grows, `blockerScratch` is refilled with references, so a
-   * steady-state frame allocates nothing. Allocating fresh per call profiled as
-   * the majority of all monster-AI time on a crowded map (docs/monsters.md §
-   * Spatial indexing).
-   *
-   * **The tradeoff: the result is valid only until the next call** — hence
-   * `readonly`, and hence its one caller consuming it synchronously.
-   * `solidBodies` deliberately does *not* share this: once per frame for the
-   * player, a plain allocation costs nothing and an aliased buffer is a trap.
-   */
-  const blockerPool: ThingBlocker[] = [];
-  const blockerScratch: ThingBlocker[] = [];
-
-  function pushBlocker(x: number, y: number, radius: number): void {
-    const i = blockerScratch.length;
-    let b = blockerPool[i];
-    if (!b) blockerPool[i] = b = { x: 0, y: 0, radius: 0 };
-    b.x = x;
-    b.y = y;
-    b.radius = radius;
-    blockerScratch.push(b);
-  }
-
-  /**
-   * The solid bodies near `p` it can bump into — every other living monster,
-   * the player, and any solid decoration/barrel, all `MF_SOLID` in vanilla.
-   * `p` itself is excluded.
-   *
-   * **The returned array is reused** — see `blockerScratch`.
-   *
-   * The box is sized from the radii actually involved, not a fixed worst case,
-   * and only the cells it covers are scanned. The single hottest thing in
-   * monster AI; see docs/monsters.md § Spatial indexing.
-   */
-  function blockersFor(p: PosedThing, player: Pos3 | null): readonly ThingBlocker[] {
-    blockerScratch.length = 0;
-    const ownRadius = p.blockRadius;
-    // `blockedByThings` only ever reports an overlap inside `r1 + r2`, so
-    // nothing further than the widest possible summed radii (plus the margin)
-    // can matter — searching further is pure waste, and it was: a fixed
-    // 320-unit box collected ~145 candidates per monster on a map of 20-unit
-    // grunts, which profiled as half of all monster-AI time.
-    const reach = ownRadius + maxBlockerRadius + BLOCKER_MARGIN;
-    // `null` once the player is dead — vanilla's `P_KillMobj` clears the
-    // player's `MF_SOLID` right alongside `MF_SHOOTABLE`, so a corpse is no
-    // more an obstacle than it is a target.
-    if (player) {
-      const playerReach = ownRadius + PLAYER_RADIUS + BLOCKER_MARGIN;
-      if (Math.abs(player.x - p.x) <= playerReach && Math.abs(player.y - p.y) <= playerReach) {
-        pushBlocker(player.x, player.y, PLAYER_RADIUS);
-      }
-    }
-    const c0 = blockerCol(p.x - reach);
-    const c1 = blockerCol(p.x + reach);
-    const r0 = blockerRow(p.y - reach);
-    const r1 = blockerRow(p.y + reach);
-    for (let gy = r0; gy <= r1; gy++) {
-      const rowBase = gy * blockerCols;
-      for (let gx = c0; gx <= c1; gx++) {
-        const cell = blockerGrid[rowBase + gx];
-        if (cell === undefined || cell.length === 0) continue;
-        for (const other of cell) {
-          // `dead` is re-checked because a monster can be killed (infighting,
-          // splash) after the grid was built for this frame.
-          if (other === p || other.dead) continue;
-          // Tighter than `reach`, which has to assume the map's largest
-          // monster: this pair's own summed radii is the real bound. That
-          // matters on a map like NUTS.WAD, where 795 spider masterminds
-          // (radius 128) would otherwise widen every 20-unit grunt's box too.
-          const pairReach = ownRadius + other.blockRadius + BLOCKER_MARGIN;
-          if (Math.abs(other.x - p.x) > pairReach || Math.abs(other.y - p.y) > pairReach) continue;
-          pushBlocker(other.x, other.y, other.blockRadius);
-        }
-      }
-    }
-    return blockerScratch;
-  }
-
-  /**
-   * Vanilla's `PIT_VileCheck`, the `resurrect` callback `runChaseCall` takes:
-   * the first corpse near (x, y) this arch-vile could raise, or null.
-   * Grid-accelerated the same shape as `blockersFor` — box, cells, exact
-   * per-pair test. Which corpse wins when several qualify follows grid
-   * iteration order, as arbitrary as vanilla's own blockmap order.
-   *
-   * Skips vanilla's `P_CheckPosition` re-test against other nearby things (the
-   * corpse height-quadrupling trick) — raises are rare enough that reusing
-   * `blockersFor`'s per-caller machinery here wasn't worth the coupling.
-   * docs/monsters.md § The arch-vile.
-   */
-  function findRaisableCorpse(x: number, y: number, vileRadius: number): RaiseCandidate | null {
-    const reach = vileRadius + maxCorpseRadius + BLOCKER_MARGIN;
-    const c0 = blockerCol(x - reach);
-    const c1 = blockerCol(x + reach);
-    const r0 = blockerRow(y - reach);
-    const r1 = blockerRow(y + reach);
-    for (let gy = r0; gy <= r1; gy++) {
-      const rowBase = gy * blockerCols;
-      for (let gx = c0; gx <= c1; gx++) {
-        const cell = corpseGrid[rowBase + gx];
-        if (cell === undefined || cell.length === 0) continue;
-        for (const c of cell) {
-          // A corpse this same frame's earlier vile already resurrected —
-          // grid buckets are up to a frame stale, `dead` is read live.
-          if (!c.dead) continue;
-          // "Not lying still yet" — vanilla's own `thing->tics != -1` gate.
-          if (c.deadTime < c.deathFrameCount * MONSTER_DEATH_FRAME_SECONDS) continue;
-          const pairReach = c.blockRadius + vileRadius;
-          if (Math.abs(c.x - x) > pairReach || Math.abs(c.y - y) > pairReach) continue;
-          if (circleBlocked(world, c.x, c.y, c.blockRadius, c.z, true)) continue; // no room to stand back up
-          return { id: c.id, x: c.x, y: c.y };
-        }
-      }
-    }
-    return null;
-  }
+  const grid = createThingGrid(map, world, posed);
 
   /**
    * Vanilla's `A_VileChase` resurrection branch: restores a corpse to full
@@ -1396,23 +657,11 @@ export function buildThingSprites(
     if (p.raiseFrames) p.anim.playOnce(p.raiseFrames, MONSTER_DEATH_FRAME_SECONDS);
   }
 
-  // Seeded once here so a lookup that lands before the first `update` (a
-  // splash on the opening frame, say) still finds the monsters that exist.
-  rebuildBlockerGrid();
-
   return {
     group,
     count: posed.length,
     stats,
-    solidBodies(pos: Pos2): ThingBlocker[] {
-      const out: ThingBlocker[] = [];
-      for (const p of posed) {
-        if (p.dead || (!MONSTER_TYPES.has(p.type) && p.type !== BARREL_TYPE && !SOLID_DECORATION_TYPES.has(p.type))) continue;
-        if (Math.abs(p.x - pos.x) > BLOCKER_SEARCH_RADIUS || Math.abs(p.y - pos.y) > BLOCKER_SEARCH_RADIUS) continue;
-        out.push({ x: p.x, y: p.y, radius: p.blockRadius });
-      }
-      return out;
-    },
+    solidBodies: grid.solidBodies,
     update(
       dt: number,
       viewerAngleDeg: number,
@@ -1424,7 +673,7 @@ export function buildThingSprites(
       const barrelExplosions: BarrelExplosion[] = [];
       // Once per frame, ahead of any blockersFor call below — see its doc for
       // why a frame-granular grid is accurate enough for contact.
-      rebuildBlockerGrid();
+      grid.rebuild();
       clock += dt;
       batch.begin(viewerAngleDeg);
       dropBatch.begin(viewerAngleDeg);
@@ -1538,8 +787,8 @@ export function buildThingSprites(
                 target,
                 targetRadius,
                 targetHeight,
-                blockersFor(p, player),
-                findRaisableCorpse,
+                grid.blockersFor(p, player),
+                grid.findRaisableCorpse,
                 sfx,
               );
               // Vanilla's own momentum-driven displacement, additive on top of
@@ -1708,7 +957,7 @@ export function buildThingSprites(
       // more than everything else in the frame put together.
       const out: MonsterRef[] = [];
       const rSq = radius * radius;
-      forEachMonsterNear(pos.x, pos.y, radius, (p) => {
+      grid.forEachMonsterNear(pos.x, pos.y, radius, (p) => {
         // blockerGrid also carries SOLID_DECORATION_TYPES now (movement only) — not MF_SHOOTABLE
         // in vanilla, so a projectile must not strike one.
         if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
@@ -1786,7 +1035,7 @@ export function buildThingSprites(
       let nearest: (MonsterRef & { dist: number }) | null = null;
       // Grid-backed rather than a scan of every thing: this runs once per
       // monster hitscan, which a crowded map fires dozens of times a frame.
-      forEachMonsterAlongRay(origin.x, origin.y, dx, dy, maxDist, (p) => {
+      grid.forEachMonsterAlongRay(origin.x, origin.y, dx, dy, maxDist, (p) => {
         // blockerGrid also carries SOLID_DECORATION_TYPES now (movement only) — not MF_SHOOTABLE
         // in vanilla, so a hitscan must pass through one rather than stopping on it.
         if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;

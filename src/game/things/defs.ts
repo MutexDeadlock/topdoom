@@ -1,0 +1,471 @@
+/**
+ * The thing layer's record shapes and the constants tied to them: one live map
+ * thing (`PosedThing`), the layer's public surface (`ThingLayer`), and the
+ * handful of doomednums/tables that only this layer's own logic reads.
+ *
+ * Distinct from `game/thingdefs.ts`, which holds the *WAD-derived* tables
+ * every thing type is looked up in (sprites, health, drops, frame letters);
+ * this file is runtime state and the API around it, the same division
+ * `monsters/defs.ts` makes for the AI. See docs/items.md and docs/monsters.md.
+ */
+import * as THREE from 'three';
+import type { Sector } from '../../wad/map.ts';
+import { BOSS_DEATH_TYPES, PICKUP_SCALE_TYPES } from '../thingdefs.ts';
+import type { MonsterAttackEvent, MonsterBody } from '../monsters/defs.ts';
+import type { ThingBlocker } from '../world.ts';
+import type { SpriteAnimator } from '../../render/sprites.ts';
+import type { Placement, Pos2, Pos3 } from '../../types.ts';
+import { DOOM_TIC, PICKUP_SCALE } from '../../constants.ts';
+
+/**
+ * One live map thing. Extends `MonsterBody` (`monsters/defs.ts`) rather than
+ * re-declaring its chase/attack fields: `stepMonsterAI` is handed a
+ * `PosedThing` directly, so the two must agree, and inheriting says so where
+ * a copied field list only hoped so. Every one of those fields is present and
+ * inert on a non-monster thing — see `pushThing`'s zeroed defaults.
+ */
+export interface PosedThing extends Pos3, MonsterBody {
+  /**
+   * Index into the `posed` array itself.
+   * A stable handle callers (game.ts) can hold onto across frames to target
+   * this exact instance with `ThingLayer.damage`.
+   */
+  id: number;
+  /**
+   * This thing's animation state and current-lump lookup. Deliberately *not*
+   * a `SpriteActor` (which owns a `THREE.Mesh`): every map thing is drawn
+   * through the shared `SpriteBatch` instead, so ten thousand of them cost a
+   * few dozen draw calls rather than ten thousand — see `SpriteBatch`'s doc.
+   */
+  anim: SpriteAnimator;
+  /** Native-size multiplier (`pickupScaleFor`), handed to the batch each frame. */
+  scale: number;
+  /**
+   * Collision radius, resolved once at spawn. `MONSTER_STATS` is a `Record`
+   * with sparse numeric keys, so V8 backs it with a dictionary and every
+   * `MONSTER_STATS[type]` is a hash lookup — fine anywhere it happens once,
+   * but `blockersFor` was doing one per *candidate* per monster per frame
+   * (hundreds of thousands), which cost more than the collision arithmetic it
+   * was feeding.
+   */
+  blockRadius: number;
+  /**
+   * This type's attack/pain WAD frame letters (`MONSTER_ATTACK_FRAMES`/
+   * `MONSTER_PAIN_FRAMES`), resolved once at spawn for the same reason
+   * `blockRadius` is: both tables are sparse-numeric-key `Record`s, so a
+   * lookup on every attack/pain event is a dictionary hash V8 has to do that
+   * a one-time spawn-time resolve avoids. `undefined` for anything without a
+   * table entry (every non-monster, and the few monster types missing one).
+   */
+  attackFrames: string[] | undefined;
+  painFrames: string[] | undefined;
+  /**
+   * Whether this thing is drawn (and so targetable/shootable) right now:
+   * fog of war hasn't revealed its subsector, it was picked up, or it died
+   * with no death art. Replaces reading `mesh.visible` back off a per-thing
+   * mesh, which the batched renderer no longer gives each thing.
+   */
+  visible: boolean;
+  /** Permanently hidden regardless of fog — a consumed pickup, or a corpse with no death animation to play. */
+  hidden: boolean;
+  /** Scratch dedupe marker for `forEachMonsterAlongRay`, whose stepped cell neighbourhoods overlap. Meaningless between queries. */
+  queryStamp: number;
+  /**
+   * Feet height (`Pos3.z`). For anything that never moves (every non-monster, and a
+   * dead or not-yet-alerted monster) this is refreshed every frame straight
+   * from `sector.floorHeight` in `update()`, the same "ride a moving floor
+   * for free" trick as before monsters could move at all. Once a monster is
+   * alerted, `stepMonsterAI` owns it instead (`groundFloor` + gravity, the
+   * same physics `Player.update` uses), since a chasing monster needs to
+   * fall off ledges and cross sector boundaries rather than trust a single
+   * fixed sector reference.
+   */
+  z: number;
+  /**
+   * Its containing sector — the live reference `z` is read from while
+   * not an alerted monster; reassigned each frame by `update()` once a monster starts moving.
+   */
+  sector: Sector | undefined;
+  facingDeg: number;
+  subsector: number;
+  type: number;
+  /** Set once a pickup consumes this instance; it then stays permanently hidden (see ThingLayer.update). */
+  picked: boolean;
+  /**
+   * Remaining hit points;
+   * only meaningful for a `MONSTER_TYPES` thing (see `MONSTER_HEALTH`).
+   * everything else stays at `Infinity` and can never die.
+   */
+  health: number;
+  /** Set once `health` reaches 0; see `ThingLayer.damage`. */
+  dead: boolean;
+  /**
+   * Seconds since `dead` was set. Vanilla's `PIT_VileCheck` refuses to raise
+   * a corpse whose own death animation is still playing (`tics != -1`,
+   * "not lying still yet") — `findRaisableCorpse` compares this against
+   * `deathFrameCount * MONSTER_DEATH_FRAME_SECONDS` for the same gate.
+   */
+  deadTime: number;
+  /** Frame count of whichever death animation (`MONSTER_DEATH_FRAMES` or the gibbed `MONSTER_XDEATH_FRAMES`) `ThingLayer.damage` actually played — set at time of death, read back by `deadTime`'s "still settling" check above. 0 for anything that never died with real death art (see `damage`'s `hidden` fallback). */
+  deathFrameCount: number;
+  /**
+   * This type's resurrection frames (`MONSTER_RAISE_FRAMES`), resolved once
+   * at spawn for the same reason `attackFrames`/`painFrames` are — and
+   * doubles as the arch-vile's own eligibility test: `undefined` means this
+   * type has no vanilla `raisestate` and `findRaisableCorpse` skips it
+   * outright, matching vanilla's `raisestate == S_NULL` check.
+   */
+  raiseFrames: string[] | undefined;
+  /**
+   * Set once a dead barrel's own `A_Explode` has actually fired
+   * (`BARREL_EXPLODE_DELAY_SECONDS` after death, not on death itself — see
+   * that constant's doc), so `update()`'s per-frame `deadTime` check doesn't
+   * re-fire it every subsequent frame. Meaningless for anything else.
+   */
+  barrelExploded: boolean;
+  /**
+   * Who dealt a barrel's killing blow, captured at the moment it died and
+   * carried forward to its own `A_Explode` — vanilla's `P_RadiusAttack`
+   * passes the exploding barrel's own `target` (whoever damaged it) as the
+   * new blast's `bombsource`, which is how a chain of barrels keeps
+   * attributing every link back to whoever set the first one off rather than
+   * to the previous barrel in the chain. `null` means "the player", the same
+   * convention `ThingLayer.damage`'s own `source` parameter already uses.
+   * Meaningless for anything else.
+   */
+  explodeSource: { id: number; type: number } | null;
+  /**
+   * Vanilla's `P_DamageMobj` horizontal knockback (`momx`/`momy`), map
+   * units/sec — an impulse `damage` adds to in `ThingLayer.damage` (via
+   * `thrustSpeed`), then `applyKnockback` integrates and decays every frame
+   * on top of whatever movement (AI-driven, for a monster) already happened
+   * this frame, exactly as vanilla's own `P_XYMovement` momentum displaces a
+   * mobj independently of, and before, `A_Chase`'s own walk step in the same
+   * tic. Meaningless for anything `ThingLayer.damage` never touches (every
+   * non-monster, non-barrel thing) — always 0 there.
+   */
+  velX: number;
+  velY: number;
+  /**
+   * True for an item `ThingLayer.damage` spawned itself (`MONSTER_DROPS`) rather than
+   * one the map placed — threaded through to `applyPickup`'s own `dropped` param, which halves the ammo it grants.
+   */
+  dropped: boolean;
+
+  // --- Monster AI. Everything `MonsterBody` declares is inherited above and
+  // inert for a non-monster; these four are the layer's own, which
+  // `game/monsters/ai.ts` has no business knowing about. ---
+  /** True once this monster has spotted the player and started chasing (`update`'s throttled wake check, LOOK_INTERVAL). */
+  alerted: boolean;
+  /**
+   * The map thing's "ambush"/deaf flag (`game/skill.ts: isAmbush`) .
+   * Gates whether a sound-alerted sector alone can wake this monster; see `update`'s wake check.
+   */
+  ambush: boolean;
+  /**
+   * Seconds since this monster's last idle look-around. Separate from the AI
+   * timers in `MonsterBody` because it only ticks *before* the monster wakes,
+   * and `game/monsters/ai.ts` has no business knowing the throttle exists.
+   */
+  lookTimer: number;
+  /** Position at the end of the previous frame, so `crossLines` can test the segment this monster just walked. Mutated in place; never re-allocated. */
+  prev: Pos2;
+  /**
+   * Who this monster is currently hunting: `null` for the player, otherwise
+   * another `PosedThing`'s id. Set by `damage` when something hurts it (see
+   * `shouldRetarget`) — the mechanism behind infighting — and reset to the
+   * player once that target dies.
+   */
+  targetId: number | null;
+}
+
+/**
+ * One monster as the rest of the engine sees it: the stable `id`
+ * `ThingLayer.damage` takes, live position, doomednum (for the species
+ * checks), and current facing — which `game.ts`'s arch-vile flame tracking
+ * needs, since `A_Fire` keys off the *target's* facing.
+ */
+export interface MonsterRef extends Pos3 {
+  id: number;
+  type: number;
+  angle: number;
+}
+
+/**
+ * Live kill/item totals for the level, vanilla's own `totalkills`/`killcount` and
+ * `totalitems`/`itemcount` — `total*` set once at spawn (`COUNTKILL_TYPES`/`COUNTITEM_TYPES`),
+ * `kills`/`items` incremented as the level is played. docs/items.md § Level stats.
+ */
+export interface LevelKillItemStats {
+  totalKills: number;
+  kills: number;
+  totalItems: number;
+  items: number;
+}
+
+export interface ThingLayer {
+  group: THREE.Group;
+  count: number;
+  /** See `LevelKillItemStats`'s own doc. */
+  stats: LevelKillItemStats;
+  /** Releases the instanced meshes/materials this layer owns; call when the map is unloaded. Shared geometry and textures belong to `SpriteMaterialCache`, which outlives a level. */
+  dispose(): void;
+  /** Every living monster, still-standing barrel, and solid decoration near (x, y) as a solid body the *player* walks around — all `MF_SOLID` in vanilla. Monsters get `blockersFor` instead. */
+  solidBodies(pos: Pos2): ThingBlocker[];
+  /**
+   * Re-poses every thing at the camera's viewer angle and, for a living
+   * monster, ticks its AI: unalerted ones re-check sight every
+   * `LOOK_INTERVAL`, alerted ones run `stepMonsterAI` every frame. Gravity and
+   * `groundFloor` mirror `Player.update`, but movement is vanilla's 8-way
+   * `P_NewChaseDir` rather than `slideMove` (docs/monsters.md § Movement).
+   * Returns every attack fired this frame for the caller to apply.
+   *
+   * `player` is `null` while the player is dead, freezing every monster in
+   * place without touching pose/animation/fog-visibility. For anything else,
+   * `z` refreshes from the sector's live `floorHeight` — the "ride a moving
+   * floor for free" trick, so a corpse left on a lift still rides it.
+   *
+   * `fogAlphaOf` hides things in an unrevealed subsector, which would
+   * otherwise spoil a secret room whose geometry is faded out. `crossLines`
+   * gets the segment each alerted monster walked, so the caller can fire walk
+   * triggers (docs/specials.md § Teleporters). Also ticks barrel death clocks
+   * and reports any `A_Explode` due this frame.
+   */
+  update(
+    dt: number,
+    viewerAngleDeg: number,
+    player: Pos3 | null,
+    fogAlphaOf?: (subsector: number) => number,
+    crossLines?: (prev: Pos2, pos: Pos2) => Placement | null,
+  ): ThingUpdateResult;
+  /**
+   * Consumes every not-yet-picked thing within `radius` and vertical reach of
+   * `z` that `consume` accepts, hiding it permanently. This layer owns only
+   * which world instance disappears; `consume` (inventory.ts's `applyPickup`)
+   * owns what picking it up means. Its second argument is the instance's
+   * `dropped` flag. docs/items.md § Collecting things.
+   */
+  tryPickup(pos: Pos3, radius: number, consume: (type: number, dropped: boolean) => boolean): void;
+  /**
+   * The visible monster this ray hits first, or null — auto-aim's lock-on
+   * (docs/combat.md § Auto-aim). Nothing fog of war hides, nothing already
+   * dead. The returned `id` is what `damage` takes, so a shot fired this frame
+   * can land on exactly this instance later without re-picking. Barrels are
+   * lockable too: `P_AimLineAttack` knows only `MF_SHOOTABLE`, not "monster".
+   */
+  pickMonster(raycaster: THREE.Raycaster): MonsterRef | null;
+  /**
+   * Living monsters within `radius` (2D — matching vanilla's own radius-attack
+   * distance test, which ignores height) of (x, y). Candidates for splash
+   * damage (game.ts); the caller still has to check line-of-sight itself,
+   * since that needs the `World` this layer doesn't otherwise touch.
+   */
+  monstersNear(pos: Pos2, radius: number): MonsterRef[];
+  /** This exact monster's live position and type, or null if the id is stale or it has since died. Lets a shot fired at a monster keep tracking it across frames. */
+  monsterById(id: number): MonsterRef | null;
+  /**
+   * Whether a shot landing on this thing splashes blood — vanilla's
+   * `MF_NOBLOOD`, which in all of stock DOOM exactly one thing carries
+   * (`MT_BARREL`; `PTR_ShootTraverse` spawns a puff there instead). Keyed by
+   * id and deliberately blind to whether the thing is already dead, so the
+   * killing blow still bleeds no matter which side of `damage` the caller
+   * asks from. See docs/combat.md § Blood.
+   */
+  bleeds(id: number): boolean;
+  /** Count of living monsters currently alerted (chasing/attacking, or mid-reaction-delay) — for the debug HUD. */
+  awakeMonsterCount(): number;
+  /**
+   * Positions of the alerted monsters `awakeMonsterCount` counts, narrowed to
+   * those actually being rendered — each is an extra occlusion-fade sightline
+   * target alongside the player. Excluding the unalerted and the fog-hidden is
+   * load-bearing (docs/render.md § Wall occlusion fading). **Must be called
+   * after `update` has run**, so `visible` reflects this frame's fog.
+   */
+  awakeMonsters(): Pos3[];
+  /**
+   * Living monsters standing in exactly `sector` — a reference-equality check
+   * against the same mutable `Sector` object `PosedThing.sector` was seeded
+   * from (see that field's doc), not a sector-index lookup this layer has no
+   * way to perform on its own. Backs crush damage (game.ts's `onCrush`
+   * callback into `SpecialsController`) and the headroom-blocked check every
+   * non-crushing mover uses to stop rather than clip through a monster
+   * (`game.ts`'s `headroomBlocked`) — either way, a mover only knows which
+   * sector it's squeezing, not who's standing in it.
+   */
+  monstersInSector(sector: Sector): MonsterRef[];
+  /**
+   * `monstersInSector` plus any still-standing barrel in `sector` — vanilla's
+   * `PIT_ChangeSector` treats a barrel exactly like a monster for crushing
+   * (any `MF_SHOOTABLE` mobj with health left takes the same periodic
+   * damage), so a barrel under a crusher dies and, after its usual
+   * `BARREL_EXPLODE_DELAY_SECONDS`, explodes the same as if it'd been shot.
+   * Crush damage's own caller (`game.ts`'s `applyCrushDamage`) is the only
+   * user — the headroom-blocked check other movers use deliberately stays on
+   * `monstersInSector` alone, unrelated to this task.
+   */
+  crushablesInSector(sector: Sector): MonsterRef[];
+  /**
+   * Applies `amount` damage to `id`, switching to the death animation at 0 —
+   * gibbed or plain per `P_KillMobj`'s overkill rule (docs/combat.md § Monster
+   * death). A no-op if `id` is stale, already dead, or the amount is
+   * non-positive: a projectile can outlive its target, and splash falloff
+   * reaches 0 at the blast edge.
+   *
+   * - `source` — who dealt the hit, absent meaning the player. Drives the
+   *   infighting retarget via `shouldRetarget` (docs/monsters.md § Infighting).
+   * - `knockUpSpeed` — the arch-vile's `A_VileAttack` launch. Applied here
+   *   because it writes the same `z`/`velZ` fields gravity integration owns.
+   * - `fromX`/`fromY` — the inflictor position, driving `thrustSpeed`'s
+   *   horizontal knockback. Omitted by damage floors and crushers, matching
+   *   vanilla's null-inflictor call (docs/movement.md § Knockback).
+   *
+   * A barrel takes this same call but follows none of it except the knockback:
+   * no pain state, no retarget, and death switches its sprite to `BEXP`.
+   */
+  damage(
+    id: number,
+    amount: number,
+    source?: { id: number; type: number },
+    knockUpSpeed?: number,
+    fromX?: number,
+    fromY?: number,
+  ): void;
+  /**
+   * Creates a fresh, already-awake monster of `type` at `at` and telefrags
+   * whatever was standing there (`TELEFRAG_DAMAGE` to every overlapping body),
+   * returning it — or null if the WAD carries no art for that doomednum.
+   * Vanilla's `A_SpawnFly` tail; the Icon of Sin's spawn cube (`game/iconofsin.ts`)
+   * is the only caller.
+   *
+   * Only the *monster* half of the telefrag happens here: this layer has no
+   * player reference, so the caller tests the returned position against the
+   * player itself. The new monster counts toward `stats.kills` when killed but
+   * never toward `totalKills`, matching vanilla's fixed `P_SpawnMapThing`
+   * total — kills can legitimately exceed 100% on MAP30. docs/monsters.md §
+   * The spawn cube.
+   */
+  spawnMonster(type: number, at: Pos3, angleRad: number): MonsterRef | null;
+  /**
+   * Nearest living monster the ray crosses within `maxDist`, or null — the
+   * "didn't click anything, but something's in the path anyway" case for a
+   * free shot, tested against `monsters/defs.ts`'s `MONSTER_HIT_RADIUS`/`_HEIGHT`.
+   *
+   * `opts` serves a *monster's* own hitscan: `ignoreId` excludes the shooter
+   * from its own trace, `includeHidden` skips the fog-of-war filter, since fog
+   * is a player-facing conceit — two monsters fighting in a room the player
+   * hasn't seen must still connect.
+   */
+  raycastMonster(
+    origin: Pos3,
+    angleRad: number,
+    maxDist: number,
+    opts?: { ignoreId?: number; includeHidden?: boolean },
+  ): (MonsterRef & { dist: number }) | null;
+}
+
+/**
+ * The two types whose sight and death sounds vanilla plays **unattenuated**,
+ * from nowhere in particular (`A_Look`/`A_Scream`'s own
+ * `if (actor->type==MT_SPIDER || actor->type == MT_CYBORG) S_StartSound(NULL, …)`)
+ * — you hear a cyberdemon wake up anywhere on the map. Nothing else about their
+ * sounds is special: their pain, footsteps and shots all attenuate normally.
+ */
+export const BOSS_TYPES = new Set([7, 16]);
+
+/**
+ * Every type whose death can drive level logic, and so the set `damageThing`'s death branch checks
+ * before it's worth scanning `posed` for "any others of this type still alive" at all. Distinct
+ * from `BOSS_TYPES` above, which is only about unattenuated sound.
+ *
+ * `BOSS_DEATH_TYPES` is `A_BossDeath`'s own five candidates; Commander Keen (72, `A_KeenDie`) and
+ * the boss brain (88, `A_BrainDie`) are added *here* rather than to that table because vanilla
+ * reaches them through their own separate action functions. In particular neither is gated on
+ * `gamemap`, and `bossDeathTriggersFor`'s `default` branch maps over `BOSS_DEATH_TYPES` to make
+ * every member exit on an unlisted episode's map 8 — which must not apply to these two. See
+ * docs/specials.md § Boss death.
+ */
+export const DEATH_NOTIFY_TYPES: Set<number> = new Set([...Object.values(BOSS_DEATH_TYPES), 72, 88]);
+
+/**
+ * Vanilla's own `P_TeleportMove` telefrag damage — the literal `10000` it deals to everything
+ * standing where a body lands. Only `spawnMonster` (the Icon of Sin's spawn cube) reaches it here;
+ * this engine has no player teleport that can land on an occupied spot. See docs/combat.md §
+ * Telefrag.
+ */
+export const TELEFRAG_DAMAGE = 10000;
+
+/** The lost soul's doomednum — what the pain elemental's `A_PainShootSkull` spawns (see `spawnLostSoul`). */
+export const LOST_SOUL_TYPE = 3006;
+/** The pain elemental's own doomednum — `damage()`'s death branch checks this for its `A_PainDie` triple-spawn. */
+export const PAIN_ELEMENTAL_TYPE = 71;
+/** Vanilla's own hard cap on how many lost souls can exist on a level at once — `A_PainShootSkull`'s "count > 20" guard. */
+export const MAX_SKULLS_ON_LEVEL = 20;
+
+/**
+ * The exploding barrel's own doomednum (`THING_SPRITES`'s `BAR1` entry) —
+ * vanilla `MT_BARREL`. Unlike every monster, a barrel has no AI at all
+ * (`MONSTER_STATS` has no entry for it, so it never enters the
+ * `if (stats && player)` branch in `update()`) — it's just a plain
+ * `MF_SOLID|MF_SHOOTABLE` prop that happens to deal splash damage on death.
+ */
+export const BARREL_TYPE = 2035;
+/** Vanilla `mobjinfo` spawnhealth for `MT_BARREL`. */
+export const BARREL_HEALTH = 20;
+/**
+ * Vanilla `MT_BARREL`'s own `radius` (10 map units) — real and much smaller
+ * than `MONSTER_HIT_RADIUS`, the approximate fallback used for a type with no
+ * `MONSTER_STATS` entry, which a barrel otherwise is.
+ */
+export const BARREL_RADIUS = 10;
+/** Vanilla `MT_BARREL`'s own `mass` — confirmed against `linuxdoom-1.10/info.c`, feeds `thrustSpeed`. */
+export const BARREL_MASS = 100;
+/** `S_BAR1`/`S_BAR2` — a two-frame idle sway, each vanilla frame held 6 tics. */
+export const BARREL_IDLE_FRAMES = ['A', 'B'];
+export const BARREL_IDLE_FRAME_SECONDS = 6 * DOOM_TIC;
+/**
+ * A barrel's death art is a genuinely different sprite lump from its own idle
+ * art (`BEXP`, not `BAR1`) — unlike every monster, whose death states reuse
+ * the same sprite name as their walk/attack states. `SpriteAnimator.die`'s
+ * optional third argument exists specifically for this.
+ */
+export const BARREL_DEATH_SPRITE = 'BEXP';
+/** `S_BEXP1`-`S_BEXP5` frame letters. */
+export const BARREL_DEATH_FRAMES = ['A', 'B', 'C', 'D', 'E'];
+/**
+ * A flat per-frame rate standing in for vanilla's own uneven per-state tic
+ * counts (5, 5, 5, 10, 10) — the same "one uniform rate" simplification
+ * `MONSTER_DEATH_FRAME_SECONDS` already makes elsewhere. Matches the real
+ * rate of the first three frames, which is the one that actually matters:
+ * `BARREL_EXPLODE_DELAY_SECONDS` below is timed off it.
+ */
+export const BARREL_DEATH_FRAME_SECONDS = 5 * DOOM_TIC;
+/**
+ * Vanilla's own `A_Explode` fires on entering `S_BEXP3` — the death
+ * animation's third frame, i.e. two frames after the barrel actually died,
+ * not instantly on death. Confirmed against `linuxdoom-1.10/info.c`'s
+ * `S_BEXP1`/`S_BEXP2` durations (5 tics each) rather than assumed.
+ */
+export const BARREL_EXPLODE_DELAY_SECONDS = 2 * BARREL_DEATH_FRAME_SECONDS;
+
+/**
+ * A barrel's `A_Explode` becoming due (`BARREL_EXPLODE_DELAY_SECONDS` after
+ * it died, not on death itself), for `game.ts` to turn into
+ * `applyRadiusDamage`. `source`, when set, is who dealt the killing blow —
+ * see `PosedThing.explodeSource`'s doc for why this is what makes a chain of
+ * barrels attribute correctly all the way back to whoever set the first one
+ * off.
+ */
+export interface BarrelExplosion extends Pos3 {
+  source?: { id: number; type: number };
+}
+
+/** `ThingLayer.update`'s return value — see that method's doc. */
+export interface ThingUpdateResult {
+  attacks: MonsterAttackEvent[];
+  barrelExplosions: BarrelExplosion[];
+}
+
+/** Whether `type` gets `PICKUP_SCALE` — see `PICKUP_SCALE_TYPES`'s doc for why this is a whitelist, not "everything but monsters/weapons". */
+export function pickupScaleFor(type: number): number {
+  return PICKUP_SCALE_TYPES.has(type) ? PICKUP_SCALE : 1;
+}

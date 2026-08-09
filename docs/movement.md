@@ -1,6 +1,7 @@
 # Movement, collision and physics
 
-`src/game/world.ts`, `src/game/player.ts`, `src/game/monsters/ai.ts`, `src/game/things.ts`
+`src/game/world.ts`, `src/game/player.ts`, `src/game/monsters/ai.ts`, `src/game/things.ts`,
+`src/game/things/grid.ts`
 
 ## Collision (`world.ts`)
 
@@ -49,7 +50,7 @@ the solid "hanging victim" quintet and DOOM II's six `HDB*` body bags. Every ent
 (doomednum 34, `flags: 0`) and every dead-monster/blood-pool prop are the decorations genuinely
 **not** solid in vanilla and are deliberately left out, same as the exploding barrel's own
 `MF_SOLID` (doomednum 2035) is handled by its pre-existing `BARREL_TYPE` special-case rather than
-being folded into this set. `things.ts`'s `rebuildBlockerGrid` and `solidBodies` both admit
+being folded into this set. `things/grid.ts`'s `rebuild` and `solidBodies` both admit
 `SOLID_DECORATION_TYPES` alongside `MONSTER_TYPES`/`BARREL_TYPE`, so a solid decoration blocks the
 player (`solidBodies`) and monster movement (`blockersFor`) exactly like a monster does.
 
@@ -65,7 +66,7 @@ closing door carries a hanging corpse along too.
 `SOLID_DECORATION_TYPES` — vanilla's `PIT_ShootTraverse`/`PIT_RadiusAttack` only test
 `MF_SHOOTABLE`, which no decoration in this set carries (unlike the barrel, which is both
 `MF_SOLID` and `MF_SHOOTABLE`). Movement blocking and shot blocking read the same grid but are two
-different filters for exactly this reason — see `things.ts`'s `rebuildBlockerGrid` doc.
+different filters for exactly this reason — see `things/grid.ts`'s `rebuild` doc.
 
 **`groundCeiling`** mirrors `groundFloor`: the local sector's ceiling, lowered to the top of any
 straddled two-sided opening. It exists for the flip side of the same straddling bug — standing half
@@ -203,7 +204,7 @@ relies on), fed a real per-species `mass` from `info.c`'s `mobjinfo` table for a
 mostly 100, but 400 for a demon/cacodemon/pain elemental, 500 for a revenant/arch-vile, 600 for an
 arachnotron, 1000 for a baron/hell knight/mancubus/spider mastermind/cyberdemon, and 50 for the lost
 soul — so a cyberdemon barely budges from a hit that sends a zombieman staggering. `BARREL_MASS`
-(`things.ts`) and `PLAYER_MASS` (`player.ts`) are the real figures for those two (both vanilla's
+(`things/defs.ts`) and `PLAYER_MASS` (`player.ts`) are the real figures for those two (both vanilla's
 default, 100). The arch-vile's vertical launch deliberately keeps its own pre-existing flat-100-mass
 approximation (`VILE_KNOCKUP_SPEED`) rather than switching to this table — shipped, working behavior
 for one rare attack.

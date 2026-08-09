@@ -1,7 +1,7 @@
 # Monster AI
 
 `src/game/monsters/ai.ts`, `src/game/monsters/defs.ts`, `src/game/monsters/vile.ts`,
-`src/game/things.ts`
+`src/game/things.ts`, `src/game/things/defs.ts`, `src/game/things/grid.ts`
 
 Every `MONSTER_TYPES` entry except Commander Keen (72) and the boss brain (88) wakes, chases and
 attacks — neither of those two attacks or moves in vanilla either.
@@ -140,6 +140,11 @@ and a height check would quietly break map geometry that relies on the vanilla r
 (`blockersFor`). The player *slides* along bodies while monsters don't, matching vanilla exactly.
 
 ## Spatial indexing
+
+All of it lives in `game/things/grid.ts` (`createThingGrid`), built over the level's live `posed`
+array and rebuilt once per `ThingLayer.update`. It is a closure rather than a set of methods on the
+thing layer purely so the pooled buffers and the two bucket arrays below can't be reached from
+anywhere else.
 
 `blockersFor` reads a **uniform grid of living monsters** (`blockerGrid`, rebuilt once per
 `ThingLayer.update`) rather than scanning every thing, for the same reason vanilla has a blockmap:

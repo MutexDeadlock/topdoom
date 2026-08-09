@@ -1,7 +1,17 @@
 # Line and sector specials
 
-`src/wad/specials.ts`, `src/game/specials.ts`, `src/game/moverblocking.ts`,
-`src/game/sectoreffects.ts`, `src/game.ts`, `src/render/occlusion.ts`
+`src/wad/specials.ts`, `src/game/specials.ts`, `src/game/specials/mapscan.ts`,
+`src/game/specials/movergeometry.ts`, `src/game/moverblocking.ts`, `src/game/sectoreffects.ts`,
+`src/game.ts`, `src/render/occlusion.ts`
+
+**The three files.** `specials.ts` is `SpecialsController`: the movers, the trigger dispatch, the
+switch flashes and the light thinkers — everything with runtime state. `specials/mapscan.ts` is the
+load-time analysis of a map (`computeMovableSectors`, `findStairChain`, `bossDeathTriggersFor`, …),
+pure functions of the `DoomMap` with no controller involved, which is why `mapmesh.ts` can call one
+before the controller exists. `specials/movergeometry.ts` (`MoverGeometry`) is everything a height or
+light change means for what is actually *drawn*: the per-sector mover meshes, their faders, and
+`recolorSector`. The controller mutates `Sector` fields and tells `MoverGeometry` which sectors went
+stale; it holds no THREE object of its own.
 
 The vanilla-only line special table is confirmed against the Doom wiki's linedef type table **and,
 where the two disagree, against the real `linuxdoom-1.10` source** — after a first pass briefly (and
@@ -281,7 +291,8 @@ occluders/flats unconditionally, a one-time load cost.
 
 ### Relighting mover geometry
 
-`recolorSector` rewrites the RGB of every surface lit by a sector, in two places: the static batches
+`recolorSector` (`specials/movergeometry.ts`) rewrites the RGB of every surface lit by a sector, in
+two places: the static batches
 (`sectorOccluders`/`sectorFlats`) and, via `recolorMoverGeometry`, any mover mesh holding that sector's
 geometry. Both are needed because a mover mesh carries its own sector's flats **plus** wall quads from
 *both* sides of every bordering line — so a sector that moves, and a static sector next to one, each
@@ -394,7 +405,7 @@ map/type gate and the victory-section action switch:
 The last row before Keen's is real, not a guess: vanilla's `switch(gameepisode)` has a `default` case
 with no per-type check at all, only `if (gamemap != 8) return;` — an unrecognized episode's map 8
 exits on whichever of the five boss types happens to die last. `bossDeathTriggersFor`
-(`game/specials.ts`) is a pure function of `map.name` (`E1M8`, `MAP07`, …) that reproduces this whole
+(`game/specials/mapscan.ts`) is a pure function of `map.name` (`E1M8`, `MAP07`, …) that reproduces this whole
 table, gating on the map's own lump name rather than which WAD supplied it — a PWAD's own MAP07 gets
 DOOM2's exact Mancubus/Arachnotron triggers, matching vanilla, which only ever looks at `gamemap`.
 
@@ -402,7 +413,7 @@ DOOM2's exact Mancubus/Arachnotron triggers, matching vanilla, which only ever l
 function* from `A_BossDeath`, and it has no `gamemap` check at all — it builds a synthetic `line_t`
 with `tag = 666` and calls `EV_DoDoor(&junk, open)` wherever the last Keen happens to die. So
 `bossDeathTriggersFor` appends it to every map's table rather than listing it per map, and 72 is
-added to `things.ts`'s `DEATH_NOTIFY_TYPES` rather than to `BOSS_DEATH_TYPES` — the latter's values
+added to `things/defs.ts`'s `DEATH_NOTIFY_TYPES` rather than to `BOSS_DEATH_TYPES` — the latter's values
 are what the `default` branch maps over to build the "any of the five exits on map 8" row, which must
 not pick Keen up. The `open` kind is `EV_DoDoor`'s ordinary `VDOORSPEED` open-and-stay, distinct from
 E4M6's `blazeOpen`. The Icon of Sin (88) is in `DEATH_NOTIFY_TYPES` too but has no row here at all:
@@ -413,7 +424,7 @@ docs/iconofsin.md.
 function builds the set of sectors pulled out of the static render batch by scanning sector specials
 10/14 and *linedef* specials — neither of which can see a sector that only ever moves via
 `triggerTag`. Without `bossDeathSectors` feeding it the tags from this table, such a sector stays in
-the static batch and is then drawn a *second* time the moment `rebuildMoverMesh` gives it a mover
+the static batch and is then drawn a *second* time the moment `MoverGeometry` gives it a mover
 mesh, leaving the old geometry frozen at its original height underneath. Two stock cases have no
 linedef carrying their tag at all and hit this: DOOM2 MAP32's Keen door (sector 16, tag 666) and
 MAP07's Arachnotron platform (sector 1, tag 667).

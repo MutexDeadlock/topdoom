@@ -82,7 +82,7 @@ scheme meant to be hand-retuned later.
 **Every sprite reads its light live, never a cached snapshot.** Sector light is mutable at runtime
 (blinking/strobing/glowing sectors, switch-triggered changes — `game/specials.ts`'s
 `SectorSpecialsController`), and geometry always reflects that immediately via `recolorSector`. A
-sprite must match: `game/things.ts`'s `PosedThing` has no `light` field precisely so nothing can cache
+sprite must match: `game/things/defs.ts`'s `PosedThing` has no `light` field precisely so nothing can cache
 one — every map thing (items, decorations, corpses, barrels, monster drops, dormant or actively
 chasing monsters alike) reads `p.sector?.light` at the moment it's batched, not at spawn time. The
 same discipline applies to anything that moves through space across a frame: `ProjectileLayer.update`
@@ -210,9 +210,11 @@ teleport landings).
 **The split between `render/sprites.ts` and `game/things.ts` follows the same rendering/game divide as
 the rest of the tree.** `render/sprites.ts` only knows how to turn a (sprite name, frame letter,
 viewer angle) into a posed plane — `SpriteAnimator`/`SpriteActor`/`SpriteMaterialCache`, no knowledge
-of maps, AI, health or pickups. `game/things.ts` owns `ThingLayer`/`PosedThing`/`buildThingSprites`:
-which map things exist, their per-instance game state, and the update loop that ticks monster AI,
-applies pickups/damage and drives drops.
+of maps, AI, health or pickups. `game/things.ts` owns `buildThingSprites`: which map things exist,
+their per-instance game state, and the update loop that ticks monster AI, applies pickups/damage and
+drives drops. Its `things/` folder holds the record shapes those run on (`defs.ts`:
+`ThingLayer`/`PosedThing`) and the spatial index they query (`grid.ts`, docs/monsters.md § Spatial
+indexing).
 
 ### Batching
 

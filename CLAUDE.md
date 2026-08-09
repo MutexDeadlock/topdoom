@@ -70,6 +70,9 @@ src/game/      spatial queries, collision, player controller, input, thing→spr
                damage floors + secrets, the Icon of Sin's cube spitter
 src/game/monsters/   tables + record shapes (defs), chase/attack decisions (ai), attack resolution
                (attacks), the arch-vile (vile)
+src/game/things/     the thing layer's record shapes + its own tables (defs), monster/corpse
+               spatial index (grid)
+src/game/specials/   load-time map analysis (mapscan), mover meshes + relighting (movergeometry)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
                WebAudio playback (channels, attenuation, pan, volume)
 src/ui/        start menu, HUD, screen tints/pain flash, DEVMODE hud + profiling overlay

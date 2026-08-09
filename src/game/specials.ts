@@ -1,6 +1,18 @@
 import * as THREE from 'three';
 import { NO_SIDE, type DoomMap, type LineDef } from '../wad/map.ts';
-import { BOSS_DEATH_TYPES } from './thingdefs.ts';
+import {
+  bossDeathTriggersFor,
+  computeLightSectors,
+  computeMovableSectors,
+  findStairChain,
+  findSwitchEntries,
+  isFrontSide,
+  neighborSectorIndices,
+  resolveTargets,
+  type BossDeathTrigger,
+  type SwitchEntry,
+} from './specials/mapscan.ts';
+import { MoverGeometry } from './specials/movergeometry.ts';
 import {
   LINE_SPECIALS,
   SECTOR_LIGHT_SPECIALS,
@@ -16,8 +28,6 @@ import {
   SWITCH_FLASH_SECONDS,
   TELEPORT_DEST,
   FLOOR_SPEED,
-  switchPairTexture,
-  type SpecialDef,
   type DoorEffect,
   type LiftEffect,
   type FloorEffect,
@@ -44,19 +54,11 @@ import { PLAYER_RADIUS } from './player.ts';
 import type { Input } from './input.ts';
 import type { FogOfWar } from './fogofwar.ts';
 import type { KeyColor } from './inventory.ts';
-import {
-  buildMoverMesh,
-  litColor,
-  wallContrast,
-  NO_TEXTURE,
-  type BuiltMap,
-  type MapMeshOptions,
-  type MoverMesh,
-} from '../render/mapmesh.ts';
+import { NO_TEXTURE, type BuiltMap, type MapMeshOptions } from '../render/mapmesh.ts';
 import type { SubSectorPoly } from '../render/bsp.ts';
 import type { Placement, Pos2 } from '../types.ts';
 import type { MaterialBank } from '../render/textures.ts';
-import { FlatFader, type FadeTarget, WallFader } from '../render/occlusion.ts';
+import type { FadeTarget } from '../render/occlusion.ts';
 import { segmentIntersect } from '../util/geom.ts';
 import { sectorOrigin, SILENT, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
 import { DOOM_TIC } from '../constants.ts';
@@ -83,273 +85,6 @@ const DOOR_SOUNDS: Record<'normal' | 'fast', { open: SfxId; close: SfxId }> = {
   normal: { open: 'doropn', close: 'dorcls' },
   fast: { open: 'bdopn', close: 'bdcls' },
 };
-
-/** Which sectors a special's linedef affects: the line's own back sector for manual doors, tag matches otherwise. */
-function resolveTargets(map: DoomMap, line: LineDef, def: SpecialDef): number[] {
-  if (def.manual) {
-    const backSector = line.left !== NO_SIDE ? map.sidedefs[line.left]?.sector : undefined;
-    return backSector !== undefined ? [backSector] : [];
-  }
-  if (line.tag === 0) return [];
-  const out: number[] = [];
-  for (let i = 0; i < map.sectors.length; i++) {
-    if (map.sectors[i].tag === line.tag) out.push(i);
-  }
-  return out;
-}
-
-type BossDeathAction =
-  | { kind: 'exit' }
-  | { kind: 'lowerFloorToLowest' | 'raiseToTexture' | 'blazeOpen' | 'open'; tag: number };
-
-interface BossDeathTrigger {
-  type: number;
-  action: BossDeathAction;
-}
-
-/**
- * Commander Keen's doomednum, and the door his death opens. `A_KeenDie` (`p_enemy.c`) is **not**
- * gated on `gameepisode`/`gamemap` the way `A_BossDeath` is — it builds a synthetic `line_t` with
- * `tag = 666` and calls `EV_DoDoor(&junk, open)` on any map at all, which is why this trigger is
- * appended to every table below rather than living in the per-map switch. `open` is `EV_DoDoor`'s
- * ordinary `VDOORSPEED` open-and-stay, not the blaze speed E4M6 uses.
- */
-const KEEN_TYPE = 72;
-const KEEN_DOOR_TAG = 666;
-
-/**
- * Vanilla's `A_BossDeath` (`p_enemy.c`), confirmed against source — see docs/specials.md §
- * Boss death for the full table. Pure function of the map's own lump name: vanilla gates on
- * `gameepisode`/`gamemap`, not on which WAD supplied the map, so a PWAD's own MAP07 gets the
- * same Mancubus/Arachnotron triggers the IWAD's does.
- *
- * Commander Keen's own trigger is appended to every map's table, for the reason at `KEEN_TYPE`
- * above. The Icon of Sin has no entry here at all: `A_BrainDie` exits the level directly rather
- * than through a tag, and `game/iconofsin.ts` owns it.
- */
-function bossDeathTriggersFor(mapName: string): BossDeathTrigger[] {
-  const keen: BossDeathTrigger = { type: KEEN_TYPE, action: { kind: 'open', tag: KEEN_DOOR_TAG } };
-  const commercial = /^MAP(\d+)$/i.exec(mapName);
-  if (commercial) {
-    if (Number(commercial[1]) !== 7) return [keen];
-    return [
-      { type: BOSS_DEATH_TYPES.mancubus, action: { kind: 'lowerFloorToLowest', tag: 666 } },
-      { type: BOSS_DEATH_TYPES.arachnotron, action: { kind: 'raiseToTexture', tag: 667 } },
-      keen,
-    ];
-  }
-  const episodic = /^E(\d+)M(\d+)$/i.exec(mapName);
-  if (!episodic) return [keen];
-  const episode = Number(episodic[1]);
-  const map = Number(episodic[2]);
-  switch (episode) {
-    case 1:
-      return map === 8
-        ? [{ type: BOSS_DEATH_TYPES.baron, action: { kind: 'lowerFloorToLowest', tag: 666 } }, keen]
-        : [keen];
-    case 2:
-      return map === 8 ? [{ type: BOSS_DEATH_TYPES.cyberdemon, action: { kind: 'exit' } }, keen] : [keen];
-    case 3:
-      return map === 8 ? [{ type: BOSS_DEATH_TYPES.spiderMastermind, action: { kind: 'exit' } }, keen] : [keen];
-    case 4:
-      if (map === 6) return [{ type: BOSS_DEATH_TYPES.cyberdemon, action: { kind: 'blazeOpen', tag: 666 } }, keen];
-      if (map === 8)
-        return [{ type: BOSS_DEATH_TYPES.spiderMastermind, action: { kind: 'lowerFloorToLowest', tag: 666 } }, keen];
-      return [keen];
-    default:
-      // Vanilla's own `default:` case has no per-type check, only `gamemap != 8` — any
-      // recognized boss type dying on map 8 of an unlisted episode (e.g. SIGIL's E5M8) exits.
-      return map === 8
-        ? [...Object.values(BOSS_DEATH_TYPES).map((type) => ({ type, action: { kind: 'exit' as const } })), keen]
-        : [keen];
-  }
-}
-
-/**
- * Every sector a map's boss-death table can move — the tags in `bossDeathTriggersFor`, resolved
- * against `map.sectors`. **Load-bearing for `computeMovableSectors`:** these sectors are driven by
- * `triggerTag`, which has no triggering linedef, so nothing else in that scan can find them. MAP32's
- * Keen door (sector 16, tag 666) and MAP07's Arachnotron platform (sector 1, tag 667) both have no
- * linedef carrying their tag at all; without this they stay in the static batch and get drawn a
- * second time the moment their mover mesh appears. See docs/specials.md § Boss death.
- */
-function bossDeathSectors(map: DoomMap): number[] {
-  const tags = new Set<number>();
-  for (const t of bossDeathTriggersFor(map.name)) {
-    if (t.action.kind !== 'exit') tags.add(t.action.tag);
-  }
-  const out: number[] = [];
-  for (let i = 0; i < map.sectors.length; i++) {
-    if (tags.has(map.sectors[i].tag)) out.push(i);
-  }
-  return out;
-}
-
-/**
- * Every two-sided line's *other-side* sector index, in the order that line
- * appears in `map.linedefs` — which, since every stock WAD's `sector->lines[]`
- * is built by walking linedefs in that same ascending order (vanilla's own
- * `P_GroupLines`), is exactly the order vanilla itself would enumerate a given
- * sector's own bordering lines in. Used wherever a special's own vanilla
- * source walks `sec->lines[i]` and reacts to whichever neighbor comes first —
- * `lowerAndChange`'s model-sector search and the donut's ring/outer search.
- */
-function neighborSectorIndices(map: DoomMap, sectorIndex: number): number[] {
-  const out: number[] = [];
-  for (const line of map.linedefs) {
-    if (line.left === NO_SIDE || line.right === NO_SIDE) continue;
-    const front = map.sidedefs[line.right]?.sector;
-    const back = map.sidedefs[line.left]?.sector;
-    if (front === sectorIndex && back !== undefined) out.push(back);
-    else if (back === sectorIndex && front !== undefined) out.push(front);
-  }
-  return out;
-}
-
-/**
- * Vanilla `P_PointOnLineSide`: true when (x, y) sits on the line's front
- * (right-sidedef) side. `P_UseSpecialLine` (confirmed against
- * `linuxdoom-1.10/p_switch.c`) rejects *every* use-triggered special except
- * an unused one (124, a "sliding door" case that never appears as a `use`
- * special in `LINE_SPECIALS`) when activated from the back side — so a
- * manual door or switch mounted on a wall is only usable from the side a
- * mapper actually intended, not through the wall from behind it.
- */
-function isFrontSide(ax: number, ay: number, bx: number, by: number, x: number, y: number): boolean {
-  const dx = bx - ax;
-  const dy = by - ay;
-  return (y - ay) * dx < dy * (x - ax);
-}
-
-interface StairStep {
-  sectorIndex: number;
-  targetHeight: number;
-}
-
-/**
- * Vanilla `EV_BuildStairs`/`T_BuildStairs`: starting at `startSectorIndex`,
- * follow a chain of two-sided lines where the current sector is the line's
- * *front* side and the back sector's floor texture matches the start
- * sector's, each one `stepHeight` higher than the last. This is directional
- * and single-path, exactly like vanilla's own search — it takes the first
- * matching line it finds each round and never branches — so a mapper's stair
- * group only works if its connector lines all face the same way, same
- * requirement vanilla itself has. Purely a function of static map data
- * (adjacency + floor textures), so it's safe to run once at load time
- * (`computeMovableSectors`) and again at trigger time without the two ever
- * disagreeing.
- */
-function findStairChain(map: DoomMap, startSectorIndex: number, stepHeight: number): StairStep[] {
-  const texture = map.sectors[startSectorIndex]?.floorTex;
-  if (texture === undefined) return [];
-  const steps: StairStep[] = [];
-  const visited = new Set<number>([startSectorIndex]);
-  let sectorIndex = startSectorIndex;
-  let height = map.sectors[startSectorIndex].floorHeight;
-  for (;;) {
-    height += stepHeight;
-    steps.push({ sectorIndex, targetHeight: height });
-    let next = -1;
-    for (const line of map.linedefs) {
-      if (line.left === NO_SIDE || line.right === NO_SIDE) continue;
-      if (map.sidedefs[line.right]?.sector !== sectorIndex) continue;
-      const backSector = map.sidedefs[line.left]?.sector;
-      if (backSector === undefined || visited.has(backSector)) continue;
-      if (map.sectors[backSector]?.floorTex !== texture) continue;
-      next = backSector;
-      break;
-    }
-    if (next === -1) break;
-    visited.add(next);
-    sectorIndex = next;
-  }
-  return steps;
-}
-
-/** One sidedef texture slot that's a switch graphic (SW1/SW2 name), with both states resolved. */
-interface SwitchEntry {
-  sideIndex: number;
-  slot: 'upper' | 'lower' | 'middle';
-  sectorIndex: number;
-  onTexture: string;
-  offTexture: string;
-}
-
-/**
- * Switch-textured slots on either side of `line` — regardless of trigger
- * kind (walkover switches with real SW art exist too, if rarely). The
- * texture found at scan time is treated as "off"; its SW1/SW2 pair is "on".
- */
-function findSwitchEntries(map: DoomMap, line: LineDef): SwitchEntry[] {
-  const out: SwitchEntry[] = [];
-  for (const sideIndex of [line.right, line.left]) {
-    if (sideIndex === NO_SIDE) continue;
-    const side = map.sidedefs[sideIndex];
-    if (!side) continue;
-    for (const slot of ['upper', 'lower', 'middle'] as const) {
-      const offTexture = side[slot];
-      const onTexture = switchPairTexture(offTexture);
-      if (onTexture) out.push({ sideIndex, slot, sectorIndex: side.sector, onTexture, offTexture });
-    }
-  }
-  return out;
-}
-
-/** Sectors whose height a mover will drive, or whose wall carries a switch texture — must stay out of the static batch (see mapmesh.ts). */
-export function computeMovableSectors(map: DoomMap): Set<number> {
-  const out = new Set<number>();
-  for (let i = 0; i < map.sectors.length; i++) {
-    // Sector-type door timers (10/14) never wait for a linedef trigger, so
-    // there's no `def`/tag-resolution step to hook into here — the sector
-    // itself is the mover from the moment the map loads.
-    if (SECTOR_DOOR_SPECIALS[map.sectors[i].special] !== undefined) out.add(i);
-  }
-  for (const line of map.linedefs) {
-    const def = LINE_SPECIALS[line.special];
-    if (!def) continue;
-    if (def.effect.kind === 'stairs') {
-      // The tag match only names the chain's start; the rest is discovered by
-      // walking the same texture-matched adjacency the trigger will use.
-      for (const startSector of resolveTargets(map, line, def)) {
-        for (const step of findStairChain(map, startSector, def.effect.stepHeight)) out.add(step.sectorIndex);
-      }
-    } else if (def.effect.kind === 'donut') {
-      // Same reasoning as stairs above: the tag only names the "hole", and
-      // its ring neighbor is discovered dynamically (see triggerDonut) so it
-      // has to be walked here too, not just resolved from the tag.
-      for (const startSector of resolveTargets(map, line, def)) {
-        out.add(startSector);
-        const ringIndex = neighborSectorIndices(map, startSector)[0];
-        if (ringIndex !== undefined) out.add(ringIndex);
-      }
-    } else if (
-      def.effect.kind !== 'exit' &&
-      def.effect.kind !== 'teleport' &&
-      def.effect.kind !== 'lightChange'
-    ) {
-      // Exit doesn't move geometry; teleport's tag match is a destination
-      // lookup, not a mover — the target sector's own height never changes.
-      // A pure light change never moves geometry either, so it stays out of
-      // the movable set: `recolorSector` reaches static and mover geometry
-      // alike, and a sector whose height never changes has no reason to pay
-      // for a mesh of its own.
-      for (const sectorIndex of resolveTargets(map, line, def)) out.add(sectorIndex);
-    }
-    for (const e of findSwitchEntries(map, line)) out.add(e.sectorIndex);
-  }
-  // A boss-death tag has no triggering linedef for the loop above to find — see bossDeathSectors.
-  for (const sectorIndex of bossDeathSectors(map)) out.add(sectorIndex);
-  return out;
-}
-
-/** Sectors animating their light level — no geometry impact, just a recolor. */
-export function computeLightSectors(map: DoomMap): Set<number> {
-  const out = new Set<number>();
-  for (let i = 0; i < map.sectors.length; i++) {
-    if (SECTOR_LIGHT_SPECIALS[map.sectors[i].special] !== undefined) out.add(i);
-  }
-  return out;
-}
 
 /**
  * `holdClosed` is the mirror of `hold`: waiting at the *bottom* before
@@ -538,27 +273,6 @@ function resolveCeilingTarget(map: DoomMap, sectorIndex: number, target: Ceiling
 }
 
 /**
- * One movable sector's geometry plus the two faders that own its vertex
- * alpha, exactly as `game.ts` runs them over the static batches. Mover walls
- * need the camera-player sightline fade for the same reason static ones do —
- * a lift's front wall or a door frame sits between camera and player just as
- * readily as any other wall — and rebuilding the mesh drops the faders'
- * smoothing state with it, which only ever happens while the mover is in
- * motion.
- */
-interface MoverGeometry {
-  mesh: MoverMesh;
-  walls: WallFader;
-  flats: FlatFader;
-}
-
-function disposeGroup(group: THREE.Group): void {
-  group.traverse((obj) => {
-    if (obj instanceof THREE.Mesh) obj.geometry.dispose();
-  });
-}
-
-/**
  * Drives every linedef/sector special in a loaded map: doors, lifts, generic
  * floor movers, crushers, teleporters, stair builders, blinking/flickering
  * lights, and level exits. Sector heights (`Sector.floorHeight`/`ceilHeight`/`light`) are
@@ -647,11 +361,8 @@ export class SpecialsController {
   private map: DoomMap;
   private world: World;
   private bank: MaterialBank;
-  private scene: THREE.Scene | THREE.Group;
-  private fog: FogOfWar;
-  private polys: SubSectorPoly[];
-  private built: BuiltMap;
-  private meshOptions: MapMeshOptions;
+  /** Everything this controller's height and light changes mean for what is actually drawn — see specials/movergeometry.ts. */
+  private geometry: MoverGeometry;
   private onExit: (secret: boolean) => void;
   private onTeleport: (dest: Placement) => void;
   private onCrush: (sectorIndex: number) => void;
@@ -672,21 +383,13 @@ export class SpecialsController {
   private crushDamageTimer = CRUSH_DAMAGE_INTERVAL;
   private crushDamageDue = false;
 
-  private movableSectors: Set<number>;
-  /** Movable sectors sharing a linedef with a given movable sector — see `rebuildAround`. */
-  private movableNeighbors = new Map<number, Set<number>>();
   private movers = new Map<number, Mover>();
-  private moverMeshes = new Map<number, MoverGeometry>();
   private usedOnce = new Set<number>();
 
   private switchTextures = new Map<number, SwitchEntry[]>();
   private switchFlashes = new Map<number, number>();
 
   private lightStates = new Map<number, LightState>();
-  private sectorOccluders = new Map<number, BuiltMap['occluders']>();
-  private sectorFlats = new Map<number, BuiltMap['flatSurfaces']>();
-  /** Which mover meshes hold geometry coloured from a given sector's light — see `recolorSector`. */
-  private moverLightTargets = new Map<number, Set<number>>();
 
   private prevX: number;
   private prevY: number;
@@ -721,10 +424,6 @@ export class SpecialsController {
     this.map = map;
     this.world = world;
     this.bank = bank;
-    this.scene = scene;
-    this.fog = fog;
-    this.polys = polys;
-    this.built = built;
     this.onExit = onExit;
     this.onTeleport = onTeleport;
     this.onCrush = onCrush;
@@ -741,12 +440,7 @@ export class SpecialsController {
       if (entries.length > 0) this.switchTextures.set(i, entries);
     }
 
-    this.movableSectors = computeMovableSectors(map);
-    // buildMoverMesh needs the full set to decide which side of a shared line
-    // is its own — see its doc; the caller only passes render preferences.
-    this.meshOptions = { ...meshOptions, movableSectors: this.movableSectors };
-    this.indexMovableNeighbors();
-    for (const sectorIndex of this.movableSectors) this.createMoverMesh(sectorIndex);
+    this.geometry = new MoverGeometry(map, world, bank, scene, fog, polys, built, meshOptions, computeMovableSectors(map));
 
     for (let i = 0; i < map.sectors.length; i++) {
       const timer = SECTOR_DOOR_SPECIALS[map.sectors[i].special];
@@ -759,14 +453,15 @@ export class SpecialsController {
       const pattern = SECTOR_LIGHT_SPECIALS[sector.special];
       this.lightStates.set(sectorIndex, makeLightState(pattern, sector.light, darkestNeighborLight(map, sectorIndex)));
     }
-    this.indexLightGeometry();
   }
 
   dispose(): void {
-    for (const g of this.moverMeshes.values()) {
-      this.scene.remove(g.mesh.group);
-      disposeGroup(g.mesh.group);
-    }
+    this.geometry.dispose();
+  }
+
+  /** The mover meshes' own per-frame occlusion/fog fade — see `MoverGeometry.updateFading`. Called from `game.ts` after the camera has settled, not from `update`. */
+  updateFading(dt: number, camX: number, camY: number, camZ: number, targets: FadeTarget[]): void {
+    this.geometry.updateFading(dt, camX, camY, camZ, targets);
   }
 
   /**
@@ -808,33 +503,6 @@ export class SpecialsController {
   }
 
   /**
-   * `sectorOccluders`/`sectorFlats` point at every sector's own occluder/flat
-   * objects, pulled out of `built.occluders`/`built.flatSurfaces` once at
-   * construction time so `recolorSector` never has to re-scan the whole map.
-   * Originally scoped to just the load-time blink-pattern sectors
-   * (`lightStates`), but the `lightChange` line specials
-   * (`triggerLightChange`) can recolor *any* tag-matched sector on demand,
-   * not just ones with an ongoing pattern, so this indexes every sector
-   * unconditionally now — a one-time, load-only cost. Static batches only:
-   * geometry living in a mover mesh is reached by `moverLightTargets`
-   * instead — see docs/specials.md § Relighting mover geometry.
-   */
-  private indexLightGeometry(): void {
-    this.sectorOccluders.clear();
-    this.sectorFlats.clear();
-    for (const o of this.built.occluders) {
-      const arr = this.sectorOccluders.get(o.sector) ?? [];
-      arr.push(o);
-      this.sectorOccluders.set(o.sector, arr);
-    }
-    for (const f of this.built.flatSurfaces) {
-      const arr = this.sectorFlats.get(f.sector) ?? [];
-      arr.push(f);
-      this.sectorFlats.set(f.sector, arr);
-    }
-  }
-
-  /**
    * Routing this field read through a method (rather than reading
    * `this.lastTeleport` directly at the end of `update`) works around a type
    * narrowing quirk in this project's pinned tsc: reading the field inline
@@ -867,7 +535,7 @@ export class SpecialsController {
     this.lastTeleport = null;
     this.handleUseTrigger(playerX, playerY, playerAngle, input, ownedKeys);
     this.handleWalkTriggers(playerX, playerY, ownedKeys);
-    this.rebuildAround(dirty);
+    this.geometry.rebuildAround(dirty);
     this.updateSwitchFlashes(dt);
     this.updateLights(dt);
     // See `lastTeleport`'s doc: a teleport this frame reseeds prevX/prevY from
@@ -875,94 +543,6 @@ export class SpecialsController {
     const teleport = this.consumeLastTeleport();
     this.prevX = teleport ? teleport.x : playerX;
     this.prevY = teleport ? teleport.y : playerY;
-  }
-
-  /**
-   * Per-frame vertex-alpha pass over the mover geometry, mirroring what
-   * `game.ts` runs over the static batches: camera sightline occlusion
-   * (player plus every awake monster — see `WallFader.update`'s doc) combined
-   * with fog-of-war reveal. Separate from `update` because it needs the
-   * camera position, which is only settled after the player has moved.
-   */
-  updateFading(dt: number, camX: number, camY: number, camZ: number, targets: FadeTarget[]): void {
-    for (const g of this.moverMeshes.values()) {
-      g.walls.update(dt, camX, camY, camZ, targets, (line) => this.world.openingOf(line));
-      g.flats.update(dt, camX, camY, camZ, targets);
-      // Mover quads aren't in the static occluder list FogOfWar indexed at
-      // load, so their subsector is probed from the quad itself.
-      g.walls.commit((i) => {
-        const q = g.mesh.wallQuads[i];
-        return this.fog.wallAlphaAt(q.ax, q.ay, q.bx, q.by);
-      });
-      g.flats.commit((subsector) => this.fog.alphaOf(subsector));
-    }
-  }
-
-  private createMoverMesh(sectorIndex: number): void {
-    const mesh = buildMoverMesh(this.map, this.polys, sectorIndex, this.bank, this.meshOptions);
-    this.scene.add(mesh.group);
-    this.moverMeshes.set(sectorIndex, {
-      mesh,
-      walls: new WallFader(mesh.wallQuads, mesh.meshes),
-      flats: new FlatFader(mesh.flatFans, mesh.meshes),
-    });
-    // A mover mesh holds its own sector's flats plus wall quads from *both*
-    // sides of every bordering line, so the sectors it must be relit for are
-    // not just `sectorIndex` — see `recolorSector`. Rebuilding a mesh never
-    // changes which sectors those are, so the sets only ever grow once.
-    for (const q of mesh.wallQuads) this.trackMoverLight(q.sector, sectorIndex);
-    for (const f of mesh.flatFans) this.trackMoverLight(f.sector, sectorIndex);
-  }
-
-  private trackMoverLight(sectorIndex: number, moverIndex: number): void {
-    const set = this.moverLightTargets.get(sectorIndex) ?? new Set<number>();
-    set.add(moverIndex);
-    this.moverLightTargets.set(sectorIndex, set);
-  }
-
-  private rebuildMoverMesh(sectorIndex: number): void {
-    const old = this.moverMeshes.get(sectorIndex);
-    if (old) {
-      this.scene.remove(old.mesh.group);
-      disposeGroup(old.mesh.group);
-    }
-    this.createMoverMesh(sectorIndex);
-  }
-
-  /**
-   * Rebuilds the meshes invalidated by a set of sectors having changed height.
-   * That is never just those sectors: a two-sided line's *other* side is drawn
-   * from both sectors' heights, so a movable neighbour's own quads on a shared
-   * line go stale too (a switch mounted on the wall of the lift it operates is
-   * the common case — the switch's own sector owns that quad, but its height
-   * comes from the lift). Static neighbours need no entry here: their side of
-   * such a line is built into this mover's mesh, not the static batch.
-   */
-  private rebuildAround(dirty: Set<number>): void {
-    if (dirty.size === 0) return;
-    const rebuild = new Set(dirty);
-    for (const sectorIndex of dirty) {
-      for (const n of this.movableNeighbors.get(sectorIndex) ?? []) rebuild.add(n);
-    }
-    for (const sectorIndex of rebuild) this.rebuildMoverMesh(sectorIndex);
-  }
-
-  private indexMovableNeighbors(): void {
-    for (const line of this.map.linedefs) {
-      if (line.right === NO_SIDE || line.left === NO_SIDE) continue;
-      const a = this.map.sidedefs[line.right]?.sector;
-      const b = this.map.sidedefs[line.left]?.sector;
-      if (a === undefined || b === undefined || a === b) continue;
-      if (!this.movableSectors.has(a) || !this.movableSectors.has(b)) continue;
-      this.link(a, b);
-      this.link(b, a);
-    }
-  }
-
-  private link(from: number, to: number): void {
-    const set = this.movableNeighbors.get(from) ?? new Set<number>();
-    set.add(to);
-    this.movableNeighbors.set(from, set);
   }
 
   // ---- Movers ----------------------------------------------------------
@@ -1398,7 +978,7 @@ export class SpecialsController {
     // vanilla's own decoupling between a sector's `special` field and an
     // already-spawned light thinker.
     sector.special = 0;
-    this.rebuildMoverMesh(sectorIndex);
+    this.geometry.rebuild(sectorIndex);
   }
 
   /** A sector already crushing (in either direction) ignores a re-trigger, matching vanilla's `sec->specialdata` guard. */
@@ -1547,13 +1127,13 @@ export class SpecialsController {
     switch (effect.mode) {
       case 'setLevel':
         sector.light = effect.level ?? sector.light;
-        this.recolorSector(sectorIndex);
+        this.geometry.recolorSector(sectorIndex);
         break;
       case 'brightestNeighbor': {
         let bright = 0;
         for (const n of neighborSectorIndices(this.map, sectorIndex)) bright = Math.max(bright, this.map.sectors[n].light);
         sector.light = bright;
-        this.recolorSector(sectorIndex);
+        this.geometry.recolorSector(sectorIndex);
         break;
       }
       case 'darkestNeighbor': {
@@ -1562,7 +1142,7 @@ export class SpecialsController {
           if (this.map.sectors[n].light < min) min = this.map.sectors[n].light;
         }
         sector.light = min;
-        this.recolorSector(sectorIndex);
+        this.geometry.recolorSector(sectorIndex);
         break;
       }
       case 'startStrobe':
@@ -1854,7 +1434,7 @@ export class SpecialsController {
       this.map.sidedefs[e.sideIndex][e.slot] = e.onTexture;
       dirty.add(e.sectorIndex);
     }
-    for (const sectorIndex of dirty) this.rebuildMoverMesh(sectorIndex);
+    for (const sectorIndex of dirty) this.geometry.rebuild(sectorIndex);
     this.switchFlashes.set(lineIndex, SWITCH_FLASH_SECONDS);
   }
 
@@ -1873,7 +1453,7 @@ export class SpecialsController {
         dirty.add(e.sectorIndex);
       }
     }
-    for (const sectorIndex of dirty) this.rebuildMoverMesh(sectorIndex);
+    for (const sectorIndex of dirty) this.geometry.rebuild(sectorIndex);
   }
 
   // ---- Lights --------------------------------------------------------
@@ -1884,83 +1464,7 @@ export class SpecialsController {
       const sector = this.map.sectors[sectorIndex];
       if (sector.light === value) continue;
       sector.light = value;
-      this.recolorSector(sectorIndex);
-    }
-  }
-
-  /**
-   * Rewrites the vertex colours of every surface lit by `sectorIndex` to that
-   * sector's current `light` — both the static batches (indexed once by
-   * `indexLightGeometry`) and any mover meshes holding its geometry. Only the
-   * RGB channels are touched; alpha belongs to the faders (render/occlusion.ts).
-   * See docs/specials.md § Light changes.
-   */
-  private recolorSector(sectorIndex: number): void {
-    const sector = this.map.sectors[sectorIndex];
-    const dirty = new Set<string>();
-
-    for (const o of this.sectorOccluders.get(sectorIndex) ?? []) {
-      const c = litColor(sector.light, wallContrast(o.ax, o.ay, o.bx, o.by));
-      const attr = this.built.wallMeshes.get(o.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
-      if (!attr) continue;
-      for (let v = 0; v < o.vertexCount; v++) attr.setXYZ(o.vertexStart + v, c, c, c);
-      dirty.add(o.key);
-    }
-    for (const f of this.sectorFlats.get(sectorIndex) ?? []) {
-      const c = litColor(sector.light);
-      const attr = this.built.flatMeshes.get(f.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
-      if (!attr) continue;
-      for (let v = 0; v < f.vertexCount; v++) attr.setXYZ(f.vertexStart + v, c, c, c);
-      dirty.add(f.key);
-    }
-
-    for (const key of dirty) {
-      const attr = (this.built.wallMeshes.get(key) ?? this.built.flatMeshes.get(key))?.geometry.getAttribute('color') as
-        | THREE.BufferAttribute
-        | undefined;
-      if (attr) attr.needsUpdate = true;
-    }
-
-    this.recolorMoverGeometry(sectorIndex, sector.light);
-  }
-
-  /**
-   * `recolorSector`'s mover-mesh half. A sector that is *also* a mover (a
-   * strobing lift — DOOM1 E1M5 sectors 2 and 32) has its flats and walls in
-   * its own `moverMeshes` entry rather than the static batch, and a static
-   * sector bordering a mover has its side of the shared line built there too,
-   * so neither is reachable through `sectorOccluders`/`sectorFlats`. Without
-   * this pass such a sector only ever picked up its light while it happened
-   * to be moving, since a height change rebuilds the mesh from the live
-   * `sector.light` anyway.
-   */
-  private recolorMoverGeometry(sectorIndex: number, light: number): void {
-    for (const moverIndex of this.moverLightTargets.get(sectorIndex) ?? []) {
-      const g = this.moverMeshes.get(moverIndex);
-      if (!g) continue;
-      const dirty = new Set<string>();
-
-      for (const q of g.mesh.wallQuads) {
-        if (q.sector !== sectorIndex) continue;
-        const attr = g.mesh.meshes.get(q.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
-        if (!attr) continue;
-        const c = litColor(light, wallContrast(q.ax, q.ay, q.bx, q.by));
-        for (let v = 0; v < q.vertexCount; v++) attr.setXYZ(q.vertexStart + v, c, c, c);
-        dirty.add(q.key);
-      }
-      for (const f of g.mesh.flatFans) {
-        if (f.sector !== sectorIndex) continue;
-        const attr = g.mesh.meshes.get(f.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
-        if (!attr) continue;
-        const c = litColor(light);
-        for (let v = 0; v < f.vertexCount; v++) attr.setXYZ(f.vertexStart + v, c, c, c);
-        dirty.add(f.key);
-      }
-
-      for (const key of dirty) {
-        const attr = g.mesh.meshes.get(key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
-        if (attr) attr.needsUpdate = true;
-      }
+      this.geometry.recolorSector(sectorIndex);
     }
   }
 

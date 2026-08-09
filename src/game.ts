@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import type { Wad } from './wad/wad.ts';
+import { wadId } from './wad/checksum.ts';
+import { bestTimeKey, recordBestTime, type BestTimeResult } from './game/besttimes.ts';
 import { GraphicsBank } from './wad/graphics.ts';
 import { SpriteBank } from './wad/sprites.ts';
 import { loadMap, type DoomMap } from './wad/map.ts';
@@ -184,6 +186,12 @@ export class Game {
 
   /** `?pos=x,y` override for the player start, consumed by the first map load. */
   private startPos: Pos2 | null;
+  /**
+   * Whether this session's completions may set best times. A `?pos=` start can drop the player
+   * anywhere — next to the exit included — so those runs are excluded (docs/items.md § Best times).
+   * Captured up front because `startPos` is nulled out once the first map has consumed it.
+   */
+  private recordsEligible: boolean;
 
   constructor(
     view: Viewport,
@@ -200,6 +208,10 @@ export class Game {
     this.title = title;
     this.skill = skill;
     this.startPos = startPos;
+    this.recordsEligible = startPos === null;
+    // Primed here, where a one-off scan of each file's bytes disappears into a load that is about
+    // to build every mesh in the level, so the exit frame only ever hits the memo.
+    for (const file of wad.files) wadId(file);
 
     this.scene.background = new THREE.Color(0x05050a);
     this.scene.fog = new THREE.Fog(0x05050a, VIEW_DISTANCE * FOG_START_FRACTION, VIEW_DISTANCE);
@@ -606,7 +618,7 @@ export class Game {
       this.pendingExit = false;
       // The next map isn't loaded here any more: the popup goes up on the level as it stands, and
       // the continue key at the top of `frame` is what loads it.
-      this.intermission.show(this.levelStats());
+      this.intermission.show(this.levelStats(), this.recordCompletion());
       this.intermissionActive = true;
       this.intermissionTime = 0;
       input.endFrame();
@@ -764,6 +776,23 @@ export class Game {
       totalSecrets: this.sectorEffects.totalSecrets,
       elapsedSeconds: this.levelTime,
     };
+  }
+
+  /**
+   * Files the completion that just happened and reports how it compares to the level's best, or
+   * null if this run was never eligible for one. The record is keyed to the WAD file that
+   * *provides* the map rather than to the loaded set — see docs/items.md § Best times.
+   */
+  private recordCompletion(): BestTimeResult | null {
+    if (!this.recordsEligible) return null;
+    const map = this.currentMap;
+    const source = this.wad.find(map)?.source;
+    if (!source) return null;
+    return recordBestTime(bestTimeKey(wadId(source), map, this.skill), this.levelTime, {
+      wad: source.name,
+      map,
+      skill: this.skill,
+    });
   }
 
   /** The 2D layers over the level: status bar, crosshair, center message, level card, and the screen tints. */

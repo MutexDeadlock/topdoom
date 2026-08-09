@@ -60,15 +60,15 @@ those go in the scratchpad, never in `src/`.
 ## Architecture
 
 ```
-src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite + sound decoding,
-               MAPINFO + the vanilla level-title tables
+src/wad/       WAD files, merged lump directory, content ids, map lumps, graphics + sprite + sound
+               decoding, MAPINFO + the vanilla level-title tables
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards + their instanced batching, shot tracers, camera, viewport
 src/game/      spatial queries, collision, player controller, input, thing→sprite table, thing
                world state (pickups, damage), fog of war, inventory/pickups, weapons and firing,
                shots in flight + splash, damage/death, projectile/effect tables, transient
                effects (fog puffs, explosions, tracers), mover obstruction + crush damage,
-               damage floors + secrets, the Icon of Sin's cube spitter
+               damage floors + secrets, per-level best times, the Icon of Sin's cube spitter
 src/game/monsters/   tables + record shapes (defs), chase/attack decisions (ai), attack resolution
                (attacks), the arch-vile (vile)
 src/game/things/     the thing layer's record shapes + its own tables (defs), monster/corpse

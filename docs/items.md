@@ -247,9 +247,13 @@ message's 3 since there is nothing else on screen to read yet.
 ### Intermission
 
 `src/ui/intermission.ts` (`#intermission`) is the end-of-level popup: the same three counts the HUD
-strip carries, as vanilla's percentages this time, then the frozen level time, then the continue
-hint. `Hud`'s own layout rules apply — a red label run, values from a shared column, and the
-yellow→green switch at 100% — and `formatClock`/`percentOf` are shared with the HUD strip
+strip carries, as vanilla's percentages this time, then the frozen level time, then the best-time
+lines (§ Best times) and the continue hint. The three percentages are **right-aligned** against
+each other, which the HUD strip's own numbers are not: the strip's are one glance among many, while
+these three sit stacked as a block where a ragged right edge is the first thing you read. A value
+wider than the `100%` the column is sized for — kills can pass 100% — widens the column rather than
+being clipped. `Hud`'s other layout rules apply — a red label run, values from a shared column, and
+the yellow→green switch at 100% — and `formatClock`/`percentOf` are shared with the HUD strip
 (`ui/hud.ts`) so the popup and the bar can never disagree about the same numbers. `percentOf`
 truncates, matching `wi_stuff.c`'s C integer division, and reads 100% for a total of 0, where
 vanilla would divide by zero.
@@ -277,6 +281,36 @@ The control flow is the part worth knowing:
 
 Secret exits still advance by `+1` like any other (the `secret` flag is dropped in `specials.ts`),
 so there is no secret-level routing for the popup to announce.
+
+### Best times
+
+`src/game/besttimes.ts` persists one best completion time per level under `topdoom.bestTimes`
+(docs/menu.md § Persisted settings), and the popup shows it: a `Best mm:ss` line on an ordinary run,
+or a green `NEW BEST TIME!` with the beaten time as `Previous mm:ss` when the record falls. The
+clock stays yellow either way — the record line is what announces one, and recoloring the number
+too said the same thing twice. A first-ever completion is a record and so has no `Previous` line to
+show.
+
+**The key is the content id of the WAD file that *provides* the map, plus the map lump, plus the
+skill** — `Game.recordCompletion` resolves the file as `wad.find(map)!.source` and hashes it
+(docs/wad.md § Content id). Keying on the whole loaded set instead would orphan every record the
+moment an unrelated add-on is loaded; keying on the file name alone would let two different WADs
+that happen to share a basename fight over one record, and would lose every record on a rename.
+Skill is in the key because a time set on skill 1 says nothing about one set on Ultra-Violence.
+
+Two rules about what counts:
+
+- **A `?pos=x,y` run never records.** That entry point can drop the player anywhere, the exit
+  included, and one such run would leave an unbeatable time in the table. `Game.recordsEligible` is
+  captured in the constructor, because `startPos` is nulled out once the first map has consumed it.
+  Such a run shows no best-time lines at all rather than a record it can't touch.
+- **A record is only written on an improvement**, so `recordBestTime` returning `previous` is what
+  the popup renders either way — the store and the popup never form separate opinions about which
+  time is the best one.
+
+The table is one JSON blob, capped at `MAX_RECORDS` with the oldest evicted first, and validated per
+entry on read: a single hand-edited or malformed record is dropped rather than the whole table,
+since losing one level's time should not cost every other level's.
 
 ### Center messages
 

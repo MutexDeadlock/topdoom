@@ -11,6 +11,11 @@ Features and improvements
     - a PWAD map with neither is named after the file it came from
     - the menu's level list shows those names too
   - leaving a level now shows an intermission popup
+    - it now also tracks your best time per level, and announces a new one
+    - records are kept per WAD, level and difficulty, and survive a reload
+    - the WAD is identified by a hash of its contents, so renaming a file
+      keeps its records and two different WADs sharing a name don't collide
+    - a run started with ?pos= can't set a record
   - a locked door or switch now says which key it wants
 
 Fixed bugs

@@ -147,6 +147,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
 | `topdoom.skill` | `ui/menu.ts` | § Difficulty above |
 | `topdoom.selection` | `ui/menu.ts` | § Remembered selection below |
+| `topdoom.bestTimes` | `game/besttimes.ts` | docs/items.md § Best times |
 
 ## Remembered selection
 

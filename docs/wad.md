@@ -92,6 +92,29 @@ anything yet — so it resolves off the manifest instead, which is why `WadManif
 file's own MAPINFO titles (§ The `public/wads/` manifest) and `mergedMaps` (`library.ts`) merges
 them the same way, later files winning.
 
+## Content id
+
+`checksum.ts` gives a `WadFile` a **content id**: a hash of its whole byte range, memoized per file
+in a `WeakMap`. It is what per-level best times are keyed on (docs/items.md § Best times), and it is
+meant to be what a saved game embeds so it can tell whether the set it was made with is the set
+loaded now — `wadSetId(wad)` returns every loaded file's `{ name, id }` in load order, a list rather
+than one combined hash so a mismatch can name *which* file is wrong.
+
+Two rules hold this up:
+
+- **The id follows the bytes, not the file name.** Renaming a WAD keeps its records; editing one
+  loses them, which is correct — an edited WAD is a different WAD.
+- **The hash is synchronous, and deliberately not `crypto.subtle`.** `crypto.subtle` is undefined
+  outside a secure context, and the Vite dev server reached over a plain-http LAN address is not
+  one. An id that depended on how the page was opened would cost a record here and would make a
+  save refuse to load once saves key off the same function, so there is one scheme everywhere.
+  What that scheme is: two FNV-1a-shaped lanes with different basis and multiplier, run in one pass
+  and concatenated to 16 hex chars, with the byte length folded in so a truncated file can't
+  collide with the whole one. 13ms for the 14 MB `DOOM2.WAD`.
+
+`Game`'s constructor primes the id for every loaded file, so the cost lands in a load that is
+already building every mesh in the level rather than on the frame a level ends.
+
 ## The `public/wads/` manifest
 
 The Vite plugin scans `public/wads/{iwad,pwad}/`, reading each file's header and directory (a few KB

@@ -34,7 +34,7 @@ import { applyCrushDamage, blocksCeilingLower, blocksFloorRise } from './game/mo
 import { SectorEffects } from './game/sectoreffects.ts';
 import { Hud } from './ui/hud.ts';
 import { Crosshair } from './ui/crosshair.ts';
-import { CenterMessage } from './ui/message.ts';
+import { CenterMessage, lockedKeyMessage } from './ui/message.ts';
 import { DebugHud, handleHotkeys } from './ui/debughud.ts';
 import { ScreenEffects } from './ui/screeneffects.ts';
 import { FrameProfiler } from './util/profiler.ts';
@@ -528,6 +528,11 @@ export class Game {
     this.profiler.time('Specials', () =>
       this.specials?.update(dt, this.player.x, this.player.y, this.player.angle, input, this.inventory.keys),
     );
+    // The `oof` a refused keyed line already played is raised inside `specials`; the message that
+    // says *which* key it wants is this layer's, since that controller has no HUD. `undefined`
+    // (no level loaded) and `null` (nothing refused) are the same non-event here.
+    const locked = this.specials?.consumeLockedLine();
+    if (locked) this.message.show(...lockedKeyMessage(locked.key, locked.kind));
     // Deferred from the exit trigger's callback — see `pendingExit`'s doc.
     // The old SpecialsController's update() has now fully returned, so it's
     // safe to dispose it and swap in the next map.

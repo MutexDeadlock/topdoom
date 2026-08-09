@@ -90,9 +90,20 @@ on their `DoorEffect` — resolved per-special against `P_UseSpecialLine` rather
 two manual-door groups don't share an ordering (26/27/28 are Blue/Yellow/Red, 32/33/34 are
 Blue/Red/Yellow). `trigger` checks `ownedKeys.has(requiredKey)` before doing anything else — no
 flashing switch texture, no `usedOnce` mark — so a player without the key can walk off, find it, and
-press the same line later, matching vanilla functionally (there's no on-screen message system yet to
-show the text). `ownedKeys` is threaded from `Game.frame` as `this.inventory.keys` on every
-`SpecialsController.update` call, same as `playerX`/`playerY`.
+press the same line later, matching vanilla. `ownedKeys` is threaded from `Game.frame` as
+`this.inventory.keys` on every `SpecialsController.update` call, same as `playerX`/`playerY`.
+
+**A refused line reports which key it wants** — vanilla's `oof` plus its message, both. `trigger`
+records the refusal as a `LockedLine` (color, plus `'door'` vs `'switch'`) rather than showing
+anything itself: it has no HUD, the same reason `onExit`/`onTeleport` are callbacks. `Game.frame`
+drains it with `consumeLockedLine()` right after `specials.update` — every keyed special is a `use`
+trigger, so that one call site catches all of them — and shows the text (§ Center messages). The
+text is `d_englsh.h`'s verbatim, including the door/switch split it already makes: `PD_*K` "You
+need a blue key to open this door" (`EV_VerticalDoor`, the manual doors 26-28/32-34) vs. `PD_*O`
+"...to activate this object" (`EV_DoLockedDoor`, the remote switches 99/133-137) — a split
+`def.manual` already draws exactly. It says "key" for a skull because vanilla's checks accept
+either, testing both `it_*card` and `it_*skull`, which is also why `KeyColor` has three values and
+not six.
 
 Getting the key check to fire surfaced a second bug in the same table: 99 and 133-137 were missing or
 mismarked `manual: true`. Unlike 26-34 (real D1 manual doors, which open the *linedef's own* back
@@ -210,13 +221,27 @@ behavior is in place for if one is added later.
 
 `src/ui/message.ts`'s `CenterMessage` draws one short line of `WadFont` text over the middle of the
 view (`#hud-message`, horizontally centered, 40% down so it clears the player sprite the camera
-holds at dead center), for 3 seconds. Currently the only caller is the secret announcement —
-`Game.collectPickupsAndSectorEffects` shows `SECRET_MESSAGE` and plays `radio` on the frame
-`SectorEffects.update` reports `secretFound`.
+holds at dead center), for 3 seconds. Two callers so far:
 
-Both halves are this engine's own, not vanilla reproductions: vanilla announces a secret nowhere at
-all (its status bar's `S` count just ticks up), prints what messages it does have in the top-left in
-STCFN's native red, and uses `DSRADIO` for DOOM 2's inter-level radio chatter. This one is
+- the secret announcement — `Game.collectPickupsAndSectorEffects` shows `SECRET_MESSAGE` and plays
+  `radio` on the frame `SectorEffects.update` reports `secretFound`;
+- the locked door/switch line — `lockedKeyMessage(key, kind)` composes vanilla's own `PD_*K`/`PD_*O`
+  text from the `LockedLine` `Game.frame` drained out of `specials` (§ Locked doors and use
+  triggers), and its `oof` was already played there.
+
+`show` takes **runs**, not one string: a bare string draws in `COLOR_YELLOW`, a `{text, color}` run
+in whatever color it names, and they're laid out left to right on one canvas — which is what lets
+the locked-door line print the key's color word in that key's color. Each distinct color costs one
+`WadFont` (all 63 `STCFN` patches decoded and retinted), so they're built on first use and cached
+for the level rather than per message. The key colors themselves are sampled from the key pickup
+sprites, the same convention `COLOR_YELLOW` and `LEVEL_STATS_GREEN` follow, with one documented
+exception: `BKEYA0`'s brightest pixel is pure `0,0,255`, unreadable over the playfield at 0.75
+opacity, so blue takes the light end of the same palette ramp instead.
+
+Both halves of the secret announcement are this engine's own, not vanilla reproductions: vanilla
+announces a secret nowhere at all (its status bar's `S` count just ticks up), prints what messages
+it does have in the top-left in
+STCFN's native red, and uses `DSRADIO` for DOOM 2's inter-level radio chatter. Placement is
 center-screen in `COLOR_YELLOW`, where a top-down player is already looking, and 3 seconds rather than
 vanilla's 4-second `HU_MSGTIMEOUT` because text in the middle of the view outstays its welcome
 faster than text in a corner. Its CSS size (`13px` glyph height, roughly the level-stats strip's

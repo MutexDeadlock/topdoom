@@ -5,9 +5,11 @@ export const AMMO_TYPES = ['bullets', 'shells', 'rockets', 'cells'] as const;
 export type AmmoType = (typeof AMMO_TYPES)[number];
 
 /**
- * Card and skull keys of the same color are tracked as one slot: this engine
- * has no locked-door requirement check yet (see game/specials.ts's note on
- * that), so there is nothing that would ever need to tell them apart.
+ * Card and skull keys of the same color are tracked as one slot, because vanilla's locked-door
+ * checks accept either: every one of them tests both (`p_doors.c`'s
+ * `!p->cards[it_bluecard] && !p->cards[it_blueskull]`), so nothing in the game can tell them
+ * apart — which is also why vanilla's own locked-door message says "key" for a skull
+ * (`ui/message.ts`).
  */
 export const KEY_COLORS = ['blue', 'red', 'yellow'] as const;
 export type KeyColor = (typeof KEY_COLORS)[number];

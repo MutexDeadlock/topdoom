@@ -337,6 +337,18 @@ function resolveCeilingTarget(map: DoomMap, sectorIndex: number, target: Ceiling
 export type TeleportDest = Placement;
 
 /**
+ * A keyed line the player just used without the key it wants — what `game.ts` needs to say so
+ * (see `consumeLockedLine`). `kind` is vanilla's own split between "open this door" (`PD_*K`, the
+ * manual door specials 26-28/32-34, where the line *is* the door) and "activate this object"
+ * (`PD_*O`, the remote switches 99/133-137) — the two messages `EV_VerticalDoor` and
+ * `EV_DoLockedDoor` print. docs/specials.md § Keyed doors.
+ */
+export interface LockedLine {
+  key: KeyColor;
+  kind: 'door' | 'switch';
+}
+
+/**
  * The only line specials a non-player thing may activate by walking over
  * them — vanilla's own short allow-list in `P_CrossSpecialLine`'s
  * `if (!thing->player)` branch. Everything else in the game (exit lines,
@@ -402,6 +414,12 @@ export class SpecialsController {
    * (and wrongly re-trigger) unrelated lines along the way.
    */
   private lastTeleport: Pos2 | null = null;
+  /**
+   * Set by `trigger` when the player uses a keyed line without its key, and read (and cleared) by
+   * `consumeLockedLine` — this controller knows which key a line wants, but nothing about the HUD
+   * that has to say so, the same reason `onExit`/`onTeleport` are callbacks.
+   */
+  private lockedLine: LockedLine | null = null;
 
   constructor(
     map: DoomMap,
@@ -512,6 +530,17 @@ export class SpecialsController {
    */
   private consumeLastTeleport(): Pos2 | null {
     return this.lastTeleport;
+  }
+
+  /**
+   * The keyed line the player was refused this frame, if any — one read per attempt, so holding
+   * `use` against a locked door re-announces it on every press and not in between. Call after
+   * `update`, which is where every keyed line is reached from (all of them are `use` triggers).
+   */
+  consumeLockedLine(): LockedLine | null {
+    const locked = this.lockedLine;
+    this.lockedLine = null;
+    return locked;
   }
 
   update(
@@ -1210,9 +1239,10 @@ export class SpecialsController {
     // matching vanilla, which just prints "you need the X key" and does
     // nothing else.
     if (def.effect.kind === 'door' && def.effect.requiredKey && !ownedKeys.has(def.effect.requiredKey)) {
-      // Vanilla prints "you need the X key" and plays `oof` at full volume
-      // (`S_StartSound(NULL, sfx_oof)`) — with no message line in this engine,
-      // the grunt is the entire feedback that the door is locked.
+      // Vanilla's own feedback: a "you need the X key" message plus `oof` at full volume
+      // (`S_StartSound(NULL, sfx_oof)`). A manual door is the door itself, anything else keyed is
+      // a remote switch — see `LockedLine`. Both are player-only; a monster never uses a line.
+      if (!byMonster) this.lockedLine = { key: def.effect.requiredKey, kind: def.manual ? 'door' : 'switch' };
       this.sfx.play('oof');
       return null;
     }

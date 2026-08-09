@@ -193,10 +193,25 @@ smoke from the same sprite, so reproducing only one loses nothing.
 
 A monster projectile reuses the same `Projectile`/`ProjectileLayer.update` machinery the player's own
 rocket/plasma/BFG shots use, distinguished by a non-null `sourceId` (with the doomednum along as
-`sourceType` for the species check). Its arrival is re-checked every frame against the player's
-*live* position (`MONSTER_PROJECTILE_HIT_RADIUS`/`_HEIGHT`) and every other living monster it might
-clip (`monsterStruckBy`, `sameSpecies`-gated), so stepping behind cover or outrunning a slower
-fireball actually works.
+`sourceType` for the species check). Arrival is re-checked every frame against the player's *live*
+position (`playerStruckBy`) and every other living body it might clip (`bodyStruckBy`,
+`sameSpecies`-gated), so stepping behind cover or outrunning a slower fireball actually works. Both
+run over `spritefxdefs.ts`'s `stepTouchesBody`, and **the player's own missiles now take the identical
+path** — docs/combat.md § How a projectile finds its target covers the shared contact rule, the
+per-missile `PROJECTILE_RADIUS` and why the step is swept rather than sampled.
+
+**What `sourceId` still decides is only what a hit *means***, not whether it happens: who the damage
+is attributed to for infighting, whether `sameSpecies` can fizzle the shot, and whether the player is
+a candidate at all. Two other rules stay monster-only for their own reasons — `hitGround` below, and
+`triggerShot`'s `byMonster` flag.
+
+**The player's hit box is vanilla's, not a generous stand-in.** Contact is the player's own 16-unit
+box plus the missile's radius (22 units for the imp/cacodemon/baron/mancubus fireballs, 27 for a
+rocket or revenant missile, 29 for arachnotron plasma) as the equal-mean-width circle — about 28
+units for an imp fireball. It used to be a flat 40-unit disc plus a ±128 height tolerance borrowed
+from `tryPickup`'s window check, i.e. **twice the cross-section** and a band tall enough that a
+fireball passing 100 units over the player's head still hit them. That is what "monster projectiles
+collide too loosely" was: fireballs detonating a body-width away and reading as hits you dodged.
 
 **The target sets the missile's slope and nothing else; the flight ends at a wall.** `P_SpawnMissile`
 fixes `momx`/`momy`/`momz` at launch — from `(dest->z - source->z)` over the launch distance — and
@@ -213,6 +228,11 @@ standing when it was fired**, whether or not they were still there. With a cyber
 rockets going off in empty floor space, which is precisely what it was doing. Only the revenant's
 `MT_TRACER` actually homes (`AttackStats.projectile.homing`, `advanceHoming`).
 
+**The player's own missiles follow the same rule now**, for the same reason and out of the same
+`P_SpawnMissile` reading: `spawnPlayerShot` sets `maxDist` from `shotPath`'s wall, never from the
+locked-on target's distance. Ending a rocket or a BFG ball at where a monster stood at launch is what
+had them bursting in empty air a body-length short of a monster that had walked on.
+
 Because the slope now outlives the aim that set it, a monster missile also explodes on meeting the
 floor or ceiling (`ProjectileLayer.update`'s `hitGround`, vanilla's `P_ZMovement`), which is how a
 cyberdemon firing down from a ledge and missing puts its rocket into the ground instead of burrowing
@@ -224,10 +244,10 @@ The mancubus's fanned pair shares one slope for the volley — `target` is loop-
 deflects only the heading, since `A_FatAttack1/2/3` rewrite `momx`/`momy` from the new angle after
 `P_SpawnMissile` and leave `momz` alone.
 
-**Both live arrival tests are gated on `hasLineOfSight`, and that gate is load-bearing.** The hit
-test is a fat 2D disc (40 units) plus ±128 height tolerance, and a projectile's flight *ends* at
-whatever wall `shotPath` found — so on the last frames before it bursts, anyone within that disc on
-the **far** side of that wall took a full direct hit through it. The trace runs **from the
+**Both live arrival tests are gated on `hasLineOfSight`, and that gate is load-bearing.** Contact
+still reaches tens of units past the missile's own centre, and a projectile's flight *ends* at
+whatever wall `shotPath` found — so on the last frames before it bursts, anyone within contact range
+on the **far** side of that wall took a full direct hit through it. The trace runs **from the
 player/monster toward the projectile**, not the other way round: by then the impact point sits
 essentially *on* the wall, and `hasLineOfSight`'s own `SELF_HIT_MARGIN` would discard that crossing
 as a self-hit and report the wall it just stopped against as clear. Both checks sit **last** in

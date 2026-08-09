@@ -63,6 +63,13 @@ export interface ThingGrid {
    * therefore up to one frame stale, which `BLOCKER_MARGIN` covers.
    */
   rebuild(): void;
+  /**
+   * Largest collision radius currently in the grid. Callers that test each
+   * candidate against *its own* radius (`ThingLayer.monstersAlongStep`) size
+   * their search box with this rather than with the biggest monster in the
+   * game — the same adaptive trick `blockersFor` uses.
+   */
+  maxBodyRadius(): number;
   forEachMonsterNear(x: number, y: number, radius: number, visit: (p: PosedThing) => void): void;
   forEachMonsterAlongRay(
     x: number,
@@ -70,6 +77,7 @@ export interface ThingGrid {
     dirX: number,
     dirY: number,
     maxDist: number,
+    clearance: number,
     visit: (p: PosedThing) => void,
   ): void;
   blockersFor(p: PosedThing, player: Pos3 | null): readonly ThingBlocker[];
@@ -198,11 +206,15 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
    * frame on a crowded map.
    *
    * Deliberately simpler than `forEachLineAlongSegment`'s exact DDA: half-cell
-   * steps with a 3×3 sweep each. Half-cell steps skip no cell on the path, and
-   * the 3×3 sweep clears a full 128 units either side — far more than the ~24
-   * unit hit radius — so it cannot miss a monster the exact ray would hit.
-   * Stamped rather than `Set`-deduped, since consecutive neighbourhoods
-   * overlap heavily. docs/monsters.md § Spatial indexing.
+   * steps with a square cell sweep each. Half-cell steps skip no cell on the
+   * path, and a sweep `n` cells either side clears a full `n ×
+   * BLOCKER_GRID_CELL` units laterally, so it cannot miss a monster the exact
+   * ray would hit. `clearance` is how far off the ray a body can still be
+   * struck — the caller's widest possible hit radius, which is per-species and
+   * so up to a spider mastermind's 163 units rather than the flat ~24 this
+   * assumed while one shared hitbox covered every type. Stamped rather than
+   * `Set`-deduped, since consecutive neighbourhoods overlap heavily.
+   * docs/monsters.md § Spatial indexing.
    */
   function forEachMonsterAlongRay(
     x: number,
@@ -210,19 +222,21 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
     dirX: number,
     dirY: number,
     maxDist: number,
+    clearance: number,
     visit: (p: PosedThing) => void,
   ): void {
     const stamp = ++monsterQueryStamp;
     const stride = BLOCKER_GRID_CELL / 2;
     const steps = Math.ceil(maxDist / stride);
+    const halo = Math.max(1, Math.ceil((clearance + BLOCKER_MARGIN) / BLOCKER_GRID_CELL));
     for (let s = 0; s <= steps; s++) {
       const t = Math.min(s * stride, maxDist);
       const cx = blockerCol(x + dirX * t);
       const cy = blockerRow(y + dirY * t);
-      for (let gy = cy - 1; gy <= cy + 1; gy++) {
+      for (let gy = cy - halo; gy <= cy + halo; gy++) {
         if (gy < 0 || gy >= blockerRows) continue;
         const rowBase = gy * blockerCols;
-        for (let gx = cx - 1; gx <= cx + 1; gx++) {
+        for (let gx = cx - halo; gx <= cx + halo; gx++) {
           if (gx < 0 || gx >= blockerCols) continue;
           const cell = blockerGrid[rowBase + gx];
           if (cell === undefined) continue;
@@ -376,5 +390,13 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
   // splash on the opening frame, say) still finds the monsters that exist.
   rebuild();
 
-  return { rebuild, forEachMonsterNear, forEachMonsterAlongRay, blockersFor, findRaisableCorpse, solidBodies };
+  return {
+    rebuild,
+    maxBodyRadius: () => maxBlockerRadius,
+    forEachMonsterNear,
+    forEachMonsterAlongRay,
+    blockersFor,
+    findRaisableCorpse,
+    solidBodies,
+  };
 }

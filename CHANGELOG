@@ -19,6 +19,14 @@ Features and improvements
   - a locked door or switch now says which key it wants
 
 Fixed bugs
+  - projectiles now collide the way vanilla's do
+    - rockets, plasma and BFG balls hit whatever they actually fly into,
+      re-checked every frame
+    - every shot is now tested against each monster's real size instead of
+      one shared 24-unit hitbox
+    - monster fireballs no longer hit from a body-width away or from far
+      over your head
+    - a shot passing you at speed can no longer slip between two frames
   - fixed periods, commas, hyphens and underscores in on-screen WAD-font text
   - fixed stuck monsters
   - fixed the game freezing when a second WAD is started from the menu after

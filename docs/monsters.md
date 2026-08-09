@@ -187,16 +187,28 @@ Four details are load-bearing:
   numeric keys, so V8 backs it with a dictionary — one hash lookup per candidate per monster per
   frame was more expensive than the collision arithmetic.
 
-**The same grid backs `monstersNear` and `raycastMonster`**, and neither can afford to be the linear
-scan it started as, because both are called *per shot in flight*, not per frame: `monstersNear` runs
-once per airborne projectile per frame (`game/projectiles.ts`'s `monsterStruckBy`) and a crowded map can have
-over a thousand in the air; `raycastMonster` runs once per monster hitscan. `raycastMonster`'s query
-is a ray rather than a box, so `forEachMonsterAlongRay` steps the ray by half a cell and sweeps each
-step's 3×3 cell neighbourhood — deliberately simpler than `World.forEachLineAlongSegment`'s exact
-DDA, and conservative by a wide margin. Monsters are deduped with a stamp on `PosedThing.queryStamp`
-rather than a `Set`, since consecutive steps overlap heavily. Both were verified to return results
-identical to the linear scans across NUTS.WAD, DOOM2 MAP07 and DOOM E1M7. `monstersInSector` is
-deliberately left linear — it runs on a crusher tick, not per frame.
+**The same grid backs `monstersNear`, `monstersAlongStep` and `raycastMonster`**, and none can afford
+to be the linear scan they started as, because they are called *per shot in flight*, not per frame:
+`monstersAlongStep` runs once per airborne projectile per frame (`game/projectiles.ts`'s
+`bodyStruckBy`) and a crowded map can have over a thousand in the air; `raycastMonster` runs once per
+monster hitscan. `raycastMonster`'s query is a ray rather than a box, so `forEachMonsterAlongRay`
+steps the ray by half a cell and sweeps a square cell neighbourhood at each step — deliberately
+simpler than `World.forEachLineAlongSegment`'s exact DDA, and conservative by a wide margin. Monsters
+are deduped with a stamp on `PosedThing.queryStamp` rather than a `Set`, since consecutive steps
+overlap heavily. All were verified to return results identical to the linear scans across NUTS.WAD,
+DOOM2 MAP07 and DOOM E1M7. `monstersInSector` is deliberately left linear — it runs on a crusher
+tick, not per frame.
+
+**Both shot queries size their search from the map's own largest body (`ThingGrid.maxBodyRadius`),
+not from the largest in the game.** Since a shot is tested against each body's real `mobjinfo.radius`
+rather than one shared 24-unit box (docs/combat.md § How a shot deals damage), the neighbourhood has
+to clear whatever the *widest* thing present could reach — 163 units around a spider mastermind, but
+still one cell on a map of 20-unit grunts, which is what keeps the common case at its old cost. This
+is the same adaptive trick `blockersFor` uses, and for the same reason: a fixed worst-case box is
+what made monster AI the frame's bottleneck. Measured against the old flat 40-unit point query, the
+wider swept box collects 3.4 candidates per query instead of 2.1 on a stock-shaped population and 9.9
+on one containing spider masterminds — 1.5× and 4× the cost of a query that was 0.1 µs to begin with,
+so even a thousand shots in the air stay well under half a millisecond a frame.
 
 **The arch-vile's corpse check (`findRaisableCorpse`) shares this grid** via a second bucket array,
 `corpseGrid`, filled in the same `posed` pass. It originally shipped as a linear scan on the
@@ -317,7 +329,7 @@ plain `target` position and never learns whether it's chasing the player or a ba
 `MonsterAttacks` is where a shot finds out who it hit — `resolveHitscan` damages the first body
 along the bolt
 (`PTR_ShootTraverse` has no notion of an intended target and no species check, which is why one
-zombieman firing past another starts a fight), and `monsterStruckBy` does the same per frame for a
+zombieman firing past another starts a fight), and `bodyStruckBy` does the same per frame for a
 projectile.
 
 Three vanilla rules keep it from degenerating:
@@ -329,7 +341,7 @@ Three vanilla rules keep it from degenerating:
   committed — vanilla singles out `MT_VILE` in both directions so its resurrect/flame behavior can't
   start a fight with the monsters it's helping.
 - **A projectile deals no damage to the shooter's own species — but is *stopped* by it**
-  (`sameSpecies`; `monsterStruckBy` owns the stop-vs-pass distinction), with baron and hell knight
+  (`sameSpecies`; `bodyStruckBy` owns the stop-vs-pass distinction), with baron and hell knight
   counting as one species in both directions (vanilla's single hardcoded cross-type pairing). A pack
   of imps can throw fireballs across each other all day; one imp fireball landing on a demon starts
   something. **Projectiles only** — hitscan has no species check in vanilla, so zombiemen really do
@@ -347,9 +359,9 @@ Three vanilla rules keep it from degenerating:
   and only the few with a clear lane reach anything). The blast is unaffected either way:
   `P_ExplodeMissile` runs the missile's death state regardless, so a cyberdemon rocket fizzling on
   another cyberdemon still calls `A_Explode` and still splashes. Fixing this settled two smaller
-  things in the same function: candidates are resolved **nearest-first** (with a fizzle and a real
-  hit both possible among the bodies a missile arrives among, which one it picks now matters), and
-  `monsterStruckBy` returns a result *object* rather than a bare id, removing a latent truthiness bug
+  things in the same function: candidates are resolved **first-along-the-step** (with a fizzle and a
+  real hit both possible among the bodies a missile passes, which one it picks matters), and
+  `bodyStruckBy` returns a result *object* rather than a bare id, removing a latent truthiness bug
   — `posed` index 0 is a valid monster id, and `if (reachedPlayer || struck || …)` treated a hit on
   it as no hit.
 

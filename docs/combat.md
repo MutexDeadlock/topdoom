@@ -237,7 +237,8 @@ in `ProjectileLayer.update` — vanilla calls `P_ShootSpecialLine` for a missile
 only runs once the missile reaches the line. `Projectile.lineIndex` carries the line found at launch
 forward (safe to resolve early, same as `maxDist` itself: static geometry doesn't move mid-flight).
 Either way, the special only fires if nothing closer — a monster's body, or the player — absorbed the
-shot first: `hitMonsterId`/`reachedPlayer`/`struck` all take priority over the wall.
+shot first: `reachedPlayer` and `struck` both take priority over the wall, as does a missile stopped
+by the floor, which never got there either.
 
 24 and 47 reuse the plain `FloorEffect` machinery already built for their walkover/switch siblings
 (5/64/91/101 and 20/68/22/95), just tag-triggered by a shot. **Only 46 can be triggered by a
@@ -301,16 +302,24 @@ screen (all `PUFF`) took the tint of whichever was posed last.
 
 ## How a shot deals damage
 
-**Two different ways, depending on whether one was locked on.** A locked-on shot resolves
-hit-or-miss against that exact target, and needs **both** halves: `spawnPlayerShot` compares
-`shotPath`'s returned distance against the distance to the target to know whether a wall cut the shot
-short, *and* tests this shot's own line against the target's body — perpendicular offset within
-`MONSTER_HIT_RADIUS` (the same width `raycastMonster` uses) and, for a pellet carrying a
-`slopeOffset`, vertical miss within half of `MONSTER_HIT_HEIGHT` at the body's distance. A *free* shot
-instead tests its straight flight path against every monster's body (`ThingLayer.raycastMonster`),
-the way any real hitscan trace would, so a monster standing between the player and the wall they're
-shooting at still gets hit even though it was never clicked; only the nearer of "a wall/step"
-(`shotPath`) and "a monster in the way" (`raycastMonster`) stops the shot.
+**The split that matters first is hitscan vs. projectile, and it is vanilla's own.** A hitscan
+pellet is an instant line, so `spawnPlayerShot` settles hit-or-miss on the spot. **A projectile
+leaves with no target at all** and re-tests live bodies every frame in `ProjectileLayer.update`
+(§ How a projectile finds its target), exactly as a monster's missile does — the lock gives it a
+*slope* and nothing else, matching `P_SpawnMissile` fixing `momx/momy/momz` at launch and
+`P_XYMovement` then re-running `PIT_CheckThing` per move. Everything in the rest of this section is
+about the hitscan half.
+
+**A hitscan pellet resolves two different ways, depending on whether one was locked on.** A
+locked-on pellet resolves hit-or-miss against that exact target, and needs **both** halves:
+`spawnPlayerShot` compares `shotPath`'s returned distance against the distance to the target to know
+whether a wall cut the shot short, *and* tests this pellet's own line against the target's body —
+perpendicular offset within `MONSTER_HIT_RADIUS` and, for a pellet carrying a `slopeOffset`, vertical
+miss within half of `MONSTER_HIT_HEIGHT` at the body's distance. A *free* pellet instead tests its
+straight flight path against every monster's body (`ThingLayer.raycastMonster`), the way any real
+hitscan trace would, so a monster standing between the player and the wall they're shooting at still
+gets hit even though it was never clicked; only the nearer of "a wall/step" (`shotPath`) and "a
+monster in the way" (`raycastMonster`) stops the shot.
 
 **The lateral test is what keeps the lock from being homing.** `WeaponSystem` offsets each hitscan
 pellet by its own spread angle, but the lock is per *trigger pull* — all of a shotgun's pellets carry
@@ -326,16 +335,72 @@ movement), so their perpendicular offset is exactly 0.
 The vertical half of the test only ever fires for the super shotgun, the one weapon with a
 `slopeSpread` (§ Spread), and only on the locked-on path: the free-shot `raycastMonster` is a 2D ray
 with a crude height band and models no slope at all, so a wide pellet's *vertical* miss is not
-reproduced once it falls through to that branch. Accepted as the same order of approximation as the
-single shared hitbox.
+reproduced once it falls through to that branch.
 
-`raycastMonster` tests a single approximate hitbox (`MONSTER_HIT_RADIUS`/`_HEIGHT`) rather than each
-monster's real, quite varied (16-128 units) vanilla radius — modelling that accurately would need a
-per-species size table for a check this approximate to begin with.
+**Only the locked-on gate uses the shared `MONSTER_HIT_RADIUS`; everything a shot can actually
+collide with is tested at its own width.** `raycastMonster` and a projectile's swept contact test both
+read `MonsterRef.radius` — `PosedThing.blockRadius`, i.e. that type's exact `mobjinfo.radius`, the
+same 10-128 unit table movement collision already used. A single 24-unit hitbox happens to be about
+right for an imp (20) and is wrong by a factor of two or more for a cacodemon (31), mancubus (48),
+arachnotron (64) and spider mastermind (128), which a shot could thread straight through inside its
+visible bulk. Vanilla's `PIT_AddThingIntercepts` tests the trace against each thing's real bounding
+box, so per-species *is* the vanilla rule. Keeping the lock on the shared box costs nothing: a pellet
+that fails it falls through to `raycastMonster`, which then tests that same body at full width.
+
+**Every box↔circle conversion goes through `util/geom.ts`'s `boxToCircleRadius`.** Vanilla collides
+axis-aligned squares; this engine tests circles. A square of half-width `h` presents mean width
+`perimeter/π` to a line arriving on an arbitrary bearing, so the circle costing the same average
+number of hits has radius `4h/π ≈ 1.273h`, not `h` — the same argument `MONSTER_BULLET_SLOP`
+(docs/monsterattacks.md) already made by hand for the player's own 16-unit box. Applying `h`
+directly instead would quietly narrow every hitbox in the game by 21%.
+
+Body *height* stays the shared `MONSTER_HIT_HEIGHT`/`PLAYER_HEIGHT` approximation rather than
+vanilla's per-species 56-110. Deliberate: the top-down camera makes height the axis a player can
+least judge, and unlike the radius it has never been the cause of a reported miss.
 
 For a hitscan pellet damage is applied immediately (an instant line has no travel time); for a
-projectile it's carried on the `Projectile` and applied in `ProjectileLayer.update` once the sprite
-visually reaches its `maxDist`.
+projectile it is carried on the `Projectile` and applied wherever `ProjectileLayer.update` finds it
+connecting.
+
+## How a projectile finds its target
+
+**A projectile has no target — it has a flight, and finds whatever is in it.** Every shot in the air,
+the player's own included, re-tests live bodies each frame in `ProjectileLayer.update`
+(`playerStruckBy`, `bodyStruckBy`, both over `spritefxdefs.ts`'s `stepTouchesBody`). What
+`spawnPlayerShot` fixes at launch is the slope and the wall (`shotPath`), never who gets hit.
+
+Resolving that at launch instead is what made **BFG balls pass through monsters**. The ball flies at
+875 units/sec, so over a 512-unit shot a target has half a second to walk out of a launch-time ray —
+and an imp covers ~160 units in that time. A locked ball also damaged that exact id wherever it
+happened to arrive, so the same bug read as a phantom hit on a monster that had moved. It showed up
+on the BFG first because it is the one projectile with no splash to cover a miss (`A_Explode` is never
+called on `MT_BFG`), and because the ball's own contact damage is 100-800.
+
+The contact test itself is `PIT_CheckThing`, both halves:
+
+- **Laterally**, `thing->radius + tmthing->radius` — the body's own radius plus the *missile's*
+  (`PROJECTILE_RADIUS`, from each missile type's `mobjinfo.radius`: 6 for the imp, cacodemon, baron
+  and mancubus fireballs, 11 for `MT_ROCKET` and the revenant's `MT_TRACER`, 13 for `MT_PLASMA`,
+  `MT_BFG` and `MT_ARACHPLAZ`), through `boxToCircleRadius`.
+- **Vertically**, the asymmetric over/under pair: a miss overhead above `body.z + height`, a miss
+  underneath below `body.z` by more than the missile's own 8-unit height. Not a ± tolerance either
+  side of the feet — a fireball level with your knees connects and one clearing your head does not,
+  which a symmetric band cannot express.
+
+**The test is swept across the frame's whole step, not sampled at its end.** `game.ts` clamps `dt` at
+0.05s and the fastest missiles fly 875 units/sec, so one frame can carry a shot 43 units — further
+than a body is wide. Sampling endpoints silently drops every graze whose closest approach falls
+between two frames, which gets worse the lower the frame rate. `stepTouchesBody` returns *where along
+the step* contact happened, which is also what orders multiple candidates: first along the flight
+wins, the swept equivalent of vanilla's blockmap traversal order.
+
+A struck body ends the flight, so it fires no shoot-triggered special — the missile never reached the
+wall whose `lineIndex` it carries.
+
+**Fog of war doesn't hide a body from a projectile**, unlike `raycastMonster`, where the filter keeps
+the auto-aim lock and a free bullet off monsters the player has never seen. A missile in flight is a
+physical thing that has to collide with whatever is actually there, and `monstersNear` already
+resolves splash the same way — a rocket fired down an unrevealed corridor explodes on what is in it.
 
 **Splash damage is separate from a direct hit and reaches everyone nearby regardless of what was
 targeted** — a rocket fired at a bare wall still explodes and can hurt a monster standing close by.

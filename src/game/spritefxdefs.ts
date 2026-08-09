@@ -1,7 +1,7 @@
 import type { SpriteAnimator } from '../render/sprites.ts';
 import type { SfxId } from '../audio/sfx.ts';
 import type { Pos3 } from '../types.ts';
-import { PLAYER_RADIUS } from './player.ts';
+import { boxToCircleRadius, closestTOnSegment } from '../util/geom.ts';
 import { DOOM_TIC } from '../constants.ts';
 
 /**
@@ -66,6 +66,39 @@ export const PROJECTILE_FRAMES: Record<string, string[]> = {
   APLS: ['A', 'B'], // arachnotron plasma ball
   FATB: ['A', 'B'], // revenant missile
 };
+
+/**
+ * Each missile's own `mobjinfo.radius`, keyed by flight sprite the same way
+ * `IMPACT_EFFECTS` is. Half of `PIT_CheckThing`'s `blockdist = thing->radius +
+ * tmthing->radius` — the other half is the body it's testing against
+ * (`MonsterRef.radius`) — so this is what makes an arachnotron's fat plasma
+ * ball a wider threat than an imp's fireball. From `info.c`: `MT_TROOPSHOT`,
+ * `MT_HEADSHOT`, `MT_BRUISERSHOT` and `MT_FATSHOT` 6; `MT_TRACER` and
+ * `MT_ROCKET` 11; `MT_PLASMA`, `MT_BFG` and `MT_ARACHPLAZ` 13.
+ */
+export const PROJECTILE_RADIUS: Record<string, number> = {
+  MISL: 11, // MT_ROCKET — the player's rocket and the cyberdemon's alike
+  PLSS: 13, // MT_PLASMA
+  BFS1: 13, // MT_BFG
+  BAL1: 6, // MT_TROOPSHOT
+  BAL2: 6, // MT_HEADSHOT
+  BAL7: 6, // MT_BRUISERSHOT
+  MANF: 6, // MT_FATSHOT
+  APLS: 13, // MT_ARACHPLAZ
+  FATB: 11, // MT_TRACER
+};
+
+/** Fallback for a sprite `PROJECTILE_RADIUS` doesn't list — vanilla's smallest missile. */
+export const PROJECTILE_RADIUS_DEFAULT = 6;
+
+/**
+ * Every missile in `info.c` is 8 units tall, so one constant covers the lower
+ * half of `PIT_CheckThing`'s over/under test: a shot passes *underneath* when
+ * `missile.z + height < target.z` and *overhead* when `missile.z > target.z +
+ * target.height`. That band is deliberately asymmetric about the target's feet
+ * — see docs/monsterattacks.md § Monster projectiles in flight.
+ */
+export const PROJECTILE_HEIGHT = 8;
 
 /** Vanilla's own explosion states run at 4 tics/frame. */
 export const IMPACT_FRAME_SECONDS = 4 * DOOM_TIC;
@@ -219,6 +252,40 @@ export function turnToward(from: number, to: number, maxDelta: number): number {
   return from + Math.max(-maxDelta, Math.min(maxDelta, diff));
 }
 
+/**
+ * Vanilla's `PIT_CheckThing` for a missile, as one frame's worth of flight:
+ * where along the step `from`→`to` the projectile touched `body`, or null if it
+ * passed it. Both halves are the real vanilla test rather than a tolerance —
+ * laterally `thing->radius + tmthing->radius` (as the circle
+ * `boxToCircleRadius` converts that box to), vertically the asymmetric
+ * overhead/underneath pair, evaluated where the step passes closest to the
+ * body. `bodyHeight` stays the shared `MONSTER_HIT_HEIGHT`/`PLAYER_HEIGHT`
+ * approximation; only the radius is per-species.
+ *
+ * **Swept, not sampled at the step's end**: `game.ts` clamps `dt` at 0.05s, so
+ * the fastest missiles cover 43 units in one frame — further than the widest
+ * contact circle a small body presents, i.e. a point test could step straight
+ * through the player. See docs/monsterattacks.md § Monster projectiles in flight.
+ */
+export function stepTouchesBody(
+  from: Pos3,
+  to: Pos3,
+  body: Pos3,
+  bodyRadius: number,
+  bodyHeight: number,
+  missileRadius: number,
+): number | null {
+  const reach = boxToCircleRadius(bodyRadius + missileRadius);
+  const t = closestTOnSegment(body.x, body.y, from.x, from.y, to.x, to.y);
+  const dx = from.x + (to.x - from.x) * t - body.x;
+  const dy = from.y + (to.y - from.y) * t - body.y;
+  // `>=`, matching `PIT_CheckThing`'s own `abs(...) >= blockdist` miss.
+  if (dx * dx + dy * dy >= reach * reach) return null;
+  const z = from.z + (to.z - from.z) * t;
+  if (z + PROJECTILE_HEIGHT < body.z || z > body.z + bodyHeight) return null;
+  return t;
+}
+
 export interface Projectile {
   /** Drawn through `Game.effectBatch`, same as `OneShotEffect.anim` — see that field's doc. */
   anim: SpriteAnimator;
@@ -235,28 +302,30 @@ export interface Projectile {
   traveled: number;
   /** SpriteBank name (PROJECTILE_FRAMES's key), so the impact explosion can look it up in IMPACT_EFFECTS. */
   sprite: string;
-  /** Direct-hit damage, applied to `hitMonsterId` (if any) on arrival. */
+  /** This missile's own `mobjinfo.radius`, from `PROJECTILE_RADIUS` — half of the contact distance to any body it passes. */
+  radius: number;
+  /** Direct-hit damage, applied to whatever body this strikes in flight. */
   damage: number;
   /** Splash to apply at the impact point regardless of what was targeted, or null for a non-explosive projectile — see weapons.ts's WeaponDef.splash. */
   splash: { radius: number; damage: number; hitsPlayer: boolean } | null;
   /** The BFG's real A_BFGSpray secondary attack, straight from weapons.ts's WeaponDef.spray — null for every projectile but the player's own BFG ball (monsters never fire one). */
   spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number } | null;
-  /** The monster this shot was locked onto *and actually reached* (spawnPlayerShot resolves that), or null — a free shot, one that missed a monster it wasn't locked onto, or a locked shot a wall cut short before the target. */
-  hitMonsterId: number | null;
   /**
    * The monster that fired this, or `null` for one of the player's own shots.
-   * A monster's shot re-tests arrival every frame against live positions
-   * instead of resolving hit-or-miss up front — docs/monsters.md § Monster
-   * projectiles in flight.
+   * Only the *player*'s own missiles are told apart by this now — every
+   * projectile, whoever fired it, re-tests what it has run into every frame
+   * against live positions rather than resolving hit-or-miss up front. See
+   * docs/monsterattacks.md § Monster projectiles in flight.
    */
   sourceId: number | null;
   /** The firing monster's doomednum, for `sameSpecies` — vanilla's "don't hit same species as originator" rule on projectiles. */
   sourceType: number;
   /**
    * The wall `shotPath` found blocking this flight at launch, or null. Carried
-   * through so a shoot-triggered special fires on *arrival*, not on launch.
-   * Only matters for the flying-sprite case; a hitscan pellet triggers
-   * immediately in `spawnPlayerShot`. See docs/combat.md § Shoot-triggered specials.
+   * through so a shoot-triggered special fires on *arrival*, and only if the
+   * flight really got to that wall — a missile stopped by a body or by the
+   * floor never reached it. A hitscan pellet triggers immediately in
+   * `spawnPlayerShot` instead. See docs/combat.md § Shoot-triggered specials.
    */
   lineIndex: number | null;
   /**
@@ -269,7 +338,3 @@ export interface Projectile {
   homing?: { targetId: number | null; x: number; y: number; z: number; headingRad: number; smokeTimer: number };
 }
 
-/** How close a monster projectile has to get to the player's live position before it's treated as a hit — see `Projectile.sourceId`'s doc. */
-export const MONSTER_PROJECTILE_HIT_RADIUS = PLAYER_RADIUS + 24;
-/** Vertical companion to `MONSTER_PROJECTILE_HIT_RADIUS` — the same overhead/underneath tolerance `ThingLayer.tryPickup`'s own gate already uses for picking an item up through a window onto a floor above/below. */
-export const MONSTER_PROJECTILE_HIT_HEIGHT = 128;

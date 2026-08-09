@@ -29,16 +29,41 @@ export function segmentIntersect(
   return { t };
 }
 
-/** Squared distance from a point to a line segment. */
-export function distSqToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+/**
+ * Where along the segment a→b its closest point to (px, py) lies, as a
+ * parameter clamped to [0, 1]. Split out of `distSqToSegment` because a
+ * projectile's swept hit test needs the *position* of closest approach (to
+ * interpolate the missile's height there), not just the distance.
+ */
+export function closestTOnSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax;
   const dy = by - ay;
   const lenSq = dx * dx + dy * dy;
-  let t = lenSq > 0 ? ((px - ax) * dx + (py - ay) * dy) / lenSq : 0;
-  t = t < 0 ? 0 : t > 1 ? 1 : t;
-  const cx = ax + dx * t - px;
-  const cy = ay + dy * t - py;
+  const t = lenSq > 0 ? ((px - ax) * dx + (py - ay) * dy) / lenSq : 0;
+  return t < 0 ? 0 : t > 1 ? 1 : t;
+}
+
+/** Squared distance from a point to a line segment. */
+export function distSqToSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const t = closestTOnSegment(px, py, ax, ay, bx, by);
+  const cx = ax + (bx - ax) * t - px;
+  const cy = ay + (by - ay) * t - py;
   return cx * cx + cy * cy;
+}
+
+/**
+ * Vanilla's collision box as the circle this engine tests instead. A DOOM thing
+ * is an axis-aligned square of half-width `halfWidth` (`PIT_CheckThing`'s
+ * `blockdist`, `PIT_AddThingIntercepts`'s bounding box), which something
+ * arriving on an arbitrary bearing sees as `perimeter/π` wide on average rather
+ * than `2·halfWidth`; the circle presenting that same mean width has radius
+ * `4·halfWidth/π`. Used by every shot-vs-body test — `ThingLayer.raycastMonster`
+ * and `ProjectileLayer`'s swept hit tests — and it is the same conversion
+ * `MONSTER_BULLET_SLOP` (game/monsters/attacks.ts) already applies by hand to
+ * the player's own 16-unit box. See docs/combat.md § How a shot deals damage.
+ */
+export function boxToCircleRadius(halfWidth: number): number {
+  return (halfWidth * 4) / Math.PI;
 }
 
 /**

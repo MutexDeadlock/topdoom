@@ -244,11 +244,17 @@ export interface MonsterStats {
    * the unit `runChaseCall` fires on.
    */
   chaseInterval: number;
-  /** Movement/collision circle radius — one approximate value per type rather than vanilla's real 16-128 unit per-species range, as `MONSTER_HIT_RADIUS` already is. */
+  /**
+   * Vanilla's own `mobjinfo.radius`, every entry exact — the real 16-128 unit
+   * per-species spread, not an approximation. It sizes movement collision *and*
+   * every shot-vs-body test: `PosedThing.blockRadius` carries it onto
+   * `MonsterRef.radius`, which `raycastMonster` and a projectile's swept
+   * contact test both read (docs/combat.md § How a shot deals damage).
+   */
   radius: number;
   /**
-   * Vanilla's `mobjinfo.mass`, the genuine per-type figure (not an
-   * approximation like `radius`). Feeds `thrustSpeed`, `P_DamageMobj`'s
+   * Vanilla's `mobjinfo.mass`, the genuine per-type figure. Feeds
+   * `thrustSpeed`, `P_DamageMobj`'s
    * horizontal knockback, so a cyberdemon barely budges from a hit that
    * staggers a zombieman. The arch-vile's separate *vertical* launch
    * (`VILE_KNOCKUP_SPEED`) still uses a flat 100. docs/movement.md § Knockback.
@@ -406,7 +412,7 @@ export function thrustSpeed(damage: number, mass: number): number {
  * zombiemen really do gun each other down.
  *
  * **This is not a pass-through** — the missile stops dead on a same-species
- * body. `game/projectiles.ts: monsterStruckBy` owns that distinction; docs/monsters.md §
+ * body. `game/projectiles.ts: bodyStruckBy` owns that distinction; docs/monsters.md §
  * Infighting has why it decides whole fights on a crowded map.
  */
 export function sameSpecies(shooterType: number, victimType: number): boolean {
@@ -440,12 +446,23 @@ export const DIR_Y = [0, 0.71716, 1, 0.71716, 0, -0.71716, -1, -0.71716];
 export const MONSTER_FIRE_HEIGHT = 40;
 
 /**
- * Single approximate hitbox every shot's ray is tested against
- * (`ThingLayer.raycastMonster`, and `spawnPlayerShot`'s locked-on test) — one
- * shared box, not `MonsterStats.radius`'s per-type value, so a spread pellet
- * misses the clicked monster at exactly the width any other bullet would.
+ * The width `spawnPlayerShot`'s **locked-on** test uses, and the fallback
+ * `blockRadius` for a shootable type with no `MonsterStats`/`INERT_SHOOTABLE`
+ * entry. One shared box on purpose *here*: it keeps the lock from behaving like
+ * homing, so a spread pellet misses the clicked monster at exactly the width any
+ * other bullet would — and it costs nothing on a wide monster, since a pellet
+ * that fails it falls through to `raycastMonster`, which tests that body at its
+ * real `MonsterStats.radius`. Everything a shot can actually collide with is
+ * per-species; only this one gate isn't.
  */
 export const MONSTER_HIT_RADIUS = 24;
+/**
+ * The shared body height every shot test uses, in place of vanilla's own
+ * per-species 56-110 (`mobjinfo.height`). Unlike the radius this stays an
+ * approximation — the top-down camera makes height the axis a player can least
+ * judge, and no reported problem traces to it. docs/combat.md § How a shot
+ * deals damage.
+ */
 export const MONSTER_HIT_HEIGHT = 64;
 
 /** Vanilla's own `FATSPREAD` (`ANG90/8`) — the mancubus's fireball-pair fan angle, see `AttackStats.projectile.pairOffsetsRad`. */

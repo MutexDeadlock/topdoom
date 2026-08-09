@@ -189,6 +189,15 @@ export interface MonsterRef extends Pos3 {
   id: number;
   type: number;
   angle: number;
+  /**
+   * This body's own `mobjinfo.radius` (`PosedThing.blockRadius`) — the real
+   * per-species 10-128 unit collision half-width, not the one shared
+   * approximation. Carried on the ref because every shot-vs-body test needs it:
+   * a missile's contact distance is `thing->radius + missile->radius`
+   * (`PIT_CheckThing`), so a mancubus really is three times the target an imp
+   * is. See docs/combat.md § How a shot deals damage.
+   */
+  radius: number;
 }
 
 /**
@@ -261,6 +270,17 @@ export interface ThingLayer {
    * since that needs the `World` this layer doesn't otherwise touch.
    */
   monstersNear(pos: Pos2, radius: number): MonsterRef[];
+  /**
+   * Every living body a projectile could have struck while stepping from
+   * `from` to `to` this frame: `reach` (the missile's own radius) is added to
+   * each candidate's *own* radius and the pair tested against the swept
+   * segment, so both a fat mancubus and a thin imp are hit at their real
+   * widths. **Swept, not sampled at the endpoint** — `game.ts` clamps `dt` at
+   * 0.05s, so the fastest missiles (25 units/tic = 875/sec) step 43 units in
+   * one frame and a point test at each end simply misses a body between them.
+   * 2D only; the caller applies the height band and line of sight.
+   */
+  monstersAlongStep(from: Pos3, to: Pos3, reach: number): MonsterRef[];
   /** This exact monster's live position and type, or null if the id is stale or it has since died. Lets a shot fired at a monster keep tracking it across frames. */
   monsterById(id: number): MonsterRef | null;
   /**
@@ -348,7 +368,8 @@ export interface ThingLayer {
   /**
    * Nearest living monster the ray crosses within `maxDist`, or null — the
    * "didn't click anything, but something's in the path anyway" case for a
-   * free shot, tested against `monsters/defs.ts`'s `MONSTER_HIT_RADIUS`/`_HEIGHT`.
+   * free shot. Tested laterally against each body's **own** `MonsterRef.radius`
+   * and vertically against the shared `MONSTER_HIT_HEIGHT` band.
    *
    * `opts` serves a *monster's* own hitscan: `ignoreId` excludes the shooter
    * from its own trace, `includeHidden` skips the fog-of-war filter, since fog

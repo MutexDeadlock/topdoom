@@ -3,7 +3,7 @@ import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import { PLAYER_ORIGIN } from '../audio/sfx.ts';
 import { hasLineOfSight, playerShotRange, projectileStepBlocker, shotPath } from './world.ts';
-import { AIM_HEIGHT_OFFSET } from './player.ts';
+import { AIM_HEIGHT_OFFSET, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import {
   MONSTER_FIRE_HEIGHT,
   MONSTER_HIT_HEIGHT,
@@ -18,14 +18,15 @@ import {
   BFG_SPRAY_HIT_FRAMES,
   IMPACT_EFFECTS,
   IMPACT_FRAME_SECONDS,
-  MONSTER_PROJECTILE_HIT_HEIGHT,
-  MONSTER_PROJECTILE_HIT_RADIUS,
   PROJECTILE_FRAMES,
+  PROJECTILE_RADIUS,
+  PROJECTILE_RADIUS_DEFAULT,
   PROJECTILE_SOUNDS,
   REVENANT_TRACER_TURN_RATE_RAD,
   SMOKE_TRAIL_FRAMES,
   SMOKE_TRAIL_FRAME_SECONDS,
   SMOKE_TRAIL_INTERVAL,
+  stepTouchesBody,
   TRACER_COLOR,
   TRACER_HOMING_Z_OFFSET,
   turnToward,
@@ -53,6 +54,13 @@ export class ProjectileLayer {
   private spriteMaterials: SpriteMaterialCache;
   private audio: AudioEngine;
   private projectiles: Projectile[] = [];
+  /**
+   * Where the projectile being advanced stood before this frame's step — a
+   * single reused object, deliberately: it is read and discarded inside one
+   * iteration of `update`'s loop, which runs for every shot in the air and can
+   * be four figures of them on a crowded map.
+   */
+  private readonly stepFrom: Pos3 = { x: 0, y: 0, z: 0 };
 
   constructor(
     ctx: CombatContext,
@@ -77,8 +85,14 @@ export class ProjectileLayer {
    * Turns one fired `Shot` (game/weapons.ts) into a tracer line or a flying
    * projectile sprite. Always starts at the player's own fire height and
    * slopes toward a locked-on monster's height; `shotPath` resolves where it
-   * actually gets to. Hit-or-miss on `targetId` is settled **here**, not on
-   * arrival. See docs/combat.md § How a shot deals damage.
+   * actually gets to.
+   *
+   * **Hit-or-miss is settled here only for a hitscan pellet** — an instant line
+   * has no travel time to change its mind about. A projectile leaves with no
+   * target at all and re-tests what it has run into every frame
+   * (`ProjectileLayer.update`), exactly as a monster's missile does; the lock
+   * gives it a slope and nothing else. See docs/combat.md § How a shot deals
+   * damage.
    */
   spawnPlayerShot(shot: Shot, startZ: number, target: Pos3 | null, targetId: number | null): void {
     const { world, things } = this.ctx;
@@ -121,54 +135,54 @@ export class ProjectileLayer {
         : target;
     const path = shotPath(world, origin, shot.angleRad, aimPoint, range);
 
-    let hitMonsterId: number | null = null;
-    let endX = path.x;
-    let endY = path.y;
-    let endDist = path.dist;
-
-    const dirX = Math.cos(shot.angleRad);
-    const dirY = Math.sin(shot.angleRad);
-    // A locked shot connects only if nothing stopped it short of the target
-    // *and* this shot's own line actually crosses the target's body — sideways
-    // (`MONSTER_HIT_RADIUS`) and, for the one weapon that scatters vertically,
-    // in height too. The lock supplies the slope, not a guaranteed hit, so a
-    // shotgun's pellets still spread. See docs/combat.md § How a shot deals damage.
-    let lockDist: number | null = null;
-    if (target !== null && targetId !== null) {
-      const relX = target.x - origin.x;
-      const relY = target.y - origin.y;
-      const along = relX * dirX + relY * dirY;
-      const perp = Math.abs(relX * dirY - relY * dirX);
-      const missZ = Math.abs(slopeOffset) * along;
-      const onBody = perp <= MONSTER_HIT_RADIUS && missZ <= MONSTER_HIT_HEIGHT / 2;
-      if (onBody && along >= 0 && path.dist >= along - 1) lockDist = along;
-    }
-
-    if (lockDist !== null) {
-      hitMonsterId = targetId;
-      endX = origin.x + dirX * lockDist;
-      endY = origin.y + dirY * lockDist;
-      endDist = lockDist;
-    } else {
-      // No lock, or a pellet the spread threw off it: test the path against
-      // every monster's body, so one standing between the player and the wall
-      // they're shooting at isn't invisible to the shot — and a wide pellet can
-      // still find whatever it *did* fly through. Only ever shortens the shot,
-      // never past `path.dist`.
-      const monsterHit = things?.raycastMonster(origin, shot.angleRad, path.dist) ?? null;
-      if (monsterHit) {
-        hitMonsterId = monsterHit.id;
-        endX = monsterHit.x;
-        endY = monsterHit.y;
-        endDist = monsterHit.dist;
-      }
-    }
-
-    // A shoot-triggered special only fires if the shot reached the wall rather
-    // than being absorbed by a monster first. A hitscan pellet resolves this
-    // frame so it fires here; a projectile's is deferred to arrival (see
-    // `Projectile.lineIndex`).
     if (shot.kind === 'hitscan') {
+      const dirX = Math.cos(shot.angleRad);
+      const dirY = Math.sin(shot.angleRad);
+      // A locked pellet connects only if nothing stopped it short of the target
+      // *and* this pellet's own line actually crosses the target's body —
+      // sideways (`MONSTER_HIT_RADIUS`) and, for the one weapon that scatters
+      // vertically, in height too. The lock supplies the slope, not a
+      // guaranteed hit, so a shotgun's pellets still spread. The shared hitbox
+      // is what keeps the *lock* honest, and costs nothing on a wide monster:
+      // a pellet that fails here falls through to `raycastMonster` below, which
+      // tests that same body at its real width. docs/combat.md § How a shot
+      // deals damage.
+      let lockDist: number | null = null;
+      if (target !== null && targetId !== null) {
+        const relX = target.x - origin.x;
+        const relY = target.y - origin.y;
+        const along = relX * dirX + relY * dirY;
+        const perp = Math.abs(relX * dirY - relY * dirX);
+        const missZ = Math.abs(slopeOffset) * along;
+        const onBody = perp <= MONSTER_HIT_RADIUS && missZ <= MONSTER_HIT_HEIGHT / 2;
+        if (onBody && along >= 0 && path.dist >= along - 1) lockDist = along;
+      }
+
+      let hitMonsterId: number | null = null;
+      let endX = path.x;
+      let endY = path.y;
+      if (lockDist !== null) {
+        hitMonsterId = targetId;
+        endX = origin.x + dirX * lockDist;
+        endY = origin.y + dirY * lockDist;
+      } else {
+        // No lock, or a pellet the spread threw off it: test the path against
+        // every monster's body, so one standing between the player and the wall
+        // they're shooting at isn't invisible to the shot — and a wide pellet can
+        // still find whatever it *did* fly through. Only ever shortens the shot,
+        // never past `path.dist`.
+        const monsterHit = things?.raycastMonster(origin, shot.angleRad, path.dist) ?? null;
+        if (monsterHit) {
+          hitMonsterId = monsterHit.id;
+          endX = monsterHit.x;
+          endY = monsterHit.y;
+        }
+      }
+
+      // A shoot-triggered special only fires if the bolt reached the wall
+      // rather than being absorbed by a monster first. A hitscan pellet
+      // resolves this frame so it fires here; a projectile's is deferred to
+      // arrival (see `Projectile.lineIndex`).
       if (hitMonsterId !== null) {
         // Where the tracer stops is where the bolt met the body, so the same
         // point is the splash's — `PTR_ShootTraverse` spawns blood on the
@@ -199,16 +213,21 @@ export class ProjectileLayer {
       endZ: path.z,
       angleRad: shot.angleRad,
       speed: shot.speed,
-      maxDist: endDist,
+      // The wall, never the target: like `P_SpawnMissile`, the lock fixed this
+      // shot's slope at launch and the thing then flies on under its own
+      // momentum. Ending it at the launch-time distance to the target is what
+      // made a BFG ball detonate in mid-air wherever a monster had been
+      // standing half a second earlier.
+      maxDist: path.dist,
       traveled: 0,
       sprite: shot.sprite,
+      radius: PROJECTILE_RADIUS[shot.sprite] ?? PROJECTILE_RADIUS_DEFAULT,
       damage: shot.damage,
       splash: shot.splash,
       spray: shot.spray,
-      hitMonsterId,
       sourceId: null,
       sourceType: 0,
-      lineIndex: hitMonsterId === null ? path.lineIndex : null,
+      lineIndex: path.lineIndex,
     });
   }
 
@@ -250,10 +269,10 @@ export class ProjectileLayer {
         maxDist: path.dist,
         traveled: 0,
         sprite: proj.sprite,
+        radius: PROJECTILE_RADIUS[proj.sprite] ?? PROJECTILE_RADIUS_DEFAULT,
         damage: atk.damage,
         splash: proj.splash ? { radius: proj.splash.radius, damage: proj.splash.damage, hitsPlayer: true } : null,
         spray: null,
-        hitMonsterId: null,
         sourceId: atk.sourceId,
         sourceType: atk.sourceType,
         lineIndex: path.lineIndex,
@@ -265,13 +284,16 @@ export class ProjectileLayer {
   }
 
   /**
-   * Advances every in-flight projectile along the fixed straight line
-   * `spawnPlayerShot` resolved for it — sloped from `startZ` to `endZ` — and,
-   * on reaching `maxDist`, removes it and plays its `IMPACT_EFFECTS` explosion
-   * in place. Arriving isn't itself a hit (`p.hitMonsterId` carries that
-   * answer), but the impact point applies `p.splash` either way. A monster's
-   * own shot instead re-checks two live arrival tests every frame — see
-   * docs/monsterattacks.md § Monster projectiles in flight.
+   * Advances every in-flight projectile — along the fixed straight line
+   * `shotPath` resolved for it, sloped from `startZ` to `endZ`, or along the
+   * revenant tracer's own curve — and resolves what it ran into on the way.
+   * On arrival it removes the shot and plays its `IMPACT_EFFECTS` explosion in
+   * place; the impact point applies `p.splash` whether or not a body was hit.
+   *
+   * **Every projectile, the player's own included, re-tests live bodies each
+   * frame** (`P_XYMovement` re-running `PIT_CheckThing` per move), and each
+   * test is swept across the frame's whole step rather than sampled at its end.
+   * See docs/monsterattacks.md § Monster projectiles in flight.
    *
    * Must run inside the caller's `SpriteFxLayer.beginFrame`/`endFrame` pair: it
    * both draws through the batch and pushes this frame's new explosions and
@@ -279,25 +301,33 @@ export class ProjectileLayer {
    */
   update(dt: number): void {
     if (this.projectiles.length === 0) return;
-    const { world, things, player } = this.ctx;
+    const { world, things } = this.ctx;
     const remaining: Projectile[] = [];
+    const from = this.stepFrom;
     for (const p of this.projectiles) {
       let at: Pos3;
       if (p.homing) {
+        from.x = p.homing.x;
+        from.y = p.homing.y;
+        from.z = p.homing.z;
         at = this.advanceHoming(p, dt);
       } else {
+        const dirX = Math.cos(p.angleRad);
+        const dirY = Math.sin(p.angleRad);
+        const before = Math.min(p.traveled, p.maxDist);
+        from.x = p.originX + dirX * before;
+        from.y = p.originY + dirY * before;
+        from.z = p.startZ + (p.endZ - p.startZ) * (p.maxDist > 0 ? before / p.maxDist : 1);
         p.traveled += p.speed * dt;
         const clamped = Math.min(p.traveled, p.maxDist);
         const frac = p.maxDist > 0 ? clamped / p.maxDist : 1;
         at = {
-          x: p.originX + Math.cos(p.angleRad) * clamped,
-          y: p.originY + Math.sin(p.angleRad) * clamped,
+          x: p.originX + dirX * clamped,
+          y: p.originY + dirY * clamped,
           z: p.startZ + (p.endZ - p.startZ) * frac,
         };
       }
 
-      // A monster's shot re-tests what it has reached every frame (see
-      // Projectile.sourceId); a player's already knows.
       const fromMonster = p.sourceId !== null;
       // One lookup, shared with the sprite light below — `floorAt`/`ceilingAt`
       // are two wrappers around the same BSP walk, and this runs per missile
@@ -307,41 +337,29 @@ export class ProjectileLayer {
       // explodes against it. Reachable because a monster's shot holds its
       // launch slope past the target that set it (`spawnMonsterShot`), so a
       // cyberdemon firing down from a ledge and missing puts its rocket in the
-      // ground. A no-op for a player's shot, which stops at what it was aimed
-      // at — left gated rather than relied on, since its endpoint is resolved
-      // at launch and re-deciding it mid-flight is not this change's business.
+      // ground. Still gated to a monster's shot: the player's own already stops
+      // where `shotPath` says the geometry stops it, and re-deciding that
+      // mid-flight is a separate question from who it hit.
       const hitGround = fromMonster && !!sector && (at.z <= sector.floorHeight || at.z >= sector.ceilHeight);
-      const reachedPlayer =
-        fromMonster &&
-        !this.ctx.playerDead &&
-        Math.hypot(player.x - at.x, player.y - at.y) <= MONSTER_PROJECTILE_HIT_RADIUS &&
-        Math.abs(player.z - at.z) <= MONSTER_PROJECTILE_HIT_HEIGHT &&
-        // Proximity alone isn't arrival, and the trace runs player→projectile,
-        // not the other way round — docs/monsters.md § Monster projectiles in
-        // flight. Last in the chain so it only runs once the cheap proximity
-        // tests already passed.
-        hasLineOfSight(world, player, at);
-      const struck = fromMonster && !reachedPlayer ? this.monsterStruckBy(p, at) : null;
+      const reachedPlayer = fromMonster && !this.ctx.playerDead && this.playerStruckBy(p, from, at);
+      const struck = reachedPlayer ? null : this.bodyStruckBy(p, from, at);
 
       if (reachedPlayer || struck || hitGround || p.traveled >= p.maxDist) {
-        if (fromMonster) {
-          if (reachedPlayer) this.ctx.damagePlayer(p.damage, at.x, at.y);
+        if (reachedPlayer) {
+          this.ctx.damagePlayer(p.damage, at.x, at.y);
+        } else if (struck) {
           // `struck.id === null` is the same-species fizzle: the body stopped
-          // the missile but takes no damage from it (see monsterStruckBy).
-          else if (struck) {
-            if (struck.id !== null)
-              things?.damage(struck.id, p.damage, { id: p.sourceId!, type: p.sourceType }, undefined, at.x, at.y);
+          // the missile but takes no damage from it (see bodyStruckBy).
+          if (struck.id !== null) {
+            const source = fromMonster ? { id: p.sourceId!, type: p.sourceType } : undefined;
+            things?.damage(struck.id, p.damage, source, undefined, at.x, at.y);
           }
-          // A clean miss (reached maxDist without hitting a body) means it
-          // arrived at whatever wall shotPath found at launch — fire its
-          // shoot special now, at actual arrival, not back when it launched.
-          // One stopped by the floor never got there, so it triggers nothing.
-          else if (!hitGround) this.ctx.triggerShot(p.lineIndex, true);
-        } else if (p.hitMonsterId !== null) {
-          things?.damage(p.hitMonsterId, p.damage, undefined, undefined, at.x, at.y);
-        } else {
-          this.ctx.triggerShot(p.lineIndex);
         }
+        // A clean miss (reached maxDist without hitting a body) means it
+        // arrived at whatever wall shotPath found at launch — fire its
+        // shoot special now, at actual arrival, not back when it launched.
+        // One stopped by the floor never got there, so it triggers nothing.
+        else if (!hitGround) this.ctx.triggerShot(p.lineIndex, fromMonster);
         if (p.splash) {
           // Attributed to the firing monster (if any), the same as a direct
           // hit already is — a cyberdemon's own rocket splash should start
@@ -379,31 +397,45 @@ export class ProjectileLayer {
   }
 
   /**
-   * What a still-flying monster projectile has just run into, or null if it
-   * hit nothing this frame. A non-null result always ends the flight; `id` is
-   * who takes the direct damage, or **null for a same-species body that stops
-   * the missile without being hurt by it**. Candidates resolve nearest first.
-   * See docs/monsters.md § Infighting.
+   * Whether this frame's step carried a *monster's* missile into the player —
+   * vanilla's `PIT_CheckThing` against `MT_PLAYER`, swept over the step rather
+   * than sampled at its end. Contact is the player's own 16-unit box widened by
+   * the missile's `mobjinfo.radius`, and the height band is `PIT_CheckThing`'s
+   * asymmetric over/under pair, not a tolerance either side of the feet.
    */
-  private monsterStruckBy(p: Projectile, at: Pos3): { id: number | null } | null {
-    if (p.sourceId === null) return null;
+  private playerStruckBy(p: Projectile, from: Pos3, at: Pos3): boolean {
+    const { world, player } = this.ctx;
+    if (stepTouchesBody(from, at, player, PLAYER_RADIUS, PLAYER_HEIGHT, p.radius) === null) return false;
+    // Proximity alone isn't arrival, and the trace runs player→projectile, not
+    // the other way round — docs/monsterattacks.md § Monster projectiles in
+    // flight. Last in the chain so it only runs once the cheap tests passed.
+    return hasLineOfSight(world, player, at);
+  }
+
+  /**
+   * What this frame's step carried the projectile into, or null if it hit
+   * nothing. A non-null result always ends the flight; `id` is who takes the
+   * direct damage, or **null for a same-species body that stops the missile
+   * without being hurt by it** (a monster's shot only — the player is nobody's
+   * species). Candidates resolve first-along-the-step, the swept equivalent of
+   * vanilla's blockmap order. See docs/monsters.md § Infighting.
+   */
+  private bodyStruckBy(p: Projectile, from: Pos3, at: Pos3): { id: number | null } | null {
     let nearest: { id: number | null } | null = null;
-    let nearestSq = Infinity;
-    for (const m of this.ctx.things?.monstersNear(at, MONSTER_PROJECTILE_HIT_RADIUS) ?? []) {
+    let nearestT = Infinity;
+    for (const m of this.ctx.things?.monstersAlongStep(from, at, p.radius) ?? []) {
       // Vanilla's `thing == tmthing->target`: a missile never collides with
-      // whoever fired it, so it can leave its own shooter's body.
+      // whoever fired it, so it can leave its own shooter's body. `sourceId` is
+      // null for the player's, who is not in this list to begin with.
       if (m.id === p.sourceId) continue;
-      // Vanilla's own "see if it went over / under" test, which really is a
-      // pass-through — the missile is simply at the wrong height.
-      if (Math.abs(m.z - at.z) > MONSTER_PROJECTILE_HIT_HEIGHT) continue;
-      const dSq = (m.x - at.x) ** 2 + (m.y - at.y) ** 2;
-      if (dSq >= nearestSq) continue;
-      // Same wall check `reachedPlayer` needs, and for the same reason — see
+      const t = stepTouchesBody(from, at, m, m.radius, MONSTER_HIT_HEIGHT, p.radius);
+      if (t === null || t >= nearestT) continue;
+      // Same wall check `playerStruckBy` needs, and for the same reason — see
       // its comment. Traced from the monster for the same `SELF_HIT_MARGIN`
       // reason, and last so it only runs on an already-close candidate.
       if (!hasLineOfSight(this.ctx.world, m, at)) continue;
-      nearestSq = dSq;
-      nearest = { id: sameSpecies(p.sourceType, m.type) ? null : m.id };
+      nearestT = t;
+      nearest = { id: p.sourceId !== null && sameSpecies(p.sourceType, m.type) ? null : m.id };
     }
     return nearest;
   }

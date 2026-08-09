@@ -78,6 +78,7 @@ import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audi
 import { SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
+import { boxToCircleRadius, distSqToSegment } from '../util/geom.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
 
 /**
@@ -947,14 +948,15 @@ export function buildThingSprites(
       });
       if (id === null) return null;
       const p = posed[id];
-      return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle };
+      return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius };
     },
     monstersNear(pos: Pos2, radius: number): MonsterRef[] {
-      // Grid-backed, not a scan of every thing. This is called once per
-      // in-flight projectile per frame (`game/projectiles.ts`'s `monsterStruckBy`), and a
-      // crowded map can have well over a thousand projectiles in the air at
-      // once — as a linear scan that alone measured ~138 ms/frame on NUTS.WAD,
-      // more than everything else in the frame put together.
+      // Grid-backed, not a scan of every thing. Splash queries alone would be
+      // survivable; `monstersAlongStep` below shares the same index and runs
+      // once per in-flight projectile per frame, and a crowded map can have
+      // well over a thousand projectiles in the air at once — as a linear scan
+      // that alone measured ~138 ms/frame on NUTS.WAD, more than everything
+      // else in the frame put together.
       const out: MonsterRef[] = [];
       const rSq = radius * radius;
       grid.forEachMonsterNear(pos.x, pos.y, radius, (p) => {
@@ -964,14 +966,33 @@ export function buildThingSprites(
         const dx = p.x - pos.x;
         const dy = p.y - pos.y;
         if (dx * dx + dy * dy >= rSq) return;
-        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle });
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius });
+      });
+      return out;
+    },
+    monstersAlongStep(from: Pos3, to: Pos3, reach: number): MonsterRef[] {
+      const out: MonsterRef[] = [];
+      // One grid query over the whole step, sized from the map's own largest
+      // body rather than the largest in the game — the same adaptive box
+      // `blockersFor` uses, and the reason a map of 20-unit grunts doesn't pay
+      // for the spider mastermind it doesn't contain.
+      const midX = (from.x + to.x) / 2;
+      const midY = (from.y + to.y) / 2;
+      const half = Math.hypot(to.x - from.x, to.y - from.y) / 2;
+      grid.forEachMonsterNear(midX, midY, half + boxToCircleRadius(reach + grid.maxBodyRadius()), (p) => {
+        // blockerGrid also carries SOLID_DECORATION_TYPES now (movement only) — not MF_SHOOTABLE
+        // in vanilla, so a projectile must not strike one.
+        if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
+        const hit = boxToCircleRadius(p.blockRadius + reach);
+        if (distSqToSegment(p.x, p.y, from.x, from.y, to.x, to.y) >= hit * hit) return;
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius });
       });
       return out;
     },
     monsterById(id: number): MonsterRef | null {
       const p = posed[id];
       if (!p || p.dead || !MONSTER_TYPES.has(p.type)) return null;
-      return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle };
+      return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius };
     },
     bleeds(id: number): boolean {
       const p = posed[id];
@@ -996,7 +1017,7 @@ export function buildThingSprites(
       const out: MonsterRef[] = [];
       for (const p of posed) {
         if (p.dead || !MONSTER_TYPES.has(p.type) || p.sector !== sector) continue;
-        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle });
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius });
       }
       return out;
     },
@@ -1005,7 +1026,7 @@ export function buildThingSprites(
       for (const p of posed) {
         if (p.dead || p.sector !== sector) continue;
         if (!MONSTER_TYPES.has(p.type) && p.type !== BARREL_TYPE) continue;
-        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle });
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius });
       }
       return out;
     },
@@ -1022,7 +1043,7 @@ export function buildThingSprites(
     },
     spawnMonster(type: number, at: Pos3, angleRad: number): MonsterRef | null {
       const p = spawnMonster(type, at, angleRad);
-      return p ? { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle } : null;
+      return p ? { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius } : null;
     },
     raycastMonster(
       origin: Pos3,
@@ -1035,7 +1056,10 @@ export function buildThingSprites(
       let nearest: (MonsterRef & { dist: number }) | null = null;
       // Grid-backed rather than a scan of every thing: this runs once per
       // monster hitscan, which a crowded map fires dozens of times a frame.
-      grid.forEachMonsterAlongRay(origin.x, origin.y, dx, dy, maxDist, (p) => {
+      // The sweep has to clear the widest body this map holds, since each is
+      // now tested at its own radius rather than one shared 24 units.
+      const clearance = boxToCircleRadius(grid.maxBodyRadius());
+      grid.forEachMonsterAlongRay(origin.x, origin.y, dx, dy, maxDist, clearance, (p) => {
         // blockerGrid also carries SOLID_DECORATION_TYPES now (movement only) — not MF_SHOOTABLE
         // in vanilla, so a hitscan must pass through one rather than stopping on it.
         if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
@@ -1050,8 +1074,22 @@ export function buildThingSprites(
         if (t < 0 || t > maxDist || (nearest && t >= nearest.dist)) return;
         const perpX = relX - dx * t;
         const perpY = relY - dy * t;
-        if (perpX * perpX + perpY * perpY > MONSTER_HIT_RADIUS * MONSTER_HIT_RADIUS) return;
-        nearest = { id: p.id, x: origin.x + dx * t, y: origin.y + dy * t, z: p.z, dist: t, type: p.type, angle: p.angle };
+        // This body's own width, not one shared hitbox: `PIT_AddThingIntercepts`
+        // tests the trace against each thing's real bounding box, and the
+        // 10-128 unit spread across types is the difference between a bullet
+        // threading past a mancubus and stopping in it.
+        const hit = boxToCircleRadius(p.blockRadius);
+        if (perpX * perpX + perpY * perpY > hit * hit) return;
+        nearest = {
+          id: p.id,
+          x: origin.x + dx * t,
+          y: origin.y + dy * t,
+          z: p.z,
+          dist: t,
+          type: p.type,
+          angle: p.angle,
+          radius: p.blockRadius,
+        };
       });
       return nearest;
     },

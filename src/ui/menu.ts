@@ -375,9 +375,13 @@ export class Menu {
       }
       const option = document.createElement('option');
       option.value = map.name;
-      // Only worth naming the provider when an add-on took the map over.
-      option.textContent =
-        map.provider === this.selectedIwad.label ? map.name : `${map.name}  —  ${map.provider}`;
+      // Lump name first — it's what the level is picked by, and the only thing every map has.
+      // Then its title where the WAD set knows one (docs/wad.md § Level names), and the provider
+      // only when an add-on took the map over.
+      const parts = [map.name];
+      if (map.title) parts.push(map.title);
+      if (map.provider !== this.selectedIwad.label) parts.push(map.provider);
+      option.textContent = parts.join('  —  ');
       group.append(option);
     }
 

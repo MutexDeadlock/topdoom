@@ -338,6 +338,111 @@ canvas {
   display: none;
 }
 
+/* ---------- level card ---------- */
+
+/*
+ * "Entering" over the level's name, both drawn native-size by ui/levelcard.ts and scaled here —
+ * the name's doubled size is this `height` pair, not a second font. Sits above the HUD (10) in the
+ * same band as #hud-message, and higher up the screen (30% vs. its 40%) so a secret found on the
+ * way in doesn't overlap the card.
+ */
+#level-card {
+  position: fixed;
+  left: 50%;
+  top: 30%;
+  transform: translate(-50%, -50%);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px #000);
+}
+
+#level-card.hidden {
+  display: none;
+}
+
+#level-card canvas {
+  image-rendering: pixelated;
+  width: auto;
+  display: block;
+}
+
+#level-card .enter {
+  height: 13px;
+}
+
+#level-card .name {
+  height: 26px;
+}
+
+/* ---------- intermission ---------- */
+
+/*
+ * The end-of-level popup: #death-overlay's dimmed full-screen backdrop with #game-hud's own
+ * bordered panel inside it, at the same z-index as the death overlay since the two can never be
+ * up at once. `pointer-events: none` like every other overlay — it's dismissed by a key, which
+ * game.ts reads, not by clicking anything here.
+ */
+#intermission {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(6, 6, 10, 0.45);
+}
+
+#intermission.hidden {
+  display: none;
+}
+
+/*
+ * Lines are centered in the panel, but the kill/item/secret block is centered as *one* item:
+ * its three lines have different widths, and centering each on its own would stagger the labels
+ * and undo the number column ui/intermission.ts lines them up in.
+ * `center`, never the default `stretch` — these canvases are `width: auto` at a fixed height, so
+ * stretching the cross axis pulls a short line (the clock) out to the panel's full width.
+ */
+#intermission .panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 20px 28px;
+  background: rgba(13, 13, 16, 0.9);
+  border: 1px solid #2a2a32;
+}
+
+#intermission .stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+#intermission canvas {
+  image-rendering: pixelated;
+  height: 18px;
+  width: auto;
+  display: block;
+}
+
+/* The blank line the "your time:" block is separated by, without an element of its own. */
+#intermission .line-timelabel {
+  margin-top: 14px;
+}
+
+#intermission .line-hint {
+  height: 13px;
+  margin-top: 14px;
+  opacity: 0.6;
+}
+
 /* ---------- death overlay ---------- */
 
 #death-overlay {

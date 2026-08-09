@@ -27,7 +27,8 @@ lists, the level list and the difficulty options are built in JS.
 `Esc` toggles between the menu and the game. With the menu open and no level loaded it does nothing
 — there is nothing to return to.
 
-Overlay stacking (`menu.css`): screen tint / pain flash `5`, HUD `10`, `#death-overlay` `15`,
+Overlay stacking (`menu.css`): screen tint / pain flash `5`, HUD `10`, `#hud-message` and
+`#level-card` `12`, `#death-overlay` and `#intermission` `15` (the two can never be up at once),
 `#menu` `20`, `#fatal-error` `30`.
 
 `VERSION` (`constants.ts`) is shown prefixed with `v`, right-aligned on the title's own row
@@ -54,8 +55,12 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
   worth seeing, just not pickable. Switching game WAD calls `pruneIncompatiblePwads` to drop any
   already-ticked add-on that no longer matches, so the merged map list (`mergedMaps`) never silently
   mixes an E1M1 with a MAP01 mapset.
-- The **Level** list groups DOOM 1's `ExMy` maps by episode and names the provider only when an
-  add-on took a map over.
+- The **Level** list groups DOOM 1's `ExMy` maps by episode, and each row reads
+  `<lump>  —  <title>  —  <provider>`, dropping either of the last two when it doesn't apply: the
+  title only when the WAD set knows one (docs/wad.md § Level names — resolved off the manifest
+  alone, since nothing has been downloaded at this point), the provider only when an add-on took the
+  map over. The lump name always comes first: it is what the level is selected by, what `?map=`
+  takes, and the only thing every map has.
 
 ## Difficulty
 
@@ -203,4 +208,9 @@ Rules that hold this together:
   would return to is disposed part-way through.
 - A second `Game` builds against the *same* static DOM, so anything holding generated children must
   replace rather than append, and per-level screen state must be cleared — see docs/items.md
-  § The HUD and § Screen effects.
+  § The HUD and § Screen effects. `dispose` clears the center message, the level card and the
+  intermission popup for that reason: all three are static markup that outlives the `Game` that
+  raised them.
+- `Esc` works during the intermission popup too. `pause()`/`stillFrame` keep drawing, the menu sits
+  over the popup, and `resume()`'s `input.reset()` drops the keypress that would otherwise dismiss
+  it the moment the game comes back.

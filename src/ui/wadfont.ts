@@ -11,6 +11,14 @@ interface Glyph {
   data: Uint8ClampedArray;
   width: number;
   height: number;
+  /**
+   * The patch's own vertical hotspot, negated — how far below the line's top this glyph starts.
+   * The short glyphs are not full-height images with blank rows: `.` is a 3px-tall patch with a
+   * `topoffset` of -4, and only lands on the baseline because `V_DrawPatch` draws it at
+   * `y - topoffset`. Ignoring it puts every period, comma, hyphen and underscore at the *top* of
+   * the line.
+   */
+  top: number;
 }
 
 /**
@@ -33,8 +41,10 @@ export const COLOR_YELLOW: WadFontRecolor = [255, 255, 115];
  * Draws text with the IWAD's own status-bar font (`STCFN033`-`STCFN095`, the same lumps
  * vanilla's on-screen messages use), proportionally spaced exactly like `hu_lib.c`'s
  * `HUlib_drawTextLine`: each glyph advances by its own patch width with no kerning, a space or
- * any character outside the font advances a flat 4px. Text is uppercased before lookup, matching
- * vanilla's `toupper` — the font has no lowercase glyphs. docs/items.md § Level stats.
+ * any character outside the font advances a flat 4px, and each is placed vertically by its own
+ * patch offset the way `V_DrawPatch` does (see `Glyph.top` — without it the short glyphs float at
+ * the top of the line). Text is uppercased before lookup, matching vanilla's `toupper` — the font
+ * has no lowercase glyphs. docs/items.md § Level stats.
  *
  * STCFN's own pixels are already vanilla's HUD-message red; pass `recolor` to retint every glyph
  * to a different color instead (see `WadFontRecolor`'s doc) — this repo has no
@@ -60,8 +70,10 @@ export class WadFont {
           data[i + 2] = b * brightness;
         }
       }
-      this.glyphs.set(code, { data, width: bmp.width, height: bmp.height });
-      height = Math.max(height, bmp.height);
+      const top = -(bmp.top ?? 0);
+      this.glyphs.set(code, { data, width: bmp.width, height: bmp.height, top });
+      // The line box has to cover where each glyph actually lands, not just how tall its patch is.
+      height = Math.max(height, top + bmp.height);
     }
     this.height = height;
   }
@@ -88,7 +100,7 @@ export class WadFont {
       // Re-wrapped rather than reusing `glyph.data` directly: `ImageData`'s constructor wants a
       // `Uint8ClampedArray<ArrayBuffer>`, and TS only narrows to that from an inline `new`
       // expression's contextual typing, not from a pre-typed field.
-      ctx.putImageData(new ImageData(new Uint8ClampedArray(glyph.data), glyph.width, glyph.height), x, y);
+      ctx.putImageData(new ImageData(new Uint8ClampedArray(glyph.data), glyph.width, glyph.height), x, y + glyph.top);
       x += glyph.width;
     }
     return x;

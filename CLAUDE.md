@@ -60,7 +60,8 @@ those go in the scratchpad, never in `src/`.
 ## Architecture
 
 ```
-src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite + sound decoding
+src/wad/       WAD files, merged lump directory, map lumps, graphics + sprite + sound decoding,
+               MAPINFO + the vanilla level-title tables
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards + their instanced batching, shot tracers, camera, viewport
 src/game/      spatial queries, collision, player controller, input, thing→sprite table, thing
@@ -75,7 +76,8 @@ src/game/things/     the thing layer's record shapes + its own tables (defs), mo
 src/game/specials/   load-time map analysis (mapscan), mover meshes + relighting (movergeometry)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
                WebAudio playback (channels, attenuation, pan, volume)
-src/ui/        start menu, HUD, screen tints/pain flash, DEVMODE hud + profiling overlay
+src/ui/        start menu, HUD, level card + end-of-level intermission, screen tints/pain flash,
+               DEVMODE hud + profiling overlay
 src/util/      small helpers shared across layers (2D geometry, damped-lerp smoothing,
                per-frame profiling)
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
@@ -101,7 +103,7 @@ several record rules that look like accidents and aren't.
 | [docs/monsters.md](docs/monsters.md) | Waking, chase pathing, the decision to attack, infighting, per-type quirks, spatial indexing |
 | [docs/monsterattacks.md](docs/monsterattacks.md) | Realizing a fired attack: hitscan vs. projectile, monster missiles in flight, the revenant's homing |
 | [docs/iconofsin.md](docs/iconofsin.md) | MAP30's boss: the spitter, the spawn cube, the brain's death |
-| [docs/items.md](docs/items.md) | Pickups, inventory, keys/locked doors, the HUD, powerups, screen effects |
+| [docs/items.md](docs/items.md) | Pickups, inventory, keys/locked doors, the HUD, the level card and intermission, powerups, screen effects |
 | [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, the donut, damage floors, scrolling textures |
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
 | [docs/audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |

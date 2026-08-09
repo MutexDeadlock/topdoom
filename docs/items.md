@@ -213,9 +213,70 @@ no recolor). `Game.levelTime` accumulates `dt` in `frame`, gated the same way `t
 frozen once `playerDead` — and reset to 0 in `loadMapByIndex`. It also never advances on the frame
 an exit trigger fires: that frame already returns early once `pendingExit` is set (see that field's
 own doc in `game.ts`), before reaching the increment, so no separate "level complete" check is
-needed on top of the death check. This repo has no intermission screen, so that frozen instant isn't
-currently visible — the very next frame loads the next map with a fresh zeroed timer — but the
-behavior is in place for if one is added later.
+needed on top of the death check. That frozen instant is exactly what the intermission below shows,
+and it stays frozen for as long as the popup is up: those frames return early too.
+
+### Level card
+
+`src/ui/levelcard.ts` raises "Entering" over the level's name (`#level-card`, horizontally centered,
+30% down so it clears `#hud-message`'s 40%) for 3.5 seconds after **every** map load — a normal exit,
+`restart()` after death, and the DEVMODE `N`/`P` jump alike — fading out over the last second of
+that. The fade is `opacity` driven from `update`'s own `dt`, not a CSS transition: a transition runs
+on wall-clock time, so opening the menu on a fresh level would leave the card fading away behind it
+and gone on return, while everything else about the frozen level waited. Two canvases rather than one: both hold
+native-size art and `menu.css` gives them different heights, which is how the name draws at twice
+the label's size without a second glyph set. The label is `WadFont` in STCFN's own red.
+
+**The name is the WAD's own `CWILV`/`WILV` graphic wherever the set has one that belongs to this
+map** (`LevelNames.graphicFor`, docs/wad.md § Level names) — the level's name as its artist drew it,
+blitted with the same `drawIcon` the HUD uses for pickup sprites, at a CSS height that lands its
+caps at the text's own size. Text is the fallback, for a map with no such lump (`E5M1`, a
+single-map PWAD) or a WAD set where the only candidate patch belongs to a different level. It is
+drawn in a grey sampled from `CWILV00`'s glyph body, so the two forms read as the same thing rather
+than as two different announcements.
+
+It is shown at the **end** of `loadMapByIndex` — that method clears every per-level overlay at its
+top, so a card raised any earlier would be wiped by its own load. The text form shows the level's
+bare title ("Hangar"), not its lump name, which the menu listed a moment earlier and the DEVMODE HUD
+shows anyway.
+
+Vanilla has no equivalent: there the level name belongs to the intermission screen you just left,
+not to the level you arrive in. 3.5 seconds is **tuned by feel**, a little longer than a center
+message's 3 since there is nothing else on screen to read yet.
+
+### Intermission
+
+`src/ui/intermission.ts` (`#intermission`) is the end-of-level popup: the same three counts the HUD
+strip carries, as vanilla's percentages this time, then the frozen level time, then the continue
+hint. `Hud`'s own layout rules apply — a red label run, values from a shared column, and the
+yellow→green switch at 100% — and `formatClock`/`percentOf` are shared with the HUD strip
+(`ui/hud.ts`) so the popup and the bar can never disagree about the same numbers. `percentOf`
+truncates, matching `wi_stuff.c`'s C integer division, and reads 100% for a total of 0, where
+vanilla would divide by zero.
+
+Lines are centered in the panel, but the three stat lines sit in a `.stats` wrapper so they are
+centered as **one block**: centering each on its own would stagger the labels and undo the very
+column `drawStatLine` lines the numbers up in.
+
+The control flow is the part worth knowing:
+
+- `Game.pendingExit` no longer loads the next map. On the frame it is consumed (still right after
+  `specials.update()` has returned — see that field's own doc for why the teardown can't happen
+  inside the callback) it shows the popup and sets `intermissionActive`.
+- While `intermissionActive`, a branch at the **top** of `frame` advances nothing at all — no clock,
+  no specials, no monsters — and only re-renders the still scene under the popup. `Space`/`Enter`
+  calls `loadMapByIndex(mapIndex + 1)`, which clears the popup and the flag along with every other
+  per-level overlay.
+- The popup ignores that key for its first `INTERMISSION_INPUT_DELAY`. `Space` is *also* the use
+  key, so without the delay a mashed exit switch dismisses the popup on the frame after it appears.
+  The press that opened it can't leak through on its own — `Input.pressed` is edge-triggered and the
+  exit frame ends with `endFrame()` — but a second tap would.
+- Deliberately not any-key, and deliberately not `pause()`: `Escape` belongs to the menu (`main.ts`)
+  and would otherwise both pause and dismiss the popup in one press, and a paused `Game` stops
+  reading input, which is the one thing this state needs.
+
+Secret exits still advance by `+1` like any other (the `secret` flag is dropped in `specials.ts`),
+so there is no secret-level routing for the popup to announce.
 
 ### Center messages
 
@@ -263,6 +324,14 @@ kerning, a space or unknown character advances a flat 4px, text is uppercased fi
 lowercase glyphs). `measure()`/`draw()` let a caller compose multiple runs (different colors, even
 different `WadFont` instances) onto one canvas — `draw()` returns the cursor x just past the last
 glyph, so a second call can continue from there.
+
+**Each glyph is placed vertically by its own patch offset**, as `V_DrawPatch` does (`y - topoffset`),
+and the line height is the tallest `top + height`, not the tallest patch. STCFN's short glyphs are
+not full-height images with blank rows: `.` is a 3px patch with `topoffset` -4, `,` 4px with -3,
+`-` 3px with -2. Drawing them all at the line's top — which is what happened before, and showed up
+as the period in `SCYTHE.WAD MAP01` floating above the letters — puts every period, comma, hyphen
+and underscore at cap height. Nothing else moves: every letter and digit has a zero offset, and
+`Q`/`$`/`@` already made the box 8px tall.
 
 STCFN's own pixels are already vanilla's HUD-message red, so the red `"M: "`/`"I: "`/`"S: "` labels
 need no recoloring. There is no full-charset yellow font in vanilla WADs (`WINUM`/`STYSNUM` are

@@ -30,7 +30,7 @@ Node runs **one process per test file**, which is what contains `player.ts`'s mo
 
 ```
 tests/
-  util/  wad/  game/     one file per src/ module under test
+  util/  wad/  game/  ui/    one file per src/ module under test
   regression/            one file per fixed bug, named after the bug
   fixtures/              builders and test data, never tests
 ```

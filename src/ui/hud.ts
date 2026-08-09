@@ -33,8 +33,36 @@ export interface LevelStats {
  * highlighting a *completed* kill/item/secret category (vanilla's intermission screen prints
  * every percentage in the same font/color regardless of value), so this is a UI addition tuned
  * by feel; only the choice of color is WAD-derived, for the same reason `COLOR_YELLOW` is.
+ *
+ * Exported for `ui/intermission.ts`, which applies the same complete-category cue to its
+ * percentages.
  */
-const LEVEL_STATS_GREEN: readonly [number, number, number] = [111, 239, 103];
+export const LEVEL_STATS_GREEN: readonly [number, number, number] = [111, 239, 103];
+
+/**
+ * `hh:mm:ss`, shared by the HUD clock and the intermission's "your time" line so the two can never
+ * disagree about the same `Game.levelTime`.
+ */
+export function formatClock(elapsedSeconds: number): string {
+  const total = Math.max(0, Math.floor(elapsedSeconds));
+  const hh = String(Math.floor(total / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+  const ss = String(total % 60).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+/**
+ * One of the intermission's three percentages. Truncating rather than rounding is
+ * `wi_stuff.c`'s own `plrs[me].skills * 100 / wbs->maxkills` — C integer division — so 99 of 100
+ * kills reads 99%, not 100%.
+ *
+ * A total of 0 reads 100%: vanilla would divide by zero there (no map it shipped has a zero
+ * total), and "nothing to find, so you found it all" is the same rule the HUD strip's
+ * `found >= total` completion cue already applies.
+ */
+export function percentOf(found: number, total: number): number {
+  return total <= 0 ? 100 : Math.floor((found * 100) / total);
+}
 
 const AMMO_ICONS: Record<AmmoType, string> = {
   bullets: 'CLIPA0',
@@ -80,15 +108,18 @@ const BACKPACK_ICON = 'BPAKA0';
  * Draws a WAD picture lump into a canvas at its native pixel size; CSS scales
  * it up with `image-rendering: pixelated`. Reusing the same pickup-sprite
  * graphics the world renders items with (rather than hand-drawn icons) keeps
- * the HUD visually consistent with whichever WAD is loaded.
+ * the HUD visually consistent with whichever WAD is loaded. Returns whether the
+ * lump was there to draw — `ui/levelcard.ts` shares this to blit a level-name
+ * patch, and falls back to its own text when it isn't.
  */
-function drawIcon(canvas: HTMLCanvasElement, gfx: GraphicsBank, lump: string): void {
+export function drawIcon(canvas: HTMLCanvasElement, gfx: GraphicsBank, lump: string): boolean {
   const bmp = gfx.picture(lump);
-  if (!bmp) return;
+  if (!bmp) return false;
   canvas.width = bmp.width;
   canvas.height = bmp.height;
   const ctx = canvas.getContext('2d')!;
   ctx.putImageData(new ImageData(new Uint8ClampedArray(bmp.data), bmp.width, bmp.height), 0, 0);
+  return true;
 }
 
 /**
@@ -217,11 +248,7 @@ export class Hud {
    * only ever formats whatever it's handed.
    */
   private drawTimer(elapsedSeconds: number): void {
-    const total = Math.max(0, Math.floor(elapsedSeconds));
-    const hh = String(Math.floor(total / 3600)).padStart(2, '0');
-    const mm = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
-    const ss = String(total % 60).padStart(2, '0');
-    const text = `${hh}:${mm}:${ss}`;
+    const text = formatClock(elapsedSeconds);
     this.timerCanvas.width = this.redFont.measure(text);
     this.timerCanvas.height = this.redFont.height;
     this.redFont.draw(this.timerCanvas.getContext('2d')!, 0, 0, text);

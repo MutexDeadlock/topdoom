@@ -1,4 +1,6 @@
-import { WadFile, type WadType } from './wad.ts';
+import { Wad, WadFile, type WadType } from './wad.ts';
+import { mapInfoNames } from './mapinfo.ts';
+import { levelTitleFor, missionOf } from './levelnames.ts';
 
 const MANIFEST_URL = '/wads/index.json';
 
@@ -15,6 +17,8 @@ export interface WadSource {
   maps: string[];
   /** Total lump count — shown for map-less add-ons so they don't look empty. */
   lumpCount: number;
+  /** Level titles this file's MAPINFO defines, keyed by map lump name — see docs/wad.md § Level names. */
+  levelNames: Record<string, string>;
   size: number;
   origin: 'server' | 'upload';
   bytes(): Promise<ArrayBuffer>;
@@ -29,6 +33,8 @@ interface ManifestEntry {
   type: WadType;
   maps: string[];
   lumpCount: number;
+  /** Only present for the few WADs that carry a MAPINFO lump — see plugins/wad-manifest.ts. */
+  levelNames?: Record<string, string>;
 }
 
 /** Which DOOM's map-naming convention a WAD's maps follow, if any. */
@@ -74,6 +80,7 @@ function serverSource(entry: ManifestEntry): WadSource {
     type: entry.type,
     maps: entry.maps,
     lumpCount: entry.lumpCount,
+    levelNames: entry.levelNames ?? {},
     size: entry.size,
     origin: 'server',
     bytes() {
@@ -95,6 +102,9 @@ export function uploadedSource(name: string, buffer: ArrayBuffer): WadSource {
     type: file.type,
     maps: file.mapNames(),
     lumpCount: file.entries.length,
+    // The manifest plugin does this server-side for the WADs on disk; a file picked here has to
+    // read its own MAPINFO, and the bytes are already in memory.
+    levelNames: Object.fromEntries(mapInfoNames(new Wad(file))),
     size: buffer.byteLength,
     origin: 'upload',
     bytes: () => Promise.resolve(buffer),
@@ -114,22 +124,46 @@ export async function fetchLibrary(): Promise<WadSource[]> {
   }
 }
 
+/** One row of the menu's level list. `title` is absent when nothing in the set names the level. */
+export interface MergedMap {
+  name: string;
+  provider: string;
+  title?: string;
+}
+
 /**
  * Map list for an IWAD plus its add-ons: the IWAD's own maps in order, then any
  * extra maps a PWAD introduces. Each map is attributed to the file that wins.
+ *
+ * Titles resolve exactly as they do in-game (`wad/levelnames.ts`), off the manifest alone so the
+ * list can be built without downloading anything: MAPINFO from anywhere in the set (later files
+ * winning, as with lumps), else the vanilla title for the IWAD's own maps.
  */
-export function mergedMaps(iwad: WadSource, pwads: WadSource[]): { name: string; provider: string }[] {
+export function mergedMaps(iwad: WadSource, pwads: WadSource[]): MergedMap[] {
   const provider = new Map<string, string>();
   for (const map of iwad.maps) provider.set(map, iwad.label);
 
   const order = [...iwad.maps];
+  const mapInfoTitles = new Map(Object.entries(iwad.levelNames));
   for (const pwad of pwads) {
     for (const map of pwad.maps) {
       if (!provider.has(map)) order.push(map);
       provider.set(map, pwad.label);
     }
+    for (const [map, title] of Object.entries(pwad.levelNames)) mapInfoTitles.set(map, title);
   }
-  return order.map((name) => ({ name, provider: provider.get(name)! }));
+
+  const mission = missionOf(iwad.label);
+  return order.map((name) => {
+    const from = provider.get(name)!;
+    const title = levelTitleFor(name, {
+      mapInfoTitle: mapInfoTitles.get(name),
+      mission,
+      providerName: from,
+      providerIsPwad: from !== iwad.label,
+    });
+    return title ? { name, provider: from, title } : { name, provider: from };
+  });
 }
 
 /** Loads the selected files in the order the engine has to merge them. */

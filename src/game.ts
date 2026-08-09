@@ -32,8 +32,11 @@ import { computeMovableSectors } from './game/specials/mapscan.ts';
 import { IconOfSin } from './game/iconofsin.ts';
 import { applyCrushDamage, blocksCeilingLower, blocksFloorRise } from './game/moverblocking.ts';
 import { SectorEffects } from './game/sectoreffects.ts';
-import { Hud } from './ui/hud.ts';
+import { Hud, type LevelStats } from './ui/hud.ts';
 import { Crosshair } from './ui/crosshair.ts';
+import { Intermission } from './ui/intermission.ts';
+import { LevelCard } from './ui/levelcard.ts';
+import { LevelNames } from './wad/levelnames.ts';
 import { CenterMessage, lockedKeyMessage } from './ui/message.ts';
 import { DebugHud, handleHotkeys } from './ui/debughud.ts';
 import { ScreenEffects } from './ui/screeneffects.ts';
@@ -67,6 +70,13 @@ const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
  * up. docs/items.md § Center messages.
  */
 const SECRET_MESSAGE = 'You found a secret area';
+
+/**
+ * How long the intermission popup ignores the continue key. `Space` both uses the exit switch and
+ * dismisses the popup, so without this a mashed switch skips past it before it can be read.
+ * **Tuned by feel** — long enough to swallow a double tap, short enough not to feel stuck.
+ */
+const INTERMISSION_INPUT_DELAY = 0.6;
 
 /** One loaded WAD set, playing one level at a time. */
 export class Game {
@@ -112,6 +122,14 @@ export class Game {
    * old map's mover mesh to the new map's scene, with nothing to clean it up.
    */
   private pendingExit = false;
+  /**
+   * True while the end-of-level popup is up: the level is finished and frozen, and `frame` advances
+   * nothing until the player presses the continue key, which is what loads the next map. Not
+   * `pause()`, which is the menu's — the popup has to keep reading input.
+   */
+  private intermissionActive = false;
+  /** Seconds the popup has been up, for `INTERMISSION_INPUT_DELAY`. The only thing that still advances while it is. */
+  private intermissionTime = 0;
   /** Damage floors and the secret counter for the current map — see game/sectoreffects.ts. */
   private sectorEffects!: SectorEffects;
   /**
@@ -136,6 +154,12 @@ export class Game {
   private crosshair: Crosshair;
   /** Center-screen text — currently only the secret-found line (see `SECRET_MESSAGE`). */
   private message: CenterMessage;
+  /** The "Entering / <level name>" card every map load raises — see ui/levelcard.ts. */
+  private levelCard: LevelCard;
+  /** The end-of-level popup — see ui/intermission.ts and `intermissionActive`. */
+  private intermission: Intermission;
+  /** Names levels for the card: MAPINFO, then the vanilla title table — see wad/levelnames.ts. */
+  private levelNames: LevelNames;
   /**
    * Measurement itself always runs — `performance.now()` calls are cheap enough
    * not to bother gating; only `DebugHud`'s decision to render the samples is
@@ -184,6 +208,11 @@ export class Game {
     this.spriteMaterials = new SpriteMaterialCache(gfx, view.renderer);
     this.hud = new Hud(gfx);
     this.message = new CenterMessage(gfx);
+    this.levelCard = new LevelCard(gfx);
+    this.intermission = new Intermission(gfx);
+    // Session-scoped like the banks above: which titles apply depends on the loaded file set
+    // (its MAPINFO lumps and which IWAD it is), not on the current map.
+    this.levelNames = new LevelNames(wad);
     this.crosshair = new Crosshair(view.renderer.domElement);
     this.mapNames = wad.mapNames();
     if (this.mapNames.length === 0) throw new Error('no maps in the selected WADs');
@@ -250,6 +279,9 @@ export class Game {
     this.playerDead = false;
     this.screen.clearDeath();
     this.message.clear();
+    this.levelCard.clear();
+    this.intermission.clear();
+    this.intermissionActive = false;
     this.playerActor.revive();
     this.mapIndex = (index + this.mapNames.length) % this.mapNames.length;
     const name = this.mapNames[this.mapIndex];
@@ -369,6 +401,10 @@ export class Game {
       this.audio,
     );
 
+    // Raised last: this method clears every overlay at its top, so a card shown any earlier than
+    // here would be wiped by its own load.
+    this.levelCard.show(this.levelNames.nameFor(name), this.levelNames.graphicFor(name));
+
     const provider = this.wad.providerOf(name)?.name ?? '?';
     console.info(
       `${name} (${provider}): ${map.sectors.length} sectors, ${map.linedefs.length} linedefs, ` +
@@ -429,9 +465,11 @@ export class Game {
     // only makes sure nothing from this level is left holding a channel.
     this.audio.stopAll();
     this.screen.reset();
-    // Like `screen`, this element outlives the Game that drove it — without
+    // Like `screen`, these elements outlive the Game that drove them — without
     // this the menu (and the next level started from it) inherits the line.
     this.message.clear();
+    this.levelCard.clear();
+    this.intermission.clear();
     this.playerActor.dispose();
     this.specials?.dispose();
     this.built?.group.traverse((obj) => {
@@ -515,6 +553,21 @@ export class Game {
     this.profiler.beginFrame();
 
     const { input, camera } = this.view;
+    // The level is over and frozen behind the popup: nothing is advanced — not the clock, not the
+    // specials, not a monster — only the still scene is redrawn under it. Space/Enter rather than
+    // any key, since Escape belongs to the menu (main.ts) and would otherwise both pause and eat
+    // the popup in the same press.
+    if (this.intermissionActive) {
+      this.intermissionTime += dt;
+      if (this.intermissionTime >= INTERMISSION_INPUT_DELAY && (input.pressed('Space') || input.pressed('Enter'))) {
+        this.loadMapByIndex(this.mapIndex + 1); // clears the popup and the flag, like every other per-level overlay
+      } else {
+        this.view.renderer.render(this.scene, camera.camera);
+      }
+      input.endFrame();
+      requestAnimationFrame(this.frame);
+      return;
+    }
     handleHotkeys(input, camera, (delta) => this.loadMapByIndex(this.mapIndex + delta));
     // Set before any system runs, since specials/monsters/weapons all raise
     // sounds during the update below. The camera's yaw is last frame's (it
@@ -538,7 +591,11 @@ export class Game {
     // safe to dispose it and swap in the next map.
     if (this.pendingExit) {
       this.pendingExit = false;
-      this.loadMapByIndex(this.mapIndex + 1);
+      // The next map isn't loaded here any more: the popup goes up on the level as it stands, and
+      // the continue key at the top of `frame` is what loads it.
+      this.intermission.show(this.levelStats());
+      this.intermissionActive = true;
+      this.intermissionTime = 0;
       input.endFrame();
       requestAnimationFrame(this.frame);
       return;
@@ -679,9 +736,13 @@ export class Game {
     if (sectorEffect.exit) this.pendingExit = true;
   }
 
-  /** The 2D layers over the level: status bar, crosshair, center message, and the screen tints. */
-  private updateOverlays(dt: number): void {
-    this.hud.update(this.inventory, {
+  /**
+   * The current level's kill/item/secret counts and clock, for the HUD strip every frame and for
+   * the intermission on the frame the level ends. Cheap integer reads, assembled fresh rather than
+   * cached — see docs/items.md § Level stats.
+   */
+  private levelStats(): LevelStats {
+    return {
       kills: this.things?.stats.kills ?? 0,
       totalKills: this.things?.stats.totalKills ?? 0,
       items: this.things?.stats.items ?? 0,
@@ -689,9 +750,15 @@ export class Game {
       secrets: this.sectorEffects.secretsFound,
       totalSecrets: this.sectorEffects.totalSecrets,
       elapsedSeconds: this.levelTime,
-    });
+    };
+  }
+
+  /** The 2D layers over the level: status bar, crosshair, center message, level card, and the screen tints. */
+  private updateOverlays(dt: number): void {
+    this.hud.update(this.inventory, this.levelStats());
     this.crosshair.update(this.inventory.health);
     this.message.update(dt);
+    this.levelCard.update(dt);
     this.screen.update(dt, this.inventory);
   }
 

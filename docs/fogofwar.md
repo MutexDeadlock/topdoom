@@ -53,8 +53,8 @@ cover the *furthest* thing on screen rather than a comfortable average. With `To
 defaults (`tiltDeg` 60, `distance` 480, 55° vertical FOV) the eye sits `cos(60°)·480 = 240` above the
 followed point and `sin(60°)·480 = 416` behind it, looking 30° below horizontal; the top edge of the
 frustum is then 2.5° below horizontal and meets the floor `240/tan(2.5°) ≈ 5500` units out, i.e.
-~5080 past the player. It is a radius rather than a frustum test because the camera yaws freely, so
-any direction can become the forward one.
+~5080 past the player. It is a radius rather than a frustum test because the camera yaws (`Q`/`E`,
+and the reorient on spawn/teleport), so any direction can become the forward one.
 
 **Anything inside that distance and outside `SIGHT_RADIUS` is a black hole in the middle of a view
 the player plainly has** — and it is not only cosmetic: `ThingLayer` gates rendering, `pickMonster`

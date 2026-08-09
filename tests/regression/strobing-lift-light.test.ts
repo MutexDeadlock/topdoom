@@ -25,7 +25,7 @@ const BANK = {
   get: () => new THREE.MeshBasicMaterial(),
 } as unknown as MaterialBank;
 
-const NO_INPUT = { pressed: () => false } as unknown as Input;
+const NO_INPUT = { pressed: () => false, rightMousePressed: () => false } as unknown as Input;
 
 const BASE_LIGHT = 192;
 const NEIGHBOR_LIGHT = 160; // gridMap's default, and so the strobe's dark level

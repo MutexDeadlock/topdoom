@@ -515,7 +515,7 @@ export class Game {
     this.profiler.beginFrame();
 
     const { input, camera } = this.view;
-    handleHotkeys(input, camera, this.audio, (delta) => this.loadMapByIndex(this.mapIndex + delta));
+    handleHotkeys(input, camera, (delta) => this.loadMapByIndex(this.mapIndex + delta));
     // Set before any system runs, since specials/monsters/weapons all raise
     // sounds during the update below. The camera's yaw is last frame's (it
     // settles in `camera.update`, at the end) — a frame of smoothing lag on the
@@ -797,9 +797,6 @@ export class Game {
       `${fps} fps   ${this.built?.triangles ?? 0} tris   monsters awake ${this.things?.awakeMonsterCount() ?? 0}`,
       `pos ${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}   z ${this.player.z.toFixed(0)}   sector ${sector}`,
       `cam ${camera.distance.toFixed(0)}u ${camera.tiltDeg.toFixed(0)}°tilt ${camera.yawDeg.toFixed(0)}°yaw`,
-      '',
-      'WASD move  Shift run  mouse aim/fire  1-7/wheel weapon  Q-E/drag cam  Space use',
-      'N/P map  +/- zoom  [/] tilt  R restart  M mute  Esc menu',
     ];
   }
 }

@@ -16,9 +16,7 @@ export interface TopDownCameraOptions {
 /** How fast `yawDeg` catches up to a `stepYaw` target, as a lerp-per-second rate. */
 const YAW_STEP_SMOOTH_RATE = 18;
 
-/** Camera-orbit degrees per pixel of right-mouse drag. */
-const YAW_SENSITIVITY = 0.15;
-/** Degrees Q/E snap the camera per press — a keyboard alternative to right-drag. */
+/** Degrees Q/E snap the camera per press. */
 const KEY_YAW_STEP = 45;
 /** Seconds between auto-repeated Q/E steps while the key stays held, after the initial tap. */
 const KEY_YAW_REPEAT_INTERVAL = 0.26;
@@ -26,8 +24,8 @@ const KEY_YAW_REPEAT_INTERVAL = 0.26;
 /**
  * A camera hanging above the player, tilted slightly off vertical so walls
  * show a bit of their height and the level reads as a space rather than a plan.
- * `yawDeg` lets it orbit around the followed point (see Input's right-drag
- * handling) so geometry facing away from the default south view stays reachable.
+ * `yawDeg` lets it orbit around the followed point (Q/E, see `applyYawInput`)
+ * so geometry facing away from the default south view stays reachable.
  */
 export class TopDownCamera {
   readonly camera: THREE.PerspectiveCamera;
@@ -58,9 +56,9 @@ export class TopDownCamera {
   }
 
   /**
-   * Orbit angle in degrees, 0 = due south. Assigning it (right-drag, or an
-   * instant reorient on spawn/teleport) jumps immediately, matching before;
-   * `stepYaw` is the only way to animate towards a new value.
+   * Orbit angle in degrees, 0 = due south. Assigning it — which only the
+   * instant reorient on spawn/teleport does — jumps immediately; `stepYaw` is
+   * the only way to animate towards a new value.
    */
   get yawDeg(): number {
     return this._yawDeg;
@@ -81,18 +79,10 @@ export class TopDownCamera {
   }
 
   /**
-   * This frame's orbit input: right-drag, plus the Q/E 45° snaps and their
-   * auto-repeat. See docs/render.md § Camera orbit for why the drag assignment
-   * is guarded on a nonzero delta.
+   * This frame's orbit input: the Q/E 45° snaps and their auto-repeat.
+   * See docs/render.md § Camera orbit.
    */
   applyYawInput(input: Input, dt: number): void {
-    // Guarded on a nonzero delta: a plain `yawDeg` assignment (even a no-op
-    // "-= 0" one) goes through the setter, which snaps `targetYawDeg` back to
-    // the current value — running it unconditionally every frame would cancel
-    // a Q/E stepYaw animation after just one frame of smoothing.
-    const dragYaw = input.consumeDragYaw();
-    if (dragYaw !== 0) this.yawDeg -= dragYaw * YAW_SENSITIVITY;
-    // Signs match right-drag: E rotates the same way as dragging right, Q as dragging left.
     // stepYaw (not a plain assignment) is what makes this animate smoothly instead of
     // snapping. Holding the key auto-repeats the same step every KEY_YAW_REPEAT_INTERVAL,
     // roughly how long one step's smoothing takes to settle, so a hold reads as continuous

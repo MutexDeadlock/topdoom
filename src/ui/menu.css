@@ -468,6 +468,10 @@ canvas {
 }
 
 #menu header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
   border-bottom: 1px solid #2a2a32;
   padding-bottom: 14px;
   margin-bottom: 18px;
@@ -480,9 +484,9 @@ canvas {
   color: #c0392b;
 }
 
-#menu .sub {
-  margin: 4px 0 0;
-  color: #7f7a74;
+#menu-version {
+  color: #4a4640;
+  font-size: 12px;
 }
 
 #menu .tabs {
@@ -517,9 +521,9 @@ canvas {
 }
 
 /*
- * Both panels are stacked in the same grid cell (rather than one being
- * display:none) so the panel container's height is always the taller of
- * the two — switching tabs changes what's visible, not the menu's size.
+ * All three panels are stacked in the same grid cell (rather than one being
+ * display:none) so the panel container's height is always the tallest of
+ * them — switching tabs changes what's visible, not the menu's size.
  */
 #menu .tab-panels {
   display: grid;
@@ -646,6 +650,72 @@ canvas {
   color: #7f7a74;
 }
 
+#menu .keys {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 18px;
+  margin: 0;
+}
+
+#menu .keys dt {
+  color: #d8d0c0;
+  white-space: nowrap;
+}
+
+#menu .keys dd {
+  margin: 0;
+  color: #7f7a74;
+}
+
+/* Undoes the full-width, roomy `#menu select` so the bound-action row reads
+ * as one line like the plain key rows around it. */
+#menu .keys select {
+  width: auto;
+  padding: 2px 4px;
+}
+
+/*
+ * Short key lists that don't need the panel's full width sit side by side,
+ * each only as wide as its own content so they pack left instead of being
+ * stretched apart. Flex rather than fixed grid tracks so the DEVMODE-only
+ * section simply becomes a third column when it's shown and leaves two when
+ * it isn't — `display: none` drops it out of the flex line entirely.
+ */
+#menu .columns {
+  display: flex;
+  gap: 0 52px;
+}
+
+/*
+ * For full-width controls (the Level and Difficulty selects) rather than key
+ * lists: equal shares, and `min-width: 0` so a long option name shrinks the
+ * select instead of pushing the row past the panel.
+ */
+#menu .columns.even {
+  gap: 0 20px;
+}
+
+#menu .columns.even > section {
+  flex: 1;
+  min-width: 0;
+}
+
+/* A description that carries its own control (the autorun checkbox) beside it. */
+#menu .keys dd.inline {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/*
+ * display, not the visibility the tab panels use: a panel stays laid out so
+ * the menu keeps its height across a tab switch, but this section must drop
+ * out of the .columns flex line entirely in a non-dev build.
+ */
+#menu #controls-dev.hidden {
+  display: none;
+}
+
 #menu select {
   width: 100%;
   padding: 8px 10px;
@@ -723,19 +793,11 @@ canvas {
   outline-offset: -10px;
 }
 
-#menu-credit,
-#menu-version {
+#menu-credit {
   position: fixed;
   bottom: 10px;
+  left: 14px;
   color: #4a4640;
   font-size: 12px;
   pointer-events: none;
-}
-
-#menu-credit {
-  left: 14px;
-}
-
-#menu-version {
-  right: 14px;
 }

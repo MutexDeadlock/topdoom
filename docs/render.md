@@ -155,11 +155,14 @@ otherwise a wall settles a hair short of fully opaque forever and shows a perman
 
 ## Camera orbit and camera-relative movement (`camera.ts`, `game/input.ts`, `game/player.ts`)
 
-`TopDownCamera.yawDeg` lets the camera orbit around the followed point on right-mouse drag
-(`Input.consumeDragYaw`, accumulated via `pointermove` with `setPointerCapture` so the drag survives
-leaving the canvas mid-move) or by pressing `Q`/`E` (`KEY_YAW_STEP`, a 45° step per press, signed to
-match the same rotation direction as dragging left/right). Tilt and distance are unaffected, so the
-camera always stays the same amount off vertical.
+`TopDownCamera.yawDeg` lets the camera orbit around the followed point by pressing `Q`/`E`
+(`KEY_YAW_STEP`, a 45° step per press). Tilt and distance are unaffected, so the camera always stays
+the same amount off vertical.
+
+**Orbiting is keyboard-only on purpose.** A right-mouse drag used to rotate it too, and that fought
+the cursor: the mouse is the aiming hand, so a drag that swings the world underneath the crosshair
+moves the aim point as a side effect of turning. The freed right button is now a menu-bound action
+instead (docs/menu.md § Right mouse button).
 
 `viewerAngleDeg` (`yawDeg - 90`) is the DOOM-space bearing from the followed point to the camera, and
 is what sprite rendering and player movement both key off — at the default `yawDeg = 0` it's `-90`,
@@ -167,13 +170,12 @@ matching the old fixed south-facing camera exactly, so nothing downstream needed
 "not yet orbited."
 
 A `stepYaw` call (Q/E) queues its step as a `targetYawDeg` for `update` to animate `yawDeg` towards
-(`YAW_STEP_SMOOTH_RATE`) rather than jumping. Plain assignment (`camera.yawDeg = ...`, used for the
-instant reorient on spawn/teleport, and by right-drag) still jumps immediately: the `yawDeg` setter
-keeps `targetYawDeg` in lockstep so nothing left over from a prior Q/E animates after an instant set.
-**`applyYawInput`'s drag-handling line only assigns `yawDeg` when `Input.consumeDragYaw()` is
-actually nonzero** — calling the setter unconditionally every frame, even as a no-op `-= 0`, would
-snap `targetYawDeg` back to the current (still mid-animation) value and cancel a Q/E step after one
-frame of smoothing.
+(`YAW_STEP_SMOOTH_RATE`) rather than jumping. Plain assignment (`camera.yawDeg = ...`, whose only
+remaining caller is the instant reorient on spawn/teleport) still jumps immediately: the `yawDeg`
+setter keeps `targetYawDeg` in lockstep so nothing left over from a prior Q/E animates after an
+instant set. **Nothing may assign `yawDeg` unconditionally every frame** — even a no-op `-= 0` snaps
+`targetYawDeg` back to the current (still mid-animation) value and cancels a Q/E step after one frame
+of smoothing, which is what forced the removed drag handler to guard on a nonzero delta.
 
 All of that input handling lives in `TopDownCamera.applyYawInput`, which `game.ts` calls once a
 frame. Holding Q/E auto-repeats the same 45° `stepYaw` every `KEY_YAW_REPEAT_INTERVAL` — `qHoldTime`/

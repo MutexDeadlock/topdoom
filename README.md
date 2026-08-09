@@ -2,7 +2,7 @@
 
 A top-down DOOM built on the original IWADs. The camera hangs above the player and is
 tilted slightly off vertical, so walls show some of their height and levels read as
-spaces rather than floor plans; it can also orbit around the player on right-drag or `Q`/`E`. Level
+spaces rather than floor plans; it can also orbit around the player with `Q`/`E`. Level
 geometry, textures and flats come straight out of `DOOM.WAD` / `DOOM2.WAD`; the game logic
 is new.
 
@@ -40,21 +40,24 @@ See [docs/menu.md](docs/menu.md) for the WAD manifest, settings persistence and 
 
 ## Controls
 
+The same list is in the menu's **Settings** tab, along with the two settings that change what a key
+does (autorun and the right mouse button), so both are there while you play — `Esc` pauses.
+
 | Key | |
 |---|---|
 | `W` `A` `S` `D` or the arrow keys | move (screen-relative: `W` always moves away from the camera) |
 | `Shift` | run |
 | `Space` | use — opens doors, throws switches, calls lifts |
+| right mouse | switch to your previous weapon, use, or nothing — pick one in the menu's Settings tab (default: previous weapon) |
 | mouse | aim; the view leads slightly towards the cursor |
 | left mouse | fire (hold to keep firing) |
 | `1`–`7` | select weapon; pressing a slot again toggles within it (fist/chainsaw, shotgun/super shotgun) |
 | mouse wheel | cycle through the weapons you own |
-| right-drag / `Q` `E` | orbit the camera around the player |
+| `Q` / `E` | orbit the camera around the player |
+| `+` / `-` | camera distance |
+| `[` / `]` | camera tilt |
 | `N` / `P` | next / previous map *(dev mode only)* |
-| `+` / `-` | camera distance *(dev mode only)* |
-| `[` / `]` | camera tilt *(dev mode only)* |
 | `R` | restart the level (once dead) |
-| `M` | mute / unmute |
 | `Esc` | menu / resume |
 
 Ceilings are never rendered — from directly above, one would hide everything underneath it. See
@@ -77,8 +80,8 @@ Sound effects are decoded from the loaded WAD, so they match whichever set is in
 add-on that replaces individual `DS*` lumps replaces those sounds, including modern Ogg/WAV/FLAC
 ones. Shareware `DOOM1.WAD` only carries 49 of the 108 sounds, so parts of it are quiet.
 
-Volume lives on the start menu and is remembered between sessions; `M` mutes in game. There is
-no music yet. See [docs/audio.md](docs/audio.md).
+Volume lives on the start menu and is remembered between sessions; drag it to 0 for silence. There
+is no music yet. See [docs/audio.md](docs/audio.md).
 
 ## HUD
 

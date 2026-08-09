@@ -72,7 +72,7 @@
       <div class="panel">
         <header>
           <h1>TOPDOOM</h1>
-          <p class="sub">Top-down DOOM on the original IWADs</p>
+          <span id="menu-version"></span>
         </header>
 
         <div class="tabs">
@@ -94,32 +94,88 @@
               <button class="ghost" id="pwad-upload">Add PWAD from disk…</button>
             </section>
 
-            <section>
-              <h2>Level</h2>
-              <select id="level-select"></select>
-            </section>
+            <div class="columns even">
+              <section>
+                <h2>Level</h2>
+                <select id="level-select"></select>
+              </section>
 
-            <section>
-              <h2>Difficulty</h2>
-              <select id="skill-select"></select>
-            </section>
+              <section>
+                <h2>Difficulty</h2>
+                <select id="skill-select"></select>
+              </section>
+            </div>
           </div>
 
           <div class="tab-panel" id="tab-settings">
             <section>
-              <h2>Sound <span class="hint">M mutes in game</span></h2>
+              <h2>Move and fight</h2>
+              <dl class="keys">
+                <dt>W A S D</dt>
+                <dd>move — screen-relative, W always moves away from the camera</dd>
+                <dt>mouse</dt>
+                <dd>aim + shoot</dd>
+                <dt>right mouse</dt>
+                <dd>
+                  <select id="rightmouse-select">
+                    <option value="previousweapon">switch to previous weapon</option>
+                    <option value="use">use</option>
+                    <option value="none">nothing</option>
+                  </select>
+                </dd>
+                <dt>Space</dt>
+                <dd>use — doors, switches, lifts</dd>
+                <dt>Q E</dt>
+                <dd>turn the camera</dd>
+                <dt>1 – 7 / wheel</dt>
+                <dd>select weapon; the wheel cycles through the ones you own</dd>
+                <dt>Shift</dt>
+                <dd class="inline">
+                  <span id="shift-action"></span>
+                  <label class="checkbox-row">
+                    <input type="checkbox" id="autorun-checkbox" />
+                    <span>Autorun</span>
+                  </label>
+                </dd>
+              </dl>
+            </section>
+
+            <div class="columns">
+              <section>
+                <h2>Camera</h2>
+                <dl class="keys">
+                  <dt>+ -</dt>
+                  <dd>zoom</dd>
+                  <dt>[ ]</dt>
+                  <dd>tilt</dd>
+                </dl>
+              </section>
+
+              <section>
+                <h2>Game</h2>
+                <dl class="keys">
+                  <dt>R</dt>
+                  <dd>restart (once dead)</dd>
+                  <dt>Esc</dt>
+                  <dd>menu / resume</dd>
+                </dl>
+              </section>
+
+              <section id="controls-dev" class="hidden">
+                <h2>Dev mode</h2>
+                <dl class="keys">
+                  <dt>N P</dt>
+                  <dd>next / previous map</dd>
+                </dl>
+              </section>
+            </div>
+
+            <section>
+              <h2>Sound</h2>
               <div class="slider">
                 <input type="range" id="volume-slider" min="0" max="100" step="1" />
                 <span class="value" id="volume-value"></span>
               </div>
-            </section>
-
-            <section>
-              <h2>Movement</h2>
-              <label class="checkbox-row">
-                <input type="checkbox" id="autorun-checkbox" />
-                <span>Autorun <span class="hint">hold Shift to walk</span></span>
-              </label>
             </section>
           </div>
         </div>
@@ -133,7 +189,6 @@
 
       <input type="file" id="file-input" accept=".wad,.WAD" hidden />
       <div id="menu-credit">by @fauler420</div>
-      <div id="menu-version"></div>
     </div>
 
     <script type="module" src="/src/main.ts"></script>

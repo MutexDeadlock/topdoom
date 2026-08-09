@@ -48,7 +48,10 @@ that order, so don't write a test that does.
 ## What is and isn't covered
 
 Round one is the two regressions from the chaingunner bug, the pure functions, and the
-vanilla-table invariants. Deliberately **not** covered yet, and why:
+vanilla-table invariants. `WeaponSystem`'s selection half joined them (`game/weapons.test.ts`): it
+takes no constructor arguments and `handleSwitching`/`updateSounds` reach it through a stubbed
+`Input` and a two-line `AudioEngine`, so the "switch to previous weapon" toggle is pinnable without a
+DOM. Deliberately **not** covered yet, and why:
 
 - **`SpecialsController`** — ~10 constructor arguments including a `MaterialBank`, a `THREE.Group`
   and a `FogOfWar`, with the whole mover state machine (`sectorActive`, `tickDoor`, `tickLift`, the

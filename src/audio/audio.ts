@@ -83,7 +83,6 @@ export class AudioEngine implements SoundEmitter {
   private forwardSin = 1;
 
   private _volume: number;
-  private _muted = false;
 
   constructor() {
     // `getItem` returns null when unset, and `Number(null)` is 0 — which would
@@ -97,28 +96,22 @@ export class AudioEngine implements SoundEmitter {
     return this._volume;
   }
 
-  /** 0-1; persisted, so it survives a reload. */
+  /**
+   * 0-1; persisted, so it survives a reload. There is no separate mute: 0 *is*
+   * the mute, so it does everything mute did — `play` short-circuits on it
+   * rather than starting inaudible sources, and reaching it cuts the voices
+   * already in flight instead of letting a long sound run out silently and
+   * resume mid-way if the slider comes back up.
+   */
   setVolume(value: number): void {
     this._volume = Math.max(0, Math.min(1, value));
-    this._muted = false;
     globalThis.localStorage?.setItem(VOLUME_STORAGE_KEY, String(this._volume));
+    if (this._volume === 0) this.stopAll();
     this.applyVolume();
-  }
-
-  get muted(): boolean {
-    return this._muted;
-  }
-
-  /** Returns the new state, so the caller can report it. */
-  toggleMute(): boolean {
-    this._muted = !this._muted;
-    if (this._muted) this.stopAll();
-    this.applyVolume();
-    return this._muted;
   }
 
   private applyVolume(): void {
-    if (this.master) this.master.gain.value = this._muted ? 0 : this._volume;
+    if (this.master) this.master.gain.value = this._volume;
   }
 
   /**
@@ -166,7 +159,7 @@ export class AudioEngine implements SoundEmitter {
   }
 
   play(id: SfxId, at?: Pos2 | null, origin?: number): void {
-    if (this._muted || this._volume === 0) return;
+    if (this._volume === 0) return;
     const ctx = this.ctx;
     // Not started yet, or paused: dropping the sound is right either way —
     // a suspended context would otherwise queue it up and fire the whole

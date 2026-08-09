@@ -19,6 +19,11 @@ wrongly) listed 174 as a vanilla S1 teleport, which is Boom-only. Same story for
 looks like it could be a third stop-crusher alongside 57/74, but is an unrelated "floor up 24".
 `wad/specials.ts`'s own table comments carry the full numbers-to-mechanism mapping.
 
+**Use triggers fire on `Space` *or* the right mouse button**, the latter only while it is bound to
+`use`, which is not the default (docs/menu.md § Right mouse button). `handleUseTrigger` asks
+`Input.rightMousePressed('use')` rather than reading the setting, and both sources are edge-triggered,
+so a held button activates a switch exactly once.
+
 Every mover here also makes noise, and *which* noise is part of the mechanism: docs/audio.md §
 Specials has the per-mover rules, including the shared 8-tic grind clock and the silent crusher
 (141), whose sound is the only thing distinguishing it from 25.

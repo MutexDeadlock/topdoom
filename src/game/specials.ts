@@ -1381,7 +1381,7 @@ export class SpecialsController {
     input: Input,
     ownedKeys: ReadonlySet<KeyColor>,
   ): void {
-    if (!input.pressed('Space')) return;
+    if (!input.pressed('Space') && !input.rightMousePressed('use')) return;
     const tx = playerX + Math.cos(playerAngle) * USE_RANGE;
     const ty = playerY + Math.sin(playerAngle) * USE_RANGE;
 

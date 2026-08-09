@@ -8,8 +8,13 @@ import {
 } from '../wad/library.ts';
 import { DEFAULT_SKILL, SKILL_NAMES, type Skill } from '../game/skill.ts';
 import { getAutorun, setAutorun } from '../game/player.ts';
+import {
+  getRightMouseAction,
+  setRightMouseAction,
+  type RightMouseAction,
+} from '../game/input.ts';
 import type { AudioEngine } from '../audio/audio.ts';
-import { VERSION } from '../constants.ts';
+import { DEVMODE, VERSION } from '../constants.ts';
 
 export interface Selection {
   iwad: WadSource;
@@ -57,6 +62,8 @@ export class Menu {
   private volumeSlider = el<HTMLInputElement>('volume-slider');
   private volumeValue = el<HTMLSpanElement>('volume-value');
   private autorunCheckbox = el<HTMLInputElement>('autorun-checkbox');
+  private shiftAction = el<HTMLSpanElement>('shift-action');
+  private rightMouseSelect = el<HTMLSelectElement>('rightmouse-select');
   private tabButtons = {
     newgame: el<HTMLButtonElement>('tab-button-newgame'),
     settings: el<HTMLButtonElement>('tab-button-settings'),
@@ -103,8 +110,11 @@ export class Menu {
     this.installSkillSelect();
     this.installVolume();
     this.installAutorun();
+    this.installRightMouse();
     this.setTab('newgame');
-    el<HTMLDivElement>('menu-version').textContent = `v${VERSION}`;
+    // DEVMODE never changes at runtime, so the dev-only key row is revealed once.
+    el<HTMLElement>('controls-dev').classList.toggle('hidden', !DEVMODE);
+    el<HTMLSpanElement>('menu-version').textContent = `v${VERSION}`;
   }
 
   /**
@@ -189,11 +199,33 @@ export class Menu {
     });
   }
 
-  /** Autorun defaults to on (`getAutorun`'s own default); Shift walks instead of runs while it's set. */
+  /**
+   * Autorun defaults to on (`getAutorun`'s own default). It shares the `Shift`
+   * row, whose description is *what that key does* — so the word has to follow
+   * the checkbox rather than state one of the two cases and leave the other
+   * to be inferred.
+   */
   private installAutorun(): void {
-    this.autorunCheckbox.checked = getAutorun();
+    const show = (on: boolean) => {
+      this.autorunCheckbox.checked = on;
+      this.shiftAction.textContent = on ? 'walk' : 'run';
+    };
+    show(getAutorun());
     this.autorunCheckbox.addEventListener('change', () => {
       setAutorun(this.autorunCheckbox.checked);
+      show(this.autorunCheckbox.checked);
+    });
+  }
+
+  /**
+   * What the right mouse button does — it has no fixed job since the camera
+   * turns with Q/E rather than by dragging. Defaults to `previousweapon` (`getRightMouseAction`).
+   * The `<option>` values are the `RightMouseAction` strings themselves.
+   */
+  private installRightMouse(): void {
+    this.rightMouseSelect.value = getRightMouseAction();
+    this.rightMouseSelect.addEventListener('change', () => {
+      setRightMouseAction(this.rightMouseSelect.value as RightMouseAction);
     });
   }
 

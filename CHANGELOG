@@ -1,16 +1,26 @@
 v0.10.1 (2026-08-0?)
 
+Features and improvements
+  - camera and mouse controls
+    - right-dragging no longer turns the camera
+    - camera distance (+/-) and tilt ([/]) are no longer dev-mode only
+    - the freed right mouse button is now bindable: switch to your previous
+      weapon (the default), use, or nothing
+    - new "Controls" Tab. "Autorun" and "Right mouse" moved there.
+  - the M mute key is gone - the volume slider at 0% is the same thing
+  - menu cleanup
+    - controls settings/overview built-in
+    - Level and Difficulty share a row
+    - dropped the subtitle under the title; the version number sits at the
+      right end of the title row instead of the corner of the screen
+
 Fixed bugs
-  - fixed a sector that both changes light and moves never showing its light
-    on its own floor and walls - only the player and the THINGs standing in
-    it were lit correctly, and the geometry caught up only while the sector
-    happened to be moving
+  - fixed a sector that both changes light and moves, never showing its light
+    on its own floor and wall
   - monster melee fixes (again...)
-    - monsters no longer melee across a height gap: a demon in a pit could bite
-      you standing on the lip above it, and one on a ledge could bite you from
-      below. Vanilla really does allow this (P_CheckMeleeRange tests distance
-      and sight only); this now follows GZDoom, which refuses a swing when the
-      two bodies don't overlap vertically at all
+    - monsters no longer melee across a height gap: 
+      Vanilla really does allow this; this now follows GZDoom, which refuses 
+      a swing when the two bodies don't overlap vertically at all
     - melee reach now uses vanilla's real formula instead of a flat 72 units
 
 

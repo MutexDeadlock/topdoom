@@ -545,6 +545,13 @@ export class WeaponSystem {
    * those. See `updateSounds`.
    */
   private lastWeapon: WeaponId = 'pistol';
+  /**
+   * The weapon selected before the current one, for the right button's
+   * "switch to previous weapon" binding. Maintained off `lastWeapon`'s once-a-frame
+   * comparison so a pickup- or berserk-driven switch counts too, exactly as
+   * that field's own doc describes. Null until the first switch of the level.
+   */
+  private previousWeapon: WeaponId | null = null;
   /** Counts down to the chainsaw's next idle rattle — see `SAW_IDLE_INTERVAL`. */
   private sawIdleTimer = 0;
   /**
@@ -564,6 +571,7 @@ export class WeaponSystem {
    */
   beginLevel(inv: Inventory): void {
     this.lastWeapon = inv.currentWeapon;
+    this.previousWeapon = null;
     this.sawIdleTimer = 0;
     this.refire = 0;
     this.refireWeapon = null;
@@ -580,6 +588,7 @@ export class WeaponSystem {
     const weapon = inv.currentWeapon;
     const justSwitched = weapon !== this.lastWeapon;
     if (justSwitched) {
+      this.previousWeapon = this.lastWeapon;
       this.lastWeapon = weapon;
       // Checked once a frame rather than at each switch, since a pickup can
       // select a weapon too (`applyPickup`), exactly as vanilla's own
@@ -605,8 +614,19 @@ export class WeaponSystem {
     audio.play('sawidl', at, PLAYER_ORIGIN);
   }
 
-  /** Applies this frame's number-key and mouse-wheel weapon switches. */
+  /**
+   * Applies this frame's number-key, mouse-wheel and right-button weapon
+   * switches. Runs before `updateSounds`, so the swap below reads the weapon
+   * left behind by an *earlier* switch and that same call then records the one
+   * being left now — which is what makes a second click toggle back.
+   */
   handleSwitching(input: Input, inv: Inventory, wheelDelta: number): void {
+    // Ahead of the wheel block, which early-returns on no scroll.
+    const previous = this.previousWeapon;
+    if (previous !== null && inv.weapons.has(previous) && input.rightMousePressed('previousweapon')) {
+      inv.currentWeapon = previous;
+    }
+
     for (let i = 0; i < WEAPON_SLOTS.length; i++) {
       if (!input.pressed(`Digit${i + 1}`)) continue;
       const owned = WEAPON_SLOTS[i].filter((w) => inv.weapons.has(w));

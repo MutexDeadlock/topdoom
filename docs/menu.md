@@ -20,7 +20,9 @@ lists, the level list and the difficulty options are built in JS.
   the tab they were on.
 - Both tab panels are stacked in **one CSS grid cell** and hidden with `visibility`, not
   `display: none`, so the panel's height is always the taller of the two and switching tabs doesn't
-  resize the menu under the cursor.
+  resize the menu under the cursor. That is also why the Settings tab's rows are kept compact, and
+  why Level and Difficulty share a row on New Game: whatever height either tab costs, the other pays
+  too.
 
 `Esc` toggles between the menu and the game. With the menu open and no level loaded it does nothing
 — there is nothing to return to.
@@ -28,8 +30,8 @@ lists, the level list and the difficulty options are built in JS.
 Overlay stacking (`menu.css`): screen tint / pain flash `5`, HUD `10`, `#death-overlay` `15`,
 `#menu` `20`, `#fatal-error` `30`.
 
-`VERSION` (`constants.ts`) is shown bottom-right, prefixed with `v`; a static credit sits
-bottom-left.
+`VERSION` (`constants.ts`) is shown prefixed with `v`, right-aligned on the title's own row
+(`#menu header` is a `space-between` flex row); a static credit sits bottom-left, outside the panel.
 
 ## Picking a WAD set
 
@@ -57,10 +59,11 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
 
 ## Difficulty
 
-**Difficulty lives at the bottom of the New Game tab, not in Settings** — it belongs with the WAD
-and level, the other two things a start is composed of, and unlike volume and autorun it can't apply
-live: skill only takes effect where things are spawned (`game/things.ts: buildThingSprites`), so
-changing it mid-level would silently do nothing until the next load.
+**Difficulty lives on the New Game tab, not the Settings tab** — it belongs with the WAD and level,
+the other two things a start is composed of, and unlike volume and autorun it can't apply live:
+skill only takes effect where things are spawned (`game/things.ts: buildThingSprites`), so changing
+it mid-level would silently do nothing until the next load. It shares a row with Level (`.columns
+even`, § Settings tab below).
 
 `#skill-select` is filled once from `SKILL_NAMES` and seeded from `topdoom.skill`; a change writes
 that key back, so the next visit opens on the last skill played. **What a start actually runs at is
@@ -68,6 +71,61 @@ that key back, so the next visit opens on the last skill played. **What a start 
 write goes nowhere and reading it back would silently ignore the player's pick. `submit()` (the
 `?map=` deep-link path) reads the same getter, which is the stored skill there since nothing has
 touched the control.
+
+## Settings tab
+
+**Mostly the full key list, and it is the only one the game itself shows** — it replaced two hint
+lines in the DEVMODE status text, which meant a shipped build listed its controls nowhere. Being a
+menu tab makes it reachable mid-level too, since the menu is the pause screen. README's table is the
+fuller reference; this one stays short enough not to stretch the other tab (see the grid-cell note
+above).
+
+**The settings live inside that list rather than in sections of their own**, because nearly
+everything a player can change *is* a key's behavior: the right button's binding is the `right mouse`
+row's description, the autorun checkbox is the `Shift` row's. A player looking up what a control does
+and a player changing it are the same person on the same trip to the menu — which is why the tab that
+briefly held only a volume slider was folded into this one rather than kept beside it. Volume, the
+one setting that isn't a key, sits alone at the bottom.
+
+**The `Shift` row's description is the word autorun currently makes true** — `walk` when it's on,
+`run` when it's off — so `installAutorun` writes `#shift-action` from the same `show` helper that
+sets the checkbox, the shape `installVolume` already uses. A fixed description here would state one
+case and leave the other to be inferred from a checkbox two words away.
+
+Two CSS notes for that: `#menu .keys select` undoes the full-width, roomy `#menu select` so the
+binding stays on one line, and `dd.inline` is the flex row that lets a description carry a control
+beside it.
+
+Camera, Game and the dev row share `.columns`, which is **flex, not fixed grid tracks** — the
+DEVMODE-only section becomes a third column when shown and leaves two when it isn't, with no empty
+cell to suppress. Columns are content-width so they pack left rather than being stretched apart,
+which is why those descriptions are kept to a word or two. Move and fight stays full width.
+
+`.columns` is shared with the New Game tab, where Level and Difficulty use the `even` modifier:
+`flex: 1` plus `min-width: 0`, since a `width: 100%` select needs an equal share it can shrink
+inside rather than a content-sized one a long map name would push past the panel.
+
+The rest is static markup with no `Menu` state — no field lookups, no listeners — except
+`#controls-dev`, the `N`/`P` map-jump row, which the constructor reveals when `DEVMODE` is set. That
+is the same set-once toggle `DebugHud` does for `#profiler-hud`; `DEVMODE` can't change at runtime,
+so neither is ever re-checked. **`#controls-dev.hidden` is `display: none`, not the `visibility`
+the tab panels use** — a panel has to keep reserving height, but a hidden section must drop out of
+the `.columns` flex line entirely.
+
+## Right mouse button
+
+The right button has **no fixed job**: the camera turns with `Q`/`E` rather than by dragging
+(docs/render.md § Camera orbit), which left the button free. `#rightmouse-select` binds it to one of
+`RightMouseAction`'s three values — `previousweapon` (the default), `use` (same as `Space`), or `none` —
+and the `<option>` values *are* those strings, so the control needs no mapping table.
+
+The setting lives in `game/input.ts` beside the button state it describes, and **only
+`Input.rightMousePressed(action)` reads it**: consumers ask for the action they implement
+(`SpecialsController.handleUseTrigger`, `WeaponSystem.handleSwitching`) rather than importing the
+preference, so adding a fourth action can't leave a stale check behind in one of them.
+
+Even at `none` the canvas still suppresses `contextmenu` — a browser menu opening mid-fight is a
+surprise whatever the button is bound to.
 
 ## Persisted settings
 
@@ -79,8 +137,9 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 
 | Key | Owner | Documented in |
 |---|---|---|
-| `topdoom.sfxVolume` | `audio/audio.ts` | docs/audio.md § Volume, mute, and the context |
+| `topdoom.sfxVolume` | `audio/audio.ts` | docs/audio.md § Volume and the context |
 | `topdoom.autorun` | `game/player.ts` (`getAutorun`/`setAutorun`) | docs/movement.md § Movement speed and straferunning |
+| `topdoom.rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
 | `topdoom.skill` | `ui/menu.ts` | § Difficulty above |
 | `topdoom.selection` | `ui/menu.ts` | § Remembered selection below |
 

@@ -113,6 +113,14 @@ weapons best-first, but pressing a digit already showing one of that slot's weap
 shotgun/super shotgun) made their weaker weapon permanently unreachable once the upgrade was owned —
 which presented as "shotgun and super shotgun are the same weapon".
 
+**"Switch to previous weapon"** (the right button's default binding, docs/menu.md § Right mouse button)
+reads `WeaponSystem.previousWeapon`, which is maintained in `updateSounds`' once-a-frame
+`justSwitched` comparison rather than at each switch site — the same reason `lastWeapon` is, since a
+pickup (`applyPickup`) and a berserk pack both select a weapon without going through
+`handleSwitching`. `handleSwitching` runs before `updateSounds`, so a click reads the weapon left
+behind by the *previous* switch and that frame's `updateSounds` then records the one just left,
+which is what makes a second click toggle back.
+
 ## shotPath
 
 **`shotPath` decides where a shot ends up**, for both tracer endpoints and how far a projectile may

@@ -2,33 +2,31 @@ import { ProfilerHud } from './profilerhud.ts';
 import type { FrameProfiler } from '../util/profiler.ts';
 import type { Input } from '../game/input.ts';
 import type { TopDownCamera } from '../render/camera.ts';
-import type { AudioEngine } from '../audio/audio.ts';
 import { DEVMODE } from '../constants.ts';
 
 /**
  * The top-left status text, the fps counter behind it, and the debug hotkeys —
- * all of which collapse to "`N` fps" and a mute key once DEVMODE is off. See
- * docs/devmode.md.
+ * all of which collapse to "`N` fps" and the camera framing keys once DEVMODE
+ * is off. See docs/devmode.md.
  */
 
 /**
- * Mute, plus the level-switching/zoom/tilt conveniences DEVMODE gates. `M` is
- * a player-facing control, so it sits ahead of that gate.
+ * Camera framing, then the level switching DEVMODE gates. Zoom and tilt are
+ * player-facing controls, so they sit ahead of that gate — the camera
+ * distance/tilt they set are framing preferences, not debug state.
  */
 export function handleHotkeys(
   input: Input,
   camera: TopDownCamera,
-  audio: AudioEngine,
   changeMap: (delta: number) => void,
 ): void {
-  if (input.pressed('KeyM')) audio.toggleMute();
-  if (!DEVMODE) return;
-  if (input.pressed('KeyN')) changeMap(1);
-  if (input.pressed('KeyP')) changeMap(-1);
   if (input.held('Equal', 'NumpadAdd')) camera.distance = Math.max(200, camera.distance - 8);
   if (input.held('Minus', 'NumpadSubtract')) camera.distance = Math.min(2400, camera.distance + 8);
   if (input.held('BracketLeft')) camera.tiltDeg = Math.max(0, camera.tiltDeg - 0.5);
   if (input.held('BracketRight')) camera.tiltDeg = Math.min(70, camera.tiltDeg + 0.5);
+  if (!DEVMODE) return;
+  if (input.pressed('KeyN')) changeMap(1);
+  if (input.pressed('KeyP')) changeMap(-1);
 }
 
 export class DebugHud {

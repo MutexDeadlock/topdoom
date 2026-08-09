@@ -7,15 +7,22 @@
 
 `DEVMODE` reads `import.meta.env.VITE_DEVMODE`, defaulting to `false`; set `VITE_DEVMODE=true` in a
 git-ignored `.env.local` at the repo root to turn it on (Vite loads `.env.local` itself, no plugin
-needed). It gates three things in `ui/debughud.ts`, all because a player has no legitimate reason to
-reach for them:
+needed). It gates four things — three in `ui/debughud.ts` and one in `ui/menu.ts` — all because a
+player has no legitimate reason to reach for them:
 
 - **The debug overlay** (`DebugHud.update`, whose lines come from `Game.debugLines`) — off, `#hud`
   shows only the fps counter; on, the full
-  map/pos/sector/camera-state/awake-monster-count block plus the hotkey hint lines.
+  map/pos/sector/camera-state/awake-monster-count block. **Everything it prints is live state.** It
+  used to end with two static hotkey hint lines as well, which were the game's only controls
+  reference and so invisible to exactly the players who needed them; that list is now the menu's
+  Settings tab (docs/menu.md § Settings tab).
 - **The profiling overlay** (`#profiler-hud`, below) — visibility toggled once at startup.
-- **`N`/`P` (jump to next/prev map), `+`/`-` (camera distance) and `[`/`]` (camera tilt)** in
-  `handleHotkeys` — early-return on `!DEVMODE`, so these are simply inert outside dev mode.
+- **The Settings tab's `#controls-dev` section**, the only place `N`/`P` is listed in the UI —
+  revealed once in the `Menu` constructor, so a shipped build never advertises a key it ignores.
+- **`N`/`P` (jump to next/prev map)** in `handleHotkeys` — behind the early-return on `!DEVMODE`, so
+  they are simply inert outside dev mode. `+`/`-` (camera distance) and `[`/`]` (camera tilt)
+  deliberately sit *ahead* of that gate: they are player-facing framing controls, not debug state,
+  and gating them only meant a shipped player couldn't adjust how much of the level fits on screen.
 
 `Game.debugLines` reports `ThingLayer.awakeMonsterCount()` — the number of living monsters
 currently alerted (chasing/attacking, or mid-`reactionTicks` delay) — useful for judging whether a

@@ -16,7 +16,7 @@ Three layers, deliberately separate:
 |---|---|
 | `wad/sound.ts` | Decoding a `DS*` lump into samples. Knows nothing about playback. |
 | `audio/sfx.ts` | Vanilla's sound table (names + priorities), the pitch/variant rules, and the `SoundEmitter` interface every game system talks to. No Web Audio. |
-| `audio/audio.ts` | `AudioEngine`: the `AudioContext`, the channel pool, attenuation/pan, volume/mute. The only `SoundEmitter` implementation. |
+| `audio/audio.ts` | `AudioEngine`: the `AudioContext`, the channel pool, attenuation/pan, volume. The only `SoundEmitter` implementation. |
 
 ## Sound lumps
 
@@ -215,11 +215,17 @@ this is a deliberate addition, not a fidelity reproduction — docs/items.md § 
 every WAD set has the lump (the shareware `DOOM1.WAD` doesn't); `bufferFor` returning null there
 means the message simply shows silently, which is the same way every other missing lump degrades.
 
-## Volume, mute, and the context
+## Volume and the context
 
-`M` toggles mute in game; the menu's Settings tab has a volume slider, and the value is persisted in
-`localStorage` under `topdoom.sfxVolume` (docs/menu.md § Persisted settings covers the shared
-pattern). Default is vanilla's own starting `snd_SfxVolume`, 8 of 15.
+The menu's Settings tab has a volume slider, and the value is persisted in `localStorage` under
+`topdoom.sfxVolume` (docs/menu.md § Persisted settings covers the shared pattern). Default is
+vanilla's own starting `snd_SfxVolume`, 8 of 15.
+
+**There is no mute, deliberately** — an `M` key and a `_muted` flag existed and were removed as a
+second way to say what the slider already says at 0. **Volume 0 therefore has to do everything mute
+did:** `play` short-circuits on `_volume === 0` rather than starting inaudible sources, and
+`setVolume` calls `stopAll()` on reaching 0. Without that last part a sound already playing keeps
+running silently, and sliding back up part-way through would drop the player into the middle of it.
 
 The slider previews itself (`itemup`) as you drag — but only once a WAD set's sounds are
 loaded, i.e. from the first Esc back to the menu onward. On the very first visit there is no

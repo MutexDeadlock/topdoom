@@ -466,6 +466,9 @@ export class Game {
     if (this.built.missingTextures.length > 0) {
       console.warn('missing textures:', this.built.missingTextures.join(', '));
     }
+    if (this.things.missingArt.length > 0) {
+      console.warn('things skipped, no sprite in this WAD set:', this.things.missingArt.join(', '));
+    }
   }
 
   resume(): void {

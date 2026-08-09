@@ -138,7 +138,9 @@ Two arguments the player's own movement never sets:
   rule, same 24-unit threshold and the same `MF_DROPOFF`/`MF_FLOAT` exemption. This is why a
   grounded monster won't walk off a high ledge chasing the player, which the player themselves
   deliberately can. `tryWalk` treats a dropoff refusal exactly like a wall refusal, so
-  `newChaseDir`'s ordinary re-routing already covers a monster balking at a ledge.
+  `newChaseDir`'s ordinary re-routing already covers a monster balking at a ledge. The three
+  exempt types don't just skip this check — they answer a blocked step by changing height
+  instead; see § Floating monsters.
 
 **A monster always keeps closing distance — it never "keeps its distance."** Vanilla has no such
 instinct: a ranged monster walks right up to the player if nothing stops it. What stops it is real
@@ -158,6 +160,42 @@ deliberate: rounding the box off would change every contact range by up to ~40% 
 and a height check would quietly break map geometry that relies on the vanilla rule.
 `ThingLayer.solidBodies` is the outward-facing half; monsters get an equivalent list internally
 (`blockersFor`). The player *slides* along bodies while monsters don't, matching vanilla exactly.
+
+## Floating monsters
+
+The cacodemon, lost soul and pain elemental (`MonsterStats.flies`) are `MF_FLOAT | MF_NOGRAVITY`,
+and all three of those halves are load-bearing — with only the dropoff exemption they still walked
+the floor, and **a cacodemon in a pit deeper than `MAX_STEP_UP` could never leave it**: every chase
+step out was refused as too big a step up, so it paced the far wall forever while vanilla's floats
+straight out (`tests/regression/floating-monster-ledge.test.ts`, `caco_pit_test.wad`: a 48-unit pit).
+
+Three rules, all in `monsters/ai.ts`:
+
+- **A blocked step becomes a height change, not a re-route.** `testStep` splits vanilla's
+  `P_TryMove` result three ways instead of two: `'adjust'` is the failure with `floatok` set — the
+  destination is one this body fits in at *some* height, so only its own `z` is wrong.
+  `floatOverStep` then moves it `FLOATSPEED` toward that destination's floor and the frame counts as
+  a move taken (no `moveBlocked`, no re-route), exactly as `P_Move` reports it. `tryWalk` accepts an
+  `'adjust'` step for the same reason: vanilla's `P_TryWalk` goes through `P_Move`, so the monster
+  stays committed to the ledge it is climbing rather than turning away from it.
+- **It hovers toward its target's mid-height** (`settleVertical`, `P_ZMovement`'s `MF_FLOAT` block):
+  toward `target.z + MONSTER_HIT_HEIGHT/2`, but only while `dist < |delta|*3`. That gate is why a
+  cacodemon in your face settles *below* eye level rather than at it, and it is suppressed while
+  `MF_INFLOAT` (`MonsterBody.inFloat`, set by `floatOverStep`) or mid-charge (`MF_SKULLFLY`), so the
+  two float rules can't fight each other.
+- **It never falls**, and is clamped between the floor under it and the ceiling above it. Gravity
+  applies to grounded types only; a flier's `velZ` (only an arch-vile launch ever gives it one)
+  rides until floor or ceiling zeroes it. Losing its target doesn't drop it either — `MF_NOGRAVITY`
+  outlives the target, so `ThingLayer`'s go-dormant branch leaves a flier's `z` alone.
+
+`testStep` also carries the one check the shared collision code doesn't: vanilla's "mobj must lower
+itself to fit" (`tmceilingz - thing->z < thing->height`). `World.blocksMovement` has no ceiling test
+because nothing that uses it can be far above its own floor — a hovering monster is the first body
+that can, and without this it would sail through the wall above a low doorway.
+
+Cost: the extra `groundCeiling` queries roughly double `stepMonsterAI` for a *flier* (2000 bodies on
+SCYTHE MAP01: 0.73 → 1.69 ms/frame) and leave grounded monsters untouched. That is ~0.5 µs per flier
+per frame, and no stock map fields more than a few dozen of them.
 
 ## Spatial indexing
 

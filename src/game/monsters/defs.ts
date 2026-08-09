@@ -38,6 +38,14 @@ export interface MonsterBody extends Pos3 {
   chargeAngle: number;
   /** >0 while staggered by a recent hit; movement and attacks pause until it drops to 0 (see `reactToDamage`). */
   painTimer: number;
+  /**
+   * Vanilla's `MF_INFLOAT`: set while a `flies` monster is changing height to
+   * get past a step it can't cross, cleared the moment it moves again. Only
+   * `settleVertical` reads it — it suppresses the hover-toward-target drift so
+   * the two float rules can't fight each other. Inert for every grounded type.
+   * docs/monsters.md § Floating monsters.
+   */
+  inFloat: boolean;
 
   // --- Vanilla's A_Chase bookkeeping (see `runChaseCall`). Every counter here
   // is measured in *chase calls*, not seconds, exactly as vanilla measures it;
@@ -269,10 +277,11 @@ export interface MonsterStats {
   /** Seconds a stagger lasts — the `painstate` chain's summed tics over 35, 4 (imp, demon, baron) to 12 (cacodemon, pain elemental). */
   painDuration: number;
   /**
-   * Vanilla's `MF_FLOAT` — exempts this monster from `circleBlocked`'s
-   * `avoidDropoff`, matching `P_TryMove`. Cacodemon, lost soul and pain
-   * elemental only. Real hover height isn't modelled (they walk the floor),
-   * but they should still cross a ledge a grounded monster wouldn't.
+   * Vanilla's `MF_FLOAT | MF_NOGRAVITY` — cacodemon, lost soul and pain
+   * elemental only. Such a monster never falls, hovers toward its target's
+   * mid-height, changes height instead of turning when a step blocks it
+   * (`P_Move`'s `floatok` branch), and is exempt from `circleBlocked`'s
+   * `avoidDropoff`. See docs/monsters.md § Floating monsters.
    */
   flies?: boolean;
   /** Vanilla's `A_VileChase` corpse search, arch-vile only — tried before anything else on a chase call, falling through to the ordinary decision only if no corpse is raisable. See `monsters/vile.ts: tryRaiseCorpse`. */

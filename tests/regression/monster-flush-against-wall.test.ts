@@ -46,6 +46,7 @@ function scene(overlap: number): { world: World; body: MonsterBody; target: { x:
     chargeTimer: 0,
     chargeAngle: 0,
     painTimer: 0,
+    inFloat: false,
     movedir: 8,
     movecount: 0,
     chaseTimer: 0,

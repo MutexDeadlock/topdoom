@@ -215,6 +215,15 @@ export interface LevelKillItemStats {
 export interface ThingLayer {
   group: THREE.Group;
   count: number;
+  /**
+   * `"<doomednum> (<sprite>)"` for every thing type the map places that the
+   * WAD set carries no art for, so it was skipped — `game.ts` warns about these
+   * at level load the way it warns about missing textures. Empty for a matched
+   * IWAD/PWAD pair; the case that fills it is a PWAD placing a monster its base
+   * WAD never had (a cacodemon on shareware `DOOM1.WAD`, which has no `HEAD`
+   * lumps).
+   */
+  missingArt: readonly string[];
   /** See `LevelKillItemStats`'s own doc. */
   stats: LevelKillItemStats;
   /** Releases the instanced meshes/materials this layer owns; call when the map is unloaded. Shared geometry and textures belong to `SpriteMaterialCache`, which outlives a level. */

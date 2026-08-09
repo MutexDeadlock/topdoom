@@ -1,4 +1,4 @@
-v0.10.2 (2026-08-??)
+v0.11.0 (2026-08-??)
 
 Features and improvements
   - add setting to cap the frame rate at 30, 60 or 120 fps
@@ -29,6 +29,10 @@ Fixed bugs
     - monster fireballs no longer hit from a body-width away or from far
       over your head
     - a shot passing you at speed can no longer slip between two frames
+  - cacodemons, lost souls and pain elementals now really fly
+  - a THING the WAD set has no sprite for is still skipped, but the level
+    load now says which ones (it used to vanish without a word - e.g. a
+    cacodemon placed on shareware DOOM1, which has no caco art at all)
   - fixed periods, commas, hyphens and underscores in on-screen WAD-font text
   - fixed stuck monsters
   - fixed the game freezing when a second WAD is started from the menu after

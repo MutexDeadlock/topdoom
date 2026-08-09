@@ -19,6 +19,7 @@ import {
 import { tryRaiseCorpse, VILE_TYPE, type Resurrector } from './vile.ts';
 import { monsterOrigin, SILENT, type SoundEmitter } from '../../audio/sfx.ts';
 import type { Pos3 } from '../../types.ts';
+import { DOOM_TIC } from '../../constants.ts';
 
 /**
  * The per-frame monster simulation: waking, target commitment, vanilla's
@@ -135,17 +136,100 @@ export function commitTarget(body: MonsterBody): void {
   body.threshold = BASE_THRESHOLD;
 }
 
-/** Settles vertical position/velocity the same way `Player.update` does: snap while grounded, integrate gravity while airborne. */
-function settleVertical(body: MonsterBody, world: World, radius: number, dt: number): void {
-  const groundZ = world.groundFloor(body.x, body.y, radius, true);
-  if (body.z > groundZ) {
-    body.velZ -= GRAVITY * dt;
-    body.z = Math.max(groundZ, body.z + body.velZ * dt);
-    if (body.z === groundZ) body.velZ = 0;
-  } else {
-    body.z = groundZ;
-    body.velZ = 0;
+/**
+ * Vanilla's `FLOATSPEED`, 4 map units per call. `P_ZMovement`'s hover runs once
+ * per tic, so as a rate that is `FLOAT_SPEED / DOOM_TIC` units/sec;
+ * `P_Move`'s blocked-step adjustment runs once per *chase call* instead, so
+ * `floatOverStep` scales it by `chaseInterval` rather than by the tic.
+ */
+const FLOAT_SPEED = 4;
+
+/**
+ * Settles vertical position/velocity. A grounded monster does what
+ * `Player.update` does — snap while grounded, integrate gravity while airborne.
+ * A `flies` monster instead never falls (`MF_NOGRAVITY`) and drifts toward its
+ * target's mid-height while close enough (`P_ZMovement`'s `MF_FLOAT` block),
+ * clamped between the floor it is over and the ceiling above it. See
+ * docs/monsters.md § Floating monsters.
+ */
+function settleVertical(body: MonsterBody, stats: MonsterStats, world: World, dt: number, target: Pos3): void {
+  const groundZ = world.groundFloor(body.x, body.y, stats.radius, true);
+  if (!stats.flies) {
+    if (body.z > groundZ) {
+      body.velZ -= GRAVITY * dt;
+      body.z = Math.max(groundZ, body.z + body.velZ * dt);
+      if (body.z === groundZ) body.velZ = 0;
+    } else {
+      body.z = groundZ;
+      body.velZ = 0;
+    }
+    return;
   }
+
+  // No gravity term: whatever velZ a flier carries (only an arch-vile's
+  // launch ever gives it one) rides until the floor or ceiling stops it.
+  body.z += body.velZ * dt;
+  // `!(MF_SKULLFLY) && !(MF_INFLOAT)`: a lost soul mid-charge and a monster
+  // already adjusting height around a step both skip the hover.
+  if (body.chargeTimer <= 0 && !body.inFloat) {
+    const delta = target.z + MONSTER_HIT_HEIGHT / 2 - body.z;
+    // Vanilla's `dist < |delta|*3` gate — the drift only engages once the
+    // monster is close enough that the height difference matters.
+    if (Math.hypot(target.x - body.x, target.y - body.y) < Math.abs(delta) * 3) {
+      const step = (FLOAT_SPEED / DOOM_TIC) * dt;
+      body.z += Math.max(-step, Math.min(step, delta));
+    }
+  }
+  const ceilZ = world.groundCeiling(body.x, body.y, stats.radius, true) - MONSTER_HIT_HEIGHT;
+  const clamped = Math.min(Math.max(body.z, groundZ), Math.max(groundZ, ceilZ));
+  if (clamped !== body.z) body.velZ = 0;
+  body.z = clamped;
+}
+
+/**
+ * How a `flies` monster's attempted step came out — vanilla's `P_TryMove`
+ * result for an `MF_FLOAT` body, which has three outcomes rather than two:
+ * `'adjust'` is `P_TryMove` failing with `floatok` set, i.e. only the
+ * monster's *height* is wrong, which `P_Move` answers by floating instead of
+ * turning. Every grounded monster only ever gets `'clear'` or `'blocked'`.
+ */
+type StepResult = 'clear' | 'adjust' | 'blocked';
+
+function testStep(
+  body: MonsterBody,
+  stats: MonsterStats,
+  world: World,
+  x: number,
+  y: number,
+  blockers?: readonly ThingBlocker[],
+): StepResult {
+  if (!circleBlocked(world, x, y, stats.radius, body.z, true, !stats.flies, blockers, body)) {
+    if (!stats.flies) return 'clear';
+    // `tmceilingz - thing->z < thing->height`, vanilla's "mobj must lower
+    // itself to fit" — only reachable for a body that can be well above its
+    // own floor, which is why the shared `blocksMovement` doesn't carry it.
+    return world.groundCeiling(x, y, stats.radius, true) - body.z >= MONSTER_HIT_HEIGHT ? 'clear' : 'adjust';
+  }
+  if (!stats.flies) return 'blocked';
+  // `floatok`: the destination is one this monster fits in at *some* height,
+  // so only the step stopped it. Re-testing at an unreachable feet height is
+  // what makes `blocksMovement`'s step-up rule vacuous while leaving the wall,
+  // body and opening-height checks — exactly the tests vanilla runs before it
+  // sets `floatok`.
+  return circleBlocked(world, x, y, stats.radius, Infinity, true, false, blockers, body) ? 'blocked' : 'adjust';
+}
+
+/**
+ * `P_Move`'s float branch: a blocked flier moves `FLOATSPEED` toward the floor
+ * of the square it wanted, and the move counts as taken. Clamping to that floor
+ * is this engine's own — vanilla steps a flat 4 units per call and can overshoot
+ * by up to that much, which at frame rate would read as a hover jitter.
+ */
+function floatOverStep(body: MonsterBody, stats: MonsterStats, world: World, x: number, y: number, dt: number): void {
+  const floor = world.groundFloor(x, y, stats.radius, true);
+  const step = (FLOAT_SPEED / stats.chaseInterval) * dt;
+  body.z = body.z < floor ? Math.min(floor, body.z + step) : Math.max(floor, body.z - step);
+  body.inFloat = true;
 }
 
 /**
@@ -178,12 +262,17 @@ function checkMissileRange(body: MonsterBody, stats: MonsterStats, dist: number,
  * `P_TryWalk` minus the part that performs the move (movement is interpolated
  * per frame here). Committing reseeds `movecount` to `P_Random() & 15` as
  * `P_TryWalk` does, which paces both re-routing and the missile gate.
+ *
+ * A step a flier can only take after changing height still counts as walkable,
+ * because vanilla's `P_TryWalk` calls `P_Move`, which reports the float as a
+ * successful move — that is what keeps a cacodemon committed to a ledge
+ * instead of re-routing away from it.
  */
 function tryWalk(body: MonsterBody, stats: MonsterStats, world: World, dir: number, blockers?: readonly ThingBlocker[]): boolean {
   const step = stats.speed * stats.chaseInterval;
   const nx = body.x + DIR_X[dir] * step;
   const ny = body.y + DIR_Y[dir] * step;
-  if (circleBlocked(world, nx, ny, stats.radius, body.z, true, !stats.flies, blockers, body)) return false;
+  if (testStep(body, stats, world, nx, ny, blockers) === 'blocked') return false;
   body.movedir = dir;
   body.movecount = Math.floor(Math.random() * 16);
   return true;
@@ -204,8 +293,7 @@ function tryWalk(body: MonsterBody, stats: MonsterStats, world: World, dir: numb
  * monster bumping a wall pays one extra query and a walking one pays none.
  */
 function escapingOverlap(body: MonsterBody, stats: MonsterStats, world: World, blockers?: readonly ThingBlocker[]): boolean {
-  const blockedAt = (x: number, y: number): boolean =>
-    circleBlocked(world, x, y, stats.radius, body.z, true, !stats.flies, blockers, body);
+  const blockedAt = (x: number, y: number): boolean => testStep(body, stats, world, x, y, blockers) === 'blocked';
   if (!blockedAt(body.x, body.y)) return false;
   const step = stats.speed * stats.chaseInterval;
   return !blockedAt(body.x + DIR_X[body.movedir] * step, body.y + DIR_Y[body.movedir] * step);
@@ -378,7 +466,7 @@ export function stepMonsterAI(
 ): MonsterAttack | null {
   if (body.painTimer > 0) {
     body.painTimer = Math.max(0, body.painTimer - dt);
-    settleVertical(body, world, stats.radius, dt);
+    settleVertical(body, stats, world, dt, target);
     return null;
   }
 
@@ -402,7 +490,7 @@ export function stepMonsterAI(
 
   if (body.chargeTimer > 0) {
     const hit = stepCharge(body, stats, dt, world, dist);
-    settleVertical(body, world, stats.radius, dt);
+    settleVertical(body, stats, world, dt, target);
     return hit;
   }
 
@@ -435,7 +523,7 @@ export function stepMonsterAI(
   }
 
   if (body.attackPause > 0) {
-    settleVertical(body, world, stats.radius, dt);
+    settleVertical(body, stats, world, dt, target);
     return attack;
   }
 
@@ -466,14 +554,18 @@ export function stepMonsterAI(
     const step = stats.speed * dt;
     const nx = body.x + DIR_X[body.movedir] * step;
     const ny = body.y + DIR_Y[body.movedir] * step;
-    if (
-      circleBlocked(world, nx, ny, stats.radius, body.z, true, !stats.flies, blockers, body) &&
-      !escapingOverlap(body, stats, world, blockers)
-    ) {
+    const result = testStep(body, stats, world, nx, ny, blockers);
+    if (result === 'adjust') {
+      // A flier changing height around a step it can't cross yet. Vanilla's
+      // P_Move reports this as a move *taken*, so no `moveBlocked` and no
+      // re-route: it stays pointed at the ledge until it has risen enough.
+      floatOverStep(body, stats, world, nx, ny, dt);
+    } else if (result === 'blocked' && !escapingOverlap(body, stats, world, blockers)) {
       body.moveBlocked = true;
     } else {
       body.x = nx;
       body.y = ny;
+      body.inFloat = false;
       body.angle = Math.atan2(DIR_Y[body.movedir], DIR_X[body.movedir]);
       // Footsteps are paced by *walking*, not by wall-clock time: a monster
       // held still by an attack or stuck against a wall stops stomping, the way
@@ -491,7 +583,7 @@ export function stepMonsterAI(
     }
   }
 
-  settleVertical(body, world, stats.radius, dt);
+  settleVertical(body, stats, world, dt, target);
   return attack;
 }
 

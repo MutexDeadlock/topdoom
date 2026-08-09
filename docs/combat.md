@@ -638,6 +638,13 @@ still participates in fog-of-war fading exactly as it did alive. `ThingLayer.dam
 `id` being the stable index `pickMonster`/`monstersNear` hand back — subtracts health and calls `die`
 at 0; `pickMonster` skips anything already dead so a corpse can't be re-targeted.
 
+**A corpse left in the air falls.** `P_KillMobj` strips `MF_NOGRAVITY` from everything it kills
+except `MT_SKULL`, so a cacodemon shot off its hover (docs/monsters.md § Floating monsters) or a
+body caught mid-launch by an arch-vile drops to the floor instead of hanging there; a lost soul
+keeps its flag and dies where it was. `ThingLayer.update` runs that fall in its dead branch, gated
+on the thing's own cached sector floor so the overwhelming majority of corpses — already resting on
+it — cost no world query at all.
+
 **Two types don't leave a corpse: the lost soul and the pain elemental.** Every other monster's final
 death state has `tics: -1` ("hold forever"), which is what makes a corpse permanent, but
 `S_SKULL_DIE6` and `S_PAIN_DIE6` both have a finite tic count and fall through to `S_NULL` — and

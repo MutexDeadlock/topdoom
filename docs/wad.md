@@ -26,6 +26,18 @@ the first NUL silently corrupts names (e.g. turns `"-"` into `"-GRAY7"`) and bre
 for real PWADs. This was found by testing against community PWADs, not synthetic data, so don't assume
 synthetic WADs will catch a regression here.
 
+## Art a WAD set doesn't have
+
+A thing whose sprite the merged set carries no lumps for is **skipped, and the level says so**:
+`buildThingSprites` collects `ThingLayer.missingArt` (`"<doomednum> (<sprite>)"`), which `game.ts`
+warns about at load beside its missing-texture warning. Vanilla `I_Error`s on startup instead, so
+skipping is the better behavior — but skipping *silently* is not, because from the outside the
+monster simply isn't in the level and nothing explains why.
+
+The case that hits real users is a **PWAD placing a monster its base WAD never had**: shareware
+`DOOM1.WAD` has no `HEAD` lumps at all (the cacodemon appears in no episode-1 map), so a caco placed
+on it can't be drawn and can't spawn. Load such a PWAD on `DOOM2.WAD` or `freedoom2.wad`.
+
 ## Player start
 
 `World.playerStart` uses the **last** doomednum-1 thing in the map, not the first. Vanilla's

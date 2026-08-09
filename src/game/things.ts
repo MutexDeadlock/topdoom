@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { DoomMap, Sector } from '../wad/map.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { World } from './world.ts';
-import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
+import { GRAVITY, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import {
   BARREL_DEATH_FRAME_SECONDS,
   BARREL_DEATH_FRAMES,
@@ -261,6 +261,7 @@ export function buildThingSprites(
       chargeTimer: 0,
       chargeAngle: 0,
       painTimer: 0,
+      inFloat: false,
       movedir: DI_NODIR,
       movecount: 0,
       chaseTimer: 0,
@@ -281,6 +282,17 @@ export function buildThingSprites(
     return thing;
   }
 
+  /**
+   * Doomednums the map places that this WAD *set* has no art for, so
+   * `pushThing` dropped them — reported once at level load beside the missing
+   * textures. Silently vanishing is the right behavior (vanilla `I_Error`s at
+   * startup instead, which is worse), but a monster that simply isn't there
+   * with nothing said is unexplainable from the outside: shareware `DOOM1.WAD`
+   * carries no `HEAD` lumps at all, so a PWAD placing a cacodemon on it loses
+   * it. Sprite name included because that is what to grep the WAD for.
+   */
+  const missingArt = new Set<string>();
+
   for (const t of map.things) {
     if (!THING_SPRITES[t.type]) continue;
     if (isMultiplayerOnly(t.flags)) continue;
@@ -291,7 +303,10 @@ export function buildThingSprites(
     const sector = world.sectorAt(t.x, t.y);
     const hangHeight = CEILING_HUNG_HEIGHT[t.type];
     const z = hangHeight !== undefined ? (sector?.ceilHeight ?? 0) - hangHeight : (sector?.floorHeight ?? 0);
-    if (!pushThing(t.type, { x: t.x, y: t.y, z }, spawnAngleDeg(t.angle), { ambush: isAmbush(t.flags) })) continue;
+    if (!pushThing(t.type, { x: t.x, y: t.y, z }, spawnAngleDeg(t.angle), { ambush: isAmbush(t.flags) })) {
+      missingArt.add(`${t.type} (${THING_SPRITES[t.type]})`);
+      continue;
+    }
     // Vanilla's own `P_SpawnMapThing` totals — incremented only for a thing that actually spawns
     // (past every filter above, art included), matching `if (mobj->flags & MF_COUNTKILL)
     // totalkills++` / `MF_COUNTITEM` in `info.c`. Fixed for the level: only the runtime kill/pickup
@@ -649,6 +664,7 @@ export function buildThingSprites(
     p.burstTimer = 0;
     p.chargeTimer = 0;
     p.painTimer = 0;
+    p.inFloat = false;
     p.attackPause = (p.raiseFrames?.length ?? 0) * MONSTER_DEATH_FRAME_SECONDS;
     // Vanilla's A_VileChase plays `slop` on the corpse as it comes back up —
     // the same sound a gib death makes, which is why a resurrection sounds
@@ -661,6 +677,7 @@ export function buildThingSprites(
   return {
     group,
     count: posed.length,
+    missingArt: [...missingArt],
     stats,
     solidBodies: grid.solidBodies,
     update(
@@ -687,6 +704,17 @@ export function buildThingSprites(
         }
         if (p.dead) {
           p.deadTime += dt;
+          // `P_KillMobj` strips `MF_NOGRAVITY` from everything but the lost
+          // soul, so a corpse left hanging in the air — a cacodemon shot off
+          // its hover, anything killed mid-launch by an arch-vile — drops.
+          // Gated on the thing's own cached sector floor so the overwhelming
+          // majority of corpses (already resting on it) cost no query at all.
+          if (p.type !== LOST_SOUL_TYPE && p.z > (p.sector?.floorHeight ?? p.z)) {
+            const restZ = world.groundFloor(p.x, p.y, p.blockRadius, true);
+            p.velZ -= GRAVITY * dt;
+            p.z = Math.max(restZ, p.z + p.velZ * dt);
+            if (p.z === restZ) p.velZ = 0;
+          }
           if (p.type === BARREL_TYPE) {
             // Vanilla's own A_Explode, firing partway through the death
             // animation rather than instantly on death — see
@@ -768,7 +796,10 @@ export function buildThingSprites(
               p.alerted = false;
               p.movedir = DI_NODIR;
               p.movecount = 0;
-              p.z = p.sector?.floorHeight ?? p.z;
+              // A flier keeps whatever height it drifted to: `MF_NOGRAVITY`
+              // outlives losing a target, and dropping it to the floor here
+              // would pop a hovering cacodemon down the instant the player dies.
+              if (!stats.flies) p.z = p.sector?.floorHeight ?? p.z;
             } else {
               const beforeX = p.x;
               const beforeY = p.y;
@@ -857,7 +888,12 @@ export function buildThingSprites(
               }
             }
           } else {
-            p.z = p.sector?.floorHeight ?? p.z;
+            // A flier keeps whatever height it hovered to — `MF_NOGRAVITY`
+            // outlives losing a target, so a dormant cacodemon must not pop
+            // down to the floor. A *rising* floor still pushes it up, which is
+            // all `P_ZMovement` does for a no-gravity body on contact.
+            const floorZ = p.sector?.floorHeight ?? p.z;
+            p.z = stats.flies ? Math.max(p.z, floorZ) : floorZ;
             // A not-yet-alerted monster can still be knocked back — a hit
             // always sets velX/velY in `damage`, though in practice it also
             // always alerts the monster in that same call, so this mostly
@@ -867,8 +903,14 @@ export function buildThingSprites(
         } else {
           // Ceiling-hung gore rides a moving ceiling (crusher, closing door) the same way
           // everything else here rides a moving floor — see CEILING_HUNG_HEIGHT's doc.
+          // A corpse still falling (the dead branch above) is the one exception:
+          // it owns its own `z` until it lands, and only then rejoins the ride.
           const hangHeight = CEILING_HUNG_HEIGHT[p.type];
-          p.z = hangHeight !== undefined ? (p.sector?.ceilHeight ?? p.z + hangHeight) - hangHeight : (p.sector?.floorHeight ?? p.z);
+          if (hangHeight !== undefined) {
+            p.z = (p.sector?.ceilHeight ?? p.z + hangHeight) - hangHeight;
+          } else if (!p.dead || p.z <= (p.sector?.floorHeight ?? p.z)) {
+            p.z = p.sector?.floorHeight ?? p.z;
+          }
           // Barrels have no AI movement of their own, so this is their only
           // source of horizontal motion; a freshly-dead monster (stats
           // undefined above) lands here too, finishing off whatever knockback

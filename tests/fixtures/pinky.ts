@@ -77,6 +77,7 @@ export function loadPinky(which: PinkyMap): PinkyFixture {
       chargeTimer: 0,
       chargeAngle: 0,
       painTimer: 0,
+      inFloat: false,
       movedir: 6, // south, toward the player
       movecount: 8,
       chaseTimer: 0,

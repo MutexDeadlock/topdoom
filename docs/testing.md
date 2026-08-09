@@ -152,17 +152,20 @@ declaration-time option, since presence is a static fact:
 test('…', { skip: existsSync(p) ? false : `${p} not present` }, () => { … });
 ```
 
-Three tiny purpose-built maps live in `tests/fixtures/wads/`, each carrying its own `MAP01` and
-loading with **no IWAD**, with a loader beside it in `tests/fixtures/`:
+Four tiny purpose-built maps live in `tests/fixtures/wads/`, each carrying its own map and loading
+with **no IWAD**, with a loader beside it in `tests/fixtures/` (or, for the newest, inside the one
+test that uses it):
 
 | WAD | Geometry | Loader | Covers |
 |---|---|---|---|
 | `long_corridor_with_chaingunner.wad` | 3648-unit corridor, chaingunner 3584 out | `corridor.ts` | both chaingunner regressions |
 | `pinky_below_test.wad` | two rooms split at `y=128`, far floor **-72** (pit) | `pinky.ts` | vertical melee reach |
 | `pinky_above_test.wad` | same, far floor **+88** (ledge) | `pinky.ts` | vertical melee reach |
+| `caco_pit_test.wad` | one room split at `y=32`, far floor **-48**, cacodemon in it (`E1M1`) | in-test | floating monsters over a ledge |
 
 The pinky pair are the maps a demon-bites-through-a-height-gap report was made on, checked against
-GZDoom (docs/monsters.md § Melee reach). `pinky.ts` also builds a ready-to-step `MonsterBody`, so the
+GZDoom (docs/monsters.md § Melee reach); `caco_pit_test.wad` is the map a cacodemon-stuck-in-a-pit
+report was made on, checked against vanilla (docs/monsters.md § Floating monsters). `pinky.ts` also builds a ready-to-step `MonsterBody`, so the
 tests drive the real `stepMonsterAI` rather than re-implementing its melee gate — worth copying: a
 test that restates the condition it is checking passes for the wrong reason. Both were confirmed to
 fail with the fix reverted before being committed.

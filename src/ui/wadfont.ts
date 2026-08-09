@@ -44,7 +44,7 @@ export const COLOR_YELLOW: WadFontRecolor = [255, 255, 115];
  * any character outside the font advances a flat 4px, and each is placed vertically by its own
  * patch offset the way `V_DrawPatch` does (see `Glyph.top` — without it the short glyphs float at
  * the top of the line). Text is uppercased before lookup, matching vanilla's `toupper` — the font
- * has no lowercase glyphs. docs/items.md § Level stats.
+ * has no lowercase glyphs. docs/hud.md § Level stats.
  *
  * STCFN's own pixels are already vanilla's HUD-message red; pass `recolor` to retint every glyph
  * to a different color instead (see `WadFontRecolor`'s doc) — this repo has no

@@ -11,7 +11,7 @@ const RECORD_TEXT = 'NEW BEST TIME!';
 /**
  * The end-of-level popup: the same three counts the HUD strip carries, as vanilla's percentages
  * this time, then the frozen level time and how it compares to the level's best. Shown when a
- * level's exit fires and dismissed by a key, with the world frozen behind it — see docs/items.md
+ * level's exit fires and dismissed by a key, with the world frozen behind it — see docs/hud.md
  * § Intermission and § Best times.
  *
  * One canvas per line (static markup in index.html), each drawn like `Hud.drawStatLine`: a red
@@ -94,7 +94,7 @@ export class Intermission {
   }
 
   /**
-   * The time-to-beat block. `record` is null for a run that can't set one (see docs/items.md
+   * The time-to-beat block. `record` is null for a run that can't set one (see docs/hud.md
    * § Best times), and both lines stay hidden then — a player who started somewhere other than the
    * level's own start is better told nothing than shown a record they can't touch.
    */

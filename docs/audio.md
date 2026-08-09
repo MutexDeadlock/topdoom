@@ -211,7 +211,7 @@ everything else — all **unattenuated**, as vanilla plays them, since you are s
 
 Entering a secret sector plays `radio`, also unattenuated, alongside the center-screen message.
 Vanilla plays no sound for a secret at all and uses `DSRADIO` for DOOM 2's inter-level chatter, so
-this is a deliberate addition, not a fidelity reproduction — docs/items.md § Center messages. Not
+this is a deliberate addition, not a fidelity reproduction — docs/hud.md § Center messages. Not
 every WAD set has the lump (the shareware `DOOM1.WAD` doesn't); `bufferFor` returning null there
 means the message simply shows silently, which is the same way every other missing lump degrades.
 

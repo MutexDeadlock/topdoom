@@ -78,7 +78,7 @@ const FOG_START_FRACTION = 0.54;
  * Shown center-screen (`ui/message.ts`) with `radio` — vanilla's `DSRADIO`, which it uses for
  * DOOM 2's inter-level radio chatter, not for secrets, so both the message and the sound are this
  * engine's own. Vanilla announces a secret nowhere at all: the status bar's `S` count just ticks
- * up. docs/items.md § Center messages.
+ * up. docs/hud.md § Center messages.
  */
 const SECRET_MESSAGE = 'You found a secret area';
 
@@ -188,7 +188,7 @@ export class Game {
   private startPos: Pos2 | null;
   /**
    * Whether this session's completions may set best times. A `?pos=` start can drop the player
-   * anywhere — next to the exit included — so those runs are excluded (docs/items.md § Best times).
+   * anywhere — next to the exit included — so those runs are excluded (docs/hud.md § Best times).
    * Captured up front because `startPos` is nulled out once the first map has consumed it.
    */
   private recordsEligible: boolean;
@@ -764,7 +764,7 @@ export class Game {
   /**
    * The current level's kill/item/secret counts and clock, for the HUD strip every frame and for
    * the intermission on the frame the level ends. Cheap integer reads, assembled fresh rather than
-   * cached — see docs/items.md § Level stats.
+   * cached — see docs/hud.md § Level stats.
    */
   private levelStats(): LevelStats {
     return {
@@ -781,7 +781,7 @@ export class Game {
   /**
    * Files the completion that just happened and reports how it compares to the level's best, or
    * null if this run was never eligible for one. The record is keyed to the WAD file that
-   * *provides* the map rather than to the loaded set — see docs/items.md § Best times.
+   * *provides* the map rather than to the loaded set — see docs/hud.md § Best times.
    */
   private recordCompletion(): BestTimeResult | null {
     if (!this.recordsEligible) return null;

@@ -48,7 +48,7 @@ export function lockedKeyMessage(key: KeyColor, kind: 'door' | 'switch'): Messag
  * A short line of WAD-font text over the middle of the view — the secret announcement and the
  * locked-door line. Vanilla prints its messages in the top-left in `STCFN`'s own red
  * (`hu_stuff.c`); this engine puts them center-screen in `COLOR_YELLOW` instead, where a top-down
- * player is already looking. See docs/items.md § Center messages.
+ * player is already looking. See docs/hud.md § Center messages.
  *
  * Same "canvas sized to its content, CSS scales it" pattern `Hud` uses — this class builds its own
  * recolored glyph sets rather than sharing `Hud`'s, which keeps the two independent about what

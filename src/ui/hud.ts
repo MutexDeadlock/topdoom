@@ -15,7 +15,7 @@ import { WadFont, COLOR_YELLOW } from './wadfont.ts';
 
 /**
  * The kill/item/secret totals the level-stats strip shows — see `WadFont`'s doc and
- * docs/items.md § Level stats.
+ * docs/hud.md § Level stats.
  */
 export interface LevelStats {
   kills: number;

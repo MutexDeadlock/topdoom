@@ -399,12 +399,12 @@ damage floors above, by the same `game/sectoreffects.ts: SectorEffects.update`, 
 `sector.special` back to 0, matching vanilla's own `case 9: player->secretcount++; sector->special =
 0;` exactly — the clear is also what prevents a second frame from double-counting, no separate
 "already found" flag needed. `SectorEffects.totalSecrets` is counted once per level load, straight off
-`map.sectors`, mirroring vanilla `P_SpawnSpecials`' own `case 9: totalsecret++`. See docs/items.md §
+`map.sectors`, mirroring vanilla `P_SpawnSpecials`' own `case 9: totalsecret++`. See docs/hud.md §
 Level stats for where these numbers surface on screen.
 
 `update` reports the entry back to `game.ts` (`SectorEffectResult.secretFound`, true on that one
 frame only) rather than just bumping the counter, because finding a secret also announces itself —
-a center-screen message and `radio`, neither of which vanilla does. docs/items.md § Center messages.
+a center-screen message and `radio`, neither of which vanilla does. docs/hud.md § Center messages.
 
 ## Boss death
 

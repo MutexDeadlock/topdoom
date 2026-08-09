@@ -32,7 +32,7 @@ const ENTERING = 'Entering';
 const LEVEL_NAME_GREY: WadFontRecolor = [197, 197, 197];
 
 /**
- * The "Entering / <level name>" card raised by every map load — see docs/items.md § Level card.
+ * The "Entering / <level name>" card raised by every map load — see docs/hud.md § Level card.
  * Same "canvas sized to its content, CSS scales it" pattern `Hud` and `CenterMessage` use, one
  * canvas per line so the name can be drawn at twice the label's size without a second font: both
  * canvases hold native-size art and `menu.css` gives them different heights.

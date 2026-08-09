@@ -2,7 +2,7 @@ import type { Skill } from './skill.ts';
 
 /**
  * Per-level best completion times, persisted across sessions and shown on the end-of-level popup —
- * see docs/items.md § Best times. Owned here rather than by `ui/intermission.ts` for the same
+ * see docs/hud.md § Best times. Owned here rather than by `ui/intermission.ts` for the same
  * reason every other `topdoom.*` value lives with the module whose behavior it changes
  * (docs/menu.md § Persisted settings): the popup only renders what this decides.
  */
@@ -35,7 +35,7 @@ export interface BestTimeResult {
 
 /**
  * The record key. The WAD part is the content id of the file that actually *provides* the map
- * (`Wad.find(map)!.source`), not of the whole loaded set — see docs/items.md § Best times for why
+ * (`Wad.find(map)!.source`), not of the whole loaded set — see docs/hud.md § Best times for why
  * the distinction matters.
  */
 export function bestTimeKey(wadId: string, map: string, skill: Skill): string {

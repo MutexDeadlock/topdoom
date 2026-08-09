@@ -147,7 +147,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
 | `topdoom.skill` | `ui/menu.ts` | § Difficulty above |
 | `topdoom.selection` | `ui/menu.ts` | § Remembered selection below |
-| `topdoom.bestTimes` | `game/besttimes.ts` | docs/items.md § Best times |
+| `topdoom.bestTimes` | `game/besttimes.ts` | docs/hud.md § Best times |
 
 ## Remembered selection
 
@@ -208,7 +208,7 @@ Rules that hold this together:
 - **"Return to game" is disabled for the duration of a start** (`startWithSkill`), since the level it
   would return to is disposed part-way through.
 - A second `Game` builds against the *same* static DOM, so anything holding generated children must
-  replace rather than append, and per-level screen state must be cleared — see docs/items.md
+  replace rather than append, and per-level screen state must be cleared — see docs/hud.md
   § The HUD and § Screen effects. `dispose` clears the center message, the level card and the
   intermission popup for that reason: all three are static markup that outlives the `Game` that
   raised them.

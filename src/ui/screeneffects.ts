@@ -6,7 +6,7 @@ import { DOOM_TIC } from '../constants.ts';
  * Every powerup or damage effect whose whole result is a *view* change: the
  * two full-screen tints, the red damage flash, the light visor's exposure
  * lift, the player sprite's translucency and the death overlay. See
- * docs/items.md § Screen effects.
+ * docs/hud.md § Screen effects.
  */
 
 /**
@@ -36,7 +36,7 @@ const PAIN_FLASH_MAX_ALPHA = 0.5;
 /**
  * When a timed powerup's screen effect starts blinking as an expiry warning,
  * and how fast. **Tuned by feel** — vanilla blinks a HUD number (`cnt & 8` in
- * `ST_Ticker`), not a screen effect. See docs/items.md § Screen effects.
+ * `ST_Ticker`), not a screen effect. See docs/hud.md § Screen effects.
  */
 const POWER_BLINK_WARNING_SECONDS = 3;
 const POWER_BLINK_HZ = 4;

@@ -38,7 +38,7 @@ voodoo-doll row and the 27th the real start.
 
 ## Level names
 
-`levelnames.ts` answers "what is this map called" for the level card (docs/items.md § Level card)
+`levelnames.ts` answers "what is this map called" for the level card (docs/hud.md § Level card)
 and for the menu's level list (docs/menu.md § Picking a WAD set). A map lump name is not an answer
 on its own: DOOM II, Plutonia and TNT all ship `MAP01`-`MAP32` with completely different titles, and
 a PWAD's `MAP01` is not the IWAD's level of that name at all.
@@ -51,7 +51,7 @@ shown either prints the lump name itself or has just come from a screen that did
 
 Ahead of both, for the card only, is **the WAD's own level-name graphic**: `LevelNames.graphicFor`
 returns the `CWILV`/`WILV` lump vanilla's intermission prints a level's name with, and the card
-blits that instead of drawing text (docs/items.md § Level card). `levelNamePatch` builds the name
+blits that instead of drawing text (docs/hud.md § Level card). `levelNamePatch` builds the name
 the way `WI_loadData` (`wi_stuff.c`) does — `CWILV%2.2d` over a 0-based map index, `WILV%d%d` over
 0-based episode and map, so `MAP07` is `CWILV06` and `E1M1` is `WILV00`. A patch is only used when
 it *belongs* to the map: one from a different file than the map counts only if the map came from
@@ -95,7 +95,7 @@ them the same way, later files winning.
 ## Content id
 
 `checksum.ts` gives a `WadFile` a **content id**: a hash of its whole byte range, memoized per file
-in a `WeakMap`. It is what per-level best times are keyed on (docs/items.md § Best times), and it is
+in a `WeakMap`. It is what per-level best times are keyed on (docs/hud.md § Best times), and it is
 meant to be what a saved game embeds so it can tell whether the set it was made with is the set
 loaded now — `wadSetId(wad)` returns every loaded file's `{ name, id }` in load order, a list rather
 than one combined hash so a mismatch can name *which* file is wrong.

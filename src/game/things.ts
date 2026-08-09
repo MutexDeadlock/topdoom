@@ -189,7 +189,7 @@ export function buildThingSprites(
    * "silently don't spawn" every caller already wanted. Deliberately does
    * **not** touch `stats.totalKills`/`totalItems`: those are
    * `P_SpawnMapThing`'s own level totals, so only the map-load loop increments
-   * them (docs/items.md § Level stats).
+   * them (docs/hud.md § Level stats).
    */
   function pushThing(
     type: number,

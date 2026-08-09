@@ -194,7 +194,7 @@ export interface MonsterRef extends Pos3 {
 /**
  * Live kill/item totals for the level, vanilla's own `totalkills`/`killcount` and
  * `totalitems`/`itemcount` — `total*` set once at spawn (`COUNTKILL_TYPES`/`COUNTITEM_TYPES`),
- * `kills`/`items` incremented as the level is played. docs/items.md § Level stats.
+ * `kills`/`items` incremented as the level is played. docs/hud.md § Level stats.
  */
 export interface LevelKillItemStats {
   totalKills: number;

@@ -90,7 +90,7 @@ it automatically — no key press needed. The bar along the bottom shows health,
 ammo counts, one slot per key color, and the weapon you currently have selected. That last one
 matters here in a way it doesn't in the original: the player sprite looks the same whatever it's
 holding, so the HUD icon is the only thing telling you what you're about to fire. See
-[docs/items.md](docs/items.md).
+[docs/items.md](docs/items.md) and [docs/hud.md](docs/hud.md).
 
 ## Powerups
 
@@ -142,7 +142,8 @@ part actually works under the hood, `docs/` documents each subsystem in depth:
 | [docs/movement.md](docs/movement.md) | Collision, wall sliding, straferunning, falling, knockback |
 | [docs/combat.md](docs/combat.md) | Weapons, shot resolution, auto-aim, line of sight, damage and death |
 | [docs/monsters.md](docs/monsters.md) | Waking, chase pathing, attacks, infighting, per-type quirks |
-| [docs/items.md](docs/items.md) | Pickups, inventory, keys, the HUD, powerups |
+| [docs/items.md](docs/items.md) | Pickups, inventory, keys, powerups |
+| [docs/hud.md](docs/hud.md) | The HUD, level card, intermission, best times, screen effects |
 | [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, damage floors |
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal and sight blocking |
 | [docs/devmode.md](docs/devmode.md) | Dev-mode gating and the profiling overlay |

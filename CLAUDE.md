@@ -103,7 +103,8 @@ several record rules that look like accidents and aren't.
 | [docs/monsters.md](docs/monsters.md) | Waking, chase pathing, the decision to attack, infighting, per-type quirks, spatial indexing |
 | [docs/monsterattacks.md](docs/monsterattacks.md) | Realizing a fired attack: hitscan vs. projectile, monster missiles in flight, the revenant's homing |
 | [docs/iconofsin.md](docs/iconofsin.md) | MAP30's boss: the spitter, the spawn cube, the brain's death |
-| [docs/items.md](docs/items.md) | Pickups, inventory, keys/locked doors, the HUD, the level card and intermission, powerups, screen effects |
+| [docs/items.md](docs/items.md) | Pickups, inventory, keys/locked doors, monster drops, powerups |
+| [docs/hud.md](docs/hud.md) | The HUD, level stats and timer, level card, intermission, best times, center messages, `WadFont`, screen effects |
 | [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, the donut, damage floors, scrolling textures |
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
 | [docs/audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |

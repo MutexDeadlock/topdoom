@@ -5,7 +5,7 @@ import { formatClock, percentOf } from '../../src/ui/hud.ts';
 /**
  * The two pure helpers the HUD strip and the intermission popup share, so the bar and the popup
  * can't disagree about the same numbers. `Hud` itself needs the DOM and isn't covered here.
- * See docs/items.md § Level stats and § Intermission.
+ * See docs/hud.md § Level stats and § Intermission.
  */
 describe('HUD · level stat formatting', () => {
   test('percentages truncate, like wi_stuff.c integer division', () => {

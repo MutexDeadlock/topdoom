@@ -39,7 +39,7 @@ const meta = { wad: 'DOOM.WAD', map: 'E1M1', skill: 3 };
 
 /**
  * Per-level best times: what gets written, what doesn't, and what a corrupted blob costs. See
- * docs/items.md § Best times.
+ * docs/hud.md § Best times.
  */
 describe('Best times · the record store', () => {
   test('the key separates WAD, map and skill', () => {

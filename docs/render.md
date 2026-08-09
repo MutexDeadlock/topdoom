@@ -187,6 +187,19 @@ Movement (`Player.update`'s `forwardDeg`, passed as `camera.viewerAngleDeg + 180
 rather than DOOM-axis-relative: `W` always moves the player away from the camera *on screen*,
 regardless of orbit. `game.ts` recomputes this every frame from the live camera angle.
 
+## The frame delta (`game.ts: frame`, `resume`)
+
+`dt` is clamped to `[0, 0.05]`; `rawDt` (unclamped, for `DebugHud`'s fps only) is the real
+wall-clock delta. The upper bound keeps physics/AI from taking a giant step after a stall. **The
+lower bound is load-bearing**, not defensive noise: `resume` stamps `lastTime` with
+`performance.now()`, while `frame` gets the timestamp of the rendering opportunity it belongs to —
+and when `resume` is reached inside a frame's *input* task (a Start click whose WAD is already in
+the browser cache, so nothing awaits long enough to yield), the rAF callback runs in that same
+frame and its timestamp predates the stamp by the whole load. Every system then takes one negative
+step; `AnimatedTextures` (§ Animated textures, docs/specials.md) turned that into a negative frame
+index into its sequence and a hard crash — reproduced by starting any level, returning to the menu
+and starting `oku2v31.wad`.
+
 ## Pausing (`game.ts: pause`, `stillFrame`, `stop`)
 
 A paused level is frozen but **still being drawn**: `pause` stops the simulation loop and starts

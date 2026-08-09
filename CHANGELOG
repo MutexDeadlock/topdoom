@@ -14,6 +14,8 @@ Features and improvements
 Fixed bugs
   - fixed periods, commas, hyphens and underscores in on-screen WAD-font text
   - fixed stuck monsters
+  - fixed the game freezing when a second WAD is started from the menu after
+    already having played a level
 
 
 ===============================================================================

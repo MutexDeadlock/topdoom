@@ -547,8 +547,12 @@ export class Game {
     // load). `DebugHud` gets rawDt, not dt — a clamped delta makes a genuine
     // slideshow under-detect itself, since ten clamped 0.05s steps reach the
     // fps accumulator's 0.5s threshold long before ten real frames have.
+    // The lower clamp is load-bearing, not defensive: `now` can predate the
+    // `performance.now()` `resume` stamped into `lastTime`, so without it the
+    // first frame of a level can step every system *backwards*. See
+    // docs/render.md § The frame delta.
     const rawDt = (now - this.lastTime) / 1000;
-    const dt = Math.min(0.05, rawDt);
+    const dt = Math.max(0, Math.min(0.05, rawDt));
     this.lastTime = now;
     this.profiler.beginFrame();
 

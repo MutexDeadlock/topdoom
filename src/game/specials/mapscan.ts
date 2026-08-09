@@ -152,6 +152,9 @@ export function neighborSectorIndices(map: DoomMap, sectorIndex: number): number
  * special in `LINE_SPECIALS`) when activated from the back side — so a
  * manual door or switch mounted on a wall is only usable from the side a
  * mapper actually intended, not through the wall from behind it.
+ *
+ * Also the `side` a walk trigger hands `trigger` (`P_TryMove`'s `oldside`),
+ * which only teleports act on — docs/specials.md § Teleporters.
  */
 export function isFrontSide(ax: number, ay: number, bx: number, by: number, x: number, y: number): boolean {
   const dx = bx - ax;

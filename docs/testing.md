@@ -53,10 +53,14 @@ takes no constructor arguments and `handleSwitching`/`updateSounds` reach it thr
 `Input` and a two-line `AudioEngine`, so the "switch to previous weapon" toggle is pinnable without a
 DOM. Deliberately **not** covered yet, and why:
 
-- **`SpecialsController`** — ~10 constructor arguments including a `MaterialBank`, a `THREE.Group`
-  and a `FogOfWar`, with the whole mover state machine (`sectorActive`, `tickDoor`, `tickLift`, the
-  `trigger*` guards) private. This is the biggest known gap. Reaching it means extracting the
-  per-mover tick into pure `(state, dt) → state` functions first.
+- **`SpecialsController`'s mover state machine** — `sectorActive`, `tickDoor`, `tickLift` and the
+  `trigger*` guards are all private, and reaching them means extracting the per-mover tick into pure
+  `(state, dt) → state` functions first. This is the biggest known gap. What *is* reachable already
+  is anything observable from the outside: its ~10 constructor arguments take a two-method
+  `MaterialBank` stub, a bare `THREE.Group` and a real `FogOfWar` (no GL context needed), and its
+  callbacks report what fired — `strobing-lift-light.test.ts` drives it through `update` for the
+  geometry it recolors, `teleport-back-side.test.ts` through the `onTeleport` callback. Prefer that
+  over widening the class's visibility.
 - **`ProjectileLayer` / `SpriteFxLayer`** — every `spawn*` short-circuits on `SpriteAnimator.resolve`,
   so a stubbed run would test the stubs. Test at `shotPath` level instead; `playerShotRange` exists
   as a separate exported function precisely so the range selection is reachable without the layer.

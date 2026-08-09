@@ -189,6 +189,26 @@ first doomednum-14 landing thing found inside a tag-matched sector (`findTelepor
 reaching it calls back into `game.ts` to move the player (`Player.teleportTo`) and snap the camera yaw
 to match, same as the initial spawn.
 
+**A crossing from the *back* of the line never teleports** — `EV_Teleport`'s own `if (side == 1)
+return 0;`, commented there as "so you can get out of teleporter". Without it, stepping off the pad
+you just landed on crosses that pad's own teleport line and bounces you straight back, forever.
+Repro: freedoom2 MAP01's two-way pair, sectors 167 (tag 3) and 133 (tag 5), whose 97 lines all have
+the pad on their back side; covered by `tests/regression/teleport-back-side.test.ts`.
+
+The side is vanilla's `P_CrossSpecialLine` `side` argument, which `P_TryMove` fills with **`oldside`**
+— the side the thing occupied *before* the move, not after — so `trigger`'s `fromBackSide` is computed
+from `prevX`/`prevY` (the player) or `prev` (a monster), not the current position. Teleports are the
+only consumer: tracing `P_CrossSpecialLine`, `side` reaches nothing but `EV_Teleport`, so no other
+special is direction-gated this way. `handleUseTrigger`'s own front-side test is a separate vanilla
+rule (`P_UseSpecialLine`) that happens to share `isFrontSide`.
+
+**A blocked teleport still consumes a one-shot line.** Vanilla's `case 39` is
+`EV_Teleport(...); line->special = 0;` — the clear is unconditional, so a W1 teleport crossed from
+the back (or one whose tag matches no landing thing) is spent all the same, and `trigger` adds to
+`usedOnce` before returning. The monster-only pair is the one exception: 125's clear sits *inside*
+its `if (!thing->player)`, so a player walking one leaves it intact, which is why the `monsterOnly`
+gate returns before the consume.
+
 **Monsters cross walk triggers too**, via `crossMonster` — `ThingLayer` keeps each monster's own
 `prevX`/`prevY` and hands the segment it just walked to a `crossLines` callback, the same "system
 reports, `game.ts` realizes" shape as `fogAlphaOf` and the crush callback. Vanilla runs

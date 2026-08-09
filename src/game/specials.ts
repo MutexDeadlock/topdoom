@@ -1189,7 +1189,18 @@ export class SpecialsController {
 
   // ---- Triggers ----------------------------------------------------------
 
-  private trigger(lineIndex: number, ownedKeys: ReadonlySet<KeyColor>, byMonster = false): TeleportDest | null {
+  /**
+   * `fromBackSide` is vanilla's `P_CrossSpecialLine` `side` argument — the side
+   * the thing was on *before* the move (`P_TryMove` passes `oldside`). Only the
+   * teleport branch reads it, matching vanilla, where `side` reaches nothing but
+   * `EV_Teleport`. See docs/specials.md § Teleporters.
+   */
+  private trigger(
+    lineIndex: number,
+    ownedKeys: ReadonlySet<KeyColor>,
+    byMonster = false,
+    fromBackSide = false,
+  ): TeleportDest | null {
     const line = this.map.linedefs[lineIndex];
     const def = LINE_SPECIALS[line.special];
     if (!def) return null;
@@ -1219,9 +1230,13 @@ export class SpecialsController {
       // only in `P_CrossSpecialLine`'s non-player branch, so a player walking
       // one does nothing at all. 39/97 work for either.
       if (def.effect.monsterOnly && !byMonster) return null;
-      const dest = this.findTeleportDestination(resolveTargets(this.map, line, def));
-      if (!dest) return null; // no matching landing thing — vanilla leaves the special un-consumed too
+      // A back-side crossing is `EV_Teleport`'s "so you can get out of
+      // teleporter" case: no teleport, but the line is still consumed, since
+      // vanilla's `case 39` clears `line->special` regardless of the result.
+      // Same for a tag that matches no landing thing. docs/specials.md § Teleporters.
+      const dest = fromBackSide ? null : this.findTeleportDestination(resolveTargets(this.map, line, def));
       if (!def.repeatable) this.usedOnce.add(lineIndex);
+      if (!dest) return null;
       // A monster's teleport is the caller's to perform, and must *not* touch
       // `lastTeleport` — that exists solely to reseed the player's own
       // walk-trigger tracking (see its doc); where a monster jumped to says
@@ -1307,7 +1322,7 @@ export class SpecialsController {
       const b = this.map.vertexes[line.v2];
       if (!a || !b) continue;
       if (!segmentIntersect(prev.x, prev.y, pos.x, pos.y, a.x, a.y, b.x, b.y)) continue;
-      const dest = this.trigger(i, ownedKeys, true);
+      const dest = this.trigger(i, ownedKeys, true, !isFrontSide(a.x, a.y, b.x, b.y, prev.x, prev.y));
       if (dest) return dest;
     }
     return null;
@@ -1413,7 +1428,9 @@ export class SpecialsController {
       const a = this.map.vertexes[line.v1];
       const b = this.map.vertexes[line.v2];
       if (!a || !b) continue;
-      if (segmentIntersect(this.prevX, this.prevY, playerX, playerY, a.x, a.y, b.x, b.y)) this.trigger(i, ownedKeys);
+      if (!segmentIntersect(this.prevX, this.prevY, playerX, playerY, a.x, a.y, b.x, b.y)) continue;
+      // `oldside`: the side the player was on before this frame's move — see `trigger`.
+      this.trigger(i, ownedKeys, false, !isFrontSide(a.x, a.y, b.x, b.y, this.prevX, this.prevY));
     }
   }
 

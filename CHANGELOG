@@ -6,7 +6,6 @@ Features and improvements
     - camera distance (+/-) and tilt ([/]) are no longer dev-mode only
     - the freed right mouse button is now bindable: switch to your previous
       weapon (the default), use, or nothing
-    - new "Controls" Tab. "Autorun" and "Right mouse" moved there.
   - the M mute key is gone - the volume slider at 0% is the same thing
   - menu cleanup
     - controls settings/overview built-in
@@ -15,6 +14,8 @@ Features and improvements
       right end of the title row instead of the corner of the screen
 
 Fixed bugs
+  - stepping off a teleport destination pad no longer teleports you straight
+    back: a teleport line crossed from its back side is ignored
   - fixed a sector that both changes light and moves, never showing its light
     on its own floor and wall
   - monster melee fixes (again...)

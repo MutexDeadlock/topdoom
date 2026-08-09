@@ -1,6 +1,8 @@
 v0.10.2 (2026-08-??)
 
 Features and improvements
+  - add setting to cap the frame rate at 30, 60 or 120 fps
+    (default: uncapped); it applies to the running level right away
   - increased view distance
   - bundled DOOM1 shareware is now the v1.9 one
   - entering a level now shows "Entering <level name>" on screen.

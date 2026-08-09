@@ -13,6 +13,7 @@ import {
   setRightMouseAction,
   type RightMouseAction,
 } from '../game/input.ts';
+import { getFpsCap, setFpsCap, type FpsCap } from '../game.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import { DEVMODE, VERSION } from '../constants.ts';
 
@@ -64,6 +65,7 @@ export class Menu {
   private autorunCheckbox = el<HTMLInputElement>('autorun-checkbox');
   private shiftAction = el<HTMLSpanElement>('shift-action');
   private rightMouseSelect = el<HTMLSelectElement>('rightmouse-select');
+  private fpsCapSelect = el<HTMLSelectElement>('fpscap-select');
   private tabButtons = {
     newgame: el<HTMLButtonElement>('tab-button-newgame'),
     settings: el<HTMLButtonElement>('tab-button-settings'),
@@ -111,6 +113,7 @@ export class Menu {
     this.installVolume();
     this.installAutorun();
     this.installRightMouse();
+    this.installFpsCap();
     this.setTab('newgame');
     // DEVMODE never changes at runtime, so the dev-only key row is revealed once.
     el<HTMLElement>('controls-dev').classList.toggle('hidden', !DEVMODE);
@@ -226,6 +229,19 @@ export class Menu {
     this.rightMouseSelect.value = getRightMouseAction();
     this.rightMouseSelect.addEventListener('change', () => {
       setRightMouseAction(this.rightMouseSelect.value as RightMouseAction);
+    });
+  }
+
+  /**
+   * The frame rate limit, `0` (unlimited) by default (`getFpsCap`). The running
+   * level reads the setting per frame, so a change here applies without a
+   * restart — same as volume and autorun. The `<option>` values are the capped
+   * rates themselves.
+   */
+  private installFpsCap(): void {
+    this.fpsCapSelect.value = String(getFpsCap());
+    this.fpsCapSelect.addEventListener('change', () => {
+      setFpsCap(Number(this.fpsCapSelect.value) as FpsCap);
     });
   }
 

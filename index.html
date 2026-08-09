@@ -190,13 +190,25 @@
               </section>
             </div>
 
-            <section>
-              <h2>Sound</h2>
-              <div class="slider">
-                <input type="range" id="volume-slider" min="0" max="100" step="1" />
-                <span class="value" id="volume-value"></span>
-              </div>
-            </section>
+            <div class="columns even">
+              <section>
+                <h2>Sound</h2>
+                <div class="slider">
+                  <input type="range" id="volume-slider" min="0" max="100" step="1" />
+                  <span class="value" id="volume-value"></span>
+                </div>
+              </section>
+
+              <section>
+                <h2>Frame rate</h2>
+                <select id="fpscap-select">
+                  <option value="0">Unlimited</option>
+                  <option value="30">30 fps</option>
+                  <option value="60">60 fps</option>
+                  <option value="120">120 fps</option>
+                </select>
+              </section>
+            </div>
           </div>
         </div>
 

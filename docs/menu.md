@@ -89,8 +89,15 @@ above).
 everything a player can change *is* a key's behavior: the right button's binding is the `right mouse`
 row's description, the autorun checkbox is the `Shift` row's. A player looking up what a control does
 and a player changing it are the same person on the same trip to the menu — which is why the tab that
-briefly held only a volume slider was folded into this one rather than kept beside it. Volume, the
-one setting that isn't a key, sits alone at the bottom.
+briefly held only a volume slider was folded into this one rather than kept beside it.
+
+**The two settings that aren't a key's behavior — sfx volume and the frame rate limit — share the
+bottom row** (`.columns even`), so the second costs the panel no extra height. The limit is
+`#fpscap-select`, and its `<option>` values *are* the capped rates (`0` = unlimited, the default), so
+the control needs no mapping table. It is owned by `game.ts` (`getFpsCap`/`setFpsCap`), whose frame
+loop is the only thing it changes, and is read live per frame — changing it mid-level applies to the
+level already running, like volume and autorun. See docs/render.md § The FPS cap for how a cap is
+actually held.
 
 **The `Shift` row's description is the word autorun currently makes true** — `walk` when it's on,
 `run` when it's off — so `installAutorun` writes `#shift-action` from the same `show` helper that
@@ -145,6 +152,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.sfxVolume` | `audio/audio.ts` | docs/audio.md § Volume and the context |
 | `topdoom.autorun` | `game/player.ts` (`getAutorun`/`setAutorun`) | docs/movement.md § Movement speed and straferunning |
 | `topdoom.rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
+| `topdoom.fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/render.md § The FPS cap |
 | `topdoom.skill` | `ui/menu.ts` | § Difficulty above |
 | `topdoom.selection` | `ui/menu.ts` | § Remembered selection below |
 | `topdoom.bestTimes` | `game/besttimes.ts` | docs/hud.md § Best times |

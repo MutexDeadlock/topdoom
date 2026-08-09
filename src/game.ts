@@ -89,6 +89,33 @@ const SECRET_MESSAGE = 'You found a secret area';
  */
 const INTERMISSION_INPUT_DELAY = 0.6;
 
+const FPS_CAP_STORAGE_KEY = 'topdoom.fpsCap';
+
+/** The frame rates the menu offers; `0` is no cap, and the default. */
+const FPS_CAPS = [0, 30, 60, 120] as const;
+export type FpsCap = (typeof FPS_CAPS)[number];
+
+/**
+ * How many frames a second the loop is allowed to run at, `0` for as many as the
+ * display offers. Lives here because `frame` is the only thing it changes; the
+ * menu just wires its select to these two. See docs/render.md § The FPS cap.
+ */
+let fpsCap: FpsCap = readStoredFpsCap();
+
+function readStoredFpsCap(): FpsCap {
+  const stored = Number(globalThis.localStorage?.getItem(FPS_CAP_STORAGE_KEY));
+  return FPS_CAPS.find((c) => c === stored) ?? 0;
+}
+
+export function getFpsCap(): FpsCap {
+  return fpsCap;
+}
+
+export function setFpsCap(cap: FpsCap): void {
+  fpsCap = cap;
+  globalThis.localStorage?.setItem(FPS_CAP_STORAGE_KEY, String(cap));
+}
+
 /** One loaded WAD set, playing one level at a time. */
 export class Game {
   private scene = new THREE.Scene();
@@ -153,6 +180,10 @@ export class Game {
 
   private running = false;
   private lastTime = 0;
+  /** Timestamp of the previous rendering opportunity, skipped ones included — the display's own period. See `dueThisFrame`. */
+  private lastRaf = 0;
+  /** When the next frame is due under the FPS cap; ignored while uncapped. See `dueThisFrame`. */
+  private nextFrameAt = 0;
   /** Paused, not stopped: the level is frozen but still being drawn — see `stillFrame`. */
   private paused = false;
   private lastStill = 0;
@@ -445,6 +476,10 @@ export class Game {
     this.paused = false;
     this.running = true;
     this.lastTime = performance.now();
+    this.lastRaf = this.lastTime;
+    // Zero, not `lastTime + interval`: the first frame back is always due, and
+    // `dueThisFrame` resyncs the deadline off its own timestamp.
+    this.nextFrameAt = 0;
     this.view.input.reset();
     requestAnimationFrame(this.frame);
   }
@@ -561,8 +596,33 @@ export class Game {
     this.loadMapByIndex(this.mapIndex);
   }
 
+  /**
+   * The FPS cap (`getFpsCap`): whether this rendering opportunity is the one to
+   * use, or one to skip because the next frame isn't due yet. Skipping is the
+   * whole frame — nothing is advanced, so the input `frame` would have consumed
+   * simply arrives on the next one. Read live rather than cached, so a change in
+   * the menu applies to the level already running.
+   *
+   * See docs/render.md § The FPS cap for why the deadline is compared with half a
+   * display period of slack and why it advances by whole intervals.
+   */
+  private dueThisFrame(now: number): boolean {
+    const period = now - this.lastRaf;
+    this.lastRaf = now;
+    const cap = getFpsCap();
+    if (cap === 0) return true;
+    const interval = 1000 / cap;
+    if (now + period / 2 < this.nextFrameAt) return false;
+    this.nextFrameAt = this.nextFrameAt + interval < now ? now + interval : this.nextFrameAt + interval;
+    return true;
+  }
+
   private frame = (now: number) => {
     if (!this.running) return;
+    if (!this.dueThisFrame(now)) {
+      requestAnimationFrame(this.frame);
+      return;
+    }
     // rawDt is the real elapsed wall-clock time; dt clamps it so physics/AI
     // never take a giant step after a stall (tab backgrounded, a slow map
     // load). `DebugHud` gets rawDt, not dt — a clamped delta makes a genuine

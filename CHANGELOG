@@ -30,6 +30,10 @@ Fixed bugs
       over your head
     - a shot passing you at speed can no longer slip between two frames
   - cacodemons, lost souls and pain elementals now really fly
+  - monster walk animations now use each type's own frames: a moving
+    cacodemon no longer chews the air, and the arch-vile, revenant, mancubus,
+    arachnotron, spider mastermind, pain elemental and lost soul all got
+    their real cycles too
   - a THING the WAD set has no sprite for is still skipped, but the level
     load now says which ones (it used to vanish without a word - e.g. a
     cacodemon placed on shareware DOOM1, which has no caco art at all)

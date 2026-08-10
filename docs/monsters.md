@@ -606,13 +606,19 @@ baron barely flinch) to 12 (cacodemon, pain elemental recoil visibly). A stagger
 whatever attack was under way, including the unfired shots of a volley, matching vanilla's pain state
 replacing the attack state outright.
 
-**The walk cycle is the one frame table that is *not* per-type.** `things.ts`'s
-`MONSTER_WALK_FRAMES` is a flat `A`-`D`, DOOM's own RUN-state convention and the same one `PLAY`
-uses. Unlike the tables below it isn't rederived per monster: `info.c` puts the walk cycle first for
-every type uniformly, so there is no per-type structural signal to check it against the way the
-rotation-0-only death tail gives death frames. A few real monsters deviate in vanilla — the lost soul
-cycles only `A`-`B`, the spider mastermind and arachnotron cycle further before repeating — left as a
-known, accepted gap.
+**The walk cycle defaults to `A`-`D` and overrides per type.** `MONSTER_WALK_FRAMES` is DOOM's RUN-
+state convention, the same cycle `PLAY` uses and correct for most of the roster;
+`MONSTER_WALK_FRAMES_OVERRIDE` (both in `thingdefs.ts`) carries the eight types whose `seestate`
+chain says otherwise, read off `info.c` by walking that chain to where it loops and keeping the
+distinct frames: cacodemon `A` alone, lost soul `A`-`B`, pain elemental `A`-`C`, and `A`-`F` for the
+arch-vile, revenant, mancubus, arachnotron and spider mastermind.
+
+The flat default used to apply to everything, which was **visible on the cacodemon**: `S_HEAD_RUN1`
+is a single state looping to itself, and `HEAD`'s `B`/`C` are its `missilestate` — so a cacodemon
+just drifting toward you opened and closed its mouth continuously, biting art with no bite. That
+overlap is what `tables.test.ts` now pins: no type's walk letters may appear in its own attack, pain
+or death table. Every override letter was also confirmed to exist as real rotation frames in
+`DOOM2.WAD`, the same check the death tables get below.
 
 **Attack and pain each get a real, dedicated pose** (`thingdefs.ts`'s `MONSTER_ATTACK_FRAMES`/
 `MONSTER_PAIN_FRAMES`). The blocker an earlier walk-cycle stand-in was working around was real:

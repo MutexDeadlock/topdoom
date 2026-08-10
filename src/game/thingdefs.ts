@@ -288,6 +288,35 @@ export const MONSTER_IDLE_FRAMES: Record<number, string[]> = {
 };
 
 /**
+ * DOOM's usual walk cycle: 4 frames (A-D), the same one `PLAY` uses, held by
+ * every type absent from `MONSTER_WALK_FRAMES_OVERRIDE` below.
+ */
+export const MONSTER_WALK_FRAMES = ['A', 'B', 'C', 'D'];
+
+/**
+ * The walk cycles that **aren't** A-D, read off each type's `seestate` chain in
+ * `info.c` (walk the chain to where it loops and keep the distinct frames;
+ * vanilla holds most of them for two states each, which the flat per-frame
+ * duration here makes a no-op).
+ *
+ * The cacodemon is the one that gets *noticed*: `S_HEAD_RUN1` is a single state
+ * looping to itself on frame A, and `HEAD`'s B/C are its `missilestate` mouth —
+ * the same letters `MONSTER_ATTACK_FRAMES` uses — so the shared 4-frame default
+ * had it biting the air continuously as it drifted. docs/monsters.md § Pain,
+ * and attack/pain poses.
+ */
+export const MONSTER_WALK_FRAMES_OVERRIDE: Record<number, string[]> = {
+  3005: ['A'], // HEAD — S_HEAD_RUN1 alone
+  3006: ['A', 'B'], // SKUL
+  71: ['A', 'B', 'C'], // PAIN
+  64: ['A', 'B', 'C', 'D', 'E', 'F'], // VILE
+  66: ['A', 'B', 'C', 'D', 'E', 'F'], // SKEL
+  67: ['A', 'B', 'C', 'D', 'E', 'F'], // FATT
+  68: ['A', 'B', 'C', 'D', 'E', 'F'], // BSPI — S_BSPI_SIGHT's own frame A leads into the same cycle
+  7: ['A', 'B', 'C', 'D', 'E', 'F'], // SPID
+};
+
+/**
  * `A_SpawnFly`'s monster lottery — the type an Icon of Sin spawn cube turns into on arrival, as
  * ordered upper bounds on one `P_Random()` roll (0-255): the first entry the roll falls under wins,
  * and the last is the `else`. Transcribed from `p_enemy.c`'s own if/else chain, with each `MT_*`

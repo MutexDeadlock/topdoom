@@ -3,9 +3,14 @@ import assert from 'node:assert/strict';
 import {
   BOSS_DEATH_TYPES,
   COUNTKILL_TYPES,
+  MONSTER_ATTACK_FRAMES,
   MONSTER_DEATH_FRAMES,
   MONSTER_HEALTH,
+  MONSTER_IDLE_FRAMES,
+  MONSTER_PAIN_FRAMES,
   MONSTER_TYPES,
+  MONSTER_WALK_FRAMES,
+  MONSTER_WALK_FRAMES_OVERRIDE,
   SPAWN_CUBE_MONSTERS,
   THING_SPRITES,
 } from '../../src/game/thingdefs.ts';
@@ -63,6 +68,25 @@ describe('Vanilla tables · monsters', () => {
     }
     for (const [type, frames] of Object.entries(MONSTER_DEATH_FRAMES)) {
       assert.ok(frames.length > 0, `${type} has an empty death animation`);
+    }
+  });
+
+  test('no walk cycle reuses a letter from that type\'s attack, pain or death art', () => {
+    // The bug this pins: `HEAD`'s walk was the shared A-D default, but its
+    // `seestate` is one state on frame A and B/C are the `missilestate` mouth,
+    // so a drifting cacodemon chewed continuously. Any override that overlaps
+    // another pose table is the same mistake.
+    for (const type of MONSTER_TYPES) {
+      const walk = MONSTER_WALK_FRAMES_OVERRIDE[type] ?? MONSTER_IDLE_FRAMES[type] ?? MONSTER_WALK_FRAMES;
+      const posed = new Set([
+        ...(MONSTER_ATTACK_FRAMES[type] ?? []),
+        ...(MONSTER_PAIN_FRAMES[type] ?? []),
+        ...(MONSTER_DEATH_FRAMES[type] ?? []),
+      ]);
+      // The two AI-less types hold a spawn frame their death art starts on —
+      // documented on MONSTER_IDLE_FRAMES, and they never animate.
+      if (MONSTER_IDLE_FRAMES[type]) continue;
+      assert.deepEqual(walk.filter((f) => posed.has(f)), [], `doomednum ${type} walks on a posed frame`);
     }
   });
 

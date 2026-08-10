@@ -50,6 +50,8 @@ import {
   MONSTER_HEALTH,
   MONSTER_IDLE_FRAMES,
   MONSTER_PAIN_FRAMES,
+  MONSTER_WALK_FRAMES,
+  MONSTER_WALK_FRAMES_OVERRIDE,
   MONSTER_RAISE_FRAMES,
   MONSTER_TYPES,
   MONSTER_XDEATH_FRAMES,
@@ -103,14 +105,6 @@ const KNOCKBACK_STOP_SPEED = 1;
  * vanilla's own idle `A_Look` calls run every 10 tics (~0.29s), not every tic.
  */
 const LOOK_INTERVAL = 0.3;
-
-/**
- * DOOM's RUN-state convention: 4 frames (A-D) for every monster, the same
- * cycle `PLAY` uses. The one frame table that isn't rederived per type, with a
- * few known vanilla deviations — docs/monsters.md § Pain, and attack/pain
- * poses.
- */
-const MONSTER_WALK_FRAMES = ['A', 'B', 'C', 'D'];
 
 /**
  * How far off the floor a monster's death drop is *drawn* (map units), and how
@@ -205,7 +199,7 @@ export function buildThingSprites(
     // A monster walks, a barrel sways, an item blinks — and the two AI-less
     // monsters hold a spawnstate frame of their own (see MONSTER_IDLE_FRAMES).
     const animFrames = MONSTER_TYPES.has(type)
-      ? (MONSTER_IDLE_FRAMES[type] ?? MONSTER_WALK_FRAMES)
+      ? (MONSTER_IDLE_FRAMES[type] ?? MONSTER_WALK_FRAMES_OVERRIDE[type] ?? MONSTER_WALK_FRAMES)
       : isBarrel
         ? BARREL_IDLE_FRAMES
         : itemAnim

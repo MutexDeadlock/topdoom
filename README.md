@@ -72,7 +72,7 @@ faster than either alone. See [docs/movement.md](docs/movement.md).
 Set `VITE_DEVMODE=true` in a `.env.local` file at the repo root (git-ignored, create it
 yourself) and restart `npm run dev` to turn on the debug overlay and the hotkeys marked
 *(dev mode only)* above. Without it those keys are simply inert.
-See [docs/devmode.md](docs/devmode.md).
+See [docs/menu.md](docs/menu.md#dev-mode-devmode).
 
 ## Sound
 
@@ -126,7 +126,8 @@ explosion splash and knockback all follow vanilla's own rules and tables — the
 exception is the damage numbers, tuned softer than the original's so the rhythm matches but the
 bite doesn't.
 
-See [docs/combat.md](docs/combat.md) and [docs/monsters.md](docs/monsters.md) for how any of it
+See [docs/weapons.md](docs/weapons.md), [docs/combat.md](docs/combat.md) and
+[docs/monster-ai.md](docs/monster-ai.md) for how any of it
 actually works.
 
 ## Layout
@@ -137,16 +138,23 @@ part actually works under the hood, `docs/` documents each subsystem in depth:
 | Doc | Covers |
 |---|---|
 | [docs/wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD overrides, the `public/wads/` manifest |
-| [docs/menu.md](docs/menu.md) | The menu, settings persistence, URL parameters, session lifecycle |
-| [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, occlusion fading, camera, sprites |
+| [docs/menu.md](docs/menu.md) | The menu, settings persistence, URL parameters, session lifecycle, dev mode |
+| [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, occlusion fading, camera |
+| [docs/sprites.md](docs/sprites.md) | Things drawn as sprites, and how thousands of them are batched |
+| [docs/frameloop.md](docs/frameloop.md) | The frame delta, the FPS cap, pausing |
 | [docs/movement.md](docs/movement.md) | Collision, wall sliding, straferunning, falling, knockback |
-| [docs/combat.md](docs/combat.md) | Weapons, shot resolution, auto-aim, line of sight, damage and death |
-| [docs/monsters.md](docs/monsters.md) | Waking, chase pathing, attacks, infighting, per-type quirks |
+| [docs/weapons.md](docs/weapons.md) | Weapon selection, fire rates, spread, damage rolls |
+| [docs/combat.md](docs/combat.md) | Shot resolution, auto-aim, blood and puffs, splash and the BFG |
+| [docs/death.md](docs/death.md) | Monster and player death, telefrag, barrels, boss triggers |
+| [docs/world.md](docs/world.md) | The shared `world.ts` queries: line of sight, neighbor heights |
+| [docs/monster-ai.md](docs/monster-ai.md) | Waking, chase pathing, attacks, infighting, per-type quirks |
+| [docs/monster-attacks.md](docs/monster-attacks.md) | Realizing a fired attack: hitscan, projectiles, the revenant's homing |
+| [docs/monster-archvile.md](docs/monster-archvile.md) | The arch-vile: raising corpses, the blast attack |
+| [docs/monster-iconofsin.md](docs/monster-iconofsin.md) | MAP30's boss: the spitter, the spawn cube, the brain's death |
 | [docs/items.md](docs/items.md) | Pickups, inventory, keys, powerups |
 | [docs/hud.md](docs/hud.md) | The HUD, level card, intermission, best times, screen effects |
 | [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, damage floors |
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal and sight blocking |
-| [docs/devmode.md](docs/devmode.md) | Dev-mode gating and the profiling overlay |
 
 ## Checking a WAD without a browser
 

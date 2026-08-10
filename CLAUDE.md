@@ -27,17 +27,15 @@ node scripts/inspect-wad.ts public/wads/iwad/DOOM.WAD E1M1
 node scripts/inspect-wad.ts public/wads/iwad/DOOM2.WAD MAP05 public/wads/pwad/SCYTHE.WAD
 ```
 
-Runs directly via Node's native TS support (no flag needed on Node 22+) — no browser
-required. Reports lump/map counts, which file a map's lumps came from, any textures the map
-references but the WAD set lacks, how many subsector polygons came out degenerate, and
-whether the player start is walkable. This is the fastest way to sanity-check a change to the
-WAD parser, texture merging, or BSP reconstruction, and the way to reproduce a bug against a
-specific real-world WAD without spinning up a browser.
+Runs under Node's native TS support, no browser. It reports lump/map counts, lump provenance,
+missing textures, degenerate subsector polygons and whether the player start is walkable — the
+fastest check on a WAD-parsing, texture-merging or BSP change, and the way to reproduce a bug
+against a specific real-world WAD.
 
-For collision/movement logic bugs, prefer synthetic geometry over probing a real map, where nearby
-unrelated geometry makes results hard to interpret: `tests/fixtures/gridmap.ts` builds a real
-`DoomMap` from ASCII art. A throwaway script is still the right tool for a one-off investigation —
-those go in the scratchpad, never in `src/`.
+For collision/movement bugs prefer synthetic geometry over a real map, where unrelated nearby
+geometry muddies the result: `tests/fixtures/gridmap.ts` builds a real `DoomMap` from ASCII art. A
+throwaway script is still right for a one-off investigation — those go in the scratchpad, never in
+`src/`.
 
 ## Toolchain constraints
 
@@ -99,22 +97,27 @@ several record rules that look like accidents and aren't.
 
 | Doc | Covers |
 |---|---|
-| [docs/wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD override rules, the `public/wads/` manifest |
-| [docs/menu.md](docs/menu.md) | The menu as launcher and pause screen, difficulty prompt, persisted settings, URL parameters, `main.ts`'s session lifecycle |
-| [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, wall occlusion fading, camera orbit, view distance, sprites and their batching |
+| [docs/wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD override rules, level names, the `public/wads/` manifest |
+| [docs/menu.md](docs/menu.md) | The menu as launcher and pause screen, difficulty, persisted settings, URL parameters, `main.ts`'s session lifecycle, `DEVMODE` and the profiler |
+| [docs/frameloop.md](docs/frameloop.md) | `game.ts`'s frame: the delta, the FPS cap, pausing |
+| [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, wall occlusion fading, camera orbit, view distance, texture animation |
+| [docs/sprites.md](docs/sprites.md) | Things as sprites: billboards, instanced batching, which things spawn, monster poses |
 | [docs/movement.md](docs/movement.md) | Collision, `groundFloor`, `slideMove`, straferunning, gravity/falling, knockback |
-| [docs/combat.md](docs/combat.md) | Weapons, `shotPath`, auto-aim, `hasLineOfSight`, splash, the BFG, monster/player death, barrels |
-| [docs/monsters.md](docs/monsters.md) | Waking, chase pathing, the decision to attack, infighting, per-type quirks, spatial indexing |
-| [docs/monsterattacks.md](docs/monsterattacks.md) | Realizing a fired attack: hitscan vs. projectile, monster missiles in flight, the revenant's homing |
-| [docs/iconofsin.md](docs/iconofsin.md) | MAP30's boss: the spitter, the spawn cube, the brain's death |
+| [docs/world.md](docs/world.md) | `world.ts`'s shared queries: `hasLineOfSight`, the neighbor-height lookups |
+| [docs/weapons.md](docs/weapons.md) | Weapon selection, fire rates, spread, damage rolls |
+| [docs/combat.md](docs/combat.md) | `shotPath`, range, auto-aim, what a shot hits, blood/puffs, splash and the BFG |
+| [docs/death.md](docs/death.md) | Monster death, telefrag, player death, exploding barrels, boss-death triggers |
+| [docs/monster-ai.md](docs/monster-ai.md) | Waking, chase pathing, the decision to attack, infighting, per-type quirks, spatial indexing |
+| [docs/monster-attacks.md](docs/monster-attacks.md) | Realizing a fired attack: hitscan vs. projectile, monster missiles in flight, the revenant's homing |
+| [docs/monster-archvile.md](docs/monster-archvile.md) | The one monster that breaks the `MONSTER_STATS` model: raising corpses, the blast attack |
+| [docs/monster-iconofsin.md](docs/monster-iconofsin.md) | MAP30's boss: the spitter, the spawn cube, the brain's death |
 | [docs/items.md](docs/items.md) | Pickups, inventory, keys/locked doors, monster drops, powerups |
 | [docs/hud.md](docs/hud.md) | The HUD, level stats and timer, level card, intermission, best times, center messages, `WadFont`, screen effects |
 | [docs/styles.md](docs/styles.md) | Which stylesheet owns what, the `styles.css` entry, the palette/stacking tokens |
-| [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, the donut, damage floors, scrolling textures |
+| [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, the donut, damage floors, secrets |
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
 | [docs/audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |
-| [docs/devmode.md](docs/devmode.md) | `DEVMODE` gating, debug hotkeys, the profiling overlay |
-| [docs/testing.md](docs/testing.md) | The test suite: runner, the ASCII-grid map fixture, which WADs are committed |
+| [docs/testing.md](docs/testing.md) | The test suite: runner, the ASCII-grid map fixture, which WADs are committed, the doc-pointer guard |
 
 For what is and isn't implemented, see [README.md](README.md#state) and [CHANGELOG](CHANGELOG).
 
@@ -138,26 +141,21 @@ not choosing against it on purpose.
 
 **Constants fall into exactly two marked categories.** Values derived from vanilla carry their
 source citation as a comment at the declaration (`g_game.c`'s ticcmd tables, `info.c`'s mobjinfo
-fields, `P_RadiusAttack`'s literal 128). Values tuned by feel say so explicitly — currently
-`GRAVITY` and `ACCELERATION` (`player.ts`), `BRIGHTNESS_LIFT`, `PICKUP_SCALE` and
-`VIEW_DISTANCE` (`constants.ts`),
-`MONSTER_FADE_RANGE` (`render/occlusion.ts`) and the pain-flash alpha (`game.ts`). `weapons.ts`
-was on that list and no longer is: fire rates, spread, damage and projectile speed all have exact
-vanilla sources (docs/combat.md § Fire rates), and "it doesn't translate to a dt-scaled model" was
-hiding numbers that were simply wrong. Never
-introduce a third, unmarked category: a bare number with no note is indistinguishable from a
-transcription error.
+fields, `P_RadiusAttack`'s literal 128). Values tuned by feel say so explicitly, in those words at
+the declaration — `grep -rn "tuned by feel" src/` is the current list, not any roster kept here,
+which drifted the moment one moved file. `weapons.ts` used to be full of them and no longer is: fire
+rates, spread, damage and projectile speed all have exact vanilla sources
+(docs/weapons.md § Fire rates), and "it doesn't translate to a dt-scaled model" was hiding numbers
+that were simply wrong. Never introduce a third, unmarked category: a bare number with no note is
+indistinguishable from a transcription error.
 
 **`constants.ts` stays small**, and admits a constant on exactly one of two grounds. Either it is
 used in more than two files and isn't identity-coupled to any one module (`DOOM_TIC`), or it is a
-**feel dial** — a tuned-by-feel presentation number deliberately parked somewhere obvious so it
-stays easy to find and retune, however few files read it (`BRIGHTNESS_LIFT`, used only by
-`render/mapmesh.ts`; `PICKUP_SCALE`, only by `game/things.ts`; `VIEW_DISTANCE`, only by `game.ts`).
-Nothing else:
-`PLAYER_RADIUS`/`PLAYER_HEIGHT` and `NO_SIDE`/`LF`/`SUBSECTOR_BIT` briefly lived there during a
-consolidation pass and were moved back to `game/player.ts` and `wad/map.ts` once it was clear they
-belong with the code that owns their meaning. Don't re-add constants there just because they're
-imported in two or three places.
+**feel dial** — a tuned-by-feel presentation number parked somewhere obvious so it stays easy to
+retune, however few files read it (`BRIGHTNESS_LIFT`, `PICKUP_SCALE`, `VIEW_DISTANCE`, each read by
+one or two). Nothing else: `PLAYER_RADIUS`/`PLAYER_HEIGHT` and `NO_SIDE`/`LF`/`SUBSECTOR_BIT` briefly
+lived there and were moved back to `game/player.ts` and `wad/map.ts`, where the code that owns their
+meaning is. Don't re-add constants there just because they're imported in two or three places.
 
 **Position types (`src/types.ts`).** `Pos2` (`{x, y}`), `Pos3` (`+z`) and `Placement`
 (`{x, y, angle}`) are **structural**, and always **DOOM map space** (x east, y north, z up = feet
@@ -194,6 +192,12 @@ without measuring; the relevant docs say which is which.
   in the commit message.
 - **README.md** should only contain a project overview, setup steps, and instructions for starting
   and playing the game. Don't let it accumulate implementation detail — link to `docs/` instead.
+- **`docs/` is flat, and a group of related docs shares a name prefix** (`monster-ai`,
+  `monster-attacks`, `monster-archvile`, `monster-iconofsin`) rather than living in a subdirectory.
+  Half these docs are cited from two or more subsystems, so "which folder owns this" often has no
+  answer; a prefix groups them in a listing while keeping every pointer one path segment, which is
+  what `tests/docs/references.test.ts` and the ~280 pointers in `src/` are written against. Adding a
+  tier means repointing all of them and widening that test's pattern.
 
 ## Code comments
 

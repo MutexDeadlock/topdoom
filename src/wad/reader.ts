@@ -53,10 +53,9 @@ export class Reader {
   }
 
   /**
-   * Lump name: 8 bytes, normalised to upper case. The name ends at the first
-   * NUL — map editors do not always zero the rest of the field, so bytes after
-   * it are leftovers from a previous edit and must be ignored, exactly as
-   * vanilla DOOM's strncpy does.
+   * Lump name: 8 bytes, normalised to upper case, ending at the first NUL —
+   * everything past it is stale bytes a map editor left behind.
+   * docs/wad.md § Loading and merging.
    */
   name8(): string {
     let s = '';

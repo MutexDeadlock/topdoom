@@ -4,24 +4,24 @@ Features and improvements
   - add setting to cap the frame rate at 30, 60 or 120 fps
     (default: uncapped); it applies to the running level right away
   - increased view distance
-  - bundled DOOM1 shareware is now the v1.9 one
-  - entering a level now shows "Entering <level name>" on screen.
-    - the name is the WAD's own CWILV/WILV graphic where it has one for that
-      level, as drawn on the original's intermission screen
-    - otherwise it comes from the WAD's own MAPINFO if it has one,
-      otherwise from the hard-coded level titles from vanilla
-    - a PWAD map with neither is named after the file it came from
-    - the menu's level list shows those names too
-  - leaving a level now shows an intermission popup
-    - it now also tracks your best time per level, and announces a new one
-      - records are kept per WAD, level and difficulty, and survive a reload
-    - the WAD is identified by a hash of its contents, so renaming a file
-      keeps its records and two different WADs sharing a name don't collide
-    - a run started with ?pos= can't set a record
-  - a locked door or switch now says which key it wants
-  - the HUD's weapon column no longer changes width with the weapon: it is
-    fixed, and an icon too wide for it is scaled down
-  - the menu's CHANGELOG link, under the version number, opens this file
+  - bundled DOOM1 shareware is now the v1.9 one (I assume)
+  - some HUD / UI work
+    - entering a level now shows "Entering <level name>" on screen.
+      - the name is the WAD's own CWILV/WILV graphic where it has one for that
+        level, as drawn on the original's intermission screen
+      - otherwise it comes from the WAD's own MAPINFO if it has one,
+        otherwise from the hard-coded level titles from vanilla
+      - a PWAD map with neither is named after the file it came from
+      - the menu's level list shows those names too
+    - leaving a level now shows an intermission popup
+      - it now also tracks your best time per level, and announces a new one
+        - records are kept per WAD, level and difficulty, and survive a reload
+      - the WAD is identified by a hash of its contents, so renaming a file
+        keeps its records and two different WADs sharing a name don't collide
+      - a run started with ?pos= can't set a record
+    - a locked door or switch now tells which key it requires
+    - the HUD's weapon column has now a fixed width
+    - the menu's CHANGELOG link, under the version number, opens this file
 
 Fixed bugs
   - projectiles now collide the way vanilla's do
@@ -35,7 +35,7 @@ Fixed bugs
   - cacodemons, lost souls and pain elementals now really fly
   - monster walk animations now use each type's own frames
   - a THING the WAD set has no sprite for is still skipped, but the level
-    load now says which ones (it used to vanish without a word)
+    load now logs which ones (it used to vanish without a word)
   - fixed periods, commas, hyphens and underscores in on-screen WAD-font text
   - fixed stuck monsters
   - fixed the game freezing when a second WAD is started from the menu after

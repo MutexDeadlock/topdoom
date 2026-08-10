@@ -56,7 +56,7 @@ const KEEN_TYPE = 72;
 const KEEN_DOOR_TAG = 666;
 
 /**
- * Vanilla's `A_BossDeath` (`p_enemy.c`), confirmed against source — see docs/specials.md §
+ * Vanilla's `A_BossDeath` (`p_enemy.c`), confirmed against source — see docs/death.md §
  * Boss death for the full table. Pure function of the map's own lump name: vanilla gates on
  * `gameepisode`/`gamemap`, not on which WAD supplied the map, so a PWAD's own MAP07 gets the
  * same Mancubus/Arachnotron triggers the IWAD's does.
@@ -109,7 +109,7 @@ export function bossDeathTriggersFor(mapName: string): BossDeathTrigger[] {
  * `triggerTag`, which has no triggering linedef, so nothing else in that scan can find them. MAP32's
  * Keen door (sector 16, tag 666) and MAP07's Arachnotron platform (sector 1, tag 667) both have no
  * linedef carrying their tag at all; without this they stay in the static batch and get drawn a
- * second time the moment their mover mesh appears. See docs/specials.md § Boss death.
+ * second time the moment their mover mesh appears. See docs/death.md § Boss death.
  */
 function bossDeathSectors(map: DoomMap): number[] {
   const tags = new Set<number>();

@@ -6,7 +6,7 @@
  * Distinct from `game/thingdefs.ts`, which holds the *WAD-derived* tables
  * every thing type is looked up in (sprites, health, drops, frame letters);
  * this file is runtime state and the API around it, the same division
- * `monsters/defs.ts` makes for the AI. See docs/items.md and docs/monsters.md.
+ * `monsters/defs.ts` makes for the AI. See docs/items.md and docs/monster-ai.md.
  */
 import * as THREE from 'three';
 import type { Sector } from '../../wad/map.ts';
@@ -235,7 +235,7 @@ export interface ThingLayer {
    * monster, ticks its AI: unalerted ones re-check sight every
    * `LOOK_INTERVAL`, alerted ones run `stepMonsterAI` every frame. Gravity and
    * `groundFloor` mirror `Player.update`, but movement is vanilla's 8-way
-   * `P_NewChaseDir` rather than `slideMove` (docs/monsters.md § Movement).
+   * `P_NewChaseDir` rather than `slideMove` (docs/monster-ai.md § Movement).
    * Returns every attack fired this frame for the caller to apply.
    *
    * `player` is `null` while the player is dead, freezing every monster in
@@ -318,7 +318,7 @@ export interface ThingLayer {
    * way to perform on its own. Backs crush damage (game.ts's `onCrush`
    * callback into `SpecialsController`) and the headroom-blocked check every
    * non-crushing mover uses to stop rather than clip through a monster
-   * (`game.ts`'s `headroomBlocked`) — either way, a mover only knows which
+   * (`game/moverblocking.ts`'s `headroomBlocked`) — either way, a mover only knows which
    * sector it's squeezing, not who's standing in it.
    */
   monstersInSector(sector: Sector): MonsterRef[];
@@ -335,13 +335,13 @@ export interface ThingLayer {
   crushablesInSector(sector: Sector): MonsterRef[];
   /**
    * Applies `amount` damage to `id`, switching to the death animation at 0 —
-   * gibbed or plain per `P_KillMobj`'s overkill rule (docs/combat.md § Monster
+   * gibbed or plain per `P_KillMobj`'s overkill rule (docs/death.md § Monster
    * death). A no-op if `id` is stale, already dead, or the amount is
    * non-positive: a projectile can outlive its target, and splash falloff
    * reaches 0 at the blast edge.
    *
    * - `source` — who dealt the hit, absent meaning the player. Drives the
-   *   infighting retarget via `shouldRetarget` (docs/monsters.md § Infighting).
+   *   infighting retarget via `shouldRetarget` (docs/monster-ai.md § Infighting).
    * - `knockUpSpeed` — the arch-vile's `A_VileAttack` launch. Applied here
    *   because it writes the same `z`/`velZ` fields gravity integration owns.
    * - `fromX`/`fromY` — the inflictor position, driving `thrustSpeed`'s
@@ -370,7 +370,7 @@ export interface ThingLayer {
    * player reference, so the caller tests the returned position against the
    * player itself. The new monster counts toward `stats.kills` when killed but
    * never toward `totalKills`, matching vanilla's fixed `P_SpawnMapThing`
-   * total — kills can legitimately exceed 100% on MAP30. docs/monsters.md §
+   * total — kills can legitimately exceed 100% on MAP30. docs/monster-iconofsin.md §
    * The spawn cube.
    */
   spawnMonster(type: number, at: Pos3, angleRad: number): MonsterRef | null;
@@ -412,14 +412,14 @@ export const BOSS_TYPES = new Set([7, 16]);
  * reaches them through their own separate action functions. In particular neither is gated on
  * `gamemap`, and `bossDeathTriggersFor`'s `default` branch maps over `BOSS_DEATH_TYPES` to make
  * every member exit on an unlisted episode's map 8 — which must not apply to these two. See
- * docs/specials.md § Boss death.
+ * docs/death.md § Boss death.
  */
 export const DEATH_NOTIFY_TYPES: Set<number> = new Set([...Object.values(BOSS_DEATH_TYPES), 72, 88]);
 
 /**
  * Vanilla's own `P_TeleportMove` telefrag damage — the literal `10000` it deals to everything
  * standing where a body lands. Only `spawnMonster` (the Icon of Sin's spawn cube) reaches it here;
- * this engine has no player teleport that can land on an occupied spot. See docs/combat.md §
+ * this engine has no player teleport that can land on an occupied spot. See docs/death.md §
  * Telefrag.
  */
 export const TELEFRAG_DAMAGE = 10000;

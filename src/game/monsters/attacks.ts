@@ -16,21 +16,21 @@ import type { Pos3 } from '../../types.ts';
  * to the world. The two halves are kept apart by their dependencies: the AI
  * touches nothing but a `MonsterBody`, while this needs the thing list, the
  * effect and projectile layers, and the audio engine.
- * docs/monsterattacks.md § Resolving an attack.
+ * docs/monster-attacks.md § Resolving an attack.
  */
 
 /**
  * How far off-aim each monster bullet is thrown — `p_enemy.c`'s
  * `(P_Random()-P_Random())<<20` BAM, ±255/4096 of a full turn, triangular.
  * Why it is the difference between a survivable gunner and a lethal one:
- * docs/monsterattacks.md § Hitscan vs. projectile.
+ * docs/monster-attacks.md § Hitscan vs. projectile.
  */
 const MONSTER_BULLET_SPREAD_DEG = (255 / 4096) * 360;
 
 /**
  * Slack added to the player's radius when testing a monster's hitscan bolt —
  * it makes a circle present the same average target as vanilla's 32-unit
- * *box*, and covers nothing else. docs/monsterattacks.md § Hitscan vs. projectile.
+ * *box*, and covers nothing else. docs/monster-attacks.md § Hitscan vs. projectile.
  */
 const MONSTER_BULLET_SLOP = 4;
 

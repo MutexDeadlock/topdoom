@@ -64,9 +64,11 @@ DOM. Deliberately **not** covered yet, and why:
 - **`ProjectileLayer` / `SpriteFxLayer`** — every `spawn*` short-circuits on `SpriteAnimator.resolve`,
   so a stubbed run would test the stubs. Test at `shotPath` level instead; `playerShotRange` exists
   as a separate exported function precisely so the range selection is reachable without the layer.
-- **`src/render/` (anything constructing THREE objects), all of `src/ui/`, `main.ts`, `game.ts`,
-  `audio/audio.ts`** — need a DOM or a GL context. `render/bsp.ts` *is* covered: it is pure
-  geometry despite where it lives.
+- **`src/render/` (anything constructing THREE objects), `src/ui/`, `main.ts`, `game.ts`,
+  `audio/audio.ts`** — need a DOM or a GL context. Two carve-outs: `render/bsp.ts` *is* covered,
+  being pure geometry despite where it lives, and so is any pure helper a DOM module happens to
+  export — `tests/ui/hud.test.ts` covers `hud.ts`'s `formatClock`/`percentOf` while `Hud` itself
+  stays out.
 - **Performance.** Hot paths are measured deliberately, in a script, on a quiet machine. A timing
   assertion in the suite turns a loaded machine into a red build and teaches everyone to ignore it.
 
@@ -141,10 +143,26 @@ Uniform cell heights also mean `hasLineOfSight`'s floor/ceiling sampling loop ne
 anything. A test meaning to exercise that half of the function must build a real step or low
 ceiling through the `heights` option, or it only looks like it covers it.
 
+## Doc references
+
+`tests/docs/references.test.ts` asserts that every `docs/<name>.md § <Heading>` pointer in `src/`,
+`tests/`, `scripts/` and `plugins/` resolves — the file exists and some heading in it starts with
+the quoted words. It exists because splitting the Icon of Sin's own doc out of the monster AI one
+left five pointers naming a file that no longer held their section, and nothing noticed until a doc
+audit.
+Any future split will do the same unless this test runs first.
+
+Two matching rules it deliberately encodes, because both shapes are all over the tree:
+- **Prefix, both directions.** A pointer may truncate a long heading (`§ The lost soul` for "The
+  lost soul: a charge, not a projectile"), and a pointer written mid-sentence trails into prose. A
+  heading's own leading words, up to the parenthetical file list most carry, must match.
+- **It must be a heading**, not a bold lead-in paragraph. A bold paragraph isn't addressable, so a
+  pointer at one is repaired by promoting the paragraph to a `###`.
+
 ## WAD-backed tests
 
-`DOOM1.WAD`, `freedoom2.wad`, `SCYTHE.WAD`, `NUTS.WAD` and `oku2v31.wad` are **committed to the
-repo**; only `DOOM.WAD` and `DOOM2.WAD` are gitignored. So a WAD-backed test runs everywhere by
+`DOOM1.WAD`, `freedoom2.wad`, `SCYTHE.WAD`, `NUTS.WAD`, `oku2v31.wad` and the two hand-made
+fixtures `fauler_sound.wad`/`faulers_first_map.wad` are **committed to the repo**; only `DOOM.WAD` and `DOOM2.WAD` are gitignored. So a WAD-backed test runs everywhere by
 default, and only a test needing one of those two has to guard itself — with node:test's
 declaration-time option, since presence is a static fact:
 
@@ -164,8 +182,8 @@ test that uses it):
 | `caco_pit_test.wad` | one room split at `y=32`, far floor **-48**, cacodemon in it (`E1M1`) | in-test | floating monsters over a ledge |
 
 The pinky pair are the maps a demon-bites-through-a-height-gap report was made on, checked against
-GZDoom (docs/monsters.md § Melee reach); `caco_pit_test.wad` is the map a cacodemon-stuck-in-a-pit
-report was made on, checked against vanilla (docs/monsters.md § Floating monsters). `pinky.ts` also builds a ready-to-step `MonsterBody`, so the
+GZDoom (docs/monster-ai.md § Melee reach); `caco_pit_test.wad` is the map a cacodemon-stuck-in-a-pit
+report was made on, checked against vanilla (docs/monster-ai.md § Floating monsters). `pinky.ts` also builds a ready-to-step `MonsterBody`, so the
 tests drive the real `stepMonsterAI` rather than re-implementing its melee gate — worth copying: a
 test that restates the condition it is checking passes for the wrong reason. Both were confirmed to
 fail with the fix reverted before being committed.

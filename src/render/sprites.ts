@@ -362,16 +362,10 @@ export class SpriteAnimator {
  * angle or animation frame now picks a different rotation frame, swaps in
  * that lump's geometry/material.
  *
- * Used only for the **player**, now the one sprite in the game that genuinely
- * wants its own mesh: it needs `setOpacity` (partial invisibility), which has
- * no per-instance equivalent in a batch, and there is exactly one of it.
- * Everything else goes through `SpriteBatch` — map things via
- * `game/things.ts`, and projectiles/impact explosions/teleport fog/smoke via
- * `game.ts`'s own `effectBatch`. Those effects were `SpriteActor`s until the
- * revenant's homing missile got its real vanilla flight and a map like
- * NUTS.WAD started holding thousands of missiles and ten thousand smoke puffs
- * in the air at once; see `Game.effectBatch`'s doc. One mesh each is fine for
- * a dozen actors and far too many draw calls for ten thousand.
+ * Used only for the **player**, the one sprite that genuinely wants its own
+ * mesh. Everything else goes through `SpriteBatch` — map things via
+ * `game/things.ts`, transient effects via `SpriteFxLayer` (`game/spritefx.ts`).
+ * docs/sprites.md § Batching.
  */
 export class SpriteActor {
   readonly mesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshBasicMaterial({ visible: false }));

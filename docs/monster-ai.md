@@ -3,6 +3,9 @@
 `src/game/monsters/ai.ts`, `src/game/monsters/defs.ts`, `src/game/monsters/vile.ts`,
 `src/game/things.ts`, `src/game/things/defs.ts`, `src/game/things/grid.ts`
 
+Realizing an attack once one is decided on is docs/monster-attacks.md; a monster's sprite poses are
+docs/sprites.md § Pain, and attack/pain poses; dying is docs/death.md.
+
 Every `MONSTER_TYPES` entry except Commander Keen (72) and the boss brain (88) wakes, chases and
 attacks — neither of those two attacks or moves in vanilla either.
 
@@ -10,7 +13,7 @@ attacks — neither of those two attacks or moves in vanilla either.
 read/write a monster's own mutable state and return *what happened* (a fired `MonsterAttack`, or
 whether it woke). `ThingLayer.update` (`things.ts`) is where that state lives — each `PosedThing`
 carries its AI fields — and owns the throttle that calls `tryWake`. `MonsterAttacks`
-(`monsters/attacks.ts`, docs/monsterattacks.md) turns a returned attack into damage and, for a
+(`monsters/attacks.ts`, docs/monster-attacks.md) turns a returned attack into damage and, for a
 ranged one, a tracer or a projectile. Same split as `WeaponSystem`/`SpecialsController`.
 
 **That is why the AI and the resolver are separate files, and the dependency gap is the reason.**
@@ -204,7 +207,7 @@ array and rebuilt once per `ThingLayer.update`. It is a closure rather than a se
 thing layer purely so the pooled buffers and the two bucket arrays below can't be reached from
 anywhere else.
 
-`blockersFor` reads a **uniform grid of living monsters** (`blockerGrid`, rebuilt once per
+`blockersFor` reads a **uniform grid of solid bodies** (`blockerGrid`, rebuilt once per
 `ThingLayer.update`) rather than scanning every thing, for the same reason vanilla has a blockmap:
 the naive version is O(monsters²) per frame, catastrophic past a stock level's population. Verified
 to return exactly the same neighbour set as the linear scan across all of NUTS.WAD's real positions.
@@ -237,6 +240,13 @@ overlap heavily. All were verified to return results identical to the linear sca
 DOOM2 MAP07 and DOOM E1M7. `monstersInSector` is deliberately left linear — it runs on a crusher
 tick, not per frame.
 
+**`stepMonsterAI` resolves sight lazily and memoizes it for the call** (`sightCached`/`canSee`).
+Only the refire loop and `runChaseCall` consume it and both run far less often than `stepMonsterAI`
+does, so evaluating it up front meant a sightline trace per monster per frame whose answer was
+usually thrown away — **measured as the engine's largest single cost on a crowded map**. Vanilla has
+the same shape: `P_CheckSight` is called from inside `A_Chase`, not per tic per thinker. Hoisting
+the call back out of the closure would undo this.
+
 **Both shot queries size their search from the map's own largest body (`ThingGrid.maxBodyRadius`),
 not from the largest in the game.** Since a shot is tested against each body's real `mobjinfo.radius`
 rather than one shared 24-unit box (docs/combat.md § How a shot deals damage), the neighbourhood has
@@ -247,6 +257,14 @@ what made monster AI the frame's bottleneck. Measured against the old flat 40-un
 wider swept box collects 3.4 candidates per query instead of 2.1 on a stock-shaped population and 9.9
 on one containing spider masterminds — 1.5× and 4× the cost of a query that was 0.1 µs to begin with,
 so even a thousand shots in the air stay well under half a millisecond a frame.
+
+**`blockerGrid` is not monsters-only, and the difference between solid and shootable is what keeps
+that safe.** It admits the exploding barrel and every `SOLID_DECORATION_TYPES` prop, because those
+carry vanilla's `MF_SOLID` and so block the player (`solidBodies`) and a monster's own movement
+(`blockersFor`) exactly as a monster does — reusing the index costs nothing. But a plain decoration
+is *not* `MF_SHOOTABLE`, so `raycastMonster` and `monstersNear` filter `SOLID_DECORATION_TYPES` back
+out: a torch stops a demon walking through it and never stops a bullet. Dropping either half of that
+is a bug in one direction or the other.
 
 **The arch-vile's corpse check (`findRaisableCorpse`) shares this grid** via a second bucket array,
 `corpseGrid`, filled in the same `posed` pass. It originally shipped as a linear scan on the
@@ -406,7 +424,7 @@ Three vanilla rules keep it from degenerating:
 A target that dies hands attention straight back to the player (`resolveTarget`), matching
 `A_Chase`'s fallback to `P_LookForPlayers` once `target->health <= 0` — unless the player is dead too,
 in which case `resolveTarget` reports no target at all and the monster reverts to idle instead of
-turning on the corpse (`game/things.ts`'s per-frame update loop, docs/combat.md § Player death). A
+turning on the corpse (`game/things.ts`'s per-frame update loop, docs/death.md § Player death). A
 monster already infighting someone else is unaffected by the player's death and fights on regardless.
 
 ## The lost soul: a charge, not a projectile
@@ -458,7 +476,7 @@ This is what makes killing one at melee range reliably worse than shooting it fr
 
 `ThingLayer.damage`'s death branch checks one other thing right after: whether the monster that just
 died was the last living one of a doomednum `A_BossDeath` cares about, which on the right map fires a
-level-wide special (a lowering floor, an exit) rather than anything AI-related — see docs/specials.md
+level-wide special (a lowering floor, an exit) rather than anything AI-related — see docs/death.md
 § Boss death.
 
 ## Commander Keen
@@ -485,169 +503,7 @@ rotation-0, so that derivation has nothing to key on.
 
 **`A_KeenDie` is the payoff**: once every Keen on the level is dead it opens the tag-666 door. Unlike
 every `A_BossDeath` case it is *not* gated on `gamemap`, which is why `bossDeathTriggersFor` appends
-Keen's trigger to every map's table rather than putting it in the per-map switch — docs/specials.md §
+Keen's trigger to every map's table rather than putting it in the per-map switch — docs/death.md §
 Boss death. One accepted simplification: vanilla runs it on the eleventh death frame, this engine
 fires it at the death instant. The delay is purely cosmetic here, unlike the barrel's `A_Explode`
 delay, which is gameplay-relevant and *is* modelled.
-
-## The arch-vile
-
-`src/game/monsters/vile.ts` — the one type with enough of its own behavior to warrant a file. It
-holds `tryRaiseCorpse` (called from `runChaseCall`), `resolveVileBlast`/`spawnWindupFire`/
-`vileFlameFor` (called from `MonsterAttacks`), and the vile's constants. Two exceptions stay out of
-it and say so at the declaration: the fire-time sight recheck and the `'vileWindup'` return remain
-one-line branches in `ai.ts`, and `VILE_KNOCKUP_SPEED` lives in `defs.ts` because `MONSTER_STATS`
-reads it (docs/monsterattacks.md § Resolving an attack).
-
-Both signature mechanics are modeled, confirmed against `p_enemy.c`/`info.c`.
-
-**Resurrection** (`A_VileChase`/`PIT_VileCheck`) is `MonsterStats.resurrects`, set only for the
-arch-vile: on every chase call where it has a `movedir`, it checks one chase-call's travel ahead
-(vanilla's `viletryx`/`viletryy`) for a raisable corpse — `MF_CORPSE`, not still mid-death-animation
-(vanilla's `tics != -1`; here `deadTime` against `deathFrameCount * MONSTER_DEATH_FRAME_SECONDS`),
-within `corpse.radius + vile.radius` (vanilla's box test, not a circle), and with room to stand back
-up (`circleBlocked` against the corpse's footprint) — and raises it *instead of* taking its ordinary
-chase-call turn at all, matching vanilla exactly: a tic that resurrects skips the reactiontime/
-threshold aging and the melee/missile/walk decision entirely.
-
-`thingdefs.ts: MONSTER_RAISE_FRAMES` is vanilla's `raisestate` table for the 13 types that have one
-(every boss, the lost soul, the arch-vile itself, Commander Keen and the boss brain don't). These
-had to be pulled from `info.c` directly — reusing `MONSTER_DEATH_FRAMES` reversed was tried first
-and is wrong, since vanilla's raise sequences are hand-authored per type and share no derivation
-rule (the zombieman's 3 raise states reverse its death sequence's *middle* frames, the shotgun guy's
-4 reverse its *entire* sequence including the settled final frame, despite both sprites sharing the
-identical death letter range).
-
-`ThingLayer.reviveCorpse` is the revival: full health back, immediately alerted and re-targeting the
-player (`corpsehit->target = NULL`), held still (`attackPause`) for exactly as long as its raise
-animation takes — reusing `SpriteActor.revive()` (undoes `die()`) plus `playOnce`, the same
-one-shot-then-hand-back mechanism attack/pain poses use, just running dead-to-alive. The vile's own
-`S_VILE_HEAL1-3` art is deliberately not reproduced: those states reference sprite frame indices
-26-28, past `Z` (25), with no corresponding WAD lumps at all — a genuine vanilla quirk, not a
-transcription slip — so the vile keeps its ordinary held pose during the hold.
-
-**The attack** (`A_VileAttack`) is `AttackStats.blast`: guaranteed un-rolled direct damage
-(`diceSides: 1, diceMult: 20` — `rollDamage` with one side always returns the multiplier, encoding
-vanilla's literal unrolled `20`) plus an upward launch (`Player.launchUpward`/`ThingLayer.damage`'s
-`knockUpSpeed`, vanilla's `momz = 1000*FRACUNIT/mass` using the default mass 100), followed by a
-separate radius blast (`P_RadiusAttack(fire, actor, 70)`) centered near the *victim*.
-
-Two things make its timing different from every other ranged monster:
-
-- **`AttackStats.startDelaySeconds`** (66/35s) — `A_VileAttack` doesn't fire until 66 tics into its
-  `missilestate` chain, unlike every other monster's shots, which fire on the next tick after
-  `A_Chase` commits. The windup having no mechanical consequence is an accepted simplification
-  everywhere else; here it is the mechanic.
-- **A second line-of-sight check at the exact moment the shot fires** (`stepMonsterAI`'s burst-fire
-  block, gated on `ranged.blast`). `A_VileAttack` calls `P_CheckSight` again right before dealing
-  any of this, so breaking sight during the ~1.9s windup makes the whole attack fizzle — the entire
-  reason ducking behind cover saves you.
-
-**That second check is sight-only — there is deliberately no distance re-check, and that is
-vanilla's own behavior.** `checkMissileRange`'s `maxOffsetDist` (896) only gates *starting* the
-attack; once committed the vile is planted for the full 2.686s and the eventual sight check never
-looks at distance, so a target that triggered the cast and then ran far away while staying in sight
-still takes the guaranteed hit — vanilla's infamous long-range vile snipes. On a very open map
-(NUTS.WAD's vile arena is essentially one continuous floor) this means sight stays connected across
-thousands of units, and a player has to start retreating almost the instant the vile commits — which
-is exactly what the windup flame exists to signal. This does **not** generalize: every non-vile
-ranged attack fires within about a frame of its own sight check, so no comparable gap exists.
-
-Getting this delay real is what exposed a latent bug in `render/sprites.ts: SpriteAnimator.advance`,
-unrelated to the arch-vile: `animIndex` is one field shared across the death/override/base-cycle
-domains, and nothing re-validated it against `animFrames` the instant `attackPause` reached 0 while
-its attack-pose `playOnce` was still running. No other monster can trigger it — their shots fire
-near the start of `duration`, so `attackPause` always outlasts the pose — but the vile's leaves a
-stale index (routinely past a 4-letter walk cycle) for `resolve` to index `animFrames` with, a real
-crash. `advance` now clamps `animIndex` into range unconditionally at the top of that branch.
-
-`resolveVileBlast` is a dedicated path rather than reusing `resolveHitscan`, since
-there's no trace to run — vanilla damages `actor->target` directly, not whatever a ray hits first.
-Its splash reuses `applyRadiusDamage`, extended with an optional `source` (attributed to the vile,
-so the "nothing retaliates against an arch-vile" rule covers it) and — spotted while wiring this up
-— a missing vanilla rule that applies to *every* explosion: `PIT_RadiusAttack` exempts the spider
-mastermind and cyberdemon from all concussion/splash damage, direct hits only.
-
-**The windup flame** (`MT_FIRE`) is a real, persistent object in vanilla that appears the instant
-the windup *starts* (`A_VileTarget`) and tracks 24 units in front of the target for its whole
-duration. Not cosmetic: without a visible warning, "duck behind cover mid-windup" isn't a mechanic a
-player can use. `beginRangedAttack` reports a fourth, purely-cosmetic `MonsterAttack` kind —
-`'vileWindup'` — the instant a `blast` attack starts, separate from the `'ranged'` event
-`resolveVileBlast` handles; `things.ts` also moves the vile's `attackFrames` pose to trigger on
-`'vileWindup'` rather than at the blast landing, matching vanilla's timing (`S_VILE_ATK1`-`ATK10`
-play across the entire missilestate chain).
-
-`MonsterAttacks.spawnWindupFire` reuses `SpriteFxLayer`'s ordinary one-shot `spawn`/`addImpact` machinery with
-two differences: its `lifetime` is overridden to `VILE_WINDUP_TRACK_SECONDS` (read from
-`MONSTER_STATS` rather than duplicated) instead of one pass through its frames, and `OneShotEffect`
-gained `followTargetId`/`vileSourceId` — `SpriteFxLayer` re-derives `x`/`y`/`z` every frame from
-`fireFrontOf(target)` (vanilla's `dest->x + 24*cos(dest->angle)` etc., keyed off the *target's*
-own `MonsterRef.angle`/`Player.angle`), but only while `World.hasLineOfSight(vile, target)` holds —
-matching `A_Fire`'s own `P_CheckSight` gate including its failure behavior: the flame freezes where
-it last was rather than disappearing or continuing to chase, since `A_Fire` just returns early.
-
-An earlier version froze a single offset vector *toward the vile* at spawn and re-applied it to the
-target's live position — the wrong formula (vanilla's windup offset is based on the *target's*
-facing, not the vile's position) and missing the sight gate, so the flame slid around behind a
-moving player instead of staying in front of whichever way they were looking. `vileBlastOffset` (the
-*different*, vile-facing-based formula `A_VileAttack` uses for its one-time final reposition once
-the shot lands) is untouched — vanilla genuinely uses two different offsets for the two moments.
-
-No hand-off is needed between the windup flame and `resolveVileBlast`'s burst effect (or nothing, if
-the shot fizzles): both are timed off the same `startDelaySeconds`.
-
-## Pain, and attack/pain poses
-
-**`painChance` is `mobjinfo.painchance` over 256 exactly, and `painDuration` its `painstate` chain's
-tics over 35.** Both are plain constants in the same table `MONSTER_HEALTH` already lifts from. An
-earlier eyeballed set had the imp and demon shrugging off roughly half the hits that stagger them in
-vanilla, and flattened pain length to one shared value where vanilla ranges from 4 tics (imp, demon,
-baron barely flinch) to 12 (cacodemon, pain elemental recoil visibly). A stagger also *aborts*
-whatever attack was under way, including the unfired shots of a volley, matching vanilla's pain state
-replacing the attack state outright.
-
-**The walk cycle defaults to `A`-`D` and overrides per type.** `MONSTER_WALK_FRAMES` is DOOM's RUN-
-state convention, the same cycle `PLAY` uses and correct for most of the roster;
-`MONSTER_WALK_FRAMES_OVERRIDE` (both in `thingdefs.ts`) carries the eight types whose `seestate`
-chain says otherwise, read off `info.c` by walking that chain to where it loops and keeping the
-distinct frames: cacodemon `A` alone, lost soul `A`-`B`, pain elemental `A`-`C`, and `A`-`F` for the
-arch-vile, revenant, mancubus, arachnotron and spider mastermind.
-
-The flat default used to apply to everything, which was **visible on the cacodemon**: `S_HEAD_RUN1`
-is a single state looping to itself, and `HEAD`'s `B`/`C` are its `missilestate` — so a cacodemon
-just drifting toward you opened and closed its mouth continuously, biting art with no bite. That
-overlap is what `tables.test.ts` now pins: no type's walk letters may appear in its own attack, pain
-or death table. Every override letter was also confirmed to exist as real rotation frames in
-`DOOM2.WAD`, the same check the death tables get below.
-
-**Attack and pain each get a real, dedicated pose** (`thingdefs.ts`'s `MONSTER_ATTACK_FRAMES`/
-`MONSTER_PAIN_FRAMES`). The blocker an earlier walk-cycle stand-in was working around was real:
-unlike death frames, which are derivable straight from the WAD because death art is structurally the
-rotation-0-only tail of a sprite's frame set, attack and pain frames are ordinary rotation 1-8 frames
-indistinguishable from walk frames by structure alone. The fix was to stop deriving them from the
-WAD and instead take vanilla's `info.c` `missilestate`/`painstate` chains and convert each state's
-frame number to a letter — then verify every letter for every monster (walk + attack + pain + death
-[+ xdeath]) against the real `SpriteBank`-indexed lumps, checking each sprite's *total* letter count
-against its WAD-confirmed rotation-1 range. All 18 sprites (17 monsters + `PLAY`) matched exactly.
-
-That cross-check caught **four pre-existing bugs** the WAD-derivation method had gotten wrong: the
-lost soul, revenant and arch-vile's death tables were each missing their actual first frame
-(`SKULF0`, and for the revenant/arch-vile a directional `SKELL1`-`8`/`VILEQ1`-`8` reused from their
-own pain state — a genuine `info.c` quirk, exactly what a pure "eyeball the lump names" derivation
-misses), and the chaingunner's death/xdeath split fell two letters too early, dropping `CPOSM0`/
-`CPOSN0` and duplicating them into the gib tail.
-
-Both tables play through `SpriteAnimator.playOnce`, not `die`: a third animation mode alongside the
-permanent one-shot-then-hold `die` and the looping alive cycle, playing its frames forward once and
-handing back to the walk cycle on its own — which is what makes it reusable for both attack and pain
-(each a transient interruption, not a permanent state change). A later `playOnce` (a pain flinch
-landing mid-attack pose) simply replaces whatever was playing, matching vanilla's state machine,
-which has no queueing either.
-
-`ThingLayer.update` triggers the attack pose where it already detects `stepMonsterAI` returning a
-fired attack, and the pain pose inside `damage()` right after `reactToDamage` — gated on
-`p.painTimer > 0` rather than every non-lethal hit, since `reactToDamage` only sets it when the hit
-rolls past the monster's `painChance` (a failed roll still alerts and retargets, just doesn't
-stagger). The player's own letters (`thingdefs.ts`'s `PLAYER_ATTACK_FRAMES`/`PLAYER_PAIN_FRAMES`, derived
-and WAD-checked the same way) trigger analogously: attack whenever `WeaponSystem.update` returns a
-nonempty `Shot[]`, pain inside `damagePlayer` whenever the player survives a hit.

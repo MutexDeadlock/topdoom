@@ -5,7 +5,7 @@
 
 What happens *after* `stepMonsterAI` has decided to attack — which attacks are hitscan and which
 throw a real missile, how each is realized against the world, and how a monster projectile flies.
-The decision side is docs/monsters.md.
+The decision side is docs/monster-ai.md.
 
 ## Resolving an attack
 

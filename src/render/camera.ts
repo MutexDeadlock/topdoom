@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Input } from '../game/input.ts';
 import type { Pos2, Pos3 } from '../types.ts';
+import { VIEW_DISTANCE } from '../constants.ts';
 
 export interface TopDownCameraOptions {
   /** Tilt away from straight down, in degrees. Small values stay top-down. */
@@ -51,7 +52,10 @@ export class TopDownCamera {
     this._yawDeg = options.yawDeg ?? 0;
     this.targetYawDeg = this._yawDeg;
 
-    this.camera = new THREE.PerspectiveCamera(55, aspect, 8, 12000);
+    // The far plane is `VIEW_DISTANCE` rather than a number of its own: the distance fog is what
+    // ends the view, and a far plane below it would clip geometry the fog hasn't hidden yet.
+    // docs/render.md § View distance.
+    this.camera = new THREE.PerspectiveCamera(55, aspect, 8, VIEW_DISTANCE);
     this.camera.up.set(0, 1, 0);
   }
 

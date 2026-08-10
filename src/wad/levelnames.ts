@@ -13,13 +13,8 @@ export type LevelMission = 'doom' | 'doom2' | 'plutonia' | 'tnt';
  * `HUSTR_1`-`HUSTR_32` (DOOM II), `PHUSTR_*` (Plutonia) and `THUSTR_*` (TNT) — 132 strings,
  * generated from that header rather than typed out, TNT MAP05's "hanger" typo included.
  *
- * Two deliberate departures from the header's own text, both because a title here is only ever
- * shown *next to* its map (the menu prints the lump name first; the level card is the one place it
- * stands alone, and only because the level was just named on the screen before it):
- * - the leading identifier is stripped — `"E1M1: Hangar"` and `"level 1: entryway"` become
- *   `"Hangar"` and `"Entryway"`, matching how a MAPINFO `levelname` is written;
- * - the first letter is capitalized, since id wrote DOOM II's, Plutonia's and TNT's strings all
- *   lowercase and DOOM 1's capitalized, and the menu draws them as ordinary DOM text.
+ * Stored bare and capitalized rather than as id wrote them (`"Hangar"`, not `"E1M1: Hangar"`) —
+ * two deliberate departures, for the reason in docs/wad.md § Level names.
  */
 export const LEVEL_NAMES: Record<LevelMission, Record<string, string>> = {
   doom: {
@@ -166,9 +161,8 @@ export const LEVEL_NAMES: Record<LevelMission, Record<string, string>> = {
 
 /**
  * The file names vanilla's own `D_IdentifyVersion` (`d_main.c`) looks for, each mapped to the title
- * table that IWAD's maps use. The match is on the **whole** name, not a substring, which is the
- * point: `freedoom2.wad` is not `doom2.wad` and must not inherit DOOM II's titles for maps it
- * names entirely differently.
+ * table that IWAD's maps use. Matched on the **whole** name, never a substring —
+ * docs/wad.md § Level names.
  */
 const IWAD_MISSIONS: Record<string, LevelMission> = {
   'doom2f.wad': 'doom2',
@@ -265,11 +259,9 @@ export class LevelNames {
    * actually belongs to this map — the level's name as the WAD's own artist drew it beats anything
    * assembled from a table.
    *
-   * The catch is the same one the vanilla title table has: a PWAD that replaces `MAP01` without
-   * replacing `CWILV00` would otherwise announce itself with the IWAD's name for a level it has
-   * nothing to do with. So a patch from a *different* file than the map only counts when the map
-   * came from the IWAD — where a graphics add-on replacing the base game's name patches is exactly
-   * what it looks like.
+   * A patch from a *different* file than the map only counts when the map came from the IWAD,
+   * which is what keeps a PWAD's `MAP01` from announcing itself with the IWAD's `CWILV00`.
+   * docs/wad.md § Level names.
    */
   graphicFor(mapName: string): string | undefined {
     const upper = mapName.toUpperCase();

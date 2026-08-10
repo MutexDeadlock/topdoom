@@ -29,7 +29,7 @@ export const TFOG_SPAWN_OFFSET = 20;
  * none of which is a real map `Thing`, so none goes through `ThingLayer`.
  */
 export interface OneShotEffect extends Pos3 {
-  /** A bare `SpriteAnimator` drawn through `Game.effectBatch`, no `THREE.Object3D` of its own — same arrangement as `PosedThing`. */
+  /** A bare `SpriteAnimator` drawn through `SpriteFxLayer`'s own batch, no `THREE.Object3D` of its own — same arrangement as `PosedThing`. */
   anim: SpriteAnimator;
   light: number;
   elapsed: number;
@@ -38,7 +38,7 @@ export interface OneShotEffect extends Pos3 {
    * Set only for the arch-vile's windup flame (vanilla's `MT_FIRE`/`A_Fire`):
    * position is re-derived every frame from this target's live position and
    * facing rather than staying fixed. `null` means the player; absent (the
-   * common case) skips this. See docs/monsters.md § The arch-vile.
+   * common case) skips this. See docs/monster-archvile.md.
    */
   followTargetId?: number | null;
   /** The arch-vile that spawned this flame — sight from it is re-checked before repositioning (`A_Fire`'s `P_CheckSight` gate). Always set alongside `followTargetId`. */
@@ -96,7 +96,7 @@ export const PROJECTILE_RADIUS_DEFAULT = 6;
  * half of `PIT_CheckThing`'s over/under test: a shot passes *underneath* when
  * `missile.z + height < target.z` and *overhead* when `missile.z > target.z +
  * target.height`. That band is deliberately asymmetric about the target's feet
- * — see docs/monsterattacks.md § Monster projectiles in flight.
+ * — see docs/monster-attacks.md § Monster projectiles in flight.
  */
 export const PROJECTILE_HEIGHT = 8;
 
@@ -107,7 +107,7 @@ export const IMPACT_FRAME_SECONDS = 4 * DOOM_TIC;
  * A projectile's impact explosion, keyed by its flight sprite — from
  * `linuxdoom-1.10`'s `info.c` state tables. `MANF` exploding into the
  * *rocket's* `MISL` frames is a genuine vanilla oddity, not a simplification
- * here (docs/monsterattacks.md § Hitscan vs. projectile). Purely cosmetic: this
+ * here (docs/monster-attacks.md § Hitscan vs. projectile). Purely cosmetic: this
  * plays where a shot reached `shotPath`'s distance; what it actually damaged
  * is resolved separately.
  */
@@ -224,7 +224,7 @@ export const VILE_FIRE_OFFSET = 24;
 /**
  * The revenant missile's turn rate — vanilla's `A_Tracer` turns by `TRACEANGLE`
  * (`0xc000000`, 16.875°) every 4th tic, converted to a continuous rate. See
- * docs/monsterattacks.md § The revenant's homing missile.
+ * docs/monster-attacks.md § The revenant's homing missile.
  */
 export const REVENANT_TRACER_TURN_RATE_RAD = (16.875 * Math.PI) / 180 / (4 * DOOM_TIC);
 
@@ -235,7 +235,7 @@ export const TRACER_HOMING_Z_OFFSET = 40;
  * The revenant missile's trailing smoke (vanilla's `MT_SMOKE`, spawned inside
  * `A_Tracer`), which only a shot that won its `homingBias` roll trails.
  * `MT_SMOKE` reuses the `PUFF` sprite; frames B,C,B,C,D (`S_SMOKE1`-`5`) from
- * `info.c`, each held 4 tics. See docs/monsterattacks.md § The revenant's
+ * `info.c`, each held 4 tics. See docs/monster-attacks.md § The revenant's
  * homing missile.
  */
 export const SMOKE_TRAIL_FRAMES = ['B', 'C', 'B', 'C', 'D'];
@@ -265,7 +265,7 @@ export function turnToward(from: number, to: number, maxDelta: number): number {
  * **Swept, not sampled at the step's end**: `game.ts` clamps `dt` at 0.05s, so
  * the fastest missiles cover 43 units in one frame — further than the widest
  * contact circle a small body presents, i.e. a point test could step straight
- * through the player. See docs/monsterattacks.md § Monster projectiles in flight.
+ * through the player. See docs/monster-attacks.md § Monster projectiles in flight.
  */
 export function stepTouchesBody(
   from: Pos3,
@@ -287,7 +287,7 @@ export function stepTouchesBody(
 }
 
 export interface Projectile {
-  /** Drawn through `Game.effectBatch`, same as `OneShotEffect.anim` — see that field's doc. */
+  /** Drawn through `SpriteFxLayer`'s own batch, same as `OneShotEffect.anim` — see that field's doc. */
   anim: SpriteAnimator;
   originX: number;
   originY: number;
@@ -315,7 +315,7 @@ export interface Projectile {
    * Only the *player*'s own missiles are told apart by this now — every
    * projectile, whoever fired it, re-tests what it has run into every frame
    * against live positions rather than resolving hit-or-miss up front. See
-   * docs/monsterattacks.md § Monster projectiles in flight.
+   * docs/monster-attacks.md § Monster projectiles in flight.
    */
   sourceId: number | null;
   /** The firing monster's doomednum, for `sameSpecies` — vanilla's "don't hit same species as originator" rule on projectiles. */
@@ -333,7 +333,7 @@ export interface Projectile {
    * path isn't the fixed origin+angle+distance line every other projectile
    * flies, so it carries its own live position/heading. `targetId` is `null`
    * for the player. A `homing` object existing at all means this shot won its
-   * `homingBias` roll. See docs/monsterattacks.md § The revenant's homing missile.
+   * `homingBias` roll. See docs/monster-attacks.md § The revenant's homing missile.
    */
   homing?: { targetId: number | null; x: number; y: number; z: number; headingRad: number; smokeTimer: number };
 }

@@ -9,7 +9,7 @@ import type { AudioEngine } from '../../src/audio/audio.ts';
  * The right button's "switch to previous weapon" binding. What's worth pinning is
  * that `previousWeapon` is tracked off the once-a-frame comparison rather than
  * at each switch site, so a switch nothing routed through `handleSwitching`
- * (a pickup, a berserk pack) still counts — docs/combat.md § Slot keys.
+ * (a pickup, a berserk pack) still counts — docs/weapons.md § Slot keys.
  */
 
 const AUDIO = { play: () => {} } as unknown as AudioEngine;

@@ -48,13 +48,8 @@ export interface WeaponDef {
   ammoPerShot: number;
   /**
    * Seconds between shots while the trigger is held — **vanilla's own state
-   * chain, not tuned by feel**: the tic counts of every state from the one
-   * carrying the fire action up to (not including) the one carrying
-   * `A_ReFire`, plus the lead-in states before the fire action. `A_ReFire`
-   * runs on *entry* to its state and re-enters the fire chain immediately
-   * while the trigger is down, so its own tics are never spent on a held
-   * trigger — which is why a weapon's listed states add up to more than this.
-   * See docs/combat.md § Fire rates.
+   * chain, not tuned by feel**, and notably excluding the `A_ReFire` state's
+   * own tics. docs/weapons.md § Fire rates.
    */
   cooldown: number;
   kind: WeaponKind;
@@ -222,7 +217,7 @@ export const WEAPON_CYCLE: WeaponId[] = [
  * shifts in `p_pspr.c`, damage from `P_GunShot`/`PIT_CheckThing`, ammo cost
  * from `P_FireWeapon`, projectile speed from `mobjinfo`. Nothing here is tuned
  * by feel; a top-down camera changes how a weapon is *aimed*, not how fast it
- * shoots or how hard it hits. See docs/combat.md § Fire rates.
+ * shoots or how hard it hits. See docs/weapons.md § Fire rates.
  */
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
   fist: {
@@ -447,7 +442,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     // S_BFG3 (10, A_FireBFG) + S_BFG1 (20) + S_BFG2 (10); S_BFG4 carries
     // A_ReFire. Those first two states are also vanilla's charge-up *before*
     // the ball leaves, which this engine doesn't reproduce — see
-    // docs/combat.md § Fire rates.
+    // docs/weapons.md § Fire rates.
     cooldown: 40 * DOOM_TIC,
     kind: 'projectile',
     pellets: 0,

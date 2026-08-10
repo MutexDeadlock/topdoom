@@ -60,7 +60,7 @@ fitting, never everyone the sector's blockmap iteration happens to touch.
 **A barrel takes the same crush damage as a monster**, via `crushablesInSector` (`monstersInSector`
 plus any living barrel in the sector) — vanilla's `PIT_ChangeSector` doesn't distinguish `MT_BARREL`
 from any other `MF_SHOOTABLE` mobj, so a barrel under a crusher dies and explodes exactly as if it'd
-been shot (docs/combat.md § Exploding barrels covers the death→explode delay itself). The
+been shot (docs/death.md § Exploding barrels covers the death→explode delay itself). The
 headroom-blocked check other movers use (`game/moverblocking.ts`) deliberately stays on
 `monstersInSector` alone — whether a barrel should also stall a closing door is a separate question
 this change doesn't touch.
@@ -169,19 +169,6 @@ pillar was stranded at whatever it had reached — around 128, the ledge with th
 a player who walks straight over after pressing the switch. The guard was previously per-mover-kind
 and inconsistent: `triggerFloor` only refused another *floor*, and `triggerLift` refused nothing.
 
-## Neighbor-height queries
-
-`world.ts`'s `lowestNeighborFloor`/`highestNeighborFloor`/`nextHigher`/`nextLowerFloor`/
-`lowestNeighborCeiling`/`highestNeighborCeiling`/`darkestNeighborLight` are vanilla's
-`P_FindLowestFloorSurrounding` family — how a mover resolves its target height.
-
-**Each falls back to the sector's own current height only when it has no two-sided neighbors at
-all**, never leaving a mover with nowhere to go. The fallback must *not* kick in merely because the
-sector's own height is already the most extreme value, which is why these track a `found` flag rather
-than seeding the reduction with the sector's own height: a closed door's sector has floor ==
-ceiling, so seeding a *lowest* ceiling search with it makes every real neighbor lose, pinning the
-door's "open" target at its own closed height instead of the corridor's actual ceiling.
-
 ## Teleporters
 
 39/97 for either the player or a monster; Doom II's 125/126 for monsters only. The destination is the
@@ -218,6 +205,11 @@ down-wait-up-stay lifts). Everything else — exit lines, stair builders, most d
 nothing under a monster's feet, which is why a level's monsters can't wander around rearranging its
 geometry. **125/126 are the monster-only pair**: vanilla lists them *only* in the non-player branch,
 so a player walking one does nothing, which is what makes the classic monster-closet setup work.
+
+The lookup around a monster is **radius-bounded** at `MONSTER_CROSS_RADIUS` (136) — the widest body
+in the game, the spider mastermind's 128, plus slack. A monster wider than that would start missing
+its own walk triggers, silently, so the constant is coupled to the widest `MONSTER_STATS.radius`
+rather than being free.
 
 A monster's teleport deliberately does **not** touch `lastTeleport` — that exists solely to reseed the
 *player's* walk-trigger tracking — but it does get the same `TFOG` puff at both ends, since vanilla
@@ -405,132 +397,3 @@ Level stats for where these numbers surface on screen.
 `update` reports the entry back to `game.ts` (`SectorEffectResult.secretFound`, true on that one
 frame only) rather than just bumping the counter, because finding a secret also announces itself —
 a center-screen message and `radio`, neither of which vanilla does. docs/hud.md § Center messages.
-
-## Boss death
-
-`A_BossDeath` (`p_enemy.c`) is the one special this engine drives from a monster's death rather than
-a linedef or a sector type: once every monster of a specific doomednum is dead **and** on a specific
-map, it fires a level-wide action. Confirmed directly against the real source (fetched from
-`raw.githubusercontent.com/id-Software/DOOM`) rather than assumed, tracing both the top-of-function
-map/type gate and the victory-section action switch:
-
-| Map (lump name) | Dies | Action |
-|---|---|---|
-| E1M8 | Baron (3003) | tag 666, `lowerFloorToLowest` |
-| E2M8 | Cyberdemon (16) | exit level |
-| E3M8 | Spider Mastermind (7) | exit level |
-| E4M6 | Cyberdemon (16) | tag 666, blaze-open door |
-| E4M8 | Spider Mastermind (7) | tag 666, `lowerFloorToLowest` |
-| MAP07 | Mancubus (67) | tag 666, `lowerFloorToLowest` |
-| MAP07 | Arachnotron (68) | tag 667, `raiseToTexture` |
-| any other episode's map 8 (e.g. SIGIL's E5M8) | any of the above five | exit level |
-| **any map at all** | **Commander Keen (72)** | **tag 666, `open`** |
-| every other map | — | nothing |
-
-The last row before Keen's is real, not a guess: vanilla's `switch(gameepisode)` has a `default` case
-with no per-type check at all, only `if (gamemap != 8) return;` — an unrecognized episode's map 8
-exits on whichever of the five boss types happens to die last. `bossDeathTriggersFor`
-(`game/specials/mapscan.ts`) is a pure function of `map.name` (`E1M8`, `MAP07`, …) that reproduces this whole
-table, gating on the map's own lump name rather than which WAD supplied it — a PWAD's own MAP07 gets
-DOOM2's exact Mancubus/Arachnotron triggers, matching vanilla, which only ever looks at `gamemap`.
-
-**Commander Keen's row is deliberately not part of that switch.** `A_KeenDie` is a *separate action
-function* from `A_BossDeath`, and it has no `gamemap` check at all — it builds a synthetic `line_t`
-with `tag = 666` and calls `EV_DoDoor(&junk, open)` wherever the last Keen happens to die. So
-`bossDeathTriggersFor` appends it to every map's table rather than listing it per map, and 72 is
-added to `things/defs.ts`'s `DEATH_NOTIFY_TYPES` rather than to `BOSS_DEATH_TYPES` — the latter's values
-are what the `default` branch maps over to build the "any of the five exits on map 8" row, which must
-not pick Keen up. The `open` kind is `EV_DoDoor`'s ordinary `VDOORSPEED` open-and-stay, distinct from
-E4M6's `blazeOpen`. The Icon of Sin (88) is in `DEATH_NOTIFY_TYPES` too but has no row here at all:
-`A_BrainDie` exits the level directly rather than through a tag, and `game/iconofsin.ts` owns it — see
-docs/iconofsin.md.
-
-**A boss-death tag has no triggering linedef, and `computeMovableSectors` has to be told.** That
-function builds the set of sectors pulled out of the static render batch by scanning sector specials
-10/14 and *linedef* specials — neither of which can see a sector that only ever moves via
-`triggerTag`. Without `bossDeathSectors` feeding it the tags from this table, such a sector stays in
-the static batch and is then drawn a *second* time the moment `MoverGeometry` gives it a mover
-mesh, leaving the old geometry frozen at its original height underneath. Two stock cases have no
-linedef carrying their tag at all and hit this: DOOM2 MAP32's Keen door (sector 16, tag 666) and
-MAP07's Arachnotron platform (sector 1, tag 667).
-
-**Split across three files, the same "system reports, `game.ts` realizes" shape as
-`onCrush`/`onExit`/`crossLines`:**
-
-- `game/things.ts`'s `damage()` death branch is the only place that can answer "is this the last
-  living one of its type" — it already has `posed` in scope, the same array the pain elemental's
-  triple-spawn special-case reads. It reproduces vanilla's own thinker scan (`posed.every(q => q.type
-  !== p.type || q.dead)`) and, if true, calls the optional `onBossDeath` callback `buildThingSprites`
-  was given — the same "callback bundle" shape `sfx: SoundEmitter` already uses there, not a return
-  value threaded back through `ThingUpdateResult`, since a death can happen from any of `game.ts`'s
-  many `things.damage()` call sites, not just inside `update()`.
-- `game/specials.ts`'s `SpecialsController.notifyBossDeath` owns the actual per-map table
-  (`bossDeathTriggers`, resolved once from `map.name` in the constructor) and dispatches to either
-  `onExit(false)` or a new `triggerTag(tag, kind)`. `triggerTag` reuses the existing
-  `triggerFloor`/`triggerRaiseToTexture`/`triggerDoor` movers exactly as a linedef special would,
-  scanning `map.sectors` for the tag directly since there's no triggering linedef to run
-  `resolveTargets` on. `triggerFloor`'s `line` parameter is optional for exactly this caller — it's
-  only ever dereferenced for `changeTexture`, which a boss-death `lowerFloorToLowest` never sets.
-- `game.ts` holds the player-alive gate (vanilla's "make sure there is a player alive for victory"),
-  since `playerDead` is `Game`'s own state — the callback passed into `buildThingSprites` checks
-  `!this.playerDead` and then fans the doomednum out to **both** owners,
-  `this.specials.notifyBossDeath(type)` and `this.icon.notifyBossDeath(type)`. Each ignores the types
-  it doesn't handle, so neither needs to know the other's table.
-
-## Scrolling textures
-
-`SCROLL_LINE_SPECIAL` = 48 (`occlusion.ts: TextureScroller`) is vanilla's `P_UpdateSpecials`: a linedef
-with this special scrolls its front sidedef's texture 35 map-units/second (`FRACUNIT`/tic), forever, no
-trigger, active from map load. Used surprisingly often in the stock IWADs (250 linedefs across both
-games) for waterfalls, lava streams and conveyor-look walls.
-
-Mechanically the same shape as `WallFader`/`FlatFader`: index the affected quads' vertex ranges once,
-rewrite one attribute on them every frame — here the `uv` attribute's U component instead of vertex
-alpha, computed from each quad's own texture width (`MaterialBank.size`) so a narrow texture's pattern
-visibly cycles faster than a wide one for the same 35 units/sec, matching vanilla's offset-over-width
-UV math.
-
-`WallOccluder` gained `line`/`frontSide` fields (threaded through `mapmesh.ts`'s
-`processLine`/`addTwoSidedSide`/`addWall`) so `TextureScroller` can find exactly the linedef's *front*
-(vanilla's `sidenum[0]`) quad — the only side vanilla ever scrolls — among the batched geometry.
-**Static-batch geometry only** — unlike `recolorSector`, which also reaches mover meshes (§ Relighting
-mover geometry), `TextureScroller` indexes the static batch alone. In practice this never excludes
-anything real: a mapper only puts 48 on a decorative wall, never one whose sector also needs to move.
-
-The accumulated offset is wrapped to `[0, 1)` before being written into the single-precision `uv`
-buffer, purely to avoid float32 precision loss over a long session — `RepeatWrapping` already renders
-an unwrapped UV outside `[0, 1]` correctly, so the wrap isn't needed for correctness.
-
-## Animated textures
-
-`render/textureanim.ts: AnimatedTextures` is the other half of `P_UpdateSpecials` — the "ANIMATE
-FLATS AND TEXTURES GLOBALLY" loop, as opposed to scrolling's line-special loop above. Nukage, lava,
-water and blood flats and the fire/blood/rock wall patterns all cycle through a fixed sequence of
-named frames forever, no trigger, from map load, at 8 tics/frame (`animdefs[]`, `p_spec.c` —
-every entry happens to share that speed).
-
-Vanilla's own comment on that table says the in-between frames are "all the flats/textures between
-the start and end entry, in the order found in the WAD file," not a naming pattern — confirmed
-necessary by entries like `FIREWALA..FIREWALL` and `FIRELAV3..FIRELAVA`, whose start/end names don't
-even sort the way a digit sequence would. `GraphicsBank.textureNamesInOrder`/`flatNamesInOrder`
-expose the same WAD-lump-order lists vanilla's own texture/flat tables are built from
-(`readAllTextures`'s `Map` insertion order, and `flats`'s), so a sequence is resolved once at load
-time by slicing between the start/end indices. A sequence whose start name isn't in the loaded WAD
-set (an episode-exclusive animation in the wrong IWAD) is dropped entirely, matching vanilla's own
-`R_CheckTextureNumForName`/`W_CheckNumForName` skip.
-
-**No geometry work needed.** This engine already keys one material per texture *name*
-(`MaterialBank`), and every quad using that name shares that one material's mesh
-(`mapmesh.ts: BatchSet`) — so animating a name just means repointing its already-built material at a
-different bitmap each tic (`MaterialBank.setFrame`), and every quad using it picks up the new frame
-for free. `MaterialBank.has` gates this to names some batch actually uses, so an animation with no
-on-screen name in the current map costs nothing beyond the initial WAD-order lookup.
-
-**Per-frame offset is counted from the sequence's own start (`i` = 0 at the first name), not
-vanilla's absolute internal texture-table index.** Real vanilla computes `pic = basepic +
-((leveltime/speed + i) % numpics)` with `i` ranging over *absolute* texture indices, so a sequence's
-apparent starting phase depends on where its first texture happens to land in vanilla's internal
-table — a WAD-load-order artifact, not something meaningful to reproduce (this engine doesn't build
-that same absolute index space at all). Using the in-sequence offset instead changes only that
-arbitrary phase, never the cycle rate or frame order, and both are equally arbitrary to a player with
-nothing to compare against.

@@ -1,13 +1,20 @@
-import type { Wad } from './wad.ts';
+import type { Wad, WadFile } from './wad.ts';
 
 /**
- * The lump names carrying level definitions, in the order a file's own lumps are preferred:
- * ZDoom reads `ZMAPINFO` instead of `MAPINFO` when a file provides both (the old lump stays
- * for engines that don't know the newer syntax), and `UMAPINFO` is the Boom-era standard that
- * most modern PWADs ship. All three are parsed by the same reader below — the only syntax
+ * The lump names carrying level definitions, **most preferred first**: a file that ships several
+ * means them as alternatives for different engines, not as layers, so only the first one it
+ * provides is read. `UMAPINFO` is the Boom-era standard most modern PWADs ship; ZDoom reads
+ * `ZMAPINFO` instead of `MAPINFO` when a file provides both (the old lump stays for engines that
+ * don't know the newer syntax). All three are parsed by the same reader below — the only syntax
  * difference that matters here is where the level name sits.
+ * docs/wad.md § Level names.
  */
-const MAPINFO_LUMPS = ['UMAPINFO', 'ZMAPINFO', 'MAPINFO'];
+export const MAPINFO_LUMPS = ['UMAPINFO', 'ZMAPINFO', 'MAPINFO'];
+
+/** The one MAPINFO-family lump to read out of a file, given every such lump name it carries. */
+export function preferredMapInfoLump(present: readonly string[]): string | null {
+  return MAPINFO_LUMPS.find((name) => present.includes(name)) ?? null;
+}
 
 /** Text lumps are 8-bit, the same as every other string a WAD carries. */
 const DECODER = new TextDecoder('latin1');
@@ -131,15 +138,24 @@ export function parseMapInfoNames(text: string): Map<string, string> {
 
 /**
  * Every level name the loaded WAD set defines. Files are read in load order and later ones win,
- * the same rule the merged lump directory itself follows (docs/wad.md); within one file `ZMAPINFO`
- * suppresses that file's `MAPINFO`, which is what ZDoom does with the pair.
+ * the same rule the merged lump directory itself follows; within one file, exactly one lump is
+ * read, per `MAPINFO_LUMPS`. docs/wad.md § Level names.
  */
 export function mapInfoNames(wad: Wad): Map<string, string> {
-  const zdoomFiles = new Set(wad.lumps.filter((l) => l.name === 'ZMAPINFO').map((l) => l.source));
-  const names = new Map<string, string>();
+  // Keyed by source file, in first-appearance order, which is load order.
+  const perFile = new Map<WadFile, string[]>();
   for (const lump of wad.lumps) {
     if (!MAPINFO_LUMPS.includes(lump.name)) continue;
-    if (lump.name === 'MAPINFO' && zdoomFiles.has(lump.source)) continue;
+    const seen = perFile.get(lump.source);
+    if (seen) seen.push(lump.name);
+    else perFile.set(lump.source, [lump.name]);
+  }
+
+  const names = new Map<string, string>();
+  for (const [file, present] of perFile) {
+    const wanted = preferredMapInfoLump(present);
+    const lump = wad.lumps.find((l) => l.source === file && l.name === wanted);
+    if (!lump) continue;
     for (const [map, title] of parseMapInfoNames(DECODER.decode(wad.data(lump)))) names.set(map, title);
   }
   return names;

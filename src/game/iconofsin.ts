@@ -32,7 +32,7 @@ const BOSS_BRAIN_TYPE = 88;
  * `hasLineOfSight` always lifts the origin it is handed by a player-sized eye height, which is the
  * right approximation for everything else in the game and wrong for a 32-tall thing sitting in a
  * 32-tall ceiling slot — it would sight from *above* its own ceiling. `PLAYER_EYE_LIFT` cancels that
- * lift back out so the wedge really starts inside the slot. See docs/monsters.md § Waking the eye.
+ * lift back out so the wedge really starts inside the slot. See docs/monster-iconofsin.md § Waking the eye.
  */
 const SHOOTER_SIGHT_Z = 32 - (32 >> 2);
 const PLAYER_EYE_LIFT = PLAYER_HEIGHT * 0.75;
@@ -128,7 +128,7 @@ interface SpawnCube extends Pos3 {
  * and death handled by `ThingLayer`'s `INERT_SHOOTABLE` branch. All this class adds is what happens
  * *after* it dies, which arrives through the same `onBossDeath` callback `A_BossDeath` uses.
  *
- * See docs/iconofsin.md.
+ * See docs/monster-iconofsin.md.
  */
 export class IconOfSin {
   private map: DoomMap;
@@ -221,7 +221,7 @@ export class IconOfSin {
    * `tryWake` to run on. Both of vanilla's wake paths are reproduced: its sector's `soundtarget`,
    * and `P_LookForPlayers`' sight. No FOV cone, though `A_Look` passes `allaround == false` —
    * gating the whole boss on the facing a mapper gave a thing that draws nothing is not worth
-   * reproducing. See docs/monsters.md § Waking the eye.
+   * reproducing. See docs/monster-iconofsin.md § Waking the eye.
    */
   private eyeNotices(): boolean {
     if (!this.shooter) return false;
@@ -275,7 +275,7 @@ export class IconOfSin {
    * Flies every cube and lands the ones that arrive. `MT_SPAWNSHOT` is
    * `MF_NOBLOCKMAP|MF_NOCLIP|MF_NOGRAVITY`, so this deliberately tests nothing against the geometry
    * it crosses and damages nothing on the way — which is exactly why a cube is not a
-   * `ProjectileLayer` projectile. See docs/monsters.md § The spawn cube.
+   * `ProjectileLayer` projectile. See docs/monster-iconofsin.md § The spawn cube.
    */
   private updateCubes(dt: number): void {
     if (this.cubes.length === 0) return;

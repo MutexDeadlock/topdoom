@@ -56,6 +56,12 @@ frustum is then 2.5° below horizontal and meets the floor `240/tan(2.5°) ≈ 5
 ~5080 past the player. It is a radius rather than a frustum test because the camera yaws (`Q`/`E`,
 and the reorient on spawn/teleport), so any direction can become the forward one.
 
+**That derivation assumes flat ground**, and only flat ground: looking down a drop of `h` puts the
+frustum's ground reach at `(240 + h)/tan(2.5°)` from the eye, so any drop at all frames further than
+the radius covers. This is knowingly not chased, because walls bound reveal long before the radius
+does — the measurement, and the three wide-open maps where it does surface, are in
+docs/render.md § View distance.
+
 **Anything inside that distance and outside `SIGHT_RADIUS` is a black hole in the middle of a view
 the player plainly has** — and it is not only cosmetic: `ThingLayer` gates rendering, `pickMonster`
 and `raycastMonster` all on fog alpha, so a monster standing there is invisible, un-lockable *and*
@@ -107,11 +113,12 @@ straight to target instead of the surroundings visibly fading up from black on f
 
 Reveal drives the *same* per-vertex alpha channel the dithered-discard technique already reads (see
 the rendering doc) — extended here to flats too (`textures.ts`'s `onBeforeCompile` injection is no
-longer wall-only). For walls that means two independent systems write one channel:
-**`WallFader.update` only computes its sightline occlusion factor and stops short of touching
-geometry; `WallFader.commit` writes the *product* of that factor and the fog alpha** once both are
-known for the frame. Flats have no occlusion pass of their own (only walls can stand between camera and
-player), so `applyFogToFlats` writes fog alpha directly.
+longer wall-only). That means two independent systems write one channel:
+**`update` only computes its sightline occlusion factor and stops short of touching geometry;
+`commit` writes the *product* of that factor and the fog alpha** once both are known for the frame.
+Walls and flats are symmetric here — `FlatFader` runs its own occlusion pass (a raised platform
+between camera and player fades the same way a wall does) and `FlatFader.commit` writes the same
+product `WallFader.commit` does.
 
 Which subsector a given surface belongs to is resolved differently per surface type, because only some
 of them know it natively:

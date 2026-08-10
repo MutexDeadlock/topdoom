@@ -6,7 +6,7 @@ import { DOOM_TIC } from '../constants.ts';
  * `animdefs[]`, `p_spec.c` (linuxdoom-1.10), verbatim: every flat and wall
  * texture vanilla animates, as (kind, first name, last name, tics/frame) —
  * the in-between frames are resolved from WAD lump order at construction
- * time, not spelled out here. See docs/specials.md § Animated textures for
+ * time, not spelled out here. See docs/render.md § Animated textures for
  * why (e.g. `FIREWALA`..`FIREWALL` isn't a naming-pattern mismatch).
  */
 interface AnimDef {
@@ -57,7 +57,7 @@ interface Sequence {
  * special-48 scrolling. Repoints each affected name's already-built material
  * at a different bitmap every few tics (`MaterialBank.setFrame`); no geometry
  * work needed. Per-frame phase is counted from each sequence's own start
- * rather than vanilla's absolute texture-table index. See docs/specials.md §
+ * rather than vanilla's absolute texture-table index. See docs/render.md §
  * Animated textures for both.
  */
 export class AnimatedTextures {

@@ -13,7 +13,7 @@ import type { MonsterBody } from '../../src/game/monsters/defs.ts';
  * of the overlap read as blocked even though `tryWalk` had just proved the full
  * chase step lands clear. Vanilla never sees this: `P_Move` tests only the
  * destination. DOOM2 MAP02's zombieman at (1056, 960) is the reported case;
- * 94 monsters across DOOM/DOOM2/SCYTHE spawn this way. See docs/monsters.md
+ * 94 monsters across DOOM/DOOM2/SCYTHE spawn this way. See docs/monster-ai.md
  * § Movement.
  */
 

@@ -38,6 +38,14 @@ The case that hits real users is a **PWAD placing a monster its base WAD never h
 `DOOM1.WAD` has no `HEAD` lumps at all (the cacodemon appears in no episode-1 map), so a caco placed
 on it can't be drawn and can't spawn. Load such a PWAD on `DOOM2.WAD` or `freedoom2.wad`.
 
+Two fallbacks inside `readAllTextures` are silent by design and worth knowing about, because both
+present as "some textures are missing" rather than as an error. **A file with `TEXTURE1`/`TEXTURE2`
+but no `PNAMES` of its own borrows the last `PNAMES` seen** — texture packs routinely ship the
+texture lumps alone and expect the IWAD's patch names. And **a malformed `TEXTUREx` is caught and
+costs only that file's textures**, not the whole merged set, so one bad add-on can't take the level
+down with it. Anything actually missing at the end still surfaces through the load-time
+missing-texture warning.
+
 ## Player start
 
 `World.playerStart` uses the **last** doomednum-1 thing in the map, not the first. Vanilla's
@@ -54,6 +62,15 @@ voodoo-doll row and the 27th the real start.
 and for the menu's level list (docs/menu.md § Picking a WAD set). A map lump name is not an answer
 on its own: DOOM II, Plutonia and TNT all ship `MAP01`-`MAP32` with completely different titles, and
 a PWAD's `MAP01` is not the IWAD's level of that name at all.
+
+A file may ship several MAPINFO flavours (`UMAPINFO`, `ZMAPINFO`, `MAPINFO`), which are alternatives
+for different engines rather than layers, so **exactly one of them is read per file** — the first
+`MAPINFO_LUMPS` lists, most preferred first (`preferredMapInfoLump`). That subsumes ZDoom's own
+`ZMAPINFO`-instead-of-`MAPINFO` rule without a special case. It matters that `mapinfo.ts` and
+`plugins/wad-manifest.ts` share the function rather than each implementing the order: they were once
+separate, one iterating the WAD's directory and one iterating the array, so a file carrying both
+`UMAPINFO` and `MAPINFO` could show one title in the menu and a different one on the level card.
+Across files the ordinary rule still applies — later files win, like the merged directory itself.
 
 Two entry points over the same rules. `levelTitleFor` returns the level's **title alone** or
 `undefined` — that's what the menu appends after the lump name it already prints. `levelNameFor`

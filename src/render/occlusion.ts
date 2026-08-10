@@ -36,7 +36,7 @@ const MONSTER_FADE_RANGE = 768;
  * Most awake monsters that can be fade targets at once, nearest first. Purely
  * a cost bound (`WallFader` cost is quads × targets): past a couple of dozen
  * nearby monsters, every wall any of them stands behind is already faded by a
- * nearer one. See docs/monsters.md § Spatial indexing.
+ * nearer one. See docs/monster-ai.md § Spatial indexing.
  */
 const MAX_FADE_TARGETS = 48;
 
@@ -87,40 +87,14 @@ export class WallFader {
   }
 
   /**
-   * Camera position in DOOM (x, y, height) coordinates, and every point a
-   * wall between the camera and it should fade for — the player plus every
-   * currently-awake monster (`ThingLayer.awakeMonsters`, game.ts), so a
-   * chasing monster stays visible through walls the same way the player
-   * does, while one that hasn't noticed the player yet stays hidden.
+   * Camera position in DOOM (x, y, height) coordinates, and every point a wall
+   * between the camera and it should fade for — the player plus the nearest
+   * awake monsters (`collectFadeTargets`).
    *
-   * `openingOf` (`World.openingOf`, threaded through as a callback so this
-   * class doesn't need a `World` reference of its own) is what tells a
-   * genuinely solid quad apart from one that only *renders* solid — a masked
-   * middle texture (grate, fence, barred window) is built (`mapmesh.ts:
-   * addTwoSidedSide`) to span exactly its line's own vertical opening, so a
-   * quad whose `[botH, topH]` sits inside that opening is the passable gap
-   * itself, not something blocking it: a shot (and a look) already passes
-   * straight through it, same as `World.blocksSight`/`blocksShot` already
-   * treat it elsewhere, so fading it too has nothing left to usefully
-   * reveal. This has to be a per-*quad* check, not a per-*line* one: the
-   * same two-sided line's upper/lower step quads sit *outside* that opening
-   * (they're the riser exposed where the neighbouring sector's floor/ceiling
-   * doesn't reach as far) and are genuinely solid regardless of whether the
-   * line has an opening elsewhere — gating on the line as a whole made an
-   * ordinary step in a corridor stop fading too, which is what broke an
-   * approaching zombieman staying hidden behind it. DOOM2 MAP01's east imp
-   * closet (sector 38) is the concrete case the *quad*-level version of this
-   * fixes — its fence's masked-middle quad used to fade to near-invisible
-   * the moment the imp inside woke up, which read as the closet wall itself
-   * vanishing rather than "you can see the imp through the bars."
-   *
-   * Note there is deliberately no "only fade if this is the *sole* wall in
-   * the way" rule: whether fading a wall actually reveals its monster is
-   * settled upstream by `ThingLayer.awakeMonsters`, which already drops any
-   * monster fog of war isn't currently drawing (see its doc). A version of
-   * this method that counted blockers per target instead was written first,
-   * for the same symptom, and fixed nothing — the wall in question had only
-   * one blocker; its monster simply wasn't rendered.
+   * `openingOf` (`World.openingOf`, threaded in as a callback so this class
+   * needs no `World` of its own) tells a genuinely solid quad from one that
+   * only *renders* solid. That test is per **quad**, not per line, and the
+   * distinction is load-bearing: docs/render.md § Wall occlusion fading.
    */
   update(
     dt: number,

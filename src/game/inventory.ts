@@ -115,9 +115,11 @@ export function tickPowers(inv: Inventory, dt: number): void {
 /** Item pickup radius (map units) vanilla uses for most pickups (health/armor/ammo/keys). */
 export const ITEM_PICKUP_RADIUS = 20;
 
+/** Vanilla's `MAXHEALTH` (`d_player.h`) — the cap ordinary health pickups stop at. */
 const MAX_HEALTH = 100;
 /** Bonus items (health bonus, soulsphere, megasphere) push health past the normal cap, up to this. */
 const MAX_HEALTH_BONUS = 200;
+/** Vanilla's blue-armor cap, `P_GiveArmor`'s `armortype*100` for `armortype` 2. */
 const MAX_ARMOR = 200;
 const AMMO_MAX: Record<AmmoType, number> = { bullets: 200, shells: 50, rockets: 50, cells: 300 };
 
@@ -167,7 +169,9 @@ const KEY_PICKUPS: Record<number, KeyColor> = {
   39: 'yellow',
 };
 
+/** Doomednum of the megasphere (DOOM II only), which gives full health *and* blue armor at once. */
 const MEGASPHERE = 83;
+/** Doomednum of the armor bonus — the one armor pickup that adds a point past the normal cap. */
 const ARMOR_BONUS = 2015;
 
 /** The powerup spheres/items, by doomednum — see `POWER_SECONDS` for how long each lasts. */
@@ -190,6 +194,7 @@ const POWERUP_PICKUPS: Record<number, PowerId> = {
  */
 export const COMPUTER_MAP_TYPE = 2026;
 
+/** Doomednum of the backpack, which doubles every `AMMO_MAX` (vanilla's `P_GiveBackpack`). */
 const BACKPACK = 8;
 
 /**

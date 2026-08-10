@@ -685,7 +685,7 @@ export const DAMAGE_FLOOR_INTERVAL = 32 * DOOM_TIC;
  * Vanilla's `P_UpdateSpecials`: scrolls the line's *front* sidedef texture
  * offset forever — no trigger, no tag. Purely cosmetic, so unlike everything
  * else here it bypasses `SpecialsController` entirely (`TextureScroller`).
- * docs/specials.md § Scrolling textures.
+ * docs/render.md § Scrolling textures.
  */
 export const SCROLL_LINE_SPECIAL = 48;
 export const SCROLL_SPEED = 35;

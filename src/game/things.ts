@@ -148,7 +148,7 @@ export function buildThingSprites(
   sfx: SoundEmitter = SILENT,
   /**
    * Fired from `damage()`'s death branch the instant a monster dies leaving none of its own type
-   * alive — vanilla's `A_BossDeath` gate, see docs/specials.md § Boss death. Just the doomednum:
+   * alive — vanilla's `A_BossDeath` gate, see docs/death.md § Boss death. Just the doomednum:
    * whether/how it matters is entirely `SpecialsController`'s per-map table to decide.
    */
   onBossDeath?: (type: number) => void,
@@ -331,7 +331,7 @@ export function buildThingSprites(
    * The 20-skull cap is **level-wide**, as in vanilla, not per-elemental. If
    * the spawn point has no room this does nothing — vanilla spawns the mobj and
    * immediately kills it with 10000 damage, which is observably identical.
-   * docs/monsters.md § The pain elemental: spawning a lost soul.
+   * docs/monster-ai.md § The pain elemental: spawning a lost soul.
    */
   function spawnLostSoul(origin: PosedThing, angleRad: number): void {
     let skullCount = 0;
@@ -372,7 +372,7 @@ export function buildThingSprites(
    * spawn spot lethal to stand on: everything overlapping the new body takes
    * `TELEFRAG_DAMAGE` rather than the spawn being blocked or skipped. That is
    * also why there's no `circleBlocked` guard here, unlike `spawnLostSoul`.
-   * docs/monsters.md § The spawn cube.
+   * docs/monster-iconofsin.md § The spawn cube.
    */
   function spawnMonster(type: number, at: Pos3, angleRad: number): PosedThing | null {
     const spawned = pushThing(type, at, (angleRad * 180) / Math.PI, { alerted: true });
@@ -559,7 +559,7 @@ export function buildThingSprites(
 
     // A_BossDeath's own thinker scan: "if any other of this type is still alive, do nothing."
     // Only worth walking `posed` at all for the types a map's own trigger table could possibly
-    // care about — see docs/specials.md § Boss death.
+    // care about — see docs/death.md § Boss death.
     if (DEATH_NOTIFY_TYPES.has(p.type) && posed.every((q) => q.type !== p.type || q.dead)) {
       onBossDeath?.(p.type);
     }

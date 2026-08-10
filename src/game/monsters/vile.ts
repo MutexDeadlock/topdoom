@@ -20,21 +20,11 @@ import { DOOM_TIC } from '../../constants.ts';
 
 /**
  * The arch-vile, the one monster type whose behavior does not fit the
- * data-driven `MONSTER_STATS` model every other type is expressed in: it raises
- * corpses instead of taking a chase call, and its attack is a guaranteed
- * direct hit plus a radius blast rather than a traced bolt or a projectile.
- * Both halves are called from elsewhere — `monsters/ai.ts` for the chase side,
- * `monsters/attacks.ts` for the resolution side. See docs/monsters.md § The
- * arch-vile.
- *
- * Two one-line branches on generic `AttackStats` fields deliberately stay in
- * `monsters/ai.ts` rather than routing through here: the fire-time sight
- * recheck (`!ranged.blast || canSee()`) and the `'vileWindup'` return in
- * `beginRangedAttack`. Both are a single boolean test on a field the generic
- * code already has in hand.
- *
- * `VILE_KNOCKUP_SPEED` is the third exception, and lives in `monsters/defs.ts`:
- * the stats table reads it, and that file must not import this one.
+ * data-driven `MONSTER_STATS` model every other type is expressed in. Both
+ * halves are called from elsewhere — `monsters/ai.ts` for the chase side,
+ * `monsters/attacks.ts` for the resolution side. docs/monster-archvile.md, which also
+ * lists the three pieces of vile-specific behavior that deliberately stay
+ * outside this file.
  */
 
 /** The arch-vile's doomednum — vanilla singles `MT_VILE` out in both directions of `shouldRetarget`'s rule. */
@@ -88,7 +78,7 @@ export function tryRaiseCorpse(
  * `actor->target` directly (guaranteed, nothing to miss along), launches it
  * upward, then blasts a radius. No tracer or projectile sprite; the `FIRE`
  * spawned here is `MT_FIRE`'s final burst, taking over from `spawnWindupFire`'s.
- * See docs/monsters.md § The arch-vile.
+ * See docs/monster-archvile.md.
  */
 export function resolveVileBlast(
   ctx: CombatContext,
@@ -124,7 +114,7 @@ export function resolveVileBlast(
  * Reuses `SpriteFxLayer.spawn` but overrides the lifetime to the windup's own
  * length, so `resolveVileBlast`'s burst (or nothing, if the shot fizzles) takes
  * over with no explicit hand-off. Positioned up front, as `A_VileTarget` calls
- * `A_Fire` immediately after spawning. See docs/monsters.md § The arch-vile.
+ * `A_Fire` immediately after spawning. See docs/monster-archvile.md.
  */
 export function spawnWindupFire(
   ctx: CombatContext,

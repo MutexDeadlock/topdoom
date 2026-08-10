@@ -50,7 +50,7 @@ export function isMultiplayerOnly(flags: number): boolean {
  * field is a signed short. An editor-placed 250° therefore faces 225° in game.
  *
  * Every consumer of a spawn angle goes through this: a monster's wake-up cone
- * reads it unchanged until it wakes (docs/monsters.md § Waking up), and it
+ * reads it unchanged until it wakes (docs/monster-ai.md § Waking up), and it
  * also picks the sprite rotation a still thing shows. DOOM/DOOM2 place all but
  * one thing on the 45° grid; `freedoom2.wad` does not.
  */

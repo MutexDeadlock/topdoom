@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
-import { parseMapInfoNames } from '../src/wad/mapinfo.ts';
+import { MAPINFO_LUMPS, parseMapInfoNames, preferredMapInfoLump } from '../src/wad/mapinfo.ts';
 
 export const MANIFEST_PATH = 'wads/index.json';
 
@@ -23,9 +23,6 @@ export interface WadManifestEntry {
    */
   levelNames?: Record<string, string>;
 }
-
-/** The MAPINFO flavours `parseMapInfoNames` reads, and the order one file's own lumps win in. */
-const MAPINFO_LUMPS = ['UMAPINFO', 'ZMAPINFO', 'MAPINFO'];
 
 /**
  * Reads the header and directory of a WAD — a few kilobytes even for a 14 MB IWAD — plus its
@@ -53,13 +50,12 @@ function describeWad(path: string, folder: WadFolder): WadManifestEntry | null {
     }
   }
 
-  // `ZMAPINFO` suppresses this file's `MAPINFO`, the same rule wad/mapinfo.ts applies to the
-  // merged set; the rest are read in the order above, later winning.
+  // Exactly one lump per file, chosen by `preferredMapInfoLump` — the menu's titles and the
+  // in-game ones come from the same rule, or a WAD shipping two flavours gets two different names.
   const levelNames: Record<string, string> = {};
-  for (const lump of MAPINFO_LUMPS) {
-    if (lump === 'MAPINFO' && mapInfoLumps.has('ZMAPINFO')) continue;
-    const at = mapInfoLumps.get(lump);
-    if (!at || at.offset < 0 || at.offset + at.size > buf.length) continue;
+  const wanted = preferredMapInfoLump([...mapInfoLumps.keys()]);
+  const at = wanted ? mapInfoLumps.get(wanted) : undefined;
+  if (at && at.offset >= 0 && at.offset + at.size <= buf.length) {
     for (const [map, title] of parseMapInfoNames(buf.toString('latin1', at.offset, at.offset + at.size))) {
       levelNames[map] = title;
     }

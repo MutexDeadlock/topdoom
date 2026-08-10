@@ -1,125 +1,12 @@
-# Weapons, shots, damage and death
+# Shots: paths, hits and effects
 
-`src/game/weapons.ts`, `src/game/projectiles.ts`, `src/game/combat.ts`,
-`src/game/world.ts: shotPath`/`hasLineOfSight`, `src/render/tracer.ts`, `src/game/spritefx.ts`,
-`src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/monsters/attacks.ts`,
-`src/game/inventory.ts`, `src/game/spritefxdefs.ts`, `src/game.ts`
+`src/game/projectiles.ts`, `src/game/combat.ts`, `src/game/world.ts: shotPath`,
+`src/render/tracer.ts`, `src/game/spritefx.ts`, `src/game/spritefxdefs.ts`, `src/game/things.ts`,
+`src/game/thingdefs.ts`, `src/game.ts`
 
-## WeaponSystem
-
-`WeaponSystem` owns weapon selection and fire timing/ammo, and **deliberately knows nothing about
-three.js**: `update` returns a list of `Shot`s describing what was fired this frame (one per hitscan
-pellet, one per projectile launched, one per melee swing), and `ProjectileLayer`
-(`game/projectiles.ts`) turns those into tracer lines and flying sprites. Same split as
-`specials.ts`'s line triggers vs. `game.ts`'s teleport fog, and it's what lets fire rates and ammo
-costs be tested headlessly against a synthetic map.
-
-`ProjectileLayer` is the mirror image: it knows nothing about ammo, cooldowns or AI, only about
-geometry and bodies, and it serves the player's shots and a monster's identically
-(`spawnPlayerShot`/`spawnMonsterShot`). It reads the live level through a `CombatContext`
-(`game/combat.ts`) rather than holding `World`/`ThingLayer` references of its own — those are
-replaced on every map load, so the context is all getters.
-
-**Nothing in `WEAPONS` is tuned by feel** — fire rates come from `info.c`'s state chains (§ Fire
-rates), spread from `p_pspr.c`'s shift constants (§ Spread), damage from `P_GunShot` and
-`PIT_CheckThing` (§ Damage rolls), ammo cost from `P_FireWeapon`, projectile speed from `mobjinfo`.
-The top-down camera changes how a weapon is *aimed*; it doesn't change how fast one shoots or how
-hard it hits, so there is nothing here a feel-tuned number would be buying.
-
-## Fire rates
-
-**A weapon's cooldown is its own vanilla state chain, and the `A_ReFire` state's tics are not part of
-it.** `A_ReFire` runs on *entry* to its state and, while the trigger is still down, calls
-`P_FireWeapon` immediately — `P_SetPsprite`'s loop then leaves the psprite sitting in the fire
-chain's first state with that state's own tics, so the `A_ReFire` state's tics are only ever spent
-when you *release*. Summing a weapon's whole state list therefore overstates its held-trigger rate;
-the shipped numbers were up to 1.7× off in both directions before this was worked out.
-
-| weapon | states counted | tics | seconds |
-|---|---|---|---|
-| fist | `S_PUNCH1`-`4` | 17 | 0.486 |
-| chainsaw | `S_SAW1` **or** `S_SAW2` | 4 | 0.114 |
-| pistol | `S_PISTOL1`-`3` | 14 | 0.400 |
-| shotgun | `S_SGUN1`-`8` | 37 | 1.057 |
-| super shotgun | `S_DSGUN1`-`9` | 57 | 1.629 |
-| chaingun | `S_CHAIN1` **or** `S_CHAIN2` | 4 | 0.114 |
-| rocket launcher | `S_MISSILE2` + `S_MISSILE1` | 20 | 0.571 |
-| plasma rifle | `S_PLASMA1` | 3 | 0.086 |
-| BFG | `S_BFG3` + `S_BFG1` + `S_BFG2` | 40 | 1.143 |
-
-Two shapes in that table are easy to get wrong. The **chainsaw and chaingun fire twice per pass**
-(`S_SAW1`/`S_SAW2` both call `A_Saw`, `S_CHAIN1`/`S_CHAIN2` both call `A_FireCGun`), so their rate is
-one state's tics, not the chain's. The **plasma rifle's** `S_PLASMA2` holds 20 tics but carries
-`A_ReFire`, so a held trigger never spends them — which is what makes it the fastest weapon in the
-game rather than a middling one.
-
-**Two vanilla delays are deliberately not reproduced.** The rocket launcher's 8-tic flash state and
-the BFG's 30 tics of charge-up both sit *before* their fire action, so in vanilla the shot leaves
-that long after the trigger; here every weapon fires on the frame you click and the delay is folded
-into the interval instead. Reproducing them needs a pending-shot timer in `WeaponSystem` and is the
-one place this engine's weapons still differ in timing.
-
-## Spread
-
-Every random fuzz in the game is one distribution — vanilla's `P_Random() - P_Random()`, two uniform
-draws subtracted, giving a triangular spread centred on the true aim (`triangularDraw`, and
-`triangularSpread` for the angular cases). The per-weapon widths are the BAM shift constants in
-`p_pspr.c`, converted as `255 << shift` of a `2^32` turn:
-
-- `<<18` = **5.6°** — `P_GunShot`'s bullet spread, so the pistol, chaingun and each of the shotgun's
-  7 pellets, *and* `A_Punch`/`A_Saw`'s swing angle. A melee swing's own share barely matters (~6
-  units of arc at `MELEERANGE`, against a 24-unit hit radius), but it is the same draw.
-- `<<19` = **11.2°** — the super shotgun's 20 pellets, twice the shotgun's cone. `A_FireShotgun2`
-  never calls `P_GunShot`; it has its own loop, which is why its numbers differ.
-- `<<5` on the *slope* (`WeaponDef.slopeSpread`, ±0.1245 rise per unit ≈ ±7°) — also super shotgun
-  only, and the only vertical scatter in the game. `HitscanShot.slopeOffset` carries it, applied by
-  moving the aim point up or down at the target's distance, since that is what `shotPath` derives a
-  slope from.
-
-**The first shot of a held pistol or chaingun has no spread at all.** `A_FirePistol` and `A_FireCGun`
-pass `P_GunShot(mo, !player->refire)`; `A_FireShotgun` hardcodes `false`. `WeaponSystem` mirrors
-`player->refire` with a counter reset whenever the trigger comes up or the weapon changes
-(`A_ReFire`'s else branch), and `WeaponDef.accurateFirstShot` marks the two weapons that read it. Tap
-for accuracy, hold for volume — without this, the auto-aim fix below makes a tapped long-range
-chaingun shot miss ~27% of the time for no reason vanilla would recognize.
-
-## Damage rolls
-
-**Two vanilla formulas, one `((rand % sides) + 1) * multiplier` shape.** A *bullet's* roll is written
-out at each call site (`5*(P_Random()%3+1)` in both `P_GunShot` and `A_FireShotgun2`: 5/10/15 per
-pellet, and the super shotgun's is identical to the shotgun's — the 20-vs-7 pellet count is its whole
-advantage). A *missile's* is not in the weapon code at all: `PIT_CheckThing` rolls
-`((P_Random()%8)+1) * mobjinfo.damage` for whatever hit something, so every projectile weapon has 8
-sides and takes its multiplier from `info.c` — rocket 20 (20-160), plasma **5 (5-40)**, BFG ball
-**100 (100-800)** before `A_BFGSpray` adds anything. The plasma bolt shipped as a 4-sided roll and
-the BFG ball as `8×30`; both were transcription guesses, and reading `mobjinfo` settles them. Fist
-and chainsaw share `(P_Random()%10+1)<<1` (2-20), the fist ×10 under berserk.
-
-Projectile *speeds* come from the same `mobjinfo` rows, × 35 for units/sec exactly as
-`game/monsters/defs.ts` converts a monster's: rocket 700, plasma 875, BFG 875. The player's rocket used to
-fly at 1000 while the cyberdemon's — already converted correctly — flew at 700.
-
-**A melee swing is resolved entirely differently from every other shot**: `spawnPlayerShot` returns before
-`shotPath` even runs and just raycasts `WeaponDef.meleeRange` (vanilla's `MELEERANGE`, 64 — the
-chainsaw's own `+1` is about its puff, § Bullet puffs) along the
-aim angle. A swing doesn't travel, so it needs none of `shotPath`'s wall/step blocking, matching
-`A_Punch`/`A_Saw`. It needs no lock-on case either: `player.angle` is already set from the same `aim`
-the lock uses, so the ray finds a hovered monster on its own and simply can't reach one further off
-than the swing's range.
-
-**Slot keys toggle within a slot, they don't select "the best".** `WEAPON_SLOTS` lists each digit's
-weapons best-first, but pressing a digit already showing one of that slot's weapons advances to the
-*next* one owned rather than re-picking the best. Without this, slots 1 and 3 (fist/chainsaw,
-shotgun/super shotgun) made their weaker weapon permanently unreachable once the upgrade was owned —
-which presented as "shotgun and super shotgun are the same weapon".
-
-**"Switch to previous weapon"** (the right button's default binding, docs/menu.md § Right mouse button)
-reads `WeaponSystem.previousWeapon`, which is maintained in `updateSounds`' once-a-frame
-`justSwitched` comparison rather than at each switch site — the same reason `lastWeapon` is, since a
-pickup (`applyPickup`) and a berserk pack both select a weapon without going through
-`handleSwitching`. `handleSwitching` runs before `updateSounds`, so a click reads the weapon left
-behind by the *previous* switch and that frame's `updateSounds` then records the one just left,
-which is what makes a second click toggle back.
+This is the middle of the chain: a weapon has fired (docs/weapons.md) and something is about to die
+(docs/death.md). What happens in between — where the shot goes, what it is allowed to hit, and what
+the hit looks like — is here. `hasLineOfSight`, which several of these use, is docs/world.md.
 
 ## shotPath
 
@@ -133,7 +20,7 @@ wants — its target cannot move mid-flight. Anything else keeps going down the 
 not the target is still standing there. Folding the two together (deriving range from the target) is
 what made every monster shot detonate on the spot the player had been standing at launch; both call
 sites then had to fake a far-away aim point to undo it, which is the shape this parameter replaces.
-See docs/monsterattacks.md § Hitscan vs. projectile.
+See docs/monster-attacks.md § Hitscan vs. projectile.
 
 What each caller actually passes is § Range below.
 
@@ -252,10 +139,11 @@ G1).
 ## Auto-aim
 
 **Auto-aim is click-to-target, not vanilla's autoaim cone** — this game has a mouse pointer, so "aim
-at that one" is expressible directly. `ThingLayer.pickMonster` raycasts the cursor against monster
-sprite meshes (`MONSTER_TYPES`, filtered to currently-`visible` ones so a fog-of-war-hidden monster
-can't be targeted through the geometry hiding it) and returns the hit monster's position *and* its
-sector's live floor height. `game.ts` uses that as both the aim point and the shot's end height. It supplies the shot's aim
+at that one" is expressible directly. `ThingLayer.pickMonster` raycasts the cursor through
+`SpriteBatch.raycast` (docs/sprites.md § Batching) with a predicate accepting `MONSTER_TYPES` **and
+the exploding barrel**, minus anything already dead, picked up, `NO_AUTO_AIM_TYPES`, or not currently
+`visible` — the last so a fog-of-war-hidden monster can't be targeted through the geometry hiding it.
+It returns the hit monster's position *and* its sector's live floor height. `game.ts` uses that as both the aim point and the shot's end height. It supplies the shot's aim
 *direction and slope* only — whether any one pellet lands is still resolved geometrically against the
 target's body, so a spread weapon spreads (§ How a shot deals damage).
 
@@ -351,7 +239,7 @@ that fails it falls through to `raycastMonster`, which then tests that same body
 axis-aligned squares; this engine tests circles. A square of half-width `h` presents mean width
 `perimeter/π` to a line arriving on an arbitrary bearing, so the circle costing the same average
 number of hits has radius `4h/π ≈ 1.273h`, not `h` — the same argument `MONSTER_BULLET_SLOP`
-(docs/monsterattacks.md) already made by hand for the player's own 16-unit box. Applying `h`
+(docs/monster-attacks.md) already made by hand for the player's own 16-unit box. Applying `h`
 directly instead would quietly narrow every hitbox in the game by 21%.
 
 Body *height* stays the shared `MONSTER_HIT_HEIGHT`/`PLAYER_HEIGHT` approximation rather than
@@ -475,98 +363,8 @@ so unlike vanilla it can't puff against a wall.
 `S_PUFF1`'s `FF_FULLBRIGHT` is not reproduced — an `OneShotEffect` takes one sector light for its
 whole life, the same simplification every explosion here already makes. `A_Tracer`'s own
 `P_SpawnPuff` (vanilla spawns a puff *and* an `MT_SMOKE` behind the revenant's missile every 4th
-tic) is also left out: it would double the trail's live sprite count, which docs/monsters.md §
+tic) is also left out: it would double the trail's live sprite count, which docs/monster-ai.md §
 The revenant's homing missile records as the reason the batch exists at all.
-
-## hasLineOfSight
-
-**It checks floor/ceiling, not just walls.** Without this, a monster standing in a room genuinely
-*underneath* a ledge the player is on — with no shared two-sided line anywhere near the straight 2D
-path, since the floor is what separates them — registered as fully visible and shootable, so a
-monster that chased around under a ledge kept hitting the player through the floor. Every caller
-(`canSee`/`tryWake`, `applyRadiusDamage`) passes real heights rather than the flat
-`MONSTER_ENGAGE_HEIGHT` guess an earlier version used, which a proper 3D check makes both redundant
-and, in a tall open room, wrong (vanilla has no such cap at all).
-
-**The floor/ceiling check is a sight *wedge* from a fixed eye height, matching `P_CheckSight`
-(`sightzstart`/`topslope`/`bottomslope`) — not a straight line interpolated from `z1` to `z2`.** An
-earlier version did exactly that, and it's wrong the moment the two ends stand at different floor
-heights, which is most of a real level: a monster on a raised platform and the player one step below
-it, in an otherwise open room, produces a line that dips below the *platform's own floor* almost
-immediately — it heads toward the lower end over the *entire* distance, not just at the step — so the
-platform's floor was misreported as blocking sight to the monster standing on it. This was a shipped
-bug: a pair of E1M1 zombiemen one step up on a 24-unit platform never woke no matter how long the
-player stood in plain view.
-
-`SIGHT_EYE_HEIGHT` (`3/4` of `PLAYER_HEIGHT`, vanilla's own fraction — this engine has no per-species
-heights, so both ends reuse the player's) fixes the origin at `z1 + SIGHT_EYE_HEIGHT` instead of
-sliding it toward `z2`. The target bound uses the full `[z2, z2 + PLAYER_HEIGHT]` span rather than a
-single point, so any part of that range clearing every opening crossed is enough.
-
-**The wedge narrows at two different things, and both are load-bearing.** The primary one walks the
-same line candidates `forEachLineAlongSegment` already finds for the wall-blocking test and, for
-every *open* two-sided line among them (skipping a flat pass-through — equal floors and equal
-ceilings on both sides can't narrow anything, matching `P_SightTraverse`'s own
-frontsector/backsector inequality guards), narrows `[bottomSlope, topSlope]` against that line's real
-opening (`World.openingOf`: min ceiling, max floor of its two sides) at the exact distance it's
-crossed — this *is* vanilla's own `P_SightTraverse`, not an approximation of it. A **periodic
-fallback** additionally samples `sectorAt` every `SIGHT_HEIGHT_SAMPLE_STEP` map units (capped at
-`SIGHT_MAX_HEIGHT_SAMPLES` samples total) and narrows against whatever sector each sample lands in,
-for the one thing a line-crossing walk can't see: two points whose straight 2D path never crosses a
-two-sided line at all yet still cross between differently-elevated footprints (the classic "monster
-under a ledge" fake-3D construction) — the reason this doc originally gave for the check existing.
-Both narrow the same wedge monotonically, so running both is always at least as strict as either
-alone, never more permissive.
-
-**The line-crossing narrowing is the one that makes melee range work at all.** `MELEE_RANGE`/vanilla's
-own `MELEERANGE` (64-72 map units) is well inside `SIGHT_HEIGHT_SAMPLE_STEP` (64), so the periodic
-sampler alone never places a single interior sample on a short sightline — `Math.ceil(72/64)` is `1`,
-and the loop that walks samples `1..steps-1` never runs. Before the line-crossing narrowing existed,
-that meant a monster standing at the base of *any* ledge more than `MAX_STEP_UP` (24 units) tall, close
-enough to be in melee range, always passed `hasLineOfSight` regardless of the ledge between it and its
-target — a demon could bite straight through the drop. `public/wads/pwad/pinky_test.wad` MAP01
-reproduces it directly: two sectors sharing one line, floors 0 and 88, a demon on the high side and the
-player on the low side just below it.
-
-**It is the most performance-sensitive query in the engine**, and two things keep the base cost
-affordable. Both were verified to produce **bit-identical results** to the straightforward version
-across 21,240 sightline pairs on six maps — this is pure optimization, not an approximation traded for
-speed:
-
-- **Wall candidates come from `World.forEachLineAlongSegment`, not `linesNear`.** `linesNear` takes a
-  *radius*, so covering a sightline with it means a box half the line's length on a side — O(dist²)
-  grid cells to test a thin segment. Walking only the cells the segment actually crosses is O(dist),
-  and is sound because `buildGrid` buckets each line into every cell its bounding box touches: if a
-  line genuinely crosses the segment, their intersection lies in a cell both pass through. On
-  NUTS.WAD this one change took `hasLineOfSight` from dominating the frame to a small fraction of it.
-- **`SIGHT_MAX_HEIGHT_SAMPLES` caps the floor/ceiling sampling** so the step stretches past
-  `SIGHT_HEIGHT_SAMPLE_STEP` instead of the sample count growing without bound. 32 is chosen so
-  nothing within `WEAPON_RANGE` (2048, the furthest a monster can shoot, and no player shot's
-  outcome is decided here — `shotPath` walks openings itself) changes at all — 2048/64 is
-  exactly 32 — while a monster 12,000 units away stops costing ~180 BSP walks per frame to answer a
-  question no attack could act on.
-
-Relatedly, `stepMonsterAI` resolves sight **lazily, at most once per call**: it's only consumed by
-the refire loop and by `runChaseCall`, and the chase call is quantized to `chaseInterval` while
-`stepMonsterAI` runs every rendered frame, so evaluating it eagerly threw the answer away most
-frames. Vanilla has the same structure for the same reason.
-
-Both `forEachLineAlongSegment` and the lazy accessor exist because these run thousands of times a
-frame: the segment walk dedupes through a per-linedef stamp array rather than allocating a `Set` and
-spreading it per call, the way `linesNear` does. **An equivalent allocation-free `linesNear` for the
-*collision* callers was tried and measured as no faster** — the callback makes that call site
-megamorphic and costs the early-out — so `groundFloor`/`dropoffFloor`/`circleBlocked` deliberately
-still use the plain array-returning `linesNear`. Don't "fix" that without measuring.
-
-**`SELF_HIT_MARGIN`**: a rocket that explodes against a wall sits its own impact point exactly on
-that wall, and a raw segment-intersection test then reports the blast blocked by the very wall it
-started on (the ray's own origin is a valid crossing at `t≈0`) — so `hasLineOfSight` said "blocked"
-in every direction, including straight out into the open room. Splash only ever worked when a shot
-connected directly with a monster and never when it hit geometry, which for a free shot is the common
-case. The margin skips a crossing within 1 unit of the ray's start, the same "nudge off the geometry
-you're standing on" idea as `WALL_OVERLAP`/`BLOCKER_OVERLAP`. Tradeoff: a rocket exploding against a
-*closed door* can in principle leak a sliver of splash through, since the door's self-hit is now the
-crossing being ignored — accepted as the same order of approximation.
 
 ## Splash and the BFG
 
@@ -575,6 +373,12 @@ direct-hit roll** — `WeaponDef.splash`, not derived from `damageDiceSides`/`Mu
 version wrongly assumed. `A_Explode` really does pass a constant 128/128 to `P_RadiusAttack`,
 separate from the missile's `(P_Random()%8+1)*20` contact roll; conflating them made splash swing
 with the same small random roll as contact damage.
+
+**The spider mastermind and the cyberdemon take no splash damage at all**, direct hits only —
+`PIT_RadiusAttack` skips them outright, and `applyRadiusDamage` reproduces that by type before it
+measures anything. This is the exemption the BFG spray and the monster-attack doc both defer to; it
+is implemented once, here, so a rocket into a cyberdemon's feet does nothing and the rocket that
+hits it does full damage.
 
 **`hitsPlayer` gates whether a splash can hurt the player who fired it** — `true` for the rocket
 (vanilla lets a rocket's blast hurt whoever fired it, the classic rocket-jump self-damage), so
@@ -611,177 +415,3 @@ separate events.
 
 Per-weapon direct-hit damage rolls follow vanilla's `((rand % sides) + 1) * multiplier` shape and are
 lifted rather than tuned by feel, same reasoning as ammo-per-shot — they decide how tough a fight is.
-
-## Monster death
-
-**Health and death-frame sequences are confirmed against the actual lump names in DOOM.WAD/DOOM2.WAD.**
-Health values are vanilla's `mobjinfo` constants, but the death *frame letters* are derivable from
-the WAD directly: death art in vanilla is rotation-0 (omnidirectional) only, so the point where a
-sprite's directional (rotation 1-8) frames stop and its rotation-0 tail begins marks exactly where
-movement/attack/pain art ends and death art starts. Confirmed by dumping every monster sprite's
-frame/rotation pairs from the real IWADs and cross-checking against known vanilla death-state counts
-(POSS's rotation-0 tail is 14 letters, split 5 DIE + 9 XDIE, matching the zombieman exactly).
-
-`MONSTER_DEATH_FRAMES` takes the DIE half; `MONSTER_XDEATH_FRAMES` the XDIE (gib) half where one
-exists at all — only five monster types in stock DOOM have gib art (the human grunts and the imp);
-everything else, including similarly-sized monsters like the demon, has no `xdeathstate` in vanilla
-and always plays its plain death. `ThingLayer.damage` picks between them exactly as `P_KillMobj`
-does: gib only if the killing blow pushed health below *minus* the monster's own max health *and*
-gib art exists for that type. Commander Keen (a pain cascade with no distinct DIE state) and the boss
-brain (2 sprite frames total, no death art) are deliberately absent from both — `damage` falls back
-to just hiding a killed monster with no entry.
-
-A death is a **permanent, one-way animation switch, not a new actor**: `SpriteActor.die` overrides
-the alive walk cycle with a one-shot sequence that advances forward and holds its last frame forever,
-reusing the same mesh/materials rather than spawning a second object — cheaper, and it means a corpse
-still participates in fog-of-war fading exactly as it did alive. `ThingLayer.damage(id, amount)` —
-`id` being the stable index `pickMonster`/`monstersNear` hand back — subtracts health and calls `die`
-at 0; `pickMonster` skips anything already dead so a corpse can't be re-targeted.
-
-**A corpse left in the air falls.** `P_KillMobj` strips `MF_NOGRAVITY` from everything it kills
-except `MT_SKULL`, so a cacodemon shot off its hover (docs/monsters.md § Floating monsters) or a
-body caught mid-launch by an arch-vile drops to the floor instead of hanging there; a lost soul
-keeps its flag and dies where it was. `ThingLayer.update` runs that fall in its dead branch, gated
-on the thing's own cached sector floor so the overwhelming majority of corpses — already resting on
-it — cost no world query at all.
-
-**Two types don't leave a corpse: the lost soul and the pain elemental.** Every other monster's final
-death state has `tics: -1` ("hold forever"), which is what makes a corpse permanent, but
-`S_SKULL_DIE6` and `S_PAIN_DIE6` both have a finite tic count and fall through to `S_NULL` — and
-transitioning *to* `S_NULL` is what makes vanilla call `P_RemoveMobj`. `MONSTER_CORPSE_VANISHES` is
-exactly those two doomednums; `ThingLayer.update` hides either type's corpse the instant `deadTime`
-reaches the end of its death animation. Both are the game's floating monsters, which tracks
-thematically, but nothing keys off "flying" — only the two confirmed doomednums.
-
-This has a second consequence for the pain elemental: its mobjinfo *does* carry a real `raisestate`
-(hence its entry in `MONSTER_RAISE_FRAMES`), but `PIT_VileCheck`'s `if (thing->tics != -1) return
-true; // not lying still yet` requires a settled corpse — which a pain elemental's never reaches
-before `P_RemoveMobj` deletes it. So despite the mobjinfo entry, a dead pain elemental can never
-actually be resurrected in real vanilla either. This engine reproduces the same unreachability
-structurally rather than adding a third special case: `rebuildBlockerGrid` never buckets a `hidden`
-corpse into `corpseGrid`, and a pain elemental's corpse is always hidden by the exact moment
-`findRaisableCorpse`'s "finished settling" gate would start accepting it — both keyed off the same
-`deadTime` threshold.
-
-**A killed monster can drop an item**, lifted from `P_KillMobj`, which has exactly three `switch`
-cases: the zombieman and Wolfenstein SS drop a clip, the shotgun guy a shotgun, the chaingunner a
-chaingun (`MONSTER_DROPS`). Everything else, including monsters that feel like they obviously should
-(the imp, the demon), drops nothing. `ThingLayer.damage` spawns the drop inline the moment it marks a
-monster dead — via a `spawnDrop` helper that's the same pose/push the map-load loop does, for one
-instance — so a drop appears no matter *how* the kill happened (direct hit, splash, gib, crusher),
-matching vanilla dropping from that one function regardless of cause. Each `PosedThing` carries a
-`dropped` flag, seeded `true` only for a `spawnDrop` instance and threaded through `tryPickup`'s
-`consume` callback into `applyPickup`'s `dropped` param — vanilla's `P_GiveAmmo`/`P_GiveWeapon` give
-a dropped pickup's ammo at half the rate of a map-placed one (a dropped clip's 5 bullets vs. 10, a
-dropped shotgun's 4 shells vs. 8).
-
-`spawnDrop`, `spawnLostSoul`, `spawnMonster` and the map-load loop all build their `PosedThing`
-through one shared `pushThing` helper. That is worth naming because the alternative was four copies
-of a ~60-field object literal, three of which already existed and had begun to drift — `spawnDrop`'s
-copy, for instance, had no `INERT_SHOOTABLE` radius lookup because it predated one.
-
-## Telefrag
-
-Vanilla's `P_TeleportMove` kills everything standing where a body lands, for a flat `10000` damage.
-This engine reaches it from exactly one place: `ThingLayer.spawnMonster`, the tail of the Icon of
-Sin's `A_SpawnFly` (docs/monsters.md § The spawn cube). There is no player teleport that can land on
-an occupied spot here, so no other caller exists.
-
-The kill is **deliberately unattributed** — no `source` is passed to `damageThing`. A telefrag is the
-teleport's doing, not an attack, and naming the newly spawned monster as the source would start an
-infight it never picked.
-
-It is split across two files for the usual reason: `ThingLayer` has no player reference, so it
-telefrags every overlapping `PosedThing` itself and returns the new body, and `game/iconofsin.ts` does the
-player half against `PLAYER_RADIUS` and calls `damagePlayer`. That is what makes standing on a MAP30
-spawn spot a real way to die.
-
-## Player death
-
-**Reuses the exact same mechanism** on `game.ts`'s single persistent `playerActor`:
-`PLAYER_DEATH_FRAMES` (`H`-`N`) is `PLAY`'s own confirmed DIE half, derived the same way as the
-monster tables — and living beside them in `game/thingdefs.ts`, not in `game/player.ts`, which owns
-no sprite.
-
-`Inventory.applyDamage` is vanilla's `P_DamageMobj` armor formula — green armor absorbs a third of
-the damage, blue half, spending armor points 1-for-1 with whatever it absorbed and falling back to
-bare once it runs out mid-hit — reused for the player specifically since monsters have no armor. It
-returns whether the hit actually landed, `false` while invulnerability blocked it outright
-(`INVULNERABLE_DAMAGE_LIMIT`); `damagePlayer` uses that to skip the pain flash and flinch animation
-for a hit that did nothing, which a first version didn't check, so an invulnerable player flashed red
-on every hit that was landing on nothing.
-
-Health hitting 0 sets `Game.playerDead`, which freezes only the input-driven half of `frame` —
-movement/aim/firing/pickups. Everything else keeps running: fog of war, effects, faders and
-rendering, and monster AI — but AI follows vanilla's own rule for it, not a blanket freeze.
-`P_KillMobj` strips the player's `MF_SHOOTABLE`/`MF_SOLID` on death, so `Game.updateThings` passes
-`ThingLayer.update` `null` for the player once `playerDead` (`game/things.ts`'s `resolveTarget` and
-`blockersFor` both take the `Pos3 | null` this produces). A monster already mid-infight with another
-monster is unaffected and keeps fighting; one whose only target *was* the player finds `resolveTarget`
-reporting no target the very next frame and reverts to idle right there — `p.alerted = false`,
-`movedir`/`movecount` cleared — the same as `A_Chase`'s own "no shootable target" branch falling
-through to `P_SetMobjState(spawnstate)`. It only wakes again via `damage`'s unconditional re-alert
-(getting caught in someone else's infight), same path any other dormant monster uses. A rocket or vile
-blast already in flight still lands and can still deal splash (or, for the vile's knockup, do nothing
-beyond the first killing blow — `resolveVileBlast` gates its knockup on `damagePlayer`'s return, and
-`resolveBullet`'s `!playerDead` guard for the hitscan equivalent) — a dead player can still be
-"hit" for nothing to happen, matching `damagePlayer`'s own early return. The death itself shows a
-`#death-overlay` div. `R` calls `restart`: a fresh `Inventory`
-and a `loadMapByIndex` reload of the current map, which already resets player/world/specials/fog for
-a normal transition and, via its own top-of-function reset, `playerDead`/the overlay/`playerActor`'s
-animation state too. Restart isn't a special case, just the ordinary map-load path with a clean
-inventory.
-
-## Exploding barrels
-
-`src/game/things.ts`, `src/render/sprites.ts`, `src/game.ts`
-
-Vanilla's `MT_BARREL` has no AI at all — a plain `MF_SOLID|MF_SHOOTABLE` prop, not a `MONSTER_TYPES`
-member, so none of the monster AI applies. It still needs to plug into almost every piece of
-machinery a monster does (solid collision, hitscan/projectile/splash/melee hit-testing, auto-aim
-lock-on), which vanilla gets for free because none of those systems know what "monster" means — they
-only check `MF_SHOOTABLE`/`MF_SOLID`. This engine's equivalent generic layer is `ThingLayer`'s
-`blockerGrid`, so a barrel joins that grid alongside every `MONSTER_TYPES` thing
-(`rebuildBlockerGrid`, `solidBodies`, `pickMonster`) rather than needing a parallel set of spatial
-queries — `raycastMonster`/`monstersNear` become barrel-aware for free, which is what lets a rocket,
-a stray pellet, a monster's own fireball or another barrel's blast all hit one. The purely-solid
-decorations (`SOLID_DECORATION_TYPES`, docs/movement.md § Solid decorations) join the same grid for
-movement but are explicitly filtered back out of `raycastMonster`/`monstersNear` — unlike the
-barrel, none of them carry vanilla's `MF_SHOOTABLE`, so a shot must pass through one rather than
-stop on it.
-
-**Only `ThingLayer.damage`'s death/pain behavior is special-cased**, gated on `BARREL_TYPE` (2035):
-no painstate (`MT_BARREL` has `painchance = 0`), no alerting, no infighting retarget (it has no AI),
-and a kill switches its sprite to `BEXP` instead of picking from the death/xdeath tables — a barrel's
-idle art (`BAR1`) and its explosion art are genuinely different lumps, unlike every monster, whose
-death states reuse the same sprite name. `SpriteAnimator.die` gained an optional third `spriteName`
-argument for exactly this; every other caller still omits it.
-
-**`A_Explode` fires partway through the death animation, not instantly on death** — `S_BEXP1`/
-`S_BEXP2` each hold 5 tics before `S_BEXP3` calls it, so `BARREL_EXPLODE_DELAY_SECONDS` is
-`2 * BARREL_DEATH_FRAME_SECONDS` (a flat per-frame rate standing in for vanilla's uneven 5/5/5/10/10,
-the same simplification `MONSTER_DEATH_FRAME_SECONDS` makes). `ThingLayer.update` ticks this off the
-same `deadTime` clock it already ticks for every dead thing and reports it back as a
-`BarrelExplosion` (`{x, y, z, source}`) once due — the same "the layer reports, someone else
-realizes" split as `MonsterAttackEvent`, bundled alongside it in `ThingUpdateResult` rather than
-folded into the same array. `game.ts` realizes this one (`applyBarrelExplosion`); `MonsterAttacks`
-realizes the attacks. No separate visual effect is spawned: the barrel's own `PosedThing` is already
-playing `BEXP` at exactly that position. `S_BEXP5` falls through to `S_NULL`, i.e. the debris is
-removed once the animation finishes, the same rule `MONSTER_CORPSE_VANISHES` reproduces — a barrel
-just isn't a `MONSTER_TYPES` member, so it gets its own copy of the check.
-
-**The blast is `applyRadiusDamage`, exactly the rocket's own splash** — `A_Explode`'s literal call is
-`P_RadiusAttack(thingy, thingy->target, 128)`, identical radius and damage. `source`
-(`PosedThing.explodeSource`, captured in `damage` at the moment the barrel died, `null` meaning the
-player) stands in for `thingy->target` and is what makes a chain attribute correctly: since
-`applyRadiusDamage` walks the now-barrel-inclusive `monstersNear` and calls `damage` on what it
-finds, a second barrel caught in the blast is killed through the same call a monster would be, which
-captures this same `source` onto *it* and queues its own explosion a frame later — propagating the
-original attacker down the whole chain rather than attributing each link to the barrel before it,
-matching vanilla's `bombsource` propagation. The spider mastermind/cyberdemon splash exemption
-applies here for free.
-
-**A crusher can kill a barrel**, exactly as vanilla's crush damage (real `P_DamageMobj` against
-anything `MF_SHOOTABLE`) allows — `ThingLayer.crushablesInSector` covers barrels alongside
-`MONSTER_TYPES` for this one caller, rather than widening the `MONSTER_TYPES`-gated
-`monstersInSector` every other system relies on. See docs/specials.md § Crushers.

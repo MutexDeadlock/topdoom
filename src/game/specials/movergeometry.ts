@@ -10,7 +10,7 @@
  * has to be rebuilt or recoloured. Nothing here knows what a door or a
  * crusher is; it takes sector indices.
  *
- * See docs/specials.md § Mover meshes and § Light changes.
+ * See docs/specials.md § Relighting mover geometry and § Light changes.
  */
 import * as THREE from 'three';
 import { NO_SIDE, type DoomMap } from '../../wad/map.ts';

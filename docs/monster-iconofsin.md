@@ -3,7 +3,7 @@
 `src/game/iconofsin.ts`, `src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/specials.ts`
 
 MAP30's boss: the spitter that launches spawn cubes, the cubes themselves, and the brain's death.
-Separate from docs/monsters.md because none of it goes through `MONSTER_STATS` or `stepMonsterAI` —
+Separate from docs/monster-ai.md because none of it goes through `MONSTER_STATS` or `stepMonsterAI` —
 the eye, the targets and the brain are all inert `MONSTER_TYPES` entries that `IconOfSin` drives
 itself.
 
@@ -70,7 +70,7 @@ On arrival, `A_SpawnFly` spawns the `MT_SPAWNFIRE` puff (`FIRE A`-`H`), plays `t
 exactly 256, transcribed from `p_enemy.c`'s if/else chain. The weights are deliberately lopsided (an
 imp is 50/256, an arch-vile 2/256) and stay that way. `ThingLayer.spawnMonster` creates the monster
 already alerted and **telefrags** whatever was standing there, so a spawn spot is lethal to stand on
-— docs/combat.md § Telefrag.
+— docs/death.md § Telefrag.
 
 A cube-spawned monster increments `stats.kills` when killed but never `stats.totalKills`, which is
 fixed at load by the map-thing loop. **Kills can exceed 100% on MAP30**; that is vanilla, whose

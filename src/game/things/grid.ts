@@ -7,7 +7,7 @@
  * Every shape in here exists because the obvious version was measured and was
  * too slow — the cell size, the per-pair reach test, the reused result buffer,
  * the stamped ray dedupe. **Don't simplify any of it without measuring.** See
- * docs/monsters.md § Spatial indexing.
+ * docs/monster-ai.md § Spatial indexing.
  */
 import type { DoomMap } from '../../wad/map.ts';
 import { PLAYER_RADIUS } from '../player.ts';
@@ -49,7 +49,7 @@ const MAX_FRAME_DT = 0.05;
  * The two maxima are taken **independently and added**, not maximised as a
  * per-type sum: the monster probing and the monster that drifted are different
  * monsters, so nothing requires them to be the same type. See
- * docs/monsters.md § Spatial indexing.
+ * docs/monster-ai.md § Spatial indexing.
  */
 const BLOCKER_MARGIN =
   Object.values(MONSTER_STATS).reduce((max, s) => Math.max(max, s.speed * s.chaseInterval), 0) +
@@ -93,14 +93,10 @@ export interface ThingGrid {
  */
 export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[]): ThingGrid {
   /**
-   * Living monsters bucketed by `BLOCKER_GRID_CELL`, rebuilt once per
-   * `update()` and read by `blockersFor` below. Vanilla has the same thing for
-   * the same reason — its blockmap — and this exists because without it
-   * monster-vs-monster collision is O(monsters²) per frame: every alerted
-   * monster scanning every other thing on the map. That is fine at a stock
-   * level's population and catastrophic beyond it (NUTS.WAD's 10,696 things
-   * work out to ~114 million distance checks per frame the moment they all
-   * wake up, which on its own is a multi-hundred-millisecond frame).
+   * Solid bodies bucketed by `BLOCKER_GRID_CELL`, rebuilt once per `update()`
+   * and read by `blockersFor` below — vanilla's blockmap, for vanilla's
+   * reason. What it admits beyond monsters, and why the shot queries have to
+   * filter some of that back out, is docs/monster-ai.md § Spatial indexing.
    *
    * Cells hold `PosedThing`s rather than ids so `blockersFor` needs no second
    * lookup, and their arrays are emptied and refilled rather than reallocated,
@@ -116,7 +112,7 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
    * Raisable corpses bucketed into `blockerGrid`'s cell grid, filled in the
    * same `posed` pass. Backs `findRaisableCorpse`, which was a linear scan on
    * the unverified assumption that arch-viles are rare — they aren't on every
-   * map, and it cost most of a frame there. docs/monsters.md § Spatial
+   * map, and it cost most of a frame there. docs/monster-ai.md § Spatial
    * indexing.
    */
   const corpseGrid: PosedThing[][] = new Array(blockerCols * blockerRows);
@@ -214,7 +210,7 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
    * so up to a spider mastermind's 163 units rather than the flat ~24 this
    * assumed while one shared hitbox covered every type. Stamped rather than
    * `Set`-deduped, since consecutive neighbourhoods overlap heavily.
-   * docs/monsters.md § Spatial indexing.
+   * docs/monster-ai.md § Spatial indexing.
    */
   function forEachMonsterAlongRay(
     x: number,
@@ -254,7 +250,7 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
    * Reused storage for `blockersFor`'s result — `blockerPool` owns the objects
    * and only grows, `blockerScratch` is refilled with references, so a
    * steady-state frame allocates nothing. Allocating fresh per call profiled as
-   * the majority of all monster-AI time on a crowded map (docs/monsters.md §
+   * the majority of all monster-AI time on a crowded map (docs/monster-ai.md §
    * Spatial indexing).
    *
    * **The tradeoff: the result is valid only until the next call** — hence
@@ -284,7 +280,7 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
    *
    * The box is sized from the radii actually involved, not a fixed worst case,
    * and only the cells it covers are scanned. The single hottest thing in
-   * monster AI; see docs/monsters.md § Spatial indexing.
+   * monster AI; see docs/monster-ai.md § Spatial indexing.
    */
   function blockersFor(p: PosedThing, player: Pos3 | null): readonly ThingBlocker[] {
     blockerScratch.length = 0;
@@ -340,7 +336,7 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
    * Skips vanilla's `P_CheckPosition` re-test against other nearby things (the
    * corpse height-quadrupling trick) — raises are rare enough that reusing
    * `blockersFor`'s per-caller machinery here wasn't worth the coupling.
-   * docs/monsters.md § The arch-vile.
+   * docs/monster-archvile.md.
    */
   function findRaisableCorpse(x: number, y: number, vileRadius: number): RaiseCandidate | null {
     const reach = vileRadius + maxCorpseRadius + BLOCKER_MARGIN;

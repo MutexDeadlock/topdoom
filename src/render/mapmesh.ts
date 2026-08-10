@@ -45,37 +45,10 @@ class BatchSet {
 
 /**
  * What each of `COLORMAP`'s 32 rows does to brightness, as a **linear-light**
- * multiplier.
- *
- * Vanilla never scales a colour by the light level directly — it picks a row
- * of the `COLORMAP` lump and remaps every palette index through it, and that
- * ramp is nothing like linear in light level. These numbers are *measured*
- * from the real lump rather than modelled: for each colormap row, the mean
- * ratio of remapped to original luminance across the PLAYPAL colours bright
- * enough for the ratio to mean anything. Same rigor as the sprite/death-frame
- * tables elsewhere — and DOOM.WAD's and DOOM2.WAD's COLORMAPs are byte for
- * byte identical, with Freedoom's within 0.003, so one baked table serves all
- * three. (Per-colour spread is ~12% of the mean, so a single scalar per row is
- * a fair summary; the colormap desaturates slightly as it darkens.)
- *
- * `r_main.c` builds the row index as `startmap - scale/DISTMAP`, where
- * `startmap = (15 - lightnum) * 4` and the subtracted term grows as a surface
- * gets *closer* — vanilla's lighting diminishes with distance, so the light
- * level really sets how fast a surface falls off rather than a flat
- * brightness. This engine has no distance lighting (the camera hangs at a
- * near-constant distance from everything it draws), so the ramp is sampled at
- * one fixed reference distance: `REFERENCE_STEPS` is that subtracted term.
- * 4 corresponds to a ~300-unit viewing distance, and is chosen because it puts
- * a uniform ~0.12 of display brightness between adjacent light segments across
- * light 112-208 — 88% of every sector in the stock IWADs. It is the knob to
- * turn if the whole game reads too dark or too bright; raising it brightens
- * and eventually flattens the bright end, lowering it darkens.
- *
- * Note both ends necessarily saturate: vanilla spends 4 colormap rows per
- * light segment, so its 16 segments want 64 rows and only 32 exist. Light
- * <= 96 (2.8% of stock sectors) all bottom out together, as do 224 and 240
- * (9%). That is vanilla's own ramp, not a shortcut — it simply doesn't show
- * up in vanilla, where distance fills the range back in.
+ * multiplier — *measured* from the real lump rather than modelled, since
+ * vanilla remaps palette indices through a colormap row instead of scaling a
+ * colour by the light level. One baked table serves DOOM, DOOM2 and Freedoom.
+ * docs/render.md § Sector lighting.
  */
 const COLORMAP_GAIN = [
   1.0, 0.9662, 0.9055, 0.8253, 0.7552, 0.6956, 0.6437, 0.584,
@@ -84,7 +57,12 @@ const COLORMAP_GAIN = [
   0.0621, 0.0492, 0.0383, 0.0288, 0.0202, 0.0142, 0.0082, 0.0034,
 ];
 
-/** See above: vanilla's distance term, sampled at one fixed viewing distance. */
+/**
+ * `r_main.c`'s `scale/DISTMAP` distance term, sampled at one fixed viewing
+ * distance since this engine has no distance lighting. **The knob to turn if
+ * the whole game reads too dark or too bright** — docs/render.md § Sector
+ * lighting for why 4, and why both ends of the ramp saturate.
+ */
 const REFERENCE_STEPS = 4;
 
 /** `COLORMAP_GAIN` folded down to one entry per light segment, built once. */

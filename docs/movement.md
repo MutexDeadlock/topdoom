@@ -39,7 +39,9 @@ projection and its per-axis fallback) all pass their mover's own position as `fr
 yet touched at `from` is unaffected — this only lets an already-overlapping pair work free, it never
 lets a mover approach a thing it wasn't already touching.
 
-**Solid decorations.** `game/thingdefs.ts`'s `SOLID_DECORATION_TYPES` is every doomednum from the
+### Solid decorations
+
+`game/thingdefs.ts`'s `SOLID_DECORATION_TYPES` is every doomednum from the
 "Obstacles & decorations" and "Gore & corpses" blocks of `THING_SPRITES` that carries vanilla's
 `MF_SOLID` flag — confirmed per-type against `linuxdoom-1.10/info.c`'s `mobjinfo` table: the
 column, candelabra, all six pillars, the evil eye, skull rock, all six torches, the stalagmite, the
@@ -177,6 +179,14 @@ rather than always snapping straight to it:
 `GRAVITY`'s value is tuned by feel (roughly a body height of fall in a third of a second), not
 converted from vanilla's fixed-point tics-per-second constant, which doesn't translate cleanly to a
 dt-scaled model.
+
+**A hard landing is derived from vanilla's drop *height*, not its speed.** `Player.landingSpeed`
+reports how fast a fall ended, and `HARD_LANDING_SPEED` is what counts as hard enough to knock the
+wind out (`oof`, docs/audio.md § Who plays what). Vanilla grunts below `momz < -8` units/tic, which
+under *its* gravity of 1 unit/tic² is exactly a 32-unit drop — so this engine solves
+`sqrt(2 * GRAVITY * 32)` under its own stronger, feel-tuned `GRAVITY` instead of copying the number.
+Copying the speed would make shallower ledges grunt than vanilla's do, and 24 units — DOOM's most
+common step height — sits right on that boundary, so the wrong choice makes ordinary stairs grunt.
 
 Crossing a short chasm without falling in — DOOM's own "gap narrower than the player" quirk — falls
 out of `groundFloor` for free rather than needing separate jump logic: a gap narrower than

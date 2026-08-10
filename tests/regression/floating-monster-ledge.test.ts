@@ -16,7 +16,7 @@ import type { Pos3 } from '../../src/types.ts';
  * forever. Vanilla answers a blocked step for an `MF_FLOAT` monster by *changing
  * height* (`P_Move`'s `floatok` branch) and hovers it toward the target
  * (`P_ZMovement`), which is how a cacodemon crosses geometry a demon can't.
- * See docs/monsters.md § Floating monsters.
+ * See docs/monster-ai.md § Floating monsters.
  *
  * `caco_pit_test.wad`: one room split at `y = 32`, player start at `(0, -64)` on
  * the `0` floor and a cacodemon at `(0, 96)` in a pit at `-48`. Self-contained,

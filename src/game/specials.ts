@@ -342,7 +342,7 @@ export type TeleportDest = Placement;
  * (see `consumeLockedLine`). `kind` is vanilla's own split between "open this door" (`PD_*K`, the
  * manual door specials 26-28/32-34, where the line *is* the door) and "activate this object"
  * (`PD_*O`, the remote switches 99/133-137) — the two messages `EV_VerticalDoor` and
- * `EV_DoLockedDoor` print. docs/specials.md § Keyed doors.
+ * `EV_DoLockedDoor` print. docs/items.md § Locked doors and use triggers.
  */
 export interface LockedLine {
   key: KeyColor;
@@ -1363,7 +1363,7 @@ export class SpecialsController {
   }
 
   /**
-   * Vanilla's `A_BossDeath` — see docs/specials.md § Boss death. `game.ts` calls this once per
+   * Vanilla's `A_BossDeath` — see docs/death.md § Boss death. `game.ts` calls this once per
    * monster death that leaves none of its type alive on the level (`ThingLayer`'s own doomednum
    * check), already gated on the player being alive, matching vanilla's own check.
    */

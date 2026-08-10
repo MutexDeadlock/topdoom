@@ -4,7 +4,7 @@ import type { Player } from './player.ts';
 // `monsters/ai.ts`, which it imports — in the runtime graph of everything that
 // resolves damage, `monsters/attacks.ts` and `monsters/vile.ts` included. Its
 // splash constants live in `thingdefs.ts` to keep that true.
-// docs/monsterattacks.md § Resolving an attack.
+// docs/monster-attacks.md § Resolving an attack.
 import type { BarrelExplosion, ThingLayer } from './things.ts';
 import { BARREL_SPLASH_DAMAGE, BARREL_SPLASH_RADIUS } from './thingdefs.ts';
 import type { Pos3 } from '../types.ts';
@@ -23,7 +23,7 @@ export interface CombatContext {
   readonly world: World;
   readonly things: ThingLayer | null;
   readonly player: Player;
-  /** True once the player's health has hit 0 — see docs/combat.md § Player death. */
+  /** True once the player's health has hit 0 — see docs/death.md § Player death. */
   readonly playerDead: boolean;
   /**
    * Armor-mitigated damage to the player, returning whether the hit actually
@@ -34,7 +34,7 @@ export interface CombatContext {
   /**
    * Fires a shoot-triggered line special, with whatever keys the player is
    * currently carrying. `byMonster` reproduces vanilla's own hardcoded
-   * exception for a monster's stray shot — docs/specials.md § Shoot triggers.
+   * exception for a monster's stray shot — docs/combat.md § Shoot-triggered specials.
    */
   triggerShot(lineIndex: number | null, byMonster?: boolean): void;
 }
@@ -76,7 +76,7 @@ export function applyRadiusDamage(
  * thingy->target, 128)`, the same shape as the rocket's splash with
  * `exp.source` standing in for `thingy->target`. Barrels are in
  * `monstersNear`, so a second one caught in the blast chains through the
- * ordinary damage path (docs/combat.md § Exploding barrels).
+ * ordinary damage path (docs/death.md § Exploding barrels).
  */
 export function applyBarrelExplosion(ctx: CombatContext, exp: BarrelExplosion): void {
   applyRadiusDamage(ctx, exp, BARREL_SPLASH_RADIUS, BARREL_SPLASH_DAMAGE, true, exp.source);

@@ -1,7 +1,7 @@
 # Pickups, inventory and powerups
 
 `src/game/inventory.ts`, `src/game/things.ts: ThingLayer.tryPickup`, `src/game/sectoreffects.ts`,
-`src/game.ts`
+`src/ui/hud/screeneffects.ts`, `src/game.ts`
 
 What any of this *looks like* on screen — the HUD panels reading off `Inventory`, the powerup strip,
 the screen tints the powers drive — is docs/hud.md.

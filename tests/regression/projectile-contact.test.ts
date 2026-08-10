@@ -12,7 +12,7 @@ import type { Pos3 } from '../../src/types.ts';
  * frame's step. That made monster fireballs hit far too generously, made the
  * player's own missiles thread through wide monsters, and — since `game.ts`
  * clamps `dt` at 0.05s — let the fastest missiles step clean past a body.
- * See docs/monsterattacks.md § Monster projectiles in flight.
+ * See docs/monster-attacks.md § Monster projectiles in flight.
  */
 
 const IMP = 3001;

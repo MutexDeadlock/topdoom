@@ -25,7 +25,7 @@ import { DOOM_TIC } from '../../constants.ts';
  * The per-frame monster simulation: waking, target commitment, vanilla's
  * `A_Chase` pathing, and the decision to attack. Everything here mutates a
  * `MonsterBody` and *reports* what happened; realizing an attack against the
- * world is `monsters/attacks.ts`. See docs/monsters.md.
+ * world is `monsters/attacks.ts`. See docs/monster-ai.md.
  */
 
 /**
@@ -37,7 +37,7 @@ import { DOOM_TIC } from '../../constants.ts';
  * the charge, so a box that tight is tunnelled straight through at charge speed;
  * the value is the pre-formula `MELEE_RANGE` this test used to share, kept
  * unchanged so tightening the melee threshold didn't silently retune the lost
- * soul too. See docs/monsters.md § The lost soul.
+ * soul too. See docs/monster-ai.md § The lost soul.
  */
 const SKULL_CONTACT_RANGE = 72;
 
@@ -64,7 +64,7 @@ const CHASE_AXIS_EPSILON = 10;
 /**
  * `P_LookForPlayers`'s field-of-view gate: the forward ~180°, unless the
  * player is within `MELEERANGE`. Initial wake-up only — `A_Chase` never
- * re-applies it to an already-hunting monster. docs/monsters.md § Waking up.
+ * re-applies it to an already-hunting monster. docs/monster-ai.md § Waking up.
  */
 export function canSpotPlayer(facingDeg: number, monsterX: number, monsterY: number, playerX: number, playerY: number): boolean {
   const dist = Math.hypot(playerX - monsterX, playerY - monsterY);
@@ -77,7 +77,7 @@ export function canSpotPlayer(facingDeg: number, monsterX: number, monsterY: num
 /**
  * Vanilla's idle `A_Look`, called once per unalerted monster on
  * `ThingLayer.update`'s `LOOK_INTERVAL` throttle. Sound, ambush/deaf things
- * and the ordinary FOV+sight path are all handled here — docs/monsters.md §
+ * and the ordinary FOV+sight path are all handled here — docs/monster-ai.md §
  * Waking up.
  *
  * On success mutates `body.alerted` and seeds `reactionTicks`, the same
@@ -121,7 +121,7 @@ export function reactToDamage(body: MonsterBody, stats: MonsterStats): void {
  * Vanilla's target-switch rule out of `P_DamageMobj` — the whole mechanism
  * behind infighting, with two carve-outs: a monster still inside its
  * `threshold` ignores new attackers (an arch-vile is exempt), and nothing
- * ever retaliates against an arch-vile. docs/monsters.md § Infighting.
+ * ever retaliates against an arch-vile. docs/monster-ai.md § Infighting.
  *
  * On a true result the caller reseeds `threshold`; that's `commitTarget`.
  */
@@ -150,7 +150,7 @@ const FLOAT_SPEED = 4;
  * A `flies` monster instead never falls (`MF_NOGRAVITY`) and drifts toward its
  * target's mid-height while close enough (`P_ZMovement`'s `MF_FLOAT` block),
  * clamped between the floor it is over and the ceiling above it. See
- * docs/monsters.md § Floating monsters.
+ * docs/monster-ai.md § Floating monsters.
  */
 function settleVertical(body: MonsterBody, stats: MonsterStats, world: World, dt: number, target: Pos3): void {
   const groundZ = world.groundFloor(body.x, body.y, stats.radius, true);
@@ -237,7 +237,7 @@ function floatOverStep(body: MonsterBody, stats: MonsterStats, world: World, x: 
  * chase call rather than converted into a cooldown — `runChaseCall` ticks at
  * vanilla's cadence, so it can afford to sample it as often as vanilla does.
  * The roll *suppresses* the shot, so fire chance is `(256 - dist) / 256`.
- * `MF_JUSTHIT` short-circuits all of it. docs/monsters.md § Attacking.
+ * `MF_JUSTHIT` short-circuits all of it. docs/monster-ai.md § Attacking.
  */
 function checkMissileRange(body: MonsterBody, stats: MonsterStats, dist: number, canSee: () => boolean): boolean {
   const ranged = stats.ranged;
@@ -283,14 +283,10 @@ function tryWalk(body: MonsterBody, stats: MonsterStats, world: World, dir: numb
  * chase step `tryWalk` committed to still lands clear — so the sub-step this
  * frame wants is on its way out, not into anything new.
  *
- * Maps place monsters flush against walls routinely (94 of them across
- * DOOM/DOOM2/SCYTHE, e.g. DOOM2 MAP02's zombieman at 1056,960), which puts
- * their spawn point inside their own radius. Vanilla never notices, because
- * `P_Move` tests only the destination — see docs/monsters.md § Movement for
- * why the per-frame interpolation here has to be told the same thing.
- *
- * Only ever reached from the already-blocked branch below, so an ordinary
- * monster bumping a wall pays one extra query and a walking one pays none.
+ * Exists because maps routinely place monsters flush against walls, which
+ * vanilla never notices since `P_Move` tests only the destination:
+ * docs/monster-ai.md § Movement. Only ever reached from the already-blocked
+ * branch below, so a walking monster pays nothing for it.
  */
 function escapingOverlap(body: MonsterBody, stats: MonsterStats, world: World, blockers?: readonly ThingBlocker[]): boolean {
   const blockedAt = (x: number, y: number): boolean => testStep(body, stats, world, x, y, blockers) === 'blocked';
@@ -304,7 +300,7 @@ function escapingOverlap(body: MonsterBody, stats: MonsterStats, world: World, b
  * then the two cardinals, then the previous heading, then a full eight-way
  * scan from a randomly chosen end, and the about-face only as a last resort.
  * That last-resort ordering and the random scan direction are both
- * load-bearing — docs/monsters.md § Movement.
+ * load-bearing — docs/monster-ai.md § Movement.
  */
 function newChaseDir(
   body: MonsterBody,
@@ -363,7 +359,7 @@ function newChaseDir(
  *
  * Deliberately **not** `slideMove`, unlike every other movement here: a charge
  * that rounded corners would track the player, and sidestepping a committed
- * lost soul is what makes the attack fair. docs/monsters.md § The lost soul.
+ * lost soul is what makes the attack fair. docs/monster-ai.md § The lost soul.
  */
 function stepCharge(body: MonsterBody, stats: MonsterStats, dt: number, world: World, distToPlayer: number): MonsterAttack | null {
   const charge = stats.ranged?.charge;
@@ -444,7 +440,7 @@ function fireAttack(
  * fires on `chaseInterval` and nothing else; position is interpolated per
  * frame along the `movedir` the last chase call settled on, since vanilla's
  * full-`speed` jump per call would visibly stutter here. Same distance, same
- * 8-way pathing, no stutter. See docs/monsters.md § Movement and § Attacking.
+ * 8-way pathing, no stutter. See docs/monster-ai.md § Movement and § Attacking.
  */
 export function stepMonsterAI(
   body: MonsterBody,

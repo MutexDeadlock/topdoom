@@ -45,7 +45,7 @@ import type { Pos3 } from '../types.ts';
  * `MonsterAttack` per attack, neither knowing what it will hit. This is the
  * other half of that split: it knows nothing about ammo, cooldowns or AI, only
  * about geometry and bodies. See docs/combat.md § How a shot deals damage and
- * docs/monsterattacks.md § Monster projectiles in flight.
+ * docs/monster-attacks.md § Monster projectiles in flight.
  */
 export class ProjectileLayer {
   private ctx: CombatContext;
@@ -237,7 +237,7 @@ export class ProjectileLayer {
    * *slope* and nothing else — `P_SpawnMissile` fixes `momx`/`momy`/`momz` at
    * launch and the thing flies on until something stops it, so the flight ends
    * at a wall, never at where the target happened to be standing. See
-   * docs/monsterattacks.md § Monster projectiles in flight.
+   * docs/monster-attacks.md § Monster projectiles in flight.
    */
   spawnMonsterShot(atk: MonsterAttackEvent): void {
     if (!atk.projectiles) return;
@@ -293,7 +293,7 @@ export class ProjectileLayer {
    * **Every projectile, the player's own included, re-tests live bodies each
    * frame** (`P_XYMovement` re-running `PIT_CheckThing` per move), and each
    * test is swept across the frame's whole step rather than sampled at its end.
-   * See docs/monsterattacks.md § Monster projectiles in flight.
+   * See docs/monster-attacks.md § Monster projectiles in flight.
    *
    * Must run inside the caller's `SpriteFxLayer.beginFrame`/`endFrame` pair: it
    * both draws through the batch and pushes this frame's new explosions and
@@ -407,7 +407,7 @@ export class ProjectileLayer {
     const { world, player } = this.ctx;
     if (stepTouchesBody(from, at, player, PLAYER_RADIUS, PLAYER_HEIGHT, p.radius) === null) return false;
     // Proximity alone isn't arrival, and the trace runs player→projectile, not
-    // the other way round — docs/monsterattacks.md § Monster projectiles in
+    // the other way round — docs/monster-attacks.md § Monster projectiles in
     // flight. Last in the chain so it only runs once the cheap tests passed.
     return hasLineOfSight(world, player, at);
   }
@@ -418,7 +418,7 @@ export class ProjectileLayer {
    * direct damage, or **null for a same-species body that stops the missile
    * without being hurt by it** (a monster's shot only — the player is nobody's
    * species). Candidates resolve first-along-the-step, the swept equivalent of
-   * vanilla's blockmap order. See docs/monsters.md § Infighting.
+   * vanilla's blockmap order. See docs/monster-ai.md § Infighting.
    */
   private bodyStruckBy(p: Projectile, from: Pos3, at: Pos3): { id: number | null } | null {
     let nearest: { id: number | null } | null = null;
@@ -447,7 +447,7 @@ export class ProjectileLayer {
    * missile has no flight-distance budget** — each step is checked against the
    * geometry it actually crossed (`projectileStepBlocker`), and forcing
    * `p.traveled` to `p.maxDist` is how arrival is signalled to `update`. See
-   * docs/monsterattacks.md § The revenant's homing missile.
+   * docs/monster-attacks.md § The revenant's homing missile.
    */
   private advanceHoming(p: Projectile, dt: number): Pos3 {
     const { world, things } = this.ctx;
@@ -484,7 +484,7 @@ export class ProjectileLayer {
     }
     // Meeting the floor or ceiling is deliberately *not* decided here — it is
     // `update`'s `hitGround`, on the sector lookup it already makes. See
-    // docs/monsterattacks.md § Monster projectiles in flight.
+    // docs/monster-attacks.md § Monster projectiles in flight.
 
     // The smoke trail — see SMOKE_TRAIL_INTERVAL's doc for why this only
     // ever runs for a shot that already won the homingBias roll.

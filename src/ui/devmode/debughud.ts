@@ -7,7 +7,7 @@ import { DEVMODE } from '../../constants.ts';
 /**
  * The top-left status text, the fps counter behind it, and the debug hotkeys —
  * all of which collapse to "`N` fps" and the camera framing keys once DEVMODE
- * is off. See docs/devmode.md.
+ * is off. See docs/menu.md § Dev mode.
  */
 
 /**

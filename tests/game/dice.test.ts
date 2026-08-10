@@ -6,7 +6,7 @@ import { scriptedRandom, seededRandom } from '../fixtures/rng.ts';
 /**
  * Vanilla's two random shapes, which every damage roll and every aim fuzz in
  * the game bottoms out in: `((P_Random() % sides) + 1) * mult` and
- * `P_Random() - P_Random()`. See docs/combat.md § Fire rates.
+ * `P_Random() - P_Random()`. See docs/weapons.md § Fire rates.
  */
 
 describe('Game rules · damage dice', () => {

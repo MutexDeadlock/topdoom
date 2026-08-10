@@ -132,7 +132,7 @@ export class World {
    * This is the query a **sightline** wants; `linesNear`'s radius box is
    * O(dist²) in cells for a thin line and was the engine's biggest single cost
    * on a crowded map. Allocation-free by design (stamp array, callback), since
-   * it runs thousands of times per frame. docs/combat.md § hasLineOfSight
+   * it runs thousands of times per frame. docs/world.md § hasLineOfSight
    * covers why this is both sound and necessary.
    */
   forEachLineAlongSegment(
@@ -389,7 +389,7 @@ export class World {
    * Floods a noise outward from the sector at (x, y) through every two-sided
    * line — vanilla's `P_NoiseAlert`/`P_RecursiveSound`. Marked sectors stay
    * marked for the rest of the level (`sector->soundtarget` is never cleared
-   * either). See docs/monsters.md § Waking up for the propagation rules.
+   * either). See docs/monster-ai.md § Waking up for the propagation rules.
    *
    * The search state is a `(sector, hasCrossedABlockLine)` pair, not just a
    * sector, so one reached first via a sound-blocked path can still be
@@ -444,7 +444,7 @@ const SIGHT_HEIGHT_SAMPLE_STEP = 64;
  * stretches instead of the count growing. 32 keeps full precision within
  * `WEAPON_RANGE` (2048/64 = 32) so nothing that can end in a monster's shot
  * changes; a player's longer shot never consults this function at all.
- * See docs/combat.md § hasLineOfSight.
+ * See docs/world.md § hasLineOfSight.
  */
 const SIGHT_MAX_HEIGHT_SAMPLES = 32;
 
@@ -457,7 +457,7 @@ const SIGHT_MAX_HEIGHT_SAMPLES = 32;
  * vanilla's `sightzstart` fraction) rather than interpolating toward `z2` —
  * vanilla's `P_CheckSight` (`sightzstart`/`topslope`/`bottomslope`). Both the
  * fixed origin and the floor/ceiling half are load-bearing, and this is the
- * engine's most performance-sensitive query: docs/combat.md § hasLineOfSight
+ * engine's most performance-sensitive query: docs/world.md § hasLineOfSight
  * covers why, and what keeps it affordable.
  *
  * The eye-height fraction is computed inline rather than as a module-level
@@ -478,7 +478,7 @@ export function hasLineOfSight(world: World, from: Pos3, to: Pos3): boolean {
   // O(dist²) in cells here — see `World.forEachLineAlongSegment`. A fully
   // blocking line stops the trace outright; an open two-sided one narrows the
   // sight wedge at its real opening, matching `P_SightTraverse` — the reason
-  // this exists alongside the periodic sampling below is docs/combat.md §
+  // this exists alongside the periodic sampling below is docs/world.md §
   // hasLineOfSight.
   let blocked = false;
   world.forEachLineAlongSegment(from.x, from.y, to.x, to.y, (i) => {
@@ -552,7 +552,7 @@ function neighborSectors(map: DoomMap, sectorIndex: number): Sector[] {
  * Neighbor-height queries a specials mover needs to resolve a target height —
  * vanilla's `P_FindLowestFloorSurrounding` family. The `found` flag (rather
  * than seeding with the sector's own height) is load-bearing; see
- * docs/specials.md § Neighbor-height queries.
+ * docs/world.md § Neighbor-height queries.
  */
 export function lowestNeighborFloor(map: DoomMap, sectorIndex: number): number {
   const sector = map.sectors[sectorIndex];
@@ -671,16 +671,12 @@ export interface ThingBlocker extends Pos2 {
  * True if a body of `radius` standing at (x, y) overlaps one of `blockers` —
  * vanilla's `PIT_CheckThing` overlap test, an axis-aligned **box** check on
  * the summed radii, not the circle test the rest of this file uses. Boxy on
- * purpose (docs/monsters.md § Movement).
+ * purpose (docs/monster-ai.md § Movement).
  *
- * `from`, when given, is where the mover currently stands. A blocker already
- * overlapped there only refuses the move if it presses further in (`newDist <
- * oldDist` to that blocker's centre) — otherwise two bodies that ended up
- * touching (map placement, or a knockback that skips this same check — see
- * `ThingLayer.applyKnockback`) can still work their way apart one frame at a
- * time instead of freezing both forever: every frame's step is a few units
- * against a reach of tens, so requiring the *destination* to already be fully
- * clear is unreachable in one step. A blocker not yet touched at `from` is
+ * `from`, when given, is where the mover currently stands: a blocker already
+ * overlapped there only refuses the move if it presses further in, which is
+ * what lets two touching bodies work free instead of freezing forever
+ * (docs/movement.md § Collision). A blocker not yet touched at `from` is
  * unaffected — you still can't walk into a thing you weren't already
  * overlapping.
  */
@@ -927,7 +923,7 @@ function shotTargetHalfHeight(): number {
  * null if the step is clear — the per-step counterpart to `shotPath`'s single
  * launch-time trace, for the one projectile whose path isn't straight and so
  * can't have its stopping point resolved up front: the revenant's homing
- * missile (`game/projectiles.ts: advanceHoming`, docs/monsters.md § The
+ * missile (`game/projectiles.ts: advanceHoming`, docs/monster-attacks.md § The
  * revenant's homing missile).
  *
  * Blocking is `blocksShot` at the height the step is at where it crosses each
@@ -995,7 +991,7 @@ export interface ShotPath extends Pos3 {
  * monster's bullet passes `WEAPON_RANGE` (`P_LineAttack`'s `MISSILERANGE`), a
  * player's free bullet the longer `PLAYER_WEAPON_RANGE`, and a missile — which
  * has no range budget in vanilla at all — `World.mapSpan`. See docs/combat.md
- * § Range and docs/monsterattacks.md § Hitscan vs. projectile.
+ * § Range and docs/monster-attacks.md § Hitscan vs. projectile.
  *
  * `lockedOn` (default: true whenever `target` is given) switches blocking from
  * `blocksShot`'s single fixed ray to a **slope wedge**, vanilla's

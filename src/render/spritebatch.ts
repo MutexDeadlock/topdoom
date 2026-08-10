@@ -14,39 +14,11 @@ interface Batch {
 
 /**
  * Draws many sprites sharing a lump as a single `InstancedMesh` instead of one
- * `THREE.Mesh` each.
+ * `THREE.Mesh` each, rebuilt from scratch every frame (`begin`/`add`/`end`).
  *
- * This exists because of the draw-call wall. `game/things.ts` poses every map
- * THING every frame, and a stress-test map like NUTS.WAD has 10,696 of them in
- * a single 69-subsector open arena — so essentially all of them are on screen
- * and fog-of-war-revealed at once. One mesh each meant ~10k draw calls per
- * frame, each with its own matrix/uniform upload, which alone dropped the
- * game to a ~2fps slideshow with the renderer utterly dominating the DEVMODE
- * profiler. Batching by lump collapses that to one draw call per *distinct
- * sprite lump currently on screen* (a few dozen to a few hundred), which is
- * the same thing hardware-accelerated source ports do.
- *
- * The batch is rebuilt from scratch every frame (`begin`/`add`/`end`) rather
- * than incrementally maintained. That's deliberate: which lump a thing uses
- * changes constantly — every monster re-picks its rotation frame as the
- * camera orbits and its own facing changes, and its walk cycle advances on
- * top of that — so an instance's batch membership is not stable across frames
- * and there is nothing useful to preserve. Writing straight into the
- * instance buffers costs one matrix's worth of float stores per sprite, far
- * less than the per-object work three.js would otherwise do for each.
- *
- * Two details make the per-instance write cheap enough to do for everything,
- * every frame:
- * - **Every sprite shares one rotation.** The planes never tilt and all track
- *   the same camera yaw (see `SpriteMaterialCache`'s doc), so the rotation's
- *   sin/cos are computed once in `begin` and the whole instance matrix is
- *   written directly into the buffer as scalars — no `Matrix4`/`Quaternion`
- *   allocation or `compose` call per sprite.
- * - **Sector light rides along as a per-instance color**, which as a bonus
- *   *fixes* a pre-existing bug rather than merely preserving behavior: the
- *   non-instanced path tints by mutating the lump's shared material, so with
- *   several things sharing a lump the last one posed each frame decided the
- *   light for all of them. Per-instance color is genuinely per-sprite.
+ * Batching is a hard performance requirement rather than a refinement, and
+ * both the rebuild-wholesale choice and the two properties that make a
+ * per-instance write cheap are load-bearing: docs/sprites.md § Batching.
  */
 export class SpriteBatch {
   readonly group = new THREE.Group();

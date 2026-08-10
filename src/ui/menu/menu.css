@@ -17,7 +17,7 @@
 /*
  * With a level loaded the menu is a pause screen, so the frozen game shows
  * through instead of the gradient (Game keeps re-rendering it, see
- * docs/render.md § Pausing). The panel itself stays opaque — readability must
+ * docs/frameloop.md § Pausing). The panel itself stays opaque — readability must
  * not depend on what the camera happens to be looking at.
  */
 #menu.ingame {

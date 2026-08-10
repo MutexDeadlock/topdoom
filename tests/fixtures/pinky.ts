@@ -20,7 +20,7 @@ export const DEMON_TYPE = 3002;
  * put the demon within 2D melee reach of a player at the lip while leaving the
  * two bodies with no vertical overlap at all, which is the case
  * `meleeReachesVertically` exists for. Reported against GZDoom; see
- * docs/monsters.md § Melee reach.
+ * docs/monster-ai.md § Melee reach.
  */
 export type PinkyMap = 'pinky_above_test' | 'pinky_below_test';
 

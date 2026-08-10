@@ -8,6 +8,7 @@
  * to 0.
  */
 
+/** Reticle size in CSS pixels. Tuned by feel, like the rest of the crosshair above. */
 const SIZE = 24;
 const CENTER = SIZE / 2;
 

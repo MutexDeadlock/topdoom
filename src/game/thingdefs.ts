@@ -166,7 +166,7 @@ export const NO_AUTO_AIM_TYPES = new Set([88]);
 
 /**
  * Doomednums of the "Ammo", "Health & armor", "Keys" and "Powerups" blocks above — the small
- * collectibles `game/things.ts`'s `pickupScaleFor` draws at `PICKUP_SCALE` (1.4×) their native WAD
+ * collectibles `game/things/defs.ts`'s `pickupScaleFor` draws at `PICKUP_SCALE` (1.4×) their native WAD
  * pixel size, since those are what actually suffer from this engine's far, tilted top-down camera
  * (see that constant's own doc). A whitelist rather than "everything but monsters/weapons": solid
  * decorations, gore props and the barrel are large enough on their own, and inflating them by 40%
@@ -280,7 +280,7 @@ export const CEILING_HUNG_HEIGHT: Record<number, number> = {
  *
  * Load-bearing even though neither type's animator currently advances: `animating` is only ever
  * turned on by the AI branch in `update()`, which these two never enter, so today they hold frame 0
- * by accident rather than by rule. docs/monsters.md § Commander Keen.
+ * by accident rather than by rule. docs/monster-ai.md § Commander Keen.
  */
 export const MONSTER_IDLE_FRAMES: Record<number, string[]> = {
   72: ['A'], // KEEN, S_KEENSTND
@@ -302,7 +302,7 @@ export const MONSTER_WALK_FRAMES = ['A', 'B', 'C', 'D'];
  * The cacodemon is the one that gets *noticed*: `S_HEAD_RUN1` is a single state
  * looping to itself on frame A, and `HEAD`'s B/C are its `missilestate` mouth —
  * the same letters `MONSTER_ATTACK_FRAMES` uses — so the shared 4-frame default
- * had it biting the air continuously as it drifted. docs/monsters.md § Pain,
+ * had it biting the air continuously as it drifted. docs/sprites.md § Pain,
  * and attack/pain poses.
  */
 export const MONSTER_WALK_FRAMES_OVERRIDE: Record<number, string[]> = {
@@ -321,7 +321,7 @@ export const MONSTER_WALK_FRAMES_OVERRIDE: Record<number, string[]> = {
  * ordered upper bounds on one `P_Random()` roll (0-255): the first entry the roll falls under wins,
  * and the last is the `else`. Transcribed from `p_enemy.c`'s own if/else chain, with each `MT_*`
  * resolved to its `info.c` doomednum. The weights are deliberately lopsided and stay that way — an
- * arch-vile is 2/256 where an imp is 50/256. docs/monsters.md § The spawn cube.
+ * arch-vile is 2/256 where an imp is 50/256. docs/monster-iconofsin.md § The spawn cube.
  */
 export const SPAWN_CUBE_MONSTERS: readonly { below: number; type: number }[] = [
   { below: 50, type: 3001 }, // MT_TROOP imp
@@ -358,7 +358,7 @@ export const COUNTITEM_TYPES = new Set([2014, 2015, 2013, 2022, 2023, 2024, 2026
 
 /**
  * The five monster types real vanilla's `A_BossDeath` (`p_enemy.c`) can fire for — confirmed
- * against `info.c`'s `mobjinfo` doomednums. See docs/specials.md § Boss death.
+ * against `info.c`'s `mobjinfo` doomednums. See docs/death.md § Boss death.
  */
 export const BOSS_DEATH_TYPES = {
   baron: 3003,
@@ -399,7 +399,7 @@ export const MONSTER_HEALTH: Record<number, number> = {
  * marks where death art starts; DIE is the front of that tail, XDIE the back.
  * That derivation doesn't reach the two AI-less types at the bottom, whose
  * whole sprite is rotation-0 — theirs come straight off `info.c`'s own chains.
- * docs/monsters.md § Pain, and attack/pain poses.
+ * docs/sprites.md § Pain, and attack/pain poses.
  */
 export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
   3004: ['H', 'I', 'J', 'K', 'L'], // POSS
@@ -442,7 +442,7 @@ export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
  * one at all** (the human grunts and the imp); everything else has no
  * `xdeathstate` in `mobjinfo` and always plays its plain death.
  * `ThingLayer.damage` picks between the two by `P_KillMobj`'s overkill rule —
- * docs/combat.md § Monster death.
+ * docs/death.md § Monster death.
  */
 export const MONSTER_XDEATH_FRAMES: Record<number, string[]> = {
   3004: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // POSS
@@ -469,7 +469,7 @@ export const MONSTER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
  * This also makes a dead pain elemental unresurrectable despite its real
  * `raisestate` — a genuine vanilla dead-data quirk, reproduced here without a
  * second special case because `rebuildBlockerGrid` never buckets a `hidden`
- * corpse. See docs/combat.md § Monster death.
+ * corpse. See docs/death.md § Monster death.
  */
 export const MONSTER_CORPSE_VANISHES = new Set([3006, 71]); // SKUL, PAIN
 
@@ -478,7 +478,7 @@ export const MONSTER_CORPSE_VANISHES = new Set([3006, 71]); // SKUL, PAIN
  * aren't structurally derivable from the WAD, so they're lifted from `info.c`'s
  * `missilestate` chains and cross-checked letter-by-letter against the real
  * sprite lumps — the discipline that surfaced the four death-table bugs above.
- * docs/monsters.md § Pain, and attack/pain poses.
+ * docs/sprites.md § Pain, and attack/pain poses.
  *
  * Only letters distinct from the walk cycle and from each other are kept:
  * vanilla repeats frames mid-sequence purely to hold a pose, a no-op against
@@ -540,7 +540,7 @@ export const MONSTER_PAIN_FRAMES: Record<number, string[]> = {
   // The two AI-less types. Both have a real painstate and effectively always
   // enter it (painchance 256 and 255 of 256), but neither has `MONSTER_STATS`
   // to roll against — `ThingLayer.damage`'s `INERT_SHOOTABLE` branch flinches
-  // them unconditionally instead. docs/monsters.md § Commander Keen.
+  // them unconditionally instead. docs/monster-ai.md § Commander Keen.
   72: ['M'], // KEEN, S_KEENPAIN
   88: ['B'], // BBRN, S_BRAIN_PAIN
 };
@@ -562,7 +562,7 @@ export const MONSTER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;
  * **Not simply the reverse of `MONSTER_DEATH_FRAMES`** — that was tried and is
  * wrong, since vanilla's raise sequences are hand-authored per type with no
  * shared derivation rule. Every letter is read off `info.c`'s `S_*_RAISE*`
- * table directly. docs/monsters.md § The arch-vile.
+ * table directly. docs/monster-archvile.md.
  *
  * Played via `playOnce` after `revive()` undoes `die()`, reusing
  * `MONSTER_DEATH_FRAME_SECONDS` — vanilla's raise states hold 5-8 tics,
@@ -598,7 +598,7 @@ export const MONSTER_RAISE_FRAMES: Record<number, string[]> = {
  * `S_PLAY_ATK1`/`ATK2` at `E`/`F` and `S_PLAY_PAIN`/`PAIN2` at `G`, right
  * before the death sequence starts at `H`. The two action frames play via
  * `SpriteAnimator.playOnce`, not `die`: both hand back to the walk/idle cycle
- * when they finish. docs/combat.md § Player death.
+ * when they finish. docs/death.md § Player death.
  */
 export const PLAYER_DEATH_FRAMES = ['H', 'I', 'J', 'K', 'L', 'M', 'N'];
 export const PLAYER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;

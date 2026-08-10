@@ -225,35 +225,18 @@ export class Player implements Pos3 {
   /**
    * Movement is camera-relative: W always moves the player away from the
    * camera on screen, independent of where the player is aiming. `forwardDeg`
-   * is the DOOM-space bearing the camera currently looks along (derived from
-   * TopDownCamera.viewerAngleDeg), so at the default yaw (camera due south,
-   * forwardDeg=90/north) this reduces to the old fixed-axis mapping exactly.
+   * is the DOOM-space bearing the camera currently looks along (from
+   * `TopDownCamera.viewerAngleDeg`), so at the default yaw this reduces to the
+   * old fixed-axis mapping exactly. docs/render.md § Camera orbit.
    *
-   * `blockers` are the solid bodies (living monsters) the player has to walk
-   * around rather than through — vanilla's monsters are all `MF_SOLID`, so
-   * they stop a mover exactly the way a wall does. Unlike a monster's own
-   * movement, this still slides along them (`slideMove`), because the player
-   * is the one thing in DOOM that gets `P_SlideMove`; bumping a demon in a
-   * corridor should scrape past it, not stop dead.
+   * `blockers` are the solid bodies the player walks around rather than
+   * through, and unlike a monster's own movement this slides along them
+   * (`slideMove`) — docs/movement.md § Collision.
    *
    * **Forward and sideways are separate, differently-sized thrusts that are
-   * never renormalized**, which is the whole of vanilla's straferunning.
-   * `G_BuildTiccmd` accumulates `forwardmove` and `sidemove` independently,
-   * clamps each to `MAXPLMOVE` on its own, and `P_PlayerThink` then thrusts
-   * along both — so running forward *and* sideways at once genuinely moves
-   * faster than either alone, by the diagonal of the two. Normalizing the
-   * input vector (which this used to do) makes every direction equally fast
-   * and takes both SR40 and SR50 away with it.
-   *
-   * - **SR40**: `W`+`D` while running is `forwardmove` 50 and `sidemove` 40,
-   *   i.e. `hypot(500, 400)` = 640 units/sec — 1.28x plain running, exactly
-   *   vanilla's own 746.9/583.3 ratio.
-   * - **SR50** is vanilla's own `MAXPLMOVE` clamp artifact — reachable there
-   *   only by binding a second strafe key and holding both on the same side
-   *   so `sidemove` sums past 50 before the clamp — and this engine has no
-   *   such second binding, so it's a latent rather than a reachable behavior
-   *   here: `MAX_PL_MOVE`'s clamp is still exactly vanilla's own, there's
-   *   just nothing that can currently push `side` past `sideMove` to exercise it.
+   * never renormalized**, which is the whole of vanilla's straferunning;
+   * normalizing the input vector takes SR40 and SR50 away with it.
+   * docs/movement.md § Movement speed and straferunning.
    */
   update(
     dt: number,

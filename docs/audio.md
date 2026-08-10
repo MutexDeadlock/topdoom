@@ -128,7 +128,7 @@ action functions play, mapped onto the moments this engine has for them. Rules w
   vanilla: a wide top-down view still can't show what is stomping toward you from next door.
 - **The arch-vile's warning is two sounds**: `vilatk` from the vile (`A_VileStart`) and
   `flamst` from the flame (`A_StartFire`) as the windup begins, then `barexp` on the blast
-  (`A_VileAttack`). See docs/monsters.md § The arch-vile for the timing they hang off.
+  (`A_VileAttack`). See docs/monster-archvile.md for the timing they hang off.
 
 ## Weapons and projectiles
 
@@ -184,8 +184,8 @@ the sector's linedefs (`P_GroupLines`), not a polygon centroid — computed lazi
   `buttonlist->soundorg`, which `P_StartButton` only fills in *after* the sound plays, so the
   real thing clicks from whatever stale button slot 0 last held; the linedef midpoint is used
   instead, since reproducing that bug would put the click anywhere on the map.
-- **A locked door** grunts `oof` at full volume. With no message line in this engine, that
-  grunt is the entire feedback that a key is missing.
+- **A locked door** grunts `oof` at full volume, alongside the `lockedKeyMessage` line
+  (docs/items.md § Locked doors and use triggers) — vanilla's own pairing of sound and message.
 - **Teleports** play `telept` at both ends, from `SpriteFxLayer.spawnTeleportFog` — which
   `spawnTeleportPair` calls twice, so every teleport is heard at both ends whether it was a
   monster's trip or the player's.

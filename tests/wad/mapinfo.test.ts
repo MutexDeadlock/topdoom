@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseMapInfoNames } from '../../src/wad/mapinfo.ts';
+import { parseMapInfoNames, preferredMapInfoLump } from '../../src/wad/mapinfo.ts';
 
 /**
  * The MAPINFO reader only ever pulls one thing out of a lump — each map's level name — so these
@@ -77,5 +77,32 @@ map MAP03 "Third"
 
   test('a lump with no map entries yields nothing', () => {
     assert.equal(parseMapInfoNames('gameinfo { titlepage = "TITLEPIC" }').size, 0);
+  });
+});
+
+/**
+ * A file shipping several MAPINFO flavours means them as alternatives for different engines, so
+ * exactly one is read. `mapinfo.ts` and `plugins/wad-manifest.ts` both route through this, or a WAD
+ * carrying two gets one title in the menu and another on the level card — which is what they did.
+ * See docs/wad.md § Level names.
+ */
+describe('WAD parsing · which MAPINFO lump wins', () => {
+  test('UMAPINFO beats both older flavours', () => {
+    assert.equal(preferredMapInfoLump(['MAPINFO', 'UMAPINFO']), 'UMAPINFO');
+    assert.equal(preferredMapInfoLump(['ZMAPINFO', 'UMAPINFO', 'MAPINFO']), 'UMAPINFO');
+  });
+
+  test('ZMAPINFO suppresses MAPINFO, as ZDoom does with the pair', () => {
+    assert.equal(preferredMapInfoLump(['MAPINFO', 'ZMAPINFO']), 'ZMAPINFO');
+  });
+
+  test('directory order does not decide it', () => {
+    assert.equal(preferredMapInfoLump(['UMAPINFO', 'MAPINFO']), 'UMAPINFO');
+    assert.equal(preferredMapInfoLump(['MAPINFO', 'UMAPINFO']), 'UMAPINFO');
+  });
+
+  test('a lone lump wins, and a file with none yields null', () => {
+    assert.equal(preferredMapInfoLump(['MAPINFO']), 'MAPINFO');
+    assert.equal(preferredMapInfoLump([]), null);
   });
 });

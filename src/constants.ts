@@ -21,11 +21,11 @@ export const DOOM_TIC = 1 / 35;
 export const BRIGHTNESS_LIFT = 0.12;
 
 /**
- * How far the player can see, in map units: the scene's distance fog (`game.ts`) is fully opaque at
- * this range, so geometry past it is black no matter what the fog of war has revealed. Measured
- * from the camera eye, which hangs `TopDownCamera.distance` back from the player, so the view
- * actually reaches ~480 units less than this out in front. Tuned by feel — it is what keeps a big
- * open map from reading as a floorplan.
+ * How far the player can see through explored territory, in map units: the scene's distance fog
+ * (`game.ts`) is fully opaque at this range, and `TopDownCamera`'s far plane follows it. Tuned by
+ * feel — it is what keeps a big open map from reading as a floorplan. What bounds an *unexplored*
+ * view is `game/fogofwar.ts: SIGHT_RADIUS`, a much shorter and separately derived number.
+ * docs/render.md § View distance.
  */
 export const VIEW_DISTANCE = 12000;
 

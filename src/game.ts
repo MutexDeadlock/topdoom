@@ -98,7 +98,7 @@ export type FpsCap = (typeof FPS_CAPS)[number];
 /**
  * How many frames a second the loop is allowed to run at, `0` for as many as the
  * display offers. Lives here because `frame` is the only thing it changes; the
- * menu just wires its select to these two. See docs/render.md § The FPS cap.
+ * menu just wires its select to these two. See docs/frameloop.md § The FPS cap.
  */
 let fpsCap: FpsCap = readStoredFpsCap();
 
@@ -427,7 +427,7 @@ export class Game {
       this.spriteMaterials,
       this.skill,
       this.audio,
-      // A_BossDeath — see docs/specials.md § Boss death. Player-alive gate is vanilla's own
+      // A_BossDeath — see docs/death.md § Boss death. Player-alive gate is vanilla's own
       // "make sure there is a player alive for victory" check. Fanned out to both owners: the
       // tag-driven actions (including Commander Keen's door) belong to `specials`, the Icon of
       // Sin's own `A_BrainDie` to `icon`; each ignores the doomednums it doesn't handle.
@@ -503,7 +503,7 @@ export class Game {
 
   /**
    * Keeps redrawing the frozen level while paused, so the menu can sit over it
-   * (see docs/render.md § Pausing). Nothing is advanced here — no dt, no input,
+   * (see docs/frameloop.md § Pausing). Nothing is advanced here — no dt, no input,
    * no profiling — only `render`, and only every ~50 ms, since a static scene
    * has no reason to cost 60 fps. `dispose` must go through `stop`, never
    * `pause`, or this would keep drawing a scene whose geometry and materials
@@ -565,7 +565,7 @@ export class Game {
    *
    * Returns whether the hit actually landed; `false` covers both a no-op corpse hit and
    * invulnerability blocking it outright, so a caller with a follow-up effect (e.g.
-   * `resolveVileBlast`'s knockup) can gate on it. See docs/combat.md § Player death.
+   * `resolveVileBlast`'s knockup) can gate on it. See docs/death.md § Player death.
    */
   private damagePlayer(amount: number, fromX?: number, fromY?: number): boolean {
     if (this.playerDead || amount <= 0) return false;
@@ -606,7 +606,7 @@ export class Game {
    * simply arrives on the next one. Read live rather than cached, so a change in
    * the menu applies to the level already running.
    *
-   * See docs/render.md § The FPS cap for why the deadline is compared with half a
+   * See docs/frameloop.md § The FPS cap for why the deadline is compared with half a
    * display period of slack and why it advances by whole intervals.
    */
   private dueThisFrame(now: number): boolean {
@@ -634,7 +634,7 @@ export class Game {
     // The lower clamp is load-bearing, not defensive: `now` can predate the
     // `performance.now()` `resume` stamped into `lastTime`, so without it the
     // first frame of a level can step every system *backwards*. See
-    // docs/render.md § The frame delta.
+    // docs/frameloop.md § The frame delta.
     const rawDt = (now - this.lastTime) / 1000;
     const dt = Math.max(0, Math.min(0.05, rawDt));
     this.lastTime = now;
@@ -870,7 +870,7 @@ export class Game {
   /**
    * Ticks the thing layer and realizes what it hands back: the monster attacks fired this frame,
    * and any barrel whose `A_Explode` came due. The player goes in as `null` once dead, matching
-   * `P_KillMobj` stripping the player's `MF_SHOOTABLE`/`MF_SOLID` — docs/combat.md § Player death
+   * `P_KillMobj` stripping the player's `MF_SHOOTABLE`/`MF_SOLID` — docs/death.md § Player death
    * for what that does and doesn't freeze in the AI.
    */
   private updateThings(dt: number, viewerAngleDeg: number): void {

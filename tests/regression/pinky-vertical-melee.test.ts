@@ -17,7 +17,7 @@ import { loadPinky, type PinkyFixture, type PinkyMap } from '../fixtures/pinky.t
  * a ledge could bite a player below — both well inside 2D melee reach, with no
  * vertical overlap whatsoever. The melee gate tested only distance and sight,
  * which is exactly what vanilla does; GZDoom refuses these, and that is the
- * behavior this engine follows. See docs/monsters.md § Melee reach.
+ * behavior this engine follows. See docs/monster-ai.md § Melee reach.
  */
 
 /** Enough simulated time for one chase call at any monster's `chaseInterval`. */

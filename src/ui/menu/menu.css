@@ -248,10 +248,13 @@
 }
 
 /* Undoes the full-width, roomy `#menu select` so the bound-action row reads
- * as one line like the plain key rows around it. */
+ * as one line like the plain key rows around it. Boxed to exactly one line
+ * height so a row carrying a select is no taller than its plain neighbours. */
 #menu .keys select {
   width: auto;
-  padding: 2px 4px;
+  box-sizing: border-box;
+  height: 1lh;
+  padding: 0 4px;
 }
 
 /*
@@ -285,6 +288,14 @@
   display: flex;
   align-items: center;
   gap: 16px;
+}
+
+/* Widest of the two words it alternates between ("walk"), so toggling autorun
+ * doesn't shift the checkbox beside it sideways. The font is monospace, so ch
+ * is exact. */
+#menu #shift-action {
+  display: inline-block;
+  min-width: 4ch;
 }
 
 /*

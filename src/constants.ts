@@ -37,25 +37,18 @@ export const VIEW_DISTANCE = 12000;
  * own ground-level first-person view at the same pixel size, and small collectibles like a clip or
  * a shell box are the ones that suffer most.
  */
-export const PICKUP_SCALE = 1.4;
+export const PICKUP_SCALE = 1.25;
 
 /**
- * Which things `PICKUP_SCALE` applies to: the small collectibles — all the ammo, health/armor, keys
- * and powerups — that `game/things/defs.ts`'s `pickupScaleFor` draws above their native WAD pixel
- * size. Lives here beside the factor rather than with the other thing tables because the two are
- * one tuning decision: a whitelist rather than "everything but monsters/weapons" because solid
- * decorations, gore props and the barrel are large enough on their own, and inflating them by 40%
- * on top of vanilla's own size reads as oversized rather than more readable. docs/sprites.md §
- * Pickup scale.
+ * Which things `PICKUP_SCALE` applies to.
+ * docs/sprites.md § Pickup scale.
  */
 export const PICKUP_SCALE_TYPES: Set<number> = new Set([
   // Ammo
   ThingType.clip,
   ThingType.boxOfBullets,
   ThingType.rocket,
-  ThingType.boxOfRockets,
   ThingType.cellCharge,
-  ThingType.cellChargePack,
   ThingType.shells,
   ThingType.boxOfShells,
   ThingType.backpack,
@@ -83,6 +76,5 @@ export const PICKUP_SCALE_TYPES: Set<number> = new Set([
   ThingType.berserk,
   ThingType.invisibility,
   ThingType.radiationSuit,
-  ThingType.computerMap,
   ThingType.lightAmpVisor,
 ]);

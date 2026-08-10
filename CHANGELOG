@@ -22,6 +22,7 @@ Features and improvements
     - a locked door or switch now tells which key it requires
     - the HUD's weapon column has now a fixed width
     - the menu's CHANGELOG link, under the version number, opens this file
+  - tuned scaling of pickup-items
 
 Fixed bugs
   - projectiles now collide the way vanilla's do

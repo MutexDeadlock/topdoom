@@ -66,7 +66,9 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
 - **Add-ons** (`renderPwads`) excludes anything of `type === 'IWAD'` and whichever source is
   currently the game WAD (even a PWAD-typed one uploaded through the IWAD picker) — otherwise it
   would show up twice. Order matters and is the order they were ticked: it's the merge order, so the
-  rows carry a `#N` badge.
+  rows carry a `#N` badge. Ticking a row re-renders the whole list, which empties the scroller and
+  would clamp it back to the top, so `renderPwads` saves and restores `scrollTop` — with enough
+  add-ons installed the list scrolls, and picking one out of the bottom of it must not scroll away.
 - Files dropped on the window or picked from disk are parsed in the browser and behave identically to
   server-side ones. **The picker decides, not the signature**: a file uploaded via "game WAD" becomes
   the game WAD regardless of its declared type, one uploaded via "add-on" is added as an add-on.

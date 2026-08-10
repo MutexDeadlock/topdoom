@@ -350,6 +350,9 @@ export class Menu {
   }
 
   private renderPwads(): void {
+    // Emptying the scroller clamps its scrollTop to 0, so picking an add-on far down a
+    // long list would jump the list back to the top. Restore the offset after refilling.
+    const scrollTop = this.pwadList.scrollTop;
     this.pwadList.replaceChildren();
     const iwadStyle = this.selectedIwad ? mapStyle(this.selectedIwad) : null;
     for (const source of this.sources) {
@@ -380,6 +383,7 @@ export class Menu {
       }
       this.pwadList.append(row);
     }
+    this.pwadList.scrollTop = scrollTop;
   }
 
   /** Drops any selected add-on whose own maps no longer match the selected game WAD. */

@@ -1,6 +1,6 @@
 # Menu, settings and session lifecycle
 
-`src/ui/menu.ts`, `src/ui/menu.css`, `index.html`'s `#menu`, `src/main.ts`
+`src/ui/menu.ts`, `src/ui/menu.css` + `src/ui/changelog.css`, `index.html`'s `#menu`, `src/main.ts`
 
 The menu is plain DOM: every element is static markup in `index.html`, looked up by id in `Menu`'s
 field initializers, so **an id renamed in the HTML fails at construction**, not lazily. Only the WAD
@@ -27,9 +27,9 @@ lists, the level list and the difficulty options are built in JS.
 `Esc` toggles between the menu and the game. With the menu open and no level loaded it does nothing
 — there is nothing to return to.
 
-Overlay stacking (`menu.css`): screen tint / pain flash `5`, HUD `10`, `#hud-message` and
-`#level-card` `12`, `#death-overlay` and `#intermission` `15` (the two can never be up at once),
-`#menu` `20`, `#fatal-error` `30`.
+`#menu` sits at `--z-menu` on the stacking ladder, above every in-game overlay and below the
+fatal-error screen — the whole ladder is one block in `base.css` (docs/styles.md § The stacking
+ladder).
 
 `VERSION` (`constants.ts`) is shown prefixed with `v`, right-aligned on the title's own row
 (`#menu header` is a `space-between` flex row), with the changelog link stacked under it in the same

@@ -1,15 +1,13 @@
-/* ---------- start menu ---------- */
-
 #menu {
   position: fixed;
   inset: 0;
-  z-index: 20;
+  z-index: var(--z-menu);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 24px;
   overflow-y: auto;
-  background: radial-gradient(ellipse at 50% 0%, #1a1012 0%, #08080a 70%);
+  background: var(--backdrop);
 }
 
 #menu.hidden {
@@ -30,8 +28,8 @@
 #menu .panel {
   width: 100%;
   max-width: 620px;
-  border: 1px solid #34343c;
-  background: #121216;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-bg);
   padding: 26px 30px 22px;
 }
 
@@ -46,7 +44,7 @@
   align-items: last baseline;
   justify-content: space-between;
   gap: 16px;
-  border-bottom: 1px solid #2a2a32;
+  border-bottom: 1px solid var(--border);
   padding-bottom: 14px;
   margin-bottom: 18px;
 }
@@ -55,7 +53,7 @@
   margin: 0;
   font-size: 30px;
   letter-spacing: 6px;
-  color: #c0392b;
+  color: var(--accent);
 }
 
 /* The title row's right-hand side: the version, with the changelog link under it. */
@@ -67,14 +65,14 @@
 }
 
 #menu-version {
-  color: #4a4640;
+  color: var(--fg-ghost);
   font-size: 12px;
 }
 
 #menu .tabs {
   display: flex;
   gap: 24px;
-  border-bottom: 1px solid #2a2a32;
+  border-bottom: 1px solid var(--border);
   margin-bottom: 20px;
 }
 
@@ -87,19 +85,19 @@
   border: none;
   border-bottom: 2px solid transparent;
   background: none;
-  color: #7f7a74;
+  color: var(--fg-dim);
   padding: 0 2px 10px;
   margin-bottom: -1px;
   letter-spacing: 2px;
 }
 
 #menu .tab:hover {
-  color: #d8d0c0;
+  color: var(--fg);
 }
 
 #menu .tab.active {
   color: #fff;
-  border-bottom-color: #c0392b;
+  border-bottom-color: var(--accent);
 }
 
 /*
@@ -131,18 +129,18 @@
   font-weight: normal;
   letter-spacing: 2px;
   text-transform: uppercase;
-  color: #8d8781;
+  color: var(--fg-muted);
 }
 
 #menu .hint {
   letter-spacing: 0;
   text-transform: none;
-  color: #5d5852;
+  color: var(--fg-faint);
 }
 
 #menu .list {
-  border: 1px solid #2a2a32;
-  background: #0d0d10;
+  border: 1px solid var(--border);
+  background: var(--inset-bg);
   max-height: 190px;
   overflow-y: auto;
 }
@@ -151,7 +149,7 @@
   content: 'Nothing in public/wads/ — load a file from disk below.';
   display: block;
   padding: 14px 12px;
-  color: #5d5852;
+  color: var(--fg-faint);
 }
 
 #menu .row {
@@ -186,7 +184,7 @@
 }
 
 #menu .row input {
-  accent-color: #c0392b;
+  accent-color: var(--accent);
   margin: 0;
 }
 
@@ -211,7 +209,7 @@
 }
 
 #menu .checkbox-row input {
-  accent-color: #c0392b;
+  accent-color: var(--accent);
   margin: 0;
 }
 
@@ -223,13 +221,13 @@
 
 #menu .slider input[type='range'] {
   flex: 1;
-  accent-color: #c0392b;
+  accent-color: var(--accent);
 }
 
 #menu .slider .value {
   min-width: 4ch;
   text-align: right;
-  color: #7f7a74;
+  color: var(--fg-dim);
 }
 
 #menu .keys {
@@ -240,13 +238,13 @@
 }
 
 #menu .keys dt {
-  color: #d8d0c0;
+  color: var(--fg);
   white-space: nowrap;
 }
 
 #menu .keys dd {
   margin: 0;
-  color: #7f7a74;
+  color: var(--fg-dim);
 }
 
 /* Undoes the full-width, roomy `#menu select` so the bound-action row reads
@@ -301,8 +299,8 @@
 #menu select {
   width: 100%;
   padding: 8px 10px;
-  border: 1px solid #2a2a32;
-  background: #0d0d10;
+  border: 1px solid var(--border);
+  background: var(--inset-bg);
   color: inherit;
   font: inherit;
 }
@@ -310,14 +308,14 @@
 #menu button {
   font: inherit;
   cursor: pointer;
-  border: 1px solid #34343c;
+  border: 1px solid var(--border-strong);
   background: #17171c;
-  color: #b8b2ab;
+  color: var(--fg-button);
   padding: 8px 14px;
 }
 
 #menu button:hover:not(:disabled) {
-  border-color: #c0392b;
+  border-color: var(--accent);
   color: #fff;
 }
 
@@ -333,22 +331,22 @@
 }
 
 #menu button.primary {
-  background: #c0392b;
-  border-color: #c0392b;
+  background: var(--accent);
+  border-color: var(--accent);
   color: #fff;
   letter-spacing: 2px;
   padding: 10px 28px;
 }
 
 #menu button.primary:hover:not(:disabled) {
-  background: #d84937;
+  background: var(--accent-hover);
 }
 
 #menu footer {
   display: flex;
   align-items: center;
   gap: 14px;
-  border-top: 1px solid #2a2a32;
+  border-top: 1px solid var(--border);
   padding-top: 16px;
 }
 
@@ -363,15 +361,15 @@
 }
 
 #menu-status {
-  color: #7f7a74;
+  color: var(--fg-dim);
 }
 
 #menu-status.error {
-  color: #e06c5a;
+  color: var(--accent-text-hover);
 }
 
 #menu.dragging {
-  outline: 2px dashed #c0392b;
+  outline: 2px dashed var(--accent);
   outline-offset: -10px;
 }
 
@@ -379,7 +377,7 @@
   position: fixed;
   bottom: 10px;
   left: 14px;
-  color: #4a4640;
+  color: var(--fg-ghost);
   font-size: 12px;
   pointer-events: none;
 }

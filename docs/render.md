@@ -254,7 +254,7 @@ A paused level is frozen but **still being drawn**: `pause` stops the simulation
 ~50 ms, since a static scene has no reason to cost 60 fps. Without it the canvas would just be
 showing its last composited frame, which goes stale the moment anything invalidates it (a window
 resize resizes the canvas, a DPR change, a tab restore), and the menu now draws *over* the level
-(`ui/menu.css: #menu.ingame`) instead of hiding it, so a stale or blank backdrop is visible.
+(`ui/menu.css: #menu.ingame`, docs/styles.md) instead of hiding it, so a stale or blank backdrop is visible.
 
 **`dispose` calls `stop`, not `pause`.** Both clear `running`, but `pause` sets `paused` and schedules
 `stillFrame`; going through it from `dispose` would leave that loop redrawing a scene whose geometry

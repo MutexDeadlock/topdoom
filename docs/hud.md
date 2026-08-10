@@ -117,7 +117,7 @@ and it stays frozen for as long as the popup is up: those frames return early to
 that. The fade is `opacity` driven from `update`'s own `dt`, not a CSS transition: a transition runs
 on wall-clock time, so opening the menu on a fresh level would leave the card fading away behind it
 and gone on return, while everything else about the frozen level waited. Two canvases rather than one: both hold
-native-size art and `menu.css` gives them different heights, which is how the name draws at twice
+native-size art and `levelcard.css` gives them different heights, which is how the name draws at twice
 the label's size without a second glyph set. The label is `WadFont` in STCFN's own red.
 
 **The name is the WAD's own `CWILV`/`WILV` graphic wherever the set has one that belongs to this
@@ -294,11 +294,11 @@ frame from the same `Game.frame` loop as `Hud.update`.
 
 ## Screen effects
 
-The two screen tints (`#screen-tint`, `menu.css`) are CSS on the composited frame rather than
+The two screen tints (`#screen-tint`, `screeneffects.css`) are CSS on the composited frame rather than
 anything in the render pipeline. Invulnerability uses `backdrop-filter: grayscale(1) invert(1)` —
 vanilla's `INVULNERABILITYMAP` really is a *grayscale* inverse of the palette, not a colour inversion
-— and the suit a flat green wash. The element sits at `z-index: 5`: above the canvas, below every HUD
-layer (10+), so the world recolours and the readouts over it don't. Everything in this section lives
+— and the suit a flat green wash. The element sits at `--z-tint`: above the canvas, below every HUD
+layer, so the world recolours and the readouts over it don't. Everything in this section lives
 in `ui/screeneffects.ts`, driven off inventory state every frame rather than toggled on
 pickup/expiry, so clearing the powers needs no teardown path of its own. **`Game.dispose` has to call
 `ScreenEffects.reset`**, since the `Viewport` and these overlay elements outlive a `Game` —

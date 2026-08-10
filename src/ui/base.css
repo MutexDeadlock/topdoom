@@ -1,11 +1,47 @@
+/*
+ * Page reset plus the tokens every other stylesheet reads. A value earns a token here by being an
+ * exact repeat across two or more sites, or by being one rung of a named ladder — see
+ * docs/styles.md § Tokens for what deliberately stays a literal.
+ */
+:root {
+  /* Stacking ladder. The full list, so a new overlay can be placed by reading one block. */
+  --z-tint: 5; /* #screen-tint, #pain-flash */
+  --z-hud: 10; /* #hud, #profiler-hud, #hud-bar */
+  --z-message: 12; /* #hud-message, #level-card */
+  --z-overlay: 15; /* #intermission, #death-overlay — never up at the same time */
+  --z-menu: 20;
+  --z-fatal: 30;
+
+  /* Surfaces. */
+  --bg: #08080a;
+  --panel-bg: #121216;
+  --inset-bg: #0d0d10; /* selects, the WAD list, the error detail block */
+  --border: #2a2a32;
+  --border-strong: #34343c; /* panel outlines */
+  --backdrop: radial-gradient(ellipse at 50% 0%, #1a1012 0%, var(--bg) 70%);
+
+  /* Text, brightest to faintest. */
+  --fg: #d8d0c0;
+  --fg-button: #b8b2ab;
+  --fg-muted: #8d8781;
+  --fg-dim: #7f7a74;
+  --fg-faint: #5d5852;
+  --fg-ghost: #4a4640;
+
+  /* Accent. */
+  --accent: #c0392b;
+  --accent-hover: #d84937;
+  --accent-text-hover: #e06c5a;
+}
+
 html,
 body {
   margin: 0;
   padding: 0;
   height: 100%;
   overflow: hidden;
-  background: #08080a;
-  color: #d8d0c0;
+  background: var(--bg);
+  color: var(--fg);
   font: 13px/1.5 ui-monospace, 'DejaVu Sans Mono', monospace;
 }
 

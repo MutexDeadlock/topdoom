@@ -8,7 +8,7 @@ const WARN_FRACTION = 0.25;
 const HOT_FRACTION = 1;
 
 /**
- * DEVMODE's per-category timing overlay (top-right — see menu.css). Renders
+ * DEVMODE's per-category timing overlay (top-right — see devmode.css). Renders
  * `FrameProfiler`'s smoothed samples as horizontal bars sized against one
  * 60fps frame's budget rather than against each other, so a glance at bar
  * *length* (not just the ms text) says whether a category is comfortably

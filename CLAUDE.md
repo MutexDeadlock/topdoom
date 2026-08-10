@@ -77,7 +77,8 @@ src/game/specials/   load-time map analysis (mapscan), mover meshes + relighting
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
                WebAudio playback (channels, attenuation, pan, volume)
 src/ui/        start menu, HUD, level card + end-of-level intermission, screen tints/pain flash,
-               DEVMODE hud + profiling overlay
+               DEVMODE hud + profiling overlay; each area's styles in the .css beside its module,
+               reaching the page through styles.css
 src/util/      small helpers shared across layers (2D geometry, damped-lerp smoothing,
                per-frame profiling)
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
@@ -105,6 +106,7 @@ several record rules that look like accidents and aren't.
 | [docs/iconofsin.md](docs/iconofsin.md) | MAP30's boss: the spitter, the spawn cube, the brain's death |
 | [docs/items.md](docs/items.md) | Pickups, inventory, keys/locked doors, monster drops, powerups |
 | [docs/hud.md](docs/hud.md) | The HUD, level stats and timer, level card, intermission, best times, center messages, `WadFont`, screen effects |
+| [docs/styles.md](docs/styles.md) | Which stylesheet owns what, the `styles.css` entry, the palette/stacking tokens |
 | [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, the donut, damage floors, scrolling textures |
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
 | [docs/audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |

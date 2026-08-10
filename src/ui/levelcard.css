@@ -1,5 +1,3 @@
-/* ---------- level card ---------- */
-
 /*
  * "Entering" over the level's name, both drawn native-size by ui/levelcard.ts and scaled here —
  * the name's doubled size is this `height` pair, not a second font. Sits above the HUD (10) in the
@@ -11,7 +9,7 @@
   left: 50%;
   top: 30%;
   transform: translate(-50%, -50%);
-  z-index: 12;
+  z-index: var(--z-message);
   display: flex;
   flex-direction: column;
   align-items: center;

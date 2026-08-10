@@ -9,7 +9,7 @@
 #screen-tint {
   position: fixed;
   inset: 0;
-  z-index: 5;
+  z-index: var(--z-tint);
   pointer-events: none;
 }
 
@@ -34,7 +34,7 @@
 #pain-flash {
   position: fixed;
   inset: 0;
-  z-index: 5;
+  z-index: var(--z-tint);
   pointer-events: none;
   background: #ff0000;
   opacity: 0;
@@ -45,7 +45,7 @@
 #death-overlay {
   position: fixed;
   inset: 0;
-  z-index: 15;
+  z-index: var(--z-overlay);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -62,11 +62,11 @@
 #death-overlay .title {
   font-size: 48px;
   letter-spacing: 8px;
-  color: #c0392b;
+  color: var(--accent);
   text-shadow: 0 2px 8px #000;
 }
 
 #death-overlay .hint {
-  color: #d8d0c0;
+  color: var(--fg);
   letter-spacing: 2px;
 }

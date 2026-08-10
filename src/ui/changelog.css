@@ -1,0 +1,62 @@
+/* ---------- changelog popup ---------- */
+
+/* A text link rather than a button, since it opens a reader and changes nothing. */
+#menu button.link {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #7f7a74;
+  text-decoration: underline;
+}
+
+#menu button.link:hover:not(:disabled) {
+  color: #fff;
+}
+
+/*
+ * A child of #menu (whose own z-index 20 is the stacking context this sits in), so it covers the
+ * menu panel and nothing else — the popup only ever exists while the menu is up.
+ */
+#changelog {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(6, 6, 8, 0.8);
+}
+
+#changelog.hidden {
+  display: none;
+}
+
+/* Column layout with a `min-height: 0` scroller: the panel is capped at the viewport and the text
+   scrolls inside it, rather than the panel growing to the CHANGELOG's full length. */
+#changelog .panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 720px;
+  max-height: 100%;
+  border: 1px solid #34343c;
+  background: #121216;
+  padding: 20px 24px 22px;
+}
+
+#changelog h2 {
+  margin: 0;
+}
+
+#changelog pre {
+  margin: 0;
+  min-height: 0;
+  overflow-y: auto;
+  /* The file is hand-wrapped, but a long line still has to wrap rather than scroll sideways. */
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #b8b2ab;
+}

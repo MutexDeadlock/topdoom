@@ -1,0 +1,81 @@
+#hud {
+  position: fixed;
+  left: 12px;
+  top: 12px;
+  line-height: 1.5;
+  text-shadow: 0 1px 2px #000;
+  pointer-events: none;
+  white-space: pre;
+  z-index: 10;
+}
+
+/* ---------- profiler overlay (DEVMODE only) ---------- */
+
+#profiler-hud {
+  display: none;
+  position: fixed;
+  right: 12px;
+  top: 12px;
+  z-index: 10;
+  pointer-events: none;
+  background: rgba(13, 13, 16, 0.85);
+  border: 1px solid #2a2a32;
+  padding: 8px 10px;
+  color: #d8d0c0;
+}
+
+#profiler-hud.visible {
+  display: block;
+}
+
+#profiler-hud .profiler-total {
+  font-size: 11px;
+  opacity: 0.75;
+  margin-bottom: 6px;
+  white-space: nowrap;
+}
+
+#profiler-hud .profiler-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0;
+  font-size: 11px;
+}
+
+#profiler-hud .profiler-label {
+  width: 88px;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#profiler-hud .profiler-bar {
+  position: relative;
+  display: block;
+  width: 110px;
+  height: 8px;
+  background: #1c1c22;
+  border: 1px solid #2a2a32;
+}
+
+#profiler-hud .profiler-fill {
+  display: block;
+  height: 100%;
+  background: #5c8a5c;
+}
+
+#profiler-hud .profiler-fill.warn {
+  background: #c9a227;
+}
+
+#profiler-hud .profiler-fill.hot {
+  background: #c0392b;
+}
+
+#profiler-hud .profiler-value {
+  width: 44px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}

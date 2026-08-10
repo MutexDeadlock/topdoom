@@ -1,0 +1,60 @@
+/* ---------- fatal error overlay ---------- */
+
+#fatal-error {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+  background: radial-gradient(ellipse at 50% 0%, #1a1012 0%, #08080a 70%);
+}
+
+#fatal-error.hidden {
+  display: none;
+}
+
+#fatal-error .panel {
+  width: 100%;
+  max-width: 620px;
+  border: 1px solid #34343c;
+  background: #121216;
+  padding: 26px 30px 22px;
+}
+
+#fatal-error h1 {
+  margin: 0 0 14px;
+  font-size: 22px;
+  letter-spacing: 3px;
+  color: #c0392b;
+}
+
+#fatal-error .message {
+  margin: 0 0 14px;
+  color: #d8d0c0;
+}
+
+#fatal-error .hint {
+  margin: 0 0 14px;
+  color: #8d8781;
+}
+
+#fatal-error .hint code {
+  color: #d8d0c0;
+}
+
+#fatal-error .hint.hidden {
+  display: none;
+}
+
+#fatal-error .detail {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #2a2a32;
+  background: #0d0d10;
+  color: #5d5852;
+  white-space: pre-wrap;
+  word-break: break-word;
+}

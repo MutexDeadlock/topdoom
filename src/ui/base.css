@@ -1,0 +1,19 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #08080a;
+  color: #d8d0c0;
+  font: 13px/1.5 ui-monospace, 'DejaVu Sans Mono', monospace;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+canvas {
+  display: block;
+}

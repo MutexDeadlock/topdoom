@@ -1,0 +1,72 @@
+/* ---------- powerup screen tint ---------- */
+
+/*
+ * Sits above the canvas but below every HUD layer (z-index 10+), so a powerup
+ * recolours the world without touching the readouts drawn over it. Both
+ * effects can be on at once, which is why they are separate classes on one
+ * element rather than one class per combination.
+ */
+#screen-tint {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/*
+ * Vanilla's invulnerability colormap is a *grayscale inverse* of the palette.
+ * We don't invert the colors because that looks to agressive, so grayscale only.
+ */
+#screen-tint.invulnerable {
+  backdrop-filter: grayscale(1);
+}
+
+/* Vanilla shifts the palette green while a radiation suit is worn. */
+#screen-tint.suited {
+  background: rgba(64, 255, 96, 0.12);
+}
+
+/*
+ * Separate element from #screen-tint: its red needs to blend with (not
+ * replace) a suit's own green wash, and its opacity is a continuously
+ * decaying value driven from JS every frame rather than an on/off class.
+ */
+#pain-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+  background: #ff0000;
+  opacity: 0;
+}
+
+/* ---------- death overlay ---------- */
+
+#death-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  pointer-events: none;
+  background: rgba(20, 4, 4, 0.35);
+}
+
+#death-overlay.hidden {
+  display: none;
+}
+
+#death-overlay .title {
+  font-size: 48px;
+  letter-spacing: 8px;
+  color: #c0392b;
+  text-shadow: 0 2px 8px #000;
+}
+
+#death-overlay .hint {
+  color: #d8d0c0;
+  letter-spacing: 2px;
+}

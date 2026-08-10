@@ -1,0 +1,39 @@
+/* ---------- level card ---------- */
+
+/*
+ * "Entering" over the level's name, both drawn native-size by ui/levelcard.ts and scaled here —
+ * the name's doubled size is this `height` pair, not a second font. Sits above the HUD (10) in the
+ * same band as #hud-message, and higher up the screen (30% vs. its 40%) so a secret found on the
+ * way in doesn't overlap the card.
+ */
+#level-card {
+  position: fixed;
+  left: 50%;
+  top: 30%;
+  transform: translate(-50%, -50%);
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px #000);
+}
+
+#level-card.hidden {
+  display: none;
+}
+
+#level-card canvas {
+  image-rendering: pixelated;
+  width: auto;
+  display: block;
+}
+
+#level-card .enter {
+  height: 13px;
+}
+
+#level-card .name {
+  height: 26px;
+}

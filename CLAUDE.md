@@ -81,7 +81,7 @@ src/ui/hud/          everything over the running level: HUD, level card, intermi
 src/ui/menu/         start menu + changelog popup
 src/ui/devmode/      DEVMODE hud + profiling overlay
 src/util/      small helpers shared across layers (2D geometry, damped-lerp smoothing,
-               per-frame profiling)
+               per-frame profiling, vanilla's random table — the engine's only entropy source)
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
                    BRIGHTNESS_LIFT, PICKUP_SCALE + PICKUP_SCALE_TYPES, VIEW_DISTANCE)
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
@@ -105,6 +105,7 @@ several record rules that look like accidents and aren't.
 | [docs/sprites.md](docs/sprites.md) | The named doomednums (`ThingType`) every type-keyed table keys through; things as sprites: billboards, instanced batching, which things spawn, monster poses |
 | [docs/movement.md](docs/movement.md) | Collision, `groundFloor`, `slideMove`, straferunning, gravity/falling, knockback |
 | [docs/world.md](docs/world.md) | `world.ts`'s shared queries: `hasLineOfSight`, the neighbor-height lookups |
+| [docs/random.md](docs/random.md) | `rndtable` and the two cursors, the triangular draw, what `clearRandom` does and doesn't guarantee |
 | [docs/weapons.md](docs/weapons.md) | Weapon selection, fire rates, spread, damage rolls |
 | [docs/combat.md](docs/combat.md) | `shotPath`, range, auto-aim, what a shot hits, blood/puffs, splash and the BFG |
 | [docs/death.md](docs/death.md) | Monster death, telefrag, player death, exploding barrels, boss-death triggers |

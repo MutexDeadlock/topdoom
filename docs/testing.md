@@ -207,11 +207,19 @@ with the constant; it should not delete the test.
 
 ## Determinism
 
-`rollDamage` and `triangularDraw` call `Math.random()` directly. Patch it with node:test's
-`t.mock.method(Math, 'random', …)`, which restores automatically when the test ends —
-`tests/fixtures/rng.ts` supplies `scriptedRandom` (replays a fixed list, for pinning exact roll
-boundaries) and `seededRandom` (an LCG, for distribution shape). Threading a `random` parameter
-through `rollDamage` was rejected: it would change `src/` in the fire path purely for the tests.
+Nothing in `src/` is random. Every draw comes off vanilla's 256-entry `rndtable`
+(`util/random.ts`, docs/random.md § The table and the two cursors), so a test calls `clearRandom()`
+and then asserts **exact** values rather than bounds — `rollDamage(5, 3)` on the first draw after a
+clear is `((8 % 5) + 1) * 3`, because `rndtable[1]` is 8. A test that needs the cursor somewhere
+else seeks it with bare `pRandom()` calls.
+
+There is no mocking and no fixture: `tests/fixtures/rng.ts` and its `scriptedRandom`/`seededRandom`
+existed only to patch `Math.random`, and went away with the last call to it. Threading a `random`
+parameter through `rollDamage` had already been rejected for changing `src/` in the fire path purely
+for the tests, and the table removes the motive entirely.
+
+`tests/util/random.test.ts` also asserts that **no file in `src/` mentions `Math.random`**. The repo
+runs no linter, so that test is the only thing keeping a second, undocumented entropy source out.
 
 ## Writing a new test
 

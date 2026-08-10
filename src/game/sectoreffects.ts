@@ -8,6 +8,7 @@ import {
   SUIT_LEAK_CHANCE,
   type DamageFloorEffect,
 } from '../wad/specials.ts';
+import { pRandom } from '../util/random.ts';
 
 /** What one frame's `SectorEffects.update` did, for the caller to realize (sound, message, level exit). */
 export interface SectorEffectResult {
@@ -91,5 +92,6 @@ export class SectorEffects {
 /** Whether a worn radiation suit stops this damage floor's hit — see `DamageFloorEffect.suit` for why the three types differ. */
 function suitBlocks(effect: DamageFloorEffect, inv: Inventory): boolean {
   if (effect.suit === 'ignored' || !hasPower(inv, 'radiationSuit')) return false;
-  return effect.suit === 'blocks' || Math.random() >= SUIT_LEAK_CHANCE;
+  // `P_PlayerInSpecialSector`'s `P_Random() < 5`, and `SUIT_LEAK_CHANCE` is that 5 over 256.
+  return effect.suit === 'blocks' || pRandom() >= SUIT_LEAK_CHANCE * 256;
 }

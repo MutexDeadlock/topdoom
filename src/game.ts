@@ -43,6 +43,7 @@ import { CenterMessage, lockedKeyMessage } from './ui/hud/message.ts';
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
 import { FrameProfiler } from './util/profiler.ts';
+import { clearRandom } from './util/random.ts';
 import type { Skill } from './game/skill.ts';
 import {
   applyDamage,
@@ -318,6 +319,9 @@ export class Game {
   }
 
   private loadMapByIndex(index: number): void {
+    // `M_ClearRandom`, from vanilla's own `G_InitNew` — this is the one place
+    // every level start funnels through. docs/random.md § What this does not buy.
+    clearRandom();
     // Keys don't survive a level transition in vanilla DOOM; health/armor/ammo do.
     finishLevel(this.inventory);
     // Whatever was still ringing belongs to the level being torn down — a door

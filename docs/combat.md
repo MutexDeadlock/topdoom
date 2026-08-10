@@ -313,8 +313,10 @@ arbitrary: the frame letters run **backwards** (`S_BLOOD1`-`3` are `BLUD` C, B, 
 and the hit's damage picks which state the splash *starts* in (`bloodFrames`: under 9 shows only
 `A`, 9-12 `B`→`A`, above 12 all three) — so weapon power reads off the size of the splash. The
 ±4-unit `HIT_Z_JITTER` is `P_SpawnBlood`'s own `(P_Random()-P_Random())<<10` (`P_SpawnPuff` opens
-with the identical line), and is what keeps a shotgun's pellets from stacking their splashes into
-one sprite. `MT_BLOOD`'s brief upward hop (`momz = 2` falling back under gravity) is deliberately
+with the identical line), drawn off the random table like every other fuzz in the game
+(docs/random.md § The triangular draw), and is what keeps a shotgun's pellets from stacking their
+splashes into one sprite — the table has no two adjacent entries equal, so the jitter is never
+exactly zero. `MT_BLOOD`'s brief upward hop (`momz = 2` falling back under gravity) is deliberately
 **not** reproduced: it peaks about 3 units in a top-down view, and every other `OneShotEffect` is
 fixed in place.
 

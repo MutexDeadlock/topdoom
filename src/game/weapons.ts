@@ -4,6 +4,7 @@ import type { AudioEngine } from '../audio/audio.ts';
 import { PLAYER_ORIGIN, type SfxId } from '../audio/sfx.ts';
 import type { Pos3 } from '../types.ts';
 import { DOOM_TIC } from '../constants.ts';
+import { pRandom } from '../util/random.ts';
 
 /**
  * How often the chainsaw's idle rattle restarts while it's the ready weapon:
@@ -155,18 +156,24 @@ export interface WeaponDef {
   spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number } | null;
 }
 
-/** `((rand % sides) + 1) * multiplier` — vanilla's own P_Random damage-roll shape. 0 sides means "always 0". */
+/** `((P_Random() % sides) + 1) * multiplier` — vanilla's own damage-roll shape. 0 sides means "always 0". */
 export function rollDamage(sides: number, multiplier: number): number {
-  return sides > 0 ? (Math.floor(Math.random() * sides) + 1) * multiplier : 0;
+  return sides > 0 ? ((pRandom() % sides) + 1) * multiplier : 0;
 }
 
 /**
  * Vanilla's `P_Random()-P_Random()` shape: a triangular draw centred on 0 and
  * `width` wide at its extremes, in whatever unit the caller counts in. Every
  * random fuzz in the game is this one distribution.
+ *
+ * The `/255` is what makes `width` mean what every caller's constant already
+ * says it means — the value at vanilla's `255 << shift` extreme — while keeping
+ * the draw on the table's own integer grid. Two separate `pRandom()` calls, and
+ * subtracting *adjacent* table entries is the point: see docs/random.md
+ * § The triangular draw.
  */
 export function triangularDraw(width: number): number {
-  return (Math.random() - Math.random()) * width;
+  return ((pRandom() - pRandom()) / 255) * width;
 }
 
 /**

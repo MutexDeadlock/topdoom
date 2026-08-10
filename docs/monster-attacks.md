@@ -63,7 +63,8 @@ omits the field and fires one straight shot per burst entry.
 **Every monster bullet is thrown off-aim by `MONSTER_BULLET_SPREAD_DEG` — the single most
 load-bearing number in how dangerous the gunners are.** `A_PosAttack`, `A_SPosAttack` and
 `A_CPosAttack` each add `(P_Random()-P_Random())<<20` BAM to the firing angle, ±255/4096 of a full
-turn (±22.4°), triangular. It is *not* an accuracy nicety: it is the only thing that makes range
+turn (±22.4°), triangular — two consecutive entries of the random table subtracted
+(docs/random.md § The triangular draw). It is *not* an accuracy nicety: it is the only thing that makes range
 matter against a hitscanner, and against the 32-unit player box it costs vanilla's gunners roughly
 65% of their shots at 128 units, 80% at 512 and 90% at 1024. Shipping without it — which this
 engine did — made every monster bullet a guaranteed hit at any distance, so a spider mastermind

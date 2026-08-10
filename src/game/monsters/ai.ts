@@ -1,6 +1,7 @@
 import type { Sector } from '../../wad/map.ts';
 import { circleBlocked, hasLineOfSight, type ThingBlocker, type World } from '../world.ts';
 import { GRAVITY } from '../player.ts';
+import { pRandom } from '../../util/random.ts';
 import { rollDamage } from '../weapons.ts';
 import {
   DIR_X,
@@ -107,7 +108,8 @@ export function reactToDamage(body: MonsterBody, stats: MonsterStats): void {
   // MF_SKULLFLY: a monster mid-charge doesn't flinch, so a lost soul can't be
   // stunned out of its dive.
   if (body.chargeTimer > 0) return;
-  if (Math.random() >= stats.painChance) return;
+  // `P_Random() < painchance`, and `painChance` is that byte over 256.
+  if (pRandom() >= stats.painChance * 256) return;
   body.justHit = true; // MF_JUSTHIT — "the target just hit the enemy, so fight back!"
   body.painTimer = Math.max(body.painTimer, stats.painDuration);
   // Vanilla's pain state replaces whatever the monster was doing, so an
@@ -255,7 +257,7 @@ function checkMissileRange(body: MonsterBody, stats: MonsterStats, dist: number,
   if (ranged.minOffsetDist !== undefined && d < ranged.minOffsetDist) return false;
   d *= ranged.rangeFalloffScale ?? 1;
   d = Math.min(ranged.rangeFalloffCap ?? 200, Math.max(0, d));
-  return Math.random() * 256 >= d;
+  return pRandom() >= d;
 }
 
 /**
@@ -275,7 +277,7 @@ function tryWalk(body: MonsterBody, stats: MonsterStats, world: World, dir: numb
   const ny = body.y + DIR_Y[dir] * step;
   if (testStep(body, stats, world, nx, ny, blockers) === 'blocked') return false;
   body.movedir = dir;
-  body.movecount = Math.floor(Math.random() * 16);
+  body.movecount = pRandom() & 15;
   return true;
 }
 
@@ -325,7 +327,7 @@ function newChaseDir(
     if (diag !== turnaround && tryWalk(body, stats, world, diag, blockers)) return;
   }
 
-  if (Math.random() * 256 > 200 || Math.abs(deltay) > Math.abs(deltax)) {
+  if (pRandom() > 200 || Math.abs(deltay) > Math.abs(deltax)) {
     const t = d1;
     d1 = d2;
     d2 = t;
@@ -339,7 +341,7 @@ function newChaseDir(
   // No direct path — keep going the way we were, if that still works.
   if (olddir !== DI_NODIR && tryWalk(body, stats, world, olddir, blockers)) return;
 
-  if (Math.random() < 0.5) {
+  if ((pRandom() & 1) !== 0) {
     for (let dir = 0; dir <= 7; dir++) {
       if (dir !== turnaround && tryWalk(body, stats, world, dir, blockers)) return;
     }
@@ -686,6 +688,6 @@ function runChaseCall(
   // Vanilla's own tail of A_Chase: the idle grunt, on a 3-in-256 roll per chase
   // call — which is why a monster hunting you mutters every few seconds rather
   // than on a timer.
-  if (stats.sounds.active && Math.random() * 256 < 3) sfx.play(stats.sounds.active, body, monsterOrigin(body.id));
+  if (stats.sounds.active && pRandom() < 3) sfx.play(stats.sounds.active, body, monsterOrigin(body.id));
   return null;
 }

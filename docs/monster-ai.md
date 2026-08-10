@@ -358,7 +358,8 @@ Three gates stand between one shot and the next, applied by `runChaseCall` on va
 An intermediate version modelled 2 and 3 statistically, converting an expected attempt count into a
 cooldown, because sampling a per-attempt probability every render frame would resolve it almost
 immediately no matter how small. Running the chase logic on a discrete `chaseInterval` tick removes
-that at the source — the roll is sampled exactly as often as vanilla samples it.
+that at the source — the roll is sampled exactly as often as vanilla samples it, and off the same
+table vanilla samples it from (docs/random.md § The table and the two cursors).
 `AttackStats.ranged`'s `rangeFalloffScale`/`Cap` reproduce vanilla's per-type offset/halving/clamp
 (halved for exactly the types vanilla special-cases — cyberdemon, spider mastermind, revenant, lost
 soul — making them noticeably more willing to fire from far away; the cyberdemon gets an extra-tight

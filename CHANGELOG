@@ -1,3 +1,15 @@
+v0.1x.x (2026-08-xx)
+
+Features and improvements
+  - randomness now comes from DOOM's own random table instead of the
+    browser's generator
+
+Fixed bugs
+  - broken and flickering lights now behave like vanilla's
+  
+
+===============================================================================
+
 v0.11.0 (2026-08-10)
 
 Features and improvements

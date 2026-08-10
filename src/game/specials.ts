@@ -50,6 +50,7 @@ import {
   darkestNeighborLight,
 } from './world.ts';
 import { PLAYER_RADIUS } from './player.ts';
+import { pRandom } from '../util/random.ts';
 import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './thingtypes.ts';
 import type { Input } from './input.ts';
@@ -176,6 +177,11 @@ interface LightState {
   timer: number;
   bright: boolean;
   phase: number;
+  /**
+   * The current light value for `flicker` alone, which is the one pattern that
+   * isn't a two-level toggle `bright` can express — see `tickLight`.
+   */
+  level: number;
 }
 
 /** Blink/flicker periods in seconds, matching vanilla's STROBEBRIGHT/FASTDARK/SLOWDARK tic counts. */
@@ -183,21 +189,51 @@ const BLINK_BRIGHT_TIME = 5 * DOOM_TIC;
 const BLINK_05_DARK = 15 * DOOM_TIC;
 const BLINK_1_DARK = 35 * DOOM_TIC;
 const GLOW_HALF_CYCLE = 1.3;
+/**
+ * `T_LightFlash`'s `mintime`/`maxtime`, used as **bit masks** and not as
+ * durations: `&7` is 0-7 tics dark, but `&64` is 0 *or* 64 and nothing between,
+ * so a broken light's lit period is either 1 tic or 65. That split is the whole
+ * character of the pattern. docs/specials.md § Lights.
+ */
+const FLASH_DARK_MASK = 7;
+const FLASH_BRIGHT_MASK = 64;
+/** `T_FireFlicker`: a new level every 4 tics, in steps of 16 below the sector's own light. */
+const FLICKER_INTERVAL = 4 * DOOM_TIC;
+const FLICKER_STEP = 16;
 
 function makeLightState(pattern: LightPattern, baseLight: number, darkLight: number): LightState {
-  return { pattern, baseLight, darkLight, timer: 0, bright: true, phase: 1 };
+  // `P_SpawnLightFlash` seeds its counter with the same `(P_Random()&64)+1` the
+  // tick uses, so a map's broken lights start out of phase with each other.
+  const timer = pattern === 'blinkRandom' ? ((pRandom() & FLASH_BRIGHT_MASK) + 1) * DOOM_TIC : pattern === 'flicker' ? FLICKER_INTERVAL : 0;
+  return { pattern, baseLight, darkLight, timer, bright: true, phase: 1, level: baseLight };
 }
 
 function tickLight(s: LightState, dt: number): number {
   switch (s.pattern) {
-    case 'blinkRandom':
-    case 'flicker': {
+    case 'blinkRandom': {
+      // `T_LightFlash` — see FLASH_DARK_MASK for why the two branches are so lopsided.
       s.timer -= dt;
       if (s.timer <= 0) {
         s.bright = !s.bright;
-        s.timer = s.bright ? BLINK_BRIGHT_TIME : 0.05 + Math.random() * (s.pattern === 'flicker' ? 0.15 : 0.6);
+        const mask = s.bright ? FLASH_BRIGHT_MASK : FLASH_DARK_MASK;
+        s.timer = ((pRandom() & mask) + 1) * DOOM_TIC;
       }
       return s.bright ? s.baseLight : s.darkLight;
+    }
+    case 'flicker': {
+      // `T_FireFlicker`, which is four brightness steps rather than a toggle.
+      // The floor is the darkest neighbour + 16, and the `< min` test reads the
+      // *current* level while the assignment uses the sector's own — vanilla's
+      // own asymmetry, and what makes the pattern sit at its floor as often as
+      // it does. docs/specials.md § Lights.
+      s.timer -= dt;
+      if (s.timer <= 0) {
+        s.timer = FLICKER_INTERVAL;
+        const amount = (pRandom() & 3) * FLICKER_STEP;
+        const min = s.darkLight + FLICKER_STEP;
+        s.level = s.level - amount < min ? min : s.baseLight - amount;
+      }
+      return s.level;
     }
     case 'blink05':
     case 'syncBlink05': {

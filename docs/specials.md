@@ -286,6 +286,38 @@ Both reuse existing `DoorState`s: 10 is seeded straight into `'hold'` (already "
 stop"), 14 into a new `'holdClosed'` — the wait-at-the-*bottom* mirror of `'hold'`, which 16/76's
 post-close wait also uses.
 
+## Lights
+
+The sector-type patterns (`SECTOR_LIGHT_SPECIALS`, `wad/specials.ts`) are assigned once at map load
+and ticked by `updateLights` → `tickLight` (`game/specials.ts`). Each holds a `baseLight` (the
+sector's own level) and a `darkLight` (`darkestNeighborLight`, vanilla's `P_FindMinSurroundingLight`)
+and interpolates or toggles between them. Every random period draws from `pRandom()` —
+docs/random.md § The table and the two cursors.
+
+The strobes (`blink05`, `blink1` and their synced variants) are the easy ones: a fixed 5-tic lit
+period against a 15- or 35-tic dark one, straight off vanilla's `STROBEBRIGHT`/`FASTDARK`/`SLOWDARK`.
+`glow` ramps continuously. The two that are **not** simple toggles are worth knowing:
+
+- **`blinkRandom`** (sector type 1) is `T_LightFlash`, and vanilla's `mintime`/`maxtime` are used as
+  **bit masks, not durations**. Dark is `(P_Random()&7)+1` — 1 to 8 tics. Lit is
+  `(P_Random()&64)+1`, which is **1 tic or 65 tics and nothing in between**, because `&64` yields
+  only 0 or 64. That lopsided split is the whole character of a vanilla broken light: mostly a slow
+  pulse, punctuated by the occasional single-frame stutter. Modelling it as a fixed lit period and a
+  random dark one — which this engine did until the light rework — gets the rhythm backwards.
+  `P_SpawnLightFlash` seeds the counter with the same `(P_Random()&64)+1`, which is what puts a
+  map's broken lights out of phase with each other rather than in lockstep.
+- **`flicker`** (sector type 17) is `T_FireFlicker`, and it has no two-state toggle at all. Every
+  4 tics it picks `amount = (P_Random()&3)*16` and sets the level to `maxlight - amount`, floored at
+  `minlight` — four brightness steps, which is what makes it read as firelight rather than as a
+  stutter. `minlight` is `P_FindMinSurroundingLight + 16`, so `darkLight + 16` here. `LightState`
+  carries a `level` field for this pattern alone; a `bright` boolean cannot express four steps.
+
+  Reproduce vanilla's asymmetry in that assignment exactly: the `< minlight` test reads the sector's
+  **current** level while the assignment uses `maxlight`. Since the current level is itself
+  `maxlight - something` from the last tick, the floor triggers more readily than the naive reading
+  suggests, and the pattern sits at `minlight` more of the time. It looks like a bug in the C and is
+  load-bearing for how the effect looks.
+
 ## Light changes
 
 `LightChangeEffect` is the runtime-triggered counterpart to the sector-type blink patterns: those

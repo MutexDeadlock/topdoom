@@ -1,4 +1,5 @@
 import type { Pos2 } from '../types.ts';
+import { mRandom, pRandom } from '../util/random.ts';
 
 /**
  * Vanilla's complete `S_sfx[]` table (`linuxdoom-1.10/sounds.c`), name → the
@@ -57,7 +58,10 @@ export function randomPlaybackRate(id: SfxId): number {
   if (UNPITCHED.has(id)) return 1;
   // `16 - (M_Random()&31)` / `8 - (M_Random()&15)`, clamped to 0..255 there;
   // neither range can reach the clamp from NORM_PITCH, so it's omitted.
-  const swing = SAW_SOUNDS.has(id) ? 8 - Math.floor(Math.random() * 16) : 16 - Math.floor(Math.random() * 32);
+  // The engine's only `mRandom` caller, which is vanilla's situation too — the
+  // pitch cursor is separate precisely so a muted or extra sound cannot shift
+  // the simulation's own draws. docs/random.md § The table and the two cursors.
+  const swing = SAW_SOUNDS.has(id) ? 8 - (mRandom() & 15) : 16 - (mRandom() & 31);
   return (NORM_PITCH + swing) / NORM_PITCH;
 }
 
@@ -77,7 +81,9 @@ const VARIANT_GROUPS: readonly SfxId[][] = [
 
 export function randomVariant(id: SfxId): SfxId {
   for (const group of VARIANT_GROUPS) {
-    if (group.includes(id)) return group[Math.floor(Math.random() * group.length)];
+    // `pRandom`, not `mRandom`: vanilla picks these inside the play simulation
+    // (`A_Look`/`A_Scream`'s `P_Random()%3` / `%2`), unlike the pitch wobble above.
+    if (group.includes(id)) return group[pRandom() % group.length];
   }
   return id;
 }

@@ -3,6 +3,7 @@ import type { DoomMap, Sector } from '../wad/map.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { World } from './world.ts';
 import { GRAVITY, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
+import { pRandom } from '../util/random.ts';
 import {
   BARREL_DEATH_FRAME_SECONDS,
   BARREL_DEATH_FRAMES,
@@ -263,7 +264,7 @@ export function buildThingSprites(
       justAttacked: false,
       reactionTicks: 0,
       refiring: false,
-      homingBias: Math.random() < 0.5,
+      homingBias: (pRandom() & 1) !== 0,
       walkSoundTimer: 0,
       walkSoundStep: 0,
       lookTimer: 0,
@@ -481,7 +482,7 @@ export function buildThingSprites(
       // same gate as the pose line just above. A no-op for every other
       // type, and a hit that failed the stagger roll doesn't reroll it
       // either, matching "if the damage causes a pain state".
-      if (p.painTimer > 0) p.homingBias = Math.random() < 0.5;
+      if (p.painTimer > 0) p.homingBias = (pRandom() & 1) !== 0;
       // Being hurt always wakes a monster, sight or no — vanilla's
       // P_DamageMobj sets the target unconditionally.
       p.alerted = true;
@@ -767,7 +768,7 @@ export function buildThingSprites(
               // revenant's guided/unguided personality — see
               // MonsterBody.homingBias's doc. A no-op for every other type.
               if (tryWake(p, world, p.sector, player)) {
-                p.homingBias = Math.random() < 0.5;
+                p.homingBias = (pRandom() & 1) !== 0;
                 // A_Look's sight sound, randomized within its family (the
                 // zombieman/imp groups) and unattenuated for the two bosses.
                 const see = stats.sounds.see;

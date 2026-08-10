@@ -13,6 +13,7 @@ import { SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import type { Skill } from './skill.ts';
 import type { Pos3 } from '../types.ts';
 import { DOOM_TIC } from '../constants.ts';
+import { pRandom } from '../util/random.ts';
 
 /**
  * Three `ThingType` members drive this file. `bossShooter` (`MT_BOSSSPIT`) is the invisible eye that
@@ -83,7 +84,8 @@ const SCREAM_X_TO = 320;
 const SCREAM_X_STEP = 8;
 const SCREAM_Y_OFFSET = -320;
 const SCREAM_Z_BASE = 128;
-const SCREAM_Z_SPREAD = 256 * 2;
+/** `A_BrainScream`'s `z = 128 + P_Random()*2`, so 128-638 map units over the floor. */
+const SCREAM_Z_STEP = 2;
 /** `A_BrainExplode`'s own follow-up burst: `(P_Random() - P_Random()) * 2048` is ±510 map units. */
 const EXPLODE_X_SPREAD = 510;
 /**
@@ -311,7 +313,7 @@ export class IconOfSin {
   private spawnFly(at: Pos3): void {
     this.effects.spawnImpact('FIRE', SPAWN_FIRE_FRAMES, SPAWN_FIRE_FRAME_SECONDS, at);
     this.sfx.play('telept', at);
-    const roll = Math.floor(Math.random() * 256);
+    const roll = pRandom();
     const last = SPAWN_CUBE_MONSTERS[SPAWN_CUBE_MONSTERS.length - 1];
     const entry = SPAWN_CUBE_MONSTERS.find((e) => roll < e.below) ?? last;
     // Facing the player: vanilla's newly spawned monster goes straight to its seestate with the
@@ -363,7 +365,7 @@ export class IconOfSin {
   }
 
   private explodeAt(x: number, y: number): void {
-    const z = this.ctx.world.floorAt(x, y) + SCREAM_Z_BASE + Math.random() * SCREAM_Z_SPREAD;
+    const z = this.ctx.world.floorAt(x, y) + SCREAM_Z_BASE + pRandom() * SCREAM_Z_STEP;
     this.effects.spawnImpact('MISL', EXPLODE_FRAMES, EXPLODE_FRAME_SECONDS, { x, y, z });
   }
 

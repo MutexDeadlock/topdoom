@@ -57,7 +57,11 @@ and one stereo panner per voice, both computed the way `S_AdjustSoundParams` com
   still carries a quarter of its volume in the far ear.
 - **Pitch**: every instance gets vanilla's random wobble — ±16/128 of playback rate, ±8 for
   the chainsaw's four sounds, none for `itemup` and `tink`. Length varies with it, as it does
-  in vanilla's own mixer.
+  in vanilla's own mixer. This is the engine's **only** `mRandom` draw: `S_StartSoundAtVolume`
+  uses `M_Random`, the cursor *outside* the play simulation, so that a sound playing or not
+  can never shift a damage roll. The sight/death sound *variant* pick (`randomVariant`) goes the
+  other way — vanilla chooses those inside `A_Look`/`A_Scream`, so it draws `pRandom`.
+  docs/random.md § The table and the two cursors.
 - **Channels**: a fixed pool, allocated by `S_getChannel`'s rule — stop whatever this
   *origin* was already playing, take a free channel, else evict the **first** channel whose
   priority is no higher than the new sound's, else drop the sound. "First, not oldest or

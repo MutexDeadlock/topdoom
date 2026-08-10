@@ -79,10 +79,12 @@ one place this engine's weapons still differ in timing.
 
 ## Spread
 
-Every random fuzz in the game is one distribution — vanilla's `P_Random() - P_Random()`, two uniform
-draws subtracted, giving a triangular spread centred on the true aim (`triangularDraw`, and
-`triangularSpread` for the angular cases). The per-weapon widths are the BAM shift constants in
-`p_pspr.c`, converted as `255 << shift` of a `2^32` turn:
+Every random fuzz in the game is one distribution — vanilla's `P_Random() - P_Random()`, two
+consecutive draws off the random table subtracted, giving a triangular spread centred on the true aim
+(`triangularDraw`, and `triangularSpread` for the angular cases). It is literally that call, not an
+approximation of it: docs/random.md § The triangular draw covers the table, why the two draws must
+be separate, and where the `/255` comes from. The per-weapon widths are the BAM shift constants in
+`p_pspr.c`, converted as `255 << shift` of a `2^32` turn — the same 255 the draw normalizes by:
 
 - `<<18` = **5.6°** — `P_GunShot`'s bullet spread, so the pistol, chaingun and each of the shotgun's
   7 pellets, *and* `A_Punch`/`A_Saw`'s swing angle. A melee swing's own share barely matters (~6
@@ -103,7 +105,8 @@ chaingun shot miss ~27% of the time for no reason vanilla would recognize.
 
 ## Damage rolls
 
-**Two vanilla formulas, one `((rand % sides) + 1) * multiplier` shape.** A *bullet's* roll is written
+**Two vanilla formulas, one `((P_Random() % sides) + 1) * multiplier` shape** — `rollDamage`, drawing
+off the random table (docs/random.md § The table and the two cursors). A *bullet's* roll is written
 out at each call site (`5*(P_Random()%3+1)` in both `P_GunShot` and `A_FireShotgun2`: 5/10/15 per
 pellet, and the super shotgun's is identical to the shotgun's — the 20-vs-7 pellet count is its whole
 advantage). A *missile's* is not in the weapon code at all: `PIT_CheckThing` rolls

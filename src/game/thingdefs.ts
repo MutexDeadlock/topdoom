@@ -1,4 +1,5 @@
 import { DOOM_TIC } from '../constants.ts';
+import { ThingType } from './thingtypes.ts';
 
 /**
  * DOOM thing type (doomednum) to the sprite it spawns with, covering
@@ -9,137 +10,137 @@ import { DOOM_TIC } from '../constants.ts';
  */
 export const THING_SPRITES: Record<number, string> = {
   // Monsters
-  3004: 'POSS',
-  9: 'SPOS',
-  3001: 'TROO',
-  3002: 'SARG',
-  58: 'SARG',
-  3006: 'SKUL',
-  3005: 'HEAD',
-  3003: 'BOSS',
-  69: 'BOS2',
-  7: 'SPID',
-  16: 'CYBR',
-  71: 'PAIN',
-  65: 'CPOS',
-  66: 'SKEL',
-  67: 'FATT',
-  68: 'BSPI',
-  64: 'VILE',
-  84: 'SSWV',
-  72: 'KEEN',
-  88: 'BBRN',
+  [ThingType.zombieman]: 'POSS',
+  [ThingType.shotgunGuy]: 'SPOS',
+  [ThingType.imp]: 'TROO',
+  [ThingType.demon]: 'SARG',
+  [ThingType.spectre]: 'SARG',
+  [ThingType.lostSoul]: 'SKUL',
+  [ThingType.cacodemon]: 'HEAD',
+  [ThingType.baronOfHell]: 'BOSS',
+  [ThingType.hellKnight]: 'BOS2',
+  [ThingType.spiderMastermind]: 'SPID',
+  [ThingType.cyberdemon]: 'CYBR',
+  [ThingType.painElemental]: 'PAIN',
+  [ThingType.heavyWeaponDude]: 'CPOS',
+  [ThingType.revenant]: 'SKEL',
+  [ThingType.mancubus]: 'FATT',
+  [ThingType.arachnotron]: 'BSPI',
+  [ThingType.archVile]: 'VILE',
+  [ThingType.wolfensteinSS]: 'SSWV',
+  [ThingType.commanderKeen]: 'KEEN',
+  [ThingType.bossBrain]: 'BBRN',
 
   // Weapons
-  2001: 'SHOT',
-  82: 'SGN2',
-  2002: 'MGUN',
-  2003: 'LAUN',
-  2004: 'PLAS',
-  2005: 'CSAW',
-  2006: 'BFUG',
+  [ThingType.shotgun]: 'SHOT',
+  [ThingType.superShotgun]: 'SGN2',
+  [ThingType.chaingun]: 'MGUN',
+  [ThingType.rocketLauncher]: 'LAUN',
+  [ThingType.plasmaRifle]: 'PLAS',
+  [ThingType.chainsaw]: 'CSAW',
+  [ThingType.bfg9000]: 'BFUG',
 
   // Ammo
-  2007: 'CLIP',
-  2048: 'AMMO',
-  2010: 'ROCK',
-  2046: 'BROK',
-  2047: 'CELL',
-  17: 'CELP',
-  2008: 'SHEL',
-  2049: 'SBOX',
-  8: 'BPAK',
+  [ThingType.clip]: 'CLIP',
+  [ThingType.boxOfBullets]: 'AMMO',
+  [ThingType.rocket]: 'ROCK',
+  [ThingType.boxOfRockets]: 'BROK',
+  [ThingType.cellCharge]: 'CELL',
+  [ThingType.cellChargePack]: 'CELP',
+  [ThingType.shells]: 'SHEL',
+  [ThingType.boxOfShells]: 'SBOX',
+  [ThingType.backpack]: 'BPAK',
 
   // Health & armor
-  2011: 'STIM',
-  2012: 'MEDI',
-  2013: 'SOUL',
-  2014: 'BON1',
-  2015: 'BON2',
-  2018: 'ARM1',
-  2019: 'ARM2',
-  83: 'MEGA',
+  [ThingType.stimpack]: 'STIM',
+  [ThingType.medikit]: 'MEDI',
+  [ThingType.soulsphere]: 'SOUL',
+  [ThingType.healthBonus]: 'BON1',
+  [ThingType.armorBonus]: 'BON2',
+  [ThingType.greenArmor]: 'ARM1',
+  [ThingType.blueArmor]: 'ARM2',
+  [ThingType.megasphere]: 'MEGA',
 
   // Keys
-  5: 'BKEY',
-  40: 'BSKU',
-  13: 'RKEY',
-  38: 'RSKU',
-  6: 'YKEY',
-  39: 'YSKU',
+  [ThingType.blueKeycard]: 'BKEY',
+  [ThingType.blueSkullKey]: 'BSKU',
+  [ThingType.redKeycard]: 'RKEY',
+  [ThingType.redSkullKey]: 'RSKU',
+  [ThingType.yellowKeycard]: 'YKEY',
+  [ThingType.yellowSkullKey]: 'YSKU',
 
   // Powerups
-  2022: 'PINV',
-  2023: 'PSTR',
-  2024: 'PINS',
-  2025: 'SUIT',
-  2026: 'PMAP',
-  2045: 'PVIS',
+  [ThingType.invulnerability]: 'PINV',
+  [ThingType.berserk]: 'PSTR',
+  [ThingType.invisibility]: 'PINS',
+  [ThingType.radiationSuit]: 'SUIT',
+  [ThingType.computerMap]: 'PMAP',
+  [ThingType.lightAmpVisor]: 'PVIS',
 
   // Obstacles & decorations
-  2035: 'BAR1',
-  2028: 'COLU',
-  34: 'CAND',
-  35: 'CBRA',
-  30: 'COL1',
-  31: 'COL2',
-  32: 'COL3',
-  33: 'COL4',
-  36: 'COL5',
-  37: 'COL6',
-  41: 'CEYE',
-  42: 'FSKU',
-  44: 'TBLU',
-  45: 'TGRN',
-  46: 'TRED',
-  55: 'SMBT',
-  56: 'SMGT',
-  57: 'SMRT',
-  47: 'SMIT',
-  48: 'ELEC',
-  70: 'FCAN',
-  85: 'TLMP',
-  86: 'TLP2',
-  43: 'TRE1',
-  54: 'TRE2',
-  25: 'POL1',
-  26: 'POL6',
-  27: 'POL4',
-  28: 'POL2',
-  29: 'POL3',
+  [ThingType.barrel]: 'BAR1',
+  [ThingType.floorLamp]: 'COLU',
+  [ThingType.candle]: 'CAND',
+  [ThingType.candelabra]: 'CBRA',
+  [ThingType.tallGreenPillar]: 'COL1',
+  [ThingType.shortGreenPillar]: 'COL2',
+  [ThingType.tallRedPillar]: 'COL3',
+  [ThingType.shortRedPillar]: 'COL4',
+  [ThingType.shortGreenPillarHeart]: 'COL5',
+  [ThingType.shortRedPillarSkull]: 'COL6',
+  [ThingType.evilEye]: 'CEYE',
+  [ThingType.floatingSkullRock]: 'FSKU',
+  [ThingType.tallBlueTorch]: 'TBLU',
+  [ThingType.tallGreenTorch]: 'TGRN',
+  [ThingType.tallRedTorch]: 'TRED',
+  [ThingType.shortBlueTorch]: 'SMBT',
+  [ThingType.shortGreenTorch]: 'SMGT',
+  [ThingType.shortRedTorch]: 'SMRT',
+  [ThingType.stalagmite]: 'SMIT',
+  [ThingType.techPillar]: 'ELEC',
+  [ThingType.burningBarrel]: 'FCAN',
+  [ThingType.tallTechnoLamp]: 'TLMP',
+  [ThingType.shortTechnoLamp]: 'TLP2',
+  [ThingType.burntTree]: 'TRE1',
+  [ThingType.largeBrownTree]: 'TRE2',
+  [ThingType.impaledHuman]: 'POL1',
+  [ThingType.twitchingImpaledHuman]: 'POL6',
+  [ThingType.skullOnPole]: 'POL4',
+  [ThingType.fiveSkullShishKebab]: 'POL2',
+  [ThingType.pileOfSkullsAndCandles]: 'POL3',
 
   // Gore & corpses — floor-standing, non-solid unless noted
-  10: 'PLAY', // Bloody mess
-  12: 'PLAY', // Bloody mess (vanilla places the same art under two editor numbers)
-  15: 'PLAY', // Dead player
-  18: 'POSS', // Dead former human
-  19: 'SPOS', // Dead former sergeant
-  20: 'TROO', // Dead imp
-  21: 'SARG', // Dead demon
-  22: 'HEAD', // Dead cacodemon
-  23: 'SKUL', // Dead lost soul (invisible in vanilla — no MF_SOLID/MF_NOBLOCKMAP either)
-  24: 'POL5', // Pool of blood and flesh
-  79: 'POB1', // Colon gibs
-  80: 'POB2', // Small pool of blood
-  81: 'BRS1', // Brain stem
+  [ThingType.bloodyMess]: 'PLAY',
+  [ThingType.bloodyMessAlt]: 'PLAY',
+  [ThingType.deadPlayer]: 'PLAY',
+  [ThingType.deadZombieman]: 'POSS',
+  [ThingType.deadShotgunGuy]: 'SPOS',
+  [ThingType.deadImp]: 'TROO',
+  [ThingType.deadDemon]: 'SARG',
+  [ThingType.deadCacodemon]: 'HEAD',
+  [ThingType.deadLostSoul]: 'SKUL', // Invisible in vanilla — no MF_SOLID/MF_NOBLOCKMAP either
+  [ThingType.poolOfBloodAndFlesh]: 'POL5',
+  [ThingType.colonGibs]: 'POB1',
+  [ThingType.smallPoolOfBlood]: 'POB2',
+  [ThingType.brainStem]: 'BRS1',
 
   // Gore — hangs from the ceiling (MF_SPAWNCEILING); solid variants block, "Hanging …" ones don't
-  49: 'GOR1',
-  50: 'GOR2',
-  51: 'GOR3',
-  52: 'GOR4',
-  53: 'GOR5',
-  59: 'GOR2',
-  60: 'GOR4',
-  61: 'GOR3',
-  62: 'GOR5',
-  63: 'GOR1',
-  73: 'HDB1',
-  74: 'HDB2',
-  75: 'HDB3',
-  76: 'HDB4',
-  77: 'HDB5',
-  78: 'HDB6',
+  [ThingType.hangingVictimTwitching]: 'GOR1',
+  [ThingType.hangingVictimArmsOut]: 'GOR2',
+  [ThingType.hangingVictimOneLegged]: 'GOR3',
+  [ThingType.hangingPairOfLegs]: 'GOR4',
+  [ThingType.hangingLeg]: 'GOR5',
+  [ThingType.hangingVictimArmsOutNoBlock]: 'GOR2',
+  [ThingType.hangingPairOfLegsNoBlock]: 'GOR4',
+  [ThingType.hangingVictimOneLeggedNoBlock]: 'GOR3',
+  [ThingType.hangingLegNoBlock]: 'GOR5',
+  [ThingType.hangingVictimTwitchingNoBlock]: 'GOR1',
+  [ThingType.hangingVictimGutsRemoved]: 'HDB1',
+  [ThingType.hangingVictimGutsAndBrainRemoved]: 'HDB2',
+  [ThingType.hangingTorsoLookingDown]: 'HDB3',
+  [ThingType.hangingTorsoOpenSkull]: 'HDB4',
+  [ThingType.hangingTorsoLookingUp]: 'HDB5',
+  [ThingType.hangingTorsoBrainRemoved]: 'HDB6',
 };
 
 /**
@@ -152,8 +153,27 @@ export const THING_SPRITES: Record<number, string> = {
  * behavior itself (waking, chasing, attacking, infighting) lives in
  * `game/monsters/ai.ts`, not here.
  */
-export const MONSTER_TYPES = new Set([
-  3004, 9, 3001, 3002, 58, 3006, 3005, 3003, 69, 7, 16, 71, 65, 66, 67, 68, 64, 84, 72, 88,
+export const MONSTER_TYPES: Set<number> = new Set([
+  ThingType.zombieman,
+  ThingType.shotgunGuy,
+  ThingType.imp,
+  ThingType.demon,
+  ThingType.spectre,
+  ThingType.lostSoul,
+  ThingType.cacodemon,
+  ThingType.baronOfHell,
+  ThingType.hellKnight,
+  ThingType.spiderMastermind,
+  ThingType.cyberdemon,
+  ThingType.painElemental,
+  ThingType.heavyWeaponDude,
+  ThingType.revenant,
+  ThingType.mancubus,
+  ThingType.arachnotron,
+  ThingType.archVile,
+  ThingType.wolfensteinSS,
+  ThingType.commanderKeen,
+  ThingType.bossBrain,
 ]);
 
 /**
@@ -162,54 +182,7 @@ export const MONSTER_TYPES = new Set([
  * body, so a locked-on shot can never reach it and the lock only steals the player's aim. See
  * docs/combat.md § Auto-aim.
  */
-export const NO_AUTO_AIM_TYPES = new Set([88]);
-
-/**
- * Doomednums of the "Ammo", "Health & armor", "Keys" and "Powerups" blocks above — the small
- * collectibles `game/things/defs.ts`'s `pickupScaleFor` draws at `PICKUP_SCALE` (1.4×) their native WAD
- * pixel size, since those are what actually suffer from this engine's far, tilted top-down camera
- * (see that constant's own doc). A whitelist rather than "everything but monsters/weapons": solid
- * decorations, gore props and the barrel are large enough on their own, and inflating them by 40%
- * on top of vanilla's own size reads as oversized rather than more readable.
- */
-export const PICKUP_SCALE_TYPES = new Set([
-  // Ammo
-  2007, // CLIP clip
-  2048, // AMMO box of bullets
-  2010, // ROCK rocket
-  2046, // BROK box of rockets
-  2047, // CELL cell
-  17, // CELP cell pack
-  2008, // SHEL shells
-  2049, // SBOX box of shells
-  8, // BPAK backpack
-
-  // Health & armor
-  2011, // STIM stimpack
-  2012, // MEDI medikit
-  2013, // SOUL soulsphere
-  2014, // BON1 health bonus
-  2015, // BON2 armor bonus
-  2018, // ARM1 green armor
-  2019, // ARM2 blue armor
-  83, // MEGA megasphere
-
-  // Keys
-  5, // BKEY blue keycard
-  40, // BSKU blue skull key
-  13, // RKEY red keycard
-  38, // RSKU red skull key
-  6, // YKEY yellow keycard
-  39, // YSKU yellow skull key
-
-  // Powerups
-  2022, // PINV invulnerability
-  2023, // PSTR berserk
-  2024, // PINS partial invisibility
-  2025, // SUIT radiation suit
-  2026, // PMAP computer area map
-  2045, // PVIS light amp. visor
-]);
+export const NO_AUTO_AIM_TYPES: Set<number> = new Set([ThingType.bossBrain]);
 
 /**
  * Doomednums from the "Obstacles & decorations" and "Gore & corpses" blocks above that carry
@@ -220,15 +193,52 @@ export const PICKUP_SCALE_TYPES = new Set([
  * body bags (73-78) — `CEILING_HUNG_HEIGHT`'s other five entries (59/60/61/62/63) reuse the same
  * `GOR*` sprites at vanilla's genuinely non-solid, wider-radius placement and are deliberately not
  * in this set. The exploding barrel (2035, `MT_BARREL`) is solid too but already has its own
- * `BARREL_TYPE` handling in `game/things.ts` and is deliberately not repeated here. Two decorations
+ * `ThingType.barrel` handling in `game/things.ts` and is deliberately not repeated here. Two decorations
  * in these blocks are
  * genuinely **not** solid in vanilla and are excluded on purpose: the plain candle (34,
  * `MT_MISC49`, `flags: 0`) and every dead-monster/blood-pool prop (10-24, 79-81) — see
  * docs/movement.md § Solid decorations.
  */
-export const SOLID_DECORATION_TYPES = new Set([
-  2028, 30, 31, 32, 33, 35, 36, 37, 41, 42, 44, 45, 46, 47, 48, 55, 56, 57, 70, 85, 86, 43, 54, 25,
-  26, 27, 28, 29, 49, 50, 51, 52, 53, 73, 74, 75, 76, 77, 78,
+export const SOLID_DECORATION_TYPES: Set<number> = new Set([
+  ThingType.floorLamp,
+  ThingType.tallGreenPillar,
+  ThingType.shortGreenPillar,
+  ThingType.tallRedPillar,
+  ThingType.shortRedPillar,
+  ThingType.candelabra,
+  ThingType.shortGreenPillarHeart,
+  ThingType.shortRedPillarSkull,
+  ThingType.evilEye,
+  ThingType.floatingSkullRock,
+  ThingType.tallBlueTorch,
+  ThingType.tallGreenTorch,
+  ThingType.tallRedTorch,
+  ThingType.stalagmite,
+  ThingType.techPillar,
+  ThingType.shortBlueTorch,
+  ThingType.shortGreenTorch,
+  ThingType.shortRedTorch,
+  ThingType.burningBarrel,
+  ThingType.tallTechnoLamp,
+  ThingType.shortTechnoLamp,
+  ThingType.burntTree,
+  ThingType.largeBrownTree,
+  ThingType.impaledHuman,
+  ThingType.twitchingImpaledHuman,
+  ThingType.skullOnPole,
+  ThingType.fiveSkullShishKebab,
+  ThingType.pileOfSkullsAndCandles,
+  ThingType.hangingVictimTwitching,
+  ThingType.hangingVictimArmsOut,
+  ThingType.hangingVictimOneLegged,
+  ThingType.hangingPairOfLegs,
+  ThingType.hangingLeg,
+  ThingType.hangingVictimGutsRemoved,
+  ThingType.hangingVictimGutsAndBrainRemoved,
+  ThingType.hangingTorsoLookingDown,
+  ThingType.hangingTorsoOpenSkull,
+  ThingType.hangingTorsoLookingUp,
+  ThingType.hangingTorsoBrainRemoved,
 ]);
 
 /** Vanilla `mobjinfo` radius shared by every entry in `SOLID_DECORATION_TYPES` except `SOLID_DECORATION_RADIUS_OVERRIDE`'s keys — confirmed against `info.c`. */
@@ -240,7 +250,9 @@ export const SOLID_DECORATION_RADIUS = 16;
  * the 16-unit radius, so this stays a single-key override rather than promoting every entry to a
  * per-type table.
  */
-export const SOLID_DECORATION_RADIUS_OVERRIDE: Record<number, number> = { 54: 32 };
+export const SOLID_DECORATION_RADIUS_OVERRIDE: Record<number, number> = {
+  [ThingType.largeBrownTree]: 32,
+};
 
 /**
  * Doomednums carrying vanilla's `MF_SPAWNCEILING` — every ceiling-hung gore prop, the five
@@ -253,23 +265,25 @@ export const SOLID_DECORATION_RADIUS_OVERRIDE: Record<number, number> = { 54: 32
  * decoration already rides a moving floor — see docs/movement.md § Solid decorations.
  */
 export const CEILING_HUNG_HEIGHT: Record<number, number> = {
-  49: 68, // GOR1 (solid) hanging victim, twitching
-  50: 84, // GOR2 (solid) hanging victim, guts removed
-  51: 84, // GOR3 (solid) hanging victim, guts and brain removed
-  52: 68, // GOR4 (solid) hanging torso, looking down
-  53: 52, // GOR5 (solid) hanging torso, open skull
-  59: 84, // GOR2 (non-solid) hanging pair of legs
-  60: 68, // GOR4 (non-solid) hanging victim, 1-legged
-  61: 52, // GOR3 (non-solid) hanging victim, arms out
-  62: 52, // GOR5 (non-solid) hanging leg
-  63: 68, // GOR1 (non-solid) hanging victim, twitching
-  73: 88, // HDB1
-  74: 88, // HDB2
-  75: 64, // HDB3
-  76: 64, // HDB4
-  77: 64, // HDB5
-  78: 64, // HDB6
-  72: 72, // KEEN commander keen — MF_SPAWNCEILING like the gore above, just shootable
+  [ThingType.hangingVictimTwitching]: 68,
+  [ThingType.hangingVictimArmsOut]: 84,
+  [ThingType.hangingVictimOneLegged]: 84,
+  [ThingType.hangingPairOfLegs]: 68,
+  [ThingType.hangingLeg]: 52,
+  [ThingType.hangingVictimArmsOutNoBlock]: 84,
+  [ThingType.hangingPairOfLegsNoBlock]: 68,
+  // 52, not the blocking twin's 84: the non-solid one-legged victim is the one pair whose two
+  // `mobjinfo` heights genuinely differ, so it hangs lower than the art suggests.
+  [ThingType.hangingVictimOneLeggedNoBlock]: 52,
+  [ThingType.hangingLegNoBlock]: 52,
+  [ThingType.hangingVictimTwitchingNoBlock]: 68,
+  [ThingType.hangingVictimGutsRemoved]: 88,
+  [ThingType.hangingVictimGutsAndBrainRemoved]: 88,
+  [ThingType.hangingTorsoLookingDown]: 64,
+  [ThingType.hangingTorsoOpenSkull]: 64,
+  [ThingType.hangingTorsoLookingUp]: 64,
+  [ThingType.hangingTorsoBrainRemoved]: 64,
+  [ThingType.commanderKeen]: 72, // MF_SPAWNCEILING like the gore above, just shootable
 };
 
 /**
@@ -283,8 +297,8 @@ export const CEILING_HUNG_HEIGHT: Record<number, number> = {
  * by accident rather than by rule. docs/monster-ai.md § Commander Keen.
  */
 export const MONSTER_IDLE_FRAMES: Record<number, string[]> = {
-  72: ['A'], // KEEN, S_KEENSTND
-  88: ['A'], // BBRN, S_BRAIN
+  [ThingType.commanderKeen]: ['A'], // KEEN, S_KEENSTND
+  [ThingType.bossBrain]: ['A'], // BBRN, S_BRAIN
 };
 
 /**
@@ -306,14 +320,14 @@ export const MONSTER_WALK_FRAMES = ['A', 'B', 'C', 'D'];
  * and attack/pain poses.
  */
 export const MONSTER_WALK_FRAMES_OVERRIDE: Record<number, string[]> = {
-  3005: ['A'], // HEAD — S_HEAD_RUN1 alone
-  3006: ['A', 'B'], // SKUL
-  71: ['A', 'B', 'C'], // PAIN
-  64: ['A', 'B', 'C', 'D', 'E', 'F'], // VILE
-  66: ['A', 'B', 'C', 'D', 'E', 'F'], // SKEL
-  67: ['A', 'B', 'C', 'D', 'E', 'F'], // FATT
-  68: ['A', 'B', 'C', 'D', 'E', 'F'], // BSPI — S_BSPI_SIGHT's own frame A leads into the same cycle
-  7: ['A', 'B', 'C', 'D', 'E', 'F'], // SPID
+  [ThingType.cacodemon]: ['A'], // HEAD — S_HEAD_RUN1 alone
+  [ThingType.lostSoul]: ['A', 'B'], // SKUL
+  [ThingType.painElemental]: ['A', 'B', 'C'], // PAIN
+  [ThingType.archVile]: ['A', 'B', 'C', 'D', 'E', 'F'], // VILE
+  [ThingType.revenant]: ['A', 'B', 'C', 'D', 'E', 'F'], // SKEL
+  [ThingType.mancubus]: ['A', 'B', 'C', 'D', 'E', 'F'], // FATT
+  [ThingType.arachnotron]: ['A', 'B', 'C', 'D', 'E', 'F'], // BSPI — S_BSPI_SIGHT's own frame A leads into the same cycle
+  [ThingType.spiderMastermind]: ['A', 'B', 'C', 'D', 'E', 'F'], // SPID
 };
 
 /**
@@ -324,17 +338,17 @@ export const MONSTER_WALK_FRAMES_OVERRIDE: Record<number, string[]> = {
  * arch-vile is 2/256 where an imp is 50/256. docs/monster-iconofsin.md § The spawn cube.
  */
 export const SPAWN_CUBE_MONSTERS: readonly { below: number; type: number }[] = [
-  { below: 50, type: 3001 }, // MT_TROOP imp
-  { below: 90, type: 3002 }, // MT_SERGEANT demon
-  { below: 120, type: 58 }, // MT_SHADOWS spectre
-  { below: 130, type: 71 }, // MT_PAIN pain elemental
-  { below: 160, type: 3005 }, // MT_HEAD cacodemon
-  { below: 162, type: 64 }, // MT_VILE arch-vile
-  { below: 172, type: 66 }, // MT_UNDEAD revenant
-  { below: 192, type: 68 }, // MT_BABY arachnotron
-  { below: 222, type: 67 }, // MT_FATSO mancubus
-  { below: 246, type: 69 }, // MT_KNIGHT hell knight
-  { below: 256, type: 3003 }, // MT_BRUISER baron of hell
+  { below: 50, type: ThingType.imp }, // MT_TROOP imp
+  { below: 90, type: ThingType.demon }, // MT_SERGEANT demon
+  { below: 120, type: ThingType.spectre }, // MT_SHADOWS spectre
+  { below: 130, type: ThingType.painElemental }, // MT_PAIN pain elemental
+  { below: 160, type: ThingType.cacodemon }, // MT_HEAD cacodemon
+  { below: 162, type: ThingType.archVile },
+  { below: 172, type: ThingType.revenant }, // MT_UNDEAD revenant
+  { below: 192, type: ThingType.arachnotron }, // MT_BABY arachnotron
+  { below: 222, type: ThingType.mancubus }, // MT_FATSO mancubus
+  { below: 246, type: ThingType.hellKnight }, // MT_KNIGHT hell knight
+  { below: 256, type: ThingType.baronOfHell }, // MT_BRUISER baron of hell
 ];
 
 /**
@@ -343,8 +357,25 @@ export const SPAWN_CUBE_MONSTERS: readonly { below: number; type: number }[] = [
  * `mobjinfo` table. `MONSTER_TYPES` exists for targeting/AI and isn't the same list vanilla uses
  * for the level's kill total.
  */
-export const COUNTKILL_TYPES = new Set([
-  3004, 9, 3001, 3002, 58, 3005, 3003, 69, 7, 16, 71, 65, 66, 67, 68, 64, 84, 72,
+export const COUNTKILL_TYPES: Set<number> = new Set([
+  ThingType.zombieman,
+  ThingType.shotgunGuy,
+  ThingType.imp,
+  ThingType.demon,
+  ThingType.spectre,
+  ThingType.cacodemon,
+  ThingType.baronOfHell,
+  ThingType.hellKnight,
+  ThingType.spiderMastermind,
+  ThingType.cyberdemon,
+  ThingType.painElemental,
+  ThingType.heavyWeaponDude,
+  ThingType.revenant,
+  ThingType.mancubus,
+  ThingType.arachnotron,
+  ThingType.archVile,
+  ThingType.wolfensteinSS,
+  ThingType.commanderKeen,
 ]);
 
 /**
@@ -354,42 +385,52 @@ export const COUNTKILL_TYPES = new Set([
  * suit (2025): none of those carry the flag in vanilla, matching the well-known behavior that the
  * backpack doesn't count toward a level's item percentage.
  */
-export const COUNTITEM_TYPES = new Set([2014, 2015, 2013, 2022, 2023, 2024, 2026, 2045, 83]);
+export const COUNTITEM_TYPES: Set<number> = new Set([
+  ThingType.healthBonus,
+  ThingType.armorBonus,
+  ThingType.soulsphere,
+  ThingType.invulnerability,
+  ThingType.berserk,
+  ThingType.invisibility,
+  ThingType.computerMap,
+  ThingType.lightAmpVisor,
+  ThingType.megasphere,
+]);
 
 /**
  * The five monster types real vanilla's `A_BossDeath` (`p_enemy.c`) can fire for — confirmed
  * against `info.c`'s `mobjinfo` doomednums. See docs/death.md § Boss death.
  */
 export const BOSS_DEATH_TYPES = {
-  baron: 3003,
-  cyberdemon: 16,
-  spiderMastermind: 7,
-  mancubus: 67,
-  arachnotron: 68,
+  baron: ThingType.baronOfHell,
+  cyberdemon: ThingType.cyberdemon,
+  spiderMastermind: ThingType.spiderMastermind,
+  mancubus: ThingType.mancubus,
+  arachnotron: ThingType.arachnotron,
 } as const;
 
 /** Vanilla `mobjinfo` spawn health, confirmed against the Doom Wiki's monster table. */
 export const MONSTER_HEALTH: Record<number, number> = {
-  3004: 20, // POSS zombieman
-  9: 30, // SPOS shotgun guy
-  3001: 60, // TROO imp
-  3002: 150, // SARG demon
-  58: 150, // SARG spectre
-  3006: 100, // SKUL lost soul
-  3005: 400, // HEAD cacodemon
-  3003: 1000, // BOSS baron of hell
-  69: 500, // BOS2 hell knight
-  7: 3000, // SPID spider mastermind
-  16: 4000, // CYBR cyberdemon
-  71: 400, // PAIN pain elemental
-  65: 70, // CPOS heavy weapon dude
-  66: 300, // SKEL revenant
-  67: 600, // FATT mancubus
-  68: 500, // BSPI arachnotron
-  64: 700, // VILE arch-vile
-  84: 50, // SSWV wolfenstein SS
-  72: 100, // KEEN commander keen
-  88: 250, // BBRN boss brain
+  [ThingType.zombieman]: 20,
+  [ThingType.shotgunGuy]: 30,
+  [ThingType.imp]: 60,
+  [ThingType.demon]: 150,
+  [ThingType.spectre]: 150,
+  [ThingType.lostSoul]: 100,
+  [ThingType.cacodemon]: 400,
+  [ThingType.baronOfHell]: 1000,
+  [ThingType.hellKnight]: 500,
+  [ThingType.spiderMastermind]: 3000,
+  [ThingType.cyberdemon]: 4000,
+  [ThingType.painElemental]: 400,
+  [ThingType.heavyWeaponDude]: 70,
+  [ThingType.revenant]: 300,
+  [ThingType.mancubus]: 600,
+  [ThingType.arachnotron]: 500,
+  [ThingType.archVile]: 700,
+  [ThingType.wolfensteinSS]: 50,
+  [ThingType.commanderKeen]: 100,
+  [ThingType.bossBrain]: 250,
 };
 
 /**
@@ -402,38 +443,38 @@ export const MONSTER_HEALTH: Record<number, number> = {
  * docs/sprites.md § Pain, and attack/pain poses.
  */
 export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
-  3004: ['H', 'I', 'J', 'K', 'L'], // POSS
-  9: ['H', 'I', 'J', 'K', 'L'], // SPOS
-  3001: ['I', 'J', 'K', 'L', 'M'], // TROO
-  3002: ['I', 'J', 'K', 'L', 'M', 'N'], // SARG
-  58: ['I', 'J', 'K', 'L', 'M', 'N'], // SARG (spectre)
+  [ThingType.zombieman]: ['H', 'I', 'J', 'K', 'L'], // POSS
+  [ThingType.shotgunGuy]: ['H', 'I', 'J', 'K', 'L'], // SPOS
+  [ThingType.imp]: ['I', 'J', 'K', 'L', 'M'], // TROO
+  [ThingType.demon]: ['I', 'J', 'K', 'L', 'M', 'N'], // SARG
+  [ThingType.spectre]: ['I', 'J', 'K', 'L', 'M', 'N'], // SARG (spectre)
   // Starts at F, not G: S_SKULL_DIE1 follows 2 walk + 2 attack + 1 pain (A-E).
-  3006: ['F', 'G', 'H', 'I', 'J', 'K'], // SKUL
-  3005: ['G', 'H', 'I', 'J', 'K', 'L'], // HEAD
-  3003: ['I', 'J', 'K', 'L', 'M', 'N', 'O'], // BOSS
-  69: ['I', 'J', 'K', 'L', 'M', 'N', 'O'], // BOS2
-  7: ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S'], // SPID
-  16: ['H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'], // CYBR
-  71: ['H', 'I', 'J', 'K', 'L', 'M'], // PAIN
+  [ThingType.lostSoul]: ['F', 'G', 'H', 'I', 'J', 'K'], // SKUL
+  [ThingType.cacodemon]: ['G', 'H', 'I', 'J', 'K', 'L'], // HEAD
+  [ThingType.baronOfHell]: ['I', 'J', 'K', 'L', 'M', 'N', 'O'], // BOSS
+  [ThingType.hellKnight]: ['I', 'J', 'K', 'L', 'M', 'N', 'O'], // BOS2
+  [ThingType.spiderMastermind]: ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S'], // SPID
+  [ThingType.cyberdemon]: ['H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'], // CYBR
+  [ThingType.painElemental]: ['H', 'I', 'J', 'K', 'L', 'M'], // PAIN
   // Seven death states (H-N) before XDEATH starts at O, not five.
-  65: ['H', 'I', 'J', 'K', 'L', 'M', 'N'], // CPOS
+  [ThingType.heavyWeaponDude]: ['H', 'I', 'J', 'K', 'L', 'M', 'N'], // CPOS
   // Starts at L: S_SKEL_DIE1 reuses S_SKEL_PAIN's own letter — a real info.c
   // quirk, so the rotation-0 tail starts one letter earlier than it looks.
-  66: ['L', 'M', 'N', 'O', 'P', 'Q'], // SKEL
-  67: ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'], // FATT
-  68: ['J', 'K', 'L', 'M', 'N', 'O', 'P'], // BSPI
+  [ThingType.revenant]: ['L', 'M', 'N', 'O', 'P', 'Q'], // SKEL
+  [ThingType.mancubus]: ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'], // FATT
+  [ThingType.arachnotron]: ['J', 'K', 'L', 'M', 'N', 'O', 'P'], // BSPI
   // Starts at Q: same shared pain/DIE1 letter quirk as SKEL above.
-  64: ['Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'], // VILE
-  84: ['I', 'J', 'K', 'L', 'M'], // SSWV
+  [ThingType.archVile]: ['Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'], // VILE
+  [ThingType.wolfensteinSS]: ['I', 'J', 'K', 'L', 'M'], // SSWV
   // S_COMMKEEN..S_COMMKEEN12 — twelve frames starting at A, the same letter
   // S_KEENSTND holds (see MONSTER_IDLE_FRAMES). The corpse keeps hanging: Keen
   // is MF_SPAWNCEILING, so `update()` goes on measuring its z off the ceiling.
-  72: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'], // KEEN
+  [ThingType.commanderKeen]: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'], // KEEN
   // S_BRAIN_DIE1-4 all hold BBRN frame 0 — the brain has no death art at all,
   // it just sits there for 120 tics while A_BrainScream detonates around it.
   // Listed anyway so `damage()` holds the sprite instead of hiding it, and so
   // `deathFrameCount` is 1 rather than 0. game/iconofsin.ts owns the rest.
-  88: ['A'], // BBRN
+  [ThingType.bossBrain]: ['A'], // BBRN
 };
 
 /**
@@ -445,12 +486,12 @@ export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
  * docs/death.md § Monster death.
  */
 export const MONSTER_XDEATH_FRAMES: Record<number, string[]> = {
-  3004: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // POSS
-  9: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // SPOS
-  3001: ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // TROO
+  [ThingType.zombieman]: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // POSS
+  [ThingType.shotgunGuy]: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // SPOS
+  [ThingType.imp]: ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // TROO
   // Starts at O, right after the DEATH table's own N — the two must not overlap.
-  65: ['O', 'P', 'Q', 'R', 'S', 'T'], // CPOS
-  84: ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V'], // SSWV
+  [ThingType.heavyWeaponDude]: ['O', 'P', 'Q', 'R', 'S', 'T'], // CPOS
+  [ThingType.wolfensteinSS]: ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V'], // SSWV
 };
 
 /**
@@ -471,7 +512,7 @@ export const MONSTER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
  * second special case because `rebuildBlockerGrid` never buckets a `hidden`
  * corpse. See docs/death.md § Monster death.
  */
-export const MONSTER_CORPSE_VANISHES = new Set([3006, 71]); // SKUL, PAIN
+export const MONSTER_CORPSE_VANISHES: Set<number> = new Set([ThingType.lostSoul, ThingType.painElemental]);
 
 /**
  * Attack sprite frame letters per doomednum. Unlike the death tables these
@@ -488,24 +529,24 @@ export const MONSTER_CORPSE_VANISHES = new Set([3006, 71]); // SKUL, PAIN
  * to key off, only the AI knows, and by then the pose is just "attacking".
  */
 export const MONSTER_ATTACK_FRAMES: Record<number, string[]> = {
-  3004: ['E', 'F'], // POSS
-  9: ['E', 'F'], // SPOS
-  3001: ['E', 'F', 'G'], // TROO
-  3002: ['E', 'F', 'G'], // SARG
-  58: ['E', 'F', 'G'], // SARG (spectre)
-  3006: ['C', 'D'], // SKUL
-  3005: ['B', 'C', 'D'], // HEAD
-  3003: ['E', 'F', 'G'], // BOSS
-  69: ['E', 'F', 'G'], // BOS2
-  7: ['G', 'H'], // SPID
-  16: ['E', 'F'], // CYBR
-  71: ['D', 'E', 'F'], // PAIN
-  65: ['E', 'F'], // CPOS
-  66: ['G', 'H', 'I', 'J', 'K'], // SKEL
-  67: ['G', 'H', 'I'], // FATT
-  68: ['G', 'H'], // BSPI
-  64: ['G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'], // VILE
-  84: ['E', 'F', 'G'], // SSWV
+  [ThingType.zombieman]: ['E', 'F'], // POSS
+  [ThingType.shotgunGuy]: ['E', 'F'], // SPOS
+  [ThingType.imp]: ['E', 'F', 'G'], // TROO
+  [ThingType.demon]: ['E', 'F', 'G'], // SARG
+  [ThingType.spectre]: ['E', 'F', 'G'], // SARG (spectre)
+  [ThingType.lostSoul]: ['C', 'D'], // SKUL
+  [ThingType.cacodemon]: ['B', 'C', 'D'], // HEAD
+  [ThingType.baronOfHell]: ['E', 'F', 'G'], // BOSS
+  [ThingType.hellKnight]: ['E', 'F', 'G'], // BOS2
+  [ThingType.spiderMastermind]: ['G', 'H'], // SPID
+  [ThingType.cyberdemon]: ['E', 'F'], // CYBR
+  [ThingType.painElemental]: ['D', 'E', 'F'], // PAIN
+  [ThingType.heavyWeaponDude]: ['E', 'F'], // CPOS
+  [ThingType.revenant]: ['G', 'H', 'I', 'J', 'K'], // SKEL
+  [ThingType.mancubus]: ['G', 'H', 'I'], // FATT
+  [ThingType.arachnotron]: ['G', 'H'], // BSPI
+  [ThingType.archVile]: ['G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'], // VILE
+  [ThingType.wolfensteinSS]: ['E', 'F', 'G'], // SSWV
 };
 
 /**
@@ -519,30 +560,30 @@ export const MONSTER_ATTACK_FRAMES: Record<number, string[]> = {
  * vanilla rule, not just by art.
  */
 export const MONSTER_PAIN_FRAMES: Record<number, string[]> = {
-  3004: ['G'], // POSS
-  9: ['G'], // SPOS
-  3001: ['H'], // TROO
-  3002: ['H'], // SARG
-  58: ['H'], // SARG (spectre)
-  3006: ['E'], // SKUL
-  3005: ['E', 'F'], // HEAD
-  3003: ['H'], // BOSS
-  69: ['H'], // BOS2
-  7: ['I'], // SPID
-  16: ['G'], // CYBR
-  71: ['G'], // PAIN
-  65: ['G'], // CPOS
-  66: ['L'], // SKEL
-  67: ['J'], // FATT
-  68: ['I'], // BSPI
-  64: ['Q'], // VILE
-  84: ['H'], // SSWV
+  [ThingType.zombieman]: ['G'], // POSS
+  [ThingType.shotgunGuy]: ['G'], // SPOS
+  [ThingType.imp]: ['H'], // TROO
+  [ThingType.demon]: ['H'], // SARG
+  [ThingType.spectre]: ['H'], // SARG (spectre)
+  [ThingType.lostSoul]: ['E'], // SKUL
+  [ThingType.cacodemon]: ['E', 'F'], // HEAD
+  [ThingType.baronOfHell]: ['H'], // BOSS
+  [ThingType.hellKnight]: ['H'], // BOS2
+  [ThingType.spiderMastermind]: ['I'], // SPID
+  [ThingType.cyberdemon]: ['G'], // CYBR
+  [ThingType.painElemental]: ['G'], // PAIN
+  [ThingType.heavyWeaponDude]: ['G'], // CPOS
+  [ThingType.revenant]: ['L'], // SKEL
+  [ThingType.mancubus]: ['J'], // FATT
+  [ThingType.arachnotron]: ['I'], // BSPI
+  [ThingType.archVile]: ['Q'], // VILE
+  [ThingType.wolfensteinSS]: ['H'], // SSWV
   // The two AI-less types. Both have a real painstate and effectively always
   // enter it (painchance 256 and 255 of 256), but neither has `MONSTER_STATS`
   // to roll against — `ThingLayer.damage`'s `INERT_SHOOTABLE` branch flinches
   // them unconditionally instead. docs/monster-ai.md § Commander Keen.
-  72: ['M'], // KEEN, S_KEENPAIN
-  88: ['B'], // BBRN, S_BRAIN_PAIN
+  [ThingType.commanderKeen]: ['M'], // KEEN, S_KEENPAIN
+  [ThingType.bossBrain]: ['B'], // BBRN, S_BRAIN_PAIN
 };
 
 /**
@@ -569,20 +610,20 @@ export const MONSTER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;
  * squarely inside death's own range, so a dedicated constant would tune nothing.
  */
 export const MONSTER_RAISE_FRAMES: Record<number, string[]> = {
-  3004: ['K', 'J', 'I'], // POSS
-  9: ['L', 'K', 'J', 'I'], // SPOS
-  3001: ['M', 'L', 'K', 'J'], // TROO
-  3002: ['N', 'M', 'L', 'K', 'J'], // SARG
-  58: ['N', 'M', 'L', 'K', 'J'], // SARG (spectre)
-  3005: ['L', 'K', 'J', 'I', 'H'], // HEAD
-  3003: ['O', 'N', 'M', 'L', 'K', 'J'], // BOSS
-  69: ['O', 'N', 'M', 'L', 'K', 'J'], // BOS2
-  65: ['N', 'M', 'L', 'K', 'J', 'I'], // CPOS
-  66: ['Q', 'P', 'O', 'N', 'M'], // SKEL
-  67: ['R', 'Q', 'P', 'O', 'N', 'M', 'L'], // FATT
-  68: ['P', 'O', 'N', 'M', 'L', 'K'], // BSPI
-  71: ['M', 'L', 'K', 'J', 'I'], // PAIN
-  84: ['M', 'L', 'K', 'J'], // SSWV
+  [ThingType.zombieman]: ['K', 'J', 'I'], // POSS
+  [ThingType.shotgunGuy]: ['L', 'K', 'J', 'I'], // SPOS
+  [ThingType.imp]: ['M', 'L', 'K', 'J'], // TROO
+  [ThingType.demon]: ['N', 'M', 'L', 'K', 'J'], // SARG
+  [ThingType.spectre]: ['N', 'M', 'L', 'K', 'J'], // SARG (spectre)
+  [ThingType.cacodemon]: ['L', 'K', 'J', 'I', 'H'], // HEAD
+  [ThingType.baronOfHell]: ['O', 'N', 'M', 'L', 'K', 'J'], // BOSS
+  [ThingType.hellKnight]: ['O', 'N', 'M', 'L', 'K', 'J'], // BOS2
+  [ThingType.heavyWeaponDude]: ['N', 'M', 'L', 'K', 'J', 'I'], // CPOS
+  [ThingType.revenant]: ['Q', 'P', 'O', 'N', 'M'], // SKEL
+  [ThingType.mancubus]: ['R', 'Q', 'P', 'O', 'N', 'M', 'L'], // FATT
+  [ThingType.arachnotron]: ['P', 'O', 'N', 'M', 'L', 'K'], // BSPI
+  [ThingType.painElemental]: ['M', 'L', 'K', 'J', 'I'], // PAIN
+  [ThingType.wolfensteinSS]: ['M', 'L', 'K', 'J'], // SSWV
 };
 
 /**
@@ -618,10 +659,10 @@ export const PLAYER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;
  * vanilla, which drops from the same `P_KillMobj` no matter the cause.
  */
 export const MONSTER_DROPS: Record<number, number> = {
-  3004: 2007, // POSS zombieman -> CLIP
-  84: 2007, // SSWV wolfenstein SS -> CLIP
-  9: 2001, // SPOS shotgun guy -> SHOTGUN
-  65: 2002, // CPOS chaingunner -> CHAINGUN
+  [ThingType.zombieman]: ThingType.clip,
+  [ThingType.wolfensteinSS]: ThingType.clip,
+  [ThingType.shotgunGuy]: ThingType.shotgun,
+  [ThingType.heavyWeaponDude]: ThingType.chaingun,
 };
 
 /**
@@ -652,57 +693,57 @@ export const MONSTER_DROPS: Record<number, number> = {
  */
 export const THING_ANIM_FRAMES: Record<number, { frames: string[]; frameSeconds: number }> = {
   // Health & armor
-  2013: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC }, // SOUL soulsphere
-  2014: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC }, // BON1 health bonus
-  2015: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC }, // BON2 armor bonus
-  2018: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC }, // ARM1 green armor
-  2019: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC }, // ARM2 blue armor
-  83: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 * DOOM_TIC }, // MEGA megasphere
+  [ThingType.soulsphere]: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC },
+  [ThingType.healthBonus]: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC },
+  [ThingType.armorBonus]: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC },
+  [ThingType.greenArmor]: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC },
+  [ThingType.blueArmor]: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC },
+  [ThingType.megasphere]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 * DOOM_TIC },
 
   // Keys — all six blink identically (S_*KEY <-> S_*KEY2)
-  5: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC }, // BKEY blue keycard
-  40: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC }, // BSKU blue skull key
-  13: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC }, // RKEY red keycard
-  38: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC }, // RSKU red skull key
-  6: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC }, // YKEY yellow keycard
-  39: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC }, // YSKU yellow skull key
+  [ThingType.blueKeycard]: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC },
+  [ThingType.blueSkullKey]: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC },
+  [ThingType.redKeycard]: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC },
+  [ThingType.redSkullKey]: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC },
+  [ThingType.yellowKeycard]: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC },
+  [ThingType.yellowSkullKey]: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC },
 
   // Powerups
-  2022: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 * DOOM_TIC }, // PINV invulnerability
-  2024: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 * DOOM_TIC }, // PINS partial invisibility
-  2026: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC }, // PMAP computer area map
-  2045: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC }, // PVIS light amp. visor
+  [ThingType.invulnerability]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 * DOOM_TIC },
+  [ThingType.invisibility]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 * DOOM_TIC },
+  [ThingType.computerMap]: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC },
+  [ThingType.lightAmpVisor]: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC },
 
   // Obstacles & decorations
-  41: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 6 * DOOM_TIC }, // CEYE evil eye
-  42: { frames: ['A', 'B', 'C'], frameSeconds: 6 * DOOM_TIC }, // FSKU floating skull-rock
-  36: { frames: ['A', 'B'], frameSeconds: 14 * DOOM_TIC }, // COL5 heart column
-  44: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // TBLU tall blue firestick
-  45: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // TGRN tall green torch
-  46: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // TRED tall red torch
-  55: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // SMBT short blue torch
-  56: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // SMGT short green torch
-  57: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // SMRT short red torch
-  70: { frames: ['A', 'B', 'C'], frameSeconds: 4 * DOOM_TIC }, // FCAN burning barrel
-  85: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // TLMP tall techno lamp
-  86: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC }, // TLP2 large techno lamp
-  26: { frames: ['A', 'B'], frameSeconds: 7 * DOOM_TIC }, // POL6 twitching impaled human — real split is 6/8 tics
-  29: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC }, // POL3 pile of skulls and candles
+  [ThingType.evilEye]: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 6 * DOOM_TIC },
+  [ThingType.floatingSkullRock]: { frames: ['A', 'B', 'C'], frameSeconds: 6 * DOOM_TIC },
+  [ThingType.shortGreenPillarHeart]: { frames: ['A', 'B'], frameSeconds: 14 * DOOM_TIC },
+  [ThingType.tallBlueTorch]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
+  [ThingType.tallGreenTorch]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
+  [ThingType.tallRedTorch]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
+  [ThingType.shortBlueTorch]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
+  [ThingType.shortGreenTorch]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
+  [ThingType.shortRedTorch]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
+  [ThingType.burningBarrel]: { frames: ['A', 'B', 'C'], frameSeconds: 4 * DOOM_TIC },
+  [ThingType.tallTechnoLamp]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
+  [ThingType.shortTechnoLamp]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
+  [ThingType.twitchingImpaledHuman]: { frames: ['A', 'B'], frameSeconds: 7 * DOOM_TIC }, // Real split is 6/8 tics
+  [ThingType.pileOfSkullsAndCandles]: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC },
 
   // Gore & corpses — fixed art at a non-'A' death-cycle frame, held forever (see doc above)
-  10: { frames: ['W'], frameSeconds: 6 * DOOM_TIC }, // PLAY bloody mess (S_PLAY_XDIE9)
-  12: { frames: ['W'], frameSeconds: 6 * DOOM_TIC }, // PLAY bloody mess (S_PLAY_XDIE9)
-  15: { frames: ['N'], frameSeconds: 6 * DOOM_TIC }, // PLAY dead player (S_PLAY_DIE7)
-  18: { frames: ['L'], frameSeconds: 6 * DOOM_TIC }, // POSS dead former human (S_POSS_DIE5)
-  19: { frames: ['L'], frameSeconds: 6 * DOOM_TIC }, // SPOS dead former sergeant (S_SPOS_DIE5)
-  20: { frames: ['M'], frameSeconds: 6 * DOOM_TIC }, // TROO dead imp (S_TROO_DIE5)
-  21: { frames: ['N'], frameSeconds: 6 * DOOM_TIC }, // SARG dead demon (S_SARG_DIE6)
-  22: { frames: ['L'], frameSeconds: 6 * DOOM_TIC }, // HEAD dead cacodemon (S_HEAD_DIE6)
-  23: { frames: ['K'], frameSeconds: 6 * DOOM_TIC }, // SKUL dead lost soul (S_SKULL_DIE6)
+  [ThingType.bloodyMess]: { frames: ['W'], frameSeconds: 6 * DOOM_TIC }, // PLAY bloody mess (S_PLAY_XDIE9)
+  [ThingType.bloodyMessAlt]: { frames: ['W'], frameSeconds: 6 * DOOM_TIC }, // PLAY bloody mess (S_PLAY_XDIE9)
+  [ThingType.deadPlayer]: { frames: ['N'], frameSeconds: 6 * DOOM_TIC }, // PLAY dead player (S_PLAY_DIE7)
+  [ThingType.deadZombieman]: { frames: ['L'], frameSeconds: 6 * DOOM_TIC }, // POSS dead former human (S_POSS_DIE5)
+  [ThingType.deadShotgunGuy]: { frames: ['L'], frameSeconds: 6 * DOOM_TIC }, // SPOS dead former sergeant (S_SPOS_DIE5)
+  [ThingType.deadImp]: { frames: ['M'], frameSeconds: 6 * DOOM_TIC }, // TROO dead imp (S_TROO_DIE5)
+  [ThingType.deadDemon]: { frames: ['N'], frameSeconds: 6 * DOOM_TIC }, // SARG dead demon (S_SARG_DIE6)
+  [ThingType.deadCacodemon]: { frames: ['L'], frameSeconds: 6 * DOOM_TIC }, // HEAD dead cacodemon (S_HEAD_DIE6)
+  [ThingType.deadLostSoul]: { frames: ['K'], frameSeconds: 6 * DOOM_TIC }, // SKUL dead lost soul (S_SKULL_DIE6)
 
   // Gore — ceiling-hung, 'A,B,C,B' twitch loop (both the solid and non-solid GOR1 placements)
-  49: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 * DOOM_TIC }, // GOR1 — real cycle is 10/15/8/6 tics
-  63: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 * DOOM_TIC }, // GOR1 — same cycle, non-blocking placement
+  [ThingType.hangingVictimTwitching]: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 * DOOM_TIC }, // GOR1 — real cycle is 10/15/8/6 tics
+  [ThingType.hangingVictimTwitchingNoBlock]: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 * DOOM_TIC }, // GOR1 — same cycle, non-blocking placement
 };
 
 /**

@@ -11,6 +11,7 @@ import type { Input } from '../../src/game/input.ts';
 import type { Placement } from '../../src/types.ts';
 import { NO_SIDE } from '../../src/wad/map.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
+import { ThingType } from '../../src/game/thingtypes.ts';
 
 /**
  * `EV_Teleport` ignores a crossing that came from the back of the line, "so you
@@ -27,7 +28,6 @@ const BANK = {
 
 const NO_INPUT = { pressed: () => false, rightMousePressed: () => false } as unknown as Input;
 
-const TELEPORT_DEST = 14;
 const WR_TELEPORT = 97;
 
 /** The one linedef with `front` on its right side and `back` on its left. */
@@ -59,8 +59,8 @@ function setup() {
   map.sectors[padA].tag = 1;
   map.sectors[padB].tag = 2;
   map.things.push(
-    { ...grid.centre(padACell, 1), angle: 0, type: TELEPORT_DEST, flags: 7 },
-    { ...grid.centre(padBCell, 1), angle: 0, type: TELEPORT_DEST, flags: 7 },
+    { ...grid.centre(padACell, 1), angle: 0, type: ThingType.teleportDest, flags: 7 },
+    { ...grid.centre(padBCell, 1), angle: 0, type: ThingType.teleportDest, flags: 7 },
   );
 
   const intoA = edgeBetween(map, grid.index(padACell - 1, 1), padA);

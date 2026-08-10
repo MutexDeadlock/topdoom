@@ -1,4 +1,5 @@
 import { WEAPON_RANGE } from '../world.ts';
+import { ThingType } from '../thingtypes.ts';
 import type { SfxId } from '../../audio/sfx.ts';
 import type { Pos3 } from '../../types.ts';
 import { DOOM_TIC } from '../../constants.ts';
@@ -421,7 +422,7 @@ export function thrustSpeed(damage: number, mass: number): number {
  */
 export function sameSpecies(shooterType: number, victimType: number): boolean {
   if (shooterType === victimType) return true;
-  const bruisers = new Set([3003, 69]); // BOSS baron of hell, BOS2 hell knight
+  const bruisers: Set<number> = new Set([ThingType.baronOfHell, ThingType.hellKnight]);
   return bruisers.has(shooterType) && bruisers.has(victimType);
 }
 
@@ -505,8 +506,8 @@ export const INERT_SHOOTABLE: Record<
   number,
   { radius: number; painSound: SfxId; deathSound: SfxId; unattenuated: boolean }
 > = {
-  72: { radius: 16, painSound: 'keenpn', deathSound: 'keendt', unattenuated: false }, // KEEN
-  88: { radius: 16, painSound: 'bospn', deathSound: 'bosdth', unattenuated: true }, // BBRN
+  [ThingType.commanderKeen]: { radius: 16, painSound: 'keenpn', deathSound: 'keendt', unattenuated: false },
+  [ThingType.bossBrain]: { radius: 16, painSound: 'bospn', deathSound: 'bosdth', unattenuated: true },
 };
 
 /**
@@ -524,7 +525,7 @@ export const INERT_SHOOTABLE: Record<
  * types get which attack.
  */
 export const MONSTER_STATS: Record<number, MonsterStats> = {
-  3004: {
+  [ThingType.zombieman]: {
     speed: 70,
     chaseInterval: 0.114,
     radius: 20,
@@ -535,8 +536,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     painChance: 0.781,
     painDuration: 0.171,
     sounds: { see: 'posit1', active: 'posact', pain: 'popain', death: 'podth1', attack: 'pistol' },
-  }, // POSS zombieman
-  9: {
+  },
+  [ThingType.shotgunGuy]: {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
@@ -548,8 +549,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     painChance: 0.664,
     painDuration: 0.171,
     sounds: { see: 'posit2', active: 'posact', pain: 'popain', death: 'podth2', attack: 'shotgn' },
-  }, // SPOS shotgun guy
-  65: {
+  },
+  [ThingType.heavyWeaponDude]: {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
@@ -564,8 +565,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     // the pistol shot its single-bullet roll would suggest — a vanilla oddity
     // (p_enemy.c), and the chaingunner's own `mobjinfo.attacksound` is 0.
     sounds: { see: 'posit2', active: 'posact', pain: 'popain', death: 'podth2', attack: 'shotgn' },
-  }, // CPOS chaingunner
-  84: {
+  },
+  [ThingType.wolfensteinSS]: {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
@@ -579,8 +580,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     painChance: 0.664,
     painDuration: 0.171,
     sounds: { see: 'sssit', active: 'posact', pain: 'popain', death: 'ssdth', attack: 'shotgn' },
-  }, // SSWV Wolfenstein SS
-  3001: {
+  },
+  [ThingType.imp]: {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
@@ -593,8 +594,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     painChance: 0.781,
     painDuration: 0.114,
     sounds: { see: 'bgsit1', active: 'bgact', pain: 'popain', death: 'bgdth1', melee: 'claw' },
-  }, // TROO imp
-  3002: {
+  },
+  [ThingType.demon]: {
     speed: 175,
     chaseInterval: 0.057,
     radius: 30,
@@ -607,8 +608,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     // `A_SargAttack` itself is silent — the bite's sound is the `attacksound`
     // `A_Chase` plays on entering meleestate. See `MonsterSounds.melee`.
     sounds: { see: 'sgtsit', active: 'dmact', pain: 'dmpain', death: 'sgtdth', melee: 'sgtatk' },
-  }, // SARG demon
-  58: {
+  },
+  [ThingType.spectre]: {
     speed: 175,
     chaseInterval: 0.057,
     radius: 30,
@@ -618,8 +619,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     painChance: 0.703,
     painDuration: 0.114,
     sounds: { see: 'sgtsit', active: 'dmact', pain: 'dmpain', death: 'sgtdth', melee: 'sgtatk' },
-  }, // SARG spectre (same as demon; no invisibility rendering)
-  3006: {
+  }, // Same stats as the demon; the spectre's invisibility isn't rendered
+  [ThingType.lostSoul]: {
     speed: 46.7,
     chaseInterval: 0.171,
     radius: 16,
@@ -642,8 +643,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     // `A_SkullAttack`'s own `sklatk`, played as the charge launches.
     sounds: { active: 'dmact', pain: 'dmpain', death: 'firxpl', attack: 'sklatk' },
     flies: true,
-  }, // SKUL lost soul — drifts slowly, then hurls itself (A_SkullAttack, SKULLSPEED = 20 units/tic)
-  3005: {
+  }, // Drifts slowly, then hurls itself (A_SkullAttack, SKULLSPEED = 20 units/tic)
+  [ThingType.cacodemon]: {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 31,
@@ -658,8 +659,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     // `attacksound` is 0, so its melee really is silent in vanilla too.
     sounds: { see: 'cacsit', active: 'dmact', pain: 'dmpain', death: 'cacdth' },
     flies: true,
-  }, // HEAD cacodemon — one attack state that bites up close and spits a fireball otherwise (A_HeadAttack)
-  3003: {
+  }, // One attack state that bites up close and spits a fireball otherwise (A_HeadAttack)
+  [ThingType.baronOfHell]: {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 24,
@@ -671,8 +672,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     painChance: 0.195,
     painDuration: 0.114,
     sounds: { see: 'brssit', active: 'dmact', pain: 'dmpain', death: 'brsdth', melee: 'claw' },
-  }, // BOSS baron of hell
-  69: {
+  },
+  [ThingType.hellKnight]: {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 24,
@@ -683,8 +684,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     painChance: 0.195,
     painDuration: 0.114,
     sounds: { see: 'kntsit', active: 'dmact', pain: 'dmpain', death: 'kntdth', melee: 'claw' },
-  }, // BOS2 hell knight — vanilla's hell knight throws the same BAL7 fireball as the baron
-  71: {
+  }, // Vanilla's hell knight throws the same BAL7 fireball as the baron
+  [ThingType.painElemental]: {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 31,
@@ -695,15 +696,15 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     // beginRangedAttack) and left at 0 rather than optional so this stays the
     // same required shape as every other AttackStats. The real bite comes
     // from whatever the spawned lost soul itself lands (AttackStats.charge on
-    // doomednum 3006, above).
-    ranged: { diceSides: 0, diceMult: 0, duration: 0.429, spawn: { type: 3006 } },
+    // `ThingType.lostSoul`, above).
+    ranged: { diceSides: 0, diceMult: 0, duration: 0.429, spawn: { type: ThingType.lostSoul } },
     painChance: 0.5,
     painDuration: 0.343,
     // `A_PainAttack` is silent; the lost soul it spawns brings its own `sklatk`.
     sounds: { see: 'pesit', active: 'dmact', pain: 'pepain', death: 'pedth' },
     flies: true,
-  }, // PAIN pain elemental — A_PainAttack/A_PainShootSkull, spawns a lost soul and launches it at the elemental's own target
-  66: {
+  }, // A_PainAttack/A_PainShootSkull, spawns a lost soul and launches it at the elemental's own target
+  [ThingType.revenant]: {
     speed: 175,
     chaseInterval: 0.057,
     radius: 20,
@@ -728,8 +729,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     // engine's melee is one moment, so it takes the punch. Its pain sound is
     // the *human* `popain`, which is vanilla's own `mobjinfo`, not a slip.
     sounds: { see: 'skesit', active: 'skeact', pain: 'popain', death: 'skedth', melee: 'skepch' },
-  }, // SKEL revenant
-  67: {
+  },
+  [ThingType.mancubus]: {
     speed: 70,
     chaseInterval: 0.114,
     radius: 48,
@@ -762,8 +763,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     // missilestate chain — the tell that a triple volley is coming. The
     // fireballs themselves are `firsht`, from the missile, not from here.
     sounds: { see: 'mansit', active: 'posact', pain: 'mnpain', death: 'mandth', windup: 'manatk' },
-  }, // FATT mancubus — A_FatAttack1/2/3, three volleys out of one 80-tic attack state, each firing a pair of fireballs
-  68: {
+  }, // A_FatAttack1/2/3, three volleys out of one 80-tic attack state, each firing a pair of fireballs
+  [ThingType.arachnotron]: {
     speed: 116.7,
     chaseInterval: 0.103,
     radius: 64,
@@ -781,8 +782,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       death: 'bspdth',
       walk: { sounds: ['bspwlk'], interval: 18 * DOOM_TIC },
     },
-  }, // BSPI arachnotron — A_SpidRefire, same never-let-up loop as the chaingunner
-  7: {
+  }, // A_SpidRefire, same never-let-up loop as the chaingunner
+  [ThingType.spiderMastermind]: {
     speed: 105,
     chaseInterval: 0.114,
     radius: 128,
@@ -812,8 +813,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       attack: 'shotgn',
       walk: { sounds: ['metal'], interval: 12 * DOOM_TIC },
     },
-  }, // SPID spider mastermind (real hitscan chaingun in vanilla too)
-  16: {
+  }, // Real hitscan chaingun in vanilla too
+  [ThingType.cyberdemon]: {
     speed: 140,
     chaseInterval: 0.114,
     radius: 40,
@@ -848,10 +849,10 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       death: 'cybdth',
       walk: { sounds: ['hoof', 'metal'], interval: 12 * DOOM_TIC },
     },
-  }, // CYBR cyberdemon — three rockets per volley, the same MISL sprite the player's own launcher fires
+  }, // Three rockets per volley, the same MISL sprite the player's own launcher fires
   // VILE arch-vile: vanilla's own P_CheckMissileRange refuses to fire beyond 14*64=896 map units
   // for this type specifically (MT_VILE), tighter than the generic 200-unit falloff cap below.
-  64: {
+  [ThingType.archVile]: {
     speed: 262.5,
     chaseInterval: 0.057,
     radius: 20,
@@ -876,5 +877,5 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     // blast itself is `A_VileAttack`'s `barexp`, played from there.
     sounds: { see: 'vilsit', active: 'vilact', pain: 'vipain', death: 'vildth', windup: 'vilatk' },
     resurrects: true,
-  }, // VILE arch-vile
+  },
 };

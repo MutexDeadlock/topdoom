@@ -13,12 +13,9 @@ import {
   BARREL_IDLE_FRAMES,
   BARREL_MASS,
   BARREL_RADIUS,
-  BARREL_TYPE,
   BOSS_TYPES,
   DEATH_NOTIFY_TYPES,
-  LOST_SOUL_TYPE,
   MAX_SKULLS_ON_LEVEL,
-  PAIN_ELEMENTAL_TYPE,
   pickupScaleFor,
   TELEFRAG_DAMAGE,
   type BarrelExplosion,
@@ -62,6 +59,7 @@ import {
   THING_ANIM_FRAMES,
   THING_SPRITES,
 } from './thingdefs.ts';
+import { ThingType } from './thingtypes.ts';
 import { isAmbush, isMultiplayerOnly, spawnAngleDeg, spawnsAtSkill, type Skill } from './skill.ts';
 import {
   DI_NODIR,
@@ -194,7 +192,7 @@ export function buildThingSprites(
   ): PosedThing | null {
     const spriteName = THING_SPRITES[type];
     if (!spriteName) return null;
-    const isBarrel = type === BARREL_TYPE;
+    const isBarrel = type === ThingType.barrel;
     const itemAnim = THING_ANIM_FRAMES[type];
     // A monster walks, a barrel sways, an item blinks — and the two AI-less
     // monsters hold a spawnstate frame of their own (see MONSTER_IDLE_FRAMES).
@@ -335,10 +333,10 @@ export function buildThingSprites(
    */
   function spawnLostSoul(origin: PosedThing, angleRad: number): void {
     let skullCount = 0;
-    for (const p of posed) if (p.type === LOST_SOUL_TYPE && !p.dead) skullCount++;
+    for (const p of posed) if (p.type === ThingType.lostSoul && !p.dead) skullCount++;
     if (skullCount > MAX_SKULLS_ON_LEVEL) return;
 
-    const skullRadius = MONSTER_STATS[LOST_SOUL_TYPE].radius;
+    const skullRadius = MONSTER_STATS[ThingType.lostSoul].radius;
     const originRadius = MONSTER_STATS[origin.type]?.radius ?? skullRadius;
     // Vanilla's `4*FRACUNIT + 3*(actor->info->radius + skullRadius)/2` — both
     // radii are already plain map units here (not FRACUNIT-scaled), so the
@@ -354,7 +352,7 @@ export function buildThingSprites(
     // checkMissileRange — and so straight into its own charge — rather than
     // first walking a step and waiting out a reaction delay it never had in
     // vanilla, where `A_SkullAttack` fires in the same tic it spawns.
-    pushThing(LOST_SOUL_TYPE, { x, y, z }, (angleRad * 180) / Math.PI, {
+    pushThing(ThingType.lostSoul, { x, y, z }, (angleRad * 180) / Math.PI, {
       alerted: true,
       targetId: origin.targetId,
     });
@@ -379,7 +377,7 @@ export function buildThingSprites(
     if (!spawned) return null;
     for (const q of posed) {
       if (q === spawned || q.dead || q.hidden) continue;
-      if (!MONSTER_TYPES.has(q.type) && q.type !== BARREL_TYPE) continue;
+      if (!MONSTER_TYPES.has(q.type) && q.type !== ThingType.barrel) continue;
       const reach = spawned.blockRadius + q.blockRadius;
       if ((q.x - spawned.x) ** 2 + (q.y - spawned.y) ** 2 > reach * reach) continue;
       // Deliberately unattributed: a telefrag is `P_TeleportMove`'s doing, not
@@ -404,7 +402,7 @@ export function buildThingSprites(
     fromX?: number,
     fromY?: number,
   ): void {
-    const isBarrel = p.type === BARREL_TYPE;
+    const isBarrel = p.type === ThingType.barrel;
     if (p.dead || amount <= 0 || !(isBarrel || MONSTER_TYPES.has(p.type))) return;
     // The two AI-less shootables: no stats to roll pain against, no target to
     // retarget, and nothing that reacts to knockback — so they take the health
@@ -551,7 +549,7 @@ export function buildThingSprites(
     // `A_PainShootSkull(actor, actor->angle+ANG90/180/270)`, fired
     // unconditionally on death regardless of what attack (if any) was
     // under way when it died.
-    if (p.type === PAIN_ELEMENTAL_TYPE) {
+    if (p.type === ThingType.painElemental) {
       spawnLostSoul(p, p.angle + Math.PI / 2);
       spawnLostSoul(p, p.angle + Math.PI);
       spawnLostSoul(p, p.angle + (3 * Math.PI) / 2);
@@ -703,13 +701,13 @@ export function buildThingSprites(
           // its hover, anything killed mid-launch by an arch-vile — drops.
           // Gated on the thing's own cached sector floor so the overwhelming
           // majority of corpses (already resting on it) cost no query at all.
-          if (p.type !== LOST_SOUL_TYPE && p.z > (p.sector?.floorHeight ?? p.z)) {
+          if (p.type !== ThingType.lostSoul && p.z > (p.sector?.floorHeight ?? p.z)) {
             const restZ = world.groundFloor(p.x, p.y, p.blockRadius, true);
             p.velZ -= GRAVITY * dt;
             p.z = Math.max(restZ, p.z + p.velZ * dt);
             if (p.z === restZ) p.velZ = 0;
           }
-          if (p.type === BARREL_TYPE) {
+          if (p.type === ThingType.barrel) {
             // Vanilla's own A_Explode, firing partway through the death
             // animation rather than instantly on death — see
             // BARREL_EXPLODE_DELAY_SECONDS's doc.
@@ -980,7 +978,7 @@ export function buildThingSprites(
         const p = posed[owner];
         if (!p || p.picked || p.dead || !p.visible) return false;
         if (NO_AUTO_AIM_TYPES.has(p.type)) return false;
-        return MONSTER_TYPES.has(p.type) || p.type === BARREL_TYPE;
+        return MONSTER_TYPES.has(p.type) || p.type === ThingType.barrel;
       });
       if (id === null) return null;
       const p = posed[id];
@@ -1032,7 +1030,7 @@ export function buildThingSprites(
     },
     bleeds(id: number): boolean {
       const p = posed[id];
-      return !!p && p.type !== BARREL_TYPE;
+      return !!p && p.type !== ThingType.barrel;
     },
     awakeMonsterCount(): number {
       let n = 0;
@@ -1061,7 +1059,7 @@ export function buildThingSprites(
       const out: MonsterRef[] = [];
       for (const p of posed) {
         if (p.dead || p.sector !== sector) continue;
-        if (!MONSTER_TYPES.has(p.type) && p.type !== BARREL_TYPE) continue;
+        if (!MONSTER_TYPES.has(p.type) && p.type !== ThingType.barrel) continue;
         out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius });
       }
       return out;

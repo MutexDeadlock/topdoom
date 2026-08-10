@@ -10,12 +10,13 @@
  */
 import * as THREE from 'three';
 import type { Sector } from '../../wad/map.ts';
-import { BOSS_DEATH_TYPES, PICKUP_SCALE_TYPES } from '../thingdefs.ts';
+import { BOSS_DEATH_TYPES } from '../thingdefs.ts';
+import { ThingType } from '../thingtypes.ts';
 import type { MonsterAttackEvent, MonsterBody } from '../monsters/defs.ts';
 import type { ThingBlocker } from '../world.ts';
 import type { SpriteAnimator } from '../../render/sprites.ts';
 import type { Placement, Pos2, Pos3 } from '../../types.ts';
-import { DOOM_TIC, PICKUP_SCALE } from '../../constants.ts';
+import { DOOM_TIC, PICKUP_SCALE, PICKUP_SCALE_TYPES } from '../../constants.ts';
 
 /**
  * One live map thing. Extends `MonsterBody` (`monsters/defs.ts`) rather than
@@ -400,7 +401,7 @@ export interface ThingLayer {
  * — you hear a cyberdemon wake up anywhere on the map. Nothing else about their
  * sounds is special: their pain, footsteps and shots all attenuate normally.
  */
-export const BOSS_TYPES = new Set([7, 16]);
+export const BOSS_TYPES: Set<number> = new Set([ThingType.spiderMastermind, ThingType.cyberdemon]);
 
 /**
  * Every type whose death can drive level logic, and so the set `damageThing`'s death branch checks
@@ -414,7 +415,11 @@ export const BOSS_TYPES = new Set([7, 16]);
  * every member exit on an unlisted episode's map 8 — which must not apply to these two. See
  * docs/death.md § Boss death.
  */
-export const DEATH_NOTIFY_TYPES: Set<number> = new Set([...Object.values(BOSS_DEATH_TYPES), 72, 88]);
+export const DEATH_NOTIFY_TYPES: Set<number> = new Set([
+  ...Object.values(BOSS_DEATH_TYPES),
+  ThingType.commanderKeen,
+  ThingType.bossBrain,
+]);
 
 /**
  * Vanilla's own `P_TeleportMove` telefrag damage — the literal `10000` it deals to everything
@@ -424,21 +429,16 @@ export const DEATH_NOTIFY_TYPES: Set<number> = new Set([...Object.values(BOSS_DE
  */
 export const TELEFRAG_DAMAGE = 10000;
 
-/** The lost soul's doomednum — what the pain elemental's `A_PainShootSkull` spawns (see `spawnLostSoul`). */
-export const LOST_SOUL_TYPE = 3006;
-/** The pain elemental's own doomednum — `damage()`'s death branch checks this for its `A_PainDie` triple-spawn. */
-export const PAIN_ELEMENTAL_TYPE = 71;
 /** Vanilla's own hard cap on how many lost souls can exist on a level at once — `A_PainShootSkull`'s "count > 20" guard. */
 export const MAX_SKULLS_ON_LEVEL = 20;
 
 /**
- * The exploding barrel's own doomednum (`THING_SPRITES`'s `BAR1` entry) —
- * vanilla `MT_BARREL`. Unlike every monster, a barrel has no AI at all
- * (`MONSTER_STATS` has no entry for it, so it never enters the
- * `if (stats && player)` branch in `update()`) — it's just a plain
- * `MF_SOLID|MF_SHOOTABLE` prop that happens to deal splash damage on death.
+ * What `ThingType.barrel` (vanilla `MT_BARREL`) runs on. Unlike every monster, a barrel has no AI
+ * at all — `MONSTER_STATS` has no entry for it, so it never enters the `if (stats && player)`
+ * branch in `update()`, and these constants stand in for the `mobjinfo` fields that branch would
+ * otherwise have read. It's just a plain `MF_SOLID|MF_SHOOTABLE` prop that happens to deal splash
+ * damage on death.
  */
-export const BARREL_TYPE = 2035;
 /** Vanilla `mobjinfo` spawnhealth for `MT_BARREL`. */
 export const BARREL_HEALTH = 20;
 /**

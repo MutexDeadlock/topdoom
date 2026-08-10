@@ -4,6 +4,7 @@ import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../r
 import { hasLineOfSight } from './world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import { SPAWN_CUBE_MONSTERS } from './thingdefs.ts';
+import { ThingType } from './thingtypes.ts';
 import { TELEFRAG_DAMAGE } from './things.ts';
 import { triangularDraw } from './weapons.ts';
 import type { CombatContext } from './combat.ts';
@@ -14,16 +15,13 @@ import type { Pos3 } from '../types.ts';
 import { DOOM_TIC } from '../constants.ts';
 
 /**
- * `MT_BOSSSPIT`'s doomednum — the invisible eye that does the spitting, and the *only* thing that
- * makes a map an Icon of Sin map. `MT_BOSSTARGET` is where a cube is aimed, `MT_BOSSBRAIN` the
- * shootable target itself. The first two are `MF_NOBLOCKMAP|MF_NOSECTOR` in `info.c` and neither
- * has a sprite of its own, which is why both stay out of `THING_SPRITES` and are read straight off
- * `map.things` here — the same treatment `SpecialsController.findTeleportDestination` gives
- * doomednum 14.
+ * Three `ThingType` members drive this file. `bossShooter` (`MT_BOSSSPIT`) is the invisible eye that
+ * does the spitting, and the *only* thing that makes a map an Icon of Sin map; `bossTarget` is where
+ * a cube is aimed, `bossBrain` the shootable target itself. The first two are
+ * `MF_NOBLOCKMAP|MF_NOSECTOR` in `info.c` and neither has a sprite of its own, which is why both
+ * stay out of `THING_SPRITES` and are read straight off `map.things` here — the same treatment
+ * `SpecialsController.findTeleportDestination` gives the teleport-landing marker.
  */
-const BOSS_SHOOTER_TYPE = 89;
-const BOSS_TARGET_TYPE = 87;
-const BOSS_BRAIN_TYPE = 88;
 
 /**
  * Where the eye sights from, above its own floor: `MT_BOSSSPIT`'s `mobjinfo.height` of 32, less the
@@ -178,7 +176,7 @@ export class IconOfSin {
     this.skill = skill;
     this.onExit = onExit;
     this.sfx = sfx;
-    this.shooter = map.things.find((t) => t.type === BOSS_SHOOTER_TYPE) ?? null;
+    this.shooter = map.things.find((t) => t.type === ThingType.bossShooter) ?? null;
   }
 
   /**
@@ -186,7 +184,7 @@ export class IconOfSin {
    * level dies. Ignores every other doomednum; `SpecialsController` handles those.
    */
   notifyBossDeath(type: number): void {
-    if (type !== BOSS_BRAIN_TYPE || this.exitTimer >= 0) return;
+    if (type !== ThingType.bossBrain || this.exitTimer >= 0) return;
     this.exitTimer = BRAIN_DEATH_TO_EXIT;
     this.explodeTimer = 0;
     this.brainScream();
@@ -239,7 +237,7 @@ export class IconOfSin {
     this.spitTimer = FIRST_SPIT_DELAY;
     this.targetIndex = 0;
     this.targets = this.map.things
-      .filter((t) => t.type === BOSS_TARGET_TYPE)
+      .filter((t) => t.type === ThingType.bossTarget)
       .map((t) => ({ x: t.x, y: t.y, z: this.ctx.world.floorAt(t.x, t.y) }));
     // S_StartSound(NULL, …) — heard from anywhere on the map, like the cyberdemon's own wake.
     this.sfx.play('bossit', null);
@@ -375,6 +373,6 @@ export class IconOfSin {
    * `A_BrainScream` uses anyway — the mobj never moves.
    */
   private brainPos(): Thing | null {
-    return this.map.things.find((t) => t.type === BOSS_BRAIN_TYPE) ?? null;
+    return this.map.things.find((t) => t.type === ThingType.bossBrain) ?? null;
   }
 }

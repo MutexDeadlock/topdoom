@@ -62,7 +62,8 @@ src/wad/       WAD files, merged lump directory, content ids, map lumps, graphic
                decoding, MAPINFO + the vanilla level-title tables
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards + their instanced batching, shot tracers, camera, viewport
-src/game/      spatial queries, collision, player controller, input, thing→sprite table, thing
+src/game/      spatial queries, collision, player controller, input, the named doomednums every
+               type-keyed table keys through (thingtypes), thing→sprite table, thing
                world state (pickups, damage), fog of war, inventory/pickups, weapons and firing,
                shots in flight + splash, damage/death, projectile/effect tables, transient
                effects (fog puffs, explosions, tracers), mover obstruction + crush damage,
@@ -82,7 +83,7 @@ src/ui/devmode/      DEVMODE hud + profiling overlay
 src/util/      small helpers shared across layers (2D geometry, damped-lerp smoothing,
                per-frame profiling)
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
-                   BRIGHTNESS_LIFT, PICKUP_SCALE, VIEW_DISTANCE)
+                   BRIGHTNESS_LIFT, PICKUP_SCALE + PICKUP_SCALE_TYPES, VIEW_DISTANCE)
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
 src/styles.css     the stylesheet index.html links; @imports the .css beside each ui module
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
@@ -101,7 +102,7 @@ several record rules that look like accidents and aren't.
 | [docs/menu.md](docs/menu.md) | The menu as launcher and pause screen, difficulty, persisted settings, URL parameters, `main.ts`'s session lifecycle, `DEVMODE` and the profiler |
 | [docs/frameloop.md](docs/frameloop.md) | `game.ts`'s frame: the delta, the FPS cap, pausing |
 | [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, wall occlusion fading, camera orbit, view distance, texture animation |
-| [docs/sprites.md](docs/sprites.md) | Things as sprites: billboards, instanced batching, which things spawn, monster poses |
+| [docs/sprites.md](docs/sprites.md) | The named doomednums (`ThingType`) every type-keyed table keys through; things as sprites: billboards, instanced batching, which things spawn, monster poses |
 | [docs/movement.md](docs/movement.md) | Collision, `groundFloor`, `slideMove`, straferunning, gravity/falling, knockback |
 | [docs/world.md](docs/world.md) | `world.ts`'s shared queries: `hasLineOfSight`, the neighbor-height lookups |
 | [docs/weapons.md](docs/weapons.md) | Weapon selection, fire rates, spread, damage rolls |
@@ -153,7 +154,10 @@ indistinguishable from a transcription error.
 used in more than two files and isn't identity-coupled to any one module (`DOOM_TIC`), or it is a
 **feel dial** — a tuned-by-feel presentation number parked somewhere obvious so it stays easy to
 retune, however few files read it (`BRIGHTNESS_LIFT`, `PICKUP_SCALE`, `VIEW_DISTANCE`, each read by
-one or two). Nothing else: `PLAYER_RADIUS`/`PLAYER_HEIGHT` and `NO_SIDE`/`LF`/`SUBSECTOR_BIT` briefly
+one or two). A dial brings its own scope with it when the two are retuned together and separating
+them would hide half the decision — `PICKUP_SCALE_TYPES`, the whitelist of what `PICKUP_SCALE`
+applies to, is the one such table here and stays the exception, not a licence for tables generally.
+Nothing else: `PLAYER_RADIUS`/`PLAYER_HEIGHT` and `NO_SIDE`/`LF`/`SUBSECTOR_BIT` briefly
 lived there and were moved back to `game/player.ts` and `wad/map.ts`, where the code that owns their
 meaning is. Don't re-add constants there just because they're imported in two or three places.
 

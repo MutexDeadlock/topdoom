@@ -14,6 +14,7 @@
  */
 import { NO_SIDE, type DoomMap, type LineDef } from '../../wad/map.ts';
 import { BOSS_DEATH_TYPES } from '../thingdefs.ts';
+import { ThingType } from '../thingtypes.ts';
 import {
   LINE_SPECIALS,
   SECTOR_LIGHT_SPECIALS,
@@ -46,13 +47,12 @@ export interface BossDeathTrigger {
 }
 
 /**
- * Commander Keen's doomednum, and the door his death opens. `A_KeenDie` (`p_enemy.c`) is **not**
+ * The door Commander Keen's death opens. `A_KeenDie` (`p_enemy.c`) is **not**
  * gated on `gameepisode`/`gamemap` the way `A_BossDeath` is — it builds a synthetic `line_t` with
  * `tag = 666` and calls `EV_DoDoor(&junk, open)` on any map at all, which is why this trigger is
  * appended to every table below rather than living in the per-map switch. `open` is `EV_DoDoor`'s
  * ordinary `VDOORSPEED` open-and-stay, not the blaze speed E4M6 uses.
  */
-const KEEN_TYPE = 72;
 const KEEN_DOOR_TAG = 666;
 
 /**
@@ -61,12 +61,12 @@ const KEEN_DOOR_TAG = 666;
  * `gameepisode`/`gamemap`, not on which WAD supplied the map, so a PWAD's own MAP07 gets the
  * same Mancubus/Arachnotron triggers the IWAD's does.
  *
- * Commander Keen's own trigger is appended to every map's table, for the reason at `KEEN_TYPE`
+ * Commander Keen's own trigger is appended to every map's table, for the reason at `KEEN_DOOR_TAG`
  * above. The Icon of Sin has no entry here at all: `A_BrainDie` exits the level directly rather
  * than through a tag, and `game/iconofsin.ts` owns it.
  */
 export function bossDeathTriggersFor(mapName: string): BossDeathTrigger[] {
-  const keen: BossDeathTrigger = { type: KEEN_TYPE, action: { kind: 'open', tag: KEEN_DOOR_TAG } };
+  const keen: BossDeathTrigger = { type: ThingType.commanderKeen, action: { kind: 'open', tag: KEEN_DOOR_TAG } };
   const commercial = /^MAP(\d+)$/i.exec(mapName);
   if (commercial) {
     if (Number(commercial[1]) !== 7) return [keen];

@@ -1,10 +1,44 @@
 # Things as sprites
 
 `src/wad/sprites.ts`, `src/render/sprites.ts`, `src/render/spritebatch.ts`, `src/game/things.ts`,
-`src/game/thingdefs.ts`
+`src/game/thingdefs.ts`, `src/game/thingtypes.ts`
 
 How a thing gets *lit* is docs/render.md § Sector lighting; how one gets hidden behind geometry
 is docs/fogofwar.md.
+
+## Thing types have names
+
+Every doomednum this engine knows sits in `game/thingtypes.ts` as a named member of one `as const`
+object, and **every type-keyed table keys through it** — `THING_SPRITES`, `MONSTER_STATS`, the pickup
+records in `inventory.ts`, the membership sets, all of them — rather than spelling the number:
+
+```ts
+export const MONSTER_HEALTH: Record<number, number> = {
+  [ThingType.zombieman]: 20,
+  [ThingType.cyberdemon]: 4000,
+};
+```
+
+**Each entry cites its vanilla `mobjtype_t`** in a trailing comment, read off `linuxdoom-1.10`'s
+`info.c` `mobjinfo` array — whose element order *is* the `mobjtype_t` order and whose first field is
+the doomednum. That pairing is what makes an entry checkable; the readable name is not evidence of
+anything on its own. The one member with no `MT_*` is `playerStart` (1), which has no `mobjinfo`
+entry at all: `P_SpawnMapThing` handles types 1-4 itself, before the table is ever consulted.
+
+**A doomednum is still a plain `number` everywhere it flows.** `Thing.type` (`wad/map.ts`), every
+`Record<number, …>` and every `Set<number>` keep that type, and the sets carry an explicit
+`: Set<number>` annotation so `as const` members don't narrow them to a literal union. This is
+load-bearing, not laziness: a PWAD may contain doomednums this registry has never heard of, and
+`pushThing` already treats an unknown type as "does not spawn". A union type here would make legal
+map data unrepresentable.
+
+`thingtypes.ts` imports nothing, so any table module can take it without a cycle — the same leaf
+property `thingdefs.ts` has, for the same reason (docs/monster-attacks.md § Resolving an attack).
+
+Names distinguish types that share art rather than collapsing them: `bloodyMess`/`bloodyMessAlt` (10
+and 12, one sprite under two editor numbers) and the two hanging-victim families — `…NoBlock` marks
+the five non-solid, wider-radius twins (59-63) of the solid 49-53, a distinction
+`SOLID_DECORATION_TYPES` turns on.
 
 ## Things as sprites (`wad/sprites.ts`, `render/sprites.ts`, `game/things.ts`, `game/thingdefs.ts`)
 
@@ -121,21 +155,29 @@ one *without* the bit is the real single-player pickup.
   used as-is for horizontal centring.
 - **Rotation frame (which of the 8 sprite angles) is picked from the live viewer angle** every frame
   (`pickRotationDigit`), same as the plane's own yaw.
-- **Ammo/health/armor/keys/powerups render `PICKUP_SCALE` (1.4×, `src/constants.ts`) larger than
-  their native WAD pixel size; nothing else does.** Vanilla's 1:1 unit-per-pixel sizing suits a ground-level view; from this
-  far, tilted camera small collectibles get lost. `game/thingdefs.ts`'s `PICKUP_SCALE_TYPES` is a
-  whitelist of exactly those four doomednum blocks, not "everything but monsters/weapons" —
-  monsters are already large enough to read, weapons already stand out, and solid decorations/gore
-  props (torches, columns, trees, corpses) are already sized to fill a room or a body, so blowing
-  them up another 40% on top of vanilla's own size reads as oversized rather than more readable.
-  Carried per instance (`pickupScaleFor` in `game/things/defs.ts` → `PosedThing.scale` →
-  `SpriteBatch.add`) rather than baked into the shared per-lump geometry, since scale varies by thing
-  type even when two types reuse art. `SpriteActor.setScale` is the same value applied to a real
-  `mesh.scale` for the one unbatched sprite, the player — which never takes `PICKUP_SCALE`. It
-  composes safely with floor-anchoring:
-  geometry is translated so the plane's bottom-center sits at local `(0, 0)` *before* `scale` is
-  applied, so scaling stretches the plane upward and outward from that point instead of moving its
-  anchor.
+
+### Pickup scale
+
+**Ammo/health/armor/keys/powerups render `PICKUP_SCALE` (1.4×) larger than their native WAD pixel
+size; nothing else does.** Vanilla's 1:1 unit-per-pixel sizing suits a ground-level view; from this
+far, tilted camera small collectibles get lost.
+
+**Both halves of that decision live in `src/constants.ts`** — the factor and `PICKUP_SCALE_TYPES`,
+the whitelist of which doomednums take it — rather than the whitelist sitting with the other thing
+tables in `thingdefs.ts`. They are one tuned-by-feel presentation choice and get retuned together;
+splitting them put the dial and the list of what it applies to in different files. It is a whitelist
+of exactly those four blocks, not "everything but monsters/weapons" — monsters are already large
+enough to read, weapons already stand out, and solid decorations/gore props (torches, columns, trees,
+corpses) are already sized to fill a room or a body, so blowing them up another 40% on top of
+vanilla's own size reads as oversized rather than more readable.
+
+Carried per instance (`pickupScaleFor` in `game/things/defs.ts` → `PosedThing.scale` →
+`SpriteBatch.add`) rather than baked into the shared per-lump geometry, since scale varies by thing
+type even when two types reuse art. `SpriteActor.setScale` is the same value applied to a real
+`mesh.scale` for the one unbatched sprite, the player — which never takes `PICKUP_SCALE`. It composes
+safely with floor-anchoring: geometry is translated so the plane's bottom-center sits at local
+`(0, 0)` *before* `scale` is applied, so scaling stretches the plane upward and outward from that
+point instead of moving its anchor.
 
 Animation (`setPose`'s `animFrames`/`animating`) is a plain frame-letter cycle with no separate idle
 art, matching DOOM itself: the player's `PLAY` sprite reuses `A,B,C,D` as its walk cycle and holds `A`

@@ -1,5 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { ThingType } from '../../src/game/thingtypes.ts';
 import {
   MELEE_RANGE,
   MONSTER_HIT_HEIGHT,
@@ -170,13 +171,13 @@ describe('Vanilla tables · meleeThreshold', () => {
   test('vanilla MELEERANGE is 64, and the threshold widens with the target', () => {
     assert.equal(MELEE_RANGE, 64, "vanilla's MELEERANGE");
     assert.equal(meleeThreshold(MELEE_RANGE, PLAYER_RADIUS), 60, 'against the player (radius 16)');
-    assert.equal(meleeThreshold(MELEE_RANGE, MONSTER_STATS[3002].radius), 74, 'against a demon (radius 30)');
+    assert.equal(meleeThreshold(MELEE_RANGE, MONSTER_STATS[ThingType.demon].radius), 74, 'against a demon (radius 30)');
     assert.equal(meleeThreshold(MELEE_RANGE, 0), 44, "GZDoom's default AActor::meleerange");
   });
 
   test('a wider victim is reachable from further out', () => {
     const player = meleeThreshold(MELEE_RANGE, PLAYER_RADIUS);
-    for (const type of [3002, 3003, 16]) {
+    for (const type of [ThingType.demon, ThingType.baronOfHell, ThingType.cyberdemon]) {
       const victim = meleeThreshold(MELEE_RANGE, MONSTER_STATS[type].radius);
       assert.ok(victim > player, `doomednum ${type} is wider than the player, so reachable further out`);
     }

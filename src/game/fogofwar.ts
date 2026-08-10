@@ -293,7 +293,7 @@ export class FogOfWar {
 
   /**
    * Marks the whole level explored — the computer area map powerup
-   * (`game/inventory.ts`'s `COMPUTER_MAP_TYPE`), which in vanilla fills in the
+   * (`ThingType.computerMap`, applied in `game.ts`'s pickup callback), which in vanilla fills in the
    * automap for the entire level at once. Here that *is* the whole effect:
    * this engine's map view and its play view are the same view, so revealing
    * the geometry is exactly what vanilla's own `pw_allmap` does to the automap.

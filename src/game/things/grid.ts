@@ -14,7 +14,8 @@ import { PLAYER_RADIUS } from '../player.ts';
 import { MONSTER_DEATH_FRAME_SECONDS, MONSTER_TYPES, SOLID_DECORATION_TYPES } from '../thingdefs.ts';
 import { MONSTER_STATS, type RaiseCandidate } from '../monsters/defs.ts';
 import { circleBlocked, type ThingBlocker, type World } from '../world.ts';
-import { BARREL_TYPE, type PosedThing } from './defs.ts';
+import { type PosedThing } from './defs.ts';
+import { ThingType } from '../thingtypes.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
 
 /**
@@ -164,7 +165,7 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
       // for monsters. Unlike the barrel, a plain decoration isn't
       // `MF_SHOOTABLE` — `raycastMonster`/`monstersNear` explicitly filter
       // `SOLID_DECORATION_TYPES` back out, so it still doesn't stop a shot.
-      if (!MONSTER_TYPES.has(p.type) && p.type !== BARREL_TYPE && !SOLID_DECORATION_TYPES.has(p.type)) continue;
+      if (!MONSTER_TYPES.has(p.type) && p.type !== ThingType.barrel && !SOLID_DECORATION_TYPES.has(p.type)) continue;
       if (p.blockRadius > maxBlockerRadius) maxBlockerRadius = p.blockRadius;
       const i = blockerRow(p.y) * blockerCols + blockerCol(p.x);
       let cell = blockerGrid[i];
@@ -375,7 +376,7 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
   function solidBodies(pos: Pos2): ThingBlocker[] {
     const out: ThingBlocker[] = [];
     for (const p of posed) {
-      if (p.dead || (!MONSTER_TYPES.has(p.type) && p.type !== BARREL_TYPE && !SOLID_DECORATION_TYPES.has(p.type))) continue;
+      if (p.dead || (!MONSTER_TYPES.has(p.type) && p.type !== ThingType.barrel && !SOLID_DECORATION_TYPES.has(p.type))) continue;
       if (Math.abs(p.x - pos.x) > BLOCKER_SEARCH_RADIUS || Math.abs(p.y - pos.y) > BLOCKER_SEARCH_RADIUS) continue;
       out.push({ x: p.x, y: p.y, radius: p.blockRadius });
     }

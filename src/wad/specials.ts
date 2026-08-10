@@ -47,8 +47,6 @@ export const CRUSHER_SPEED_FAST = 70;
  * rather than sealing flush with it.
  */
 export const EIGHT_UNIT_GAP = 8;
-/** DOOM's teleport landing marker (doomednum 14) — a spawn marker only, never rendered (see thingdefs.ts). */
-export const TELEPORT_DEST = 14;
 /** Vanilla P_BuildStairs: build8 runs at FLOORSPEED/4, turbo16 at FLOORSPEED*4. */
 export const STAIR_SPEED = FLOOR_SPEED / 4;
 export const STAIR_SPEED_TURBO = FLOOR_SPEED * 4;

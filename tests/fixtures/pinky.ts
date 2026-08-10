@@ -4,10 +4,11 @@ import { loadMap } from '../../src/wad/map.ts';
 import { World } from '../../src/game/world.ts';
 import { MONSTER_STATS, type MonsterBody, type MonsterStats } from '../../src/game/monsters/defs.ts';
 import { PLAYER_RADIUS } from '../../src/game/player.ts';
+import { ThingType } from '../../src/game/thingtypes.ts';
 import type { Pos3 } from '../../src/types.ts';
 
 /** Doomednum of the demon/pinky (`MT_SERGEANT`). */
-export const DEMON_TYPE = 3002;
+export const DEMON_TYPE = ThingType.demon;
 
 /**
  * `pinky_{above,below}_test.wad`: two four-line rooms split at `y = 128`, with a

@@ -1,4 +1,5 @@
 import type { SfxId } from '../audio/sfx.ts';
+import { ThingType } from './thingtypes.ts';
 
 /** The four ammo classes DOOM tracks; matches vanilla's `ammotype_t`. */
 export const AMMO_TYPES = ['bullets', 'shells', 'rockets', 'cells'] as const;
@@ -135,67 +136,46 @@ export function ammoMax(inv: Inventory, type: AmmoType): number {
 }
 
 const HEALTH_PICKUPS: Record<number, { amount: number; bonus: boolean }> = {
-  2011: { amount: 10, bonus: false }, // Stimpack
-  2012: { amount: 25, bonus: false }, // Medikit
-  2014: { amount: 1, bonus: true }, // Health bonus
-  2013: { amount: 100, bonus: true }, // Soulsphere
+  [ThingType.stimpack]: { amount: 10, bonus: false },
+  [ThingType.medikit]: { amount: 25, bonus: false },
+  [ThingType.healthBonus]: { amount: 1, bonus: true },
+  [ThingType.soulsphere]: { amount: 100, bonus: true },
 };
 
-/** Doomednum of the soulsphere — the one health pickup with the powerup jingle rather than the item blip (`pickupSound`). */
-const SOULSPHERE = 2013;
-
 const ARMOR_PICKUPS: Record<number, { amount: number; armorType: 1 | 2 }> = {
-  2018: { amount: 100, armorType: 1 }, // Green armor
-  2019: { amount: 200, armorType: 2 }, // Blue armor
+  [ThingType.greenArmor]: { amount: 100, armorType: 1 },
+  [ThingType.blueArmor]: { amount: 200, armorType: 2 },
 };
 
 const AMMO_PICKUPS: Record<number, { type: AmmoType; amount: number }> = {
-  2007: { type: 'bullets', amount: 10 }, // Clip
-  2048: { type: 'bullets', amount: 50 }, // Box of bullets
-  2008: { type: 'shells', amount: 4 }, // Shotgun shells
-  2049: { type: 'shells', amount: 20 }, // Box of shells
-  2010: { type: 'rockets', amount: 1 }, // Rocket
-  2046: { type: 'rockets', amount: 5 }, // Box of rockets
-  2047: { type: 'cells', amount: 20 }, // Cell charge
-  17: { type: 'cells', amount: 100 }, // Cell charge pack
+  [ThingType.clip]: { type: 'bullets', amount: 10 },
+  [ThingType.boxOfBullets]: { type: 'bullets', amount: 50 },
+  [ThingType.shells]: { type: 'shells', amount: 4 },
+  [ThingType.boxOfShells]: { type: 'shells', amount: 20 },
+  [ThingType.rocket]: { type: 'rockets', amount: 1 },
+  [ThingType.boxOfRockets]: { type: 'rockets', amount: 5 },
+  [ThingType.cellCharge]: { type: 'cells', amount: 20 },
+  [ThingType.cellChargePack]: { type: 'cells', amount: 100 },
 };
 
 const KEY_PICKUPS: Record<number, KeyColor> = {
-  5: 'blue',
-  40: 'blue',
-  13: 'red',
-  38: 'red',
-  6: 'yellow',
-  39: 'yellow',
+  [ThingType.blueKeycard]: 'blue',
+  [ThingType.blueSkullKey]: 'blue',
+  [ThingType.redKeycard]: 'red',
+  [ThingType.redSkullKey]: 'red',
+  [ThingType.yellowKeycard]: 'yellow',
+  [ThingType.yellowSkullKey]: 'yellow',
 };
-
-/** Doomednum of the megasphere (DOOM II only), which gives full health *and* blue armor at once. */
-const MEGASPHERE = 83;
-/** Doomednum of the armor bonus — the one armor pickup that adds a point past the normal cap. */
-const ARMOR_BONUS = 2015;
 
 /** The powerup spheres/items, by doomednum — see `POWER_SECONDS` for how long each lasts. */
 const POWERUP_PICKUPS: Record<number, PowerId> = {
-  2022: 'invulnerability', // PINV
-  2023: 'berserk', // PSTR
-  2024: 'invisibility', // PINS
-  2025: 'radiationSuit', // SUIT
-  2026: 'computerMap', // PMAP
-  2045: 'lightVisor', // PVIS
+  [ThingType.invulnerability]: 'invulnerability',
+  [ThingType.berserk]: 'berserk',
+  [ThingType.invisibility]: 'invisibility',
+  [ThingType.radiationSuit]: 'radiationSuit',
+  [ThingType.computerMap]: 'computerMap',
+  [ThingType.lightAmpVisor]: 'lightVisor',
 };
-
-/**
- * Doomednum of the computer area map, exported because picking it up has an
- * effect no other pickup does: it reveals the level's own geometry
- * (`game/fogofwar.ts: FogOfWar.revealAll`), which lives outside the
- * `Inventory` struct entirely. `game.ts`'s pickup callback watches for this
- * one type and calls it — the same "state here, world effect at the caller"
- * split `ThingLayer.tryPickup` already makes for removing the item itself.
- */
-export const COMPUTER_MAP_TYPE = 2026;
-
-/** Doomednum of the backpack, which doubles every `AMMO_MAX` (vanilla's `P_GiveBackpack`). */
-const BACKPACK = 8;
 
 /**
  * Vanilla's `clipammo[]` — one pickup's worth of each ammo class, which is
@@ -216,13 +196,13 @@ const CLIP_AMMO: Record<AmmoType, number> = { bullets: 10, shells: 4, rockets: 1
  * (`applyPickup`'s `dropped` param). The chainsaw needs no ammo at all.
  */
 const WEAPON_PICKUPS: Record<number, { weapon: WeaponId; ammoType: AmmoType | null; ammoAmount: number }> = {
-  2005: { weapon: 'chainsaw', ammoType: null, ammoAmount: 0 },
-  2001: { weapon: 'shotgun', ammoType: 'shells', ammoAmount: 8 },
-  82: { weapon: 'supershotgun', ammoType: 'shells', ammoAmount: 8 },
-  2002: { weapon: 'chaingun', ammoType: 'bullets', ammoAmount: 20 },
-  2003: { weapon: 'rocketLauncher', ammoType: 'rockets', ammoAmount: 2 },
-  2004: { weapon: 'plasmaRifle', ammoType: 'cells', ammoAmount: 40 },
-  2006: { weapon: 'bfg', ammoType: 'cells', ammoAmount: 40 },
+  [ThingType.chainsaw]: { weapon: 'chainsaw', ammoType: null, ammoAmount: 0 },
+  [ThingType.shotgun]: { weapon: 'shotgun', ammoType: 'shells', ammoAmount: 8 },
+  [ThingType.superShotgun]: { weapon: 'supershotgun', ammoType: 'shells', ammoAmount: 8 },
+  [ThingType.chaingun]: { weapon: 'chaingun', ammoType: 'bullets', ammoAmount: 20 },
+  [ThingType.rocketLauncher]: { weapon: 'rocketLauncher', ammoType: 'rockets', ammoAmount: 2 },
+  [ThingType.plasmaRifle]: { weapon: 'plasmaRifle', ammoType: 'cells', ammoAmount: 40 },
+  [ThingType.bfg9000]: { weapon: 'bfg', ammoType: 'cells', ammoAmount: 40 },
 };
 
 /**
@@ -244,13 +224,15 @@ const WEAPON_PICKUPS: Record<number, { weapon: WeaponId; ammoType: AmmoType | nu
  * dropped by a monster in vanilla, so `dropped` is meaningless there.
  */
 export function applyPickup(inv: Inventory, type: number, dropped = false): boolean {
-  if (type === MEGASPHERE) {
+  // DOOM II only: full health *and* blue armor at once, both past what any single pickup gives.
+  if (type === ThingType.megasphere) {
     inv.health = MAX_HEALTH_BONUS;
     inv.armor = MAX_ARMOR;
     inv.armorType = 2;
     return true;
   }
-  if (type === ARMOR_BONUS) {
+  // The one armor pickup that adds a point past `ARMOR_PICKUPS`' own amounts, up to `MAX_ARMOR`.
+  if (type === ThingType.armorBonus) {
     inv.armor = Math.min(inv.armor + 1, MAX_ARMOR);
     if (inv.armorType === 0) inv.armorType = 1;
     return true;
@@ -272,10 +254,10 @@ export function applyPickup(inv: Inventory, type: number, dropped = false): bool
     return true;
   }
 
-  if (type === BACKPACK) {
-    // Vanilla raises the caps only the first time, but always hands over one
-    // clip of everything and always consumes the backpack — even at full
-    // ammo, unlike every other ammo pickup here.
+  if (type === ThingType.backpack) {
+    // Doubles every `AMMO_MAX` (vanilla's `P_GiveBackpack`). Vanilla raises the caps only the
+    // first time, but always hands over one clip of everything and always consumes the
+    // backpack — even at full ammo, unlike every other ammo pickup here.
     inv.backpack = true;
     for (const t of AMMO_TYPES) inv.ammo[t] = Math.min(inv.ammo[t] + CLIP_AMMO[t], ammoMax(inv, t));
     return true;
@@ -332,7 +314,8 @@ export function applyPickup(inv: Inventory, type: number, dropped = false): bool
  * `S_StartSound(NULL, sound)` does: you are standing on it.
  */
 export function pickupSound(type: number): SfxId {
-  if (type === MEGASPHERE || type === SOULSPHERE || POWERUP_PICKUPS[type]) return 'getpow';
+  if (type === ThingType.megasphere || type === ThingType.soulsphere || POWERUP_PICKUPS[type])
+    return 'getpow';
   if (WEAPON_PICKUPS[type]) return 'wpnup';
   return 'itemup';
 }

@@ -3,6 +3,7 @@ import { sectorOfSubSector } from '../render/bsp.ts';
 import { distSqToSegment, segmentIntersect } from '../util/geom.ts';
 import { PLAYER_HEIGHT } from './player.ts';
 import { spawnAngleDeg } from './skill.ts';
+import { ThingType } from './thingtypes.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
 
 /** Vanilla DOOM value, in map units. */
@@ -378,7 +379,7 @@ export class World {
    * Player start.
    */
   playerStart(): Placement {
-    const starts = this.thingsOfType(1);
+    const starts = this.thingsOfType(ThingType.playerStart);
     const t = starts[starts.length - 1];
     if (t) return { x: t.x, y: t.y, angle: (spawnAngleDeg(t.angle) * Math.PI) / 180 };
     const { minX, minY, maxX, maxY } = this.map.bounds;

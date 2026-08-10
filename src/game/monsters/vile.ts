@@ -1,3 +1,4 @@
+import { ThingType } from '../thingtypes.ts';
 import {
   DIR_X,
   DIR_Y,
@@ -27,9 +28,6 @@ import { DOOM_TIC } from '../../constants.ts';
  * outside this file.
  */
 
-/** The arch-vile's doomednum — vanilla singles `MT_VILE` out in both directions of `shouldRetarget`'s rule. */
-export const VILE_TYPE = 64;
-
 /** Vanilla's S_VILE_HEAL1-3: the arch-vile holds still for 30 tics while the corpse it just found rises. */
 const VILE_HEAL_DURATION = 30 * DOOM_TIC;
 
@@ -41,7 +39,7 @@ const VILE_HEAL_DURATION = 30 * DOOM_TIC;
  * `VILE_FIRE_*` values: that file is otherwise free of `MONSTER_STATS`, and
  * keeping it that way is what lets this file import it.
  */
-const VILE_WINDUP_TRACK_SECONDS = MONSTER_STATS[VILE_TYPE].ranged?.startDelaySeconds ?? 0;
+const VILE_WINDUP_TRACK_SECONDS = MONSTER_STATS[ThingType.archVile].ranged?.startDelaySeconds ?? 0;
 
 /** `ThingLayer`'s `findRaisableCorpse`, as `stepMonsterAI` receives it — a lookahead point and the vile's own radius in, the one corpse to raise out. */
 export type Resurrector = (x: number, y: number, vileRadius: number) => RaiseCandidate | null;

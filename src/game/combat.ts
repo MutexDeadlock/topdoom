@@ -7,6 +7,7 @@ import type { Player } from './player.ts';
 // docs/monster-attacks.md § Resolving an attack.
 import type { BarrelExplosion, ThingLayer } from './things.ts';
 import { BARREL_SPLASH_DAMAGE, BARREL_SPLASH_RADIUS } from './thingdefs.ts';
+import { ThingType } from './thingtypes.ts';
 import type { Pos3 } from '../types.ts';
 
 /**
@@ -58,7 +59,7 @@ export function applyRadiusDamage(
   for (const m of ctx.things?.monstersNear(at, radius) ?? []) {
     // Vanilla's PIT_RadiusAttack: the spider mastermind and cyberdemon take
     // no concussion/splash damage at all, direct hits only.
-    if (m.type === 7 || m.type === 16) continue;
+    if (m.type === ThingType.spiderMastermind || m.type === ThingType.cyberdemon) continue;
     const dist = Math.hypot(m.x - at.x, m.y - at.y);
     if (dist >= radius || !hasLineOfSight(ctx.world, at, m)) continue;
     ctx.things?.damage(m.id, maxDamage * (1 - dist / radius), source, undefined, at.x, at.y);

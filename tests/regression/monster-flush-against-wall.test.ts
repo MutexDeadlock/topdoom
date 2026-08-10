@@ -6,6 +6,7 @@ import { MONSTER_STATS } from '../../src/game/monsters/defs.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import type { MonsterBody } from '../../src/game/monsters/defs.ts';
+import { ThingType } from '../../src/game/thingtypes.ts';
 
 /**
  * A zombieman placed flush against a wall woke and shot but never took a step.
@@ -17,8 +18,7 @@ import type { MonsterBody } from '../../src/game/monsters/defs.ts';
  * § Movement.
  */
 
-const ZOMBIEMAN = 3004;
-const stats = MONSTER_STATS[ZOMBIEMAN];
+const stats = MONSTER_STATS[ThingType.zombieman];
 
 /** Big enough that a whole chase step plus the monster's radius stays inside one cell. */
 const CELL = 128;

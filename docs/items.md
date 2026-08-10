@@ -159,7 +159,7 @@ arithmetic:
 - **Berserk**'s ×10 is applied in `WeaponSystem.update`, to the **fist only** — `A_Punch` reads
   `pw_strength` and `A_Saw` deliberately doesn't.
 - **Computer area map** is the one whose whole effect lives outside `Inventory`: `FogOfWar.revealAll`,
-  watched for by doomednum (`COMPUTER_MAP_TYPE`) in `game.ts`'s pickup callback. Here that *is*
+  watched for by doomednum (`ThingType.computerMap`) in `game.ts`'s pickup callback. Here that *is*
   vanilla's `pw_allmap` — this engine's play view and its map view are the same view, so revealing the
   geometry is exactly what filling in the automap does. It sets only the `explored` flags, not
   `alpha`, so the ordinary reveal lerp fades the level in rather than snapping it on.

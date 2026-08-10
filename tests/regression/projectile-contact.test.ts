@@ -4,6 +4,7 @@ import { PROJECTILE_RADIUS, stepTouchesBody } from '../../src/game/spritefxdefs.
 import { MONSTER_HIT_HEIGHT, MONSTER_STATS } from '../../src/game/monsters/defs.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { boxToCircleRadius } from '../../src/util/geom.ts';
+import { ThingType } from '../../src/game/thingtypes.ts';
 import type { Pos3 } from '../../src/types.ts';
 
 /**
@@ -14,10 +15,6 @@ import type { Pos3 } from '../../src/types.ts';
  * clamps `dt` at 0.05s — let the fastest missiles step clean past a body.
  * See docs/monster-attacks.md § Monster projectiles in flight.
  */
-
-const IMP = 3001;
-const MANCUBUS = 67;
-const CACODEMON = 3005;
 
 /** A body standing at the origin on the floor. */
 const AT_ORIGIN: Pos3 = { x: 0, y: 0, z: 0 };
@@ -69,7 +66,7 @@ describe('Regressions · projectile contact', () => {
   test('a BFG ball meets a wide monster across its real width', () => {
     const bfg = PROJECTILE_RADIUS.BFS1;
     assert.equal(bfg, 13, "MT_BFG's own mobjinfo radius");
-    const fat = MONSTER_STATS[MANCUBUS].radius;
+    const fat = MONSTER_STATS[ThingType.mancubus].radius;
     assert.equal(fat, 48, "MT_FATSO's own mobjinfo radius");
 
     // 50 units off centre is well inside a mancubus and was outside the old
@@ -79,7 +76,7 @@ describe('Regressions · projectile contact', () => {
 
     // The same shot past a slimmer body still misses: this is per-species, not
     // a blanket widening.
-    const imp = MONSTER_STATS[IMP].radius;
+    const imp = MONSTER_STATS[ThingType.imp].radius;
     assert.equal(stepTouchesBody(through.from, through.to, AT_ORIGIN, imp, MONSTER_HIT_HEIGHT, bfg), null);
   });
 
@@ -104,7 +101,7 @@ describe('Regressions · projectile contact', () => {
     const ball = PROJECTILE_RADIUS.BAL1;
     const from: Pos3 = { x: 0, y: 0, z: 32 };
     const to: Pos3 = { x: 200, y: 0, z: 32 };
-    const caco = MONSTER_STATS[CACODEMON].radius;
+    const caco = MONSTER_STATS[ThingType.cacodemon].radius;
 
     const near = stepTouchesBody(from, to, { x: 40, y: 0, z: 0 }, caco, MONSTER_HIT_HEIGHT, ball);
     const far = stepTouchesBody(from, to, { x: 160, y: 0, z: 0 }, caco, MONSTER_HIT_HEIGHT, ball);

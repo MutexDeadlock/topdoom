@@ -7,6 +7,7 @@ import { World } from '../../src/game/world.ts';
 import { MONSTER_HIT_HEIGHT, MONSTER_STATS, type MonsterBody } from '../../src/game/monsters/defs.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
+import { ThingType } from '../../src/game/thingtypes.ts';
 import type { Pos3 } from '../../src/types.ts';
 
 /**
@@ -23,7 +24,6 @@ import type { Pos3 } from '../../src/types.ts';
  * needing no IWAD, the same as the pinky fixtures.
  */
 
-const CACO_TYPE = 3005;
 const PIT_FLOOR = -48;
 const ROOM_FLOOR = 0;
 /** The divider the pit's near edge sits on. */
@@ -39,8 +39,8 @@ function loadCacoPit(): { world: World; body: MonsterBody; player: Pos3 } {
   );
   const map = loadMap(new Wad([file]), 'E1M1');
   const world = new World(map);
-  const stats = MONSTER_STATS[CACO_TYPE];
-  const thing = map.things.find((t) => t.type === CACO_TYPE)!;
+  const stats = MONSTER_STATS[ThingType.cacodemon];
+  const thing = map.things.find((t) => t.type === ThingType.cacodemon)!;
   const start = map.things.find((t) => t.type === 1)!;
 
   return {
@@ -82,7 +82,7 @@ function loadCacoPit(): { world: World; body: MonsterBody; player: Pos3 } {
 function run(f: ReturnType<typeof loadCacoPit>, seconds: number): void {
   const dt = 1 / 35;
   for (let t = 0; t < seconds; t += dt) {
-    stepMonsterAI(f.body, MONSTER_STATS[CACO_TYPE], dt, f.world, f.player, PLAYER_RADIUS, PLAYER_HEIGHT);
+    stepMonsterAI(f.body, MONSTER_STATS[ThingType.cacodemon], dt, f.world, f.player, PLAYER_RADIUS, PLAYER_HEIGHT);
   }
 }
 
@@ -95,7 +95,7 @@ describe('Regressions · floating monsters over a ledge', () => {
     // The step out of the pit is well past MAX_STEP_UP, so a grounded monster
     // genuinely could not take it — otherwise this passes for the wrong reason.
     assert.ok(ROOM_FLOOR - PIT_FLOOR > 24);
-    assert.equal(MONSTER_STATS[CACO_TYPE].flies, true);
+    assert.equal(MONSTER_STATS[ThingType.cacodemon].flies, true);
   });
 
   test('a cacodemon floats out of the pit and reaches the player', () => {
@@ -123,7 +123,7 @@ describe('Regressions · floating monsters over a ledge', () => {
   test('a grounded monster of the same size still refuses the step', () => {
     const f = loadCacoPit();
     // The demon: same class of body, no MF_FLOAT. It must stay in the pit.
-    const demon = MONSTER_STATS[3002];
+    const demon = MONSTER_STATS[ThingType.demon];
     assert.equal(demon.flies, undefined);
     const dt = 1 / 35;
     for (let t = 0; t < 5; t += dt) {

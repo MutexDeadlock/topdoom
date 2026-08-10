@@ -1,3 +1,5 @@
+import { ThingType } from './game/thingtypes.ts';
+
 /** Shown bottom-right on the start menu. */
 export const VERSION = '0.10.1';
 
@@ -36,3 +38,51 @@ export const VIEW_DISTANCE = 12000;
  * a shell box are the ones that suffer most.
  */
 export const PICKUP_SCALE = 1.4;
+
+/**
+ * Which things `PICKUP_SCALE` applies to: the small collectibles — all the ammo, health/armor, keys
+ * and powerups — that `game/things/defs.ts`'s `pickupScaleFor` draws above their native WAD pixel
+ * size. Lives here beside the factor rather than with the other thing tables because the two are
+ * one tuning decision: a whitelist rather than "everything but monsters/weapons" because solid
+ * decorations, gore props and the barrel are large enough on their own, and inflating them by 40%
+ * on top of vanilla's own size reads as oversized rather than more readable. docs/sprites.md §
+ * Pickup scale.
+ */
+export const PICKUP_SCALE_TYPES: Set<number> = new Set([
+  // Ammo
+  ThingType.clip,
+  ThingType.boxOfBullets,
+  ThingType.rocket,
+  ThingType.boxOfRockets,
+  ThingType.cellCharge,
+  ThingType.cellChargePack,
+  ThingType.shells,
+  ThingType.boxOfShells,
+  ThingType.backpack,
+
+  // Health & armor
+  ThingType.stimpack,
+  ThingType.medikit,
+  ThingType.soulsphere,
+  ThingType.healthBonus,
+  ThingType.armorBonus,
+  ThingType.greenArmor,
+  ThingType.blueArmor,
+  ThingType.megasphere,
+
+  // Keys
+  ThingType.blueKeycard,
+  ThingType.blueSkullKey,
+  ThingType.redKeycard,
+  ThingType.redSkullKey,
+  ThingType.yellowKeycard,
+  ThingType.yellowSkullKey,
+
+  // Powerups
+  ThingType.invulnerability,
+  ThingType.berserk,
+  ThingType.invisibility,
+  ThingType.radiationSuit,
+  ThingType.computerMap,
+  ThingType.lightAmpVisor,
+]);

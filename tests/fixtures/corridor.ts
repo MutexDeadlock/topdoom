@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { Wad, WadFile } from '../../src/wad/wad.ts';
 import { loadMap } from '../../src/wad/map.ts';
 import { World } from '../../src/game/world.ts';
+import { ThingType } from '../../src/game/thingtypes.ts';
 import type { Pos3 } from '../../src/types.ts';
 
 /**
@@ -32,7 +33,7 @@ export function loadCorridor(): Corridor {
   const map = loadMap(new Wad([file]), 'MAP01');
   const world = new World(map);
   const start = world.playerStart();
-  const chaingunner = map.things.find((t) => t.type === 65)!;
+  const chaingunner = map.things.find((t) => t.type === ThingType.heavyWeaponDude)!;
   return {
     world,
     player: { x: start.x, y: start.y, z: 0 },

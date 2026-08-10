@@ -15,6 +15,7 @@ import {
   THING_SPRITES,
 } from '../../src/game/thingdefs.ts';
 import { INERT_SHOOTABLE, MONSTER_STATS } from '../../src/game/monsters/defs.ts';
+import { ThingType } from '../../src/game/thingtypes.ts';
 import { WEAPONS, WEAPON_CYCLE, WEAPON_SLOTS } from '../../src/game/weapons.ts';
 import { IMPACT_EFFECTS, PROJECTILE_SOUNDS } from '../../src/game/spritefxdefs.ts';
 import { SFX_NAMES } from '../../src/audio/sfx.ts';
@@ -32,6 +33,36 @@ import type { SfxId } from '../../src/audio/sfx.ts';
 const numericKeys = (o: object): number[] => Object.keys(o).map(Number);
 const missing = (needles: Iterable<number>, haystack: Set<number>): number[] =>
   [...needles].filter((n) => !haystack.has(n));
+
+describe('Vanilla tables · thing types', () => {
+  test('no two names share a doomednum', () => {
+    // The failure mode a hand-written table of ~120 entries actually has: a
+    // copy-pasted line whose number was never changed, which silently makes one
+    // of the two names an alias for the wrong thing.
+    const seen = new Map<number, string>();
+    const clashes: string[] = [];
+    for (const [name, num] of Object.entries(ThingType)) {
+      const previous = seen.get(num);
+      if (previous) clashes.push(`${previous} and ${name} both map to ${num}`);
+      else seen.set(num, name);
+    }
+    assert.deepEqual(clashes, []);
+  });
+
+  test('every doomednum is a positive integer', () => {
+    const bad = Object.entries(ThingType).filter(
+      ([, num]) => !Number.isInteger(num) || num <= 0,
+    );
+    assert.deepEqual(bad, []);
+  });
+
+  test('every sprite table key is a named thing type', () => {
+    // Catches a table entry written with a raw number instead of a ThingType
+    // member, which would reintroduce exactly what the registry exists to end.
+    const named = new Set<number>(Object.values(ThingType));
+    assert.deepEqual(missing(numericKeys(THING_SPRITES), named), []);
+  });
+});
 
 describe('Vanilla tables · monsters', () => {
   test('every monster type has a sprite', () => {

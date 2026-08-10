@@ -16,7 +16,8 @@ import {
   type MonsterStats,
   type WakeCheckBody,
 } from './defs.ts';
-import { tryRaiseCorpse, VILE_TYPE, type Resurrector } from './vile.ts';
+import { tryRaiseCorpse, type Resurrector } from './vile.ts';
+import { ThingType } from '../thingtypes.ts';
 import { monsterOrigin, SILENT, type SoundEmitter } from '../../audio/sfx.ts';
 import type { Pos3 } from '../../types.ts';
 import { DOOM_TIC } from '../../constants.ts';
@@ -126,8 +127,8 @@ export function reactToDamage(body: MonsterBody, stats: MonsterStats): void {
  * On a true result the caller reseeds `threshold`; that's `commitTarget`.
  */
 export function shouldRetarget(body: MonsterBody, victimType: number, sourceType: number): boolean {
-  if (sourceType === VILE_TYPE) return false;
-  if (body.threshold > 0 && victimType !== VILE_TYPE) return false;
+  if (sourceType === ThingType.archVile) return false;
+  if (body.threshold > 0 && victimType !== ThingType.archVile) return false;
   return true;
 }
 

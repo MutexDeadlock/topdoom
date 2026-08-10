@@ -47,7 +47,6 @@ import type { Skill } from './game/skill.ts';
 import {
   applyDamage,
   applyPickup,
-  COMPUTER_MAP_TYPE,
   createInventory,
   finishLevel,
   hasPower,
@@ -56,6 +55,7 @@ import {
   tickPowers,
   type Inventory,
 } from './game/inventory.ts';
+import { ThingType } from './game/thingtypes.ts';
 import { WEAPONS, WeaponSystem } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
 import { PLAYER_ORIGIN } from './audio/sfx.ts';
@@ -806,9 +806,11 @@ export class Game {
   private collectPickupsAndSectorEffects(dt: number): void {
     this.things?.tryPickup(this.player, PICKUP_RANGE, (type, dropped) => {
       const taken = applyPickup(this.inventory, type, dropped);
-      // The computer area map's whole effect lives outside the inventory
-      // struct — see COMPUTER_MAP_TYPE's doc.
-      if (taken && type === COMPUTER_MAP_TYPE) this.fogOfWar.revealAll();
+      // The computer area map is the one pickup whose whole effect lives outside the `Inventory`
+      // struct: it reveals the level's own geometry. Watched for here rather than handled in
+      // `applyPickup` — the same "state there, world effect at the caller" split `tryPickup`
+      // already makes for removing the item itself.
+      if (taken && type === ThingType.computerMap) this.fogOfWar.revealAll();
       // Unattenuated, as vanilla plays every pickup: you're standing on it.
       if (taken) this.audio.play(pickupSound(type));
       return taken;

@@ -51,9 +51,9 @@ the solid "hanging victim" quintet and DOOM II's six `HDB*` body bags. Every ent
 `SOLID_DECORATION_RADIUS_OVERRIDE` is the one-key exception table for it. The plain candle
 (doomednum 34, `flags: 0`) and every dead-monster/blood-pool prop are the decorations genuinely
 **not** solid in vanilla and are deliberately left out, same as the exploding barrel's own
-`MF_SOLID` (doomednum 2035) is handled by its pre-existing `BARREL_TYPE` special-case rather than
+`MF_SOLID` (doomednum 2035) is handled by its pre-existing `ThingType.barrel` special-case rather than
 being folded into this set. `things/grid.ts`'s `rebuild` and `solidBodies` both admit
-`SOLID_DECORATION_TYPES` alongside `MONSTER_TYPES`/`BARREL_TYPE`, so a solid decoration blocks the
+`SOLID_DECORATION_TYPES` alongside `MONSTER_TYPES`/`ThingType.barrel`, so a solid decoration blocks the
 player (`solidBodies`) and monster movement (`blockersFor`) exactly like a monster does.
 
 **Ceiling-hung gore.** `CEILING_HUNG_HEIGHT` holds vanilla's `MF_SPAWNCEILING` doomednums (the

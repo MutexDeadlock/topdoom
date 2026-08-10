@@ -26,7 +26,6 @@ import {
   EIGHT_UNIT_GAP,
   CRUSH_DAMAGE_INTERVAL,
   SWITCH_FLASH_SECONDS,
-  TELEPORT_DEST,
   FLOOR_SPEED,
   type DoorEffect,
   type LiftEffect,
@@ -52,6 +51,7 @@ import {
 } from './world.ts';
 import { PLAYER_RADIUS } from './player.ts';
 import { spawnAngleDeg } from './skill.ts';
+import { ThingType } from './thingtypes.ts';
 import type { Input } from './input.ts';
 import type { FogOfWar } from './fogofwar.ts';
 import type { KeyColor } from './inventory.ts';
@@ -1206,12 +1206,12 @@ export class SpecialsController {
     }
   }
 
-  /** First `TELEPORT_DEST` (doomednum 14) thing sitting in one of the tag-matched sectors — vanilla's own search is just as arbitrary when more than one exists. */
+  /** First teleport-landing marker (`MT_TELEPORTMAN`) sitting in one of the tag-matched sectors — vanilla's own search is just as arbitrary when more than one exists. */
   private findTeleportDestination(sectorIndices: number[]): Placement | null {
     if (sectorIndices.length === 0) return null;
     const targets = new Set(sectorIndices);
     for (const t of this.map.things) {
-      if (t.type !== TELEPORT_DEST) continue;
+      if (t.type !== ThingType.teleportDest) continue;
       // Vanilla's `EV_Teleport` copies the destination mobj's own angle, and that mobj came out of
       // `P_SpawnMapThing` — so the arrival facing is the snapped one, not the raw THING field.
       if (targets.has(this.world.sectorIndexAt(t.x, t.y)))

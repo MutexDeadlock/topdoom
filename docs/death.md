@@ -143,7 +143,7 @@ movement but are explicitly filtered back out of `raycastMonster`/`monstersNear`
 barrel, none of them carry vanilla's `MF_SHOOTABLE`, so a shot must pass through one rather than
 stop on it.
 
-**Only `ThingLayer.damage`'s death/pain behavior is special-cased**, gated on `BARREL_TYPE` (2035):
+**Only `ThingLayer.damage`'s death/pain behavior is special-cased**, gated on `ThingType.barrel` (2035):
 no painstate (`MT_BARREL` has `painchance = 0`), no alerting, no infighting retarget (it has no AI),
 and a kill switches its sprite to `BEXP` instead of picking from the death/xdeath tables — a barrel's
 idle art (`BAR1`) and its explosion art are genuinely different lumps, unlike every monster, whose

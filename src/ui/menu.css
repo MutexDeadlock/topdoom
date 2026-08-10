@@ -209,8 +209,22 @@ canvas {
   height: 22px;
 }
 
+/*
+ * Fixed width, so switching weapons doesn't resize #game-hud and shuffle every panel beside it —
+ * the pickup sprites the icons come from differ hugely in aspect (DOOM2's SHOTA0 is 168px wide at
+ * a 32px height, PISGA0 29px). Icons narrower than the column are centred in it; a wider one is
+ * scaled down to fit, which needs `object-fit` — `max-width` alone would squash the canvas, since
+ * a replaced element's content is stretched to whatever box the used width and height give it.
+ */
+#game-hud .hud-weapon {
+  flex: 0 0 140px;
+  justify-content: center;
+}
+
 #game-hud .hud-weapon .icon {
   height: 32px;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 #hud-levelstats {
@@ -581,9 +595,15 @@ canvas {
   padding: 26px 30px 22px;
 }
 
+/*
+ * The title sits on the *last* baseline of the row — the changelog link's, not the version's above
+ * it. Plain `baseline` hangs the title off the first line of the `.build` column, leaving it riding
+ * high once that column has two lines in it. No fallback declaration: the CSS minifier drops a
+ * duplicated property, and every browser that can run a WebGL2 game handles `last baseline`.
+ */
 #menu header {
   display: flex;
-  align-items: baseline;
+  align-items: last baseline;
   justify-content: space-between;
   gap: 16px;
   border-bottom: 1px solid #2a2a32;
@@ -596,6 +616,14 @@ canvas {
   font-size: 30px;
   letter-spacing: 6px;
   color: #c0392b;
+}
+
+/* The title row's right-hand side: the version, with the changelog link under it. */
+#menu .build {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
 }
 
 #menu-version {
@@ -914,4 +942,67 @@ canvas {
   color: #4a4640;
   font-size: 12px;
   pointer-events: none;
+}
+
+/* ---------- changelog popup ---------- */
+
+/* A text link rather than a button, since it opens a reader and changes nothing. */
+#menu button.link {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: #7f7a74;
+  text-decoration: underline;
+}
+
+#menu button.link:hover:not(:disabled) {
+  color: #fff;
+}
+
+/*
+ * A child of #menu (whose own z-index 20 is the stacking context this sits in), so it covers the
+ * menu panel and nothing else — the popup only ever exists while the menu is up.
+ */
+#changelog {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(6, 6, 8, 0.8);
+}
+
+#changelog.hidden {
+  display: none;
+}
+
+/* Column layout with a `min-height: 0` scroller: the panel is capped at the viewport and the text
+   scrolls inside it, rather than the panel growing to the CHANGELOG's full length. */
+#changelog .panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 720px;
+  max-height: 100%;
+  border: 1px solid #34343c;
+  background: #121216;
+  padding: 20px 24px 22px;
+}
+
+#changelog h2 {
+  margin: 0;
+}
+
+#changelog pre {
+  margin: 0;
+  min-height: 0;
+  overflow-y: auto;
+  /* The file is hand-wrapped, but a long line still has to wrap rather than scroll sideways. */
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #b8b2ab;
 }

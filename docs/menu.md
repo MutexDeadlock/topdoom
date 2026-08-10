@@ -32,7 +32,27 @@ Overlay stacking (`menu.css`): screen tint / pain flash `5`, HUD `10`, `#hud-mes
 `#menu` `20`, `#fatal-error` `30`.
 
 `VERSION` (`constants.ts`) is shown prefixed with `v`, right-aligned on the title's own row
-(`#menu header` is a `space-between` flex row); a static credit sits bottom-left, outside the panel.
+(`#menu header` is a `space-between` flex row), with the changelog link stacked under it in the same
+`.build` column; a static credit sits bottom-left, outside the panel.
+
+## Changelog
+
+The header's **CHANGELOG** link opens `#changelog`, a scrolling reader over the repo's `CHANGELOG`
+file. Two things about it are load-bearing:
+
+- The text is a **dynamic** `import('../../CHANGELOG?raw')`, run on first open (`loadChangelog`).
+  Dynamic, because the file only grows and nobody who never opens the reader should pay for it: the
+  bundler gives it its own chunk (~12 kB, 5 kB gzipped) instead of the main one. `import` rather than
+  `fetch`, because the file lives at the repo root rather than under `public/`, so a fetch would
+  resolve in dev and 404 in a build. A failed load is reported in the panel and leaves the popup
+  unmarked as loaded, so reopening retries.
+- **`Esc` is handed off explicitly**, not raced. `main.ts`'s `Esc` listener calls
+  `menu.closeChangelog()` first, which reports whether it had anything to close — so one `Esc`
+  dismisses the popup and leaves the menu (and a paused level) alone. A second window listener in
+  `Menu` would have made that depend on registration order.
+
+`#changelog` is a child of `#menu` so it disappears with it; `close()` also closes it, or it would
+still be up the next time the menu opens.
 
 ## Picking a WAD set
 

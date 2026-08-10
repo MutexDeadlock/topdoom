@@ -66,6 +66,9 @@ export class Menu {
   private shiftAction = el<HTMLSpanElement>('shift-action');
   private rightMouseSelect = el<HTMLSelectElement>('rightmouse-select');
   private fpsCapSelect = el<HTMLSelectElement>('fpscap-select');
+  private changelogRoot = el<HTMLDivElement>('changelog');
+  private changelogText = el<HTMLPreElement>('changelog-text');
+  private changelogLoaded = false;
   private tabButtons = {
     newgame: el<HTMLButtonElement>('tab-button-newgame'),
     settings: el<HTMLButtonElement>('tab-button-settings'),
@@ -114,6 +117,7 @@ export class Menu {
     this.installAutorun();
     this.installRightMouse();
     this.installFpsCap();
+    this.installChangelog();
     this.setTab('newgame');
     // DEVMODE never changes at runtime, so the dev-only key row is revealed once.
     el<HTMLElement>('controls-dev').classList.toggle('hidden', !DEVMODE);
@@ -167,6 +171,8 @@ export class Menu {
   }
 
   close(): void {
+    // Otherwise it would be waiting, still open, the next time the menu comes up.
+    this.closeChangelog();
     this.root.classList.add('hidden');
   }
 
@@ -243,6 +249,54 @@ export class Menu {
     this.fpsCapSelect.addEventListener('change', () => {
       setFpsCap(Number(this.fpsCapSelect.value) as FpsCap);
     });
+  }
+
+  /**
+   * The CHANGELOG reader behind the header's link. Dismissed by the close button, by clicking the
+   * backdrop around the panel, or by Esc — see `closeChangelog` and docs/menu.md § Changelog.
+   */
+  private installChangelog(): void {
+    el<HTMLButtonElement>('changelog-button').addEventListener('click', () => {
+      this.changelogRoot.classList.remove('hidden');
+      // Reopening always starts at the newest entry rather than where the last read left off.
+      this.changelogText.scrollTop = 0;
+      void this.loadChangelog();
+    });
+    el<HTMLButtonElement>('changelog-close').addEventListener('click', () => this.closeChangelog());
+    this.changelogRoot.addEventListener('click', (e) => {
+      if (e.target === this.changelogRoot) this.closeChangelog();
+    });
+  }
+
+  /**
+   * Fills the popup on first open. The file is a *dynamic* `import`, so the bundler resolves it at
+   * build time (no `public/` copy, and nothing that can 404) but parks the text in its own chunk,
+   * downloaded only by someone who actually opens the reader — docs/menu.md § Changelog.
+   *
+   * A failed load is reported in the panel and leaves `changelogLoaded` false, so simply reopening
+   * retries.
+   */
+  private async loadChangelog(): Promise<void> {
+    if (this.changelogLoaded) return;
+    this.changelogText.textContent = 'Loading …';
+    try {
+      const { default: text } = await import('../../CHANGELOG?raw');
+      this.changelogText.textContent = text.trimEnd();
+      this.changelogLoaded = true;
+    } catch (err) {
+      this.changelogText.textContent = `Could not load the changelog: ${(err as Error).message}`;
+    }
+  }
+
+  /**
+   * Closes the changelog popup, reporting whether it *was* open. `main.ts` calls this first in its
+   * own Esc handler, so one Esc dismisses the popup instead of the whole menu — an explicit
+   * hand-off rather than two window listeners racing over the same key.
+   */
+  closeChangelog(): boolean {
+    if (this.changelogRoot.classList.contains('hidden')) return false;
+    this.changelogRoot.classList.add('hidden');
+    return true;
   }
 
   /** True once a level can actually be started. */

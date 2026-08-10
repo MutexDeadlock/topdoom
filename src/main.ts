@@ -106,6 +106,8 @@ async function boot(): Promise<void> {
   // Esc toggles between playing and the menu; the level survives the trip.
   window.addEventListener('keydown', (e) => {
     if (e.code !== 'Escape') return;
+    // The changelog popup takes Esc first: dismissing it must not also close the menu behind it.
+    if (menu.closeChangelog()) return;
     if (!menu.isOpen) {
       game?.pause();
       menu.open(game !== null);

@@ -26,6 +26,13 @@ compile-time constant in `weapons.ts`, so duplicating it as static markup would 
 in sync. Icons reuse each weapon's own ground-pickup sprite (`WeaponDef.iconLump`); fist and pistol
 have no pickup, so they fall back to their first-person `PUNGA0`/`PISGA0` frames.
 
+Those sprites differ wildly in aspect — at the strip's 32px height DOOM2's `SHOTA0` renders 168px
+wide against `PISGA0`'s 29px — so `.hud-weapon` is pinned to a **fixed 140px column** rather than
+sized by its icon: otherwise `#game-hud` changes width on every weapon switch and every panel beside
+it jumps. Icons narrower than the column are centred in it, and a wider one is scaled down to fit,
+which is `object-fit: contain` on the canvas — `max-width` alone clamps the box but stretches the
+content into it, since the canvas is a replaced element.
+
 **The powerup strip** (`.hud-powers`, built from `STRIP_POWER_IDS` the same way) exists for the same
 reason: a running powerup has no other on-screen presence at all — no number that changes, no door
 that opens — so without it there's no way to know one is active or how much is left. Each row shows

@@ -92,7 +92,10 @@
       <div class="panel">
         <header>
           <h1>TOPDOOM</h1>
-          <span id="menu-version"></span>
+          <div class="build">
+            <span id="menu-version"></span>
+            <button class="link" id="changelog-button">CHANGELOG</button>
+          </div>
         </header>
 
         <div class="tabs">
@@ -217,6 +220,17 @@
           <span id="menu-status"></span>
           <button id="resume-button" class="hidden">Return to game</button>
         </footer>
+      </div>
+
+      <!-- Inside #menu, so closing the menu can never leave the popup up on its own. -->
+      <div id="changelog" class="hidden">
+        <div class="panel">
+          <header>
+            <h2>Changelog</h2>
+            <button id="changelog-close">Close</button>
+          </header>
+          <pre id="changelog-text"></pre>
+        </div>
       </div>
 
       <input type="file" id="file-input" accept=".wad,.WAD" hidden />

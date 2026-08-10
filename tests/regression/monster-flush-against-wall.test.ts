@@ -7,6 +7,7 @@ import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import type { MonsterBody } from '../../src/game/monsters/defs.ts';
 import { ThingType } from '../../src/game/thingtypes.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
 
 /**
  * A zombieman placed flush against a wall woke and shot but never took a step.
@@ -63,12 +64,12 @@ function scene(overlap: number): { world: World; body: MonsterBody; target: { x:
   return { world, body, target: { x: grid.centre(4, 0).x, y, z: 0 } };
 }
 
-/** Runs `seconds` of AI at 60fps and reports how far the monster actually travelled. */
+/** Runs `seconds` of AI at the simulation's own tic rate and reports how far the monster actually travelled. */
 function travelled(world: World, body: MonsterBody, target: { x: number; y: number; z: number }, seconds: number): number {
   const startX = body.x;
   const startY = body.y;
-  for (let f = 0; f < Math.round(seconds * 60); f++) {
-    stepMonsterAI(body, stats, 1 / 60, world, target, PLAYER_RADIUS, PLAYER_HEIGHT);
+  for (let f = 0; f < Math.round(seconds / DOOM_TIC); f++) {
+    stepMonsterAI(body, stats, DOOM_TIC, world, target, PLAYER_RADIUS, PLAYER_HEIGHT);
   }
   return Math.hypot(body.x - startX, body.y - startY);
 }

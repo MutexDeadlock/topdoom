@@ -112,12 +112,19 @@ a drifting curve into a wall instead of DOOM's flat commit-and-re-route.
 
 Two consequences: monster movement **deliberately doesn't use `slideMove`** (vanilla's `P_Move` is
 all-or-nothing; only the player gets `P_SlideMove`, and re-routing rather than sliding is what
-produces the zig-zag), and the walk is **interpolated per frame** along the last chase call's
+produces the zig-zag), and the walk is **sub-stepped per tic** along the last chase call's
 `movedir` rather than jumping a full `speed` units per call — same distance and same 8-way path,
-but vanilla's jump only reads as continuous because it renders at 35fps. Everything else
-(`groundFloor`, gravity via `settleVertical`) mirrors `Player.update`.
+spread over the 3-4 tics a `chaseInterval` lasts. Vanilla's single jump reads as continuous only
+because it renders at the same 35fps it simulates at; here the render clock is faster than the tic,
+so the walk is sub-stepped in the simulation *and* interpolated again for display
+(docs/frameloop.md § Interpolation). Everything else (`groundFloor`, gravity via `settleVertical`)
+mirrors `Player.update`.
 
-**The per-frame sub-step must never be stricter than the chase step `tryWalk` already approved**
+Going the whole way to vanilla — one full `speed * chaseInterval` jump per chase call — is a
+demo-compatibility question, not a tic-lock one, and is deliberately still open: the jump and the
+sub-steps collide with different geometry.
+
+**The per-tic sub-step must never be stricter than the chase step `tryWalk` already approved**
 (`escapingOverlap`). Vanilla's `P_Move` tests only the *destination* of a full `speed` jump; it
 never asks whether the monster is standing somewhere legal right now. Maps place monsters flush
 against walls all the time — 95 across DOOM/DOOM2/SCYTHE, e.g. DOOM2 MAP02's zombieman at
@@ -360,6 +367,11 @@ cooldown, because sampling a per-attempt probability every render frame would re
 immediately no matter how small. Running the chase logic on a discrete `chaseInterval` tick removes
 that at the source — the roll is sampled exactly as often as vanilla samples it, and off the same
 table vanilla samples it from (docs/random.md § The table and the two cursors).
+
+Since the whole simulation went tic-locked, `chaseTimer`'s accumulator is *exact* rather than
+merely close: `chaseInterval` is a whole number of tics and so is the step it accumulates, so a
+chase call lands on the same tic every time instead of drifting with the frame rate.
+docs/frameloop.md § The accumulator.
 `AttackStats.ranged`'s `rangeFalloffScale`/`Cap` reproduce vanilla's per-type offset/halving/clamp
 (halved for exactly the types vanilla special-cases — cyberdemon, spider mastermind, revenant, lost
 soul — making them noticeably more willing to fire from far away; the cyberdemon gets an extra-tight

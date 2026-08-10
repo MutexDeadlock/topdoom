@@ -76,7 +76,13 @@ import { commitTarget, reactToDamage, shouldRetarget, stepMonsterAI, tryWake } f
 import { createThingGrid } from './things/grid.ts';
 import { circleBlocked } from './world.ts';
 import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audio/sfx.ts';
-import { SpriteAnimator, SpriteMaterialCache, VIEWER_ANGLE_DEG } from '../render/sprites.ts';
+import {
+  BILLBOARD_MAX_REACH,
+  intersectBillboard,
+  SpriteAnimator,
+  SpriteMaterialCache,
+  VIEWER_ANGLE_DEG,
+} from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import { boxToCircleRadius, distSqToSegment } from '../util/geom.ts';
@@ -157,8 +163,7 @@ export function buildThingSprites(
    * Monster death drops draw through their own batch, which is what lets them
    * carry `DROP_DEPTH_BIAS` and a pulsing batch-wide opacity that the rest of
    * the map's things must not get. No extra draw calls: batching is per-lump
-   * anyway and a drop never shares a lump with a monster. Not raycast
-   * (`pickMonster` wants monsters).
+   * anyway and a drop never shares a lump with a monster.
    */
   const dropBatch = new SpriteBatch({ depthBias: DROP_DEPTH_BIAS, translucent: true });
   const group = new THREE.Group();
@@ -236,6 +241,11 @@ export function buildThingSprites(
       x,
       y,
       z,
+      // A fresh thing has nowhere to interpolate from but where it is, so its
+      // first drawn frame sits still instead of sliding in from the origin.
+      drawPrevX: x,
+      drawPrevY: y,
+      drawPrevZ: z,
       sector: world.sectorAt(x, y),
       facingDeg,
       subsector: world.subsectorAt(x, y),
@@ -675,22 +685,23 @@ export function buildThingSprites(
     solidBodies: grid.solidBodies,
     update(
       dt: number,
-      viewerAngleDeg: number,
       player: Pos3 | null,
-      fogAlphaOf?: (subsector: number) => number,
+      fogVisible?: (subsector: number) => boolean,
       crossLines?: (prev: Pos2, pos: Pos2) => Placement | null,
     ): ThingUpdateResult {
       const attacks: MonsterAttackEvent[] = [];
       const barrelExplosions: BarrelExplosion[] = [];
-      // Once per frame, ahead of any blockersFor call below — see its doc for
-      // why a frame-granular grid is accurate enough for contact.
+      // Once per tic, ahead of any blockersFor call below — see its doc for
+      // why a tic-granular grid is accurate enough for contact.
       grid.rebuild();
       clock += dt;
-      batch.begin(viewerAngleDeg);
-      dropBatch.begin(viewerAngleDeg);
-      const pulse = Math.sin((clock / DROP_PULSE_SECONDS) * Math.PI * 2) * 0.5 + 0.5;
-      dropBatch.setOpacity(DROP_OPACITY_MIN + (DROP_OPACITY_MAX - DROP_OPACITY_MIN) * pulse);
       for (const p of posed) {
+        // Every thing, every tic, before anything below can move it — `prev` is
+        // no substitute (see its doc), and a thing that skips a tic via one of
+        // the `continue`s below must still have a sane interpolation source.
+        p.drawPrevX = p.x;
+        p.drawPrevY = p.y;
+        p.drawPrevZ = p.z;
         if (p.hidden) {
           p.visible = false;
           continue;
@@ -827,6 +838,13 @@ export function buildThingSprites(
                 p.y = dest.y;
                 p.angle = dest.angle;
                 p.velZ = 0;
+                // Collapse the interpolation window onto the arrival point, or
+                // the render layer draws the monster gliding across the whole
+                // map over one tic instead of appearing at the far end.
+                // docs/frameloop.md § Interpolation.
+                p.drawPrevX = p.x;
+                p.drawPrevY = p.y;
+                p.drawPrevZ = p.z;
                 // Re-route from scratch: the heading it had is meaningless on
                 // the far side of the map.
                 p.movedir = DI_NODIR;
@@ -911,14 +929,31 @@ export function buildThingSprites(
           if (!p.dead && (p.velX !== 0 || p.velY !== 0)) applyKnockback(p, dt);
         }
 
-        p.visible = !fogAlphaOf || fogAlphaOf(p.subsector) > 0.5;
+        // Whether this thing can be seen — and so shot, and so auto-aimed at.
+        // Keyed to fog's crisp `explored` flag rather than its damped alpha:
+        // alpha is a render-clock fade, and gating a gameplay decision on it
+        // would make what is shootable depend on framerate.
+        // docs/fogofwar.md § What gameplay reads.
+        p.visible = !fogVisible || fogVisible(p.subsector);
         p.anim.advance(dt, animating);
+      }
+      return { attacks, barrelExplosions };
+    },
+    draw(alpha: number, viewAngleDeg: number): void {
+      batch.begin(viewAngleDeg);
+      dropBatch.begin(viewAngleDeg);
+      const pulse = Math.sin((clock / DROP_PULSE_SECONDS) * Math.PI * 2) * 0.5 + 0.5;
+      dropBatch.setOpacity(DROP_OPACITY_MIN + (DROP_OPACITY_MAX - DROP_OPACITY_MIN) * pulse);
+      for (const p of posed) {
         // Resolving the lump is only worth doing for something actually being
         // drawn — for a map like NUTS.WAD this skips thousands of SpriteBank
         // lookups a frame while the player has only explored part of it.
         if (!p.visible) continue;
-        const cached = p.anim.resolve(p.facingDeg, viewerAngleDeg);
+        const cached = p.anim.resolve(p.facingDeg, viewAngleDeg);
         if (!cached) continue;
+        const x = p.drawPrevX + (p.x - p.drawPrevX) * alpha;
+        const y = p.drawPrevY + (p.y - p.drawPrevY) * alpha;
+        const z = p.drawPrevZ + (p.z - p.drawPrevZ) * alpha;
         // Everything the map itself placed draws plainly, at its own height:
         // only a drop lands on top of a corpse, and only a drop is worth
         // singling out (docs/items.md § Making monster drops readable).
@@ -926,20 +961,19 @@ export function buildThingSprites(
         // thing — see docs/render.md § Sector lighting on why every sprite must.
         const light = litColor(p.sector?.light ?? 128);
         if (!p.dropped) {
-          doomToWorld(p.x, p.y, p.z, worldPos);
-          batch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light, p.id);
+          doomToWorld(x, y, z, worldPos);
+          batch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light);
           continue;
         }
         // Phase-shifted per instance (`p.id`), so two drops side by side
         // ripple instead of bobbing in unison. The opacity pulse can't do the
         // same — it's batch-wide, see `SpriteBatch.setOpacity`.
         const bob = Math.sin((clock / DROP_BOB_SECONDS + p.id * 0.7) * Math.PI * 2) * DROP_BOB;
-        doomToWorld(p.x, p.y, p.z + DROP_HOVER + bob, worldPos);
-        dropBatch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light, p.id);
+        doomToWorld(x, y, z + DROP_HOVER + bob, worldPos);
+        dropBatch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light);
       }
       batch.end();
       dropBatch.end();
-      return { attacks, barrelExplosions };
     },
     dispose(): void {
       batch.dispose();
@@ -968,22 +1002,56 @@ export function buildThingSprites(
         }
       }
     },
-    pickMonster(raycaster: THREE.Raycaster): MonsterRef | null {
-      // The batch hands back the id of the nearest instance this predicate
-      // accepts, skipping (rather than being blocked by) everything else — so
-      // a plain decoration standing in front of a monster or barrel still
-      // doesn't make it untargetable, exactly as when only monster meshes
-      // were raycast at all. Barrels are included alongside MONSTER_TYPES —
-      // see pickMonster's own doc for why.
-      const id = batch.raycast(raycaster, (owner) => {
-        const p = posed[owner];
-        if (!p || p.picked || p.dead || !p.visible) return false;
-        if (NO_AUTO_AIM_TYPES.has(p.type)) return false;
-        return MONSTER_TYPES.has(p.type) || p.type === ThingType.barrel;
-      });
-      if (id === null) return null;
-      const p = posed[id];
-      return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius };
+    pickMonster(ray: THREE.Ray, viewerAngleDeg: number): MonsterRef | null {
+      // The yaw every billboard stands at, computed once here exactly as
+      // `SpriteBatch.begin` does per batch.
+      const rad = ((viewerAngleDeg - VIEWER_ANGLE_DEG) * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      let best: PosedThing | null = null;
+      let bestDist = Infinity;
+      for (const p of posed) {
+        if (!p.visible || p.dead || p.picked) continue;
+        // Broad phase before anything that costs a lookup: reject on the
+        // ray's distance to a sphere around the thing's anchor, sized so no
+        // billboard can escape it (BILLBOARD_MAX_REACH). This is what keeps a
+        // 10,000-thing map from paying a `SpriteBank` resolve per thing per
+        // tic — the whole point of picking analytically rather than through
+        // the render batch.
+        doomToWorld(p.x, p.y, p.z, worldPos);
+        const dx = worldPos.x - ray.origin.x;
+        const dy = worldPos.y - ray.origin.y;
+        const dz = worldPos.z - ray.origin.z;
+        const along = dx * ray.direction.x + dy * ray.direction.y + dz * ray.direction.z;
+        const reach = BILLBOARD_MAX_REACH * p.scale;
+        // Behind the camera by more than it could ever reach forward.
+        if (along < -reach) continue;
+        const offSq = dx * dx + dy * dy + dz * dz - along * along;
+        if (offSq > reach * reach) continue;
+        // Nothing this far out can beat a hit already found, whichever part
+        // of its quad the ray crosses.
+        if (along - reach > bestDist) continue;
+        // Everything the pointer can lock onto, and nothing else. Anything
+        // rejected here is simply skipped rather than treated as a blocker —
+        // a plain decoration standing in front of a monster must not make it
+        // untargetable. Barrels join MONSTER_TYPES; see the doc on
+        // `ThingLayer.pickMonster` for why.
+        if (NO_AUTO_AIM_TYPES.has(p.type)) continue;
+        if (!MONSTER_TYPES.has(p.type) && p.type !== ThingType.barrel) continue;
+        // Tic state throughout: this thing's own position, its `facingDeg`
+        // and animation frame as `update` left them, and the tic-exact viewer
+        // angle. Nothing interpolated reaches this, which is what makes what
+        // auto-aim locks onto independent of framerate.
+        const cached = p.anim.resolve(p.facingDeg, viewerAngleDeg);
+        if (!cached) continue;
+        const dist = intersectBillboard(ray, cached, worldPos, p.scale, cos, sin);
+        if (dist < 0 || dist >= bestDist) continue;
+        bestDist = dist;
+        best = p;
+      }
+      if (!best) return null;
+      const { id, x, y, z, type, angle, blockRadius } = best;
+      return { id, x, y, z, type, angle, radius: blockRadius };
     },
     monstersNear(pos: Pos2, radius: number): MonsterRef[] {
       // Grid-backed, not a scan of every thing. Splash queries alone would be

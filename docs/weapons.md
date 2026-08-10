@@ -46,6 +46,22 @@ which is what makes a second click toggle back.
 
 ## Fire rates
 
+**The cooldown is counted in whole tics, as an integer** (`WeaponSystem.cooldownTics`), not as
+seconds remaining. Every cooldown below is a whole number of tics and the simulation steps one tic at
+a time (docs/frameloop.md § The accumulator), so an integer countdown is exact — and it is the same
+model vanilla has, a psprite sitting in a state with that many tics left. In seconds, float residue
+decides whether a shot lands on tic N or N+1, which is a third of the plasma rifle's rate.
+
+Two halves of one rule, and it takes both — **an idle trigger banks nothing**:
+
+- the counter **clamps at zero** rather than running negative while the trigger is up, and
+- firing **assigns** the cooldown rather than adding to it.
+
+Break either alone and nothing visibly changes; break both and the weapon free-falls into debt while
+idle, then fires *every tic* until it climbs back through zero. That combination shipped once, from
+converting the old seconds-based counter carelessly, and `tests/game/weapons.test.ts` § Game rules ·
+fire rates now pins every weapon's gap to its exact vanilla tic count so it cannot again.
+
 **A weapon's cooldown is its own vanilla state chain, and the `A_ReFire` state's tics are not part of
 it.** `A_ReFire` runs on *entry* to its state and, while the trigger is still down, calls
 `P_FireWeapon` immediately — `P_SetPsprite`'s loop then leaves the psprite sitting in the fire

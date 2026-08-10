@@ -174,7 +174,7 @@ is what sprite rendering and player movement both key off — at the default `ya
 matching the old fixed south-facing camera exactly, so nothing downstream needed a special case for
 "not yet orbited."
 
-A `stepYaw` call (Q/E) queues its step as a `targetYawDeg` for `update` to animate `yawDeg` towards
+A `stepYaw` call (Q/E) queues its step as a `targetYawDeg` for `tick` to animate `yawDeg` towards
 (`YAW_STEP_SMOOTH_RATE`) rather than jumping. Plain assignment (`camera.yawDeg = ...`, whose only
 remaining caller is the instant reorient on spawn/teleport) still jumps immediately: the `yawDeg`
 setter keeps `targetYawDeg` in lockstep so nothing left over from a prior Q/E animates after an
@@ -183,14 +183,36 @@ instant set. **Nothing may assign `yawDeg` unconditionally every frame** — eve
 of smoothing, which is what forced the removed drag handler to guard on a nonzero delta.
 
 All of that input handling lives in `TopDownCamera.applyYawInput`, which `game.ts` calls once a
-frame. Holding Q/E auto-repeats the same 45° `stepYaw` every `KEY_YAW_REPEAT_INTERVAL` — `qHoldTime`/
-`eHoldTime` accumulate `dt` while `Input.held` is true and fire+reset once the interval is reached,
-alongside the immediate step fired on `Input.pressed`. The interval is tuned to roughly the time one
-step's smoothing takes to settle, so a hold reads as continuous rotation made of chained steps.
+**tic**. Holding Q/E auto-repeats the same 45° `stepYaw` every `KEY_YAW_REPEAT_INTERVAL` —
+`qHoldTime`/`eHoldTime` accumulate `dt` while `Input.held` is true and fire+reset once the interval
+is reached, alongside the immediate step fired on `Input.pressed`. The interval is tuned to roughly
+the time one step's smoothing takes to settle, so a hold reads as continuous rotation made of chained
+steps.
 
 Movement (`Player.update`'s `forwardDeg`, passed as `camera.viewerAngleDeg + 180`) is camera-relative
 rather than DOOM-axis-relative: `W` always moves the player away from the camera *on screen*,
-regardless of orbit. `game.ts` recomputes this every frame from the live camera angle.
+regardless of orbit. `game.ts` recomputes this every tic from the live camera angle.
+
+## The camera is simulation state
+
+`TopDownCamera` splits into `tick(dt, pos, aim)` — which advances the smoothed follow point and
+`yawDeg` — and `applyToCamera(alpha)`, which interpolates between the last two tics and is the only
+thing that moves the `THREE` camera. **`tick` runs on the simulation clock**, which is unusual for
+something in `src/render/` and is forced rather than stylistic:
+
+- the pointer ray is cast through this camera (`rayFor` → `pickMonster`, `pointerToPlane`), and
+  where that ray lands sets `Player.angle` — the angle every shot is fired at;
+- `viewerAngleDeg` is the basis WASD movement is rotated into, so it decides *which direction the
+  player moves*.
+
+Both would otherwise be functions of how many times the render loop had smoothed the camera, i.e. of
+framerate. Feel is unchanged: both smoothers are `1 - exp(-rate * dt)`, framerate-independent by
+construction, so sampling at 35 Hz and interpolating traces the same curve.
+
+Two angles come out of this, and mixing them up is the easy mistake. `viewerAngleDeg` is **tic-exact**
+and is what the simulation reads; `viewAngleDeg` is the interpolated pose actually drawn, and is what
+billboards must orient to — using the tic-exact one there leaves every sprite a fraction of a yaw snap
+out of line with the walls behind it. docs/frameloop.md § Interpolation.
 
 ## View distance (`constants.ts: VIEW_DISTANCE`, `game.ts`)
 

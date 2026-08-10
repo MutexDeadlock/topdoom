@@ -38,8 +38,13 @@ const BLOCKER_SEARCH_RADIUS = 320;
  */
 const BLOCKER_GRID_CELL = 128;
 
-/** `game.ts`'s own per-frame `dt` clamp; the most simulated time one frame can ever represent. */
-const MAX_FRAME_DT = 0.05;
+/**
+ * The most simulated time one step can ever represent — `game.ts`'s fixed
+ * `TIC_SECONDS`, since the simulation only ever advances a whole tic at a time.
+ * Kept as its own literal rather than imported to avoid a cycle back through
+ * `game.ts`, which owns the real one. docs/frameloop.md § The accumulator.
+ */
+const MAX_FRAME_DT = 1 / 35;
 
 /**
  * Slack added to every blocker search so narrowing it to the bodies that can

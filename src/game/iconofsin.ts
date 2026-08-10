@@ -113,6 +113,10 @@ interface SpawnCube extends Pos3 {
   /** Distance still to cover, this engine's stand-in for vanilla's launch-time `reactiontime`. */
   remaining: number;
   soundTimer: number;
+  /** Position at the end of the previous tic — docs/frameloop.md § Interpolation. */
+  drawPrevX: number;
+  drawPrevY: number;
+  drawPrevZ: number;
 }
 
 /**
@@ -155,6 +159,8 @@ export class IconOfSin {
   private awake = false;
   private spitTimer = 0;
   private cubes: SpawnCube[] = [];
+  /** `draw`'s interpolated position, reused per cube so drawing allocates nothing. */
+  private readonly drawAt: Pos3 = { x: 0, y: 0, z: 0 };
   /** Counts down from `BRAIN_DEATH_TO_EXIT` once the brain dies; -1 while it's still alive. */
   private exitTimer = -1;
   private explodeTimer = 0;
@@ -258,15 +264,19 @@ export class IconOfSin {
     if (!anim.resolve(0, VIEWER_ANGLE_DEG)) return;
     const dx = target.x - this.shooter.x;
     const dy = target.y - this.shooter.y;
+    const spawnZ = this.ctx.world.floorAt(this.shooter.x, this.shooter.y);
     this.cubes.push({
       anim,
       x: this.shooter.x,
       y: this.shooter.y,
-      z: this.ctx.world.floorAt(this.shooter.x, this.shooter.y),
+      z: spawnZ,
       angleRad: Math.atan2(dy, dx),
       target,
       remaining: Math.hypot(dx, dy),
       soundTimer: 0,
+      drawPrevX: this.shooter.x,
+      drawPrevY: this.shooter.y,
+      drawPrevZ: spawnZ,
     });
     this.sfx.play('bospit', null);
   }
@@ -282,6 +292,9 @@ export class IconOfSin {
     const remaining: SpawnCube[] = [];
     for (const c of this.cubes) {
       const step = CUBE_SPEED * dt;
+      c.drawPrevX = c.x;
+      c.drawPrevY = c.y;
+      c.drawPrevZ = c.z;
       c.remaining -= step;
       if (c.remaining <= 0) {
         this.spawnFly(c.target);
@@ -300,10 +313,23 @@ export class IconOfSin {
         this.sfx.play('boscub', c);
       }
       c.anim.advance(dt, true);
-      this.effects.batchSprite(c.anim, c, (c.angleRad * 180) / Math.PI, FULLBRIGHT);
       remaining.push(c);
     }
     this.cubes = remaining;
+  }
+
+  /**
+   * Draws every cube still in flight, interpolated `alpha` of the way through
+   * the last tic. Runs inside the caller's `SpriteFxLayer.beginFrame`/`endFrame`
+   * pair, same as the cube's own update. docs/frameloop.md § Interpolation.
+   */
+  draw(alpha: number): void {
+    for (const c of this.cubes) {
+      this.drawAt.x = c.drawPrevX + (c.x - c.drawPrevX) * alpha;
+      this.drawAt.y = c.drawPrevY + (c.y - c.drawPrevY) * alpha;
+      this.drawAt.z = c.drawPrevZ + (c.z - c.drawPrevZ) * alpha;
+      this.effects.batchSprite(c.anim, this.drawAt, (c.angleRad * 180) / Math.PI, FULLBRIGHT);
+    }
   }
 
   /**

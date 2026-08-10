@@ -1,60 +1,182 @@
 # The frame loop (`game.ts`)
 
-`src/game.ts: frame`, `resume`, `dueThisFrame`, `pause`, `stillFrame`, `stop`
+`src/game.ts: frame`, `tic`, `draw`, `dueThisFrame`, `resume`, `pause`, `stillFrame`, `stop`
 
 Who starts and stops a session around this loop is docs/menu.md § Session lifecycle.
 
-## The frame delta (`game.ts: frame`, `resume`)
+**The simulation runs at a fixed 35 Hz and the display runs as fast as it can.** Every gameplay
+system advances by exactly `TIC_SECONDS` (`DOOM_TIC`, vanilla's own clock) and never by a frame
+delta, so the same inputs produce the same run on a 60 Hz laptop and a 144 Hz monitor. Rendering
+then poses everything part-way between the last two tics so motion still looks smooth.
 
-`dt` is clamped to `[0, 0.05]`; `rawDt` (unclamped, for `DebugHud`'s fps only) is the real
-wall-clock delta. The upper bound keeps physics/AI from taking a giant step after a stall. **The
-lower bound is load-bearing**, not defensive noise: `resume` stamps `lastTime` with
-`performance.now()`, while `frame` gets the timestamp of the rendering opportunity it belongs to —
-and when `resume` is reached inside a frame's *input* task (a Start click whose WAD is already in
-the browser cache, so nothing awaits long enough to yield), the rAF callback runs in that same
-frame and its timestamp predates the stamp by the whole load. Every system then takes one negative
-step; `AnimatedTextures` (§ Animated textures, docs/specials.md) turned that into a negative frame
-index into its sequence and a hard crash — reproduced by starting any level, returning to the menu
-and starting `oku2v31.wad`.
+What that buys and what it does not: the simulation is **framerate-independent**, which is the
+prerequisite for replays, verified times and eventually demo playback. It is *not* portable
+determinism — `Math.sin`/`cos`/`atan2`/`exp` are implementation-defined precision and differ between
+browsers — and it is not vanilla demo compatibility, which additionally needs fixed-point arithmetic
+and a port of vanilla's own game code. docs/random.md § What this does not buy makes the same point
+about the RNG.
+
+## The accumulator (`game.ts: frame`)
+
+Real elapsed time is *banked*, not consumed. Each frame adds `rawDt` to `accumulator`, spends it in
+whole `TIC_SECONDS` steps, and hands whatever is left over to `draw` as the interpolation alpha:
+
+```ts
+this.accumulator += Math.max(0, rawDt);
+if (this.accumulator > MAX_TICS_PER_FRAME * TIC_SECONDS) this.accumulator = MAX_TICS_PER_FRAME * TIC_SECONDS;
+while (this.accumulator >= TIC_SECONDS && ran < MAX_TICS_PER_FRAME) { this.accumulator -= TIC_SECONDS; this.tic(...); }
+this.draw(this.accumulator / TIC_SECONDS, rawDt);
+```
+
+Three rules hold it together:
+
+- **The lower clamp on `rawDt` is load-bearing**, not defensive. `resume` stamps `lastTime` with
+  `performance.now()` while `frame` gets the timestamp of the rendering opportunity it belongs to,
+  and when `resume` runs inside a frame's own input task (a Start click whose WAD is already cached,
+  so nothing awaits long enough to yield) that timestamp *predates* the stamp. Without the clamp the
+  accumulator runs backwards.
+- **A stall drops its debt rather than paying it back.** `MAX_TICS_PER_FRAME` caps both the burst
+  after a backgrounded tab and the worst-case cost of one frame. This is the same "never take a
+  giant step" the old `dt` clamp bought, expressed in tics.
+- **`accumulator` is zeroed by `resume` and by `loadMapByIndex`.** Time spent paused or loading is
+  not simulation time; without it the level would run a catch-up burst the moment the menu closes.
+
+A tic that swaps the level (an exit, a restart) makes every reference the rest of the frame holds
+stale, so `tic` reports it and `frame` returns immediately.
+
+## What runs in a tic (`game.ts: tic`)
+
+The whole simulation, in the order it has always run — several orderings are load-bearing:
+
+- `specials.update` runs **before** `player.update`, so a lift or door underfoot has already moved
+  by the time `groundFloor` samples it.
+- the aim ray runs **before** `player.update`, so `player.angle` is this tic's.
+- `projectiles.update` runs **before** `effects.updateImpacts`, so an explosion spawned by an
+  arrival this tic is drawn on the very next frame rather than one late.
+
+Also in the tic, and worth knowing because they look like presentation: the **camera**
+(docs/render.md § The camera is simulation state), the **fog-of-war reveal scan**
+(docs/fogofwar.md § What gameplay reads), and `SpriteAnimator.advance` — vanilla's frame durations
+are tic counts, so animation belongs on the tic clock.
+
+### Input runs on the tic
+
+`Input`'s edge latches (`pressed`, `rightMousePressed`) hold "went down since the last **tic**", and
+`endTic` is the only thing that clears them. Rendering runs several times per tic, so clearing at
+frame cadence would drop most presses before a tic ever saw them — every door, weapon-switch digit
+and respawn key. A frame that runs no tics must not touch input state at all.
+
+`consumeWheel` was already an accumulate-and-drain channel and needed only to move to the tic.
+
+### Posing for the aim ray
+
+The aim ray is cast through the **live `THREE` camera**, which the last rendered frame left at an
+*interpolated* pose — a function of frame timing. Casting through it as it stands makes what auto-aim
+locks onto depend on framerate, and since auto-aim sets `player.angle`, that is the angle every shot
+is fired at.
+
+So the tic calls `applyToCamera(1)`, putting the camera back on the previous tic's exact pose, and it
+does so **immediately before the ray**. The placement is the whole trick and it is easy to get wrong:
+posing at the *end* of the tic instead looks equivalent and is not, because `draw` runs afterwards
+and overwrites it. With one tic per frame — the normal case — that end-of-tic pose is never read by
+anything, and the ray goes back to reading an interpolated camera. It shipped that way once.
+
+Nothing else has to be re-posed. `pickMonster` tests the ray against each thing's billboard
+**analytically** (`intersectBillboard`, `render/sprites.ts`) from the thing's own tic state and the
+tic-exact `viewerAngleDeg` — it reads no render state at all, so the sprite batches can stay wherever
+the last frame left them. They used to be re-filled at alpha 1 for a `THREE.Raycaster` to hit, a fill
+instrumented as `Sprites (aim)` that measured ~1.4 ms/frame on NUTS.WAD (10,617 things) and scaled
+with tics per frame — ~6.4 ms at 3 tics/frame, exactly when the machine could least afford it. The
+analytic pick is a linear scan with a cheap broad phase (`BILLBOARD_MAX_REACH`) and measures ~0.09 ms
+on the same scene, so it no longer earns its own profiler block.
+
+The pick is skipped entirely while the player is dead, since nothing aims then.
+
+### Keeping real time under load
+
+The old model clamped `dt` to 0.05 s, so **below 20 fps the game silently ran in slow motion** —
+every system stepped less simulated time than had really passed. Measured on NUTS.WAD at 15 fps:
+0.77× speed, i.e. the level clock lost about a quarter of every second. The accumulator fixes this
+by running the extra tics instead of shortening them, and measures 1.00× on the same scene.
+
+That is not a cosmetic difference. It is why a heavy fight now escalates at the rate it should:
+NUTS.WAD's ~7,700-monster infight cascade resolves several times faster than it used to, because it
+is no longer being run at three-quarters speed. `MAX_TICS_PER_FRAME` is the bound on how far this
+can go — past 5 tics of debt the engine gives up and drops the rest, and *then* it does slow down.
+
+## What runs in a frame (`game.ts: draw`)
+
+Presentation only — it advances no gameplay state. The camera pose, the sprite batches, the HUD and
+overlays, the occlusion and fog *fades*, the texture scroller and animator, and the render call.
+These take `rawDt`, not `TIC_SECONDS`: they are measuring real frames.
+
+## Interpolation
+
+Everything drawn carries where it was at the end of the previous tic, and `draw` emits
+`prev + (curr - prev) * alpha`.
+
+| Carrier | Fields |
+|---|---|
+| `Player` | `prevX/Y/Z/prevAngle`, plus `syncInterpolation()` for teleports |
+| `PosedThing` | `drawPrevX/Y/Z` — written for *every* thing every tic |
+| `Projectile` | `drawPrevX/Y/Z` + `drawX/Y/Z` |
+| `OneShotEffect`, `SpawnCube` | `drawPrevX/Y/Z` |
+| `TopDownCamera` | `prevSmoothed`, `prevYawDeg` |
+
+Four rules:
+
+- **`PosedThing.prev` is not an interpolation source.** It exists for `crossLines`' walk triggers and
+  is maintained only on the alerted-with-a-target path, but knockback, corpse gravity and a
+  ceiling-hung prop riding a closing door all move a thing that never runs that path. Hence the
+  separate `drawPrev*`, written unconditionally at the top of the per-thing loop.
+- **Every discontinuous move must collapse the window.** A teleport that leaves a stale `prev`
+  behind is drawn as a glide across the map. `Player.syncInterpolation` and `TopDownCamera`'s
+  `yawDeg` setter are the two that matter; a freshly spawned thing seeds `drawPrev*` to its spawn
+  point for the same reason.
+- **Sprite *facing* is not interpolated.** It is quantised to 8 directions, so lerping it is work
+  that changes nothing. Positions only — except the player's own billboard, whose facing is
+  continuous and so uses a shortest-arc lerp.
+- **Angles need shortest-arc**, or a shot across the ±π seam spins the billboard the long way round.
+
+**Movers are deliberately not interpolated.** Doors, lifts, floors and crushers write
+`sector.floorHeight`/`ceilHeight` and rebuild geometry per tic — which is exactly the rate vanilla
+ran them at, and a lift is a large slow object where 35 Hz reads far less than it does on a sprite.
+docs/specials.md § Lights covers the light patterns' own tic timing.
 
 ## The FPS cap (`game.ts: dueThisFrame`, `getFpsCap`)
 
-A settings-menu limit of 30, 60 or 120 fps, or `0` for none — the default, and what every earlier
-build did unconditionally. It is enforced by **skipping whole rendering opportunities**: a `frame`
-that isn't due yet advances nothing at all and re-arms `requestAnimationFrame`, so no system sees a
-partial step and the input that frame would have consumed simply arrives on the next one. `dt` is
-the delta since the last frame that *ran*, and 30 fps (0.033 s) is still inside its 0.05 clamp, so
-the slowest cap on offer can't turn into a clamped step.
+A settings-menu limit of 30, 60 or 120 fps, or `0` for none — the default. It is enforced by
+**skipping whole rendering opportunities**: a frame that isn't due yet re-arms
+`requestAnimationFrame` without drawing.
+
+It returns *before* `lastTime = now`, so a skipped opportunity keeps its elapsed time for the next
+real frame. That is exactly right for an accumulator, and it is why capping to 30 fps still runs a
+true 35 Hz simulation instead of slowing the game down — the cap costs frames, never tics.
 
 Two rules make the rate come out right on displays whose refresh isn't a multiple of the cap:
 
 - **A frame is due at the vsync nearest its deadline**, not the first one past it — `now + period/2`
-  is what's compared, where `period` is the interval between the last two rAF callbacks (i.e. the
-  display's own). A strict `now >= deadline` test halves the frame rate whenever the display runs at
-  exactly the capped rate, because sub-millisecond vsync jitter makes it miss almost every deadline
-  by a hair.
+  is what's compared, where `period` is the interval between the last two rAF callbacks. A strict
+  `now >= deadline` test halves the frame rate whenever the display runs at exactly the capped rate,
+  because sub-millisecond vsync jitter makes it miss almost every deadline by a hair.
 - **Deadlines advance by whole intervals** rather than being restamped from `now`, so the *average*
   holds at the cap when the display can only bracket it: 144 Hz capped to 120 drops every sixth
-  frame, 75 Hz capped to 60 every fifth. Falling more than one interval behind (a stall, a
-  backgrounded tab) resyncs off `now` instead of paying the debt back as a burst of frames.
+  frame, 75 Hz capped to 60 every fifth. Falling more than one interval behind resyncs off `now`
+  instead of paying the debt back as a burst of frames.
 
-A cap at or above the refresh rate is a no-op — 120 on a 60 Hz display still renders 60. The setting
-is read **live, once per frame**, so changing it mid-level applies to the level already running;
-`resume` clears the deadline so the first frame back is always due.
-
-The paused loop (§ Pausing) ignores the cap: its own ~50 ms floor is already below every value on
-offer. `DebugHud`'s fps counter reports the capped rate, since it measures the delta between frames
-that actually ran.
+A cap at or above the refresh rate is a no-op. The setting is read **live, once per frame**, so
+changing it mid-level applies to the level already running; `resume` clears the deadline so the
+first frame back is always due.
 
 ## Pausing (`game.ts: pause`, `stillFrame`, `stop`)
 
 A paused level is frozen but **still being drawn**: `pause` stops the simulation loop and starts
-`stillFrame`, which only calls `renderer.render` — no `dt`, no input, no profiling — and only every
+`stillFrame`, which only calls `renderer.render` — no tics, no input, no profiling — and only every
 ~50 ms, since a static scene has no reason to cost 60 fps. Without it the canvas would just be
 showing its last composited frame, which goes stale the moment anything invalidates it (a window
 resize resizes the canvas, a DPR change, a tab restore), and the menu now draws *over* the level
-(`ui/menu/menu.css: #menu.ingame`, docs/styles.md) instead of hiding it, so a stale or blank backdrop is visible.
+(`ui/menu/menu.css: #menu.ingame`, docs/styles.md) instead of hiding it.
 
-**`dispose` calls `stop`, not `pause`.** Both clear `running`, but `pause` sets `paused` and schedules
-`stillFrame`; going through it from `dispose` would leave that loop redrawing a scene whose geometry
-and materials have just been released.
+**`dispose` calls `stop`, not `pause`.** Both clear `running`, but `pause` sets `paused` and
+schedules `stillFrame`; going through it from `dispose` would leave that loop redrawing a scene
+whose geometry and materials have just been released.

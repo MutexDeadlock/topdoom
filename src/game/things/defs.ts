@@ -169,8 +169,24 @@ export interface PosedThing extends Pos3, MonsterBody {
    * and `game/monsters/ai.ts` has no business knowing the throttle exists.
    */
   lookTimer: number;
-  /** Position at the end of the previous frame, so `crossLines` can test the segment this monster just walked. Mutated in place; never re-allocated. */
+  /**
+   * Position at the end of the previous tic, so `crossLines` can test the
+   * segment this monster just walked. Mutated in place; never re-allocated.
+   * Maintained only on the alerted-with-a-target path, which is the only one
+   * that can walk over a line — **not** an interpolation source, which is what
+   * `drawPrevX`/`Y`/`Z` are for.
+   */
   prev: Pos2;
+  /**
+   * Where this thing was at the end of the previous tic, for the render layer to
+   * interpolate from. Unlike `prev` this is written for *every* thing on *every*
+   * tic, since knockback, corpse gravity and a ceiling-hung prop riding a closing
+   * door all move a thing that never runs the AI path.
+   * docs/frameloop.md § Interpolation.
+   */
+  drawPrevX: number;
+  drawPrevY: number;
+  drawPrevZ: number;
   /**
    * Who this monster is currently hunting: `null` for the player, otherwise
    * another `PosedThing`'s id. Set by `damage` when something hurts it (see
@@ -244,19 +260,28 @@ export interface ThingLayer {
    * `z` refreshes from the sector's live `floorHeight` — the "ride a moving
    * floor for free" trick, so a corpse left on a lift still rides it.
    *
-   * `fogAlphaOf` hides things in an unrevealed subsector, which would
+   * `fogVisible` hides things in an unrevealed subsector, which would
    * otherwise spoil a secret room whose geometry is faded out. `crossLines`
    * gets the segment each alerted monster walked, so the caller can fire walk
    * triggers (docs/specials.md § Teleporters). Also ticks barrel death clocks
    * and reports any `A_Explode` due this frame.
+   *
+   * **Advances the world only — it draws nothing.** `draw` is the other half,
+   * and runs on the render clock. docs/frameloop.md § What runs in a tic.
    */
   update(
     dt: number,
-    viewerAngleDeg: number,
     player: Pos3 | null,
-    fogAlphaOf?: (subsector: number) => number,
+    fogVisible?: (subsector: number) => boolean,
     crossLines?: (prev: Pos2, pos: Pos2) => Placement | null,
   ): ThingUpdateResult;
+  /**
+   * Fills the sprite batches from the state `update` left, with every position
+   * interpolated `alpha` of the way from the previous tic to the current one
+   * (`alpha` 1 draws the tic exactly). Presentation only — nothing the
+   * simulation reads back. docs/frameloop.md § Interpolation.
+   */
+  draw(alpha: number, viewAngleDeg: number): void;
   /**
    * Consumes every not-yet-picked thing within `radius` and vertical reach of
    * `z` that `consume` accepts, hiding it permanently. This layer owns only
@@ -266,13 +291,20 @@ export interface ThingLayer {
    */
   tryPickup(pos: Pos3, radius: number, consume: (type: number, dropped: boolean) => boolean): void;
   /**
-   * The visible monster this ray hits first, or null — auto-aim's lock-on
-   * (docs/combat.md § Auto-aim). Nothing fog of war hides, nothing already
-   * dead. The returned `id` is what `damage` takes, so a shot fired this frame
-   * can land on exactly this instance later without re-picking. Barrels are
-   * lockable too: `P_AimLineAttack` knows only `MF_SHOOTABLE`, not "monster".
+   * The visible monster whose billboard this ray crosses nearest the camera,
+   * or null — auto-aim's lock-on (docs/combat.md § Auto-aim). Nothing fog of
+   * war hides, nothing already dead. The returned `id` is what `damage` takes,
+   * so a shot fired this frame can land on exactly this instance later without
+   * re-picking. Barrels are lockable too: `P_AimLineAttack` knows only
+   * `MF_SHOOTABLE`, not "monster".
+   *
+   * `viewerAngleDeg` is the yaw the billboards stand at, and must be the
+   * **tic-exact** one (`TopDownCamera.viewerAngleDeg`): tested analytically
+   * against this layer's own state, so nothing here reads the render batch and
+   * the tic no longer has to re-pose it. docs/frameloop.md § Posing for the
+   * aim ray.
    */
-  pickMonster(raycaster: THREE.Raycaster): MonsterRef | null;
+  pickMonster(ray: THREE.Ray, viewerAngleDeg: number): MonsterRef | null;
   /**
    * Living monsters within `radius` (2D — matching vanilla's own radius-attack
    * distance test, which ignores height) of (x, y). Candidates for splash

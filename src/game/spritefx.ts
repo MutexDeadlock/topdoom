@@ -55,6 +55,8 @@ export class SpriteFxLayer {
   private batch = new SpriteBatch();
   /** Scratch for `doomToWorld`, reused across every batched sprite — same reason `game/things.ts` keeps one. */
   private batchPos = new THREE.Vector3();
+  /** `drawList`'s interpolated position, reused per effect so drawing allocates nothing. */
+  private drawAt: Pos3 = { x: 0, y: 0, z: 0 };
   private teleportFogs: OneShotEffect[] = [];
   private impacts: OneShotEffect[] = [];
   private tracers: Tracer[] = [];
@@ -116,7 +118,20 @@ export class SpriteFxLayer {
     const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, sprite, frames, frameSeconds);
     if (!anim.resolve(0, VIEWER_ANGLE_DEG)) return null;
     const light = this.world.sectorAt(at.x, at.y)?.light ?? 128;
-    return { anim, x: at.x, y: at.y, z: at.z, light, elapsed: 0, lifetime: frames.length * frameSeconds };
+    // drawPrev seeded to the spawn point: a one-shot's first drawn frame must
+    // sit where it was spawned, not interpolate in from the world origin.
+    return {
+      anim,
+      x: at.x,
+      y: at.y,
+      z: at.z,
+      drawPrevX: at.x,
+      drawPrevY: at.y,
+      drawPrevZ: at.z,
+      light,
+      elapsed: 0,
+      lifetime: frames.length * frameSeconds,
+    };
   }
 
   /** Queues an already-spawned effect (one whose fields the caller had to adjust) onto the impact list. */
@@ -226,7 +241,7 @@ export class SpriteFxLayer {
     const cached = anim.resolve(facingDeg, this.viewerAngleDeg);
     if (!cached) return;
     doomToWorld(at.x, at.y, at.z, this.batchPos);
-    this.batch.add(cached, this.batchPos.x, this.batchPos.y, this.batchPos.z, 1, litColor(light), 0);
+    this.batch.add(cached, this.batchPos.x, this.batchPos.y, this.batchPos.z, 1, litColor(light));
   }
 
   updateTeleportFogs(dt: number): void {
@@ -263,6 +278,9 @@ export class SpriteFxLayer {
     for (const e of list) {
       e.elapsed += dt;
       if (e.elapsed >= e.lifetime) continue;
+      e.drawPrevX = e.x;
+      e.drawPrevY = e.y;
+      e.drawPrevZ = e.z;
       if (e.followTargetId !== undefined && e.vileSourceId !== undefined) {
         // Vanilla's own A_Fire: "don't move it if the vile lost sight" — a
         // broken sightline (or a dead/stale vile or target) just leaves the
@@ -278,9 +296,30 @@ export class SpriteFxLayer {
         }
       }
       e.anim.advance(dt, true);
-      this.batchSprite(e.anim, e, 0, e.light);
       remaining.push(e);
     }
     return remaining;
+  }
+
+  /**
+   * Draws both one-shot lists, interpolated `alpha` of the way through the last
+   * tic. Runs inside the caller's `beginFrame`/`endFrame` pair alongside
+   * `ProjectileLayer.draw`. docs/frameloop.md § Interpolation.
+   */
+  draw(alpha: number): void {
+    this.drawList(this.teleportFogs, alpha);
+    // After the fogs and (at the call site) after the projectiles, so an
+    // explosion or smoke puff spawned by an arrival this tic is drawn on it
+    // rather than a frame late — the ordering `updateImpacts` used to carry.
+    this.drawList(this.impacts, alpha);
+  }
+
+  private drawList(list: OneShotEffect[], alpha: number): void {
+    for (const e of list) {
+      this.drawAt.x = e.drawPrevX + (e.x - e.drawPrevX) * alpha;
+      this.drawAt.y = e.drawPrevY + (e.y - e.drawPrevY) * alpha;
+      this.drawAt.z = e.drawPrevZ + (e.z - e.drawPrevZ) * alpha;
+      this.batchSprite(e.anim, this.drawAt, 0, e.light);
+    }
   }
 }

@@ -6,13 +6,18 @@ import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { boxToCircleRadius } from '../../src/util/geom.ts';
 import { ThingType } from '../../src/game/thingtypes.ts';
 import type { Pos3 } from '../../src/types.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
 
 /**
  * A projectile's contact test was one flat 40-unit disc plus a ±128 height
  * tolerance for every missile and every body alike, sampled at the end of each
  * frame's step. That made monster fireballs hit far too generously, made the
- * player's own missiles thread through wide monsters, and — since `game.ts`
- * clamps `dt` at 0.05s — let the fastest missiles step clean past a body.
+ * player's own missiles thread through wide monsters, and let the fastest
+ * missiles step clean past a body.
+ *
+ * The tic lock halved the worst case — a step is now one `DOOM_TIC` rather than
+ * the old 0.05s `dt` clamp — but did not remove it: 25 units/tic is still wider
+ * than some bodies, so the swept test remains load-bearing.
  * See docs/monster-attacks.md § Monster projectiles in flight.
  */
 
@@ -81,13 +86,18 @@ describe('Regressions · projectile contact', () => {
   });
 
   test('a graze that falls between two frame samples still connects', () => {
-    // game.ts clamps dt at 0.05s; MT_ARACHPLAZ/MT_BFG fly 25 units/tic = 875/sec,
-    // so one frame can carry a missile 43 units — further than the body it is
-    // passing is wide, which is what makes sampling the endpoints lossy.
+    // MT_ARACHPLAZ/MT_BFG fly 25 units/tic, so one tic carries a missile 25
+    // units — still further than the body it is passing is wide, which is what
+    // makes sampling the endpoints lossy.
     const ball = PROJECTILE_RADIUS.APLS;
-    const step = 875 * 0.05;
+    const step = 875 * DOOM_TIC;
     const reach = boxToCircleRadius(PLAYER_RADIUS + ball);
-    const offset = reach - 3;
+    // 1 unit inside the contact circle, not the 3 this used before the tic lock:
+    // a shorter step puts the endpoints closer to the closest-approach point, so
+    // the band where a point test misses but a swept test connects is narrower.
+    // That band shrinking is the whole benefit of the shorter step — it has not
+    // closed, which is why the swept test is still load-bearing.
+    const offset = reach - 1;
 
     // Closest approach falls at the step's midpoint, inside the contact circle;
     // both endpoints sit outside it, so a point test at either one sees nothing.

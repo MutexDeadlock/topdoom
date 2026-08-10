@@ -286,6 +286,16 @@ Both reuse existing `DoorState`s: 10 is seeded straight into `'hold'` (already "
 stop"), 14 into a new `'holdClosed'` — the wait-at-the-*bottom* mirror of `'hold'`, which 16/76's
 post-close wait also uses.
 
+## Movers run at the tic rate
+
+Doors, lifts, floors, ceilings and crushers write `sector.floorHeight`/`ceilHeight` and rebuild their
+mover geometry once per simulation tic, and that motion is **deliberately not interpolated** for
+display the way sprite positions are (docs/frameloop.md § Interpolation). 35 Hz is the rate vanilla
+ran them at, a lift is a large slow object where the stepping reads far less than it does on a
+sprite, and interpolating would mean lerping heights and rebuilding meshes on the render clock — the
+most invasive change available in the riskiest code here. If a door ever *does* need smoothing, that
+is its own change, not an oversight to be fixed in passing.
+
 ## Lights
 
 The sector-type patterns (`SECTOR_LIGHT_SPECIALS`, `wad/specials.ts`) are assigned once at map load

@@ -12,7 +12,7 @@ import type { World } from './world.ts';
  * is then 2.5° below horizontal and meets the floor `240/tan(2.5°) ≈ 5500`
  * out, i.e. ~5080 past the player. A radius shorter than that leaves geometry
  * the player is plainly looking at sitting in the dark — and, because
- * `ThingLayer` gates both rendering and shootability on fog alpha, a monster
+ * `ThingLayer` gates both rendering and shootability on fog, a monster
  * standing in it is invisible *and* unhittable while it shoots back.
  * See docs/fogofwar.md § Reveal radius.
  */
@@ -24,21 +24,27 @@ const SNAP_EPS = 0.004;
 
 /**
  * Cap on how many not-yet-explored subsectors get their sample rays tested in
- * one `update` call. Tuned by feel against freedoom2 MAP03 (315 sectors, 2855
+ * one `tick` call. Tuned by feel against freedoom2 MAP03 (315 sectors, 2855
  * linedefs, 1531 subsectors): with no cap, the initial reveal sweep — every
  * unexplored subsector's sample points against every blocker within
- * `SIGHT_RADIUS` — measured 8.6ms/frame with the player standing still at
- * spawn, over half a 60fps budget before rendering runs at all, vs. ~0.3-0.4ms
- * on DOOM2 MAP02/E1M1. The cap turns that one-frame spike into a sweep spread
- * over several frames (`scanCursor` picks up where the last call left off,
+ * `SIGHT_RADIUS` — measured 8.6ms with the player standing still at spawn, over
+ * half a 60fps budget before rendering runs at all, vs. ~0.3-0.4ms on DOOM2
+ * MAP02/E1M1. The cap turns that one-call spike into a sweep spread over
+ * several tics (`scanCursor` picks up where the last call left off,
  * round-robin), which is invisible: reveal already fades in over `FADE_SPEED`
- * seconds, so a few frames' delay before a subsector's fade even starts is
- * well under the threshold of "late". A subsector that fails every sample
- * this frame (out of range, or blocked) is simply retried on the next pass
- * through the array — no state is lost, `pending` just shrinks slower on a
- * level big enough to need the cap at all.
+ * seconds, so a few tics' delay before a subsector's fade even starts is well
+ * under the threshold of "late". A subsector that fails every sample this tic
+ * (out of range, or blocked) is simply retried on the next pass through the
+ * array — no state is lost, `pending` just shrinks slower on a level big enough
+ * to need the cap at all.
+ *
+ * **Per tic, not per frame**, since `tick` runs on the simulation clock and
+ * `explored` is a gameplay input (see `isVisible`) — a per-frame budget would
+ * make what is revealed, and so what is shootable, depend on framerate. The 350
+ * holds the old ~200-per-frame-at-60fps sweep rate across 35 tics/sec; the
+ * trade is that one call now does up to 1.75x the work it used to.
  */
-const MAX_SIGHT_TESTS_PER_FRAME = 200;
+const MAX_SIGHT_TESTS_PER_TIC = 350;
 
 /**
  * How far a wall's probe point is pushed off its own face, so it lands inside
@@ -108,7 +114,7 @@ export class FogOfWar {
   /** Sight-blocking lines near the player, refreshed each frame as x1,y1,x2,y2 runs. */
   private blockers: number[] = [];
 
-  /** Round-robin resume point into `sights` for `update`'s budgeted scan — see `MAX_SIGHT_TESTS_PER_FRAME`. */
+  /** Round-robin resume point into `sights` for `tick`'s budgeted scan — see `MAX_SIGHT_TESTS_PER_TIC`. */
   private scanCursor = 0;
 
   constructor(world: World, occluders: WallOccluder[], startX: number, startY: number) {
@@ -187,15 +193,23 @@ export class FogOfWar {
     }
 
     // Seed the spawn's surroundings fully revealed instead of fading up from
-    // black on frame one — a large dt drives the lerp below straight to
-    // target, and `Infinity` bypasses `MAX_SIGHT_TESTS_PER_FRAME` so this one
-    // call still reveals everything visible from spawn instead of leaving
-    // some of it to fade in over the first few real frames.
-    this.update(10, startX, startY, Infinity);
+    // black on frame one. `Infinity` bypasses `MAX_SIGHT_TESTS_PER_TIC` so this
+    // one call reveals everything visible from spawn rather than leaving some of
+    // it to fade in over the first few tics; the alpha snap below is what skips
+    // the fade itself.
+    this.tick(startX, startY, Infinity);
+    this.alpha.set(this.explored);
   }
 
-  /** Player position in DOOM (x, y) coordinates. */
-  update(dt: number, playerX: number, playerY: number, sightTestBudget = MAX_SIGHT_TESTS_PER_FRAME): void {
+  /**
+   * One tic of reveal: marks newly seen subsectors `explored`. Player position
+   * in DOOM (x, y) coordinates.
+   *
+   * On the **simulation** clock, because `explored` decides what can be shot
+   * (`isVisible`). The visual fade is `updateFade`, which is not.
+   * docs/fogofwar.md § What gameplay reads.
+   */
+  tick(playerX: number, playerY: number, sightTestBudget = MAX_SIGHT_TESTS_PER_TIC): void {
     const currentSS = this.world.subsectorAt(playerX, playerY);
     if (currentSS >= 0 && currentSS < this.explored.length && !this.explored[currentSS]) {
       this.explored[currentSS] = 1;
@@ -226,12 +240,30 @@ export class FogOfWar {
       }
       this.scanCursor = ss;
     }
+  }
 
+  /**
+   * Fades each subsector's drawn alpha toward whether it is explored. Purely
+   * cosmetic and on the **render** clock: nothing in the simulation reads
+   * `alpha`, which is what lets this stay framerate-smooth without making
+   * shootability framerate-dependent.
+   */
+  updateFade(dt: number): void {
     for (let ss = 0; ss < this.alpha.length; ss++) {
       const target = this.explored[ss];
       if (this.alpha[ss] === target) continue;
       this.alpha[ss] = dampen(this.alpha[ss], target, FADE_SPEED, dt, SNAP_EPS);
     }
+  }
+
+  /**
+   * Whether a subsector has been revealed — the **gameplay** gate, deciding
+   * what is drawn, shootable and auto-aimable (`ThingLayer.update`). Reads the
+   * crisp `explored` flag rather than the damped `alpha`, so it cannot depend on
+   * how many frames the fade has had. docs/fogofwar.md § What gameplay reads.
+   */
+  isVisible(subsector: number): boolean {
+    return this.explored[subsector] !== 0;
   }
 
   /**

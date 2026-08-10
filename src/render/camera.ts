@@ -27,6 +27,14 @@ const KEY_YAW_REPEAT_INTERVAL = 0.26;
  * show a bit of their height and the level reads as a space rather than a plan.
  * `yawDeg` lets it orbit around the followed point (Q/E, see `applyYawInput`)
  * so geometry facing away from the default south view stays reachable.
+ *
+ * **This camera's follow point and yaw are simulation state, not view state**,
+ * and advance in `tick` on the tic clock; `applyToCamera` interpolates them into
+ * the actual `THREE` camera for display. That split is forced rather than
+ * stylistic: the pointer ray is cast through this camera, and the ray decides
+ * both `Player.angle` and the basis WASD moves along — so a render-smoothed
+ * pose would make aim and movement direction depend on framerate.
+ * docs/render.md § The camera is simulation state.
  */
 export class TopDownCamera {
   readonly camera: THREE.PerspectiveCamera;
@@ -40,10 +48,17 @@ export class TopDownCamera {
 
   private target = new THREE.Vector3();
   private smoothed = new THREE.Vector3();
+  /** Last tic's `smoothed`/`_yawDeg`, the interpolation source for `applyToCamera`. */
+  private prevSmoothed = new THREE.Vector3();
+  private prevYawDeg: number;
   private initialised = false;
   /** Seconds Q/E has been continuously held, for auto-repeat — see `applyYawInput`. */
   private qHoldTime = 0;
   private eHoldTime = 0;
+  /** Scratch for `applyToCamera`'s interpolated follow point, so drawing allocates nothing. */
+  private viewPoint = new THREE.Vector3();
+  /** The interpolated yaw `applyToCamera` last drew at — see `viewAngleDeg`. */
+  private viewYawDeg: number;
 
   constructor(aspect: number, options: TopDownCameraOptions = {}) {
     this.tiltDeg = options.tiltDeg ?? 60;
@@ -51,6 +66,8 @@ export class TopDownCamera {
     this.aimLead = options.aimLead ?? 0.18;
     this._yawDeg = options.yawDeg ?? 0;
     this.targetYawDeg = this._yawDeg;
+    this.prevYawDeg = this._yawDeg;
+    this.viewYawDeg = this._yawDeg;
 
     // The far plane is `VIEW_DISTANCE` rather than a number of its own: the distance fog is what
     // ends the view, and a far plane below it would clip geometry the fog hasn't hidden yet.
@@ -71,6 +88,10 @@ export class TopDownCamera {
   set yawDeg(value: number) {
     this._yawDeg = value;
     this.targetYawDeg = value;
+    // An instant reorient must not leave a stale previous yaw for the next
+    // frame to interpolate out of, or the spawn/teleport snap animates instead.
+    this.prevYawDeg = value;
+    this.viewYawDeg = value;
   }
 
   /**
@@ -107,9 +128,21 @@ export class TopDownCamera {
    * DOOM-space angle (0 = east, 90 = north, CCW) from the followed point to
    * the camera. At yaw=0 this is -90 (due south), matching the sprite system's
    * default viewer angle; see render/sprites.ts's VIEWER_ANGLE_DEG.
+   *
+   * The **tic-exact** angle: this is the one the simulation reads, since it is
+   * the basis WASD movement is rotated into. Billboards want `viewAngleDeg`.
    */
   get viewerAngleDeg(): number {
     return this._yawDeg - 90;
+  }
+
+  /**
+   * `viewerAngleDeg` at the interpolated pose the camera is actually drawn at,
+   * for billboard orientation. Using the tic-exact angle instead would leave
+   * every sprite a fraction of a yaw snap out of line with the walls behind it.
+   */
+  get viewAngleDeg(): number {
+    return this.viewYawDeg - 90;
   }
 
   setAspect(aspect: number): void {
@@ -118,10 +151,16 @@ export class TopDownCamera {
   }
 
   /**
+   * One tic of camera *simulation*: advances the smoothed follow point and the
+   * orbit yaw. Draws nothing — `applyToCamera` is what moves the `THREE` camera.
+   *
    * @param pos  the followed point in DOOM coordinates (the player's feet)
    * @param aim  world-space point the player is aiming at, if any
    */
-  update(dt: number, pos: Pos3, aim: Pos2 | null): void {
+  tick(dt: number, pos: Pos3, aim: Pos2 | null): void {
+    this.prevSmoothed.copy(this.smoothed);
+    this.prevYawDeg = this._yawDeg;
+
     this.target.set(pos.x, pos.z, -pos.y);
 
     if (aim && this.aimLead > 0) {
@@ -137,15 +176,31 @@ export class TopDownCamera {
 
     if (!this.initialised) {
       this.smoothed.copy(this.target);
+      this.prevSmoothed.copy(this.target);
       this.initialised = true;
     } else {
       this.smoothed.lerp(this.target, 1 - Math.exp(-10 * dt));
     }
 
     this._yawDeg += (this.targetYawDeg - this._yawDeg) * (1 - Math.exp(-YAW_STEP_SMOOTH_RATE * dt));
+  }
+
+  /**
+   * Places the `THREE` camera `alpha` of the way from the previous tic's pose to
+   * the current one — `alpha` 1 is the tic-exact pose, which is what the tic
+   * itself uses before casting the aim ray. Pure view work: it writes nothing
+   * the simulation reads back. docs/frameloop.md § Interpolation.
+   */
+  applyToCamera(alpha: number): void {
+    this.viewPoint.copy(this.prevSmoothed).lerp(this.smoothed, alpha);
+    // Both yaws are plain accumulating degrees rather than a wrapped angle
+    // (`stepYaw` adds ±45 without normalising), so a straight lerp is right and
+    // there is no shortest-arc case to handle.
+    const yawDeg = this.prevYawDeg + (this._yawDeg - this.prevYawDeg) * alpha;
+    this.viewYawDeg = yawDeg;
 
     const tilt = THREE.MathUtils.degToRad(this.tiltDeg);
-    const yaw = THREE.MathUtils.degToRad(this._yawDeg);
+    const yaw = THREE.MathUtils.degToRad(yawDeg);
     // The offset sits yawDeg around the target from due south (yaw=0) so the
     // camera can orbit while staying tilted the same amount off vertical.
     const horiz = Math.sin(tilt) * this.distance;
@@ -153,28 +208,31 @@ export class TopDownCamera {
     const offsetX = horiz * Math.sin(yaw);
     const offsetZ = horiz * Math.cos(yaw);
 
-    this.camera.position.set(this.smoothed.x + offsetX, this.smoothed.y + offsetY, this.smoothed.z + offsetZ);
-    this.camera.lookAt(this.smoothed);
+    this.camera.position.set(this.viewPoint.x + offsetX, this.viewPoint.y + offsetY, this.viewPoint.z + offsetZ);
+    this.camera.lookAt(this.viewPoint);
   }
 
   /** Where the pointer ray meets the horizontal plane at height `planeY`. */
   pointerToPlane(ndcX: number, ndcY: number, planeY: number): Pos2 | null {
-    const ray = this.raycasterFor(ndcX, ndcY);
+    const ray = this.rayFor(ndcX, ndcY);
     const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY);
     const hit = new THREE.Vector3();
-    if (!ray.ray.intersectPlane(plane, hit)) return null;
+    if (!ray.intersectPlane(plane, hit)) return null;
     return { x: hit.x, y: -hit.z };
   }
 
   /**
-   * A THREE.Raycaster through the pointer's NDC position, for callers that
-   * need to test against real meshes (auto-aim's click-on-a-monster check,
-   * game/things.ts's `ThingLayer.pickMonster`) rather than the flat plane
-   * `pointerToPlane` intersects.
+   * A world-space ray through the pointer's NDC position: auto-aim tests it
+   * against monster billboards (game/things.ts's `ThingLayer.pickMonster`),
+   * `pointerToPlane` against the flat aim plane.
+   *
+   * Cast through the `THREE` camera at whatever pose it currently holds, so a
+   * caller in the tic has to put that at alpha 1 first — docs/frameloop.md §
+   * Posing for the aim ray.
    */
-  raycasterFor(ndcX: number, ndcY: number): THREE.Raycaster {
-    const ray = new THREE.Raycaster();
-    ray.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
-    return ray;
+  rayFor(ndcX: number, ndcY: number): THREE.Ray {
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), this.camera);
+    return raycaster.ray;
   }
 }

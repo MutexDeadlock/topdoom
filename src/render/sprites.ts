@@ -22,6 +22,78 @@ export function pickRotationDigit(facingDeg: number, viewerAngleDeg = VIEWER_ANG
 export interface CachedSprite {
   material: THREE.MeshBasicMaterial;
   geometry: THREE.BufferGeometry;
+  /**
+   * The quad `geometry` spans, in the sprite's own local units and with the
+   * hotspot shift already folded in (see `SpriteMaterialCache.get`): x runs
+   * `minX`..`maxX` across the plane, y from 0 at the feet — the plane's bottom
+   * edge, anchored to the thing's own z — up to `height`.
+   *
+   * Carried alongside the geometry so a caller can intersect the billboard
+   * *analytically*, with no mesh and no render state to raycast against:
+   * `intersectBillboard`, for `ThingLayer.pickMonster`.
+   */
+  quad: { minX: number; maxX: number; height: number };
+}
+
+/**
+ * How far a billboard can reach from its own anchor point, in local units
+ * before `scale` — a conservative bound for a caller that wants to reject a
+ * sprite *before* resolving which lump it currently draws
+ * (`ThingLayer.pickMonster`'s broad phase, which is what keeps that from
+ * being a `SpriteBank` lookup per thing per tic).
+ *
+ * Measured across every world sprite lump in the bundled IWADs (the player's
+ * own HUD weapon art excluded, since nothing draws it in the world): the
+ * furthest reach is 130 units sideways of the hotspot (`SPID`, the spider
+ * mastermind) and 134 up (`CYBR`, the cyberdemon), i.e. 187 from the anchor.
+ * This is double that, so a PWAD carrying outsized monster art doesn't quietly
+ * go unclickable around its edges. Only ever a rejection test —
+ * `intersectBillboard` is what decides an actual hit.
+ */
+export const BILLBOARD_MAX_REACH = 384;
+
+/**
+ * Where `ray` crosses the billboard `cached` is drawn at, as a distance along
+ * the ray, or -1 for a miss. The plane is upright and turned only about its
+ * vertical axis (see `SpriteMaterialCache`'s class doc), so `cos`/`sin` are
+ * the shared yaw every sprite is drawn at — `Math.cos/sin` of
+ * `viewerAngleDeg - VIEWER_ANGLE_DEG` in radians, exactly what
+ * `SpriteBatch.begin` computes once per batch and for the same reason.
+ *
+ * `pos` is the sprite's world-space anchor (`doomToWorld` of its map position,
+ * i.e. its feet) and `scale` its size multiplier, matching what the batch is
+ * handed. Deliberately the plain quad, transparent corners included, the same
+ * silhouette a mesh raycast would have hit. docs/combat.md § Auto-aim.
+ */
+export function intersectBillboard(
+  ray: THREE.Ray,
+  cached: CachedSprite,
+  pos: THREE.Vector3,
+  scale: number,
+  cos: number,
+  sin: number,
+): number {
+  // The plane's own basis: local +x runs (cos, 0, -sin) in world space and
+  // local +y is straight up, so the normal is their cross product. Mirrors
+  // the instance matrix `SpriteBatch.add` writes — the two have to agree, and
+  // tests/render/billboard-pick.test.ts holds them to it.
+  const nx = sin;
+  const nz = cos;
+  const denom = ray.direction.x * nx + ray.direction.z * nz;
+  // Edge-on: a plane of zero apparent width can't be clicked, and dividing
+  // through would hand back an arbitrarily distant hit.
+  if (denom > -1e-6 && denom < 1e-6) return -1;
+  const t = ((pos.x - ray.origin.x) * nx + (pos.z - ray.origin.z) * nz) / denom;
+  if (t < 0) return -1;
+
+  const wy = ray.origin.y + ray.direction.y * t - pos.y;
+  const ly = wy / scale;
+  if (ly < 0 || ly > cached.quad.height) return -1;
+  const wx = ray.origin.x + ray.direction.x * t - pos.x;
+  const wz = ray.origin.z + ray.direction.z * t - pos.z;
+  const lx = (wx * cos - wz * sin) / scale;
+  if (lx < cached.quad.minX || lx > cached.quad.maxX) return -1;
+  return t;
 }
 
 /**
@@ -123,7 +195,13 @@ export class SpriteMaterialCache {
         // would simply vanish there.
         side: THREE.DoubleSide,
       });
-      result = { material, geometry };
+      // Read off the same two offsets the geometry was translated by, so the
+      // analytic pick can never drift from what is actually drawn.
+      result = {
+        material,
+        geometry,
+        quad: { minX: offsetX - bmp.width / 2, maxX: offsetX + bmp.width / 2, height: bmp.height },
+      };
     }
     this.cache.set(key, result);
     return result;
@@ -280,11 +358,10 @@ export class SpriteAnimator {
     // override sequence can still be sitting there the instant control falls
     // through to here, and nothing below would touch it if this call's own
     // animTimer hasn't yet built up enough to reach the while loop. Clamping
-    // here, unconditionally, is what makes that safe regardless: every other
-    // path in this method already leaves animIndex valid for whichever array
-    // is about to be read (death.index/override.index for their own,
-    // matching-length arrays, or the reset below), so this is the one seam
-    // where a stale value can otherwise survive into a read.
+    // here covers a sequence *ending*; `die`/`playOnce` reset the index
+    // themselves to cover one *starting*, since `resolve` can be reached
+    // between a state change and the next `advance` (docs/frameloop.md § What
+    // runs in a tic) and must never see an index past the end of its array.
     if (this.animIndex >= this.animFrames.length) this.animIndex = 0;
     if (animating && this.animFrames.length > 1) {
       this.animTimer += dt;
@@ -332,6 +409,12 @@ export class SpriteAnimator {
   die(frames: string[], frameDuration: number, spriteName?: string): void {
     this.death.start(frames, frameDuration, true);
     this.deathSpriteName = spriteName ?? null;
+    // Onto the new sequence's first frame *now*, not at the next `advance`.
+    // `resolve` reads `animFrames[animIndex]` against whichever sequence is
+    // live, so a switch that leaves the old index in place dangles past the end
+    // of a shorter one — see this method's rule in `animIndex`'s own doc.
+    this.animIndex = 0;
+    this.animTimer = 0;
   }
 
   /**
@@ -342,6 +425,10 @@ export class SpriteAnimator {
   playOnce(frames: string[], frameDuration: number): void {
     if (this.death.frames) return;
     this.override.start(frames, frameDuration, false);
+    // Same reason as `die`: keep `animIndex` valid for the sequence `resolve`
+    // is about to read, without waiting for an `advance` to clamp it.
+    this.animIndex = 0;
+    this.animTimer = 0;
   }
 
   /** Undoes `die`, back to the normal alive animation — used when a level restart brings the player back to life. */

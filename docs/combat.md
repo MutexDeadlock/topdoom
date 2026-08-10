@@ -139,10 +139,24 @@ G1).
 ## Auto-aim
 
 **Auto-aim is click-to-target, not vanilla's autoaim cone** — this game has a mouse pointer, so "aim
-at that one" is expressible directly. `ThingLayer.pickMonster` raycasts the cursor through
-`SpriteBatch.raycast` (docs/sprites.md § Batching) with a predicate accepting `MONSTER_TYPES` **and
-the exploding barrel**, minus anything already dead, picked up, `NO_AUTO_AIM_TYPES`, or not currently
-`visible` — the last so a fog-of-war-hidden monster can't be targeted through the geometry hiding it.
+at that one" is expressible directly. `ThingLayer.pickMonster` intersects the cursor ray with each
+candidate's billboard and keeps the nearest, accepting `MONSTER_TYPES` **and the exploding barrel**,
+minus anything already dead, picked up, `NO_AUTO_AIM_TYPES`, or not currently `visible` — the last so
+a fog-of-war-hidden monster can't be targeted through the geometry hiding it. Anything rejected is
+*skipped*, not treated as a blocker, so a decoration standing in front of a monster doesn't make it
+untargetable.
+
+The test is **analytic and reads no render state**: `intersectBillboard` (`render/sprites.ts`)
+reproduces the instance matrix `SpriteBatch.add` writes — the upright plane, its hotspot-shifted quad
+and the shared yaw — against the thing's own tic position and the tic-exact viewer angle. That is
+what lets the tic cast this ray without first re-posing the sprite batch (docs/frameloop.md § Posing
+for the aim ray), and it is why the two must not drift: `tests/render/billboard-pick.test.ts` pins
+the analytic plane against both the batch's matrix and a `THREE` raycast of the same quad. The target
+is the plain quad, transparent corners included, exactly the silhouette the old mesh raycast hit.
+
+A conservative sphere around each thing (`BILLBOARD_MAX_REACH`) rejects the overwhelming majority
+before any `SpriteBank` lookup; without it the scan would resolve a lump per thing per tic, which is
+the cost the analytic pick exists to avoid.
 It returns the hit monster's position *and* its sector's live floor height. `game.ts` uses that as both the aim point and the shot's end height. It supplies the shot's aim
 *direction and slope* only — whether any one pellet lands is still resolved geometrically against the
 target's body, so a spread weapon spreads (§ How a shot deals damage).

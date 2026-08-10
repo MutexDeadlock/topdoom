@@ -438,7 +438,7 @@ function fireAttack(
  * usually the player, but a monster hurt by another chases *it* instead, and
  * nothing here needs to know the difference.
  *
- * **Decisions run on vanilla's clock, movement runs on the frame's.** Every
+ * **Decisions run on vanilla's clock, movement runs on the tic's.** Every
  * counter `A_Chase` touches is measured in chase calls, so `runChaseCall`
  * fires on `chaseInterval` and nothing else; position is interpolated per
  * frame along the `movedir` the last chase call settled on, since vanilla's

@@ -7,8 +7,6 @@ const INITIAL_CAPACITY = 64;
 
 interface Batch {
   mesh: THREE.InstancedMesh;
-  /** Per-instance `ownerId` handed to `add`, so a raycast hit maps back to whatever the caller keyed on. */
-  owners: number[];
   count: number;
 }
 
@@ -64,24 +62,24 @@ export class SpriteBatch {
     for (const m of this.materials.values()) m.opacity = opacity;
   }
 
-  /** Starts a frame: drops last frame's instances and fixes the shared yaw every sprite is drawn at. */
+  /**
+   * Starts a frame: drops last frame's instances and fixes the shared yaw
+   * every sprite is drawn at. The same yaw `render/sprites.ts`'s
+   * `intersectBillboard` takes, which has to reproduce the instance matrix
+   * `add` writes below.
+   */
   begin(viewerAngleDeg: number): void {
     const rad = THREE.MathUtils.degToRad(viewerAngleDeg - VIEWER_ANGLE_DEG);
     this.cos = Math.cos(rad);
     this.sin = Math.sin(rad);
-    for (const b of this.batches.values()) {
-      b.count = 0;
-      b.owners.length = 0;
-    }
+    for (const b of this.batches.values()) b.count = 0;
   }
 
   /**
    * Queues one sprite. `pos` is already **three.js** space (the caller
-   * converts via `doomToWorld`), `light` is a 0..1 tint (`lightToColor`), and
-   * `ownerId` is an opaque handle `raycast` hands back for whatever the hit
-   * instance turns out to be.
+   * converts via `doomToWorld`) and `light` is a 0..1 tint (`lightToColor`).
    */
-  add(cached: CachedSprite, x: number, y: number, z: number, scale: number, light: number, ownerId: number): void {
+  add(cached: CachedSprite, x: number, y: number, z: number, scale: number, light: number): void {
     const batch = this.batchFor(cached);
     const i = batch.count;
     if (i === batch.mesh.instanceMatrix.count) this.grow(cached, batch);
@@ -105,7 +103,6 @@ export class SpriteBatch {
     c[co + 1] = light;
     c[co + 2] = light;
 
-    batch.owners.push(ownerId);
     batch.count = i + 1;
   }
 
@@ -115,30 +112,7 @@ export class SpriteBatch {
       b.mesh.count = b.count;
       b.mesh.instanceMatrix.needsUpdate = true;
       b.mesh.instanceColor!.needsUpdate = true;
-      // Instances move every frame, so any sphere three.js cached for the
-      // raycast below (which lazily computes and then keeps one) is stale by
-      // now. Nulling it forces a recompute on next use; nothing else reads it,
-      // since the batches opt out of frustum culling (see `grow`).
-      b.mesh.boundingSphere = null;
     }
-  }
-
-  /**
-   * The `ownerId` of the nearest instance this ray hits that `accept` approves
-   * of, or null. Instances `accept` rejects are skipped rather than treated as
-   * blockers — the caller (`ThingLayer.pickMonster`) only ever wants monsters,
-   * and a decoration standing in front of one shouldn't make it unclickable,
-   * matching the behavior from when only monster meshes were in the raycast
-   * set at all.
-   */
-  raycast(raycaster: THREE.Raycaster, accept: (ownerId: number) => boolean): number | null {
-    for (const hit of raycaster.intersectObjects(this.group.children, false)) {
-      const batch = this.batches.get((hit.object as THREE.InstancedMesh).userData.cached as CachedSprite);
-      if (!batch || hit.instanceId === undefined) continue;
-      const owner = batch.owners[hit.instanceId];
-      if (owner !== undefined && accept(owner)) return owner;
-    }
-    return null;
   }
 
   dispose(): void {
@@ -156,7 +130,7 @@ export class SpriteBatch {
   private batchFor(cached: CachedSprite): Batch {
     const hit = this.batches.get(cached);
     if (hit) return hit;
-    const batch: Batch = { mesh: this.makeMesh(cached, INITIAL_CAPACITY), owners: [], count: 0 };
+    const batch: Batch = { mesh: this.makeMesh(cached, INITIAL_CAPACITY), count: 0 };
     this.group.add(batch.mesh);
     this.batches.set(cached, batch);
     return batch;
@@ -186,8 +160,6 @@ export class SpriteBatch {
     // Off-screen instances are clipped by the GPU for the price of a trivially
     // cheap vertex shader on 4 vertices, which is the better trade here.
     mesh.frustumCulled = false;
-    // Lets `raycast` map a hit mesh back to its batch without a reverse scan.
-    mesh.userData.cached = cached;
     return mesh;
   }
 

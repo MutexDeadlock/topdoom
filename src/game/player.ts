@@ -128,6 +128,18 @@ export class Player implements Pos3 {
    */
   landingSpeed = 0;
 
+  /**
+   * Where the player was at the end of the previous tic, for the render layer to
+   * interpolate from — `game.ts: posePlayer` and the camera's follow point both
+   * read it. Written at the top of `update`, and re-synced by every teleport-like
+   * jump (`moveTo`) so an instant relocation is not smeared into a glide across
+   * the map. docs/frameloop.md § Interpolation.
+   */
+  prevX: number;
+  prevY: number;
+  prevZ: number;
+  prevAngle: number;
+
   private world: World;
 
   constructor(world: World) {
@@ -137,6 +149,22 @@ export class Player implements Pos3 {
     this.y = start.y;
     this.angle = start.angle;
     this.z = world.groundFloor(start.x, start.y, PLAYER_RADIUS);
+    this.prevX = this.x;
+    this.prevY = this.y;
+    this.prevZ = this.z;
+    this.prevAngle = this.angle;
+  }
+
+  /**
+   * Collapses the interpolation window onto the current position, so the next
+   * frame draws the player where they now are instead of gliding there from
+   * where they were. Every discontinuous move has to call this.
+   */
+  syncInterpolation(): void {
+    this.prevX = this.x;
+    this.prevY = this.y;
+    this.prevZ = this.z;
+    this.prevAngle = this.angle;
   }
 
   get eyeZ(): number {
@@ -159,12 +187,15 @@ export class Player implements Pos3 {
     this.knockVelX = 0;
     this.knockVelY = 0;
     this.z = this.world.groundFloor(pos.x, pos.y, PLAYER_RADIUS);
+    this.syncInterpolation();
   }
 
   /** Teleporter landing: drops the player at the destination facing `dest.angle`, matching vanilla's own view-angle snap on arrival. */
   teleportTo(dest: Placement): void {
     this.moveTo(dest);
     this.angle = dest.angle;
+    // After the angle, not just inside `moveTo`: a teleport snaps the facing too.
+    this.syncInterpolation();
   }
 
   /**
@@ -246,6 +277,10 @@ export class Player implements Pos3 {
     blockers?: readonly ThingBlocker[],
   ): void {
     this.landingSpeed = 0;
+    this.prevX = this.x;
+    this.prevY = this.y;
+    this.prevZ = this.z;
+    this.prevAngle = this.angle;
     const shiftHeld = input.held('ShiftLeft', 'ShiftRight');
     const run = (getAutorun() ? !shiftHeld : shiftHeld) ? 1 : 0;
     const forwardMove = FORWARD_MOVE[run];

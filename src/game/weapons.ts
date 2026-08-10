@@ -539,7 +539,16 @@ export type Shot = HitscanShot | ProjectileShot | MeleeShot;
  * where the damage this class rolls per shot actually gets applied.
  */
 export class WeaponSystem {
-  private cooldownRemaining = 0;
+  /**
+   * Tics until the trigger may fire again, counted as a **whole number** rather
+   * than as seconds remaining. The simulation steps one tic at a time and every
+   * `WeaponDef.cooldown` is a whole number of tics, so an integer countdown is
+   * both exact and the same model vanilla has — a psprite sitting in a state
+   * with that many tics left. Seconds invited a float residue to decide whether
+   * a shot landed on tic N or N+1, which is a whole 33% of the plasma rifle's
+   * rate. docs/weapons.md § Fire rates.
+   */
+  private cooldownTics = 0;
   /**
    * Which weapon was selected as of the previous frame, so bringing the
    * chainsaw up can play `sawup` — a switch can come from a key, the wheel
@@ -572,6 +581,9 @@ export class WeaponSystem {
    * it had just been brought up.
    */
   beginLevel(inv: Inventory): void {
+    // A fresh level starts ready to fire, rather than inheriting whatever was
+    // left on the clock when the last one ended.
+    this.cooldownTics = 0;
     this.lastWeapon = inv.currentWeapon;
     this.previousWeapon = null;
     this.sawIdleTimer = 0;
@@ -651,23 +663,28 @@ export class WeaponSystem {
    * one `HitscanShot` per pellet, one `ProjectileShot` per launch, or one
    * `MeleeShot` per swing. Empty whenever nothing fired.
    */
-  update(dt: number, firing: boolean, inv: Inventory, aimAngleRad: number): Shot[] {
-    // Floored at *minus one frame*, not at 0, so the overshoot past the
-    // cooldown is carried into the next one rather than dropped: a cooldown
-    // that isn't a whole number of frames otherwise rounds up to the frame
-    // time, which cost the plasma rifle (3 tics = 0.086s) 14% of its rate on a
-    // 60Hz display. One frame is also the cap, so a long stall can't bank a
-    // burst of instant shots.
-    this.cooldownRemaining = Math.max(-dt, this.cooldownRemaining - dt);
+  update(firing: boolean, inv: Inventory, aimAngleRad: number): Shot[] {
+    // Clamped at 0 rather than allowed to run negative. That and the plain
+    // assignment below are one rule in two halves — **an idle trigger banks
+    // nothing** — and it takes both: a counter that free-falls while the trigger
+    // is up, then has the cooldown *added* to it, comes back up through zero one
+    // tic at a time and fires every tic until it does. Breaking either half
+    // alone is harmless, which is exactly why the pair is easy to get wrong.
+    if (this.cooldownTics > 0) this.cooldownTics--;
     // A_ReFire's else branch: letting the trigger up — or having a weapon
     // switch pending — resets the burst, so the next shot counts as its first.
     if (!firing || inv.currentWeapon !== this.refireWeapon) this.refire = 0;
-    if (!firing || this.cooldownRemaining > 0) return [];
+    if (!firing || this.cooldownTics > 0) return [];
 
     const def = WEAPONS[inv.currentWeapon];
     if (def.ammoType && inv.ammo[def.ammoType] < def.ammoPerShot) return [];
 
-    this.cooldownRemaining += def.cooldown;
+    // Assigned, not added — the other half of the rule at the decrement above:
+    // the interval between two shots is exactly this weapon's own state length,
+    // with nothing carried over from the last one. `WEAPONS` quotes cooldowns in
+    // seconds (the table is written `N * DOOM_TIC`, and `tests/game/tables.test.ts`
+    // pins every entry to a whole tic), so this recovers the N the state chain holds.
+    this.cooldownTics = Math.round(def.cooldown / DOOM_TIC);
     if (def.ammoType) inv.ammo[def.ammoType] -= def.ammoPerShot;
     // `!player->refire` is read *before* A_ReFire bumps it, so the opening
     // shot of a hold is the accurate one.

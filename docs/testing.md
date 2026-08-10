@@ -30,7 +30,7 @@ Node runs **one process per test file**, which is what contains `player.ts`'s mo
 
 ```
 tests/
-  util/  wad/  game/  ui/    one file per src/ module under test
+  util/  wad/  game/  ui/  render/   one file per src/ module under test
   regression/            one file per fixed bug, named after the bug
   fixtures/              builders and test data, never tests
 ```
@@ -64,11 +64,13 @@ DOM. Deliberately **not** covered yet, and why:
 - **`ProjectileLayer` / `SpriteFxLayer`** — every `spawn*` short-circuits on `SpriteAnimator.resolve`,
   so a stubbed run would test the stubs. Test at `shotPath` level instead; `playerShotRange` exists
   as a separate exported function precisely so the range selection is reachable without the layer.
-- **`src/render/` (anything constructing THREE objects), `src/ui/`, `main.ts`, `game.ts`,
-  `audio/audio.ts`** — need a DOM or a GL context. Two carve-outs: `render/bsp.ts` *is* covered,
-  being pure geometry despite where it lives, and so is any pure helper a DOM module happens to
-  export — `tests/ui/hud.test.ts` covers `hud.ts`'s `formatClock`/`percentOf` while `Hud` itself
-  stays out.
+- **`src/render/` (anything that needs a GL context), `src/ui/`, `main.ts`, `game.ts`,
+  `audio/audio.ts`** — need a DOM or a renderer. Three carve-outs: `render/bsp.ts` *is* covered,
+  being pure geometry despite where it lives; so is any pure helper a DOM module happens to export —
+  `tests/ui/hud.test.ts` covers `hud.ts`'s `formatClock`/`percentOf` while `Hud` itself stays out;
+  and *constructing* THREE objects is fine on its own, only rendering them isn't, which is what lets
+  `tests/render/billboard-pick.test.ts` hold `intersectBillboard` against both a `SpriteBatch`
+  instance matrix and a `THREE.Raycaster` over the same quad.
 - **Performance.** Hot paths are measured deliberately, in a script, on a quiet machine. A timing
   assertion in the suite turns a loaded machine into a red build and teaches everyone to ignore it.
 
@@ -220,6 +222,28 @@ for the tests, and the table removes the motive entirely.
 
 `tests/util/random.test.ts` also asserts that **no file in `src/` mentions `Math.random`**. The repo
 runs no linter, so that test is the only thing keeping a second, undocumented entropy source out.
+
+## Framerate independence
+
+`tests/regression/framerate-independence.test.ts` is the one test that protects the whole tic lock,
+and the property it checks is invisible in ordinary play: the same elapsed wall-clock time must
+produce the same run whatever the display refreshes at. It mirrors `game.ts`'s accumulator, drives
+the same scene at 60 Hz, at 144 Hz and through a jittery pattern, and compares position, the AI's
+own counters and the RNG cursor — which vanilla itself uses as a desync checksum
+(docs/random.md § The table and the two cursors).
+
+Two things in it are load-bearing and easy to remove by accident:
+
+- **A third test asserts the *old* dt-scaled model diverges** on the same scene. Without it, a scene
+  that happened to resolve identically under any step size would let the first two pass with the tic
+  lock reverted.
+- **The duration is 5.5s, deliberately not a whole number of tics.** Neither `1/60` nor `1/144` is
+  exact in binary, so a total landing on a tic boundary has the two runs disagree by one tic purely
+  on last-bit accumulation — a property of any float accumulator, and not what the test is about.
+
+A test that drives a simulation system directly should step it at `DOOM_TIC`, since that is the only
+delta the engine ever passes. Several already did; `monster-flush-against-wall.test.ts` used `1/60`
+and was retimed.
 
 ## Writing a new test
 

@@ -62,7 +62,7 @@ import type { AudioEngine } from './audio/audio.ts';
 import { PLAYER_ORIGIN } from './audio/sfx.ts';
 import { SoundBank } from './wad/sound.ts';
 import type { Placement, Pos2 } from './types.ts';
-import { VIEW_DISTANCE } from './constants.ts';
+import { DOOM_TIC, VIEW_DISTANCE } from './constants.ts';
 
 /** Combined radius (map units) within which an item is close enough to pick up. */
 const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
@@ -89,6 +89,24 @@ const SECRET_MESSAGE = 'You found a secret area';
  * **Tuned by feel** — long enough to swallow a double tap, short enough not to feel stuck.
  */
 const INTERMISSION_INPUT_DELAY = 0.6;
+
+/**
+ * The simulation's fixed step. Every gameplay system advances by exactly this
+ * and never by a frame delta, which is what makes a run independent of the
+ * display it is drawn on. It is `DOOM_TIC` because vanilla's own 35 Hz clock is
+ * what every duration in the engine is already quoted in.
+ * docs/frameloop.md § The accumulator.
+ */
+const TIC_SECONDS = DOOM_TIC;
+
+/**
+ * Most tics one frame may run before the rest of the banked time is dropped.
+ * Bounds both the catch-up burst after a stall and the worst-case cost of a
+ * single frame; without it a backgrounded tab returns owing minutes of
+ * simulation and spends them all in one frame. Five is ~143ms of debt, a little
+ * over what the old `dt` clamp allowed to pass in one step.
+ */
+const MAX_TICS_PER_FRAME = 5;
 
 const FPS_CAP_STORAGE_KEY = 'topdoom.fpsCap';
 
@@ -181,6 +199,12 @@ export class Game {
 
   private running = false;
   private lastTime = 0;
+  /**
+   * Real time banked but not yet spent on a tic, always under `TIC_SECONDS` once
+   * `frame` has drained it. Doubles as the interpolation alpha's numerator — see
+   * docs/frameloop.md § The accumulator.
+   */
+  private accumulator = 0;
   /** Timestamp of the previous rendering opportunity, skipped ones included — the display's own period. See `dueThisFrame`. */
   private lastRaf = 0;
   /** When the next frame is due under the FPS cap; ignored while uncapped. See `dueThisFrame`. */
@@ -322,6 +346,8 @@ export class Game {
     // `M_ClearRandom`, from vanilla's own `G_InitNew` — this is the one place
     // every level start funnels through. docs/random.md § What this does not buy.
     clearRandom();
+    // A slow load is not simulation time, same as a pause — see `resume`.
+    this.accumulator = 0;
     // Keys don't survive a level transition in vanilla DOOM; health/armor/ammo do.
     finishLevel(this.inventory);
     // Whatever was still ringing belongs to the level being torn down — a door
@@ -484,6 +510,9 @@ export class Game {
     this.running = true;
     this.lastTime = performance.now();
     this.lastRaf = this.lastTime;
+    // Time spent paused is not simulation time: without this the level would
+    // run a catch-up burst of tics the moment the menu closes.
+    this.accumulator = 0;
     // Zero, not `lastTime + interval`: the first frame back is always due, and
     // `dueThisFrame` resyncs the deadline off its own timestamp.
     this.nextFrameAt = 0;
@@ -630,48 +659,81 @@ export class Game {
       requestAnimationFrame(this.frame);
       return;
     }
-    // rawDt is the real elapsed wall-clock time; dt clamps it so physics/AI
-    // never take a giant step after a stall (tab backgrounded, a slow map
-    // load). `DebugHud` gets rawDt, not dt — a clamped delta makes a genuine
-    // slideshow under-detect itself, since ten clamped 0.05s steps reach the
-    // fps accumulator's 0.5s threshold long before ten real frames have.
+    // `rawDt` is the real elapsed wall-clock time, and it is banked rather than
+    // consumed: the simulation only ever advances in whole `TIC_SECONDS` steps
+    // (`tic`), and whatever is left over becomes the interpolation alpha the
+    // draw below poses everything at. `DebugHud` gets `rawDt` because it is
+    // measuring real frames, not tics.
+    //
     // The lower clamp is load-bearing, not defensive: `now` can predate the
-    // `performance.now()` `resume` stamped into `lastTime`, so without it the
-    // first frame of a level can step every system *backwards*. See
-    // docs/frameloop.md § The frame delta.
+    // `performance.now()` `resume` stamped into `lastTime`, so without it a
+    // level's first frame would run the accumulator *backwards*. See
+    // docs/frameloop.md § The accumulator.
     const rawDt = (now - this.lastTime) / 1000;
-    const dt = Math.max(0, Math.min(0.05, rawDt));
     this.lastTime = now;
+    this.accumulator += Math.max(0, rawDt);
+    // A stall (backgrounded tab, a slow map load) must not be paid back as a
+    // burst of catch-up tics — drop the debt instead, the same "never take a
+    // giant step" the old 0.05s dt clamp bought.
+    if (this.accumulator > MAX_TICS_PER_FRAME * TIC_SECONDS) this.accumulator = MAX_TICS_PER_FRAME * TIC_SECONDS;
     this.profiler.beginFrame();
 
     const { input, camera } = this.view;
+    let ran = 0;
+    while (this.accumulator >= TIC_SECONDS && ran < MAX_TICS_PER_FRAME) {
+      this.accumulator -= TIC_SECONDS;
+      ran++;
+      // A tic that swapped the level (an exit, a restart) invalidates
+      // everything the rest of this frame would touch — stop and let the next
+      // frame start clean on the new map.
+      if (this.tic(input, camera)) {
+        requestAnimationFrame(this.frame);
+        return;
+      }
+    }
+
+    this.draw(this.accumulator / TIC_SECONDS, rawDt);
+    requestAnimationFrame(this.frame);
+  };
+
+  /**
+   * One fixed `TIC_SECONDS` step of the whole simulation, and the only place
+   * input is consumed. Returns true if it loaded a different level, which makes
+   * every reference the caller holds stale.
+   *
+   * The call order here is the old per-frame order verbatim, and parts of it are
+   * load-bearing — specials before `player.update` so a lift underfoot has
+   * already moved when `groundFloor` samples it, the aim ray before
+   * `player.update` so `player.angle` is this tic's.
+   * docs/frameloop.md § What runs in a tic.
+   */
+  private tic(input: Input, camera: TopDownCamera): boolean {
     // The level is over and frozen behind the popup: nothing is advanced — not the clock, not the
     // specials, not a monster — only the still scene is redrawn under it. Space/Enter rather than
     // any key, since Escape belongs to the menu (main.ts) and would otherwise both pause and eat
     // the popup in the same press.
     if (this.intermissionActive) {
-      this.intermissionTime += dt;
-      if (this.intermissionTime >= INTERMISSION_INPUT_DELAY && (input.pressed('Space') || input.pressed('Enter'))) {
+      this.intermissionTime += TIC_SECONDS;
+      const go = input.pressed('Space') || input.pressed('Enter');
+      input.endTic();
+      if (this.intermissionTime >= INTERMISSION_INPUT_DELAY && go) {
         this.loadMapByIndex(this.mapIndex + 1); // clears the popup and the flag, like every other per-level overlay
-      } else {
-        this.view.renderer.render(this.scene, camera.camera);
+        return true;
       }
-      input.endFrame();
-      requestAnimationFrame(this.frame);
-      return;
+      return false;
     }
     handleHotkeys(input, camera, (delta) => this.loadMapByIndex(this.mapIndex + delta));
     // Set before any system runs, since specials/monsters/weapons all raise
-    // sounds during the update below. The camera's yaw is last frame's (it
-    // settles in `camera.update`, at the end) — a frame of smoothing lag on the
+    // sounds during the update below. The camera's yaw is last tic's (it
+    // settles in `camera.tick`, at the end) — a tic of smoothing lag on the
     // pan axis, which is inaudible.
     this.audio.setListener(this.player, camera.viewerAngleDeg + 180);
-    camera.applyYawInput(input, dt);
+    camera.applyYawInput(input, TIC_SECONDS);
 
     // Runs before player.update so a lift/door the player is standing on has
-    // already moved this frame by the time groundFloor is sampled below.
+    // already moved this tic by the time groundFloor is sampled below.
     this.profiler.time('Specials', () =>
-      this.specials?.update(dt, this.player.x, this.player.y, this.player.angle, input, this.inventory.keys),
+      this.specials?.update(TIC_SECONDS, this.player.x, this.player.y, this.player.angle, input, this.inventory.keys),
     );
     // The `oof` a refused keyed line already played is raised inside `specials`; the message that
     // says *which* key it wants is this layer's, since that controller has no HUD. `undefined`
@@ -684,51 +746,70 @@ export class Game {
     if (this.pendingExit) {
       this.pendingExit = false;
       // The next map isn't loaded here any more: the popup goes up on the level as it stands, and
-      // the continue key at the top of `frame` is what loads it.
+      // the continue key at the top of `tic` is what loads it.
       this.intermission.show(this.levelStats(), this.recordCompletion());
       this.intermissionActive = true;
       this.intermissionTime = 0;
-      input.endFrame();
-      requestAnimationFrame(this.frame);
-      return;
+      input.endTic();
+      return false;
     }
 
     // `R` is the only input a corpse still answers; everything else the player
     // drives is skipped below instead of branching here.
     if (this.playerDead && input.pressed('KeyR')) {
+      input.endTic();
       this.restart();
-      input.endFrame();
-      requestAnimationFrame(this.frame);
-      return;
+      return true;
     }
 
     // Auto-aim, movement, firing and pickups all freeze once the player is
     // dead — there's nothing to aim/move/fire/collect with a corpse — but
-    // fog of war, things, effects, faders and rendering below keep ticking
-    // normally, so a still-flying rocket the player fired right before dying
-    // finishes its flight and can still deal splash damage (including, in a
+    // fog of war, things and effects below keep ticking normally, so a
+    // still-flying rocket the player fired right before dying finishes its
+    // flight and can still deal splash damage (including, in a
     // grim-but-correct edge case, to the player's own corpse — damagePlayer
     // is a no-op once already dead, so this can't double-kill).
-    const aim = this.playerDead ? null : this.updateLivingPlayer(dt, input, camera);
+    // The aim ray is cast through the live `THREE` camera, which the last
+    // rendered frame left at an *interpolated* pose — a function of frame
+    // timing. Re-posing it at alpha 1 puts it back on the previous tic's exact
+    // state, which is what keeps what auto-aim can lock onto (and so
+    // `player.angle`, and so every shot) independent of framerate. It has to
+    // happen immediately before the ray: `draw` overwrites the pose afterwards.
+    // docs/frameloop.md § Posing for the aim ray.
+    if (!this.playerDead) camera.applyToCamera(1);
+    const aim = this.playerDead ? null : this.updateLivingPlayer(TIC_SECONDS, input, camera);
 
-    if (!this.playerDead) this.levelTime += dt;
-    camera.update(dt, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, aim);
-    this.updateOverlays(dt);
+    if (!this.playerDead) this.levelTime += TIC_SECONDS;
+    camera.tick(TIC_SECONDS, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, aim);
 
-    this.profiler.time('Fog of War', () => this.fogOfWar.update(dt, this.player.x, this.player.y));
-    this.updateThings(dt, camera.viewerAngleDeg);
-    this.updateEffects(dt, camera.viewerAngleDeg);
-    this.updateFading(dt, camera);
-    this.posePlayer(dt, camera.viewerAngleDeg);
+    this.profiler.time('Fog of War', () => this.fogOfWar.tick(this.player.x, this.player.y));
+    this.updateThings(TIC_SECONDS);
+    this.updateEffects(TIC_SECONDS);
+
+    input.endTic();
+    return false;
+  }
+
+  /**
+   * One rendered frame: poses everything `alpha` of the way from the last tic to
+   * the current one, runs the presentation-only animators, and draws. Advances
+   * no gameplay state whatsoever. docs/frameloop.md § What runs in a frame.
+   */
+  private draw(alpha: number, rawDt: number): void {
+    const camera = this.view.camera;
+    camera.applyToCamera(alpha);
+    this.updateOverlays(rawDt);
+    this.fogOfWar.updateFade(rawDt);
+    this.profiler.time('Sprites', () => this.things?.draw(alpha, camera.viewAngleDeg));
+    this.drawEffects(alpha, camera.viewAngleDeg);
+    this.updateFading(rawDt, camera);
+    this.posePlayer(alpha, rawDt, camera.viewAngleDeg);
 
     this.profiler.time('Render', () => this.view.renderer.render(this.scene, camera.camera));
     this.profiler.endFrame();
 
     this.debugHud.update(rawDt, this.profiler, (fps) => this.debugLines(fps));
-
-    input.endFrame();
-    requestAnimationFrame(this.frame);
-  };
+  }
 
   /**
    * Everything a *living* player drives in a frame: powers, aim, movement, firing, pickups and the
@@ -746,14 +827,18 @@ export class Game {
     // `mouseDown` makes both jump the instant a click lands. See
     // docs/combat.md § Auto-aim.
     const { monster, aim } = this.profiler.time('Player', () => {
-      const m = this.things?.pickMonster(camera.raycasterFor(input.pointer.x, input.pointer.y)) ?? null;
+      // The tic-exact viewer angle, not the interpolated `viewAngleDeg` the
+      // billboards are drawn at, for the same framerate-independence reason
+      // the camera was posed at alpha 1 above.
+      const ray = camera.rayFor(input.pointer.x, input.pointer.y);
+      const m = this.things?.pickMonster(ray, camera.viewerAngleDeg) ?? null;
       const at = m ?? camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
       // Monsters are solid: the player walks around them, not through them.
       this.player.update(dt, input, at, camera.viewerAngleDeg + 180, this.things?.solidBodies(this.player));
       return { monster: m, aim: at };
     });
 
-    this.profiler.time('Weapons', () => this.fireWeapons(dt, input, monster));
+    this.profiler.time('Weapons', () => this.fireWeapons(input, monster));
     this.profiler.time('Player', () => this.collectPickupsAndSectorEffects(dt));
 
     // Hard landings and the chainsaw's two ambient sounds, both of which
@@ -764,11 +849,11 @@ export class Game {
   }
 
   /**
-   * Weapon switching and this frame's trigger pull, turning each shot `WeaponSystem.update` returns
+   * Weapon switching and this tic's trigger pull, turning each shot `WeaponSystem.update` returns
    * into a projectile or tracer. `monster` is whatever aim locked onto, which is what lets a shot
    * angle toward its height — see docs/combat.md § Auto-aim.
    */
-  private fireWeapons(dt: number, input: Input, monster: MonsterRef | null): void {
+  private fireWeapons(input: Input, monster: MonsterRef | null): void {
     // A shot always *starts* at the player's own fire height — never the
     // target's, or a tracer/projectile would visibly begin mid-air instead
     // of at the player. Handing shotPath the locked-on monster as its
@@ -780,7 +865,7 @@ export class Game {
 
     // Called after player.update so player.angle already reflects this frame's aim.
     this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
-    const shots = this.weaponSystem.update(dt, input.mouseDown, this.inventory, this.player.angle);
+    const shots = this.weaponSystem.update(input.mouseDown, this.inventory, this.player.angle);
     // Vanilla's P_FireWeapon calls P_NoiseAlert every time a shot is actually
     // fired (ammo/cooldown allowed it) — this is what lets a monster with no
     // line of sight to the player still wake up on gunfire (World.noiseAlert,
@@ -879,23 +964,22 @@ export class Game {
    * `P_KillMobj` stripping the player's `MF_SHOOTABLE`/`MF_SOLID` — docs/death.md § Player death
    * for what that does and doesn't freeze in the AI.
    */
-  private updateThings(dt: number, viewerAngleDeg: number): void {
-    // Every attack a monster fired this frame comes back for us to apply/render, the same "system
+  private updateThings(dt: number): void {
+    // Every attack a monster fired this tic comes back for us to apply/render, the same "system
     // returns data, caller realizes it" split as `WeaponSystem.update`.
     const thingUpdate = this.profiler.time(
       'Monsters',
       () =>
         this.things?.update(
           dt,
-          viewerAngleDeg,
           this.playerDead ? null : this.player,
-          (subsector) => this.fogOfWar.alphaOf(subsector),
+          (subsector) => this.fogOfWar.isVisible(subsector),
           (prev, pos) => this.monsterCrossedLines(prev, pos),
         ) ?? { attacks: [], barrelExplosions: [] },
     );
     this.profiler.time('Monsters', () => {
       this.monsterAttacks.resolve(thingUpdate.attacks);
-      // A barrel's own A_Explode, become due this frame (game/things.ts's
+      // A barrel's own A_Explode, become due this tic (game/things.ts's
       // update() ticks the delay; see applyBarrelExplosion's doc). No visual
       // spawned effect is needed here the way every other explosion needs one —
       // the barrel's own PosedThing is already drawing its BEXP death
@@ -904,21 +988,31 @@ export class Game {
     });
   }
 
-  /** Everything drawn through the sprite-fx batch: teleport fog, tracers, things in flight, the icon's cubes. */
-  private updateEffects(dt: number, viewerAngleDeg: number): void {
+  /**
+   * One tic of everything transient: teleport fog, tracers, things in flight, the icon's cubes.
+   * Draws nothing — `drawEffects` is the other half.
+   *
+   * The order is load-bearing and unchanged: projectiles advance before impacts,
+   * so an explosion or smoke puff spawned by an arrival this tic is drawn on the
+   * very next frame rather than one late.
+   */
+  private updateEffects(dt: number): void {
     this.profiler.time('Effects', () => {
-      // One begin/end pair around all four lists, the same per-frame rebuild
-      // `game/things.ts` does — and it has to enclose `ProjectileLayer.update`,
-      // which both draws through the batch and pushes this frame's new impact
-      // explosions and smoke puffs on for `updateImpacts` to draw.
-      this.effects.beginFrame(viewerAngleDeg);
       this.effects.updateTeleportFogs(dt);
       this.effects.updateTracers(dt);
       this.projectiles.update(dt);
-      // Inside the pair for the same reason as projectiles: a spawn cube draws
-      // through the batch, and the fire and explosions it spawns are impacts.
       this.icon?.update(dt);
       this.effects.updateImpacts(dt);
+    });
+  }
+
+  /** The draw half of `updateEffects`: one begin/end pair around every list that batches a sprite. */
+  private drawEffects(alpha: number, viewAngleDeg: number): void {
+    this.profiler.time('Effects', () => {
+      this.effects.beginFrame(viewAngleDeg);
+      this.projectiles.draw(alpha);
+      this.icon?.draw(alpha);
+      this.effects.draw(alpha);
       this.effects.endFrame();
     });
   }
@@ -950,25 +1044,29 @@ export class Game {
     });
   }
 
-  /** Places the player's own billboard: position, facing, sector light and which animation is due. */
-  private posePlayer(dt: number, viewerAngleDeg: number): void {
-    const facingDeg = (this.player.angle * 180) / Math.PI;
-    const sector = this.world.sectorAt(this.player.x, this.player.y);
+  /**
+   * Places the player's own billboard: position, facing, sector light and which
+   * animation is due. Positions are interpolated `alpha` through the last tic;
+   * the animation still advances on `rawDt`, since it is presentation and its
+   * own frame chain is what times it.
+   */
+  private posePlayer(alpha: number, rawDt: number, viewAngleDeg: number): void {
+    const p = this.player;
+    const x = p.prevX + (p.x - p.prevX) * alpha;
+    const y = p.prevY + (p.y - p.prevY) * alpha;
+    const z = p.prevZ + (p.z - p.prevZ) * alpha;
+    // Shortest-arc, so a shot fired across the -pi/pi seam doesn't spin the
+    // billboard the long way round between two tics.
+    let dAngle = p.angle - p.prevAngle;
+    dAngle = Math.atan2(Math.sin(dAngle), Math.cos(dAngle));
+    const facingDeg = ((p.prevAngle + dAngle * alpha) * 180) / Math.PI;
+    const sector = this.world.sectorAt(x, y);
     // player.update (and with it, velX/velY) stops running once dead, so
     // this must not read possibly-stale velocity from the moment of death —
     // not that it would matter anyway, since setPose ignores `animating`
     // entirely once `die()` has been called (see SpriteActor's doc).
     const walking = !this.playerDead && Math.hypot(this.player.velX, this.player.velY) > 1;
-    this.playerActor.setPose(
-      this.player.x,
-      this.player.y,
-      this.player.z,
-      facingDeg,
-      sector?.light ?? 128,
-      dt,
-      walking,
-      viewerAngleDeg,
-    );
+    this.playerActor.setPose(x, y, z, facingDeg, sector?.light ?? 128, rawDt, walking, viewAngleDeg);
   }
 
   /** DEVMODE's status text. Only ever called while the panel is shown — see `DebugHud.update`. */

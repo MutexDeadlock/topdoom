@@ -26,16 +26,24 @@ export function setRightMouseAction(action: RightMouseAction): void {
   globalThis.localStorage?.setItem(RIGHT_MOUSE_STORAGE_KEY, action);
 }
 
-/** Keyboard and pointer state, sampled by the game loop rather than event-driven. */
+/**
+ * Keyboard and pointer state, sampled by the game loop rather than event-driven.
+ *
+ * The edge latches (`pressed`, `rightMousePressed`) hold "went down since the
+ * last **tic**", not since the last rendered frame, and `endTic` is what clears
+ * them. Rendering runs far more often than the simulation, so a frame-cadence
+ * clear would drop most presses before a tic ever saw them.
+ * docs/frameloop.md § Input runs on the tic.
+ */
 export class Input {
   private down = new Set<string>();
-  private pressedThisFrame = new Set<string>();
+  private pressedThisTic = new Set<string>();
   /** Pointer position in normalised device coordinates (-1..1). */
   readonly pointer = { x: 0, y: 0 };
   mouseDown = false;
 
   private rightDown = false;
-  private rightPressedThisFrame = false;
+  private rightPressedThisTic = false;
   private wheelDelta = 0;
 
   private element: HTMLElement;
@@ -56,7 +64,7 @@ export class Input {
   }
 
   private onKeyDown = (e: KeyboardEvent) => {
-    if (!this.down.has(e.code)) this.pressedThisFrame.add(e.code);
+    if (!this.down.has(e.code)) this.pressedThisTic.add(e.code);
     this.down.add(e.code);
     // Keep the browser from scrolling the page with the movement keys.
     if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
@@ -80,7 +88,7 @@ export class Input {
 
   private onPointerDown = (e: PointerEvent) => {
     if (e.button === 2) {
-      if (!this.rightDown) this.rightPressedThisFrame = true;
+      if (!this.rightDown) this.rightPressedThisTic = true;
       this.rightDown = true;
     } else if (e.button === 0) {
       this.mouseDown = true;
@@ -103,18 +111,18 @@ export class Input {
     return codes.some((c) => this.down.has(c));
   }
 
-  /** True only on the first frame a key went down. */
+  /** True only on the first tic a key went down. */
   pressed(code: string): boolean {
-    return this.pressedThisFrame.has(code);
+    return this.pressedThisTic.has(code);
   }
 
   /**
-   * True only on the first frame the right button went down, and only if it is
+   * True only on the first tic the right button went down, and only if it is
    * currently bound to `action` — so every consumer asks for the action it
    * implements rather than reading the setting itself.
    */
   rightMousePressed(action: RightMouseAction): boolean {
-    return this.rightPressedThisFrame && rightMouseAction === action;
+    return this.rightPressedThisTic && rightMouseAction === action;
   }
 
   /** Accumulated scroll-wheel `deltaY` since the last call: positive is "down" (next weapon). */
@@ -124,19 +132,22 @@ export class Input {
     return delta;
   }
 
-  /** Call once at the end of every frame. */
-  endFrame(): void {
-    this.pressedThisFrame.clear();
-    this.rightPressedThisFrame = false;
+  /**
+   * Call once at the end of every simulation tic — never per rendered frame,
+   * and never on a frame that ran no tics, or the edge is lost.
+   */
+  endTic(): void {
+    this.pressedThisTic.clear();
+    this.rightPressedThisTic = false;
   }
 
   /** Forget everything currently held, e.g. when the menu takes over. */
   reset(): void {
     this.down.clear();
-    this.pressedThisFrame.clear();
+    this.pressedThisTic.clear();
     this.mouseDown = false;
     this.rightDown = false;
-    this.rightPressedThisFrame = false;
+    this.rightPressedThisTic = false;
     this.wheelDelta = 0;
   }
 

@@ -3,10 +3,11 @@ v0.1x.x (2026-08-xx)
 Features and improvements
   - randomness now comes from DOOM's own random table instead of the
     browser's generator
+  - the game now simulates at a fixed 35 ticks per second, like the original
 
 Fixed bugs
   - broken and flickering lights now behave like vanilla's
-  
+
 
 ===============================================================================
 

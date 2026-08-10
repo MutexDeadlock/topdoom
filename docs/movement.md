@@ -155,6 +155,11 @@ recreated every map load (`game.ts: loadMapByIndex`) and the setting must take e
 level already in progress, not just the next one. Persisted as `topdoom.autorun` — docs/menu.md
 § Persisted settings.
 
+`Player.update` runs once per simulation tic, and `Player` carries `prevX`/`prevY`/`prevZ`/
+`prevAngle` for the render layer to interpolate from — with `syncInterpolation` collapsing that
+window on every discontinuous move (`moveTo`, `teleportTo`), or a teleport draws as a glide across
+the map. docs/frameloop.md § Interpolation.
+
 `ACCELERATION` (the exponential approach toward the target velocity) is deliberately **not**
 vanilla-derived and is the one thing here still tuned by feel, same as `GRAVITY`: vanilla reaches its
 terminal speed through per-tic thrust against a 0.90625 friction multiplier, which works out to a

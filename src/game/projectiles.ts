@@ -61,6 +61,8 @@ export class ProjectileLayer {
    * be four figures of them on a crowded map.
    */
   private readonly stepFrom: Pos3 = { x: 0, y: 0, z: 0 };
+  /** `draw`'s interpolated position, reused per missile for the same reason `stepFrom` is. */
+  private readonly drawAt: Pos3 = { x: 0, y: 0, z: 0 };
 
   constructor(
     ctx: CombatContext,
@@ -228,6 +230,16 @@ export class ProjectileLayer {
       sourceId: null,
       sourceType: 0,
       lineIndex: path.lineIndex,
+      // A missile's first drawn frame sits at its launch point rather than
+      // interpolating in from the origin of the world.
+      drawX: origin.x,
+      drawY: origin.y,
+      drawZ: startZ,
+      drawPrevX: origin.x,
+      drawPrevY: origin.y,
+      drawPrevZ: startZ,
+      drawAngleRad: shot.angleRad,
+      drawLight: 128,
     });
   }
 
@@ -276,6 +288,14 @@ export class ProjectileLayer {
         sourceId: atk.sourceId,
         sourceType: atk.sourceType,
         lineIndex: path.lineIndex,
+        drawX: atk.x,
+        drawY: atk.y,
+        drawZ: atk.z,
+        drawPrevX: atk.x,
+        drawPrevY: atk.y,
+        drawPrevZ: atk.z,
+        drawAngleRad: proj.angleRad,
+        drawLight: 128,
         homing: proj.homing
           ? { targetId: atk.targetId, x: atk.x, y: atk.y, z: atk.z, headingRad: proj.angleRad, smokeTimer: 0 }
           : undefined,
@@ -385,15 +405,37 @@ export class ProjectileLayer {
       }
       // A homing missile's sprite tracks its live, turning heading rather
       // than the fixed launch angle every other projectile keeps.
-      const poseAngleRad = p.homing?.headingRad ?? p.angleRad;
+      p.drawAngleRad = p.homing?.headingRad ?? p.angleRad;
       p.anim.advance(dt, true);
-      // Re-read every frame, not just at launch — a missile flying between
+      // Re-read every tic, not just at launch — a missile flying between
       // differently-lit sectors should shade like everything else does.
-      const light = sector?.light ?? 128;
-      this.effects.batchSprite(p.anim, at, (poseAngleRad * 180) / Math.PI, light);
+      p.drawLight = sector?.light ?? 128;
+      // `from` is shared scratch reused across projectiles, so the previous
+      // position has to be copied out per missile rather than referenced.
+      p.drawPrevX = from.x;
+      p.drawPrevY = from.y;
+      p.drawPrevZ = from.z;
+      p.drawX = at.x;
+      p.drawY = at.y;
+      p.drawZ = at.z;
       remaining.push(p);
     }
     this.projectiles = remaining;
+  }
+
+  /**
+   * Draws every missile still in flight, `alpha` of the way along the step its
+   * last `update` took. Must run inside the caller's
+   * `SpriteFxLayer.beginFrame`/`endFrame` pair, same as `update`.
+   * docs/frameloop.md § Interpolation.
+   */
+  draw(alpha: number): void {
+    for (const p of this.projectiles) {
+      this.drawAt.x = p.drawPrevX + (p.drawX - p.drawPrevX) * alpha;
+      this.drawAt.y = p.drawPrevY + (p.drawY - p.drawPrevY) * alpha;
+      this.drawAt.z = p.drawPrevZ + (p.drawZ - p.drawPrevZ) * alpha;
+      this.effects.batchSprite(p.anim, this.drawAt, (p.drawAngleRad * 180) / Math.PI, p.drawLight);
+    }
   }
 
   /**

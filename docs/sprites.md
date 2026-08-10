@@ -101,8 +101,7 @@ monster drops readable) — and it is sized to settle a coplanar tie and nothing
 The batches set `frustumCulled = false`: a batch's instances are scattered across the whole map, so
 culling it as one object could only ever cull nothing while costing a per-frame bounds recompute to
 decide that — off-screen instances are clipped by the GPU for the price of a 4-vertex vertex shader
-instead. That in turn means the bounding sphere three.js lazily computes and caches for *raycasting*
-would go stale as instances move, so `end()` nulls it each frame.
+instead. Nothing raycasts a batch either (see below), so no bounds are computed for it at all.
 
 `SpriteAnimator` is what makes both paths possible: it owns the frame cycle and the state→(geometry,
 material) lookup with **no `THREE.Object3D` of its own**. `SpriteActor` wraps one in a `THREE.Mesh`
@@ -111,10 +110,15 @@ needs `setOpacity` (partial invisibility), which has no per-instance equivalent 
 Everything else holds a bare `SpriteAnimator` and feeds a `SpriteBatch` — `PosedThing` for map things,
 and `SpriteFxLayer`'s batch (`game/spritefx.ts`) for projectiles, impact explosions, teleport fog and
 the revenant's smoke trail. Because a batched thing has no mesh of its own, `PosedThing.visible` replaces what used
-to be read off `mesh.visible`, and `ThingLayer.pickMonster` routes its auto-aim raycast through
-`SpriteBatch.raycast`, which maps an `instanceId` hit back to the owning thing. That raycast skips
-(rather than being blocked by) instances its predicate rejects, so a decoration standing in front of
-a monster still doesn't make it untargetable.
+to be read off `mesh.visible`.
+
+**A batch is write-only: nothing reads geometry back out of it.** Auto-aim's `ThingLayer.pickMonster`
+used to raycast the instance geometry, which forced the tic to re-fill the whole batch at alpha 1
+before every aim ray; it now intersects the billboard analytically instead (`intersectBillboard`,
+docs/combat.md § Auto-aim). What that function needs from this file is `CachedSprite.quad` — the
+rectangle the lump's geometry spans, hotspot shift folded in, feet at y=0 — and the same yaw
+`begin()` fixes for the batch. The two derive their plane from the same two numbers so they cannot
+disagree about where a sprite stands.
 
 `ThingLayer` owns **two** batches under one `things` group: ordinary things, and monster death drops
 — which are depth-biased (above) and `translucent`, so `setOpacity` can pulse them (docs/items.md §
@@ -196,6 +200,27 @@ covers the opposite case — a corpse/gib prop (the "Dead …"/"Bloody mess" doo
 letter, so it holds correctly instead of drawing the sprite's first (unrelated) frame. A doomednum
 absent from the table either has vanilla `tics: -1` (genuinely static — ammo, weapons, STIM/MEDI, the
 plain column) or spawns at the literal `'A'` frame already, and needs neither case.
+
+## The animation index must always be valid
+
+`SpriteAnimator` keeps **one** `animIndex` shared by three sequences — the base cycle,
+`playOnce`'s override and `die`'s death chain — rather than one per sequence. That is cheaper day
+to day and costs one rule, which every future sequence-switching method has to keep:
+
+> `animIndex` is valid for whatever sequence `resolve` would read, **at every moment** — not merely
+> after an `advance`.
+
+Both directions of a switch can break it, and they are fixed in different places. A sequence
+*ending* (an override running out, handing back to a shorter base cycle) is clamped inside `advance`.
+A sequence *starting* is reset by `die`/`playOnce`/`revive` themselves.
+
+The starting half was missing and went unnoticed for a long time, because ordering hid it: `advance`
+and `resolve` sat adjacent in one loop, so the clamp always ran first. Splitting simulation from
+drawing (docs/frameloop.md § What runs in a tic) removed that accident — a monster killed in
+`MonsterAttacks.resolve`, *after* `ThingLayer.update` advanced it, is drawn before it is ever
+advanced again. `resolve` then read `frames[animIndex]` as `undefined` and `SpriteBank.lookup` threw
+on `frame.toUpperCase()`. Repro: NUTS.WAD, within seconds of waking the first crowd. Covered by
+`tests/regression/anim-frame-after-state-change.test.ts`.
 
 ## Pain, and attack/pain poses
 

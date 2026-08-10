@@ -105,9 +105,14 @@ one-time reveal sweep into several frames' worth of work instead of one frame's 
 reveal already fades in over `FADE_SPEED` seconds, so a subsector's fade starting a few frames later than
 strictly necessary reads the same as starting immediately. Measured fix on the same map/scenario: 8.6 ms/
 frame → ~2 ms worst-case, ~1 ms average during active exploration. The constructor's one-time spawn seed
-(`this.update(10, startX, startY, Infinity)`) passes an unbounded budget deliberately — it has to reveal
-everything visible from spawn in that single call, since that's what makes the large `dt` drive the fade
-straight to target instead of the surroundings visibly fading up from black on frame one.
+(`this.tick(startX, startY, Infinity)`) passes an unbounded budget deliberately — it has to reveal
+everything visible from spawn in that single call; the `alpha.set(explored)` right after is what skips
+the fade, so the surroundings don't visibly rise out of black on frame one.
+
+The budget is counted **per tic, not per frame** — `MAX_SIGHT_TESTS_PER_TIC`, and 350 rather than 200
+to hold the same sweep rate across 35 tics/sec instead of ~60 frames/sec. That is forced by the split
+below: `explored` is a gameplay input, so a per-frame budget would make what is revealed, and so what
+is shootable, depend on framerate.
 
 ## How reveal reaches the geometry
 
@@ -131,5 +136,17 @@ of them know it natively:
   of `a->b`) and asking the BSP what's there — which is why `WallFader.commit` takes a callback keyed
   by *occluder index* rather than by sector, and why `mapmesh.ts` carries no fog-specific field at all.
 
-Thing sprites get the simplest treatment: `ThingLayer.update` takes an optional `fogAlphaOf` and just
+Thing sprites get the simplest treatment: `ThingLayer.update` takes an optional `fogVisible` and just
 toggles visibility, since a monster or item doesn't need a smooth per-pixel fade the way geometry does.
+
+## What gameplay reads
+
+**`explored` is the gameplay gate; `alpha` is only ever drawn.** The two are split because `alpha` is
+damped on the render clock (`updateFade`) while `explored` is set by the reveal scan on the tic clock
+(`tick`), and `PosedThing.visible` — which decides what can be shot, meleed and auto-aimed at, not
+merely what is drawn — must not depend on how many frames a fade has had. `isVisible` is the accessor
+gameplay uses; `alphaOf`/`wallAlpha` stay for the faders.
+
+The gate used to be `alphaOf(subsector) > 0.5`. Since `alpha` only ever damps upward toward a
+permanent `explored` flag, the behavioural difference is small and one-directional: a monster becomes
+shootable the moment its subsector reveals, rather than partway through the fade-in.

@@ -43,6 +43,16 @@ export interface OneShotEffect extends Pos3 {
   followTargetId?: number | null;
   /** The arch-vile that spawned this flame — sight from it is re-checked before repositioning (`A_Fire`'s `P_CheckSight` gate). Always set alongside `followTargetId`. */
   vileSourceId?: number;
+  /**
+   * Position at the end of the previous tic, for the render layer to interpolate
+   * from. Every effect carries it although only the arch-vile's following flame
+   * ever moves — a stationary explosion's `prev` simply equals its current
+   * position, which costs one branch-free lerp rather than a special case.
+   * docs/frameloop.md § Interpolation.
+   */
+  drawPrevX: number;
+  drawPrevY: number;
+  drawPrevZ: number;
 }
 
 /** Color of a hitscan tracer line (render/tracer.ts) — a hot yellow-white, like a vanilla muzzle flash. */
@@ -336,5 +346,23 @@ export interface Projectile {
    * `homingBias` roll. See docs/monster-attacks.md § The revenant's homing missile.
    */
   homing?: { targetId: number | null; x: number; y: number; z: number; headingRad: number; smokeTimer: number };
+  /**
+   * Where this missile is now and where it was one tic ago, written by
+   * `ProjectileLayer.update` so `draw` can interpolate between them. Held as
+   * plain coordinates rather than recomputed from `traveled`, because a homing
+   * missile has no scalar to recompute from — it carries its own position.
+   * A missile is the fastest thing on screen, so this is the interpolation that
+   * matters most. docs/frameloop.md § Interpolation.
+   */
+  drawX: number;
+  drawY: number;
+  drawZ: number;
+  drawPrevX: number;
+  drawPrevY: number;
+  drawPrevZ: number;
+  /** The heading its sprite is posed at, which for a homing missile turns in flight. */
+  drawAngleRad: number;
+  /** Sector light at its current position, re-read every tic — see `update`. */
+  drawLight: number;
 }
 

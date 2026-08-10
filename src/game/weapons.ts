@@ -86,7 +86,7 @@ export interface WeaponDef {
   projectileSprite: string;
   /**
    * Status-bar icon lump. Reuses the ground pickup's own sprite frame (the
-   * same convention ui/hud.ts already uses for ammo/keys/health) for every
+   * same convention ui/hud/hud.ts already uses for ammo/keys/health) for every
    * weapon that has one; fist and pistol have no map pickup, so their own
    * first-person "ready" frame stands in instead.
    */

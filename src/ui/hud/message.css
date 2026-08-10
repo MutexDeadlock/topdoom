@@ -1,5 +1,5 @@
 /*
- * The canvas is sized to the text's own pixel width by ui/message.ts and scaled
+ * The canvas is sized to the text's own pixel width by ui/hud/message.ts and scaled
  * up here (`height` + `width: auto`), so translateX(-50%) centers whatever line
  * is currently drawn. 40% down rather than dead center keeps it clear of the
  * player sprite, which the camera holds at the middle of the view. Above the

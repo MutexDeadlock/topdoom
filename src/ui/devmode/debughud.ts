@@ -1,8 +1,8 @@
 import { ProfilerHud } from './profilerhud.ts';
-import type { FrameProfiler } from '../util/profiler.ts';
-import type { Input } from '../game/input.ts';
-import type { TopDownCamera } from '../render/camera.ts';
-import { DEVMODE } from '../constants.ts';
+import type { FrameProfiler } from '../../util/profiler.ts';
+import type { Input } from '../../game/input.ts';
+import type { TopDownCamera } from '../../render/camera.ts';
+import { DEVMODE } from '../../constants.ts';
 
 /**
  * The top-left status text, the fps counter behind it, and the debug hotkeys —

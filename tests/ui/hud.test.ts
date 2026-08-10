@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { formatClock, percentOf } from '../../src/ui/hud.ts';
+import { formatClock, percentOf } from '../../src/ui/hud/hud.ts';
 
 /**
  * The two pure helpers the HUD strip and the intermission popup share, so the bar and the popup

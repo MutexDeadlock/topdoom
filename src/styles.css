@@ -1,0 +1,16 @@
+/*
+ * The one stylesheet index.html links. Every rule lives in the file named after the src/ui module
+ * that owns those elements — see docs/styles.md. Import order mirrors the stacking ladder, and
+ * base.css must stay first: it defines the tokens the rest read.
+ */
+
+@import './ui/base.css';
+@import './ui/devmode/devmode.css';
+@import './ui/hud/hud.css';
+@import './ui/hud/screeneffects.css';
+@import './ui/hud/message.css';
+@import './ui/hud/levelcard.css';
+@import './ui/hud/intermission.css';
+@import './ui/fatalerror.css';
+@import './ui/menu/menu.css';
+@import './ui/menu/changelog.css';

@@ -1,6 +1,6 @@
 # Menu, settings and session lifecycle
 
-`src/ui/menu.ts`, `src/ui/menu.css` + `src/ui/changelog.css`, `index.html`'s `#menu`, `src/main.ts`
+`src/ui/menu/menu.ts`, `src/ui/menu/menu.css` + `src/ui/menu/changelog.css`, `index.html`'s `#menu`, `src/main.ts`
 
 The menu is plain DOM: every element is static markup in `index.html`, looked up by id in `Menu`'s
 field initializers, so **an id renamed in the HTML fails at construction**, not lazily. Only the WAD
@@ -40,7 +40,7 @@ ladder).
 The header's **CHANGELOG** link opens `#changelog`, a scrolling reader over the repo's `CHANGELOG`
 file. Two things about it are load-bearing:
 
-- The text is a **dynamic** `import('../../CHANGELOG?raw')`, run on first open (`loadChangelog`).
+- The text is a **dynamic** `import('../../../CHANGELOG?raw')`, run on first open (`loadChangelog`).
   Dynamic, because the file only grows and nobody who never opens the reader should pay for it: the
   bundler gives it its own chunk (~12 kB, 5 kB gzipped) instead of the main one. `import` rather than
   `fetch`, because the file lives at the repo root rather than under `public/`, so a fetch would
@@ -173,8 +173,8 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.autorun` | `game/player.ts` (`getAutorun`/`setAutorun`) | docs/movement.md § Movement speed and straferunning |
 | `topdoom.rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
 | `topdoom.fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/render.md § The FPS cap |
-| `topdoom.skill` | `ui/menu.ts` | § Difficulty above |
-| `topdoom.selection` | `ui/menu.ts` | § Remembered selection below |
+| `topdoom.skill` | `ui/menu/menu.ts` | § Difficulty above |
+| `topdoom.selection` | `ui/menu/menu.ts` | § Remembered selection below |
 | `topdoom.bestTimes` | `game/besttimes.ts` | docs/hud.md § Best times |
 
 ## Remembered selection

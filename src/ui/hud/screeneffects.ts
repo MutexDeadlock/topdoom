@@ -1,6 +1,6 @@
 import type * as THREE from 'three';
-import { hasPower, type Inventory } from '../game/inventory.ts';
-import { DOOM_TIC } from '../constants.ts';
+import { hasPower, type Inventory } from '../../game/inventory.ts';
+import { DOOM_TIC } from '../../constants.ts';
 
 /**
  * Every powerup or damage effect whose whole result is a *view* change: the

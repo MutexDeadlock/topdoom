@@ -1,6 +1,6 @@
 import { Wad } from './wad/wad.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
-import { Menu, type Selection } from './ui/menu.ts';
+import { Menu, type Selection } from './ui/menu/menu.ts';
 import { Game } from './game.ts';
 import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';

@@ -1,4 +1,4 @@
-import type { GraphicsBank } from '../wad/graphics.ts';
+import type { GraphicsBank } from '../../wad/graphics.ts';
 
 /** Vanilla `hu_stuff.h`'s `HU_FONTSTART`/`HU_FONTEND` — the `STCFN033`-`STCFN095` range. */
 const FONT_FIRST = 33; // '!'
@@ -32,8 +32,8 @@ export type WadFontRecolor = readonly [number, number, number];
 
 /**
  * Sampled from `STYSNUM1` — vanilla's own status-bar yellow. Lives here rather than with either
- * consumer because both the level-stats numbers (`ui/hud.ts`) and the center message
- * (`ui/message.ts`) recolor to the same WAD-derived yellow.
+ * consumer because both the level-stats numbers (`ui/hud/hud.ts`) and the center message
+ * (`ui/hud/message.ts`) recolor to the same WAD-derived yellow.
  */
 export const COLOR_YELLOW: WadFontRecolor = [255, 255, 115];
 

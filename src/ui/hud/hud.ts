@@ -1,4 +1,4 @@
-import type { GraphicsBank } from '../wad/graphics.ts';
+import type { GraphicsBank } from '../../wad/graphics.ts';
 import {
   AMMO_TYPES,
   hasPower,
@@ -9,8 +9,8 @@ import {
   type KeyColor,
   type PowerId,
   type WeaponId,
-} from '../game/inventory.ts';
-import { WEAPON_CYCLE, WEAPONS } from '../game/weapons.ts';
+} from '../../game/inventory.ts';
+import { WEAPON_CYCLE, WEAPONS } from '../../game/weapons.ts';
 import { WadFont, COLOR_YELLOW } from './wadfont.ts';
 
 /**
@@ -34,7 +34,7 @@ export interface LevelStats {
  * every percentage in the same font/color regardless of value), so this is a UI addition tuned
  * by feel; only the choice of color is WAD-derived, for the same reason `COLOR_YELLOW` is.
  *
- * Exported for `ui/intermission.ts`, which applies the same complete-category cue to its
+ * Exported for `ui/hud/intermission.ts`, which applies the same complete-category cue to its
  * percentages.
  */
 export const LEVEL_STATS_GREEN: readonly [number, number, number] = [111, 239, 103];
@@ -109,7 +109,7 @@ const BACKPACK_ICON = 'BPAKA0';
  * it up with `image-rendering: pixelated`. Reusing the same pickup-sprite
  * graphics the world renders items with (rather than hand-drawn icons) keeps
  * the HUD visually consistent with whichever WAD is loaded. Returns whether the
- * lump was there to draw — `ui/levelcard.ts` shares this to blit a level-name
+ * lump was there to draw — `ui/hud/levelcard.ts` shares this to blit a level-name
  * patch, and falls back to its own text when it isn't.
  */
 export function drawIcon(canvas: HTMLCanvasElement, gfx: GraphicsBank, lump: string): boolean {

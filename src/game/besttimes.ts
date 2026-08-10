@@ -2,7 +2,7 @@ import type { Skill } from './skill.ts';
 
 /**
  * Per-level best completion times, persisted across sessions and shown on the end-of-level popup —
- * see docs/hud.md § Best times. Owned here rather than by `ui/intermission.ts` for the same
+ * see docs/hud.md § Best times. Owned here rather than by `ui/hud/intermission.ts` for the same
  * reason every other `topdoom.*` value lives with the module whose behavior it changes
  * (docs/menu.md § Persisted settings): the popup only renders what this decides.
  */

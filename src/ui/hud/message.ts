@@ -1,5 +1,5 @@
-import type { GraphicsBank } from '../wad/graphics.ts';
-import type { KeyColor } from '../game/inventory.ts';
+import type { GraphicsBank } from '../../wad/graphics.ts';
+import type { KeyColor } from '../../game/inventory.ts';
 import { WadFont, COLOR_YELLOW, type WadFontRecolor } from './wadfont.ts';
 
 /**
@@ -12,7 +12,7 @@ const MESSAGE_SECONDS = 3;
 
 /**
  * Each key color's own text color, sampled from that key's pickup sprite the same way
- * `COLOR_YELLOW` and `ui/hud.ts`'s `LEVEL_STATS_GREEN` are — `RKEYA0`'s and `YKEYA0`'s
+ * `COLOR_YELLOW` and `ui/hud/hud.ts`'s `LEVEL_STATS_GREEN` are — `RKEYA0`'s and `YKEYA0`'s
  * brightest pixel exactly.
  *
  * Blue is the one that isn't: `BKEYA0`'s brightest pixel is the palette's pure `0,0,255`

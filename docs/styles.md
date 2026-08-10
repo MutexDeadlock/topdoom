@@ -1,34 +1,40 @@
 # Stylesheets
 
-`src/ui/styles.css`, `src/ui/base.css`, and one `.css` per `src/ui` module
+`src/styles.css`, `src/ui/base.css`, and one `.css` per `src/ui` module
 
 ## One stylesheet per owning module
 
 Markup is static in `index.html`, looked up by id in a module's field initializers, and the module
-only ever toggles class names (`src/ui/menu.ts`, `hud.ts`, …). The stylesheets follow that same
-ownership: **the rules for an element live in the `.css` named after the `.ts` that drives it**, next
-to it in `src/ui/`.
+only ever toggles class names (`src/ui/menu/menu.ts`, `hud/hud.ts`, …). The stylesheets follow that
+same ownership: **the rules for an element live in the `.css` named after the `.ts` that drives it**,
+next to it.
 
-| Stylesheet | Owner | Covers |
-|---|---|---|
-| `base.css` | — | page reset, `#app`, `canvas`, and the tokens below |
-| `devmode.css` | `debughud.ts`, `profilerhud.ts` | `#hud`, `#profiler-hud` |
-| `hud.css` | `hud.ts` | `#hud-bar`, `#game-hud`, `#hud-levelstats`, `#hud-timer` |
-| `screeneffects.css` | `screeneffects.ts` | `#screen-tint`, `#pain-flash`, `#death-overlay` |
-| `message.css` | `message.ts` | `#hud-message` |
-| `levelcard.css` | `levelcard.ts` | `#level-card` |
-| `intermission.css` | `intermission.ts` | `#intermission` |
-| `fatalerror.css` | `main.ts` | `#fatal-error` |
-| `menu.css` | `menu.ts` | `#menu` |
-| `changelog.css` | `menu.ts` | `#changelog` and its `#menu button.link` trigger |
+```
+src/styles.css        the entry, and the only stylesheet index.html links
+src/ui/base.css       page reset, #app, canvas, and the tokens below
+src/ui/fatalerror.css #fatal-error — owned by src/main.ts, hence not in a subfolder
+src/ui/hud/           everything drawn over the running level (docs/hud.md's own file list)
+    hud.css           #hud-bar, #game-hud, #hud-levelstats, #hud-timer
+    screeneffects.css #screen-tint, #pain-flash, #death-overlay
+    message.css       #hud-message
+    levelcard.css     #level-card
+    intermission.css  #intermission
+src/ui/menu/
+    menu.css          #menu
+    changelog.css     #changelog and its #menu button.link trigger
+src/ui/devmode/
+    devmode.css       #hud, #profiler-hud
+```
 
-`screeneffects.css` holding the death overlay is the one case where the file boundary doesn't match
-what a reader would guess from the element names — it's there because `screeneffects.ts` shows and
-hides all three.
+`hud/screeneffects.css` holding the death overlay is the one case where a file boundary doesn't
+match what a reader would guess from the element names — it's there because `screeneffects.ts` shows
+and hides all three. `crosshair.ts` and `wadfont.ts` sit in `hud/` with no stylesheet of their own:
+one writes a data-URI cursor, the other only rasterizes glyphs.
 
-`styles.css` is the only stylesheet `index.html` links; everything else reaches the page through its
-`@import` list, in stacking order, `base.css` first so the tokens exist before anything reads them.
-Vite inlines the imports into a single asset at build. **The parts are never imported from TS**
+`styles.css` is at `src/` rather than in `ui/` because it belongs to the page, not to any one UI
+area: it is what `index.html` links, and everything else reaches the browser through its `@import`
+list — in stacking order, `base.css` first so the tokens exist before anything reads them. Vite
+inlines the imports into a single asset at build. **The parts are never imported from TS**
 (`import './hud.css'` in a module): anything under `src/` may be pulled in by a script run through
 Node's native TS stripping, which would choke on it.
 

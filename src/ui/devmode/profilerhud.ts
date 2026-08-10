@@ -1,4 +1,4 @@
-import type { ProfileSample } from '../util/profiler.ts';
+import type { ProfileSample } from '../../util/profiler.ts';
 
 /** A category's bar fills its row at this many ms — one whole 60fps frame budget, so a bar reaching full width means that category alone would miss it. */
 const BAR_BUDGET_MS = 1000 / 60;

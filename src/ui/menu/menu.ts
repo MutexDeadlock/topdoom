@@ -5,17 +5,17 @@ import {
   mergedMaps,
   uploadedSource,
   type WadSource,
-} from '../wad/library.ts';
-import { DEFAULT_SKILL, SKILL_NAMES, type Skill } from '../game/skill.ts';
-import { getAutorun, setAutorun } from '../game/player.ts';
+} from '../../wad/library.ts';
+import { DEFAULT_SKILL, SKILL_NAMES, type Skill } from '../../game/skill.ts';
+import { getAutorun, setAutorun } from '../../game/player.ts';
 import {
   getRightMouseAction,
   setRightMouseAction,
   type RightMouseAction,
-} from '../game/input.ts';
-import { getFpsCap, setFpsCap, type FpsCap } from '../game.ts';
-import type { AudioEngine } from '../audio/audio.ts';
-import { DEVMODE, VERSION } from '../constants.ts';
+} from '../../game/input.ts';
+import { getFpsCap, setFpsCap, type FpsCap } from '../../game.ts';
+import type { AudioEngine } from '../../audio/audio.ts';
+import { DEVMODE, VERSION } from '../../constants.ts';
 
 export interface Selection {
   iwad: WadSource;
@@ -280,7 +280,7 @@ export class Menu {
     if (this.changelogLoaded) return;
     this.changelogText.textContent = 'Loading …';
     try {
-      const { default: text } = await import('../../CHANGELOG?raw');
+      const { default: text } = await import('../../../CHANGELOG?raw');
       this.changelogText.textContent = text.trimEnd();
       this.changelogLoaded = true;
     } catch (err) {

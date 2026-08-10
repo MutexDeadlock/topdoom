@@ -1,7 +1,7 @@
 # The HUD, level card, intermission and screen effects
 
-`src/ui/hud.ts`, `src/ui/wadfont.ts`, `src/ui/levelcard.ts`, `src/ui/intermission.ts`,
-`src/ui/message.ts`, `src/ui/crosshair.ts`, `src/ui/screeneffects.ts`, `src/game/besttimes.ts`,
+`src/ui/hud/hud.ts`, `src/ui/hud/wadfont.ts`, `src/ui/hud/levelcard.ts`, `src/ui/hud/intermission.ts`,
+`src/ui/hud/message.ts`, `src/ui/hud/crosshair.ts`, `src/ui/hud/screeneffects.ts`, `src/game/besttimes.ts`,
 `src/game.ts`
 
 Everything on screen that isn't the world. What the readouts *report* — the inventory, pickups and
@@ -111,7 +111,7 @@ and it stays frozen for as long as the popup is up: those frames return early to
 
 ## Level card
 
-`src/ui/levelcard.ts` raises "Entering" over the level's name (`#level-card`, horizontally centered,
+`src/ui/hud/levelcard.ts` raises "Entering" over the level's name (`#level-card`, horizontally centered,
 30% down so it clears `#hud-message`'s 40%) for 3.5 seconds after **every** map load — a normal exit,
 `restart()` after death, and the DEVMODE `N`/`P` jump alike — fading out over the last second of
 that. The fade is `opacity` driven from `update`'s own `dt`, not a CSS transition: a transition runs
@@ -139,7 +139,7 @@ message's 3 since there is nothing else on screen to read yet.
 
 ## Intermission
 
-`src/ui/intermission.ts` (`#intermission`) is the end-of-level popup: the same three counts the HUD
+`src/ui/hud/intermission.ts` (`#intermission`) is the end-of-level popup: the same three counts the HUD
 strip carries, as vanilla's percentages this time, then the frozen level time, then the best-time
 lines (§ Best times) and the continue hint. The three percentages are **right-aligned** against
 each other, which the HUD strip's own numbers are not: the strip's are one glance among many, while
@@ -147,7 +147,7 @@ these three sit stacked as a block where a ragged right edge is the first thing 
 wider than the `100%` the column is sized for — kills can pass 100% — widens the column rather than
 being clipped. `Hud`'s other layout rules apply — a red label run, values from a shared column, and
 the yellow→green switch at 100% — and `formatClock`/`percentOf` are shared with the HUD strip
-(`ui/hud.ts`) so the popup and the bar can never disagree about the same numbers. `percentOf`
+(`ui/hud/hud.ts`) so the popup and the bar can never disagree about the same numbers. `percentOf`
 truncates, matching `wi_stuff.c`'s C integer division, and reads 100% for a total of 0, where
 vanilla would divide by zero.
 
@@ -207,7 +207,7 @@ since losing one level's time should not cost every other level's.
 
 ## Center messages
 
-`src/ui/message.ts`'s `CenterMessage` draws one short line of `WadFont` text over the middle of the
+`src/ui/hud/message.ts`'s `CenterMessage` draws one short line of `WadFont` text over the middle of the
 view (`#hud-message`, horizontally centered, 40% down so it clears the player sprite the camera
 holds at dead center), for 3 seconds. Two callers so far:
 
@@ -240,7 +240,7 @@ The timeout is ticked from `Game.frame`'s `dt`, so a paused game doesn't burn a 
 time behind the menu; `loadMapByIndex` and `dispose` both `clear()` it, since the element is static
 markup that outlives any one `Game` (the same reason `Hud`'s panels `replaceChildren()`).
 
-## `WadFont` (`src/ui/wadfont.ts`)
+## `WadFont` (`src/ui/hud/wadfont.ts`)
 
 The strip is drawn with the IWAD's own font graphics rather than DOM text, and built as a reusable
 primitive rather than a one-off, since more WAD-font text is expected later. `WadFont` wraps
@@ -283,7 +283,7 @@ three numbers still form a flush column starting at the same x.
 
 ## The crosshair
 
-**The mouse cursor is the health readout too.** `src/ui/crosshair.ts`'s `Crosshair` sets the game
+**The mouse cursor is the health readout too.** `src/ui/hud/crosshair.ts`'s `Crosshair` sets the game
 canvas's OS cursor to a plus-shaped reticle (an inline SVG data URI, since the built-in `crosshair`
 keyword can't be recolored) whose color reports health at a glance: blue above 100, sliding from
 green at 100 through yellow down to red at 0 below that. This is TopDoom's own convention, not a
@@ -299,7 +299,7 @@ anything in the render pipeline. Invulnerability uses `backdrop-filter: grayscal
 vanilla's `INVULNERABILITYMAP` really is a *grayscale* inverse of the palette, not a colour inversion
 — and the suit a flat green wash. The element sits at `--z-tint`: above the canvas, below every HUD
 layer, so the world recolours and the readouts over it don't. Everything in this section lives
-in `ui/screeneffects.ts`, driven off inventory state every frame rather than toggled on
+in `ui/hud/screeneffects.ts`, driven off inventory state every frame rather than toggled on
 pickup/expiry, so clearing the powers needs no teardown path of its own. **`Game.dispose` has to call
 `ScreenEffects.reset`**, since the `Viewport` and these overlay elements outlive a `Game` —
 otherwise the menu, and the next level started from it, inherit whatever powerup was running.

@@ -1,5 +1,5 @@
 /*
- * "Entering" over the level's name, both drawn native-size by ui/levelcard.ts and scaled here —
+ * "Entering" over the level's name, both drawn native-size by ui/hud/levelcard.ts and scaled here —
  * the name's doubled size is this `height` pair, not a second font. Sits above the HUD (10) in the
  * same band as #hud-message, and higher up the screen (30% vs. its 40%) so a secret found on the
  * way in doesn't overlap the card.

@@ -34,14 +34,14 @@ import { computeMovableSectors } from './game/specials/mapscan.ts';
 import { IconOfSin } from './game/iconofsin.ts';
 import { applyCrushDamage, blocksCeilingLower, blocksFloorRise } from './game/moverblocking.ts';
 import { SectorEffects } from './game/sectoreffects.ts';
-import { Hud, type LevelStats } from './ui/hud.ts';
-import { Crosshair } from './ui/crosshair.ts';
-import { Intermission } from './ui/intermission.ts';
-import { LevelCard } from './ui/levelcard.ts';
+import { Hud, type LevelStats } from './ui/hud/hud.ts';
+import { Crosshair } from './ui/hud/crosshair.ts';
+import { Intermission } from './ui/hud/intermission.ts';
+import { LevelCard } from './ui/hud/levelcard.ts';
 import { LevelNames } from './wad/levelnames.ts';
-import { CenterMessage, lockedKeyMessage } from './ui/message.ts';
-import { DebugHud, handleHotkeys } from './ui/debughud.ts';
-import { ScreenEffects } from './ui/screeneffects.ts';
+import { CenterMessage, lockedKeyMessage } from './ui/hud/message.ts';
+import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
+import { ScreenEffects } from './ui/hud/screeneffects.ts';
 import { FrameProfiler } from './util/profiler.ts';
 import type { Skill } from './game/skill.ts';
 import {
@@ -75,7 +75,7 @@ const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
 const FOG_START_FRACTION = 0.54;
 
 /**
- * Shown center-screen (`ui/message.ts`) with `radio` — vanilla's `DSRADIO`, which it uses for
+ * Shown center-screen (`ui/hud/message.ts`) with `radio` — vanilla's `DSRADIO`, which it uses for
  * DOOM 2's inter-level radio chatter, not for secrets, so both the message and the sound are this
  * engine's own. Vanilla announces a secret nowhere at all: the status bar's `S` count just ticks
  * up. docs/hud.md § Center messages.
@@ -196,9 +196,9 @@ export class Game {
   private crosshair: Crosshair;
   /** Center-screen text — currently only the secret-found line (see `SECRET_MESSAGE`). */
   private message: CenterMessage;
-  /** The "Entering / <level name>" card every map load raises — see ui/levelcard.ts. */
+  /** The "Entering / <level name>" card every map load raises — see ui/hud/levelcard.ts. */
   private levelCard: LevelCard;
-  /** The end-of-level popup — see ui/intermission.ts and `intermissionActive`. */
+  /** The end-of-level popup — see ui/hud/intermission.ts and `intermissionActive`. */
   private intermission: Intermission;
   /** Names levels for the card: MAPINFO, then the vanilla title table — see wad/levelnames.ts. */
   private levelNames: LevelNames;

@@ -9,7 +9,7 @@ export type AmmoType = (typeof AMMO_TYPES)[number];
  * checks accept either: every one of them tests both (`p_doors.c`'s
  * `!p->cards[it_bluecard] && !p->cards[it_blueskull]`), so nothing in the game can tell them
  * apart — which is also why vanilla's own locked-door message says "key" for a skull
- * (`ui/message.ts`).
+ * (`ui/hud/message.ts`).
  */
 export const KEY_COLORS = ['blue', 'red', 'yellow'] as const;
 export type KeyColor = (typeof KEY_COLORS)[number];

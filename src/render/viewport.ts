@@ -21,7 +21,7 @@ export class Viewport {
     // `toneMappingExposure` is a plain uniform. `LinearToneMapping` at the
     // default exposure of 1 is `saturate(color)` — bit-identical to
     // `NoToneMapping` for anything already in range, so this costs nothing
-    // until `ui/screeneffects.ts`'s light visor actually turns it up.
+    // until `ui/hud/screeneffects.ts`'s light visor actually turns it up.
     this.renderer.toneMapping = THREE.LinearToneMapping;
     container.appendChild(this.renderer.domElement);
 

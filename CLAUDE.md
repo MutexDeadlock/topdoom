@@ -76,14 +76,17 @@ src/game/things/     the thing layer's record shapes + its own tables (defs), mo
 src/game/specials/   load-time map analysis (mapscan), mover meshes + relighting (movergeometry)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
                WebAudio playback (channels, attenuation, pan, volume)
-src/ui/        start menu, HUD, level card + end-of-level intermission, screen tints/pain flash,
-               DEVMODE hud + profiling overlay; each area's styles in the .css beside its module,
-               reaching the page through styles.css
+src/ui/        the page's own chrome (base styles + tokens, the fatal-error screen)
+src/ui/hud/          everything over the running level: HUD, level card, intermission, center
+               messages, screen tints/pain flash, crosshair, WadFont glyph rasterizing
+src/ui/menu/         start menu + changelog popup
+src/ui/devmode/      DEVMODE hud + profiling overlay
 src/util/      small helpers shared across layers (2D geometry, damped-lerp smoothing,
                per-frame profiling)
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
                    BRIGHTNESS_LIFT, PICKUP_SCALE, VIEW_DISTANCE)
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
+src/styles.css     the stylesheet index.html links; @imports the .css beside each ui module
 plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
 scripts/       headless WAD inspection (node scripts/inspect-wad.ts)
 ```

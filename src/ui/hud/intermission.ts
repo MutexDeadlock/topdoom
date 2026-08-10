@@ -1,5 +1,5 @@
-import type { GraphicsBank } from '../wad/graphics.ts';
-import type { BestTimeResult } from '../game/besttimes.ts';
+import type { GraphicsBank } from '../../wad/graphics.ts';
+import type { BestTimeResult } from '../../game/besttimes.ts';
 import { formatClock, percentOf, LEVEL_STATS_GREEN, type LevelStats } from './hud.ts';
 import { WadFont, COLOR_YELLOW } from './wadfont.ts';
 

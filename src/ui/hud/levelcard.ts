@@ -1,4 +1,4 @@
-import type { GraphicsBank } from '../wad/graphics.ts';
+import type { GraphicsBank } from '../../wad/graphics.ts';
 import { drawIcon } from './hud.ts';
 import { WadFont, type WadFontRecolor } from './wadfont.ts';
 

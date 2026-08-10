@@ -1,13 +1,13 @@
 # Dev mode and profiling
 
-`src/constants.ts`, `src/ui/debughud.ts`, `src/game.ts`, `src/util/profiler.ts`,
-`src/ui/profilerhud.ts`
+`src/constants.ts`, `src/ui/devmode/debughud.ts`, `src/game.ts`, `src/util/profiler.ts`,
+`src/ui/devmode/profilerhud.ts`
 
 ## DEVMODE
 
 `DEVMODE` reads `import.meta.env.VITE_DEVMODE`, defaulting to `false`; set `VITE_DEVMODE=true` in a
 git-ignored `.env.local` at the repo root to turn it on (Vite loads `.env.local` itself, no plugin
-needed). It gates four things — three in `ui/debughud.ts` and one in `ui/menu.ts` — all because a
+needed). It gates four things — three in `ui/devmode/debughud.ts` and one in `ui/menu/menu.ts` — all because a
 player has no legitimate reason to reach for them:
 
 - **The debug overlay** (`DebugHud.update`, whose lines come from `Game.debugLines`) — off, `#hud`

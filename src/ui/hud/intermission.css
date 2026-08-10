@@ -22,7 +22,7 @@
 /*
  * Lines are centered in the panel, but the kill/item/secret block is centered as *one* item:
  * its three lines have different widths, and centering each on its own would stagger the labels
- * and undo the number column ui/intermission.ts lines them up in.
+ * and undo the number column ui/hud/intermission.ts lines them up in.
  * `center`, never the default `stretch` — these canvases are `width: auto` at a fixed height, so
  * stretching the cross axis pulls a short line (the clock) out to the panel's full width.
  */

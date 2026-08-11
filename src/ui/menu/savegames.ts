@@ -30,9 +30,9 @@ const HOLD_MS = 1000;
  */
 export interface SaveHooks {
   /** Captures and stores the current moment under `name`. */
-  onSave(name: string): void;
+  onSave(name: string): void | Promise<void>;
   /** Refills an existing save with the current moment, keeping its name. */
-  onOverwrite(id: string): void;
+  onOverwrite(id: string): void | Promise<void>;
   /** Tears down the current session and starts one from `save` — the load-side `onStart`. */
   onLoad(save: SaveGame): void | Promise<void>;
 }
@@ -68,12 +68,14 @@ export class SavegamesUi {
   private inGame = false;
   /**
    * Which of the two lists is on screen, and whether each still matches the
-   * store. Only the visible one is ever built: listing means parsing every
-   * stored save's whole payload, which must not happen on a plain Esc pause or
-   * at boot, and rendering means one thumbnail decode per row.
+   * store. Only the visible one is ever built: listing itself is a cheap meta
+   * read now, but rendering still means one thumbnail decode and one WAD-set
+   * resolution per row, which must not happen on a plain Esc pause or at boot.
    */
   private visible: 'save' | 'load' | null = null;
   private stale = { save: true, load: true };
+  /** Monotonic ticket for `renderVisible`: a render that finds a newer one started while it awaited discards itself. */
+  private renderEpoch = 0;
 
   constructor(
     hooks: SaveHooks,
@@ -83,9 +85,9 @@ export class SavegamesUi {
     this.hooks = hooks;
     this.setStatus = setStatus;
     this.describe = describe;
-    this.saveButton.addEventListener('click', () => this.save());
+    this.saveButton.addEventListener('click', () => void this.save());
     this.nameInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') this.save();
+      if (e.key === 'Enter') void this.save();
     });
     el<HTMLButtonElement>('save-import').addEventListener('click', () => {
       this.fileInput.value = '';
@@ -107,31 +109,48 @@ export class SavegamesUi {
     this.saveButton.disabled = !inGame;
     this.stale.save = true;
     this.stale.load = true;
-    this.renderVisible();
+    void this.renderVisible();
   }
 
   /** Which tab is showing, `null` for one of the menu's others — `Menu.setTab`'s hand-off. */
   setVisible(tab: 'save' | 'load' | null): void {
     this.visible = tab;
-    this.renderVisible();
+    void this.renderVisible();
   }
 
-  private renderVisible(): void {
+  /**
+   * Rebuilds the visible list from the store, if it's stale. Async, so two
+   * hazards need the epoch ticket: a `refresh` or tab switch while the listing
+   * is in flight starts a newer render, and the older one must discard rather
+   * than paint over it — `stale` is only cleared by the render that actually
+   * painted, so a discarded one leaves the tab marked for the next look.
+   */
+  private async renderVisible(): Promise<void> {
     const tab = this.visible;
     if (!tab || !this.stale[tab]) return;
-    this.renderList(tab === 'save' ? this.saveList : this.loadList, listSaves(), tab);
+    const epoch = ++this.renderEpoch;
+    let entries: SaveListEntry[];
+    try {
+      entries = await listSaves();
+    } catch (err) {
+      this.setStatus((err as Error).message, true);
+      return;
+    }
+    if (epoch !== this.renderEpoch || this.visible !== tab) return;
     this.stale[tab] = false;
+    this.renderList(tab === 'save' ? this.saveList : this.loadList, entries, tab);
   }
 
   /**
    * Runs one store or hook call under this class's single refusal contract:
    * anything thrown becomes the status line, and the caller learns whether to
    * go on. Every action routes through here so the contract the class doc
-   * states is written once rather than at each of them.
+   * states is written once rather than at each of them — the store's calls all
+   * being async now, the action is awaited and so is the verdict.
    */
-  private attempt(action: () => void, done?: string): boolean {
+  private async attempt(action: () => void | Promise<void>, done?: string): Promise<boolean> {
     try {
-      action();
+      await action();
     } catch (err) {
       this.setStatus((err as Error).message, true);
       return false;
@@ -140,9 +159,14 @@ export class SavegamesUi {
     return true;
   }
 
-  private save(): void {
-    if (!this.inGame) return;
-    if (!this.attempt(() => this.hooks.onSave(this.nameInput.value), 'Game saved.')) return;
+  private async save(): Promise<void> {
+    // The disabled check covers a save already in flight (Enter bypasses the
+    // button's own disabled state), so one keypress can't store two.
+    if (!this.inGame || this.saveButton.disabled) return;
+    this.saveButton.disabled = true;
+    const ok = await this.attempt(() => this.hooks.onSave(this.nameInput.value), 'Game saved.');
+    this.saveButton.disabled = !this.inGame;
+    if (!ok) return;
     this.nameInput.value = '';
     this.refresh();
   }
@@ -151,7 +175,7 @@ export class SavegamesUi {
   async importFiles(files: File[]): Promise<void> {
     for (const file of files) {
       try {
-        const meta = importSave(await file.text());
+        const meta = await importSave(await file.text());
         this.setStatus(`Imported "${meta.name}".`);
       } catch (err) {
         this.setStatus(`${file.name}: ${(err as Error).message}`, true);
@@ -222,7 +246,7 @@ export class SavegamesUi {
       // name baked in here would go stale, and the row's own field shows it anyway.
       overwrite.title = 'Hold to replace this save with the current moment';
       overwrite.disabled = !this.inGame;
-      this.confirmOnHold(overwrite, 'Hold Overwrite to replace that save.', () => this.overwrite(meta.id));
+      this.confirmOnHold(overwrite, 'Hold Overwrite to replace that save.', () => void this.overwrite(meta.id));
       actions.append(overwrite);
     }
     actions.append(this.makeDownloadButton(meta), this.makeDeleteButton(meta));
@@ -252,7 +276,7 @@ export class SavegamesUi {
         input.blur();
       }
     });
-    input.addEventListener('blur', () => this.rename(meta, input));
+    input.addEventListener('blur', () => void this.rename(meta, input));
     return input;
   }
 
@@ -262,14 +286,13 @@ export class SavegamesUi {
    * the row's own buttons. Nor does a successful rename: the name is the only
    * thing that changed and it is already on screen, so the row is patched in
    * place and only the *other* tab's list is marked stale. Re-listing here
-   * would re-parse every stored payload, thumbnails included, to redraw one
-   * string — and renaming several saves in a row is the one path a player
-   * repeats.
+   * would redecode every row's thumbnail to redraw one string — and renaming
+   * several saves in a row is the one path a player repeats.
    */
-  private rename(meta: SaveMeta, input: HTMLInputElement): void {
+  private async rename(meta: SaveMeta, input: HTMLInputElement): Promise<void> {
     const trimmed = input.value.trim();
     if (trimmed === meta.name) return;
-    if (!this.attempt(() => renameSave(meta.id, input.value))) {
+    if (!(await this.attempt(() => renameSave(meta.id, input.value)))) {
       input.value = meta.name;
       return;
     }
@@ -305,11 +328,13 @@ export class SavegamesUi {
     button.title = 'Hold to delete this save';
     button.setAttribute('aria-label', 'Hold to delete this save');
     this.confirmOnHold(button, 'Hold the trash button to delete that save.', () => {
-      deleteSave(meta.id);
-      // Only this row goes; re-listing would re-parse every remaining save's
-      // whole payload to redraw rows that didn't change (see `rename`).
-      button.closest('.row')?.remove();
-      this.markOtherListStale();
+      void this.attempt(async () => {
+        await deleteSave(meta.id);
+        // Only this row goes; re-listing would redecode every remaining row's
+        // thumbnail to redraw rows that didn't change (see `rename`).
+        button.closest('.row')?.remove();
+        this.markOtherListStale();
+      });
     });
     return button;
   }
@@ -371,18 +396,18 @@ export class SavegamesUi {
     button.addEventListener('keyup', cancel);
   }
 
-  private overwrite(id: string): void {
+  private async overwrite(id: string): Promise<void> {
     if (!this.inGame) return;
-    if (this.attempt(() => this.hooks.onOverwrite(id), 'Save overwritten.')) this.refresh();
+    if (await this.attempt(() => this.hooks.onOverwrite(id), 'Save overwritten.')) this.refresh();
   }
 
   private load(id: string): void {
-    this.attempt(() => void this.hooks.onLoad(readSave(id)));
+    void this.attempt(async () => this.hooks.onLoad(await readSave(id)));
   }
 
   private download(id: string, map: string): void {
-    this.attempt(() => {
-      const blob = new Blob([exportSave(id)], { type: 'application/json' });
+    void this.attempt(async () => {
+      const blob = new Blob([await exportSave(id)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

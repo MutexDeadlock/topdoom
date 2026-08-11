@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, test } from 'node:test';
+import { beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   MAX_SAVES,
@@ -10,39 +10,62 @@ import {
   overwriteSave,
   readSave,
   renameSave,
+  setSaveBackend,
   wadLabel,
   writeSave,
   type SaveCapture,
 } from '../../src/game/savegames.ts';
+import {
+  STATE_ENCODING,
+  base64ToBytes,
+  bytesToBase64,
+  compressText,
+  decompressText,
+  type SaveStoreBackend,
+  type StoredState,
+} from '../../src/game/savestore.ts';
 
-/** Same in-memory stand-in as besttimes.test.ts — the store only reaches localStorage through `globalThis.localStorage?`. */
-function installStorage(): Map<string, string> {
-  const backing = new Map<string, string>();
-  const fake = {
-    get length() {
-      return backing.size;
-    },
-    clear: () => backing.clear(),
-    getItem: (key: string) => backing.get(key) ?? null,
-    key: (index: number) => [...backing.keys()][index] ?? null,
-    removeItem: (key: string) => void backing.delete(key),
-    setItem: (key: string, value: string) => void backing.set(key, value),
-  };
-  (globalThis as { localStorage?: Storage }).localStorage = fake as Storage;
-  return backing;
+/**
+ * The two IndexedDB object stores as two Maps, exposed so tests can tamper with
+ * stored records the way devtools (or a future build) could. The gzip codec is
+ * *not* faked — `CompressionStream` is global in Node, so every test compresses
+ * and decompresses for real.
+ */
+interface MemoryBackend extends SaveStoreBackend {
+  metas: Map<string, unknown>;
+  states: Map<string, StoredState>;
 }
 
-let store: Map<string, string>;
+function memoryBackend(): MemoryBackend {
+  const metas = new Map<string, unknown>();
+  const states = new Map<string, StoredState>();
+  return {
+    metas,
+    states,
+    listMeta: async () => [...metas.values()],
+    readMeta: async (id) => metas.get(id),
+    readState: async (id) => states.get(id),
+    putSave: async (meta, state) => {
+      metas.set((meta as { id: string }).id, meta);
+      states.set(state.id, state);
+    },
+    putMeta: async (meta) => void metas.set((meta as { id: string }).id, meta),
+    remove: async (id) => {
+      metas.delete(id);
+      states.delete(id);
+    },
+    count: async () => metas.size,
+  };
+}
+
+let store: MemoryBackend;
 
 beforeEach(() => {
-  store = installStorage();
+  store = memoryBackend();
+  setSaveBackend(store);
 });
 
-afterEach(() => {
-  delete (globalThis as { localStorage?: Storage }).localStorage;
-});
-
-/** The smallest state payload `isLoadable` accepts — the store never looks deeper than this. */
+/** The smallest state payload the loadability check accepts — the store never looks deeper than this. */
 const state = { player: { x: 0 }, rng: { p: 0, m: 0 } } as unknown as SaveCapture['state'];
 
 const capture = (map = 'E1M1'): SaveCapture => ({
@@ -54,27 +77,47 @@ const capture = (map = 'E1M1'): SaveCapture => ({
   state,
 });
 
-/** The savegame store: keys, the cap, version refusal, and what a damaged entry costs. See docs/savegames.md § Storage and the cap. */
+/** Mutates a stored meta record in place — the devtools-style tampering `asMeta` has to survive. */
+function tamperMeta(id: string, patch: Record<string, unknown>): void {
+  store.metas.set(id, { ...(store.metas.get(id) as Record<string, unknown>), ...patch });
+}
+
+/** The savegame store: the meta/state split, the cap, version refusal, and what a damaged record costs. See docs/savegames.md § Storage and the cap. */
 describe('Savegames · the store', () => {
-  test('write, list, read and delete round-trip', () => {
-    const meta = writeSave(capture(), 'my save');
+  test('write, list, read and delete round-trip', async () => {
+    const meta = await writeSave(capture(), 'my save');
     assert.equal(meta.version, SAVE_VERSION);
     assert.equal(meta.name, 'my save');
-    assert.ok(store.has(`topdoom.save.${meta.id}`), 'stored under its own key');
+    assert.ok(store.metas.has(meta.id), 'meta stored under its id');
+    assert.ok(store.states.has(meta.id), 'state stored under the same id');
 
-    const listed = listSaves();
+    const listed = await listSaves();
     assert.equal(listed.length, 1);
     assert.deepEqual(listed[0], { meta, supported: true });
 
-    const back = readSave(meta.id);
+    const back = await readSave(meta.id);
     assert.equal(back.map, 'E1M1');
     assert.deepEqual(back.state, state);
 
-    deleteSave(meta.id);
-    assert.deepEqual(listSaves(), []);
+    await deleteSave(meta.id);
+    assert.deepEqual(await listSaves(), []);
+    assert.equal(store.states.size, 0, 'the state record went with the meta');
   });
 
-  test('the WAD set is stored verbatim as one load-order list of content ids', () => {
+  test('the stored state is gzip, and listing never touches it', async () => {
+    const meta = await writeSave(capture(), 'zipped');
+    const record = store.states.get(meta.id)!;
+    assert.equal(record.encoding, STATE_ENCODING);
+    assert.deepEqual(record.bytes.subarray(0, 2), new Uint8Array([0x1f, 0x8b]), 'gzip magic bytes');
+    assert.deepEqual(JSON.parse(await decompressText(record.bytes)), state);
+
+    store.readState = async () => {
+      throw new Error('listing must not read a state record');
+    };
+    assert.equal((await listSaves()).length, 1);
+  });
+
+  test('the WAD set is stored verbatim as one load-order list of content ids', async () => {
     const set: SaveCapture = {
       ...capture(),
       wads: [
@@ -84,147 +127,206 @@ describe('Savegames · the store', () => {
     };
     // Nothing is added on the way in: `wadSetId`'s output is already the format,
     // so no library key can go stale inside a save.
-    const meta = writeSave(set, 'byid');
+    const meta = await writeSave(set, 'byid');
     assert.deepEqual(meta.wads, set.wads);
-    assert.deepEqual(readSave(meta.id).wads, set.wads, 'and survives the round-trip');
+    assert.deepEqual((await readSave(meta.id)).wads, set.wads, 'and survives the round-trip');
   });
 
-  test('a damaged WAD entry is blanked, not dropped — load order decides the role', () => {
-    const meta = writeSave({ ...capture(), wads: [{ name: 'A', id: 'a' }, { name: 'B', id: 'b' }] }, 's');
-    const raw = JSON.parse(store.get(`topdoom.save.${meta.id}`)!);
-    raw.wads[0] = 'nonsense';
-    store.set(`topdoom.save.${meta.id}`, JSON.stringify(raw));
+  test('a damaged WAD entry is blanked, not dropped — load order decides the role', async () => {
+    const meta = await writeSave({ ...capture(), wads: [{ name: 'A', id: 'a' }, { name: 'B', id: 'b' }] }, 's');
+    tamperMeta(meta.id, { wads: ['nonsense', { name: 'B', id: 'b' }] });
 
-    const listed = listSaves()[0].meta;
+    const listed = (await listSaves())[0].meta;
     assert.equal(listed.wads.length, 2, 'the entry keeps its slot so B stays an add-on');
     assert.deepEqual(listed.wads[0], { name: '', id: '' });
     assert.equal(wadLabel(listed.wads[0]), 'unknown file');
     assert.deepEqual(listed.wads[1], { name: 'B', id: 'b' });
   });
 
-  test('an empty name defaults to map and date', () => {
-    assert.match(writeSave(capture('MAP05'), '   ').name, /^MAP05 — /);
+  test('an empty name defaults to map and date', async () => {
+    assert.match((await writeSave(capture('MAP05'), '   ')).name, /^MAP05 — /);
   });
 
-  test('the prefix scan ignores every other topdoom key', () => {
-    store.set('topdoom.bestTimes', '{}');
-    store.set('topdoom.skill', '3');
-    writeSave(capture(), 's');
-    assert.equal(listSaves().length, 1);
-  });
-
-  test('the list is newest first', () => {
-    const a = writeSave(capture('E1M1'), 'a');
-    store.set(`topdoom.save.${a.id}`, JSON.stringify({ ...readSave(a.id), at: '2001-01-01T00:00:00.000Z' }));
-    writeSave(capture('E1M2'), 'b');
+  test('the list is newest first', async () => {
+    const a = await writeSave(capture('E1M1'), 'a');
+    tamperMeta(a.id, { at: '2001-01-01T00:00:00.000Z' });
+    await writeSave(capture('E1M2'), 'b');
     assert.deepEqual(
-      listSaves().map((e) => e.meta.name),
+      (await listSaves()).map((e) => e.meta.name),
       ['b', 'a'],
     );
   });
 
-  test('an unsupported version is listed but refuses to load', () => {
-    const meta = writeSave(capture(), 'old');
-    const raw = JSON.parse(store.get(`topdoom.save.${meta.id}`)!);
-    raw.version = SAVE_VERSION + 1;
-    store.set(`topdoom.save.${meta.id}`, JSON.stringify(raw));
+  test('an unsupported version is listed but refuses to load', async () => {
+    const meta = await writeSave(capture(), 'old');
+    tamperMeta(meta.id, { version: SAVE_VERSION + 1 });
 
-    const [entry] = listSaves();
+    const [entry] = await listSaves();
     assert.equal(entry.supported, false);
     assert.equal(entry.meta.name, 'old', 'the row still shows its own name');
-    assert.throws(() => readSave(meta.id), new RegExp(`version ${SAVE_VERSION + 1}.*version ${SAVE_VERSION}`));
+    await assert.rejects(readSave(meta.id), new RegExp(`version ${SAVE_VERSION + 1}.*version ${SAVE_VERSION}`));
   });
 
-  test('a damaged entry is one unloadable row, not a broken list', () => {
-    writeSave(capture(), 'good');
-    store.set('topdoom.save.broken', '{not json');
-    const listed = listSaves();
+  test('a damaged meta is one unloadable row, not a broken list', async () => {
+    await writeSave(capture(), 'good');
+    store.metas.set('broken', 'not even an object');
+    const listed = await listSaves();
     assert.equal(listed.length, 2);
-    const broken = listed.find((e) => e.meta.id === 'broken')!;
+    const broken = listed.find((e) => e.meta.map === '?')!;
     assert.equal(broken.supported, false);
     assert.equal(broken.meta.name, '(unreadable save)');
-    assert.throws(() => readSave('broken'), /damaged/);
+    await assert.rejects(readSave('broken'), /damaged/);
     assert.equal(listed.find((e) => e.meta.name === 'good')!.supported, true);
   });
 
-  test('overwriting keeps the id and the name, and replaces the payload', () => {
-    const meta = writeSave(capture('E1M1'), 'slot one');
-    const replaced = overwriteSave(meta.id, capture('E1M9'));
+  test('a damaged state lists as loadable and fails at load, readably', async () => {
+    const meta = await writeSave(capture(), 'hollow');
+
+    // Listing reads metas only, so neither problem below can show up in the list.
+    store.states.set(meta.id, { id: meta.id, encoding: STATE_ENCODING, bytes: new Uint8Array([1, 2, 3]) });
+    assert.equal((await listSaves())[0].supported, true);
+    await assert.rejects(readSave(meta.id), /damaged/);
+
+    store.states.delete(meta.id);
+    assert.equal((await listSaves())[0].supported, true);
+    await assert.rejects(readSave(meta.id), /damaged/);
+    await deleteSave(meta.id);
+    assert.deepEqual(await listSaves(), [], 'still deletable');
+  });
+
+  test('a state under an unknown encoding refuses to load', async () => {
+    const meta = await writeSave(capture(), 's');
+    const record = store.states.get(meta.id)!;
+    store.states.set(meta.id, { ...record, encoding: STATE_ENCODING + 1 });
+    await assert.rejects(readSave(meta.id), /damaged/);
+  });
+
+  test('overwriting keeps the id and the name, and replaces the payload', async () => {
+    const meta = await writeSave(capture('E1M1'), 'slot one');
+    const replaced = await overwriteSave(meta.id, capture('E1M9'));
     assert.equal(replaced.id, meta.id);
     assert.equal(replaced.name, 'slot one', 'the slot keeps its label');
     assert.equal(replaced.map, 'E1M9');
-    assert.equal(listSaves().length, 1, 'one slot, not two');
-    assert.equal(readSave(meta.id).map, 'E1M9');
-    assert.throws(() => overwriteSave('never-existed', capture()), /no longer exists/);
+    assert.equal((await listSaves()).length, 1, 'one slot, not two');
+    assert.equal((await readSave(meta.id)).map, 'E1M9');
+    await assert.rejects(overwriteSave('never-existed', capture()), /no longer exists/);
   });
 
-  test('overwriting works with the list full — no new key, so no cap', () => {
-    const first = writeSave(capture(), 's0');
-    for (let i = 1; i < MAX_SAVES; i++) writeSave(capture(), `s${i}`);
-    assert.throws(() => writeSave(capture(), 'one too many'), /delete a save first/);
-    assert.equal(overwriteSave(first.id, capture('MAP07')).map, 'MAP07');
-    assert.equal(listSaves().length, MAX_SAVES);
+  test('overwriting works with the list full — no new save, so no cap', async () => {
+    const first = await writeSave(capture(), 's0');
+    for (let i = 1; i < MAX_SAVES; i++) await writeSave(capture(), `s${i}`);
+    await assert.rejects(writeSave(capture(), 'one too many'), /delete a save first/);
+    assert.equal((await overwriteSave(first.id, capture('MAP07'))).map, 'MAP07');
+    assert.equal((await listSaves()).length, MAX_SAVES);
   });
 
-  test('renaming touches the name only, and refuses a damaged row', () => {
-    const meta = writeSave(capture(), 'before');
-    renameSave(meta.id, '  after  ');
-    const [entry] = listSaves();
+  test('renaming touches the meta only, and refuses a damaged row', async () => {
+    const meta = await writeSave(capture(), 'before');
+    const record = store.states.get(meta.id)!;
+    await renameSave(meta.id, '  after  ');
+    const [entry] = await listSaves();
     assert.equal(entry.meta.name, 'after', 'trimmed');
     assert.equal(entry.meta.at, meta.at, 'the list does not reorder under a rename');
-    assert.deepEqual(readSave(meta.id).state, state);
+    assert.equal(store.states.get(meta.id), record, 'the state record was not rewritten');
 
-    assert.throws(() => renameSave(meta.id, '   '), /needs a name/);
-    assert.equal(listSaves()[0].meta.name, 'after');
+    await assert.rejects(renameSave(meta.id, '   '), /needs a name/);
+    assert.equal((await listSaves())[0].meta.name, 'after');
 
-    store.set('topdoom.save.broken', '{not json');
-    assert.throws(() => renameSave('broken', 'x'), /damaged/);
-    assert.equal(store.get('topdoom.save.broken'), '{not json', 'left as it was');
+    store.metas.set('broken', 'not even an object');
+    await assert.rejects(renameSave('broken', 'x'), /damaged/);
+    assert.equal(store.metas.get('broken'), 'not even an object', 'left as it was');
   });
 
-  test('the cap refuses the write instead of evicting', () => {
-    for (let i = 0; i < MAX_SAVES; i++) writeSave(capture(), `s${i}`);
-    assert.throws(() => writeSave(capture(), 'one too many'), /delete a save first/);
-    assert.equal(listSaves().length, MAX_SAVES);
+  test('the cap refuses the write instead of evicting', async () => {
+    for (let i = 0; i < MAX_SAVES; i++) await writeSave(capture(), `s${i}`);
+    await assert.rejects(writeSave(capture(), 'one too many'), /delete a save first/);
+    assert.equal((await listSaves()).length, MAX_SAVES);
   });
 
-  test('a full quota surfaces as a readable error', () => {
-    const fake = globalThis.localStorage as Storage;
-    const originalSet = fake.setItem.bind(fake);
-    fake.setItem = () => {
+  test('a full quota surfaces as a readable error', async () => {
+    store.putSave = async () => {
       throw new DOMException('quota', 'QuotaExceededError');
     };
-    assert.throws(() => writeSave(capture(), 's'), /storage/);
-    fake.setItem = originalSet;
+    await assert.rejects(writeSave(capture(), 's'), /storage/);
   });
 
-  test('the download is tab-indented, while the stored copy stays compact', () => {
-    const meta = writeSave(capture(), 'readable');
-    assert.equal(store.get(`topdoom.save.${meta.id}`)!.includes('\n'), false, 'stored compact for the quota');
-    const downloaded = exportSave(meta.id);
-    assert.match(downloaded, /^\{\n\t"/, 'downloaded with newlines and tab indents');
-    assert.deepEqual(JSON.parse(downloaded), JSON.parse(store.get(`topdoom.save.${meta.id}`)!));
+  test('the download is one readable JSON file carrying the stored gzip bytes', async () => {
+    const meta = await writeSave(capture(), 'readable');
+    const downloaded = await exportSave(meta.id);
+    assert.match(downloaded, /^\{\n\t"/, 'newlines and tab indents');
+
+    const file = JSON.parse(downloaded);
+    assert.equal(file.name, 'readable', 'meta fields stay human-readable');
+    assert.equal(file.version, SAVE_VERSION);
+    assert.equal(file.stateEncoding, STATE_ENCODING);
+    assert.deepEqual(base64ToBytes(file.state), store.states.get(meta.id)!.bytes, 'the stored bytes, verbatim');
   });
 
-  test('a save too damaged to parse still downloads, verbatim', () => {
-    store.set('topdoom.save.broken', '{not json');
-    assert.equal(exportSave('broken'), '{not json');
-    assert.throws(() => exportSave('never-existed'), /no longer exists/);
+  test('an unsupported version still downloads, its version intact', async () => {
+    const meta = await writeSave(capture(), 'old');
+    tamperMeta(meta.id, { version: SAVE_VERSION + 9 });
+    const file = JSON.parse(await exportSave(meta.id));
+    assert.equal(file.version, SAVE_VERSION + 9, 'carried verbatim so a matching build can re-import it');
   });
 
-  test('importing a downloaded save re-ids it, so importing twice makes two', () => {
-    const meta = writeSave(capture(), 'exported');
-    const text = exportSave(meta.id);
-    const imported = importSave(text);
+  test('a state too damaged to decompress still downloads, byte-exact', async () => {
+    const meta = await writeSave(capture(), 'corrupt');
+    const junk = new Uint8Array([9, 9, 9, 9]);
+    store.states.set(meta.id, { id: meta.id, encoding: STATE_ENCODING, bytes: junk });
+    const file = JSON.parse(await exportSave(meta.id));
+    assert.deepEqual(base64ToBytes(file.state), junk);
+
+    store.states.delete(meta.id);
+    await assert.rejects(exportSave(meta.id), /cannot be downloaded/, 'nothing left to hand over');
+    await assert.rejects(exportSave('never-existed'), /no longer exists/);
+  });
+
+  test('importing a downloaded save re-ids it, so importing twice makes two', async () => {
+    const meta = await writeSave(capture(), 'exported');
+    const text = await exportSave(meta.id);
+    const imported = await importSave(text);
     assert.notEqual(imported.id, meta.id);
-    assert.equal(importSave(text).id === imported.id, false);
-    assert.equal(listSaves().length, 3);
+    assert.equal((await importSave(text)).id === imported.id, false);
+    assert.equal((await listSaves()).length, 3);
   });
 
-  test('import refuses non-saves and old versions by name', () => {
-    assert.throws(() => importSave('hello'), /not a TopDoom save/);
-    assert.throws(() => importSave('{"some": "json"}'), /not a TopDoom save/);
-    const old = JSON.stringify({ ...capture(), id: 'x', version: 99, at: '', name: 'x' });
-    assert.throws(() => importSave(old), /version 99/);
+  test('import stores the file’s bytes verbatim and the state round-trips', async () => {
+    const meta = await writeSave(capture(), 'round');
+    const original = store.states.get(meta.id)!.bytes;
+    const imported = await importSave(await exportSave(meta.id));
+    assert.deepEqual(store.states.get(imported.id)!.bytes, original, 'no recompression drift');
+    assert.deepEqual((await readSave(imported.id)).state, state);
+  });
+
+  test('import refuses non-saves, old versions by name, and un-encoded states', async () => {
+    await assert.rejects(importSave('hello'), /not a TopDoom save/);
+    await assert.rejects(importSave('{"some": "json"}'), /not a TopDoom save/);
+    const base = { ...capture(), id: 'x', version: SAVE_VERSION, at: '', name: 'x' };
+    await assert.rejects(importSave(JSON.stringify({ ...base, version: 99 })), /version 99/);
+    // The pre-IndexedDB export shape — `state` as a plain object — is refused:
+    // the format is unreleased, so it gets no compat path.
+    await assert.rejects(importSave(JSON.stringify(base)), /not a TopDoom save/);
+    const garbled = { ...base, stateEncoding: STATE_ENCODING, state: 'not base64!!' };
+    await assert.rejects(importSave(JSON.stringify(garbled)), /not a TopDoom save/);
+  });
+});
+
+/** The byte codecs under the store: real gzip both ways, and the export file's base64. */
+describe('Savegames · codecs', () => {
+  test('gzip round-trips, non-ASCII included', async () => {
+    const text = '{"name":"Ärger im Töten-Level ✓","x":1.5}';
+    assert.equal(await decompressText(await compressText(text)), text);
+  });
+
+  test('compression actually shrinks a repetitive payload', async () => {
+    const text = JSON.stringify(Array.from({ length: 500 }, (_, i) => [i, { floorHeight: 128, light: 255 }]));
+    const bytes = await compressText(text);
+    assert.ok(bytes.length < text.length / 4, `${bytes.length} of ${text.length} bytes`);
+  });
+
+  test('base64 round-trips a large buffer through the chunked encoder', () => {
+    const bytes = new Uint8Array(300_000);
+    for (let i = 0; i < bytes.length; i++) bytes[i] = (i * 7 + (i >> 8)) & 0xff;
+    assert.deepEqual(base64ToBytes(bytesToBase64(bytes)), bytes);
   });
 });

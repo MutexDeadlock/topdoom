@@ -1,18 +1,20 @@
 # Savegames
 
-A save is one JSON document: identity metadata (which WAD set, which map, which skill), a small
-JPEG thumbnail, and a `GameSnapshot` — the full mutable state of the running level, down to the
-random-table cursors. Loading one rebuilds the level through the ordinary
-`Game.loadMapByIndex` funnel and then overwrites the mutable state, so everything the constructors
-derive (BSP polys, meshes, spatial grids) is always derived from restored data rather than patched
-afterwards. The store lives in `game/savegames.ts`, the payload types and encoding helpers in
-`game/snapshot.ts`, the menu surface in `ui/menu/savegames.ts` (docs/menu.md § Save and Load tabs).
+A save is two things: a `SaveMeta` (which WAD set, which map, which skill, a small JPEG thumbnail)
+and a `GameSnapshot` — the full mutable state of the running level, down to the random-table
+cursors — stored separately so that listing saves reads metas alone (§ Storage and the cap).
+Loading one rebuilds the level through the ordinary `Game.loadMapByIndex` funnel and then
+overwrites the mutable state, so everything the constructors derive (BSP polys, meshes, spatial
+grids) is always derived from restored data rather than patched afterwards. The store lives in
+`game/savegames.ts` over `game/savestore.ts`'s IndexedDB backend and byte codecs, the payload
+types and encoding helpers in `game/snapshot.ts`, the menu surface in `ui/menu/savegames.ts`
+(docs/menu.md § Save and Load tabs).
 
 ## The format and its version
 
 `SaveGame` = `SaveMeta` (id, `version`, ISO date, display name, map lump name, skill, the WAD list,
-level time, `thumb` data URL, the menu source keys) + `state: GameSnapshot`. The payload is
-plain JSON with four deliberate encodings, all owned by `game/snapshot.ts`:
+level time, `thumb` data URL) + `state: GameSnapshot`. The snapshot serializes as JSON with four
+deliberate encodings, all owned by `game/snapshot.ts`:
 
 - **`Infinity` → `-1`** (`encodeSeconds`/`decodeSeconds`): `JSON.stringify(Infinity)` silently
   yields `null`, and the berserk/computer-map powers genuinely hold `Infinity`.
@@ -26,13 +28,16 @@ plain JSON with four deliberate encodings, all owned by `game/snapshot.ts`:
   out of `loadMap`, before anything runs — the same state a later load's `applySectors` writes
   into, which is what makes "absent" mean "unchanged". Writing all of them out costs ~24 KB of
   JSON on DOOM2 MAP15 (301 sectors), most of an untouched save.
-- **Floats → 6 decimals** (`roundFloat`): a `JSON.stringify` replacer, applied by the store's own
-  `put` — dt-accumulated doubles otherwise serialize with 17-digit tails, which are most of a
-  float's JSON cost, and 1e-6 map units/radians/seconds is far below anything observable. Integers
-  (sector heights, the RNG cursors, the `-1` sentinel) pass through exactly. A replacer rather
-  than a pass over the tree: the rounding only ever matters in the stored text, and a second copy
-  of the largest object the feature builds is the last thing to allocate beside the quota this
-  exists to protect. `Game.captureSave` hands over its state unrounded.
+- **Floats → 6 decimals** (`roundFloat`): a `JSON.stringify` replacer, applied at the one place
+  the snapshot is stringified (`encodeState`, feeding the compressor) — dt-accumulated doubles
+  otherwise serialize with 17-digit tails, which are most of a float's JSON cost, and 1e-6 map
+  units/radians/seconds is far below anything observable. Integers (sector heights, the RNG
+  cursors, the `-1` sentinel) pass through exactly. A replacer rather than a pass over the tree:
+  the rounding only ever matters in the serialized text, and a second copy of the largest object
+  the feature builds is the last thing to allocate beside the quota this exists to protect.
+  `Game.captureSave` hands over its state unrounded; the meta is stored as an object, where digits
+  cost nothing, so only `levelTime` is rounded (in `createMeta`, because the export file
+  stringifies the meta without a replacer).
 
 A killable thing's AI block is the one part not written out field by field: `MONSTER_SAVE_KEYS`
 names the `PosedThing` fields it can carry, `MonsterFields` is `Pick`ed off `PosedThing` with that
@@ -67,9 +72,12 @@ restore must never skip an entry (`buildThingSprites` throws on missing art inst
 `SAVE_VERSION` is a single integer, bumped on any change a version-1 reader would misread. The
 loader refuses any other version; the Load tab still lists such saves (grayed, with the version
 named) so they can be deleted or downloaded, just not loaded. This is deliberately unlike every
-other `topdoom.*` key (docs/menu.md § Persisted settings): a settings scalar degrades safely under
-structural validation, a snapshot's schema genuinely evolves and half-reading an old one produces a
-subtly wrong level rather than a default.
+other persisted `topdoom.*` value (docs/menu.md § Persisted settings): a settings scalar degrades
+safely under structural validation, a snapshot's schema genuinely evolves and half-reading an old
+one produces a subtly wrong level rather than a default. It versions the snapshot's *content*
+only: the move to IndexedDB with split, gzipped records shipped without a bump, because how the
+bytes are stored is the separately-versioned `STATE_ENCODING`'s job (§ Storage and the cap) and
+the snapshot inside is unchanged.
 
 ## What is saved and what is deliberately not
 
@@ -160,24 +168,56 @@ heights** and **RNG cursors dead last**.
 
 ## Storage and the cap
 
-Saves live in localStorage, one key per save (`topdoom.save.<id>`), listed by prefix scan — no
-index key to desync, deletion is one `removeItem`. Reads are validated per entry in the
-`besttimes.ts` style: a malformed save renders as unloadable rather than taking the list down.
-`MAX_SAVES` caps the count and the store *refuses* the write when full — silently evicting
-somebody's save is worse than asking them to delete one. The cap belongs to `writeSave` alone:
-`overwriteSave` (refill a slot, keeping its id and name) and `renameSave` (the name only, `at`
-included so the list can't reorder under the cursor) reuse the same key, add nothing to the count,
-and so must keep working with a full list. `setItem` is wrapped so a
-`QuotaExceededError` (the origin's ~5 MB budget, shared with everything else) surfaces as a
-readable message in the menu. Thumbnails are ~320 px JPEGs (tens of KB); the state payload for a
-normal map is a similar order of magnitude thanks to the pristine-thing, sparse-block, sparse-
-sector, float-rounding and fog-RLE encodings. Sectors alone were ~24 KB on MAP15 before the diff
-against the loaded map, against a ~40 KB untouched save. A disturbed monster costs ~350 bytes at worst (wounded and
-mid-chase) and ~200 as a corpse, roughly half of what the pre-sparse full block did — measured
-pre-sparse: DOOM2 MAP15 ~40 KB untouched, ~140 KB with every monster damaged. The known limit is
-still a slaughter map with most of its monsters *disturbed* — NUTS.WAD with all 10k wounded was
-~6 MB pre-sparse, around half that now, so a worst case can still brush the quota — where the
-write fails with the quota message rather than corrupting anything.
+Saves live in IndexedDB (database `topdoom`, `game/savestore.ts`), split across two object stores
+keyed by save id: `saves-meta` holds each `SaveMeta` as a plain structured-clone object, and
+`saves-state` holds the snapshot as **gzipped JSON bytes** (`CompressionStream`, native in browser
+and Node alike) tagged with a `STATE_ENCODING` number. The split is the point: `listSaves` is one
+`getAll` over metas and never touches a state, so the save list costs thumbnails, not snapshots.
+The trade-off is deliberate and cuts both ways — a save whose *state* record is missing or corrupt
+lists as loadable and only fails (readably) at load, because finding out earlier would mean
+decompressing every save to draw a list. `STATE_ENCODING` is versioned separately from
+`SAVE_VERSION`: one names the byte encoding, the other the snapshot's content, and they evolve
+independently.
+
+Two rules in `savestore.ts` are load-bearing. An IndexedDB transaction auto-commits as soon as
+control returns to the event loop with no request pending, so compression finishes *before*
+`putSave` opens its transaction, and both puts (meta + state) are issued synchronously inside one
+`readwrite` transaction — an abort rolls both back, so a quota failure can't leave an orphan meta.
+And a failed database *open* is un-cached, so a transient refusal (private mode, storage pressure)
+is retried the next time the menu lists.
+
+Reads are validated per meta in the `besttimes.ts` style: a malformed record renders as unloadable
+rather than taking the list down. `MAX_SAVES` caps the count and the store *refuses* the write when
+full — silently evicting somebody's save is worse than asking them to delete one. The cap belongs
+to `writeSave` (and `importSave`) alone: `overwriteSave` (refill a slot, keeping its id and name)
+and `renameSave` (the name only, `at` included so the list can't reorder under the cursor — and the
+meta record only, so renaming never rewrites state bytes) add nothing to the count, and so must
+keep working with a full list. A `QuotaExceededError` out of the write transaction surfaces as a
+readable message in the menu (mapped in `savegames.ts`, not the backend, so the tests' in-memory
+backend exercises the same translation). Quota pressure is far lower than under localStorage's
+~5 MB: the origin budget is typically hundreds of MB, and gzip takes several-fold off the
+snapshot JSON on top of the pristine-thing, sparse-block, sparse-sector, float-rounding and
+fog-RLE encodings it compresses. The uncompressed sizes for scale: DOOM2 MAP15 ~40 KB untouched
+(~24 KB of that would be sectors without the diff), a disturbed monster ~350 bytes, a corpse ~200,
+NUTS.WAD with all 10k monsters wounded ~3 MB.
+
+## Download and import
+
+A downloaded save is **one JSON file**, tab-indented: every meta field in the clear — a person can
+open it and read what it is — plus the state's stored gzip bytes, base64'd, as `state`, with the
+record's encoding as `stateEncoding`. Base64 costs a third over the raw bytes and is still several
+times smaller than the snapshot's plain JSON. `exportSave` deliberately does **no decompression**:
+the bytes are handed over verbatim, so an unsupported-version save — and even one whose state no
+longer decompresses — escapes to disk byte-exact, carrying its stored `version` untouched (only
+`importSave` ever stamps `SAVE_VERSION`). The one thing that refuses to download is a save whose
+state record is missing outright: there are no bytes left to hand over.
+
+`importSave` re-validates everything a foreign file could get wrong — JSON, version (named both
+ways on mismatch), meta shape, base64, gzip, the snapshot's own shape — and then stores the
+*decoded* bytes verbatim rather than recompressing, under a fresh id (importing the same file
+twice must make two saves, never overwrite) and a meta rebuilt through `asMeta` so no extra
+top-level keys are smuggled into storage. The pre-IndexedDB export shape (`state` as a plain JSON
+object) is refused: the format is unreleased, so it gets no compat path.
 
 ## WAD-set identity
 

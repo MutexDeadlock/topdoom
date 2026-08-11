@@ -86,8 +86,9 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   field re-renders nothing, so a plain focus-and-blur can't pull the row out from under a click
   heading for one of its own buttons. Nor does a *successful* rename, or a delete: both patch the
   visible list (the input's own value, `row.remove()`) and only mark the other tab's list stale.
-  `listSaves` parses every stored payload, thumbnails included, so re-listing to redraw one string
-  is the cost worth avoiding on the one path a player repeats. It also means nothing may bake a
+  Re-listing rebuilds every row — one thumbnail decode and one `describeSave` each — to redraw one
+  string, the cost worth avoiding on the one path a player repeats. (A rename also never rewrites
+  the save's state record: `renameSave` puts the meta alone.) It also means nothing may bake a
   save's name into a row's other elements — the Overwrite tooltip says "this save" for that reason.
 - **The save lists fill the panel vertically**: `.saves-section` is the tab panel's flexible child
   and the list is the section's, against a `#menu > .panel` capped at the viewport — so the rows use
@@ -106,9 +107,9 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   from the current moment, keeping its id and its name (renaming has its own affordance), and can't
   hit `MAX_SAVES` since no new key appears. Delete and download are icon-only buttons (`⤓`, `🗑︎` with
   a text-presentation selector) with their meaning in the tooltip; Load and Overwrite are `.primary`.
-- **Download** writes the save as `topdoom-<map>-<date>.json` through a temporary anchor, re-indented
-  with tabs on the way out (`exportSave`) — the stored copy stays compact for the quota, but a file
-  on disk is something a person can open;
+- **Download** writes the save as `<map>-<date>.topdoom.json` through a temporary anchor: one
+  tab-indented JSON file whose meta fields are readable and whose `state` is the stored gzip bytes,
+  base64'd (`exportSave` — docs/savegames.md § Storage and the cap has the format's rules);
   **import** accepts such a file back via its own `#save-file-input` (the WAD `#file-input` is
   multiplexed by `uploadTarget` and stays out of this), or by dropping a `.json` onto the menu —
   `installDropTarget` routes `.json` to the importer and everything else to `addFiles` as before.
@@ -120,13 +121,20 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   alike, which is why `captureSave` has no null return: one `catch (err) → setStatus` shape rather
   than two conventions for the same job, and the reason thrown is the specific one
   (`Game.saveRefusal`) rather than a list of everything it might have been. `SavegamesUi.attempt`
-  is the single place that shape is written on the UI side.
+  is the single place that shape is written on the UI side; the store being async now, every hook
+  may return a promise and `attempt` awaits it, so a rejection lands in the same status line a
+  synchronous throw does.
 - **Only the tab on screen is built.** `refresh` marks both lists stale and renders whichever
   `Menu.setTab` last declared visible (`setVisible`); the other waits until it's picked. Listing
-  means `JSON.parse` over every stored save's *whole* payload and one thumbnail decode per row, and
-  `open()` runs on every `Esc` pause and once at boot — a player who never opens Save or Load must
-  not pay for the store at all. `Menu.mapCache` memoizes `mergedMaps` per WAD set for the same
-  reason: `describeSave` needs a level title per row, and the rows share a handful of sets.
+  itself is a cheap meta read since the store's meta/state split, but rendering still costs one
+  thumbnail decode and one `describeSave` per row, and `open()` runs on every `Esc` pause and once
+  at boot — a player who never opens Save or Load must not pay for the rows at all. `renderVisible`
+  is async (the listing awaits IndexedDB) and guards itself with an epoch ticket: a refresh or tab
+  switch while a listing is in flight starts a newer render, the older one discards instead of
+  painting over it, and `stale` is cleared only by the render that painted — a discarded render
+  leaves its tab marked for the next look. `Menu.mapCache` memoizes `mergedMaps` per WAD set for
+  the same reason as the laziness: `describeSave` needs a level title per row, and the rows share a
+  handful of sets.
 
 ## Picking a WAD set
 

@@ -1,18 +1,37 @@
 import { roundFloat, type GameSnapshot } from './snapshot.ts';
 import { type Skill } from './skill.ts';
+import {
+  STATE_ENCODING,
+  base64ToBytes,
+  bytesToBase64,
+  compressText,
+  decompressText,
+  idbBackend,
+  type SaveStoreBackend,
+  type StoredState,
+} from './savestore.ts';
 
 /**
- * The savegame store: one localStorage key per save under `topdoom.save.<id>`,
- * listed by prefix scan — no index key that could desync, deletion is one
- * `removeItem`. Reads are validated per entry in the `besttimes.ts` style, but
- * unlike every other `topdoom.*` key a save carries an explicit `version`,
- * refused (not half-read) on mismatch. docs/savegames.md § Storage and the cap.
+ * The savegame store: one meta record and one gzipped state record per save,
+ * both keyed by id, in `game/savestore.ts`'s IndexedDB backend — split so that
+ * listing reads metas alone and never touches a snapshot. Reads are validated
+ * per entry in the `besttimes.ts` style, but unlike every other `topdoom.*`
+ * value a save carries an explicit `version`, refused (not half-read) on
+ * mismatch. docs/savegames.md § Storage and the cap.
  */
 
 export const SAVE_VERSION = 1;
 /** The store refuses a write past this rather than evicting — deleting somebody's save silently is worse than asking. */
 export const MAX_SAVES = 24;
-const KEY_PREFIX = 'topdoom.save.';
+
+/** The IndexedDB backend, created on first touch so importing this module in Node never reaches for `indexedDB`. */
+let backend: SaveStoreBackend | null = null;
+const store = (): SaveStoreBackend => (backend ??= idbBackend());
+
+/** Test seam: replaces the backend with an in-memory one (`tests/game/savegames.test.ts`). */
+export function setSaveBackend(replacement: SaveStoreBackend): void {
+  backend = replacement;
+}
 
 /**
  * One file of a save's WAD set — the two facts a load needs about it, in one
@@ -91,7 +110,7 @@ export type SaveCapture = Omit<SaveGame, 'id' | 'version' | 'at' | 'name'>;
 
 export interface SaveListEntry {
   meta: SaveMeta;
-  /** False for a version this build can't load, or an entry too damaged to trust — still listed so it can be deleted or downloaded. */
+  /** False for a version this build can't load, or a meta too damaged to trust — still listed so it can be deleted or downloaded. A damaged *state* is invisible here (listing never reads it) and surfaces at load instead. */
   supported: boolean;
 }
 
@@ -128,209 +147,213 @@ function asMeta(raw: unknown, id: string): SaveMeta {
   };
 }
 
-/** The shape check `readSave`/`importSave` insist on beyond the meta: without these the restore path would crash mid-load. */
-function isLoadable(raw: unknown): raw is SaveGame {
-  return (
-    isRecord(raw) &&
-    raw.version === SAVE_VERSION &&
-    typeof raw.map === 'string' &&
-    Array.isArray(raw.wads) &&
-    isRecord(raw.state) &&
-    isRecord((raw.state as Record<string, unknown>).player) &&
-    isRecord((raw.state as Record<string, unknown>).rng)
-  );
+/** The meta half of loadability — everything checkable without the state record in hand, which is all a listing ever sees. */
+function hasLoadableMeta(raw: unknown): boolean {
+  return isRecord(raw) && raw.version === SAVE_VERSION && typeof raw.map === 'string' && Array.isArray(raw.wads);
 }
 
-/** The stored JSON for `id`, or a thrown refusal — the shared opening of every read-modify-write below. */
-function readRaw(id: string): string {
-  const text = globalThis.localStorage?.getItem(KEY_PREFIX + id);
-  if (!text) throw new Error('that save no longer exists');
-  return text;
+/** The state half: without these the restore path would crash mid-load. Checked wherever a snapshot is actually decoded. */
+function isLoadableState(state: unknown): state is GameSnapshot {
+  return isRecord(state) && isRecord(state.player) && isRecord(state.rng);
 }
 
-function saveKeys(): string[] {
-  const storage = globalThis.localStorage;
-  if (!storage) return [];
-  const keys: string[] = [];
-  for (let i = 0; i < storage.length; i++) {
-    const key = storage.key(i);
-    if (key?.startsWith(KEY_PREFIX)) keys.push(key);
-  }
-  return keys;
+/** The stored meta for `id`, or a thrown refusal — the shared opening of every read-modify-write below. */
+async function readMeta(id: string): Promise<unknown> {
+  const raw = await store().readMeta(id);
+  if (raw === undefined) throw new Error('that save no longer exists');
+  return raw;
 }
 
-/** Every stored save, newest first, unsupported versions included (marked, not hidden). */
-export function listSaves(): SaveListEntry[] {
-  const entries: SaveListEntry[] = [];
-  for (const key of saveKeys()) {
-    const id = key.slice(KEY_PREFIX.length);
-    let raw: unknown = null;
-    try {
-      raw = JSON.parse(globalThis.localStorage?.getItem(key) ?? 'null');
-    } catch {
-      // fall through: asMeta on null renders the row as unreadable
-    }
-    entries.push({ meta: asMeta(raw, id), supported: isLoadable(raw) });
-  }
+/** Every stored save, newest first, unsupported versions included (marked, not hidden). Reads metas only — never a state. */
+export async function listSaves(): Promise<SaveListEntry[]> {
+  const raws = await store().listMeta();
+  const entries = raws.map((raw) => {
+    const id = isRecord(raw) && typeof raw.id === 'string' ? raw.id : '';
+    return { meta: asMeta(raw, id), supported: hasLoadableMeta(raw) };
+  });
   return entries.sort((a, b) => b.meta.at.localeCompare(a.meta.at));
 }
 
+const damaged = (): Error => new Error('this save is damaged and cannot be loaded');
+
 /** The full save, or a thrown, user-readable refusal — an unsupported version names both versions rather than half-loading. */
-export function readSave(id: string): SaveGame {
-  const text = readRaw(id);
-  let raw: unknown;
+export async function readSave(id: string): Promise<SaveGame> {
+  const rawMeta = await readMeta(id);
+  if (isRecord(rawMeta) && rawMeta.version !== SAVE_VERSION) {
+    throw new Error(`this save uses format version ${String(rawMeta.version)}; this build loads version ${SAVE_VERSION}`);
+  }
+  if (!hasLoadableMeta(rawMeta)) throw damaged();
+  const record = await store().readState(id);
+  if (!record || record.encoding !== STATE_ENCODING) throw damaged();
+  let state: unknown;
   try {
-    raw = JSON.parse(text);
+    state = JSON.parse(await decompressText(record.bytes));
   } catch {
-    throw new Error('this save is damaged and cannot be loaded');
+    throw damaged();
   }
-  if (isRecord(raw) && raw.version !== SAVE_VERSION) {
-    throw new Error(`this save uses format version ${String(raw.version)}; this build loads version ${SAVE_VERSION}`);
-  }
-  if (!isLoadable(raw)) throw new Error('this save is damaged and cannot be loaded');
-  return { ...raw, id };
+  if (!isLoadableState(state)) throw damaged();
+  return { ...asMeta(rawMeta, id), state };
 }
 
-/** The one place a save is serialized, so `roundFloat` is applied exactly where the bytes it saves are counted. */
-function put(id: string, value: unknown): void {
+/** The one place a snapshot is serialized, so `roundFloat` is applied exactly where the bytes it saves are counted. */
+async function encodeState(id: string, state: GameSnapshot): Promise<StoredState> {
+  return { id, encoding: STATE_ENCODING, bytes: await compressText(JSON.stringify(state, roundFloat)) };
+}
+
+/**
+ * The one write of a whole save: both records in the backend's single
+ * transaction, with a quota refusal — the only failure a player can act on —
+ * translated to a readable message. Mapped here rather than in the backend so
+ * the tests' in-memory backend exercises the same translation.
+ */
+async function putSave(meta: SaveMeta, state: StoredState): Promise<void> {
   try {
-    globalThis.localStorage?.setItem(KEY_PREFIX + id, JSON.stringify(value, roundFloat));
-  } catch {
-    // Overwhelmingly QuotaExceededError — the origin's ~5 MB budget, shared
-    // with everything else this site stores.
-    throw new Error('not enough browser storage for this save — delete an older save and try again');
+    await store().putSave(meta, state);
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'QuotaExceededError') {
+      throw new Error('not enough browser storage for this save — delete an older save and try again');
+    }
+    throw err;
   }
 }
 
-/** `put` plus the cap, which only a *new* key can hit — replacing one adds nothing to the count. */
-function store(save: SaveGame): void {
-  if (saveKeys().length >= MAX_SAVES) {
-    throw new Error(`the save list is full (${MAX_SAVES}) — delete a save first`);
-  }
-  put(save.id, save);
-}
-
-/** Session-scoped tiebreaker for saves landing in the same millisecond; uniqueness is checked against the stored keys anyway. */
+/** Session-scoped tiebreaker for saves landing in the same millisecond; uniqueness is checked against the stored ids anyway. */
 let idCounter = 0;
 
 /** Deliberately entropy-free — the engine's one randomness source is the DOOM table (docs/random.md), and a save id needs uniqueness, not randomness. */
-function freshId(): string {
-  const existing = new Set(saveKeys());
+async function freshId(): Promise<string> {
+  const existing = new Set((await store().listMeta()).map((raw) => (isRecord(raw) ? raw.id : undefined)));
   let id: string;
   do {
     id = Date.now().toString(36) + '-' + (idCounter++).toString(36);
-  } while (existing.has(KEY_PREFIX + id));
+  } while (existing.has(id));
   return id;
 }
 
 /** What an unnamed save is called: the map and when it was taken. */
 const defaultName = (map: string): string => `${map} — ${new Date().toLocaleString()}`;
 
-/** A save without its payload — what every mutator hands back to the menu. */
-function metaOf(save: SaveGame): SaveMeta {
-  const { state: _state, ...meta } = save;
-  return meta;
+/**
+ * Owns the naming rule for both writers: a blank (or all-whitespace) name falls
+ * back to `defaultName`. `levelTime` is rounded here — the meta is stored as an
+ * object, where digits cost nothing, but the export file stringifies it without
+ * a replacer.
+ */
+function createMeta(id: string, name: string, capture: SaveCapture): SaveMeta {
+  const { state: _state, ...rest } = capture;
+  return {
+    ...rest,
+    id,
+    version: SAVE_VERSION,
+    at: new Date().toISOString(),
+    name: name.trim() || defaultName(capture.map),
+    levelTime: Math.round(capture.levelTime * 1e6) / 1e6,
+  };
 }
 
 /** Stores a fresh capture under a new id; throws (readably) at the cap or the storage quota. */
-export function writeSave(capture: SaveCapture, name: string): SaveMeta {
-  const save = createSave(freshId(), name, capture);
-  store(save);
-  return metaOf(save);
+export async function writeSave(capture: SaveCapture, name: string): Promise<SaveMeta> {
+  if ((await store().count()) >= MAX_SAVES) {
+    throw new Error(`the save list is full (${MAX_SAVES}) — delete a save first`);
+  }
+  const meta = createMeta(await freshId(), name, capture);
+  await putSave(meta, await encodeState(meta.id, capture.state));
+  return meta;
 }
 
 /**
  * Refills an existing save from a fresh capture, keeping its id and its name —
  * an overwrite replaces a slot's contents, and the name is the slot's label
- * (changed on its own through `renameSave`). Deliberately not `store`: no new
- * key appears, so the cap can't refuse an overwrite even when the list is full.
+ * (changed on its own through `renameSave`). Deliberately no cap check: no new
+ * save appears, so the cap can't refuse an overwrite even when the list is full.
  */
-export function overwriteSave(id: string, capture: SaveCapture): SaveMeta {
-  const text = readRaw(id);
-  let previous: unknown = null;
-  try {
-    previous = JSON.parse(text);
-  } catch {
-    // A damaged row can still be overwritten — it just can't lend its name.
-  }
+export async function overwriteSave(id: string, capture: SaveCapture): Promise<SaveMeta> {
+  const previous = await readMeta(id);
+  // A damaged row can still be overwritten — it just can't lend its name.
   const kept = isRecord(previous) && typeof previous.name === 'string' ? previous.name : '';
-  const save = createSave(id, kept, capture);
-  put(save.id, save);
-  return metaOf(save);
-}
-
-/** Owns the naming rule for both writers: a blank (or all-whitespace) name falls back to `defaultName`. */
-function createSave(id: string, name: string, capture: SaveCapture): SaveGame {
-  return {
-    id,
-    version: SAVE_VERSION,
-    at: new Date().toISOString(),
-    name: name.trim() || defaultName(capture.map),
-    ...capture,
-  };
+  const meta = createMeta(id, kept, capture);
+  await putSave(meta, await encodeState(id, capture.state));
+  return meta;
 }
 
 /**
- * Renames a save in place, leaving its payload — and its `at`, so the list
- * doesn't reorder under the cursor — untouched. The name is the only field the
- * menu lets anyone edit; a row too damaged to parse is refused rather than
- * replaced by a bare `{ name }`.
+ * Renames a save in place, leaving its `at` — so the list doesn't reorder under
+ * the cursor — untouched, and never rewriting the state record at all: the name
+ * is the only field the menu lets anyone edit, and renaming several saves in a
+ * row is the one path a player repeats. A row too damaged to parse is refused
+ * rather than replaced by a bare `{ name }`.
  */
-export function renameSave(id: string, name: string): void {
-  const text = readRaw(id);
+export async function renameSave(id: string, name: string): Promise<void> {
   const trimmed = name.trim();
   if (!trimmed) throw new Error('a save needs a name');
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch {
-    raw = null;
-  }
+  const raw = await readMeta(id);
   if (!isRecord(raw)) throw new Error('this save is damaged and cannot be renamed');
-  put(id, { ...raw, name: trimmed });
+  await store().putMeta({ ...raw, name: trimmed });
 }
 
-export function deleteSave(id: string): void {
-  globalThis.localStorage?.removeItem(KEY_PREFIX + id);
+export async function deleteSave(id: string): Promise<void> {
+  await store().remove(id);
 }
 
 /**
- * The stored JSON for the download button, tab-indented: stored saves are
- * compact to spare the quota, but a downloaded file is something a person can
- * open and read. Deliberately *not* `readSave` — downloading is how an
- * unsupported-version save escapes to disk, so it must work exactly where
- * loading refuses, and a save too damaged to even parse is handed over
- * verbatim rather than withheld.
+ * The download file, tab-indented: the meta fields stay something a person can
+ * open and read, while `state` travels as the stored gzip bytes, base64'd —
+ * compressed-plus-base64 is still far smaller than the snapshot's plain JSON.
+ * Deliberately *not* `readSave`, and deliberately no decompression: downloading
+ * is how an unsupported-version — or even undecompressable — save escapes to
+ * disk, so the bytes are handed over verbatim with their `stateEncoding` and
+ * the stored `version` intact (only `importSave` ever stamps `SAVE_VERSION`).
+ * Only a save whose state record is missing outright has nothing to hand over.
  */
-export function exportSave(id: string): string {
-  const text = readRaw(id);
-  try {
-    return JSON.stringify(JSON.parse(text), null, '\t');
-  } catch {
-    return text;
-  }
+export async function exportSave(id: string): Promise<string> {
+  const rawMeta = await readMeta(id);
+  const record = await store().readState(id);
+  if (!record) throw new Error('this save is missing its data and cannot be downloaded');
+  const file = {
+    ...asMeta(rawMeta, id),
+    stateEncoding: record.encoding,
+    state: bytesToBase64(record.bytes),
+  };
+  return JSON.stringify(file, null, '\t');
 }
 
 /**
  * Validates a downloaded save's JSON and stores it under a fresh id (never the
  * embedded one — importing the same file twice must not overwrite). Same
  * version strictness as `readSave`: an old-format file is refused with both
- * versions named, not stored as a dead row.
+ * versions named, not stored as a dead row. The embedded state is fully decoded
+ * here — the one moment a foreign file's bytes are in hand — and then stored
+ * *as decoded*, byte-exact, rather than recompressed.
  */
-export function importSave(text: string): SaveMeta {
+export async function importSave(text: string): Promise<SaveMeta> {
+  const refusal = (): Error => new Error('that file is not a TopDoom save');
   let raw: unknown;
   try {
     raw = JSON.parse(text);
   } catch {
-    throw new Error('that file is not a TopDoom save');
+    throw refusal();
   }
   if (isRecord(raw) && typeof raw.version === 'number' && raw.version !== SAVE_VERSION) {
     throw new Error(`this save uses format version ${raw.version}; this build loads version ${SAVE_VERSION}`);
   }
-  if (!isLoadable(raw)) throw new Error('that file is not a TopDoom save');
+  if (!hasLoadableMeta(raw)) throw refusal();
+  const record = raw as Record<string, unknown>;
+  if (typeof record.state !== 'string' || record.stateEncoding !== STATE_ENCODING) throw refusal();
+  let bytes: Uint8Array<ArrayBuffer>;
+  let state: unknown;
+  try {
+    bytes = base64ToBytes(record.state);
+    state = JSON.parse(await decompressText(bytes));
+  } catch {
+    throw refusal();
+  }
+  if (!isLoadableState(state)) throw refusal();
+  if ((await store().count()) >= MAX_SAVES) {
+    throw new Error(`the save list is full (${MAX_SAVES}) — delete a save first`);
+  }
   // `asMeta` supplies every meta field, so nothing of the file's own top level
   // is spread in: an imported file must not smuggle extra keys into storage.
-  const save: SaveGame = { ...asMeta(raw, freshId()), version: SAVE_VERSION, state: raw.state };
-  store(save);
-  return metaOf(save);
+  const meta: SaveMeta = { ...asMeta(raw, await freshId()), version: SAVE_VERSION };
+  await putSave(meta, { id: meta.id, encoding: STATE_ENCODING, bytes });
+  return meta;
 }

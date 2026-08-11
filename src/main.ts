@@ -150,14 +150,14 @@ async function boot(): Promise<void> {
    * reason when the moment is unsaveable, like the store's writers do — the
    * menu turns any of them into its status line (see `SaveHooks`).
    */
-  const withCapture = (write: (capture: SaveCapture) => void): void => {
+  const withCapture = async (write: (capture: SaveCapture) => Promise<unknown>): Promise<void> => {
     if (!game) throw new Error('no running game to save');
-    write(game.captureSave());
+    await write(game.captureSave());
   };
 
   const menu: Menu = new Menu((selection) => startLevel(selection), resumeGame, audio, {
-    onSave: (name) => withCapture((capture) => void writeSave(capture, name)),
-    onOverwrite: (id) => withCapture((capture) => void overwriteSave(id, capture)),
+    onSave: (name) => withCapture((capture) => writeSave(capture, name)),
+    onOverwrite: (id) => withCapture((capture) => overwriteSave(id, capture)),
     onLoad: (save) => loadSave(save),
   });
 

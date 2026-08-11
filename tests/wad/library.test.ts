@@ -10,6 +10,7 @@ import { mergedMaps, type WadSource } from '../../src/wad/library.ts';
 function source(label: string, type: 'IWAD' | 'PWAD', maps: string[], levelNames: Record<string, string> = {}): WadSource {
   return {
     key: label,
+    id: `id:${label}`,
     label,
     type,
     maps,

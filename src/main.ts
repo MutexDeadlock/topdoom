@@ -2,13 +2,7 @@ import { Wad } from './wad/wad.ts';
 import { wadSetId } from './wad/checksum.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
 import { Menu, type Selection } from './ui/menu/menu.ts';
-import {
-  overwriteSave,
-  writeSave,
-  type SaveCapture,
-  type SaveGame,
-  type SaveMeta,
-} from './game/savegames.ts';
+import { missingWadText, overwriteSave, writeSave, type SaveCapture, type SaveGame } from './game/savegames.ts';
 import { Game } from './game.ts';
 import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';
@@ -81,12 +75,6 @@ async function boot(): Promise<void> {
   // context itself waits for the first `resume`, i.e. for a user gesture.
   const audio = new AudioEngine();
   let game: Game | null = null;
-  /**
-   * The selection the running `game` was built from — what a save records as
-   * its `sourceKeys`, so a load can re-resolve the same files from the
-   * library. Only ever set beside a successful `Game` construction.
-   */
-  let currentSelection: Selection | null = null;
 
   /**
    * The one session lifecycle, for both a fresh start and a load: assemble the
@@ -115,7 +103,6 @@ async function boot(): Promise<void> {
       previous?.dispose();
       const title = titleOf(selection.iwad, selection.pwads);
       game = new Game(view, audio, wad, selection.map, title, selection.skill, save ? null : startPos, save?.state ?? null);
-      currentSelection = selection;
 
       menu.setStatus('');
       menu.close();
@@ -137,13 +124,12 @@ async function boot(): Promise<void> {
    */
   const loadSave = async (save: SaveGame): Promise<void> => {
     try {
-      const resolve = (key: string, role: string): WadSource => {
-        const found = menu.findSource(key);
-        if (!found) throw new Error(`${key || role} is not available — load it from disk first`);
-        return found;
-      };
-      const iwad = resolve(save.sourceKeys.iwad, save.wads[0]?.name ?? 'the game WAD');
-      const pwads = save.sourceKeys.pwads.map((key) => resolve(key, 'an add-on'));
+      // The same resolution the save row shows, so a row that reports no
+      // problem can't fail here — and a file it does report is named in the
+      // same words (docs/savegames.md § WAD-set identity).
+      const { iwad, pwads, missing } = menu.resolveSaveWads(save.wads);
+      if (missing.length > 0) throw new Error(missingWadText(missing[0]));
+      if (!iwad) throw new Error('this save does not name a game WAD');
       await startLevel({ iwad, pwads, map: save.map, skill: save.skill }, save);
     } catch (err) {
       menu.setStatus((err as Error).message, true);
@@ -158,24 +144,20 @@ async function boot(): Promise<void> {
   };
 
   /**
-   * The shared body of the two save hooks: refuse when there is no game or the
-   * moment can't be captured, otherwise hand the capture and the running
-   * selection's source keys to `write`. Refusals are thrown, like the store's
-   * own — the menu turns them into its status line (see `SaveHooks`).
+   * The shared body of the two save hooks: the only thing they need from the
+   * session is that there *is* one, since a capture identifies its WAD set by
+   * content and needs nothing else from around it. `captureSave` throws its own
+   * reason when the moment is unsaveable, like the store's writers do — the
+   * menu turns any of them into its status line (see `SaveHooks`).
    */
-  const withCapture = (write: (capture: SaveCapture, sourceKeys: SaveMeta['sourceKeys']) => void): void => {
-    if (!game || !currentSelection) throw new Error('no running game to save');
-    const capture = game.captureSave();
-    if (!capture) throw new Error('this moment cannot be saved — dead, exiting or between levels');
-    write(capture, {
-      iwad: currentSelection.iwad.key,
-      pwads: currentSelection.pwads.map((p) => p.key),
-    });
+  const withCapture = (write: (capture: SaveCapture) => void): void => {
+    if (!game) throw new Error('no running game to save');
+    write(game.captureSave());
   };
 
   const menu: Menu = new Menu((selection) => startLevel(selection), resumeGame, audio, {
-    onSave: (name) => withCapture((capture, keys) => void writeSave(capture, name, keys)),
-    onOverwrite: (id) => withCapture((capture, keys) => void overwriteSave(id, capture, keys)),
+    onSave: (name) => withCapture((capture) => void writeSave(capture, name)),
+    onOverwrite: (id) => withCapture((capture) => void overwriteSave(id, capture)),
     onLoad: (save) => loadSave(save),
   });
 

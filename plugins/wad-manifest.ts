@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import { MAPINFO_LUMPS, parseMapInfoNames, preferredMapInfoLump } from '../src/wad/mapinfo.ts';
+import { hashBytes } from '../src/wad/checksum.ts';
 
 export const MANIFEST_PATH = 'wads/index.json';
 
@@ -17,6 +18,13 @@ export interface WadManifestEntry {
   maps: string[];
   /** Total lump count, shown for map-less add-ons so they don't look empty. */
   lumpCount: number;
+  /**
+   * `hashBytes` content id, so the menu knows a file's identity without downloading it — what a
+   * savegame's WAD set is matched against (docs/savegames.md § WAD-set identity). Computed here
+   * because these bytes are already in memory; the alternative is fetching every WAD in the
+   * library to draw the save list.
+   */
+  id: string;
   /**
    * Level titles this file's own MAPINFO defines, so the menu can name levels without downloading
    * it — the same reason `maps` is here. Absent when the file has no MAPINFO, which is most of them.
@@ -68,8 +76,28 @@ function describeWad(path: string, folder: WadFolder): WadManifestEntry | null {
     type: ident,
     maps,
     lumpCount: numLumps,
+    // Over the whole file, exactly as `wadId` does at runtime — the two must
+    // agree or `verifyWadSet` would refuse every load.
+    id: hashBytes(buf),
     ...(Object.keys(levelNames).length > 0 ? { levelNames } : {}),
   };
+}
+
+/**
+ * `describeWad` memoized on the file's mtime and size, which `scanFolder`'s
+ * `statSync` already has. The dev middleware re-scans on *every* request for
+ * the manifest, and `describeWad` reads and hashes each file whole — ~57 MB of
+ * WADs here, added to every page reload on the path that gates `Menu.init`.
+ * Editing a WAD still re-describes it; reloading the page no longer does.
+ */
+const described = new Map<string, { mtimeMs: number; size: number; entry: WadManifestEntry | null }>();
+
+function describeCached(path: string, folder: WadFolder, mtimeMs: number, size: number): WadManifestEntry | null {
+  const hit = described.get(path);
+  if (hit && hit.mtimeMs === mtimeMs && hit.size === size) return hit.entry;
+  const entry = describeWad(path, folder);
+  described.set(path, { mtimeMs, size, entry });
+  return entry;
 }
 
 function scanFolder(dir: string, folder: WadFolder): WadManifestEntry[] {
@@ -85,8 +113,9 @@ function scanFolder(dir: string, folder: WadFolder): WadManifestEntry[] {
     if (!/\.wad$/i.test(name)) continue;
     const path = join(dir, name);
     try {
-      if (!statSync(path).isFile()) continue;
-      const entry = describeWad(path, folder);
+      const stat = statSync(path);
+      if (!stat.isFile()) continue;
+      const entry = describeCached(path, folder, stat.mtimeMs, stat.size);
       if (!entry) continue;
       // The folder is what decides how the file is used; a signature mismatch
       // (e.g. a PWAD dropped into wads/iwad/) still gets listed, just flagged.

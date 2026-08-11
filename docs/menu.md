@@ -72,17 +72,23 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   the row resolves it against the current library through `mergedMaps` and names it with the same
   `describeMap` the level select uses — `<lump>  —  <title>  —  <provider>`, so the two lists can't
   disagree about what a level is called. The same pass reports
-  every file of the set the library no longer offers, as a subtle red `Missing IWAD/PWAD: <file>`
-  line per file. It names the file from the save's own `wads` list rather than its `sourceKeys`,
-  since an upload's key is a synthetic `upload:…` string and the *file name* is what has to be found
-  again (docs/savegames.md § WAD-set identity). Load stays enabled: the attempt is what tells the
+  every file of the set the library can no longer supply, as a subtle red line per file — matched
+  by *content id* (`resolveSaveWads`, the same call the load path makes), so a renamed WAD is not
+  reported and a file whose bytes have changed reads `Different IWAD/PWAD: …` rather than
+  `Missing IWAD/PWAD: …`, which would send the player looking for something they already
+  have. Both surfaces take the sentence itself from `missingWadText`
+  (docs/savegames.md § WAD-set identity). Load stays enabled: the attempt is what tells the
   player which file to bring back. `addFiles` re-renders the save lists as well as the WAD lists, so
   bringing that file back clears the warning on the spot rather than on the menu's next `open` —
   which is also why `Menu` keeps the last `inGame` it was opened with.
 - **The name in each row is an `<input>`** — renaming happens in place (`renameSave`), Enter or blur
   commits, Esc reverts and is stopped from bubbling to `main.ts`'s menu-closing handler. An untouched
   field re-renders nothing, so a plain focus-and-blur can't pull the row out from under a click
-  heading for one of its own buttons.
+  heading for one of its own buttons. Nor does a *successful* rename, or a delete: both patch the
+  visible list (the input's own value, `row.remove()`) and only mark the other tab's list stale.
+  `listSaves` parses every stored payload, thumbnails included, so re-listing to redraw one string
+  is the cost worth avoiding on the one path a player repeats. It also means nothing may bake a
+  save's name into a row's other elements — the Overwrite tooltip says "this save" for that reason.
 - **The save lists fill the panel vertically**: `.saves-section` is the tab panel's flexible child
   and the list is the section's, against a `#menu > .panel` capped at the viewport — so the rows use
   whatever height is left and scroll inside the menu instead of growing it off-screen. Because the
@@ -110,8 +116,11 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   `SavegamesUi` never touches the running game. The three hooks (`onSave`, `onOverwrite`, `onLoad`)
   are `main.ts`'s (§ Session lifecycle below), which owns the `Game` instance and the selection the
   save records; the first two share one `withCapture` body, differing only in what they write. A
-  refusal is **thrown**, never returned: the store already signals that way, so the UI has one
-  `catch (err) → setStatus` shape rather than two conventions for the same job.
+  refusal is **thrown**, never returned — by the store, by `withCapture` and by `Game.captureSave`
+  alike, which is why `captureSave` has no null return: one `catch (err) → setStatus` shape rather
+  than two conventions for the same job, and the reason thrown is the specific one
+  (`Game.saveRefusal`) rather than a list of everything it might have been. `SavegamesUi.attempt`
+  is the single place that shape is written on the UI side.
 - **Only the tab on screen is built.** `refresh` marks both lists stale and renders whichever
   `Menu.setTab` last declared visible (`setVisible`); the other waits until it's picked. Listing
   means `JSON.parse` over every stored save's *whole* payload and one thumbnail decode per row, and
@@ -313,9 +322,9 @@ Rules that hold this together:
   set against the save's own WAD ids (`verifyWadSet`, docs/savegames.md § WAD-set identity) and hands
   `Game` the snapshot instead of `?pos=`. Everything above — the audio gesture, the dispose ordering,
   the failure re-sync — is one copy, so a lifecycle fix can't reach the new-game path and miss the
-  load path. `loadSave` only re-resolves the save's `sourceKeys` to `WadSource`s first, and a file the
-  library no longer offers fails *there*, before anything is torn down, so the running level survives
-  a load that can't happen.
+  load path. `loadSave` only re-resolves each `wads` entry to a `WadSource` by content id first, and a
+  file the library can't supply fails *there*, before anything is torn down, so the running level
+  survives a load that can't happen.
 - A second `Game` builds against the *same* static DOM, so anything holding generated children must
   replace rather than append, and per-level screen state must be cleared — see docs/hud.md
   § The HUD and § Screen effects. `dispose` clears the center message, the level card and the

@@ -6,6 +6,7 @@ import {
   deserializeInventory,
   encodeRuns,
   encodeSeconds,
+  roundFloat,
   serializeInventory,
 } from '../../src/game/snapshot.ts';
 import { createInventory } from '../../src/game/inventory.ts';
@@ -75,6 +76,28 @@ describe('Savegames · state encoding', () => {
     assert.deepEqual([...back.keys], ['blue'], 'unknown key colors are dropped');
     assert.deepEqual(back.ammo, fresh.ammo);
     assert.equal(back.currentWeapon, fresh.currentWeapon);
+  });
+
+  test('roundFloat trims float tails to 6 decimals throughout the serialized tree', () => {
+    const input = {
+      angle: 0.4666666666666667,
+      nested: { third: 1 / 3, sentinel: -1 },
+      list: [16.099999999999998, 7, 'MAP05', true, null],
+    };
+    assert.deepEqual(JSON.parse(JSON.stringify(input, roundFloat)), {
+      angle: 0.466667,
+      nested: { third: 0.333333, sentinel: -1 },
+      list: [16.1, 7, 'MAP05', true, null],
+    });
+    assert.equal(input.angle, 0.4666666666666667, 'the state itself is left untouched');
+  });
+
+  test('roundFloat leaves integers bit-exact, however large', () => {
+    // The RNG cursors, sector heights and the -1 sentinel must pass through
+    // unchanged — only fractional tails may move.
+    for (const n of [0, -1, 255, -32768, 123456789]) {
+      assert.equal(JSON.stringify(n, roundFloat), String(n));
+    }
   });
 
   test('the random cursors save and restore exactly', () => {

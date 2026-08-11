@@ -1,4 +1,4 @@
-import type { GameSnapshot } from './snapshot.ts';
+import { roundFloat, type GameSnapshot } from './snapshot.ts';
 import { type Skill } from './skill.ts';
 
 /**
@@ -14,6 +14,51 @@ export const SAVE_VERSION = 1;
 export const MAX_SAVES = 24;
 const KEY_PREFIX = 'topdoom.save.';
 
+/**
+ * One file of a save's WAD set — the two facts a load needs about it, in one
+ * record so they cannot disagree: what it must contain, and what to call it
+ * when it can't be found. docs/savegames.md § WAD-set identity.
+ */
+export interface SaveWad {
+  /**
+   * What the file was called when the save was made. Purely for the player —
+   * it names the file to go and find when one is missing, and no lookup keys
+   * through it, so a renamed WAD is still found.
+   */
+  name: string;
+  /**
+   * `wadId` content hash — **the file's identity**, and what a load matches the
+   * library against. Deliberately not the name or a library key: those are
+   * addresses that change under a rename or when the same bytes arrive from
+   * disk instead of the server. docs/savegames.md § WAD-set identity.
+   */
+  id: string;
+}
+
+/** What to call a saved file in a message; the name is for humans, so it needs a fallback and the id doesn't. */
+export function wadLabel(wad: SaveWad): string {
+  return wad.name || 'unknown file';
+}
+
+/** One file of a save's set the library can't supply. The role is just the position in `wads`, `[0]` being the game WAD. */
+export interface MissingWad {
+  name: string;
+  role: 'IWAD' | 'PWAD';
+  /** The library has a file by this name, but not these bytes — worth saying, since "missing" would send the player looking for something they already have. */
+  wrongVersion: boolean;
+}
+
+/**
+ * The one sentence about a file the library can't supply, shared by the save
+ * row and the load error so the two surfaces can't word the same problem
+ * differently. docs/savegames.md § WAD-set identity.
+ */
+export function missingWadText(file: MissingWad): string {
+  return file.wrongVersion
+    ? `Different ${file.role}: ${file.name} is not the version this save was made with`
+    : `Missing ${file.role}: ${file.name} — load it from disk first`;
+}
+
 export interface SaveMeta {
   id: string;
   version: number;
@@ -25,10 +70,8 @@ export interface SaveMeta {
   map: string;
   /** Load-bearing for thing identity, not just difficulty — the save's things were filtered by it. */
   skill: Skill;
-  /** `wadSetId(wad)` in load order, `[0]` the game WAD — verified file by file on load (docs/savegames.md § WAD-set identity). */
-  wads: { name: string; id: string }[];
-  /** The menu `WadSource.key`s the set was assembled from, to re-resolve the files from the library. */
-  sourceKeys: { iwad: string; pwads: string[] };
+  /** The whole WAD set in load order, `[0]` the game WAD — one list, so a file's name and id can't drift apart and a file's role is just its position (docs/savegames.md § WAD-set identity). */
+  wads: SaveWad[];
   levelTime: number;
   /** JPEG data URL thumbnail, ~320px wide. */
   thumb: string;
@@ -38,8 +81,13 @@ export interface SaveGame extends SaveMeta {
   state: GameSnapshot;
 }
 
-/** What `Game.captureSave` produces — everything but the store's own bookkeeping and the menu's source keys. */
-export type SaveCapture = Omit<SaveGame, 'id' | 'version' | 'at' | 'name' | 'sourceKeys'>;
+/**
+ * What `Game.captureSave` produces — everything but the store's own bookkeeping.
+ * `wads` needs nothing added: a save identifies its files by content, which is
+ * exactly what `wadSetId` hands back, so `Game` never has to know which library
+ * the files were picked from.
+ */
+export type SaveCapture = Omit<SaveGame, 'id' | 'version' | 'at' | 'name'>;
 
 export interface SaveListEntry {
   meta: SaveMeta;
@@ -50,26 +98,33 @@ export interface SaveListEntry {
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null;
 const asSkill = (v: unknown): Skill => (v === 1 || v === 2 || v === 3 || v === 4 || v === 5 ? v : 3);
 
+const asText = (v: unknown): string => (typeof v === 'string' ? v : '');
+
+/**
+ * One stored WAD entry, each field degraded on its own. Deliberately *mapped*
+ * rather than filtered: `wads` is in load order and `[0]` is the game WAD, so
+ * dropping a damaged entry would silently shift every file after it into the
+ * wrong role. A blanked entry instead fails loudly — an empty id matches
+ * nothing in the library, so the file is reported as one to go and find.
+ */
+const asWad = (v: unknown): SaveWad => {
+  const w = isRecord(v) ? v : {};
+  return { name: asText(w.name), id: asText(w.id) };
+};
+
 /** Best-effort meta for the list; every field degrades to something displayable rather than failing the whole row. */
 function asMeta(raw: unknown, id: string): SaveMeta {
   const r = isRecord(raw) ? raw : {};
-  const sk = isRecord(r.sourceKeys) ? r.sourceKeys : {};
   return {
     id,
     version: typeof r.version === 'number' ? r.version : 0,
-    at: typeof r.at === 'string' ? r.at : '',
+    at: asText(r.at),
     name: typeof r.name === 'string' && r.name.length > 0 ? r.name : '(unreadable save)',
     map: typeof r.map === 'string' ? r.map : '?',
     skill: asSkill(r.skill),
-    wads: Array.isArray(r.wads)
-      ? r.wads.filter((w): w is { name: string; id: string } => isRecord(w) && typeof w.name === 'string' && typeof w.id === 'string')
-      : [],
-    sourceKeys: {
-      iwad: typeof sk.iwad === 'string' ? sk.iwad : '',
-      pwads: Array.isArray(sk.pwads) ? sk.pwads.filter((p): p is string => typeof p === 'string') : [],
-    },
+    wads: Array.isArray(r.wads) ? r.wads.map(asWad) : [],
     levelTime: typeof r.levelTime === 'number' ? r.levelTime : 0,
-    thumb: typeof r.thumb === 'string' ? r.thumb : '',
+    thumb: asText(r.thumb),
   };
 }
 
@@ -136,9 +191,10 @@ export function readSave(id: string): SaveGame {
   return { ...raw, id };
 }
 
+/** The one place a save is serialized, so `roundFloat` is applied exactly where the bytes it saves are counted. */
 function put(id: string, value: unknown): void {
   try {
-    globalThis.localStorage?.setItem(KEY_PREFIX + id, JSON.stringify(value));
+    globalThis.localStorage?.setItem(KEY_PREFIX + id, JSON.stringify(value, roundFloat));
   } catch {
     // Overwhelmingly QuotaExceededError — the origin's ~5 MB budget, shared
     // with everything else this site stores.
@@ -177,8 +233,8 @@ function metaOf(save: SaveGame): SaveMeta {
 }
 
 /** Stores a fresh capture under a new id; throws (readably) at the cap or the storage quota. */
-export function writeSave(capture: SaveCapture, name: string, sourceKeys: SaveMeta['sourceKeys']): SaveMeta {
-  const save = createSave(freshId(), name, capture, sourceKeys);
+export function writeSave(capture: SaveCapture, name: string): SaveMeta {
+  const save = createSave(freshId(), name, capture);
   store(save);
   return metaOf(save);
 }
@@ -189,7 +245,7 @@ export function writeSave(capture: SaveCapture, name: string, sourceKeys: SaveMe
  * (changed on its own through `renameSave`). Deliberately not `store`: no new
  * key appears, so the cap can't refuse an overwrite even when the list is full.
  */
-export function overwriteSave(id: string, capture: SaveCapture, sourceKeys: SaveMeta['sourceKeys']): SaveMeta {
+export function overwriteSave(id: string, capture: SaveCapture): SaveMeta {
   const text = readRaw(id);
   let previous: unknown = null;
   try {
@@ -198,19 +254,18 @@ export function overwriteSave(id: string, capture: SaveCapture, sourceKeys: Save
     // A damaged row can still be overwritten — it just can't lend its name.
   }
   const kept = isRecord(previous) && typeof previous.name === 'string' ? previous.name : '';
-  const save = createSave(id, kept, capture, sourceKeys);
+  const save = createSave(id, kept, capture);
   put(save.id, save);
   return metaOf(save);
 }
 
 /** Owns the naming rule for both writers: a blank (or all-whitespace) name falls back to `defaultName`. */
-function createSave(id: string, name: string, capture: SaveCapture, sourceKeys: SaveMeta['sourceKeys']): SaveGame {
+function createSave(id: string, name: string, capture: SaveCapture): SaveGame {
   return {
     id,
     version: SAVE_VERSION,
     at: new Date().toISOString(),
     name: name.trim() || defaultName(capture.map),
-    sourceKeys,
     ...capture,
   };
 }

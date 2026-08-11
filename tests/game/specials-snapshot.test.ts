@@ -8,7 +8,7 @@ import { WeaponSystem } from '../../src/game/weapons.ts';
 import { createInventory } from '../../src/game/inventory.ts';
 import { SpecialsController } from '../../src/game/specials.ts';
 import { computeMovableSectors } from '../../src/game/specials/mapscan.ts';
-import { applySectors, snapshotSectors } from '../../src/game/snapshot.ts';
+import { applySectors, sectorBaseline, snapshotSectors } from '../../src/game/snapshot.ts';
 import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import { NO_SIDE } from '../../src/wad/map.ts';
 import type { MaterialBank } from '../../src/render/textures.ts';
@@ -87,6 +87,9 @@ function controllerOver(map: ReturnType<typeof liftMap>['map'], at: { x: number;
 describe('Savegames · specials round-trip', () => {
   test('a lift saved mid-motion continues exactly as the original over a fresh map', () => {
     const { grid, map, lift } = liftMap();
+    // Taken before anything runs, exactly as `Game` does on level load — the
+    // sparse sector format is a diff against it.
+    const baseline = sectorBaseline(map);
     const y = grid.centre(1, 1).y;
     const before = { x: 2 * grid.cell - 6, y };
     const after = { x: 2 * grid.cell + 6, y };
@@ -99,8 +102,14 @@ describe('Savegames · specials round-trip', () => {
 
     // Serialize through real JSON, exactly as the store will.
     const saved = JSON.parse(
-      JSON.stringify({ sectors: snapshotSectors(map), specials: original.specials.snapshot() }),
+      JSON.stringify({ sectors: snapshotSectors(map, baseline), specials: original.specials.snapshot() }),
     );
+    // The sparse format carries the moved sector and skips the untouched ones.
+    assert.ok(
+      saved.sectors.some(([index]: [number]) => index === lift),
+      'the lift sector is in the saved diff',
+    );
+    assert.ok(saved.sectors.length < map.sectors.length, 'untouched sectors are left out');
 
     const fresh = liftMap();
     applySectors(fresh.map, saved.sectors);

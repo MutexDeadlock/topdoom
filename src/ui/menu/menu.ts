@@ -16,7 +16,7 @@ import {
 } from '../../game/input.ts';
 import { getFpsCap, setFpsCap, type FpsCap } from '../../game.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
-import type { SaveMeta } from '../../game/savegames.ts';
+import { wadLabel, type MissingWad, type SaveMeta, type SaveWad } from '../../game/savegames.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
 import { DEVMODE, VERSION } from '../../constants.ts';
 
@@ -334,14 +334,43 @@ export class Menu {
   }
 
   /**
-   * Resolves a stored `WadSource.key` — `init`'s restored selection, or a
-   * savegame's — against the current library, uploads included, since
-   * `addFiles` unshifts a re-uploaded file under the same key. For a save,
-   * `undefined` names the recovery story: load the file from disk, then Load
-   * again (docs/savegames.md § WAD-set identity).
+   * Resolves a stored `WadSource.key` — `init`'s restored selection — against
+   * the current library, uploads included, since `addFiles` unshifts a
+   * re-uploaded file under the same key. A savegame's set does *not* come
+   * through here: it resolves by content id (`resolveSaveWads`).
    */
   findSource(key: string): WadSource | undefined {
     return this.sources.find((s) => s.key.toLowerCase() === key.toLowerCase());
+  }
+
+  /**
+   * Resolves a savegame's whole WAD set against the current library, in load
+   * order — the one place that rule lives, so the save row and the load path
+   * can't disagree about which files a save can be played with.
+   *
+   * Matching is by content id, the file's real identity, so a renamed WAD (or
+   * the server's copy of one that was uploaded when the save was made) still
+   * matches. The name is only the fallback *diagnosis*: a file matching by name
+   * but not by id is the same WAD in a different version, worth saying
+   * precisely rather than reporting as missing (docs/savegames.md § WAD-set
+   * identity). `wads[0]` is the game WAD, so a file's role is just its position.
+   */
+  resolveSaveWads(wads: SaveWad[]): { iwad?: WadSource; pwads: WadSource[]; missing: MissingWad[] } {
+    const missing: MissingWad[] = [];
+    const found = wads.map((wad, i) => {
+      const source = this.sources.find((s) => s.id !== '' && s.id === wad.id);
+      if (source) return source;
+      missing.push({
+        name: wadLabel(wad),
+        role: i === 0 ? 'IWAD' : 'PWAD',
+        wrongVersion: this.sources.some((s) => s.label.toLowerCase() === wad.name.toLowerCase()),
+      });
+      return undefined;
+    });
+    const [iwad, ...pwads] = found;
+    // Add-ons the library no longer has are simply left out — a caller that
+    // can't proceed without them reads `missing` instead.
+    return { iwad, pwads: pwads.filter((p): p is WadSource => p !== undefined), missing };
   }
 
   /** `mergedMaps` for a set, from `mapCache` — see that field's doc. */
@@ -358,27 +387,11 @@ export class Menu {
   /**
    * What a save row shows beyond its own stored meta: the level named exactly as
    * the level select names it (`describeMap` — a save stores only the lump name,
-   * which alone can't name a level, docs/wad.md § Level names), and every file of
-   * the set the library no longer offers. A missing file is named from the save's
-   * own `wads` list rather than from its `sourceKeys`, since an uploaded source's
-   * key is a synthetic `upload:…` string and the file name is what the player
-   * has to go and find (docs/savegames.md § WAD-set identity).
+   * which alone can't name a level, docs/wad.md § Level names), and whatever
+   * `resolveSaveWads` reports as unavailable.
    */
   describeSave(meta: SaveMeta): SaveSetInfo {
-    const missing: SaveSetInfo['missing'] = [];
-    // `wads` is in load order with the game WAD first, so add-on i is wads[i + 1].
-    const nameAt = (index: number, fallback: string) => meta.wads[index]?.name || fallback || 'unknown file';
-
-    const iwad = this.findSource(meta.sourceKeys.iwad);
-    if (!iwad) missing.push({ name: nameAt(0, meta.sourceKeys.iwad), role: 'IWAD' });
-
-    const pwads: WadSource[] = [];
-    meta.sourceKeys.pwads.forEach((key, i) => {
-      const source = this.findSource(key);
-      if (source) pwads.push(source);
-      else missing.push({ name: nameAt(i + 1, key), role: 'PWAD' });
-    });
-
+    const { iwad, pwads, missing } = this.resolveSaveWads(meta.wads);
     // Without the game WAD there is no map list to resolve against; the row
     // falls back to the bare lump name and says which file is missing.
     if (!iwad) return { level: meta.map, missing };

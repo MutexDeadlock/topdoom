@@ -3,8 +3,10 @@ import {
   exportSave,
   importSave,
   listSaves,
+  missingWadText,
   readSave,
   renameSave,
+  type MissingWad,
   type SaveGame,
   type SaveListEntry,
   type SaveMeta,
@@ -43,8 +45,8 @@ export interface SaveHooks {
 export interface SaveSetInfo {
   /** The level, named exactly as the level select names it (`describeMap`); the bare lump name where the set can't be resolved. */
   level: string;
-  /** Files the save was made with that the library no longer offers, in load order. */
-  missing: { name: string; role: 'IWAD' | 'PWAD' }[];
+  /** Files the save was made with that the library can no longer supply, in load order. */
+  missing: MissingWad[];
 }
 
 /**
@@ -121,16 +123,27 @@ export class SavegamesUi {
     this.stale[tab] = false;
   }
 
-  private save(): void {
-    if (!this.inGame) return;
+  /**
+   * Runs one store or hook call under this class's single refusal contract:
+   * anything thrown becomes the status line, and the caller learns whether to
+   * go on. Every action routes through here so the contract the class doc
+   * states is written once rather than at each of them.
+   */
+  private attempt(action: () => void, done?: string): boolean {
     try {
-      this.hooks.onSave(this.nameInput.value);
+      action();
     } catch (err) {
       this.setStatus((err as Error).message, true);
-      return;
+      return false;
     }
+    if (done !== undefined) this.setStatus(done);
+    return true;
+  }
+
+  private save(): void {
+    if (!this.inGame) return;
+    if (!this.attempt(() => this.hooks.onSave(this.nameInput.value), 'Game saved.')) return;
     this.nameInput.value = '';
-    this.setStatus('Game saved.');
     this.refresh();
   }
 
@@ -187,7 +200,7 @@ export class SavegamesUi {
     for (const file of set.missing) {
       const warning = document.createElement('span');
       warning.className = 'warning';
-      warning.textContent = `Missing ${file.role}: ${file.name}`;
+      warning.textContent = missingWadText(file);
       label.append(warning);
     }
     row.append(label);
@@ -205,7 +218,9 @@ export class SavegamesUi {
       const overwrite = document.createElement('button');
       overwrite.className = 'primary';
       overwrite.textContent = 'Overwrite';
-      overwrite.title = `Hold to replace "${meta.name}" with the current moment`;
+      // Deliberately not naming the save: `rename` patches a row in place, so a
+      // name baked in here would go stale, and the row's own field shows it anyway.
+      overwrite.title = 'Hold to replace this save with the current moment';
       overwrite.disabled = !this.inGame;
       this.confirmOnHold(overwrite, 'Hold Overwrite to replace that save.', () => this.overwrite(meta.id));
       actions.append(overwrite);
@@ -244,16 +259,29 @@ export class SavegamesUi {
   /**
    * Commits an edited name. An untouched field re-renders nothing — a plain
    * focus and blur must not rebuild the list under a click heading for one of
-   * the row's own buttons.
+   * the row's own buttons. Nor does a successful rename: the name is the only
+   * thing that changed and it is already on screen, so the row is patched in
+   * place and only the *other* tab's list is marked stale. Re-listing here
+   * would re-parse every stored payload, thumbnails included, to redraw one
+   * string — and renaming several saves in a row is the one path a player
+   * repeats.
    */
   private rename(meta: SaveMeta, input: HTMLInputElement): void {
-    if (input.value.trim() === meta.name) return;
-    try {
-      renameSave(meta.id, input.value);
-    } catch (err) {
-      this.setStatus((err as Error).message, true);
+    const trimmed = input.value.trim();
+    if (trimmed === meta.name) return;
+    if (!this.attempt(() => renameSave(meta.id, input.value))) {
+      input.value = meta.name;
+      return;
     }
-    this.refresh();
+    meta.name = trimmed;
+    input.value = trimmed;
+    this.markOtherListStale();
+  }
+
+  /** After a row is patched in place: the tab on screen is up to date, the other one has to be rebuilt before it is shown again. */
+  private markOtherListStale(): void {
+    this.stale.save = this.visible !== 'save';
+    this.stale.load = this.visible !== 'load';
   }
 
   private makeDownloadButton(meta: SaveMeta): HTMLButtonElement {
@@ -278,7 +306,10 @@ export class SavegamesUi {
     button.setAttribute('aria-label', 'Hold to delete this save');
     this.confirmOnHold(button, 'Hold the trash button to delete that save.', () => {
       deleteSave(meta.id);
-      this.refresh();
+      // Only this row goes; re-listing would re-parse every remaining save's
+      // whole payload to redraw rows that didn't change (see `rename`).
+      button.closest('.row')?.remove();
+      this.markOtherListStale();
     });
     return button;
   }
@@ -342,27 +373,15 @@ export class SavegamesUi {
 
   private overwrite(id: string): void {
     if (!this.inGame) return;
-    try {
-      this.hooks.onOverwrite(id);
-    } catch (err) {
-      this.setStatus((err as Error).message, true);
-      return;
-    }
-    this.setStatus('Save overwritten.');
-    this.refresh();
+    if (this.attempt(() => this.hooks.onOverwrite(id), 'Save overwritten.')) this.refresh();
   }
 
   private load(id: string): void {
-    try {
-      const save = readSave(id);
-      void this.hooks.onLoad(save);
-    } catch (err) {
-      this.setStatus((err as Error).message, true);
-    }
+    this.attempt(() => void this.hooks.onLoad(readSave(id)));
   }
 
   private download(id: string, map: string): void {
-    try {
+    this.attempt(() => {
       const blob = new Blob([exportSave(id)], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -370,8 +389,6 @@ export class SavegamesUi {
       a.download = `${map}-${new Date().toISOString().slice(0, 10)}.topdoom.json`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch (err) {
-      this.setStatus((err as Error).message, true);
-    }
+    });
   }
 }

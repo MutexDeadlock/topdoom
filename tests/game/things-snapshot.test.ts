@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { World } from '../../src/game/world.ts';
 import { buildThingSprites } from '../../src/game/things.ts';
+import { MONSTER_FIELD_DEFAULTS } from '../../src/game/snapshot.ts';
+import { MONSTER_HEALTH } from '../../src/game/thingdefs.ts';
 import { ThingType } from '../../src/game/thingtypes.ts';
 import { clearRandom, getRandomCursors, setRandomCursors } from '../../src/util/random.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
@@ -103,6 +105,65 @@ describe('Savegames · things round-trip', () => {
 
     layer.damage(2, 5);
     assert.notEqual(layer.snapshot().things[2].monster, undefined, 'one scratch and the block appears');
+  });
+
+  test('a disturbed monster saves only its off-default fields', () => {
+    clearRandom();
+    const { grid, world, map } = arena();
+    const layer = build(world, map);
+    const player = { ...grid.centre(1, 1), z: 0 };
+    layer.damage(0, 20, undefined, undefined, player.x, player.y); // wound one imp
+    layer.damage(1, 1000); // gib the other
+
+    const saved = layer.snapshot();
+    const wounded = saved.things[0].monster!;
+    assert.equal(wounded.health, MONSTER_HEALTH[ThingType.imp] - 20, 'damaged health is saved');
+    assert.equal(wounded.alerted, true);
+    assert.ok('homingBias' in wounded, 'the coin flip is always saved — its spawn default is a random draw');
+    for (const key of ['deadTime', 'burstLeft', 'chargeTimer', 'targetId', 'movecount'] as const) {
+      assert.ok(!(key in wounded), `default-valued ${key} is elided`);
+    }
+    assert.ok(!('dead' in wounded) && !('deathFrameCount' in wounded), 'the two derived fields are never saved');
+
+    const corpse = saved.things[1].monster!;
+    assert.ok(!('dead' in corpse), 'dead is derived from health on restore');
+    assert.ok(corpse.health! <= 0, 'the overkill health the gib rule re-reads is intact');
+  });
+
+  test('a fully-populated pre-sparse monster block still restores the same', () => {
+    clearRandom();
+    const { grid, world, map } = arena();
+    const layer = build(world, map);
+    const player = { ...grid.centre(1, 1), z: 0 };
+    layer.damage(0, 20, undefined, undefined, player.x, player.y);
+    layer.damage(1, 1000);
+    layer.update(DOOM_TIC, player);
+    const saved = JSON.parse(JSON.stringify(layer.snapshot()));
+    const cursors = getRandomCursors();
+
+    // Rewrite each sparse block the way the pre-sparse writer laid it out:
+    // every key present, defaults included, plus the since-removed `dead` and
+    // `deathFrameCount` (the latter deliberately stale to prove it is ignored).
+    const padded = JSON.parse(JSON.stringify(saved));
+    for (const t of padded.things) {
+      if (!t.monster) continue;
+      t.monster = {
+        ...MONSTER_FIELD_DEFAULTS,
+        health: MONSTER_HEALTH[t.type],
+        angle: (t.facingDeg * Math.PI) / 180,
+        dead: false,
+        deathFrameCount: 99,
+        ...t.monster,
+      };
+      t.monster.dead = t.monster.health <= 0;
+    }
+
+    const fresh = arena();
+    const restored = buildThingSprites(fresh.map, fresh.world, BANK, MATERIALS, 3, undefined, undefined, padded);
+    setRandomCursors(cursors);
+    assert.deepEqual(restored.snapshot(), saved, 'the padded block round-trips to the same sparse snapshot');
+    assert.equal(restored.monsterById(1), null, 'the corpse is still dead');
+    assert.ok(restored.monsterById(0), 'the wounded imp is still alive');
   });
 
   test('a save naming a type this WAD set cannot draw refuses to restore', () => {

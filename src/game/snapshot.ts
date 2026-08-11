@@ -16,6 +16,7 @@ import {
   type PowerId,
   type WeaponId,
 } from './inventory.ts';
+import { DI_NODIR } from './monsters/defs.ts';
 import type { Mover, LightState } from './specials.ts';
 import type { LevelKillItemStats, PosedThing } from './things/defs.ts';
 import type { Projectile } from './spritefxdefs.ts';
@@ -64,18 +65,25 @@ export interface WeaponsSnapshot {
 }
 
 /**
- * The mutable `Sector`/`SideDef` fields specials rewrite at runtime, one entry
- * per sector, saved verbatim. Applied to the freshly loaded `DoomMap` *before*
- * the mesh build so everything downstream bakes restored geometry —
- * docs/savegames.md § Apply order.
+ * The mutable `Sector` fields specials rewrite at runtime. Applied to the
+ * freshly loaded `DoomMap` *before* the mesh build so everything downstream
+ * bakes restored geometry — docs/savegames.md § Apply order.
  */
-export interface SectorsSnapshot {
-  floorHeight: number[];
-  ceilHeight: number[];
-  light: number[];
-  special: number[];
-  floorTex: string[];
+export interface SectorSnapshot {
+  floorHeight: number;
+  ceilHeight: number;
+  light: number;
+  special: number;
+  floorTex: string;
 }
+
+/**
+ * `[sectorIndex, fields]` for one sector that no longer matches the map as the
+ * WAD authored it. Only those are saved: a restore applies them to a freshly
+ * loaded map, so every sector left out is already correct — and most of a level
+ * is never touched (docs/savegames.md § Storage and the cap).
+ */
+export type SectorEntry = [number, SectorSnapshot];
 
 /** `SectorEffects`' own two counters; `totalSecrets` is re-counted from the map, not saved. */
 export interface SectorEffectsSnapshot {
@@ -97,18 +105,18 @@ export interface SpecialsSnapshot {
 }
 
 /**
- * Which `PosedThing` fields a killable thing's `MonsterFields` block carries —
- * the one list `snapshotThings` and `restoreThings` both loop over, so a field
- * can't be saved and then not restored. Everything not named here is either
- * re-derived by `pushThing` on restore or deliberately dropped
+ * Which `PosedThing` fields a killable thing's `MonsterFields` block can
+ * carry — the one list `snapshotThings` and `restoreThings` both loop over, so
+ * a field can't be saved and then not restored. Everything not named here is
+ * either re-derived by `pushThing` on restore or deliberately dropped —
+ * including `dead` (⟺ `health <= 0`, every death/revive site maintains it) and
+ * `deathFrameCount` (recomputed by `enterDeathPose` on a restored corpse)
  * (docs/savegames.md § What is saved and what is deliberately not).
  */
 export const MONSTER_SAVE_KEYS = [
   'health',
   'angle',
-  'dead',
   'deadTime',
-  'deathFrameCount',
   'barrelExploded',
   'explodeSource',
   'velX',
@@ -149,18 +157,74 @@ export const MONSTER_SAVE_KEYS = [
 export type MonsterFields = Pick<PosedThing, (typeof MONSTER_SAVE_KEYS)[number]>;
 
 /**
+ * Spawn defaults for the sparse encoding: a field equal to its entry here is
+ * omitted from the saved block, and the restore loop lets `pushThing`'s own
+ * default stand for any absent key. `pushThing` spreads this very table into
+ * the thing it builds, so the elision baseline *is* the spawn record rather
+ * than a copy of it — a default changed in one place and not the other would
+ * otherwise elide a field that restores to something else. Mapped over the key
+ * tuple so adding a key to `MONSTER_SAVE_KEYS` without deciding its default is
+ * a compile error.
+ * Three keys have no constant spawn default and are special-cased in
+ * `snapshotThings`: `health` (per type, `spawnHealthFor`), `angle`
+ * (`facingDeg` in radians, already in every `ThingState`) and `homingBias`
+ * (a random draw — always saved). docs/savegames.md § The format and its version.
+ */
+export const MONSTER_FIELD_DEFAULTS: {
+  readonly [K in Exclude<(typeof MONSTER_SAVE_KEYS)[number], 'health' | 'angle' | 'homingBias'>]: MonsterFields[K];
+} = {
+  deadTime: 0,
+  barrelExploded: false,
+  explodeSource: null,
+  velX: 0,
+  velY: 0,
+  velZ: 0,
+  alerted: false,
+  lookTimer: 0,
+  targetId: null,
+  attackPause: 0,
+  burstLeft: 0,
+  burstTimer: 0,
+  chargeTimer: 0,
+  chargeAngle: 0,
+  painTimer: 0,
+  inFloat: false,
+  movedir: DI_NODIR,
+  movecount: 0,
+  chaseTimer: 0,
+  moveBlocked: false,
+  threshold: 0,
+  justHit: false,
+  justAttacked: false,
+  reactionTicks: 0,
+  refiring: false,
+  walkSoundTimer: 0,
+  walkSoundStep: 0,
+};
+
+/**
+ * The keys the sparse loop can decide by table lookup — every `MONSTER_SAVE_KEYS`
+ * entry except the three `MONSTER_FIELD_DEFAULTS` deliberately omits, which
+ * `snapshotThings` handles on its own.
+ */
+export const MONSTER_KEYS_WITH_DEFAULTS = Object.keys(MONSTER_FIELD_DEFAULTS) as (keyof typeof MONSTER_FIELD_DEFAULTS)[];
+
+/**
  * Copies one `MONSTER_SAVE_KEYS` field, in either direction — a live
  * `PosedThing` is structurally a `MonsterFields`, so this serves both the
- * snapshot and the restore loop. Generic in the key so `to[key]` and `from[key]`
- * are the *same* type at every key rather than the union of all of them, which
- * is what an inline `to[key] = from[key]` can't express.
+ * snapshot and the restore loop, and a key absent from a sparse saved block is
+ * a no-op (the `pushThing` spawn default stands). Generic in the key so
+ * `to[key]` and `from[key]` are the *same* type at every key rather than the
+ * union of all of them, which is what an inline `to[key] = from[key]` can't
+ * express.
  */
 export function copyMonsterField<K extends keyof MonsterFields>(
-  to: MonsterFields,
-  from: MonsterFields,
+  to: Partial<MonsterFields>,
+  from: Partial<MonsterFields>,
   key: K,
 ): void {
-  to[key] = from[key];
+  const value = from[key];
+  if (value !== undefined) to[key] = value;
 }
 
 /**
@@ -168,8 +232,9 @@ export function copyMonsterField<K extends keyof MonsterFields>(
  * index *is* `PosedThing.id`, which is what keeps every saved `targetId`/
  * `sourceId` reference valid. Type-derived fields (`anim`, `scale`,
  * `blockRadius`, the frame tables) are never saved; `pushThing` re-derives
- * them on restore. The flags are present only when true: a 10k-thing map pays
- * for every byte of this record (docs/savegames.md § Storage and the cap).
+ * them on restore. The flags are present only when true, and the monster
+ * block is sparse (`MONSTER_FIELD_DEFAULTS`): a 10k-thing map pays for every
+ * byte of this record (docs/savegames.md § Storage and the cap).
  */
 export interface ThingState {
   type: number;
@@ -181,7 +246,7 @@ export interface ThingState {
   hidden?: boolean;
   dropped?: boolean;
   ambush?: boolean;
-  monster?: MonsterFields;
+  monster?: Partial<MonsterFields>;
 }
 
 export interface ThingsSnapshot {
@@ -223,7 +288,8 @@ export interface GameSnapshot {
   player: PlayerSnapshot;
   inventory: InventorySnapshot;
   weapons: WeaponsSnapshot;
-  sectors: SectorsSnapshot;
+  /** Only the sectors that differ from the freshly loaded map — see `snapshotSectors`. */
+  sectors: SectorEntry[];
   specials: SpecialsSnapshot;
   sectorEffects: SectorEffectsSnapshot;
   /** `encodeRuns` of the fog-of-war `explored` bitmap. */
@@ -248,6 +314,22 @@ export function encodeSeconds(seconds: number): number {
 
 export function decodeSeconds(encoded: number): number {
   return encoded === -1 ? Infinity : encoded;
+}
+
+/**
+ * `JSON.stringify` replacer that rounds every number to 6 decimals —
+ * dt-accumulated doubles otherwise serialize with 17-digit tails, and those
+ * tails are most of a float's JSON cost. 6 decimals keeps the error at 1e-6 map
+ * units/radians/seconds, far below anything observable (collision radii are
+ * 16+, a tic is 1/35 s). Integers — sector heights, the RNG cursors, the `-1`
+ * sentinel — pass through exactly; everything else is untouched. A replacer
+ * rather than a pass over the tree: the rounding only ever matters in the
+ * stored text, and a second copy of the largest object the feature builds is
+ * the last thing to allocate next to the quota this exists to protect.
+ * docs/savegames.md § The format and its version.
+ */
+export function roundFloat(_key: string, value: unknown): unknown {
+  return typeof value === 'number' ? Math.round(value * 1e6) / 1e6 : value;
 }
 
 /**
@@ -286,31 +368,74 @@ export function decodeRuns(runs: number[], length: number): Uint8Array {
   return data;
 }
 
-export function snapshotSectors(map: DoomMap): SectorsSnapshot {
-  const s: SectorsSnapshot = { floorHeight: [], ceilHeight: [], light: [], special: [], floorTex: [] };
-  for (const sector of map.sectors) {
-    s.floorHeight.push(sector.floorHeight);
-    s.ceilHeight.push(sector.ceilHeight);
-    s.light.push(sector.light);
-    s.special.push(sector.special);
-    s.floorTex.push(sector.floorTex);
-  }
-  return s;
+/**
+ * Every sector's savable fields in index order, taken off a map. `Game` takes
+ * one of these per level load, straight out of `loadMap` and before anything
+ * has run — that is the baseline `snapshotSectors` diffs against, and it is
+ * exactly the state a later restore's `applySectors` writes into.
+ */
+export function sectorBaseline(map: DoomMap): SectorSnapshot[] {
+  return map.sectors.map((sector) => ({
+    floorHeight: sector.floorHeight,
+    ceilHeight: sector.ceilHeight,
+    light: sector.light,
+    special: sector.special,
+    floorTex: sector.floorTex,
+  }));
 }
 
 /**
- * Applies a sector snapshot to a freshly loaded `DoomMap` in place. Must run
- * *before* any geometry or world construction so everything downstream bakes
- * restored heights and lights — docs/savegames.md § Apply order.
+ * The sectors that no longer match `baseline`, as `[index, fields]`. A whole
+ * level's sectors written out cost ~24 KB of JSON on DOOM2 MAP15 and are
+ * identical to the freshly loaded map in all but the handful a door, lift or
+ * light has touched — so only those are stored (docs/savegames.md § Storage
+ * and the cap).
  */
-export function applySectors(map: DoomMap, s: SectorsSnapshot): void {
+export function snapshotSectors(map: DoomMap, baseline: SectorSnapshot[]): SectorEntry[] {
+  const out: SectorEntry[] = [];
   for (let i = 0; i < map.sectors.length; i++) {
     const sector = map.sectors[i];
-    if (s.floorHeight[i] !== undefined) sector.floorHeight = s.floorHeight[i];
-    if (s.ceilHeight[i] !== undefined) sector.ceilHeight = s.ceilHeight[i];
-    if (s.light[i] !== undefined) sector.light = s.light[i];
-    if (s.special[i] !== undefined) sector.special = s.special[i];
-    if (s.floorTex[i] !== undefined) sector.floorTex = s.floorTex[i];
+    const was = baseline[i] as SectorSnapshot | undefined;
+    if (
+      was &&
+      sector.floorHeight === was.floorHeight &&
+      sector.ceilHeight === was.ceilHeight &&
+      sector.light === was.light &&
+      sector.special === was.special &&
+      sector.floorTex === was.floorTex
+    ) {
+      continue;
+    }
+    out.push([
+      i,
+      {
+        floorHeight: sector.floorHeight,
+        ceilHeight: sector.ceilHeight,
+        light: sector.light,
+        special: sector.special,
+        floorTex: sector.floorTex,
+      },
+    ]);
+  }
+  return out;
+}
+
+/**
+ * Applies saved sector entries to a freshly loaded `DoomMap` in place; a sector
+ * with no entry is left as the WAD authored it, which is what the sparse format
+ * means. Must run *before* any geometry or world construction so everything
+ * downstream bakes restored heights and lights — docs/savegames.md § Apply order.
+ */
+export function applySectors(map: DoomMap, entries: SectorEntry[]): void {
+  for (const entry of entries) {
+    const sector = map.sectors[entry?.[0]];
+    const saved = entry?.[1];
+    if (!sector || !saved) continue;
+    sector.floorHeight = saved.floorHeight;
+    sector.ceilHeight = saved.ceilHeight;
+    sector.light = saved.light;
+    sector.special = saved.special;
+    sector.floorTex = saved.floorTex;
   }
 }
 

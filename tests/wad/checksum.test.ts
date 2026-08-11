@@ -2,6 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { hashBytes, wadId, wadSetId } from '../../src/wad/checksum.ts';
 import { Wad, WadFile } from '../../src/wad/wad.ts';
+import { readFileSync } from 'node:fs';
 
 /** A directory-only WAD, same shape as tests/wad/levelnames.test.ts uses — no lump bytes needed. */
 function wadFile(type: 'IWAD' | 'PWAD', name: string, lumps: string[]): WadFile {
@@ -75,5 +76,16 @@ describe('WAD parsing · content ids', () => {
       { name: 'DOOM2.WAD', id: wadId(iwad) },
       { name: 'SCYTHE.WAD', id: wadId(pwad) },
     ]);
+  });
+
+  test("the manifest's build-time id is the same string the runtime computes", () => {
+    // The manifest plugin hashes a Node `Buffer` straight from `readFileSync`,
+    // the runtime hashes an `ArrayBuffer` through `wadId` — and a save resolves
+    // by matching one against the other, so a disagreement (a Buffer's view
+    // offset into Node's pool, say) would silently refuse every load rather
+    // than fail anywhere near the cause. docs/savegames.md § WAD-set identity.
+    const bytes = readFileSync(new URL('../fixtures/wads/pinky_above_test.wad', import.meta.url));
+    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+    assert.equal(hashBytes(bytes), wadId(new WadFile(buffer, 'pinky_above_test.wad')));
   });
 });

@@ -1,4 +1,5 @@
 import { Wad, WadFile, type WadType } from './wad.ts';
+import { wadId } from './checksum.ts';
 import { mapInfoNames } from './mapinfo.ts';
 import { levelTitleFor, missionOf } from './levelnames.ts';
 
@@ -9,8 +10,15 @@ const MANIFEST_URL = '/wads/index.json';
  * the user's disk. Bytes are only pulled in when something actually needs them.
  */
 export interface WadSource {
-  /** Stable id used in the UI and in ?wad= / ?pwad= parameters. */
+  /** Where the file lives: the UI's handle for it, and what ?wad= / ?pwad= name. Not an identity — a rename changes it, and the same bytes have different keys as a server file and as an upload. */
   key: string;
+  /**
+   * Content id of the bytes (`hashBytes`), known without downloading them: the
+   * manifest carries it for a server file, an upload is hashed as it is added.
+   * *This* is the file's identity — what a savegame's WAD set is matched
+   * against (docs/savegames.md § WAD-set identity).
+   */
+  id: string;
   label: string;
   type: WadType;
   /** Map markers this file defines. */
@@ -33,6 +41,12 @@ interface ManifestEntry {
   type: WadType;
   maps: string[];
   lumpCount: number;
+  /**
+   * `hashBytes` content id — see the plugin's own note for why it is computed at build time.
+   * Optional because a cached `index.json` can predate the field, which is what the `?? ''`
+   * below degrades to: a source with no id matches no savegame rather than matching wrongly.
+   */
+  id?: string;
   /** Only present for the few WADs that carry a MAPINFO lump — see plugins/wad-manifest.ts. */
   levelNames?: Record<string, string>;
 }
@@ -76,6 +90,7 @@ function serverSource(entry: ManifestEntry): WadSource {
   let cached: Promise<ArrayBuffer> | null = null;
   return {
     key: entry.file,
+    id: entry.id ?? '',
     label: entry.file,
     type: entry.type,
     maps: entry.maps,
@@ -98,6 +113,10 @@ export function uploadedSource(name: string, buffer: ArrayBuffer): WadSource {
   const file = new WadFile(buffer, name);
   return {
     key: `upload:${name}:${buffer.byteLength}`,
+    // The one place an id costs real work (a pass over up to ~14 MB), paid here
+    // rather than lazily: the save list matches by id and renders synchronously.
+    // `wadId` memoizes per file, so loading this source later re-uses it.
+    id: wadId(file),
     label: name,
     type: file.type,
     maps: file.mapNames(),

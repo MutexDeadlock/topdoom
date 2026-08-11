@@ -47,9 +47,11 @@ import { clearRandom, getRandomCursors, setRandomCursors } from './util/random.t
 import {
   applySectors,
   deserializeInventory,
+  sectorBaseline,
   serializeInventory,
   snapshotSectors,
   type GameSnapshot,
+  type SectorSnapshot,
 } from './game/snapshot.ts';
 import type { SaveCapture } from './game/savegames.ts';
 import type { Skill } from './game/skill.ts';
@@ -153,6 +155,12 @@ export class Game {
   private mapIndex = 0;
 
   private map!: DoomMap;
+  /**
+   * The current level's sectors as the WAD authored them, taken before anything
+   * has touched them — what a capture diffs against so only sectors a special
+   * has actually changed are saved (`snapshotSectors`).
+   */
+  private sectorBaseline: SectorSnapshot[] = [];
   private world!: World;
   private player!: Player;
   private built: BuiltMap | null = null;
@@ -358,23 +366,32 @@ export class Game {
   }
 
   /**
-   * Whether this moment can be saved. Death, a pending exit and the
-   * intermission are refused — excluding those three from the save format
-   * entirely is far cheaper than restoring them correctly
-   * (docs/savegames.md § What is saved and what is deliberately not).
+   * Why this moment can't be saved, or null when it can. Death, a pending exit
+   * and the intermission are refused — excluding those three from the save
+   * format entirely is far cheaper than restoring them correctly
+   * (docs/savegames.md § What is saved and what is deliberately not). The
+   * reason is a sentence rather than a flag because it is what the player is
+   * told; nothing else asks this.
    */
-  canSave(): boolean {
-    return !this.playerDead && !this.intermissionActive && !this.pendingExit;
+  private saveRefusal(): string | null {
+    if (this.playerDead) return "you can't save while dead";
+    if (this.intermissionActive) return "you can't save during the intermission";
+    if (this.pendingExit) return "you can't save while the level is exiting";
+    return null;
   }
 
   /**
-   * The full state of this moment plus a thumbnail, ready for the store —
-   * or null when `canSave` refuses. The store's own bookkeeping (id, name,
-   * date) and the menu's source keys are the caller's to add; this class
-   * knows the running level, not the library it was picked from.
+   * The full state of this moment plus a thumbnail, ready for the store.
+   * Refuses by *throwing* the reason, the same convention the store's own
+   * writers use, so the whole save path has one refusal shape and the player is
+   * told which condition actually applies (docs/menu.md § Save and Load tabs).
+   * Only the store's own bookkeeping (id, name, date) is the caller's to add: a
+   * capture identifies its WAD set by content, so this class needs to know
+   * nothing about the library it was picked from.
    */
-  captureSave(): SaveCapture | null {
-    if (!this.canSave()) return null;
+  captureSave(): SaveCapture {
+    const refusal = this.saveRefusal();
+    if (refusal) throw new Error(refusal);
     return {
       map: this.currentMap,
       skill: this.skill,
@@ -388,7 +405,7 @@ export class Game {
         player: this.player.snapshot(),
         inventory: serializeInventory(this.inventory),
         weapons: this.weaponSystem.snapshot(),
-        sectors: snapshotSectors(this.map),
+        sectors: snapshotSectors(this.map, this.sectorBaseline),
         // Non-null: all three are built by every `loadMapByIndex` pass, and
         // `captureSave` is only reachable with a level loaded.
         specials: this.specials!.snapshot(),
@@ -464,6 +481,10 @@ export class Game {
     const t0 = performance.now();
     const map = loadMap(this.wad, name);
     this.map = map;
+    // Straight out of `loadMap`, ahead of the restore below and of everything
+    // that mutates a sector — this is the state a later load starts from, so it
+    // is what a capture may leave out (docs/savegames.md § Apply order).
+    this.sectorBaseline = sectorBaseline(map);
     // Before the sector snapshot below, so `totalSecrets` counts the map's
     // authored secrets — a found secret zeroes its sector's `special`.
     this.sectorEffects = new SectorEffects(map);

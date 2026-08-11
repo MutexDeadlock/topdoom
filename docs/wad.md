@@ -123,12 +123,18 @@ them the same way, later files winning.
 
 ## Content id
 
-`checksum.ts` gives a `WadFile` a **content id**: a hash of its whole byte range, memoized per file
-in a `WeakMap`. It is what per-level best times are keyed on (docs/hud.md § Best times), and it is
-what a saved game embeds so it can tell whether the set it was made with is the set loaded now —
-`wadSetId(wad)` returns every loaded file's `{ name, id }` in load order, a list rather than one
-combined hash so a mismatch can name *which* file is wrong, which is exactly how `main.ts`'s
-`loadSave` uses it (docs/savegames.md § WAD-set identity).
+`checksum.ts` gives a `WadFile` a **content id**: a hash of its whole byte range, memoized in a
+`WeakMap` keyed on the underlying `ArrayBuffer` rather than on the `WadFile` — the same bytes get
+wrapped more than once (an upload hashes its own `WadFile`, `loadWadFiles` builds another over the
+same buffer, a restart re-wraps the memoized fetch), and a wrapper-keyed memo misses every time,
+re-walking ~14 MB on the level-start path. It is what per-level best times are keyed on (docs/hud.md § Best times), and it is
+what a saved game stores as its WAD set — `wadSetId(wad)` returns every loaded file's
+`{ name, id }` in load order, a list rather than one combined hash so a mismatch can name *which*
+file is wrong. A save uses the id as the file's **identity**, not merely as a check: it is what
+`loadSave` re-resolves the library against, so a renamed WAD still loads and the same bytes match
+whether they come from the server or from disk (docs/savegames.md § WAD-set identity). That is also
+why `plugins/wad-manifest.ts` publishes each server WAD's id — the menu has to know a file's
+identity without downloading it.
 
 Two rules hold this up:
 
@@ -147,10 +153,17 @@ already building every mesh in the level rather than on the frame a level ends.
 
 ## The `public/wads/` manifest
 
-The Vite plugin scans `public/wads/{iwad,pwad}/`, reading each file's header and directory (a few KB
-even for a 14 MB IWAD) plus its MAPINFO lump if it has one, and serving that as `/wads/index.json`
-(dev middleware and build-time `emitFile`), so the menu can list types/sizes/map counts and name
-levels without downloading anything. Bytes are only fetched when a level actually starts, and
+The Vite plugin scans `public/wads/{iwad,pwad}/`, parsing each file's header and directory plus its
+MAPINFO lump if it has one, and hashing its bytes for the content id (§ Content id) — the file is
+already in memory, so the id costs one pass and nothing extra to read. That is served as
+`/wads/index.json` (dev middleware and build-time `emitFile`), so the menu can list
+types/sizes/map counts, name levels, and know each file's *identity* without downloading anything —
+the last being what lets a savegame's WAD set resolve while the save list renders
+(docs/savegames.md § WAD-set identity). The dev middleware re-scans on every request for the
+manifest, so `describeWad` is memoized on each file's mtime and size (`statSync` is already being
+called for the listing): without it every page reload would re-read and re-hash every WAD in
+`public/wads/` — tens of MB, on the path that gates `Menu.init`. Editing a WAD still re-describes
+it. Bytes are only fetched when a level actually starts, and
 `library.ts: serverSource` memoizes them, so restarting the same WAD set costs no download. A WAD
 picked from disk has no manifest entry, so `uploadedSource` parses its MAPINFO itself — the bytes
 are already in memory by then.

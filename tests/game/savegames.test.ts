@@ -10,6 +10,7 @@ import {
   overwriteSave,
   readSave,
   renameSave,
+  wadLabel,
   writeSave,
   type SaveCapture,
 } from '../../src/game/savegames.ts';
@@ -53,12 +54,10 @@ const capture = (map = 'E1M1'): SaveCapture => ({
   state,
 });
 
-const keys = { iwad: 'DOOM.WAD', pwads: [] };
-
 /** The savegame store: keys, the cap, version refusal, and what a damaged entry costs. See docs/savegames.md § Storage and the cap. */
 describe('Savegames · the store', () => {
   test('write, list, read and delete round-trip', () => {
-    const meta = writeSave(capture(), 'my save', keys);
+    const meta = writeSave(capture(), 'my save');
     assert.equal(meta.version, SAVE_VERSION);
     assert.equal(meta.name, 'my save');
     assert.ok(store.has(`topdoom.save.${meta.id}`), 'stored under its own key');
@@ -75,21 +74,49 @@ describe('Savegames · the store', () => {
     assert.deepEqual(listSaves(), []);
   });
 
+  test('the WAD set is stored verbatim as one load-order list of content ids', () => {
+    const set: SaveCapture = {
+      ...capture(),
+      wads: [
+        { name: 'DOOM2.WAD', id: 'aaa' },
+        { name: 'SCYTHE.WAD', id: 'bbb' },
+      ],
+    };
+    // Nothing is added on the way in: `wadSetId`'s output is already the format,
+    // so no library key can go stale inside a save.
+    const meta = writeSave(set, 'byid');
+    assert.deepEqual(meta.wads, set.wads);
+    assert.deepEqual(readSave(meta.id).wads, set.wads, 'and survives the round-trip');
+  });
+
+  test('a damaged WAD entry is blanked, not dropped — load order decides the role', () => {
+    const meta = writeSave({ ...capture(), wads: [{ name: 'A', id: 'a' }, { name: 'B', id: 'b' }] }, 's');
+    const raw = JSON.parse(store.get(`topdoom.save.${meta.id}`)!);
+    raw.wads[0] = 'nonsense';
+    store.set(`topdoom.save.${meta.id}`, JSON.stringify(raw));
+
+    const listed = listSaves()[0].meta;
+    assert.equal(listed.wads.length, 2, 'the entry keeps its slot so B stays an add-on');
+    assert.deepEqual(listed.wads[0], { name: '', id: '' });
+    assert.equal(wadLabel(listed.wads[0]), 'unknown file');
+    assert.deepEqual(listed.wads[1], { name: 'B', id: 'b' });
+  });
+
   test('an empty name defaults to map and date', () => {
-    assert.match(writeSave(capture('MAP05'), '   ', keys).name, /^MAP05 — /);
+    assert.match(writeSave(capture('MAP05'), '   ').name, /^MAP05 — /);
   });
 
   test('the prefix scan ignores every other topdoom key', () => {
     store.set('topdoom.bestTimes', '{}');
     store.set('topdoom.skill', '3');
-    writeSave(capture(), 's', keys);
+    writeSave(capture(), 's');
     assert.equal(listSaves().length, 1);
   });
 
   test('the list is newest first', () => {
-    const a = writeSave(capture('E1M1'), 'a', keys);
+    const a = writeSave(capture('E1M1'), 'a');
     store.set(`topdoom.save.${a.id}`, JSON.stringify({ ...readSave(a.id), at: '2001-01-01T00:00:00.000Z' }));
-    writeSave(capture('E1M2'), 'b', keys);
+    writeSave(capture('E1M2'), 'b');
     assert.deepEqual(
       listSaves().map((e) => e.meta.name),
       ['b', 'a'],
@@ -97,7 +124,7 @@ describe('Savegames · the store', () => {
   });
 
   test('an unsupported version is listed but refuses to load', () => {
-    const meta = writeSave(capture(), 'old', keys);
+    const meta = writeSave(capture(), 'old');
     const raw = JSON.parse(store.get(`topdoom.save.${meta.id}`)!);
     raw.version = SAVE_VERSION + 1;
     store.set(`topdoom.save.${meta.id}`, JSON.stringify(raw));
@@ -109,7 +136,7 @@ describe('Savegames · the store', () => {
   });
 
   test('a damaged entry is one unloadable row, not a broken list', () => {
-    writeSave(capture(), 'good', keys);
+    writeSave(capture(), 'good');
     store.set('topdoom.save.broken', '{not json');
     const listed = listSaves();
     assert.equal(listed.length, 2);
@@ -121,26 +148,26 @@ describe('Savegames · the store', () => {
   });
 
   test('overwriting keeps the id and the name, and replaces the payload', () => {
-    const meta = writeSave(capture('E1M1'), 'slot one', keys);
-    const replaced = overwriteSave(meta.id, capture('E1M9'), keys);
+    const meta = writeSave(capture('E1M1'), 'slot one');
+    const replaced = overwriteSave(meta.id, capture('E1M9'));
     assert.equal(replaced.id, meta.id);
     assert.equal(replaced.name, 'slot one', 'the slot keeps its label');
     assert.equal(replaced.map, 'E1M9');
     assert.equal(listSaves().length, 1, 'one slot, not two');
     assert.equal(readSave(meta.id).map, 'E1M9');
-    assert.throws(() => overwriteSave('never-existed', capture(), keys), /no longer exists/);
+    assert.throws(() => overwriteSave('never-existed', capture()), /no longer exists/);
   });
 
   test('overwriting works with the list full — no new key, so no cap', () => {
-    const first = writeSave(capture(), 's0', keys);
-    for (let i = 1; i < MAX_SAVES; i++) writeSave(capture(), `s${i}`, keys);
-    assert.throws(() => writeSave(capture(), 'one too many', keys), /delete a save first/);
-    assert.equal(overwriteSave(first.id, capture('MAP07'), keys).map, 'MAP07');
+    const first = writeSave(capture(), 's0');
+    for (let i = 1; i < MAX_SAVES; i++) writeSave(capture(), `s${i}`);
+    assert.throws(() => writeSave(capture(), 'one too many'), /delete a save first/);
+    assert.equal(overwriteSave(first.id, capture('MAP07')).map, 'MAP07');
     assert.equal(listSaves().length, MAX_SAVES);
   });
 
   test('renaming touches the name only, and refuses a damaged row', () => {
-    const meta = writeSave(capture(), 'before', keys);
+    const meta = writeSave(capture(), 'before');
     renameSave(meta.id, '  after  ');
     const [entry] = listSaves();
     assert.equal(entry.meta.name, 'after', 'trimmed');
@@ -156,8 +183,8 @@ describe('Savegames · the store', () => {
   });
 
   test('the cap refuses the write instead of evicting', () => {
-    for (let i = 0; i < MAX_SAVES; i++) writeSave(capture(), `s${i}`, keys);
-    assert.throws(() => writeSave(capture(), 'one too many', keys), /delete a save first/);
+    for (let i = 0; i < MAX_SAVES; i++) writeSave(capture(), `s${i}`);
+    assert.throws(() => writeSave(capture(), 'one too many'), /delete a save first/);
     assert.equal(listSaves().length, MAX_SAVES);
   });
 
@@ -167,12 +194,12 @@ describe('Savegames · the store', () => {
     fake.setItem = () => {
       throw new DOMException('quota', 'QuotaExceededError');
     };
-    assert.throws(() => writeSave(capture(), 's', keys), /storage/);
+    assert.throws(() => writeSave(capture(), 's'), /storage/);
     fake.setItem = originalSet;
   });
 
   test('the download is tab-indented, while the stored copy stays compact', () => {
-    const meta = writeSave(capture(), 'readable', keys);
+    const meta = writeSave(capture(), 'readable');
     assert.equal(store.get(`topdoom.save.${meta.id}`)!.includes('\n'), false, 'stored compact for the quota');
     const downloaded = exportSave(meta.id);
     assert.match(downloaded, /^\{\n\t"/, 'downloaded with newlines and tab indents');
@@ -186,7 +213,7 @@ describe('Savegames · the store', () => {
   });
 
   test('importing a downloaded save re-ids it, so importing twice makes two', () => {
-    const meta = writeSave(capture(), 'exported', keys);
+    const meta = writeSave(capture(), 'exported');
     const text = exportSave(meta.id);
     const imported = importSave(text);
     assert.notEqual(imported.id, meta.id);
@@ -197,7 +224,7 @@ describe('Savegames · the store', () => {
   test('import refuses non-saves and old versions by name', () => {
     assert.throws(() => importSave('hello'), /not a TopDoom save/);
     assert.throws(() => importSave('{"some": "json"}'), /not a TopDoom save/);
-    const old = JSON.stringify({ ...capture(), id: 'x', version: 99, at: '', name: 'x', sourceKeys: keys });
+    const old = JSON.stringify({ ...capture(), id: 'x', version: 99, at: '', name: 'x' });
     assert.throws(() => importSave(old), /version 99/);
   });
 });

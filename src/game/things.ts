@@ -74,6 +74,8 @@ import {
 } from './monsters/defs.ts';
 import { commitTarget, reactToDamage, shouldRetarget, stepMonsterAI, tryWake } from './monsters/ai.ts';
 import {
+  MONSTER_FIELD_DEFAULTS,
+  MONSTER_KEYS_WITH_DEFAULTS,
   MONSTER_SAVE_KEYS,
   copyMonsterField,
   type MonsterFields,
@@ -288,12 +290,12 @@ export function buildThingSprites(
       attackFrames: MONSTER_ATTACK_FRAMES[type],
       painFrames: MONSTER_PAIN_FRAMES[type],
       raiseFrames: MONSTER_RAISE_FRAMES[type],
-      deadTime: 0,
+      // Every AI/damage field the save can elide, straight from the table the
+      // snapshot compares against — one definition of "spawn state", so the two
+      // can't drift (see MONSTER_FIELD_DEFAULTS). The `opts`-driven and
+      // per-type ones below override it.
+      ...MONSTER_FIELD_DEFAULTS,
       deathFrameCount: 0,
-      barrelExploded: false,
-      explodeSource: null,
-      velX: 0,
-      velY: 0,
       visible: true,
       hidden: false,
       queryStamp: 0,
@@ -315,28 +317,8 @@ export function buildThingSprites(
       dropped: opts?.dropped ?? false,
       alerted: opts?.alerted ?? false,
       ambush: opts?.ambush ?? false,
-      velZ: 0,
       angle: (facingDeg * Math.PI) / 180,
-      attackPause: 0,
-      burstLeft: 0,
-      burstTimer: 0,
-      chargeTimer: 0,
-      chargeAngle: 0,
-      painTimer: 0,
-      inFloat: false,
-      movedir: DI_NODIR,
-      movecount: 0,
-      chaseTimer: 0,
-      moveBlocked: false,
-      threshold: 0,
-      justHit: false,
-      justAttacked: false,
-      reactionTicks: 0,
-      refiring: false,
       homingBias: (pRandom() & 1) !== 0,
-      walkSoundTimer: 0,
-      walkSoundStep: 0,
-      lookTimer: 0,
       prev: { x, y },
       targetId: opts?.targetId ?? null,
     };
@@ -383,14 +365,19 @@ export function buildThingSprites(
       p.visible = !p.hidden;
       const m = s.monster;
       if (!m) continue;
-      // The dead-only fields carry `pushThing`'s own defaults while alive, so
-      // the whole block copies back unconditionally — see MONSTER_SAVE_KEYS.
+      // The block is sparse: a key it lacks keeps the spawn default `pushThing`
+      // just applied (`copyMonsterField` skips it) — see MONSTER_FIELD_DEFAULTS.
       for (const key of MONSTER_SAVE_KEYS) copyMonsterField(p, m, key);
+      // `dead` is derived, not saved: every death site sets it exactly when
+      // health drops to <= 0, and `reviveCorpse` restores positive health when
+      // clearing it (docs/savegames.md § The format and its version).
+      p.dead = p.health <= 0;
       // Re-enter the death pose `damageThing` played, fast-forwarded onto
       // whichever frame `deadTime` says the corpse is holding. `health` keeps
       // its negative overkill in the save precisely so the gib rule inside
-      // recomputes the same way it did at the time of death.
-      if (m.dead) enterDeathPose(p, m.deadTime);
+      // recomputes the same way it did at the time of death (it also re-derives
+      // `deathFrameCount`, the other field the save leaves out).
+      if (p.dead) enterDeathPose(p, p.deadTime);
     }
   }
 
@@ -769,11 +756,12 @@ export function buildThingSprites(
 
   /**
    * A killable thing still in its exact spawn state needs no `MonsterFields`
-   * block — the restore's own `pushThing` recreates those defaults. Alerted,
-   * damaged, moving or dead all disqualify; `lookTimer` and `homingBias` are
-   * deliberately ignored, so a never-disturbed monster costs 9 saved fields
-   * instead of ~40, which is what keeps a 10k-monster map's save inside the
-   * localStorage quota (docs/savegames.md § Storage and the cap).
+   * block at all — the restore's own `pushThing` recreates those defaults.
+   * Alerted, damaged, moving or dead all disqualify; `lookTimer` and
+   * `homingBias` are deliberately ignored, so a never-disturbed monster costs
+   * nothing beyond its `ThingState`, which together with the sparse block is
+   * what keeps a 10k-monster map's save inside the localStorage quota
+   * (docs/savegames.md § Storage and the cap).
    */
   function isPristine(p: PosedThing): boolean {
     return (
@@ -800,8 +788,20 @@ export function buildThingSprites(
         if (p.ambush) s.ambush = true;
         const killable = Number.isFinite(p.health) || p.dead;
         if (killable && !isPristine(p)) {
-          const block = {} as MonsterFields;
-          for (const key of MONSTER_SAVE_KEYS) copyMonsterField(block, p, key);
+          // Sparse: a field still at its spawn default is omitted and the
+          // restore's own `pushThing` re-supplies it. Three keys have no
+          // constant default and are decided here instead: spawn health is per
+          // type, spawn angle is `facingDeg` (which every ThingState carries)
+          // in radians, and `homingBias` spawns as a random draw, so it is
+          // always saved.
+          const block: Partial<MonsterFields> = {
+            homingBias: p.homingBias,
+          };
+          if (p.health !== spawnHealthFor(p.type, p.dropped)) block.health = p.health;
+          if (p.angle !== (p.facingDeg * Math.PI) / 180) block.angle = p.angle;
+          for (const key of MONSTER_KEYS_WITH_DEFAULTS) {
+            if (p[key] !== MONSTER_FIELD_DEFAULTS[key]) copyMonsterField(block, p, key);
+          }
           s.monster = block;
         }
         return s;

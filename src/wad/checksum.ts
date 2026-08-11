@@ -6,8 +6,14 @@ import type { Wad, WadFile } from './wad.ts';
  * see docs/wad.md § Content id.
  */
 
-/** One file's id, keyed by identity so the scan happens once per loaded file. */
-const ids = new WeakMap<WadFile, string>();
+/**
+ * One file's id, keyed by the *bytes* rather than by the `WadFile` wrapping
+ * them: the same buffer is wrapped more than once — an uploaded source hashes
+ * its own `WadFile`, then `loadWadFiles` builds another over the same
+ * `ArrayBuffer`, and a restart re-wraps the memoized fetch — and a wrapper-keyed
+ * memo misses every time, re-walking ~14 MB on the level-start path.
+ */
+const ids = new WeakMap<ArrayBuffer, string>();
 
 // FNV-1a 32-bit's own basis and prime, then a second pair (the golden-ratio constant and murmur3's
 // finalizer multiplier) so the two lanes mix differently rather than only starting apart.
@@ -43,10 +49,10 @@ function hex32(n: number): string {
 
 /** The file's content id, computed once and memoized. */
 export function wadId(file: WadFile): string {
-  let id = ids.get(file);
+  let id = ids.get(file.buffer);
   if (id === undefined) {
     id = hashBytes(new Uint8Array(file.buffer));
-    ids.set(file, id);
+    ids.set(file.buffer, id);
   }
   return id;
 }

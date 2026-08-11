@@ -104,6 +104,31 @@ export class TopDownCamera {
   }
 
   /**
+   * Puts the follow point at `pos` with nothing left to catch up on — the
+   * position twin of the `yawDeg` setter, and the camera's own
+   * `Player.syncInterpolation`. This camera outlives the level (it belongs to
+   * the `Viewport`), so without it a level load or a save restore leaves the
+   * smoother holding the *previous* level's point and the new level opens with
+   * the camera flying to the player. Collapses the interpolation window too,
+   * and poses the `THREE` camera immediately, since a frame can be drawn
+   * before the next `tick` (the pause loop's `stillFrame`, `captureThumbnail`).
+   * Set `yawDeg` first if both are being snapped. docs/frameloop.md §
+   * Interpolation.
+   */
+  snapTo(pos: Pos3): void {
+    this.setTarget(pos);
+    this.smoothed.copy(this.target);
+    this.prevSmoothed.copy(this.target);
+    this.initialised = true;
+    this.applyToCamera(1);
+  }
+
+  /** The followed point in three.js space — DOOM's `(x, y, z)` is three's `(x, z, -y)`. */
+  private setTarget(pos: Pos3): void {
+    this.target.set(pos.x, pos.z, -pos.y);
+  }
+
+  /**
    * This frame's orbit input: the Q/E 45° snaps and their auto-repeat.
    * See docs/render.md § Camera orbit.
    */
@@ -161,7 +186,7 @@ export class TopDownCamera {
     this.prevSmoothed.copy(this.smoothed);
     this.prevYawDeg = this._yawDeg;
 
-    this.target.set(pos.x, pos.z, -pos.y);
+    this.setTarget(pos);
 
     if (aim && this.aimLead > 0) {
       // Nudge the focus towards the cursor, capped so the player stays on screen.

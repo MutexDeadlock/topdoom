@@ -121,7 +121,7 @@ Everything drawn carries where it was at the end of the previous tic, and `draw`
 | `PosedThing` | `drawPrevX/Y/Z` — written for *every* thing every tic |
 | `Projectile` | `drawPrevX/Y/Z` + `drawX/Y/Z` |
 | `OneShotEffect`, `SpawnCube` | `drawPrevX/Y/Z` |
-| `TopDownCamera` | `prevSmoothed`, `prevYawDeg` |
+| `TopDownCamera` | `prevSmoothed`, `prevYawDeg`, plus `snapTo()` for level loads |
 
 Four rules:
 
@@ -130,9 +130,12 @@ Four rules:
   ceiling-hung prop riding a closing door all move a thing that never runs that path. Hence the
   separate `drawPrev*`, written unconditionally at the top of the per-thing loop.
 - **Every discontinuous move must collapse the window.** A teleport that leaves a stale `prev`
-  behind is drawn as a glide across the map. `Player.syncInterpolation` and `TopDownCamera`'s
-  `yawDeg` setter are the two that matter; a freshly spawned thing seeds `drawPrev*` to its spawn
-  point for the same reason.
+  behind is drawn as a glide across the map. `Player.syncInterpolation`, `TopDownCamera`'s `yawDeg`
+  setter and `TopDownCamera.snapTo` are the three that matter; a freshly spawned thing seeds
+  `drawPrev*` to its spawn point for the same reason. The camera's case is the widest, because it
+  outlives the level: `snapTo` collapses the *smoother* as well as the window, or a level load —
+  a discontinuous move of the follow point if ever there was one — opens with the camera flying in
+  from the previous level's position (docs/render.md § The camera is simulation state).
 - **Sprite *facing* is not interpolated.** It is quantised to 8 directions, so lerping it is work
   that changes nothing. Positions only — except the player's own billboard, whose facing is
   continuous and so uses a shortest-arc lerp.

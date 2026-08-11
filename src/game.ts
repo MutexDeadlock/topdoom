@@ -532,6 +532,11 @@ export class Game {
       // the map's own player-start angle.
       this.view.camera.yawDeg = (this.player.angle * 180) / Math.PI - 90;
     }
+    // After both branches, and after the yaw each sets: the camera belongs to
+    // the session, not the level, so its smoothed follow point still holds the
+    // outgoing level's — a load would open with the camera flying to the
+    // player. docs/render.md § The camera is simulation state.
+    this.view.camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
     this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player.x, this.player.y);
     if (restore) this.fogOfWar.restoreExplored(restore.fog);
     this.specials = new SpecialsController(
@@ -553,10 +558,13 @@ export class Game {
         const from = { x: this.player.x, y: this.player.y, z: this.player.z };
         this.player.teleportTo(dest);
         this.effects.spawnTeleportPair(from, dest, this.player.z);
-        // Snap the camera to face the same way the player now does, same as
-        // the initial spawn — a teleport should reorient the view instantly,
-        // not leave it aimed at wherever the old spot happened to be.
+        // Snap the camera onto the landing spot facing the way the player now
+        // does, same as the initial spawn — a teleport should cut, not leave
+        // the view aimed at wherever the old spot happened to be and then fly
+        // across the map to catch up (docs/render.md § The camera is
+        // simulation state). Yaw first: `snapTo` poses the camera with it.
         this.view.camera.yawDeg = (dest.angle * 180) / Math.PI - 90;
+        this.view.camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
       },
       (sectorIndex) =>
         applyCrushDamage(this.world, this.map, this.things, this.player, sectorIndex, (amount) =>

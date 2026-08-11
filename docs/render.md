@@ -214,6 +214,22 @@ and is what the simulation reads; `viewAngleDeg` is the interpolated pose actual
 billboards must orient to — using the tic-exact one there leaves every sprite a fraction of a yaw snap
 out of line with the walls behind it. docs/frameloop.md § Interpolation.
 
+**The camera outlives the level**, since it belongs to the `Viewport` and a load only replaces the
+`Game` — so the follow point's exponential smoother still holds the *outgoing* level's position when
+the next one starts. `loadMapByIndex` therefore ends the player's placement with `snapTo`, which puts
+the smoothed point, the interpolation source and the `THREE` camera itself on the new player position
+at once; without it a level change or a save restore opens with the camera gliding in from wherever
+the last level left it. It poses the `THREE` camera immediately rather than leaving that to the next
+`applyToCamera` because two paths render without one (the pause loop's `stillFrame`, and
+`captureThumbnail`). The yaw has had this since the beginning — the `yawDeg` setter is the same
+collapse for the orbit angle — which is why `snapTo` is called *after* whichever branch set the yaw.
+
+**A teleport is the same discontinuity** and takes the same pair, in the same order (docs/specials.md
+§ Teleporters). It used to snap only the yaw, which left the camera flying to the landing spot over
+roughly a third of a second while the player was already there and shooting. What still glides after
+either snap is the aim lead alone — `tick` re-applies it to the fresh target on the very next tic —
+which is bounded by `maxLead` and is the intended follow-the-cursor feel rather than a leftover.
+
 ## View distance (`constants.ts: VIEW_DISTANCE`, `game.ts`)
 
 How far the player can see is the scene's **distance fog**, not a clipping plane: `game.ts` sets

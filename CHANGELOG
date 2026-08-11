@@ -5,6 +5,8 @@ Features and improvements
   - savegames! new Save and Load tabs in the menu
   - randomness now comes from DOOM's own random table instead of the
     browser's generator
+  - camera instantly snaps above the player when entering a level, 
+    loading a save, or after an teleport
 
 Fixed bugs
   - broken and flickering lights now behave like vanilla's

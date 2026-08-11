@@ -275,5 +275,5 @@ fired attack, and the pain pose inside `damage()` right after `reactToDamage` â€
 `p.painTimer > 0` rather than every non-lethal hit, since `reactToDamage` only sets it when the hit
 rolls past the monster's `painChance` (a failed roll still alerts and retargets, just doesn't
 stagger). The player's own letters (`thingdefs.ts`'s `PLAYER_ATTACK_FRAMES`/`PLAYER_PAIN_FRAMES`, derived
-and WAD-checked the same way) trigger analogously: attack whenever `WeaponSystem.update` returns a
+and WAD-checked the same way) trigger analogously: attack whenever `WeaponSystem.fire` returns a
 nonempty `Shot[]`, pain inside `damagePlayer` whenever the player survives a hit.

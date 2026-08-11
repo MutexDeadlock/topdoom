@@ -49,7 +49,6 @@ const capture = (map = 'E1M1'): SaveCapture => ({
   skill: 3,
   wads: [{ name: 'DOOM.WAD', id: 'abc123' }],
   levelTime: 61.5,
-  health: 80,
   thumb: 'data:image/jpeg;base64,xyz',
   state,
 });

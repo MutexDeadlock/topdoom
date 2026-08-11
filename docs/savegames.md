@@ -11,7 +11,7 @@ afterwards. The store lives in `game/savegames.ts`, the payload types and encodi
 ## The format and its version
 
 `SaveGame` = `SaveMeta` (id, `version`, ISO date, display name, map lump name, skill, the WAD list,
-level time, health, `thumb` data URL, the menu source keys) + `state: GameSnapshot`. The payload is
+level time, `thumb` data URL, the menu source keys) + `state: GameSnapshot`. The payload is
 plain JSON with three deliberate encodings, all owned by `game/snapshot.ts`:
 
 - **`Infinity` → `-1`** (`encodeSeconds`/`decodeSeconds`): `JSON.stringify(Infinity)` silently
@@ -20,6 +20,12 @@ plain JSON with three deliberate encodings, all owned by `game/snapshot.ts`:
   `lightStates`, `switchFlashes` as `[key, value][]` entries).
 - **The fog bitmap → run lengths** (`encodeRuns`/`decodeRuns`): alternating run lengths starting
   with zeros, JSON-native numbers rather than base64 so Node tests need no `atob`.
+
+A killable thing's AI block is the one part not written out field by field: `MONSTER_SAVE_KEYS`
+names the `PosedThing` fields it carries, `MonsterFields` is `Pick`ed off `PosedThing` with that
+tuple, and `snapshotThings`/`restoreThings` both loop over it through `copyMonsterField`. One list,
+so a field can't be saved and then not restored — the failure mode a hand-written pair has no
+compiler check against, and the block is ~30 fields the AI keeps growing.
 
 Object references never serialize as references: a thing's `sector`, the world's
 `soundAlertedSectors` and a spawn cube's `target` are saved as indices and re-resolved against the
@@ -52,9 +58,22 @@ nearly so:
   The vile's *attack state* rides in its thing's `attackPause`/AI fields; only the flame visual is
   lost.
 - **Transient `playOnce` poses** (pain flinch, attack frames): a restored corpse replays its death
-  sequence fast-forwarded by `deadTime`, but a live monster restarts from its walk cycle.
+  sequence fast-forwarded by `deadTime`, but a live monster restarts from its walk cycle. The replay
+  goes through `enterDeathPose`, the same function `damageThing` uses — `P_KillMobj`'s overkill-gib
+  rule has exactly one implementation, so a corpse can't look different after a load than before it
+  (docs/death.md § Monster death). This is why `health` is saved with its negative overkill intact.
 - **`SpecialsController`'s one-frame flags** (`lastTeleport`, `lockedLine`) and the derived
   `moveSoundDue`/`crushDamageDue` booleans.
+- **`WeaponSystem.weaponLastFrame`** — derivable, not transient. `WeaponSystem.update` runs last in
+  the frame, after both switch sources (`handleSwitching` and a pickup's `applyPickup`), so at the
+  frame boundary a save is captured on it always equals `inventory.currentWeapon`; `restore` takes
+  the restored inventory and reads it back off that. What makes this load-bearing rather than
+  cosmetic is that `beginLevel` runs against the *outgoing* inventory (§ Apply order, step 13), so
+  a `weaponLastFrame` left over from before the load reads as a switch that never happened on the
+  first frame after it: a restored chainsaw announces itself with `sawup`, and the restored
+  `previousWeapon` is overwritten with the pre-load weapon, sending the right-button toggle to the
+  wrong one. Pinned by "restoring a saved weapon does not read as a switch on the next frame"
+  (`tests/game/specials-snapshot.test.ts`).
 - **A pristine killable thing's AI block**: a monster still exactly in its spawn state saves 9
   fields, not ~40 (`isPristine` in `game/things.ts`); its `lookTimer` phase and `homingBias` coin
   flip are re-seeded on restore, both invisible before first contact. This is what keeps a
@@ -72,8 +91,10 @@ heights** and **RNG cursors dead last**.
    `loadMap`.
 2. `new SectorEffects(map)` — *before* the sector snapshot, so `totalSecrets` counts the map's
    authored secrets (a consumed secret zeroes its sector's `special`).
-3. `applySectors` writes the saved sector fields into the fresh `DoomMap` in place. Everything
-   built after this step bakes restored geometry — no rebuild/recolor pass exists anywhere below.
+3. `applySectors` writes the saved sector fields into the fresh `DoomMap` in place, then
+   `sectorEffects.restore(...)` — in that order, and both here, because the counters restored belong
+   to the instance step 2 already built from the *authored* specials. Everything built after this
+   step bakes restored geometry — no rebuild/recolor pass exists anywhere below.
 4. `computeMovableSectors(map)` **unioned with every saved mover's sector** — a mid-motion mover
    whose authored sector special was consumed would otherwise land back in the static batch. The
    union is handed to both `buildMapMesh` and the `SpecialsController` constructor.
@@ -90,9 +111,14 @@ heights** and **RNG cursors dead last**.
     save in order.
 11. `new IconOfSin(...)` → `icon.restore(...)`.
 12. `projectiles.beginLevel()` → `projectiles.restore(...)`.
-13. Inventory deserialized, `weaponSystem.restore(...)`, `sectorEffects.restore(...)`,
-    `levelTime`.
-14. `levelCard.show(...)` as on any load.
+13. Inventory deserialized, then `weaponSystem.restore(..., inventory)` — **in that order, and it
+    takes the restored inventory**. `WeaponSystem.beginLevel` ran back at the top of the load
+    against the *outgoing* inventory, so `weaponLastFrame` is left pointing at whatever weapon was
+    in hand before, which is why it is derived from `inventory.currentWeapon` here rather than
+    saved (see § What is not saved). (`levelTime` is taken back in step 3's block, with the sector
+    state.)
+14. `levelCard.show(...)` — **skipped on a restore**: the card announces *entering* a level, and a
+    save resumes one already under way (docs/hud.md § Level card).
 15. `setRandomCursors(...)` — after every construction-time `pRandom` draw (`makeLightState`
     seeding, `pushThing`'s `homingBias`) has already happened and been overwritten, so the first
     *simulation* draw after a load is exactly the one the save would have made next.
@@ -120,6 +146,7 @@ anything.
 A save embeds `wadSetId(wad)` — every loaded file's `{ name, id }` content hash in load order
 (docs/wad.md § Content id, designed for exactly this) — plus the menu's own source keys so the
 files can be re-resolved from the library. Loading re-fetches the files by key, then verifies each
-`wadId` against the saved list and refuses on the first mismatch, *naming the file*. A save made
+`wadId` against the saved list (`verifyWadSet` in `main.ts`, on the shared `startLevel` path — see
+docs/menu.md § Session lifecycle) and refuses on the first mismatch, *naming the file*. A save made
 against an uploaded WAD survives a reload of the page only after the same file is loaded from disk
 again; the error says which file to bring back.

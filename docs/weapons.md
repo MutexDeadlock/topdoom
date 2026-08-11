@@ -37,12 +37,17 @@ which presented as "shotgun and super shotgun are the same weapon".
 ### Switch to previous weapon
 
 The right button's default binding (docs/menu.md § Right mouse button)
-reads `WeaponSystem.previousWeapon`, which is maintained in `updateSounds`' once-a-frame
-`justSwitched` comparison rather than at each switch site — the same reason `lastWeapon` is, since a
-pickup (`applyPickup`) and a berserk pack both select a weapon without going through
-`handleSwitching`. `handleSwitching` runs before `updateSounds`, so a click reads the weapon left
-behind by the *previous* switch and that frame's `updateSounds` then records the one just left,
+reads `WeaponSystem.previousWeapon`, which is maintained in `WeaponSystem.update`'s once-a-frame
+`justSwitched` comparison rather than at each switch site — the same reason `weaponLastFrame` is,
+since a pickup (`applyPickup`) and a berserk pack both select a weapon without going through
+`handleSwitching`. `handleSwitching` runs before `update`, so a click reads the weapon left
+behind by the *previous* switch and that frame's `update` then records the one just left,
 which is what makes a second click toggle back.
+
+The two fields differ by one frame and are easy to confuse: `weaponLastFrame` is the edge detector
+("what was selected last frame", equal to the current weapon on every frame but the one a switch is
+noticed), while `previousWeapon` is the older selection the toggle switches *back* to, held until
+the next switch.
 
 ## Fire rates
 

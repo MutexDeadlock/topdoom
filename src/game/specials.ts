@@ -3,7 +3,6 @@ import { NO_SIDE, type DoomMap, type LineDef } from '../wad/map.ts';
 import {
   bossDeathTriggersFor,
   computeLightSectors,
-  computeMovableSectors,
   findStairChain,
   findSwitchEntries,
   isFrontSide,
@@ -481,15 +480,17 @@ export class SpecialsController {
     blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean,
     playerX: number,
     playerY: number,
-    sfx: SoundEmitter = SILENT,
     /**
-     * Which sectors get mover-owned geometry. Defaults to the map's own scan;
-     * a savegame restore passes the same set it gave `buildMapMesh`, unioned
-     * with every saved mover's sector — a mid-motion mover whose authored
-     * sector special was consumed (`FloorMover.arrivalTexture`) would
+     * Which sectors get mover-owned geometry — **the same set the caller gave
+     * `buildMapMesh`**, so the mesh and this controller can't disagree about
+     * who owns a sector. Required, rather than defaulting to its own
+     * `computeMovableSectors`, for exactly that reason. A savegame restore
+     * unions the scan with every saved mover's sector: a mid-motion mover whose
+     * authored sector special was consumed (`FloorMover.arrivalTexture`) would
      * otherwise land back in the static batch. docs/savegames.md § Apply order.
      */
-    movableSectors: Set<number> | null = null,
+    movableSectors: Set<number>,
+    sfx: SoundEmitter = SILENT,
   ) {
     this.map = map;
     this.world = world;
@@ -510,7 +511,7 @@ export class SpecialsController {
       if (entries.length > 0) this.switchTextures.set(i, entries);
     }
 
-    this.geometry = new MoverGeometry(map, world, bank, scene, fog, polys, built, meshOptions, movableSectors ?? computeMovableSectors(map));
+    this.geometry = new MoverGeometry(map, world, bank, scene, fog, polys, built, meshOptions, movableSectors);
 
     for (let i = 0; i < map.sectors.length; i++) {
       const timer = SECTOR_DOOR_SPECIALS[map.sectors[i].special];

@@ -211,7 +211,7 @@ export class IconOfSin {
     };
   }
 
-  /** Restore twin of `snapshot`; each cube's animator is re-armed exactly as `brainSpit` builds one. docs/savegames.md § Apply order. */
+  /** Restore twin of `snapshot`; each cube goes back through `makeCube`, the same builder `brainSpit` uses. docs/savegames.md § Apply order. */
   restore(s: IconSnapshot | null): void {
     if (!s || !this.shooter) return;
     this.targets = s.targets.map((t) => ({ ...t }));
@@ -225,22 +225,40 @@ export class IconOfSin {
     for (const c of s.cubes) {
       const target = this.targets[c.targetIndex];
       if (!target) continue;
-      const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, 'BOSF', CUBE_FRAMES, CUBE_FRAME_SECONDS);
-      if (!anim.resolve(0, VIEWER_ANGLE_DEG)) continue;
-      this.cubes.push({
-        anim,
-        x: c.x,
-        y: c.y,
-        z: c.z,
-        angleRad: c.angleRad,
-        target,
-        remaining: c.remaining,
-        soundTimer: c.soundTimer,
-        drawPrevX: c.x,
-        drawPrevY: c.y,
-        drawPrevZ: c.z,
-      });
+      const cube = this.makeCube({ x: c.x, y: c.y, z: c.z }, c.angleRad, target, c.remaining, c.soundTimer);
+      if (cube) this.cubes.push(cube);
     }
+  }
+
+  /**
+   * One `MT_SPAWNSHOT` in flight, animator armed and interpolation seeded from
+   * where it stands. Null when this WAD set can't draw `BOSF` at all, which is
+   * a cube that simply never exists — the same silent drop a missing missile
+   * sprite gets. Shared by `brainSpit` and the savegame restore, so a restored
+   * cube can't be built differently from a freshly spat one.
+   */
+  private makeCube(
+    at: Pos3,
+    angleRad: number,
+    target: Pos3,
+    remaining: number,
+    soundTimer: number,
+  ): SpawnCube | null {
+    const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, 'BOSF', CUBE_FRAMES, CUBE_FRAME_SECONDS);
+    if (!anim.resolve(0, VIEWER_ANGLE_DEG)) return null;
+    return {
+      anim,
+      x: at.x,
+      y: at.y,
+      z: at.z,
+      angleRad,
+      target,
+      remaining,
+      soundTimer,
+      drawPrevX: at.x,
+      drawPrevY: at.y,
+      drawPrevZ: at.z,
+    };
   }
 
   /**
@@ -316,24 +334,12 @@ export class IconOfSin {
     if (this.skill <= 2 && !this.easy) return;
     const target = this.targets[this.targetIndex];
     this.targetIndex = (this.targetIndex + 1) % this.targets.length;
-    const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, 'BOSF', CUBE_FRAMES, CUBE_FRAME_SECONDS);
-    if (!anim.resolve(0, VIEWER_ANGLE_DEG)) return;
     const dx = target.x - this.shooter.x;
     const dy = target.y - this.shooter.y;
-    const spawnZ = this.ctx.world.floorAt(this.shooter.x, this.shooter.y);
-    this.cubes.push({
-      anim,
-      x: this.shooter.x,
-      y: this.shooter.y,
-      z: spawnZ,
-      angleRad: Math.atan2(dy, dx),
-      target,
-      remaining: Math.hypot(dx, dy),
-      soundTimer: 0,
-      drawPrevX: this.shooter.x,
-      drawPrevY: this.shooter.y,
-      drawPrevZ: spawnZ,
-    });
+    const at = { x: this.shooter.x, y: this.shooter.y, z: this.ctx.world.floorAt(this.shooter.x, this.shooter.y) };
+    const cube = this.makeCube(at, Math.atan2(dy, dx), target, Math.hypot(dx, dy), 0);
+    if (!cube) return;
+    this.cubes.push(cube);
     this.sfx.play('bospit', null);
   }
 

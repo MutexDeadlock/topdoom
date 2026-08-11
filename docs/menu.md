@@ -90,8 +90,13 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
 - An **unsupported version** renders dimmed via its own `unsupported` class rather than `.disabled`
   (a child can't undo a parent's opacity, and its download/delete buttons must stay live); only
   Load is refused.
-- **Delete and Overwrite are two-click inline confirms** (`confirmOnSecondClick`: the button arms for
-  3 s), so the changelog stays the menu's only popup. Both are per row; Overwrite refills that save
+- **Delete and Overwrite confirm by being held** (`confirmOnHold`, `HOLD_MS`): a bar sweeps the
+  button and the action fires when it lands, letting go early cancels and says so in the status line.
+  An inline confirm, so the changelog stays the menu's only popup — and one gesture rather than the
+  two-click arm it replaced, which read as a broken button. The sweep is a CSS transition whose
+  duration is handed over as `--hold-time`, so the bar and the timer can't disagree; the label moves
+  into a `.label` span so the `.fill` can paint behind it, and Space/Enter held on a focused button
+  works the same way. Both are per row; Overwrite refills that save
   from the current moment, keeping its id and its name (renaming has its own affordance), and can't
   hit `MAX_SAVES` since no new key appears. Delete and download are icon-only buttons (`⤓`, `🗑︎` with
   a text-presentation selector) with their meaning in the tooltip; Load and Overwrite are `.primary`.
@@ -104,7 +109,15 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
 - Every failure — quota, cap, version, missing WAD — lands in the shared `#menu-status` line;
   `SavegamesUi` never touches the running game. The three hooks (`onSave`, `onOverwrite`, `onLoad`)
   are `main.ts`'s (§ Session lifecycle below), which owns the `Game` instance and the selection the
-  save records; the first two share one `withCapture` body, differing only in what they write.
+  save records; the first two share one `withCapture` body, differing only in what they write. A
+  refusal is **thrown**, never returned: the store already signals that way, so the UI has one
+  `catch (err) → setStatus` shape rather than two conventions for the same job.
+- **Only the tab on screen is built.** `refresh` marks both lists stale and renders whichever
+  `Menu.setTab` last declared visible (`setVisible`); the other waits until it's picked. Listing
+  means `JSON.parse` over every stored save's *whole* payload and one thumbnail decode per row, and
+  `open()` runs on every `Esc` pause and once at boot — a player who never opens Save or Load must
+  not pay for the store at all. `Menu.mapCache` memoizes `mergedMaps` per WAD set for the same
+  reason: `describeSave` needs a level title per row, and the rows share a handful of sets.
 
 ## Picking a WAD set
 
@@ -296,6 +309,13 @@ Rules that hold this together:
   and is re-synced with `open(game !== null)` so it stops offering a return.
 - **"Return to game" is disabled for the duration of a start** (`startWithSkill`), since the level it
   would return to is disposed part-way through.
+- **A load is the same `startLevel`**, given the save as a second argument: it verifies the assembled
+  set against the save's own WAD ids (`verifyWadSet`, docs/savegames.md § WAD-set identity) and hands
+  `Game` the snapshot instead of `?pos=`. Everything above — the audio gesture, the dispose ordering,
+  the failure re-sync — is one copy, so a lifecycle fix can't reach the new-game path and miss the
+  load path. `loadSave` only re-resolves the save's `sourceKeys` to `WadSource`s first, and a file the
+  library no longer offers fails *there*, before anything is torn down, so the running level survives
+  a load that can't happen.
 - A second `Game` builds against the *same* static DOM, so anything holding generated children must
   replace rather than append, and per-level screen state must be cleared — see docs/hud.md
   § The HUD and § Screen effects. `dispose` clears the center message, the level card and the

@@ -156,7 +156,7 @@ arithmetic:
   leaks `SUIT_LEAK_CHANCE` of hits, and E1M8's finale type (11) never consults the suit at all. The
   interval keeps running while a hit is blocked (vanilla's clock is the global `leveltime&0x1f`), so
   the suit skips damage rather than banking it up for the moment it expires.
-- **Berserk**'s ×10 is applied in `WeaponSystem.update`, to the **fist only** — `A_Punch` reads
+- **Berserk**'s ×10 is applied in `WeaponSystem.fire`, to the **fist only** — `A_Punch` reads
   `pw_strength` and `A_Saw` deliberately doesn't.
 - **Computer area map** is the one whose whole effect lives outside `Inventory`: `FogOfWar.revealAll`,
   watched for by doomednum (`ThingType.computerMap`) in `game.ts`'s pickup callback. Here that *is*

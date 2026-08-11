@@ -112,9 +112,11 @@ and it stays frozen for as long as the popup is up: those frames return early to
 ## Level card
 
 `src/ui/hud/levelcard.ts` raises "Entering" over the level's name (`#level-card`, horizontally centered,
-30% down so it clears `#hud-message`'s 40%) for 3.5 seconds after **every** map load — a normal exit,
-`restart()` after death, and the DEVMODE `N`/`P` jump alike — fading out over the last second of
-that. The fade is `opacity` driven from `update`'s own `dt`, not a CSS transition: a transition runs
+30% down so it clears `#hud-message`'s 40%) for 3.5 seconds after every map load that *enters* a
+level — a normal exit, `restart()` after death, and the DEVMODE `N`/`P` jump alike — fading out over the last second of
+that. **Loading a save is the one map load that raises no card** (`loadMapByIndex`'s `restore`
+branch, docs/savegames.md § Apply order): it resumes a level rather than entering one. The fade is
+`opacity` driven from `update`'s own `dt`, not a CSS transition: a transition runs
 on wall-clock time, so opening the menu on a fresh level would leave the card fading away behind it
 and gone on return, while everything else about the frozen level waited. Two canvases rather than one: both hold
 native-size art and `levelcard.css` gives them different heights, which is how the name draws at twice

@@ -49,7 +49,7 @@ that order, so don't write a test that does.
 
 Round one is the two regressions from the chaingunner bug, the pure functions, and the
 vanilla-table invariants. `WeaponSystem`'s selection half joined them (`game/weapons.test.ts`): it
-takes no constructor arguments and `handleSwitching`/`updateSounds` reach it through a stubbed
+takes no constructor arguments and `handleSwitching`/`update` reach it through a stubbed
 `Input` and a two-line `AudioEngine`, so the "switch to previous weapon" toggle is pinnable without a
 DOM. The savegame suite joined next (`game/snapshot.test.ts`, `game/savegames.test.ts`,
 `game/specials-snapshot.test.ts`, `game/things-snapshot.test.ts`): the store runs on the same

@@ -175,8 +175,11 @@ export function mergedMaps(iwad: WadSource, pwads: WadSource[]): MergedMap[] {
  */
 export function describeMap(map: MergedMap, iwadLabel: string): string {
   const parts = [map.name];
-  if (map.title) parts.push(map.title);
-  if (map.provider !== iwadLabel) parts.push(map.provider);
+  if (map.title) {
+    parts.push(map.title);
+  } else if (map.provider !== iwadLabel) {
+    parts.push(map.provider);
+  }
   return parts.join('  —  ');
 }
 

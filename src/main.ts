@@ -27,6 +27,23 @@ function parsePos(raw: string | null): Pos2 | null {
 }
 
 /**
+ * Refuses a load whose assembled WAD set isn't the one the save was made with:
+ * same file count, same content ids, same order. Throws a message naming the
+ * offending file — docs/savegames.md § WAD-set identity.
+ */
+function verifyWadSet(wad: Wad, expected: SaveGame['wads']): void {
+  const actual = wadSetId(wad);
+  if (actual.length !== expected.length) {
+    throw new Error('the loaded WAD set has a different file count than the one this save was made with');
+  }
+  for (let i = 0; i < actual.length; i++) {
+    if (actual[i].id !== expected[i].id) {
+      throw new Error(`${actual[i].name} differs from the file this save was made with`);
+    }
+  }
+}
+
+/**
  * `new Viewport` synchronously throws when the browser can't create a WebGL2
  * context (blocklisted GPU, disabled hardware acceleration, ...) — three.js's
  * own error is a raw `Error`, not something a player can act on. Without this,
@@ -71,7 +88,14 @@ async function boot(): Promise<void> {
    */
   let currentSelection: Selection | null = null;
 
-  const startLevel = async (selection: Selection): Promise<void> => {
+  /**
+   * The one session lifecycle, for both a fresh start and a load: assemble the
+   * WAD set, tear the old level down, build the new one. With `save` given it
+   * additionally verifies the set against what the save was made with and
+   * threads the snapshot through `Game`'s restore path — the two are the same
+   * sequence, so they stay one function rather than drifting apart.
+   */
+  const startLevel = async (selection: Selection, save: SaveGame | null = null): Promise<void> => {
     // Synchronously, before the first `await`: this call is still inside the
     // Start button's own click handler, which is the safest moment a browser
     // will let an AudioContext start.
@@ -80,6 +104,7 @@ async function boot(): Promise<void> {
     try {
       const files = await loadWadFiles(selection.iwad, selection.pwads);
       const wad = new Wad(files);
+      if (save) verifyWadSet(wad, save.wads);
 
       // Cleared before the old level is torn down, so a constructor that throws
       // (a WAD with no maps, a mesh build failure) can't leave `game` pointing at
@@ -88,7 +113,8 @@ async function boot(): Promise<void> {
       const previous = game;
       game = null;
       previous?.dispose();
-      game = new Game(view, audio, wad, selection.map, titleOf(selection.iwad, selection.pwads), selection.skill, startPos);
+      const title = titleOf(selection.iwad, selection.pwads);
+      game = new Game(view, audio, wad, selection.map, title, selection.skill, save ? null : startPos, save?.state ?? null);
       currentSelection = selection;
 
       menu.setStatus('');
@@ -104,14 +130,12 @@ async function boot(): Promise<void> {
   };
 
   /**
-   * The load-side `startLevel`: re-resolves the save's WAD set from the
-   * library, verifies every file's content id against what the save was made
-   * with (docs/savegames.md § WAD-set identity), then rebuilds the level with
-   * the snapshot threaded through `Game`'s restore path.
+   * The load side of `startLevel`: re-resolves the save's WAD set from the
+   * current library and hands the whole thing over. A file the library no
+   * longer offers fails here, before anything is torn down, so the running
+   * level survives a load that can't happen.
    */
   const loadSave = async (save: SaveGame): Promise<void> => {
-    audio.resume();
-    menu.setStatus('Loading …');
     try {
       const resolve = (key: string, role: string): WadSource => {
         const found = menu.findSource(key);
@@ -120,33 +144,9 @@ async function boot(): Promise<void> {
       };
       const iwad = resolve(save.sourceKeys.iwad, save.wads[0]?.name ?? 'the game WAD');
       const pwads = save.sourceKeys.pwads.map((key) => resolve(key, 'an add-on'));
-
-      const files = await loadWadFiles(iwad, pwads);
-      const wad = new Wad(files);
-      const actual = wadSetId(wad);
-      if (actual.length !== save.wads.length) {
-        throw new Error('the loaded WAD set has a different file count than the one this save was made with');
-      }
-      for (let i = 0; i < actual.length; i++) {
-        if (actual[i].id !== save.wads[i].id) {
-          throw new Error(`${actual[i].name} differs from the file this save was made with`);
-        }
-      }
-
-      // Same dispose discipline as startLevel: cleared before teardown so a
-      // throwing constructor can't leave `game` pointing at a disposed level.
-      const previous = game;
-      game = null;
-      previous?.dispose();
-      game = new Game(view, audio, wad, save.map, titleOf(iwad, pwads), save.skill, null, save.state);
-      currentSelection = { iwad, pwads, map: save.map, skill: save.skill };
-
-      menu.setStatus('');
-      menu.close();
-      game.resume();
+      await startLevel({ iwad, pwads, map: save.map, skill: save.skill }, save);
     } catch (err) {
       menu.setStatus((err as Error).message, true);
-      menu.open(game !== null);
       console.error(err);
     }
   };
@@ -160,24 +160,17 @@ async function boot(): Promise<void> {
   /**
    * The shared body of the two save hooks: refuse when there is no game or the
    * moment can't be captured, otherwise hand the capture and the running
-   * selection's source keys to `write`. Returns a user-readable error for the
-   * menu's status line, or null on success.
+   * selection's source keys to `write`. Refusals are thrown, like the store's
+   * own — the menu turns them into its status line (see `SaveHooks`).
    */
-  const withCapture = (
-    write: (capture: SaveCapture, sourceKeys: SaveMeta['sourceKeys']) => void,
-  ): string | null => {
-    if (!game || !currentSelection) return 'no running game to save';
-    try {
-      const capture = game.captureSave();
-      if (!capture) return 'this moment cannot be saved — dead, exiting or between levels';
-      write(capture, {
-        iwad: currentSelection.iwad.key,
-        pwads: currentSelection.pwads.map((p) => p.key),
-      });
-      return null;
-    } catch (err) {
-      return (err as Error).message;
-    }
+  const withCapture = (write: (capture: SaveCapture, sourceKeys: SaveMeta['sourceKeys']) => void): void => {
+    if (!game || !currentSelection) throw new Error('no running game to save');
+    const capture = game.captureSave();
+    if (!capture) throw new Error('this moment cannot be saved — dead, exiting or between levels');
+    write(capture, {
+      iwad: currentSelection.iwad.key,
+      pwads: currentSelection.pwads.map((p) => p.key),
+    });
   };
 
   const menu: Menu = new Menu((selection) => startLevel(selection), resumeGame, audio, {

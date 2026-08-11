@@ -86,10 +86,15 @@ export class Menu {
   };
   private activeTab: Tab = 'newgame';
   private savegames: SavegamesUi;
-  /** Last value `open` was given — what a save-list refresh outside `open` (an upload) has to pass on. */
-  private inGame = false;
 
   private sources: WadSource[] = [];
+  /**
+   * `mergedMaps` per WAD set, for `describeSave`: building one merges every
+   * lump directory in the set and titles every map in it, and a save list is a
+   * page of rows all asking about the same handful of sets. Dropped whenever
+   * `sources` changes, since an upload can complete a set that was short a file.
+   */
+  private mapCache = new Map<string, ReturnType<typeof mergedMaps>>();
   private selectedIwad: WadSource | null = null;
   /** Ordered: add-ons are merged in the order the user picked them. */
   private selectedPwads: WadSource[] = [];
@@ -148,21 +153,19 @@ export class Menu {
   async init(defaults: MenuDefaults): Promise<void> {
     this.setStatus('Scanning public/wads/ …');
     this.sources = await fetchLibrary();
-
-    const byKey = (name: string) =>
-      this.sources.find((s) => s.key.toLowerCase() === name.toLowerCase());
+    this.mapCache.clear();
 
     const stored = this.loadSelection();
 
     this.selectedIwad =
-      (defaults.iwad ? byKey(defaults.iwad) : undefined) ??
-      (stored ? byKey(stored.iwad) : undefined) ??
+      (defaults.iwad ? this.findSource(defaults.iwad) : undefined) ??
+      (stored ? this.findSource(stored.iwad) : undefined) ??
       this.sources.find((s) => s.type === 'IWAD') ??
       null;
 
     const wantedPwads = defaults.pwads?.length ? defaults.pwads : (stored?.pwads ?? []);
     this.selectedPwads = wantedPwads
-      .map(byKey)
+      .map((key) => this.findSource(key))
       .filter((s): s is WadSource => s !== undefined && s !== this.selectedIwad);
     // Restored add-ons can disagree with a game WAD that came from ?wad=.
     this.pruneIncompatiblePwads();
@@ -181,7 +184,6 @@ export class Menu {
    * they were on.
    */
   open(inGame = false): void {
-    this.inGame = inGame;
     this.root.classList.remove('hidden');
     this.root.classList.toggle('ingame', inGame);
     this.resumeButton.classList.toggle('hidden', !inGame);
@@ -210,6 +212,8 @@ export class Menu {
       this.tabButtons[key].classList.toggle('active', key === tab);
       this.tabPanels[key].classList.toggle('hidden', key !== tab);
     }
+    // A save list is only built while it's the tab on screen — see `SavegamesUi.setVisible`.
+    this.savegames.setVisible(tab === 'save' || tab === 'load' ? tab : null);
   }
 
   /**
@@ -330,13 +334,25 @@ export class Menu {
   }
 
   /**
-   * Resolves a savegame's stored `WadSource.key` against the current library —
-   * uploads included, since `addFiles` unshifts a re-uploaded file under the
-   * same key. `undefined` names the recovery story: load the file from disk,
-   * then Load again (docs/savegames.md § WAD-set identity).
+   * Resolves a stored `WadSource.key` — `init`'s restored selection, or a
+   * savegame's — against the current library, uploads included, since
+   * `addFiles` unshifts a re-uploaded file under the same key. For a save,
+   * `undefined` names the recovery story: load the file from disk, then Load
+   * again (docs/savegames.md § WAD-set identity).
    */
   findSource(key: string): WadSource | undefined {
     return this.sources.find((s) => s.key.toLowerCase() === key.toLowerCase());
+  }
+
+  /** `mergedMaps` for a set, from `mapCache` — see that field's doc. */
+  private mapsFor(iwad: WadSource, pwads: WadSource[]): ReturnType<typeof mergedMaps> {
+    const key = [iwad.key, ...pwads.map((p) => p.key)].join('\n');
+    let maps = this.mapCache.get(key);
+    if (!maps) {
+      maps = mergedMaps(iwad, pwads);
+      this.mapCache.set(key, maps);
+    }
+    return maps;
   }
 
   /**
@@ -366,7 +382,7 @@ export class Menu {
     // Without the game WAD there is no map list to resolve against; the row
     // falls back to the bare lump name and says which file is missing.
     if (!iwad) return { level: meta.map, missing };
-    const map = mergedMaps(iwad, pwads).find((m) => m.name === meta.map);
+    const map = this.mapsFor(iwad, pwads).find((m) => m.name === meta.map);
     return { level: map ? describeMap(map, iwad.label) : meta.map, missing };
   }
 
@@ -499,7 +515,7 @@ export class Menu {
       return;
     }
 
-    const maps = mergedMaps(this.selectedIwad, this.selectedPwads);
+    const maps = this.mapsFor(this.selectedIwad, this.selectedPwads);
     this.levelSelect.disabled = maps.length === 0;
 
     // DOOM 1 names maps E<episode>M<mission>, so group them by episode.
@@ -667,7 +683,8 @@ export class Menu {
       // The file just added may be the one a save was waiting for, so the save
       // rows are re-resolved here too: bringing a WAD back must clear its
       // "Missing …" warning right away, not on the menu's next open.
-      this.savegames.refresh(this.inGame);
+      this.mapCache.clear();
+      this.savegames.refresh();
       this.saveSelection();
       this.setStatus(`Added ${added.join(', ')}`);
     }

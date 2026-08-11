@@ -95,7 +95,7 @@ export function randomVariant(id: SfxId): SfxId {
  * browser that refused an `AudioContext`).
  *
  * Sound is the one effect this engine's systems raise directly instead of
- * reporting back for `game.ts` to realize (the split `WeaponSystem.update`'s
+ * reporting back for `game.ts` to realize (the split `WeaponSystem.fire`'s
  * `Shot[]` and `ThingLayer.update`'s attacks follow): it changes no game
  * state, and the moments vanilla plays sounds at are *inside* those systems —
  * `A_Chase`'s 3-in-256 idle grunt has no observable event to hang off.

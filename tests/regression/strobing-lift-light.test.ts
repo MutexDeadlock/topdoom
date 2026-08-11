@@ -80,6 +80,7 @@ function strobingLift() {
     () => false,
     start.x,
     start.y,
+    movableSectors,
   );
 
   // The player never moves and never presses use, so nothing triggers the lift:

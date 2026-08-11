@@ -23,10 +23,10 @@ const CLICK = {
 } as unknown as Input;
 const IDLE = { pressed: () => false, rightMousePressed: () => false } as unknown as Input;
 
-/** One frame that doesn't click: lets `updateSounds` notice whatever was selected. */
+/** One frame that doesn't click: lets `update` notice whatever was selected. */
 function settle(weapons: WeaponSystem, inv: Inventory): void {
   weapons.handleSwitching(IDLE, inv, 0);
-  weapons.updateSounds(0.016, false, inv, AUDIO, AT);
+  weapons.update(0.016, false, inv, AUDIO, AT);
 }
 
 function selectDirectly(weapons: WeaponSystem, inv: Inventory, weapon: WeaponId): void {
@@ -45,9 +45,9 @@ describe('Weapons · switch to previous weapon', () => {
     weapons.handleSwitching(CLICK, inv, 0);
     assert.equal(inv.currentWeapon, 'pistol');
 
-    // The same frame's updateSounds records the weapon just left, so the next
+    // The same frame's update records the weapon just left, so the next
     // click goes the other way rather than sticking on the pistol.
-    weapons.updateSounds(0.016, false, inv, AUDIO, AT);
+    weapons.update(0.016, false, inv, AUDIO, AT);
     weapons.handleSwitching(CLICK, inv, 0);
     assert.equal(inv.currentWeapon, 'fist');
   });
@@ -102,9 +102,9 @@ describe('Game rules · fire rates', () => {
     inv.currentWeapon = weapon;
     for (const ammo of Object.keys(inv.ammo) as (keyof typeof inv.ammo)[]) inv.ammo[ammo] = 999_999;
     ws.beginLevel(inv);
-    for (let i = 0; i < Math.round(idleSeconds / DOOM_TIC); i++) ws.update(false, inv, 0);
+    for (let i = 0; i < Math.round(idleSeconds / DOOM_TIC); i++) ws.fire(false, inv, 0);
     const fired: number[] = [];
-    for (let i = 0; i < Math.round(seconds / DOOM_TIC); i++) if (ws.update(true, inv, 0).length > 0) fired.push(i);
+    for (let i = 0; i < Math.round(seconds / DOOM_TIC); i++) if (ws.fire(true, inv, 0).length > 0) fired.push(i);
     return fired;
   }
 

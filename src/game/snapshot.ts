@@ -17,7 +17,7 @@ import {
   type WeaponId,
 } from './inventory.ts';
 import type { Mover, LightState } from './specials.ts';
-import type { LevelKillItemStats } from './things/defs.ts';
+import type { LevelKillItemStats, PosedThing } from './things/defs.ts';
 import type { Projectile } from './spritefxdefs.ts';
 import type { DoomMap } from '../wad/map.ts';
 import type { Pos3 } from '../types.ts';
@@ -50,10 +50,13 @@ export interface InventorySnapshot {
   backpack: boolean;
 }
 
-/** `WeaponSystem`'s private fire-timing state — the restore twin of `beginLevel`'s reset list. */
+/**
+ * `WeaponSystem`'s private fire-timing state — `beginLevel`'s reset list minus
+ * `weaponLastFrame`, which `restore` derives from the restored inventory
+ * instead (docs/savegames.md § Apply order).
+ */
 export interface WeaponsSnapshot {
   cooldownTics: number;
-  lastWeapon: WeaponId;
   previousWeapon: WeaponId | null;
   sawIdleTimer: number;
   refire: number;
@@ -74,6 +77,12 @@ export interface SectorsSnapshot {
   floorTex: string[];
 }
 
+/** `SectorEffects`' own two counters; `totalSecrets` is re-counted from the map, not saved. */
+export interface SectorEffectsSnapshot {
+  secretsFound: number;
+  timer: number;
+}
+
 export interface SpecialsSnapshot {
   /** `[sectorIndex, mover]` entries; `Mover` is plain data throughout (see its export note). */
   movers: [number, Mover][];
@@ -88,43 +97,70 @@ export interface SpecialsSnapshot {
 }
 
 /**
+ * Which `PosedThing` fields a killable thing's `MonsterFields` block carries —
+ * the one list `snapshotThings` and `restoreThings` both loop over, so a field
+ * can't be saved and then not restored. Everything not named here is either
+ * re-derived by `pushThing` on restore or deliberately dropped
+ * (docs/savegames.md § What is saved and what is deliberately not).
+ */
+export const MONSTER_SAVE_KEYS = [
+  'health',
+  'angle',
+  'dead',
+  'deadTime',
+  'deathFrameCount',
+  'barrelExploded',
+  'explodeSource',
+  'velX',
+  'velY',
+  'velZ',
+  'alerted',
+  'lookTimer',
+  'targetId',
+  'attackPause',
+  'burstLeft',
+  'burstTimer',
+  'chargeTimer',
+  'chargeAngle',
+  'painTimer',
+  'inFloat',
+  'movedir',
+  'movecount',
+  'chaseTimer',
+  'moveBlocked',
+  'threshold',
+  'justHit',
+  'justAttacked',
+  'reactionTicks',
+  'refiring',
+  'homingBias',
+  'walkSoundTimer',
+  'walkSoundStep',
+] as const;
+
+/**
  * The mutable AI/damage state of a killable thing (a monster or a barrel).
  * Present on a `ThingState` exactly when the live thing's `health` was finite;
  * everything here stays at `pushThing`'s spawn defaults for any other thing.
+ * `Pick`ed off the live record rather than re-declared, so a renamed or
+ * retyped `PosedThing` field is a compile error here instead of a save that
+ * silently stores something else.
  */
-export interface MonsterFields {
-  health: number;
-  angle: number;
-  dead: boolean;
-  deadTime: number;
-  deathFrameCount: number;
-  barrelExploded: boolean;
-  explodeSource: { id: number; type: number } | null;
-  velX: number;
-  velY: number;
-  velZ: number;
-  alerted: boolean;
-  lookTimer: number;
-  targetId: number | null;
-  attackPause: number;
-  burstLeft: number;
-  burstTimer: number;
-  chargeTimer: number;
-  chargeAngle: number;
-  painTimer: number;
-  inFloat: boolean;
-  movedir: number;
-  movecount: number;
-  chaseTimer: number;
-  moveBlocked: boolean;
-  threshold: number;
-  justHit: boolean;
-  justAttacked: boolean;
-  reactionTicks: number;
-  refiring: boolean;
-  homingBias: boolean;
-  walkSoundTimer: number;
-  walkSoundStep: number;
+export type MonsterFields = Pick<PosedThing, (typeof MONSTER_SAVE_KEYS)[number]>;
+
+/**
+ * Copies one `MONSTER_SAVE_KEYS` field, in either direction — a live
+ * `PosedThing` is structurally a `MonsterFields`, so this serves both the
+ * snapshot and the restore loop. Generic in the key so `to[key]` and `from[key]`
+ * are the *same* type at every key rather than the union of all of them, which
+ * is what an inline `to[key] = from[key]` can't express.
+ */
+export function copyMonsterField<K extends keyof MonsterFields>(
+  to: MonsterFields,
+  from: MonsterFields,
+  key: K,
+): void {
+  to[key] = from[key];
 }
 
 /**
@@ -189,8 +225,9 @@ export interface GameSnapshot {
   weapons: WeaponsSnapshot;
   sectors: SectorsSnapshot;
   specials: SpecialsSnapshot;
-  sectorEffects: { secretsFound: number; timer: number };
-  fog: { runs: number[] };
+  sectorEffects: SectorEffectsSnapshot;
+  /** `encodeRuns` of the fog-of-war `explored` bitmap. */
+  fog: number[];
   /** Sector indices of `World.soundAlertedSectors` — the live set holds `Sector` object references. */
   soundAlerted: number[];
   things: ThingsSnapshot;

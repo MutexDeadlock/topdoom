@@ -380,7 +380,6 @@ export class Game {
       skill: this.skill,
       wads: wadSetId(this.wad),
       levelTime: this.levelTime,
-      health: this.inventory.health,
       thumb: this.captureThumbnail(),
       state: {
         levelTime: this.levelTime,
@@ -394,7 +393,7 @@ export class Game {
         // `captureSave` is only reachable with a level loaded.
         specials: this.specials!.snapshot(),
         sectorEffects: this.sectorEffects.snapshot(),
-        fog: { runs: this.fogOfWar.snapshotExplored() },
+        fog: this.fogOfWar.snapshotExplored(),
         soundAlerted: this.world.snapshotSoundAlerted(),
         things: this.things!.snapshot(),
         icon: this.icon!.snapshot(),
@@ -473,7 +472,7 @@ export class Game {
     // rebuild pass is needed — docs/savegames.md § Apply order.
     if (restore) {
       applySectors(map, restore.sectors);
-      this.sectorEffects.restore(restore.sectorEffects.secretsFound, restore.sectorEffects.timer);
+      this.sectorEffects.restore(restore.sectorEffects);
     }
     this.levelTime = restore ? restore.levelTime : 0;
     this.world = new World(map);
@@ -513,7 +512,7 @@ export class Game {
       this.view.camera.yawDeg = (this.player.angle * 180) / Math.PI - 90;
     }
     this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player.x, this.player.y);
-    if (restore) this.fogOfWar.restoreExplored(restore.fog.runs);
+    if (restore) this.fogOfWar.restoreExplored(restore.fog);
     this.specials = new SpecialsController(
       map,
       this.world,
@@ -548,8 +547,8 @@ export class Game {
         blocksFloorRise(this.world, this.map, this.things, this.player, sectorIndex, floorHeight),
       this.player.x,
       this.player.y,
-      this.audio,
       movableSectors,
+      this.audio,
     );
     if (restore) {
       this.specials.restore(restore.specials);
@@ -593,12 +592,15 @@ export class Game {
       this.icon.restore(restore.icon);
       this.projectiles.restore(restore.projectiles);
       this.inventory = deserializeInventory(restore.inventory);
-      this.weaponSystem.restore(restore.weapons);
+      // After the line above: `restore` derives `weaponLastFrame` off the
+      // inventory it is handed, and `beginLevel` only saw the outgoing one.
+      this.weaponSystem.restore(restore.weapons, this.inventory);
     }
 
     // Raised last: this method clears every overlay at its top, so a card shown any earlier than
-    // here would be wiped by its own load.
-    this.levelCard.show(this.levelNames.nameFor(name), this.levelNames.graphicFor(name));
+    // here would be wiped by its own load. A restore shows none — "Entering …" announces arriving
+    // at a level, and loading a save resumes one already under way.
+    if (!restore) this.levelCard.show(this.levelNames.nameFor(name), this.levelNames.graphicFor(name));
 
     // Dead last, after every construction-time pRandom draw above (light-state
     // seeds, pushThing's homingBias) has happened and been overwritten: the
@@ -960,15 +962,16 @@ export class Game {
     this.profiler.time('Weapons', () => this.fireWeapons(input, monster));
     this.profiler.time('Player', () => this.collectPickupsAndSectorEffects(dt));
 
-    // Hard landings and the chainsaw's two ambient sounds, both of which
-    // belong to a living player only.
+    // Hard landings, and the weapon bookkeeping that has to run after every
+    // switch source (`fireWeapons`' `handleSwitching`, a pickup) has had its
+    // say — both belong to a living player only.
     if (this.player.landingSpeed > HARD_LANDING_SPEED) this.audio.play('oof', this.player, PLAYER_ORIGIN);
-    this.weaponSystem.updateSounds(dt, input.mouseDown, this.inventory, this.audio, this.player);
+    this.weaponSystem.update(dt, input.mouseDown, this.inventory, this.audio, this.player);
     return aim;
   }
 
   /**
-   * Weapon switching and this tic's trigger pull, turning each shot `WeaponSystem.update` returns
+   * Weapon switching and this tic's trigger pull, turning each shot `WeaponSystem.fire` returns
    * into a projectile or tracer. `monster` is whatever aim locked onto, which is what lets a shot
    * angle toward its height — see docs/combat.md § Auto-aim.
    */
@@ -984,7 +987,7 @@ export class Game {
 
     // Called after player.update so player.angle already reflects this frame's aim.
     this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
-    const shots = this.weaponSystem.update(input.mouseDown, this.inventory, this.player.angle);
+    const shots = this.weaponSystem.fire(input.mouseDown, this.inventory, this.player.angle);
     // Vanilla's P_FireWeapon calls P_NoiseAlert every time a shot is actually
     // fired (ammo/cooldown allowed it) — this is what lets a monster with no
     // line of sight to the player still wake up on gunfire (World.noiseAlert,
@@ -1085,7 +1088,7 @@ export class Game {
    */
   private updateThings(dt: number): void {
     // Every attack a monster fired this tic comes back for us to apply/render, the same "system
-    // returns data, caller realizes it" split as `WeaponSystem.update`.
+    // returns data, caller realizes it" split as `WeaponSystem.fire`.
     const thingUpdate = this.profiler.time(
       'Monsters',
       () =>

@@ -434,7 +434,7 @@ function fireAttack(
  * Advances one already-alerted monster by `dt`: re-routes and closes on
  * `target`, fires whichever attack is in range and off cooldown, and returns
  * it for the caller to apply/render — the same "return what happened, let the
- * caller realize it" split as `WeaponSystem.update`'s `Shot[]`. `target` is
+ * caller realize it" split as `WeaponSystem.fire`'s `Shot[]`. `target` is
  * usually the player, but a monster hurt by another chases *it* instead, and
  * nothing here needs to know the difference.
  *

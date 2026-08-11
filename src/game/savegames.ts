@@ -30,8 +30,6 @@ export interface SaveMeta {
   /** The menu `WadSource.key`s the set was assembled from, to re-resolve the files from the library. */
   sourceKeys: { iwad: string; pwads: string[] };
   levelTime: number;
-  /** Player health at save time — display only. */
-  health: number;
   /** JPEG data URL thumbnail, ~320px wide. */
   thumb: string;
 }
@@ -71,7 +69,6 @@ function asMeta(raw: unknown, id: string): SaveMeta {
       pwads: Array.isArray(sk.pwads) ? sk.pwads.filter((p): p is string => typeof p === 'string') : [],
     },
     levelTime: typeof r.levelTime === 'number' ? r.levelTime : 0,
-    health: typeof r.health === 'number' ? r.health : 0,
     thumb: typeof r.thumb === 'string' ? r.thumb : '',
   };
 }
@@ -87,6 +84,13 @@ function isLoadable(raw: unknown): raw is SaveGame {
     isRecord((raw.state as Record<string, unknown>).player) &&
     isRecord((raw.state as Record<string, unknown>).rng)
   );
+}
+
+/** The stored JSON for `id`, or a thrown refusal — the shared opening of every read-modify-write below. */
+function readRaw(id: string): string {
+  const text = globalThis.localStorage?.getItem(KEY_PREFIX + id);
+  if (!text) throw new Error('that save no longer exists');
+  return text;
 }
 
 function saveKeys(): string[] {
@@ -118,8 +122,7 @@ export function listSaves(): SaveListEntry[] {
 
 /** The full save, or a thrown, user-readable refusal — an unsupported version names both versions rather than half-loading. */
 export function readSave(id: string): SaveGame {
-  const text = globalThis.localStorage?.getItem(KEY_PREFIX + id);
-  if (!text) throw new Error('that save no longer exists');
+  const text = readRaw(id);
   let raw: unknown;
   try {
     raw = JSON.parse(text);
@@ -167,20 +170,17 @@ function freshId(): string {
 /** What an unnamed save is called: the map and when it was taken. */
 const defaultName = (map: string): string => `${map} — ${new Date().toLocaleString()}`;
 
-/** Stores a fresh capture under a new id; throws (readably) at the cap or the storage quota. */
-export function writeSave(capture: SaveCapture, name: string, sourceKeys: SaveMeta['sourceKeys']): SaveMeta {
-  const at = new Date().toISOString();
-  const save: SaveGame = {
-    ...capture,
-    id: freshId(),
-    version: SAVE_VERSION,
-    at,
-    name: name.trim() || defaultName(capture.map),
-    sourceKeys,
-  };
-  store(save);
+/** A save without its payload — what every mutator hands back to the menu. */
+function metaOf(save: SaveGame): SaveMeta {
   const { state: _state, ...meta } = save;
   return meta;
+}
+
+/** Stores a fresh capture under a new id; throws (readably) at the cap or the storage quota. */
+export function writeSave(capture: SaveCapture, name: string, sourceKeys: SaveMeta['sourceKeys']): SaveMeta {
+  const save = createSave(freshId(), name, capture, sourceKeys);
+  store(save);
+  return metaOf(save);
 }
 
 /**
@@ -190,8 +190,7 @@ export function writeSave(capture: SaveCapture, name: string, sourceKeys: SaveMe
  * key appears, so the cap can't refuse an overwrite even when the list is full.
  */
 export function overwriteSave(id: string, capture: SaveCapture, sourceKeys: SaveMeta['sourceKeys']): SaveMeta {
-  const text = globalThis.localStorage?.getItem(KEY_PREFIX + id);
-  if (!text) throw new Error('that save no longer exists');
+  const text = readRaw(id);
   let previous: unknown = null;
   try {
     previous = JSON.parse(text);
@@ -199,17 +198,21 @@ export function overwriteSave(id: string, capture: SaveCapture, sourceKeys: Save
     // A damaged row can still be overwritten — it just can't lend its name.
   }
   const kept = isRecord(previous) && typeof previous.name === 'string' ? previous.name : '';
-  const save: SaveGame = {
-    ...capture,
+  const save = createSave(id, kept, capture, sourceKeys);
+  put(save.id, save);
+  return metaOf(save);
+}
+
+/** Owns the naming rule for both writers: a blank (or all-whitespace) name falls back to `defaultName`. */
+function createSave(id: string, name: string, capture: SaveCapture, sourceKeys: SaveMeta['sourceKeys']): SaveGame {
+  return {
     id,
     version: SAVE_VERSION,
     at: new Date().toISOString(),
-    name: kept || defaultName(capture.map),
+    name: name.trim() || defaultName(capture.map),
     sourceKeys,
+    ...capture,
   };
-  put(save.id, save);
-  const { state: _state, ...meta } = save;
-  return meta;
 }
 
 /**
@@ -219,8 +222,7 @@ export function overwriteSave(id: string, capture: SaveCapture, sourceKeys: Save
  * replaced by a bare `{ name }`.
  */
 export function renameSave(id: string, name: string): void {
-  const text = globalThis.localStorage?.getItem(KEY_PREFIX + id);
-  if (!text) throw new Error('that save no longer exists');
+  const text = readRaw(id);
   const trimmed = name.trim();
   if (!trimmed) throw new Error('a save needs a name');
   let raw: unknown;
@@ -246,8 +248,7 @@ export function deleteSave(id: string): void {
  * verbatim rather than withheld.
  */
 export function exportSave(id: string): string {
-  const text = globalThis.localStorage?.getItem(KEY_PREFIX + id);
-  if (!text) throw new Error('that save no longer exists');
+  const text = readRaw(id);
   try {
     return JSON.stringify(JSON.parse(text), null, '\t');
   } catch {
@@ -272,8 +273,9 @@ export function importSave(text: string): SaveMeta {
     throw new Error(`this save uses format version ${raw.version}; this build loads version ${SAVE_VERSION}`);
   }
   if (!isLoadable(raw)) throw new Error('that file is not a TopDoom save');
-  const save: SaveGame = { ...raw, ...asMeta(raw, freshId()), version: SAVE_VERSION, state: raw.state };
+  // `asMeta` supplies every meta field, so nothing of the file's own top level
+  // is spread in: an imported file must not smuggle extra keys into storage.
+  const save: SaveGame = { ...asMeta(raw, freshId()), version: SAVE_VERSION, state: raw.state };
   store(save);
-  const { state: _state, ...meta } = save;
-  return meta;
+  return metaOf(save);
 }

@@ -13,6 +13,7 @@ import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import { NO_SIDE } from '../../src/wad/map.ts';
 import type { MaterialBank } from '../../src/render/textures.ts';
 import type { Input } from '../../src/game/input.ts';
+import type { AudioEngine } from '../../src/audio/audio.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 
 /**
@@ -28,6 +29,11 @@ const BANK = {
 } as unknown as MaterialBank;
 
 const NO_INPUT = { pressed: () => false, rightMousePressed: () => false } as unknown as Input;
+/** Right-clicking with the button bound to "switch to previous weapon", nothing else pressed. */
+const PREV_CLICK = {
+  pressed: () => false,
+  rightMousePressed: (a: string) => a === 'previousweapon',
+} as unknown as Input;
 
 const ART = ['####', '#.L#', '####'] as const;
 const LIFT_FLOOR = 64;
@@ -73,6 +79,7 @@ function controllerOver(map: ReturnType<typeof liftMap>['map'], at: { x: number;
     () => false,
     at.x,
     at.y,
+    movableSectors,
   );
   return { specials, tick: (x: number, y: number) => specials.update(1 / 35, x, y, 0, NO_INPUT, new Set()) };
 }
@@ -125,21 +132,53 @@ describe('Savegames · specials round-trip', () => {
     assert.equal(fresh.prevX, 200, 'restore collapsed the interpolation window');
   });
 
-  test('the weapon system snapshot mirrors beginLevel field for field', () => {
+  test('the weapon system snapshot round-trips every field it carries', () => {
+    const inv = createInventory();
+    inv.currentWeapon = 'chaingun';
     const ws = new WeaponSystem();
-    ws.restore({
-      cooldownTics: 3,
-      lastWeapon: 'chaingun',
-      previousWeapon: 'shotgun',
-      sawIdleTimer: 0.5,
-      refire: 4,
-      refireWeapon: 'chaingun',
-    });
+    ws.restore(
+      {
+        cooldownTics: 3,
+        previousWeapon: 'shotgun',
+        sawIdleTimer: 0.5,
+        refire: 4,
+        refireWeapon: 'chaingun',
+      },
+      inv,
+    );
     const fresh = new WeaponSystem();
-    fresh.restore(JSON.parse(JSON.stringify(ws.snapshot())));
+    fresh.restore(JSON.parse(JSON.stringify(ws.snapshot())), inv);
     assert.deepEqual(fresh.snapshot(), ws.snapshot());
     fresh.beginLevel(createInventory());
     assert.equal(fresh.snapshot().cooldownTics, 0, 'beginLevel still resets a restored system');
+  });
+
+  /**
+   * `weaponLastFrame` is derived from the restored inventory rather than saved,
+   * because `beginLevel` runs against the *outgoing* one long before the save's
+   * inventory lands — docs/savegames.md § Apply order. Left stale, the first
+   * frame after a load reads a switch that never happened: the chainsaw
+   * announces itself and the restored `previousWeapon` is overwritten.
+   */
+  test('restoring a saved weapon does not read as a switch on the next frame', () => {
+    const inv = createInventory();
+    inv.currentWeapon = 'chainsaw';
+    inv.weapons.add('chainsaw').add('shotgun');
+    const ws = new WeaponSystem();
+    // The load order: beginLevel against the outgoing inventory (a pistol),
+    // then the save's own inventory and weapon state.
+    ws.beginLevel(createInventory());
+    ws.restore({ cooldownTics: 0, previousWeapon: 'shotgun', sawIdleTimer: 0, refire: 0, refireWeapon: null }, inv);
+
+    const played: string[] = [];
+    const audio = { play: (id: string) => played.push(id) } as unknown as AudioEngine;
+    ws.update(0.016, false, inv, audio, { x: 0, y: 0, z: 0 });
+
+    // `sawidl` is expected and correct — the saw is the ready weapon with a
+    // restored timer of 0. Only the bring-up would be a phantom switch.
+    assert.ok(!played.includes('sawup'), 'a restored chainsaw is not brought up again');
+    ws.handleSwitching(PREV_CLICK, inv, 0);
+    assert.equal(inv.currentWeapon, 'shotgun', 'the restored previousWeapon survived the first frame');
   });
 
   test('fog of war restores the explored bitmap wholesale and recounts pending', () => {

@@ -71,7 +71,8 @@ function setup() {
   map.linedefs[intoB].tag = 1;
 
   const world = new World(map);
-  const built = buildMapMesh(map, BANK, { movableSectors: computeMovableSectors(map) });
+  const movableSectors = computeMovableSectors(map);
+  const built = buildMapMesh(map, BANK, { movableSectors });
   const start = { x: grid.centre(padACell, 1).x - 70, y: grid.centre(padACell, 1).y };
   const fog = new FogOfWar(world, built.occluders, start.x, start.y);
   const teleports: Placement[] = [];
@@ -91,6 +92,7 @@ function setup() {
     () => false,
     start.x,
     start.y,
+    movableSectors,
   );
 
   /** One frame of the player standing at (x, y) — the same call `game.ts` makes. */

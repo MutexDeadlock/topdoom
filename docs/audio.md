@@ -83,7 +83,7 @@ player's, as in vanilla.
 
 Sound is the one effect systems raise directly (through `SoundEmitter`) instead of reporting
 back for someone else to realize, unlike damage (`ThingLayer.update`'s attacks, applied by
-`MonsterAttacks`) or shots (`WeaponSystem.update`'s `Shot[]`). Two reasons: it changes no game state, and several of
+`MonsterAttacks`) or shots (`WeaponSystem.fire`'s `Shot[]`). Two reasons: it changes no game state, and several of
 vanilla's sounds sit at moments that have no observable event to hang off — `A_Chase`'s
 3-in-256 idle grunt is inside the chase call, not a result of it. `SILENT` is the no-op
 emitter, so a headless script or a browser with no `AudioContext` needs no branches.
@@ -153,8 +153,8 @@ chainsaw revs (`sawful`) on air and bites (`sawhit`) on contact, the fist's `pun
 on a hit — `A_Punch` is silent on a miss. Bringing the chainsaw up plays `sawup`
 (`P_BringUpWeapon` does this for no other weapon), and while it is the ready weapon and the
 trigger is released, `sawidl` restarts every 4 tics (`SAW_IDLE_INTERVAL`). Those two are the only
-weapon sounds not tied to firing, and are raised by `WeaponSystem.updateSounds` rather than from the
-fire path.
+weapon sounds not tied to firing, and are raised by `WeaponSystem.updateSounds` (private, reached
+through `WeaponSystem.update`) rather than from the fire path.
 
 Launch sounds carry **no origin**: every shot is its own mobj in vanilla, so a burst of plasma
 layers rather than cutting itself off. Weapon fire sounds carry the player's origin, so a held

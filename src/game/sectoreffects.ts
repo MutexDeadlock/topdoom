@@ -9,6 +9,7 @@ import {
   type DamageFloorEffect,
 } from '../wad/specials.ts';
 import { pRandom } from '../util/random.ts';
+import type { SectorEffectsSnapshot } from './snapshot.ts';
 
 /** What one frame's `SectorEffects.update` did, for the caller to realize (sound, message, level exit). */
 export interface SectorEffectResult {
@@ -50,13 +51,13 @@ export class SectorEffects {
    * constructs this *before* applying the saved sector specials (a consumed
    * secret zeroes its sector's `special`) — docs/savegames.md § Apply order.
    */
-  restore(secretsFound: number, timer: number): void {
-    this.secretsFound = secretsFound;
-    this.timer = timer;
+  restore(s: SectorEffectsSnapshot): void {
+    this.secretsFound = s.secretsFound;
+    this.timer = s.timer;
   }
 
   /** The counterpart snapshot — docs/savegames.md § What is saved and what is deliberately not. */
-  snapshot(): { secretsFound: number; timer: number } {
+  snapshot(): SectorEffectsSnapshot {
     return { secretsFound: this.secretsFound, timer: this.timer };
   }
 

@@ -73,7 +73,13 @@ import {
   type MonsterAttackEvent,
 } from './monsters/defs.ts';
 import { commitTarget, reactToDamage, shouldRetarget, stepMonsterAI, tryWake } from './monsters/ai.ts';
-import type { ThingsSnapshot, ThingState } from './snapshot.ts';
+import {
+  MONSTER_SAVE_KEYS,
+  copyMonsterField,
+  type MonsterFields,
+  type ThingsSnapshot,
+  type ThingState,
+} from './snapshot.ts';
 import { createThingGrid } from './things/grid.ts';
 import { circleBlocked } from './world.ts';
 import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audio/sfx.ts';
@@ -143,6 +149,50 @@ const DROP_PULSE_SECONDS = 1.8;
  * corpse underneath, far too little to reach through real geometry.
  */
 const DROP_DEPTH_BIAS = 16;
+
+/**
+ * A fresh thing's hit points: `MT_BARREL`'s own spawnhealth, this type's
+ * `MONSTER_HEALTH`, or `Infinity` for anything that can never be killed —
+ * a monster's own dropped item included. Shared by `pushThing`, which seeds it,
+ * and `isPristine`, which asks whether a thing is still sitting on it.
+ */
+function spawnHealthFor(type: number, dropped: boolean): number {
+  if (type === ThingType.barrel) return BARREL_HEALTH;
+  return dropped ? Infinity : MONSTER_HEALTH[type] ?? Infinity;
+}
+
+/**
+ * Puts `p` into the death pose it should be holding: the barrel's own `BEXP`
+ * chain, otherwise `P_KillMobj`'s overkill-gib rule off its (already negative)
+ * `health`, and permanent hiding for a type the WAD set has no death art for.
+ * Sets `deathFrameCount` and returns whether the gib chain was the one played,
+ * which is what picks the death sound. `deadTime` fast-forwards the animation,
+ * for a corpse being restored from a savegame that died some time ago.
+ *
+ * The single owner of that gib rule — `damageThing` and `restoreThings` both
+ * come through here, so a corpse can't look different after a load than it did
+ * before it. docs/death.md § Monster death.
+ */
+function enterDeathPose(p: PosedThing, deadTime = 0): boolean {
+  if (p.type === ThingType.barrel) {
+    p.deathFrameCount = BARREL_DEATH_FRAMES.length;
+    p.anim.die(BARREL_DEATH_FRAMES, BARREL_DEATH_FRAME_SECONDS, BARREL_DEATH_SPRITE);
+    if (deadTime > 0) p.anim.advance(deadTime, false);
+    return false;
+  }
+  const maxHealth = MONSTER_HEALTH[p.type] ?? 0;
+  const gibbed = p.health < -maxHealth && MONSTER_XDEATH_FRAMES[p.type];
+  const frames = gibbed || MONSTER_DEATH_FRAMES[p.type];
+  p.deathFrameCount = frames ? frames.length : 0;
+  if (frames) {
+    p.anim.die(frames, MONSTER_DEATH_FRAME_SECONDS);
+    if (deadTime > 0) p.anim.advance(deadTime, false);
+  } else {
+    p.hidden = true;
+    p.visible = false;
+  }
+  return Boolean(gibbed);
+}
 
 /** One static upright plane per map THING whose type is a known, visible sprite. */
 export function buildThingSprites(
@@ -260,7 +310,7 @@ export function buildThingSprites(
       subsector: world.subsectorAt(x, y),
       type,
       picked: false,
-      health: isBarrel ? BARREL_HEALTH : opts?.dropped ? Infinity : MONSTER_HEALTH[type] ?? Infinity,
+      health: spawnHealthFor(type, opts?.dropped ?? false),
       dead: false,
       dropped: opts?.dropped ?? false,
       alerted: opts?.alerted ?? false,
@@ -333,57 +383,14 @@ export function buildThingSprites(
       p.visible = !p.hidden;
       const m = s.monster;
       if (!m) continue;
-      p.health = m.health;
-      p.angle = m.angle;
-      p.velX = m.velX;
-      p.velY = m.velY;
-      p.velZ = m.velZ;
-      p.alerted = m.alerted;
-      p.lookTimer = m.lookTimer;
-      p.targetId = m.targetId;
-      p.attackPause = m.attackPause;
-      p.burstLeft = m.burstLeft;
-      p.burstTimer = m.burstTimer;
-      p.chargeTimer = m.chargeTimer;
-      p.chargeAngle = m.chargeAngle;
-      p.painTimer = m.painTimer;
-      p.inFloat = m.inFloat;
-      p.movedir = m.movedir;
-      p.movecount = m.movecount;
-      p.chaseTimer = m.chaseTimer;
-      p.moveBlocked = m.moveBlocked;
-      p.threshold = m.threshold;
-      p.justHit = m.justHit;
-      p.justAttacked = m.justAttacked;
-      p.reactionTicks = m.reactionTicks;
-      p.refiring = m.refiring;
-      p.homingBias = m.homingBias;
-      p.walkSoundTimer = m.walkSoundTimer;
-      p.walkSoundStep = m.walkSoundStep;
-      if (!m.dead) continue;
-      p.dead = true;
-      p.deadTime = m.deadTime;
-      p.deathFrameCount = m.deathFrameCount;
-      p.barrelExploded = m.barrelExploded;
-      p.explodeSource = m.explodeSource;
-      // Re-enter the death pose `damageThing` had played, fast-forwarded onto
-      // whichever frame `deadTime` says the corpse is holding.
-      if (p.type === ThingType.barrel) {
-        p.anim.die(BARREL_DEATH_FRAMES, BARREL_DEATH_FRAME_SECONDS, BARREL_DEATH_SPRITE);
-        p.anim.advance(m.deadTime, false);
-        continue;
-      }
-      // The same overkill gib rule as the death branch — health keeps its
-      // negative overkill in the save precisely so this recomputes right.
-      const maxHealth = MONSTER_HEALTH[p.type] ?? 0;
-      const frames = (m.health < -maxHealth && MONSTER_XDEATH_FRAMES[p.type]) || MONSTER_DEATH_FRAMES[p.type];
-      if (frames) {
-        p.anim.die(frames, MONSTER_DEATH_FRAME_SECONDS);
-        p.anim.advance(m.deadTime, false);
-      } else {
-        p.hidden = true;
-        p.visible = false;
-      }
+      // The dead-only fields carry `pushThing`'s own defaults while alive, so
+      // the whole block copies back unconditionally — see MONSTER_SAVE_KEYS.
+      for (const key of MONSTER_SAVE_KEYS) copyMonsterField(p, m, key);
+      // Re-enter the death pose `damageThing` played, fast-forwarded onto
+      // whichever frame `deadTime` says the corpse is holding. `health` keeps
+      // its negative overkill in the save precisely so the gib rule inside
+      // recomputes the same way it did at the time of death.
+      if (m.dead) enterDeathPose(p, m.deadTime);
     }
   }
 
@@ -616,8 +623,7 @@ export function buildThingSprites(
       // kills (see PosedThing.explodeSource's doc).
       p.barrelExploded = false;
       p.explodeSource = source ?? null;
-      p.deathFrameCount = BARREL_DEATH_FRAMES.length;
-      p.anim.die(BARREL_DEATH_FRAMES, BARREL_DEATH_FRAME_SECONDS, BARREL_DEATH_SPRITE);
+      enterDeathPose(p);
       // MT_BARREL's own deathsound. Vanilla's A_Scream sits on S_BEXP2, one
       // 5-tic frame into the explosion rather than on death itself; played
       // here on death, since a fifth of a second of silent fireball reads as
@@ -625,13 +631,7 @@ export function buildThingSprites(
       sfx.play('barexp', p, monsterOrigin(p.id));
       return;
     }
-    // Matches vanilla's P_KillMobj: gib only if this killing blow overkilled
-    // by more than the monster's own max health, and only if it actually has
-    // gib art (most don't — see MONSTER_XDEATH_FRAMES's doc).
-    const maxHealth = MONSTER_HEALTH[p.type] ?? 0;
-    const gibbed = p.health < -maxHealth && MONSTER_XDEATH_FRAMES[p.type];
-    const frames = gibbed || MONSTER_DEATH_FRAMES[p.type];
-    p.deathFrameCount = frames ? frames.length : 0;
+    const gibbed = enterDeathPose(p);
     // A_Scream's own death cry — randomized within its family, unattenuated
     // for the two bosses — or A_XScream's wet `slop` for a gib, which the
     // xdeathstate chain plays *instead*, not on top.
@@ -640,11 +640,6 @@ export function buildThingSprites(
     const death = gibbed ? 'slop' : MONSTER_STATS[p.type]?.sounds.death;
     if (death) {
       sfx.play(randomVariant(death), BOSS_TYPES.has(p.type) ? null : p, monsterOrigin(p.id));
-    }
-    if (frames) p.anim.die(frames, MONSTER_DEATH_FRAME_SECONDS);
-    else {
-      p.hidden = true;
-      p.visible = false;
     }
 
     const dropType = MONSTER_DROPS[p.type];
@@ -781,11 +776,10 @@ export function buildThingSprites(
    * localStorage quota (docs/savegames.md § Storage and the cap).
    */
   function isPristine(p: PosedThing): boolean {
-    const spawnHealth = p.type === ThingType.barrel ? BARREL_HEALTH : MONSTER_HEALTH[p.type] ?? Infinity;
     return (
       !p.dead &&
       !p.alerted &&
-      p.health === spawnHealth &&
+      p.health === spawnHealthFor(p.type, p.dropped) &&
       p.targetId === null &&
       p.velX === 0 &&
       p.velY === 0 &&
@@ -806,40 +800,9 @@ export function buildThingSprites(
         if (p.ambush) s.ambush = true;
         const killable = Number.isFinite(p.health) || p.dead;
         if (killable && !isPristine(p)) {
-          s.monster = {
-            health: p.health,
-            angle: p.angle,
-            dead: p.dead,
-            deadTime: p.deadTime,
-            deathFrameCount: p.deathFrameCount,
-            barrelExploded: p.barrelExploded,
-            explodeSource: p.explodeSource,
-            velX: p.velX,
-            velY: p.velY,
-            velZ: p.velZ,
-            alerted: p.alerted,
-            lookTimer: p.lookTimer,
-            targetId: p.targetId,
-            attackPause: p.attackPause,
-            burstLeft: p.burstLeft,
-            burstTimer: p.burstTimer,
-            chargeTimer: p.chargeTimer,
-            chargeAngle: p.chargeAngle,
-            painTimer: p.painTimer,
-            inFloat: p.inFloat,
-            movedir: p.movedir,
-            movecount: p.movecount,
-            chaseTimer: p.chaseTimer,
-            moveBlocked: p.moveBlocked,
-            threshold: p.threshold,
-            justHit: p.justHit,
-            justAttacked: p.justAttacked,
-            reactionTicks: p.reactionTicks,
-            refiring: p.refiring,
-            homingBias: p.homingBias,
-            walkSoundTimer: p.walkSoundTimer,
-            walkSoundStep: p.walkSoundStep,
-          };
+          const block = {} as MonsterFields;
+          for (const key of MONSTER_SAVE_KEYS) copyMonsterField(block, p, key);
+          s.monster = block;
         }
         return s;
       }),

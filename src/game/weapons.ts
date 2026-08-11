@@ -551,17 +551,17 @@ export class WeaponSystem {
    */
   private cooldownTics = 0;
   /**
-   * Which weapon was selected as of the previous frame, so bringing the
-   * chainsaw up can play `sawup` — a switch can come from a key, the wheel
-   * *or* a pickup, so this is compared once a frame rather than at each of
-   * those. See `updateSounds`.
+   * Which weapon was selected as of the previous frame, so a switch can be
+   * noticed at all — it can come from a key, the wheel *or* a pickup, so this
+   * is compared once a frame rather than at each of those. See `update`.
    */
-  private lastWeapon: WeaponId = 'pistol';
+  private weaponLastFrame: WeaponId = 'pistol';
   /**
    * The weapon selected before the current one, for the right button's
-   * "switch to previous weapon" binding. Maintained off `lastWeapon`'s once-a-frame
-   * comparison so a pickup- or berserk-driven switch counts too, exactly as
-   * that field's own doc describes. Null until the first switch of the level.
+   * "switch to previous weapon" binding. Maintained off `weaponLastFrame`'s
+   * once-a-frame comparison so a pickup- or berserk-driven switch counts too,
+   * exactly as that field's own doc describes. Null until the first switch of
+   * the level.
    */
   private previousWeapon: WeaponId | null = null;
   /** Counts down to the chainsaw's next idle rattle — see `SAW_IDLE_INTERVAL`. */
@@ -585,18 +585,20 @@ export class WeaponSystem {
     // A fresh level starts ready to fire, rather than inheriting whatever was
     // left on the clock when the last one ended.
     this.cooldownTics = 0;
-    this.lastWeapon = inv.currentWeapon;
+    this.weaponLastFrame = inv.currentWeapon;
     this.previousWeapon = null;
     this.sawIdleTimer = 0;
     this.refire = 0;
     this.refireWeapon = null;
   }
 
-  /** The fire-timing state a savegame keeps, mirroring `beginLevel`'s reset list field for field. */
+  /**
+   * The fire-timing state a savegame keeps: `beginLevel`'s reset list minus
+   * `weaponLastFrame`, which `restore` derives rather than reads back.
+   */
   snapshot(): WeaponsSnapshot {
     return {
       cooldownTics: this.cooldownTics,
-      lastWeapon: this.lastWeapon,
       previousWeapon: this.previousWeapon,
       sawIdleTimer: this.sawIdleTimer,
       refire: this.refire,
@@ -604,14 +606,38 @@ export class WeaponSystem {
     };
   }
 
-  /** The restore twin of `beginLevel`, applied over its reset — docs/savegames.md § Apply order. */
-  restore(s: WeaponsSnapshot): void {
+  /**
+   * The restore twin of `beginLevel`, applied over its reset — docs/savegames.md
+   * § Apply order. Takes the *restored* inventory, since `beginLevel` ran far
+   * earlier in the load and only ever saw the outgoing one.
+   */
+  restore(s: WeaponsSnapshot, inv: Inventory): void {
     this.cooldownTics = s.cooldownTics;
-    this.lastWeapon = s.lastWeapon;
+    // Derived, not saved: `update` runs last in the frame (after switching and
+    // pickups), so this always equals the current weapon at the frame boundary
+    // a save is captured on.
+    this.weaponLastFrame = inv.currentWeapon;
     this.previousWeapon = s.previousWeapon;
     this.sawIdleTimer = s.sawIdleTimer;
     this.refire = s.refire;
     this.refireWeapon = s.refireWeapon;
+  }
+
+  /**
+   * The frame's weapon bookkeeping, run after every switch source has had its
+   * say: notices what is selected now and raises the sounds that follow from
+   * that. Compared once a frame rather than at each switch site, since a
+   * pickup can select a weapon too (`applyPickup`), exactly as vanilla's own
+   * `pendingweapon` path does — docs/weapons.md § Switch to previous weapon.
+   */
+  update(dt: number, firing: boolean, inv: Inventory, audio: AudioEngine, at: Pos3): void {
+    const weapon = inv.currentWeapon;
+    const justSwitched = weapon !== this.weaponLastFrame;
+    if (justSwitched) {
+      this.previousWeapon = this.weaponLastFrame;
+      this.weaponLastFrame = weapon;
+    }
+    this.updateSounds(dt, firing, weapon, justSwitched, audio, at);
   }
 
   /**
@@ -621,17 +647,15 @@ export class WeaponSystem {
    * released (`A_WeaponReady`, see `SAW_IDLE_INTERVAL`). `at` is the player's
    * own position, which both are attenuated from.
    */
-  updateSounds(dt: number, firing: boolean, inv: Inventory, audio: AudioEngine, at: Pos3): void {
-    const weapon = inv.currentWeapon;
-    const justSwitched = weapon !== this.lastWeapon;
-    if (justSwitched) {
-      this.previousWeapon = this.lastWeapon;
-      this.lastWeapon = weapon;
-      // Checked once a frame rather than at each switch, since a pickup can
-      // select a weapon too (`applyPickup`), exactly as vanilla's own
-      // `pendingweapon` path does.
-      if (weapon === 'chainsaw') audio.play('sawup', at, PLAYER_ORIGIN);
-    }
+  private updateSounds(
+    dt: number,
+    firing: boolean,
+    weapon: WeaponId,
+    justSwitched: boolean,
+    audio: AudioEngine,
+    at: Pos3,
+  ): void {
+    if (justSwitched && weapon === 'chainsaw') audio.play('sawup', at, PLAYER_ORIGIN);
     if (weapon !== 'chainsaw' || firing) {
       this.sawIdleTimer = 0;
       return;
@@ -653,7 +677,7 @@ export class WeaponSystem {
 
   /**
    * Applies this frame's number-key, mouse-wheel and right-button weapon
-   * switches. Runs before `updateSounds`, so the swap below reads the weapon
+   * switches. Runs before `update`, so the swap below reads the weapon
    * left behind by an *earlier* switch and that same call then records the one
    * being left now — which is what makes a second click toggle back.
    */
@@ -686,7 +710,7 @@ export class WeaponSystem {
    * one `HitscanShot` per pellet, one `ProjectileShot` per launch, or one
    * `MeleeShot` per swing. Empty whenever nothing fired.
    */
-  update(firing: boolean, inv: Inventory, aimAngleRad: number): Shot[] {
+  fire(firing: boolean, inv: Inventory, aimAngleRad: number): Shot[] {
     // Clamped at 0 rather than allowed to run negative. That and the plain
     // assignment below are one rule in two halves — **an idle trigger banks
     // nothing** — and it takes both: a counter that free-falls while the trigger

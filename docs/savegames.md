@@ -153,6 +153,7 @@ heights** and **RNG cursors dead last**.
 4. `new World(map)`, then `effects.beginLevel(world)` — which clears the layer — and
    `restoreTeleportFogs` refilling it. After step 3, so each puff re-samples its sector's *restored*
    light; after `beginLevel`, which would otherwise drop what was just restored.
+   `projectiles.beginLevel()` also runs here, clearing that layer for step 13's restore.
 5. `computeMovableSectors(map)` **unioned with every saved mover's sector** — a mid-motion mover
    whose authored sector special was consumed would otherwise land back in the static batch. The
    union is handed to both `buildMapMesh` and the `SpecialsController` constructor.
@@ -169,7 +170,7 @@ heights** and **RNG cursors dead last**.
 11. `buildThingSprites(..., restore)` — the spawn loop is skipped and `posed` rebuilt from the
     save in order.
 12. `new IconOfSin(...)` → `icon.restore(...)`.
-13. `projectiles.beginLevel()` → `projectiles.restore(...)`.
+13. `projectiles.restore(...)` — into the layer step 4's `beginLevel` already cleared.
 14. Inventory deserialized, then `weaponSystem.restore(..., inventory)` — **in that order, and it
     takes the restored inventory**. `WeaponSystem.beginLevel` ran back at the top of the load
     against the *outgoing* inventory, so `weaponLastFrame` is left pointing at whatever weapon was

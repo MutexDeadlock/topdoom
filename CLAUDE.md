@@ -137,6 +137,14 @@ Crush" naming all needed the source to settle), and not from what seems reasonab
 bugs came from eyeballing a table that could have been read off `info.c`. When you add or change one
 of these, cite where it came from.
 
+**A change that would break existing saves must be flagged to the user first.** `SAVE_VERSION`
+(`game/savegames.ts`) is meant to stay at its current value: released saves exist, and a bump
+orphans them all. When a change would make the current reader misread a stored `GameSnapshot` — a
+renamed/re-encoded field, a changed spawn default the sparse encodings elide against, a reordered
+`posed`/thing identity — say so explicitly *before* implementing, and prefer a compatible extension
+(an optional field whose absence means the old behavior, the `teleportFogs` pattern —
+docs/savegames.md § The format and its version) whenever one exists.
+
 **A deliberate deviation is fine; an undocumented one is not.** Where this engine knowingly departs
 from vanilla, the departure says so at the declaration, names what it follows instead, and explains
 why — `meleeReachesVertically` (`game/monsters/defs.ts`, follows ZDoom's `MF5_NOVERTICALMELEERANGE`

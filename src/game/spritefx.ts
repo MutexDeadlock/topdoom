@@ -20,6 +20,7 @@ import {
   TFOG_SPAWN_OFFSET,
   type OneShotEffect,
 } from './spritefxdefs.ts';
+import type { TeleportFogState } from './snapshot.ts';
 import type { Placement, Pos3 } from '../types.ts';
 
 /**
@@ -35,7 +36,9 @@ export type VileFlameResolver = (vileId: number, targetId: number | null) => Pos
  * impact explosions, blood splashes, bullet puffs, the revenant's smoke trail, the
  * arch-vile's flame, and hitscan tracer lines. All of them share one
  * lifecycle — spawned by some other system, animated here for a fixed time,
- * dropped when they finish, and cleared wholesale on a level change.
+ * dropped when they finish, and cleared wholesale on a level change. None of
+ * them is saved except the teleport fog, the only one long enough to be caught
+ * mid-animation (docs/savegames.md § What is saved and what is deliberately not).
  *
  * The one-shot sprites are drawn through a single `SpriteBatch` (one
  * `InstancedMesh` per lump); tracers own a `THREE.Line` each. The player is
@@ -188,6 +191,34 @@ export class SpriteFxLayer {
   /** `P_SpawnBlood`/`P_SpawnPuff`'s shared opening line — the same triangular draw every other random fuzz in the game uses. */
   private jitter(z: number): number {
     return z + triangularDraw(HIT_Z_JITTER);
+  }
+
+  /**
+   * The teleport fogs still playing, for a savegame. The only transient this
+   * layer saves: at 10 frames of 6 tics it runs ~1.7 s, long enough to save
+   * inside, where an impact puff or tracer is gone in a fraction of that.
+   * docs/savegames.md § What is saved and what is deliberately not.
+   */
+  snapshotTeleportFogs(): TeleportFogState[] {
+    return this.teleportFogs.map((e) => ({ x: e.x, y: e.y, z: e.z, elapsed: e.elapsed }));
+  }
+
+  /**
+   * Rebuilds them on the freshly loaded level. Goes through the ordinary
+   * `spawn`, so the animator, the sector light and `drawPrev*` are re-derived
+   * rather than restored — then the animator is fast-forwarded by `elapsed` in
+   * one `advance`, whose own frame loop lands it on the frame the save was
+   * taken on. Silent, unlike `spawnTeleportFog`: `telept` played when the
+   * teleport happened, and a load is not a second teleport.
+   */
+  restoreTeleportFogs(states: TeleportFogState[]): void {
+    for (const s of states) {
+      const effect = this.spawn('TFOG', TFOG_FRAMES, TFOG_FRAME_SECONDS, s);
+      if (!effect) continue;
+      effect.elapsed = s.elapsed;
+      effect.anim.advance(s.elapsed, true);
+      this.teleportFogs.push(effect);
+    }
   }
 
   spawnTeleportFog(at: Pos3): void {

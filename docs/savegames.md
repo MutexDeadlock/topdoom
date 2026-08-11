@@ -81,8 +81,8 @@ the snapshot inside is unchanged.
 
 ## What is saved and what is deliberately not
 
-Saved: the player (position, velocities, private knockback), inventory, `WeaponSystem`'s fire
-timing, the *changed* sectors' mutable fields (`floorHeight`/`ceilHeight`/`light`/`special`/
+Saved: the player (position, velocities, private knockback), inventory, teleport fogs still
+playing, `WeaponSystem`'s fire timing, the *changed* sectors' mutable fields (`floorHeight`/`ceilHeight`/`light`/`special`/
 `floorTex` — `DoomMap` is mutated in place at runtime by specials and secrets), the specials controller (movers
 mid-motion, `usedOnce`, switch flashes, light states, the two shared sound/damage clocks,
 `prevX`/`prevY`), secrets found + damage-floor timer, fog of war's `explored`, sound-alerted
@@ -92,9 +92,21 @@ sectors, every thing, the Icon of Sin, projectiles in flight, level time, camera
 Deliberately not saved, each a sub-second transient whose absence on restore is invisible or
 nearly so:
 
-- **`SpriteFxLayer` entirely** — teleport fogs, impact puffs, tracer lines, the arch-vile flame.
-  The vile's *attack state* rides in its thing's `attackPause`/AI fields; only the flame visual is
-  lost.
+- **`SpriteFxLayer` except the teleport fogs** — impact puffs, blood, bullet puffs, the revenant's
+  smoke trail, tracer lines and the arch-vile flame are all dropped. The vile's *attack state* rides
+  in its thing's `attackPause`/AI fields; only the flame visual is lost. The **teleport fog is the
+  exception, and the reason is its length**: 10 frames of 6 tics is ~1.7 s, long enough to save
+  inside and notice the puffs vanish, where every other effect here is gone in a fraction of that.
+  `snapshotTeleportFogs` saves a position and `elapsed` per puff; `restoreTeleportFogs` respawns
+  through the ordinary `spawn` — so the animator, the sector light and `drawPrev*` are re-derived
+  rather than stored — and then fast-forwards the animator by `elapsed` in one `advance`, whose own
+  frame loop lands it on the frame the save was taken on. Silent on restore: `telept` played when
+  the teleport happened, and a load is not a second teleport. Within a float epsilon of an exact
+  frame boundary the restored puff can land one frame either side of where it was; that is one
+  frame of a cosmetic transient at 35 Hz, and buying exactness would mean a seek API on
+  `SpriteAnimator` for this one caller. Pinned by `tests/game/spritefx-snapshot.test.ts`.
+  `GameSnapshot.teleportFogs` is **optional**, which is what let it ship without a `SAVE_VERSION`
+  bump: absent means no fogs, exactly what a save from before it restored to.
 - **Transient `playOnce` poses** (pain flinch, attack frames): a restored corpse replays its death
   sequence fast-forwarded by `deadTime`, but a live monster restarts from its walk cycle. The replay
   goes through `enterDeathPose`, the same function `damageThing` uses — `P_KillMobj`'s overkill-gib
@@ -138,31 +150,35 @@ heights** and **RNG cursors dead last**.
    `sectorEffects.restore(...)` — in that order, and both here, because the counters restored belong
    to the instance step 2 already built from the *authored* specials. Everything built after this
    step bakes restored geometry — no rebuild/recolor pass exists anywhere below.
-4. `computeMovableSectors(map)` **unioned with every saved mover's sector** — a mid-motion mover
+4. `new World(map)`, then `effects.beginLevel(world)` — which clears the layer — and
+   `restoreTeleportFogs` refilling it. After step 3, so each puff re-samples its sector's *restored*
+   light; after `beginLevel`, which would otherwise drop what was just restored.
+5. `computeMovableSectors(map)` **unioned with every saved mover's sector** — a mid-motion mover
    whose authored sector special was consumed would otherwise land back in the static batch. The
    union is handed to both `buildMapMesh` and the `SpecialsController` constructor.
-5. `buildMapMesh` / `World` / faders, unchanged, over restored geometry.
-6. `new Player(world)` → `player.restore(...)`; camera yaw from the snapshot rather than the spawn
-   angle.
-7. `new FogOfWar(...)` → `restoreExplored(...)` (the constructor's spawn-seeded reveal is
+6. `buildMapMesh` / faders, unchanged, over restored geometry.
+7. `new Player(world)` → `player.restore(...)`; camera yaw from the snapshot rather than the spawn
+   angle, and `camera.snapTo` on the restored position so the view doesn't fly in from the outgoing
+   level (docs/render.md § The camera is simulation state).
+8. `new FogOfWar(...)` → `restoreExplored(...)` (the constructor's spawn-seeded reveal is
    overwritten wholesale, not ORed in).
-8. `new SpecialsController(...)` → `specials.restore(...)`. Switch on-textures are flipped *here*,
+9. `new SpecialsController(...)` → `specials.restore(...)`. Switch on-textures are flipped *here*,
    not in step 3: `findSwitchEntries` reads the authored sidedef as the off state, so flipping
    before that scan would invert every pair.
-9. `world.restoreSoundAlerted(...)`.
-10. `buildThingSprites(..., restore)` — the spawn loop is skipped and `posed` rebuilt from the
+10. `world.restoreSoundAlerted(...)`.
+11. `buildThingSprites(..., restore)` — the spawn loop is skipped and `posed` rebuilt from the
     save in order.
-11. `new IconOfSin(...)` → `icon.restore(...)`.
-12. `projectiles.beginLevel()` → `projectiles.restore(...)`.
-13. Inventory deserialized, then `weaponSystem.restore(..., inventory)` — **in that order, and it
+12. `new IconOfSin(...)` → `icon.restore(...)`.
+13. `projectiles.beginLevel()` → `projectiles.restore(...)`.
+14. Inventory deserialized, then `weaponSystem.restore(..., inventory)` — **in that order, and it
     takes the restored inventory**. `WeaponSystem.beginLevel` ran back at the top of the load
     against the *outgoing* inventory, so `weaponLastFrame` is left pointing at whatever weapon was
     in hand before, which is why it is derived from `inventory.currentWeapon` here rather than
     saved (see § What is not saved). (`levelTime` is taken back in step 3's block, with the sector
     state.)
-14. `levelCard.show(...)` — **skipped on a restore**: the card announces *entering* a level, and a
+15. `levelCard.show(...)` — **skipped on a restore**: the card announces *entering* a level, and a
     save resumes one already under way (docs/hud.md § Level card).
-15. `setRandomCursors(...)` — after every construction-time `pRandom` draw (`makeLightState`
+16. `setRandomCursors(...)` — after every construction-time `pRandom` draw (`makeLightState`
     seeding, `pushThing`'s `homingBias`) has already happened and been overwritten, so the first
     *simulation* draw after a load is exactly the one the save would have made next.
 

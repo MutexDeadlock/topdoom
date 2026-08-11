@@ -52,12 +52,16 @@ vanilla-table invariants. `WeaponSystem`'s selection half joined them (`game/wea
 takes no constructor arguments and `handleSwitching`/`update` reach it through a stubbed
 `Input` and a two-line `AudioEngine`, so the "switch to previous weapon" toggle is pinnable without a
 DOM. The savegame suite joined next (`game/snapshot.test.ts`, `game/savegames.test.ts`,
-`game/specials-snapshot.test.ts`, `game/things-snapshot.test.ts`): the store runs on the same
-in-memory `localStorage` stand-in as best times, and the round-trips prove behavioral equality —
-save mid-motion, rebuild over a fresh grid map, then tick original and restored in lockstep and
-compare positions and the RNG cursors, not just fields. The `ThingLayer` tests reach
-`buildThingSprites` headless through a name-only `SpriteBank` stub and a three-field
-`SpriteMaterialCache` stub, since the layer only ever *keys* batches by lump name during a tic.
+`game/specials-snapshot.test.ts`, `game/things-snapshot.test.ts`, `game/spritefx-snapshot.test.ts`),
+and the round-trips prove behavioral equality — save mid-motion, rebuild over a fresh grid map, then
+tick original and restored in lockstep and compare positions and the RNG cursors, not just fields.
+The store itself has no `indexedDB` to reach in Node, so it takes an injected backend instead
+(`setSaveBackend`, two `Map`s standing in for the two object stores); the gzip and base64 codecs
+around it are **not** stubbed, since `CompressionStream` is global in Node and a compression
+round-trip that isn't the real one proves nothing. The `ThingLayer` and `SpriteFxLayer` tests reach
+`buildThingSprites`/`spawn` headless through a name-only `SpriteBank` stub and a three-field
+`SpriteMaterialCache` stub, since both layers only ever *key* batches by lump name during a tic —
+which is also what lets the fog test read back the frame letter a restored puff resumes on.
 Deliberately **not** covered yet, and why:
 
 - **`SpecialsController`'s mover state machine** — `sectorActive`, `tickDoor`, `tickLift` and the

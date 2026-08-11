@@ -280,6 +280,18 @@ export interface IconSnapshot {
 /** A `Projectile` minus its animator, which restore rebuilds from `sprite`. */
 export type ProjectileSnapshot = Omit<Projectile, 'anim'>;
 
+/**
+ * A teleport-fog puff mid-animation: where it is and how far into its ~1.7 s it
+ * has got. The animator, the sector light and `drawPrev*` are all re-derived by
+ * the ordinary `spawn` on restore rather than saved — a fog never moves, so
+ * `drawPrev*` is its own position, and re-sampling the light picks up a sector
+ * whose lighting has since changed. docs/savegames.md § What is saved and what
+ * is deliberately not.
+ */
+export interface TeleportFogState extends Pos3 {
+  elapsed: number;
+}
+
 export interface GameSnapshot {
   levelTime: number;
   cameraYawDeg: number;
@@ -299,6 +311,13 @@ export interface GameSnapshot {
   things: ThingsSnapshot;
   icon: IconSnapshot | null;
   projectiles: ProjectileSnapshot[];
+  /**
+   * The teleport fogs still playing — the one `SpriteFxLayer` transient long
+   * enough (~1.7 s) to be caught mid-animation by a save. Optional because it
+   * was added without a `SAVE_VERSION` bump: absent means no fogs, which is
+   * exactly what a save from before it restored to.
+   */
+  teleportFogs?: TeleportFogState[];
   /** The two random-table cursors. Restored after every other step — docs/savegames.md § Apply order. */
   rng: { p: number; m: number };
 }

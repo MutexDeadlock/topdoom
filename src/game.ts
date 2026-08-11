@@ -415,6 +415,7 @@ export class Game {
         things: this.things!.snapshot(),
         icon: this.icon!.snapshot(),
         projectiles: this.projectiles.snapshot(),
+        teleportFogs: this.effects.snapshotTeleportFogs(),
         rng: getRandomCursors(),
       },
     };
@@ -500,6 +501,9 @@ export class Game {
     // Both drop whatever was still in flight or mid-animation in the level
     // being torn down, which would otherwise carry over into the new one.
     this.effects.beginLevel(this.world);
+    // After `beginLevel` (which clears the layer) and after `applySectors`
+    // above, so a fog re-samples its sector's *restored* light.
+    if (restore?.teleportFogs) this.effects.restoreTeleportFogs(restore.teleportFogs);
     this.projectiles.beginLevel();
     // Sectors a door/lift/floor mover will drive are pulled out of the static
     // batches up front — SpecialsController owns their geometry instead (see

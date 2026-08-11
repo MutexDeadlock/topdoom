@@ -11,7 +11,8 @@ import {
   sameSpecies,
   type MonsterAttackEvent,
 } from './monsters/defs.ts';
-import { PLAYER_MELEE_RANGE, rollDamage, type Shot } from './weapons.ts';
+import { PLAYER_MELEE_RANGE, type Shot } from './weapons.ts';
+import { rollDamage } from '../util/random.ts';
 import { applyRadiusDamage, type CombatContext } from './combat.ts';
 import type { ProjectileSnapshot } from './snapshot.ts';
 import type { SpriteFxLayer } from './spritefx.ts';

@@ -1,6 +1,6 @@
 import { shotPath, WEAPON_RANGE } from '../world.ts';
 import { AIM_HEIGHT_OFFSET, PLAYER_RADIUS } from '../player.ts';
-import { triangularSpread } from '../weapons.ts';
+import { triangularSpread } from '../../util/random.ts';
 import type { CombatContext } from '../combat.ts';
 import type { SpriteFxLayer } from '../spritefx.ts';
 import type { ProjectileLayer } from '../projectiles.ts';

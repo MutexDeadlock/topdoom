@@ -6,7 +6,6 @@ import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import { SPAWN_CUBE_MONSTERS } from './thingdefs.ts';
 import { ThingType } from './thingtypes.ts';
 import { TELEFRAG_DAMAGE } from './things.ts';
-import { triangularDraw } from './weapons.ts';
 import type { CombatContext } from './combat.ts';
 import type { IconSnapshot } from './snapshot.ts';
 import type { SpriteFxLayer } from './spritefx.ts';
@@ -14,7 +13,7 @@ import { SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import type { Skill } from './skill.ts';
 import type { Pos3 } from '../types.ts';
 import { DOOM_TIC } from '../constants.ts';
-import { pRandom } from '../util/random.ts';
+import { pRandom, triangularDraw } from '../util/random.ts';
 
 /**
  * Three `ThingType` members drive this file. `bossShooter` (`MT_BOSSSPIT`) is the invisible eye that

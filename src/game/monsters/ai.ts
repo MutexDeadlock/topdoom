@@ -1,8 +1,7 @@
 import type { Sector } from '../../wad/map.ts';
 import { circleBlocked, hasLineOfSight, type ThingBlocker, type World } from '../world.ts';
 import { GRAVITY } from '../player.ts';
-import { pRandom } from '../../util/random.ts';
-import { rollDamage } from '../weapons.ts';
+import { pRandom, rollDamage } from '../../util/random.ts';
 import {
   DIR_X,
   DIR_Y,

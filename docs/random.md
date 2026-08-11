@@ -6,6 +6,13 @@ flinches, how long a broken light stays lit — is one entry off that table. `sr
 that table, transcribed from `linuxdoom-1.10/m_random.c`, and it is the **only** source of
 randomness in `src/`; `tests/util/random.test.ts` fails the build if a `Math.random` reappears.
 
+It also owns the three **draw shapes** every layer reuses rather than rewriting — `rollDamage`,
+`triangularDraw` and `triangularSpread`, documented in the two sections below. They belong here and
+not in `game/weapons.ts`, whatever their vanilla call sites were: most of their callers (blood and
+puff z-jitter, the Icon of Sin's explosion scatter, monster damage rolls, monster bullet spread) are
+nowhere near the player's weapons, and routing them through that module coupled the spitter and the
+sprite-effect layer to it for one arithmetic line.
+
 ## The table and the two cursors
 
 ```c
@@ -53,7 +60,7 @@ construction itself draws from the table on the way (docs/savegames.md § Apply 
 
 ## The triangular draw
 
-`triangularDraw` (`game/weapons.ts`) is vanilla's `(P_Random() - P_Random()) << shift`, and it is
+`triangularDraw` is vanilla's `(P_Random() - P_Random()) << shift`, and it is
 the shape under *every* fuzzed value in the game: pellet and melee spread, the super shotgun's
 slope jitter, monster bullet spread, `A_FaceTarget`'s `MF_SHADOW` penalty, blood and puff z-jitter,
 the brain's explosion scatter.

@@ -1,7 +1,13 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { rollDamage, triangularDraw, triangularSpread } from '../../src/game/weapons.ts';
-import { clearRandom, pRandom, RNDTABLE } from '../../src/util/random.ts';
+import {
+  clearRandom,
+  pRandom,
+  RNDTABLE,
+  rollDamage,
+  triangularDraw,
+  triangularSpread,
+} from '../../src/util/random.ts';
 
 /**
  * Vanilla's two random shapes, which every damage roll and every aim fuzz in

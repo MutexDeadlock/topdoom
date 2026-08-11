@@ -1,6 +1,7 @@
 # Weapons: selection, fire rates and damage
 
-`src/game/weapons.ts`, `src/game/inventory.ts` (ammo), `src/game/input.ts` (the slot keys)
+`src/game/weapons.ts`, `src/game/inventory.ts` (ammo), `src/game/input.ts` (the slot keys),
+`src/util/random.ts` (the dice and spread draws every weapon rolls through)
 
 What happens *after* a weapon fires — the shot's path, what it hits, what it does — is
 docs/combat.md. Death is docs/death.md.
@@ -102,7 +103,8 @@ one place this engine's weapons still differ in timing.
 
 Every random fuzz in the game is one distribution — vanilla's `P_Random() - P_Random()`, two
 consecutive draws off the random table subtracted, giving a triangular spread centred on the true aim
-(`triangularDraw`, and `triangularSpread` for the angular cases). It is literally that call, not an
+(`util/random.ts`'s `triangularDraw`, and `triangularSpread` for the angular cases). It is literally
+that call, not an
 approximation of it: docs/random.md § The triangular draw covers the table, why the two draws must
 be separate, and where the `/255` comes from. The per-weapon widths are the BAM shift constants in
 `p_pspr.c`, converted as `255 << shift` of a `2^32` turn — the same 255 the draw normalizes by:
@@ -126,7 +128,8 @@ chaingun shot miss ~27% of the time for no reason vanilla would recognize.
 
 ## Damage rolls
 
-**Two vanilla formulas, one `((P_Random() % sides) + 1) * multiplier` shape** — `rollDamage`, drawing
+**Two vanilla formulas, one `((P_Random() % sides) + 1) * multiplier` shape** — `util/random.ts`'s
+`rollDamage`, drawing
 off the random table (docs/random.md § The table and the two cursors). A *bullet's* roll is written
 out at each call site (`5*(P_Random()%3+1)` in both `P_GunShot` and `A_FireShotgun2`: 5/10/15 per
 pellet, and the super shotgun's is identical to the shotgun's — the 20-vs-7 pellet count is its whole

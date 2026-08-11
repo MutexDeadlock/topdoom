@@ -2,7 +2,10 @@
  * DOOM's random numbers, which are not random: a fixed 256-byte table and two
  * cursors that walk it. Everything in this engine that fuzzes a value — damage
  * dice, pellet spread, pain chance, an AI decision, a light's dark period —
- * draws from here and nowhere else.
+ * draws from here and nowhere else — through the two cursors below, or through
+ * the shared draw *shapes* at the bottom of this file (`rollDamage`,
+ * `triangularDraw`, `triangularSpread`), which every layer from weapons to the
+ * Icon of Sin's spitter reuses rather than rewriting the arithmetic.
  *
  * docs/random.md § The table and the two cursors.
  */
@@ -83,4 +86,35 @@ export function getRandomCursors(): { p: number; m: number } {
 export function setRandomCursors(cursors: { p: number; m: number }): void {
   prndindex = cursors.p & 0xff;
   rndindex = cursors.m & 0xff;
+}
+
+/** `((P_Random() % sides) + 1) * multiplier` — vanilla's own damage-roll shape. 0 sides means "always 0". */
+export function rollDamage(sides: number, multiplier: number): number {
+  return sides > 0 ? ((pRandom() % sides) + 1) * multiplier : 0;
+}
+
+/**
+ * Vanilla's `P_Random()-P_Random()` shape: a triangular draw centred on 0 and
+ * `width` wide at its extremes, in whatever unit the caller counts in. Every
+ * random fuzz in the game is this one distribution.
+ *
+ * The `/255` is what makes `width` mean what every caller's constant already
+ * says it means — the value at vanilla's `255 << shift` extreme — while keeping
+ * the draw on the table's own integer grid. Two separate `pRandom()` calls, and
+ * subtracting *adjacent* table entries is the point: see docs/random.md
+ * § The triangular draw.
+ */
+export function triangularDraw(width: number): number {
+  return ((pRandom() - pRandom()) / 255) * width;
+}
+
+/**
+ * `triangularDraw` in degrees, returned as radians off-aim — the angular half
+ * of it: the player's pellet spread and melee swing, a monster bullet's
+ * `<<20`, `A_FaceTarget`'s `MF_SHADOW` `<<21`. The super shotgun's *slope*
+ * jitter (`game/weapons.ts`'s `WeaponDef.slopeSpread`) is the one that isn't an
+ * angle.
+ */
+export function triangularSpread(deg: number): number {
+  return (triangularDraw(deg) * Math.PI) / 180;
 }

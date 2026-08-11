@@ -6,7 +6,7 @@ import { Tracer } from '../render/tracer.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import type { ShotPath, World } from './world.ts';
-import { triangularDraw } from './weapons.ts';
+import { triangularDraw } from '../util/random.ts';
 import {
   BLOOD_FRAME_SECONDS,
   bloodFrames,

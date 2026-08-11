@@ -125,9 +125,10 @@ them the same way, later files winning.
 
 `checksum.ts` gives a `WadFile` a **content id**: a hash of its whole byte range, memoized per file
 in a `WeakMap`. It is what per-level best times are keyed on (docs/hud.md § Best times), and it is
-meant to be what a saved game embeds so it can tell whether the set it was made with is the set
-loaded now — `wadSetId(wad)` returns every loaded file's `{ name, id }` in load order, a list rather
-than one combined hash so a mismatch can name *which* file is wrong.
+what a saved game embeds so it can tell whether the set it was made with is the set loaded now —
+`wadSetId(wad)` returns every loaded file's `{ name, id }` in load order, a list rather than one
+combined hash so a mismatch can name *which* file is wrong, which is exactly how `main.ts`'s
+`loadSave` uses it (docs/savegames.md § WAD-set identity).
 
 Two rules hold this up:
 

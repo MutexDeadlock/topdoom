@@ -51,7 +51,14 @@ Round one is the two regressions from the chaingunner bug, the pure functions, a
 vanilla-table invariants. `WeaponSystem`'s selection half joined them (`game/weapons.test.ts`): it
 takes no constructor arguments and `handleSwitching`/`updateSounds` reach it through a stubbed
 `Input` and a two-line `AudioEngine`, so the "switch to previous weapon" toggle is pinnable without a
-DOM. Deliberately **not** covered yet, and why:
+DOM. The savegame suite joined next (`game/snapshot.test.ts`, `game/savegames.test.ts`,
+`game/specials-snapshot.test.ts`, `game/things-snapshot.test.ts`): the store runs on the same
+in-memory `localStorage` stand-in as best times, and the round-trips prove behavioral equality —
+save mid-motion, rebuild over a fresh grid map, then tick original and restored in lockstep and
+compare positions and the RNG cursors, not just fields. The `ThingLayer` tests reach
+`buildThingSprites` headless through a name-only `SpriteBank` stub and a three-field
+`SpriteMaterialCache` stub, since the layer only ever *keys* batches by lump name during a tic.
+Deliberately **not** covered yet, and why:
 
 - **`SpecialsController`'s mover state machine** — `sectorActive`, `tickDoor`, `tickLift` and the
   `trigger*` guards are all private, and reaching them means extracting the per-mover tick into pure

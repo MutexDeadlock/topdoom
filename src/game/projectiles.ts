@@ -13,6 +13,7 @@ import {
 } from './monsters/defs.ts';
 import { PLAYER_MELEE_RANGE, rollDamage, type Shot } from './weapons.ts';
 import { applyRadiusDamage, type CombatContext } from './combat.ts';
+import type { ProjectileSnapshot } from './snapshot.ts';
 import type { SpriteFxLayer } from './spritefx.ts';
 import {
   BFG_SPRAY_HIT_FRAMES,
@@ -81,6 +82,26 @@ export class ProjectileLayer {
   /** Drops everything still in flight — a missile that outlives its level would otherwise arrive in the next one. */
   beginLevel(): void {
     this.projectiles = [];
+  }
+
+  /** Every shot still in flight, minus its animator (rebuilt from `sprite` on restore) — for a savegame. */
+  snapshot(): ProjectileSnapshot[] {
+    return this.projectiles.map(({ anim: _anim, ...rest }) => structuredClone(rest));
+  }
+
+  /**
+   * Rebuilds the in-flight list from a save, re-arming each missile's animator
+   * the same way `spawnPlayerShot`/`spawnMonsterShot` do. A sprite this WAD
+   * set can't draw is dropped silently — unlike a thing, a missile owns no id
+   * anything else references. docs/savegames.md § Apply order.
+   */
+  restore(saved: ProjectileSnapshot[]): void {
+    this.projectiles = [];
+    for (const s of saved) {
+      const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, s.sprite, PROJECTILE_FRAMES[s.sprite]);
+      if (!anim.resolve(0, VIEWER_ANGLE_DEG)) continue;
+      this.projectiles.push({ ...structuredClone(s), anim });
+    }
   }
 
   /**

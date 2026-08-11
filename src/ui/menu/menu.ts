@@ -1,4 +1,5 @@
 import {
+  describeMap,
   describeSource,
   fetchLibrary,
   mapStyle,
@@ -14,6 +15,8 @@ import {
   type RightMouseAction,
 } from '../../game/input.ts';
 import { getFpsCap, setFpsCap, type FpsCap } from '../../game.ts';
+import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
+import type { SaveMeta } from '../../game/savegames.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
 import { DEVMODE, VERSION } from '../../constants.ts';
 
@@ -33,7 +36,7 @@ export interface MenuDefaults {
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-type Tab = 'newgame' | 'settings';
+type Tab = 'newgame' | 'save' | 'load' | 'settings';
 
 const SKILL_STORAGE_KEY = 'topdoom.skill';
 const SELECTION_STORAGE_KEY = 'topdoom.selection';
@@ -71,12 +74,20 @@ export class Menu {
   private changelogLoaded = false;
   private tabButtons = {
     newgame: el<HTMLButtonElement>('tab-button-newgame'),
+    save: el<HTMLButtonElement>('tab-button-save'),
+    load: el<HTMLButtonElement>('tab-button-load'),
     settings: el<HTMLButtonElement>('tab-button-settings'),
   };
   private tabPanels = {
     newgame: el<HTMLDivElement>('tab-newgame'),
+    save: el<HTMLDivElement>('tab-save'),
+    load: el<HTMLDivElement>('tab-load'),
     settings: el<HTMLDivElement>('tab-settings'),
   };
+  private activeTab: Tab = 'newgame';
+  private savegames: SavegamesUi;
+  /** Last value `open` was given — what a save-list refresh outside `open` (an upload) has to pass on. */
+  private inGame = false;
 
   private sources: WadSource[] = [];
   private selectedIwad: WadSource | null = null;
@@ -93,10 +104,16 @@ export class Menu {
     onStart: (selection: Selection) => void | Promise<void>,
     onResume: () => void,
     audio: AudioEngine,
+    saves: SaveHooks,
   ) {
     this.onStart = onStart;
     this.onResume = onResume;
     this.audio = audio;
+    this.savegames = new SavegamesUi(
+      saves,
+      (text, isError) => this.setStatus(text, isError),
+      (meta) => this.describeSave(meta),
+    );
 
     el<HTMLButtonElement>('iwad-upload').addEventListener('click', () => this.pickFile('IWAD'));
     el<HTMLButtonElement>('pwad-upload').addEventListener('click', () => this.pickFile('PWAD'));
@@ -164,9 +181,16 @@ export class Menu {
    * they were on.
    */
   open(inGame = false): void {
+    this.inGame = inGame;
     this.root.classList.remove('hidden');
     this.root.classList.toggle('ingame', inGame);
     this.resumeButton.classList.toggle('hidden', !inGame);
+    // The Save tab only exists while there is a game to save — same gate as
+    // the resume button. Whoever was *on* it when the game ended is moved off
+    // rather than left staring at a hidden tab's panel.
+    this.tabButtons.save.classList.toggle('hidden', !inGame);
+    if (!inGame && this.activeTab === 'save') this.setTab('newgame');
+    this.savegames.refresh(inGame);
     this.refreshButtons();
   }
 
@@ -181,6 +205,7 @@ export class Menu {
   }
 
   private setTab(tab: Tab): void {
+    this.activeTab = tab;
     for (const key of Object.keys(this.tabButtons) as Tab[]) {
       this.tabButtons[key].classList.toggle('active', key === tab);
       this.tabPanels[key].classList.toggle('hidden', key !== tab);
@@ -302,6 +327,47 @@ export class Menu {
   /** True once a level can actually be started. */
   get isReady(): boolean {
     return this.selectedIwad !== null && this.levelSelect.value !== '';
+  }
+
+  /**
+   * Resolves a savegame's stored `WadSource.key` against the current library —
+   * uploads included, since `addFiles` unshifts a re-uploaded file under the
+   * same key. `undefined` names the recovery story: load the file from disk,
+   * then Load again (docs/savegames.md § WAD-set identity).
+   */
+  findSource(key: string): WadSource | undefined {
+    return this.sources.find((s) => s.key.toLowerCase() === key.toLowerCase());
+  }
+
+  /**
+   * What a save row shows beyond its own stored meta: the level named exactly as
+   * the level select names it (`describeMap` — a save stores only the lump name,
+   * which alone can't name a level, docs/wad.md § Level names), and every file of
+   * the set the library no longer offers. A missing file is named from the save's
+   * own `wads` list rather than from its `sourceKeys`, since an uploaded source's
+   * key is a synthetic `upload:…` string and the file name is what the player
+   * has to go and find (docs/savegames.md § WAD-set identity).
+   */
+  describeSave(meta: SaveMeta): SaveSetInfo {
+    const missing: SaveSetInfo['missing'] = [];
+    // `wads` is in load order with the game WAD first, so add-on i is wads[i + 1].
+    const nameAt = (index: number, fallback: string) => meta.wads[index]?.name || fallback || 'unknown file';
+
+    const iwad = this.findSource(meta.sourceKeys.iwad);
+    if (!iwad) missing.push({ name: nameAt(0, meta.sourceKeys.iwad), role: 'IWAD' });
+
+    const pwads: WadSource[] = [];
+    meta.sourceKeys.pwads.forEach((key, i) => {
+      const source = this.findSource(key);
+      if (source) pwads.push(source);
+      else missing.push({ name: nameAt(i + 1, key), role: 'PWAD' });
+    });
+
+    // Without the game WAD there is no map list to resolve against; the row
+    // falls back to the bare lump name and says which file is missing.
+    if (!iwad) return { level: meta.map, missing };
+    const map = mergedMaps(iwad, pwads).find((m) => m.name === meta.map);
+    return { level: map ? describeMap(map, iwad.label) : meta.map, missing };
   }
 
   setStatus(text: string, isError = false): void {
@@ -449,13 +515,7 @@ export class Menu {
       }
       const option = document.createElement('option');
       option.value = map.name;
-      // Lump name first — it's what the level is picked by, and the only thing every map has.
-      // Then its title where the WAD set knows one (docs/wad.md § Level names), and the provider
-      // only when an add-on took the map over.
-      const parts = [map.name];
-      if (map.title) parts.push(map.title);
-      if (map.provider !== this.selectedIwad.label) parts.push(map.provider);
-      option.textContent = parts.join('  —  ');
+      option.textContent = describeMap(map, this.selectedIwad.label);
       group.append(option);
     }
 
@@ -604,6 +664,10 @@ export class Menu {
 
     if (added.length > 0) {
       this.render();
+      // The file just added may be the one a save was waiting for, so the save
+      // rows are re-resolved here too: bringing a WAD back must clear its
+      // "Missing …" warning right away, not on the menu's next open.
+      this.savegames.refresh(this.inGame);
       this.saveSelection();
       this.setStatus(`Added ${added.join(', ')}`);
     }
@@ -622,7 +686,12 @@ export class Menu {
     this.root.addEventListener('drop', (e) => {
       e.preventDefault();
       const files = [...((e as DragEvent).dataTransfer?.files ?? [])];
-      if (files.length > 0) void this.addFiles(files);
+      // A dropped save import lands beside the WADs: `.json` can only be a
+      // downloaded save, everything else keeps going to the WAD path.
+      const saves = files.filter((f) => f.name.toLowerCase().endsWith('.json'));
+      const wads = files.filter((f) => !saves.includes(f));
+      if (saves.length > 0) void this.savegames.importFiles(saves);
+      if (wads.length > 0) void this.addFiles(wads);
     });
   }
 

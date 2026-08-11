@@ -45,6 +45,22 @@ export class SectorEffects {
   }
 
   /**
+   * Savegame restore. `totalSecrets` stays whatever this instance counted from
+   * the freshly loaded map — which is why a restoring `loadMapByIndex`
+   * constructs this *before* applying the saved sector specials (a consumed
+   * secret zeroes its sector's `special`) — docs/savegames.md § Apply order.
+   */
+  restore(secretsFound: number, timer: number): void {
+    this.secretsFound = secretsFound;
+    this.timer = timer;
+  }
+
+  /** The counterpart snapshot — docs/savegames.md § What is saved and what is deliberately not. */
+  snapshot(): { secretsFound: number; timer: number } {
+    return { secretsFound: this.secretsFound, timer: this.timer };
+  }
+
+  /**
    * Runs this frame's specials for the sector the player is standing in and reports what they did
    * — a secret being entered, and whether one of them ends the level (an `exitBelowHealth` floor).
    * Gated on `player.z === sector.floorHeight` (vanilla's `mo->z != floorheight`),

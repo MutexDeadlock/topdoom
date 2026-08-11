@@ -50,6 +50,7 @@ import {
   darkestNeighborLight,
 } from './world.ts';
 import { PLAYER_RADIUS } from './player.ts';
+import type { SpecialsSnapshot } from './snapshot.ts';
 import { pRandom } from '../util/random.ts';
 import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './thingtypes.ts';
@@ -168,9 +169,15 @@ interface CrusherMover {
   silent: boolean;
 }
 
-type Mover = DoorMover | LiftMover | FloorMover | CrusherMover | CeilingMover;
+/**
+ * Exported for the savegame snapshot alone (`game/snapshot.ts`): every member
+ * is plain JSON-safe data (verified down to the `effect` tables' scalar
+ * fields), so a saved mover is a structural copy of the live one —
+ * docs/savegames.md § What is saved and what is deliberately not.
+ */
+export type Mover = DoorMover | LiftMover | FloorMover | CrusherMover | CeilingMover;
 
-interface LightState {
+export interface LightState {
   pattern: LightPattern;
   baseLight: number;
   darkLight: number;
@@ -475,6 +482,14 @@ export class SpecialsController {
     playerX: number,
     playerY: number,
     sfx: SoundEmitter = SILENT,
+    /**
+     * Which sectors get mover-owned geometry. Defaults to the map's own scan;
+     * a savegame restore passes the same set it gave `buildMapMesh`, unioned
+     * with every saved mover's sector — a mid-motion mover whose authored
+     * sector special was consumed (`FloorMover.arrivalTexture`) would
+     * otherwise land back in the static batch. docs/savegames.md § Apply order.
+     */
+    movableSectors: Set<number> | null = null,
   ) {
     this.map = map;
     this.world = world;
@@ -495,7 +510,7 @@ export class SpecialsController {
       if (entries.length > 0) this.switchTextures.set(i, entries);
     }
 
-    this.geometry = new MoverGeometry(map, world, bank, scene, fog, polys, built, meshOptions, computeMovableSectors(map));
+    this.geometry = new MoverGeometry(map, world, bank, scene, fog, polys, built, meshOptions, movableSectors ?? computeMovableSectors(map));
 
     for (let i = 0; i < map.sectors.length; i++) {
       const timer = SECTOR_DOOR_SPECIALS[map.sectors[i].special];
@@ -512,6 +527,52 @@ export class SpecialsController {
 
   dispose(): void {
     this.geometry.dispose();
+  }
+
+  /**
+   * The controller's mutable state for a savegame, deep-copied since the live
+   * movers keep mutating. The one-frame flags (`lastTeleport`, `lockedLine`)
+   * and the due-this-frame booleans are deliberately dropped —
+   * docs/savegames.md § What is saved and what is deliberately not.
+   */
+  snapshot(): SpecialsSnapshot {
+    return structuredClone({
+      movers: [...this.movers.entries()],
+      usedOnce: [...this.usedOnce],
+      switchFlashes: [...this.switchFlashes.entries()],
+      lightStates: [...this.lightStates.entries()],
+      moveSoundTimer: this.moveSoundTimer,
+      crushDamageTimer: this.crushDamageTimer,
+      prevX: this.prevX,
+      prevY: this.prevY,
+    });
+  }
+
+  /**
+   * Overwrites the constructor's own seeding (sector door timers, light
+   * states) with the saved state. Sector heights/lights were already applied
+   * to the map before any geometry was built, so the only visual fix-up needed
+   * here is the switch on-textures: `findSwitchEntries` reads the *authored*
+   * sidedef as the off state, so a flashed switch has to be flipped after that
+   * scan, not baked into the map up front. docs/savegames.md § Apply order.
+   */
+  restore(s: SpecialsSnapshot): void {
+    this.movers = new Map(structuredClone(s.movers));
+    this.usedOnce = new Set(s.usedOnce);
+    this.switchFlashes = new Map(s.switchFlashes);
+    this.lightStates = new Map(structuredClone(s.lightStates));
+    this.moveSoundTimer = s.moveSoundTimer;
+    this.crushDamageTimer = s.crushDamageTimer;
+    this.prevX = s.prevX;
+    this.prevY = s.prevY;
+    const dirty = new Set<number>();
+    for (const [lineIndex] of this.switchFlashes) {
+      for (const e of this.switchTextures.get(lineIndex) ?? []) {
+        this.map.sidedefs[e.sideIndex][e.slot] = e.onTexture;
+        dirty.add(e.sectorIndex);
+      }
+    }
+    for (const sectorIndex of dirty) this.geometry.rebuild(sectorIndex);
   }
 
   /** The mover meshes' own per-frame occlusion/fog fade — see `MoverGeometry.updateFading`. Called from `game.ts` after the camera has settled, not from `update`. */

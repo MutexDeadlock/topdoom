@@ -19,11 +19,11 @@ lists, the level list and the difficulty options are built in JS.
 - The active tab is *not* reset on open — it's whichever the player last clicked (`newgame` on the
   first open, set in the constructor). Reopening mid-level to change one setting must not throw away
   the tab they were on.
-- Both tab panels are stacked in **one CSS grid cell** and hidden with `visibility`, not
-  `display: none`, so the panel's height is always the taller of the two and switching tabs doesn't
+- All tab panels are stacked in **one CSS grid cell** and hidden with `visibility`, not
+  `display: none`, so the panel's height is always the tallest of them and switching tabs doesn't
   resize the menu under the cursor. That is also why the Settings tab's rows are kept compact, and
-  why Level and Difficulty share a row on New Game: whatever height either tab costs, the other pays
-  too.
+  why Level and Difficulty share a row on New Game: whatever height any tab costs, the others pay
+  too — the save lists cap themselves with the `.list` scroller for the same reason.
 
 `Esc` toggles between the menu and the game. With the menu open and no level loaded it does nothing
 — there is nothing to return to.
@@ -55,6 +55,57 @@ file. Two things about it are load-bearing:
 `#changelog` is a child of `#menu` so it disappears with it; `close()` also closes it, or it would
 still be up the next time the menu opens.
 
+## Save and Load tabs
+
+`ui/menu/savegames.ts` (`SavegamesUi`) renders both panels over the `game/savegames.ts` store; the
+format, apply order and WAD-identity rules are docs/savegames.md's. What is the menu's own:
+
+- **The Save tab exists only mid-game** — `open(inGame)` hides its button with `display: none` (the
+  `#controls-dev` pattern; the button must leave the flex row, not hold a gap) and moves anyone
+  still on it to New Game. Same gate as the resume button: there is nothing to save otherwise. The
+  Load tab is always available.
+- Saving takes an optional name (defaulting to map + date), and both panels list every save, newest
+  first: thumbnail, name, the level, then skill · level time · date. Rows are rendered fresh on every
+  `open` via `SavegamesUi.refresh`, with the `#pwad-list` scrollTop-restore trick.
+- **The level line and the missing-file warnings come from `Menu.describeSave`**, not from the save:
+  a save stores the map *lump* name, which alone can't name a level (docs/wad.md § Level names), so
+  the row resolves it against the current library through `mergedMaps` and names it with the same
+  `describeMap` the level select uses — `<lump>  —  <title>  —  <provider>`, so the two lists can't
+  disagree about what a level is called. The same pass reports
+  every file of the set the library no longer offers, as a subtle red `Missing IWAD/PWAD: <file>`
+  line per file. It names the file from the save's own `wads` list rather than its `sourceKeys`,
+  since an upload's key is a synthetic `upload:…` string and the *file name* is what has to be found
+  again (docs/savegames.md § WAD-set identity). Load stays enabled: the attempt is what tells the
+  player which file to bring back. `addFiles` re-renders the save lists as well as the WAD lists, so
+  bringing that file back clears the warning on the spot rather than on the menu's next `open` —
+  which is also why `Menu` keeps the last `inGame` it was opened with.
+- **The name in each row is an `<input>`** — renaming happens in place (`renameSave`), Enter or blur
+  commits, Esc reverts and is stopped from bubbling to `main.ts`'s menu-closing handler. An untouched
+  field re-renders nothing, so a plain focus-and-blur can't pull the row out from under a click
+  heading for one of its own buttons.
+- **The save lists fill the panel vertically**: `.saves-section` is the tab panel's flexible child
+  and the list is the section's, against a `#menu > .panel` capped at the viewport — so the rows use
+  whatever height is left and scroll inside the menu instead of growing it off-screen. Because the
+  tab panels share one grid cell, that height is the tallest panel's on every tab, as before.
+- An **unsupported version** renders dimmed via its own `unsupported` class rather than `.disabled`
+  (a child can't undo a parent's opacity, and its download/delete buttons must stay live); only
+  Load is refused.
+- **Delete and Overwrite are two-click inline confirms** (`confirmOnSecondClick`: the button arms for
+  3 s), so the changelog stays the menu's only popup. Both are per row; Overwrite refills that save
+  from the current moment, keeping its id and its name (renaming has its own affordance), and can't
+  hit `MAX_SAVES` since no new key appears. Delete and download are icon-only buttons (`⤓`, `🗑︎` with
+  a text-presentation selector) with their meaning in the tooltip; Load and Overwrite are `.primary`.
+- **Download** writes the save as `topdoom-<map>-<date>.json` through a temporary anchor, re-indented
+  with tabs on the way out (`exportSave`) — the stored copy stays compact for the quota, but a file
+  on disk is something a person can open;
+  **import** accepts such a file back via its own `#save-file-input` (the WAD `#file-input` is
+  multiplexed by `uploadTarget` and stays out of this), or by dropping a `.json` onto the menu —
+  `installDropTarget` routes `.json` to the importer and everything else to `addFiles` as before.
+- Every failure — quota, cap, version, missing WAD — lands in the shared `#menu-status` line;
+  `SavegamesUi` never touches the running game. The three hooks (`onSave`, `onOverwrite`, `onLoad`)
+  are `main.ts`'s (§ Session lifecycle below), which owns the `Game` instance and the selection the
+  save records; the first two share one `withCapture` body, differing only in what they write.
+
 ## Picking a WAD set
 
 The lists are fed by `/wads/index.json` (docs/wad.md § The `public/wads/` manifest) plus anything
@@ -83,7 +134,8 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
   title only when the WAD set knows one (docs/wad.md § Level names — resolved off the manifest
   alone, since nothing has been downloaded at this point), the provider only when an add-on took the
   map over. The lump name always comes first: it is what the level is selected by, what `?map=`
-  takes, and the only thing every map has.
+  takes, and the only thing every map has. The label itself is `library.ts`'s `describeMap`, shared
+  with the save rows (§ Save and Load tabs) so a level can't be named two ways in one menu.
 
 ## Difficulty
 
@@ -179,6 +231,12 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.skill` | `ui/menu/menu.ts` | § Difficulty above |
 | `topdoom.selection` | `ui/menu/menu.ts` | § Remembered selection below |
 | `topdoom.bestTimes` | `game/besttimes.ts` | docs/hud.md § Best times |
+| `topdoom.save.<id>` | `game/savegames.ts` | docs/savegames.md § Storage and the cap |
+
+`topdoom.save.<id>` (one key per save) is the one departure from per-value structural validation:
+it carries an explicit `version` field, refused on mismatch rather than half-read. A settings
+scalar degrades safely to its default; a save's schema genuinely evolves, and half-reading an old
+one restores a subtly wrong level (docs/savegames.md § The format and its version).
 
 ## Remembered selection
 

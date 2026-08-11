@@ -1,6 +1,14 @@
 import { Wad } from './wad/wad.ts';
+import { wadSetId } from './wad/checksum.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
 import { Menu, type Selection } from './ui/menu/menu.ts';
+import {
+  overwriteSave,
+  writeSave,
+  type SaveCapture,
+  type SaveGame,
+  type SaveMeta,
+} from './game/savegames.ts';
 import { Game } from './game.ts';
 import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';
@@ -56,6 +64,12 @@ async function boot(): Promise<void> {
   // context itself waits for the first `resume`, i.e. for a user gesture.
   const audio = new AudioEngine();
   let game: Game | null = null;
+  /**
+   * The selection the running `game` was built from — what a save records as
+   * its `sourceKeys`, so a load can re-resolve the same files from the
+   * library. Only ever set beside a successful `Game` construction.
+   */
+  let currentSelection: Selection | null = null;
 
   const startLevel = async (selection: Selection): Promise<void> => {
     // Synchronously, before the first `await`: this call is still inside the
@@ -75,6 +89,7 @@ async function boot(): Promise<void> {
       game = null;
       previous?.dispose();
       game = new Game(view, audio, wad, selection.map, titleOf(selection.iwad, selection.pwads), selection.skill, startPos);
+      currentSelection = selection;
 
       menu.setStatus('');
       menu.close();
@@ -88,13 +103,88 @@ async function boot(): Promise<void> {
     }
   };
 
+  /**
+   * The load-side `startLevel`: re-resolves the save's WAD set from the
+   * library, verifies every file's content id against what the save was made
+   * with (docs/savegames.md § WAD-set identity), then rebuilds the level with
+   * the snapshot threaded through `Game`'s restore path.
+   */
+  const loadSave = async (save: SaveGame): Promise<void> => {
+    audio.resume();
+    menu.setStatus('Loading …');
+    try {
+      const resolve = (key: string, role: string): WadSource => {
+        const found = menu.findSource(key);
+        if (!found) throw new Error(`${key || role} is not available — load it from disk first`);
+        return found;
+      };
+      const iwad = resolve(save.sourceKeys.iwad, save.wads[0]?.name ?? 'the game WAD');
+      const pwads = save.sourceKeys.pwads.map((key) => resolve(key, 'an add-on'));
+
+      const files = await loadWadFiles(iwad, pwads);
+      const wad = new Wad(files);
+      const actual = wadSetId(wad);
+      if (actual.length !== save.wads.length) {
+        throw new Error('the loaded WAD set has a different file count than the one this save was made with');
+      }
+      for (let i = 0; i < actual.length; i++) {
+        if (actual[i].id !== save.wads[i].id) {
+          throw new Error(`${actual[i].name} differs from the file this save was made with`);
+        }
+      }
+
+      // Same dispose discipline as startLevel: cleared before teardown so a
+      // throwing constructor can't leave `game` pointing at a disposed level.
+      const previous = game;
+      game = null;
+      previous?.dispose();
+      game = new Game(view, audio, wad, save.map, titleOf(iwad, pwads), save.skill, null, save.state);
+      currentSelection = { iwad, pwads, map: save.map, skill: save.skill };
+
+      menu.setStatus('');
+      menu.close();
+      game.resume();
+    } catch (err) {
+      menu.setStatus((err as Error).message, true);
+      menu.open(game !== null);
+      console.error(err);
+    }
+  };
+
   const resumeGame = (): void => {
     if (!game) return;
     menu.close();
     game.resume();
   };
 
-  const menu: Menu = new Menu((selection) => startLevel(selection), resumeGame, audio);
+  /**
+   * The shared body of the two save hooks: refuse when there is no game or the
+   * moment can't be captured, otherwise hand the capture and the running
+   * selection's source keys to `write`. Returns a user-readable error for the
+   * menu's status line, or null on success.
+   */
+  const withCapture = (
+    write: (capture: SaveCapture, sourceKeys: SaveMeta['sourceKeys']) => void,
+  ): string | null => {
+    if (!game || !currentSelection) return 'no running game to save';
+    try {
+      const capture = game.captureSave();
+      if (!capture) return 'this moment cannot be saved — dead, exiting or between levels';
+      write(capture, {
+        iwad: currentSelection.iwad.key,
+        pwads: currentSelection.pwads.map((p) => p.key),
+      });
+      return null;
+    } catch (err) {
+      return (err as Error).message;
+    }
+  };
+
+  const menu: Menu = new Menu((selection) => startLevel(selection), resumeGame, audio, {
+    onSave: (name) => withCapture((capture, keys) => void writeSave(capture, name, keys)),
+    onOverwrite: (id) => withCapture((capture, keys) => void overwriteSave(id, capture, keys)),
+    onLoad: (save) => loadSave(save),
+  });
 
   // A `?map=` deep link starts a level without the player ever clicking
   // anything, so no gesture has unlocked audio by then — the first one that

@@ -63,6 +63,27 @@ export class World {
     this.buildSectorNeighbors();
   }
 
+  /**
+   * The sound-alerted set as sector indices, for a savegame — the live set
+   * holds `Sector` object references into `map.sectors`, which is also why
+   * `restoreSoundAlerted` must resolve through the *current* map's array.
+   */
+  snapshotSoundAlerted(): number[] {
+    const indices: number[] = [];
+    for (let i = 0; i < this.map.sectors.length; i++) {
+      if (this.soundAlertedSectors.has(this.map.sectors[i])) indices.push(i);
+    }
+    return indices;
+  }
+
+  restoreSoundAlerted(indices: number[]): void {
+    this.soundAlertedSectors.clear();
+    for (const i of indices) {
+      const sector = this.map.sectors[i];
+      if (sector) this.soundAlertedSectors.add(sector);
+    }
+  }
+
   /** Every sector's two-sided-line neighbors, for `noiseAlert`'s flood — built once rather than rescanning all linedefs per visited sector. */
   private buildSectorNeighbors(): void {
     this.sectorNeighbors = this.map.sectors.map(() => []);

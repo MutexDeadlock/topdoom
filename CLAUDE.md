@@ -67,7 +67,8 @@ src/game/      spatial queries, collision, player controller, input, the named d
                world state (pickups, damage), fog of war, inventory/pickups, weapons and firing,
                shots in flight + splash, damage/death, projectile/effect tables, transient
                effects (fog puffs, explosions, tracers), mover obstruction + crush damage,
-               damage floors + secrets, per-level best times, the Icon of Sin's cube spitter
+               damage floors + secrets, per-level best times, the Icon of Sin's cube spitter,
+               savegames (the snapshot payload + the localStorage store)
 src/game/monsters/   tables + record shapes (defs), chase/attack decisions (ai), attack resolution
                (attacks), the arch-vile (vile)
 src/game/things/     the thing layer's record shapes + its own tables (defs), monster/corpse
@@ -116,6 +117,7 @@ several record rules that look like accidents and aren't.
 | [docs/items.md](docs/items.md) | Pickups, inventory, keys/locked doors, monster drops, powerups |
 | [docs/hud.md](docs/hud.md) | The HUD, level stats and timer, level card, intermission, best times, center messages, `WadFont`, screen effects |
 | [docs/styles.md](docs/styles.md) | Which stylesheet owns what, the `styles.css` entry, the palette/stacking tokens |
+| [docs/savegames.md](docs/savegames.md) | The save format and its version, the snapshot apply order, the localStorage store, WAD-set identity |
 | [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, the donut, damage floors, secrets |
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
 | [docs/audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |

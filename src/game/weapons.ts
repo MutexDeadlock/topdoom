@@ -1,4 +1,5 @@
 import { hasPower, type AmmoType, type Inventory, type WeaponId } from './inventory.ts';
+import type { WeaponsSnapshot } from './snapshot.ts';
 import type { Input } from './input.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import { PLAYER_ORIGIN, type SfxId } from '../audio/sfx.ts';
@@ -589,6 +590,28 @@ export class WeaponSystem {
     this.sawIdleTimer = 0;
     this.refire = 0;
     this.refireWeapon = null;
+  }
+
+  /** The fire-timing state a savegame keeps, mirroring `beginLevel`'s reset list field for field. */
+  snapshot(): WeaponsSnapshot {
+    return {
+      cooldownTics: this.cooldownTics,
+      lastWeapon: this.lastWeapon,
+      previousWeapon: this.previousWeapon,
+      sawIdleTimer: this.sawIdleTimer,
+      refire: this.refire,
+      refireWeapon: this.refireWeapon,
+    };
+  }
+
+  /** The restore twin of `beginLevel`, applied over its reset — docs/savegames.md § Apply order. */
+  restore(s: WeaponsSnapshot): void {
+    this.cooldownTics = s.cooldownTics;
+    this.lastWeapon = s.lastWeapon;
+    this.previousWeapon = s.previousWeapon;
+    this.sawIdleTimer = s.sawIdleTimer;
+    this.refire = s.refire;
+    this.refireWeapon = s.refireWeapon;
   }
 
   /**

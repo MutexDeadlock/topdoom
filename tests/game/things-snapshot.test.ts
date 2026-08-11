@@ -1,0 +1,119 @@
+import { describe, test } from 'node:test';
+import assert from 'node:assert/strict';
+import * as THREE from 'three';
+import { World } from '../../src/game/world.ts';
+import { buildThingSprites } from '../../src/game/things.ts';
+import { ThingType } from '../../src/game/thingtypes.ts';
+import { clearRandom, getRandomCursors, setRandomCursors } from '../../src/util/random.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
+import type { SpriteBank } from '../../src/wad/sprites.ts';
+import type { SpriteMaterialCache } from '../../src/render/sprites.ts';
+import type { Pos3 } from '../../src/types.ts';
+import { gridMap, thingAt } from '../fixtures/gridmap.ts';
+
+/**
+ * The thing layer's savegame round-trip: a snapshot rebuilt through
+ * `buildThingSprites`' restore parameter must both *look* the same (every
+ * field, in `posed` order) and *behave* the same (lockstep AI stepping with the
+ * RNG cursors restored). See docs/savegames.md § Apply order.
+ */
+
+/** Every lump "exists": the layer only ever needs a name to key its batches by, not pixels. */
+const BANK = {
+  lookup: (sprite: string, frame: string, digit: number) => ({ lump: `${sprite}${frame}${digit}`, flip: false }),
+} as unknown as SpriteBank;
+
+const MATERIALS = {
+  get: () => ({
+    material: new THREE.MeshBasicMaterial(),
+    geometry: new THREE.BufferGeometry(),
+    quad: { minX: -16, maxX: 16, height: 56 },
+  }),
+} as unknown as SpriteMaterialCache;
+
+/** An arena with two imps, a demon, a barrel and a stimpack. */
+function arena() {
+  const grid = gridMap(['######', '#....#', '#....#', '######'], { cell: 128 });
+  const map = grid.map;
+  map.things.push(
+    thingAt(grid, 1, 1, 1), // player start
+    thingAt(grid, 2, 1, ThingType.imp),
+    thingAt(grid, 3, 1, ThingType.imp),
+    thingAt(grid, 2, 2, ThingType.demon),
+    thingAt(grid, 3, 2, ThingType.barrel),
+    thingAt(grid, 4, 1, ThingType.stimpack),
+  );
+  const world = new World(map);
+  return { grid, map, world };
+}
+
+const build = (world: World, map: ReturnType<typeof arena>['map']) =>
+  buildThingSprites(map, world, BANK, MATERIALS, 3);
+
+describe('Savegames · things round-trip', () => {
+  test('a battle-scarred layer restores field for field and steps identically', () => {
+    clearRandom();
+    const { grid, world, map } = arena();
+    const layer = build(world, map);
+    assert.equal(layer.count, 5, 'everything but the player start spawned');
+
+    const player: Pos3 = { ...grid.centre(1, 1), z: 0 };
+    // Wound one imp (wakes it and rolls pain/homing dice), kill the other, and
+    // consume the stimpack, so the save holds an alerted monster, a corpse
+    // mid-death-animation and a picked item all at once.
+    layer.damage(0, 20, undefined, undefined, player.x, player.y);
+    layer.damage(1, 1000);
+    layer.update(DOOM_TIC, player);
+    layer.tryPickup({ ...grid.centre(4, 1), z: 0 }, 24, (type) => type === ThingType.stimpack);
+    for (let i = 0; i < 10; i++) layer.update(DOOM_TIC, player);
+
+    const saved = JSON.parse(JSON.stringify(layer.snapshot()));
+    const cursors = getRandomCursors();
+
+    const fresh = arena();
+    const restored = buildThingSprites(fresh.map, fresh.world, BANK, MATERIALS, 3, undefined, undefined, saved);
+    setRandomCursors(cursors);
+    assert.deepEqual(restored.snapshot(), layer.snapshot(), 'the rebuilt layer snapshots identically');
+    assert.deepEqual(restored.stats, layer.stats);
+    assert.equal(restored.monsterById(1), null, 'the corpse is still dead');
+    assert.ok(restored.monsterById(0), 'the wounded imp is still alive');
+
+    // Behavioral half: step the original from the save point, then rewind the
+    // cursors and step the restored copy — every monster must land on exactly
+    // the same spot, which is what the RNG-cursors-restored-last rule buys.
+    const walk = (l: typeof layer) => {
+      for (let i = 0; i < 35; i++) l.update(DOOM_TIC, player);
+      return [0, 2, 3].map((id) => l.monsterById(id)).map((m) => (m ? [m.x, m.y, m.z, m.angle] : null));
+    };
+    setRandomCursors(cursors);
+    const originalPath = walk(layer);
+    const cursorsAfter = getRandomCursors();
+    setRandomCursors(cursors);
+    assert.deepEqual(walk(restored), originalPath, 'both layers walk the same path');
+    assert.deepEqual(getRandomCursors(), cursorsAfter, 'and draw the same random numbers');
+  });
+
+  test('an undisturbed monster is saved compactly, without the AI block', () => {
+    clearRandom();
+    const { world, map } = arena();
+    const layer = build(world, map);
+    const saved = layer.snapshot();
+    assert.equal(saved.things[2].monster, undefined, 'the untouched demon has no monster block');
+    assert.equal(saved.things[4].monster, undefined, 'the stimpack never has one');
+
+    layer.damage(2, 5);
+    assert.notEqual(layer.snapshot().things[2].monster, undefined, 'one scratch and the block appears');
+  });
+
+  test('a save naming a type this WAD set cannot draw refuses to restore', () => {
+    clearRandom();
+    const { world, map } = arena();
+    const saved = build(world, map).snapshot();
+    saved.things[0].type = 99999; // no THING_SPRITES entry
+    const fresh = arena();
+    assert.throws(
+      () => buildThingSprites(fresh.map, fresh.world, BANK, MATERIALS, 3, undefined, undefined, saved),
+      /no art for thing 99999/,
+    );
+  });
+});

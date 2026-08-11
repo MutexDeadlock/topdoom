@@ -25,9 +25,18 @@
   backdrop-filter: blur(3px);
 }
 
-#menu .panel {
+/*
+ * A column capped at the viewport (the 48px is #menu's own padding), so a panel
+ * whose content wants more height — the save lists, which fill whatever is left
+ * — scrolls inside itself instead of growing off-screen. Direct child on
+ * purpose: the changelog popup is a `.panel` inside #menu too and sizes itself.
+ */
+#menu > .panel {
+  display: flex;
+  flex-direction: column;
   width: 100%;
   max-width: 620px;
+  max-height: calc(100dvh - 48px);
   border: 1px solid var(--border-strong);
   background: var(--panel-bg);
   padding: 26px 30px 22px;
@@ -100,6 +109,11 @@
   border-bottom-color: var(--accent);
 }
 
+/* The Save tab exists only mid-game (Menu.open). display, not visibility: it must leave the flex row, not hold a gap. */
+#menu .tab.hidden {
+  display: none;
+}
+
 /*
  * All three panels are stacked in the same grid cell (rather than one being
  * display:none) so the panel container's height is always the tallest of
@@ -107,11 +121,19 @@
  */
 #menu .tab-panels {
   display: grid;
+  /* The panel's flexible middle: it takes the height left over between header and
+     footer, and `min-height: 0` lets a taller panel shrink into it and scroll. */
+  flex: 1;
+  min-height: 0;
 }
 
+/* A column so a panel can hand its own leftover height to one child (`.saves-section`). */
 #menu .tab-panel {
   grid-area: 1 / 1;
+  display: flex;
+  flex-direction: column;
   min-width: 0;
+  min-height: 0;
 }
 
 #menu .tab-panel.hidden {

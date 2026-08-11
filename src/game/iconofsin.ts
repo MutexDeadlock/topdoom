@@ -8,6 +8,7 @@ import { ThingType } from './thingtypes.ts';
 import { TELEFRAG_DAMAGE } from './things.ts';
 import { triangularDraw } from './weapons.ts';
 import type { CombatContext } from './combat.ts';
+import type { IconSnapshot } from './snapshot.ts';
 import type { SpriteFxLayer } from './spritefx.ts';
 import { SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import type { Skill } from './skill.ts';
@@ -185,6 +186,61 @@ export class IconOfSin {
     this.onExit = onExit;
     this.sfx = sfx;
     this.shooter = map.things.find((t) => t.type === ThingType.bossShooter) ?? null;
+  }
+
+  /** Everything mutable for a savegame, or null on a map with no eye (nothing to save). Cubes name their target by index into `targets`, since the live field is a reference into that array. */
+  snapshot(): IconSnapshot | null {
+    if (!this.shooter) return null;
+    return {
+      targets: this.targets.map((t) => ({ ...t })),
+      targetIndex: this.targetIndex,
+      easy: this.easy,
+      awake: this.awake,
+      spitTimer: this.spitTimer,
+      exitTimer: this.exitTimer,
+      explodeTimer: this.explodeTimer,
+      cubes: this.cubes.map((c) => ({
+        x: c.x,
+        y: c.y,
+        z: c.z,
+        angleRad: c.angleRad,
+        targetIndex: Math.max(0, this.targets.indexOf(c.target)),
+        remaining: c.remaining,
+        soundTimer: c.soundTimer,
+      })),
+    };
+  }
+
+  /** Restore twin of `snapshot`; each cube's animator is re-armed exactly as `brainSpit` builds one. docs/savegames.md § Apply order. */
+  restore(s: IconSnapshot | null): void {
+    if (!s || !this.shooter) return;
+    this.targets = s.targets.map((t) => ({ ...t }));
+    this.targetIndex = s.targetIndex;
+    this.easy = s.easy;
+    this.awake = s.awake;
+    this.spitTimer = s.spitTimer;
+    this.exitTimer = s.exitTimer;
+    this.explodeTimer = s.explodeTimer;
+    this.cubes = [];
+    for (const c of s.cubes) {
+      const target = this.targets[c.targetIndex];
+      if (!target) continue;
+      const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, 'BOSF', CUBE_FRAMES, CUBE_FRAME_SECONDS);
+      if (!anim.resolve(0, VIEWER_ANGLE_DEG)) continue;
+      this.cubes.push({
+        anim,
+        x: c.x,
+        y: c.y,
+        z: c.z,
+        angleRad: c.angleRad,
+        target,
+        remaining: c.remaining,
+        soundTimer: c.soundTimer,
+        drawPrevX: c.x,
+        drawPrevY: c.y,
+        drawPrevZ: c.z,
+      });
+    }
   }
 
   /**

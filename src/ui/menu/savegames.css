@@ -1,0 +1,181 @@
+/* The Save/Load tab panels (ui/menu/savegames.ts): the save form and the two save lists. */
+
+#menu .save-form {
+  display: flex;
+  gap: 10px;
+}
+
+#menu .save-form input {
+  flex: 1;
+  font: inherit;
+  color: var(--fg);
+  background: var(--inset-bg);
+  border: 1px solid var(--border);
+  padding: 8px 10px;
+}
+
+#menu .save-form input:focus {
+  outline: none;
+  border-color: var(--border-strong);
+}
+
+/* The form's Save button next to the input — not the full-width footer kind. */
+#menu .save-form button {
+  width: auto;
+  flex: none;
+  padding: 8px 18px;
+}
+
+/*
+ * The list is the panel's flexible child, so it fills the height the menu has
+ * left rather than the fixed cap `.list` gives the WAD lists — a save list is
+ * the point of its tab, and scrolling a 190px box through 24 saves isn't.
+ * Chain: .tab-panel (column) → this section → .saves (menu.css § .panel).
+ */
+#menu .saves-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  /* Last thing in its panel: a bottom margin here would only shorten the list. */
+  margin-bottom: 0;
+}
+
+#menu .saves {
+  flex: 1;
+  max-height: none;
+  /* Two rows' worth, so a short list still looks like a list. */
+  min-height: 150px;
+}
+
+#menu .saves:empty::after {
+  content: 'No saved games yet.';
+  display: block;
+  padding: 14px 12px;
+  color: var(--fg-faint);
+}
+
+/* Taller rows than the WAD lists: a thumbnail needs the height, and the label under
+   the name (level, then meta, then any missing-file warning) fills it. */
+#menu .saves .row {
+  align-items: center;
+  cursor: default;
+  gap: 12px;
+  padding: 9px 12px;
+}
+
+#menu .saves .thumb {
+  width: 76px;
+  border: 1px solid var(--border);
+  flex: none;
+}
+
+#menu .saves .save-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+#menu .saves .save-label > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The name is an `<input>` in every row — renaming happens in place — so it has
+ * to read as plain text until it's pointed at. The negative margin cancels its
+ * own padding, keeping the name on the same left edge as the lines below it.
+ */
+#menu .saves .save-label .name {
+  font: inherit;
+  color: var(--fg);
+  background: none;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 1px 4px;
+  margin: -1px -4px;
+  cursor: text;
+  /* Undoes `#menu .row .name`'s `flex: 1`, which in this column label would give
+     the field a zero basis and stretch it over the lines below. */
+  flex: none;
+}
+
+#menu .saves .save-label .name:hover {
+  border-color: var(--border);
+}
+
+#menu .saves .save-label .name:focus {
+  outline: none;
+  border-color: var(--border-strong);
+  background: var(--inset-bg);
+}
+
+#menu .saves .save-label .level {
+  color: var(--fg-dim);
+  font-size: 12px;
+}
+
+/*
+ * Subtle, not alarming: the save is still listed, renameable, downloadable and
+ * deletable — only *loading* it needs the file back. Same token the status
+ * line's errors use, so the menu has one red for "this won't work yet".
+ */
+#menu .saves .save-label .warning {
+  color: var(--accent-text-hover);
+  font-size: 12px;
+}
+
+#menu .saves .save-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+/* Small inline actions — undo button.ghost's full-width, left-aligned upload styling
+   and button.primary's roomy footer padding. */
+#menu .saves .save-actions button {
+  width: auto;
+  margin: 0;
+  text-align: center;
+  font-size: 12px;
+  letter-spacing: normal;
+  padding: 5px 10px;
+}
+
+/* Icon buttons (download, delete) carry their meaning in the tooltip, so they get
+   a square glyph-sized box rather than a label's worth of padding. */
+#menu .saves .save-actions button.icon {
+  width: 30px;
+  padding: 4px 0;
+  font-size: 15px;
+  line-height: 1.2;
+}
+
+/*
+ * An unsupported save dims its content but not its buttons — download and
+ * delete stay live, only Load is refused. Not `.disabled`: that dims the whole
+ * row, and a child can't undo a parent's opacity.
+ */
+#menu .saves .row.unsupported .thumb,
+#menu .saves .row.unsupported .save-label {
+  opacity: 0.4;
+}
+
+/* Armed: the first click of a two-click confirm (delete, overwrite). */
+#menu .saves .save-actions button.armed {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+/* Overwrite is already accent-coloured at rest, so its armed state needs a
+   second signal — a lighter fill and a white outline. */
+#menu .saves .save-actions button.primary.armed {
+  background: var(--accent-hover);
+  border-color: #fff;
+}

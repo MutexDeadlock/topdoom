@@ -1,6 +1,7 @@
 import { buildSubSectorPolys } from '../render/bsp.ts';
 import { segmentIntersect } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
+import { decodeRuns, encodeRuns } from './snapshot.ts';
 import type { WallOccluder } from '../render/mapmesh.ts';
 import type { World } from './world.ts';
 
@@ -198,6 +199,26 @@ export class FogOfWar {
     // it to fade in over the first few tics; the alpha snap below is what skips
     // the fade itself.
     this.tick(startX, startY, Infinity);
+    this.alpha.set(this.explored);
+  }
+
+  /** The `explored` bitmap, run-length encoded for a savegame (`snapshot.ts: encodeRuns`). */
+  snapshotExplored(): number[] {
+    return encodeRuns(this.explored);
+  }
+
+  /**
+   * Overwrites the exploration state wholesale — not ORed in, so a restore
+   * reproduces the save exactly even over the constructor's own spawn-seeded
+   * reveal. `pending` is recounted and the visual alpha snapped to match, the
+   * same snap the constructor ends on.
+   */
+  restoreExplored(runs: number[]): void {
+    this.explored.set(decodeRuns(runs, this.explored.length));
+    this.pending = 0;
+    for (let ss = 0; ss < this.sights.length; ss++) {
+      if (this.sights[ss] && !this.explored[ss]) this.pending++;
+    }
     this.alpha.set(this.explored);
   }
 

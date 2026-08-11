@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { Wad } from './wad/wad.ts';
-import { wadId } from './wad/checksum.ts';
+import { wadId, wadSetId } from './wad/checksum.ts';
 import { bestTimeKey, recordBestTime, type BestTimeResult } from './game/besttimes.ts';
 import { GraphicsBank } from './wad/graphics.ts';
 import { SpriteBank } from './wad/sprites.ts';
@@ -43,7 +43,15 @@ import { CenterMessage, lockedKeyMessage } from './ui/hud/message.ts';
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
 import { FrameProfiler } from './util/profiler.ts';
-import { clearRandom } from './util/random.ts';
+import { clearRandom, getRandomCursors, setRandomCursors } from './util/random.ts';
+import {
+  applySectors,
+  deserializeInventory,
+  serializeInventory,
+  snapshotSectors,
+  type GameSnapshot,
+} from './game/snapshot.ts';
+import type { SaveCapture } from './game/savegames.ts';
 import type { Skill } from './game/skill.ts';
 import {
   applyDamage,
@@ -257,6 +265,8 @@ export class Game {
     title: string,
     skill: Skill,
     startPos: Pos2 | null = null,
+    /** A savegame's state payload: the level is built normally, then overwritten step by step — docs/savegames.md § Apply order. */
+    restore: GameSnapshot | null = null,
   ) {
     this.view = view;
     this.audio = audio;
@@ -264,7 +274,9 @@ export class Game {
     this.title = title;
     this.skill = skill;
     this.startPos = startPos;
-    this.recordsEligible = startPos === null;
+    // From the save when restoring: a `?pos=` run must not become eligible for
+    // best times by being saved and loaded back (docs/hud.md § Best times).
+    this.recordsEligible = restore ? restore.recordsEligible : startPos === null;
     // Primed here, where a one-off scan of each file's bytes disappears into a load that is about
     // to build every mesh in the level, so the exit frame only ever hits the memo.
     for (const file of wad.files) wadId(file);
@@ -335,14 +347,82 @@ export class Game {
     this.screen = new ScreenEffects(view.renderer, (opacity) => this.playerActor.setOpacity(opacity));
 
     const wanted = this.mapNames.indexOf(startMap.toUpperCase());
-    this.loadMapByIndex(wanted >= 0 ? wanted : 0);
+    // The first-map fallback is fine for a fresh start, but a restore's things
+    // and sectors only make sense on the exact map they were saved on.
+    if (restore && wanted < 0) throw new Error(`the selected WADs have no map ${startMap.toUpperCase()}`);
+    this.loadMapByIndex(wanted >= 0 ? wanted : 0, restore);
   }
 
   get currentMap(): string {
     return this.mapNames[this.mapIndex];
   }
 
-  private loadMapByIndex(index: number): void {
+  /**
+   * Whether this moment can be saved. Death, a pending exit and the
+   * intermission are refused — excluding those three from the save format
+   * entirely is far cheaper than restoring them correctly
+   * (docs/savegames.md § What is saved and what is deliberately not).
+   */
+  canSave(): boolean {
+    return !this.playerDead && !this.intermissionActive && !this.pendingExit;
+  }
+
+  /**
+   * The full state of this moment plus a thumbnail, ready for the store —
+   * or null when `canSave` refuses. The store's own bookkeeping (id, name,
+   * date) and the menu's source keys are the caller's to add; this class
+   * knows the running level, not the library it was picked from.
+   */
+  captureSave(): SaveCapture | null {
+    if (!this.canSave()) return null;
+    return {
+      map: this.currentMap,
+      skill: this.skill,
+      wads: wadSetId(this.wad),
+      levelTime: this.levelTime,
+      health: this.inventory.health,
+      thumb: this.captureThumbnail(),
+      state: {
+        levelTime: this.levelTime,
+        cameraYawDeg: this.view.camera.yawDeg,
+        recordsEligible: this.recordsEligible,
+        player: this.player.snapshot(),
+        inventory: serializeInventory(this.inventory),
+        weapons: this.weaponSystem.snapshot(),
+        sectors: snapshotSectors(this.map),
+        // Non-null: all three are built by every `loadMapByIndex` pass, and
+        // `captureSave` is only reachable with a level loaded.
+        specials: this.specials!.snapshot(),
+        sectorEffects: this.sectorEffects.snapshot(),
+        fog: { runs: this.fogOfWar.snapshotExplored() },
+        soundAlerted: this.world.snapshotSoundAlerted(),
+        things: this.things!.snapshot(),
+        icon: this.icon!.snapshot(),
+        projectiles: this.projectiles.snapshot(),
+        rng: getRandomCursors(),
+      },
+    };
+  }
+
+  /**
+   * A small JPEG of the moment being saved. The renderer runs without
+   * `preserveDrawingBuffer`, so the pixels are only readable in the same task
+   * as a `render` call — hence the fresh synchronous render here rather than
+   * trusting whatever `stillFrame` last composited.
+   */
+  private captureThumbnail(): string {
+    this.view.renderer.render(this.scene, this.view.camera.camera);
+    const src = this.view.renderer.domElement;
+    const w = 320;
+    const h = Math.max(1, Math.round((src.height / Math.max(1, src.width)) * w));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d')!.drawImage(src, 0, 0, w, h);
+    return canvas.toDataURL('image/jpeg', 0.7);
+  }
+
+  private loadMapByIndex(index: number, restore: GameSnapshot | null = null): void {
     // `M_ClearRandom`, from vanilla's own `G_InitNew` — this is the one place
     // every level start funnels through. docs/random.md § What this does not buy.
     clearRandom();
@@ -385,8 +465,17 @@ export class Game {
     const t0 = performance.now();
     const map = loadMap(this.wad, name);
     this.map = map;
+    // Before the sector snapshot below, so `totalSecrets` counts the map's
+    // authored secrets — a found secret zeroes its sector's `special`.
     this.sectorEffects = new SectorEffects(map);
-    this.levelTime = 0;
+    // The sector snapshot is applied to the *map* here, ahead of everything
+    // built from it, so meshes/world/fog all bake restored geometry and no
+    // rebuild pass is needed — docs/savegames.md § Apply order.
+    if (restore) {
+      applySectors(map, restore.sectors);
+      this.sectorEffects.restore(restore.sectorEffects.secretsFound, restore.sectorEffects.timer);
+    }
+    this.levelTime = restore ? restore.levelTime : 0;
     this.world = new World(map);
     // Both drop whatever was still in flight or mid-animation in the level
     // being torn down, which would otherwise carry over into the new one.
@@ -396,23 +485,35 @@ export class Game {
     // batches up front — SpecialsController owns their geometry instead (see
     // render/mapmesh.ts's MapMeshOptions doc for why).
     const movableSectors = computeMovableSectors(map);
+    // A saved mid-motion mover's sector may have had its authored special
+    // consumed, dropping it from the scan above — union it back in so its
+    // geometry stays mover-owned (docs/savegames.md § Apply order).
+    if (restore) for (const [sectorIndex] of restore.specials.movers) movableSectors.add(sectorIndex);
     this.built = buildMapMesh(map, this.materials, { movableSectors });
     this.scene.add(this.built.group);
     this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
     this.flatFader = new FlatFader(this.built.flatSurfaces, this.built.flatMeshes);
     this.textureScroller = new TextureScroller(map, this.built.occluders, this.built.wallMeshes, this.materials);
     this.player = new Player(this.world);
-    // Applied before fog of war is seeded, so an explicit start position reveals
-    // exactly what is visible from there and nothing from the map's real spawn.
-    if (this.startPos) {
-      this.player.moveTo(this.startPos);
-      this.startPos = null;
+    if (restore) {
+      // The saved position and camera replace both the map's own start and any
+      // `?pos=` override, which stays queued for the next fresh level.
+      this.player.restore(restore.player);
+      this.view.camera.yawDeg = restore.cameraYawDeg;
+    } else {
+      // Applied before fog of war is seeded, so an explicit start position reveals
+      // exactly what is visible from there and nothing from the map's real spawn.
+      if (this.startPos) {
+        this.player.moveTo(this.startPos);
+        this.startPos = null;
+      }
+      // Every level (re)load starts the camera facing the same way the player
+      // spawns facing, instead of always defaulting to due-north regardless of
+      // the map's own player-start angle.
+      this.view.camera.yawDeg = (this.player.angle * 180) / Math.PI - 90;
     }
-    // Every level (re)load starts the camera facing the same way the player
-    // spawns facing, instead of always defaulting to due-north regardless of
-    // the map's own player-start angle.
-    this.view.camera.yawDeg = (this.player.angle * 180) / Math.PI - 90;
     this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player.x, this.player.y);
+    if (restore) this.fogOfWar.restoreExplored(restore.fog.runs);
     this.specials = new SpecialsController(
       map,
       this.world,
@@ -448,7 +549,12 @@ export class Game {
       this.player.x,
       this.player.y,
       this.audio,
+      movableSectors,
     );
+    if (restore) {
+      this.specials.restore(restore.specials);
+      this.world.restoreSoundAlerted(restore.soundAlerted);
+    }
 
     this.things = buildThingSprites(
       map,
@@ -466,6 +572,7 @@ export class Game {
         this.specials?.notifyBossDeath(type);
         this.icon?.notifyBossDeath(type);
       },
+      restore?.things,
     );
     this.scene.add(this.things.group);
 
@@ -482,10 +589,22 @@ export class Game {
       },
       this.audio,
     );
+    if (restore) {
+      this.icon.restore(restore.icon);
+      this.projectiles.restore(restore.projectiles);
+      this.inventory = deserializeInventory(restore.inventory);
+      this.weaponSystem.restore(restore.weapons);
+    }
 
     // Raised last: this method clears every overlay at its top, so a card shown any earlier than
     // here would be wiped by its own load.
     this.levelCard.show(this.levelNames.nameFor(name), this.levelNames.graphicFor(name));
+
+    // Dead last, after every construction-time pRandom draw above (light-state
+    // seeds, pushThing's homingBias) has happened and been overwritten: the
+    // first simulation draw after a load is exactly the one the save would
+    // have made next — docs/savegames.md § Apply order.
+    if (restore) setRandomCursors(restore.rng);
 
     const provider = this.wad.providerOf(name)?.name ?? '?';
     console.info(

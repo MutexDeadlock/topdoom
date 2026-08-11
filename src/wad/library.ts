@@ -166,6 +166,20 @@ export function mergedMaps(iwad: WadSource, pwads: WadSource[]): MergedMap[] {
   });
 }
 
+/**
+ * How a map is named wherever it is listed — the level select and the save rows,
+ * which must agree. Lump name first: it's what the level is picked by, and the
+ * only thing every map has. Then its title where the WAD set knows one
+ * (docs/wad.md § Level names), and the provider only when an add-on took the map
+ * over.
+ */
+export function describeMap(map: MergedMap, iwadLabel: string): string {
+  const parts = [map.name];
+  if (map.title) parts.push(map.title);
+  if (map.provider !== iwadLabel) parts.push(map.provider);
+  return parts.join('  —  ');
+}
+
 /** Loads the selected files in the order the engine has to merge them. */
 export async function loadWadFiles(iwad: WadSource, pwads: WadSource[]): Promise<WadFile[]> {
   const sources = [iwad, ...pwads];

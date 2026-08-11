@@ -47,6 +47,10 @@ and then asserts *exact* values, because there is nothing left to sample.
 `util/` rather than `game/` because `audio/sfx.ts` needs `mRandom` and must not import from `game/`.
 It is the one stateful module in `util/`.
 
+Being global is also what lets a savegame capture them whole: `getRandomCursors`/`setRandomCursors`
+save and restore both, and a restore applies them *after* every other rebuild step, since level
+construction itself draws from the table on the way (docs/savegames.md § Apply order).
+
 ## The triangular draw
 
 `triangularDraw` (`game/weapons.ts`) is vanilla's `(P_Random() - P_Random()) << shift`, and it is

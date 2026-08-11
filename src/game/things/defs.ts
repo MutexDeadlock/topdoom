@@ -13,6 +13,7 @@ import type { Sector } from '../../wad/map.ts';
 import { BOSS_DEATH_TYPES } from '../thingdefs.ts';
 import { ThingType } from '../thingtypes.ts';
 import type { MonsterAttackEvent, MonsterBody } from '../monsters/defs.ts';
+import type { ThingsSnapshot } from '../snapshot.ts';
 import type { ThingBlocker } from '../world.ts';
 import type { SpriteAnimator } from '../../render/sprites.ts';
 import type { Placement, Pos2, Pos3 } from '../../types.ts';
@@ -243,6 +244,15 @@ export interface ThingLayer {
   missingArt: readonly string[];
   /** See `LevelKillItemStats`'s own doc. */
   stats: LevelKillItemStats;
+  /**
+   * Every live thing's mutable state in `posed` order for a savegame — the
+   * array index is the id, which is what keeps saved cross-thing references
+   * (`targetId`, a projectile's `sourceId`) valid on restore. The restore half
+   * is `buildThingSprites`' own `restore` parameter, not a method here: things
+   * are rebuilt through `pushThing`, which only exists inside the factory.
+   * docs/savegames.md § What is saved and what is deliberately not.
+   */
+  snapshot(): ThingsSnapshot;
   /** Releases the instanced meshes/materials this layer owns; call when the map is unloaded. Shared geometry and textures belong to `SpriteMaterialCache`, which outlives a level. */
   dispose(): void;
   /** Every living monster, still-standing barrel, and solid decoration near (x, y) as a solid body the *player* walks around — all `MF_SOLID` in vanilla. Monsters get `blockersFor` instead. */

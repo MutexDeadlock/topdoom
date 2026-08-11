@@ -100,6 +100,8 @@
 
         <div class="tabs">
           <button class="tab" id="tab-button-newgame" data-tab="newgame">New Game</button>
+          <button class="tab hidden" id="tab-button-save" data-tab="save">Save</button>
+          <button class="tab" id="tab-button-load" data-tab="load">Load</button>
           <button class="tab" id="tab-button-settings" data-tab="settings">Settings</button>
         </div>
 
@@ -128,6 +130,28 @@
                 <select id="skill-select"></select>
               </section>
             </div>
+          </div>
+
+          <div class="tab-panel" id="tab-save">
+            <section>
+              <h2>Save game</h2>
+              <div class="save-form">
+                <input type="text" id="save-name" placeholder="Name (optional)" maxlength="60" autocomplete="off" />
+                <button class="primary" id="save-button">Save</button>
+              </div>
+            </section>
+            <section class="saves-section">
+              <h2>Existing saves <span class="hint">overwrite one, or rename it in place</span></h2>
+              <div class="list saves" id="save-list"></div>
+            </section>
+          </div>
+
+          <div class="tab-panel" id="tab-load">
+            <section class="saves-section">
+              <h2>Load game</h2>
+              <div class="list saves" id="load-list"></div>
+              <button class="ghost" id="save-import">Import save from disk…</button>
+            </section>
           </div>
 
           <div class="tab-panel" id="tab-settings">
@@ -234,6 +258,7 @@
       </div>
 
       <input type="file" id="file-input" accept=".wad,.WAD" hidden />
+      <input type="file" id="save-file-input" accept=".json,application/json" hidden />
       <div id="menu-credit">by @fauler420</div>
     </div>
 

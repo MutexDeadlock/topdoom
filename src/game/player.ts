@@ -1,5 +1,6 @@
 import { slideMove, type ThingBlocker, type World } from './world.ts';
 import type { Input } from './input.ts';
+import type { PlayerSnapshot } from './snapshot.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
 
 /** Vanilla DOOM values, in map units. */
@@ -153,6 +154,35 @@ export class Player implements Pos3 {
     this.prevY = this.y;
     this.prevZ = this.z;
     this.prevAngle = this.angle;
+  }
+
+  /** Every field the simulation mutates, for a savegame — docs/savegames.md § What is saved and what is deliberately not. */
+  snapshot(): PlayerSnapshot {
+    return {
+      x: this.x,
+      y: this.y,
+      z: this.z,
+      angle: this.angle,
+      velX: this.velX,
+      velY: this.velY,
+      velZ: this.velZ,
+      knockVelX: this.knockVelX,
+      knockVelY: this.knockVelY,
+    };
+  }
+
+  /** The restore twin of `snapshot`; a discontinuous move, so it ends on `syncInterpolation`. */
+  restore(s: PlayerSnapshot): void {
+    this.x = s.x;
+    this.y = s.y;
+    this.z = s.z;
+    this.angle = s.angle;
+    this.velX = s.velX;
+    this.velY = s.velY;
+    this.velZ = s.velZ;
+    this.knockVelX = s.knockVelX;
+    this.knockVelY = s.knockVelY;
+    this.syncInterpolation();
   }
 
   /**

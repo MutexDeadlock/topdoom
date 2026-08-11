@@ -69,3 +69,18 @@ export function clearRandom(): void {
   prndindex = 0;
   rndindex = 0;
 }
+
+/** Both cursors, for a savegame. docs/random.md § Why the cursors are global. */
+export function getRandomCursors(): { p: number; m: number } {
+  return { p: prndindex, m: rndindex };
+}
+
+/**
+ * Restores saved cursors. A savegame applies this *after* every other restore
+ * step, since rebuilding the level draws from the table on the way —
+ * docs/savegames.md § Apply order.
+ */
+export function setRandomCursors(cursors: { p: number; m: number }): void {
+  prndindex = cursors.p & 0xff;
+  rndindex = cursors.m & 0xff;
+}

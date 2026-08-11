@@ -13,4 +13,5 @@
 @import './ui/hud/intermission.css';
 @import './ui/fatalerror.css';
 @import './ui/menu/menu.css';
+@import './ui/menu/savegames.css';
 @import './ui/menu/changelog.css';

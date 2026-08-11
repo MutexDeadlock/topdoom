@@ -73,6 +73,7 @@ import {
   type MonsterAttackEvent,
 } from './monsters/defs.ts';
 import { commitTarget, reactToDamage, shouldRetarget, stepMonsterAI, tryWake } from './monsters/ai.ts';
+import type { ThingsSnapshot, ThingState } from './snapshot.ts';
 import { createThingGrid } from './things/grid.ts';
 import { circleBlocked } from './world.ts';
 import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audio/sfx.ts';
@@ -157,6 +158,14 @@ export function buildThingSprites(
    * whether/how it matters is entirely `SpecialsController`'s per-map table to decide.
    */
   onBossDeath?: (type: number) => void,
+  /**
+   * A savegame's saved thing list. When present the map's own spawn loop is
+   * skipped entirely and every thing is rebuilt from the save in order —
+   * restore lives here as a parameter rather than a `ThingLayer` method
+   * because things can only be built through `pushThing`, which exists only
+   * inside this closure. docs/savegames.md § Apply order.
+   */
+  restore?: ThingsSnapshot,
 ): ThingLayer {
   const batch = new SpriteBatch();
   /**
@@ -296,27 +305,113 @@ export function buildThingSprites(
    */
   const missingArt = new Set<string>();
 
-  for (const t of map.things) {
-    if (!THING_SPRITES[t.type]) continue;
-    if (isMultiplayerOnly(t.flags)) continue;
-    if (!spawnsAtSkill(t.flags, skill)) continue;
-
-    // MF_SPAWNCEILING things (ceiling-hung gore, Commander Keen) measure z down from the ceiling
-    // instead of up from the floor — see CEILING_HUNG_HEIGHT's doc.
-    const sector = world.sectorAt(t.x, t.y);
-    const hangHeight = CEILING_HUNG_HEIGHT[t.type];
-    const z = hangHeight !== undefined ? (sector?.ceilHeight ?? 0) - hangHeight : (sector?.floorHeight ?? 0);
-    if (!pushThing(t.type, { x: t.x, y: t.y, z }, spawnAngleDeg(t.angle), { ambush: isAmbush(t.flags) })) {
-      missingArt.add(`${t.type} (${THING_SPRITES[t.type]})`);
-      continue;
+  /**
+   * Rebuilds every saved thing in order through `pushThing`, then overwrites
+   * the fields the simulation had mutated. Ids are positional, so a type whose
+   * art this WAD set lacks is a hard error — silently skipping it (the spawn
+   * loop's behavior) would shift every later id and desync all saved
+   * cross-thing references. A dead thing's death pose is replayed and
+   * fast-forwarded by its own `deadTime`; a transient pain/attack pose is not
+   * (docs/savegames.md § What is saved and what is deliberately not).
+   */
+  function restoreThings(saved: ThingsSnapshot): void {
+    clock = saved.clock;
+    stats.totalKills = saved.stats.totalKills;
+    stats.kills = saved.stats.kills;
+    stats.totalItems = saved.stats.totalItems;
+    stats.items = saved.stats.items;
+    for (const s of saved.things) {
+      const p = pushThing(s.type, { x: s.x, y: s.y, z: s.z }, s.facingDeg, {
+        ambush: s.ambush === true,
+        dropped: s.dropped === true,
+      });
+      if (!p) {
+        throw new Error(`this WAD set has no art for thing ${s.type} (${THING_SPRITES[s.type] ?? '?'}) the save needs`);
+      }
+      p.picked = s.picked === true;
+      p.hidden = s.hidden === true;
+      p.visible = !p.hidden;
+      const m = s.monster;
+      if (!m) continue;
+      p.health = m.health;
+      p.angle = m.angle;
+      p.velX = m.velX;
+      p.velY = m.velY;
+      p.velZ = m.velZ;
+      p.alerted = m.alerted;
+      p.lookTimer = m.lookTimer;
+      p.targetId = m.targetId;
+      p.attackPause = m.attackPause;
+      p.burstLeft = m.burstLeft;
+      p.burstTimer = m.burstTimer;
+      p.chargeTimer = m.chargeTimer;
+      p.chargeAngle = m.chargeAngle;
+      p.painTimer = m.painTimer;
+      p.inFloat = m.inFloat;
+      p.movedir = m.movedir;
+      p.movecount = m.movecount;
+      p.chaseTimer = m.chaseTimer;
+      p.moveBlocked = m.moveBlocked;
+      p.threshold = m.threshold;
+      p.justHit = m.justHit;
+      p.justAttacked = m.justAttacked;
+      p.reactionTicks = m.reactionTicks;
+      p.refiring = m.refiring;
+      p.homingBias = m.homingBias;
+      p.walkSoundTimer = m.walkSoundTimer;
+      p.walkSoundStep = m.walkSoundStep;
+      if (!m.dead) continue;
+      p.dead = true;
+      p.deadTime = m.deadTime;
+      p.deathFrameCount = m.deathFrameCount;
+      p.barrelExploded = m.barrelExploded;
+      p.explodeSource = m.explodeSource;
+      // Re-enter the death pose `damageThing` had played, fast-forwarded onto
+      // whichever frame `deadTime` says the corpse is holding.
+      if (p.type === ThingType.barrel) {
+        p.anim.die(BARREL_DEATH_FRAMES, BARREL_DEATH_FRAME_SECONDS, BARREL_DEATH_SPRITE);
+        p.anim.advance(m.deadTime, false);
+        continue;
+      }
+      // The same overkill gib rule as the death branch — health keeps its
+      // negative overkill in the save precisely so this recomputes right.
+      const maxHealth = MONSTER_HEALTH[p.type] ?? 0;
+      const frames = (m.health < -maxHealth && MONSTER_XDEATH_FRAMES[p.type]) || MONSTER_DEATH_FRAMES[p.type];
+      if (frames) {
+        p.anim.die(frames, MONSTER_DEATH_FRAME_SECONDS);
+        p.anim.advance(m.deadTime, false);
+      } else {
+        p.hidden = true;
+        p.visible = false;
+      }
     }
-    // Vanilla's own `P_SpawnMapThing` totals — incremented only for a thing that actually spawns
-    // (past every filter above, art included), matching `if (mobj->flags & MF_COUNTKILL)
-    // totalkills++` / `MF_COUNTITEM` in `info.c`. Fixed for the level: only the runtime kill/pickup
-    // counters change after this, which is why a cube-spawned monster (`spawnMonster`) can push
-    // the kill count past 100%.
-    if (COUNTKILL_TYPES.has(t.type)) stats.totalKills++;
-    else if (COUNTITEM_TYPES.has(t.type)) stats.totalItems++;
+  }
+
+  if (restore) {
+    restoreThings(restore);
+  } else {
+    for (const t of map.things) {
+      if (!THING_SPRITES[t.type]) continue;
+      if (isMultiplayerOnly(t.flags)) continue;
+      if (!spawnsAtSkill(t.flags, skill)) continue;
+
+      // MF_SPAWNCEILING things (ceiling-hung gore, Commander Keen) measure z down from the ceiling
+      // instead of up from the floor — see CEILING_HUNG_HEIGHT's doc.
+      const sector = world.sectorAt(t.x, t.y);
+      const hangHeight = CEILING_HUNG_HEIGHT[t.type];
+      const z = hangHeight !== undefined ? (sector?.ceilHeight ?? 0) - hangHeight : (sector?.floorHeight ?? 0);
+      if (!pushThing(t.type, { x: t.x, y: t.y, z }, spawnAngleDeg(t.angle), { ambush: isAmbush(t.flags) })) {
+        missingArt.add(`${t.type} (${THING_SPRITES[t.type]})`);
+        continue;
+      }
+      // Vanilla's own `P_SpawnMapThing` totals — incremented only for a thing that actually spawns
+      // (past every filter above, art included), matching `if (mobj->flags & MF_COUNTKILL)
+      // totalkills++` / `MF_COUNTITEM` in `info.c`. Fixed for the level: only the runtime kill/pickup
+      // counters change after this, which is why a cube-spawned monster (`spawnMonster`) can push
+      // the kill count past 100%.
+      if (COUNTKILL_TYPES.has(t.type)) stats.totalKills++;
+      else if (COUNTITEM_TYPES.has(t.type)) stats.totalItems++;
+    }
   }
 
   /**
@@ -677,11 +772,86 @@ export function buildThingSprites(
     if (p.raiseFrames) p.anim.playOnce(p.raiseFrames, MONSTER_DEATH_FRAME_SECONDS);
   }
 
+  /**
+   * A killable thing still in its exact spawn state needs no `MonsterFields`
+   * block — the restore's own `pushThing` recreates those defaults. Alerted,
+   * damaged, moving or dead all disqualify; `lookTimer` and `homingBias` are
+   * deliberately ignored, so a never-disturbed monster costs 9 saved fields
+   * instead of ~40, which is what keeps a 10k-monster map's save inside the
+   * localStorage quota (docs/savegames.md § Storage and the cap).
+   */
+  function isPristine(p: PosedThing): boolean {
+    const spawnHealth = p.type === ThingType.barrel ? BARREL_HEALTH : MONSTER_HEALTH[p.type] ?? Infinity;
+    return (
+      !p.dead &&
+      !p.alerted &&
+      p.health === spawnHealth &&
+      p.targetId === null &&
+      p.velX === 0 &&
+      p.velY === 0 &&
+      p.velZ === 0
+    );
+  }
+
+  function snapshotThings(): ThingsSnapshot {
+    return {
+      clock,
+      stats: { ...stats },
+      things: posed.map((p) => {
+        const s: ThingState = { type: p.type, x: p.x, y: p.y, z: p.z, facingDeg: p.facingDeg };
+        // Present only when true — see ThingState's doc.
+        if (p.picked) s.picked = true;
+        if (p.hidden) s.hidden = true;
+        if (p.dropped) s.dropped = true;
+        if (p.ambush) s.ambush = true;
+        const killable = Number.isFinite(p.health) || p.dead;
+        if (killable && !isPristine(p)) {
+          s.monster = {
+            health: p.health,
+            angle: p.angle,
+            dead: p.dead,
+            deadTime: p.deadTime,
+            deathFrameCount: p.deathFrameCount,
+            barrelExploded: p.barrelExploded,
+            explodeSource: p.explodeSource,
+            velX: p.velX,
+            velY: p.velY,
+            velZ: p.velZ,
+            alerted: p.alerted,
+            lookTimer: p.lookTimer,
+            targetId: p.targetId,
+            attackPause: p.attackPause,
+            burstLeft: p.burstLeft,
+            burstTimer: p.burstTimer,
+            chargeTimer: p.chargeTimer,
+            chargeAngle: p.chargeAngle,
+            painTimer: p.painTimer,
+            inFloat: p.inFloat,
+            movedir: p.movedir,
+            movecount: p.movecount,
+            chaseTimer: p.chaseTimer,
+            moveBlocked: p.moveBlocked,
+            threshold: p.threshold,
+            justHit: p.justHit,
+            justAttacked: p.justAttacked,
+            reactionTicks: p.reactionTicks,
+            refiring: p.refiring,
+            homingBias: p.homingBias,
+            walkSoundTimer: p.walkSoundTimer,
+            walkSoundStep: p.walkSoundStep,
+          };
+        }
+        return s;
+      }),
+    };
+  }
+
   return {
     group,
     count: posed.length,
     missingArt: [...missingArt],
     stats,
+    snapshot: snapshotThings,
     solidBodies: grid.solidBodies,
     update(
       dt: number,

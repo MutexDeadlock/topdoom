@@ -1,6 +1,17 @@
 v0.1x.x (2026-08-xx)
 
 Features and improvements
+  - savegames! new Save and Load tabs in the menu
+    - a save captures the exact moment: monsters, doors and lifts mid-motion,
+      fog of war, projectiles in flight, even the random number cursors
+    - each save shows a small screenshot and the level's name, can be renamed
+      right in the list, overwritten with the current moment, downloaded as a
+      .json file, imported back (file picker or drop it on the menu), deleted
+    - a save whose WAD files aren't loaded says which one is missing
+    - saves carry a format version; ones a newer build can't read stay listed
+      but refuse to load
+    - loading verifies the WAD files are byte-identical to the ones the save
+      was made with, and names the file that isn't
   - randomness now comes from DOOM's own random table instead of the
     browser's generator
   - the game now simulates at a fixed 35 ticks per second, like the original

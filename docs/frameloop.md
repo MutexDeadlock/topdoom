@@ -68,6 +68,17 @@ and respawn key. A frame that runs no tics must not touch input state at all.
 
 `consumeWheel` was already an accumulate-and-drain channel and needed only to move to the tic.
 
+**A key going to a focused form control is not the game's** (`isTyping`, `game/input.ts`): `keydown`
+is listened for on `window`, and it both latches the key and preventDefaults `Space` and the arrows,
+so without the guard the menu's name fields could not contain a space or move their caret, and its
+dropdowns could not be arrowed through. Only `keydown` is guarded — a key held from the canvas into
+a field must still see its `keyup`, and clearing one that was never latched costs nothing.
+
+The other half of that rule is **`Menu.close` blurring whatever it still holds**: focus survives the
+menu closing, so a dropdown or button clicked on the way out would keep taking the game's keys for
+the rest of the level. Nothing outside the menu is focusable, which is what makes the guard's own
+"only while the menu is up" true.
+
 ### Posing for the aim ray
 
 The aim ray is cast through the **live `THREE` camera**, which the last rendered frame left at an

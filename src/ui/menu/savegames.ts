@@ -38,7 +38,8 @@ export interface SaveHooks {
   /**
    * Why the current moment can't be saved, or null when it can — the same
    * sentence `onSave`/`onOverwrite` would throw, asked ahead of the click so
-   * the buttons can be disabled rather than failing when pressed.
+   * the buttons can be disabled rather than failing when pressed. Null with no
+   * game running too: `inGame` is the gate for that, not this.
    */
   saveRefusal(): string | null;
 }
@@ -73,12 +74,6 @@ export class SavegamesUi {
   private setStatus: (text: string, isError?: boolean) => void;
   private describe: (meta: SaveMeta) => SaveSetInfo;
   private inGame = false;
-  /**
-   * Why this moment can't be saved, or null — read from the hook on each
-   * `refresh` and so on every menu open, which is the only moment it can have
-   * changed: the game is paused for as long as the menu is up.
-   */
-  private refusal: string | null = null;
   /**
    * Which of the two lists is on screen, and whether each still matches the
    * store. Only the visible one is ever built: listing itself is a cheap meta
@@ -119,20 +114,22 @@ export class SavegamesUi {
    */
   refresh(inGame = this.inGame): void {
     this.inGame = inGame;
-    // Before the lists: `renderVisible` builds the rows' Overwrite buttons off it.
-    this.refusal = inGame ? this.hooks.saveRefusal() : null;
     this.saveButton.disabled = !this.canSave;
-    // A disabled button shows no tooltip, so the reason goes next to the
-    // heading, where it is on screen without being hunted for.
-    this.refusalHint.textContent = this.refusal ?? '';
+    // A disabled button shows no tooltip, so the reason has to be on screen.
+    this.refusalHint.textContent = this.hooks.saveRefusal() ?? '';
     this.stale.save = true;
     this.stale.load = true;
     void this.renderVisible();
   }
 
-  /** Whether Save and Overwrite are live: a game to save, and a moment it would accept. */
+  /**
+   * Whether Save and Overwrite are live: a game to save, and a moment it would
+   * accept. Asked afresh each time rather than cached — it is three field reads
+   * behind the hook, and a stored copy would have to be refreshed before the
+   * rows are built.
+   */
   private get canSave(): boolean {
-    return this.inGame && this.refusal === null;
+    return this.inGame && this.hooks.saveRefusal() === null;
   }
 
   /** Which tab is showing, `null` for one of the menu's others — `Menu.setTab`'s hand-off. */
@@ -269,7 +266,9 @@ export class SavegamesUi {
       overwrite.textContent = 'Overwrite';
       // Deliberately not naming the save: `rename` patches a row in place, so a
       // name baked in here would go stale, and the row's own field shows it anyway.
-      overwrite.title = this.refusal ?? 'Hold to replace this save with the current moment';
+      // The refusal, when there is one, is in the heading's hint instead: a
+      // disabled button never shows its tooltip.
+      overwrite.title = 'Hold to replace this save with the current moment';
       overwrite.disabled = !this.canSave;
       this.confirmOnHold(overwrite, 'Hold Overwrite to replace that save.', () => void this.overwrite(meta.id));
       actions.append(overwrite);
@@ -394,9 +393,8 @@ export class SavegamesUi {
       this.setStatus(hint);
     };
     const start = () => {
-      // `disabled` is checked here, not left to the browser: not every one
-      // suppresses pointer events on a disabled control, and a press that got
-      // through would print the hold hint for a button that does nothing.
+      // Not every browser suppresses pointer events on a disabled control, and
+      // a press that got through would print the hold hint for a dead button.
       if (timer || button.disabled) return;
       button.classList.add('holding');
       timer = window.setTimeout(() => {

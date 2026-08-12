@@ -7,6 +7,7 @@ Features and improvements
 Fixed bugs
   - a monster whose step was clear but whose first fraction of it
     grazed a corner stood there forever
+  - manually named savegames can contain spaces now
 
 
 ===============================================================================

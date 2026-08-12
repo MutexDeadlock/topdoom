@@ -199,6 +199,11 @@ export class Menu {
   close(): void {
     // Otherwise it would be waiting, still open, the next time the menu comes up.
     this.closeChangelog();
+    // Nothing in the menu may keep focus once it's gone: a control that still
+    // had it would go on taking keys the game wants (`isTyping`, game/input.ts)
+    // — a level dropdown clicked on the way out would eat the arrow keys.
+    const focused = document.activeElement;
+    if (focused instanceof HTMLElement && this.root.contains(focused)) focused.blur();
     this.root.classList.add('hidden');
   }
 

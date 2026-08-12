@@ -27,6 +27,23 @@ export function setRightMouseAction(action: RightMouseAction): void {
 }
 
 /**
+ * Whether a key belongs to a focused form control rather than to the game — the
+ * menu's name fields, its sliders, checkboxes and dropdowns. The listeners below
+ * are on `window`, and they preventDefault `Space` and the arrows, which without
+ * this leaves a save name unable to contain a space, a caret unable to move and
+ * a dropdown unable to be arrowed through. Only ever true while the menu is up:
+ * nothing else here takes focus, and `Menu.close` drops what it holds.
+ *
+ * Only `keydown` asks: a key held from the canvas into a field must still see
+ * its `keyup`, and clearing one that was never latched costs nothing.
+ */
+function isTyping(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
+  );
+}
+
+/**
  * Keyboard and pointer state, sampled by the game loop rather than event-driven.
  *
  * The edge latches (`pressed`, `rightMousePressed`) hold "went down since the
@@ -64,6 +81,8 @@ export class Input {
   }
 
   private onKeyDown = (e: KeyboardEvent) => {
+    // `onKeyUp` stays unguarded on purpose — see `isTyping`.
+    if (isTyping(e.target)) return;
     if (!this.down.has(e.code)) this.pressedThisTic.add(e.code);
     this.down.add(e.code);
     // Keep the browser from scrolling the page with the movement keys.

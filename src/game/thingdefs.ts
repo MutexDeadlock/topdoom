@@ -803,7 +803,7 @@ export const THING_NAMES: Record<number, string> = {
 export function obituary(cause: DamageCause | undefined): string {
   if (cause === 'self') return 'You blew yourself up';
   if (cause === 'crush') return 'You were crushed';
-  if (cause === 'slime') return 'You died in the slime';
+  if (cause === 'slime') return 'You forgot to wear a protection suit';
   const name = typeof cause === 'number' ? THING_NAMES[cause] : undefined;
   return name ? `You were killed by ${name}` : '';
 }

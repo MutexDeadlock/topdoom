@@ -210,9 +210,11 @@ export class SavegamesUi {
 
     const level = document.createElement('span');
     level.className = 'level';
-    level.textContent = set.level;
+    // The level time rides on the level line rather than in the meta line: it is
+    // a property of *this level's* run, and the bottom line is about the save.
+    level.textContent = `${set.level} · ${formatClock(meta.levelTime)}`;
 
-    const parts = [SKILL_NAMES[meta.skill], formatClock(meta.levelTime)];
+    const parts = [SKILL_NAMES[meta.skill]];
     if (meta.at) parts.push(new Date(meta.at).toLocaleString());
     if (!entry.supported) parts.push(`unsupported version ${meta.version}`);
     const detail = document.createElement('span');

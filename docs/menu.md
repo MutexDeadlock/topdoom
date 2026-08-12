@@ -65,7 +65,7 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   still on it to New Game. Same gate as the resume button: there is nothing to save otherwise. The
   Load tab is always available.
 - Saving takes an optional name (defaulting to map + date), and both panels list every save the
-  player made, newest first: thumbnail, name, the level, then skill · level time · date. The
+  player made, newest first: thumbnail, name, the level · level time, then skill · date. The
   level-entry checkpoint is the one save neither tab ever shows — `listSaves` drops it, and it
   costs nobody a slot (docs/savegames.md § The checkpoint). Rows are rendered fresh on every
   `open` via `SavegamesUi.refresh`, with the `#pwad-list` scrollTop-restore trick.

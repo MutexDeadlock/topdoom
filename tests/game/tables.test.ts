@@ -102,7 +102,7 @@ describe('Vanilla tables · monsters', () => {
     assert.equal(obituary(ThingType.bossBrain), 'You were killed by the Icon of Sin');
     assert.equal(obituary('self'), 'You blew yourself up');
     assert.equal(obituary('crush'), 'You were crushed');
-    assert.equal(obituary('slime'), 'You died in the slime');
+    assert.equal(obituary('slime'), 'You forgot to wear a protection suit');
     // Both "nothing to say" cases: an unattributed hit, and a thing with no
     // name of its own (a player start's doomednum here). The overlay draws the
     // empty line as if it weren't there.

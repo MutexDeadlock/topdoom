@@ -147,6 +147,17 @@ export const THING_SPRITES: Record<number, string> = {
 };
 
 /**
+ * Doomednums carrying vanilla's `MF_SHADOW`, which `r_things.c: R_ProjectSprite` draws with the
+ * fuzz effect instead of its own art (`vis->colormap = NULL`). In `info.c`'s `mobjinfo` that is
+ * `MT_SHADOWS` and nothing else, so this set holds exactly the spectre — the player's
+ * invisibility powerup is the flag's only other user and doesn't come through here
+ * (docs/items.md § Powerups and the backpack). The flag survives death: `P_KillMobj` clears
+ * `MF_SHOOTABLE|MF_FLOAT|MF_SKULLFLY` and never `MF_SHADOW`, so a spectre's corpse stays fuzzed.
+ * docs/sprites.md § The spectre's fuzz.
+ */
+export const FUZZ_TYPES: Set<number> = new Set([ThingType.spectre]);
+
+/**
  * Doomednums of the "Monsters" block above — the things auto-aim (game/weapons.ts's
  * click-to-target, wired up in game.ts's `ThingLayer.pickMonster`) is willing to
  * snap a shot onto, minus `NO_AUTO_AIM_TYPES` below, and the set

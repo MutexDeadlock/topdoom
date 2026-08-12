@@ -647,7 +647,8 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     painChance: 0.703,
     painDuration: 0.114,
     sounds: { see: 'sgtsit', active: 'dmact', pain: 'dmpain', death: 'sgtdth', melee: 'sgtatk' },
-  }, // Same stats as the demon; the spectre's invisibility isn't rendered
+  }, // Same stats as the demon; only `MF_SHADOW` differs, and that is purely
+  // how it draws — docs/sprites.md § The spectre's fuzz.
   [ThingType.lostSoul]: {
     speed: 46.7,
     chaseInterval: 0.171,

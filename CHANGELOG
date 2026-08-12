@@ -13,6 +13,8 @@ Features and improvements
     and "Overwrite" buttons are disabled now
 
 Fixed bugs
+  - spectres were drawn as ordinary demons; they now shimmer as the
+    original's fuzz effect, corpses included
   - a monster whose step was clear but whose first fraction of it
     grazed a corner stood there forever
   - manually named savegames can contain spaces now

@@ -128,6 +128,56 @@ and flipping `transparent`/`alphaTest` on a live material would recompile its sh
 whereas `opacity` alone is a uniform write. The fade is per *batch*, not per instance —
 `instanceColor` carries no alpha, so a per-sprite fade would need a custom shader.
 
+### The spectre's fuzz
+
+The spectre carries the demon's own `SARG` art (`THING_SPRITES`) and vanilla's `MF_SHADOW` flag, and
+the flag is the entire difference between the two: `r_things.c: R_ProjectSprite` sets
+`vis->colormap = NULL` for it, which makes `R_DrawVisSprite` swap in `R_DrawFuzzColumn`. That column
+routine draws **none of the sprite's own pixels**. For every pixel of the silhouette it reads the
+*background* one screen row up or down (`fuzzoffset[FUZZTABLE]`, alternating `±SCREENWIDTH`) and runs
+it through colormap 6, so a spectre reads as a dark, shimmering hole in the scene rather than as a
+monster, and `fuzzpos` walking the table each frame is what makes it shimmer.
+
+`FUZZ_TYPES` (`game/thingdefs.ts`) is that flag: `MT_SHADOWS` and nothing else in `info.c`, so the
+spectre alone. It stays set through death — `P_KillMobj` clears `MF_SHOOTABLE|MF_FLOAT|MF_SKULLFLY`
+and never `MF_SHADOW` — so a spectre's **corpse is fuzzed too**, and the type-keyed set gets that
+right for free where a check on the live monster wouldn't have. The player's invisibility powerup is
+the flag's one other vanilla user and deliberately does not come through here: it is one sprite with
+a mesh of its own and fades via `SpriteActor.setOpacity` instead (docs/items.md § Powerups and the
+backpack).
+
+`ThingLayer` draws those things through a third batch, built `fuzz: true`, whose material clones
+`SpriteBatch.applyFuzz` patches: the sprite is darkened to `FUZZ_DARKEN` and `FUZZ_DISCARD` of its
+pixels are discarded, on a noise pattern re-seeded every `FUZZ_STEP_SECONDS` from the `uFuzzTime`
+uniform `ThingLayer.draw` writes. Three decisions there are load-bearing:
+
+- **Discard, not blending.** The same trade `render/textures.ts` makes for occlusion/fog fading: a
+  screen-door pattern keeps these planes in the ordinary opaque, depth-tested and depth-written
+  pass, so they composite correctly against the level's per-texture batches whatever the draw order.
+- **The shimmer steps on the tic, not the frame.** Vanilla advances `fuzzpos` once per frame in a
+  35fps game; stepping `uFuzzTime` at `DOOM_TIC` reproduces that cadence instead of letting a 144Hz
+  display shimmer four times as fast.
+- **`customProgramCacheKey`.** A fuzzed sprite material shares every cache-key *parameter* with an
+  ordinary batched one (same class, same flags, `vertexColors` on), and three.js keys its program
+  cache on those. Without a key of its own, whichever compiled first would hand its program to the
+  other — an unpatched spectre, or every sprite in the level drawn as fuzz.
+
+**This is a look chosen against vanilla's, not an approximation of it, and that was decided by
+eye.** A much closer reproduction was built and rejected: `MultiplyBlending` so the fragment writes
+a darkening *factor* and the demon's art never reaches the screen at all (the shape of vanilla's
+colormap-6 lookup, and the only way to get it without the framebuffer read a forward-rendered
+material can't do), the silhouette sampled a texel up or down per column per step for
+`fuzzoffset[]`'s crawl, and the darkening jittered per pixel to stand in for the displacement noise.
+It is more faithful and it looks worse here — a top-down spectre is small on screen and vanilla's
+effect leans on a first-person view's size and a floor-height camera. Don't rebuild it. What ships
+is deliberately the cruder thing: the demon's own art, dark, with most of its pixels shot out.
+
+`FUZZ_DISCARD` and `FUZZ_DARKEN` are therefore tuned by feel outright, with no vanilla number
+underneath either, and are meant to be retuned by eye — more discard is a more transparent spectre.
+
+Nothing else about a spectre differs from a demon — same stats, same batch membership rules, same
+`pickMonster` billboard, and no gameplay effect of `MF_SHADOW` is modelled.
+
 ### Which things spawn
 
 **`game/skill.ts: isMultiplayerOnly`** filters out things carrying THING flag bit `0x10` before

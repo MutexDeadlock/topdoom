@@ -41,6 +41,7 @@ import {
   CEILING_HUNG_HEIGHT,
   COUNTITEM_TYPES,
   COUNTKILL_TYPES,
+  FUZZ_TYPES,
   MONSTER_ACTION_FRAME_SECONDS,
   MONSTER_ATTACK_FRAMES,
   MONSTER_CORPSE_VANISHES,
@@ -255,10 +256,16 @@ export function buildThingSprites(
    * anyway and a drop never shares a lump with a monster.
    */
   const dropBatch = new SpriteBatch({ depthBias: DROP_DEPTH_BIAS, translucent: true });
+  /**
+   * The spectre and nothing else (`FUZZ_TYPES`): same art as the demon, drawn
+   * through vanilla's `MF_SHADOW` fuzz instead of plainly.
+   * docs/sprites.md § The spectre's fuzz.
+   */
+  const fuzzBatch = new SpriteBatch({ fuzz: true });
   const group = new THREE.Group();
   group.name = 'things';
-  group.add(batch.group, dropBatch.group);
-  /** Level time in seconds, driving the drop bob/pulse — see `DROP_HOVER`. */
+  group.add(batch.group, dropBatch.group, fuzzBatch.group);
+  /** Level time in seconds, driving the drop bob/pulse (`DROP_HOVER`) and the fuzz shimmer. */
   let clock = 0;
   const posed: PosedThing[] = [];
   const stats: LevelKillItemStats = { totalKills: 0, kills: 0, totalItems: 0, items: 0 };
@@ -1205,6 +1212,8 @@ export function buildThingSprites(
     draw(alpha: number, viewAngleDeg: number): void {
       batch.begin(viewAngleDeg);
       dropBatch.begin(viewAngleDeg);
+      fuzzBatch.begin(viewAngleDeg);
+      fuzzBatch.setFuzzTime(clock);
       const pulse = Math.sin((clock / DROP_PULSE_SECONDS) * Math.PI * 2) * 0.5 + 0.5;
       dropBatch.setOpacity(DROP_OPACITY_MIN + (DROP_OPACITY_MAX - DROP_OPACITY_MIN) * pulse);
       for (const p of posed) {
@@ -1225,7 +1234,11 @@ export function buildThingSprites(
         const light = litColor(p.sector?.light ?? 128);
         if (!p.dropped) {
           doomToWorld(x, y, z, worldPos);
-          batch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light);
+          // A fuzzed thing (the spectre, alive or a corpse — `FUZZ_TYPES`)
+          // differs only in which batch draws it; everything above is the same
+          // pose an ordinary thing gets.
+          const into = FUZZ_TYPES.has(p.type) ? fuzzBatch : batch;
+          into.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light);
           continue;
         }
         // Phase-shifted per instance (`p.id`), so two drops side by side
@@ -1237,10 +1250,12 @@ export function buildThingSprites(
       }
       batch.end();
       dropBatch.end();
+      fuzzBatch.end();
     },
     dispose(): void {
       batch.dispose();
       dropBatch.dispose();
+      fuzzBatch.dispose();
     },
     tryPickup(pos: Pos3, radius: number, consume: (type: number, dropped: boolean) => boolean): void {
       const rSq = radius * radius;

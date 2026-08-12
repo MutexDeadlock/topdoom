@@ -1,9 +1,37 @@
 import * as THREE from 'three';
 import type { CachedSprite } from './sprites.ts';
 import { VIEWER_ANGLE_DEG } from './sprites.ts';
+import { DOOM_TIC } from '../constants.ts';
 
 /** Instances a freshly-created batch starts with, doubling from there as needed. */
 const INITIAL_CAPACITY = 64;
+
+/**
+ * Fraction of a fuzzed sprite's pixels dropped each fuzz step, and how far the
+ * rest are darkened. Both tuned by feel — this engine's fuzz is a look chosen
+ * against vanilla's own, not derived from it (docs/sprites.md § The spectre's
+ * fuzz), so these two are the whole of it and are meant to be retuned by eye.
+ */
+const FUZZ_DISCARD = 0.62;
+const FUZZ_DARKEN = 0.22;
+
+/**
+ * How often the fuzz pattern is redrawn. Vanilla advances `fuzzpos` through
+ * `fuzzoffset[FUZZTABLE]` once per column per frame, i.e. the shimmer steps at
+ * the frame rate of a 35fps game; stepping on the tic keeps that cadence
+ * instead of letting the shimmer run faster on a faster display.
+ */
+const FUZZ_STEP_SECONDS = DOOM_TIC;
+
+/** The shimmer's clock and its noise, prepended to the fragment shader by `applyFuzz`. */
+const FUZZ_GLSL = `
+uniform float uFuzzTime;
+
+/** Interleaved gradient noise (Jimenez): cheap, decorrelated per pixel. */
+float fuzzNoise(vec2 seed) {
+  return fract(52.9829189 * fract(dot(seed, vec2(0.06711056, 0.00583715))));
+}
+`;
 
 interface Batch {
   mesh: THREE.InstancedMesh;
@@ -27,7 +55,14 @@ export class SpriteBatch {
   private sin = 0;
   private depthBias: number;
   private translucent: boolean;
+  private fuzz: boolean;
   private opacity = 1;
+  /**
+   * The shimmer's clock, shared by every material this batch builds — a live
+   * uniform object handed to each patched shader, so `setFuzzTime` is one
+   * write no matter how many lumps the batch spans.
+   */
+  private fuzzTime = { value: 0 };
 
   /**
    * `depthBias` biases every fragment this batch draws toward the camera by
@@ -39,11 +74,22 @@ export class SpriteBatch {
    * sprite through geometry genuinely in front of it.
    *
    * `translucent` builds this batch's materials for `setOpacity` — see there.
+   * `fuzz` draws everything in this batch as vanilla's `MF_SHADOW` fuzz
+   * instead of its own art — see `applyFuzz`.
    */
-  constructor(options: { depthBias?: number; translucent?: boolean } = {}) {
+  constructor(options: { depthBias?: number; translucent?: boolean; fuzz?: boolean } = {}) {
     this.group.name = 'sprite-batches';
     this.depthBias = options.depthBias ?? 0;
     this.translucent = options.translucent ?? false;
+    this.fuzz = options.fuzz ?? false;
+  }
+
+  /**
+   * Advances the fuzz shimmer to level time `seconds` (see `applyFuzz`). Only
+   * meaningful on a `fuzz` batch; a plain uniform write, called every frame.
+   */
+  setFuzzTime(seconds: number): void {
+    this.fuzzTime.value = Math.floor(seconds / FUZZ_STEP_SECONDS);
   }
 
   /**
@@ -196,7 +242,41 @@ export class SpriteBatch {
       // it from punching a hole in whatever draws after it.
       material.depthWrite = false;
     }
+    if (this.fuzz) this.applyFuzz(material);
     this.materials.set(cached, material);
     return material;
+  }
+
+  /**
+   * Turns a lump's material into this engine's `MF_SHADOW` fuzz: the sprite
+   * darkened to `FUZZ_DARKEN`, with `FUZZ_DISCARD` of its pixels dropped on a
+   * noise pattern re-seeded every `FUZZ_STEP_SECONDS`, so the floor shows
+   * through and shimmers.
+   *
+   * Discarding rather than blending is the same trade the wall/flat fade makes
+   * (`render/textures.ts`): a screen-door pattern keeps these planes in the
+   * ordinary opaque, depth-tested pass, so they composite correctly against
+   * the level's per-texture batches regardless of draw order.
+   *
+   * A closer reproduction of vanilla's own effect was built and rejected on how
+   * it looked, and the rejection is the load-bearing part: docs/sprites.md §
+   * The spectre's fuzz.
+   */
+  private applyFuzz(material: THREE.MeshBasicMaterial): void {
+    material.onBeforeCompile = (shader) => {
+      shader.uniforms.uFuzzTime = this.fuzzTime;
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+         if (fuzzNoise(gl_FragCoord.xy + uFuzzTime * vec2(11.0, 7.0)) < ${FUZZ_DISCARD.toFixed(3)}) discard;
+         diffuseColor.rgb *= ${FUZZ_DARKEN.toFixed(3)};`,
+      );
+      shader.fragmentShader = FUZZ_GLSL + shader.fragmentShader;
+    };
+    // three.js keys its program cache on the material's *parameters*, which a
+    // fuzzed sprite shares exactly with an ordinary batched one — without a
+    // key of its own it would be handed the unpatched program (or hand its
+    // patched one to every other sprite, whichever compiled first).
+    material.customProgramCacheKey = () => 'fuzz';
   }
 }

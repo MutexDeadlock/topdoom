@@ -124,12 +124,30 @@ const CLIP_EPS = 1e-6;
  * Clips a convex polygon against the half-plane cross(p) <= 0 (Sutherland-Hodgman).
  * The line is given as a point (px, py) plus a direction (dx, dy). `poly` is a
  * flat [x0,y0, x1,y1, …] array; the result may have more or fewer points.
+ *
+ * `tolerance` (map units, default 0) pushes the line that far towards the
+ * discarded side, so the result keeps anything within that distance of it. The
+ * result is still a proper half-plane clip of the input, hence still convex and
+ * still a subset of it.
  */
-export function clipConvexPolygon(poly: number[], px: number, py: number, dx: number, dy: number): number[] {
+export function clipConvexPolygon(
+  poly: number[],
+  px: number,
+  py: number,
+  dx: number,
+  dy: number,
+  tolerance = 0,
+): number[] {
   const n = poly.length / 2;
   if (n === 0) return poly;
   const out: number[] = [];
 
+  // `side` is a cross product, so it scales with the direction's length: the
+  // tolerance has to be scaled the same way to mean a distance in map units.
+  // `CLIP_EPS` only decides which side a point counts as being on; the cut runs
+  // through the tolerance-offset line itself, so tolerance 0 clips exactly.
+  const cut = tolerance * Math.hypot(dx, dy);
+  const limit = cut + CLIP_EPS;
   const side = (x: number, y: number) => dx * (y - py) - dy * (x - px);
 
   let ax = poly[(n - 1) * 2];
@@ -141,11 +159,11 @@ export function clipConvexPolygon(poly: number[], px: number, py: number, dx: nu
     const by = poly[i * 2 + 1];
     const db = side(bx, by);
 
-    const aIn = da <= CLIP_EPS;
-    const bIn = db <= CLIP_EPS;
+    const aIn = da <= limit;
+    const bIn = db <= limit;
 
     if (aIn !== bIn) {
-      const t = da / (da - db);
+      const t = (da - cut) / (da - db);
       out.push(ax + (bx - ax) * t, ay + (by - ay) * t);
     }
     if (bIn) out.push(bx, by);

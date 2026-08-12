@@ -8,6 +8,8 @@ Fixed bugs
   - a monster whose step was clear but whose first fraction of it
     grazed a corner stood there forever
   - manually named savegames can contain spaces now
+  - fixed hairline cracks in the floor where two subsectors of the same
+    sector meet (rare, but noteicable)
 
 
 ===============================================================================

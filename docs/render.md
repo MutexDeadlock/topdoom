@@ -15,6 +15,40 @@ that leaf, then against the subsector's own segs. The result is convex, so a tri
 Traversal is iterative (stack-based), not recursive — some maps have deep BSP trees.
 `sectorOfSubSector` resolves a subsector's sector via its first seg → linedef → sidedef.
 
+### Cracks between subsectors
+
+The seg clip runs with a tolerance (`SEG_CLIP_TOLERANCE`, 4 map units): a seg's line only cuts the
+cell where the cell sticks out past it by more than that. Without it, thin wedges of floor go
+missing in the middle of a room — DOOM2 MAP06 around `(-704, 896)`, between subsectors 253 and 254,
+is the case this was found on.
+
+The cause is that a WAD's node partitions are stored as integer `(x, y, dx, dy)`, so a partition
+built from a linedef is a hair off that linedef's own slope. The two subsectors either side of such
+a node get their shared boundary from the partition, but the one whose segs lie on the linedef then
+clips itself again against the linedef's *exact* line — which diverges from the partition as it runs
+away from the seg, and shaves off a sliver its neighbour does not fill. In MAP06 the partition is
+`(-628, 704) d(-75, 192)` where linedef 230 runs `d(-76, 192)`: 2 units of missing floor 192 units
+along. The same mechanism cuts far larger wedges out of a cell when a *short* seg's line sweeps
+across it at a shallow angle, which is the other thing this tolerance buys back.
+
+**The tolerance can never make two subsectors overlap**, which is why it can be this blunt. Node
+clipping alone partitions the plane into disjoint cells, and a subsector's polygon is only ever that
+cell with pieces cut away — so slack on the seg clip returns territory that belongs to this cell and
+that no other subsector can draw. What it can do is leave up to 4 units of floor past a wall, in
+space that would otherwise be a hole: hidden behind the wall from this camera, and a straight
+improvement where the hole was in the open. The clip against the *node* partitions stays exact —
+give that slack and neighbouring cells really would overlap.
+
+4 units clears every crack this produces in `DOOM1.WAD` and all but a handful in `DOOM2.WAD`
+(measured by sampling each map on a 2-unit grid for points inside a sector that no subsector polygon
+covers). **What it does not reach is the same disagreement scaled up by a very short seg**: an 8-unit
+seg's endpoints round to the integer grid like any other, but that same fraction of a unit is a much
+larger angle, and the line it implies can be tens of units off by the time it has crossed a wide
+cell. DOOM2 MAP24 sector 42 is the one bad case left — linedef 99's 8-unit seg cuts a ~350 × 100
+wedge out of the floor around `(-400, -3450)`. Widening the tolerance is not the fix for that one: it
+would have to reach ~55 units, and this slack is only safe because it is far smaller than anything
+a player can see past a wall.
+
 ## Mesh building (`mapmesh.ts`)
 
 Walls are built per linedef from sidedefs: one-sided lines get their middle texture over the full

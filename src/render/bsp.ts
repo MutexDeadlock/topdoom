@@ -1,6 +1,16 @@
 import { SUBSECTOR_BIT, type DoomMap } from '../wad/map.ts';
 import { clipConvexPolygon as clip } from '../util/geom.ts';
 
+/**
+ * Slack, in map units, on the clip against a subsector's own segs: how far the
+ * node-clipped cell may stick out past a seg's line before that overhang is cut
+ * away. Without it, a seg line that disagrees with the partition it shares an
+ * edge with by a rounding error shaves a sliver off the cell that the neighbouring
+ * subsector doesn't fill — a visible crack in the floor.
+ * docs/render.md § Cracks between subsectors.
+ */
+const SEG_CLIP_TOLERANCE = 4;
+
 export interface SubSectorPoly {
   /** Sector this subsector belongs to. */
   sector: number;
@@ -35,7 +45,7 @@ export function buildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
       const a = map.vertexes[seg.v1];
       const b = map.vertexes[seg.v2];
       if (!a || !b) continue;
-      clipped = clip(clipped, a.x, a.y, b.x - a.x, b.y - a.y);
+      clipped = clip(clipped, a.x, a.y, b.x - a.x, b.y - a.y, SEG_CLIP_TOLERANCE);
       if (clipped.length < 6) break;
     }
 

@@ -114,6 +114,23 @@ describe('Geometry · convex polygons', () => {
     );
   });
 
+  test('clipConvexPolygon measures its tolerance in map units, not cross-product units', () => {
+    // The tolerance pushes the line towards the discarded side by that distance,
+    // so it survives whatever length the caller's direction vector happens to
+    // have — a seg's direction is its own length, never normalized.
+    const short = clipConvexPolygon([...UNIT_SQUARE], 5, 0, 0, 1, 2);
+    const long = clipConvexPolygon([...UNIT_SQUARE], 5, 0, 0, 1000, 2);
+    assert.deepEqual(short, [3, 0, 10, 0, 10, 10, 3, 10], 'x >= 5 - 2');
+    assert.deepEqual(long, short, 'the same cut, from a direction 1000x as long');
+
+    // Slack on the seg clip is what stops a partition that disagrees with its
+    // own linedef by a rounding error from shaving a crack in the floor —
+    // docs/render.md § Cracks between subsectors.
+    assert.equal(polygonArea(clipConvexPolygon([...UNIT_SQUARE], 1.5, 0, 0, 1)), 85, 'the exact cut');
+    const untouched = clipConvexPolygon([...UNIT_SQUARE], 1.5, 0, 0, 1, 2);
+    assert.equal(polygonArea(untouched), 100, 'a cut shallower than the tolerance takes nothing');
+  });
+
   test('clipConvexPolygon handles fully-inside, fully-outside and empty input', () => {
     // Partition far to the west: the whole square is on the kept side.
     const inside = clipConvexPolygon([...UNIT_SQUARE], -100, 0, 0, 1);

@@ -72,7 +72,7 @@ and one stereo panner per voice, both computed the way `S_AdjustSoundParams` com
   what makes a held chaingun trigger sound like a chaingun instead of a dozen layered shots
   — and what turns the chainsaw's 4-tic idle retrigger into one continuous engine note.
 
-Two values here are **not** vanilla. `CHANNELS` is 16 rather than `snd_channels`' 8, because
+Two values here are **not** vanilla. `CHANNELS` is 32 rather than `snd_channels`' 8, because
 this camera shows a whole room and part of the next, and 8 has visible monsters cutting each
 other off. And the listener's *orientation* is the **camera's**, not the player's: aim is
 mouse-driven and swings freely while the view doesn't, so panning off the player's facing

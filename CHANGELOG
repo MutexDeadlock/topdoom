@@ -10,6 +10,7 @@ Features and improvements
   - the death screen now says what killed you
   - camera instantly snaps above the player when entering a level, 
     loading a save, or after an teleport
+  - increased sound channels from 16 to 32
 
 Fixed bugs
   - broken and flickering lights now behave like vanilla's

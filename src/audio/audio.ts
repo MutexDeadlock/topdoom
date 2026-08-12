@@ -10,7 +10,7 @@ import { randomPlaybackRate, SFX, SFX_NAMES, type SfxId, type SoundEmitter } fro
  * inside the frame they're visible in. The eviction rule they're allocated by
  * is still vanilla's own (`allocate`).
  */
-const CHANNELS = 16;
+const CHANNELS = 32;
 
 /**
  * Vanilla's `S_CLIPPING_DIST`/`S_CLOSE_DIST`/`S_ATTENUATOR` (`s_sound.c`), in

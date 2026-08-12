@@ -1,9 +1,12 @@
 v0.1?.? (2026-08-??)
 
 Features and improvements
-  - if a game can't be saved (dead, intermission), the "Save" 
+  - if a game can't be saved (dead, intermission), the "Save"
     and "Overwrite" buttons are disabled now
 
+Fixed bugs
+  - a monster whose step was clear but whose first fraction of it
+    grazed a corner stood there forever
 
 
 ===============================================================================

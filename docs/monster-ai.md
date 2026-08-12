@@ -122,7 +122,8 @@ mirrors `Player.update`.
 
 Going the whole way to vanilla — one full `speed * chaseInterval` jump per chase call — is a
 demo-compatibility question, not a tic-lock one, and is deliberately still open: the jump and the
-sub-steps collide with different geometry.
+sub-steps collide with different geometry. Where they disagree the jump wins, which is the fallback
+below.
 
 **A monster that doesn't fit where it is going cannot move at all** — `P_TryMove`'s
 `tmceilingz - tmfloorz < thing->height`, checked in `testStep` before anything else. This is the
@@ -145,19 +146,39 @@ crusher is pinned too, but being unable to move with no on-screen explanation re
 from a top-down camera that may not even be showing the ceiling. The momentum paths — a lost soul's
 charge and knockback — don't carry it either, both being brief and self-cancelling.
 
-**The per-tic sub-step must never be stricter than the chase step `tryWalk` already approved**
-(`escapingOverlap`). Vanilla's `P_Move` tests only the *destination* of a full `speed` jump; it
-never asks whether the monster is standing somewhere legal right now. Maps place monsters flush
-against walls all the time — 95 across DOOM/DOOM2/SCYTHE, e.g. DOOM2 MAP02's zombieman at
-(1056, 960) — which puts the spawn point inside the monster's own radius. Re-validating every
-1-unit sub-step as an absolute position then froze those monsters permanently: the 8-unit
-destination was clear, but the first sub-step out of the overlap was not, so they woke, faced the
-player and shot without ever taking a step. A monster already overlapping is therefore allowed to
-walk as long as its committed chase step still lands clear. The escape reaches exactly one chase
-step, which is the same bound vanilla's `P_TryWalk` has: 89 of the 95 recover, and the six that
-don't are wide types (mancubus, spectre) wedged deeper than one step, which vanilla leaves stuck
-too. The extra query is inside the already-blocked branch and measured as free (NUTS.WAD MAP01,
-10,617 chasing monsters: 3.6 ms/frame either way).
+**The per-tic sub-step must never be stricter than the chase step `tryWalk` already approved.**
+Vanilla's `P_Move` tests only the *destination* of a full `speed` jump; it never asks whether the
+monster is standing somewhere legal right now, nor whether anything between here and there is. The
+sub-step asks both, so it can refuse a move vanilla makes — and a refusal is not recoverable on its
+own, because the next chase call re-routes, `tryWalk` approves the same direction again (the
+destination really is clear) and the monster stands there forever, still turning to bite anyone who
+walks up to it. **A refused sub-step therefore falls back on the whole chase step it subdivides: if
+that lands clear, the monster takes it in one go**, which is exactly the move `P_Move` would have
+made.
+
+Two shapes of geometry need it, and only the first was known when the fallback was written:
+
+- **A spawn point inside the monster's own radius.** Maps place monsters flush against walls all
+  the time — 95 across DOOM/DOOM2/SCYTHE, e.g. DOOM2 MAP02's zombieman at (1056, 960). Every
+  sub-step out of the overlap read as blocked, so they woke, faced the player and shot without ever
+  taking a step.
+- **A corner the circle grazes part-way along the step.** Distance to a linedef is convex along a
+  straight path, so an obstacle can be cleared at the start of a step and again at its end while
+  blocking everything between — a wedge apex just inside the radius, or the corner of a solid
+  body's `PIT_CheckThing` box crossed on the diagonal. DOOM2 MAP06's demon at (-68, 482) grazes the
+  vertex at (-64, 512) for the first 7 units of its 10-unit step and froze in the pit below the
+  player (`tests/regression/monster-substep-blocked-midway.test.ts`).
+
+The reach is exactly one chase step, the same bound vanilla's `P_TryWalk` has: 89 of the 95
+overlapping spawns recover, and the six that don't are wide types (mancubus, spectre) wedged deeper
+than one step, which vanilla leaves stuck too. **It cannot walk through a wall**, and that is a
+property of the numbers rather than an extra check: `circleBlocked` refuses any destination within
+`radius` of a solid line, and every type's chase step is shorter than its own radius (the closest is
+the arch-vile, 15 against 20), so a clear destination and the position one step behind it are always
+on the same side. Taking the whole step rather than creeping into the refused position is also what
+keeps `settleVertical` honest — standing mid-graze would snap the body up to a `groundFloor` the
+step-up rule exists to refuse, a visible 56-unit hop on the MAP06 case. The extra query is one
+`testStep` inside the already-blocked branch, replacing the two the older overlap-only version ran.
 
 Two arguments the player's own movement never sets:
 

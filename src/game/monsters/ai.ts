@@ -293,23 +293,6 @@ function tryWalk(body: MonsterBody, stats: MonsterStats, world: World, dir: numb
 }
 
 /**
- * True when the monster is standing *inside* something right now but the full
- * chase step `tryWalk` committed to still lands clear — so the sub-step this
- * frame wants is on its way out, not into anything new.
- *
- * Exists because maps routinely place monsters flush against walls, which
- * vanilla never notices since `P_Move` tests only the destination:
- * docs/monster-ai.md § Movement. Only ever reached from the already-blocked
- * branch below, so a walking monster pays nothing for it.
- */
-function escapingOverlap(body: MonsterBody, stats: MonsterStats, world: World, blockers?: readonly ThingBlocker[]): boolean {
-  const blockedAt = (x: number, y: number): boolean => testStep(body, stats, world, x, y, blockers) === 'blocked';
-  if (!blockedAt(body.x, body.y)) return false;
-  const step = stats.speed * stats.chaseInterval;
-  return !blockedAt(body.x + DIR_X[body.movedir] * step, body.y + DIR_Y[body.movedir] * step);
-}
-
-/**
  * Vanilla's `P_NewChaseDir`, reproduced step for step: the both-axes diagonal,
  * then the two cardinals, then the previous heading, then a full eight-way
  * scan from a randomly chosen end, and the about-face only as a last resort.
@@ -562,15 +545,31 @@ export function stepMonsterAI(
     // the player gets P_SlideMove), and re-routing rather than sliding along
     // a wall is exactly what makes DOOM monsters zig-zag.
     const step = stats.speed * dt;
-    const nx = body.x + DIR_X[body.movedir] * step;
-    const ny = body.y + DIR_Y[body.movedir] * step;
-    const result = testStep(body, stats, world, nx, ny, blockers);
+    let nx = body.x + DIR_X[body.movedir] * step;
+    let ny = body.y + DIR_Y[body.movedir] * step;
+    let result = testStep(body, stats, world, nx, ny, blockers);
+    // A refused sub-step falls back on the whole chase step it subdivides,
+    // which is the only position vanilla's `P_Move` ever judges. Sub-stepping
+    // is this engine's own, and it is *stricter* rather than weaker: the
+    // points between here and that destination can all be refused while the
+    // destination itself is clear. docs/monster-ai.md § Movement.
+    if (result === 'blocked') {
+      const full = stats.speed * stats.chaseInterval;
+      const fx = body.x + DIR_X[body.movedir] * full;
+      const fy = body.y + DIR_Y[body.movedir] * full;
+      const fullResult = testStep(body, stats, world, fx, fy, blockers);
+      if (fullResult !== 'blocked') {
+        nx = fx;
+        ny = fy;
+        result = fullResult;
+      }
+    }
     if (result === 'adjust') {
       // A flier changing height around a step it can't cross yet. Vanilla's
       // P_Move reports this as a move *taken*, so no `moveBlocked` and no
       // re-route: it stays pointed at the ledge until it has risen enough.
       floatOverStep(body, stats, world, nx, ny, dt);
-    } else if (result === 'blocked' && !escapingOverlap(body, stats, world, blockers)) {
+    } else if (result === 'blocked') {
       body.moveBlocked = true;
     } else {
       body.x = nx;

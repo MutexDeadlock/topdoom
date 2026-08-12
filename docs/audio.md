@@ -143,6 +143,18 @@ which have no weapon sound in vanilla at all: the launch sound is the missile's 
 `IMPACT_EFFECTS` is. The BFG is the one projectile weapon with its own sound (`MT_BFG`'s
 seesound is 0; `A_BFGsound` is a separate state action).
 
+**The super shotgun is the one weapon that keeps making noise after its shot.**
+`A_OpenShotgun2`, `A_LoadShotgun2` and `A_CloseShotgun2` (in `p_enemy.c`, not `p_pspr.c`) sit on
+`S_DSGUN5`/`7`/`9`, so `dbopn`, `dbload` and `dbcls` land 21, 35 and 48 tics after
+`A_FireShotgun2` — all three inside the weapon's own 57-tic cooldown, on the player's origin like
+the shot itself. This engine collapses that state chain into a single cooldown number, so the three
+moments need their own clock: `SSG_RELOAD_SOUNDS` is the schedule, `WeaponSystem.reloadTic` the tics
+since the shot, started in `fire` and played off in `updateReloadSounds`. Two things abort what is
+left of the sequence, both because vanilla lowers the weapon and its psprite never reaches those
+states: **switching away**, and **`A_CheckReload` 14 tics in** finding fewer than two shells left,
+which is why a shot fired with the last shells reloads silently. Pinned by
+`tests/game/weapons.test.ts` § Game rules · super shotgun reload sounds.
+
 A missile's impact plays its `deathsound`, wherever `shotPath` says the flight ended. Two
 oddities in that table are vanilla's and are kept: every fireball bursts with `firxpl` while
 the rocket and the revenant's tracer use the **barrel** explosion, and the BFG ball's
@@ -196,8 +208,7 @@ the sector's linedefs (`P_GroupLines`), not a polygon centroid — computed lazi
 
 Not implemented: vanilla's `noway`, the grunt for using a wall that isn't a door.
 `handleUseTrigger` only scans lines that *have* a special, so there is nothing to hang it on
-without a second geometric search. The super shotgun's `dbopn`/`dbload`/`dbcls` reload
-sounds are also absent — they live on first-person weapon states this engine doesn't model.
+without a second geometric search.
 
 ## Player and pickups
 

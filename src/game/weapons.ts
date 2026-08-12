@@ -42,6 +42,32 @@ const BERSERK_FIST_MULTIPLIER = 10;
  */
 const SSG_SLOPE_SPREAD = (255 * 32) / 65536;
 
+/**
+ * The super shotgun's reload sounds and how many tics after its shot each one
+ * lands. `info.c`'s `S_DSGUN` chain carries them as state actions —
+ * `A_OpenShotgun2` on `S_DSGUN5`, `A_LoadShotgun2` on `S_DSGUN7`,
+ * `A_CloseShotgun2` on `S_DSGUN9`, all three in `p_enemy.c` — so each tic here
+ * is the length of the states between `S_DSGUN2`'s own `A_FireShotgun2` and
+ * that one: 7+7+7, then +7+7, then +7+6. docs/audio.md § Weapons and
+ * projectiles.
+ */
+const SSG_RELOAD_SOUNDS: { tic: number; sfx: SfxId }[] = [
+  { tic: 21, sfx: 'dbopn' },
+  { tic: 35, sfx: 'dbload' },
+  { tic: 48, sfx: 'dbcls' },
+];
+
+/** Tics from the shot to the last of `SSG_RELOAD_SOUNDS`, i.e. the whole sequence's length. */
+const SSG_RELOAD_TICS = 48;
+
+/**
+ * When `A_CheckReload` runs (`S_DSGUN4`, 14 tics after the shot): finding fewer
+ * than two shells left there, its `P_CheckAmmo` lowers the weapon, so the
+ * psprite never reaches the three states above and a shot fired with the last
+ * shells reloads silently.
+ */
+const SSG_RELOAD_CHECK_TIC = 14;
+
 export type WeaponKind = 'melee' | 'hitscan' | 'projectile';
 
 export interface WeaponDef {
@@ -537,6 +563,15 @@ export class WeaponSystem {
   /** Counts down to the chainsaw's next idle rattle — see `SAW_IDLE_INTERVAL`. */
   private sawIdleTimer = 0;
   /**
+   * Tics since the super shotgun's last shot while its reload is still running,
+   * or -1 when none is — the clock `SSG_RELOAD_SOUNDS` is played off, so 0 (the
+   * shot's own tic) is a live value and the idle state needs its own sentinel.
+   * Vanilla counts nothing here: those sounds are actions on states the psprite
+   * is walking through anyway, and this engine collapses that whole chain into
+   * one `cooldownTics` number, so the moments inside it need their own clock.
+   */
+  private reloadTic = -1;
+  /**
    * Vanilla's `player->refire`: how many shots the trigger has already fired
    * without coming up. Only `WeaponDef.accurateFirstShot` reads it, and only
    * for "is this shot the first of the burst" — `A_ReFire` zeroes it the
@@ -558,6 +593,7 @@ export class WeaponSystem {
     this.weaponLastFrame = inv.currentWeapon;
     this.previousWeapon = null;
     this.sawIdleTimer = 0;
+    this.reloadTic = -1;
     this.refire = 0;
     this.refireWeapon = null;
   }
@@ -571,6 +607,7 @@ export class WeaponSystem {
       cooldownTics: this.cooldownTics,
       previousWeapon: this.previousWeapon,
       sawIdleTimer: this.sawIdleTimer,
+      reloadTic: this.reloadTic,
       refire: this.refire,
       refireWeapon: this.refireWeapon,
     };
@@ -589,6 +626,10 @@ export class WeaponSystem {
     this.weaponLastFrame = inv.currentWeapon;
     this.previousWeapon = s.previousWeapon;
     this.sawIdleTimer = s.sawIdleTimer;
+    // Absent in a save written before the reload sounds existed, which is the
+    // same thing as no reload in flight — docs/savegames.md § The format and
+    // its version.
+    this.reloadTic = s.reloadTic ?? -1;
     this.refire = s.refire;
     this.refireWeapon = s.refireWeapon;
   }
@@ -608,6 +649,32 @@ export class WeaponSystem {
       this.weaponLastFrame = weapon;
     }
     this.updateSounds(dt, firing, weapon, justSwitched, audio, at);
+    this.updateReloadSounds(weapon, inv, audio, at);
+  }
+
+  /**
+   * The super shotgun's three reload sounds, each `SSG_RELOAD_SOUNDS` tics after
+   * the shot that started them — the one weapon in the game whose state chain
+   * keeps making noise once the shot itself is gone. Two things abort the
+   * sequence, both because vanilla lowers the weapon and its psprite never
+   * reaches the states those actions sit on: switching away, and
+   * `SSG_RELOAD_CHECK_TIC`'s ammo check. `at` is the player's own position,
+   * which they are attenuated from as vanilla's `player->mo` origin makes them.
+   * docs/audio.md § Weapons and projectiles.
+   */
+  private updateReloadSounds(weapon: WeaponId, inv: Inventory, audio: AudioEngine, at: Pos3): void {
+    if (this.reloadTic < 0) return;
+    if (weapon !== 'supershotgun') {
+      this.reloadTic = -1;
+      return;
+    }
+    if (this.reloadTic === SSG_RELOAD_CHECK_TIC && inv.ammo.shells < WEAPONS.supershotgun.ammoPerShot) {
+      this.reloadTic = -1;
+      return;
+    }
+    const due = SSG_RELOAD_SOUNDS.find((s) => s.tic === this.reloadTic);
+    if (due) audio.play(due.sfx, at, PLAYER_ORIGIN);
+    this.reloadTic = this.reloadTic < SSG_RELOAD_TICS ? this.reloadTic + 1 : -1;
   }
 
   /**
@@ -703,6 +770,10 @@ export class WeaponSystem {
     // pins every entry to a whole tic), so this recovers the N the state chain holds.
     this.cooldownTics = Math.round(def.cooldown / DOOM_TIC);
     if (def.ammoType) inv.ammo[def.ammoType] -= def.ammoPerShot;
+    // The super shotgun's reload is the one thing a weapon keeps doing after
+    // its shot; `updateReloadSounds` plays it off this clock, starting with
+    // this same tic's own `update` call (0 tics since the shot).
+    if (inv.currentWeapon === 'supershotgun') this.reloadTic = 0;
     // `!player->refire` is read *before* A_ReFire bumps it, so the opening
     // shot of a hold is the accurate one.
     const accurate = def.accurateFirstShot && this.refire === 0;

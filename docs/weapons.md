@@ -93,6 +93,10 @@ one state's tics, not the chain's. The **plasma rifle's** `S_PLASMA2` holds 20 t
 `A_ReFire`, so a held trigger never spends them — which is what makes it the fastest weapon in the
 game rather than a middling one.
 
+The super shotgun's chain is the only one with anything *inside* it: its `dbopn`/`dbload`/`dbcls`
+reload sounds land on states partway through those 57 tics, played off their own clock in
+`WeaponSystem` — docs/audio.md § Weapons and projectiles.
+
 **Two vanilla delays are deliberately not reproduced.** The rocket launcher's 8-tic flash state and
 the BFG's 30 tics of charge-up both sit *before* their fire action, so in vanilla the shot leaves
 that long after the trigger; here every weapon fires on the frame you click and the delay is folded

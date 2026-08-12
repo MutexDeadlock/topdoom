@@ -17,6 +17,7 @@ Fixed bugs
     original's fuzz effect, corpses included
   - a monster whose step was clear but whose first fraction of it
     grazed a corner stood there forever
+  - the super shotgun reloaded silently
   - manually named savegames can contain spaces now
   - fixed hairline cracks in the floor where two subsectors of the same
     sector meet (rare, but noteicable)

@@ -60,6 +60,12 @@ export interface WeaponsSnapshot {
   cooldownTics: number;
   previousWeapon: WeaponId | null;
   sawIdleTimer: number;
+  /**
+   * Tics into the super shotgun's reload sequence, -1 for none in flight.
+   * Optional because it was added without a `SAVE_VERSION` bump: absent means
+   * no reload, which is exactly what a save from before it restored to.
+   */
+  reloadTic?: number;
   refire: number;
   refireWeapon: WeaponId | null;
 }

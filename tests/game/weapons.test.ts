@@ -137,3 +137,55 @@ describe('Game rules · fire rates', () => {
     assert.equal(fireTics('bfg', 1)[0], 0);
   });
 });
+
+/**
+ * The super shotgun's reload is the one weapon sound that arrives *after* its
+ * shot, on tics this engine has no state chain to hang it off — so what needs
+ * pinning is the schedule itself and the two things vanilla aborts it with.
+ * See docs/audio.md § Weapons and projectiles.
+ */
+describe('Game rules · super shotgun reload sounds', () => {
+  /** `[tic since the shot, sound]` for one trigger pull, over `tics` of held-then-idle trigger. */
+  function reloadSounds(shells: number, tics: number, switchAwayAt = -1): [number, string][] {
+    const played: [number, string][] = [];
+    let tic = 0;
+    const audio = { play: (id: string) => played.push([tic, id]) } as unknown as AudioEngine;
+    const inv = createInventory();
+    inv.weapons.add('supershotgun').add('shotgun');
+    inv.currentWeapon = 'supershotgun';
+    inv.ammo.shells = shells;
+    const ws = new WeaponSystem();
+    ws.beginLevel(inv);
+    for (; tic < tics; tic++) {
+      if (tic === switchAwayAt) inv.currentWeapon = 'shotgun';
+      // Only the opening tic pulls the trigger: one shot, then the reload.
+      ws.fire(tic === 0, inv, 0);
+      ws.update(DOOM_TIC, tic === 0, inv, audio, AT);
+    }
+    // The fire sound itself comes from `game.ts`, not `WeaponSystem`.
+    return played;
+  }
+
+  test('open, load and close land on their own vanilla tics', () => {
+    // `A_OpenShotgun2` (S_DSGUN5), `A_LoadShotgun2` (S_DSGUN7) and
+    // `A_CloseShotgun2` (S_DSGUN9), offset from `A_FireShotgun2` by the states
+    // between — and all three inside the weapon's own 57-tic cooldown.
+    assert.deepEqual(reloadSounds(50, 60), [
+      [21, 'dbopn'],
+      [35, 'dbload'],
+      [48, 'dbcls'],
+    ]);
+  });
+
+  test('a shot fired with the last shells reloads silently', () => {
+    // `A_CheckReload`'s `P_CheckAmmo` lowers the weapon 14 tics in, so the
+    // psprite never reaches any of the three states.
+    assert.deepEqual(reloadSounds(2, 60), []);
+    // One shell short of another shot is the same case: `P_CheckAmmo` wants two.
+    assert.deepEqual(reloadSounds(3, 60), []);
+  });
+
+  test('switching away mid-reload drops whatever is left of it', () => {
+    assert.deepEqual(reloadSounds(50, 60, 30), [[21, 'dbopn']]);
+  });
+});

@@ -90,7 +90,9 @@ the snapshot inside is unchanged.
 ## What is saved and what is deliberately not
 
 Saved: the player (position, velocities, private knockback), inventory, teleport fogs still
-playing, `WeaponSystem`'s fire timing, the *changed* sectors' mutable fields (`floorHeight`/`ceilHeight`/`light`/`special`/
+playing, `WeaponSystem`'s fire timing (including the super shotgun's reload clock, `reloadTic` —
+**optional** for the same no-bump reason `teleportFogs` is: absent means no reload in flight),
+the *changed* sectors' mutable fields (`floorHeight`/`ceilHeight`/`light`/`special`/
 `floorTex` — `DoomMap` is mutated in place at runtime by specials and secrets), the specials controller (movers
 mid-motion, `usedOnce`, switch flashes, light states, the two shared sound/damage clocks,
 `prevX`/`prevY`), secrets found + damage-floor timer, fog of war's `explored`, sound-alerted

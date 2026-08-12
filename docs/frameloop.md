@@ -123,7 +123,7 @@ Everything drawn carries where it was at the end of the previous tic, and `draw`
 | `OneShotEffect`, `SpawnCube` | `drawPrevX/Y/Z` |
 | `TopDownCamera` | `prevSmoothed`, `prevYawDeg`, plus `snapTo()` for level loads |
 
-Four rules:
+Five rules:
 
 - **`PosedThing.prev` is not an interpolation source.** It exists for `crossLines`' walk triggers and
   is maintained only on the alerted-with-a-target path, but knockback, corpse gravity and a
@@ -140,6 +140,13 @@ Four rules:
   that changes nothing. Positions only — except the player's own billboard, whose facing is
   continuous and so uses a shortest-arc lerp.
 - **Angles need shortest-arc**, or a shot across the ±π seam spins the billboard the long way round.
+- **Anything that stops being simulated must not be left mid-window.** Interpolation assumes another
+  tic is coming; when none is, the last two tics stay apart forever while `alpha` — the leftover
+  accumulator — keeps changing every frame, so the still subject jitters between them at frame
+  cadence. Two cases exist and each closes it at its own scope: the **intermission** freezes the
+  whole simulation, so `frame` draws it at `alpha` 1 outright (the tic-exact pose); a **dead player**
+  freezes only `player.update`, which is what writes `prev*`, so `damagePlayer` collapses that one
+  window with `syncInterpolation` on the killing hit. Both shipped as a visible shake.
 
 **Movers are deliberately not interpolated.** Doors, lifts, floors and crushers write
 `sector.floorHeight`/`ceilHeight` and rebuild geometry per tic — which is exactly the rate vanilla

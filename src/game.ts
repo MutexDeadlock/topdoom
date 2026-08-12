@@ -798,6 +798,11 @@ export class Game {
     this.screen.addPain(amount);
     if (this.inventory.health <= 0) {
       this.playerDead = true;
+      // `player.update` stops running from here on, so it never writes `prev*`
+      // again: leaving the window open would have every frame lerp the corpse
+      // somewhere else between the last two live tics. docs/frameloop.md §
+      // Interpolation.
+      this.player.syncInterpolation();
       // A_PlayerScream: the drawn-out `pdiehi` for a death that overkilled by
       // more than 50, the ordinary `pldeth` otherwise. Vanilla tests the
       // *post-hit* health, which goes negative there; `applyDamage` clamps it at
@@ -958,7 +963,11 @@ export class Game {
       }
     }
 
-    this.draw(this.accumulator / TIC_SECONDS, rawDt);
+    // A frozen simulation is drawn at the tic-exact pose, not at the leftover
+    // accumulator: with no further tic coming, the last two tics stay apart
+    // forever while `alpha` keeps changing every frame, so the still scene
+    // shakes between them. docs/frameloop.md § Interpolation.
+    this.draw(this.intermissionActive ? 1 : this.accumulator / TIC_SECONDS, rawDt);
     requestAnimationFrame(this.frame);
   };
 

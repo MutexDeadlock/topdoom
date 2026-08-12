@@ -9,6 +9,13 @@ import type { Placement, Pos2, Pos3 } from '../types.ts';
 /** Vanilla DOOM value, in map units. */
 export const MAX_STEP_UP = 24;
 
+/**
+ * A feet height that vacates both of `blocksMovement`'s z-relative gates, so
+ * only the line's own geometry is tested — vanilla's pre-`floatok` subset of
+ * `P_TryMove`. `monsters/ai.ts: testStep` is the only caller that wants it.
+ */
+export const ANY_HEIGHT = Infinity;
+
 const GRID_CELL = 128;
 
 export interface Opening {
@@ -378,13 +385,29 @@ export class World {
     return !opening || opening.top <= opening.bottom;
   }
 
-  /** True if a body standing at feet height `z` cannot cross this line. `forMonster` — see `isSolidWall`. */
+  /**
+   * True if a body standing at feet height `z` cannot cross this line —
+   * `P_TryMove`'s three height gates against `P_LineOpening`'s opening, in
+   * vanilla's order: the opening is too short to stand in at all, the step up
+   * to it is too big, or its top is too low **for this body's own `z`**.
+   *
+   * That last one is the one an opening-range test cannot stand in for, and it
+   * only bites a body standing higher than the opening's bottom — a raised
+   * lift beside a neighbor whose ceiling is below the lift's floor, or a body
+   * still airborne. Repro: DOOM2 MAP06 line 359, the lift (sector 122, up at
+   * 40) against sector 118's ceiling at -440. docs/movement.md § Collision.
+   *
+   * `z` of `ANY_HEIGHT` tests the line's geometry alone. `forMonster` — see
+   * `isSolidWall`.
+   */
   blocksMovement(lineIndex: number, z: number, forMonster = false): boolean {
     if (this.isSolidWall(lineIndex, forMonster)) return true;
     const opening = this.openingOf(lineIndex);
     if (!opening) return true;
     if (opening.top - opening.bottom < PLAYER_HEIGHT) return true;
+    if (!Number.isFinite(z)) return false;
     if (opening.bottom - z > MAX_STEP_UP) return true;
+    if (opening.top - z < PLAYER_HEIGHT) return true;
     return false;
   }
 

@@ -20,6 +20,8 @@ Fixed bugs
   - fixed some problems with crushers
   - monsters now use their real per-type body height (56 to 110) instead of one
     shared 64 everywhere
+  - you can no longer step off a raised lift into a space whose ceiling sits
+    below the lift's floor (DOOM2 MAP06)
 
 
 ===============================================================================

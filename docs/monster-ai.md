@@ -220,10 +220,18 @@ Three rules, all in `monsters/ai.ts`:
   rides until floor or ceiling zeroes it. Losing its target doesn't drop it either — `MF_NOGRAVITY`
   outlives the target, so `ThingLayer`'s go-dormant branch leaves a flier's `z` alone.
 
-`testStep` also carries the one check the shared collision code doesn't: vanilla's "mobj must lower
-itself to fit" (`tmceilingz - thing->z < thing->height`). `World.blocksMovement` has no ceiling test
-because nothing that uses it can be far above its own floor — a hovering monster is the first body
-that can, and without this it would sail through the wall above a low doorway.
+`testStep` carries its own copy of vanilla's "mobj must lower itself to fit"
+(`tmceilingz - thing->z < thing->height`) even though `World.blocksMovement` now applies that rule
+per crossed opening too (docs/movement.md § Collision). The two are not redundant: `blocksMovement`
+only ever sees openings the body is *straddling*, so a flier drifting around inside one sector
+crosses nothing, and it measures against `PLAYER_HEIGHT` rather than the species' own `stats.height`.
+Without the `testStep` copy a hovering monster would sail through the wall above a low doorway.
+
+What did change is that a flier's `circleBlocked` probe can now come back blocked purely on the
+ceiling gate. That lands on the `floatok` path, which is the correct answer — the body lowers itself
+instead of turning — and the re-probe there passes `ANY_HEIGHT` so both of `blocksMovement`'s
+feet-relative gates drop out, leaving exactly the tests vanilla runs before it sets `floatok`. All
+three flying types are 56 units tall, so the shared `PLAYER_HEIGHT` costs nothing here.
 
 Cost: the extra `groundCeiling` queries roughly double `stepMonsterAI` for a *flier* (2000 bodies on
 SCYTHE MAP01: 0.73 → 1.69 ms/frame) and leave grounded monsters untouched. That is ~0.5 µs per flier

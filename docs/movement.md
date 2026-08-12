@@ -26,6 +26,31 @@ the circle actually straddles it (`crossesLine`); solid walls (`isSolidWall`: on
 direction. Conflating "near" with "straddling" for passable openings is exactly what causes the
 deadlock above.
 
+**`blocksMovement` is all three of `P_TryMove`'s height gates, and the third one is easy to miss.**
+Against a crossed opening, in vanilla's order: too short to stand in at all
+(`tmceilingz - tmfloorz < thing->height`), too big a step up (`tmfloorz - thing->z > 24`), and the
+opening's top too low **for this body's own `z`** (`tmceilingz - thing->z < thing->height`, "mobj
+must lower itself to fit"). Only the third is relative to the mover's feet rather than to the
+opening, so an opening-range test cannot stand in for it, and it only ever bites a body standing
+*higher* than the opening's bottom — which for a grounded mover on flat or stepped ground never
+happens, since `groundFloor` already pins `z` to the highest straddled opening bottom. The two cases
+that do reach it: a body on a raised lift beside a neighbor whose ceiling is below the lift's floor,
+and a body still airborne. Missing it let the player walk off a raised lift and end up standing
+inside solid geometry.
+
+**Repro: DOOM2 MAP06 line 359**, the north edge of the lift (sector 122, up at 40). Three 16-unit
+blocks sit just past that edge; the gap between them is spanned by sector 118, whose ceiling is
+-440 — a crawlspace reachable only once the lift has taken you down to the pit floor at -512. The
+first two gates both pass there (the opening is 72 tall, and entering it is a step *down*), so
+without the third the 48-unit gap was walkable at lift height. Across DOOM/DOOM2/freedoom2 the gate
+changes under 0.006% of grounded positions, so it is genuinely this shape of geometry and not a
+general narrowing.
+
+`ANY_HEIGHT` as the `z` argument drops both feet-relative gates and tests the line's geometry alone —
+vanilla's pre-`floatok` subset, wanted by exactly one caller (docs/monster-ai.md § Floating
+monsters). `blocksMovement` measures every gate against `PLAYER_HEIGHT`; a monster's real
+`stats.height` is applied separately by `monsters/ai.ts: testStep`.
+
 **Thing-vs-thing collision has the same class of deadlock, and the same shape of fix.**
 `blockedByThings` (used by both `circleBlocked` and `blockingLineAt`) takes an optional `from`, the
 mover's current position: a blocker already overlapped there only refuses the move if it presses

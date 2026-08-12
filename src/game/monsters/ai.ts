@@ -1,5 +1,5 @@
 import type { Sector } from '../../wad/map.ts';
-import { circleBlocked, hasLineOfSight, type ThingBlocker, type World } from '../world.ts';
+import { ANY_HEIGHT, circleBlocked, hasLineOfSight, type ThingBlocker, type World } from '../world.ts';
 import { GRAVITY } from '../player.ts';
 import { pRandom, rollDamage } from '../../util/random.ts';
 import {
@@ -219,17 +219,18 @@ function testStep(
   if (!circleBlocked(world, x, y, stats.radius, body.z, true, !stats.flies, blockers, body)) {
     if (!stats.flies) return 'clear';
     // `tmceilingz - thing->z < thing->height`, vanilla's "mobj must lower
-    // itself to fit" — only reachable for a body that can be well above its
-    // own floor, which is why the shared `blocksMovement` doesn't carry it.
+    // itself to fit", against the destination's *own* overhead rather than a
+    // crossed opening — `blocksMovement` carries the per-opening half of the
+    // same rule, but a monster walking around inside one sector crosses no
+    // line, and this one is per-species height besides.
     return world.groundCeiling(x, y, stats.radius, true) - body.z >= stats.height ? 'clear' : 'adjust';
   }
   if (!stats.flies) return 'blocked';
   // `floatok`: the destination is one this monster fits in at *some* height,
-  // so only the step stopped it. Re-testing at an unreachable feet height is
-  // what makes `blocksMovement`'s step-up rule vacuous while leaving the wall,
-  // body and opening-height checks — exactly the tests vanilla runs before it
-  // sets `floatok`.
-  return circleBlocked(world, x, y, stats.radius, Infinity, true, false, blockers, body) ? 'blocked' : 'adjust';
+  // so only the step stopped it. `ANY_HEIGHT` drops `blocksMovement`'s two
+  // feet-relative gates while leaving the wall, body and opening-height
+  // checks — exactly the tests vanilla runs before it sets `floatok`.
+  return circleBlocked(world, x, y, stats.radius, ANY_HEIGHT, true, false, blockers, body) ? 'blocked' : 'adjust';
 }
 
 /**

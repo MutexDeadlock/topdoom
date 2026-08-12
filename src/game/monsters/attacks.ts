@@ -125,7 +125,7 @@ export class MonsterAttacks {
     fromX: number,
     fromY: number,
   ): void {
-    if (targetId === null) this.ctx.damagePlayer(damage, fromX, fromY);
+    if (targetId === null) this.ctx.damagePlayer(damage, fromX, fromY, sourceType);
     else this.ctx.things?.damage(targetId, damage, { id: sourceId, type: sourceType }, undefined, fromX, fromY);
   }
 
@@ -210,7 +210,7 @@ export class MonsterAttacks {
       if (things?.bleeds(blocker.id)) this.effects.spawnBlood(hitAt, damage);
       else this.effects.spawnPuff(hitAt);
     } else if (playerInPath) {
-      this.ctx.damagePlayer(damage, atk.x, atk.y);
+      this.ctx.damagePlayer(damage, atk.x, atk.y, atk.sourceType);
       endX = player.x;
       endY = player.y;
       endZ = player.z + AIM_HEIGHT_OFFSET;

@@ -11,6 +11,14 @@ import { ThingType } from './thingtypes.ts';
 import type { Pos3 } from '../types.ts';
 
 /**
+ * What killed the player, carried alongside a hit so the death overlay can name
+ * it. A doomednum is the thing that did it (a monster, or the barrel it went
+ * off in); the three strings are the causes with no attacker behind them —
+ * `'self'` is the player's own splash. See docs/death.md § Player death.
+ */
+export type DamageCause = number | 'self' | 'crush' | 'slime';
+
+/**
  * The live level as the combat systems (`game/projectiles.ts` and the shot
  * resolution still in `game.ts`) see it: the state they need to read, plus the
  * two effects they raise that belong to somebody else.
@@ -29,9 +37,10 @@ export interface CombatContext {
   /**
    * Armor-mitigated damage to the player, returning whether the hit actually
    * landed (`false` covers both a corpse hit and invulnerability). `fromX`/
-   * `fromY` are where it physically came from, and drive knockback.
+   * `fromY` are where it physically came from, and drive knockback; `cause`
+   * is who to name if this is the hit that kills.
    */
-  damagePlayer(amount: number, fromX?: number, fromY?: number): boolean;
+  damagePlayer(amount: number, fromX?: number, fromY?: number, cause?: DamageCause): boolean;
   /**
    * Fires a shoot-triggered line special, with whatever keys the player is
    * currently carrying. `byMonster` reproduces vanilla's own hardcoded
@@ -55,6 +64,12 @@ export function applyRadiusDamage(
   maxDamage: number,
   hitsPlayer: boolean,
   source?: { id: number; type: number },
+  /**
+   * Who the overlay names for a killing blast, when that is not `source`'s own
+   * type: a barrel blames the barrel rather than whoever set it off, and a
+   * shot of the player's has no `source` at all.
+   */
+  cause: DamageCause | undefined = source?.type,
 ): void {
   for (const m of ctx.things?.monstersNear(at, radius) ?? []) {
     // Vanilla's PIT_RadiusAttack: the spider mastermind and cyberdemon take
@@ -68,7 +83,7 @@ export function applyRadiusDamage(
   if (!hitsPlayer) return;
   const pdist = Math.hypot(ctx.player.x - at.x, ctx.player.y - at.y);
   if (pdist < radius && hasLineOfSight(ctx.world, at, ctx.player)) {
-    ctx.damagePlayer(maxDamage * (1 - pdist / radius), at.x, at.y);
+    ctx.damagePlayer(maxDamage * (1 - pdist / radius), at.x, at.y, cause);
   }
 }
 
@@ -80,5 +95,7 @@ export function applyRadiusDamage(
  * ordinary damage path (docs/death.md § Exploding barrels).
  */
 export function applyBarrelExplosion(ctx: CombatContext, exp: BarrelExplosion): void {
-  applyRadiusDamage(ctx, exp, BARREL_SPLASH_RADIUS, BARREL_SPLASH_DAMAGE, true, exp.source);
+  // The barrel, not `exp.source`: retaliation follows whoever set it off,
+  // but what killed the player is the barrel they were standing next to.
+  applyRadiusDamage(ctx, exp, BARREL_SPLASH_RADIUS, BARREL_SPLASH_DAMAGE, true, exp.source, ThingType.barrel);
 }

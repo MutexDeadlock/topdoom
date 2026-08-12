@@ -91,7 +91,7 @@ export function resolveVileBlast(
   if (atk.targetId === null) {
     // A no-op hit (already dead, or invulnerable) reports false — see
     // `CombatContext.damagePlayer` — and skips the knockup along with it.
-    if (ctx.damagePlayer(atk.damage, atk.x, atk.y)) player.launchUpward(atk.blast.knockUpSpeed);
+    if (ctx.damagePlayer(atk.damage, atk.x, atk.y, atk.sourceType)) player.launchUpward(atk.blast.knockUpSpeed);
   } else {
     ctx.things?.damage(atk.targetId, atk.damage, { id: atk.sourceId, type: atk.sourceType }, atk.blast.knockUpSpeed, atk.x, atk.y);
   }

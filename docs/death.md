@@ -119,11 +119,41 @@ blast already in flight still lands and can still deal splash (or, for the vile'
 beyond the first killing blow — `resolveVileBlast` gates its knockup on `damagePlayer`'s return, and
 `resolveBullet`'s `!playerDead` guard for the hitscan equivalent) — a dead player can still be
 "hit" for nothing to happen, matching `damagePlayer`'s own early return. The death itself shows a
-`#death-overlay` div. `R` calls `restart`: a fresh `Inventory`
-and a `loadMapByIndex` reload of the current map, which already resets player/world/specials/fog for
-a normal transition and, via its own top-of-function reset, `playerDead`/the overlay/`playerActor`'s
-animation state too. Restart isn't a special case, just the ordinary map-load path with a clean
-inventory.
+`#death-overlay` div.
+
+`R` calls `restart`, which reloads the level **from the checkpoint** written when the player
+advanced into it (docs/savegames.md § The checkpoint) — so the health, armor, ammo and weapons
+carried in are what the level restarts with, and the inventory comes out of the snapshot. With no
+checkpoint to use — none written this session (the first level of a run), one that no longer
+matches map/skill/WAD set, or a store that refused the read — it falls back to what `R` always did:
+a fresh `Inventory` and a plain `loadMapByIndex` reload. Either way it isn't a special case, just
+the ordinary map-load path, which already resets player/world/specials/fog for a normal transition
+and, via its own top-of-function reset, `playerDead`/the overlay/`playerActor`'s animation state
+too. The one wrinkle is that reading a checkpoint is async while `tic` is not: `restart` dispatches
+and returns, `restarting` swallows a second press, and `disposed`/`playerDead` are re-checked after
+the read because the menu can have started another level meanwhile.
+
+### Who killed the player
+
+The overlay's middle line names the killer — "You were killed by an Arch-Vile". `damagePlayer`
+takes a `DamageCause` (`game/combat.ts`) alongside the hit and only the killing one reads it;
+`thingdefs.ts`'s `obituary` turns it into the sentence and `ScreenEffects.showDeath` draws it, so
+the view layer composes nothing. An unattributed cause renders as `''` and the overlay looks exactly
+as it did before the line existed.
+
+A cause is either a doomednum — named through `THING_NAMES`, whose values carry their own article
+so "Commander Keen" and "the Icon of Sin" need no exception — or one of three strings for the
+killers with no attacker behind them: `'self'` (the player's own splash), `'crush'`, `'slime'`.
+Vanilla has no obituaries at all, so none of this text is a fidelity claim.
+
+Every attack path already carried the identity for `ThingLayer.damage`'s retaliation rule and simply
+dropped it on the player branch; each now passes it on: melee and the lost soul's charge plus
+hitscan (`monsters/attacks.ts`), a missile's arrival (`projectiles.ts`), the vile's blast
+(`monsters/vile.ts`), the spawn cube's telefrag (`iconofsin.ts`). Splash is the one that can't just
+reuse `source`: `applyRadiusDamage` defaults `cause` to `source?.type`, but a barrel blames the
+barrel rather than whoever set it off, and a rocket of the player's own carries no `source` at all,
+so both pass it explicitly. Crushers and damage floors keep their `(amount) => void` callbacks —
+their cause is fixed per wiring site, so `game.ts` binds `'crush'`/`'slime'` where it builds them.
 
 ## Exploding barrels
 

@@ -64,8 +64,10 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   `#controls-dev` pattern; the button must leave the flex row, not hold a gap) and moves anyone
   still on it to New Game. Same gate as the resume button: there is nothing to save otherwise. The
   Load tab is always available.
-- Saving takes an optional name (defaulting to map + date), and both panels list every save, newest
-  first: thumbnail, name, the level, then skill · level time · date. Rows are rendered fresh on every
+- Saving takes an optional name (defaulting to map + date), and both panels list every save the
+  player made, newest first: thumbnail, name, the level, then skill · level time · date. The
+  level-entry checkpoint is the one save neither tab ever shows — `listSaves` drops it, and it
+  costs nobody a slot (docs/savegames.md § The checkpoint). Rows are rendered fresh on every
   `open` via `SavegamesUi.refresh`, with the `#pwad-list` scrollTop-restore trick.
 - **The level line and the missing-file warnings come from `Menu.describeSave`**, not from the save:
   a save stores the map *lump* name, which alone can't name a level (docs/wad.md § Level names), so

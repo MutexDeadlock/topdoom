@@ -12,7 +12,9 @@ import {
   MONSTER_WALK_FRAMES,
   MONSTER_WALK_FRAMES_OVERRIDE,
   SPAWN_CUBE_MONSTERS,
+  THING_NAMES,
   THING_SPRITES,
+  obituary,
 } from '../../src/game/thingdefs.ts';
 import { INERT_SHOOTABLE, MONSTER_STATS } from '../../src/game/monsters/defs.ts';
 import { ThingType } from '../../src/game/thingtypes.ts';
@@ -89,6 +91,23 @@ describe('Vanilla tables · monsters', () => {
     // And nothing in either table that is not a monster at all.
     assert.deepEqual(missing(withStats, MONSTER_TYPES), []);
     assert.deepEqual(missing(inert, MONSTER_TYPES), []);
+  });
+
+  test('every monster type can be named on the death overlay', () => {
+    // A monster missing here still kills the player, the overlay just says
+    // nothing about it — the quiet failure THING_NAMES is easiest to forget in.
+    assert.deepEqual(missing(MONSTER_TYPES, new Set(numericKeys(THING_NAMES))), []);
+    assert.equal(obituary(ThingType.archVile), 'You were killed by an Arch-Vile');
+    assert.equal(obituary(ThingType.barrel), 'You were killed by an exploding barrel');
+    assert.equal(obituary(ThingType.bossBrain), 'You were killed by the Icon of Sin');
+    assert.equal(obituary('self'), 'You blew yourself up');
+    assert.equal(obituary('crush'), 'You were crushed');
+    assert.equal(obituary('slime'), 'You died in the slime');
+    // Both "nothing to say" cases: an unattributed hit, and a thing with no
+    // name of its own (a player start's doomednum here). The overlay draws the
+    // empty line as if it weren't there.
+    assert.equal(obituary(undefined), '');
+    assert.equal(obituary(1), '');
   });
 
   test('every monster type has health and a death animation', () => {

@@ -412,7 +412,7 @@ export class IconOfSin {
     const reach = PLAYER_RADIUS + PLAYER_TELEFRAG_RADIUS;
     const { player } = this.ctx;
     if ((player.x - spawned.x) ** 2 + (player.y - spawned.y) ** 2 <= reach * reach) {
-      this.ctx.damagePlayer(TELEFRAG_DAMAGE, spawned.x, spawned.y);
+      this.ctx.damagePlayer(TELEFRAG_DAMAGE, spawned.x, spawned.y, spawned.type);
     }
   }
 

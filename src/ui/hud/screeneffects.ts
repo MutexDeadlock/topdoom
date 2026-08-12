@@ -61,6 +61,7 @@ export class ScreenEffects {
   private tintEl = document.getElementById('screen-tint')!;
   private painEl = document.getElementById('pain-flash')!;
   private deathEl = document.getElementById('death-overlay')!;
+  private killerEl = document.querySelector<HTMLElement>('#death-overlay .killer')!;
   /** Current intensity of the damage flash, 0-1 — bumped by `addPain`, decayed by `update`. */
   private painFlash = 0;
 
@@ -93,13 +94,20 @@ export class ScreenEffects {
     this.painFlash = Math.min(1, this.painFlash + amount / PAIN_FLASH_MAX_DAMAGE);
   }
 
-  showDeath(): void {
+  /**
+   * Raises the overlay, with `killer` as its middle line — an already-composed
+   * sentence (`thingdefs.ts`'s `obituary`), since what killed the player is the
+   * game layer's to know, not this one's. `''` leaves the line out entirely.
+   */
+  showDeath(killer: string): void {
+    this.killerEl.textContent = killer;
     this.deathEl.classList.remove('hidden');
   }
 
   /** Clears the death overlay and any lingering flash — every map (re)load starts from here. */
   clearDeath(): void {
     this.deathEl.classList.add('hidden');
+    this.killerEl.textContent = '';
     this.painFlash = 0;
     this.painEl.style.opacity = '0';
   }

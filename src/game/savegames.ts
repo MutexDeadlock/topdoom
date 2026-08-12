@@ -24,6 +24,19 @@ export const SAVE_VERSION = 1;
 /** The store refuses a write past this rather than evicting — deleting somebody's save silently is worse than asking. */
 export const MAX_SAVES = 24;
 
+/**
+ * The checkpoint's reserved id. An ordinary save under a fixed id, which is what
+ * makes it self-overwriting and needs no field of its own: it is hidden from
+ * `listSaves` and left out of the cap by *this id*, not by a `SaveMeta` flag a
+ * v1 reader would not know about. docs/savegames.md § The checkpoint.
+ *
+ * `freshId` can never produce it (base-36 timestamp and counter), so no player
+ * save can land on it.
+ */
+export const AUTOSAVE_ID = 'auto';
+/** Never shown anywhere — `createMeta` wants a name, and a blank one would be replaced by the map-and-date default. */
+const AUTOSAVE_NAME = 'Checkpoint';
+
 /** The IndexedDB backend, created on first touch so importing this module in Node never reaches for `indexedDB`. */
 let backend: SaveStoreBackend | null = null;
 const store = (): SaveStoreBackend => (backend ??= idbBackend());
@@ -164,13 +177,20 @@ async function readMeta(id: string): Promise<unknown> {
   return raw;
 }
 
-/** Every stored save, newest first, unsupported versions included (marked, not hidden). Reads metas only — never a state. */
+/**
+ * Every stored save, newest first, unsupported versions included (marked, not
+ * hidden). Reads metas only — never a state. The checkpoint is the one row
+ * dropped outright: it is the engine's, not the player's, and both tabs list
+ * through here, so one filter keeps it out of Save and Load alike.
+ */
 export async function listSaves(): Promise<SaveListEntry[]> {
   const raws = await store().listMeta();
-  const entries = raws.map((raw) => {
-    const id = isRecord(raw) && typeof raw.id === 'string' ? raw.id : '';
-    return { meta: asMeta(raw, id), supported: hasLoadableMeta(raw) };
-  });
+  const entries = raws
+    .map((raw) => {
+      const id = isRecord(raw) && typeof raw.id === 'string' ? raw.id : '';
+      return { meta: asMeta(raw, id), supported: hasLoadableMeta(raw) };
+    })
+    .filter((entry) => entry.meta.id !== AUTOSAVE_ID);
   return entries.sort((a, b) => b.meta.at.localeCompare(a.meta.at));
 }
 
@@ -251,9 +271,19 @@ function createMeta(id: string, name: string, capture: SaveCapture): SaveMeta {
   };
 }
 
+/**
+ * How many of the stored saves the cap is about: everything the player can see
+ * in the list. The checkpoint is a record like any other in the backend, so it
+ * has to be discounted here or it would quietly cost somebody a slot.
+ */
+async function countListed(): Promise<number> {
+  const total = await store().count();
+  return (await store().readMeta(AUTOSAVE_ID)) === undefined ? total : total - 1;
+}
+
 /** Stores a fresh capture under a new id; throws (readably) at the cap or the storage quota. */
 export async function writeSave(capture: SaveCapture, name: string): Promise<SaveMeta> {
-  if ((await store().count()) >= MAX_SAVES) {
+  if ((await countListed()) >= MAX_SAVES) {
     throw new Error(`the save list is full (${MAX_SAVES}) — delete a save first`);
   }
   const meta = createMeta(await freshId(), name, capture);
@@ -274,6 +304,41 @@ export async function overwriteSave(id: string, capture: SaveCapture): Promise<S
   const meta = createMeta(id, kept, capture);
   await putSave(meta, await encodeState(id, capture.state));
   return meta;
+}
+
+/**
+ * What `Game` is handed so it can keep a checkpoint without ever reaching for
+ * the store itself — the same split as `SaveHooks`: the session (main.ts) owns
+ * the library and the database, `Game` owns the moment worth capturing.
+ */
+export interface CheckpointStore {
+  write(capture: SaveCapture): Promise<void>;
+  read(): Promise<SaveGame | null>;
+}
+
+/**
+ * Replaces the checkpoint with a fresh capture. No cap check, like
+ * `overwriteSave`: the id already exists (or is the engine's own), so no listed
+ * save appears. docs/savegames.md § The checkpoint.
+ */
+export async function writeAutosave(capture: SaveCapture): Promise<void> {
+  const meta = createMeta(AUTOSAVE_ID, AUTOSAVE_NAME, capture);
+  await putSave(meta, await encodeState(AUTOSAVE_ID, capture.state));
+}
+
+/**
+ * The checkpoint, or `null` when there isn't a usable one — missing, damaged,
+ * or written by a build with a different `SAVE_VERSION`. Every refusal
+ * `readSave` throws collapses to `null` here: nothing in this path is worth a
+ * message, because the caller's fallback (an ordinary restart) is a perfectly
+ * good outcome. docs/savegames.md § The checkpoint.
+ */
+export async function readAutosave(): Promise<SaveGame | null> {
+  try {
+    return await readSave(AUTOSAVE_ID);
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -348,7 +413,7 @@ export async function importSave(text: string): Promise<SaveMeta> {
     throw refusal();
   }
   if (!isLoadableState(state)) throw refusal();
-  if ((await store().count()) >= MAX_SAVES) {
+  if ((await countListed()) >= MAX_SAVES) {
     throw new Error(`the save list is full (${MAX_SAVES}) — delete a save first`);
   }
   // `asMeta` supplies every meta field, so nothing of the file's own top level

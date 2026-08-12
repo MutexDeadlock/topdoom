@@ -66,6 +66,17 @@
   text-shadow: 0 2px 8px #000;
 }
 
+/* Empty whenever nothing attributed the killing blow: the overlay then looks
+   exactly as it did before this line existed, rather than leaving a gap. */
+#death-overlay .killer {
+  color: var(--fg);
+  letter-spacing: 2px;
+}
+
+#death-overlay .killer:empty {
+  display: none;
+}
+
 #death-overlay .hint {
   color: var(--fg);
   letter-spacing: 2px;

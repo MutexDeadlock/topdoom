@@ -1,5 +1,8 @@
 import { DOOM_TIC } from '../constants.ts';
 import { ThingType } from './thingtypes.ts';
+// Type-only: `combat.ts` imports the barrel constants below at runtime, and a
+// value import back would close that loop.
+import type { DamageCause } from './combat.ts';
 
 /**
  * DOOM thing type (doomednum) to the sprite it spawns with, covering
@@ -756,3 +759,51 @@ export const THING_ANIM_FRAMES: Record<number, { frames: string[]; frameSeconds:
  */
 export const BARREL_SPLASH_RADIUS = 128;
 export const BARREL_SPLASH_DAMAGE = 128;
+
+/**
+ * What to call a thing that killed the player, on the death overlay. The
+ * article is part of the value rather than derived, so the two names that don't
+ * take "a"/"an" (Commander Keen, the Icon of Sin) need no exception.
+ *
+ * Vanilla has no obituaries at all, so nothing here is a fidelity claim: these
+ * are the standard manual/editor names for the types, as player-facing text.
+ * Only what can actually land a killing blow is listed — every monster, plus
+ * the exploding barrel. See docs/death.md § Player death.
+ */
+export const THING_NAMES: Record<number, string> = {
+  [ThingType.zombieman]: 'a Zombieman',
+  [ThingType.shotgunGuy]: 'a Shotgun Guy',
+  [ThingType.imp]: 'an Imp',
+  [ThingType.demon]: 'a Demon',
+  [ThingType.spectre]: 'a Spectre',
+  [ThingType.lostSoul]: 'a Lost Soul',
+  [ThingType.cacodemon]: 'a Cacodemon',
+  [ThingType.baronOfHell]: 'a Baron of Hell',
+  [ThingType.hellKnight]: 'a Hell Knight',
+  [ThingType.spiderMastermind]: 'a Spider Mastermind',
+  [ThingType.cyberdemon]: 'a Cyberdemon',
+  [ThingType.painElemental]: 'a Pain Elemental',
+  [ThingType.heavyWeaponDude]: 'a Heavy Weapon Dude',
+  [ThingType.revenant]: 'a Revenant',
+  [ThingType.mancubus]: 'a Mancubus',
+  [ThingType.arachnotron]: 'an Arachnotron',
+  [ThingType.archVile]: 'an Arch-Vile',
+  [ThingType.wolfensteinSS]: 'a Wolfenstein SS',
+  [ThingType.commanderKeen]: 'Commander Keen',
+  [ThingType.bossBrain]: 'the Icon of Sin',
+  [ThingType.barrel]: 'an exploding barrel',
+};
+
+/**
+ * The death overlay's line under "YOU DIED", or `''` when there is nothing to
+ * say — a cause no call site attributed, or a doomednum with no name here,
+ * which the overlay then draws exactly as it did before there was a line at
+ * all. See docs/death.md § Player death.
+ */
+export function obituary(cause: DamageCause | undefined): string {
+  if (cause === 'self') return 'You blew yourself up';
+  if (cause === 'crush') return 'You were crushed';
+  if (cause === 'slime') return 'You died in the slime';
+  const name = typeof cause === 'number' ? THING_NAMES[cause] : undefined;
+  return name ? `You were killed by ${name}` : '';
+}

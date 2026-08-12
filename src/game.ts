@@ -19,13 +19,14 @@ import {
   PLAYER_DEATH_FRAME_SECONDS,
   PLAYER_DEATH_FRAMES,
   PLAYER_PAIN_FRAMES,
+  obituary,
 } from './game/thingdefs.ts';
 import { thrustSpeed } from './game/monsters/defs.ts';
 import { MonsterAttacks } from './game/monsters/attacks.ts';
 import { collectFadeTargets, FlatFader, TextureScroller, WallFader } from './render/occlusion.ts';
 import { World } from './game/world.ts';
 import { AIM_HEIGHT_OFFSET, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
-import { applyBarrelExplosion, type CombatContext } from './game/combat.ts';
+import { applyBarrelExplosion, type CombatContext, type DamageCause } from './game/combat.ts';
 import { SpriteFxLayer } from './game/spritefx.ts';
 import { ProjectileLayer } from './game/projectiles.ts';
 import { FogOfWar } from './game/fogofwar.ts';
@@ -53,7 +54,7 @@ import {
   type GameSnapshot,
   type SectorSnapshot,
 } from './game/snapshot.ts';
-import type { SaveCapture } from './game/savegames.ts';
+import type { CheckpointStore, SaveCapture, SaveGame } from './game/savegames.ts';
 import type { Skill } from './game/skill.ts';
 import {
   applyDamage,
@@ -256,6 +257,22 @@ export class Game {
   private playerDead = false;
   readonly title: string;
 
+  /**
+   * Where the level-entry checkpoint is kept, or null when nothing is offering
+   * one (the tests, mainly). docs/savegames.md § The checkpoint.
+   */
+  private checkpoint: CheckpointStore | null;
+  /**
+   * Whether *this session* has written a checkpoint, i.e. has advanced a level
+   * at least once. What stops `restart` from restoring a checkpoint left in the
+   * store by an earlier run — that save would be a level start with a different
+   * run's inventory, which is not what "restart this level" means.
+   */
+  private hasCheckpoint = false;
+  /** Guards the two async gaps in `restart`: a held-down `R`, and a `Game` torn down mid-read. */
+  private restarting = false;
+  private disposed = false;
+
   /** `?pos=x,y` override for the player start, consumed by the first map load. */
   private startPos: Pos2 | null;
   /**
@@ -275,6 +292,8 @@ export class Game {
     startPos: Pos2 | null = null,
     /** A savegame's state payload: the level is built normally, then overwritten step by step — docs/savegames.md § Apply order. */
     restore: GameSnapshot | null = null,
+    /** The checkpoint store, taken as a port so this class still knows nothing about IndexedDB. */
+    checkpoint: CheckpointStore | null = null,
   ) {
     this.view = view;
     this.audio = audio;
@@ -282,6 +301,7 @@ export class Game {
     this.title = title;
     this.skill = skill;
     this.startPos = startPos;
+    this.checkpoint = checkpoint;
     // From the save when restoring: a `?pos=` run must not become eligible for
     // best times by being saved and loaded back (docs/hud.md § Best times).
     this.recordsEligible = restore ? restore.recordsEligible : startPos === null;
@@ -343,7 +363,7 @@ export class Game {
       get playerDead() {
         return game.playerDead;
       },
-      damagePlayer: (amount, fromX, fromY) => this.damagePlayer(amount, fromX, fromY),
+      damagePlayer: (amount, fromX, fromY, cause) => this.damagePlayer(amount, fromX, fromY, cause),
       triggerShot: (lineIndex, byMonster) => this.specials?.triggerShot(lineIndex, this.inventory.keys, byMonster),
     };
     this.projectiles = new ProjectileLayer(this.combat, this.effects, this.spriteBank, this.spriteMaterials, audio);
@@ -389,7 +409,7 @@ export class Game {
    * capture identifies its WAD set by content, so this class needs to know
    * nothing about the library it was picked from.
    */
-  captureSave(): SaveCapture {
+  captureSave(thumbnail = true): SaveCapture {
     const refusal = this.saveRefusal();
     if (refusal) throw new Error(refusal);
     return {
@@ -397,7 +417,9 @@ export class Game {
       skill: this.skill,
       wads: wadSetId(this.wad),
       levelTime: this.levelTime,
-      thumb: this.captureThumbnail(),
+      // The checkpoint passes `false`: it is never listed, so nothing would ever
+      // draw its thumbnail, and taking one costs a full extra render.
+      thumb: thumbnail ? this.captureThumbnail() : '',
       state: {
         levelTime: this.levelTime,
         cameraYawDeg: this.view.camera.yawDeg,
@@ -572,7 +594,9 @@ export class Game {
       },
       (sectorIndex) =>
         applyCrushDamage(this.world, this.map, this.things, this.player, sectorIndex, (amount) =>
-          this.damagePlayer(amount),
+          // The cause is fixed per wiring site, so the callbacks these two
+          // helpers take stay `(amount) => void` and bind it here instead.
+          this.damagePlayer(amount, undefined, undefined, 'crush'),
         ),
       (sectorIndex, ceilingHeight) =>
         blocksCeilingLower(this.world, this.map, this.things, this.player, sectorIndex, ceilingHeight),
@@ -632,7 +656,8 @@ export class Game {
 
     // Raised last: this method clears every overlay at its top, so a card shown any earlier than
     // here would be wiped by its own load. A restore shows none — "Entering …" announces arriving
-    // at a level, and loading a save resumes one already under way.
+    // at a level, and loading a save resumes one already under way — the level-entry checkpoint
+    // `restart` reloads included, which is a load like any other.
     if (!restore) this.levelCard.show(this.levelNames.nameFor(name), this.levelNames.graphicFor(name));
 
     // Dead last, after every construction-time pRandom draw above (light-state
@@ -706,6 +731,8 @@ export class Game {
   };
 
   dispose(): void {
+    // Read by `resumeFromCheckpoint`, whose store read can still be in flight.
+    this.disposed = true;
     this.stop();
     // The engine is session-level and the next Game sets its own bank; this
     // only makes sure nothing from this level is left holding a channel.
@@ -749,12 +776,13 @@ export class Game {
    * animation once health hits 0. `fromX`/`fromY`, when both given, are where the damage
    * physically came from — same omitted-for-damage-floors-and-crushers convention as
    * `ThingLayer.damage`'s own params — and drive vanilla's `P_DamageMobj` knockback.
+   * `cause` is only read by the killing hit, which names it on the overlay.
    *
    * Returns whether the hit actually landed; `false` covers both a no-op corpse hit and
    * invulnerability blocking it outright, so a caller with a follow-up effect (e.g.
    * `resolveVileBlast`'s knockup) can gate on it. See docs/death.md § Player death.
    */
-  private damagePlayer(amount: number, fromX?: number, fromY?: number): boolean {
+  private damagePlayer(amount: number, fromX?: number, fromY?: number, cause?: DamageCause): boolean {
     if (this.playerDead || amount <= 0) return false;
     const healthBefore = this.inventory.health;
     if (!applyDamage(this.inventory, amount)) return false;
@@ -772,7 +800,7 @@ export class Game {
       // between the two cries.
       this.audio.play(amount > healthBefore + 50 ? 'pdiehi' : 'pldeth', this.player, PLAYER_ORIGIN);
       this.playerActor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
-      this.screen.showDeath();
+      this.screen.showDeath(obituary(cause));
       return true;
     }
     this.audio.play('plpain', this.player, PLAYER_ORIGIN);
@@ -780,10 +808,88 @@ export class Game {
     return true;
   }
 
-  /** `R`, while dead: a fresh inventory and a reload of the current map — `loadMapByIndex` resets the player/world/specials/fog and, via the doc on its own top, `playerDead`/the death overlay/`playerActor` too. */
+  /**
+   * Advancing into another level: the exit the player just took, or the DEVMODE
+   * `N`/`P` jump, which arrives at a level the same way. The checkpoint is
+   * written *after* the load, not before — `captureSave` refuses while the
+   * intermission is up, and what a death on the new level should return to is
+   * that level at tic 0, which is exactly the state now built.
+   */
+  private enterLevel(index: number): void {
+    this.loadMapByIndex(index);
+    this.writeCheckpoint();
+  }
+
+  /**
+   * Stores the state the player should come back to when they die on the level
+   * being entered. Fire-and-forget: a refused write (a full storage quota) must
+   * not take the level change down with it, and the flag only goes up once the
+   * bytes are actually in the store — a checkpoint that was never written must
+   * not be read back. docs/savegames.md § The checkpoint.
+   */
+  private writeCheckpoint(): void {
+    if (!this.checkpoint) return;
+    let capture: SaveCapture;
+    try {
+      // Nothing here should throw — the refusals `captureSave` checks are all
+      // false on a level just loaded — but this runs inside the frame loop,
+      // where an exception would take the running game down with it.
+      capture = this.captureSave(false);
+    } catch (err) {
+      console.warn('checkpoint not captured:', err);
+      return;
+    }
+    void this.checkpoint
+      .write(capture)
+      .then(() => {
+        this.hasCheckpoint = true;
+      })
+      .catch((err: unknown) => console.warn('checkpoint not saved:', err));
+  }
+
+  /**
+   * `R`, while dead. Dispatches the reload below; stays `void` because `tic`
+   * calls it, and re-entrant while a read is in flight is the same press twice.
+   */
   private restart(): void {
+    if (this.restarting) return;
+    this.restarting = true;
+    void this.resumeFromCheckpoint().finally(() => {
+      this.restarting = false;
+    });
+  }
+
+  /**
+   * The level again from its checkpoint, or — with none written this session,
+   * one that no longer matches, or a store that refused the read — a fresh
+   * inventory and a plain reload, which is what `R` has always done.
+   * `loadMapByIndex` resets the player/world/specials/fog and, via the doc on
+   * its own top, `playerDead`/the death overlay/`playerActor` too; on the
+   * restore path the inventory comes out of the snapshot instead.
+   */
+  private async resumeFromCheckpoint(): Promise<void> {
+    const save = this.hasCheckpoint && this.checkpoint ? await this.checkpoint.read() : null;
+    // The read is async, so the session may have moved on underneath it: the
+    // menu can have started another level (and disposed this Game) meanwhile.
+    if (this.disposed || !this.playerDead) return;
+    if (save && this.matchesSession(save)) {
+      this.loadMapByIndex(this.mapIndex, save.state);
+      return;
+    }
     this.inventory = createInventory();
     this.loadMapByIndex(this.mapIndex);
+  }
+
+  /**
+   * Whether a checkpoint is one this level can be reloaded from: the same map,
+   * the same skill (which decides which things exist at all) and the same WAD
+   * set by content, the identity rule every load matches on
+   * (docs/savegames.md § WAD-set identity).
+   */
+  private matchesSession(save: SaveGame): boolean {
+    if (save.map !== this.currentMap || save.skill !== this.skill) return false;
+    const wads = wadSetId(this.wad);
+    return save.wads.length === wads.length && save.wads.every((w, i) => w.id === wads[i].id);
   }
 
   /**
@@ -871,12 +977,12 @@ export class Game {
       const go = input.pressed('Space') || input.pressed('Enter');
       input.endTic();
       if (this.intermissionTime >= INTERMISSION_INPUT_DELAY && go) {
-        this.loadMapByIndex(this.mapIndex + 1); // clears the popup and the flag, like every other per-level overlay
+        this.enterLevel(this.mapIndex + 1); // clears the popup and the flag, like every other per-level overlay
         return true;
       }
       return false;
     }
-    handleHotkeys(input, camera, (delta) => this.loadMapByIndex(this.mapIndex + delta));
+    handleHotkeys(input, camera, (delta) => this.enterLevel(this.mapIndex + delta));
     // Set before any system runs, since specials/monsters/weapons all raise
     // sounds during the update below. The camera's yaw is last tic's (it
     // settles in `camera.tick`, at the end) — a tic of smoothing lag on the
@@ -1060,7 +1166,7 @@ export class Game {
       return taken;
     });
     const sectorEffect = this.sectorEffects.update(dt, this.world, this.player, this.inventory, (amount) =>
-      this.damagePlayer(amount),
+      this.damagePlayer(amount, undefined, undefined, 'slime'),
     );
     if (sectorEffect.secretFound) {
       this.message.show(SECRET_MESSAGE);

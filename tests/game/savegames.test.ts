@@ -1,6 +1,7 @@
 import { beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  AUTOSAVE_ID,
   MAX_SAVES,
   SAVE_VERSION,
   deleteSave,
@@ -8,10 +9,12 @@ import {
   importSave,
   listSaves,
   overwriteSave,
+  readAutosave,
   readSave,
   renameSave,
   setSaveBackend,
   wadLabel,
+  writeAutosave,
   writeSave,
   type SaveCapture,
 } from '../../src/game/savegames.ts';
@@ -308,6 +311,57 @@ describe('Savegames · the store', () => {
     await assert.rejects(importSave(JSON.stringify(base)), /not a TopDoom save/);
     const garbled = { ...base, stateEncoding: STATE_ENCODING, state: 'not base64!!' };
     await assert.rejects(importSave(JSON.stringify(garbled)), /not a TopDoom save/);
+  });
+});
+
+/** The level-entry checkpoint: one reserved id, hidden from both tabs and outside the cap. See docs/savegames.md § The checkpoint. */
+describe('Savegames · the checkpoint', () => {
+  test('it replaces itself and never appears in the list', async () => {
+    await writeAutosave(capture('E1M1'));
+    await writeAutosave(capture('E1M2'));
+    assert.equal(store.metas.size, 1, 'one meta, not one per level');
+    assert.equal(store.states.size, 1);
+    assert.equal((await readAutosave())?.map, 'E1M2', 'the later write won');
+
+    assert.deepEqual(await listSaves(), [], 'hidden with nothing else stored');
+    const mine = await writeSave(capture(), 'my save');
+    assert.deepEqual(
+      (await listSaves()).map((e) => e.meta.id),
+      [mine.id],
+      'and hidden beside a real save',
+    );
+  });
+
+  test('it costs nobody a save slot', async () => {
+    await writeAutosave(capture());
+    for (let i = 0; i < MAX_SAVES; i++) await writeSave(capture(), `s${i}`);
+    assert.equal((await listSaves()).length, MAX_SAVES, 'the full list is still the player’s own');
+    await assert.rejects(writeSave(capture(), 'one too many'), /delete a save first/);
+    // Same discount on the import path, which shares the cap check.
+    const exported = await exportSave((await listSaves())[0].meta.id);
+    await assert.rejects(importSave(exported), /delete a save first/);
+  });
+
+  test('an unusable checkpoint reads as null rather than throwing', async () => {
+    assert.equal(await readAutosave(), null, 'nothing stored');
+
+    await writeAutosave(capture());
+    store.states.delete(AUTOSAVE_ID);
+    assert.equal(await readAutosave(), null, 'state record gone');
+
+    await writeAutosave(capture());
+    tamperMeta(AUTOSAVE_ID, { version: SAVE_VERSION + 1 });
+    assert.equal(await readAutosave(), null, 'written by another build');
+  });
+
+  test('the capture round-trips through it, thumbnail-less and all', async () => {
+    await writeAutosave({ ...capture('MAP12'), thumb: '' });
+    const save = await readAutosave();
+    assert.equal(save?.id, AUTOSAVE_ID);
+    assert.equal(save?.skill, 3);
+    assert.equal(save?.thumb, '');
+    assert.deepEqual(save?.wads, [{ name: 'DOOM.WAD', id: 'abc123' }]);
+    assert.deepEqual(save?.state, state);
   });
 });
 

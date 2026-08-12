@@ -2,7 +2,16 @@ import { Wad } from './wad/wad.ts';
 import { wadSetId } from './wad/checksum.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
 import { Menu, type Selection } from './ui/menu/menu.ts';
-import { missingWadText, overwriteSave, writeSave, type SaveCapture, type SaveGame } from './game/savegames.ts';
+import {
+  missingWadText,
+  overwriteSave,
+  readAutosave,
+  writeAutosave,
+  writeSave,
+  type CheckpointStore,
+  type SaveCapture,
+  type SaveGame,
+} from './game/savegames.ts';
 import { Game } from './game.ts';
 import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';
@@ -77,6 +86,13 @@ async function boot(): Promise<void> {
   let game: Game | null = null;
 
   /**
+   * The level-entry checkpoint's two directions, handed to every `Game` — the
+   * store stays this layer's business, the same split the save hooks below use
+   * (docs/savegames.md § The checkpoint).
+   */
+  const checkpoint: CheckpointStore = { write: writeAutosave, read: readAutosave };
+
+  /**
    * The one session lifecycle, for both a fresh start and a load: assemble the
    * WAD set, tear the old level down, build the new one. With `save` given it
    * additionally verifies the set against what the save was made with and
@@ -102,7 +118,17 @@ async function boot(): Promise<void> {
       game = null;
       previous?.dispose();
       const title = titleOf(selection.iwad, selection.pwads);
-      game = new Game(view, audio, wad, selection.map, title, selection.skill, save ? null : startPos, save?.state ?? null);
+      game = new Game(
+        view,
+        audio,
+        wad,
+        selection.map,
+        title,
+        selection.skill,
+        save ? null : startPos,
+        save?.state ?? null,
+        checkpoint,
+      );
 
       menu.setStatus('');
       menu.close();

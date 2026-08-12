@@ -388,7 +388,7 @@ export class ProjectileLayer {
 
       if (reachedPlayer || struck || hitGround || p.traveled >= p.maxDist) {
         if (reachedPlayer) {
-          this.ctx.damagePlayer(p.damage, at.x, at.y);
+          this.ctx.damagePlayer(p.damage, at.x, at.y, p.sourceType);
         } else if (struck) {
           // `struck.id === null` is the same-species fizzle: the body stopped
           // the missile but takes no damage from it (see bodyStruckBy).
@@ -413,6 +413,9 @@ export class ProjectileLayer {
             p.splash.damage,
             p.splash.hitsPlayer,
             fromMonster ? { id: p.sourceId!, type: p.sourceType } : undefined,
+            // No `source` means the shot is the player's own, which is the one
+            // splash that can kill them without anyone else being involved.
+            fromMonster ? p.sourceType : 'self',
           );
         }
         // Only ever set for the player's own BFG ball (spawnMonsterShot

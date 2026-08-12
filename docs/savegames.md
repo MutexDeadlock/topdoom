@@ -178,7 +178,8 @@ heights** and **RNG cursors dead last**.
     saved (see § What is not saved). (`levelTime` is taken back in step 3's block, with the sector
     state.)
 15. `levelCard.show(...)` — **skipped on a restore**: the card announces *entering* a level, and a
-    save resumes one already under way (docs/hud.md § Level card).
+    save resumes one already under way (docs/hud.md § Level card). The checkpoint restart is a
+    restore like any other here, so it raises no card either (§ The checkpoint).
 16. `setRandomCursors(...)` — after every construction-time `pRandom` draw (`makeLightState`
     seeding, `pushThing`'s `homingBias`) has already happened and been overwritten, so the first
     *simulation* draw after a load is exactly the one the save would have made next.
@@ -217,6 +218,44 @@ snapshot JSON on top of the pristine-thing, sparse-block, sparse-sector, float-r
 fog-RLE encodings it compresses. The uncompressed sizes for scale: DOOM2 MAP15 ~40 KB untouched
 (~24 KB of that would be sectors without the diff), a disturbed monster ~350 bytes, a corpse ~200,
 NUTS.WAD with all 10k monsters wounded ~3 MB.
+
+## The checkpoint
+
+Advancing into a level writes a **checkpoint**: an ordinary save, under the reserved id
+`AUTOSAVE_ID` (`'auto'`), taken by `Game.enterLevel` immediately *after* `loadMapByIndex` has built
+the new level. Dying and pressing `R` reloads it, so a death costs the level and not the run's
+inventory (docs/death.md § Player death). Both ways of arriving at the next level go through
+`enterLevel` — the exit the player took, and the DEVMODE `N`/`P` jump, which would otherwise leave
+a level with no checkpoint to restart from. The session's *first* level is deliberately not one of
+them: nothing was advanced into, so `R` there restarts as it always did.
+
+The reserved id is the whole mechanism, and that is deliberate: hiding a save by *id* needs no
+`SaveMeta` field, so the format is unchanged and `SAVE_VERSION` did not move. The id is also what
+makes it self-overwriting — the same key replaces both records, so there is only ever one — and
+`freshId` (a base-36 timestamp plus a counter) can never collide with it. Three consequences the
+code has to honor, all in `savegames.ts`:
+
+- `listSaves` filters the row out. It is the engine's save, not the player's, and both tabs list
+  through that one function, so one filter keeps it out of Save and Load alike.
+- `countListed` discounts it, so the checkpoint never costs a player one of the `MAX_SAVES` slots.
+  `writeAutosave` itself skips the cap, for `overwriteSave`'s reason: no new key appears.
+- `readAutosave` collapses every refusal `readSave` can throw — missing, damaged, or written by a
+  build with a different `SAVE_VERSION` — to `null`. None of them is worth a message, because the
+  caller's fallback (a plain restart) is a perfectly good outcome.
+
+The capture skips the thumbnail (`captureSave(false)`): nothing ever lists it, so the extra render
+would be for a JPEG no one sees. Writing is fire-and-forget, and `Game.hasCheckpoint` only goes up
+once the bytes are actually stored — a refused write (a full quota) must not take the level change
+down with it, and must not leave a checkpoint that isn't there readable.
+
+`hasCheckpoint` is *also* what scopes the checkpoint to the session. A `Game` spans every level of
+a run, so the flag means "this run has advanced at least once"; without it, a run started on a map
+that some earlier run happened to checkpoint would restore that run's inventory. `matchesSession`
+then re-checks map, skill and the WAD set by content on top of it.
+
+`Game` reaches the store through the injected `CheckpointStore` port, never directly — the same
+split as `SaveHooks`: `main.ts` owns the library and the database, `Game` owns which moment is
+worth capturing.
 
 ## Download and import
 

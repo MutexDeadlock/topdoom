@@ -181,10 +181,12 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
 ## Difficulty
 
 **Difficulty lives on the New Game tab, not the Settings tab** — it belongs with the WAD and level,
-the other two things a start is composed of, and unlike volume and autorun it can't apply live:
-skill only takes effect where things are spawned (`game/things.ts: buildThingSprites`), so changing
-it mid-level would silently do nothing until the next load. It shares a row with Level (`.columns
-even`, § Settings tab below).
+the other two things a start is composed of, and unlike volume and autorun it can't apply live: a
+running `Game` holds the skill it was constructed with, and most of what the skill decides — which
+things spawn at all, and which stat table the monsters run on (docs/monster-ai.md § Fast monsters)
+— is resolved once per level in `game/things.ts: buildThingSprites`, so changing it mid-level would
+silently do nothing until the next load. It shares a row with Level (`.columns even`, § Settings
+tab below).
 
 `#skill-select` is filled once from `SKILL_NAMES` and seeded from `topdoom.skill`; a change writes
 that key back, so the next visit opens on the last skill played. **What a start actually runs at is

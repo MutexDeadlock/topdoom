@@ -1,5 +1,6 @@
 import type { SfxId } from '../audio/sfx.ts';
 import { ThingType } from './thingtypes.ts';
+import { DEFAULT_SKILL, ammoAtSkill, type Skill } from './skill.ts';
 
 /** The four ammo classes DOOM tracks; matches vanilla's `ammotype_t`. */
 export const AMMO_TYPES = ['bullets', 'shells', 'rockets', 'cells'] as const;
@@ -222,8 +223,11 @@ const WEAPON_PICKUPS: Record<number, { weapon: WeaponId; ammoType: AmmoType | nu
  * dropped pickup's ammo at half the rate of a map-placed one. Only ammo and
  * weapon pickups are affected; nothing else (health, armor, keys) is ever
  * dropped by a monster in vanilla, so `dropped` is meaningless there.
+ *
+ * `skill` only ever reaches the three paths that grant ammo, which skills 1 and 5 double
+ * (`ammoAtSkill`); it defaults to skill 3, the one skill that changes nothing here.
  */
-export function applyPickup(inv: Inventory, type: number, dropped = false): boolean {
+export function applyPickup(inv: Inventory, type: number, dropped = false, skill: Skill = DEFAULT_SKILL): boolean {
   // DOOM II only: full health *and* blue armor at once, both past what any single pickup gives.
   if (type === ThingType.megasphere) {
     inv.health = MAX_HEALTH_BONUS;
@@ -259,7 +263,7 @@ export function applyPickup(inv: Inventory, type: number, dropped = false): bool
     // first time, but always hands over one clip of everything and always consumes the
     // backpack — even at full ammo, unlike every other ammo pickup here.
     inv.backpack = true;
-    for (const t of AMMO_TYPES) inv.ammo[t] = Math.min(inv.ammo[t] + CLIP_AMMO[t], ammoMax(inv, t));
+    for (const t of AMMO_TYPES) inv.ammo[t] = Math.min(inv.ammo[t] + ammoAtSkill(CLIP_AMMO[t], skill), ammoMax(inv, t));
     return true;
   }
 
@@ -270,7 +274,7 @@ export function applyPickup(inv: Inventory, type: number, dropped = false): bool
   if (ammo) {
     const cap = ammoMax(inv, ammo.type);
     if (inv.ammo[ammo.type] >= cap) return false;
-    const amount = dropped ? Math.floor(ammo.amount / 2) : ammo.amount;
+    const amount = ammoAtSkill(dropped ? Math.floor(ammo.amount / 2) : ammo.amount, skill);
     inv.ammo[ammo.type] = Math.min(inv.ammo[ammo.type] + amount, cap);
     return true;
   }
@@ -287,7 +291,7 @@ export function applyPickup(inv: Inventory, type: number, dropped = false): bool
     let gaveAmmo = false;
     if (weapon.ammoType) {
       const cap = ammoMax(inv, weapon.ammoType);
-      const amount = dropped ? Math.floor(weapon.ammoAmount / 2) : weapon.ammoAmount;
+      const amount = ammoAtSkill(dropped ? Math.floor(weapon.ammoAmount / 2) : weapon.ammoAmount, skill);
       if (inv.ammo[weapon.ammoType] < cap) {
         inv.ammo[weapon.ammoType] = Math.min(inv.ammo[weapon.ammoType] + amount, cap);
         gaveAmmo = true;

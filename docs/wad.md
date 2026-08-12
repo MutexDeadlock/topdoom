@@ -121,6 +121,45 @@ anything yet — so it resolves off the manifest instead, which is why `WadManif
 file's own MAPINFO titles (§ The `public/wads/` manifest) and `mergedMaps` (`library.ts`) merges
 them the same way, later files winning.
 
+## Level progression
+
+Which level an exit leads to (`progression.ts`). Vanilla keeps this nowhere in the WAD: it is two
+hard-coded tables in `G_DoCompleted` (`g_game.c`), which is why the rules live beside the title
+tables rather than being read off a lump. `LevelProgression` is built once per `Game`, next to
+`LevelNames` and for the same reason — it depends on the loaded file set, not on the current map.
+
+A level has **two** exits, and until the flag was routed through they behaved identically. The four
+vanilla exit linedefs (11, 51, 52, 124 — `wad/specials.ts`) already carried `effect.secret`;
+`game.ts` dropped it on the floor and advanced by index, so MAP15's secret exit led to MAP16 and
+MAP31 was reachable only from the level select.
+
+Resolution order for `nextMap(map, secret)`, highest authority first:
+
+1. **The WAD set's own MAPINFO** — `next` for the normal exit, `secretnext` (ZDoom) or `nextsecret`
+   (UMAPINFO) for the secret one, both spellings read. `parseMapInfo` picks them up in the `{ … }`
+   block form and in the old brace-less ZDoom form, with or without the `=`. A value is only used
+   if it names a map **the loaded set actually has**: a `next` pointing at a level nobody provides
+   would strand the player, and it also disposes of ZDoom's finale keywords (`next = EndGame`),
+   which name no map and fall through to the rules below.
+2. **Vanilla's tables** (`vanillaNextMap`), applied by map-name scheme, again only when the level
+   they name is in the set. `MAP<nn>` follows DOOM II: MAP15's secret exit leads to MAP31, MAP31's
+   to MAP32, and a normal exit out of either secret level returns to MAP16. `E<x>M<y>` follows the
+   episodes: any secret exit leads to `E<x>M9`, and M9's normal exit returns to the level *after*
+   the one hiding its entrance — E1M4, E2M6, E3M7, E4M3, one per episode.
+3. **Nothing**, which is `null`. Vanilla ends the game at `MAP30` and at every `E<x>M8`; a PWAD map
+   set simply runs out.
+
+A secret exit that resolves to nothing falls back to the normal one rather than doing nothing —
+`G_SecretExitLevel`'s own check, written for the German edition of DOOM II, which shipped without
+the two Wolfenstein levels: with no MAP31 present the secret switch still ends the level, it just
+doesn't lead anywhere special. Here the same rule covers every PWAD that defines part of a
+progression.
+
+Where `nextMap` returns null, `Game.resolveNextMap` advances to the **next map in load order**,
+which is what every exit did before there was a progression at all. This engine has no finale to
+run instead — no victory text, no cast call — so ending the game is not yet something it can do,
+and killing the Icon of Sin drops the player into whatever map follows MAP30 in the set.
+
 ## Content id
 
 `checksum.ts` gives a `WadFile` a **content id**: a hash of its whole byte range, memoized in a

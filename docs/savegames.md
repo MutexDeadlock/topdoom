@@ -51,10 +51,18 @@ compile error), and `copyMonsterField` skips absent keys on restore, letting the
 default stand. `pushThing` **spreads that same table** into every thing it builds, so the elision
 baseline *is* the spawn record rather than a second copy of it — the dangerous drift otherwise is
 silent and one-directional: a default changed only in `pushThing` would elide a live field that
-then restores to something else. Three defaults aren't constants and are decided in
+then restores to something else. Six defaults aren't constants and are decided in
 `snapshotThings` instead (`MONSTER_KEYS_WITH_DEFAULTS` is the rest): `health` compares against
 `spawnHealthFor` (per type), `angle` against `facingDeg` in radians (already in every
-`ThingState`), and `homingBias` — whose spawn value is a random draw — is always saved. Two
+`ThingState`), `homingBias` — whose spawn value is a random draw — is always saved, and the three
+`spawn*` fields (`mobj->spawnpoint`, which only a nightmare respawn reads —
+docs/monster-ai.md § Respawning monsters) compare against the `x`/`y`/`facingDeg` the same
+`ThingState` already carries, since a thing's spawn point *is* where it is until it moves. Those
+three were added after release and cost no `SAVE_VERSION` bump for the usual two reasons: they are
+optional, so a save written before them restores a corpse with its spawn point set to wherever it
+lies (it would come back where it fell rather than where the map placed it — visible on nightmare
+alone, on a save made before the feature existed), and an older reader ignores keys it doesn't
+know. Two
 fields are derived on restore rather than saved at all: `dead` (⟺ `health <= 0`; every death
 branch in `damageThing` and `reviveCorpse`'s full-health reset maintain the equivalence) and
 `deathFrameCount` (recomputed by `enterDeathPose` for a restored corpse, spawn `0` otherwise). A

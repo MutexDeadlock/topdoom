@@ -12,6 +12,54 @@ export const SKILL_NAMES: Record<Skill, string> = {
   5: 'Nightmare!',
 };
 
+/** `sk_baby`, vanilla's own name for skill 1 — the two rules below are the only places it differs from skill 2. */
+const SKILL_BABY: Skill = 1;
+/** `sk_nightmare`. Everything it changes beyond skill 4 is keyed off this: double ammo, fast monsters and respawning monsters. */
+const SKILL_NIGHTMARE: Skill = 5;
+
+/**
+ * Damage actually dealt to the player, halved on skill 1: `P_DamageMobj`'s
+ * `if (player && gameskill == sk_baby) damage >>= 1;` (`p_inter.c`). Vanilla halves before
+ * anything else looks at the number, so the reduced damage is also what knockback, the pain flash
+ * and the death cry's overkill test see. Only the *player* gets this — a monster on skill 1 takes
+ * what it always took. See docs/items.md § Skill.
+ */
+export function playerDamageAtSkill(damage: number, skill: Skill): number {
+  return skill === SKILL_BABY ? damage / 2 : damage;
+}
+
+/**
+ * One pickup's worth of ammo, doubled on skills 1 and 5: `P_GiveAmmo`'s
+ * `if (gameskill == sk_baby || gameskill == sk_nightmare) num <<= 1;` (`p_inter.c`) — a trainer
+ * bonus at one end and a concession to respawning monsters at the other. Vanilla doubles after
+ * halving a dropped pickup, so `applyPickup` applies it in that order too, and the ammo cap still
+ * applies afterwards. Reaches every path that grants ammo: plain ammo, a weapon's own ammo, and
+ * the backpack. See docs/items.md § Skill.
+ */
+export function ammoAtSkill(amount: number, skill: Skill): number {
+  return skill === SKILL_BABY || skill === SKILL_NIGHTMARE ? amount * 2 : amount;
+}
+
+/**
+ * Whether this skill runs vanilla's fast monsters — `G_InitNew`'s
+ * `if (fastparm || (skill == sk_nightmare && …))` (`g_game.c`). There is no `-fast` switch here,
+ * so nightmare is the only way to get them. What "fast" actually changes is a much smaller list
+ * than the name suggests: see `FAST_MONSTER_STATS` in game/monsters/defs.ts.
+ */
+export function fastMonsters(skill: Skill): boolean {
+  return skill === SKILL_NIGHTMARE;
+}
+
+/**
+ * Whether killed monsters come back — `G_InitNew`'s
+ * `if (skill == sk_nightmare || respawnparm) respawnmonsters = true;` (`g_game.c`). As with
+ * `fastMonsters` there is no command-line switch here, so nightmare is the only source.
+ * What that actually does to a corpse is docs/monster-ai.md § Respawning monsters.
+ */
+export function respawnMonsters(skill: Skill): boolean {
+  return skill === SKILL_NIGHTMARE;
+}
+
 /** THING flag bits gating which skills a thing spawns on. */
 const SKILL_FLAG = {
   EASY: 0x0001, // skills 1-2

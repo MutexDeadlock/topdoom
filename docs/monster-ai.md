@@ -89,6 +89,81 @@ shambling zombieman (70 units/sec) and a charging demon (175) and let nearly eve
 with a running player. In vanilla the fastest monster in the game — the arch-vile at 262 — is still
 barely half the player's own run speed.
 
+## Fast monsters
+
+Nightmare's fast monsters are a far smaller change than the name suggests, and
+`FAST_MONSTER_STATS` (`monsters/defs.ts`) is derived from `MONSTER_STATS` rather than typed out so
+a stat corrected in one can't fail to reach the other. `G_InitNew` (`g_game.c`) makes exactly two
+edits to the global tables when the skill is nightmare (or `-fast` is passed, which this engine has
+no switch for):
+
+- `for (i=S_SARG_RUN1; i<=S_SARG_PAIN2; i++) states[i].tics >>= 1` — **the demon's** run, attack
+  and pain states, and the spectre's along with them, since `info.c` runs `MT_SPECTRE` on the very
+  same state chain. Halving a walk state's tics doubles how often `A_Chase` runs, which in this
+  engine's dt-scaled model is a doubled `speed` and a halved `chaseInterval`; the attack and pain
+  states in the same range simply become half as long. The range starts at `RUN1`, so the standing
+  states are untouched, and stops at `PAIN2`, so dying still takes as long as it ever did.
+- `mobjinfo[…].speed` for **three missiles**: `MT_TROOPSHOT` (the imp's) and `MT_HEADSHOT` (the
+  cacodemon's) from 10 to 20 units per tic, `MT_BRUISERSHOT` (the baron's and the hell knight's)
+  from 15 to 20. They are keyed here by the sprite that identifies them (`BAL1`, `BAL2`, `BAL7`).
+
+That is the whole list. **No other monster moves any faster on nightmare** — a cyberdemon stomps at
+exactly its usual pace, and the revenant's, mancubus's and arachnotron's missiles fly at their
+usual speed. What actually makes the skill hard is the double-strength thing spawns it shares with
+Ultra-Violence, plus respawning monsters.
+
+`ThingLayer` resolves the table once per level (`monsterStatsFor`, off `fastMonsters(skill)`) and
+every stat lookup below reads that, rather than naming `MONSTER_STATS` directly. `BLOCKER_MARGIN`
+(§ Spatial indexing) is the one figure derived from *both* tables: a fast demon out-travels every
+ordinary monster in a frame, and a margin that only knew the normal table would come up short.
+
+## Respawning monsters
+
+The other half of nightmare, and the half that actually changes how a level plays:
+`P_MobjThinker`'s respawn branch (`p_mobj.c`), reached in `ThingLayer.update`'s dead-thing branch
+and realized by `respawnCorpse`. Four gates, in vanilla's own order, and all four matter:
+
+1. `MF_COUNTKILL` only — `COUNTKILL_TYPES`. A barrel, a piece of gore, a decoration never comes
+   back. Neither does a lost soul or a pain elemental, for a subtler reason: vanilla *removes*
+   those two the moment their death animation ends (§ The pain elemental), and a removed mobj has
+   no thinker left to run this branch. Here the corpse-vanish branch above already `continue`s past
+   the check, which reproduces that for free.
+2. **12 seconds face down** (`12*35` tics, `NIGHTMARE_RESPAWN_DELAY`), measured off `deadTime` —
+   the same counter the arch-vile's "not lying still yet" gate reads, and vanilla's own `movecount`
+   in the same role.
+3. **`leveltime & 31`** — the roll is only reached every 32nd tic, and that clock is *level-wide*,
+   not per corpse: on the tics it fires, every eligible corpse on the map rolls at once.
+4. **`P_Random() > 4` returns** — a 5-in-256 pass, drawn from the shared table like every other
+   roll in the engine (docs/random.md).
+
+Together those make the wait around a minute on average rather than the 12 seconds gate 2 suggests.
+
+`respawnCorpse` puts the monster back **at its own spawn point** (`PosedThing.spawnX`/`spawnY`/
+`spawnAngle`, vanilla's `mobj->spawnpoint`), not where the corpse lies, and refuses if anything is
+standing there — `P_CheckPosition`, which here means `circleBlocked` against the geometry plus
+`grid.solidBodies` and the player, who is not in `posed` and has to be added by hand. A refused
+respawn changes nothing and simply rolls again later.
+
+What comes back is a **fresh, dormant** monster, not an arch-vile's raise: full health, no target,
+its spawn facing, its ambush flag intact, and `alerted` false, so it has to catch sight of the
+player all over again. Two deliberate departures, both small:
+
+- Vanilla sets `reactiontime = 18` on the respawned body, a longer hesitation than any monster's
+  own `mobjinfo` value. This engine seeds that hesitation when a monster *wakes* rather than when
+  it spawns (`tryWake`), so anything written at respawn would be overwritten moments later.
+- A monster the map never placed — a pain elemental's lost soul, an Icon of Sin cube's spawn —
+  respawns where it was *created*. Vanilla leaves those with a zeroed `spawnpoint` and will try to
+  respawn them at map coordinate (0, 0), which is a bug rather than a rule.
+
+The corpse record is **reused** rather than removed and replaced (vanilla does
+`P_RemoveMobj` + `P_SpawnMobj`), so its `id` survives and every saved `targetId` aimed at it stays
+valid. The kill count is not decremented, exactly as in vanilla — killing the same monster twice
+counts twice, which is how a nightmare run ends over 100%.
+
+The three `spawn*` fields are the one thing this cost the save format; they are elided whenever
+they still match the thing's live position, which covers everything that never moved
+(docs/savegames.md § The format and its version).
+
 **`reactiontime`** is 8 for every monster in the game. `tryWake` seeds `MonsterBody.reactionTicks`
 with `REACTION_CHASES` (8) and `runChaseCall` decrements it once per chase call, as `A_Chase` does —
 so it's measured in chase calls, not seconds, and a zombieman's hesitation (~0.91s) lasts twice as

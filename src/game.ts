@@ -40,6 +40,7 @@ import { Crosshair } from './ui/hud/crosshair.ts';
 import { Intermission } from './ui/hud/intermission.ts';
 import { LevelCard } from './ui/hud/levelcard.ts';
 import { LevelNames } from './wad/levelnames.ts';
+import { LevelProgression } from './wad/progression.ts';
 import { CenterMessage, lockedKeyMessage } from './ui/hud/message.ts';
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
@@ -55,7 +56,7 @@ import {
   type SectorSnapshot,
 } from './game/snapshot.ts';
 import type { CheckpointStore, SaveCapture, SaveGame } from './game/savegames.ts';
-import type { Skill } from './game/skill.ts';
+import { playerDamageAtSkill, type Skill } from './game/skill.ts';
 import {
   applyDamage,
   applyPickup,
@@ -194,8 +195,17 @@ export class Game {
    * ticked dirty earlier in the same call is only rebuilt afterwards; tearing
    * the scene down synchronously would leave that pending rebuild to `add` the
    * old map's mover mesh to the new map's scene, with nothing to clean it up.
+   *
+   * Which of the two exits fired is carried along: it decides where the level leads, and only
+   * here, since by the time the popup is up the choice has already been made into `nextMapIndex`.
    */
-  private pendingExit = false;
+  private pendingExit: 'normal' | 'secret' | null = null;
+  /**
+   * The map the intermission's continue key loads, resolved the moment the popup goes up rather
+   * than when it is dismissed — that is the last moment `currentMap` is still the level just
+   * finished. docs/wad.md § Level progression.
+   */
+  private nextMapIndex = 0;
   /**
    * True while the end-of-level popup is up: the level is finished and frozen, and `frame` advances
    * nothing until the player presses the continue key, which is what loads the next map. Not
@@ -244,6 +254,8 @@ export class Game {
   private intermission: Intermission;
   /** Names levels for the card: MAPINFO, then the vanilla title table — see wad/levelnames.ts. */
   private levelNames: LevelNames;
+  /** Where each exit leads: MAPINFO, then vanilla's own tables — see wad/progression.ts. */
+  private progression: LevelProgression;
   /**
    * Measurement itself always runs — `performance.now()` calls are cheap enough
    * not to bother gating; only `DebugHud`'s decision to render the samples is
@@ -333,6 +345,8 @@ export class Game {
     this.crosshair = new Crosshair(view.renderer.domElement);
     this.mapNames = wad.mapNames();
     if (this.mapNames.length === 0) throw new Error('no maps in the selected WADs');
+    // After `mapNames`: a progression may only name a level the loaded set actually provides.
+    this.progression = new LevelProgression(wad, this.mapNames);
 
     // PLAY's own walk cycle: DOOM has no separate idle art, it just holds
     // frame A (this list's first entry) until the player is actually moving.
@@ -575,8 +589,8 @@ export class Game {
       this.built.polys,
       this.built,
       {},
-      () => {
-        this.pendingExit = true;
+      (secret) => {
+        this.pendingExit = secret ? 'secret' : 'normal';
       },
       (dest) => {
         // The origin puff's position has to be captured before teleportTo
@@ -636,6 +650,12 @@ export class Game {
         this.icon?.notifyBossDeath(type);
       },
       restore?.things,
+      // `P_NightmareRespawn`'s two `MT_TFOG`s, at the corpse and at the spawn point it returns to.
+      // `spawnTeleportFog` plays the `telept` that goes with each, exactly as a teleport does.
+      (from, to) => {
+        this.effects.spawnTeleportFog(from);
+        this.effects.spawnTeleportFog(to);
+      },
     );
     this.scene.add(this.things.group);
 
@@ -648,7 +668,8 @@ export class Game {
       this.spriteMaterials,
       this.skill,
       () => {
-        this.pendingExit = true;
+        // `A_BrainDie` is a plain `G_ExitLevel` — MAP30 has no secret exit to take.
+        this.pendingExit = 'normal';
       },
       this.audio,
     );
@@ -789,8 +810,10 @@ export class Game {
    * invulnerability blocking it outright, so a caller with a follow-up effect (e.g.
    * `resolveVileBlast`'s knockup) can gate on it. See docs/death.md § Player death.
    */
-  private damagePlayer(amount: number, fromX?: number, fromY?: number, cause?: DamageCause): boolean {
-    if (this.playerDead || amount <= 0) return false;
+  private damagePlayer(rawAmount: number, fromX?: number, fromY?: number, cause?: DamageCause): boolean {
+    if (this.playerDead || rawAmount <= 0) return false;
+    // Before anything reads it — knockback and the pain flash included, exactly as in vanilla.
+    const amount = playerDamageAtSkill(rawAmount, this.skill);
     const healthBefore = this.inventory.health;
     if (!applyDamage(this.inventory, amount)) return false;
     if (fromX !== undefined && fromY !== undefined) {
@@ -830,6 +853,20 @@ export class Game {
   private enterLevel(index: number): void {
     this.loadMapByIndex(index);
     this.writeCheckpoint();
+  }
+
+  /**
+   * Which map in the loaded set the exit just taken leads to. `LevelProgression` answers for the
+   * WAD set's own MAPINFO and for vanilla's tables; where neither knows one — the end of the game
+   * in vanilla, or a PWAD map set that runs out — the next map in load order stands in, which is
+   * what every exit did before there was a progression at all. There is no finale to run instead.
+   * docs/wad.md § Level progression.
+   */
+  private resolveNextMap(secret: boolean): number {
+    const name = this.progression.nextMap(this.currentMap, secret);
+    // Non-negative whenever `name` is non-null: `LevelProgression` only ever names a map it was
+    // built from this very list.
+    return name ? this.mapNames.indexOf(name) : this.mapIndex + 1;
   }
 
   /**
@@ -993,7 +1030,7 @@ export class Game {
       const go = input.pressed('Space') || input.pressed('Enter');
       input.endTic();
       if (this.intermissionTime >= INTERMISSION_INPUT_DELAY && go) {
-        this.enterLevel(this.mapIndex + 1); // clears the popup and the flag, like every other per-level overlay
+        this.enterLevel(this.nextMapIndex); // clears the popup and the flag, like every other per-level overlay
         return true;
       }
       return false;
@@ -1020,7 +1057,8 @@ export class Game {
     // The old SpecialsController's update() has now fully returned, so it's
     // safe to dispose it and swap in the next map.
     if (this.pendingExit) {
-      this.pendingExit = false;
+      this.nextMapIndex = this.resolveNextMap(this.pendingExit === 'secret');
+      this.pendingExit = null;
       // The next map isn't loaded here any more: the popup goes up on the level as it stands, and
       // the continue key at the top of `tic` is what loads it.
       this.intermission.show(this.levelStats(), this.recordCompletion());
@@ -1171,7 +1209,7 @@ export class Game {
    */
   private collectPickupsAndSectorEffects(dt: number): void {
     this.things?.tryPickup(this.player, PICKUP_RANGE, (type, dropped) => {
-      const taken = applyPickup(this.inventory, type, dropped);
+      const taken = applyPickup(this.inventory, type, dropped, this.skill);
       // The computer area map is the one pickup whose whole effect lives outside the `Inventory`
       // struct: it reveals the level's own geometry. Watched for here rather than handled in
       // `applyPickup` — the same "state there, world effect at the caller" split `tryPickup`
@@ -1189,7 +1227,9 @@ export class Game {
       // Unattenuated, like a pickup: it's an announcement to the player, not a sound in the world.
       this.audio.play('radio');
     }
-    if (sectorEffect.exit) this.pendingExit = true;
+    // Vanilla's sector type 11 calls `G_ExitLevel`, not `G_SecretExitLevel` — a damage floor that
+    // ends the level never leads to the secret one.
+    if (sectorEffect.exit) this.pendingExit = 'normal';
   }
 
   /**

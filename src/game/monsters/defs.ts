@@ -919,5 +919,63 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
   },
 };
 
+/**
+ * The three missiles vanilla's fast mode speeds up, keyed by the sprite that identifies them here:
+ * `MT_TROOPSHOT` (`BAL1`, the imp's) and `MT_HEADSHOT` (`BAL2`, the cacodemon's) go from 10 to 20
+ * units per tic, `MT_BRUISERSHOT` (`BAL7`, the baron's and the hell knight's) from 15 to 20 —
+ * `G_InitNew`, `g_game.c`. ×35 for this engine's units per second. Every *other* missile in the
+ * game (the revenant's, the mancubus's, the arachnotron's, the cyberdemon's rocket) is untouched.
+ */
+const FAST_MISSILE_SPEED: Record<string, number> = { BAL1: 20 * 35, BAL2: 20 * 35, BAL7: 20 * 35 };
+
+/**
+ * The types whose state tics fast mode halves: `for (i=S_SARG_RUN1; i<=S_SARG_PAIN2; i++)
+ * states[i].tics >>= 1`. That range is the demon's run, attack and pain states — and the spectre
+ * runs on the very same state chain (`info.c`'s `MT_SPECTRE`), so it is caught by the same loop.
+ * Nothing else in the roster is: on nightmare a cyberdemon moves at exactly its usual pace, which
+ * surprises people who expect "fast monsters" to mean all of them.
+ */
+const FAST_TIC_TYPES = new Set<number>([ThingType.demon, ThingType.spectre]);
+
+/**
+ * `MONSTER_STATS` as vanilla's fast mode leaves it — what `G_InitNew` produces by editing the
+ * global `states`/`mobjinfo` tables in place when the skill is nightmare (or `-fast` is given,
+ * which this engine has no switch for). Derived rather than typed out, so a stat corrected in the
+ * table above can't fail to reach the fast one.
+ *
+ * Halving a state's tics doubles how often `A_Chase` runs, which in this engine's dt-scaled model
+ * is a doubled `speed` and a halved `chaseInterval`; the attack and pain states in the same range
+ * become half as long. See docs/monster-ai.md § Fast monsters.
+ */
+export const FAST_MONSTER_STATS: Record<number, MonsterStats> = Object.fromEntries(
+  Object.entries(MONSTER_STATS).map(([key, stats]) => [key, fastVariant(Number(key), stats)]),
+);
+
+/** One type's entry as fast mode leaves it — the two edits `G_InitNew` makes, applied in turn. */
+function fastVariant(type: number, stats: MonsterStats): MonsterStats {
+  let fast = stats;
+  if (FAST_TIC_TYPES.has(type)) {
+    fast = {
+      ...fast,
+      speed: fast.speed * 2,
+      chaseInterval: fast.chaseInterval / 2,
+      painDuration: fast.painDuration / 2,
+      melee: fast.melee && { ...fast.melee, duration: fast.melee.duration / 2 },
+      ranged: fast.ranged && { ...fast.ranged, duration: fast.ranged.duration / 2 },
+    };
+  }
+  const missile = fast.ranged?.projectile;
+  const missileSpeed = missile && FAST_MISSILE_SPEED[missile.sprite];
+  if (fast.ranged && missile && missileSpeed !== undefined) {
+    fast = { ...fast, ranged: { ...fast.ranged, projectile: { ...missile, speed: missileSpeed } } };
+  }
+  return fast;
+}
+
+/** The stat table one skill plays on: nightmare's fast monsters, or the plain vanilla one — see `fastMonsters` in game/skill.ts. */
+export function monsterStatsFor(fast: boolean): Record<number, MonsterStats> {
+  return fast ? FAST_MONSTER_STATS : MONSTER_STATS;
+}
+
 /** The tallest body in the roster (the cyberdemon's 110), derived from the table so it can't drift — a cheap "nobody can be caught in a gap this big" early-out. */
 export const TALLEST_BODY_HEIGHT = Math.max(...Object.values(MONSTER_STATS).map((s) => s.height));

@@ -1,6 +1,14 @@
 v0.1?.? (2026-08-??)
 
 Features and improvements
+  - secret exits work
+    - a PWAD can define its own with MAPINFO's "next" / "secretnext"
+  - the difficulty you pick now changes more than which monsters are
+    placed, all of it as in the original
+    - "I'm Too Young to Die" halves the damage you take
+    - "I'm Too Young to Die" and "Nightmare!" double every ammo pickup
+    - "Nightmare!" speeds up some monsters and their projectiles
+    - "Nightmare!" respawns killed monsters back
   - if a game can't be saved (dead, intermission), the "Save"
     and "Overwrite" buttons are disabled now
 

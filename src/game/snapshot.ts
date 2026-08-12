@@ -116,6 +116,9 @@ export interface SpecialsSnapshot {
 export const MONSTER_SAVE_KEYS = [
   'health',
   'angle',
+  'spawnX',
+  'spawnY',
+  'spawnAngle',
   'deadTime',
   'barrelExploded',
   'explodeSource',
@@ -165,13 +168,20 @@ export type MonsterFields = Pick<PosedThing, (typeof MONSTER_SAVE_KEYS)[number]>
  * otherwise elide a field that restores to something else. Mapped over the key
  * tuple so adding a key to `MONSTER_SAVE_KEYS` without deciding its default is
  * a compile error.
- * Three keys have no constant spawn default and are special-cased in
+ * Six keys have no constant spawn default and are special-cased in
  * `snapshotThings`: `health` (per type, `spawnHealthFor`), `angle`
- * (`facingDeg` in radians, already in every `ThingState`) and `homingBias`
- * (a random draw — always saved). docs/savegames.md § The format and its version.
+ * (`facingDeg` in radians, already in every `ThingState`), `homingBias`
+ * (a random draw — always saved), and the three `spawn*` fields, whose default
+ * is wherever this particular thing was created — so each is written only when
+ * it no longer matches the `x`/`y`/`facingDeg` the same `ThingState` carries,
+ * which for anything that never moved is never.
+ * docs/savegames.md § The format and its version.
  */
 export const MONSTER_FIELD_DEFAULTS: {
-  readonly [K in Exclude<(typeof MONSTER_SAVE_KEYS)[number], 'health' | 'angle' | 'homingBias'>]: MonsterFields[K];
+  readonly [K in Exclude<
+    (typeof MONSTER_SAVE_KEYS)[number],
+    'health' | 'angle' | 'homingBias' | 'spawnX' | 'spawnY' | 'spawnAngle'
+  >]: MonsterFields[K];
 } = {
   deadTime: 0,
   barrelExploded: false,

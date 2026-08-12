@@ -1,6 +1,17 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isAmbush, isMultiplayerOnly, spawnAngleDeg, spawnsAtSkill, type Skill } from '../../src/game/skill.ts';
+import {
+  ammoAtSkill,
+  fastMonsters,
+  isAmbush,
+  isMultiplayerOnly,
+  playerDamageAtSkill,
+  spawnAngleDeg,
+  spawnsAtSkill,
+  type Skill,
+} from '../../src/game/skill.ts';
+import { FAST_MONSTER_STATS, MONSTER_STATS } from '../../src/game/monsters/defs.ts';
+import { ThingType } from '../../src/game/thingtypes.ts';
 
 /**
  * Which THINGs a map spawns at each difficulty. Pure flag arithmetic against
@@ -92,5 +103,74 @@ describe('Game rules · THING spawn angle', () => {
     assert.equal(spawnAngleDeg(-100), -90);
     assert.equal(spawnAngleDeg(-45), -45);
     assert.equal(spawnAngleDeg(-44), -0);
+  });
+});
+
+/**
+ * The two rules that make skills 1 and 5 more than a thing filter, plus the fast-monster table.
+ * Sources: `P_GiveAmmo` and `P_DamageMobj` (`p_inter.c`), `G_InitNew` (`g_game.c`).
+ * See docs/items.md § Skill and docs/monster-ai.md § Fast monsters.
+ */
+describe('Game rules · what a skill changes beyond spawns', () => {
+  test('ammo doubles on skill 1 and skill 5, and nowhere between', () => {
+    assert.deepEqual(
+      SKILLS.map((s) => ammoAtSkill(10, s)),
+      [20, 10, 10, 10, 20],
+      'baby and nightmare only',
+    );
+  });
+
+  test('the player takes half damage on skill 1 only', () => {
+    assert.deepEqual(
+      SKILLS.map((s) => playerDamageAtSkill(40, s)),
+      [20, 40, 40, 40, 40],
+    );
+  });
+
+  test('fast monsters are nightmare and nothing else', () => {
+    assert.deepEqual(
+      SKILLS.map(fastMonsters),
+      [false, false, false, false, true],
+    );
+  });
+});
+
+describe('Vanilla tables · fast monsters', () => {
+  test('the demon and the spectre halve their tics, and nothing else does', () => {
+    const changed = Object.keys(MONSTER_STATS).filter(
+      (type) => FAST_MONSTER_STATS[Number(type)].speed !== MONSTER_STATS[Number(type)].speed,
+    );
+    // `S_SARG_RUN1`..`S_SARG_PAIN2` is the whole of `G_InitNew`'s state loop, and `MT_SPECTRE`
+    // shares that chain — no other monster in the game moves faster on nightmare.
+    assert.deepEqual(changed.map(Number).sort(), [ThingType.demon, ThingType.spectre].sort());
+  });
+
+  test('a fast demon covers twice the ground per second at half the chase interval', () => {
+    const normal = MONSTER_STATS[ThingType.demon];
+    const fast = FAST_MONSTER_STATS[ThingType.demon];
+    assert.equal(fast.speed, normal.speed * 2);
+    assert.equal(fast.chaseInterval, normal.chaseInterval / 2);
+    assert.equal(fast.painDuration, normal.painDuration / 2);
+    assert.equal(fast.melee!.duration, normal.melee!.duration / 2);
+    // Halving a walk state's tics doubles the speed and halves the interval, so the distance one
+    // chase call covers — what `BLOCKER_MARGIN`'s probe term is built on — is unchanged.
+    assert.equal(fast.speed * fast.chaseInterval, normal.speed * normal.chaseInterval);
+  });
+
+  test('only the imp, cacodemon, baron and hell knight missiles speed up, all to 20 units/tic', () => {
+    const missileSpeeds = (table: typeof MONSTER_STATS) =>
+      Object.fromEntries(
+        Object.entries(table)
+          .filter(([, s]) => s.ranged?.projectile)
+          .map(([type, s]) => [Number(type), s.ranged!.projectile!.speed]),
+      );
+    const normal = missileSpeeds(MONSTER_STATS);
+    const fast = missileSpeeds(FAST_MONSTER_STATS);
+    const sped = Object.keys(fast).filter((type) => fast[Number(type)] !== normal[Number(type)]);
+    assert.deepEqual(
+      sped.map(Number).sort(),
+      [ThingType.imp, ThingType.cacodemon, ThingType.baronOfHell, ThingType.hellKnight].sort(),
+    );
+    for (const type of sped) assert.equal(fast[Number(type)], 20 * 35, 'MT_*SHOT speed 20 × 35 tics');
   });
 });

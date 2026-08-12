@@ -180,3 +180,26 @@ arithmetic:
   anything already in range, so it costs nothing until the visor turns it up. A flat multiply is an
   approximation of vanilla's "force the brightest colormap row everywhere"; matching that exactly
   would mean rebuilding every surface's baked vertex lighting.
+
+## Skill
+
+Two of the five skills change what a pickup or a hit is worth, and both rules live in `skill.ts`
+next to the spawn filter, since the skill is the only thing they depend on:
+
+- **`ammoAtSkill`** doubles every ammo grant on skill 1 *and* skill 5 — `P_GiveAmmo`'s
+  `if (gameskill == sk_baby || gameskill == sk_nightmare) num <<= 1`, a trainer bonus at one end and
+  a concession to respawning monsters at the other. It reaches all three paths that hand over ammo,
+  because vanilla's do too: plain ammo pickups, a weapon's own ammo, and the backpack's clip of
+  each class. Order matters where a monster dropped the pickup — vanilla halves for the drop first
+  (`P_GiveAmmo(…, 0)`, which is `clipammo/2`) and doubles after, so a dropped clip on skill 1 is
+  worth exactly a full one — and the `ammoMax` cap still applies last.
+- **`playerDamageAtSkill`** halves damage on skill 1 only: `P_DamageMobj`'s
+  `if (player && gameskill == sk_baby) damage >>= 1`. It is applied at the top of
+  `game.ts: damagePlayer`, before anything else reads the number, which is where vanilla applies it
+  too — so knockback, the pain flash and the death cry's overkill test all see the reduced figure,
+  and armor absorbs its share of that rather than of the original. Only the player gets it; a
+  monster on skill 1 takes exactly what it always took.
+
+Everything else the skill decides lives elsewhere: which things spawn at all is `spawnsAtSkill`
+(docs/sprites.md § Which things spawn), and nightmare's fast monsters are
+docs/monster-ai.md § Fast monsters.

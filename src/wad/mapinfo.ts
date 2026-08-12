@@ -83,21 +83,53 @@ function normalizeMapName(name: string): string {
   return name.toUpperCase();
 }
 
+/** What one `map` entry in a MAPINFO-family lump tells this engine. Every field is optional: most entries define only a name. */
+export interface MapInfoEntry {
+  /** The level's own title — see `parseMapInfo`'s list of the syntaxes that carry one. */
+  title?: string;
+  /** Where the normal exit leads (`next`), as a map lump name. */
+  next?: string;
+  /** Where the secret exit leads — ZDoom spells the key `secretnext`, UMAPINFO `nextsecret`; both are read. */
+  secretNext?: string;
+}
+
+/** The property keys `parseMapInfo` reads, in either syntax, mapped onto their `MapInfoEntry` field. */
+const EXIT_KEYS: Record<string, 'next' | 'secretNext'> = {
+  next: 'next',
+  secretnext: 'secretNext',
+  nextsecret: 'secretNext',
+};
+
 /**
- * Level names out of one MAPINFO/ZMAPINFO/UMAPINFO lump's text, keyed by map lump name. Covers the
- * three syntaxes that actually name a level:
+ * A `next`/`secretnext` value as a map lump name. ZDoom also accepts finale keywords here
+ * (`EndGame`, `EndPic`, `EndBunny`), which normalize to something no map is called — that is
+ * deliberate: `LevelProgression` only takes a value that names a map the loaded set actually has,
+ * so a finale keyword falls through to the vanilla rules rather than being mistaken for a level.
+ */
+function exitValue(token: Token | undefined): string | undefined {
+  if (!token || token.text === '{' || token.text === '}' || token.text === '=') return undefined;
+  return normalizeMapName(token.text);
+}
+
+/**
+ * Every `map` entry one MAPINFO/ZMAPINFO/UMAPINFO lump's text defines, keyed by map lump name.
+ * Covers the three syntaxes that actually name a level:
  *
  * - ZDoom, new and old: `map MAP01 "Entryway"` (with or without a `{ … }` property block).
  * - UMAPINFO: `map MAP01 { levelname = "Entryway" }`.
  * - Hexen numeric: `map 01 "Entryway"`.
  *
+ * and, in both the block and the old brace-less form, the two properties that say where a level's
+ * exits lead (`EXIT_KEYS`) — what lets a PWAD define its own progression instead of inheriting
+ * vanilla's (docs/wad.md § Level progression).
+ *
  * `map MAP01 lookup HUSTR_1` names no literal at all — it defers to the engine's own string table,
- * which is exactly what `levelNameFor` falls back to anyway, so those entries are skipped.
+ * which is exactly what `levelNameFor` falls back to anyway, so no title is recorded for those.
  * Anything else in the file (skies, music, clusters, `defaultmap`, episode blocks) is not a `map`
  * keyword followed by a name and is simply walked past. See docs/wad.md § Level names.
  */
-export function parseMapInfoNames(text: string): Map<string, string> {
-  const names = new Map<string, string>();
+export function parseMapInfo(text: string): Map<string, MapInfoEntry> {
+  const maps = new Map<string, MapInfoEntry>();
   const tokens = tokenize(stripComments(text));
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i].quoted || tokens[i].text.toLowerCase() !== 'map') continue;
@@ -106,12 +138,12 @@ export function parseMapInfoNames(text: string): Map<string, string> {
     const mapName = normalizeMapName(nameToken.text);
     i++;
 
-    let title: string | undefined;
+    const entry: MapInfoEntry = {};
     const next = tokens[i + 1];
     if (next && !next.quoted && next.text.toLowerCase() === 'lookup') {
       i += 2; // the `lookup` and the string-table id after it
     } else if (next && next.quoted) {
-      title = next.text;
+      entry.title = next.text;
       i++;
     }
 
@@ -124,24 +156,52 @@ export function parseMapInfoNames(text: string): Map<string, string> {
         if (token.quoted) continue;
         if (token.text === '{') depth++;
         else if (token.text === '}') depth--;
-        else if (depth === 1 && token.text.toLowerCase() === 'levelname' && tokens[i + 1]?.text === '=' && tokens[i + 2]?.quoted) {
-          title = tokens[i + 2].text;
+        else if (depth !== 1) continue;
+        else if (token.text.toLowerCase() === 'levelname' && tokens[i + 1]?.text === '=' && tokens[i + 2]?.quoted) {
+          entry.title = tokens[i + 2].text;
+        } else {
+          const key = EXIT_KEYS[token.text.toLowerCase()];
+          // `=` is optional even inside a block: UMAPINFO always writes it, ZDoom's newer syntax
+          // usually does, and neither requires it.
+          if (key) entry[key] = exitValue(tokens[i + 1]?.text === '=' ? tokens[i + 2] : tokens[i + 1]) ?? entry[key];
         }
       }
       i--; // the loop above stopped one past the closing brace
+    } else {
+      // Old brace-less ZDoom form: the level's properties are the bare lines between this `map`
+      // and the next one. Read-only lookahead — the outer loop still walks these tokens itself.
+      for (let j = i + 1; j < tokens.length; j++) {
+        const token = tokens[j];
+        if (token.quoted) continue;
+        if (token.text.toLowerCase() === 'map' || token.text === '{') break;
+        const key = EXIT_KEYS[token.text.toLowerCase()];
+        if (key) entry[key] = exitValue(tokens[j + 1]?.text === '=' ? tokens[j + 2] : tokens[j + 1]) ?? entry[key];
+      }
     }
 
-    if (title) names.set(mapName, title);
+    if (entry.title !== undefined || entry.next !== undefined || entry.secretNext !== undefined) maps.set(mapName, entry);
+  }
+  return maps;
+}
+
+/** Just the titles out of `parseMapInfo` — what the menu's map list and `LevelNames` want. */
+export function parseMapInfoNames(text: string): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const [map, entry] of parseMapInfo(text)) {
+    if (entry.title !== undefined) names.set(map, entry.title);
   }
   return names;
 }
 
 /**
- * Every level name the loaded WAD set defines. Files are read in load order and later ones win,
+ * Every `map` entry the loaded WAD set defines. Files are read in load order and later ones win,
  * the same rule the merged lump directory itself follows; within one file, exactly one lump is
- * read, per `MAPINFO_LUMPS`. docs/wad.md § Level names.
+ * read, per `MAPINFO_LUMPS`. A later file's entry replaces an earlier one outright rather than
+ * merging field by field: a PWAD redefining a level defines all of it, and a half-inherited
+ * progression (its own `next`, the IWAD's `secretnext`) is not something any file asked for.
+ * docs/wad.md § Level names.
  */
-export function mapInfoNames(wad: Wad): Map<string, string> {
+export function mapInfoEntries(wad: Wad): Map<string, MapInfoEntry> {
   // Keyed by source file, in first-appearance order, which is load order.
   const perFile = new Map<WadFile, string[]>();
   for (const lump of wad.lumps) {
@@ -151,12 +211,21 @@ export function mapInfoNames(wad: Wad): Map<string, string> {
     else perFile.set(lump.source, [lump.name]);
   }
 
-  const names = new Map<string, string>();
+  const maps = new Map<string, MapInfoEntry>();
   for (const [file, present] of perFile) {
     const wanted = preferredMapInfoLump(present);
     const lump = wad.lumps.find((l) => l.source === file && l.name === wanted);
     if (!lump) continue;
-    for (const [map, title] of parseMapInfoNames(DECODER.decode(wad.data(lump)))) names.set(map, title);
+    for (const [map, entry] of parseMapInfo(DECODER.decode(wad.data(lump)))) maps.set(map, entry);
+  }
+  return maps;
+}
+
+/** Just the level names out of `mapInfoEntries` — see `parseMapInfoNames`. */
+export function mapInfoNames(wad: Wad): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const [map, entry] of mapInfoEntries(wad)) {
+    if (entry.title !== undefined) names.set(map, entry.title);
   }
   return names;
 }

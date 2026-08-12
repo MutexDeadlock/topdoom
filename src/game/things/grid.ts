@@ -12,7 +12,7 @@
 import type { DoomMap } from '../../wad/map.ts';
 import { PLAYER_RADIUS } from '../player.ts';
 import { MONSTER_DEATH_FRAME_SECONDS, MONSTER_TYPES, SOLID_DECORATION_TYPES } from '../thingdefs.ts';
-import { MONSTER_STATS, type RaiseCandidate } from '../monsters/defs.ts';
+import { FAST_MONSTER_STATS, MONSTER_STATS, type RaiseCandidate } from '../monsters/defs.ts';
 import { circleBlocked, type ThingBlocker, type World } from '../world.ts';
 import { type PosedThing } from './defs.ts';
 import { ThingType } from '../thingtypes.ts';
@@ -52,14 +52,22 @@ const MAX_FRAME_DT = 1 / 35;
  * full `P_Move` ahead) plus the worst one-frame grid staleness. Derived from
  * `MONSTER_STATS` rather than hardcoded so it can't drift out of sync.
  *
+ * Both tables feed it, so the one figure covers a nightmare level too: a fast
+ * demon out-runs every ordinary monster, and a margin that only knew the
+ * normal table would come up short by its extra frame of travel. The probe
+ * term needs no such care — halving a monster's tics doubles its speed and
+ * halves its `chaseInterval`, leaving their product exactly as it was — but it
+ * costs nothing to take both the same way.
+ *
  * The two maxima are taken **independently and added**, not maximised as a
  * per-type sum: the monster probing and the monster that drifted are different
  * monsters, so nothing requires them to be the same type. See
  * docs/monster-ai.md § Spatial indexing.
  */
+const EVERY_STAT = [...Object.values(MONSTER_STATS), ...Object.values(FAST_MONSTER_STATS)];
 const BLOCKER_MARGIN =
-  Object.values(MONSTER_STATS).reduce((max, s) => Math.max(max, s.speed * s.chaseInterval), 0) +
-  Object.values(MONSTER_STATS).reduce((max, s) => Math.max(max, s.speed), 0) * MAX_FRAME_DT;
+  EVERY_STAT.reduce((max, s) => Math.max(max, s.speed * s.chaseInterval), 0) +
+  EVERY_STAT.reduce((max, s) => Math.max(max, s.speed), 0) * MAX_FRAME_DT;
 
 /** The queries `createThingGrid` hands back — see each method's own doc. */
 export interface ThingGrid {

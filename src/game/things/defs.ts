@@ -96,6 +96,21 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   sector: Sector | undefined;
   facingDeg: number;
+  /**
+   * Where this thing came into the world, and facing which way — vanilla's `mobj->spawnpoint`,
+   * which only `P_NightmareRespawn` ever reads: a nightmare respawn puts the monster back *here*,
+   * not where its corpse happens to lie. Set once by `pushThing` and never written again, so for
+   * everything that doesn't move it stays equal to `x`/`y`/`facingDeg` — which is exactly the
+   * condition `snapshotThings` elides it on.
+   *
+   * A monster the map didn't place (a pain elemental's lost soul, an Icon of Sin cube's spawn)
+   * gets the position it was created at. Vanilla leaves those with a zeroed `spawnpoint` and will
+   * cheerfully try to respawn them at map coordinate (0, 0); reproducing that is not worth it.
+   * docs/monster-ai.md § Respawning monsters.
+   */
+  spawnX: number;
+  spawnY: number;
+  spawnAngle: number;
   subsector: number;
   type: number;
   /** Set once a pickup consumes this instance; it then stays permanently hidden (see ThingLayer.update). */

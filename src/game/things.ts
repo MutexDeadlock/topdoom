@@ -4,6 +4,7 @@ import type { SpriteBank } from '../wad/sprites.ts';
 import type { World } from './world.ts';
 import { GRAVITY, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import { pRandom } from '../util/random.ts';
+import { DOOM_TIC } from '../constants.ts';
 import {
   BARREL_DEATH_FRAME_SECONDS,
   BARREL_DEATH_FRAMES,
@@ -62,14 +63,14 @@ import {
   THING_SPRITES,
 } from './thingdefs.ts';
 import { ThingType } from './thingtypes.ts';
-import { isAmbush, isMultiplayerOnly, spawnAngleDeg, spawnsAtSkill, type Skill } from './skill.ts';
+import { fastMonsters, isAmbush, isMultiplayerOnly, respawnMonsters, spawnAngleDeg, spawnsAtSkill, type Skill } from './skill.ts';
 import {
   DI_NODIR,
   INERT_SHOOTABLE,
   MONSTER_FIRE_HEIGHT,
   BODY_HEIGHT_FALLBACK,
   MONSTER_HIT_RADIUS,
-  MONSTER_STATS,
+  monsterStatsFor,
   thrustSpeed,
   type MonsterAttackEvent,
 } from './monsters/defs.ts';
@@ -120,6 +121,17 @@ const KNOCKBACK_STOP_SPEED = 1;
  * vanilla's own idle `A_Look` calls run every 10 tics (~0.29s), not every tic.
  */
 const LOOK_INTERVAL = 0.3;
+
+/**
+ * How long a corpse has to lie still before a nightmare respawn will even roll for it —
+ * `P_MobjThinker`'s `if (mobj->movecount < 12*35) return;`, i.e. 12 seconds. The roll itself is
+ * only reached every 32nd tic and then passes 5 times in 256, so the wait in practice is closer to
+ * a minute. docs/monster-ai.md § Respawning monsters.
+ */
+const NIGHTMARE_RESPAWN_DELAY = 12 * 35 * DOOM_TIC;
+
+/** `leveltime & 31` — how often `P_MobjThinker` rolls for a respawn at all, level-wide rather than per corpse. */
+const RESPAWN_ROLL_INTERVAL_TICS = 32;
 
 /**
  * How far off the floor a monster's death drop is *drawn* (map units), and how
@@ -219,7 +231,22 @@ export function buildThingSprites(
    * inside this closure. docs/savegames.md § Apply order.
    */
   restore?: ThingsSnapshot,
+  /**
+   * The two teleport fogs a nightmare respawn leaves behind, at the corpse's spot and at the spawn
+   * point it returns to — `P_NightmareRespawn`'s own pair of `MT_TFOG`s, each with its `telept`.
+   * A callback because the fog layer belongs to `game.ts`, exactly as `onBossDeath` above is.
+   */
+  onRespawn?: (from: Pos3, to: Pos3) => void,
 ): ThingLayer {
+  /**
+   * The stat table this level runs on: nightmare swaps in the fast-monster one, which vanilla
+   * produces by editing its global tables at `G_InitNew`. Resolved once here rather than per
+   * lookup, and read by every site below that would otherwise name `MONSTER_STATS` directly.
+   * docs/monster-ai.md § Fast monsters.
+   */
+  const monsterStats = monsterStatsFor(fastMonsters(skill));
+  /** Whether killed monsters come back at all — nightmare only, see `respawnCorpse`. */
+  const respawns = respawnMonsters(skill);
   const batch = new SpriteBatch();
   /**
    * Monster death drops draw through their own batch, which is what lets them
@@ -287,11 +314,11 @@ export function buildThingSprites(
           ? (SOLID_DECORATION_RADIUS_OVERRIDE[type] ?? SOLID_DECORATION_RADIUS)
           : // INERT_SHOOTABLE before the fallback: Keen and the brain have a real
             // mobjinfo radius of 16, they just have no MONSTER_STATS to carry it.
-            MONSTER_STATS[type]?.radius ?? INERT_SHOOTABLE[type]?.radius ?? MONSTER_HIT_RADIUS,
+            monsterStats[type]?.radius ?? INERT_SHOOTABLE[type]?.radius ?? MONSTER_HIT_RADIUS,
       // Same resolution order and the same reason as `blockRadius` above.
       bodyHeight: isBarrel
         ? BARREL_HEIGHT
-        : (MONSTER_STATS[type]?.height ?? INERT_SHOOTABLE[type]?.height ?? BODY_HEIGHT_FALLBACK),
+        : (monsterStats[type]?.height ?? INERT_SHOOTABLE[type]?.height ?? BODY_HEIGHT_FALLBACK),
       attackFrames: MONSTER_ATTACK_FRAMES[type],
       painFrames: MONSTER_PAIN_FRAMES[type],
       raiseFrames: MONSTER_RAISE_FRAMES[type],
@@ -314,6 +341,10 @@ export function buildThingSprites(
       drawPrevZ: z,
       sector: world.sectorAt(x, y),
       facingDeg,
+      // `mobj->spawnpoint`, fixed here for the rest of this thing's life — see its doc.
+      spawnX: x,
+      spawnY: y,
+      spawnAngle: facingDeg,
       subsector: world.subsectorAt(x, y),
       type,
       picked: false,
@@ -441,8 +472,8 @@ export function buildThingSprites(
     for (const p of posed) if (p.type === ThingType.lostSoul && !p.dead) skullCount++;
     if (skullCount > MAX_SKULLS_ON_LEVEL) return;
 
-    const skullRadius = MONSTER_STATS[ThingType.lostSoul].radius;
-    const originRadius = MONSTER_STATS[origin.type]?.radius ?? skullRadius;
+    const skullRadius = monsterStats[ThingType.lostSoul].radius;
+    const originRadius = monsterStats[origin.type]?.radius ?? skullRadius;
     // Vanilla's `4*FRACUNIT + 3*(actor->info->radius + skullRadius)/2` — both
     // radii are already plain map units here (not FRACUNIT-scaled), so the
     // shared scaling factor just divides back out.
@@ -546,7 +577,7 @@ export function buildThingSprites(
     }
     if (fromX !== undefined && fromY !== undefined) {
       // Vanilla's P_DamageMobj horizontal thrust — see thrustSpeed's doc.
-      const mass = isBarrel ? BARREL_MASS : MONSTER_STATS[p.type]?.mass ?? 100;
+      const mass = isBarrel ? BARREL_MASS : monsterStats[p.type]?.mass ?? 100;
       const speed = thrustSpeed(amount, mass);
       let dx = p.x - fromX;
       let dy = p.y - fromY;
@@ -571,7 +602,7 @@ export function buildThingSprites(
       // that survives a hit just sits there, no flinch, no wake, no
       // infighting (it has no AI to alert or retarget in the first place).
       if (isBarrel) return;
-      const stats = MONSTER_STATS[p.type];
+      const stats = monsterStats[p.type];
       if (stats) reactToDamage(p, stats);
       // reactToDamage only actually sets painTimer if the stagger roll
       // (stats.painChance) passed and the monster wasn't mid-charge — a
@@ -629,7 +660,7 @@ export function buildThingSprites(
     // xdeathstate chain plays *instead*, not on top.
     // `MONSTER_STATS` re-read rather than reused: the `stats` above is scoped
     // to the survived-the-hit branch this one is the alternative to.
-    const death = gibbed ? 'slop' : MONSTER_STATS[p.type]?.sounds.death;
+    const death = gibbed ? 'slop' : monsterStats[p.type]?.sounds.death;
     if (death) {
       sfx.play(randomVariant(death), BOSS_TYPES.has(p.type) ? null : p, monsterOrigin(p.id));
     }
@@ -760,6 +791,81 @@ export function buildThingSprites(
   }
 
   /**
+   * Vanilla's `P_NightmareRespawn` (`p_mobj.c`): puts a corpse back at its own spawn point as a
+   * fresh, dormant monster, with a teleport fog and `telept` at both the spot it left and the spot
+   * it arrives at. Called only on nightmare, and only once the roll in `update` has passed.
+   *
+   * Returns false and changes nothing when something already occupies the spawn point —
+   * vanilla's `if (!P_CheckPosition(mobj, x, y)) return;`, which is why a corpse in a doorway the
+   * player is standing in stays down until they move. The corpse is *reused* rather than removed
+   * and replaced (vanilla's `P_RemoveMobj` + `P_SpawnMobj`), so its `id` — and every saved
+   * `targetId` pointing at it — survives. docs/monster-ai.md § Respawning monsters.
+   */
+  function respawnCorpse(p: PosedThing, player: Pos3 | null): boolean {
+    const sector = world.sectorAt(p.spawnX, p.spawnY);
+    // The same ceiling-hung measurement the map's own spawn loop makes, for the same reason;
+    // vanilla splits it as `ONCEILINGZ`/`ONFLOORZ` right here in `P_NightmareRespawn`.
+    const hangHeight = CEILING_HUNG_HEIGHT[p.type];
+    const z = hangHeight !== undefined ? (sector?.ceilHeight ?? 0) - hangHeight : (sector?.floorHeight ?? 0);
+
+    // `solidBodies` skips the dead, so the corpse itself never blocks its own return; the player
+    // isn't in `posed` at all and has to be added by hand.
+    const blockers = grid.solidBodies({ x: p.spawnX, y: p.spawnY });
+    if (player) blockers.push({ x: player.x, y: player.y, radius: PLAYER_RADIUS });
+    if (circleBlocked(world, p.spawnX, p.spawnY, p.blockRadius, z, true, false, blockers)) return false;
+
+    onRespawn?.({ x: p.x, y: p.y, z: p.sector?.floorHeight ?? p.z }, { x: p.spawnX, y: p.spawnY, z });
+
+    p.x = p.spawnX;
+    p.y = p.spawnY;
+    p.z = z;
+    // Across the map in one tic: without this the render layer would lerp the monster from where
+    // its corpse lay to where it reappeared, drawing a body sliding through walls.
+    p.drawPrevX = p.x;
+    p.drawPrevY = p.y;
+    p.drawPrevZ = p.z;
+    p.sector = sector;
+    p.subsector = world.subsectorAt(p.x, p.y);
+    p.facingDeg = p.spawnAngle;
+    p.angle = (p.spawnAngle * Math.PI) / 180;
+
+    p.dead = false;
+    p.deadTime = 0;
+    p.health = MONSTER_HEALTH[p.type] ?? p.health;
+    p.hidden = false;
+    p.velX = 0;
+    p.velY = 0;
+    p.velZ = 0;
+    // Dormant again, unlike an arch-vile's raise: vanilla respawns the monster into its
+    // *spawnstate*, so it has to catch sight of the player all over again — and `isAmbush` still
+    // holds, since `P_NightmareRespawn` re-applies `MTF_AMBUSH` from the spawn point it kept.
+    p.alerted = false;
+    p.targetId = null;
+    p.lookTimer = 0;
+    p.movedir = DI_NODIR;
+    p.movecount = 0;
+    p.chaseTimer = 0;
+    p.moveBlocked = false;
+    p.threshold = 0;
+    p.justHit = false;
+    p.justAttacked = false;
+    p.refiring = false;
+    p.burstLeft = 0;
+    p.burstTimer = 0;
+    p.chargeTimer = 0;
+    p.painTimer = 0;
+    p.attackPause = 0;
+    p.inFloat = false;
+    // Vanilla additionally sets `reactiontime = 18`, a longer hesitation than any monster's own
+    // `mobjinfo` value. It isn't reproduced: this engine seeds the hesitation when a monster
+    // *wakes* (`tryWake`'s `REACTION_CHASES`) rather than when it spawns, so anything written here
+    // is overwritten the moment the respawned monster notices anyone.
+    p.reactionTicks = 0;
+    p.anim.revive();
+    return true;
+  }
+
+  /**
    * A killable thing still in its exact spawn state needs no `MonsterFields`
    * block at all — the restore's own `pushThing` recreates those defaults.
    * Alerted, damaged, moving or dead all disqualify; `lookTimer` and
@@ -794,16 +900,21 @@ export function buildThingSprites(
         const killable = Number.isFinite(p.health) || p.dead;
         if (killable && !isPristine(p)) {
           // Sparse: a field still at its spawn default is omitted and the
-          // restore's own `pushThing` re-supplies it. Three keys have no
+          // restore's own `pushThing` re-supplies it. Six keys have no
           // constant default and are decided here instead: spawn health is per
           // type, spawn angle is `facingDeg` (which every ThingState carries)
-          // in radians, and `homingBias` spawns as a random draw, so it is
-          // always saved.
+          // in radians, `homingBias` spawns as a random draw, so it is
+          // always saved, and the three `spawn*` fields default to wherever
+          // this thing is — true of everything that never moved, which on a
+          // typical map is most of it.
           const block: Partial<MonsterFields> = {
             homingBias: p.homingBias,
           };
           if (p.health !== spawnHealthFor(p.type, p.dropped)) block.health = p.health;
           if (p.angle !== (p.facingDeg * Math.PI) / 180) block.angle = p.angle;
+          if (p.spawnX !== p.x) block.spawnX = p.spawnX;
+          if (p.spawnY !== p.y) block.spawnY = p.spawnY;
+          if (p.spawnAngle !== p.facingDeg) block.spawnAngle = p.spawnAngle;
           for (const key of MONSTER_KEYS_WITH_DEFAULTS) {
             if (p[key] !== MONSTER_FIELD_DEFAULTS[key]) copyMonsterField(block, p, key);
           }
@@ -833,6 +944,11 @@ export function buildThingSprites(
       // why a tic-granular grid is accurate enough for contact.
       grid.rebuild();
       clock += dt;
+      // One respawn attempt every 32 tics for the whole level, not per corpse: `P_MobjThinker`
+      // reads the global `leveltime`, and `clock` is that same clock kept in seconds. Rounded
+      // rather than floored — the simulation only ever advances whole tics, so this is an exact
+      // tic index up to float noise.
+      const respawnTic = respawns && Math.round(clock / DOOM_TIC) % RESPAWN_ROLL_INTERVAL_TICS === 0;
       for (const p of posed) {
         // Every thing, every tic, before anything below can move it — `prev` is
         // no substitute (see its doc), and a thing that skips a tic via one of
@@ -889,6 +1005,16 @@ export function buildThingSprites(
             p.visible = false;
             continue;
           }
+          // `P_MobjThinker`'s respawn branch, in its own order: `MF_COUNTKILL` only, then 12
+          // seconds face down, then the level-wide 32-tic gate above, then a 5-in-256 roll. The
+          // two corpse-removal branches above already `continue`, so a lost soul or an exploded
+          // barrel can never reach this — vanilla removes those mobjs outright, and a removed
+          // mobj has no thinker left to respawn it.
+          if (respawnTic && p.deadTime >= NIGHTMARE_RESPAWN_DELAY && COUNTKILL_TYPES.has(p.type) && pRandom() <= 4) {
+            // No `continue` on success: the monster is alive as of this line, so it falls through
+            // to the ordinary live path below and starts looking around in the same tic.
+            respawnCorpse(p, player);
+          }
         }
 
         // Every non-monster (barrel sway, decoration flicker, item/key/powerup
@@ -897,7 +1023,7 @@ export function buildThingSprites(
         // starts false and only the stats branch below turns it on, based on
         // whether it actually stepped this frame.
         let animating = !MONSTER_TYPES.has(p.type);
-        const stats = !p.dead ? MONSTER_STATS[p.type] : undefined;
+        const stats = !p.dead ? monsterStats[p.type] : undefined;
         if (stats) {
           // Only the wake check itself needs a living player — vanilla's
           // `P_LookForPlayers` (which `A_Look`/idle monsters call) explicitly

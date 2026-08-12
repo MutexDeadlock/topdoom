@@ -29,6 +29,9 @@ automatically:
   automatically; ones with no maps of their own (textures, sounds, ...) always stay selectable.
 - **Level** — every map in the resulting set, grouped by episode for DOOM 1.
 - **Difficulty** — the five vanilla skills; **Start new game** runs the level at the one picked.
+  Skill decides which monsters are placed at all, and — as in the original — halves the damage you
+  take on *I'm Too Young to Die*, doubles ammo pickups on that skill and on *Nightmare!*, and on
+  *Nightmare!* runs the demons at double speed and brings every monster you kill back again.
 
 Your game WAD, add-ons, level and difficulty are remembered for the next visit. Files outside `public/wads/` go through
 *Load from disk* or by dropping them on the window.

@@ -74,7 +74,7 @@ function controllerOver(map: ReturnType<typeof liftMap>['map'], at: { x: number;
     {},
     () => {},
     () => {},
-    () => {},
+    () => false,
     () => false,
     () => false,
     at.x,

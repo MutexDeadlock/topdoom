@@ -592,11 +592,17 @@ export class Game {
         this.view.camera.yawDeg = (dest.angle * 180) / Math.PI - 90;
         this.view.camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
       },
-      (sectorIndex) =>
-        applyCrushDamage(this.world, this.map, this.things, this.player, sectorIndex, (amount) =>
+      (sectorIndex, dealDamage) =>
+        applyCrushDamage(
+          this.world,
+          this.map,
+          this.things,
+          this.player,
+          sectorIndex,
           // The cause is fixed per wiring site, so the callbacks these two
           // helpers take stay `(amount) => void` and bind it here instead.
-          this.damagePlayer(amount, undefined, undefined, 'crush'),
+          (amount) => this.damagePlayer(amount, undefined, undefined, 'crush'),
+          dealDamage,
         ),
       (sectorIndex, ceilingHeight) =>
         blocksCeilingLower(this.world, this.map, this.things, this.player, sectorIndex, ceilingHeight),

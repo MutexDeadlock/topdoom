@@ -2,7 +2,7 @@ import type { DoomMap } from '../wad/map.ts';
 import type { Pos2 } from '../types.ts';
 import type { World } from './world.ts';
 import type { ThingLayer } from './things.ts';
-import { MONSTER_HIT_HEIGHT } from './monsters/defs.ts';
+import { TALLEST_BODY_HEIGHT } from './monsters/defs.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import { CRUSH_DAMAGE } from '../wad/specials.ts';
 
@@ -36,9 +36,9 @@ function circleOverlapsSector(world: World, x: number, y: number, radius: number
 /**
  * Vanilla's `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule: whoever's
  * standing in `sectorIndex` doesn't fit in the vertical gap the mover's next
- * step would leave. A flat headroom test against `PLAYER_HEIGHT`/
- * `MONSTER_HIT_HEIGHT`, this engine having no per-thing floor/ceiling clip to
- * do better with.
+ * step would leave. Each body is measured against its **own**
+ * `mobjinfo.height` (`MonsterRef.height`), so a door closes on a cyberdemon
+ * well before it would on an imp.
  */
 function headroomBlocked(
   world: World,
@@ -55,11 +55,15 @@ function headroomBlocked(
   ) {
     return true;
   }
-  // The gap check doesn't depend on which monster it is, so one monster in the
-  // sector is enough to decide it for all of them — no need to loop.
-  if (floorHeight + MONSTER_HIT_HEIGHT <= ceilingHeight) return false;
+  // Nothing in the game is taller than this, so a gap that clears it clears
+  // everyone — worth the early-out because it skips the sector query entirely,
+  // which is the expensive half and runs per mover per tic.
+  if (floorHeight + TALLEST_BODY_HEIGHT <= ceilingHeight) return false;
   const sector = map.sectors[sectorIndex];
-  return (things?.monstersInSector(sector).length ?? 0) > 0;
+  for (const m of things?.monstersInSector(sector) ?? []) {
+    if (floorHeight + m.height > ceilingHeight) return true;
+  }
+  return false;
 }
 
 /** A closing door or a lowering `CeilingMover`. The sector's floor doesn't move here, so it's read straight off the map. */
@@ -119,13 +123,27 @@ export function applyCrushDamage(
   player: Pos2,
   sectorIndex: number,
   damagePlayer: (amount: number) => void,
-): void {
+  dealDamage: boolean,
+): boolean {
   const sector = map.sectors[sectorIndex];
   const gap = sector.ceilHeight - sector.floorHeight;
+  // `nofit`: something shootable is in the sector and doesn't fit the gap. It is
+  // reported whether or not this tic is a damage tic, because the crusher
+  // slowdown keys off it every tic — see `SpecialsController.tickCrush`.
+  let caught = false;
   if (gap < PLAYER_HEIGHT && world.sectorIndexAt(player.x, player.y) === sectorIndex) {
-    damagePlayer(CRUSH_DAMAGE);
+    caught = true;
+    if (dealDamage) damagePlayer(CRUSH_DAMAGE);
   }
-  if (gap < MONSTER_HIT_HEIGHT) {
-    for (const m of things?.crushablesInSector(sector) ?? []) things?.damage(m.id, CRUSH_DAMAGE);
+  if (gap < TALLEST_BODY_HEIGHT) {
+    for (const m of things?.crushablesInSector(sector) ?? []) {
+      // Per body, not one shared band: a barrel is 42 tall against a
+      // cyberdemon's 110, so the ceiling reaches them at very different points
+      // of the same descent.
+      if (gap >= m.height) continue;
+      caught = true;
+      if (dealDamage) things?.damage(m.id, CRUSH_DAMAGE);
+    }
   }
+  return caught;
 }

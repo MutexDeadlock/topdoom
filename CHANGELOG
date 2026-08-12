@@ -1,4 +1,4 @@
-v0.1x.x (2026-08-xx)
+v0.12.0 (2026-08-xx)
 
 Features and improvements
   - the game now simulates at a fixed 35 ticks per second, like the original
@@ -13,6 +13,13 @@ Features and improvements
 
 Fixed bugs
   - broken and flickering lights now behave like vanilla's
+  - fixed problems with switches
+    - a switch that did nothing, because every sector it targets was already
+      busy, is no longer used up by the press
+    - a one-shot switch now stays lit up after you press it
+  - fixed some problems with crushers
+  - monsters now use their real per-type body height (56 to 110) instead of one
+    shared 64 everywhere
 
 
 ===============================================================================

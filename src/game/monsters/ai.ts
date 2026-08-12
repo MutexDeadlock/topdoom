@@ -7,7 +7,6 @@ import {
   DIR_Y,
   DI_NODIR,
   MELEE_RANGE,
-  MONSTER_HIT_HEIGHT,
   meleeReachesVertically,
   meleeThreshold,
   type AttackStats,
@@ -174,7 +173,7 @@ function settleVertical(body: MonsterBody, stats: MonsterStats, world: World, dt
   // `!(MF_SKULLFLY) && !(MF_INFLOAT)`: a lost soul mid-charge and a monster
   // already adjusting height around a step both skip the hover.
   if (body.chargeTimer <= 0 && !body.inFloat) {
-    const delta = target.z + MONSTER_HIT_HEIGHT / 2 - body.z;
+    const delta = target.z + stats.height / 2 - body.z;
     // Vanilla's `dist < |delta|*3` gate — the drift only engages once the
     // monster is close enough that the height difference matters.
     if (Math.hypot(target.x - body.x, target.y - body.y) < Math.abs(delta) * 3) {
@@ -182,7 +181,7 @@ function settleVertical(body: MonsterBody, stats: MonsterStats, world: World, dt
       body.z += Math.max(-step, Math.min(step, delta));
     }
   }
-  const ceilZ = world.groundCeiling(body.x, body.y, stats.radius, true) - MONSTER_HIT_HEIGHT;
+  const ceilZ = world.groundCeiling(body.x, body.y, stats.radius, true) - stats.height;
   const clamped = Math.min(Math.max(body.z, groundZ), Math.max(groundZ, ceilZ));
   if (clamped !== body.z) body.velZ = 0;
   body.z = clamped;
@@ -205,12 +204,24 @@ function testStep(
   y: number,
   blockers?: readonly ThingBlocker[],
 ): StepResult {
+  // `tmceilingz - tmfloorz < thing->height` — `P_TryMove`'s "doesn't fit",
+  // which sits *before* it sets `floatok`, so a floater is refused outright
+  // here rather than adjusting its height. This is the destination's own
+  // headroom, narrowed by no line at all, which is exactly why
+  // `blocksMovement`'s per-opening test cannot stand in for it: a monster
+  // walking around inside a single sector crosses nothing. Without it a
+  // crusher that has already closed on a body leaves it strolling about
+  // underneath. docs/monster-ai.md § Movement.
+  //
+  if (world.groundCeiling(x, y, stats.radius, true) - world.groundFloor(x, y, stats.radius, true) < stats.height) {
+    return 'blocked';
+  }
   if (!circleBlocked(world, x, y, stats.radius, body.z, true, !stats.flies, blockers, body)) {
     if (!stats.flies) return 'clear';
     // `tmceilingz - thing->z < thing->height`, vanilla's "mobj must lower
     // itself to fit" — only reachable for a body that can be well above its
     // own floor, which is why the shared `blocksMovement` doesn't carry it.
-    return world.groundCeiling(x, y, stats.radius, true) - body.z >= MONSTER_HIT_HEIGHT ? 'clear' : 'adjust';
+    return world.groundCeiling(x, y, stats.radius, true) - body.z >= stats.height ? 'clear' : 'adjust';
   }
   if (!stats.flies) return 'blocked';
   // `floatok`: the destination is one this monster fits in at *some* height,
@@ -664,7 +675,7 @@ function runChaseCall(
   if (
     stats.melee &&
     dist < meleeThreshold(stats.melee.range ?? MELEE_RANGE, targetRadius) &&
-    meleeReachesVertically(body.z, MONSTER_HIT_HEIGHT, target.z, targetHeight) &&
+    meleeReachesVertically(body.z, stats.height, target.z, targetHeight) &&
     canSee()
   ) {
     body.angle = Math.atan2(dy, dx); // A_FaceTarget

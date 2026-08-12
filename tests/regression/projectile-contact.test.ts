@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PROJECTILE_RADIUS, stepTouchesBody } from '../../src/game/spritefxdefs.ts';
-import { MONSTER_HIT_HEIGHT, MONSTER_STATS } from '../../src/game/monsters/defs.ts';
+import { MONSTER_STATS } from '../../src/game/monsters/defs.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { boxToCircleRadius } from '../../src/util/geom.ts';
 import { ThingType } from '../../src/game/thingtypes.ts';
@@ -77,12 +77,12 @@ describe('Regressions · projectile contact', () => {
     // 50 units off centre is well inside a mancubus and was outside the old
     // flat 24-unit test — the ball flew straight through its visible bulk.
     const through = stepPast(50, 40);
-    assert.notEqual(stepTouchesBody(through.from, through.to, AT_ORIGIN, fat, MONSTER_HIT_HEIGHT, bfg), null);
+    assert.notEqual(stepTouchesBody(through.from, through.to, AT_ORIGIN, fat, MONSTER_STATS[ThingType.mancubus].height, bfg), null);
 
     // The same shot past a slimmer body still misses: this is per-species, not
     // a blanket widening.
     const imp = MONSTER_STATS[ThingType.imp].radius;
-    assert.equal(stepTouchesBody(through.from, through.to, AT_ORIGIN, imp, MONSTER_HIT_HEIGHT, bfg), null);
+    assert.equal(stepTouchesBody(through.from, through.to, AT_ORIGIN, imp, MONSTER_STATS[ThingType.imp].height, bfg), null);
   });
 
   test('a graze that falls between two frame samples still connects', () => {
@@ -113,8 +113,8 @@ describe('Regressions · projectile contact', () => {
     const to: Pos3 = { x: 200, y: 0, z: 32 };
     const caco = MONSTER_STATS[ThingType.cacodemon].radius;
 
-    const near = stepTouchesBody(from, to, { x: 40, y: 0, z: 0 }, caco, MONSTER_HIT_HEIGHT, ball);
-    const far = stepTouchesBody(from, to, { x: 160, y: 0, z: 0 }, caco, MONSTER_HIT_HEIGHT, ball);
+    const near = stepTouchesBody(from, to, { x: 40, y: 0, z: 0 }, caco, MONSTER_STATS[ThingType.cacodemon].height, ball);
+    const far = stepTouchesBody(from, to, { x: 160, y: 0, z: 0 }, caco, MONSTER_STATS[ThingType.cacodemon].height, ball);
     assert.notEqual(near, null);
     assert.notEqual(far, null);
     assert.ok(near! < far!, 'the body the missile reaches first sorts first');

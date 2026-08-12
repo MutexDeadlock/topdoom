@@ -87,7 +87,7 @@ function setup() {
     {},
     () => {},
     (dest) => teleports.push(dest),
-    () => {},
+    () => false,
     () => false,
     () => false,
     start.x,

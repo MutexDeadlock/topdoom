@@ -273,6 +273,14 @@ export interface MonsterStats {
   ranged: AttackStats | null;
   /** This type's vanilla sounds — see `MonsterSounds`. */
   sounds: MonsterSounds;
+  /**
+   * `mobjinfo.height` — this body's real vertical extent, 56 to 110 across the
+   * roster. Every fit/reach test that knows *which* body it is asking about
+   * uses this rather than one shared figure: a cyberdemon is nearly twice an
+   * imp, which decides whether a crusher catches it and whether it fits through
+   * a low opening. See `BODY_HEIGHT_FALLBACK`.
+   */
+  height: number;
   /** Chance a hit staggers this monster (`reactToDamage`) — `mobjinfo.painchance` over 256, lifted exactly. */
   painChance: number;
   /** Seconds a stagger lasts — the `painstate` chain's summed tics over 35, 4 (imp, demon, baron) to 12 (cacodemon, pain elemental). */
@@ -462,13 +470,26 @@ export const MONSTER_FIRE_HEIGHT = 40;
  */
 export const MONSTER_HIT_RADIUS = 24;
 /**
- * The shared body height every shot test uses, in place of vanilla's own
- * per-species 56-110 (`mobjinfo.height`). Unlike the radius this stays an
- * approximation — the top-down camera makes height the axis a player can least
- * judge, and no reported problem traces to it. docs/combat.md § How a shot
- * deals damage.
+ * The vertical half of that same deliberately-shared auto-aim lock box, and
+ * shared for the identical reason — the lock must not behave like homing. Left
+ * at the 64 the engine used everywhere before bodies got their real
+ * `mobjinfo.height`, since retuning auto-aim is a separate question from
+ * getting the physical heights right.
  */
-export const MONSTER_HIT_HEIGHT = 64;
+export const MONSTER_LOCK_HEIGHT = 64;
+/**
+ * `PosedThing.bodyHeight` for a shootable type carrying no `mobjinfo.height` of
+ * its own — the same last-resort role `MONSTER_HIT_RADIUS` plays for the width,
+ * and reached by nothing in the stock roster, every member of which has a real
+ * height in `MONSTER_STATS`/`INERT_SHOOTABLE`/`BARREL_HEIGHT`.
+ *
+ * This replaced a single shared 64 used for *every* body. That figure was
+ * taller than the 56 most of the roster actually is and far shorter than a
+ * cyberdemon's 110, which mattered the moment heights started gating movement
+ * as well as shots: a crusher caught bodies it shouldn't and missed ones it
+ * should. docs/combat.md § How a shot deals damage.
+ */
+export const BODY_HEIGHT_FALLBACK = 56;
 
 /** Vanilla's own `FATSPREAD` (`ANG90/8`) — the mancubus's fireball-pair fan angle, see `AttackStats.projectile.pairOffsetsRad`. */
 const FATSPREAD = Math.PI / 2 / 8;
@@ -504,10 +525,10 @@ const VILE_KNOCKUP_SPEED = (1000 / 100) * 35;
  */
 export const INERT_SHOOTABLE: Record<
   number,
-  { radius: number; painSound: SfxId; deathSound: SfxId; unattenuated: boolean }
+  { radius: number; height: number; painSound: SfxId; deathSound: SfxId; unattenuated: boolean }
 > = {
-  [ThingType.commanderKeen]: { radius: 16, painSound: 'keenpn', deathSound: 'keendt', unattenuated: false },
-  [ThingType.bossBrain]: { radius: 16, painSound: 'bospn', deathSound: 'bosdth', unattenuated: true },
+  [ThingType.commanderKeen]: { radius: 16, height: 72, painSound: 'keenpn', deathSound: 'keendt', unattenuated: false },
+  [ThingType.bossBrain]: { radius: 16, height: 16, painSound: 'bospn', deathSound: 'bosdth', unattenuated: true },
 };
 
 /**
@@ -529,6 +550,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 70,
     chaseInterval: 0.114,
     radius: 20,
+    height: 56,
     mass: 100,
     melee: null,
     // A_PosAttack: (rand%5+1)*3.
@@ -541,6 +563,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
+    height: 56,
     mass: 100,
     melee: null,
     // A_SPosAttack: 3 separate P_LineAttacks per call, each (rand%5+1)*3 —
@@ -554,6 +577,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
+    height: 56,
     mass: 100,
     melee: null,
     // A_CPosAttack: (rand%5+1)*3, once per shots:2 entry — A_CPosRefire
@@ -570,6 +594,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
+    height: 56,
     mass: 100,
     melee: null,
     // SSWV fires the same A_CPosAttack as the chaingunner, twice (S_SSWV_ATK3/
@@ -585,6 +610,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 20,
+    height: 56,
     mass: 100,
     // A_TroopAttack melee: (rand%8+1)*3.
     melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 3, duration: 0.629 },
@@ -599,6 +625,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 175,
     chaseInterval: 0.057,
     radius: 30,
+    height: 56,
     mass: 400,
     // A_SargAttack: (rand%10+1)*4.
     melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 4, duration: 0.686 },
@@ -613,6 +640,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 175,
     chaseInterval: 0.057,
     radius: 30,
+    height: 56,
     mass: 400,
     melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 4, duration: 0.686 },
     ranged: null,
@@ -624,6 +652,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 46.7,
     chaseInterval: 0.171,
     radius: 16,
+    height: 56,
     mass: 50,
     melee: null,
     ranged: {
@@ -648,6 +677,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 31,
+    height: 56,
     mass: 400,
     // A_HeadAttack melee: (rand%6+1)*10.
     melee: { range: MELEE_RANGE, diceSides: 6, diceMult: 10, duration: 0.429 },
@@ -664,6 +694,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 24,
+    height: 64,
     mass: 1000,
     // A_BruisAttack melee: (rand%8+1)*10.
     melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10, duration: 0.686 },
@@ -677,6 +708,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 24,
+    height: 64,
     mass: 1000,
     // Baron and hell knight share A_BruisAttack/MT_BRUISERSHOT exactly.
     melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10, duration: 0.686 },
@@ -689,6 +721,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 93.3,
     chaseInterval: 0.086,
     radius: 31,
+    height: 56,
     mass: 400,
     melee: null,
     // A_PainAttack deals no damage of its own — diceSides/diceMult are unused
@@ -708,6 +741,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 175,
     chaseInterval: 0.057,
     radius: 20,
+    height: 56,
     mass: 500,
     // A_SkelFist: (rand%10+1)*6.
     melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 6, duration: 0.514 },
@@ -734,6 +768,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 70,
     chaseInterval: 0.114,
     radius: 48,
+    height: 64,
     mass: 1000,
     melee: null,
     ranged: {
@@ -768,6 +803,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 116.7,
     chaseInterval: 0.103,
     radius: 64,
+    height: 64,
     mass: 600,
     melee: null,
     // Universal missile-hit formula; ARACHPLAZ's own damage field is 5.
@@ -787,6 +823,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 105,
     chaseInterval: 0.114,
     radius: 128,
+    height: 100,
     mass: 1000,
     melee: null,
     // Fires A_SPosAttack (the shotgun guy's own 3-pellet, (rand%5+1)*3
@@ -818,6 +855,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 140,
     chaseInterval: 0.114,
     radius: 40,
+    height: 110,
     mass: 1000,
     melee: null,
     ranged: {
@@ -856,6 +894,7 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     speed: 262.5,
     chaseInterval: 0.057,
     radius: 20,
+    height: 56,
     mass: 500,
     melee: null,
     ranged: {
@@ -879,3 +918,6 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     resurrects: true,
   },
 };
+
+/** The tallest body in the roster (the cyberdemon's 110), derived from the table so it can't drift — a cheap "nobody can be caught in a gap this big" early-out. */
+export const TALLEST_BODY_HEIGHT = Math.max(...Object.values(MONSTER_STATS).map((s) => s.height));

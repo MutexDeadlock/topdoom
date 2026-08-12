@@ -6,7 +6,7 @@ import { hasLineOfSight, playerShotRange, projectileStepBlocker, shotPath } from
 import { AIM_HEIGHT_OFFSET, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import {
   MONSTER_FIRE_HEIGHT,
-  MONSTER_HIT_HEIGHT,
+  MONSTER_LOCK_HEIGHT,
   MONSTER_HIT_RADIUS,
   sameSpecies,
   type MonsterAttackEvent,
@@ -178,7 +178,7 @@ export class ProjectileLayer {
         const along = relX * dirX + relY * dirY;
         const perp = Math.abs(relX * dirY - relY * dirX);
         const missZ = Math.abs(slopeOffset) * along;
-        const onBody = perp <= MONSTER_HIT_RADIUS && missZ <= MONSTER_HIT_HEIGHT / 2;
+        const onBody = perp <= MONSTER_HIT_RADIUS && missZ <= MONSTER_LOCK_HEIGHT / 2;
         if (onBody && along >= 0 && path.dist >= along - 1) lockDist = along;
       }
 
@@ -495,7 +495,7 @@ export class ProjectileLayer {
       // whoever fired it, so it can leave its own shooter's body. `sourceId` is
       // null for the player's, who is not in this list to begin with.
       if (m.id === p.sourceId) continue;
-      const t = stepTouchesBody(from, at, m, m.radius, MONSTER_HIT_HEIGHT, p.radius);
+      const t = stepTouchesBody(from, at, m, m.radius, m.height, p.radius);
       if (t === null || t >= nearestT) continue;
       // Same wall check `playerStruckBy` needs, and for the same reason — see
       // its comment. Traced from the monster for the same `SELF_HIT_MARGIN`

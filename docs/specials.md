@@ -37,6 +37,49 @@ needing a genuinely new mechanism, all now modelled. Boom/MBF-only numbers (174,
 crusher at 150) are deliberately out of scope. Nothing vanilla-scoped remains knowingly unmodelled;
 if you find a gap, it's a bug, not a deferred decision.
 
+## A switch only flips when it acts
+
+`P_ChangeSwitchTexture` is one operation doing two things — flipping the sidedef to its on-texture
+*and*, for a one-shot line, clearing `line->special` so it can never fire again. So the flip, the
+`swtchn` click and `usedOnce` all move together in `trigger`, and either all happen or none do.
+
+**`P_UseSpecialLine` calls it inside `if (EV_…)`.** A switch whose EV_ helper returned 0 — every
+tag-matched sector already busy, a donut with no ring, a stair chain that couldn't start — is left
+untouched and unspent, so the player can press it again once whatever was in the way has finished.
+Getting this wrong is worse than a cosmetic bug: an S1 switch consumed by a press that did nothing is
+dead for the rest of the level, and on a map where it is the only way to raise a floor or open a
+crusher, the level is unfinishable.
+
+The exceptions are exact, not approximate, and `SWITCH_ALWAYS_FLIPS` (`game/specials.ts`) is the
+whole list:
+
+- **11 and 51**, the two exits, and **138/139**, the two light switches — vanilla calls
+  `P_ChangeSwitchTexture` outside the `if` for these four and nothing else.
+- **Manual doors** (1/26/27/28/31–34/117/118), which go through `EV_VerticalDoor` and never reach an
+  EV_ return in the first place.
+- **Walk and shoot triggers**, unconditional in both `P_CrossSpecialLine` (`line->special = 0` sits
+  after the EV_ call, never inside a test) and `P_ShootSpecialLine` (all three of 24/46/47 flip
+  unconditionally — this one is worth reading in the source before "fixing", since it looks like an
+  oversight and is not).
+
+**The flip is permanent unless the switch is repeatable.** `P_ChangeSwitchTexture`'s second argument
+is `useAgain`, and it does two things with it: `if (!useAgain) line->special = 0` spends a one-shot
+line, and `if (useAgain) P_StartButton(..., BUTTONTIME)` starts the 35-tic timer that flips the art
+*back*. So only an SR/WR switch reverts, so it can visibly be pressed again; an S1/W1 switch is given
+no button at all and shows its pressed art for the rest of the level. Running the revert timer on
+every switch — which this engine did — makes every one-shot switch in the game flick green and back
+to red a second later. `flashSwitch` takes `useAgain` for exactly this.
+
+That also means `switchFlashes` is no longer the full set of pressed switches, which the savegame
+restore has to account for: it re-applies on-textures from `switchFlashes` **and** `usedOnce`, since a
+permanently-flipped switch has no timer to be found under. (A `usedOnce` line with no switch art —
+most of them, all the walk triggers — resolves to no entries and costs nothing.)
+
+Each `trigger*` method therefore returns its EV_ helper's `rtn` rather than `void`: **true only for a
+sector that actually took the effect**, which for most of them is exactly `!sectorActive(sectorIndex)`
+— vanilla's `rtn = 1` and its `if (sec->specialdata) continue;` are the same test read two ways. The
+crusher is the one that isn't; see § Crushers.
+
 ## Crushers
 
 Start 6/25/49/73/77/141, stop 57/74. Pure ceiling geometry: repeatedly lower to floor+8, reverse,
@@ -46,7 +89,7 @@ forever, with no hold/rest state.
 They — and the vanilla `raiseFloorCrush` floor family (55/56/65/94) — deal `CRUSH_DAMAGE` every
 `CRUSH_DAMAGE_INTERVAL` (vanilla's 10 HP every 4 tics) to the player or any monster in their sector
 that the current headroom doesn't fit (`sector.ceilHeight - sector.floorHeight` against
-`PLAYER_HEIGHT`/`MONSTER_HIT_HEIGHT`), via `SpecialsController`'s `onCrush` callback into
+`PLAYER_HEIGHT` and each body's own `mobjinfo.height`), via `SpecialsController`'s `onCrush` callback into
 `moverblocking.ts: applyCrushDamage` — the same "hand back a sector index, let someone else work out
 who is standing in it" split as the two obstruction callbacks beside it, since `SpecialsController`
 mutates geometry but has no idea where anyone is. `ThingLayer.
@@ -83,6 +126,51 @@ per-mover countdown, reset to `CRUSH_DAMAGE_INTERVAL` on each fire, was tried fi
 phase with the level's real tic count over a long-running crusher — caught by testing
 `crusher_test.wad`'s WR fast crusher against GZDoom side by side, which came out one `CRUSH_DAMAGE` hit
 lower than this engine over the same run.
+
+**A descent that is actually crushing something drops to an eighth speed.**
+`T_MoveCeiling` sets `ceiling->speed = CEILSPEED / 8` whenever `T_MovePlane` comes back `crushed`, and
+restores full speed on reaching the bottom (`CrusherEffect.slowsWhenCrushing`, `CrusherMover.slowed`).
+This is not a flourish — it multiplies the time a body spends under the descending ceiling, and so the
+damage one stroke deals, **by eight**. Without it MAP06's crusher deals ~140 damage a cycle and a
+500 HP Hell Knight walks away from four of them; with it the stroke deals over 1000 and kills him on
+the first, which is what vanilla and GZDoom both do. Three details are load-bearing:
+
+- `crushed` and `pastdest` are mutually exclusive in `T_MoveCeiling` (the slowdown lives in the
+  `else` of the `pastdest` test), so the tic that lands on the bottom restores full speed and must
+  **not** re-slow. Damage still lands on that tic — `P_ChangeSector` runs either way.
+- The slowdown is never lifted mid-stroke, only at the bottom. A crusher keeps grinding slowly for
+  the rest of its descent even after whatever it caught is already dead.
+- **`fastCrushAndRaise` (6/77) is excluded**, deliberately: `p_ceilng.c` lists only `crushAndRaise`,
+  `silentCrushAndRaise` and `lowerAndCrush` in that switch, which is the whole reason the fast pair
+  reads as fast. It is also why the bottom-of-stroke reset sits under `case crushAndRaise:` and the
+  fast type falls past it.
+
+Because the slowdown keys off `crushed` every tic while the damage is rationed on `leveltime&3`, the
+`onCrush` callback carries both rates: it is asked every tic, returns whether anything is caught
+(vanilla's `nofit`), and takes a flag for whether this tic is also a damage tic.
+
+**A stop line freezes a crusher mid-stroke, and a restart resumes that direction.** 57/74
+(`EV_CeilingCrushStop`) set vanilla's `direction = 0` — "in-stasis" — leaving the ceiling exactly
+where it stands, after saving `olddirection`; `P_ActivateInStasisCeiling`, which every crusher
+trigger runs before its own loop, puts that direction back. `CrusherMover.stoppedFrom` carries it.
+Restarting a crusher stopped on its way *up* must not send it back down: that is a visible,
+half-second-long wrong move on any map with a repeatable crusher trigger sharing a tag with a stop
+line. `stoppedFrom` is optional, so a mover from a save written before it existed reads as
+`'lowering'` — the old behavior — rather than breaking the save.
+
+Two consequences worth knowing, both vanilla's:
+
+- **Stasis never clears `sec->specialdata`**, so the restart is invisible to `EV_DoCeiling`'s `rtn`:
+  `P_ActivateInStasisCeiling` runs, then the loop `continue`s past that same sector and returns 0. A
+  switch that only *restarts* a frozen crusher therefore neither flips nor is spent (§ A switch only
+  flips when it acts) — `triggerCrusher` returns `false` on that path on purpose.
+- **A stop line is one-way for an S1 trigger.** Nothing else restarts a crusher, so a spent switch
+  plus a crossed stop line leaves it parked for the rest of the level. **Repro: DOOM2 MAP06 sector
+  115 (tag 13).** Its room has three openings and only the east one, line 303, carries the 74; enter
+  from the south or west and the crusher keeps running, enter from the east and it freezes wherever
+  it was — which reads as "the crusher went down, came back up and stayed up" if you cross during
+  the up-stroke. The switch, line 587, is an S1 (49) and already spent. This is the map's own
+  design, not a bug, and the report that chased it down is in the commit history.
 
 The turbo-16 stair specials (100/127) are deliberately *not* included, even though the wiki names them
 "...and Crush" — the actual `EV_BuildStairs` source never sets a crush flag on the floor movers it

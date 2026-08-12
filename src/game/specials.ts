@@ -24,6 +24,7 @@ import {
   DOOR_RAISE_WAIT_SECONDS,
   EIGHT_UNIT_GAP,
   CRUSH_DAMAGE_INTERVAL,
+  CRUSH_SLOWDOWN,
   SWITCH_FLASH_SECONDS,
   FLOOR_SPEED,
   type DoorEffect,
@@ -164,8 +165,25 @@ interface CrusherMover {
   topHeight: number;
   bottomHeight: number;
   state: CrusherState;
+  /**
+   * Which way it was travelling when a 57/74 stop line froze it, so a restart
+   * resumes that direction — vanilla's `olddirection`, saved by
+   * `EV_CeilingCrushStop` and put back by `P_ActivateInStasisCeiling`. Optional
+   * because a mover saved before this field existed has none; `'lowering'` is
+   * the compatible default there, matching the old unconditional behavior.
+   * docs/specials.md § Crushers.
+   */
+  stoppedFrom?: 'lowering' | 'raising';
   /** Vanilla's `silentCrushAndRaise` (special 141) — see `CrusherEffect.silent`. */
   silent: boolean;
+  /** See `CrusherEffect.slowsWhenCrushing`. Absent on a mover from a save written before it existed, where the slowing majority (25/49/73/141) is the safer default. */
+  slowsWhenCrushing?: boolean;
+  /**
+   * Currently grinding through a body at an eighth speed — `T_MoveCeiling`'s
+   * mutated `ceiling->speed`, cleared again when the descent reaches the
+   * bottom. Live state, so it rides along in a savegame like `state` does.
+   */
+  slowed?: boolean;
 }
 
 /**
@@ -364,7 +382,7 @@ function resolveCeilingTarget(map: DoomMap, sectorIndex: number, target: Ceiling
  * stalling in place until whoever's in the way clears out — functionally the
  * same "don't crush through them" result vanilla's own per-tic retry
  * produces. Approximated as 2D sector membership plus a flat headroom check
- * against `PLAYER_HEIGHT`/`MONSTER_HIT_HEIGHT`, the same coarseness
+ * against `PLAYER_HEIGHT` and each body's own `mobjinfo.height`, the same shape
  * `applyCrushDamage` already accepts — and, unlike vanilla, applied uniformly
  * to every door regardless of speed, since this engine has no separate
  * "blazeClose never reverses" door type to hook the one real vanilla
@@ -402,6 +420,21 @@ export interface LockedLine {
 /** How far around a monster to look for walk-trigger lines — the largest monster radius (the spider mastermind's 128) plus slack. */
 const MONSTER_CROSS_RADIUS = 136;
 
+/**
+ * The `use` specials whose switch flip is *not* gated on the effect having done
+ * anything: `P_UseSpecialLine` calls `P_ChangeSwitchTexture` outside the
+ * `if (EV_…)` for exactly the two exits and the two light switches, and for
+ * nothing else. Every other switch — and only a switch; walk and shoot triggers
+ * are unconditional throughout — flips, and spends a one-shot line, solely when
+ * its EV_ call returned true. docs/specials.md § A switch only flips when it acts.
+ */
+const SWITCH_ALWAYS_FLIPS = new Set([
+  11, // exit level
+  51, // secret exit
+  138, // light turn on
+  139, // light turn off
+]);
+
 const MONSTER_CROSSABLE = new Set([
   4, // raise door
   10, // plat down-wait-up-stay
@@ -420,7 +453,7 @@ export class SpecialsController {
   private geometry: MoverGeometry;
   private onExit: (secret: boolean) => void;
   private onTeleport: (dest: Placement) => void;
-  private onCrush: (sectorIndex: number) => void;
+  private onCrush: (sectorIndex: number, dealDamage: boolean) => boolean;
   private blocksCeilingLower: (sectorIndex: number, ceilingHeight: number) => boolean;
   private blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean;
   private sfx: SoundEmitter;
@@ -475,7 +508,7 @@ export class SpecialsController {
     meshOptions: MapMeshOptions,
     onExit: (secret: boolean) => void,
     onTeleport: (dest: Placement) => void,
-    onCrush: (sectorIndex: number) => void,
+    onCrush: (sectorIndex: number, dealDamage: boolean) => boolean,
     blocksCeilingLower: (sectorIndex: number, ceilingHeight: number) => boolean,
     blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean,
     playerX: number,
@@ -567,7 +600,12 @@ export class SpecialsController {
     this.prevX = s.prevX;
     this.prevY = s.prevY;
     const dirty = new Set<number>();
-    for (const [lineIndex] of this.switchFlashes) {
+    // Two sources, since a switch shows its on-texture for two different
+    // reasons: a repeatable one mid-BUTTONTIME (`switchFlashes`), and a
+    // one-shot one that is flipped for good and has no timer at all
+    // (`usedOnce` — see `flashSwitch`). A `usedOnce` line with no switch art,
+    // which is most of them, resolves to no entries and costs nothing.
+    for (const lineIndex of [...this.switchFlashes.keys(), ...this.usedOnce]) {
       for (const e of this.switchTextures.get(lineIndex) ?? []) {
         this.map.sidedefs[e.sideIndex][e.slot] = e.onTexture;
         dirty.add(e.sectorIndex);
@@ -917,18 +955,25 @@ export class SpecialsController {
     // lowering crusher ever deals damage, so this tick's direction (before
     // any end-of-travel flip below) decides whether tickCrush fires.
     const wasLowering = mover.state === 'lowering';
+    // `T_MoveCeiling` drops a crushing descent to `CEILSPEED / 8` for as long as
+    // it is actually grinding through a body — see `CrusherEffect.slowsWhenCrushing`.
+    const speed = mover.slowed ? mover.speed / CRUSH_SLOWDOWN : mover.speed;
     if (mover.state === 'lowering') {
-      sector.ceilHeight = Math.max(mover.bottomHeight, sector.ceilHeight - mover.speed * dt);
+      sector.ceilHeight = Math.max(mover.bottomHeight, sector.ceilHeight - speed * dt);
       if (sector.ceilHeight <= mover.bottomHeight) {
         sector.ceilHeight = mover.bottomHeight;
         mover.state = 'raising';
+        // Vanilla's `ceiling->speed = CEILSPEED` on reaching the bottom: the
+        // slowdown lasts only the stroke that earned it, so the way back up —
+        // which never crushes anyway — is always full speed.
+        mover.slowed = false;
         // The silent crusher's one sound, at each end of its travel — the exact
         // inverse of every other crusher, which grinds throughout and is quiet
         // at the turns (see CrusherEffect.silent).
         if (mover.silent) this.playSector(mover.sectorIndex, 'pstop');
       }
     } else {
-      sector.ceilHeight = Math.min(mover.topHeight, sector.ceilHeight + mover.speed * dt);
+      sector.ceilHeight = Math.min(mover.topHeight, sector.ceilHeight + speed * dt);
       if (sector.ceilHeight >= mover.topHeight) {
         sector.ceilHeight = mover.topHeight;
         mover.state = 'lowering';
@@ -937,20 +982,37 @@ export class SpecialsController {
     }
     if (!mover.silent && this.moveSoundDue) this.playSector(mover.sectorIndex, 'stnmov');
     if (sector.ceilHeight !== before) dirty.add(mover.sectorIndex);
-    if (wasLowering) this.tickCrush(mover.sectorIndex);
+    // `T_MovePlane`'s `crushed` result is per-tic and independent of the damage
+    // clock, so this asks every tic and only the damage inside is rationed.
+    if (wasLowering) {
+      const caught = this.tickCrush(mover.sectorIndex);
+      // `crushed` is the *else* of `pastdest` in `T_MoveCeiling` — the two
+      // results are mutually exclusive — so the tic that lands on the bottom
+      // restores full speed and must not re-slow on the way out of the stroke.
+      // (The damage above still lands: `P_ChangeSector` runs either way.)
+      const reachedBottom = mover.state === 'raising';
+      if (caught && !reachedBottom && mover.slowsWhenCrushing !== false) mover.slowed = true;
+    }
   }
 
   /**
-   * Fires `onCrush` for `sectorIndex` on the shared `crushDamageDue` clock —
-   * vanilla's `leveltime&3` is one clock for the whole level, not a per-mover
+   * Asks `onCrush` whether anything in `sectorIndex` is caught under the
+   * mover, dealing `CRUSH_DAMAGE` at the same time only on the shared
+   * `crushDamageDue` clock. Two rates in one call because vanilla has two:
+   * `P_ChangeSector`'s `nofit` is recomputed every tic (it is what
+   * `T_MovePlane` returns as `crushed`, and so what drives the crusher
+   * slowdown), while `PIT_ChangeSector` rations the damage inside it on
+   * `leveltime&3`.
+   *
+   * That damage clock is one clock for the whole level, not a per-mover
    * countdown, so every crushing mover anywhere pulses on the same tic
    * (exactly `moveSoundDue`'s reasoning, applied to damage instead of sound).
    * A per-mover countdown reset on each fire drifts out of phase with that
    * global tic and can rack up an extra hit a real vanilla/GZDoom crusher
    * wouldn't have — this replaced that approach for exactly that reason.
    */
-  private tickCrush(sectorIndex: number): void {
-    if (this.crushDamageDue) this.onCrush(sectorIndex);
+  private tickCrush(sectorIndex: number): boolean {
+    return this.onCrush(sectorIndex, this.crushDamageDue);
   }
 
   /**
@@ -989,11 +1051,11 @@ export class SpecialsController {
     return DOOR_SOUNDS[effect.speed >= DOOR_SPEED_FAST ? 'fast' : 'normal'];
   }
 
-  private triggerDoor(sectorIndex: number, effect: DoorEffect): void {
+  private triggerDoor(sectorIndex: number, effect: DoorEffect): boolean {
     const existing = this.movers.get(sectorIndex);
     const sounds = this.doorSounds(effect);
     if (!existing || existing.kind !== 'door') {
-      if (this.sectorActive(sectorIndex)) return;
+      if (this.sectorActive(sectorIndex)) return false;
       const sector = this.map.sectors[sectorIndex];
       const closeThenOpen = effect.mode === 'closeThenOpen';
       // A closeThenOpen door is authored already open, and reopens to
@@ -1016,20 +1078,25 @@ export class SpecialsController {
       // sec->ceilingheight)`); that case can't reach here, since a door with
       // nothing to open is one this engine gives no mover at all.
       this.playSector(sectorIndex, closeThenOpen ? sounds.close : sounds.open);
-      return;
+      return true;
     }
+    // A door this engine still has a record of is one vanilla either left a
+    // thinker on (mid-motion: `EV_DoDoor` `continue`s, rtn 0) or had already
+    // finished and removed (`'open'`/`'closed'`: a fresh thinker, rtn 1) —
+    // exactly `sectorActive`. The re-trigger behavior below is unchanged.
     const mover = existing;
+    const fresh = !this.sectorActive(sectorIndex);
     if (effect.mode === 'closeOnly' || effect.mode === 'closeThenOpen') {
       mover.state = 'lowering';
       this.playSector(sectorIndex, sounds.close);
-      return;
+      return fresh;
     }
     if (effect.mode === 'openOnly') {
       if (mover.state === 'closed' || mover.state === 'lowering') {
         mover.state = 'raising';
         this.playSector(sectorIndex, sounds.open);
       }
-      return;
+      return fresh;
     }
     // Retriggering an open door only resets its wait — no sound, matching
     // vanilla, which just writes `door->topcountdown` and never reaches
@@ -1043,12 +1110,13 @@ export class SpecialsController {
       mover.state = 'raising';
       this.playSector(sectorIndex, sounds.open);
     }
+    return fresh;
   }
 
-  private triggerLift(sectorIndex: number, effect: LiftEffect): void {
+  private triggerLift(sectorIndex: number, effect: LiftEffect): boolean {
     const existing = this.movers.get(sectorIndex);
     if (!existing || existing.kind !== 'lift') {
-      if (this.sectorActive(sectorIndex)) return;
+      if (this.sectorActive(sectorIndex)) return false;
       const restHeight = this.map.sectors[sectorIndex].floorHeight;
       const downHeight = lowestNeighborFloor(this.map, sectorIndex);
       this.movers.set(sectorIndex, {
@@ -1061,16 +1129,19 @@ export class SpecialsController {
         holdRemaining: 0,
       });
       this.playSector(sectorIndex, 'pstart'); // EV_DoPlat's own downWaitUpStay sound
-      return;
+      return true;
     }
-    if (existing.state === 'rest') {
-      existing.state = 'lowering';
-      this.playSector(sectorIndex, 'pstart');
-    }
+    // A resting lift is one vanilla had already removed (`P_RemoveActivePlat`),
+    // so re-triggering it is a fresh thinker; one still running is `EV_DoPlat`'s
+    // own `continue`.
+    if (existing.state !== 'rest') return false;
+    existing.state = 'lowering';
+    this.playSector(sectorIndex, 'pstart');
+    return true;
   }
 
-  private triggerFloor(sectorIndex: number, effect: FloorEffect, line?: LineDef): void {
-    if (this.sectorActive(sectorIndex)) return;
+  private triggerFloor(sectorIndex: number, effect: FloorEffect, line?: LineDef): boolean {
+    if (this.sectorActive(sectorIndex)) return false;
     // `line` is only actually needed for `changeTexture` — the only caller without a real
     // linedef (`triggerTag`, for a boss-death `lowerFloorToLowest`) never sets that flag.
     if (effect.changeTexture && line) this.applyFloorChange(sectorIndex, line);
@@ -1083,6 +1154,7 @@ export class SpecialsController {
       state: 'moving',
       crush: effect.crush,
     });
+    return true;
   }
 
   /**
@@ -1109,14 +1181,26 @@ export class SpecialsController {
     this.geometry.rebuild(sectorIndex);
   }
 
-  /** A sector already crushing (in either direction) ignores a re-trigger, matching vanilla's `sec->specialdata` guard. */
-  private triggerCrusher(sectorIndex: number, effect: CrusherEffect): void {
+  /**
+   * A sector already crushing (in either direction) ignores a re-trigger, matching vanilla's
+   * `sec->specialdata` guard; one frozen by a stop line resumes the direction it was travelling.
+   *
+   * Returns `EV_DoCeiling`'s own `rtn`, which the switch gating in `trigger` reads: 1 only for a
+   * sector that got a *new* thinker. Restarting an in-stasis crusher deliberately reports `false` —
+   * vanilla runs `P_ActivateInStasisCeiling` before the loop, and the loop then `continue`s past
+   * that sector because stasis never cleared its `specialdata`, so `rtn` stays 0 and the switch
+   * neither flips nor is spent. docs/specials.md § Crushers.
+   */
+  private triggerCrusher(sectorIndex: number, effect: CrusherEffect): boolean {
     const existing = this.movers.get(sectorIndex);
     if (existing && existing.kind === 'crusher') {
-      if (existing.state === 'stopped') existing.state = 'lowering';
-      return;
+      if (existing.state === 'stopped') {
+        existing.state = existing.stoppedFrom ?? 'lowering';
+        existing.stoppedFrom = undefined;
+      }
+      return false;
     }
-    if (this.sectorActive(sectorIndex)) return;
+    if (this.sectorActive(sectorIndex)) return false;
     const sector = this.map.sectors[sectorIndex];
     this.movers.set(sectorIndex, {
       kind: 'crusher',
@@ -1126,19 +1210,26 @@ export class SpecialsController {
       bottomHeight: sector.floorHeight + EIGHT_UNIT_GAP,
       state: 'lowering',
       silent: effect.silent,
+      slowsWhenCrushing: effect.slowsWhenCrushing,
     });
+    return true;
   }
 
-  private triggerCrusherStop(sectorIndex: number): void {
+  /** `EV_CeilingCrushStop`: freezes a running crusher where it stands, remembering its direction. Already-stopped is not a hit — vanilla's own `direction != 0` guard, and so its `rtn`. */
+  private triggerCrusherStop(sectorIndex: number): boolean {
     const existing = this.movers.get(sectorIndex);
-    if (existing && existing.kind === 'crusher') existing.state = 'stopped';
+    if (!existing || existing.kind !== 'crusher' || existing.state === 'stopped') return false;
+    existing.stoppedFrom = existing.state;
+    existing.state = 'stopped';
+    return true;
   }
 
   /** Vanilla's own `sec->specialdata` guard: a sector already driven by *any* mover ignores this — unlike doors/lifts/floors above, there's no interactive re-trigger behavior worth having for a one-way move. */
-  private triggerCeiling(sectorIndex: number, effect: CeilingEffect): void {
-    if (this.sectorActive(sectorIndex)) return;
+  private triggerCeiling(sectorIndex: number, effect: CeilingEffect): boolean {
+    if (this.sectorActive(sectorIndex)) return false;
     const target = resolveCeilingTarget(this.map, sectorIndex, effect.target);
     this.movers.set(sectorIndex, { kind: 'ceiling', sectorIndex, speed: effect.speed, target, state: 'moving' });
+    return true;
   }
 
   /**
@@ -1152,8 +1243,8 @@ export class SpecialsController {
    * this only happens on a malformed map (no bordering line has a bottom
    * texture at all), which no real map actually does.
    */
-  private triggerRaiseToTexture(sectorIndex: number): void {
-    if (this.sectorActive(sectorIndex)) return;
+  private triggerRaiseToTexture(sectorIndex: number): boolean {
+    if (this.sectorActive(sectorIndex)) return false;
     let minHeight = Infinity;
     for (const line of this.map.linedefs) {
       const front = line.right !== NO_SIDE ? this.map.sidedefs[line.right]?.sector : undefined;
@@ -1176,6 +1267,7 @@ export class SpecialsController {
       state: 'moving',
       crush: false,
     });
+    return true;
   }
 
   /**
@@ -1183,8 +1275,8 @@ export class SpecialsController {
    * model-sector search and why the texture/special only apply on arrival
    * (`arrivalTexture`, applied by `tickFloor`).
    */
-  private triggerLowerAndChange(sectorIndex: number): void {
-    if (this.sectorActive(sectorIndex)) return;
+  private triggerLowerAndChange(sectorIndex: number): boolean {
+    if (this.sectorActive(sectorIndex)) return false;
     const target = lowestNeighborFloor(this.map, sectorIndex);
     let arrivalTexture: { floorTex: string; special: number } | undefined;
     for (const neighborIndex of neighborSectorIndices(this.map, sectorIndex)) {
@@ -1203,6 +1295,7 @@ export class SpecialsController {
       crush: false,
       arrivalTexture,
     });
+    return true;
   }
 
   /**
@@ -1212,17 +1305,17 @@ export class SpecialsController {
    * matching the real source, which never checks the ring before
    * overwriting its mover.
    */
-  private triggerDonut(holeIndex: number): void {
-    if (this.sectorActive(holeIndex)) return;
+  private triggerDonut(holeIndex: number): boolean {
+    if (this.sectorActive(holeIndex)) return false;
     const ringIndex = neighborSectorIndices(this.map, holeIndex)[0];
-    if (ringIndex === undefined) return;
+    if (ringIndex === undefined) return false;
     let outerIndex: number | undefined;
     for (const candidate of neighborSectorIndices(this.map, ringIndex)) {
       if (candidate === holeIndex) continue;
       outerIndex = candidate;
       break;
     }
-    if (outerIndex === undefined) return;
+    if (outerIndex === undefined) return false;
     const outer = this.map.sectors[outerIndex];
     this.movers.set(ringIndex, {
       kind: 'floor',
@@ -1241,6 +1334,7 @@ export class SpecialsController {
       state: 'moving',
       crush: false,
     });
+    return true;
   }
 
   /**
@@ -1250,7 +1344,7 @@ export class SpecialsController {
    * sector on demand, which is exactly what `recolorSector` already handles
    * generically — the only new piece here is computing the new level itself.
    */
-  private triggerLightChange(sectorIndex: number, effect: LightChangeEffect): void {
+  private triggerLightChange(sectorIndex: number, effect: LightChangeEffect): boolean {
     const sector = this.map.sectors[sectorIndex];
     switch (effect.mode) {
       case 'setLevel':
@@ -1274,10 +1368,11 @@ export class SpecialsController {
         break;
       }
       case 'startStrobe':
-        if (this.movers.has(sectorIndex)) return; // vanilla's sec->specialdata guard
+        if (this.movers.has(sectorIndex)) return false; // vanilla's sec->specialdata guard
         this.lightStates.set(sectorIndex, makeLightState('blink1', sector.light, darkestNeighborLight(this.map, sectorIndex)));
         break;
     }
+    return true;
   }
 
   /**
@@ -1287,8 +1382,8 @@ export class SpecialsController {
    * machinery per step rather than a dedicated mover kind, since a single
    * step is exactly a floor rising to a fixed target height.
    */
-  private triggerStairs(startSectorIndex: number, effect: StairsEffect): void {
-    if (this.sectorActive(startSectorIndex)) return; // vanilla's sec->specialdata guard
+  private triggerStairs(startSectorIndex: number, effect: StairsEffect): boolean {
+    if (this.sectorActive(startSectorIndex)) return false; // vanilla's sec->specialdata guard
     for (const step of findStairChain(this.map, startSectorIndex, effect.stepHeight)) {
       if (this.sectorActive(step.sectorIndex)) continue; // EV_BuildStairs' own per-step `tsec->specialdata` skip
       this.movers.set(step.sectorIndex, {
@@ -1302,6 +1397,7 @@ export class SpecialsController {
         crush: false,
       });
     }
+    return true;
   }
 
   /** First teleport-landing marker (`MT_TELEPORTMAN`) sitting in one of the tag-matched sectors — vanilla's own search is just as arbitrary when more than one exists. */
@@ -1349,7 +1445,15 @@ export class SpecialsController {
       return null;
     }
 
-    this.flashSwitch(lineIndex);
+    // `P_ChangeSwitchTexture` both flips the art and, for a one-shot line,
+    // spends it, so the two always move together. `P_UseSpecialLine` calls it
+    // *inside* `if (EV_…)` for every switch but the exits and light switches
+    // (`SWITCH_ALWAYS_FLIPS`) and the manual doors, which never route through an
+    // EV_ return at all; walk and shoot triggers are unconditional in
+    // `P_CrossSpecialLine`/`P_ShootSpecialLine`. Deferred to the end of the
+    // method when gated. docs/specials.md § A switch only flips when it acts.
+    const gated = def.trigger === 'use' && !def.manual && !SWITCH_ALWAYS_FLIPS.has(line.special);
+    if (!gated) this.flashSwitch(lineIndex, def.repeatable);
 
     if (def.effect.kind === 'exit') {
       this.usedOnce.add(lineIndex);
@@ -1379,54 +1483,56 @@ export class SpecialsController {
       return null;
     }
 
-    if (def.effect.kind === 'stairs') {
-      for (const startSector of resolveTargets(this.map, line, def)) this.triggerStairs(startSector, def.effect);
-      if (!def.repeatable) this.usedOnce.add(lineIndex);
-      return null;
-    }
-
     const targets = resolveTargets(this.map, line, def);
     if (targets.length === 0) return null;
 
+    // Vanilla's `rtn`: true once any target sector actually took the effect.
+    let applied = false;
     for (const sectorIndex of targets) {
       switch (def.effect.kind) {
         case 'door':
-          this.triggerDoor(sectorIndex, def.effect);
+          applied = this.triggerDoor(sectorIndex, def.effect) || applied;
           break;
         case 'lift':
-          this.triggerLift(sectorIndex, def.effect);
+          applied = this.triggerLift(sectorIndex, def.effect) || applied;
           break;
         case 'floor':
-          this.triggerFloor(sectorIndex, def.effect, line);
+          applied = this.triggerFloor(sectorIndex, def.effect, line) || applied;
           break;
         case 'crusher':
-          this.triggerCrusher(sectorIndex, def.effect);
+          applied = this.triggerCrusher(sectorIndex, def.effect) || applied;
           break;
         case 'crusherStop':
-          this.triggerCrusherStop(sectorIndex);
+          applied = this.triggerCrusherStop(sectorIndex) || applied;
           break;
         case 'ceiling':
-          this.triggerCeiling(sectorIndex, def.effect);
+          applied = this.triggerCeiling(sectorIndex, def.effect) || applied;
           break;
         case 'raiseToTexture':
-          this.triggerRaiseToTexture(sectorIndex);
+          applied = this.triggerRaiseToTexture(sectorIndex) || applied;
           break;
         case 'lowerAndChange':
-          this.triggerLowerAndChange(sectorIndex);
+          applied = this.triggerLowerAndChange(sectorIndex) || applied;
+          break;
+        case 'stairs':
+          applied = this.triggerStairs(sectorIndex, def.effect) || applied;
           break;
         case 'donut':
           // The tag match already resolved to the "hole" sector; the ring
           // and outer sectors are discovered dynamically inside — see
           // triggerDonut's doc.
-          this.triggerDonut(sectorIndex);
+          applied = this.triggerDonut(sectorIndex) || applied;
           break;
         case 'lightChange':
-          this.triggerLightChange(sectorIndex, def.effect);
+          applied = this.triggerLightChange(sectorIndex, def.effect) || applied;
           break;
         default:
           break;
       }
     }
+    // See `gated` above: a switch that did nothing is left untouched and unspent.
+    if (gated && !applied) return null;
+    if (gated) this.flashSwitch(lineIndex, def.repeatable);
     if (!def.repeatable) this.usedOnce.add(lineIndex);
     return null;
   }
@@ -1568,7 +1674,7 @@ export class SpecialsController {
 
   // ---- Switch textures -------------------------------------------------
 
-  private flashSwitch(lineIndex: number): void {
+  private flashSwitch(lineIndex: number, useAgain: boolean): void {
     const entries = this.switchTextures.get(lineIndex);
     if (!entries || entries.length === 0) return;
     // `P_ChangeSwitchTexture` plays this from inside its switchlist match, so a
@@ -1584,7 +1690,12 @@ export class SpecialsController {
       dirty.add(e.sectorIndex);
     }
     for (const sectorIndex of dirty) this.geometry.rebuild(sectorIndex);
-    this.switchFlashes.set(lineIndex, SWITCH_FLASH_SECONDS);
+    // `P_ChangeSwitchTexture` only starts a `P_StartButton` timer when
+    // `useAgain` is set — that is, for a *repeatable* switch, which reverts
+    // after BUTTONTIME so it can visibly be pressed again. A one-shot switch is
+    // given no button at all and stays showing its on-texture for the rest of
+    // the level. docs/specials.md § A switch only flips when it acts.
+    if (useAgain) this.switchFlashes.set(lineIndex, SWITCH_FLASH_SECONDS);
   }
 
   private updateSwitchFlashes(dt: number): void {

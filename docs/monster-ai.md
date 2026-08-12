@@ -124,6 +124,27 @@ Going the whole way to vanilla — one full `speed * chaseInterval` jump per cha
 demo-compatibility question, not a tic-lock one, and is deliberately still open: the jump and the
 sub-steps collide with different geometry.
 
+**A monster that doesn't fit where it is going cannot move at all** — `P_TryMove`'s
+`tmceilingz - tmfloorz < thing->height`, checked in `testStep` before anything else. This is the
+*destination's own* headroom and it narrows past no linedef, which is why `World.blocksMovement`'s
+per-opening test cannot stand in for it: a monster walking around inside a single sector crosses
+nothing, so nothing ever consults the ceiling that just came down on it. Without this a crusher that
+had already closed to eight units left its victim strolling about underneath, taking damage; vanilla
+pins it in place, which combined with a near-continuous pain state is the "stands still and screams"
+a crushed body actually does.
+
+The check sits *before* vanilla sets `floatok`, so a floating monster is refused outright here too
+rather than adjusting its height — unlike the sibling `tmceilingz - thing->z < thing->height` rule
+just below it, which is the flying-only "must lower itself to fit".
+
+It uses `MONSTER_HIT_HEIGHT`, the engine's single shared body height (64, against vanilla's real
+56-110), so a 56-63 unit crawlspace refuses monsters vanilla would let through. Nothing in the
+shipped IWADs was found to depend on that, and a crusher closes far below either figure. **The
+player is deliberately not subject to this**: vanilla applies it to every mobj, so a player under a
+crusher is pinned too, but being unable to move with no on-screen explanation reads as a frozen game
+from a top-down camera that may not even be showing the ceiling. The momentum paths — a lost soul's
+charge and knockback — don't carry it either, both being brief and self-cancelling.
+
 **The per-tic sub-step must never be stricter than the chase step `tryWalk` already approved**
 (`escapingOverlap`). Vanilla's `P_Move` tests only the *destination* of a full `speed` jump; it
 never asks whether the monster is standing somewhere legal right now. Maps place monsters flush
@@ -189,7 +210,8 @@ Three rules, all in `monsters/ai.ts`:
   `'adjust'` step for the same reason: vanilla's `P_TryWalk` goes through `P_Move`, so the monster
   stays committed to the ledge it is climbing rather than turning away from it.
 - **It hovers toward its target's mid-height** (`settleVertical`, `P_ZMovement`'s `MF_FLOAT` block):
-  toward `target.z + MONSTER_HIT_HEIGHT/2`, but only while `dist < |delta|*3`. That gate is why a
+  toward `target.z + (its own height)/2` — `mo->height>>1` in the C is the *floater's* height, not
+  the target's — but only while `dist < |delta|*3`. That gate is why a
   cacodemon in your face settles *below* eye level rather than at it, and it is suppressed while
   `MF_INFLOAT` (`MonsterBody.inFloat`, set by `floatOverStep`) or mid-charge (`MF_SKULLFLY`), so the
   two float rules can't fight each other.
@@ -302,10 +324,10 @@ if (pl->Top() < actor->Z())  return false;
 ```
 
 This engine follows ZDoom, because vanilla's version reads as a bug to anyone who has played a
-source port. Both comparisons are **strict**, so bodies that exactly touch still connect. Heights
-are this engine's approximate boxes, not per-type `mobjinfo.height`: `MONSTER_HIT_HEIGHT` for the
-attacker, and the target's own — `PLAYER_HEIGHT` when `ThingLayer` resolved the target to the
-player, `MONSTER_HIT_HEIGHT` for an infight — threaded in as `stepMonsterAI`'s `targetHeight`.
+source port. Both comparisons are **strict**, so bodies that exactly touch still connect. Both heights are the real
+per-type `mobjinfo.height`: `MonsterStats.height` for the attacker, and the target's own —
+`PLAYER_HEIGHT` when `ThingLayer` resolved the target to the player, that body's
+`PosedThing.bodyHeight` for an infight — threaded in as `stepMonsterAI`'s `targetHeight`.
 
 Repro maps, committed as fixtures: `tests/fixtures/wads/pinky_{below,above}_test.wad`, covered by
 `tests/regression/pinky-vertical-melee.test.ts`. `above` is the sharper of the two — standing at the

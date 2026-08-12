@@ -13,6 +13,7 @@ import {
   BARREL_IDLE_FRAME_SECONDS,
   BARREL_IDLE_FRAMES,
   BARREL_MASS,
+  BARREL_HEIGHT,
   BARREL_RADIUS,
   BOSS_TYPES,
   DEATH_NOTIFY_TYPES,
@@ -66,7 +67,7 @@ import {
   DI_NODIR,
   INERT_SHOOTABLE,
   MONSTER_FIRE_HEIGHT,
-  MONSTER_HIT_HEIGHT,
+  BODY_HEIGHT_FALLBACK,
   MONSTER_HIT_RADIUS,
   MONSTER_STATS,
   thrustSpeed,
@@ -287,6 +288,10 @@ export function buildThingSprites(
           : // INERT_SHOOTABLE before the fallback: Keen and the brain have a real
             // mobjinfo radius of 16, they just have no MONSTER_STATS to carry it.
             MONSTER_STATS[type]?.radius ?? INERT_SHOOTABLE[type]?.radius ?? MONSTER_HIT_RADIUS,
+      // Same resolution order and the same reason as `blockRadius` above.
+      bodyHeight: isBarrel
+        ? BARREL_HEIGHT
+        : (MONSTER_STATS[type]?.height ?? INERT_SHOOTABLE[type]?.height ?? BODY_HEIGHT_FALLBACK),
       attackFrames: MONSTER_ATTACK_FRAMES[type],
       painFrames: MONSTER_PAIN_FRAMES[type],
       raiseFrames: MONSTER_RAISE_FRAMES[type],
@@ -942,12 +947,11 @@ export function buildThingSprites(
               const beforeY = p.y;
               // The melee gate's `pl->info->radius`/height. The target is the
               // player exactly when `resolveTarget` fell back to it; anything
-              // else is another `PosedThing`, whose `blockRadius` is already
-              // this type's own resolved radius (see that field's doc), sized
-              // vertically by the one approximate monster box.
+              // else is another `PosedThing`, whose `blockRadius`/`bodyHeight`
+              // are already this type's own resolved figures (see those fields).
               const victim = target === player ? null : (posed[p.targetId!] ?? null);
               const targetRadius = victim ? victim.blockRadius : PLAYER_RADIUS;
-              const targetHeight = victim ? MONSTER_HIT_HEIGHT : PLAYER_HEIGHT;
+              const targetHeight = victim ? victim.bodyHeight : PLAYER_HEIGHT;
               const result = stepMonsterAI(
                 p,
                 stats,
@@ -1183,8 +1187,8 @@ export function buildThingSprites(
         best = p;
       }
       if (!best) return null;
-      const { id, x, y, z, type, angle, blockRadius } = best;
-      return { id, x, y, z, type, angle, radius: blockRadius };
+      const { id, x, y, z, type, angle, blockRadius, bodyHeight } = best;
+      return { id, x, y, z, type, angle, radius: blockRadius, height: bodyHeight };
     },
     monstersNear(pos: Pos2, radius: number): MonsterRef[] {
       // Grid-backed, not a scan of every thing. Splash queries alone would be
@@ -1202,7 +1206,7 @@ export function buildThingSprites(
         const dx = p.x - pos.x;
         const dy = p.y - pos.y;
         if (dx * dx + dy * dy >= rSq) return;
-        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius });
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius, height: p.bodyHeight });
       });
       return out;
     },
@@ -1221,14 +1225,14 @@ export function buildThingSprites(
         if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
         const hit = boxToCircleRadius(p.blockRadius + reach);
         if (distSqToSegment(p.x, p.y, from.x, from.y, to.x, to.y) >= hit * hit) return;
-        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius });
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius, height: p.bodyHeight });
       });
       return out;
     },
     monsterById(id: number): MonsterRef | null {
       const p = posed[id];
       if (!p || p.dead || !MONSTER_TYPES.has(p.type)) return null;
-      return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius };
+      return { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius, height: p.bodyHeight };
     },
     bleeds(id: number): boolean {
       const p = posed[id];
@@ -1253,7 +1257,7 @@ export function buildThingSprites(
       const out: MonsterRef[] = [];
       for (const p of posed) {
         if (p.dead || !MONSTER_TYPES.has(p.type) || p.sector !== sector) continue;
-        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius });
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius, height: p.bodyHeight });
       }
       return out;
     },
@@ -1262,7 +1266,7 @@ export function buildThingSprites(
       for (const p of posed) {
         if (p.dead || p.sector !== sector) continue;
         if (!MONSTER_TYPES.has(p.type) && p.type !== ThingType.barrel) continue;
-        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius });
+        out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius, height: p.bodyHeight });
       }
       return out;
     },
@@ -1279,7 +1283,7 @@ export function buildThingSprites(
     },
     spawnMonster(type: number, at: Pos3, angleRad: number): MonsterRef | null {
       const p = spawnMonster(type, at, angleRad);
-      return p ? { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius } : null;
+      return p ? { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius, height: p.bodyHeight } : null;
     },
     raycastMonster(
       origin: Pos3,
@@ -1303,7 +1307,8 @@ export function buildThingSprites(
         // Fog of war is a *player*-facing conceit; a monster shooting another
         // monster in an unrevealed room must still connect.
         if (!opts?.includeHidden && !p.visible) return;
-        if (Math.abs(p.z - origin.z) > MONSTER_HIT_HEIGHT) return;
+        // This body's own height, same per-species reasoning as the width below.
+        if (Math.abs(p.z - origin.z) > p.bodyHeight) return;
         const relX = p.x - origin.x;
         const relY = p.y - origin.y;
         const t = relX * dx + relY * dy;
@@ -1323,6 +1328,7 @@ export function buildThingSprites(
           z: p.z,
           dist: t,
           type: p.type,
+          height: p.bodyHeight,
           angle: p.angle,
           radius: p.blockRadius,
         };

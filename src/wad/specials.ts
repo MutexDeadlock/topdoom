@@ -64,6 +64,8 @@ export const CRUSH_DAMAGE = 10;
  * dealt — confirmed the difference testing `crusher_test.wad` against GZDoom.
  */
 export const CRUSH_DAMAGE_INTERVAL = 4 * DOOM_TIC;
+/** Vanilla `T_MoveCeiling`'s `ceiling->speed = CEILSPEED / 8` — see `CrusherEffect.slowsWhenCrushing`. */
+export const CRUSH_SLOWDOWN = 8;
 
 /** Gap vanilla leaves between an open door's ceiling and the lowest neighboring ceiling. */
 export const DOOR_OPEN_GAP = 4;
@@ -202,6 +204,17 @@ export interface CrusherEffect {
    * which is the whole point of the type, so it can't be folded in.
    */
   silent: boolean;
+  /**
+   * `T_MoveCeiling`'s `ceiling->speed = CEILSPEED / 8` — while its descent is
+   * actually crushing something, a crusher grinds down at an eighth speed,
+   * restored to full when it reaches the bottom. `p_ceilng.c` applies it to
+   * `crushAndRaise` and `silentCrushAndRaise` (25/49/73/141) and pointedly not
+   * to `fastCrushAndRaise` (6/77), which is the whole reason the fast pair
+   * stays fast. Not cosmetic: it is what multiplies the time a body spends
+   * under the ceiling, and so the crush damage a single stroke deals, by eight
+   * — docs/specials.md § Crushers.
+   */
+  slowsWhenCrushing: boolean;
 }
 
 /** Freezes whatever crusher is currently active on the targeted sector(s) wherever it is. */
@@ -551,12 +564,12 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
 
   // Crushers — vanilla numbers confirmed against the Doom wiki's linedef type
   // table (57/74 stop crushers, not 58, which is an unrelated "floor up 24").
-  6: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST, silent: false } },
-  25: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: false } },
-  49: { trigger: 'use', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: false } },
-  73: { trigger: 'walk', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: false } },
-  77: { trigger: 'walk', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST, silent: false } },
-  141: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: true } },
+  6: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST, silent: false, slowsWhenCrushing: false } },
+  25: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: false, slowsWhenCrushing: true } },
+  49: { trigger: 'use', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: false, slowsWhenCrushing: true } },
+  73: { trigger: 'walk', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: false, slowsWhenCrushing: true } },
+  77: { trigger: 'walk', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST, silent: false, slowsWhenCrushing: false } },
+  141: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: true, slowsWhenCrushing: true } },
   57: { trigger: 'walk', repeatable: false, effect: { kind: 'crusherStop' } },
   74: { trigger: 'walk', repeatable: true, effect: { kind: 'crusherStop' } },
 

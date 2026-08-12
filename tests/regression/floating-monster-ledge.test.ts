@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { Wad, WadFile } from '../../src/wad/wad.ts';
 import { loadMap } from '../../src/wad/map.ts';
 import { World } from '../../src/game/world.ts';
-import { MONSTER_HIT_HEIGHT, MONSTER_STATS, type MonsterBody } from '../../src/game/monsters/defs.ts';
+import { MONSTER_STATS, type MonsterBody } from '../../src/game/monsters/defs.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/thingtypes.ts';
@@ -111,7 +111,8 @@ describe('Regressions · floating monsters over a ledge', () => {
   test('it hovers off the floor, closing on the target mid-height without passing it', () => {
     const f = loadCacoPit();
     run(f, 5);
-    const midHeight = f.player.z + MONSTER_HIT_HEIGHT / 2;
+    // `mo->height>>1` is the *floater's* own half-height, not the target's.
+    const midHeight = f.player.z + MONSTER_STATS[ThingType.cacodemon].height / 2;
     assert.ok(f.body.z > ROOM_FLOOR, `airborne over the room floor (z = ${f.body.z})`);
     // `P_ZMovement`'s drift target is `target->z + (mo->height>>1)`, but its
     // `dist < |delta|*3` gate switches off before the gap closes — a cacodemon

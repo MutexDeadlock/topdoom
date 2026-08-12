@@ -52,6 +52,13 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   blockRadius: number;
   /**
+   * This body's own `mobjinfo.height`, resolved once at spawn exactly as
+   * `blockRadius` is. Every vertical fit test that knows which body it means
+   * reads it: whether a crusher has closed far enough to catch this thing,
+   * whether it fits through an opening, and how tall a target a shot sees.
+   */
+  bodyHeight: number;
+  /**
    * This type's attack/pain WAD frame letters (`MONSTER_ATTACK_FRAMES`/
    * `MONSTER_PAIN_FRAMES`), resolved once at spawn for the same reason
    * `blockRadius` is: both tables are sparse-numeric-key `Record`s, so a
@@ -216,6 +223,8 @@ export interface MonsterRef extends Pos3 {
    * is. See docs/combat.md § How a shot deals damage.
    */
   radius: number;
+  /** This body's own `mobjinfo.height` (`PosedThing.bodyHeight`) — carried for the same reason `radius` is: every shot and crush test needs the real per-species figure, not one shared band. */
+  height: number;
 }
 
 /**
@@ -421,7 +430,7 @@ export interface ThingLayer {
    * Nearest living monster the ray crosses within `maxDist`, or null — the
    * "didn't click anything, but something's in the path anyway" case for a
    * free shot. Tested laterally against each body's **own** `MonsterRef.radius`
-   * and vertically against the shared `MONSTER_HIT_HEIGHT` band.
+   * and vertically against its own `MonsterRef.height`.
    *
    * `opts` serves a *monster's* own hitscan: `ignoreId` excludes the shooter
    * from its own trace, `includeHidden` skips the fog-of-war filter, since fog
@@ -489,6 +498,12 @@ export const BARREL_HEALTH = 20;
  * `MONSTER_STATS` entry, which a barrel otherwise is.
  */
 export const BARREL_RADIUS = 10;
+/**
+ * Vanilla `MT_BARREL`'s own `height` (42), shorter than anything else that can
+ * be crushed — a descending ceiling reaches a monster well before it reaches a
+ * barrel standing beside it.
+ */
+export const BARREL_HEIGHT = 42;
 /** Vanilla `MT_BARREL`'s own `mass` — confirmed against `linuxdoom-1.10/info.c`, feeds `thrustSpeed`. */
 export const BARREL_MASS = 100;
 /** `S_BAR1`/`S_BAR2` — a two-frame idle sway, each vanilla frame held 6 tics. */

@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { ThingType } from '../../src/game/thingtypes.ts';
 import {
   MELEE_RANGE,
-  MONSTER_HIT_HEIGHT,
   MONSTER_STATS,
   meleeReachesVertically,
   meleeThreshold,
@@ -12,6 +11,9 @@ import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { hasLineOfSight } from '../../src/game/world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { loadPinky, type PinkyFixture, type PinkyMap } from '../fixtures/pinky.ts';
+
+/** `MT_SERGEANT`'s own `mobjinfo.height`; the melee gate measures the attacker by its real body. */
+const DEMON_HEIGHT = MONSTER_STATS[ThingType.demon].height;
 
 /**
  * A demon in a pit could bite a player standing on the lip above it, and one on
@@ -83,7 +85,7 @@ describe('Regressions · vertical melee reach', () => {
         for (const y of IN_REACH_Y) {
           const player = f.playerAt(y);
           assert.equal(
-            meleeReachesVertically(f.demon.z, MONSTER_HIT_HEIGHT, player.z, PLAYER_HEIGHT),
+            meleeReachesVertically(f.demon.z, DEMON_HEIGHT, player.z, PLAYER_HEIGHT),
             false,
             `no vertical overlap at y=${y}`,
           );
@@ -114,7 +116,7 @@ describe('Regressions · vertical melee reach', () => {
    */
   test('a demon on the same floor still bites', () => {
     const f = loadPinky('pinky_below_test');
-    assert.ok(meleeReachesVertically(0, MONSTER_HIT_HEIGHT, 0, PLAYER_HEIGHT), 'same floor overlaps');
+    assert.ok(meleeReachesVertically(0, DEMON_HEIGHT, 0, PLAYER_HEIGHT), 'same floor overlaps');
 
     // Same map and same 2D distance as the refused cases above — only the
     // demon's own `z` is lifted out of the pit onto the player's floor.

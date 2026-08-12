@@ -217,7 +217,7 @@ locked-on pellet resolves hit-or-miss against that exact target, and needs **bot
 `spawnPlayerShot` compares `shotPath`'s returned distance against the distance to the target to know
 whether a wall cut the shot short, *and* tests this pellet's own line against the target's body —
 perpendicular offset within `MONSTER_HIT_RADIUS` and, for a pellet carrying a `slopeOffset`, vertical
-miss within half of `MONSTER_HIT_HEIGHT` at the body's distance. A *free* pellet instead tests its
+miss within half of `MONSTER_LOCK_HEIGHT` at the body's distance. A *free* pellet instead tests its
 straight flight path against every monster's body (`ThingLayer.raycastMonster`), the way any real
 hitscan trace would, so a monster standing between the player and the wall they're shooting at still
 gets hit even though it was never clicked; only the nearer of "a wall/step" (`shotPath`) and "a
@@ -256,9 +256,13 @@ number of hits has radius `4h/π ≈ 1.273h`, not `h` — the same argument `MON
 (docs/monster-attacks.md) already made by hand for the player's own 16-unit box. Applying `h`
 directly instead would quietly narrow every hitbox in the game by 21%.
 
-Body *height* stays the shared `MONSTER_HIT_HEIGHT`/`PLAYER_HEIGHT` approximation rather than
-vanilla's per-species 56-110. Deliberate: the top-down camera makes height the axis a player can
-least judge, and unlike the radius it has never been the cause of a reported miss.
+Body *height* is per-species too, `mobjinfo.height`'s real 56-110 carried on each body as
+`PosedThing.bodyHeight` and handed out on `MonsterRef.height`. It was one shared 64 until heights
+started gating *movement* as well as shots (docs/monster-ai.md § Movement): a figure taller than the
+56 most of the roster is and half a cyberdemon's 110 made crushers catch bodies they shouldn't and
+miss ones they should. The one place a shared box survives is the **auto-aim lock**
+(`MONSTER_HIT_RADIUS`/`MONSTER_LOCK_HEIGHT`), which is shared on purpose so the lock can't behave
+like homing — see `MONSTER_HIT_RADIUS`.
 
 For a hitscan pellet damage is applied immediately (an instant line has no travel time); for a
 projectile it is carried on the `Projectile` and applied wherever `ProjectileLayer.update` finds it

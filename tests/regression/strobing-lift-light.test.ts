@@ -75,7 +75,7 @@ function strobingLift() {
     {},
     () => {},
     () => {},
-    () => {},
+    () => false,
     () => false,
     () => false,
     start.x,

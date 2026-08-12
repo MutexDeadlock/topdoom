@@ -269,8 +269,8 @@ export function turnToward(from: number, to: number, maxDelta: number): number {
  * laterally `thing->radius + tmthing->radius` (as the circle
  * `boxToCircleRadius` converts that box to), vertically the asymmetric
  * overhead/underneath pair, evaluated where the step passes closest to the
- * body. `bodyHeight` stays the shared `MONSTER_HIT_HEIGHT`/`PLAYER_HEIGHT`
- * approximation; only the radius is per-species.
+ * body. `bodyHeight` is the target's own `mobjinfo.height`
+ * (`MonsterRef.height`) or `PLAYER_HEIGHT`, per-species like the radius.
  *
  * **Swept, not sampled at the step's end**: `game.ts` clamps `dt` at 0.05s, so
  * the fastest missiles cover 43 units in one frame — further than the widest

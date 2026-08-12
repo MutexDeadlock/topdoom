@@ -132,8 +132,9 @@ nearly so:
 - **Saving is refused mid-intermission, mid-exit and while dead** (`Game.saveRefusal`), which keeps
   the intermission/exit cascade out of the format entirely. `captureSave` *throws* that refusal
   rather than returning a sentinel, so the whole save path has one refusal convention and the
-  player is told which of the three applies instead of all of them (docs/menu.md § Save and Load
-  tabs).
+  player is told which of the three applies instead of all of them. The menu also asks the same
+  question *before* the click, to disable Save and Overwrite and name the reason (docs/menu.md
+  § Save and Load tabs) — the throw is still what enforces it.
 
 ## Apply order
 

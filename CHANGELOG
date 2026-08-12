@@ -1,3 +1,14 @@
+v0.1?.? (2026-08-??)
+
+Features and improvements
+  - if a game can't be saved (dead, intermission), the "Save" 
+    and "Overwrite" buttons are disabled now
+
+
+
+===============================================================================
+
+
 v0.12.0 (2026-08-12)
 
 Features and improvements

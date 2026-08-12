@@ -19,6 +19,16 @@
   border-color: var(--border-strong);
 }
 
+/*
+ * Why Save and Overwrite are greyed out (dead, intermission, exiting), in the
+ * heading's hint slot: a disabled button shows no tooltip, so the reason has to
+ * be on screen. Warning-coloured like a row's missing-file line — it explains a
+ * control that won't respond, not a passing remark — and empty the rest of the time.
+ */
+#menu #save-refusal {
+  color: var(--accent-text-hover);
+}
+
 /* The form's Save button next to the input — not the full-width footer kind. */
 #menu .save-form button {
   width: auto;

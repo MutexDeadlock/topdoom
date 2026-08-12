@@ -391,9 +391,10 @@ export class Game {
    * format entirely is far cheaper than restoring them correctly
    * (docs/savegames.md § What is saved and what is deliberately not). The
    * reason is a sentence rather than a flag because it is what the player is
-   * told; nothing else asks this.
+   * told — `captureSave` throws it, and the menu also asks *before* the fact to
+   * disable Save/Overwrite and name the reason (docs/menu.md § Save and Load tabs).
    */
-  private saveRefusal(): string | null {
+  saveRefusal(): string | null {
     if (this.playerDead) return "you can't save while dead";
     if (this.intermissionActive) return "you can't save during the intermission";
     if (this.pendingExit) return "you can't save while the level is exiting";

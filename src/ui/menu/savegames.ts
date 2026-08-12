@@ -35,6 +35,12 @@ export interface SaveHooks {
   onOverwrite(id: string): void | Promise<void>;
   /** Tears down the current session and starts one from `save` — the load-side `onStart`. */
   onLoad(save: SaveGame): void | Promise<void>;
+  /**
+   * Why the current moment can't be saved, or null when it can — the same
+   * sentence `onSave`/`onOverwrite` would throw, asked ahead of the click so
+   * the buttons can be disabled rather than failing when pressed.
+   */
+  saveRefusal(): string | null;
 }
 
 /**
@@ -60,12 +66,19 @@ export class SavegamesUi {
   private loadList = el<HTMLDivElement>('load-list');
   private nameInput = el<HTMLInputElement>('save-name');
   private saveButton = el<HTMLButtonElement>('save-button');
+  private refusalHint = el<HTMLSpanElement>('save-refusal');
   private fileInput = el<HTMLInputElement>('save-file-input');
 
   private hooks: SaveHooks;
   private setStatus: (text: string, isError?: boolean) => void;
   private describe: (meta: SaveMeta) => SaveSetInfo;
   private inGame = false;
+  /**
+   * Why this moment can't be saved, or null — read from the hook on each
+   * `refresh` and so on every menu open, which is the only moment it can have
+   * changed: the game is paused for as long as the menu is up.
+   */
+  private refusal: string | null = null;
   /**
    * Which of the two lists is on screen, and whether each still matches the
    * store. Only the visible one is ever built: listing itself is a cheap meta
@@ -106,10 +119,20 @@ export class SavegamesUi {
    */
   refresh(inGame = this.inGame): void {
     this.inGame = inGame;
-    this.saveButton.disabled = !inGame;
+    // Before the lists: `renderVisible` builds the rows' Overwrite buttons off it.
+    this.refusal = inGame ? this.hooks.saveRefusal() : null;
+    this.saveButton.disabled = !this.canSave;
+    // A disabled button shows no tooltip, so the reason goes next to the
+    // heading, where it is on screen without being hunted for.
+    this.refusalHint.textContent = this.refusal ?? '';
     this.stale.save = true;
     this.stale.load = true;
     void this.renderVisible();
+  }
+
+  /** Whether Save and Overwrite are live: a game to save, and a moment it would accept. */
+  private get canSave(): boolean {
+    return this.inGame && this.refusal === null;
   }
 
   /** Which tab is showing, `null` for one of the menu's others — `Menu.setTab`'s hand-off. */
@@ -162,10 +185,10 @@ export class SavegamesUi {
   private async save(): Promise<void> {
     // The disabled check covers a save already in flight (Enter bypasses the
     // button's own disabled state), so one keypress can't store two.
-    if (!this.inGame || this.saveButton.disabled) return;
+    if (!this.canSave || this.saveButton.disabled) return;
     this.saveButton.disabled = true;
     const ok = await this.attempt(() => this.hooks.onSave(this.nameInput.value), 'Game saved.');
-    this.saveButton.disabled = !this.inGame;
+    this.saveButton.disabled = !this.canSave;
     if (!ok) return;
     this.nameInput.value = '';
     this.refresh();
@@ -246,8 +269,8 @@ export class SavegamesUi {
       overwrite.textContent = 'Overwrite';
       // Deliberately not naming the save: `rename` patches a row in place, so a
       // name baked in here would go stale, and the row's own field shows it anyway.
-      overwrite.title = 'Hold to replace this save with the current moment';
-      overwrite.disabled = !this.inGame;
+      overwrite.title = this.refusal ?? 'Hold to replace this save with the current moment';
+      overwrite.disabled = !this.canSave;
       this.confirmOnHold(overwrite, 'Hold Overwrite to replace that save.', () => void this.overwrite(meta.id));
       actions.append(overwrite);
     }
@@ -371,7 +394,10 @@ export class SavegamesUi {
       this.setStatus(hint);
     };
     const start = () => {
-      if (timer) return;
+      // `disabled` is checked here, not left to the browser: not every one
+      // suppresses pointer events on a disabled control, and a press that got
+      // through would print the hold hint for a button that does nothing.
+      if (timer || button.disabled) return;
       button.classList.add('holding');
       timer = window.setTimeout(() => {
         timer = 0;
@@ -399,7 +425,7 @@ export class SavegamesUi {
   }
 
   private async overwrite(id: string): Promise<void> {
-    if (!this.inGame) return;
+    if (!this.canSave) return;
     if (await this.attempt(() => this.hooks.onOverwrite(id), 'Save overwritten.')) this.refresh();
   }
 

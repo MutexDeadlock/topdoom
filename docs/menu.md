@@ -64,6 +64,13 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   `#controls-dev` pattern; the button must leave the flex row, not hold a gap) and moves anyone
   still on it to New Game. Same gate as the resume button: there is nothing to save otherwise. The
   Load tab is always available.
+- **A moment the capture would refuse greys Save and Overwrite out**, rather than letting the click
+  fail: `refresh` asks the `saveRefusal` hook (`Game.saveRefusal` — dead, intermission, exiting) and
+  disables both against `inGame && refusal === null`. It is asked on every `refresh`, which covers
+  every menu open, and that is enough because the game is paused for as long as the menu is up.
+  The reason itself goes in the `#save-refusal` hint beside the Save heading — **a disabled button
+  shows no tooltip**, so the Overwrite `title` alone would tell the player nothing. The throw stays
+  in place regardless: the buttons are a courtesy, `captureSave` is the actual gate.
 - Saving takes an optional name (defaulting to map + date), and both panels list every save the
   player made, newest first: thumbnail, name, the level · level time, then skill · date. The
   level-entry checkpoint is the one save neither tab ever shows — `listSaves` drops it, and it

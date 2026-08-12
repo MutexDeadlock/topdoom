@@ -185,6 +185,10 @@ async function boot(): Promise<void> {
     onSave: (name) => withCapture((capture) => writeSave(capture, name)),
     onOverwrite: (id) => withCapture((capture) => overwriteSave(id, capture)),
     onLoad: (save) => loadSave(save),
+    // Asked while the menu is up, so a moment the capture would refuse greys
+    // the buttons out instead of failing on the click. No game is the menu's
+    // own `inGame` gate, so there is nothing to say here.
+    saveRefusal: () => game?.saveRefusal() ?? null,
   });
 
   // A `?map=` deep link starts a level without the player ever clicking

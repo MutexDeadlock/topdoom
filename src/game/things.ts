@@ -1,3 +1,9 @@
+/**
+ * `ThingLayer`: every live map thing — spawning by skill, pickups, damage and death, waking and
+ * stepping monster AI, barrels, corpse raising — drawn through the shared sprite batch. The
+ * record shapes and tables live in `things/defs.ts` and `thingdefs.ts`. See docs/sprites.md,
+ * docs/items.md, docs/monster-ai.md and docs/death.md.
+ */
 import * as THREE from 'three';
 import type { DoomMap, Sector } from '../wad/map.ts';
 import type { SpriteBank } from '../wad/sprites.ts';

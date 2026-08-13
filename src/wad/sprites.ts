@@ -1,3 +1,7 @@
+/**
+ * `SpriteBank`: indexes the WAD's sprite lumps (S_START..S_END) by sprite name, frame letter and
+ * rotation, so a thing's facing resolves to a lump. See docs/sprites.md.
+ */
 import type { Lump, Wad } from './wad.ts';
 
 export interface SpriteFrame {

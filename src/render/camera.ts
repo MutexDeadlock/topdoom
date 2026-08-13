@@ -1,3 +1,8 @@
+/**
+ * `TopDownCamera`: the tilted overhead camera — follow smoothing, aim lead, and the Q/E orbit.
+ * See docs/render.md § Camera orbit and camera-relative movement, and § The camera is simulation
+ * state.
+ */
 import * as THREE from 'three';
 import type { Input } from '../game/input.ts';
 import type { Pos2, Pos3 } from '../types.ts';

@@ -32,10 +32,9 @@ missing textures, degenerate subsector polygons and whether the player start is 
 fastest check on a WAD-parsing, texture-merging or BSP change, and the way to reproduce a bug
 against a specific real-world WAD.
 
-For collision/movement bugs prefer synthetic geometry over a real map, where unrelated nearby
-geometry muddies the result: `tests/fixtures/gridmap.ts` builds a real `DoomMap` from ASCII art. A
-throwaway script is still right for a one-off investigation — those go in the scratchpad, never in
-`src/`.
+For collision/movement bugs prefer synthetic geometry, where unrelated nearby geometry can't muddy
+the result: `tests/fixtures/gridmap.ts` builds a real `DoomMap` from ASCII art. A throwaway script
+is still right for a one-off investigation — those go in the scratchpad, never in `src/`.
 
 ## Toolchain constraints
 
@@ -48,12 +47,11 @@ throwaway script is still right for a one-off investigation — those go in the 
   works.
 - `tsconfig.json` has `noUnusedLocals`/`noUnusedParameters` on; `npm run typecheck` is the
   cheapest way to catch this before running anything.
-- The pinned `tsc` has a control-flow narrowing quirk: reading a nullable `this`-field directly
-  after several intervening method calls (any of which may reassign it) can stay typed as its
-  last-seen literal instead of widening back to the declared union — surfaced by
-  `SpecialsController.lastTeleport` in `game/specials.ts`. Routing the read through a trivial
-  getter (`consumeLastTeleport`) works around it; reach for that pattern rather than fighting the
-  checker if the same shape of bug shows up elsewhere.
+- The pinned `tsc` has a control-flow narrowing quirk: a nullable `this`-field read after several
+  intervening method calls (any of which may reassign it) can stay typed as its last-seen literal
+  instead of the declared union. Route the read through a trivial getter
+  (`SpecialsController.consumeLastTeleport` in `game/specials.ts` is the precedent) rather than
+  fighting the checker.
 
 ## Architecture
 
@@ -62,13 +60,11 @@ src/wad/       WAD files, merged lump directory, content ids, map lumps, graphic
                decoding, MAPINFO + the vanilla level-title tables
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards + their instanced batching, shot tracers, camera, viewport
-src/game/      spatial queries, collision, player controller, input, the named doomednums every
-               type-keyed table keys through (thingtypes), thing→sprite table, thing
-               world state (pickups, damage), fog of war, inventory/pickups, weapons and firing,
-               shots in flight + splash, damage/death, projectile/effect tables, transient
-               effects (fog puffs, explosions, tracers), mover obstruction + crush damage,
-               damage floors + secrets, per-level best times, the Icon of Sin's cube spitter,
-               savegames (the snapshot payload + the IndexedDB store)
+src/game/      spatial queries + collision, player controller, input, the named doomednums every
+               type-keyed table keys through (thingtypes), thing world state, fog of war,
+               inventory/pickups, weapons and firing, shots in flight + splash, damage/death,
+               transient effects, mover obstruction + crush damage, damage floors + secrets,
+               best times, the Icon of Sin's cube spitter, savegames
 src/game/monsters/   tables + record shapes (defs), chase/attack decisions (ai), attack resolution
                (attacks), the arch-vile (vile)
 src/game/things/     the thing layer's record shapes + its own tables (defs), monster/corpse
@@ -81,9 +77,8 @@ src/ui/hud/          everything over the running level: HUD, level card, intermi
                messages, screen tints/pain flash, crosshair, WadFont glyph rasterizing
 src/ui/menu/         start menu + changelog popup
 src/ui/devmode/      DEVMODE hud + profiling overlay
-src/util/      small helpers shared across layers (2D geometry, damped-lerp smoothing,
-               per-frame profiling, vanilla's random table — the engine's only entropy source —
-               plus the damage-dice and triangular-spread draws every layer rolls through)
+src/util/      small helpers shared across layers: 2D geometry, damped-lerp smoothing, per-frame
+               profiling, vanilla's random table — the engine's only entropy source
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
                    BRIGHTNESS_LIFT, PICKUP_SCALE + PICKUP_SCALE_TYPES, VIEW_DISTANCE)
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
@@ -133,9 +128,8 @@ These apply no matter which file you're in.
 **Vanilla fidelity is confirmed, never guessed.** Where this engine reproduces a DOOM behavior, the
 rule comes from the real `linuxdoom-1.10` source or from the actual WAD lumps — not from the Doom
 wiki alone (which has been wrong here: linedef 174, crusher-stop 58, and the turbo stairs' "and
-Crush" naming all needed the source to settle), and not from what seems reasonable. Several shipped
-bugs came from eyeballing a table that could have been read off `info.c`. When you add or change one
-of these, cite where it came from.
+Crush" naming all needed the source to settle), and not from what seems reasonable. When you add or
+change one of these, cite where it came from.
 
 **A change that would break existing saves must be flagged to the user first.** `SAVE_VERSION`
 (`game/savegames.ts`) is meant to stay at its current value: released saves exist, and a bump
@@ -155,12 +149,10 @@ not choosing against it on purpose.
 **Constants fall into exactly two marked categories.** Values derived from vanilla carry their
 source citation as a comment at the declaration (`g_game.c`'s ticcmd tables, `info.c`'s mobjinfo
 fields, `P_RadiusAttack`'s literal 128). Values tuned by feel say so explicitly, in those words at
-the declaration — `grep -rn "tuned by feel" src/` is the current list, not any roster kept here,
-which drifted the moment one moved file. `weapons.ts` used to be full of them and no longer is: fire
-rates, spread, damage and projectile speed all have exact vanilla sources
-(docs/weapons.md § Fire rates), and "it doesn't translate to a dt-scaled model" was hiding numbers
-that were simply wrong. Never introduce a third, unmarked category: a bare number with no note is
-indistinguishable from a transcription error.
+the declaration — `grep -rn "tuned by feel" src/` is the current list; no roster is kept here.
+Prefer digging out the exact vanilla source over declaring a number tuned: every `weapons.ts` rate,
+spread and damage turned out to have one (docs/weapons.md § Fire rates). Never introduce a third,
+unmarked category: a bare number with no note is indistinguishable from a transcription error.
 
 **`constants.ts` stays small**, and admits a constant on exactly one of two grounds. Either it is
 used in more than two files and isn't identity-coupled to any one module (`DOOM_TIC`), or it is a
@@ -169,17 +161,15 @@ retune, however few files read it (`BRIGHTNESS_LIFT`, `PICKUP_SCALE`, `VIEW_DIST
 one or two). A dial brings its own scope with it when the two are retuned together and separating
 them would hide half the decision — `PICKUP_SCALE_TYPES`, the whitelist of what `PICKUP_SCALE`
 applies to, is the one such table here and stays the exception, not a licence for tables generally.
-Nothing else: `PLAYER_RADIUS`/`PLAYER_HEIGHT` and `NO_SIDE`/`LF`/`SUBSECTOR_BIT` briefly
-lived there and were moved back to `game/player.ts` and `wad/map.ts`, where the code that owns their
-meaning is. Don't re-add constants there just because they're imported in two or three places.
+Nothing else: a constant identity-coupled to one module lives in that module
+(`PLAYER_RADIUS` in `game/player.ts`, `SUBSECTOR_BIT` in `wad/map.ts`), however many files import it.
 
 **Position types (`src/types.ts`).** `Pos2` (`{x, y}`), `Pos3` (`+z`) and `Placement`
 (`{x, y, angle}`) are **structural**, and always **DOOM map space** (x east, y north, z up = feet
 height), never three.js space — `mapmesh.ts: doomToWorld` is the one place the two meet. Nothing
 here is a direction or velocity: those stay separate `velX`/`velY`/`velZ` fields, and headings are
 plain `angle` numbers. `Placement.angle` is **radians**, matching `Player.angle`/`MonsterBody.angle`
-rather than the WAD's own degrees — naming this type is what surfaced a shipped double-conversion
-bug in two consumers.
+rather than the WAD's own degrees.
 
 The rule for parameters: **take a `Pos2`/`Pos3` where callers already hold a point object, keep
 scalars where they're computing coordinates inline.** `Player`, `PosedThing`, `MonsterBody` and the
@@ -190,10 +180,9 @@ coordinates on the fly, so a point parameter there would force a fresh object pe
 the code that runs thousands of times a frame.
 
 **Hot paths are measured, not reasoned about.** `hasLineOfSight`, `circleBlocked`, the monster grids
-and the sprite batches all carry non-obvious shapes that exist because the obvious version was
-measured and was too slow — and at least one obvious-looking optimization (an allocation-free
-`linesNear` for the collision callers) was measured and was *not* faster. Don't "simplify" these
-without measuring; the relevant docs say which is which.
+and the sprite batches all carry non-obvious shapes because the obvious version measured too slow —
+and at least one obvious-looking optimization (an allocation-free `linesNear`) measured *slower*.
+Don't "simplify" these without measuring; the relevant docs say which is which.
 
 ## Documentation maintenance
 
@@ -209,16 +198,19 @@ without measuring; the relevant docs say which is which.
 - **README.md** should only contain a project overview, setup steps, and instructions for starting
   and playing the game. Don't let it accumulate implementation detail — link to `docs/` instead.
 - **`docs/` is flat, and a group of related docs shares a name prefix** (`monster-ai`,
-  `monster-attacks`, `monster-archvile`, `monster-iconofsin`) rather than living in a subdirectory.
-  Half these docs are cited from two or more subsystems, so "which folder owns this" often has no
-  answer; a prefix groups them in a listing while keeping every pointer one path segment, which is
-  what `tests/docs/references.test.ts` and the ~280 pointers in `src/` are written against. Adding a
-  tier means repointing all of them and widening that test's pattern.
+  `monster-attacks`, …) rather than living in a subdirectory: half these docs are cited from two or
+  more subsystems, and a flat prefix keeps every pointer one path segment — the shape
+  `tests/docs/references.test.ts` and the hundreds of pointers in `src/` are written against.
 
 ## Code comments
 
-A rule that a subsystem doc covers is written **once**, in the doc. Two copies drift, and the code
-copy is the one nobody re-reads. Comments fall into three tiers by what breaks if they're missing:
+**Every `src/` file opens with a short header comment** — one to three sentences on what the file
+owns and where it sits, ending in a pointer to its subsystem doc(s). It is the router into `docs/`
+at the point of reading; keep it to purpose, not a table of contents.
+
+Beyond the header, comments are minimal. A rule that a subsystem doc covers is written **once**, in
+the doc. Two copies drift, and the code copy is the one nobody re-reads. Comments fall into three
+tiers by what breaks if they're missing:
 
 1. **Doc-owned** — any invariant a `docs/` file covers: vanilla fidelity, why an algorithm has the
    shape it does, bug history. The comment states what the thing returns or does in a sentence or

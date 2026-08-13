@@ -1,3 +1,7 @@
+/**
+ * Decodes the WAD's graphics into RGBA `Bitmap`s: PLAYPAL, the column/post picture format, raw
+ * flats, and TEXTURE1/2 + PNAMES patch composition (`GraphicsBank`). See docs/wad.md.
+ */
 import { Reader } from './reader.ts';
 import type { Lump, Wad, WadFile } from './wad.ts';
 

@@ -1,3 +1,8 @@
+/**
+ * `MaterialBank`: WAD bitmaps turned into cached three.js materials — every wall texture and flat
+ * exists exactly once on the GPU, including the dither-fade variants occlusion asks for.
+ * See docs/render.md § Wall occlusion fading.
+ */
 import * as THREE from 'three';
 import type { Bitmap, GraphicsBank } from '../wad/graphics.ts';
 

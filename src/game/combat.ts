@@ -1,3 +1,8 @@
+/**
+ * Resolving a hit into damage: `CombatContext` (the live level every shot, projectile and blast
+ * resolves against), damage application to player/monsters/barrels, and splash (radius) damage.
+ * See docs/combat.md § How a shot deals damage and § Splash and the BFG.
+ */
 import { hasLineOfSight, type World } from './world.ts';
 import type { Player } from './player.ts';
 // Type-only, deliberately: a value import here would put `things.ts` — and so

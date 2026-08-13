@@ -1,3 +1,8 @@
+/**
+ * `World`: the loaded map's shared spatial queries — subsector/sector lookup, floor heights,
+ * collision (`circleBlocked`, `slideMove`), line of sight, vertical openings and shot tracing
+ * (`shotPath`). Every layer reads the level through this. See docs/world.md and docs/movement.md.
+ */
 import { LF, NO_SIDE, SKY_FLAT, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
 import { sectorOfSubSector } from '../render/bsp.ts';
 import { distSqToSegment, segmentIntersect } from '../util/geom.ts';

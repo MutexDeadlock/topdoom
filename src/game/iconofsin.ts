@@ -1,3 +1,7 @@
+/**
+ * MAP30's Icon of Sin: the boss eye's spitter, the spawn cube in flight, telefrag on landing and
+ * the brain's death sequence. See docs/monster-iconofsin.md.
+ */
 import type { DoomMap, Thing } from '../wad/map.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../render/sprites.ts';
@@ -120,18 +124,9 @@ interface SpawnCube extends Pos3 {
 }
 
 /**
- * The Icon of Sin: the eye that spits cubes (`MT_BOSSSPIT`, doomednum 89), the cubes themselves
- * (`MT_SPAWNSHOT`), the monsters they turn into at a spawn spot (`MT_BOSSTARGET`, 87), and the
- * brain's own death cascade and the level exit it ends in.
- *
- * **Nothing here is gated on the map's name.** Vanilla's only gate is that the things exist, so a
- * PWAD that places 87/88/89 gets exactly this behavior, and every other map builds an instance
- * whose `update` returns immediately — no shooter, nothing to do.
- *
- * The brain itself is an ordinary `PosedThing`: `MONSTER_TYPES` member 88, shootable, with its pain
- * and death handled by `ThingLayer`'s `INERT_SHOOTABLE` branch. All this class adds is what happens
- * *after* it dies, which arrives through the same `onBossDeath` callback `A_BossDeath` uses.
- *
+ * Nothing here is gated on the map's name — vanilla's only gate is that things 87/88/89 exist, so
+ * any PWAD placing them gets this behavior and every other map builds an inert instance. The brain
+ * itself is an ordinary shootable `PosedThing`; this class only adds what happens *after* it dies.
  * See docs/monster-iconofsin.md.
  */
 export class IconOfSin {

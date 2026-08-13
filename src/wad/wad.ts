@@ -1,3 +1,7 @@
+/**
+ * `WadFile` (one physical .wad: header + directory + bytes) and `Wad` (the merged lump directory
+ * over an IWAD and its PWADs, later files overriding earlier). See docs/wad.md.
+ */
 import { Reader } from './reader.ts';
 
 export type WadType = 'IWAD' | 'PWAD';

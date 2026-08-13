@@ -1,3 +1,7 @@
+/**
+ * Instanced batching for map-thing sprites — thousands of billboards in a few draw calls, plus
+ * the spectre fuzz shader. See docs/sprites.md § Batching and § The spectre's fuzz.
+ */
 import * as THREE from 'three';
 import type { CachedSprite } from './sprites.ts';
 import { VIEWER_ANGLE_DEG } from './sprites.ts';

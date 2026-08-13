@@ -1,3 +1,7 @@
+/**
+ * Decodes `DS*` sound lumps: vanilla's DMX PCM, or a browser-decodable container a modern
+ * replacement PWAD ships. See docs/audio.md § Sound lumps.
+ */
 import type { Lump, Wad } from './wad.ts';
 
 /**

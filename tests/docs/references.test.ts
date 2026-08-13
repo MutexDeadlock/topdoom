@@ -12,7 +12,7 @@ import { join } from 'node:path';
 
 const ROOTS = ['src', 'tests', 'scripts', 'plugins'];
 const CODE = /\.(ts|css)$/;
-/** The two markdown files outside `docs/` that link into it — both carry a whole table of links. */
+/** The two markdown files outside `docs/` that link into it — CLAUDE.md carries a whole table of links. */
 const ROOT_DOCS = ['README.md', 'CLAUDE.md'];
 /** This file's own doc comment quotes pointers as examples; scanning it would flag them. */
 const SELF = join('tests', 'docs', 'references.test.ts');

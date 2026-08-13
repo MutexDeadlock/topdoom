@@ -1,3 +1,8 @@
+/**
+ * The menu's WAD library: `WadSource` (a server-manifest file or a disk upload), which maps a
+ * game-WAD + add-on selection yields, and loading the picked set into `WadFile`s.
+ * See docs/wad.md and docs/menu.md.
+ */
 import { Wad, WadFile, type WadType } from './wad.ts';
 import { wadId } from './checksum.ts';
 import { mapInfoNames } from './mapinfo.ts';

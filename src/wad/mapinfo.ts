@@ -1,3 +1,7 @@
+/**
+ * Parses the MAPINFO lump family (UMAPINFO/ZMAPINFO/MAPINFO) for the level titles a PWAD defines.
+ * See docs/wad.md § Level names.
+ */
 import type { Wad, WadFile } from './wad.ts';
 
 /**

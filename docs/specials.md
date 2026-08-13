@@ -13,6 +13,15 @@ light change means for what is actually *drawn*: the per-sector mover meshes, th
 `recolorSector`. The controller mutates `Sector` fields and tells `MoverGeometry` which sectors went
 stale; it holds no THREE object of its own.
 
+That mutation is direct — `Sector.floorHeight`/`ceilHeight`/`light` change on the `DoomMap` itself,
+and `World` never caches them, so collision, sight-blocking and resting heights pick a mover's change
+up on their very next query with no invalidation step. The controller also has no idea who is
+standing where: crush damage, obstruction, exits and teleports all reach `game.ts` through callbacks
+(`onCrush`/`onExit`/`onTeleport`, `game/moverblocking.ts`). And a stair builder is not its own mover
+type: each step is a plain `FloorMover` rising to a fixed height, over the chain of sectors
+`findStairChain` discovered at load time by the same texture-matched adjacency walk vanilla's
+`EV_BuildStairs` does at runtime.
+
 The vanilla-only line special table is confirmed against the Doom wiki's linedef type table **and,
 where the two disagree, against the real `linuxdoom-1.10` source** — after a first pass briefly (and
 wrongly) listed 174 as a vanilla S1 teleport, which is Boom-only. Same story for crusher stop: 58
@@ -188,6 +197,9 @@ vanilla's `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule for `crush==false`. C
 real source: vanilla's per-tic mover code reverts that tic's step outright whenever it would leave a
 thing with `ceilingheight - floorheight < thing->height`, unconditionally *unless* `crush==true` —
 which in practice only the crushing-floor family sets.
+
+Unlike vanilla, the door check applies uniformly regardless of speed — this engine has no separate
+"blazeClose never reverses" door type to hook vanilla's one real exception on.
 
 `tickDoor` already had this for a closing door; the same rule now also applies to a lowering
 `CeilingMover` (real vanilla never sets `crush=true` for this mover) and to a rising `LiftMover` or

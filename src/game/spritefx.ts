@@ -1,3 +1,8 @@
+/**
+ * `SpriteFxLayer`: the transient sprite effects in flight — blood, bullet puffs, explosions,
+ * teleport fog, smoke trails, flames — batched like map things, plus hitscan tracer lines.
+ * See docs/combat.md § Effects and their batching.
+ */
 import * as THREE from 'three';
 import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
@@ -32,19 +37,11 @@ import type { Placement, Pos3 } from '../types.ts';
 export type VileFlameResolver = (vileId: number, targetId: number | null) => Pos3 | null;
 
 /**
- * Every transient visual the game spawns and forgets: teleport-fog puffs,
- * impact explosions, blood splashes, bullet puffs, the revenant's smoke trail, the
- * arch-vile's flame, and hitscan tracer lines. All of them share one
- * lifecycle — spawned by some other system, animated here for a fixed time,
- * dropped when they finish, and cleared wholesale on a level change. None of
- * them is saved except the teleport fog, the only one long enough to be caught
- * mid-animation (docs/savegames.md § What is saved and what is deliberately not).
- *
- * The one-shot sprites are drawn through a single `SpriteBatch` (one
- * `InstancedMesh` per lump); tracers own a `THREE.Line` each. The player is
- * deliberately *not* in the batch: it needs `SpriteActor.setOpacity`, which
- * has no per-instance equivalent. See docs/combat.md § Effects and their
- * batching.
+ * One lifecycle for every transient visual: spawned by some other system, animated for a fixed
+ * time, dropped on finish, cleared wholesale on level change. The player is deliberately *not* in
+ * the shared batch — it needs `SpriteActor.setOpacity`, which has no per-instance equivalent
+ * (docs/combat.md § Effects and their batching). Only the teleport fog is saved —
+ * docs/savegames.md § What is saved and what is deliberately not.
  */
 export class SpriteFxLayer {
   private scene: THREE.Scene;

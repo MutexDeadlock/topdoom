@@ -1,3 +1,7 @@
+/**
+ * The player's inventory — health, armor, ammo, keys, weapons, powerups — and how each pickup type
+ * applies to it, vanilla's own amounts and caps. See docs/items.md.
+ */
 import type { SfxId } from '../audio/sfx.ts';
 import { ThingType } from './thingtypes.ts';
 import { DEFAULT_SKILL, ammoAtSkill, type Skill } from './skill.ts';
@@ -207,25 +211,10 @@ const WEAPON_PICKUPS: Record<number, { weapon: WeaponId; ammoType: AmmoType | nu
 };
 
 /**
- * Applies a picked-up thing's effect, following vanilla's
- * `P_TouchSpecialThing` rules for every item type this engine models —
- * health, armor, ammo, keys, weapons, the backpack and the six powerups.
- *
- * Returns false for an item that can't (or shouldn't) be picked up right
- * now — e.g. a Stimpack at full health, or a weapon already owned whose
- * ammo type is already full — so the caller leaves it on the ground and
- * visible, matching vanilla rather than "wasting" the pickup.
- *
- * `dropped` is true for an item spawned by `ThingLayer.damage` on a
- * monster's death (`game/thingdefs.ts`'s `MONSTER_DROPS`) rather than one
- * placed directly on the map, and halves whatever ammo it would otherwise
- * grant — matching vanilla's own `P_GiveAmmo`/`P_GiveWeapon`, which give a
- * dropped pickup's ammo at half the rate of a map-placed one. Only ammo and
- * weapon pickups are affected; nothing else (health, armor, keys) is ever
- * dropped by a monster in vanilla, so `dropped` is meaningless there.
- *
- * `skill` only ever reaches the three paths that grant ammo, which skills 1 and 5 double
- * (`ammoAtSkill`); it defaults to skill 3, the one skill that changes nothing here.
+ * Applies a picked-up thing's effect, vanilla's `P_TouchSpecialThing` rules. Returns false for an
+ * item that shouldn't be collected right now (Stimpack at full health), so the caller leaves it on
+ * the ground. `dropped` halves granted ammo (`P_GiveAmmo`'s monster-drop rule); `skill` doubles it
+ * on skills 1 and 5. See docs/items.md § Collecting things.
  */
 export function applyPickup(inv: Inventory, type: number, dropped = false, skill: Skill = DEFAULT_SKILL): boolean {
   // DOOM II only: full health *and* blue armor at once, both past what any single pickup gives.

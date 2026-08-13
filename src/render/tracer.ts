@@ -1,3 +1,7 @@
+/**
+ * The blinking line a hitscan shot draws from muzzle to impact. See docs/combat.md § Effects and
+ * their batching.
+ */
 import * as THREE from 'three';
 import { doomToWorld } from './mapmesh.ts';
 import type { Pos3 } from '../types.ts';

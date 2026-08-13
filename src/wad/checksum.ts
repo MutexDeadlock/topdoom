@@ -1,10 +1,9 @@
-import type { Wad, WadFile } from './wad.ts';
-
 /**
  * Content id for a WAD file: a hash of its bytes, stable across renames and across however the
  * page was opened. Keys per-level records today and is meant to validate a save's WAD set later —
  * see docs/wad.md § Content id.
  */
+import type { Wad, WadFile } from './wad.ts';
 
 /**
  * One file's id, keyed by the *bytes* rather than by the `WadFile` wrapping

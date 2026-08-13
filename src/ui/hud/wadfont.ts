@@ -1,3 +1,7 @@
+/**
+ * `WadFont`: rasterizes the WAD's `STCFN*` glyph lumps for HUD/menu text, with recoloring.
+ * See docs/hud.md § WadFont.
+ */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 
 /** Vanilla `hu_stuff.h`'s `HU_FONTSTART`/`HU_FONTEND` — the `STCFN033`-`STCFN095` range. */

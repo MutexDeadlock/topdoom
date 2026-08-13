@@ -1,9 +1,3 @@
-import type { SpriteAnimator } from '../render/sprites.ts';
-import type { SfxId } from '../audio/sfx.ts';
-import type { Pos3 } from '../types.ts';
-import { boxToCircleRadius, closestTOnSegment } from '../util/geom.ts';
-import { DOOM_TIC } from '../constants.ts';
-
 /**
  * The sprite/sound/timing tables and the two record shapes behind everything
  * `game.ts` draws that isn't a map `Thing`: projectiles in flight, their impact
@@ -11,6 +5,11 @@ import { DOOM_TIC } from '../constants.ts';
  * smoke trail and the arch-vile's flame. Data and pure helpers only — the simulation that reads
  * them lives in `game.ts`. See docs/combat.md § Effects and their batching.
  */
+import type { SpriteAnimator } from '../render/sprites.ts';
+import type { SfxId } from '../audio/sfx.ts';
+import type { Pos3 } from '../types.ts';
+import { boxToCircleRadius, closestTOnSegment } from '../util/geom.ts';
+import { DOOM_TIC } from '../constants.ts';
 
 /**
  * Teleport-fog puff (vanilla's `MT_TFOG`): a one-shot animation, not a real

@@ -1,3 +1,8 @@
+/**
+ * The arch-vile — the one monster that doesn't fit the data-driven `MONSTER_STATS` model: raising
+ * corpses mid-chase and the sight-checked windup blast. Both `monsters/ai.ts` and
+ * `monsters/attacks.ts` call into here. See docs/monster-archvile.md.
+ */
 import { ThingType } from '../thingtypes.ts';
 import {
   DIR_X,

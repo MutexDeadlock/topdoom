@@ -1,13 +1,12 @@
-import type * as THREE from 'three';
-import { hasPower, type Inventory } from '../../game/inventory.ts';
-import { DOOM_TIC } from '../../constants.ts';
-
 /**
  * Every powerup or damage effect whose whole result is a *view* change: the
  * two full-screen tints, the red damage flash, the light visor's exposure
  * lift, the player sprite's translucency and the death overlay. See
  * docs/hud.md § Screen effects.
  */
+import type * as THREE from 'three';
+import { hasPower, type Inventory } from '../../game/inventory.ts';
+import { DOOM_TIC } from '../../constants.ts';
 
 /**
  * How solid the player sprite draws under partial invisibility. Vanilla's

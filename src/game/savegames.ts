@@ -1,3 +1,7 @@
+/**
+ * The save format: `SAVE_VERSION`, the stored payload around a `GameSnapshot`, named saves and
+ * autosaves over the IndexedDB store, and download/import. See docs/savegames.md.
+ */
 import { roundFloat, type GameSnapshot } from './snapshot.ts';
 import { type Skill } from './skill.ts';
 import {

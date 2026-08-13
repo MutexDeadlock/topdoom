@@ -1,3 +1,7 @@
+/**
+ * The level-name card shown while a level loads and fades out over the first steps.
+ * See docs/hud.md § Level card.
+ */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 import { drawIcon } from './hud.ts';
 import { WadFont, type WadFontRecolor } from './wadfont.ts';

@@ -1,3 +1,7 @@
+/**
+ * Vanilla's animated flats and wall textures (`p_spec.c`'s `animdefs[]`), stepped on the tic
+ * through `MaterialBank`. See docs/render.md § Animated textures.
+ */
 import type { GraphicsBank } from '../wad/graphics.ts';
 import type { MaterialBank, SurfaceKind } from './textures.ts';
 import { DOOM_TIC } from '../constants.ts';

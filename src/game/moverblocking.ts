@@ -1,3 +1,8 @@
+/**
+ * The "who is standing in this mover" callbacks `SpecialsController` calls back into: crush
+ * damage, and the two obstruction tests that stall or reverse a mover. See docs/specials.md
+ * § Crushers and § Every other mover stops instead.
+ */
 import type { DoomMap } from '../wad/map.ts';
 import type { Pos2 } from '../types.ts';
 import type { World } from './world.ts';

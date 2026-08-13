@@ -1,3 +1,7 @@
+/**
+ * The session: boots the page, runs the menu as launcher and pause screen, starts and tears down
+ * one `Game` per level, and autosaves around the edges. See docs/menu.md § Session lifecycle.
+ */
 import { Wad } from './wad/wad.ts';
 import { wadSetId } from './wad/checksum.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';

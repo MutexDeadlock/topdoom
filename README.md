@@ -135,29 +135,9 @@ actually works.
 
 ## Layout
 
-[CLAUDE.md](CLAUDE.md) has the source tree and the project-wide conventions. For how any one
-part actually works under the hood, `docs/` documents each subsystem in depth:
-
-| Doc | Covers |
-|---|---|
-| [docs/wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD overrides, the `public/wads/` manifest |
-| [docs/menu.md](docs/menu.md) | The menu, settings persistence, URL parameters, session lifecycle, dev mode |
-| [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, occlusion fading, camera |
-| [docs/sprites.md](docs/sprites.md) | Things drawn as sprites, and how thousands of them are batched |
-| [docs/frameloop.md](docs/frameloop.md) | The frame delta, the FPS cap, pausing |
-| [docs/movement.md](docs/movement.md) | Collision, wall sliding, straferunning, falling, knockback |
-| [docs/weapons.md](docs/weapons.md) | Weapon selection, fire rates, spread, damage rolls |
-| [docs/combat.md](docs/combat.md) | Shot resolution, auto-aim, blood and puffs, splash and the BFG |
-| [docs/death.md](docs/death.md) | Monster and player death, telefrag, barrels, boss triggers |
-| [docs/world.md](docs/world.md) | The shared `world.ts` queries: line of sight, neighbor heights |
-| [docs/monster-ai.md](docs/monster-ai.md) | Waking, chase pathing, attacks, infighting, per-type quirks |
-| [docs/monster-attacks.md](docs/monster-attacks.md) | Realizing a fired attack: hitscan, projectiles, the revenant's homing |
-| [docs/monster-archvile.md](docs/monster-archvile.md) | The arch-vile: raising corpses, the blast attack |
-| [docs/monster-iconofsin.md](docs/monster-iconofsin.md) | MAP30's boss: the spitter, the spawn cube, the brain's death |
-| [docs/items.md](docs/items.md) | Pickups, inventory, keys, powerups |
-| [docs/hud.md](docs/hud.md) | The HUD, level card, intermission, best times, screen effects |
-| [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, damage floors |
-| [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal and sight blocking |
+[CLAUDE.md](CLAUDE.md) has the source tree, the project-wide conventions and the full index of
+`docs/`, where every subsystem — WAD parsing, rendering, movement, combat, the monsters, specials,
+saves — is documented in depth.
 
 ## Checking a WAD without a browser
 

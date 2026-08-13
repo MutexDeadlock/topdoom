@@ -1,3 +1,8 @@
+/**
+ * Builds the level's three.js meshes from the subsector polygons and linedefs — floors and walls
+ * batched by texture, lit per sector — and owns `doomToWorld`, the one DOOM-space → three.js-space
+ * conversion. See docs/render.md § Mesh building and § Sector lighting.
+ */
 import * as THREE from 'three';
 import { LF, NO_SIDE, SKY_FLAT, type DoomMap, type LineDef, type SideDef, type Sector } from '../wad/map.ts';
 import { buildSubSectorPolys, type SubSectorPoly } from './bsp.ts';

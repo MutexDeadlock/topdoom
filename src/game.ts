@@ -1,3 +1,8 @@
+/**
+ * `Game`: one running level — builds the scene from the WAD, owns the frame/tic loop, and wires
+ * every subsystem (world, things, specials, weapons, projectiles, effects, fog of war, HUD, audio)
+ * into the simulation order. See docs/frameloop.md.
+ */
 import * as THREE from 'three';
 import type { Wad } from './wad/wad.ts';
 import { wadId, wadSetId } from './wad/checksum.ts';

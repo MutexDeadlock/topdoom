@@ -1,3 +1,7 @@
+/**
+ * `WeaponSystem`: the nine weapons — selection and slot toggling, vanilla fire rates, spread and
+ * damage rolls, ammo spend — raising fire events for `game.ts` to realize. See docs/weapons.md.
+ */
 import { hasPower, type AmmoType, type Inventory, type WeaponId } from './inventory.ts';
 import type { WeaponsSnapshot } from './snapshot.ts';
 import type { Input } from './input.ts';
@@ -115,18 +119,9 @@ export interface WeaponDef {
    */
   iconLump: string;
   /**
-   * A direct/pellet hit's damage roll is `((rand % damageDiceSides) + 1) *
-   * damageDiceMultiplier` — vanilla's own P_Random-based per-weapon formula,
-   * lifted rather than tuned by feel since it decides how tough a fight
-   * actually is, the same reasoning ammo-per-shot already used. Two different
-   * vanilla formulas land in this one shape: a *bullet's* is written out in
-   * `P_GunShot`/`A_FireShotgun2` (`5*(P_Random()%3+1)`, i.e. 5/10/15 per
-   * pellet), while a *missile's* is `PIT_CheckThing`'s single
-   * `((P_Random()%8)+1) * mobjinfo.damage` applied to whatever it hit — so
-   * every projectile has 8 sides and its multiplier is its `info.c` damage
-   * field (rocket 20, plasma 5, BFG ball 100). Fist and chainsaw roll
-   * `(P_Random()%10+1)<<1`, 2-20; the fist's is additionally scaled while
-   * berserk is held — see `BERSERK_FIST_MULTIPLIER`.
+   * A direct/pellet hit's damage roll: `((rand % damageDiceSides) + 1) * damageDiceMultiplier`,
+   * the one shape both vanilla formulas (`P_GunShot`'s bullets, `PIT_CheckThing`'s missiles)
+   * reduce to. See docs/weapons.md § Damage rolls.
    */
   damageDiceSides: number;
   damageDiceMultiplier: number;
@@ -147,38 +142,16 @@ export interface WeaponDef {
   hitSound: SfxId | null;
   missSound: SfxId | null;
   /**
-   * Splash a projectile's impact also applies, independent of its own
-   * randomized direct-hit roll above — vanilla's rocket explosion
-   * (`A_Explode`) passes a **fixed** radius/damage of 128 to `P_RadiusAttack`,
-   * not the missile's own random contact-damage roll; those are two separate
-   * numbers that only look related because this file happens to reuse the
-   * same dice for the rocket's direct hit. `hitsPlayer` is true for the
-   * rocket — vanilla really does let a rocket's own blast hurt whoever fired
-   * it (the classic "rocket jump" self-damage). `null` means no splash at all
-   * (plasma and the BFG, both direct-hit-only bolts as far as `A_Explode` is
-   * concerned — the BFG's own devastating secondary damage is `spray`
-   * below, a completely different mechanism from a radius blast).
+   * Splash a projectile's impact also applies — a fixed radius/damage pair (`A_Explode`'s constant
+   * 128), deliberately independent of the direct-hit roll above. `hitsPlayer` is the rocket-jump
+   * self-damage rule. See docs/combat.md § Splash and the BFG.
    */
   splash: { radius: number; damage: number; hitsPlayer: boolean } | null;
   /**
-   * The BFG ball's real secondary attack, vanilla's `A_BFGSpray` — confirmed
-   * against `linuxdoom-1.10/p_enemy.c` rather than approximated. It is
-   * nothing like a radius splash: `rays` shots fan out across `arcDeg`
-   * (vanilla: 40 rays over 90°, i.e. every 2.25°) centered on the ball's own
-   * flight angle, each one an independent `raycastMonster`-style trace out to
-   * `range` (vanilla: 16*64 = 1024 units) that deals a full, undiminished
-   * direct hit — the sum of `diceRolls` rolls of a d`diceSides` (vanilla: 15
-   * rolls of 1-8, so 15-120 per ray that connects, no distance falloff at
-   * all) — to whatever it lands on, not a shared pool split by distance from
-   * the impact point. Traced from the **player's own current position**, not
-   * the explosion point: vanilla's `A_BFGSpray` reads `mo->target` (the
-   * shooter, still a live pointer) at the moment the ball's death state
-   * fires, which after ~1.5s of a slow 700u/s flight can be well behind
-   * where the ball actually detonated. A monster standing directly in front
-   * of the player can catch several of the 40 rays at once — genuinely more
-   * devastating against one big target than an even radius falloff, which is
-   * the actual source of the BFG's reputation. `null` for every weapon but
-   * the BFG.
+   * The BFG ball's real secondary attack, vanilla's `A_BFGSpray` (`p_enemy.c`): `rays` independent
+   * traces fanned across `arcDeg` from the player's own live position, each dealing `diceRolls`
+   * d`diceSides` undiminished. Nothing like a radius splash — see docs/combat.md § Splash and the
+   * BFG. `null` for every weapon but the BFG.
    */
   spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number } | null;
 }
@@ -521,19 +494,9 @@ export interface MeleeShot {
 export type Shot = HitscanShot | ProjectileShot | MeleeShot;
 
 /**
- * Owns weapon selection (number keys, mouse wheel) and fire timing/ammo.
- * Deliberately knows nothing about THREE.js: `update` only returns *what*
- * was fired this frame (one `Shot` per hitscan pellet or per projectile
- * launched), and `game.ts` turns those into tracer lines / flying projectile
- * sprites — the same split as `game/specials.ts`'s line triggers vs.
- * `game.ts`'s teleport-fog puffs, and `game/monsters/defs.ts`'s own `MonsterAttack`
- * return value for a monster's fired shot.
- *
- * A `Shot` doesn't know *what* it's aimed at beyond the angle/damage numbers
- * here — whether it actually lands on anything (a locked-on target within
- * range, a monster caught in a free shot's path, or one caught in a
- * projectile's splash) is resolved entirely in `game.ts`, which is also
- * where the damage this class rolls per shot actually gets applied.
+ * Owns weapon selection (number keys, mouse wheel) and fire timing/ammo. Knows nothing about
+ * three.js or what a shot hits: `update` returns the `Shot`s fired this frame and the layers above
+ * realize them. See docs/weapons.md § WeaponSystem.
  */
 export class WeaponSystem {
   /**

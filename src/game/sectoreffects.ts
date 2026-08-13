@@ -1,3 +1,7 @@
+/**
+ * What standing in a sector does to the player: damage floors (with the radiation suit's leak
+ * roll) and the secret-found tally. See docs/specials.md § Damage floors and § Secret sectors.
+ */
 import type { DoomMap } from '../wad/map.ts';
 import type { Pos3 } from '../types.ts';
 import type { World } from './world.ts';

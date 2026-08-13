@@ -167,6 +167,15 @@ fence's masked-middle quad used to fade to near-invisible the moment the imp ins
 the closet wall vanishing rather than "you can see the imp through the bars." `FlatFader` has no
 equivalent gate — floors have no comparable "visually-solid-but-actually-passable" case.
 
+`FlatFader` is the same test for a horizontal plane: a raised floor sitting between the camera and a
+target standing below it. Only floors above the target's own height are candidates, which excludes
+the floor being stood on by construction — no "which subsector am I in" tracking needed. The
+sightline crosses a given floor height at exactly one (x, y) point, but the BSP routinely splits one
+physical platform into several subsector polygons, and a plain point-in-polygon test faded only
+whichever fragment contained the crossing, leaving its siblings solid beside it (DOOM2 MAP05's
+rocket-ammo balcony: one platform, 3 subsectors). `pointNearConvexPolygon` inflates the test by
+`PLAYER_RADIUS` so fragments within the player's own width of the sightline fade together.
+
 **`awakeMonsters` only returns monsters fog of war is actually drawing** (`p.actor.mesh.visible`,
 which `ThingLayer.update` sets from `fogAlphaOf` earlier in the same frame). A monster in a subsector
 the player has never had sight of isn't rendered at all, so fading the wall in front of it reveals an

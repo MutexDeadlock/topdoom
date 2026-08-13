@@ -1,3 +1,7 @@
+/**
+ * Fades the walls (and overhanging flats) that sit between the camera and the player, as a
+ * dithered discard rather than alpha blending. See docs/render.md § Wall occlusion fading.
+ */
 import * as THREE from 'three';
 import type { FlatSurface, WallOccluder } from './mapmesh.ts';
 import type { MaterialBank } from './textures.ts';
@@ -60,20 +64,10 @@ export function collectFadeTargets(player: Pos3, awakeMonsters: readonly Pos3[])
 }
 
 /**
- * Fades the specific wall quad(s) currently between the camera and the
- * player, rather than the coarser fix of drawing the player on top of
- * everything (which would also show it through walls that genuinely
- * separate it from the camera). Wall quads are already backface-culled when
- * their front faces away from the camera (see mapmesh.ts's dollhouse
- * comment) — this covers what's left: quads that legitimately face the
- * camera but happen to sit on the line of sight to the player.
- *
- * `update` only computes this sightline factor; it does not touch geometry.
- * A wall's on-screen alpha is actually the *product* of this factor and
- * `FogOfWar`'s per-sector reveal factor (game/fogofwar.ts) — two independent
- * systems driving the same vertex-alpha channel — so `commit` writes the
- * combined value once both are known, instead of each system overwriting
- * the other's work.
+ * Fades the wall quads currently sitting on a camera→target sightline. `update` only computes
+ * that factor; a wall's on-screen alpha is its *product* with fog of war's reveal — two systems
+ * driving the same vertex-alpha channel — so `commit` writes the combined value once both are
+ * known. See docs/render.md § Wall occlusion fading.
  */
 export class WallFader {
   private occluders: WallOccluder[];
@@ -154,32 +148,9 @@ export class WallFader {
 }
 
 /**
- * Fades a raised floor (a room "further up") when it sits between the camera
- * and the player on the way down — the same problem `WallFader` solves for
- * vertical walls, but for a horizontal plane: an elevated room's floor is
- * solid geometry too, and the tilted top-down camera can easily be looking
- * *through* the space above a lower room, past the underside of a floor it
- * doesn't clip, at a player standing beneath it.
- *
- * Only floors above the player's own eye height are considered (`s.height >
- * targetZ`), which is what keeps this from flagging the player's own current
- * floor: standing on a floor means that floor's height is at or below the
- * player's centre height, so it's excluded by construction rather than by
- * tracking "which subsector is the player in" separately. Ceilings
- * (`isCeiling`) are left out for now — `renderCeilings` is an off-by-default
- * debug toggle, and a room's own ceiling sitting directly above the player
- * would otherwise flag itself the same way every frame.
- *
- * The sightline only ever crosses a given height at one exact (x, y) point,
- * but a single physical floor (e.g. a raised platform) routinely gets split
- * into several adjacent subsector polygons by the BSP — that's a rendering
- * detail, invisible to the player. Testing the crossing point with plain
- * point-in-polygon would flag only whichever one fragment happens to contain
- * it, leaving the other fragments of the same platform solid right next to
- * the one that faded (confirmed on DOOM2 MAP05's rocket-ammo balcony, whose
- * sector is split into 3 subsectors at the same height). `pointNearConvexPolygon`
- * inflates the test by the player's own radius so neighbouring fragments the
- * player's width would also be behind fade together.
+ * Fades a raised floor sitting between the camera and a fade target below it — `WallFader` for a
+ * horizontal plane. Ceilings are left out (`renderCeilings` is a debug toggle, and a room's own
+ * ceiling would flag itself). See docs/render.md § Wall occlusion fading.
  */
 export class FlatFader {
   private surfaces: FlatSurface[];
@@ -251,24 +222,8 @@ interface ScrollingWall {
 }
 
 /**
- * Vanilla's `P_UpdateSpecials` scroll effect (linedef special 48,
- * `SCROLL_LINE_SPECIAL`): continuously scrolls a line's front-sidedef
- * texture, forever, with no trigger — see `SCROLL_LINE_SPECIAL`'s doc in
- * wad/specials.ts for why this lives outside `SpecialsController`'s
- * trigger/mover machinery entirely. Mechanically this is the same
- * "index each affected quad's vertex range once, rewrite one attribute on it
- * every frame" shape `WallFader`/`FlatFader` already use for vertex-alpha —
- * here it's the `uv` attribute's U component instead.
- *
- * **Static-batch geometry only.** A scroll-48 line whose sector also happens
- * to be a specials mover has its geometry rebuilt wholesale by
- * `SpecialsController` instead of living in the shared static batch this
- * class indexes. (`SpecialsController.recolorSector` no longer accepts that
- * limitation for light changes — see docs/specials.md § Relighting mover
- * geometry.) In practice this never actually excludes anything: a mapper only
- * has a reason to put 48 on a *static* wall — it's a decorative treatment
- * (waterfalls, lava streams, conveyor-look walls), never a line whose own
- * sector also needs to move.
+ * Vanilla's linedef-48 scroll effect: rewrites the indexed front-side quads' U every frame.
+ * Static-batch geometry only. See docs/render.md § Scrolling textures.
  */
 export class TextureScroller {
   private meshes: Map<string, THREE.Mesh>;

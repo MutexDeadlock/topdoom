@@ -1,3 +1,7 @@
+/**
+ * Vanilla's `S_sfx[]` sound table (`sounds.c`) and the `SoundEmitter` surface game systems raise
+ * sounds through. See docs/audio.md.
+ */
 import type { Pos2 } from '../types.ts';
 import { mRandom, pRandom } from '../util/random.ts';
 

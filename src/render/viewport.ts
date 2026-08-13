@@ -1,11 +1,11 @@
+/**
+ * Renderer, canvas, camera and input, bundled because all four live for the whole session — a new
+ * level must not cost a new WebGL context. See docs/menu.md § Session lifecycle.
+ */
 import * as THREE from 'three';
 import { TopDownCamera } from './camera.ts';
 import { Input } from '../game/input.ts';
 
-/**
- * Renderer, canvas, camera and input live for the whole session — a new level
- * must not cost a new WebGL context.
- */
 export class Viewport {
   readonly renderer: THREE.WebGLRenderer;
   readonly camera: TopDownCamera;

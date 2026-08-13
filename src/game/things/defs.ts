@@ -43,12 +43,9 @@ export interface PosedThing extends Pos3, MonsterBody {
   /** Native-size multiplier (`pickupScaleFor`), handed to the batch each frame. */
   scale: number;
   /**
-   * Collision radius, resolved once at spawn. `MONSTER_STATS` is a `Record`
-   * with sparse numeric keys, so V8 backs it with a dictionary and every
-   * `MONSTER_STATS[type]` is a hash lookup — fine anywhere it happens once,
-   * but `blockersFor` was doing one per *candidate* per monster per frame
-   * (hundreds of thousands), which cost more than the collision arithmetic it
-   * was feeding.
+   * Collision radius, resolved once at spawn — a per-query `MONSTER_STATS[type]` is a sparse-key
+   * dictionary hash, measured hotter than the collision arithmetic it fed (docs/monster-ai.md
+   * § Spatial indexing).
    */
   blockRadius: number;
   /**
@@ -59,12 +56,8 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   bodyHeight: number;
   /**
-   * This type's attack/pain WAD frame letters (`MONSTER_ATTACK_FRAMES`/
-   * `MONSTER_PAIN_FRAMES`), resolved once at spawn for the same reason
-   * `blockRadius` is: both tables are sparse-numeric-key `Record`s, so a
-   * lookup on every attack/pain event is a dictionary hash V8 has to do that
-   * a one-time spawn-time resolve avoids. `undefined` for anything without a
-   * table entry (every non-monster, and the few monster types missing one).
+   * This type's attack/pain WAD frame letters, resolved once at spawn for the same reason
+   * `blockRadius` is. `undefined` for anything without a table entry.
    */
   attackFrames: string[] | undefined;
   painFrames: string[] | undefined;
@@ -80,14 +73,9 @@ export interface PosedThing extends Pos3, MonsterBody {
   /** Scratch dedupe marker for `forEachMonsterAlongRay`, whose stepped cell neighbourhoods overlap. Meaningless between queries. */
   queryStamp: number;
   /**
-   * Feet height (`Pos3.z`). For anything that never moves (every non-monster, and a
-   * dead or not-yet-alerted monster) this is refreshed every frame straight
-   * from `sector.floorHeight` in `update()`, the same "ride a moving floor
-   * for free" trick as before monsters could move at all. Once a monster is
-   * alerted, `stepMonsterAI` owns it instead (`groundFloor` + gravity, the
-   * same physics `Player.update` uses), since a chasing monster needs to
-   * fall off ledges and cross sector boundaries rather than trust a single
-   * fixed sector reference.
+   * Feet height (`Pos3.z`). While not an alerted monster: refreshed each frame from
+   * `sector.floorHeight` (the "ride a moving floor for free" trick). Once alerted,
+   * `stepMonsterAI` owns it via `groundFloor` + gravity, the same physics the player uses.
    */
   z: number;
   /**
@@ -97,15 +85,9 @@ export interface PosedThing extends Pos3, MonsterBody {
   sector: Sector | undefined;
   facingDeg: number;
   /**
-   * Where this thing came into the world, and facing which way — vanilla's `mobj->spawnpoint`,
-   * which only `P_NightmareRespawn` ever reads: a nightmare respawn puts the monster back *here*,
-   * not where its corpse happens to lie. Set once by `pushThing` and never written again, so for
-   * everything that doesn't move it stays equal to `x`/`y`/`facingDeg` — which is exactly the
-   * condition `snapshotThings` elides it on.
-   *
-   * A monster the map didn't place (a pain elemental's lost soul, an Icon of Sin cube's spawn)
-   * gets the position it was created at. Vanilla leaves those with a zeroed `spawnpoint` and will
-   * cheerfully try to respawn them at map coordinate (0, 0); reproducing that is not worth it.
+   * Where this thing came into the world and facing which way — vanilla's `mobj->spawnpoint`,
+   * read only by nightmare respawning. Set once by `pushThing`, so for anything that never moved
+   * it equals `x`/`y`/`facingDeg` — the condition `snapshotThings` elides it on.
    * docs/monster-ai.md § Respawning monsters.
    */
   spawnX: number;

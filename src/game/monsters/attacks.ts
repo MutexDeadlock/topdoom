@@ -1,3 +1,11 @@
+/**
+ * Attack resolution. `monsters/ai.ts` decides *that* a monster attacks and
+ * reports a `MonsterAttackEvent`; this works out what that attack actually does
+ * to the world. The two halves are kept apart by their dependencies: the AI
+ * touches nothing but a `MonsterBody`, while this needs the thing list, the
+ * effect and projectile layers, and the audio engine.
+ * docs/monster-attacks.md § Resolving an attack.
+ */
 import { shotPath, WEAPON_RANGE } from '../world.ts';
 import { AIM_HEIGHT_OFFSET, PLAYER_RADIUS } from '../player.ts';
 import { triangularSpread } from '../../util/random.ts';
@@ -9,15 +17,6 @@ import { MONSTER_FIRE_HEIGHT, type MonsterAttackEvent } from './defs.ts';
 import { resolveVileBlast, spawnWindupFire, vileFlameFor } from './vile.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
 import type { Pos3 } from '../../types.ts';
-
-/**
- * Attack resolution. `monsters/ai.ts` decides *that* a monster attacks and
- * reports a `MonsterAttackEvent`; this works out what that attack actually does
- * to the world. The two halves are kept apart by their dependencies: the AI
- * touches nothing but a `MonsterBody`, while this needs the thing list, the
- * effect and projectile layers, and the audio engine.
- * docs/monster-attacks.md § Resolving an attack.
- */
 
 /**
  * How far off-aim each monster bullet is thrown — `p_enemy.c`'s

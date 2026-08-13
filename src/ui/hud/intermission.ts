@@ -1,3 +1,7 @@
+/**
+ * The end-of-level popup: kills/items/secrets percentages, level time against par and best.
+ * See docs/hud.md § Intermission.
+ */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 import type { BestTimeResult } from '../../game/besttimes.ts';
 import { formatClock, percentOf, LEVEL_STATS_GREEN, type LevelStats } from './hud.ts';

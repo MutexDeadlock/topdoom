@@ -1,3 +1,7 @@
+/**
+ * Cross-cutting values and the tuned-by-feel dials. CLAUDE.md's constants rule says what may live
+ * here — nothing identity-coupled to one module, however often it's imported.
+ */
 import { ThingType } from './game/thingtypes.ts';
 
 /** Shown on the start menu. */

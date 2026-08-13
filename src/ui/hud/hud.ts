@@ -1,3 +1,7 @@
+/**
+ * The bar along the bottom: health, armor, the four ammo counts, key slots, the selected weapon,
+ * plus the level stats/timer line. Drawn from the WAD's own art. See docs/hud.md § The HUD.
+ */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 import {
   AMMO_TYPES,

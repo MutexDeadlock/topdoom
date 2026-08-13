@@ -1,3 +1,7 @@
+/**
+ * The menu's Save and Load tabs: listing, naming, overwrite/delete, download and import.
+ * See docs/menu.md § Save and Load tabs and docs/savegames.md.
+ */
 import {
   deleteSave,
   exportSave,

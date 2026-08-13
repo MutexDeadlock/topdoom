@@ -181,9 +181,9 @@ cardinals (longer axis first, with vanilla's ~22% random swap), then its previou
 full scan from a randomly chosen end, and only as a last resort the about-face it has been avoiding.
 The refuse-to-turn-around rule stops a blocked monster oscillating; the random scan direction
 eventually unwedges two monsters stuck in the same doorway. There is still no pathfinding — vanilla
-routinely gets monsters stuck on complex geometry too — but this is vanilla's actual algorithm
-rather than the "blend in a random lateral angle" heuristic an earlier version used, which produced
-a drifting curve into a wall instead of DOOM's flat commit-and-re-route.
+routinely gets monsters stuck on complex geometry too — but this is vanilla's actual algorithm, and
+approximating it (a blended random lateral angle was tried) produces a drifting curve into a wall
+instead of DOOM's flat commit-and-re-route.
 
 Two consequences: monster movement **deliberately doesn't use `slideMove`** (vanilla's `P_Move` is
 all-or-nothing; only the player gets `P_SlideMove`, and re-routing rather than sliding is what
@@ -271,10 +271,9 @@ Two arguments the player's own movement never sets:
 
 **A monster always keeps closing distance — it never "keeps its distance."** Vanilla has no such
 instinct: a ranged monster walks right up to the player if nothing stops it. What stops it is real
-contact, not a rule — every monster and the player are solid bodies (`World.ThingBlocker`). An
-earlier version had no thing-vs-thing collision at all and used `MELEE_RANGE` as a stand-in
-"personal space", which let monsters walk through each other and the player, and overshoot and
-oscillate past a target. Line of sight gates whether an attack can land; without sight a monster
+contact, not a rule — every monster and the player are solid bodies (`World.ThingBlocker`); a
+"personal space" distance in place of collision lets monsters walk through each other and oscillate
+past a target. Line of sight gates whether an attack can land; without sight a monster
 keeps heading toward its target's *actual* current position (there's no remembered last-known
 position).
 
@@ -386,10 +385,8 @@ rather than one shared 24-unit box (docs/combat.md § How a shot deals damage), 
 to clear whatever the *widest* thing present could reach — 163 units around a spider mastermind, but
 still one cell on a map of 20-unit grunts, which is what keeps the common case at its old cost. This
 is the same adaptive trick `blockersFor` uses, and for the same reason: a fixed worst-case box is
-what made monster AI the frame's bottleneck. Measured against the old flat 40-unit point query, the
-wider swept box collects 3.4 candidates per query instead of 2.1 on a stock-shaped population and 9.9
-on one containing spider masterminds — 1.5× and 4× the cost of a query that was 0.1 µs to begin with,
-so even a thousand shots in the air stay well under half a millisecond a frame.
+what made monster AI the frame's bottleneck, while sizing from the map's own population measured as
+noise even with a thousand shots in the air.
 
 **`blockerGrid` is not monsters-only, and the difference between solid and shootable is what keeps
 that safe.** It admits the exploding barrel and every `SOLID_DECORATION_TYPES` prop, because those
@@ -400,11 +397,8 @@ out: a torch stops a demon walking through it and never stops a bullet. Dropping
 is a bug in one direction or the other.
 
 **The arch-vile's corpse check (`findRaisableCorpse`) shares this grid** via a second bucket array,
-`corpseGrid`, filled in the same `posed` pass. It originally shipped as a linear scan on the
-reasoning that arch-viles are rare enough not to matter — which was never checked against a map that
-stresses it (NUTS.WAD has 1,272 of them, and the scan cost most of the frame once they were all
-alerted). Unlike the queries above, indexed from the start because their cost was obvious on paper,
-this one shipped on an assumption that didn't hold.
+`corpseGrid`, filled in the same `posed` pass — not a linear scan, however rare arch-viles seem:
+NUTS.WAD places 1,272 of them, and a scan cost most of the frame once they were all alerted.
 
 For the same reason, `collectFadeTargets` (render/occlusion.ts) caps them at `MAX_FADE_TARGETS`
 (nearest first):

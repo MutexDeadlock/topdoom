@@ -1,3 +1,8 @@
+/**
+ * `ProjectileLayer`: player and monster missiles in flight — stepping, homing, collision against
+ * things and geometry, and handing impacts to combat. See docs/combat.md § How a projectile finds
+ * its target and docs/monster-attacks.md.
+ */
 import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../render/sprites.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
@@ -37,17 +42,9 @@ import {
 import type { Pos3 } from '../types.ts';
 
 /**
- * Every shot in flight, from launch to whatever it lands on: the player's own
- * hitscan tracers and missiles (`spawnPlayerShot`), a monster's missiles
- * (`spawnMonsterShot`), and the per-frame advance that resolves arrival,
- * damage, splash and the BFG spray.
- *
- * Who *decides* to fire is somebody else's business — `game/weapons.ts`
- * returns a `Shot` per trigger pull and `game/monsters/ai.ts` a
- * `MonsterAttack` per attack, neither knowing what it will hit. This is the
- * other half of that split: it knows nothing about ammo, cooldowns or AI, only
- * about geometry and bodies. See docs/combat.md § How a shot deals damage and
- * docs/monster-attacks.md § Monster projectiles in flight.
+ * Every shot in flight, from launch to whatever it lands on. Who *decides* to fire is somebody
+ * else's business (`weapons.ts`, `monsters/ai.ts`); this half knows nothing about ammo, cooldowns
+ * or AI, only geometry and bodies. See docs/weapons.md § WeaponSystem for the split.
  */
 export class ProjectileLayer {
   private ctx: CombatContext;

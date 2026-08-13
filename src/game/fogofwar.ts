@@ -1,3 +1,7 @@
+/**
+ * Fog of war: hides the parts of the level the player hasn't seen yet, revealing per subsector,
+ * sticky on sight. See docs/fogofwar.md.
+ */
 import { buildSubSectorPolys } from '../render/bsp.ts';
 import { segmentIntersect } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
@@ -6,16 +10,9 @@ import type { WallOccluder } from '../render/mapmesh.ts';
 import type { World } from './world.ts';
 
 /**
- * How far the player can reveal, in map units — derived from what the camera
- * actually frames, not tuned by feel. With `TopDownCamera`'s defaults the eye
- * sits `cos(60°)·480 = 240` above the followed point and `sin(60°)·480 = 416`
- * behind it, looking 30° below horizontal; the top edge of a 55° vertical FOV
- * is then 2.5° below horizontal and meets the floor `240/tan(2.5°) ≈ 5500`
- * out, i.e. ~5080 past the player. A radius shorter than that leaves geometry
- * the player is plainly looking at sitting in the dark — and, because
- * `ThingLayer` gates both rendering and shootability on fog, a monster
- * standing in it is invisible *and* unhittable while it shoots back.
- * See docs/fogofwar.md § Reveal radius.
+ * How far the player can reveal, in map units — derived from what the camera actually frames, not
+ * tuned by feel; the geometry, and why falling short of the frame is a gameplay bug, is
+ * docs/fogofwar.md § Reveal radius. Bracketed by tests/regression/fog-reveal-radius.test.ts.
  */
 const SIGHT_RADIUS = 5100;
 /** Exponential smoothing rate (1/seconds) for the reveal, gentler than wall occlusion. */
@@ -24,26 +21,10 @@ const FADE_SPEED = 3;
 const SNAP_EPS = 0.004;
 
 /**
- * Cap on how many not-yet-explored subsectors get their sample rays tested in
- * one `tick` call. Tuned by feel against freedoom2 MAP03 (315 sectors, 2855
- * linedefs, 1531 subsectors): with no cap, the initial reveal sweep — every
- * unexplored subsector's sample points against every blocker within
- * `SIGHT_RADIUS` — measured 8.6ms with the player standing still at spawn, over
- * half a 60fps budget before rendering runs at all, vs. ~0.3-0.4ms on DOOM2
- * MAP02/E1M1. The cap turns that one-call spike into a sweep spread over
- * several tics (`scanCursor` picks up where the last call left off,
- * round-robin), which is invisible: reveal already fades in over `FADE_SPEED`
- * seconds, so a few tics' delay before a subsector's fade even starts is well
- * under the threshold of "late". A subsector that fails every sample this tic
- * (out of range, or blocked) is simply retried on the next pass through the
- * array — no state is lost, `pending` just shrinks slower on a level big enough
- * to need the cap at all.
- *
- * **Per tic, not per frame**, since `tick` runs on the simulation clock and
- * `explored` is a gameplay input (see `isVisible`) — a per-frame budget would
- * make what is revealed, and so what is shootable, depend on framerate. The 350
- * holds the old ~200-per-frame-at-60fps sweep rate across 35 tics/sec; the
- * trade is that one call now does up to 1.75x the work it used to.
+ * Cap on how many not-yet-explored subsectors get their sample rays tested in one `tick` call
+ * (tuned by feel; `scanCursor` round-robins the rest onto later tics). Counted per tic, not per
+ * frame — `explored` is a gameplay input, so the sweep rate must not depend on framerate.
+ * See docs/fogofwar.md § Reveal radius.
  */
 const MAX_SIGHT_TESTS_PER_TIC = 350;
 
@@ -70,39 +51,8 @@ interface SubSectorSight {
 }
 
 /**
- * Hides the parts of the level the player hasn't seen yet — without which the
- * dollhouse camera shows every room, including ones reached much later and
- * ones flagged secret, at once.
- *
- * State is **per subsector, not per sector**, and that distinction is the
- * whole ballgame. A DOOM sector is a logical grouping, not a place: one sector
- * number routinely covers scattered, disconnected chunks of a map, and even a
- * single connected one can be enormous. DOOM2 MAP02's inner water ring is one
- * sector spanning 21 subsectors and 18% of the map's floor area — revealing
- * per sector meant catching a glimpse of any one corner of it lit the entire
- * ring, which is exactly the bug this granularity fixes. Subsectors are the
- * BSP's convex leaves, i.e. actual places, so they reveal one at a time.
- *
- * Reveal is **sticky on sight**: a subsector the player has had line of sight
- * to stays lit for good, like DOOM's own automap filling in as you explore.
- * An earlier design kept sight-only reveals transient (fading back to black
- * once out of view) and made just the sectors walked through permanent, but at
- * subsector granularity "walked through" is a one-tile-wide trail — a room
- * would go dark behind the player except for a thin lit path through it, and
- * every camera orbit would flicker subsectors in and out. Once seen, kept.
- *
- * Sight is the *only* rule — in particular there is deliberately no special
- * case for sectors flagged secret (`special === 9`). That flag means "counts
- * toward the level's secret tally when entered", not "hidden from view", and
- * mappers apply it to places that are in plain sight: DOOM2 MAP01's secret is
- * the outdoor grass strip you look straight down onto through the big window,
- * with non-secret water beyond it. Excluding secrets from sight reveal punched
- * that strip out as a black hole in the middle of a view the player plainly
- * had, water and all. What actually hides a secret is geometry, and
- * `World.blocksSight` already models that faithfully: across DOOM E1M1-E1M8
- * and DOOM2 MAP01-MAP10, none of the 197 secret subsectors is visible from the
- * player start, so nothing is given away before the player has walked up and
- * looked at it — which is exactly what vanilla shows them too.
+ * Per-subsector reveal state, sticky on sight, with sight as the only rule (no special case for
+ * secret-flagged sectors) — each of those three choices is load-bearing; see docs/fogofwar.md.
  */
 export class FogOfWar {
   private world: World;
@@ -288,23 +238,9 @@ export class FogOfWar {
   }
 
   /**
-   * Collects the sight-blocking lines within reach once per frame, so the
-   * per-subsector rays below test a small flat array instead of each redoing
-   * the grid lookup. Rebuilt every frame rather than cached at load, because
-   * `blocksSight` reads live sector heights — once doors move, a door that
-   * opens has to stop blocking on the very next frame.
-   *
-   * Each segment is stored slightly overlong (`BLOCKER_OVERLAP`). Where two
-   * blockers meet at a shared vertex — a door leaf and its frame, two walls at
-   * a corner — a ray aimed at that exact point passes just outside the end of
-   * both and neither reports an intersection, so sight squirts through the
-   * pinhole into the room beyond. (Measured: a sample point beside DOOM2
-   * MAP02's closed door cleared the frame corner by 0.1 map units and lit the
-   * room behind it.) A quarter-unit overlap closes those junctions and stays
-   * far below the width of any real opening — vanilla's narrowest doorways are
-   * 64 units across. Bigger is not better: at 0.5 the extended ends start
-   * clipping sight that legitimately grazes along a wall, costing visibly more
-   * wrongly-dark subsectors for no further leak closed.
+   * Collects the sight-blocking lines within reach once per frame — rebuilt live rather than
+   * cached because `blocksSight` reads current sector heights — each stored `BLOCKER_OVERLAP`
+   * overlong so a ray can't squirt through a shared-vertex junction. See docs/fogofwar.md.
    */
   private refreshBlockers(playerX: number, playerY: number): void {
     const map = this.world.map;
@@ -345,17 +281,9 @@ export class FogOfWar {
   }
 
   /**
-   * Marks the whole level explored — the computer area map powerup
-   * (`ThingType.computerMap`, applied in `game.ts`'s pickup callback), which in vanilla fills in the
-   * automap for the entire level at once. Here that *is* the whole effect:
-   * this engine's map view and its play view are the same view, so revealing
-   * the geometry is exactly what vanilla's own `pw_allmap` does to the automap.
-   *
-   * Only the `explored` flags are set, not `alpha` — the ordinary per-frame
-   * lerp below fades the level in over `FADE_SPEED` instead of snapping it on,
-   * which reads as the map drawing itself rather than a hard cut. Setting
-   * `pending` to 0 also retires the sight-sampling loop above for the rest of
-   * the level, since there is nothing left it could reveal.
+   * Marks the whole level explored — the computer area map powerup (vanilla's `pw_allmap`, which
+   * here reveals the play view itself). Only `explored` is set, not `alpha`, so the level fades in
+   * rather than snapping on. See docs/items.md § Powerups and the backpack.
    */
   revealAll(): void {
     this.explored.fill(1);

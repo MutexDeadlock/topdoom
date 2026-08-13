@@ -1,3 +1,7 @@
+/**
+ * The DEVMODE profiling overlay: per-category frame-time bars against the 60fps budget.
+ * See docs/menu.md § Profiling overlay.
+ */
 import type { ProfileSample } from '../../util/profiler.ts';
 
 /** A category's bar fills its row at this many ms — one whole 60fps frame budget, so a bar reaching full width means that category alone would miss it. */

@@ -1,3 +1,8 @@
+/**
+ * Things as upright sprite billboards: decoded sprite lumps cached as textures (`SpriteCache`),
+ * rotation-frame picking, and the per-thing animation/pose state (`SpriteAnimator`,
+ * `SpriteActor`). See docs/sprites.md.
+ */
 import * as THREE from 'three';
 import type { GraphicsBank } from '../wad/graphics.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
@@ -261,21 +266,10 @@ class FrameSequence {
 }
 
 /**
- * The frame-cycle state of one animated sprite, and the lookup from that
- * state to the geometry/material actually drawn — with **no `THREE.Object3D`
- * of its own**. That split is what lets the same animation logic serve both
- * ways this engine draws a sprite: `SpriteActor` below (one `THREE.Mesh` per
- * sprite, for the handful of standalone actors — the player, teleport fog,
- * projectiles, impacts) and `render/spritebatch.ts`'s `SpriteBatch` (one
- * `InstancedMesh` per lump, for `game/things.ts`'s map things, of which a
- * stress-test map like NUTS.WAD has over ten thousand — see SpriteBatch's own
- * doc for why those must not be one mesh each).
- *
- * Animation is a plain frame-letter cycle, e.g. DOOM's own PLAY sprite reuses
- * A, B, C, D as a 4-step leg cycle while walking and simply holds frame A
- * while idle — there is no separate "idle" art, just the walk cycle stopped
- * on its first frame. `animFrames` defaults to a single held frame, which is
- * every non-animated actor.
+ * The frame-cycle state of one animated sprite and its current-lump lookup, with no
+ * `THREE.Object3D` of its own — the same animation logic serves both a standalone `SpriteActor`
+ * mesh and `SpriteBatch`'s instances (docs/sprites.md § Batching). Animation is a plain
+ * frame-letter cycle; `animFrames` defaults to a single held frame.
  */
 export class SpriteAnimator {
   private lastKey = '';

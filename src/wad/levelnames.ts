@@ -1,3 +1,7 @@
+/**
+ * Vanilla's level-title tables (`d_englsh.h`) and the IWAD identification they key off, plus the
+ * per-WAD-set title resolution that folds MAPINFO in. See docs/wad.md § Level names.
+ */
 import type { Wad } from './wad.ts';
 import { mapInfoNames } from './mapinfo.ts';
 

@@ -1,3 +1,8 @@
+/**
+ * The WAD-derived tables every thing type is looked up in: sprite names, health, drops, animation
+ * frames, barrel and splash constants — data only, confirmed against `info.c`. The runtime layer
+ * reading these is `game/things.ts`. See docs/sprites.md and docs/items.md.
+ */
 import { DOOM_TIC } from '../constants.ts';
 import { ThingType } from './thingtypes.ts';
 // Type-only: `combat.ts` imports the barrel constants below at runtime, and a
@@ -199,19 +204,11 @@ export const MONSTER_TYPES: Set<number> = new Set([
 export const NO_AUTO_AIM_TYPES: Set<number> = new Set([ThingType.bossBrain]);
 
 /**
- * Doomednums from the "Obstacles & decorations" and "Gore & corpses" blocks above that carry
- * vanilla's `MF_SOLID` flag, confirmed against `linuxdoom-1.10/info.c`'s `mobjinfo` table: the
- * column, candelabra, all six pillars, the evil eye, skull rock, all six torches, the stalagmite,
- * the tech pillar, the burning barrel, both techno lamps, both trees, the five pole/skull
- * decorations, the solid "hanging victim" quintet (49/50/51/52/53) and DOOM II's six solid `HDB*`
- * body bags (73-78) — `CEILING_HUNG_HEIGHT`'s other five entries (59/60/61/62/63) reuse the same
- * `GOR*` sprites at vanilla's genuinely non-solid, wider-radius placement and are deliberately not
- * in this set. The exploding barrel (2035, `MT_BARREL`) is solid too but already has its own
- * `ThingType.barrel` handling in `game/things.ts` and is deliberately not repeated here. Two decorations
- * in these blocks are
- * genuinely **not** solid in vanilla and are excluded on purpose: the plain candle (34,
- * `MT_MISC49`, `flags: 0`) and every dead-monster/blood-pool prop (10-24, 79-81) — see
- * docs/movement.md § Solid decorations.
+ * Doomednums from the decoration/gore blocks above that carry vanilla's `MF_SOLID` flag, confirmed
+ * against `linuxdoom-1.10/info.c`'s `mobjinfo` — membership is that flag, nothing else. Deliberate
+ * absences: the exploding barrel (2035, has its own `ThingType.barrel` handling), the five
+ * non-solid `GOR*` hangers (59-63), the plain candle (34, `flags: 0`) and every
+ * dead-monster/blood-pool prop. See docs/movement.md § Solid decorations.
  */
 export const SOLID_DECORATION_TYPES: Set<number> = new Set([
   ThingType.floorLamp,
@@ -693,17 +690,10 @@ export const MONSTER_DROPS: Record<number, number> = {
  *   `frames` array naming that exact letter, which `SpriteAnimator` then holds
  *   forever the same way it holds `'A'` for anything with no entry at all.
  *
- * A doomednum absent from this table either has vanilla `tics: -1` (genuinely
- * static — STIM/MEDI, the plain column, both candles, ammo/weapon pickups) or
- * spawns at its sprite's literal `'A'` frame (most solid decorations, blood
- * pools, hanging corpses) — both cases already match `buildThingSprites`'s
- * default and don't need an entry.
- *
- * `frameSeconds` is one flat rate per entry standing in for vanilla's own
- * per-state tic counts, the same accepted simplification `BARREL_IDLE_FRAME_SECONDS`
- * and `MONSTER_DEATH_FRAME_SECONDS` already make (ARM1's real A/B split is 6/7
- * tics, not perfectly even, but a second constant for one doomednum would tune
- * nothing anyone could see); meaningless for a single-frame entry, which never animates.
+ * A doomednum absent from this table either has vanilla `tics: -1` (genuinely static) or spawns
+ * at its sprite's literal `'A'` frame — both already match `buildThingSprites`'s default.
+ * `frameSeconds` is one flat rate per entry standing in for vanilla's per-state tic counts, the
+ * same accepted simplification `MONSTER_DEATH_FRAME_SECONDS` makes.
  */
 export const THING_ANIM_FRAMES: Record<number, { frames: string[]; frameSeconds: number }> = {
   // Health & armor

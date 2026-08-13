@@ -1,3 +1,7 @@
+/**
+ * WebAudio playback: the channel pool and vanilla's cutoff/priority model, distance attenuation,
+ * pan, and volume/mute. See docs/audio.md § The mixer model.
+ */
 import type { SoundBank } from '../wad/sound.ts';
 import type { Pos2 } from '../types.ts';
 import { randomPlaybackRate, SFX, SFX_NAMES, type SfxId, type SoundEmitter } from './sfx.ts';

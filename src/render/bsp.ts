@@ -1,3 +1,7 @@
+/**
+ * Reconstructs each subsector's convex floor polygon from the BSP: the node planes above it,
+ * clipped against its own segs. See docs/render.md § BSP polygon reconstruction.
+ */
 import { SUBSECTOR_BIT, type DoomMap } from '../wad/map.ts';
 import { clipConvexPolygon as clip } from '../util/geom.ts';
 

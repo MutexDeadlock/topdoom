@@ -1,3 +1,8 @@
+/**
+ * Chase/attack decisions: `tryWake` and `stepMonsterAI`, pure functions over a `MonsterBody`, a
+ * `World` and a `SoundEmitter` that return *what happened* for the caller to realize — the
+ * headlessly-testable half of the AI/attacks split. See docs/monster-ai.md.
+ */
 import type { Sector } from '../../wad/map.ts';
 import { ANY_HEIGHT, circleBlocked, hasLineOfSight, type ThingBlocker, type World } from '../world.ts';
 import { GRAVITY } from '../player.ts';

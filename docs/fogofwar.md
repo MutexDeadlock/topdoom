@@ -66,11 +66,9 @@ docs/render.md § View distance.
 the player plainly has** — and it is not only cosmetic: `ThingLayer` gates rendering, `pickMonster`
 and `raycastMonster` all on fog alpha, so a monster standing there is invisible, un-lockable *and*
 unhittable while it shoots back. The radius was 3000 and a chaingunner 3,584 units down a straight
-corridor was exactly that: audible, firing, and impossible to see or shoot. The cost of covering the
-real frame is small, because on real geometry it is walls and not the radius that bound reveal —
-measured 3000 → 5100 with the player standing at spawn: freedoom2 MAP03 1.98 → 2.23 ms/frame average
-(70 subsectors revealed either way), DOOM2 MAP13 0.48 → 0.51 ms (78 → 79), DOOM2 MAP01 and MAP29
-unchanged in both time and count.
+corridor was exactly that: audible, firing, and impossible to see or shoot. Covering the real frame
+costs nearly nothing — measured 3000 → 5100 across four maps, reveal time and count barely moved,
+because on real geometry it is walls and not the radius that bound reveal.
 
 `SIGHT_RADIUS` is module-private, so `tests/regression/fog-reveal-radius.test.ts` brackets it from both
 sides instead: revealed at 5120 units, dark at 5248. Changing what the camera frames means updating
@@ -94,25 +92,20 @@ further leak closed.
 Explored subsectors are skipped forever after, so the per-frame cost falls as a level is explored; the
 worst case (nothing explored yet) measures ~0.4 ms on DOOM2 MAP02.
 
-**The sight-sampling sweep is budgeted, not run to completion every frame** — `MAX_SIGHT_TESTS_PER_FRAME`
-(200, tuned by feel) caps how many not-yet-explored subsectors get their sample rays tested per `update`
-call; `scanCursor` remembers where the round-robin left off so the next frame picks up there rather than
-restarting from subsector 0. Without this, cost is `unexplored subsectors × samples per subsector ×
-blockers within SIGHT_RADIUS`, and on a level big enough that all three factors are large at once —
-freedoom2 MAP03 (315 sectors, 2855 linedefs, 1531 subsectors) — that measured 8.6 ms/frame with the player
-standing still at spawn, over half a 60fps budget before rendering even runs. The cap turns the map's
-one-time reveal sweep into several frames' worth of work instead of one frame's spike, which is invisible:
-reveal already fades in over `FADE_SPEED` seconds, so a subsector's fade starting a few frames later than
-strictly necessary reads the same as starting immediately. Measured fix on the same map/scenario: 8.6 ms/
-frame → ~2 ms worst-case, ~1 ms average during active exploration. The constructor's one-time spawn seed
-(`this.tick(startX, startY, Infinity)`) passes an unbounded budget deliberately — it has to reveal
-everything visible from spawn in that single call; the `alpha.set(explored)` right after is what skips
-the fade, so the surroundings don't visibly rise out of black on frame one.
-
-The budget is counted **per tic, not per frame** — `MAX_SIGHT_TESTS_PER_TIC`, and 350 rather than 200
-to hold the same sweep rate across 35 tics/sec instead of ~60 frames/sec. That is forced by the split
-below: `explored` is a gameplay input, so a per-frame budget would make what is revealed, and so what
-is shootable, depend on framerate.
+**The sight-sampling sweep is budgeted, not run to completion** — `MAX_SIGHT_TESTS_PER_TIC` (350,
+tuned by feel) caps how many not-yet-explored subsectors get their sample rays tested per `tick`;
+`scanCursor` remembers where the round-robin left off, and a subsector that fails every sample is
+simply retried on a later pass. Without the cap, cost is `unexplored subsectors × samples per
+subsector × blockers within SIGHT_RADIUS`, and on a level where all three factors are large at once —
+freedoom2 MAP03 (315 sectors, 2855 linedefs, 1531 subsectors) — the one-time reveal sweep measured
+8.6 ms in a single call, over half a 60fps budget before rendering even runs. Spreading it across
+several tics is invisible, because reveal already fades in over `FADE_SPEED` seconds. The budget is
+counted **per tic, not per frame**, forced by the split below: `explored` is a gameplay input, so a
+per-frame budget would make what is revealed — and so what is shootable — depend on framerate. The
+constructor's one-time spawn seed (`this.tick(startX, startY, Infinity)`) passes an unbounded budget
+deliberately: it has to reveal everything visible from spawn in that single call, and the
+`alpha.set(explored)` right after skips the fade so the surroundings don't rise out of black on
+frame one.
 
 ## How reveal reaches the geometry
 

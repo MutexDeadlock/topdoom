@@ -1,3 +1,7 @@
+/**
+ * The map lumps decoded into a `DoomMap`: vertices, linedefs/sidedefs, sectors, the BSP
+ * (nodes/segs/subsectors) and THINGS, exactly as the WAD stores them. See docs/wad.md.
+ */
 import type { Wad } from './wad.ts';
 
 export const NO_SIDE = 0xffff;

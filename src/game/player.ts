@@ -1,3 +1,7 @@
+/**
+ * The player's body: camera-relative movement, running/straferunning, gravity and falling,
+ * knockback, and the vanilla `PLAYER_*` constants. See docs/movement.md.
+ */
 import { slideMove, type ThingBlocker, type World } from './world.ts';
 import type { Input } from './input.ts';
 import type { PlayerSnapshot } from './snapshot.ts';

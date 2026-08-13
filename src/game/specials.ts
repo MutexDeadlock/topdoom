@@ -1,3 +1,7 @@
+/**
+ * `SpecialsController`: drives every linedef/sector special in a loaded map — doors, lifts, floor
+ * movers, crushers, stair builders, teleporters, lights and exits. See docs/specials.md.
+ */
 import * as THREE from 'three';
 import { NO_SIDE, type DoomMap, type LineDef } from '../wad/map.ts';
 import {
@@ -333,67 +337,6 @@ function resolveCeilingTarget(map: DoomMap, sectorIndex: number, target: Ceiling
   }
 }
 
-/**
- * Drives every linedef/sector special in a loaded map: doors, lifts, generic
- * floor movers, crushers, teleporters, stair builders, blinking/flickering
- * lights, and level exits. Sector heights (`Sector.floorHeight`/`ceilHeight`/`light`) are
- * mutated directly on the `DoomMap` — `World` never caches them, so
- * collision, sight-blocking and the player's resting height all pick the
- * change up on their very next query, with no changes needed there. This
- * controller only owns the two things that don't already "just work":
- * rebuilding the small per-sector geometry a mover's height change
- * invalidates, and re-triggering.
- *
- * Crushers are pure ceiling geometry — down to floor+gap, back to their start
- * height, forever. They (and the `raiseFloorCrush` floor family — 55/56/65/94
- * — but *not* the turbo-16 stairs; see `StairsEffect`'s doc) also deal
- * periodic damage to whoever's caught in their sector via `onCrush`, a
- * callback into `game.ts` — this controller mutates map geometry but has no
- * idea where the player or any monster is standing, the same reason
- * `onExit`/`onTeleport` are callbacks rather than direct calls. A genuine
- * crusher (`CrusherMover`, and any `FloorMover`/`CeilingMover` with
- * `crush: true` — currently only the `raiseFloorCrush` family) never stops
- * or reverses early, matching vanilla's own `crush==true` branch of
- * `T_MovePlane` exactly: it just keeps hurting whoever's in its way every
- * `CRUSH_DAMAGE_INTERVAL` until they leave or die, which is the part of the
- * vanilla behavior that actually matters for how a crusher reads as a hazard.
- *
- * Stair builders (`triggerStairs`/`findStairChain`) reuse the plain
- * `FloorMover` machinery per step — a stair step is just a floor rising to a
- * fixed height — with the chain of sectors to raise discovered once at load
- * time (`computeMovableSectors`) by walking the same texture-matched
- * adjacency the trigger itself uses at runtime. Stairs never set `crush`
- * (`StairsEffect`'s doc), so a rising step is one of the ordinary movers the
- * next paragraph blocks on contact, same as any other non-crushing riser.
- *
- * Every *non*-crushing mover reverses or stalls rather than clipping through
- * the player or a monster standing in its way — vanilla's own
- * `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule for `crush==false`, via
- * two callbacks into `game.ts` (this controller mutates map geometry but has
- * no idea who's standing in it, the same reason `onCrush` is a callback too):
- * `blocksCeilingLower` for a closing door or a lowering `CeilingMover`
- * (real vanilla never sets `crush=true` for this mover — see the
- * `lowerAndCrush`/44/72 note in `CeilingMover`'s own doc — so every one of
- * them genuinely should stop), and `blocksFloorRise` for a rising
- * `LiftMover` or a `crush: false` `FloorMover`. A door reverses direction
- * outright (it already has a `raising` state to fall back into); a
- * `CeilingMover`/`FloorMover`/`LiftMover` has no such state, so it simply
- * skips that tick's step and retries the next one, which reads as the mover
- * stalling in place until whoever's in the way clears out — functionally the
- * same "don't crush through them" result vanilla's own per-tic retry
- * produces. Approximated as 2D sector membership plus a flat headroom check
- * against `PLAYER_HEIGHT` and each body's own `mobjinfo.height`, the same shape
- * `applyCrushDamage` already accepts — and, unlike vanilla, applied uniformly
- * to every door regardless of speed, since this engine has no separate
- * "blazeClose never reverses" door type to hook the one real vanilla
- * exception on. The opposite direction of each of these movers (opening,
- * raising a ceiling, lowering a non-lift floor) is deliberately left
- * unchecked, matching vanilla's own asymmetry — `T_MovePlane`'s ceiling-up
- * and floor-down branches essentially never trap a "standing on the floor"
- * thing, since `P_ThingHeightClip` rides it along with the floor
- * automatically; only the direction that closes the gap on someone can ever
- * actually block them.
- */
 /** A teleport landing spot: where to put the thing, and which way it should face on arrival (radians — see `Placement`). */
 export type TeleportDest = Placement;
 
@@ -1005,11 +948,8 @@ export class SpecialsController {
    * `leveltime&3`.
    *
    * That damage clock is one clock for the whole level, not a per-mover
-   * countdown, so every crushing mover anywhere pulses on the same tic
-   * (exactly `moveSoundDue`'s reasoning, applied to damage instead of sound).
-   * A per-mover countdown reset on each fire drifts out of phase with that
-   * global tic and can rack up an extra hit a real vanilla/GZDoom crusher
-   * wouldn't have — this replaced that approach for exactly that reason.
+   * countdown (`moveSoundDue`'s reasoning, applied to damage) — a per-mover
+   * countdown drifts off vanilla's global `leveltime&3` and racks up extra hits.
    */
   private tickCrush(sectorIndex: number): boolean {
     return this.onCrush(sectorIndex, this.crushDamageDue);

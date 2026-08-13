@@ -1,3 +1,7 @@
+/**
+ * Center-screen messages ("You need a blue key…"), one at a time, in the WAD's own font.
+ * See docs/hud.md § Center messages.
+ */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 import type { KeyColor } from '../../game/inventory.ts';
 import { WadFont, COLOR_YELLOW, type WadFontRecolor } from './wadfont.ts';

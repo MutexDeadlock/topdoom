@@ -1,9 +1,3 @@
-import { WEAPON_RANGE } from '../world.ts';
-import { ThingType } from '../thingtypes.ts';
-import type { SfxId } from '../../audio/sfx.ts';
-import type { Pos3 } from '../../types.ts';
-import { DOOM_TIC } from '../../constants.ts';
-
 /**
  * The record shapes every monster system passes around, the vanilla tables they
  * are read out of (`MONSTER_STATS`, `INERT_SHOOTABLE`), and the pure helpers
@@ -11,6 +5,11 @@ import { DOOM_TIC } from '../../constants.ts';
  * simulation reading them is `monsters/ai.ts` and `monsters/attacks.ts`, the same
  * split as `things.ts`/`thingdefs.ts`. See docs/monster-ai.md.
  */
+import { WEAPON_RANGE } from '../world.ts';
+import { ThingType } from '../thingtypes.ts';
+import type { SfxId } from '../../audio/sfx.ts';
+import type { Pos3 } from '../../types.ts';
+import { DOOM_TIC } from '../../constants.ts';
 
 /**
  * The mutable chase/attack state `stepMonsterAI` (`monsters/ai.ts`) reads and

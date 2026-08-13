@@ -123,12 +123,12 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   duration is handed over as `--hold-time`, so the bar and the timer can't disagree; the label moves
   into a `.label` span so the `.fill` can paint behind it, and Space/Enter held on a focused button
   works the same way. Both are per row; Overwrite refills that save
-  from the current moment, keeping its id and its name (renaming has its own affordance), and can't
-  hit `MAX_SAVES` since no new key appears. Delete and download are icon-only buttons (`⤓`, `🗑︎` with
+  from the current moment, keeping its id and its name (renaming has its own affordance). Delete and
+  download are icon-only buttons (`⤓`, `🗑︎` with
   a text-presentation selector) with their meaning in the tooltip; Load and Overwrite are `.primary`.
 - **Download** writes the save as `<map>-<date>.topdoom.json` through a temporary anchor: one
   tab-indented JSON file whose meta fields are readable and whose `state` is the stored gzip bytes,
-  base64'd (`exportSave` — docs/savegames.md § Storage and the cap has the format's rules);
+  base64'd (`exportSave` — docs/savegames.md § Storage has the format's rules);
   **import** accepts such a file back via its own `#save-file-input` (the WAD `#file-input` is
   multiplexed by `uploadTarget` and stays out of this), or by dropping a `.json` onto the menu —
   `installDropTarget` routes `.json` to the importer and everything else to `addFiles` as before.
@@ -282,7 +282,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.skill` | `ui/menu/menu.ts` | § Difficulty above |
 | `topdoom.selection` | `ui/menu/menu.ts` | § Remembered selection below |
 | `topdoom.bestTimes` | `game/besttimes.ts` | docs/hud.md § Best times |
-| `topdoom.save.<id>` | `game/savegames.ts` | docs/savegames.md § Storage and the cap |
+| `topdoom.save.<id>` | `game/savegames.ts` | docs/savegames.md § Storage |
 
 `topdoom.save.<id>` (one key per save) is the one departure from per-value structural validation:
 it carries an explicit `version` field, refused on mismatch rather than half-read. A settings

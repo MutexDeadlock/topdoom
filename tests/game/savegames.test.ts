@@ -2,7 +2,6 @@ import { beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AUTOSAVE_ID,
-  MAX_SAVES,
   SAVE_VERSION,
   deleteSave,
   exportSave,
@@ -61,7 +60,6 @@ function memoryBackend(): MemoryBackend {
       metas.delete(id);
       states.delete(id);
     },
-    count: async () => metas.size,
   };
 }
 
@@ -90,7 +88,7 @@ function tamperMeta(id: string, patch: Record<string, unknown>): void {
   store.metas.set(id, { ...(store.metas.get(id) as Record<string, unknown>), ...patch });
 }
 
-/** The savegame store: the meta/state split, the cap, version refusal, and what a damaged record costs. See docs/savegames.md § Storage and the cap. */
+/** The savegame store: the meta/state split, version refusal, and what a damaged record costs. See docs/savegames.md § Storage. */
 describe('Savegames · the store', () => {
   test('write, list, read and delete round-trip', async () => {
     const meta = await writeSave(capture(), 'my save');
@@ -333,14 +331,6 @@ describe('Savegames · the store', () => {
     await assert.rejects(overwriteSave('never-existed', capture()), /no longer exists/);
   });
 
-  test('overwriting works with the list full — no new save, so no cap', async () => {
-    const first = await writeSave(capture(), 's0');
-    for (let i = 1; i < MAX_SAVES; i++) await writeSave(capture(), `s${i}`);
-    await assert.rejects(writeSave(capture(), 'one too many'), /delete a save first/);
-    assert.equal((await overwriteSave(first.id, capture('MAP07'))).map, 'MAP07');
-    assert.equal((await listSaves()).length, MAX_SAVES);
-  });
-
   test('renaming touches the meta only, and refuses a damaged row', async () => {
     const meta = await writeSave(capture(), 'before');
     const record = store.states.get(meta.id)!;
@@ -356,12 +346,6 @@ describe('Savegames · the store', () => {
     store.metas.set('broken', 'not even an object');
     await assert.rejects(renameSave('broken', 'x'), /damaged/);
     assert.equal(store.metas.get('broken'), 'not even an object', 'left as it was');
-  });
-
-  test('the cap refuses the write instead of evicting', async () => {
-    for (let i = 0; i < MAX_SAVES; i++) await writeSave(capture(), `s${i}`);
-    await assert.rejects(writeSave(capture(), 'one too many'), /delete a save first/);
-    assert.equal((await listSaves()).length, MAX_SAVES);
   });
 
   test('a full quota surfaces as a readable error', async () => {
@@ -432,7 +416,7 @@ describe('Savegames · the store', () => {
   });
 });
 
-/** The level-entry checkpoint: one reserved id, hidden from both tabs and outside the cap. See docs/savegames.md § The checkpoint. */
+/** The level-entry checkpoint: one reserved id, hidden from both tabs. See docs/savegames.md § The checkpoint. */
 describe('Savegames · the checkpoint', () => {
   test('it replaces itself and never appears in the list', async () => {
     await writeAutosave(capture('E1M1'));
@@ -448,16 +432,6 @@ describe('Savegames · the checkpoint', () => {
       [mine.id],
       'and hidden beside a real save',
     );
-  });
-
-  test('it costs nobody a save slot', async () => {
-    await writeAutosave(capture());
-    for (let i = 0; i < MAX_SAVES; i++) await writeSave(capture(), `s${i}`);
-    assert.equal((await listSaves()).length, MAX_SAVES, 'the full list is still the player’s own');
-    await assert.rejects(writeSave(capture(), 'one too many'), /delete a save first/);
-    // Same discount on the import path, which shares the cap check.
-    const exported = await exportSave((await listSaves())[0].meta.id);
-    await assert.rejects(importSave(exported), /delete a save first/);
   });
 
   test('an unusable checkpoint reads as null rather than throwing', async () => {

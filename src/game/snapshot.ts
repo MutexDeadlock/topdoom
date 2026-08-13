@@ -87,7 +87,7 @@ export interface SectorSnapshot {
  * `[sectorIndex, fields]` for one sector that no longer matches the map as the
  * WAD authored it. Only those are saved: a restore applies them to a freshly
  * loaded map, so every sector left out is already correct — and most of a level
- * is never touched (docs/savegames.md § Storage and the cap).
+ * is never touched (docs/savegames.md § Storage).
  */
 export type SectorEntry = [number, SectorSnapshot];
 
@@ -250,7 +250,7 @@ export function copyMonsterField<K extends keyof MonsterFields>(
  * `blockRadius`, the frame tables) are never saved; `pushThing` re-derives
  * them on restore. The flags are present only when true, and the monster
  * block is sparse (`MONSTER_FIELD_DEFAULTS`): a 10k-thing map pays for every
- * byte of this record (docs/savegames.md § Storage and the cap).
+ * byte of this record (docs/savegames.md § Storage).
  */
 export interface ThingState {
   type: number;
@@ -423,8 +423,7 @@ export function sectorBaseline(map: DoomMap): SectorSnapshot[] {
  * The sectors that no longer match `baseline`, as `[index, fields]`. A whole
  * level's sectors written out cost ~24 KB of JSON on DOOM2 MAP15 and are
  * identical to the freshly loaded map in all but the handful a door, lift or
- * light has touched — so only those are stored (docs/savegames.md § Storage
- * and the cap).
+ * light has touched — so only those are stored (docs/savegames.md § Storage).
  */
 export function snapshotSectors(map: DoomMap, baseline: SectorSnapshot[]): SectorEntry[] {
   const out: SectorEntry[] = [];

@@ -1,28 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { LEVEL_NAMES, LevelNames, levelNameFor, levelNamePatch, levelTitleFor, missionOf } from '../../src/wad/levelnames.ts';
-import { Wad, WadFile } from '../../src/wad/wad.ts';
-
-/**
- * A WAD that is nothing but a directory: every lump is empty, which is all the name-resolution
- * paths below ever look at. Real bytes belong in tests of the decoders, not here.
- */
-function wadFile(type: 'IWAD' | 'PWAD', name: string, lumps: string[]): WadFile {
-  const dirOffset = 12;
-  const buffer = new ArrayBuffer(dirOffset + lumps.length * 16);
-  const bytes = new Uint8Array(buffer);
-  const view = new DataView(buffer);
-  for (let i = 0; i < 4; i++) bytes[i] = type.charCodeAt(i);
-  view.setInt32(4, lumps.length, true);
-  view.setInt32(8, dirOffset, true);
-  lumps.forEach((lump, i) => {
-    const at = dirOffset + i * 16;
-    view.setInt32(at, 0, true); // offset
-    view.setInt32(at + 4, 0, true); // size
-    for (let c = 0; c < lump.length; c++) bytes[at + 8 + c] = lump.charCodeAt(c);
-  });
-  return new WadFile(buffer, name);
-}
+import { Wad } from '../../src/wad/wad.ts';
+import { wadFile } from '../fixtures/wadfile.ts';
 
 /**
  * The title table is generated from `linuxdoom-1.10/d_englsh.h` rather than typed, so what's worth

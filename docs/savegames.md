@@ -2,7 +2,7 @@
 
 A save is two things: a `SaveMeta` (which WAD set, which map, which skill, a small JPEG thumbnail)
 and a `GameSnapshot` — the full mutable state of the running level, down to the random-table
-cursors — stored separately so that listing saves reads metas alone (§ Storage and the cap).
+cursors — stored separately so that listing saves reads metas alone (§ Storage).
 Loading one rebuilds the level through the ordinary `Game.loadMapByIndex` funnel and then
 overwrites the mutable state, so everything the constructors derive (BSP polys, meshes, spatial
 grids) is always derived from restored data rather than patched afterwards. The store lives in
@@ -84,7 +84,7 @@ other persisted `topdoom.*` value (docs/menu.md § Persisted settings): a settin
 safely under structural validation, a snapshot's schema genuinely evolves and half-reading an old
 one produces a subtly wrong level rather than a default. It versions the snapshot's *content*
 only: the move to IndexedDB with split, gzipped records shipped without a bump, because how the
-bytes are stored is the separately-versioned `STATE_ENCODING`'s job (§ Storage and the cap) and
+bytes are stored is the separately-versioned `STATE_ENCODING`'s job (§ Storage) and
 the snapshot inside is unchanged.
 
 ## What is saved and what is deliberately not
@@ -138,7 +138,7 @@ nearly so:
   block at all — not even the sparse block's always-saved `homingBias` (`isPristine` in
   `game/things.ts`); its `lookTimer` phase and `homingBias` coin flip are re-seeded on restore,
   both invisible before first contact. This plus the sparse encoding is what keeps a 10k-monster
-  map's save inside the quota (§ Storage and the cap).
+  map's save inside the quota (§ Storage).
 - **Saving is refused mid-intermission, mid-exit and while dead** (`Game.saveRefusal`), which keeps
   the intermission/exit cascade out of the format entirely. `captureSave` *throws* that refusal
   rather than returning a sentinel, so the whole save path has one refusal convention and the
@@ -195,7 +195,7 @@ heights** and **RNG cursors dead last**.
     seeding, `pushThing`'s `homingBias`) has already happened and been overwritten, so the first
     *simulation* draw after a load is exactly the one the save would have made next.
 
-## Storage and the cap
+## Storage
 
 Saves live in IndexedDB (database `topdoom`, `game/savestore.ts`), split across two object stores
 keyed by save id: `saves-meta` holds each `SaveMeta` as a plain structured-clone object, and
@@ -216,12 +216,11 @@ And a failed database *open* is un-cached, so a transient refusal (private mode,
 is retried the next time the menu lists.
 
 Reads are validated per meta in the `besttimes.ts` style: a malformed record renders as unloadable
-rather than taking the list down. `MAX_SAVES` caps the count and the store *refuses* the write when
-full — silently evicting somebody's save is worse than asking them to delete one. The cap belongs
-to `writeSave` (and `importSave`) alone: `overwriteSave` (refill a slot, keeping its id and name)
-and `renameSave` (the name only, `at` included so the list can't reorder under the cursor — and the
-meta record only, so renaming never rewrites state bytes) add nothing to the count, and so must
-keep working with a full list. A `QuotaExceededError` out of the write transaction surfaces as a
+rather than taking the list down. **The save list has no count limit**: storage is bounded by the
+origin's quota alone, and nothing evicts a save the player did not delete. `overwriteSave` refills a
+slot keeping its id and name, and `renameSave` touches the name only (`at` included, so the list
+can't reorder under the cursor — and the meta record only, so renaming never rewrites state bytes).
+A `QuotaExceededError` out of the write transaction surfaces as a
 readable message in the menu (mapped in `savegames.ts`, not the backend, so the tests' in-memory
 backend exercises the same translation). Quota pressure is far lower than under localStorage's
 ~5 MB: the origin budget is typically hundreds of MB, and gzip takes several-fold off the
@@ -243,13 +242,11 @@ them: nothing was advanced into, so `R` there restarts as it always did.
 The reserved id is the whole mechanism, and that is deliberate: hiding a save by *id* needs no
 `SaveMeta` field, so the format is unchanged and `SAVE_VERSION` did not move. The id is also what
 makes it self-overwriting — the same key replaces both records, so there is only ever one — and
-`freshId` (a base-36 timestamp plus a counter) can never collide with it. Three consequences the
-code has to honor, all in `savegames.ts`:
+`freshId` (a base-36 timestamp plus a counter) can never collide with it. Two consequences the
+code has to honor, both in `savegames.ts`:
 
 - `listSaves` filters the row out. It is the engine's save, not the player's, and both tabs list
   through that one function, so one filter keeps it out of Save and Load alike.
-- `countListed` discounts it, so the checkpoint never costs a player one of the `MAX_SAVES` slots.
-  `writeAutosave` itself skips the cap, for `overwriteSave`'s reason: no new key appears.
 - `readAutosave` collapses every refusal `readSave` can throw — missing, damaged, or written by a
   build with a different `SAVE_VERSION` — to `null`. None of them is worth a message, because the
   caller's fallback (a plain restart) is a perfectly good outcome.

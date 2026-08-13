@@ -83,20 +83,15 @@ describe('Regressions · a monster spawned flush against a wall', () => {
     );
   });
 
-  test('it walks out of the overlap instead of standing still', () => {
-    const { world, body, target } = scene(4);
-    assert.ok(travelled(world, body, target, 2) > 32, 'must cover real ground in two seconds');
-    assert.equal(
-      circleBlocked(world, body.x, body.y, stats.radius, body.z, true, true),
-      false,
-      'and must end up clear of the wall',
-    );
-  });
-
-  test('at any overlap up to one chase step', () => {
+  test('it walks out of the overlap instead of standing still, at any overlap up to one chase step', () => {
     for (const overlap of [1, 4, 7]) {
       const { world, body, target } = scene(overlap);
-      assert.ok(travelled(world, body, target, 2) > 32, `overlap of ${overlap} units`);
+      assert.ok(travelled(world, body, target, 2) > 32, `overlap of ${overlap}: must cover real ground in two seconds`);
+      assert.equal(
+        circleBlocked(world, body.x, body.y, stats.radius, body.z, true, true),
+        false,
+        `overlap of ${overlap}: must end up clear of the wall`,
+      );
     }
   });
 
@@ -112,29 +107,17 @@ describe('Regressions · a monster spawned flush against a wall', () => {
     const step = stats.speed * stats.chaseInterval;
     assert.ok(step > 7 && step < 8, `a zombieman moves ${step} units per chase call`);
 
-    const justInside = scene(7);
-    assert.ok(travelled(justInside.world, justInside.body, justInside.target, 2) > 32);
-
+    // The inside half of the bracket is the overlap-7 case in the test above.
     const tooDeep = scene(9);
     assert.equal(travelled(tooDeep.world, tooDeep.body, tooDeep.target, 2), 0, 'no legal step exists');
     assert.equal(tooDeep.body.movedir, 8, 'DI_NODIR — newChaseDir found nothing, as in vanilla');
   });
 
-  test('a monster boxed in on all sides still refuses to move', () => {
-    // The guard against over-correcting: the escape hatch only opens when the
-    // committed chase step lands somewhere clear, so a monster wedged into a
-    // space smaller than itself must not walk out through the wall. A 36-unit
-    // cell is narrower than the zombieman's 40-unit diameter, so it overlaps
-    // all four walls at once and no direction helps.
-    const grid = gridMap(['###', '#.#', '###'], { cell: 36 });
-    const world = new World(grid.map);
-    const { body } = scene(0);
-    const at = grid.centre(1, 1);
-    body.x = at.x;
-    body.y = at.y;
-    assert.ok(circleBlocked(world, body.x, body.y, stats.radius, 0, true, true), 'boxed in');
-    assert.equal(travelled(world, body, { x: at.x + 400, y: at.y, z: 0 }, 2), 0, 'goes nowhere');
-  });
+  // The guard against over-correcting — a monster wedged into a space smaller
+  // than itself must not walk out through the wall — lives in
+  // `monster-substep-blocked-midway.test.ts`. It is the same code path for both
+  // fixes: every `tryWalk` fails, `newChaseDir` leaves `movedir` at `DI_NODIR`,
+  // and the movement block neither escape hatch sits in is skipped entirely.
 
   test('an ordinary monster in the open is unaffected', () => {
     const grid = gridMap(['#.....#'], { cell: CELL });

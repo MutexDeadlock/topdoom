@@ -885,7 +885,7 @@ export function buildThingSprites(
    * `homingBias` are deliberately ignored, so a never-disturbed monster costs
    * nothing beyond its `ThingState`, which together with the sparse block is
    * what keeps a 10k-monster map's save inside the localStorage quota
-   * (docs/savegames.md § Storage and the cap).
+   * (docs/savegames.md § Storage).
    */
   function isPristine(p: PosedThing): boolean {
     return (

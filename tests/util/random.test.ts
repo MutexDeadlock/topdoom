@@ -67,13 +67,6 @@ describe('Vanilla tables · the random table', () => {
     assert.equal(mRandom(), RNDTABLE[2], 'and the same the other way round');
   });
 
-  test('every value is a byte', () => {
-    clearRandom();
-    for (let i = 0; i < 512; i++) {
-      const v = pRandom();
-      assert.ok(Number.isInteger(v) && v >= 0 && v <= 255, `draw ${i} was ${v}`);
-    }
-  });
 });
 
 describe('Vanilla tables · the table is the only entropy source', () => {

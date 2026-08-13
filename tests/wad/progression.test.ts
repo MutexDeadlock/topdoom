@@ -1,34 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { LevelProgression, vanillaNextMap } from '../../src/wad/progression.ts';
-import { Wad, WadFile } from '../../src/wad/wad.ts';
-
-/**
- * A WAD carrying real lump bytes — unlike `levelnames.test.ts`'s directory-only helper, these
- * tests need a MAPINFO lump that actually parses.
- */
-function wadFile(type: 'IWAD' | 'PWAD', name: string, lumps: { name: string; text?: string }[]): WadFile {
-  const encoder = new TextEncoder();
-  const payloads = lumps.map((lump) => encoder.encode(lump.text ?? ''));
-  const dirOffset = 12 + payloads.reduce((sum, p) => sum + p.length, 0);
-  const buffer = new ArrayBuffer(dirOffset + lumps.length * 16);
-  const bytes = new Uint8Array(buffer);
-  const view = new DataView(buffer);
-  for (let i = 0; i < 4; i++) bytes[i] = type.charCodeAt(i);
-  view.setInt32(4, lumps.length, true);
-  view.setInt32(8, dirOffset, true);
-
-  let at = 12;
-  payloads.forEach((payload, i) => {
-    bytes.set(payload, at);
-    const entry = dirOffset + i * 16;
-    view.setInt32(entry, at, true);
-    view.setInt32(entry + 4, payload.length, true);
-    for (let c = 0; c < lumps[i].name.length; c++) bytes[entry + 8 + c] = lumps[i].name.charCodeAt(c);
-    at += payload.length;
-  });
-  return new WadFile(buffer, name);
-}
+import { Wad } from '../../src/wad/wad.ts';
+import { wadFile } from '../fixtures/wadfile.ts';
 
 /** The map markers a DOOM II IWAD's worth of levels needs, so `LevelProgression` can find them. */
 const DOOM2_MAPS = Array.from({ length: 32 }, (_, i) => ({ name: `MAP${String(i + 1).padStart(2, '0')}` }));

@@ -430,7 +430,8 @@ per-type `mobjinfo.height`: `MonsterStats.height` for the attacker, and the targ
 Repro maps, committed as fixtures: `tests/fixtures/wads/pinky_{below,above}_test.wad`, covered by
 `tests/regression/pinky-vertical-melee.test.ts`. `above` is the sharper of the two — standing at the
 wall the sight wedge is already clipped by the ledge lip, so the missing check only showed once the
-player backed off far enough to see over it.
+player backed off far enough to see over it. Both predicates are pinned as functions, apart from any
+map, in `tests/game/melee.test.ts`.
 
 **The threshold is vanilla's own formula, not a flat range**: `meleeThreshold` is
 `MELEERANGE - 20 + target->info->radius` (`p_enemy.c`, with `MELEERANGE` 64 from `p_local.h`), so a

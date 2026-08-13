@@ -21,18 +21,16 @@ import {
  * listing reads metas alone and never touches a snapshot. Reads are validated
  * per entry in the `besttimes.ts` style, but unlike every other `topdoom.*`
  * value a save carries an explicit `version`, refused (not half-read) on
- * mismatch. docs/savegames.md § Storage and the cap.
+ * mismatch. docs/savegames.md § Storage.
  */
 
 export const SAVE_VERSION = 1;
-/** The store refuses a write past this rather than evicting — deleting somebody's save silently is worse than asking. */
-export const MAX_SAVES = 24;
 
 /**
  * The checkpoint's reserved id. An ordinary save under a fixed id, which is what
  * makes it self-overwriting and needs no field of its own: it is hidden from
- * `listSaves` and left out of the cap by *this id*, not by a `SaveMeta` flag a
- * v1 reader would not know about. docs/savegames.md § The checkpoint.
+ * `listSaves` by *this id*, not by a `SaveMeta` flag a v1 reader would not know
+ * about. docs/savegames.md § The checkpoint.
  *
  * `freshId` can never produce it (base-36 timestamp and counter), so no player
  * save can land on it.
@@ -376,21 +374,8 @@ function createMeta(id: string, name: string, capture: SaveCapture): SaveMeta {
   };
 }
 
-/**
- * How many of the stored saves the cap is about: everything the player can see
- * in the list. The checkpoint is a record like any other in the backend, so it
- * has to be discounted here or it would quietly cost somebody a slot.
- */
-async function countListed(): Promise<number> {
-  const total = await store().count();
-  return (await store().readMeta(AUTOSAVE_ID)) === undefined ? total : total - 1;
-}
-
-/** Stores a fresh capture under a new id; throws (readably) at the cap or the storage quota. */
+/** Stores a fresh capture under a new id; throws (readably) at the storage quota. */
 export async function writeSave(capture: SaveCapture, name: string): Promise<SaveMeta> {
-  if ((await countListed()) >= MAX_SAVES) {
-    throw new Error(`the save list is full (${MAX_SAVES}) — delete a save first`);
-  }
   const meta = createMeta(await freshId(), name, capture);
   await putSave(meta, await encodeState(meta.id, capture.state));
   return meta;
@@ -399,8 +384,7 @@ export async function writeSave(capture: SaveCapture, name: string): Promise<Sav
 /**
  * Refills an existing save from a fresh capture, keeping its id and its name —
  * an overwrite replaces a slot's contents, and the name is the slot's label
- * (changed on its own through `renameSave`). Deliberately no cap check: no new
- * save appears, so the cap can't refuse an overwrite even when the list is full.
+ * (changed on its own through `renameSave`).
  */
 export async function overwriteSave(id: string, capture: SaveCapture): Promise<SaveMeta> {
   const previous = await readMeta(id);
@@ -422,9 +406,9 @@ export interface CheckpointStore {
 }
 
 /**
- * Replaces the checkpoint with a fresh capture. No cap check, like
- * `overwriteSave`: the id already exists (or is the engine's own), so no listed
- * save appears. docs/savegames.md § The checkpoint.
+ * Replaces the checkpoint with a fresh capture: the id is the engine's own, so
+ * the same key replaces both records and there is only ever one.
+ * docs/savegames.md § The checkpoint.
  */
 export async function writeAutosave(capture: SaveCapture): Promise<void> {
   const meta = createMeta(AUTOSAVE_ID, AUTOSAVE_NAME, capture);
@@ -518,9 +502,6 @@ export async function importSave(text: string): Promise<SaveMeta> {
     throw refusal();
   }
   if (!isLoadableState(state)) throw refusal();
-  if ((await countListed()) >= MAX_SAVES) {
-    throw new Error(`the save list is full (${MAX_SAVES}) — delete a save first`);
-  }
   // `asMeta` supplies every meta field, so nothing of the file's own top level
   // is spread in: an imported file must not smuggle extra keys into storage.
   const meta: SaveMeta = { ...asMeta(raw, await freshId()), version: SAVE_VERSION };

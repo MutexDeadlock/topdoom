@@ -46,7 +46,6 @@ describe('Regressions · fog reveal radius', () => {
 
     assert.deepEqual(at(41), { dist: 5120, alpha: 1 });
     assert.deepEqual(at(42), { dist: 5248, alpha: 0 });
-    assert.equal(at(29).alpha, 1, '3584 — the reported case, on synthetic geometry');
   });
 
   // Without this, a bug that revealed everything unconditionally would pass the

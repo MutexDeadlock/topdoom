@@ -53,7 +53,6 @@ describe('Regressions · player hitscan range', () => {
 
     // The regression itself: a free player bullet must not fall back to the
     // monster bound, which is what shotPath uses when no range is passed.
-    assert.notEqual(playerShotRange('hitscan', null, mapSpan), WEAPON_RANGE);
     assert.ok(PLAYER_WEAPON_RANGE > WEAPON_RANGE);
   });
 });

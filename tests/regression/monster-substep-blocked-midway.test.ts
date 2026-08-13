@@ -130,9 +130,10 @@ describe('Regressions · a sub-step refused part-way through an approved chase s
   });
 
   test('a monster with nowhere legal to land still refuses to move', () => {
-    // The guard against over-correcting: the fallback only fires when the full
-    // chase step lands clear, so a monster wedged into a space smaller than
-    // itself must not walk out through the wall. A 56-unit cell is narrower
+    // The guard against over-correcting, and it covers the escape hatch in
+    // `monster-flush-against-wall.test.ts` too: both fallbacks only fire when
+    // the full chase step lands clear, so a monster wedged into a space smaller
+    // than itself must not walk out through the wall. A 56-unit cell is narrower
     // than the demon's 60-unit diameter.
     const grid = gridMap(['###', '#.#', '###'], { cell: 56 });
     const world = new World(grid.map);

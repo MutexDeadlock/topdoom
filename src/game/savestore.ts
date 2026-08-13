@@ -4,7 +4,7 @@
  * built on. Deliberately typed over `unknown` meta records — validation and the
  * `SaveMeta` shape stay in `savegames.ts`, so this file owns bytes and
  * transactions, nothing about what a save means.
- * docs/savegames.md § Storage and the cap.
+ * docs/savegames.md § Storage.
  */
 
 /**
@@ -36,7 +36,6 @@ export interface SaveStoreBackend {
   /** Meta only — a rename must not rewrite the state bytes. */
   putMeta(meta: unknown): Promise<void>;
   remove(id: string): Promise<void>;
-  count(): Promise<number>;
 }
 
 const DB_NAME = 'topdoom';
@@ -112,7 +111,6 @@ export function idbBackend(): SaveStoreBackend {
       tx.objectStore(STATE_STORE).delete(id);
       return txDone(tx);
     },
-    count: () => read(META_STORE, (s) => s.count()),
   };
 }
 

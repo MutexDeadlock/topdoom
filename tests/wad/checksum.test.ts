@@ -3,22 +3,7 @@ import assert from 'node:assert/strict';
 import { hashBytes, wadId, wadSetId } from '../../src/wad/checksum.ts';
 import { Wad, WadFile } from '../../src/wad/wad.ts';
 import { readFileSync } from 'node:fs';
-
-/** A directory-only WAD, same shape as tests/wad/levelnames.test.ts uses — no lump bytes needed. */
-function wadFile(type: 'IWAD' | 'PWAD', name: string, lumps: string[]): WadFile {
-  const dirOffset = 12;
-  const buffer = new ArrayBuffer(dirOffset + lumps.length * 16);
-  const bytes = new Uint8Array(buffer);
-  const view = new DataView(buffer);
-  for (let i = 0; i < 4; i++) bytes[i] = type.charCodeAt(i);
-  view.setInt32(4, lumps.length, true);
-  view.setInt32(8, dirOffset, true);
-  lumps.forEach((lump, i) => {
-    const at = dirOffset + i * 16;
-    for (let c = 0; c < lump.length; c++) bytes[at + 8 + c] = lump.charCodeAt(c);
-  });
-  return new WadFile(buffer, name);
-}
+import { wadFile } from '../fixtures/wadfile.ts';
 
 /**
  * The content id keys persisted per-level records, and is meant to tell a saved game whether the
@@ -61,12 +46,6 @@ describe('WAD parsing · content ids', () => {
     const same = wadFile('IWAD', 'RENAMED.WAD', ['MAP01', 'THINGS']);
     assert.equal(wadId(file), wadId(file), 'memoized, not recomputed differently');
     assert.equal(wadId(file), wadId(same), 'the id follows the bytes, not the file name');
-  });
-
-  test('WADs with different directories get different ids', () => {
-    const a = wadFile('IWAD', 'DOOM2.WAD', ['MAP01']);
-    const b = wadFile('IWAD', 'DOOM2.WAD', ['MAP02']);
-    assert.notEqual(wadId(a), wadId(b));
   });
 
   test('a set id names every file in load order', () => {

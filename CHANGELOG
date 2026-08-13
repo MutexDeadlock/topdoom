@@ -16,6 +16,7 @@ Features and improvements
     provided the level itself
     - a save whose game WAD or level file is gone now greys its "Load"
       button out instead of failing on the click
+  - the savegame list is no longer capped at 24 entries
   - tuned (auto-)aiming
 
 Fixed bugs

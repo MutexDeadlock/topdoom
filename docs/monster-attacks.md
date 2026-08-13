@@ -72,14 +72,17 @@ engine did — made every monster bullet a guaranteed hit at any distance, so a 
 top-down camera makes this worse than it would be in vanilla, not better: it opens fights at ranges
 where vanilla's gunners are missing four shots in five.
 
-**A monster's hitscan bolt tests against the player's radius plus `MONSTER_BULLET_SLOP` (4).**
-Vanilla resolves it against the player's 32-unit-wide *axis-aligned box*, which a bullet from an
-arbitrary bearing sees as `perimeter/π ≈ 40.7` units wide on average rather than 32 — a circle of
-radius 20 presents the same average target. The tolerance covers that box-vs-circle difference and
-nothing else; simulated against vanilla's own integer draw it lands within 1.5% of vanilla's hit
-rate from 64 to 1536 units. (It used to be 12, covering a stale firing angle. The angle isn't
-stale — `A_FaceTarget` re-runs on every burst shot, so it is at most one frame old — and the
-spread now dwarfs a frame's worth of error anyway.)
+**A monster's hitscan bolt tests the player's own box**, through the same
+`PIT_AddThingIntercepts` diagonal every monster gets (`util/geom.ts: traceHitsBox`,
+docs/combat.md § How a shot deals damage) — so the player's 32-unit-wide box presents 32 units
+head-on and 45 on the diagonal, exactly as vanilla's does.
+
+It used to add a `MONSTER_BULLET_SLOP` of 4 to the player's radius, standing a circle of radius 20
+in for that box because 20 presents the same *average* target (`perimeter/π ≈ 40.7`). The average was
+right and the hit rate landed within 1.5% of vanilla's from 64 to 1536 units; testing the real box
+keeps that average and gets the per-angle distribution right too, so the constant is gone. (It had
+earlier been 12, covering a supposedly stale firing angle. The angle isn't stale — `A_FaceTarget`
+re-runs on every burst shot — and the spread dwarfs a frame's worth of error anyway.)
 
 **Flight speed is that missile type's own `mobjinfo.speed`.** For a missile that field is plain
 fracunits *per tic*, so the conversion is `× 35`: imp/cacodemon 350, baron/hell knight 525, mancubus

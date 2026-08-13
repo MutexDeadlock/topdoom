@@ -141,16 +141,16 @@ all 93. A winding or partition error breaks one of those two immediately.
 
 ### Cell size and tunnelling
 
-`circleBlocked` only consults lines the **destination** circle touches, so a step longer than a cell
+`positionBlocked` only consults lines the **destination** box overlaps, so a step longer than a cell
 lands clean inside the next one and reports free. That is the engine's real behaviour — vanilla
 `P_TryMove` has the same property — not a fixture artifact, but it is easy to write a movement test
-that silently exercises it: a 48-unit slide from `(320, 200)` correctly projects to `(368, 200)`,
-while the same slide from `(320, 240)` tunnels to `(320, 304)`. Keep `cell` comfortably larger than
-any single move plus the mover's radius.
+that silently exercises it. On `gridMap(['...', '.#.', '...'])` (cell 128, so the wall cell spans
+x 128..256), a 160-unit westward slide from `(320, 200)` ends at `(160, 200)` — *inside* the wall
+cell, reported free. Keep `cell` comfortably larger than any single move plus the mover's radius.
 
 The same property means **a wall cell's interior is not blocked** — only its boundary lines are.
-`circleBlocked` at a `#` cell's centre with radius 16 returns `false`, because a 128-unit cell has
-real floor inside it. Probe near a boundary, not at a centre.
+`positionBlocked` at that `#` cell's centre `(192, 192)` with radius 16 returns `false`, because a
+128-unit cell has real floor inside it. Probe near a boundary, not at a centre.
 
 Uniform cell heights also mean `hasLineOfSight`'s floor/ceiling sampling loop never narrows
 anything. A test meaning to exercise that half of the function must build a real step or low
@@ -193,6 +193,11 @@ test that uses it):
 | `pinky_below_test.wad` | two rooms split at `y=128`, far floor **-72** (pit) | `pinky.ts` | vertical melee reach |
 | `pinky_above_test.wad` | same, far floor **+88** (ledge) | `pinky.ts` | vertical melee reach |
 | `caco_pit_test.wad` | one room split at `y=32`, far floor **-48**, cacodemon in it (`E1M1`) | in-test | floating monsters over a ledge |
+
+One regression is backed by a **committed IWAD** rather than a purpose-built map:
+`blocking-line-slide.test.ts` needs a diagonal two-sided `ML_BLOCKING` wall, which the grid fixture
+cannot build, and uses `freedoom2.wad` MAP01 line 514 (it parses in ~15ms, so the cost is not worth
+authoring a map for). It asserts the line's flags first, so the fixture cannot drift silently.
 
 The pinky pair are the maps a demon-bites-through-a-height-gap report was made on, checked against
 GZDoom (docs/monster-ai.md § Melee reach); `caco_pit_test.wad` is the map a cacodemon-stuck-in-a-pit

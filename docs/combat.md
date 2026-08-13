@@ -297,12 +297,27 @@ visible bulk. Vanilla's `PIT_AddThingIntercepts` tests the trace against each th
 box, so per-species *is* the vanilla rule. Keeping the lock on the shared box costs nothing: a pellet
 that fails it falls through to `raycastMonster`, which then tests that same body at full width.
 
-**Every box↔circle conversion goes through `util/geom.ts`'s `boxToCircleRadius`.** Vanilla collides
-axis-aligned squares; this engine tests circles. A square of half-width `h` presents mean width
-`perimeter/π` to a line arriving on an arbitrary bearing, so the circle costing the same average
-number of hits has radius `4h/π ≈ 1.273h`, not `h` — the same argument `MONSTER_BULLET_SLOP`
-(docs/monster-attacks.md) already made by hand for the player's own 16-unit box. Applying `h`
-directly instead would quietly narrow every hitbox in the game by 21%.
+**Nothing in the engine converts a box to a circle any more.** Vanilla collides axis-aligned
+squares, and both shot tests are now the real thing — `util/geom.ts`'s `traceHitsBox` for a hitscan
+and `segmentEntersBox` for a missile in flight, matching movement, which clips the same box
+(docs/movement.md § Collision).
+
+**A hitscan's width is direction-dependent, and that is the whole of `PIT_AddThingIntercepts`.**
+Vanilla does not test the box: it tests **one of the box's two diagonals**, picked by whether the
+trace's `dx` and `dy` share a sign. That is exact rather than approximate — the chosen diagonal's
+endpoints are precisely the two corners bounding the box's silhouette from that bearing, so crossing
+it is equivalent to crossing the box, in one segment test instead of four. The effective half-width
+is therefore `h·(|sin θ| + |cos θ|)`: `h` head-on, `h·√2` at 45°.
+
+This replaced a single circle of radius `4h/π ≈ 1.273h`, chosen because a square of half-width `h`
+presents mean width `perimeter/π` to a line on an arbitrary bearing. That average was *right* — the
+mean of `h·(|sin θ| + |cos θ|)` over all bearings is exactly `4h/π` — so the change does not move the
+overall hit rate. It redistributes it by angle: a shot straight down an axis is now 21% narrower than
+the circle allowed, one on the diagonal 11% wider.
+
+One consequence worth knowing: a hitscan resolves at its crossing with the **diagonal**, not at the
+box's near face, so a shot straight down the middle of a body reports the body's own centre — which
+is where the puff or blood belongs.
 
 Body *height* is per-species too, `mobjinfo.height`'s real 56-110 carried on each body as
 `PosedThing.bodyHeight` and handed out on `MonsterRef.height`. It was one shared 64 until heights
@@ -335,7 +350,9 @@ The contact test itself is `PIT_CheckThing`, both halves:
 - **Laterally**, `thing->radius + tmthing->radius` — the body's own radius plus the *missile's*
   (`PROJECTILE_RADIUS`, from each missile type's `mobjinfo.radius`: 6 for the imp, cacodemon, baron
   and mancubus fireballs, 11 for `MT_ROCKET` and the revenant's `MT_TRACER`, 13 for `MT_PLASMA`,
-  `MT_BFG` and `MT_ARACHPLAZ`), through `boxToCircleRadius`.
+  `MT_BFG` and `MT_ARACHPLAZ`) — an axis-aligned box on that sum, `segmentEntersBox`, unlike the
+  diagonal test a *hitscan* gets. Vanilla really does use two different shapes here:
+  `PIT_CheckThing` is a plain `abs(dx) >= blockdist || abs(dy) >= blockdist`.
 - **Vertically**, the asymmetric over/under pair: a miss overhead above `body.z + height`, a miss
   underneath below `body.z` by more than the missile's own 8-unit height. Not a ± tolerance either
   side of the feet — a fireball level with your knees connects and one clearing your head does not,
@@ -441,6 +458,20 @@ direct-hit roll** — `WeaponDef.splash`, not derived from `damageDiceSides`/`Mu
 version wrongly assumed. `A_Explode` really does pass a constant 128/128 to `P_RadiusAttack`,
 separate from the missile's `(P_Random()%8+1)*20` contact roll; conflating them made splash swing
 with the same small random roll as contact damage.
+
+**Range is measured to a body's *edge*, on the Chebyshev metric** — `util/geom.ts:
+blastDistanceToBox`, vanilla's `PIT_RadiusAttack`: `dist = (max(|dx|, |dy|) - thing->radius)`,
+clamped at 0. Neither half is cosmetic. Subtracting the body's own radius means a wide monster is
+both caught from further out and hurt harder at any range, and the Chebyshev metric is the same box
+the rest of the engine collides. A 48-radius mancubus 100 units from a barrel takes `128 - 52` = 76;
+measuring centre-to-centre — what this did until the collision model became a box throughout —
+gave it 28, under-damaging exactly the monsters explosions are aimed at by nearly 3×.
+
+Vanilla carries **one** number where `applyRadiusDamage` takes two: `P_RadiusAttack(spot, source,
+damage)` uses `damage` as the range too, so its falloff is a plain `bombdamage - dist`. Every call
+site here passes `radius === maxDamage` (barrel 128/128, cyberdemon rocket 128/128, arch-vile blast
+70/70), which makes `maxDamage * (1 - dist / radius)` exactly that; the pair stays split only so a
+caller could tune them apart.
 
 **The spider mastermind and the cyberdemon take no splash damage at all**, direct hits only —
 `PIT_RadiusAttack` skips them outright, and `applyRadiusDamage` reproduces that by type before it

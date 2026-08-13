@@ -92,7 +92,7 @@ import {
   type ThingState,
 } from './snapshot.ts';
 import { createThingGrid } from './things/grid.ts';
-import { circleBlocked } from './world.ts';
+import { positionBlocked } from './world.ts';
 import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import {
   BILLBOARD_MAX_REACH,
@@ -103,7 +103,7 @@ import {
 } from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
-import { boxToCircleRadius, distSqToSegment } from '../util/geom.ts';
+import { blastDistanceToBox, boxReach, segmentEntersBox, traceHitsBox } from '../util/geom.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
 
 /**
@@ -494,7 +494,7 @@ export function buildThingSprites(
     const x = origin.x + Math.cos(angleRad) * prestep;
     const y = origin.y + Math.sin(angleRad) * prestep;
     const z = origin.z + 8;
-    if (circleBlocked(world, x, y, skullRadius, z, true)) return;
+    if (positionBlocked(world, x, y, skullRadius, z, true)) return;
 
     // Already alerted, with reactionTicks/movecount pre-zeroed (pushThing's own
     // defaults) so its very first chase call is free to roll straight into
@@ -518,7 +518,7 @@ export function buildThingSprites(
    * Vanilla ends `A_SpawnFly` with `P_TeleportMove`, which is what makes a
    * spawn spot lethal to stand on: everything overlapping the new body takes
    * `TELEFRAG_DAMAGE` rather than the spawn being blocked or skipped. That is
-   * also why there's no `circleBlocked` guard here, unlike `spawnLostSoul`.
+   * also why there's no `positionBlocked` guard here, unlike `spawnLostSoul`.
    * docs/monster-iconofsin.md § The spawn cube.
    */
   function spawnMonster(type: number, at: Pos3, angleRad: number): PosedThing | null {
@@ -714,7 +714,7 @@ export function buildThingSprites(
   function applyKnockback(p: PosedThing, dt: number): void {
     const nx = p.x + p.velX * dt;
     const ny = p.y + p.velY * dt;
-    if (circleBlocked(world, nx, ny, p.blockRadius, p.z, true)) {
+    if (positionBlocked(world, nx, ny, p.blockRadius, p.z, true)) {
       p.velX = 0;
       p.velY = 0;
       return;
@@ -825,7 +825,7 @@ export function buildThingSprites(
     // isn't in `posed` at all and has to be added by hand.
     const blockers = grid.solidBodies({ x: p.spawnX, y: p.spawnY });
     if (player) blockers.push({ x: player.x, y: player.y, radius: PLAYER_RADIUS });
-    if (circleBlocked(world, p.spawnX, p.spawnY, p.blockRadius, z, true, false, blockers)) return false;
+    if (positionBlocked(world, p.spawnX, p.spawnY, p.blockRadius, z, true, blockers)) return false;
 
     onRespawn?.({ x: p.x, y: p.y, z: p.sector?.floorHeight ?? p.z }, { x: p.spawnX, y: p.spawnY, z });
 
@@ -1345,14 +1345,15 @@ export function buildThingSprites(
       // that alone measured ~138 ms/frame on NUTS.WAD, more than everything
       // else in the frame put together.
       const out: MonsterRef[] = [];
-      const rSq = radius * radius;
-      grid.forEachMonsterNear(pos.x, pos.y, radius, (p) => {
+      // Range is measured to each body's *edge* (`blastDistanceToBox`), so the
+      // grid box has to reach a full body-width further than the blast itself
+      // or the widest monsters — the ones the subtraction matters most for —
+      // would never be considered.
+      grid.forEachMonsterNear(pos.x, pos.y, radius + grid.maxBodyRadius(), (p) => {
         // blockerGrid also carries SOLID_DECORATION_TYPES now (movement only) — not MF_SHOOTABLE
         // in vanilla, so a projectile must not strike one.
         if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
-        const dx = p.x - pos.x;
-        const dy = p.y - pos.y;
-        if (dx * dx + dy * dy >= rSq) return;
+        if (blastDistanceToBox(pos.x, pos.y, p.x, p.y, p.blockRadius) >= radius) return;
         out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius, height: p.bodyHeight });
       });
       return out;
@@ -1366,12 +1367,11 @@ export function buildThingSprites(
       const midX = (from.x + to.x) / 2;
       const midY = (from.y + to.y) / 2;
       const half = Math.hypot(to.x - from.x, to.y - from.y) / 2;
-      grid.forEachMonsterNear(midX, midY, half + boxToCircleRadius(reach + grid.maxBodyRadius()), (p) => {
+      grid.forEachMonsterNear(midX, midY, half + boxReach(reach + grid.maxBodyRadius()), (p) => {
         // blockerGrid also carries SOLID_DECORATION_TYPES now (movement only) — not MF_SHOOTABLE
         // in vanilla, so a projectile must not strike one.
         if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
-        const hit = boxToCircleRadius(p.blockRadius + reach);
-        if (distSqToSegment(p.x, p.y, from.x, from.y, to.x, to.y) >= hit * hit) return;
+        if (segmentEntersBox(from.x, from.y, to.x, to.y, p.x, p.y, p.blockRadius + reach) === null) return;
         out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius, height: p.bodyHeight });
       });
       return out;
@@ -1445,7 +1445,7 @@ export function buildThingSprites(
       // monster hitscan, which a crowded map fires dozens of times a frame.
       // The sweep has to clear the widest body this map holds, since each is
       // now tested at its own radius rather than one shared 24 units.
-      const clearance = boxToCircleRadius(grid.maxBodyRadius());
+      const clearance = boxReach(grid.maxBodyRadius());
       grid.forEachMonsterAlongRay(origin.x, origin.y, dx, dy, maxDist, clearance, (p) => {
         // blockerGrid also carries SOLID_DECORATION_TYPES now (movement only) — not MF_SHOOTABLE
         // in vanilla, so a hitscan must pass through one rather than stopping on it.
@@ -1456,18 +1456,12 @@ export function buildThingSprites(
         if (!opts?.includeHidden && !p.visible) return;
         // This body's own height, same per-species reasoning as the width below.
         if (Math.abs(p.z - origin.z) > p.bodyHeight) return;
-        const relX = p.x - origin.x;
-        const relY = p.y - origin.y;
-        const t = relX * dx + relY * dy;
-        if (t < 0 || t > maxDist || (nearest && t >= nearest.dist)) return;
-        const perpX = relX - dx * t;
-        const perpY = relY - dy * t;
         // This body's own width, not one shared hitbox: `PIT_AddThingIntercepts`
-        // tests the trace against each thing's real bounding box, and the
-        // 10-128 unit spread across types is the difference between a bullet
-        // threading past a mancubus and stopping in it.
-        const hit = boxToCircleRadius(p.blockRadius);
-        if (perpX * perpX + perpY * perpY > hit * hit) return;
+        // tests the trace against a diagonal of each thing's real bounding box,
+        // and the 10-128 unit spread across types is the difference between a
+        // bullet threading past a mancubus and stopping in it.
+        const t = traceHitsBox(origin.x, origin.y, dx, dy, p.x, p.y, p.blockRadius);
+        if (t === null || t > maxDist || (nearest && t >= nearest.dist)) return;
         nearest = {
           id: p.id,
           x: origin.x + dx * t,

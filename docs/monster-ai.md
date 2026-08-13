@@ -140,7 +140,7 @@ Together those make the wait around a minute on average rather than the 12 secon
 
 `respawnCorpse` puts the monster back **at its own spawn point** (`PosedThing.spawnX`/`spawnY`/
 `spawnAngle`, vanilla's `mobj->spawnpoint`), not where the corpse lies, and refuses if anything is
-standing there — `P_CheckPosition`, which here means `circleBlocked` against the geometry plus
+standing there — `P_CheckPosition`, which here means `positionBlocked` against the geometry plus
 `grid.solidBodies` and the player, who is not in `posed` and has to be added by hand. A refused
 respawn changes nothing and simply rolls again later.
 
@@ -202,7 +202,7 @@ below.
 
 **A monster that doesn't fit where it is going cannot move at all** — `P_TryMove`'s
 `tmceilingz - tmfloorz < thing->height`, checked in `testStep` before anything else. This is the
-*destination's own* headroom and it narrows past no linedef, which is why `World.blocksMovement`'s
+*destination's own* headroom and it narrows past no linedef, which is why `checkPosition`'s
 per-opening test cannot stand in for it: a monster walking around inside a single sector crosses
 nothing, so nothing ever consults the ceiling that just came down on it. Without this a crusher that
 had already closed to eight units left its victim strolling about underneath, taking damage; vanilla
@@ -237,9 +237,9 @@ Two shapes of geometry need it, and only the first was known when the fallback w
   the time — 95 across DOOM/DOOM2/SCYTHE, e.g. DOOM2 MAP02's zombieman at (1056, 960). Every
   sub-step out of the overlap read as blocked, so they woke, faced the player and shot without ever
   taking a step.
-- **A corner the circle grazes part-way along the step.** Distance to a linedef is convex along a
-  straight path, so an obstacle can be cleared at the start of a step and again at its end while
-  blocking everything between — a wedge apex just inside the radius, or the corner of a solid
+- **A corner the box clips part-way along the step.** Whether a box spans a linedef is not monotonic
+  along a straight path, so an obstacle can be cleared at the start of a step and again at its end
+  while blocking everything between — a wedge apex, or the corner of a solid
   body's `PIT_CheckThing` box crossed on the diagonal. DOOM2 MAP06's demon at (-68, 482) grazes the
   vertex at (-64, 512) for the first 7 units of its 10-unit step and froze in the pit below the
   player (`tests/regression/monster-substep-blocked-midway.test.ts`).
@@ -247,10 +247,10 @@ Two shapes of geometry need it, and only the first was known when the fallback w
 The reach is exactly one chase step, the same bound vanilla's `P_TryWalk` has: 89 of the 95
 overlapping spawns recover, and the six that don't are wide types (mancubus, spectre) wedged deeper
 than one step, which vanilla leaves stuck too. **It cannot walk through a wall**, and that is a
-property of the numbers rather than an extra check: `circleBlocked` refuses any destination within
-`radius` of a solid line, and every type's chase step is shorter than its own radius (the closest is
-the arch-vile, 15 against 20), so a clear destination and the position one step behind it are always
-on the same side. Taking the whole step rather than creeping into the refused position is also what
+property of the numbers rather than an extra check: a refused destination is one whose *box spans* a
+solid line (docs/movement.md § Collision), and every type's chase step is shorter than its own
+radius (the closest is the arch-vile, 15 against 20) — so the box at the destination and the box one
+step behind it always overlap, and a wall that the second one spans the first spans too. Taking the whole step rather than creeping into the refused position is also what
 keeps `settleVertical` honest — standing mid-graze would snap the body up to a `groundFloor` the
 step-up rule exists to refuse, a visible 56-unit hop on the MAP06 case. The extra query is one
 `testStep` inside the already-blocked branch, replacing the two the older overlap-only version ran.
@@ -259,9 +259,12 @@ Two arguments the player's own movement never sets:
 
 - **`forMonster: true`** makes `isSolidWall` additionally treat `LF.BLOCK_MONSTERS` as solid
   (`ML_BLOCKMONSTERS`, used to fence monsters off a ledge while the player walks through freely).
-- **`avoidDropoff: true`** — every type except the cacodemon, lost soul and pain elemental
-  (`MonsterStats.flies`) — refuses a step whose `groundFloor` rest height would sit more than
-  `MAX_STEP_UP` above `World.dropoffFloor`'s lowest touched floor. Vanilla's `P_TryMove` dropoff
+- **The dropoff rule** — every type except the cacodemon, lost soul and pain elemental
+  (`MonsterStats.flies`) — refuses a step whose rest height (`PositionCheck.floorZ`) would sit more
+  than `MAX_STEP_UP` above the lowest floor the box touches (`dropoffZ`). `checkPosition`
+  accumulates `dropoffZ` **only for a monster**, since nothing else consults it, and deliberately
+  counts the far side of an `LF.BLOCK_MONSTERS` line as real floor: that line fences a monster's
+  movement, but it is not a ledge. Vanilla's `P_TryMove` dropoff
   rule, same 24-unit threshold and the same `MF_DROPOFF`/`MF_FLOAT` exemption. This is why a
   grounded monster won't walk off a high ledge chasing the player, which the player themselves
   deliberately can. `tryWalk` treats a dropoff refusal exactly like a wall refusal, so
@@ -277,9 +280,9 @@ past a target. Line of sight gates whether an attack can land; without sight a m
 keeps heading toward its target's *actual* current position (there's no remembered last-known
 position).
 
-**Bodies block bodies, using vanilla's box test.** `circleBlocked`/`slideMove` take an optional
+**Bodies block bodies, using vanilla's box test.** `positionBlocked`/`slideMove` take an optional
 `blockers` list, and `blockedByThings` reproduces `PIT_CheckThing`'s check exactly: an axis-aligned
-**box** on the summed radii (`abs(dx) < r1+r2 && abs(dy) < r1+r2`), not the circle test the rest of
+**box** on the summed radii (`abs(dx) < r1+r2 && abs(dy) < r1+r2`), the same shape the line tests in
 the collision code uses, and with **no height comparison at all** — vanilla's solid-blocking path
 returns before any z check, the well-known "infinitely tall actors" behavior. Both deviations are
 deliberate: rounding the box off would change every contact range by up to ~40% on the diagonal,
@@ -316,15 +319,15 @@ Three rules, all in `monsters/ai.ts`:
   outlives the target, so `ThingLayer`'s go-dormant branch leaves a flier's `z` alone.
 
 `testStep` carries its own copy of vanilla's "mobj must lower itself to fit"
-(`tmceilingz - thing->z < thing->height`) even though `World.blocksMovement` now applies that rule
-per crossed opening too (docs/movement.md § Collision). The two are not redundant: `blocksMovement`
+(`tmceilingz - thing->z < thing->height`) even though `checkPosition` now applies that rule
+per crossed opening too (docs/movement.md § Collision). The two are not redundant: `checkPosition`
 only ever sees openings the body is *straddling*, so a flier drifting around inside one sector
 crosses nothing, and it measures against `PLAYER_HEIGHT` rather than the species' own `stats.height`.
 Without the `testStep` copy a hovering monster would sail through the wall above a low doorway.
 
-What did change is that a flier's `circleBlocked` probe can now come back blocked purely on the
+What did change is that a flier's `checkPosition` probe can now come back blocked purely on the
 ceiling gate. That lands on the `floatok` path, which is the correct answer — the body lowers itself
-instead of turning — and the re-probe there passes `ANY_HEIGHT` so both of `blocksMovement`'s
+instead of turning — and the re-probe there passes `ANY_HEIGHT` so both of `checkPosition`'s
 feet-relative gates drop out, leaving exactly the tests vanilla runs before it sets `floatok`. All
 three flying types are 56 units tall, so the shared `PLAYER_HEIGHT` costs nothing here.
 

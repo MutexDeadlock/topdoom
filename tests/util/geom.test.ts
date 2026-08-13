@@ -1,11 +1,14 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  blastDistanceToBox,
   clipConvexPolygon,
   distSqToSegment,
   pointInConvexPolygon,
   pointNearConvexPolygon,
+  segmentEntersBox,
   segmentIntersect,
+  traceHitsBox,
 } from '../../src/util/geom.ts';
 
 /**
@@ -142,5 +145,93 @@ describe('Geometry · convex polygons', () => {
     assert.deepEqual(outside, [], 'nothing survives');
 
     assert.deepEqual(clipConvexPolygon([], 0, 0, 0, 1), [], 'n === 0 returns the input');
+  });
+});
+
+/**
+ * The two shot-vs-body tests, which are different shapes in vanilla and were
+ * both a mean-width circle here until movement stopped approximating boxes.
+ * See docs/combat.md § How a shot deals damage.
+ */
+describe('Geometry · shot-vs-body', () => {
+  test('a hitscan’s width is direction-dependent: radius head-on, radius·√2 at 45°', () => {
+    // `PIT_AddThingIntercepts` crosses one *diagonal* of the box, not the box.
+    // Due east at a body of radius 16 at the origin: the diagonal spans y ±16.
+    assert.notEqual(traceHitsBox(-100, 15.9, 1, 0, 0, 0, 16), null, 'just inside head-on');
+    assert.equal(traceHitsBox(-100, 16.1, 1, 0, 0, 0, 16), null, 'just outside head-on');
+
+    // On the 45° diagonal the tested cross-section is the full corner-to-corner
+    // span, so the reach perpendicular to the trace is radius·√2.
+    const d = Math.SQRT1_2;
+    const wide = 16 * Math.SQRT2;
+    // Offset perpendicular to a north-east trace, i.e. along (-d, d).
+    for (const [off, want] of [[wide - 0.1, true], [wide + 0.1, false]] as [number, boolean][]) {
+      const ox = -100 - d * off;
+      const oy = -100 + d * off;
+      assert.equal(traceHitsBox(ox, oy, d, d, 0, 0, 16) !== null, want, `offset ${off}`);
+    }
+  });
+
+  test('a hitscan resolves at the diagonal, so a centred shot lands on the body’s centre', () => {
+    // Not the near face: the crossing is with the diagonal, which for a shot
+    // straight down the middle is the body's own centre — where the puff goes.
+    const centred = traceHitsBox(-100, 0, 1, 0, 0, 0, 16);
+    assert.ok(centred !== null && Math.abs(centred - 100) < 1e-9, `expected 100, got ${centred}`);
+
+    // Off-centre it slides along the diagonal, so a shot grazing the near edge
+    // resolves earlier than one down the middle.
+    const grazing = traceHitsBox(-100, 15, 1, 0, 0, 0, 16);
+    assert.ok(grazing !== null && grazing < centred, `expected earlier than ${centred}, got ${grazing}`);
+
+    // Same body, but the trace points away from it.
+    assert.equal(traceHitsBox(-100, 0, -1, 0, 0, 0, 16), null);
+  });
+
+  test('a projectile’s box is the plain summed-radii AABB, exclusive at the edge', () => {
+    // Flying east past a body of half-width 22 at the origin.
+    assert.notEqual(segmentEntersBox(-100, 21.9, 100, 21.9, 0, 0, 22), null);
+    assert.equal(segmentEntersBox(-100, 22, 100, 22, 0, 0, 22), null, 'exactly flush is a miss');
+    // A 45° pass is measured against the same axis-aligned box, whose corner
+    // reach is 22·√2 ≈ 31.1 perpendicular to the travel.
+    const perp = (p: number) => segmentEntersBox(-100, -100 + p, 100, 100 + p, 0, 0, 22);
+    assert.notEqual(perp(40), null, 'perpendicular offset 28.3, inside the corner');
+    assert.equal(perp(50), null, 'perpendicular offset 35.4, outside it');
+  });
+
+  test('a projectile’s contact is the entry point, and a miss is null', () => {
+    const t = segmentEntersBox(-100, 0, 100, 0, 0, 0, 22);
+    assert.ok(t !== null && Math.abs(t - 0.39) < 1e-9, `enters at x = -22, got t=${t}`);
+    assert.equal(segmentEntersBox(-100, 50, 100, 50, 0, 0, 22), null);
+  });
+});
+
+/**
+ * `PIT_RadiusAttack`'s range: to the body's *edge*, on the Chebyshev metric.
+ * Measuring centre-to-centre instead under-damaged every wide monster, which is
+ * exactly the kind explosions get aimed at. See docs/combat.md § Splash and the BFG.
+ */
+describe('Geometry · blast range', () => {
+  test('it measures to the body’s edge, so a wide body is caught further out', () => {
+    // A 48-radius mancubus 100 units east of a 128-unit barrel blast.
+    assert.equal(blastDistanceToBox(0, 0, 100, 0, 48), 52);
+    // vanilla deals `128 - 52` = 76 there; centre-to-centre would have said 100,
+    // i.e. 28 damage.
+    const damage = (dist: number, radius = 128) => radius * (1 - dist / radius);
+    assert.equal(damage(52), 76);
+    assert.equal(damage(100), 28);
+
+    // A narrow body at the same spot is hurt less — the subtraction is per-body.
+    assert.equal(blastDistanceToBox(0, 0, 100, 0, 16), 84);
+  });
+
+  test('it is Chebyshev, not Euclidean', () => {
+    // Diagonal at (60, 60): Euclidean 84.9, Chebyshev 60. A point body sees 60.
+    assert.equal(blastDistanceToBox(0, 0, 60, 60, 0), 60);
+    assert.ok(Math.hypot(60, 60) > 84, 'the Euclidean distance really is further');
+  });
+
+  test('a body overlapping the blast point is at range 0, never negative', () => {
+    assert.equal(blastDistanceToBox(0, 0, 10, 0, 48), 0);
+    assert.equal(blastDistanceToBox(0, 0, 0, 0, 16), 0);
   });
 });

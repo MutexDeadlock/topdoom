@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { PROJECTILE_RADIUS, stepTouchesBody } from '../../src/game/spritefxdefs.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/defs.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
-import { boxToCircleRadius } from '../../src/util/geom.ts';
 import { ThingType } from '../../src/game/thingtypes.ts';
 import type { Pos3 } from '../../src/types.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
@@ -33,18 +32,24 @@ function stepPast(offset: number, z: number, len = 12): { from: Pos3; to: Pos3 }
 }
 
 describe('Regressions · projectile contact', () => {
-  test('an imp fireball hits at vanilla width, not the old flat 40 units', () => {
+  test('an imp fireball hits across PIT_CheckThing’s blockdist, exactly', () => {
     const ball = PROJECTILE_RADIUS.BAL1;
     assert.equal(ball, 6, "MT_TROOPSHOT's own mobjinfo radius");
-    // PIT_CheckThing's blockdist is 16 + 6 = 22, as the equal-mean-width circle.
-    const reach = boxToCircleRadius(PLAYER_RADIUS + ball);
-    assert.ok(reach > 27 && reach < 29, `expected ~28 units of reach, got ${reach}`);
+    // `blockdist = thing->radius + tmthing->radius` = 16 + 6, and the box is
+    // that half-width on each axis — no mean-width circle standing in for it.
+    const blockdist = PLAYER_RADIUS + ball;
+    assert.equal(blockdist, 22);
 
-    const near = stepPast(25, 20);
+    const near = stepPast(blockdist - 2, 20);
     assert.notEqual(stepTouchesBody(near.from, near.to, AT_ORIGIN, PLAYER_RADIUS, PLAYER_HEIGHT, ball), null);
 
-    // Inside the old 40-unit disc, outside vanilla's box: this used to hit.
-    const wide = stepPast(35, 20);
+    // Exactly at blockdist is a miss, matching vanilla's `>=`.
+    const flush = stepPast(blockdist, 20);
+    assert.equal(stepTouchesBody(flush.from, flush.to, AT_ORIGIN, PLAYER_RADIUS, PLAYER_HEIGHT, ball), null);
+
+    // The equal-mean-width circle this used to test reached ~28 units, so a
+    // fireball 25 north of the player connected. Vanilla's box does not.
+    const wide = stepPast(25, 20);
     assert.equal(stepTouchesBody(wide.from, wide.to, AT_ORIGIN, PLAYER_RADIUS, PLAYER_HEIGHT, ball), null);
   });
 
@@ -85,26 +90,24 @@ describe('Regressions · projectile contact', () => {
     assert.equal(stepTouchesBody(through.from, through.to, AT_ORIGIN, imp, MONSTER_STATS[ThingType.imp].height, bfg), null);
   });
 
-  test('a graze that falls between two frame samples still connects', () => {
-    // MT_ARACHPLAZ/MT_BFG fly 25 units/tic, so one tic carries a missile 25
-    // units — still further than the body it is passing is wide, which is what
-    // makes sampling the endpoints lossy.
+  test('the test is swept, not sampled at the step’s endpoints', () => {
+    // A step long enough to cross the whole box: both endpoints sit outside it,
+    // so sampling either one sees nothing and only a swept test connects.
     const ball = PROJECTILE_RADIUS.APLS;
-    const step = 875 * DOOM_TIC;
-    const reach = boxToCircleRadius(PLAYER_RADIUS + ball);
-    // 1 unit inside the contact circle, not the 3 this used before the tic lock:
-    // a shorter step puts the endpoints closer to the closest-approach point, so
-    // the band where a point test misses but a swept test connects is narrower.
-    // That band shrinking is the whole benefit of the shorter step — it has not
-    // closed, which is why the swept test is still load-bearing.
-    const offset = reach - 1;
+    const blockdist = PLAYER_RADIUS + ball;
+    const from: Pos3 = { x: -blockdist * 2, y: 0, z: 32 };
+    const to: Pos3 = { x: blockdist * 2, y: 0, z: 32 };
+    assert.ok(Math.abs(from.x) > blockdist && Math.abs(to.x) > blockdist, 'both endpoints are clear');
+    const t = stepTouchesBody(from, to, AT_ORIGIN, PLAYER_RADIUS, PLAYER_HEIGHT, ball);
+    assert.notEqual(t, null);
+    // It reports first contact, so the entry point rather than closest approach.
+    assert.ok(Math.abs(from.x + (to.x - from.x) * t! + blockdist) < 1e-9, 'enters at -blockdist');
 
-    // Closest approach falls at the step's midpoint, inside the contact circle;
-    // both endpoints sit outside it, so a point test at either one sees nothing.
-    const from: Pos3 = { x: -step / 2, y: offset, z: 32 };
-    const to: Pos3 = { x: step / 2, y: offset, z: 32 };
-    assert.ok(Math.hypot(from.x, from.y) > reach && Math.hypot(to.x, to.y) > reach, 'both endpoints are clear');
-    assert.notEqual(stepTouchesBody(from, to, AT_ORIGIN, PLAYER_RADIUS, PLAYER_HEIGHT, ball), null);
+    // Against stock missile speeds the sweep is now belt-and-braces rather than
+    // load-bearing: the fastest missile covers 25 units a tic
+    // (`875 * DOOM_TIC`), and the narrowest box a missile meets is wider than
+    // that, so an endpoint sample would not actually skip one.
+    assert.ok(875 * DOOM_TIC < 2 * blockdist);
   });
 
   test('contact reports where along the step it happened, so the nearest body wins', () => {

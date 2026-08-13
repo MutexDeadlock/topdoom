@@ -175,11 +175,11 @@ The rule for parameters: **take a `Pos2`/`Pos3` where callers already hold a poi
 scalars where they're computing coordinates inline.** `Player`, `PosedThing`, `MonsterBody` and the
 WAD's `Thing` already carry `x`/`y`(/`z`), so passing them costs no conversion and no allocation.
 But `util/geom.ts`'s primitives and `World`'s point queries (`linesNear`, `subsectorAt`, `sectorAt`,
-`floorAt`, `groundFloor`, `circleBlocked`) deliberately stay on scalars — their callers compute
+`floorAt`, `groundFloor`, `positionBlocked`) deliberately stay on scalars — their callers compute
 coordinates on the fly, so a point parameter there would force a fresh object per call in exactly
 the code that runs thousands of times a frame.
 
-**Hot paths are measured, not reasoned about.** `hasLineOfSight`, `circleBlocked`, the monster grids
+**Hot paths are measured, not reasoned about.** `hasLineOfSight`, `positionBlocked`, the monster grids
 and the sprite batches all carry non-obvious shapes because the obvious version measured too slow —
 and at least one obvious-looking optimization (an allocation-free `linesNear`) measured *slower*.
 Don't "simplify" these without measuring; the relevant docs say which is which.

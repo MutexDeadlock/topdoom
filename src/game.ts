@@ -802,8 +802,10 @@ export class Game {
   private monsterCrossedLines(prev: Pos2, pos: Pos2): Placement | null {
     const dest = this.specials?.crossMonster(prev, pos, this.inventory.keys);
     if (!dest) return null;
-    const from = { x: pos.x, y: pos.y, z: this.world.groundFloor(pos.x, pos.y, 0) };
-    this.effects.spawnTeleportPair(from, dest, this.world.groundFloor(dest.x, dest.y, 0));
+    // A fog puff has no body, so the plain sector floor is the whole answer —
+    // `groundFloor` at radius 0 would walk the lines to arrive at the same number.
+    const from = { x: pos.x, y: pos.y, z: this.world.floorAt(pos.x, pos.y) };
+    this.effects.spawnTeleportPair(from, dest, this.world.floorAt(dest.x, dest.y));
     return dest;
   }
 

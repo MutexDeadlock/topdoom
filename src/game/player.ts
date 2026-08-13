@@ -342,7 +342,7 @@ export class Player implements Pos3 {
     this.velY += (targetY - this.velY) * k;
 
     if (Math.abs(this.velX) > 0.01 || Math.abs(this.velY) > 0.01) {
-      const moved = slideMove(this.world, this, this.velX * dt, this.velY * dt, PLAYER_RADIUS, false, false, blockers);
+      const moved = slideMove(this.world, this, this.velX * dt, this.velY * dt, PLAYER_RADIUS, blockers);
       // Adopt whatever the slide actually managed as the new velocity, exactly
       // as vanilla's P_SlideMove writes its clipped vector back to momx/momy:
       // the component that ran along a wall carries over to the next frame and
@@ -369,7 +369,7 @@ export class Player implements Pos3 {
     // identical decay does), unlike `velX`/`velY`'s own feel-tuned
     // `ACCELERATION` model.
     if (Math.abs(this.knockVelX) > KNOCKBACK_STOP_SPEED || Math.abs(this.knockVelY) > KNOCKBACK_STOP_SPEED) {
-      const moved = slideMove(this.world, this, this.knockVelX * dt, this.knockVelY * dt, PLAYER_RADIUS, false, false, blockers);
+      const moved = slideMove(this.world, this, this.knockVelX * dt, this.knockVelY * dt, PLAYER_RADIUS, blockers);
       if (dt > 0) {
         this.knockVelX = (moved.x - this.x) / dt;
         this.knockVelY = (moved.y - this.y) / dt;
@@ -387,10 +387,10 @@ export class Player implements Pos3 {
     }
 
     // groundFloor (not the bare sector floor) keeps the resting height pinned to
-    // a ledge's high side for as long as the player's circle still straddles it,
+    // a ledge's high side for as long as the player's box still spans it,
     // matching DOOM's thing->floorz — that's also what makes a gap narrower than
     // the player's diameter (2*PLAYER_RADIUS) crossable without falling in: the
-    // circle overlaps both edges at once the whole way across, so this never
+    // box overlaps both edges at once the whole way across, so this never
     // reports the lower pit floor in between, the same "step over it" quirk
     // vanilla has.
     const groundZ = this.world.groundFloor(this.x, this.y, PLAYER_RADIUS);
@@ -407,7 +407,7 @@ export class Player implements Pos3 {
       }
     } else {
       // On the ground, or stepping up onto a higher tread within MAX_STEP_UP
-      // (already enforced by circleBlocked/blocksMovement above). Vanilla
+      // (already enforced by positionBlocked above). Vanilla
       // snaps this instantly rather than animating it — climbing a real
       // staircase already looks smooth because each tread is a separate
       // sector crossed one frame at a time while walking.

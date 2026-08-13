@@ -8,25 +8,41 @@
 `World` provides spatial queries over a `DoomMap`: a 128-unit grid buckets linedefs for `linesNear`,
 and `subsectorAt`/`sectorAt` walk the BSP tree the same way the renderer does.
 
+**A mover is an axis-aligned box, half-width `radius`** — vanilla's own `mobjinfo.radius`, 16 for the
+player. Not a circle: the engine clipped an inscribed circle until it was replaced by
+`P_BoxOnLineSide`, and the box is what every rule below is written against. The two disagree by up
+to `radius·(√2−1)` on the diagonal, which is why 0.93% of positions legal under the circle are not
+under the box — the box does not fit diagonal gaps a mapper shaped to be impassable.
+
+Every line test is `PIT_CheckLine`'s pair, in vanilla's order:
+
+1. **`boxOverlapsLine`** — the mover's box against the linedef's *own* precomputed bounding box.
+   Exactly flush is deliberately not an overlap (vanilla's `<=`/`>=`). This is also what makes a line
+   stop applying past its own ends, and so why nothing can catch on a wall's endpoint (§ slideMove).
+2. **`boxOnLineSide`** — `P_BoxOnLineSide`, which reads the line's `slopetype` to pick which two
+   opposing corners decide it and returns `-1` when they disagree, i.e. the box spans the line.
+
+Both read per-linedef tables (`lineBox`, `lineDX`/`lineDY`, `lineSlope`, first vertex) built once in
+`World`'s constructor from `P_LoadLineDefs`' own derivation. They are typed arrays rather than fields
+on `LineDef` because this is the hottest query in the engine and `LineDef` is the parse result, which
+`tests/fixtures/gridmap.ts` constructs by hand.
+
 **`groundFloor`** is the subtlest part, and it exists to fix a specific class of bug (falling off a
 ledge permanently deadlocking movement): the height a body should rest at is not simply the
 point-sampled sector floor. DOOM pins a mover's `floorz` to a straddled ledge's *high* side for as
-long as its collision circle still spans that ledge's linedef (`P_TryMove`'s `tmfloorz`
-accumulation) — only once fully clear does the floor, and so `z`, drop to the low side.
-`groundFloor` reproduces this: the max of the local sector's floor and the opening-bottom of any
-two-sided line the circle is currently straddling (`crossesLine` tests straddling — spanning both
-sides of the infinite line — not mere proximity, matching `P_BoxOnLineSide`). **Player `z` must be
-snapped from `groundFloor`, not `floorAt`**, or the very next frame's step-up test compares a
-freshly-dropped `z` against a still-high opening bottom and blocks every further move near that edge,
-forever.
+long as its box still spans that ledge's linedef (`P_TryMove`'s `tmfloorz` accumulation) — only once
+fully clear does the floor, and so `z`, drop to the low side. `groundFloor` reproduces this: the max
+of the local sector's floor and the opening-bottom of any two-sided line the box currently spans.
+**Player `z` must be snapped from `groundFloor`, not `floorAt`**, or the very next frame's step-up
+test compares a freshly-dropped `z` against a still-high opening bottom and blocks every further move
+near that edge, forever.
 
-Relatedly, `circleBlocked` only applies a two-sided line's opening (step-height, headroom) gate while
-the circle actually straddles it (`crossesLine`); solid walls (`isSolidWall`: one-sided or
-`LF.BLOCKING`) block on mere proximity regardless of side, since real walls stop you from any
-direction. Conflating "near" with "straddling" for passable openings is exactly what causes the
-deadlock above.
+A **solid** wall goes through the same two gates as a passable opening — it is not refused on mere
+proximity. That is `PIT_CheckLine`'s own order (bbox, then side, and only then the `!backsector` /
+`ML_BLOCKING` decisions), and it is the whole reason the endpoint jam § slideMove used to describe
+cannot happen: a wall that the box does not span is a wall that does not apply.
 
-**`blocksMovement` is all three of `P_TryMove`'s height gates, and the third one is easy to miss.**
+**`checkPosition` applies all three of `P_TryMove`'s height gates, and the third one is easy to miss.**
 Against a crossed opening, in vanilla's order: too short to stand in at all
 (`tmceilingz - tmfloorz < thing->height`), too big a step up (`tmfloorz - thing->z > 24`), and the
 opening's top too low **for this body's own `z`** (`tmceilingz - thing->z < thing->height`, "mobj
@@ -48,11 +64,11 @@ general narrowing.
 
 `ANY_HEIGHT` as the `z` argument drops both feet-relative gates and tests the line's geometry alone —
 vanilla's pre-`floatok` subset, wanted by exactly one caller (docs/monster-ai.md § Floating
-monsters). `blocksMovement` measures every gate against `PLAYER_HEIGHT`; a monster's real
+monsters). `checkPosition` measures every gate against `PLAYER_HEIGHT`; a monster's real
 `stats.height` is applied separately by `monsters/ai.ts: testStep`.
 
 **Thing-vs-thing collision has the same class of deadlock, and the same shape of fix.**
-`blockedByThings` (used by both `circleBlocked` and `blockingLineAt`) takes an optional `from`, the
+`blockedByThings` (used by `checkPosition`, and through it by `slideMove`) takes an optional `from`, the
 mover's current position: a blocker already overlapped there only refuses the move if it presses
 *further* in (Euclidean distance to that blocker's centre goes down), not merely for the destination
 still overlapping. Without this, two bodies that end up touching — map placement, or a knockback
@@ -103,76 +119,82 @@ compares against *that sector's own* ceiling (`game/moverblocking.ts: blocksFloo
 neighbor and lets the floor carry the player up into the neighbor's ceiling/upper wall — they end up
 visibly stuck inside geometry. `blocksFloorRise` additionally checks the prospective floor height
 against `groundCeiling` at the player's actual position, gated the same way `headroomBlocked` gates
-sector membership (`circleOverlapsSector`), so the neighbor's real ceiling stops the rise before it
+sector membership (`boxOverlapsSector`), so the neighbor's real ceiling stops the rise before it
 gets that far. See docs/specials.md § Every other mover stops instead.
 
 ### slideMove
 
-`slideMove` is vanilla's `P_SlideMove`/`P_HitSlideLine`: a refused move is **projected onto the
-blocking line's own direction** and retried, up to three walls deep, so what survives is the component
-running along the wall and what's lost is the component pushing into it.
+`slideMove` is vanilla's `P_SlideMove` (`p_map.c`), and it is the **player's alone** — a monster gets
+`P_Move`'s all-or-nothing step instead (docs/monster-ai.md § Movement). It is only entered once the
+whole move has already been refused, which is `P_XYMovement`'s own structure.
 
-`blockingLineAt` identifies that wall — deliberately a separate function from `circleBlocked` rather
-than an extension of it, because the two want opposite things: `circleBlocked` is the hot one (every
-monster's `tryWalk` probe, every dropoff test) and returns on the *first* blocker it finds, while this
-one has to weigh all of them to pick the nearest, i.e. the wall the circle is actually pressed against
-rather than one it merely grazes.
+One attempt, up to `SLIDE_ATTEMPTS` (vanilla's `hitcount == 3`) of them:
 
-It used to try the two axes separately instead, retrying the blocked axis from the new position — and
-that only ever worked for an **axis-aligned** wall, for which (and only for which) the coordinate axes
-happen to *be* the wall's own tangent and normal. Against anything diagonal it stopped the player
-dead: pushing due north into a 45° wall leaves `dx = 0`, so there's no second axis left to move on.
-Measured on real geometry across five maps, the share of wall-adjacent probes that covered under 5% of
-a free second's distance roughly halved, the residue being genuine head-on walls, which *should* stop
-you. Rounding a convex corner, the one case the axis split was written for, still works — the
-projection produces the same slide, derived from the wall's geometry rather than the coordinate
-system.
+1. **Three corner traces.** The leading corner of the box and the two beside it are each traced along
+   the move; the fourth, trailing corner deliberately is not — vanilla traces three. Each trace keeps
+   the nearest blocking line it crosses (`bestslidefrac`/`bestslideline`).
+2. **Commit up to the wall**, less `SLIDE_FUDGE` — vanilla's `0x800`, a thirty-second of the step —
+   so the position taken is reliably clear of the wall rather than exactly on it. This costs up to
+   that fraction of the along-wall travel on the tic where contact happens, which is vanilla's own
+   behaviour, not an approximation of it.
+3. **Project the remainder** onto the blocking line's own direction (`P_HitSlideLine`), so what
+   survives is the component running along the wall and what is lost is the component pushing into
+   it. Vanilla's angle arithmetic reduces to exactly this projection, without `P_AproxDistance`'s
+   ~12% magnitude error.
 
-The per-axis attempt survives as a **fallback**, for the two cases projection can't resolve: a solid
-body rather than a line stopped the move (`SOLID_BODY` — and axis separation is the *correct* slide
-there anyway, since `PIT_CheckThing`'s blocker is an axis-aligned box, so its faces run along the
-axes), or the circle already overlaps the wall it's trying to slide along, so the projection makes no
-progress. Every position the projection loop returns has been validated by `blockingLineAt`; the loop
-never falls out with an unchecked one.
+When no trace finds a wall, it falls to vanilla's **`stairstep`**: try Y alone, and X alone only if Y
+was refused. That is also where a **solid body** rather than a line lands, since a thing produces no
+line intercept at all — which is the correct slide against one anyway, `PIT_CheckThing`'s blocker
+being an axis-aligned box whose faces run along the axes. Note the consequence of vanilla's exact
+nesting: with no Y component the Y attempt is the mover's own position and succeeds, so a purely
+lateral move stopped by a body does not fall through to the X attempt.
 
-**`roundCorner` is the one step vanilla has no equivalent of, and it runs only after both of
-vanilla's have refused.** A collision *box* never rounds an outside corner; a circle can come to
-rest against a wall's **endpoint**, out past the wall's own length. There the projection is a no-op
-(the move is already parallel to the refused wall) and an axis-aligned push leaves the stairstep no
-second axis to try, so the player freezes solid: forward dead, backward and strafing fine. Rounding
-projects onto the tangent *at the contact* instead — perpendicular to the corner-to-circle radial,
-which preserves the distance to that corner exactly as the line direction preserves the distance to
-the wall — and the result is still validated by `circleBlocked` before it is taken. **Repro: DOOM2
-MAP01**, walking due west into the lift (sector 21) at any y below 648 jams on the corner at
-(184, 632), where the lift's south wall (line 125) meets the room's diagonal (line 158); from
-further north the corner is never touched, which made the bug look like a one-sided lift.
+**Ordering the intercepts costs nothing here.** Vanilla's `P_PathTraverse` sorts them by fraction and
+stops at the first blocker, but `PTR_SlideTraverse`'s blocking decision reads nothing but the line
+itself, and its only output is the smallest blocking fraction. A running minimum over the grid's own
+order (`forEachLineAlongSegment`, docs/world.md § hasLineOfSight) therefore picks the same line, with
+no sort and no intercept buffer.
 
-**Two rules keep it a pure rescue.** "Both refused" is a share of the requested move
-(`SLIDE_MIN_PROGRESS_SQ`, 1%), not exact zero: `Player.update` writes the achieved displacement back
-as velocity, so after any wall contact a microscopic cross-axis residue survives (and savegames
-store it — one MAP01 report had `velY = 7e-6`), letting the stairstep "succeed" by ~1e-7 a tic,
-which an exact-zero gate counts as progress and so masks the jam. And rounding is only taken when it
-moves farther than the stairstep did. Together they mean it can only ever turn a (near-)dead stop
-into movement: measured over 1.17M wall-adjacent probes across 14 DOOM/DOOM2/freedoom2 maps, with
-and without a poisoned cross-axis residue, no probe moved *less* than before and none stopped that
-used to move, while 1.26% that had frozen now move.
+**A two-sided `ML_BLOCKING` line counts as blocking in the traces, and vanilla's does not.**
+`PTR_SlideTraverse` tests only `ML_TWOSIDED` and the opening, so a two-sided wall carrying
+`ML_BLOCKING` — an ordinary way to build a solid diagonal — is invisible to the traverse while
+`PIT_CheckLine` refuses the move. No wall is found, the move falls to the stairstep, and if either
+component is exactly zero the stairstep is a no-op: the player stops dead against a wall they should
+slide along.
 
-**It must stay that last resort, not become a per-contact direction choice inside the projection
-loop.** The tempting "root cause" refactor — line direction against the face, corner tangent at an
-endpoint, gate and comparison deleted — fails because at an endpoint contact **both** directions can
-be the correct slide, and only trying vanilla's first tells them apart: pushed head-on into a
-diagonal wall's corner, the move is anti-parallel to the corner radial, so the tangent projection is
-exactly zero and the per-contact version freezes — while the line's own direction still slides along
-the diagonal, as vanilla does. **Repro: DOOM2 MAP01**, at (1696, 1536) pushing due east into the
-west endpoint (1712, 1536) of line 204, which runs off to the south-east. Swept over 2.8M probes
-across seven DOOM2 maps, the per-contact version froze hundreds of moves that used to slide and
-shortened ~1.5% of them; salvaging it means trying both directions and keeping the better validated
-one — the same try-then-compare as above, relocated and paying extra collision probes per attempt.
+Vanilla rarely shows this because its momentum comes from an angle that is almost never exactly
+axis-aligned. **This engine hits it constantly**: movement is camera-relative off a yaw that snaps to
+fixed values, so holding one strafe key produces an exactly zero component as the *normal* case.
+**Repro: DOOM2 MAP01** line 334, the diagonal (-448,576)-(-576,704) — running due west into it
+stopped dead. Pinned by `tests/regression/blocking-line-slide.test.ts` on freedoom2 MAP01 line 514,
+since the grid fixture cannot build a diagonal.
 
-Unlike vanilla, the projection runs from the circle's *current* position instead of first advancing it
-to the contact point. At this engine's frame rate a move step is a few map units, so the skipped
-fraction is far below anything visible, and the perpendicular distance to the wall is preserved by the
-projection either way, so the circle never creeps into it.
+Aligning the traverse with what actually refuses the move can only ever turn a dead stop into a
+slide: `slideMove` is entered only once the whole move is already refused, so finding the real
+blocker is strictly better than finding none. It never blocks a move that was allowed.
+
+**One deliberate deviation in the traces.** `PIT_AddLineIntercepts` tests the trace against the
+*infinite* line and leans on blockmap locality to stop that inventing crossings past a linedef's own
+ends; this bounds both segments instead, the same choice `hasLineOfSight` and `shotPath` make. That
+is a strict subset of vanilla's intercepts, which is the safe direction of error: a missed one
+degrades to the stairstep, where a phantom one would slide along a wall that is not there. A trace
+never validates a position — `positionBlocked` does — so it can only pick a direction, never let a body
+through a wall.
+
+**There is no corner-rounding rescue, and there must not be one.** A collision *circle* can come to
+rest against a wall's **endpoint**, out past the wall's own length, where the projection is a no-op
+and the stairstep has no second axis to try — the player freezes solid, forward dead, backward and
+strafing fine. That state is unreachable for a box: a linedef stops applying the moment the box no
+longer overlaps the line's own bounding box (§ Collision), so a wall that refuses the move is always
+a wall whose direction is a usable slide. The rescue this file used to document, along with its
+progress gate, was deleted with the circle.
+
+The visible consequence is that a body pressed into a wall junction now stops where vanilla stops it.
+Pushing due east at DOOM2 MAP01 (1696, 1536) — into the junction where line 205 runs north-south and
+line 204 heads off south-east — produces no movement, because a pure-east push into a north-south
+wall has no along-wall component. The circle used to round that corner and slide south-east instead.
+Nothing is trapped by this: measured across nine DOOM/DOOM2 maps, 9 of 375,495 legal positions have
+no free direction at all, against 8 of 379,022 under the circle.
 
 **`Player.update` adopts whatever the slide actually managed as the new velocity**
 (`(moved.x - x) / dt`), which is `P_SlideMove` writing its clipped vector back to `momx`/`momy`: the
@@ -232,7 +254,7 @@ that is a live tuning knob rather than a matched behavior.
 rather than always snapping straight to it:
 
 - **`z <= groundFloor`** (on the ground, or a step-up onto a higher tread within `MAX_STEP_UP` —
-  already gated by `circleBlocked`) snaps instantly, matching vanilla, which doesn't animate climbing
+  already gated by `positionBlocked`) snaps instantly, matching vanilla, which doesn't animate climbing
   a stair riser either; walking across a real staircase already reads as smooth because each tread is
   a separate sector crossed one frame at a time.
 - **`z > groundFloor`** (the ground dropped out — walked off a ledge) is airborne: `velZ` accumulates
@@ -254,7 +276,7 @@ common step height — sits right on that boundary, so the wrong choice makes or
 
 Crossing a short chasm without falling in — DOOM's own "gap narrower than the player" quirk — falls
 out of `groundFloor` for free rather than needing separate jump logic: a gap narrower than
-`2*PLAYER_RADIUS` (32 units) keeps the collision circle straddling *both* edges for the entire
+`2*PLAYER_RADIUS` (32 units) keeps the collision box spanning *both* edges for the entire
 crossing, so `groundFloor` reports the high side throughout and the low pit floor is never sampled. A
 wider gap does lose that straddle partway across, and the player falls in — there's no jump input to
 clear it, unlike some later source ports.
@@ -316,7 +338,7 @@ rate first, which would only approximate it. Below `KNOCKBACK_STOP_SPEED` (1 u/s
 to exactly 0 rather than crawling forever, the same reasoning as `WallFader`'s fade snap.
 
 - **`ThingLayer.applyKnockback`** integrates a monster or barrel's velocity as a plain displacement,
-  blocked by ordinary wall/step collision (`circleBlocked`, `forMonster: true` — `ML_BLOCKMONSTERS`
+  blocked by ordinary wall/step collision (`positionBlocked`, `forMonster: true` — `ML_BLOCKMONSTERS`
   stops *any* non-player thing, so this is the correct flag even for a barrel). Unlike the player, a
   blocked monster or barrel stops dead and drops the remaining velocity rather than sliding, matching
   `P_XYMovement` zeroing `momx`/`momy` for a blocked non-missile, non-player mobj. It runs

@@ -8,7 +8,7 @@
 import type { SpriteAnimator } from '../render/sprites.ts';
 import type { SfxId } from '../audio/sfx.ts';
 import type { Pos3 } from '../types.ts';
-import { boxToCircleRadius, closestTOnSegment } from '../util/geom.ts';
+import { segmentEntersBox } from '../util/geom.ts';
 import { DOOM_TIC } from '../constants.ts';
 
 /**
@@ -263,18 +263,14 @@ export function turnToward(from: number, to: number, maxDelta: number): number {
 
 /**
  * Vanilla's `PIT_CheckThing` for a missile, as one frame's worth of flight:
- * where along the step `from`→`to` the projectile touched `body`, or null if it
- * passed it. Both halves are the real vanilla test rather than a tolerance —
- * laterally `thing->radius + tmthing->radius` (as the circle
- * `boxToCircleRadius` converts that box to), vertically the asymmetric
- * overhead/underneath pair, evaluated where the step passes closest to the
- * body. `bodyHeight` is the target's own `mobjinfo.height`
- * (`MonsterRef.height`) or `PLAYER_HEIGHT`, per-species like the radius.
- *
- * **Swept, not sampled at the step's end**: `game.ts` clamps `dt` at 0.05s, so
- * the fastest missiles cover 43 units in one frame — further than the widest
- * contact circle a small body presents, i.e. a point test could step straight
- * through the player. See docs/monster-attacks.md § Monster projectiles in flight.
+ * where along the step `from`→`to` the projectile **first touches** `body`, or
+ * null if it passed it. Both halves are the real vanilla test rather than a
+ * tolerance — laterally the axis-aligned `thing->radius + tmthing->radius` box
+ * (`segmentEntersBox`, swept along the step), vertically the asymmetric
+ * overhead/underneath pair, evaluated at the moment of contact. `bodyHeight` is
+ * the target's own `mobjinfo.height` (`MonsterRef.height`) or `PLAYER_HEIGHT`,
+ * per-species like the radius.
+ * See docs/monster-attacks.md § Monster projectiles in flight.
  */
 export function stepTouchesBody(
   from: Pos3,
@@ -284,12 +280,8 @@ export function stepTouchesBody(
   bodyHeight: number,
   missileRadius: number,
 ): number | null {
-  const reach = boxToCircleRadius(bodyRadius + missileRadius);
-  const t = closestTOnSegment(body.x, body.y, from.x, from.y, to.x, to.y);
-  const dx = from.x + (to.x - from.x) * t - body.x;
-  const dy = from.y + (to.y - from.y) * t - body.y;
-  // `>=`, matching `PIT_CheckThing`'s own `abs(...) >= blockdist` miss.
-  if (dx * dx + dy * dy >= reach * reach) return null;
+  const t = segmentEntersBox(from.x, from.y, to.x, to.y, body.x, body.y, bodyRadius + missileRadius);
+  if (t === null) return null;
   const z = from.z + (to.z - from.z) * t;
   if (z + PROJECTILE_HEIGHT < body.z || z > body.z + bodyHeight) return null;
   return t;

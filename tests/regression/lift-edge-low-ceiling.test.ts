@@ -1,13 +1,13 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { MAX_STEP_UP, World, circleBlocked } from '../../src/game/world.ts';
+import { MAX_STEP_UP, World, positionBlocked } from '../../src/game/world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 
 /**
  * A raised lift could be walked off into a neighbor whose ceiling sits far
  * *below* the lift's floor — the player ended up standing inside solid
- * geometry. `blocksMovement` had only two of `P_TryMove`'s three height gates,
+ * geometry. The line-opening test had only two of `P_TryMove`'s three height gates,
  * missing `tmceilingz - thing->z < thing->height` ("mobj must lower itself to
  * fit"), which is the only one that fires here. Reported against DOOM2 MAP06
  * line 359: the lift (sector 122) parked up at 40, against sector 118's
@@ -46,19 +46,19 @@ describe('a low-ceilinged neighbor blocks a body standing above it', () => {
 
   test('blocked at lift height', () => {
     const { world, x, y } = scene();
-    assert.ok(circleBlocked(world, x, y, PLAYER_RADIUS, LIFT_FLOOR), 'must not walk off the raised lift');
+    assert.ok(positionBlocked(world, x, y, PLAYER_RADIUS, LIFT_FLOOR), 'must not walk off the raised lift');
   });
 
   test('free on the pit floor, which is the way through', () => {
     const { world, x, y } = scene();
-    assert.ok(!circleBlocked(world, x, y, PLAYER_RADIUS, PIT_FLOOR), 'the crawl-through must stay open');
+    assert.ok(!positionBlocked(world, x, y, PLAYER_RADIUS, PIT_FLOOR), 'the crawl-through must stay open');
   });
 
   test('blocked while still airborne above the opening', () => {
     const { world, x, y } = scene();
     // Mid-fall the player's feet are above the opening's top by more than a
     // body height, which vanilla refuses the same way.
-    assert.ok(circleBlocked(world, x, y, PLAYER_RADIUS, CRAWL_CEIL - PLAYER_HEIGHT + 1), 'no room to fit yet');
-    assert.ok(!circleBlocked(world, x, y, PLAYER_RADIUS, CRAWL_CEIL - PLAYER_HEIGHT), 'exactly fits');
+    assert.ok(positionBlocked(world, x, y, PLAYER_RADIUS, CRAWL_CEIL - PLAYER_HEIGHT + 1), 'no room to fit yet');
+    assert.ok(!positionBlocked(world, x, y, PLAYER_RADIUS, CRAWL_CEIL - PLAYER_HEIGHT), 'exactly fits');
   });
 });

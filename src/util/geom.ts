@@ -29,13 +29,8 @@ export function segmentIntersect(
   return { t };
 }
 
-/**
- * Where along the segment a→b its closest point to (px, py) lies, as a
- * parameter clamped to [0, 1]. Split out of `distSqToSegment` because a
- * projectile's swept hit test needs the *position* of closest approach (to
- * interpolate the missile's height there), not just the distance.
- */
-export function closestTOnSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+/** Where along the segment a→b its closest point to (px, py) lies, clamped to [0, 1]. */
+function closestTOnSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax;
   const dy = by - ay;
   const lenSq = dx * dx + dy * dy;
@@ -52,18 +47,125 @@ export function distSqToSegment(px: number, py: number, ax: number, ay: number, 
 }
 
 /**
- * Vanilla's collision box as the circle this engine tests instead. A DOOM thing
- * is an axis-aligned square of half-width `halfWidth` (`PIT_CheckThing`'s
- * `blockdist`, `PIT_AddThingIntercepts`'s bounding box), which something
- * arriving on an arbitrary bearing sees as `perimeter/π` wide on average rather
- * than `2·halfWidth`; the circle presenting that same mean width has radius
- * `4·halfWidth/π`. Used by every shot-vs-body test — `ThingLayer.raycastMonster`
- * and `ProjectileLayer`'s swept hit tests — and it is the same conversion
- * `MONSTER_BULLET_SLOP` (game/monsters/attacks.ts) already applies by hand to
- * the player's own 16-unit box. See docs/combat.md § How a shot deals damage.
+ * How far along a **hitscan** trace it strikes the body of half-width `radius`
+ * at (bx, by), or null if it misses — vanilla's `PIT_AddThingIntercepts`
+ * (`p_maputl.c`). `dirX`/`dirY` must be a unit direction, so the result is a
+ * distance.
+ *
+ * Vanilla tests one of the box's two *diagonals* rather than the box, picked by
+ * whether the trace's `dx` and `dy` share a sign — equivalent to a box test, and
+ * the reason a body's hitscan width is direction-dependent.
+ * See docs/combat.md § How a shot deals damage.
  */
-export function boxToCircleRadius(halfWidth: number): number {
-  return (halfWidth * 4) / Math.PI;
+export function traceHitsBox(
+  ox: number,
+  oy: number,
+  dirX: number,
+  dirY: number,
+  bx: number,
+  by: number,
+  radius: number,
+): number | null {
+  // `tracepositive` is vanilla's `(trace.dx ^ trace.dy) > 0` — the two sign
+  // bits agreeing. A zero component takes its sign from the other one, which
+  // the XOR does for free and this has to spell out.
+  const negX = dirX < 0;
+  const negY = dirY < 0;
+  const tracePositive = negX === negY && (dirX !== 0 || dirY !== 0);
+  const x1 = bx - radius;
+  const y1 = tracePositive ? by + radius : by - radius;
+  const x2 = bx + radius;
+  const y2 = tracePositive ? by - radius : by + radius;
+  // `P_PointOnDivlineSide` for each end: not crossed if both land the same side.
+  const s1 = dirX * (y1 - oy) - dirY * (x1 - ox) < 0;
+  const s2 = dirX * (y2 - oy) - dirY * (x2 - ox) < 0;
+  if (s1 === s2) return null;
+  // `P_InterceptVector`, the crossing's fraction along the trace.
+  const ddx = x2 - x1;
+  const ddy = y2 - y1;
+  const den = ddy * dirX - ddx * dirY;
+  if (den === 0) return null;
+  const frac = ((x1 - ox) * ddy + (oy - y1) * ddx) / den;
+  return frac < 0 ? null : frac;
+}
+
+/**
+ * How far an explosion at (px, py) is from the **edge** of the body of
+ * half-width `radius` at (bx, by), never below 0 — vanilla's `PIT_RadiusAttack`
+ * (`p_map.c`), which is what its splash falls off over.
+ *
+ * Neither centre-to-centre nor Euclidean: vanilla subtracts the body's own
+ * radius and measures on the Chebyshev metric, which together decide how much
+ * splash a wide monster takes. Vanilla truncates to whole map units
+ * (`>> FRACBITS`); this keeps the fraction, the same precision difference
+ * `World.pointOnLineSide` carries. See docs/combat.md § Splash and the BFG.
+ */
+export function blastDistanceToBox(px: number, py: number, bx: number, by: number, radius: number): number {
+  const dx = Math.abs(bx - px);
+  const dy = Math.abs(by - py);
+  const dist = (dx > dy ? dx : dy) - radius;
+  return dist < 0 ? 0 : dist;
+}
+
+/**
+ * How far from a body's centre either box test can reach — its half-diagonal.
+ * A grid prefilter feeding `traceHitsBox` or `segmentEntersBox` has to be
+ * inflated by this or the widest bodies are dropped before the test sees them,
+ * which shows up only as a hit-rate change on crowded maps.
+ */
+export function boxReach(halfWidth: number): number {
+  return halfWidth * Math.SQRT2;
+}
+
+/**
+ * Where along the segment (x1,y1)→(x2,y2) a point first enters the axis-aligned
+ * box of half-width `half` centred on (bx, by), as a parameter in [0, 1], or
+ * null if it never does — vanilla's `PIT_CheckThing` overlap
+ * (`blockdist = thing->radius + tmthing->radius`, missing on
+ * `abs(dx) >= blockdist || abs(dy) >= blockdist`), swept along the step rather
+ * than sampled at its end.
+ *
+ * Sweeping is this engine's own; under the tic lock the fastest missile covers
+ * 25 units a step, narrower than any box it can meet, so it is belt-and-braces
+ * rather than load-bearing (`tests/regression/projectile-contact.test.ts`).
+ * Exactly grazing the box is a miss, matching vanilla's `>=`.
+ * See docs/monster-attacks.md § Monster projectiles in flight.
+ */
+export function segmentEntersBox(
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  bx: number,
+  by: number,
+  half: number,
+): number | null {
+  let t0 = 0;
+  let t1 = 1;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+
+  if (dx === 0) {
+    if (Math.abs(x1 - bx) >= half) return null;
+  } else {
+    let near = (bx - half - x1) / dx;
+    let far = (bx + half - x1) / dx;
+    if (near > far) [near, far] = [far, near];
+    if (near > t0) t0 = near;
+    if (far < t1) t1 = far;
+  }
+
+  if (dy === 0) {
+    if (Math.abs(y1 - by) >= half) return null;
+  } else {
+    let near = (by - half - y1) / dy;
+    let far = (by + half - y1) / dy;
+    if (near > far) [near, far] = [far, near];
+    if (near > t0) t0 = near;
+    if (far < t1) t1 = far;
+  }
+
+  return t0 < t1 ? t0 : null;
 }
 
 /**
@@ -99,7 +201,7 @@ export function pointInConvexPolygon(px: number, py: number, poly: ArrayLike<num
  * raised platform) routinely gets split into several adjacent subsector
  * polygons that share edges. The exact height-crossing point of a
  * camera-player sightline can only ever land inside *one* of those pieces,
- * but the player has real width (their collision circle, at least), so a
+ * but the player has real width (their collision box, at least), so a
  * neighbouring piece just across that shared edge is just as much "in the
  * way" on screen. Inflating the test by the player's radius catches those
  * without needing to know which polygons are fragments of the same surface.

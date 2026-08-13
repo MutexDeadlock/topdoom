@@ -8,6 +8,7 @@
  */
 import { shotPath, WEAPON_RANGE } from '../world.ts';
 import { AIM_HEIGHT_OFFSET, PLAYER_RADIUS } from '../player.ts';
+import { traceHitsBox } from '../../util/geom.ts';
 import { triangularSpread } from '../../util/random.ts';
 import type { CombatContext } from '../combat.ts';
 import type { SpriteFxLayer } from '../spritefx.ts';
@@ -25,13 +26,6 @@ import type { Pos3 } from '../../types.ts';
  * docs/monster-attacks.md § Hitscan vs. projectile.
  */
 const MONSTER_BULLET_SPREAD_DEG = (255 / 4096) * 360;
-
-/**
- * Slack added to the player's radius when testing a monster's hitscan bolt —
- * it makes a circle present the same average target as vanilla's 32-unit
- * *box*, and covers nothing else. docs/monster-attacks.md § Hitscan vs. projectile.
- */
-const MONSTER_BULLET_SLOP = 4;
 
 /**
  * Vanilla's `A_FaceTarget`: aiming at an `MF_SHADOW` thing (here only ever the
@@ -186,16 +180,11 @@ export class MonsterAttacks {
     });
     const dirX = Math.cos(angleRad);
     const dirY = Math.sin(angleRad);
-    const relX = player.x - atk.x;
-    const relY = player.y - atk.y;
-    const playerAlong = relX * dirX + relY * dirY;
-    const perpX = relX - dirX * playerAlong;
-    const perpY = relY - dirY * playerAlong;
-    const playerInPath =
-      !this.ctx.playerDead &&
-      playerAlong >= 0 &&
-      playerAlong <= path.dist &&
-      Math.hypot(perpX, perpY) <= PLAYER_RADIUS + MONSTER_BULLET_SLOP;
+    // The player's own box, on `PIT_AddThingIntercepts`' diagonal test — the
+    // same rule `ThingLayer.raycastMonster` puts every monster on.
+    const playerHit = traceHitsBox(atk.x, atk.y, dirX, dirY, player.x, player.y, PLAYER_RADIUS);
+    const playerAlong = playerHit ?? 0;
+    const playerInPath = !this.ctx.playerDead && playerHit !== null && playerHit <= path.dist;
 
     let endX = atk.x + dirX * path.dist;
     let endY = atk.y + dirY * path.dist;

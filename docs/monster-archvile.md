@@ -23,7 +23,7 @@ arch-vile: on every chase call where it has a `movedir`, it checks one chase-cal
 (vanilla's `viletryx`/`viletryy`) for a raisable corpse — `MF_CORPSE`, not still mid-death-animation
 (vanilla's `tics != -1`; here `deadTime` against `deathFrameCount * MONSTER_DEATH_FRAME_SECONDS`),
 within `corpse.radius + vile.radius` (vanilla's box test, not a circle), and with room to stand back
-up (`circleBlocked` against the corpse's footprint) — and raises it *instead of* taking its ordinary
+up (`positionBlocked` against the corpse's footprint) — and raises it *instead of* taking its ordinary
 chase-call turn at all, matching vanilla exactly: a tic that resurrects skips the reactiontime/
 threshold aging and the melee/missile/walk decision entirely.
 

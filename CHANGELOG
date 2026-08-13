@@ -1,3 +1,12 @@
+v0.1?.? (2026-08-1?)
+
+Features and improvements
+  - collision now clips the original's axis-aligned box instead of a
+    circle, so you fit exactly where a DOOM marine fits
+
+
+===============================================================================
+
 v0.12.1 (2026-08-13)
 
 Features and improvements
@@ -33,7 +42,6 @@ Fixed bugs
 
 
 ===============================================================================
-
 
 v0.12.0 (2026-08-12)
 

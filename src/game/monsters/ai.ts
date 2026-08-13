@@ -4,7 +4,16 @@
  * headlessly-testable half of the AI/attacks split. See docs/monster-ai.md.
  */
 import type { Sector } from '../../wad/map.ts';
-import { ANY_HEIGHT, circleBlocked, hasLineOfSight, type ThingBlocker, type World } from '../world.ts';
+import {
+  ANY_HEIGHT,
+  checkPosition,
+  positionBlocked,
+  hasLineOfSight,
+  MAX_STEP_UP,
+  type PositionCheck,
+  type ThingBlocker,
+  type World,
+} from '../world.ts';
 import { GRAVITY } from '../player.ts';
 import { pRandom, rollDamage } from '../../util/random.ts';
 import {
@@ -151,6 +160,12 @@ export function commitTarget(body: MonsterBody): void {
 const FLOAT_SPEED = 4;
 
 /**
+ * `settleVertical`'s own `PositionCheck`, so its one walk can't be clobbered by
+ * `checkPosition`'s shared default between the floor read and the ceiling read.
+ */
+const verticalCheck: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0 };
+
+/**
  * Settles vertical position/velocity. A grounded monster does what
  * `Player.update` does — snap while grounded, integrate gravity while airborne.
  * A `flies` monster instead never falls (`MF_NOGRAVITY`) and drifts toward its
@@ -159,7 +174,10 @@ const FLOAT_SPEED = 4;
  * docs/monster-ai.md § Floating monsters.
  */
 function settleVertical(body: MonsterBody, stats: MonsterStats, world: World, dt: number, target: Pos3): void {
-  const groundZ = world.groundFloor(body.x, body.y, stats.radius, true);
+  // One walk for both heights: the flier branch below wants the ceiling from
+  // the same position, and two wrapper calls would walk the lines twice.
+  const at = checkPosition(world, body.x, body.y, stats.radius, ANY_HEIGHT, true, undefined, undefined, false, verticalCheck);
+  const groundZ = at.floorZ;
   if (!stats.flies) {
     if (body.z > groundZ) {
       body.velZ -= GRAVITY * dt;
@@ -186,7 +204,7 @@ function settleVertical(body: MonsterBody, stats: MonsterStats, world: World, dt
       body.z += Math.max(-step, Math.min(step, delta));
     }
   }
-  const ceilZ = world.groundCeiling(body.x, body.y, stats.radius, true) - stats.height;
+  const ceilZ = at.ceilingZ - stats.height;
   const clamped = Math.min(Math.max(body.z, groundZ), Math.max(groundZ, ceilZ));
   if (clamped !== body.z) body.velZ = 0;
   body.z = clamped;
@@ -213,29 +231,34 @@ function testStep(
   // which sits *before* it sets `floatok`, so a floater is refused outright
   // here rather than adjusting its height. This is the destination's own
   // headroom, narrowed by no line at all, which is exactly why
-  // `blocksMovement`'s per-opening test cannot stand in for it: a monster
+  // `checkPosition`'s per-opening test cannot stand in for it: a monster
   // walking around inside a single sector crosses nothing. Without it a
   // crusher that has already closed on a body leaves it strolling about
   // underneath. docs/monster-ai.md § Movement.
   //
-  if (world.groundCeiling(x, y, stats.radius, true) - world.groundFloor(x, y, stats.radius, true) < stats.height) {
+  // One `P_CheckPosition` walk answers all three: the destination's headroom,
+  // the blocking verdict against this body's own feet, and the dropoff.
+  const check = checkPosition(world, x, y, stats.radius, body.z, true, blockers, body, false);
+  if (check.ceilingZ - check.floorZ < stats.height) {
     return 'blocked';
   }
-  if (!circleBlocked(world, x, y, stats.radius, body.z, true, !stats.flies, blockers, body)) {
+  const overDropoff = !stats.flies && check.floorZ - check.dropoffZ > MAX_STEP_UP;
+  if (!check.blocked && !overDropoff) {
     if (!stats.flies) return 'clear';
     // `tmceilingz - thing->z < thing->height`, vanilla's "mobj must lower
     // itself to fit", against the destination's *own* overhead rather than a
-    // crossed opening — `blocksMovement` carries the per-opening half of the
+    // crossed opening — `checkPosition` carries the per-opening half of the
     // same rule, but a monster walking around inside one sector crosses no
     // line, and this one is per-species height besides.
-    return world.groundCeiling(x, y, stats.radius, true) - body.z >= stats.height ? 'clear' : 'adjust';
+    return check.ceilingZ - body.z >= stats.height ? 'clear' : 'adjust';
   }
   if (!stats.flies) return 'blocked';
   // `floatok`: the destination is one this monster fits in at *some* height,
-  // so only the step stopped it. `ANY_HEIGHT` drops `blocksMovement`'s two
-  // feet-relative gates while leaving the wall, body and opening-height
-  // checks — exactly the tests vanilla runs before it sets `floatok`.
-  return circleBlocked(world, x, y, stats.radius, ANY_HEIGHT, true, false, blockers, body) ? 'blocked' : 'adjust';
+  // so only the step stopped it. `ANY_HEIGHT` drops the two feet-relative
+  // gates while leaving the wall, body and opening-height checks — exactly the
+  // tests vanilla runs before it sets `floatok`. The one probe that still needs
+  // a second walk, and only for a flier that was already refused.
+  return checkPosition(world, x, y, stats.radius, ANY_HEIGHT, true, blockers, body, true).blocked ? 'blocked' : 'adjust';
 }
 
 /**
@@ -379,7 +402,7 @@ function stepCharge(body: MonsterBody, stats: MonsterStats, dt: number, world: W
   const step = charge.speed * dt;
   const nx = body.x + Math.cos(body.chargeAngle) * step;
   const ny = body.y + Math.sin(body.chargeAngle) * step;
-  if (circleBlocked(world, nx, ny, stats.radius, body.z, true)) {
+  if (positionBlocked(world, nx, ny, stats.radius, body.z, true)) {
     body.chargeTimer = 0;
     return null;
   }

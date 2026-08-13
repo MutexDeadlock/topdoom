@@ -288,8 +288,8 @@ export interface MonsterStats {
    * Vanilla's `MF_FLOAT | MF_NOGRAVITY` — cacodemon, lost soul and pain
    * elemental only. Such a monster never falls, hovers toward its target's
    * mid-height, changes height instead of turning when a step blocks it
-   * (`P_Move`'s `floatok` branch), and is exempt from `circleBlocked`'s
-   * `avoidDropoff`. See docs/monster-ai.md § Floating monsters.
+   * (`P_Move`'s `floatok` branch), and is exempt from the dropoff rule.
+   * See docs/monster-ai.md § Floating monsters.
    */
   flies?: boolean;
   /** Vanilla's `A_VileChase` corpse search, arch-vile only — tried before anything else on a chase call, falling through to the ordinary decision only if no corpse is raisable. See `monsters/vile.ts: tryRaiseCorpse`. */

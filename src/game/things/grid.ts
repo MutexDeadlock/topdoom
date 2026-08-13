@@ -13,7 +13,7 @@ import type { DoomMap } from '../../wad/map.ts';
 import { PLAYER_RADIUS } from '../player.ts';
 import { MONSTER_DEATH_FRAME_SECONDS, MONSTER_TYPES, SOLID_DECORATION_TYPES } from '../thingdefs.ts';
 import { FAST_MONSTER_STATS, MONSTER_STATS, type RaiseCandidate } from '../monsters/defs.ts';
-import { circleBlocked, type ThingBlocker, type World } from '../world.ts';
+import { positionBlocked, type ThingBlocker, type World } from '../world.ts';
 import { type PosedThing } from './defs.ts';
 import { ThingType } from '../thingtypes.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
@@ -371,7 +371,7 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
           if (c.deadTime < c.deathFrameCount * MONSTER_DEATH_FRAME_SECONDS) continue;
           const pairReach = c.blockRadius + vileRadius;
           if (Math.abs(c.x - x) > pairReach || Math.abs(c.y - y) > pairReach) continue;
-          if (circleBlocked(world, c.x, c.y, c.blockRadius, c.z, true)) continue; // no room to stand back up
+          if (positionBlocked(world, c.x, c.y, c.blockRadius, c.z, true)) continue; // no room to stand back up
           return { id: c.id, x: c.x, y: c.y };
         }
       }

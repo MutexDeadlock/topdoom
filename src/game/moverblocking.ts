@@ -21,19 +21,33 @@ import { CRUSH_DAMAGE } from '../wad/specials.ts';
  */
 
 /**
- * Whether a `radius`-circle at (x, y) overlaps `sectorIndex` at all, not just
- * whichever sector its bare center point resolves to — a rim-sample ring, the
- * same approximation `FogOfWar` uses. A plain point test misses the player
- * standing half in a doorway.
+ * The eight points of a `radius`-box's rim that `boxOverlapsSector` samples —
+ * its four corners and its four edge midpoints, as multiples of `radius`.
  */
-function circleOverlapsSector(world: World, x: number, y: number, radius: number, sectorIndex: number): boolean {
+const BOX_RIM = [
+  [-1, -1],
+  [0, -1],
+  [1, -1],
+  [1, 0],
+  [1, 1],
+  [0, 1],
+  [-1, 1],
+  [-1, 0],
+] as const;
+
+/**
+ * Whether a `radius`-box at (x, y) overlaps `sectorIndex` at all, not just
+ * whichever sector its bare centre point resolves to. A plain point test misses
+ * the player standing half in a doorway.
+ *
+ * Still a rim approximation where vanilla's `PIT_ChangeSector` walks the
+ * sector's own thing list, but sampling the same box the movement code clips
+ * (docs/movement.md § Collision) rather than a circle.
+ */
+function boxOverlapsSector(world: World, x: number, y: number, radius: number, sectorIndex: number): boolean {
   if (world.sectorIndexAt(x, y) === sectorIndex) return true;
-  const RIM_SAMPLES = 8;
-  for (let i = 0; i < RIM_SAMPLES; i++) {
-    const angle = (i / RIM_SAMPLES) * Math.PI * 2;
-    const sx = x + Math.cos(angle) * radius;
-    const sy = y + Math.sin(angle) * radius;
-    if (world.sectorIndexAt(sx, sy) === sectorIndex) return true;
+  for (const [dx, dy] of BOX_RIM) {
+    if (world.sectorIndexAt(x + dx * radius, y + dy * radius) === sectorIndex) return true;
   }
   return false;
 }
@@ -55,7 +69,7 @@ function headroomBlocked(
   ceilingHeight: number,
 ): boolean {
   if (
-    circleOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex) &&
+    boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex) &&
     floorHeight + PLAYER_HEIGHT > ceilingHeight
   ) {
     return true;
@@ -103,7 +117,7 @@ export function blocksFloorRise(
   if (headroomBlocked(world, map, things, player, sectorIndex, floorHeight, map.sectors[sectorIndex].ceilHeight)) {
     return true;
   }
-  if (circleOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) {
+  if (boxOverlapsSector(world, player.x, player.y, PLAYER_RADIUS, sectorIndex)) {
     const ceiling = world.groundCeiling(player.x, player.y, PLAYER_RADIUS);
     if (floorHeight + PLAYER_HEIGHT > ceiling) return true;
   }
@@ -119,7 +133,7 @@ export function blocksFloorRise(
  * Monsters and barrels share one loop, matching `PIT_ChangeSector` treating
  * any shootable mobj the same. 2D membership only; the deliberately cheap
  * point test is docs/specials.md § Crushers, which also says why it isn't
- * `circleOverlapsSector`.
+ * `boxOverlapsSector`.
  */
 export function applyCrushDamage(
   world: World,

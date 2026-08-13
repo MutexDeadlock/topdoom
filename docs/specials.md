@@ -228,12 +228,12 @@ ever checked (a closing door/lowering ceiling, a rising lift/floor). The opposit
 unchecked, since `P_ThingHeightClip` rides a grounded thing along with a receding floor/ceiling
 automatically, so that direction essentially never traps anyone.
 
-**`headroomBlocked` must test sector membership with `circleOverlapsSector`, not a bare
-`sectorIndexAt` point test.** Walking up to a door leaves the collision circle straddling the frame —
+**`headroomBlocked` must test sector membership with `boxOverlapsSector`, not a bare
+`sectorIndexAt` point test.** Walking up to a door leaves the collision box straddling the frame —
 the same straddling `World.groundFloor` accounts for — so the player's *center* still reads as the
 corridor's sector while the door sector, the one actually about to close on them, is never checked at
 all. A plain point test was the original bug here. The overlap is approximated the way `FogOfWar`
-samples polygons: a ring of points around the circle's rim, ample for a doorway-sized sector.
+samples polygons: the box's four corners and four edge midpoints, ample for a doorway-sized sector.
 `applyCrushDamage`, in the same file and directly below it, keeps the cheap point test on purpose —
 a crusher's sector is typically the whole room, where the blind spot barely matters.
 

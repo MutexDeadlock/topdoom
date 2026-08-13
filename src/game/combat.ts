@@ -4,7 +4,7 @@
  * See docs/combat.md § How a shot deals damage and § Splash and the BFG.
  */
 import { hasLineOfSight, type World } from './world.ts';
-import type { Player } from './player.ts';
+import { PLAYER_RADIUS, type Player } from './player.ts';
 // Type-only, deliberately: a value import here would put `things.ts` — and so
 // `monsters/ai.ts`, which it imports — in the runtime graph of everything that
 // resolves damage, `monsters/attacks.ts` and `monsters/vile.ts` included. Its
@@ -14,6 +14,7 @@ import type { BarrelExplosion, ThingLayer } from './things.ts';
 import { BARREL_SPLASH_DAMAGE, BARREL_SPLASH_RADIUS } from './thingdefs.ts';
 import { ThingType } from './thingtypes.ts';
 import type { Pos3 } from '../types.ts';
+import { blastDistanceToBox } from '../util/geom.ts';
 
 /**
  * What killed the player, carried alongside a hit so the death overlay can name
@@ -55,12 +56,16 @@ export interface CombatContext {
 }
 
 /**
- * An explosion's blast — vanilla's `P_RadiusAttack`: every living monster
- * within `radius` with an unobstructed line to the impact point takes damage
- * falling off linearly to 0 at the edge. `hitsPlayer` gates self-splash
+ * An explosion's blast — vanilla's `P_RadiusAttack`: every living body whose
+ * **edge** lies within `radius` of the impact point, with an unobstructed line
+ * to it, takes damage falling off linearly to 0 there. Range is
+ * `blastDistanceToBox` (Chebyshev, minus that body's own radius), not a
+ * centre-to-centre distance — which is what makes a wide monster both catchable
+ * from further out and hurt harder at any range. `hitsPlayer` gates self-splash
  * ("rocket jump"); `source`, when given, attributes the hit for
  * `ThingLayer.damage`'s retaliation rule. **2D distance only, no height
- * check**, as in vanilla. See docs/combat.md § Splash and the BFG.
+ * check**, as in vanilla.
+ * Vanilla carries one number where this takes two — docs/combat.md § Splash and the BFG.
  */
 export function applyRadiusDamage(
   ctx: CombatContext,
@@ -80,13 +85,13 @@ export function applyRadiusDamage(
     // Vanilla's PIT_RadiusAttack: the spider mastermind and cyberdemon take
     // no concussion/splash damage at all, direct hits only.
     if (m.type === ThingType.spiderMastermind || m.type === ThingType.cyberdemon) continue;
-    const dist = Math.hypot(m.x - at.x, m.y - at.y);
+    const dist = blastDistanceToBox(at.x, at.y, m.x, m.y, m.radius);
     if (dist >= radius || !hasLineOfSight(ctx.world, at, m)) continue;
     ctx.things?.damage(m.id, maxDamage * (1 - dist / radius), source, undefined, at.x, at.y);
   }
 
   if (!hitsPlayer) return;
-  const pdist = Math.hypot(ctx.player.x - at.x, ctx.player.y - at.y);
+  const pdist = blastDistanceToBox(at.x, at.y, ctx.player.x, ctx.player.y, PLAYER_RADIUS);
   if (pdist < radius && hasLineOfSight(ctx.world, at, ctx.player)) {
     ctx.damagePlayer(maxDamage * (1 - pdist / radius), at.x, at.y, cause);
   }

@@ -30,8 +30,8 @@ export interface GridMapOptions {
   name?: string;
   /**
    * Map units per grid cell. Must exceed any single move a test makes plus the
-   * mover's radius: `circleBlocked` only consults lines its *destination*
-   * circle touches, so a long enough step lands clean inside the next cell and
+   * mover's radius: `positionBlocked` only consults lines its *destination*
+   * box touches, so a long enough step lands clean inside the next cell and
    * reports free. That is the engine's real behaviour (vanilla `P_TryMove` has
    * it too), not a fixture artifact — but it is easy to trip over by accident.
    * See docs/testing.md § Cell size and tunnelling.

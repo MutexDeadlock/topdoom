@@ -1,11 +1,11 @@
 /**
  * `World`: the loaded map's shared spatial queries — subsector/sector lookup, floor heights,
- * collision (`circleBlocked`, `slideMove`), line of sight, vertical openings and shot tracing
+ * collision (`positionBlocked`, `slideMove`), line of sight, vertical openings and shot tracing
  * (`shotPath`). Every layer reads the level through this. See docs/world.md and docs/movement.md.
  */
 import { LF, NO_SIDE, SKY_FLAT, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
 import { sectorOfSubSector } from '../render/bsp.ts';
-import { closestTOnSegment, distSqToSegment, segmentIntersect } from '../util/geom.ts';
+import { segmentIntersect } from '../util/geom.ts';
 import { PLAYER_HEIGHT } from './player.ts';
 import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './thingtypes.ts';
@@ -15,13 +15,29 @@ import type { Placement, Pos2, Pos3 } from '../types.ts';
 export const MAX_STEP_UP = 24;
 
 /**
- * A feet height that vacates both of `blocksMovement`'s z-relative gates, so
+ * A feet height that vacates both of `checkPosition`'s z-relative gates, so
  * only the line's own geometry is tested — vanilla's pre-`floatok` subset of
  * `P_TryMove`. `monsters/ai.ts: testStep` is the only caller that wants it.
  */
 export const ANY_HEIGHT = Infinity;
 
 const GRID_CELL = 128;
+
+/**
+ * Vanilla's `slopetype_t` (`p_local.h`), assigned per linedef by
+ * `P_LoadLineDefs` (`p_setup.c`) and read only by `boxOnLineSide`, which picks
+ * which pair of box corners to test from it.
+ */
+const ST_HORIZONTAL = 0;
+const ST_VERTICAL = 1;
+const ST_POSITIVE = 2;
+const ST_NEGATIVE = 3;
+
+/** Vanilla's `BOXTOP`…`BOXRIGHT` (`p_local.h`), the order `World.lineBox` packs each linedef's bounds in. */
+const BOX_TOP = 0;
+const BOX_BOTTOM = 1;
+const BOX_LEFT = 2;
+const BOX_RIGHT = 3;
 
 export interface Opening {
   top: number;
@@ -52,6 +68,23 @@ export class World {
   private lineStamp: Int32Array;
   private queryId = 0;
 
+  /**
+   * The per-linedef geometry vanilla precomputes in `P_LoadLineDefs` and its
+   * collision reads on every probe: each line's own bounding box (packed four
+   * to a line in `BOX_*` order), its `dx`/`dy`, its first vertex, and its
+   * `slopetype`. Parallel typed arrays indexed by linedef index, the same
+   * discipline `lineStamp` uses — this is read once per candidate line per
+   * movement probe, which is the hottest query in the engine.
+   * See docs/movement.md § Collision.
+   */
+  private lineBox: Float64Array;
+  /** Each linedef's own direction — vanilla's `ld->dx`/`ld->dy`, what `P_HitSlideLine` projects a refused move onto. */
+  readonly lineDX: Float64Array;
+  readonly lineDY: Float64Array;
+  private lineV1X: Float64Array;
+  private lineV1Y: Float64Array;
+  private lineSlope: Int8Array;
+
   readonly map: DoomMap;
 
   /**
@@ -71,8 +104,124 @@ export class World {
     this.gridCols = Math.max(1, Math.ceil((maxX - minX) / GRID_CELL) + 1);
     this.gridRows = Math.max(1, Math.ceil((maxY - minY) / GRID_CELL) + 1);
     this.lineStamp = new Int32Array(map.linedefs.length);
+    this.lineBox = new Float64Array(map.linedefs.length * 4);
+    this.lineDX = new Float64Array(map.linedefs.length);
+    this.lineDY = new Float64Array(map.linedefs.length);
+    this.lineV1X = new Float64Array(map.linedefs.length);
+    this.lineV1Y = new Float64Array(map.linedefs.length);
+    this.lineSlope = new Int8Array(map.linedefs.length);
+    this.buildLineData();
     this.buildGrid();
     this.buildSectorNeighbors();
+  }
+
+  /**
+   * Fills the per-linedef geometry tables — `P_LoadLineDefs`'s own derivation
+   * (`p_setup.c`): `dx`/`dy` off the two vertexes, the bbox as their min/max,
+   * and the slopetype from `!dx` first (so a degenerate zero-length line lands
+   * on `ST_VERTICAL`, exactly as vanilla's ordering has it), then `!dy`, then
+   * the sign of `dy/dx`.
+   */
+  private buildLineData(): void {
+    for (let i = 0; i < this.map.linedefs.length; i++) {
+      const line = this.map.linedefs[i];
+      const a = this.map.vertexes[line.v1];
+      const b = this.map.vertexes[line.v2];
+      if (!a || !b) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      this.lineDX[i] = dx;
+      this.lineDY[i] = dy;
+      this.lineV1X[i] = a.x;
+      this.lineV1Y[i] = a.y;
+      this.lineSlope[i] = dx === 0 ? ST_VERTICAL : dy === 0 ? ST_HORIZONTAL : dy / dx > 0 ? ST_POSITIVE : ST_NEGATIVE;
+      const base = i * 4;
+      this.lineBox[base + BOX_TOP] = Math.max(a.y, b.y);
+      this.lineBox[base + BOX_BOTTOM] = Math.min(a.y, b.y);
+      this.lineBox[base + BOX_LEFT] = Math.min(a.x, b.x);
+      this.lineBox[base + BOX_RIGHT] = Math.max(a.x, b.x);
+    }
+  }
+
+  /**
+   * Which side of linedef `lineIndex` the point (x, y) lies on — vanilla's
+   * `P_PointOnLineSide` (`p_maputl.c`): 0 front, 1 back, and a point exactly
+   * *on* the line counts as the back side, which its `right < left` test is
+   * what decides. The axis-aligned fast paths are vanilla's own.
+   *
+   * Vanilla truncates `dy` to whole units before multiplying
+   * (`FixedMul(line->dy>>FRACBITS, dx)`); this doesn't, which is a precision
+   * improvement over the original rather than a behavior choice.
+   */
+  pointOnLineSide(x: number, y: number, lineIndex: number): number {
+    const dx = this.lineDX[lineIndex];
+    const dy = this.lineDY[lineIndex];
+    if (dx === 0) {
+      if (x <= this.lineV1X[lineIndex]) return dy > 0 ? 1 : 0;
+      return dy < 0 ? 1 : 0;
+    }
+    if (dy === 0) {
+      if (y <= this.lineV1Y[lineIndex]) return dx < 0 ? 1 : 0;
+      return dx > 0 ? 1 : 0;
+    }
+    const left = dy * (x - this.lineV1X[lineIndex]);
+    const right = (y - this.lineV1Y[lineIndex]) * dx;
+    return right < left ? 0 : 1;
+  }
+
+  /**
+   * Which side of linedef `lineIndex` an axis-aligned box lies on, or `-1` if
+   * it spans the line — vanilla's `P_BoxOnLineSide` (`p_maputl.c`), and the
+   * test that replaced this engine's original collision *circle*. The
+   * slopetype picks which two opposing corners decide it, so only two point
+   * tests run rather than four. See docs/movement.md § Collision.
+   */
+  boxOnLineSide(left: number, bottom: number, right: number, top: number, lineIndex: number): number {
+    let p1 = 0;
+    let p2 = 0;
+    switch (this.lineSlope[lineIndex]) {
+      case ST_HORIZONTAL:
+        p1 = top > this.lineV1Y[lineIndex] ? 1 : 0;
+        p2 = bottom > this.lineV1Y[lineIndex] ? 1 : 0;
+        if (this.lineDX[lineIndex] < 0) {
+          p1 ^= 1;
+          p2 ^= 1;
+        }
+        break;
+      case ST_VERTICAL:
+        p1 = right < this.lineV1X[lineIndex] ? 1 : 0;
+        p2 = left < this.lineV1X[lineIndex] ? 1 : 0;
+        if (this.lineDY[lineIndex] < 0) {
+          p1 ^= 1;
+          p2 ^= 1;
+        }
+        break;
+      case ST_POSITIVE:
+        p1 = this.pointOnLineSide(left, top, lineIndex);
+        p2 = this.pointOnLineSide(right, bottom, lineIndex);
+        break;
+      case ST_NEGATIVE:
+        p1 = this.pointOnLineSide(right, top, lineIndex);
+        p2 = this.pointOnLineSide(left, bottom, lineIndex);
+        break;
+    }
+    return p1 === p2 ? p1 : -1;
+  }
+
+  /**
+   * True if a box overlaps linedef `lineIndex`'s own bounding box —
+   * `PIT_CheckLine`'s cheap reject, run before `boxOnLineSide`. Exactly flush
+   * is deliberately *not* an overlap, matching vanilla's `<=`/`>=` and the
+   * strict `< radius²` boundary the circle test it replaced also had.
+   */
+  boxOverlapsLine(left: number, bottom: number, right: number, top: number, lineIndex: number): boolean {
+    const base = lineIndex * 4;
+    return !(
+      right <= this.lineBox[base + BOX_LEFT] ||
+      left >= this.lineBox[base + BOX_RIGHT] ||
+      top <= this.lineBox[base + BOX_BOTTOM] ||
+      bottom >= this.lineBox[base + BOX_TOP]
+    );
   }
 
   /**
@@ -287,75 +436,26 @@ export class World {
 
   /**
    * The height a body of this radius should rest at, standing here: the local
-   * sector's floor, raised to the bottom of any two-sided opening its circle
-   * is currently straddling — vanilla's `thing->floorz` in `P_TryMove`, which
-   * keeps a mover pinned to a ledge's high side while its circle still spans
+   * sector's floor, raised to the bottom of any two-sided opening its box
+   * currently spans — vanilla's `thing->floorz` in `P_TryMove`, which
+   * keeps a mover pinned to a ledge's high side while its box still spans
    * that ledge's line. Point-sampling the floor instead deadlocks a fall off a
    * ledge; see docs/movement.md § Collision.
    */
   groundFloor(x: number, y: number, radius: number, forMonster = false): number {
-    let floor = this.floorAt(x, y);
-    const rSq = radius * radius;
-    for (const i of this.linesNear(x, y, radius)) {
-      if (this.isSolidWall(i, forMonster)) continue;
-      const line = this.map.linedefs[i];
-      const a = this.map.vertexes[line.v1];
-      const b = this.map.vertexes[line.v2];
-      if (!a || !b) continue;
-      if (distSqToSegment(x, y, a.x, a.y, b.x, b.y) >= rSq) continue;
-      if (!crossesLine(x, y, radius, a.x, a.y, b.x, b.y)) continue;
-      const opening = this.openingOf(i);
-      if (opening) floor = Math.max(floor, opening.bottom);
-    }
-    return floor;
+    return checkPosition(this, x, y, radius, ANY_HEIGHT, forMonster, undefined, undefined, false).floorZ;
   }
 
   /**
    * The lowest ceiling a body of this radius must clear, standing here — the
    * mirror of `groundFloor`: the local sector's ceiling, lowered to the top
-   * of any two-sided opening its circle is currently straddling. Exists so a
+   * of any two-sided opening its box currently spans. Exists so a
    * rising floor's headroom check (`game.ts: blocksFloorRise`) can see a
-   * lower-ceilinged neighbor sector the player's circle still overlaps, not
+   * lower-ceilinged neighbor sector the player's box still overlaps, not
    * just the rising sector's own ceiling — see docs/movement.md § Collision.
    */
   groundCeiling(x: number, y: number, radius: number, forMonster = false): number {
-    let ceiling = this.ceilingAt(x, y);
-    const rSq = radius * radius;
-    for (const i of this.linesNear(x, y, radius)) {
-      if (this.isSolidWall(i, forMonster)) continue;
-      const line = this.map.linedefs[i];
-      const a = this.map.vertexes[line.v1];
-      const b = this.map.vertexes[line.v2];
-      if (!a || !b) continue;
-      if (distSqToSegment(x, y, a.x, a.y, b.x, b.y) >= rSq) continue;
-      if (!crossesLine(x, y, radius, a.x, a.y, b.x, b.y)) continue;
-      const opening = this.openingOf(i);
-      if (opening) ceiling = Math.min(ceiling, opening.top);
-    }
-    return ceiling;
-  }
-
-  /**
-   * The lowest floor this circle's footprint touches — vanilla's `tmdropoffz`,
-   * the mirror of `groundFloor`'s `tmfloorz`. `circleBlocked`'s dropoff check
-   * compares the two.
-   */
-  dropoffFloor(x: number, y: number, radius: number): number {
-    let floor = this.floorAt(x, y);
-    const rSq = radius * radius;
-    for (const i of this.linesNear(x, y, radius)) {
-      if (this.isSolidWall(i)) continue;
-      const line = this.map.linedefs[i];
-      const a = this.map.vertexes[line.v1];
-      const b = this.map.vertexes[line.v2];
-      if (!a || !b) continue;
-      if (distSqToSegment(x, y, a.x, a.y, b.x, b.y) >= rSq) continue;
-      if (!crossesLine(x, y, radius, a.x, a.y, b.x, b.y)) continue;
-      const front = this.map.sectors[this.map.sidedefs[line.right]?.sector];
-      const back = this.map.sectors[this.map.sidedefs[line.left]?.sector];
-      if (front && back) floor = Math.min(floor, front.floorHeight, back.floorHeight);
-    }
-    return floor;
+    return checkPosition(this, x, y, radius, ANY_HEIGHT, forMonster, undefined, undefined, false).ceilingZ;
   }
 
   /**
@@ -388,32 +488,6 @@ export class World {
     if (line.left === NO_SIDE || line.right === NO_SIDE) return true;
     const opening = this.openingOf(lineIndex);
     return !opening || opening.top <= opening.bottom;
-  }
-
-  /**
-   * True if a body standing at feet height `z` cannot cross this line —
-   * `P_TryMove`'s three height gates against `P_LineOpening`'s opening, in
-   * vanilla's order: the opening is too short to stand in at all, the step up
-   * to it is too big, or its top is too low **for this body's own `z`**.
-   *
-   * That last one is the one an opening-range test cannot stand in for, and it
-   * only bites a body standing higher than the opening's bottom — a raised
-   * lift beside a neighbor whose ceiling is below the lift's floor, or a body
-   * still airborne. Repro: DOOM2 MAP06 line 359, the lift (sector 122, up at
-   * 40) against sector 118's ceiling at -440. docs/movement.md § Collision.
-   *
-   * `z` of `ANY_HEIGHT` tests the line's geometry alone. `forMonster` — see
-   * `isSolidWall`.
-   */
-  blocksMovement(lineIndex: number, z: number, forMonster = false): boolean {
-    if (this.isSolidWall(lineIndex, forMonster)) return true;
-    const opening = this.openingOf(lineIndex);
-    if (!opening) return true;
-    if (opening.top - opening.bottom < PLAYER_HEIGHT) return true;
-    if (!Number.isFinite(z)) return false;
-    if (opening.bottom - z > MAX_STEP_UP) return true;
-    if (opening.top - z < PLAYER_HEIGHT) return true;
-    return false;
   }
 
   thingsOfType(type: number): Thing[] {
@@ -689,22 +763,6 @@ export function darkestNeighborLight(map: DoomMap, sectorIndex: number): number 
 }
 
 /**
- * True if a circle centred at (x, y) reaches across the infinite extension of
- * segment a-b, rather than sitting entirely on one side of it — DOOM's
- * `P_BoxOnLineSide`. A two-sided opening only gates movement while the mover
- * actually straddles the line; without this the player gets trapped at a ledge
- * edge (docs/movement.md § Collision).
- */
-function crossesLine(x: number, y: number, radius: number, ax: number, ay: number, bx: number, by: number): boolean {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const len = Math.hypot(dx, dy);
-  if (len === 0) return true;
-  const cross = dx * (y - ay) - dy * (x - ax);
-  return Math.abs(cross) / len < radius;
-}
-
-/**
  * A body (monster or player) that other bodies physically bump into —
  * vanilla's `MF_SOLID` things, tested by `PIT_CheckThing`. Callers pass the
  * set of *other* bodies; nothing here filters out the mover itself.
@@ -720,8 +778,8 @@ export interface ThingBlocker extends Pos2 {
 /**
  * True if a body of `radius` standing at (x, y) overlaps one of `blockers` —
  * vanilla's `PIT_CheckThing` overlap test, an axis-aligned **box** check on
- * the summed radii, not the circle test the rest of this file uses. Boxy on
- * purpose (docs/monster-ai.md § Movement).
+ * the summed radii — the same shape the line tests use, and vanilla's own
+ * `PIT_CheckThing` (docs/monster-ai.md § Movement).
  *
  * `from`, when given, is where the mover currently stands: a blocker already
  * overlapped there only refuses the move if it presses further in, which is
@@ -744,127 +802,240 @@ function blockedByThings(x: number, y: number, radius: number, blockers: readonl
 }
 
 /**
- * True if a circle at (x, y) overlaps any line that blocks it. `forMonster` —
- * see `World.isSolidWall`. `blockers` are the other solid bodies in the way
- * (see `ThingBlocker`); omitting them means only geometry blocks.
+ * Everything one `P_CheckPosition` pass reports about a candidate position: is
+ * it refused, and the three heights `PIT_CheckLine` accumulates on the way —
+ * `tmfloorz`, `tmceilingz`, `tmdropoffz`.
  *
- * `avoidDropoff` also rejects a position standing over a dropoff
- * (`groundFloor` more than `MAX_STEP_UP` above `dropoffFloor`) — vanilla's
- * `P_TryMove`. Exempting a thing from it is the caller's job here rather than
- * an `MF_DROPOFF`/`MF_FLOAT` check; the player never passes it, since falling
- * off a ledge is deliberate (docs/movement.md § Vertical physics).
+ * Reused in place rather than returned fresh (see `checkPosition`), so read the
+ * fields before the next call.
+ */
+export interface PositionCheck {
+  blocked: boolean;
+  floorZ: number;
+  ceilingZ: number;
+  dropoffZ: number;
+}
+
+const positionScratch: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0 };
+
+/**
+ * One `P_CheckPosition` over the lines a body's box at (x, y) spans, filling
+ * `out` with the verdict and all three accumulated heights at once — vanilla
+ * accumulates them in a single `PIT_CheckLine` walk, and so does this.
+ *
+ * `stopOnBlock` returns on the first refusing line, as `P_CheckPosition` does;
+ * the heights are then only partly accumulated, which is safe for a caller that
+ * wants nothing but the verdict. A caller needing the heights *and* the verdict
+ * (`monsters/ai.ts: testStep`, and the dropoff test below) passes `false` and
+ * gets both from the same walk.
+ *
+ * `forMonster` — see `World.isSolidWall`. Note `dropoffZ` deliberately ignores
+ * it: a `BLOCK_MONSTERS` line fences a monster's *movement* but its far side is
+ * still real floor, so it must not read as a dropoff. That asymmetry predates
+ * this unification and is preserved exactly.
+ */
+/**
+ * `P_TryMove`'s three height gates against a `P_LineOpening`, in vanilla's
+ * order: too short to stand in at all, too big a step up, or the top too low
+ * for this body's own `z`. `zFinite` false (`ANY_HEIGHT`) drops the two
+ * feet-relative gates and tests the opening's own height alone.
+ *
+ * **The one home of this rule.** `checkPosition` decides whether a position is
+ * refused and `slideTraverse` decides which wall to slide along; they must
+ * agree on what "refused" means, and stating it twice in opposite polarity is
+ * exactly how the two drift apart. See docs/movement.md § Collision.
+ */
+function openingRefuses(openTop: number, openBottom: number, z: number, zFinite: boolean): boolean {
+  if (openTop - openBottom < PLAYER_HEIGHT) return true;
+  if (!zFinite) return false;
+  return openBottom - z > MAX_STEP_UP || openTop - z < PLAYER_HEIGHT;
+}
+
+export function checkPosition(
+  world: World,
+  x: number,
+  y: number,
+  radius: number,
+  z: number,
+  forMonster: boolean,
+  blockers: readonly ThingBlocker[] | undefined,
+  from: Pos2 | undefined,
+  stopOnBlock: boolean,
+  out: PositionCheck = positionScratch,
+): PositionCheck {
+  // One BSP descent for both heights — `floorAt`/`ceilingAt` would walk it twice.
+  const here = world.sectorAt(x, y);
+  out.blocked = blockedByThings(x, y, radius, blockers, from);
+  out.floorZ = here?.floorHeight ?? 0;
+  out.ceilingZ = here?.ceilHeight ?? 0;
+  out.dropoffZ = out.floorZ;
+  if (out.blocked && stopOnBlock) return out;
+
+  const left = x - radius;
+  const right = x + radius;
+  const bottom = y - radius;
+  const top = y + radius;
+  const zFinite = Number.isFinite(z);
+  // The `+ 1` is broadphase slop only; `boxOverlapsLine` below is exact.
+  for (const i of world.linesNear(x, y, radius + 1)) {
+    if (!world.boxOverlapsLine(left, bottom, right, top, i)) continue;
+    if (world.boxOnLineSide(left, bottom, right, top, i) !== -1) continue;
+
+    const solid = world.isSolidWall(i, forMonster);
+    // A `BLOCK_MONSTERS` line fences a monster's *movement* but its far side is
+    // still real floor, hence the second test. Only a monster ever consults
+    // `dropoffZ` at all, so everyone else skips the accumulation — the player
+    // falls off ledges on purpose (docs/movement.md § Vertical physics).
+    if (forMonster && (!solid || !world.isSolidWall(i, false))) {
+      const fenced = world.map.linedefs[i];
+      const front = world.map.sectors[world.map.sidedefs[fenced.right]?.sector];
+      const back = world.map.sectors[world.map.sidedefs[fenced.left]?.sector];
+      if (front && back) out.dropoffZ = Math.min(out.dropoffZ, front.floorHeight, back.floorHeight);
+    }
+    if (solid) {
+      out.blocked = true;
+      if (stopOnBlock) return out;
+      continue;
+    }
+
+    // `P_LineOpening` inline: `openingOf` allocates a record, and this is the
+    // hottest loop in the engine.
+    const line = world.map.linedefs[i];
+    const front = world.map.sectors[world.map.sidedefs[line.right]?.sector];
+    const back = world.map.sectors[world.map.sidedefs[line.left]?.sector];
+    if (!front || !back) {
+      out.blocked = true;
+      if (stopOnBlock) return out;
+      continue;
+    }
+    const openTop = front.ceilHeight < back.ceilHeight ? front.ceilHeight : back.ceilHeight;
+    const openBottom = front.floorHeight > back.floorHeight ? front.floorHeight : back.floorHeight;
+    if (openBottom > out.floorZ) out.floorZ = openBottom;
+    if (openTop < out.ceilingZ) out.ceilingZ = openTop;
+    if (openingRefuses(openTop, openBottom, z, zFinite)) {
+      out.blocked = true;
+      if (stopOnBlock) return out;
+    }
+  }
+  return out;
+}
+
+/**
+ * True if a body's collision **box** at (x, y) — half-width `radius`, vanilla's
+ * own `mobjinfo.radius` — overlaps any line that blocks it. This is
+ * `P_CheckPosition`'s line half, and each line goes through `PIT_CheckLine`'s
+ * two gates in vanilla's order: the line's own bounding box, then
+ * `boxOnLineSide`. `forMonster` — see `World.isSolidWall`. `blockers` are the
+ * other solid bodies in the way (see `ThingBlocker`); omitting them means only
+ * geometry blocks.
+ *
+ * A solid wall is refused on the *same* straddle test as a two-sided opening,
+ * not on mere proximity — see docs/movement.md § Collision for why that is what
+ * keeps a body from catching on a wall's endpoint.
+ *
+ * **Geometry and bodies only.** `P_TryMove`'s dropoff rule is not here: it is
+ * a monster's alone and lives with the rest of the chase step in
+ * `monsters/ai.ts: testStep`, which reads `dropoffZ` off its own
+ * `checkPosition` walk (docs/monster-ai.md § Movement).
  *
  * `from` — see `blockedByThings`: the mover's current position, so a body
  * already touching one of `blockers` can still move away from it.
  */
-export function circleBlocked(
+export function positionBlocked(
   world: World,
   x: number,
   y: number,
   radius: number,
   z: number,
   forMonster = false,
-  avoidDropoff = false,
   blockers?: readonly ThingBlocker[],
   from?: Pos2,
 ): boolean {
-  if (blockedByThings(x, y, radius, blockers, from)) return true;
-  if (avoidDropoff && world.groundFloor(x, y, radius, forMonster) - world.dropoffFloor(x, y, radius) > MAX_STEP_UP) return true;
-  const rSq = radius * radius;
-  for (const i of world.linesNear(x, y, radius + 1)) {
-    const line = world.map.linedefs[i];
-    const a = world.map.vertexes[line.v1];
-    const b = world.map.vertexes[line.v2];
-    if (!a || !b) continue;
-    if (distSqToSegment(x, y, a.x, a.y, b.x, b.y) >= rSq) continue;
-    if (world.isSolidWall(i, forMonster)) return true;
-    if (!crossesLine(x, y, radius, a.x, a.y, b.x, b.y)) continue;
-    if (world.blocksMovement(i, z, forMonster)) return true;
-  }
-  return false;
+  // The first refusing line is the whole answer, so the walk stops there.
+  return checkPosition(world, x, y, radius, z, forMonster, blockers, from, true).blocked;
 }
 
-/**
- * `blockingLineAt`'s answer when something other than a linedef stopped the
- * circle — a solid body, or a dropoff. No wall direction to slide along, so
- * `slideMove` falls back to its per-axis attempt, which is the right slide for
- * a body anyway: `PIT_CheckThing`'s blocker is an axis-aligned box.
- */
-export const SOLID_BODY = -1;
-
-/**
- * Which line blocks a circle at (x, y), or `null` if nothing does —
- * `circleBlocked`'s answer plus the identity of the blocker, which is what
- * `slideMove` needs to project a move onto the wall it ran into.
- *
- * Separate from `circleBlocked` on purpose (that one is hot and returns on the
- * first blocker; this one weighs all of them and the nearest wins). See
- * docs/movement.md § slideMove.
- *
- * `from` — see `blockedByThings`.
- */
-export function blockingLineAt(
-  world: World,
-  x: number,
-  y: number,
-  radius: number,
-  z: number,
-  forMonster = false,
-  avoidDropoff = false,
-  blockers?: readonly ThingBlocker[],
-  from?: Pos2,
-): number | null {
-  if (blockedByThings(x, y, radius, blockers, from)) return SOLID_BODY;
-  if (avoidDropoff && world.groundFloor(x, y, radius, forMonster) - world.dropoffFloor(x, y, radius) > MAX_STEP_UP) return SOLID_BODY;
-  const rSq = radius * radius;
-  let best: number | null = null;
-  let bestDistSq = Infinity;
-  for (const i of world.linesNear(x, y, radius + 1)) {
-    const line = world.map.linedefs[i];
-    const a = world.map.vertexes[line.v1];
-    const b = world.map.vertexes[line.v2];
-    if (!a || !b) continue;
-    const dSq = distSqToSegment(x, y, a.x, a.y, b.x, b.y);
-    if (dSq >= rSq || dSq >= bestDistSq) continue;
-    if (!world.isSolidWall(i, forMonster)) {
-      if (!crossesLine(x, y, radius, a.x, a.y, b.x, b.y)) continue;
-      if (!world.blocksMovement(i, z, forMonster)) continue;
-    }
-    best = i;
-    bestDistSq = dSq;
-  }
-  return best;
-}
-
-/** How many walls one `slideMove` will project against before giving up — vanilla's own `P_SlideMove` retry count. */
+/** How many walls one `slideMove` projects against before giving up — vanilla's own `hitcount == 3`. */
 const SLIDE_ATTEMPTS = 3;
 
-/** Below this (map units) a projected slide has nothing left to give; treat the wall as head-on. */
-const SLIDE_EPSILON = 1e-6;
-
 /**
- * Squared share of the requested move below which the per-axis fallback's
- * progress counts as standing still, so `roundCorner` still gets its chance
- * (docs/movement.md § slideMove). The exact share is uncritical: the
- * farther-than comparison at the call site caps what it can change.
+ * `P_SlideMove`'s `0x800` fudge, as a fraction of the traced move: it stops the
+ * mover a thirty-second of a step short of the wall a trace found, so the
+ * position it commits to is reliably clear of that wall rather than exactly on
+ * it.
  */
-const SLIDE_MIN_PROGRESS_SQ = 0.01 ** 2;
+export const SLIDE_FUDGE = 1 / 32;
 
 /**
- * Moves a circle by (dx, dy) and slides along whatever it hits, returning the
- * position actually reached. `forMonster`/`avoidDropoff` — see
- * `circleBlocked`; the player's own movement never passes either, and nothing
- * else calls this at all (vanilla's `P_SlideMove` is the player's alone —
- * monsters get `P_Move`'s all-or-nothing step, see `game/monsters/ai.ts`).
+ * Where a slide trace ran into a wall — vanilla's `bestslidefrac`/`bestslideline`,
+ * as the smallest fraction along the traced move and the line that produced it.
+ * Module-level and overwritten in place rather than returned: `slideMove` runs
+ * three traces per attempt per moving body per tic, and this is the one
+ * allocation that would show up.
+ */
+const slideHit = { frac: Infinity, line: -1 };
+
+/**
+ * `PTR_SlideTraverse`: walks one corner's path from (cornerX, cornerY) along
+ * (mx, my) and keeps the nearest blocking line along it in `slideHit`. A
+ * one-sided line blocks unless the mover already stands behind it; a two-sided
+ * one blocks on `openingRefuses`, the same predicate that decides whether a
+ * position is refused. `PLAYER_HEIGHT` throughout, since `P_SlideMove` is the
+ * player's alone.
  *
- * This is vanilla's `P_HitSlideLine`: the refused move is **projected onto the
- * blocking line's own direction** and retried, up to `SLIDE_ATTEMPTS` walls in
- * turn, then vanilla's per-axis stairstep. Only once *both* have come up empty
- * does `roundCorner` add the one step vanilla has no need of. See
- * docs/movement.md § slideMove for that, for why the projection (and not the
- * per-axis split it replaced) is the only thing that works on a diagonal wall,
- * and why projecting from the current position rather than vanilla's contact
- * point is safe here.
+ * No sort is needed, and it carries two deliberate deviations from vanilla —
+ * one of them the fix for a real dead-stop bug. All three are
+ * docs/movement.md § slideMove.
+ */
+function slideTraverse(
+  world: World,
+  moverX: number,
+  moverY: number,
+  cornerX: number,
+  cornerY: number,
+  mx: number,
+  my: number,
+  z: number,
+): void {
+  const zFinite = Number.isFinite(z);
+  world.forEachLineAlongSegment(cornerX, cornerY, cornerX + mx, cornerY + my, (i) => {
+    const line = world.map.linedefs[i];
+    const a = world.map.vertexes[line.v1];
+    const b = world.map.vertexes[line.v2];
+    if (!a || !b) return;
+    // Intersect before classifying: most lines in a cell the corner path clips
+    // are not crossed by it, and the opening lookup is the expensive half.
+    const cross = segmentIntersect(cornerX, cornerY, cornerX + mx, cornerY + my, a.x, a.y, b.x, b.y);
+    if (!cross || cross.t >= slideHit.frac) return;
+
+    if (line.left === NO_SIDE || line.right === NO_SIDE) {
+      // Vanilla's "don't hit the back side": behind a one-sided line is void.
+      if (world.pointOnLineSide(moverX, moverY, i) === 1) return;
+    } else if (!(line.flags & LF.BLOCKING)) {
+      const front = world.map.sectors[world.map.sidedefs[line.right]?.sector];
+      const back = world.map.sectors[world.map.sidedefs[line.left]?.sector];
+      if (!front || !back) return;
+      const openTop = front.ceilHeight < back.ceilHeight ? front.ceilHeight : back.ceilHeight;
+      const openBottom = front.floorHeight > back.floorHeight ? front.floorHeight : back.floorHeight;
+      if (!openingRefuses(openTop, openBottom, z, zFinite)) return;
+    }
+    slideHit.frac = cross.t;
+    slideHit.line = i;
+  });
+}
+
+/**
+ * Moves a body's collision box by (dx, dy), sliding along whatever it runs into,
+ * and returns the position actually reached — vanilla's `P_SlideMove`
+ * (`p_map.c`), which is the player's alone: a monster gets `P_Move`'s
+ * all-or-nothing step instead (`game/monsters/ai.ts`).
+ *
+ * Three of the box's four corners are traced to find the nearest wall, the move
+ * commits to just short of it, and the remainder is projected onto that wall's
+ * own direction and retried, `SLIDE_ATTEMPTS` walls deep. When no trace finds a
+ * wall — which includes a solid *body* refusing the move, since a thing produces
+ * no line intercept — it falls to vanilla's `stairstep`: one axis at a time, Y
+ * before X. See docs/movement.md § slideMove.
  */
 export function slideMove(
   world: World,
@@ -872,103 +1043,74 @@ export function slideMove(
   dx: number,
   dy: number,
   radius: number,
-  forMonster = false,
-  avoidDropoff = false,
   blockers?: readonly ThingBlocker[],
 ): Pos2 {
-  const { x, y, z } = from;
+  const z = from.z;
+  let curX = from.x;
+  let curY = from.y;
   let mx = dx;
   let my = dy;
-  let lastHit = null as number | null;
+
+  // `from` stays the *original* position for every probe, so a body that began
+  // the tic already overlapping another can still work free of it
+  // (`blockedByThings`) without a multi-attempt slide creeping further in.
+  const free = (x: number, y: number): boolean =>
+    !positionBlocked(world, x, y, radius, z, false, blockers, from);
+
+  // `P_XYMovement` only reaches `P_SlideMove` once the whole move is refused.
+  if (free(curX + mx, curY + my)) return { x: curX + mx, y: curY + my };
+
   for (let attempt = 0; attempt < SLIDE_ATTEMPTS; attempt++) {
-    if (mx === 0 && my === 0) break;
-    const hit = blockingLineAt(world, x + mx, y + my, radius, z, forMonster, avoidDropoff, blockers, from);
-    if (hit === null) return { x: x + mx, y: y + my };
-    // A body/dropoff has no wall direction, and hitting the same wall twice
-    // means the projection made no progress (the circle already overlaps it) —
-    // either way the per-axis fallback below is the only thing left to try.
-    // A body also leaves no corner to round, hence dropping `lastHit` with it.
-    if (hit === SOLID_BODY) {
-      lastHit = null;
-      break;
+    // Vanilla traces the leading corner and the two beside it, never the
+    // trailing one. A zero component takes the same branch a negative one does.
+    const leadX = mx > 0 ? curX + radius : curX - radius;
+    const trailX = mx > 0 ? curX - radius : curX + radius;
+    const leadY = my > 0 ? curY + radius : curY - radius;
+    const trailY = my > 0 ? curY - radius : curY + radius;
+
+    slideHit.frac = Infinity;
+    slideHit.line = -1;
+    slideTraverse(world, curX, curY, leadX, leadY, mx, my, z);
+    slideTraverse(world, curX, curY, trailX, leadY, mx, my, z);
+    slideTraverse(world, curX, curY, leadX, trailY, mx, my, z);
+
+    if (slideHit.line < 0) break;
+
+    const frac = slideHit.frac - SLIDE_FUDGE;
+    if (frac > 0) {
+      const nx = curX + mx * frac;
+      const ny = curY + my * frac;
+      if (!free(nx, ny)) break;
+      curX = nx;
+      curY = ny;
     }
-    if (hit === lastHit) break;
-    lastHit = hit;
-    const line = world.map.linedefs[hit];
-    const a = world.map.vertexes[line.v1];
-    const b = world.map.vertexes[line.v2];
-    const ldx = b.x - a.x;
-    const ldy = b.y - a.y;
-    const len = Math.hypot(ldx, ldy);
-    if (len === 0) break;
-    const along = (mx * ldx + my * ldy) / len;
-    mx = (ldx / len) * along;
-    my = (ldy / len) * along;
-    if (Math.abs(mx) < SLIDE_EPSILON && Math.abs(my) < SLIDE_EPSILON) break;
+
+    // Vanilla clamps the remainder to FRACUNIT here; `segmentIntersect` already
+    // bounds the fraction to [0, 1], so the clamp cannot fire.
+    const rest = 1 - slideHit.frac;
+    if (rest <= 0) return { x: curX, y: curY };
+
+    // `P_HitSlideLine`: what is left of the move projected onto the wall's own
+    // direction, so the along-wall component survives and the into-wall one is
+    // gone. Vanilla's angle arithmetic and its `P_AproxDistance` reduce to
+    // exactly this projection, without that function's ~12% magnitude error.
+    const ldx = world.lineDX[slideHit.line];
+    const ldy = world.lineDY[slideHit.line];
+    const lenSq = ldx * ldx + ldy * ldy;
+    if (lenSq === 0) break;
+    const along = (rest * (mx * ldx + my * ldy)) / lenSq;
+    mx = ldx * along;
+    my = ldy * along;
+
+    if (free(curX + mx, curY + my)) return { x: curX + mx, y: curY + my };
   }
 
-  // Fallback for the cases the projection can't resolve: a solid body, or a
-  // circle already overlapping the wall it's trying to slide along.
-  let nx = x;
-  let ny = y;
-  if (dx !== 0 && !circleBlocked(world, x + dx, y, radius, z, forMonster, avoidDropoff, blockers, from)) nx = x + dx;
-  if (dy !== 0 && !circleBlocked(world, nx, y + dy, radius, z, forMonster, avoidDropoff, blockers, from)) ny = y + dy;
-  if (ny === y && dy !== 0 && nx !== x && !circleBlocked(world, nx, y + dy, radius, z, forMonster, avoidDropoff, blockers, from)) ny = y + dy;
-  const stepped = { x: nx, y: ny };
-  const steppedSq = (nx - x) * (nx - x) + (ny - y) * (ny - y);
-  if (lastHit === null || steppedSq > (dx * dx + dy * dy) * SLIDE_MIN_PROGRESS_SQ) return stepped;
-
-  // Rounding may only ever improve on the stairstep, never trade against it.
-  const rounded = roundCorner(world, from, dx, dy, radius, lastHit, forMonster, avoidDropoff, blockers);
-  const rdx = rounded.x - x;
-  const rdy = rounded.y - y;
-  return rdx * rdx + rdy * rdy > steppedSq ? rounded : stepped;
-}
-
-/**
- * The one step vanilla's `P_SlideMove` has no equivalent of: with both the
- * projection and the stairstep refused, a circle caught on the **endpoint** of
- * `lineIndex` slides around that corner rather than freezing, along the tangent
- * at its own position. Returns `from`'s own position when there is no corner to
- * round or the rounded step is itself blocked. Deliberately a last resort, not
- * a per-contact direction choice inside the projection loop: at an endpoint
- * contact the line's own direction can still be the right slide, and only
- * trying it first tells the two apart. See docs/movement.md § slideMove for
- * why a circle reaches a state vanilla's collision box never does, and for
- * the measured case against the in-loop refactor.
- */
-function roundCorner(
-  world: World,
-  from: Pos3,
-  dx: number,
-  dy: number,
-  radius: number,
-  lineIndex: number,
-  forMonster: boolean,
-  avoidDropoff: boolean,
-  blockers?: readonly ThingBlocker[],
-): Pos2 {
-  const { x, y, z } = from;
-  const line = world.map.linedefs[lineIndex];
-  const a = world.map.vertexes[line.v1];
-  const b = world.map.vertexes[line.v2];
-  const t = closestTOnSegment(x, y, a.x, a.y, b.x, b.y);
-  // Pressed against the wall's length, not one of its ends: no corner here.
-  if (t > 0 && t < 1) return { x, y };
-  const corner = t === 0 ? a : b;
-  const cx = x - corner.x;
-  const cy = y - corner.y;
-  const lenSq = cx * cx + cy * cy;
-  if (lenSq === 0) return { x, y };
-  // The move projected onto the tangent (-cy, cx). Normalizing that tangent
-  // would cancel against the projection's own divide, so the squared length is
-  // the whole of it.
-  const along = (dx * -cy + dy * cx) / lenSq;
-  const rx = x + -cy * along;
-  const ry = y + cx * along;
-  if (Math.abs(rx - x) < SLIDE_EPSILON && Math.abs(ry - y) < SLIDE_EPSILON) return { x, y };
-  if (circleBlocked(world, rx, ry, radius, z, forMonster, avoidDropoff, blockers, from)) return { x, y };
-  return { x: rx, y: ry };
+  // `stairstep`. X is tried only if Y was refused, exactly as vanilla nests it;
+  // with `my` zero the Y attempt is the mover's own position and succeeds, which
+  // is why a purely lateral move stopped by a body does not fall through to X.
+  if (free(curX, curY + my)) return { x: curX, y: curY + my };
+  if (free(curX + mx, curY)) return { x: curX + mx, y: curY };
+  return { x: curX, y: curY };
 }
 
 /** Vanilla's `MISSILERANGE` (`32*64`), what every *monster* hitscan attack passes to `P_LineAttack`. */

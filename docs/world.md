@@ -70,6 +70,9 @@ speed:
   and is sound because `buildGrid` buckets each line into every cell its bounding box touches: if a
   line genuinely crosses the segment, their intersection lies in a cell both pass through. On
   NUTS.WAD this one change took `hasLineOfSight` from dominating the frame to a small fraction of it.
+  `slideMove`'s corner traces run on it too (docs/movement.md § slideMove) — and need no ordering
+  from it, because `PTR_SlideTraverse`'s blocking decision reads nothing but the line itself, so a
+  running minimum over the grid's own order finds the same nearest wall a sorted traversal would.
 - **`SIGHT_MAX_HEIGHT_SAMPLES` caps the floor/ceiling sampling** so the step stretches past
   `SIGHT_HEIGHT_SAMPLE_STEP` instead of the sample count growing without bound. 32 is chosen so
   nothing within `WEAPON_RANGE` (2048, the furthest a monster can shoot, and no player shot's
@@ -86,8 +89,8 @@ Both `forEachLineAlongSegment` and the lazy accessor exist because these run tho
 frame: the segment walk dedupes through a per-linedef stamp array rather than allocating a `Set` and
 spreading it per call, the way `linesNear` does. **An equivalent allocation-free `linesNear` for the
 *collision* callers was tried and measured as no faster** — the callback makes that call site
-megamorphic and costs the early-out — so `groundFloor`/`dropoffFloor`/`circleBlocked` deliberately
-still use the plain array-returning `linesNear`. Don't "fix" that without measuring.
+megamorphic and costs the early-out — so `checkPosition`, the one collision caller left, deliberately
+still uses the plain array-returning `linesNear`. Don't "fix" that without measuring.
 
 **`SELF_HIT_MARGIN`**: a rocket that explodes against a wall sits its own impact point exactly on
 that wall, and a raw segment-intersection test then reports the blast blocked by the very wall it

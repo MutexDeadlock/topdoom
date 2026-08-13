@@ -40,6 +40,7 @@ import {
   type Projectile,
 } from './spritefxdefs.ts';
 import type { Pos3 } from '../types.ts';
+import type { MonsterRef } from './things/defs.ts';
 
 /**
  * Every shot in flight, from launch to whatever it lands on. Who *decides* to fire is somebody
@@ -105,8 +106,8 @@ export class ProjectileLayer {
   /**
    * Turns one fired `Shot` (game/weapons.ts) into a tracer line or a flying
    * projectile sprite. Always starts at the player's own fire height and
-   * slopes toward a locked-on monster's height; `shotPath` resolves where it
-   * actually gets to.
+   * slopes toward the locked-on monster's mid-body; `shotPath` resolves both
+   * the slope it settles on and where it actually gets to.
    *
    * **Hit-or-miss is settled here only for a hitscan pellet** — an instant line
    * has no travel time to change its mind about. A projectile leaves with no
@@ -115,7 +116,7 @@ export class ProjectileLayer {
    * gives it a slope and nothing else. See docs/combat.md § How a shot deals
    * damage.
    */
-  spawnPlayerShot(shot: Shot, startZ: number, target: Pos3 | null, targetId: number | null): void {
+  spawnPlayerShot(shot: Shot, startZ: number, target: MonsterRef | null): void {
     const { world, things } = this.ctx;
     const origin: Pos3 = { x: this.ctx.player.x, y: this.ctx.player.y, z: startZ };
 
@@ -143,18 +144,16 @@ export class ProjectileLayer {
     }
 
     const range = playerShotRange(shot.kind, target, world.mapSpan);
-    // The super shotgun's per-pellet slope jitter (`HitscanShot.slopeOffset`)
-    // rides on the aim point rather than on the trace: `shotPath` takes its
-    // slope from the target, so raising or lowering that point by the jitter
-    // over the target's own distance *is* `bulletslope + ((P_Random()-P_Random())<<5)`.
-    // Zero for every other weapon, which then aims exactly at `target`.
-    const toTarget = target === null ? 0 : Math.hypot(target.x - origin.x, target.y - origin.y);
+    // Zero for every other weapon; `shotPath` adds it after the wedge has
+    // clamped the aim, as `A_FireShotgun2` adds it to the finished
+    // `bulletslope` (docs/combat.md § shotPath).
     const slopeOffset = shot.kind === 'hitscan' ? shot.slopeOffset : 0;
-    const aimPoint =
-      target !== null && slopeOffset !== 0
-        ? { x: target.x, y: target.y, z: target.z + slopeOffset * toTarget }
-        : target;
-    const path = shotPath(world, origin, shot.angleRad, aimPoint, range);
+    // The body's centre and half-height, which is where vanilla's `aimslope`
+    // points on a clear target — see docs/combat.md § Auto-aim.
+    const half = target === null ? 0 : target.height / 2;
+    const aimAt = target === null ? null : { x: target.x, y: target.y, z: target.z + half };
+    const lock = target === null ? null : { halfHeight: half, slopeOffset };
+    const path = shotPath(world, origin, shot.angleRad, aimAt, range, lock);
 
     if (shot.kind === 'hitscan') {
       const dirX = Math.cos(shot.angleRad);
@@ -168,25 +167,23 @@ export class ProjectileLayer {
       // a pellet that fails here falls through to `raycastMonster` below, which
       // tests that same body at its real width. docs/combat.md § How a shot
       // deals damage.
-      let lockDist: number | null = null;
-      if (target !== null && targetId !== null) {
+      let hitMonsterId: number | null = null;
+      let endX = path.x;
+      let endY = path.y;
+      if (target !== null) {
         const relX = target.x - origin.x;
         const relY = target.y - origin.y;
         const along = relX * dirX + relY * dirY;
         const perp = Math.abs(relX * dirY - relY * dirX);
         const missZ = Math.abs(slopeOffset) * along;
         const onBody = perp <= MONSTER_HIT_RADIUS && missZ <= MONSTER_LOCK_HEIGHT / 2;
-        if (onBody && along >= 0 && path.dist >= along - 1) lockDist = along;
+        if (onBody && along >= 0 && path.dist >= along - 1) {
+          hitMonsterId = target.id;
+          endX = origin.x + dirX * along;
+          endY = origin.y + dirY * along;
+        }
       }
-
-      let hitMonsterId: number | null = null;
-      let endX = path.x;
-      let endY = path.y;
-      if (lockDist !== null) {
-        hitMonsterId = targetId;
-        endX = origin.x + dirX * lockDist;
-        endY = origin.y + dirY * lockDist;
-      } else {
+      if (hitMonsterId === null) {
         // No lock, or a pellet the spread threw off it: test the path against
         // every monster's body, so one standing between the player and the wall
         // they're shooting at isn't invisible to the shot — and a wide pellet can
@@ -284,7 +281,7 @@ export class ProjectileLayer {
     // slope while only its heading is deflected, exactly as `A_FatAttack1/2/3`
     // rewrite momx/momy from the new angle and leave momz alone.
     for (const proj of atk.projectiles) {
-      const path = shotPath(world, atk, proj.angleRad, target, world.mapSpan, false);
+      const path = shotPath(world, atk, proj.angleRad, target, world.mapSpan, null);
       const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, proj.sprite, PROJECTILE_FRAMES[proj.sprite]);
       if (!anim.resolve((proj.angleRad * 180) / Math.PI, VIEWER_ANGLE_DEG)) continue;
       const launch = PROJECTILE_SOUNDS[proj.sprite]?.launch;
@@ -590,12 +587,12 @@ export class ProjectileLayer {
       // Vanilla's inflictor is the ball itself, by then far from the player;
       // this engine doesn't track where it stopped, so `origin` stands in.
       things?.damage(hit.id, damage, undefined, undefined, origin.x, origin.y);
-      // MT_EXTRABFG spawns at `linetarget->height>>2`; with no per-species
-      // height table, `MONSTER_FIRE_HEIGHT` is the same stand-in used elsewhere.
+      // `A_BFGSpray` spawns MT_EXTRABFG at `linetarget->height>>2`, which the
+      // body's own `mobjinfo.height` gives exactly.
       this.effects.spawnImpact('BFE2', BFG_SPRAY_HIT_FRAMES, IMPACT_FRAME_SECONDS, {
         x: hit.x,
         y: hit.y,
-        z: hit.z + MONSTER_FIRE_HEIGHT,
+        z: hit.z + hit.height / 4,
       });
     }
   }

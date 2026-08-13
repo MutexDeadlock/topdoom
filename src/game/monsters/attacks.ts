@@ -177,7 +177,7 @@ export class MonsterAttacks {
     // `WEAPON_RANGE` rather than the distance to `aim`: a bullet the spread
     // threw wide keeps flying, and can still find a wall or another monster
     // behind whoever it was fired at. `P_LineAttack(..., MISSILERANGE, ...)`.
-    const path = shotPath(world, atk, angleRad, aim, WEAPON_RANGE, false);
+    const path = shotPath(world, atk, angleRad, aim, WEAPON_RANGE, null);
 
     // The trace damages the first body it reaches, whatever it was aimed at.
     const blocker = things?.raycastMonster(atk, angleRad, path.dist, {

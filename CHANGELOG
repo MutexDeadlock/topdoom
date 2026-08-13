@@ -1,4 +1,4 @@
-v0.1?.? (2026-08-??)
+v0.12.1 (2026-08-1?)
 
 Features and improvements
   - secret exits work
@@ -11,8 +11,10 @@ Features and improvements
     - "Nightmare!" respawns killed monsters back
   - if a game can't be saved (dead, intermission), the "Save"
     and "Overwrite" buttons are disabled now
+  - tuned (auto-)aiming
 
 Fixed bugs
+  - the camera drifted whenever the mouse passed over a monster
   - spectres were drawn as ordinary demons; they now shimmer as the
     original's fuzz effect, corpses included
   - a monster whose step was clear but whose first fraction of it

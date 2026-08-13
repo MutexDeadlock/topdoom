@@ -1096,10 +1096,10 @@ export class Game {
     // happen immediately before the ray: `draw` overwrites the pose afterwards.
     // docs/frameloop.md § Posing for the aim ray.
     if (!this.playerDead) camera.applyToCamera(1);
-    const aim = this.playerDead ? null : this.updateLivingPlayer(TIC_SECONDS, input, camera);
+    const cursor = this.playerDead ? null : this.updateLivingPlayer(TIC_SECONDS, input, camera);
 
     if (!this.playerDead) this.levelTime += TIC_SECONDS;
-    camera.tick(TIC_SECONDS, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, aim);
+    camera.tick(TIC_SECONDS, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, cursor);
 
     this.profiler.time('Fog of War', () => this.fogOfWar.tick(this.player.x, this.player.y));
     this.updateThings(TIC_SECONDS);
@@ -1132,8 +1132,8 @@ export class Game {
 
   /**
    * Everything a *living* player drives in a frame: powers, aim, movement, firing, pickups and the
-   * sector underfoot. Returns the point the camera leads toward — the locked-on monster if the
-   * cursor is over one, otherwise where the cursor meets the aim plane.
+   * sector underfoot. Returns the point the camera leads toward, which is always where the cursor
+   * meets the aim plane — never the locked-on monster.
    */
   private updateLivingPlayer(dt: number, input: Input, camera: TopDownCamera): Pos2 | null {
     // Ticked with the rest of the player's own update and not while dead,
@@ -1141,20 +1141,21 @@ export class Game {
     // `P_DeathThink` and returns before reaching them once health hits 0.
     tickPowers(this.inventory, dt);
     // The cursor hovering over a monster locks aim onto its actual position
-    // and height. **On hover, not on click** — `aim` drives `player.angle`
-    // and the camera's lead unconditionally, so gating the lock to
-    // `mouseDown` makes both jump the instant a click lands. See
-    // docs/combat.md § Auto-aim.
-    const { monster, aim } = this.profiler.time('Player', () => {
+    // and height — **on hover, not on click** (docs/combat.md § Auto-aim). The
+    // camera leads on `cursor` and never sees the lock, which is
+    // docs/render.md § Aim lead's rule and the reason the two are returned
+    // separately at all.
+    const { monster, cursor } = this.profiler.time('Player', () => {
       // The tic-exact viewer angle, not the interpolated `viewAngleDeg` the
       // billboards are drawn at, for the same framerate-independence reason
       // the camera was posed at alpha 1 above.
       const ray = camera.rayFor(input.pointer.x, input.pointer.y);
       const m = this.things?.pickMonster(ray, camera.viewerAngleDeg) ?? null;
-      const at = m ?? camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
+      const onPlane = camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
+      const at = m ?? onPlane;
       // Monsters are solid: the player walks around them, not through them.
       this.player.update(dt, input, at, camera.viewerAngleDeg + 180, this.things?.solidBodies(this.player));
-      return { monster: m, aim: at };
+      return { monster: m, cursor: onPlane };
     });
 
     this.profiler.time('Weapons', () => this.fireWeapons(input, monster));
@@ -1165,7 +1166,7 @@ export class Game {
     // say — both belong to a living player only.
     if (this.player.landingSpeed > HARD_LANDING_SPEED) this.audio.play('oof', this.player, PLAYER_ORIGIN);
     this.weaponSystem.update(dt, input.mouseDown, this.inventory, this.audio, this.player);
-    return aim;
+    return cursor;
   }
 
   /**
@@ -1176,12 +1177,10 @@ export class Game {
   private fireWeapons(input: Input, monster: MonsterRef | null): void {
     // A shot always *starts* at the player's own fire height — never the
     // target's, or a tracer/projectile would visibly begin mid-air instead
-    // of at the player. Handing shotPath the locked-on monster as its
-    // target is what makes the shot angle toward *its* height and stop
-    // there; see world.ts's shotPath/blocksShot for why a locked shot is
+    // of at the player. The locked-on monster travels with it as the body to
+    // aim at; see world.ts's shotPath/blocksShot for why a locked shot is
     // allowed to clear the floor steps a free one is stopped by.
     const fireStartZ = this.player.z + AIM_HEIGHT_OFFSET;
-    const fireTarget = monster ? { x: monster.x, y: monster.y, z: monster.z + AIM_HEIGHT_OFFSET } : null;
 
     // Called after player.update so player.angle already reflects this frame's aim.
     this.weaponSystem.handleSwitching(input, this.inventory, input.consumeWheel());
@@ -1204,7 +1203,7 @@ export class Game {
       if (fire) this.audio.play(fire, this.player, PLAYER_ORIGIN);
     }
     for (const shot of shots) {
-      this.projectiles.spawnPlayerShot(shot, fireStartZ, fireTarget, monster ? monster.id : null);
+      this.projectiles.spawnPlayerShot(shot, fireStartZ, monster);
     }
   }
 

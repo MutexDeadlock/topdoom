@@ -42,11 +42,37 @@ blocked both the player's shots at the imp and the imp's fireballs back through 
 shooter's fire height to the target's over exactly the distance between them, and stops *at* the
 target. A separate `lockedOn` parameter (default: on whenever a `target` is given) switches the
 blocking test from the single fixed ray to a **slope wedge** — vanilla's `P_AimLineAttack`: start
-from the span of slopes reaching any part of the target (`shotTargetHalfHeight`, the same
-"feet-to-head, any part counts" idea `hasLineOfSight` uses), narrow `[bottomSlope, topSlope]` against
+from the span of slopes reaching any part of the target, narrow `[bottomSlope, topSlope]` against
 every opening crossed in increasing distance order, and stop at the first line where the wedge
 collapses. A monster's own fired shot passes `lockedOn: false`: it needs the slope-toward-target
 behavior but has no "you clicked it" promise to honor, so it stays on the strict single ray.
+
+**The wedge that survives is also the slope fired** — `PTR_AimTraverse`'s `aimslope`, the middle of
+`[bottomSlope, topSlope]` after every opening has cut into it. This is not cosmetic: firing the raw
+line to the target instead meant the wedge cleared a shot on the grounds that *some* slope got
+through, and the shot then went out on a different one that didn't, so the leniency was granted to
+the blocking test and never to the shot. A player's missile shows it plainly, since
+`ProjectileLayer.update` gates its floor/ceiling test to a monster's shot: a rocket aimed over a step
+would clear the wedge, fly at the raw slope straight through the step, and detonate on the far wall.
+With nothing narrowing the wedge the midpoint *is* the target's centre, so an ordinary open-room shot
+is unchanged.
+
+The span the wedge starts from is the target's **real body** — `ShotLock.halfHeight`, half its
+`mobjinfo.height`, around an aim point that is the body's centre (both derived in
+`spawnPlayerShot` from the `MonsterRef` the lock handed it). Vanilla measures
+`[th->z, th->z + th->height]`, which is a 110-unit cyberdemon and a 56-unit imp, and aims at the
+middle of it; a fixed half-`PLAYER_HEIGHT` band around a fixed 32 units above the feet — what this
+was — got the imp about right and put a cyberdemon's aim at its knees.
+
+Passing a `ShotLock` at all is what selects the wedge: it and the old separate `lockedOn` flag were
+the same bit at every call site, since only a player's clicked shot has a body to aim at. A monster's
+own shot passes none and stays on the single ray.
+
+`ShotLock.slopeOffset` (the super shotgun's per-pellet jitter) is added **after** that clamp, because
+`A_FireShotgun2` adds it to the finished `bulletslope`: vanilla jitters the shot, not the aim, so a
+pellet may scatter into the very step the aim had to clear. Folding it into the aim point before the
+trace — what this used to do — let the wedge clamp the scatter back out. Note the jitter lands after
+the blocking test too, so it moves where the pellet is drawn without moving what stopped it.
 
 **Both of the other two things this has been are wrong, and the wedge is the fix for the second.**
 The single-ray test is too *strict* for auto-aim: the one ray from gun to target clips the near edge
@@ -157,9 +183,29 @@ is the plain quad, transparent corners included, exactly the silhouette the old 
 A conservative sphere around each thing (`BILLBOARD_MAX_REACH`) rejects the overwhelming majority
 before any `SpriteBank` lookup; without it the scan would resolve a lump per thing per tic, which is
 the cost the analytic pick exists to avoid.
-It returns the hit monster's position *and* its sector's live floor height. `game.ts` uses that as both the aim point and the shot's end height. It supplies the shot's aim
-*direction and slope* only — whether any one pellet lands is still resolved geometrically against the
-target's body, so a spread weapon spreads (§ How a shot deals damage).
+It returns the hit monster's `MonsterRef`, which `game.ts: fireWeapons` hands to the shot as-is;
+`spawnPlayerShot` is the one place that turns a body into an aim point, at `z + height/2` — the
+body's **centre**, which is where vanilla's `aimslope` lands on an unobstructed target
+(§ shotPath). It supplies the shot's aim *direction and slope* only — whether any one pellet
+lands is still resolved geometrically against the target's body, so a spread weapon spreads (§ How a
+shot deals damage).
+
+**Three of vanilla's own limits on aiming are deliberately absent**, all of them consequences of
+picking with a pointer instead of tracing down the facing, and none of them missed by accident:
+
+- **Range.** `P_BulletSlope` and `P_SpawnPlayerMissile` both aim `16*64` = 1024 units, half
+  `MISSILERANGE`; past that vanilla finds nothing and fires flat. `pickMonster` has no distance test
+  at all — its `BILLBOARD_MAX_REACH` sphere is a broad-phase reject, not a range. The real bound is
+  what the camera draws, roughly 5,000 units (docs/fogofwar.md § Reveal radius), which is the same
+  argument `PLAYER_WEAPON_RANGE` already makes for the bullet itself (§ Range).
+- **The vertical cone.** `P_AimLineAttack` opens its wedge at `±100/160` (±0.625 slope, ±32°) and
+  refuses anything outside it. Nothing here caps the slope: a monster on a high ledge is lockable at
+  whatever angle it takes, because the pointer is over it and refusing would read as the click being
+  ignored.
+- **Sight.** Vanilla's traverse stops at the first wall, so an unreachable monster is simply not a
+  target. The pick's only equivalent is fog of war (`visible`), which is a memory of having seen the
+  room, not a live sightline — so a monster can be locked through a wall the camera looks over. The
+  shot is still stopped by that wall; what carries is the aim.
 
 **`NO_AUTO_AIM_TYPES` (`game/thingdefs.ts`) holds the one thing the cursor refuses to lock onto**:
 the Icon of Sin's brain (88). Its recess (DOOM2 MAP30 sector 8, floor 288) opens onto the arena only
@@ -170,11 +216,13 @@ top-down camera looks over the wall and shows you the brain anyway, so hovering 
 and sent every shot into the wall below the slot. Everything else about the brain is unchanged: it is
 an ordinary `MONSTER_TYPES` member, still shootable by a free shot, and still counted as a kill.
 
-**The lock applies on hover, not on click.** Gating it to `input.mouseDown` made `aim` — which drives
-`player.angle` *and* the camera's aim-lead — switch sources the instant a click landed, and since a
-monster is normally much nearer than the cursor's floor-plane projection, the camera's lead offset
-collapsed at that moment and read as the camera lurching backwards. Aim has always been set from the
-cursor unconditionally; the lock has to follow the same rule to stay continuous.
+**The lock applies on hover, not on click.** Gating it to `input.mouseDown` made `player.angle`
+switch sources the instant a click landed, snapping the player round by whatever the monster's anchor
+and the cursor's plane point differ by. Aim has always been set from the cursor unconditionally; the
+lock has to follow the same rule to stay continuous.
+
+**The camera never sees the lock**, which is why `updateLivingPlayer` returns the cursor's plane
+point rather than the aim: docs/render.md § Aim lead.
 
 ## Effects and their batching
 
@@ -425,9 +473,9 @@ distance falloff at all. Two things make it genuinely different from a radius bl
 `resolveBfgSpray` draws no line for the rays — `A_BFGSpray`'s traces are pure math in vanilla too,
 never rendered, and an earlier approximated splash drew a green tracer purely to make its damage
 legible. **Every ray that connects spawns vanilla's own `MT_EXTRABFG`** on the monster it hit
-(`BFG_SPRAY_HIT_FRAMES`, `BFE2A0`-`D0`, confirmed against the real `DOOM2.WAD` lump names) placed
-roughly a quarter of the way up the target (vanilla's `linetarget->height>>2`; with no per-species
-height table this reuses `MONSTER_FIRE_HEIGHT`). Spawned once *per connecting ray*, unconditionally,
+(`BFG_SPRAY_HIT_FRAMES`, `BFE2A0`-`D0`, confirmed against the real `DOOM2.WAD` lump names) placed a
+quarter of the way up the target — vanilla's `linetarget->height>>2`, off that body's own
+`mobjinfo.height` (`MonsterRef.height`). Spawned once *per connecting ray*, unconditionally,
 matching the `P_SpawnMobj` call inside vanilla's loop — a target caught by several rays gets several
 overlapping bursts, which is the flickering green flash a BFG'd monster shows in real vanilla. `BFE1`
 (the ball's own impact where it physically stopped) and `BFE2` are two separate sprites for two

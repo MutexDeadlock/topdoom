@@ -956,16 +956,15 @@ function blocksShot(world: World, lineIndex: number, z: number): boolean {
 }
 
 /**
- * Half the vertical extent a locked-on shot may aim within around its target
- * point, for `shotPath`'s wedge — `game.ts` passes a target `z` of roughly
- * mid-body, so a symmetric half-body band approximates the silhouette. Same
- * "any part counts" idea as `hasLineOfSight`'s `[z2, z2 + PLAYER_HEIGHT]`.
- *
- * A function rather than a module-level const for the `PLAYER_HEIGHT`
- * import-cycle reason documented on `hasLineOfSight`.
+ * The lock a player's shot was fired under: the target's own body for the wedge
+ * to start from, and this pellet's jitter. Passing one is what puts `shotPath`
+ * on its locked-on branch at all. See docs/combat.md § shotPath.
  */
-function shotTargetHalfHeight(): number {
-  return PLAYER_HEIGHT / 2;
+export interface ShotLock {
+  /** Half the target's real `mobjinfo.height` (`MonsterRef.height`); `target.z` is its centre. */
+  halfHeight: number;
+  /** `A_FireShotgun2`'s per-pellet `bulletslope + ((P_Random()-P_Random())<<5)`, added after the wedge clamps. */
+  slopeOffset: number;
 }
 
 /**
@@ -1043,11 +1042,12 @@ export interface ShotPath extends Pos3 {
  * has no range budget in vanilla at all — `World.mapSpan`. See docs/combat.md
  * § Range and docs/monster-attacks.md § Hitscan vs. projectile.
  *
- * `lockedOn` (default: true whenever `target` is given) switches blocking from
- * `blocksShot`'s single fixed ray to a **slope wedge**, vanilla's
- * `P_AimLineAttack` — the auto-aim leniency, and neither of the two things it
- * has been in the past. A monster's own fired shot passes `lockedOn: false`:
- * it needs `target` to aim, but has no "you clicked it" promise to honor. See
+ * **A `lock` switches blocking** from `blocksShot`'s single fixed ray to a
+ * **slope wedge**, vanilla's `P_AimLineAttack` — the auto-aim leniency, and
+ * neither of the two things it has been in the past — and re-aims the shot at
+ * the wedge it cleared (`PTR_AimTraverse`'s `aimslope`), so the slope fired is
+ * one the geometry admits. A monster's own fired shot passes none: it needs
+ * `target` to aim, but has no "you clicked it" promise to honor. See
  * docs/combat.md § shotPath.
  */
 export function shotPath(
@@ -1056,7 +1056,7 @@ export function shotPath(
   angleRad: number,
   target: Pos3 | null = null,
   range?: number,
-  lockedOn: boolean = target !== null,
+  lock: ShotLock | null = null,
 ): ShotPath {
   const { x, y, z } = origin;
   const dx = Math.cos(angleRad);
@@ -1064,9 +1064,10 @@ export function shotPath(
   const toTarget = target ? Math.hypot(target.x - x, target.y - y) : 0;
   const maxRange = range ?? (target ? toTarget : WEAPON_RANGE);
   // Held for the whole trace, so a `range` past the target keeps climbing or
-  // falling at the rate the aim set — `P_LineAttack`'s `slope`, `momz`.
+  // falling at the rate the aim set — `P_LineAttack`'s `slope`, `momz`. The
+  // locked-on branch below may re-aim it within the wedge it cleared.
   const slope = target && toTarget > 0 ? (target.z - z) / toTarget : 0;
-  const endZ = z + slope * maxRange;
+  let aimSlope = slope;
   const tx = x + dx * maxRange;
   const ty = y + dy * maxRange;
   let nearestT = 1;
@@ -1087,14 +1088,14 @@ export function shotPath(
     return hit ? hit.t : null;
   };
 
-  if (!lockedOn) {
+  if (!lock) {
     // Walked along the trace, not gathered from a radius box around its start:
     // a missile's `range` is the whole map (see `World.mapSpan`), and
     // `linesNear` is O(range²) in cells for what is one thin line.
     world.forEachLineAlongSegment(x, y, tx, ty, (i) => {
       const t = crossingT(i);
       if (t === null || t >= nearestT) return;
-      if (blocksShot(world, i, z + (endZ - z) * t)) {
+      if (blocksShot(world, i, z + slope * maxRange * t)) {
         nearestT = t;
         blockingLine = i;
       }
@@ -1111,9 +1112,11 @@ export function shotPath(
     });
     crossings.sort((p, q) => p.t - q.t);
 
-    const half = shotTargetHalfHeight();
-    let bottomSlope = (endZ - half - z) / maxRange;
-    let topSlope = (endZ + half - z) / maxRange;
+    // The target's own silhouette, `PTR_AimTraverse`'s
+    // `thingtopslope`/`thingbottomslope` — `target.z` is the body's centre, so
+    // the pair spans `[z, z + height]`.
+    let bottomSlope = slope - lock.halfHeight / maxRange;
+    let topSlope = slope + lock.halfHeight / maxRange;
     for (const { t, i } of crossings) {
       const line = world.map.linedefs[i];
       // A genuinely solid wall or a shut door stops any shot outright, the
@@ -1141,8 +1144,13 @@ export function shotPath(
         break;
       }
     }
+    // `PTR_AimTraverse`'s `aimslope`, the middle of what survived, plus the
+    // pellet's own jitter — docs/combat.md § shotPath for why the shot is aimed
+    // at the wedge rather than at the target, and why the jitter comes after. A
+    // collapsed wedge keeps the raw slope: the shot stops at that line anyway.
+    aimSlope = (topSlope > bottomSlope ? (bottomSlope + topSlope) / 2 : slope) + lock.slopeOffset;
   }
 
   const dist = maxRange * nearestT;
-  return { x: x + dx * dist, y: y + dy * dist, z: z + (endZ - z) * nearestT, dist, lineIndex: blockingLine };
+  return { x: x + dx * dist, y: y + dy * dist, z: z + aimSlope * dist, dist, lineIndex: blockingLine };
 }

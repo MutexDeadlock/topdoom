@@ -13,7 +13,7 @@ export interface TopDownCameraOptions {
   tiltDeg?: number;
   /** Distance from the point being followed, in map units. */
   distance?: number;
-  /** How far the view leads towards the aim point, 0..1. */
+  /** How far the view leads towards the cursor, 0..1. */
   aimLead?: number;
   /** Orbit around the target, in degrees. 0 keeps the camera due south. */
   yawDeg?: number;
@@ -184,19 +184,21 @@ export class TopDownCamera {
    * One tic of camera *simulation*: advances the smoothed follow point and the
    * orbit yaw. Draws nothing — `applyToCamera` is what moves the `THREE` camera.
    *
-   * @param pos  the followed point in DOOM coordinates (the player's feet)
-   * @param aim  world-space point the player is aiming at, if any
+   * @param pos     the followed point in DOOM coordinates (the player's feet)
+   * @param cursor  where the pointer meets the aim plane, if anywhere — deliberately *not* whatever
+   *                auto-aim locked onto, or the view would twitch every time the cursor crossed a
+   *                monster (docs/render.md § Aim lead)
    */
-  tick(dt: number, pos: Pos3, aim: Pos2 | null): void {
+  tick(dt: number, pos: Pos3, cursor: Pos2 | null): void {
     this.prevSmoothed.copy(this.smoothed);
     this.prevYawDeg = this._yawDeg;
 
     this.setTarget(pos);
 
-    if (aim && this.aimLead > 0) {
+    if (cursor && this.aimLead > 0) {
       // Nudge the focus towards the cursor, capped so the player stays on screen.
-      const dx = aim.x - pos.x;
-      const dy = aim.y - pos.y;
+      const dx = cursor.x - pos.x;
+      const dy = cursor.y - pos.y;
       const dist = Math.hypot(dx, dy);
       const maxLead = 220;
       const scale = dist > 0 ? (Math.min(dist * this.aimLead, maxLead) / dist) : 0;

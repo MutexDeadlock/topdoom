@@ -238,7 +238,7 @@ regardless of orbit. `game.ts` recomputes this every tic from the live camera an
 
 ## The camera is simulation state
 
-`TopDownCamera` splits into `tick(dt, pos, aim)` — which advances the smoothed follow point and
+`TopDownCamera` splits into `tick(dt, pos, cursor)` — which advances the smoothed follow point and
 `yawDeg` — and `applyToCamera(alpha)`, which interpolates between the last two tics and is the only
 thing that moves the `THREE` camera. **`tick` runs on the simulation clock**, which is unusual for
 something in `src/render/` and is forced rather than stylistic:
@@ -272,6 +272,18 @@ collapse for the orbit angle — which is why `snapTo` is called *after* whichev
 roughly a third of a second while the player was already there and shooting. What still glides after
 either snap is the aim lead alone — `tick` re-applies it to the fresh target on the very next tic —
 which is bounded by `maxLead` and is the intended follow-the-cursor feel rather than a leftover.
+
+## Aim lead
+
+The follow point is nudged `aimLead` (0.18) of the way from the player toward the cursor, capped at
+`maxLead` 220 units so the player never leaves the screen. **What it leads toward is always the
+cursor's own aim-plane point (`pointerToPlane`), never what auto-aim locked onto**, and the two are
+not the same place: the lock returns the monster's anchor, which for a billboard under the pointer
+sits somewhere else entirely than where that pointer meets the plane. Feeding `tick` the lock made
+the view lurch every time the cursor crossed a monster and again when it left — motion the player
+never asked for, from a system that is supposed to be invisible. `game.ts: updateLivingPlayer`
+therefore returns the plane point specifically, while `Player.angle` and the shot keep the lock
+(docs/combat.md § Auto-aim).
 
 ## View distance (`constants.ts: VIEW_DISTANCE`, `game.ts`)
 

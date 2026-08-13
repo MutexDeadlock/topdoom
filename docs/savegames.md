@@ -288,9 +288,10 @@ object) is refused: the format is unreleased, so it gets no compat path.
 
 ## WAD-set identity
 
-A save embeds its whole WAD set as **one list in load order**, `wads[0]` the game WAD. A `SaveWad`
-is exactly what `wadSetId(wad)` produces — nothing is added on the way into the store — and it
-carries two fields with sharply different jobs:
+A save embeds its whole WAD set as **one list in load order**, `wads[0]` the game WAD, plus
+`mapWad` — the content id of the file that supplied the saved map's lumps. A `SaveWad` is exactly
+what `wadSetId(wad)` produces and `mapWad` exactly what `wadId(wad.providerOf(map))` does — nothing
+is added on the way into the store — and a `SaveWad`'s two fields have sharply different jobs:
 
 - **`id`** — `wadId`'s content hash (docs/wad.md § Content id, designed for exactly this). **This
   is the file's identity**, and the only thing a load matches on.
@@ -311,18 +312,52 @@ whole file in memory; an upload is hashed once as it is added. The two must prod
 for the same bytes — the plugin hashes a Node `Buffer`, the runtime an `ArrayBuffer` — or every
 load would refuse, so `tests/wad/checksum.test.ts` pins that agreement directly.
 
+**A load requires two files, not the whole set.** Everything a snapshot stores keys through an
+index into *one map's* lumps — a sector index, a `posed` index, a subsector index for the fog — so
+the only files that can change what a stored index means are the game WAD and whatever supplied
+that map. An add-on which supplied neither gave the session textures, sprites, sounds or MAPINFO at
+most: without it the level looks or sounds different, but every index still points at the same
+thing. `requiredWads(wads, mapWad)` is that rule, positionally, and it is why a save made with a
+test PWAD loaded still loads when the map came from the IWAD.
+
+Its hedge is also what keeps the field **compatible**, at `SAVE_VERSION` 1: `requiresWholeSet` — a
+`mapWad` that is blank or names no entry in the set — puts a save back under the old whole-set
+rule. A save written before the field has no `mapWad` (`asMeta` reads it as `''`) and so is gated
+exactly as it was when it was written, and a damaged field can only ever be too strict, never too
+lax. That condition has **one** spelling, in that function, because it is the branch every gate
+turns on: two spellings of it (`mapWad === ''` in one place, "matches no entry" in another) disagree
+precisely on the damaged saves it exists to protect.
+
+Being lenient about the rest is deliberate, and it costs the exactness of what is *drawn*: a level
+restored without the add-on that only skinned it comes back with the game WAD's textures and
+sounds. That is a visible difference the player can see and fix (load the file, load again), where
+refusing was an invisible one they could not.
+
 `Menu.resolveSaveWads` resolves the **whole set at once**, in load order, and is the only place
 that happens: the save row (`describeSave`) and the load path (`main.ts`'s `loadSave`) both call
 it, so a row reporting no problem can't be followed by a load that fails on one. It also does the
 *diagnosis*: no id match, but a file of the same name present, means the same WAD in a different
-version. The sentence for either outcome is `missingWadText`'s alone, so the row and the load
-error can't word the same problem differently. `asMeta` *blanks* a damaged entry instead of
-dropping it (`asWad`): dropping one would shift every later file into the wrong role, where a
-blank fails loudly instead.
+version. The wording for every outcome — required or not — comes from this module and nowhere else,
+in two lengths that are written together: `missingWadLabel` names the file and the problem for the
+save row, which has ~55 characters before it ellipsizes, and `missingWadText` says what to do about
+it for the surfaces with a whole line — the load error and the row's tooltip. Both kinds are a
+warning on the row, in two colours: the accent's red for a required file, amber for the rest, since
+red is what says *this save can't be loaded* and using it for one that loads fine would read as a
+refusal that isn't there. `asMeta` *blanks* a damaged entry instead of dropping it (`asWad`): dropping one would
+shift every later file into the wrong role, where a blank fails loudly instead.
 
 Loading resolves every entry before anything is torn down, so the running level survives a load
-that can't happen, then still verifies each `wadId` against the saved list (`verifyWadSet` in
-`main.ts`, on the shared `startLevel` path — see docs/menu.md § Session lifecycle) and refuses on
-the first mismatch, *naming the file*. That check stays even though resolution now matches ids: a
-manifest id is a build-time claim, and re-hashing the bytes actually in hand is what catches a
-manifest left stale by a changed file.
+that can't happen — only a *required* missing file stops it (`blockingWad`); the rest are simply
+left out of the assembled set. That refusal is the gate, not the greyed-out Load button the row
+also grows: the button asks `blockingWad` the same question ahead of the click, and is a courtesy
+in the same way the Save/Overwrite disabling is (docs/menu.md § Save and Load tabs).
+
+**`wadSetRefusal` is then the gate itself, and the only statement of it.** It takes plain facts
+rather than a `Wad` — the save, `wadSetId`'s list for the set in hand, and that set's provider for
+the map — so the rule lives in the format module with the field it reads, and returns the refusal
+message or null. `verifySaveWads` (`main.ts`, on the shared `startLevel` path — see
+docs/menu.md § Session lifecycle) throws what it returns; `Game.matchesSession`, the checkpoint's
+fit test, compares it to null, so a checkpoint cannot refuse where a manual load would work. Both
+feed it freshly re-hashed bytes (`wadSetId`, `mapProvider` in `wad/checksum.ts`) even though
+resolution already matched ids: a manifest id is a build-time claim, and re-hashing what is
+actually in hand is what catches a manifest left stale by a changed file.

@@ -83,13 +83,21 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   the row resolves it against the current library through `mergedMaps` and names it with the same
   `describeMap` the level select uses — `<lump>  —  <title>  —  <provider>`, so the two lists can't
   disagree about what a level is called. The same pass reports
-  every file of the set the library can no longer supply, as a subtle red line per file — matched
+  every file of the set the library can no longer supply, one line per file — matched
   by *content id* (`resolveSaveWads`, the same call the load path makes), so a renamed WAD is not
   reported and a file whose bytes have changed reads `Different IWAD/PWAD: …` rather than
   `Missing IWAD/PWAD: …`, which would send the player looking for something they already
-  have. Both surfaces take the sentence itself from `missingWadText`
-  (docs/savegames.md § WAD-set identity). Load stays enabled: the attempt is what tells the
-  player which file to bring back. `addFiles` re-renders the save lists as well as the WAD lists, so
+  have. A file the load actually needs back (the game WAD, or the map's provider) is a subtle red
+  warning; the rest are the same line in amber (`.caution`), because they are still a file the save
+  was made with and no longer has — just not one that blocks the load, which is what the red says. **The line is `missingWadLabel`, not the full sentence**: every
+  line in the label column is `white-space: nowrap` with an ellipsis, so the rows keep one height
+  beside the thumbnails, and the column is only ~55 characters wide at 12px (620px menu, less the
+  thumbnail and the row's three buttons). The sentence saying what to *do* — `missingWadText` — goes
+  on that line's `title` and is what a failed Load throws into the status line, both of which have
+  the width for it (docs/savegames.md § WAD-set identity). **A row missing a *required* file greys
+  its Load button out**, the same courtesy Save and Overwrite get for a refused moment — the red
+  line beside the button is the reason, since a disabled button shows no tooltip. A row missing only
+  optional files keeps Load live, because that load works. `addFiles` re-renders the save lists as well as the WAD lists, so
   bringing that file back clears the warning on the spot rather than on the menu's next `open` —
   which is also why `Menu` keeps the last `inGame` it was opened with.
 - **The name in each row is an `<input>`** — renaming happens in place (`renameSave`), Enter or blur
@@ -340,12 +348,14 @@ Rules that hold this together:
 - **"Return to game" is disabled for the duration of a start** (`startWithSkill`), since the level it
   would return to is disposed part-way through.
 - **A load is the same `startLevel`**, given the save as a second argument: it verifies the assembled
-  set against the save's own WAD ids (`verifyWadSet`, docs/savegames.md § WAD-set identity) and hands
+  set's game WAD and map provider against the save's own ids (`verifySaveWads`, over
+  `wadSetRefusal` — docs/savegames.md § WAD-set identity) and hands
   `Game` the snapshot instead of `?pos=`. Everything above — the audio gesture, the dispose ordering,
   the failure re-sync — is one copy, so a lifecycle fix can't reach the new-game path and miss the
   load path. `loadSave` only re-resolves each `wads` entry to a `WadSource` by content id first, and a
-  file the library can't supply fails *there*, before anything is torn down, so the running level
-  survives a load that can't happen.
+  *required* file the library can't supply fails *there*, before anything is torn down, so the running
+  level survives a load that can't happen; an add-on that supplied neither the map nor the game WAD is
+  left out of the set instead.
 - A second `Game` builds against the *same* static DOM, so anything holding generated children must
   replace rather than append, and per-level screen state must be cleared — see docs/hud.md
   § The HUD and § Screen effects. `dispose` clears the center message, the level card and the

@@ -76,23 +76,108 @@ export function wadLabel(wad: SaveWad): string {
   return wad.name || 'unknown file';
 }
 
+/** The identity half of a save's meta: every field the WAD gate reads, and all it reads. */
+export type SaveWadSet = Pick<SaveMeta, 'map' | 'wads' | 'mapWad'>;
+
+/**
+ * Whether this save falls back to demanding its **whole** set: its `mapWad` is
+ * blank, or names a file the set doesn't have. The **one** definition of that
+ * condition — every gate below reads it, so none of them can disagree about
+ * which saves are in the narrow regime, and an unusable field can then only
+ * ever be too strict. docs/savegames.md § WAD-set identity.
+ */
+export function requiresWholeSet(wads: SaveWad[], mapWad: string): boolean {
+  return mapWad === '' || !wads.some((wad) => wad.id === mapWad);
+}
+
+/**
+ * Which entries of a save's set a load actually requires back, positionally:
+ * the game WAD (`[0]`), and the file `mapWad` names. Everything else supplied
+ * textures, sprites or sounds at most — never an index the snapshot keys
+ * through — so its absence changes how the level looks, not what it means.
+ * docs/savegames.md § WAD-set identity.
+ */
+export function requiredWads(wads: SaveWad[], mapWad: string): boolean[] {
+  const wholeSet = requiresWholeSet(wads, mapWad);
+  return wads.map((wad, i) => i === 0 || wad.id === mapWad || wholeSet);
+}
+
+/**
+ * Why the assembled set can't play this save, or null when it can — **the load
+ * gate itself**, as one function over plain facts rather than over a `Wad`, so
+ * the format module owns the rule and nothing has to re-derive it. `actual` is
+ * `wadSetId`'s list for the set in hand and `mapProvider` the file supplying
+ * `save.map` in it (null when it supplies none).
+ *
+ * Both callers are the same question asked in two shapes: `main.ts` throws the
+ * message on a load, `Game.matchesSession` compares it to null for a
+ * checkpoint. docs/savegames.md § WAD-set identity.
+ */
+export function wadSetRefusal(save: SaveWadSet, actual: SaveWad[], mapProvider: SaveWad | null): string | null {
+  if (requiresWholeSet(save.wads, save.mapWad)) {
+    if (actual.length !== save.wads.length) {
+      return 'the loaded WAD set has a different file count than the one this save was made with';
+    }
+    const differing = actual.find((file, i) => file.id !== save.wads[i].id);
+    return differing ? `${differing.name} differs from the file this save was made with` : null;
+  }
+  const iwad = actual[0] as SaveWad | undefined;
+  if (!iwad || iwad.id !== save.wads[0]?.id) {
+    return `${iwad ? iwad.name : 'the game WAD'} differs from the game WAD this save was made with`;
+  }
+  if (!mapProvider) return `the loaded WADs have no map ${save.map}`;
+  if (mapProvider.id !== save.mapWad) {
+    return `${mapProvider.name} provides ${save.map}, but not the version this save was made on`;
+  }
+  return null;
+}
+
 /** One file of a save's set the library can't supply. The role is just the position in `wads`, `[0]` being the game WAD. */
 export interface MissingWad {
   name: string;
   role: 'IWAD' | 'PWAD';
   /** The library has a file by this name, but not these bytes — worth saying, since "missing" would send the player looking for something they already have. */
   wrongVersion: boolean;
+  /** Whether the load actually needs this file back: the game WAD and `mapWad`'s provider, nothing else. docs/savegames.md § WAD-set identity. */
+  required: boolean;
 }
 
 /**
- * The one sentence about a file the library can't supply, shared by the save
- * row and the load error so the two surfaces can't word the same problem
- * differently. docs/savegames.md § WAD-set identity.
+ * What a file the library can't supply is called in a **save row**: which file,
+ * and what is wrong with it, in no more than a few words plus the name. The row
+ * ellipsizes every line it can't fit on one (docs/menu.md § Save and Load tabs),
+ * and the label column is only ~55 characters wide, so the advice lives in
+ * `missingWadText` instead — where the surfaces showing it have the room.
+ */
+export function missingWadLabel(file: MissingWad): string {
+  if (!file.required) return file.wrongVersion ? `Other version: ${file.name}` : `Not loaded: ${file.name}`;
+  return file.wrongVersion ? `Different ${file.role}: ${file.name}` : `Missing ${file.role}: ${file.name}`;
+}
+
+/**
+ * The label plus what to *do* about it: the load error and the row's tooltip,
+ * both of which have a whole line's width. An optional file's clause says
+ * outright that the save loads — the label alone would read as a refusal for
+ * something that works. Built *from* `missingWadLabel` rather than written out
+ * again, so a row and its own tooltip cannot name the same file two ways.
+ * docs/savegames.md § WAD-set identity.
  */
 export function missingWadText(file: MissingWad): string {
-  return file.wrongVersion
-    ? `Different ${file.role}: ${file.name} is not the version this save was made with`
-    : `Missing ${file.role}: ${file.name} — load it from disk first`;
+  return `${missingWadLabel(file)} ${adviceFor(file)}`;
+}
+
+function adviceFor(file: MissingWad): string {
+  if (!file.required) {
+    return file.wrongVersion
+      ? '— this level plays with the version you have, but content it added may differ'
+      : '— this level plays without it, but content it added may be missing';
+  }
+  return file.wrongVersion ? '— not the version this save was made with' : '— load it from disk first';
+}
+
+/** The one file of a set that stops a load, or undefined when the set is playable — what greys Load out and what `loadSave` refuses over. */
+export function blockingWad(missing: MissingWad[]): MissingWad | undefined {
+  return missing.find((file) => file.required);
 }
 
 export interface SaveMeta {
@@ -108,6 +193,16 @@ export interface SaveMeta {
   skill: Skill;
   /** The whole WAD set in load order, `[0]` the game WAD — one list, so a file's name and id can't drift apart and a file's role is just its position (docs/savegames.md § WAD-set identity). */
   wads: SaveWad[];
+  /**
+   * Content id of the file that supplied `map`'s lumps. **This, with the game
+   * WAD, is what a load requires** — every index a snapshot keys through
+   * (sector, `posed`, subsector) comes from that one map, so an add-on which
+   * supplied none of it can be absent without the save meaning anything else.
+   *
+   * `''` names no provider, and then the whole set is required back
+   * (`requiresWholeSet`). docs/savegames.md § WAD-set identity.
+   */
+  mapWad: string;
   levelTime: number;
   /** JPEG data URL thumbnail, ~320px wide. */
   thumb: string;
@@ -119,9 +214,9 @@ export interface SaveGame extends SaveMeta {
 
 /**
  * What `Game.captureSave` produces — everything but the store's own bookkeeping.
- * `wads` needs nothing added: a save identifies its files by content, which is
- * exactly what `wadSetId` hands back, so `Game` never has to know which library
- * the files were picked from.
+ * `wads` and `mapWad` need nothing added: a save identifies its files by
+ * content, which is exactly what `wadSetId` and `wadId` hand back, so `Game`
+ * never has to know which library the files were picked from.
  */
 export type SaveCapture = Omit<SaveGame, 'id' | 'version' | 'at' | 'name'>;
 
@@ -159,12 +254,18 @@ function asMeta(raw: unknown, id: string): SaveMeta {
     map: typeof r.map === 'string' ? r.map : '?',
     skill: asSkill(r.skill),
     wads: Array.isArray(r.wads) ? r.wads.map(asWad) : [],
+    mapWad: asText(r.mapWad),
     levelTime: typeof r.levelTime === 'number' ? r.levelTime : 0,
     thumb: asText(r.thumb),
   };
 }
 
-/** The meta half of loadability — everything checkable without the state record in hand, which is all a listing ever sees. */
+/**
+ * The meta half of loadability — everything checkable without the state record
+ * in hand, which is all a listing ever sees. Deliberately says nothing about
+ * `mapWad`: a save without one is still perfectly loadable, since a blank only
+ * makes the WAD gate stricter (`requiresWholeSet`).
+ */
 function hasLoadableMeta(raw: unknown): boolean {
   return isRecord(raw) && raw.version === SAVE_VERSION && typeof raw.map === 'string' && Array.isArray(raw.wads);
 }

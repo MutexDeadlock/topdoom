@@ -3,13 +3,15 @@
  * one `Game` per level, and autosaves around the edges. See docs/menu.md § Session lifecycle.
  */
 import { Wad } from './wad/wad.ts';
-import { wadSetId } from './wad/checksum.ts';
+import { mapProvider, wadSetId } from './wad/checksum.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
 import { Menu, type Selection } from './ui/menu/menu.ts';
 import {
+  blockingWad,
   missingWadText,
   overwriteSave,
   readAutosave,
+  wadSetRefusal,
   writeAutosave,
   writeSave,
   type CheckpointStore,
@@ -34,20 +36,14 @@ function parsePos(raw: string | null): Pos2 | null {
 }
 
 /**
- * Refuses a load whose assembled WAD set isn't the one the save was made with:
- * same file count, same content ids, same order. Throws a message naming the
- * offending file — docs/savegames.md § WAD-set identity.
+ * Refuses a load the freshly assembled set can't play, naming the offending
+ * file. The rule itself is `wadSetRefusal`'s (docs/savegames.md § WAD-set
+ * identity); this re-hashes the bytes actually in hand to feed it, which is
+ * what catches a manifest id left stale by a changed file.
  */
-function verifyWadSet(wad: Wad, expected: SaveGame['wads']): void {
-  const actual = wadSetId(wad);
-  if (actual.length !== expected.length) {
-    throw new Error('the loaded WAD set has a different file count than the one this save was made with');
-  }
-  for (let i = 0; i < actual.length; i++) {
-    if (actual[i].id !== expected[i].id) {
-      throw new Error(`${actual[i].name} differs from the file this save was made with`);
-    }
-  }
+function verifySaveWads(wad: Wad, save: SaveGame): void {
+  const refusal = wadSetRefusal(save, wadSetId(wad), mapProvider(wad, save.map));
+  if (refusal) throw new Error(refusal);
 }
 
 /**
@@ -112,7 +108,7 @@ async function boot(): Promise<void> {
     try {
       const files = await loadWadFiles(selection.iwad, selection.pwads);
       const wad = new Wad(files);
-      if (save) verifyWadSet(wad, save.wads);
+      if (save) verifySaveWads(wad, save);
 
       // Cleared before the old level is torn down, so a constructor that throws
       // (a WAD with no maps, a mesh build failure) can't leave `game` pointing at
@@ -148,17 +144,20 @@ async function boot(): Promise<void> {
 
   /**
    * The load side of `startLevel`: re-resolves the save's WAD set from the
-   * current library and hands the whole thing over. A file the library no
-   * longer offers fails here, before anything is torn down, so the running
-   * level survives a load that can't happen.
+   * current library and hands over what it could supply. A *required* file the
+   * library no longer offers fails here, before anything is torn down, so the
+   * running level survives a load that can't happen.
    */
   const loadSave = async (save: SaveGame): Promise<void> => {
     try {
       // The same resolution the save row shows, so a row that reports no
       // problem can't fail here — and a file it does report is named in the
-      // same words (docs/savegames.md § WAD-set identity).
-      const { iwad, pwads, missing } = menu.resolveSaveWads(save.wads);
-      if (missing.length > 0) throw new Error(missingWadText(missing[0]));
+      // same words (docs/savegames.md § WAD-set identity). Only a *required*
+      // file stops the load; the rest are a note on the row and are simply left
+      // out of the set.
+      const { iwad, pwads, missing } = menu.resolveSaveWads(save);
+      const blocker = blockingWad(missing);
+      if (blocker) throw new Error(missingWadText(blocker));
       if (!iwad) throw new Error('this save does not name a game WAD');
       await startLevel({ iwad, pwads, map: save.map, skill: save.skill }, save);
     } catch (err) {

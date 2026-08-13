@@ -5,7 +5,7 @@
  */
 import * as THREE from 'three';
 import type { Wad } from './wad/wad.ts';
-import { wadId, wadSetId } from './wad/checksum.ts';
+import { mapProvider, wadId, wadSetId } from './wad/checksum.ts';
 import { bestTimeKey, recordBestTime, type BestTimeResult } from './game/besttimes.ts';
 import { GraphicsBank } from './wad/graphics.ts';
 import { SpriteBank } from './wad/sprites.ts';
@@ -60,7 +60,7 @@ import {
   type GameSnapshot,
   type SectorSnapshot,
 } from './game/snapshot.ts';
-import type { CheckpointStore, SaveCapture, SaveGame } from './game/savegames.ts';
+import { wadSetRefusal, type CheckpointStore, type SaveCapture, type SaveGame } from './game/savegames.ts';
 import { playerDamageAtSkill, type Skill } from './game/skill.ts';
 import {
   applyDamage,
@@ -436,6 +436,9 @@ export class Game {
       map: this.currentMap,
       skill: this.skill,
       wads: wadSetId(this.wad),
+      // A level is running, so the map has a provider; `''` would only mean the
+      // save asks for its whole set back, which is the safe way to be wrong.
+      mapWad: mapProvider(this.wad, this.currentMap)?.id ?? '',
       levelTime: this.levelTime,
       // The checkpoint passes `false`: it is never listed, so nothing would ever
       // draw its thumbnail, and taking one costs a full extra render.
@@ -936,14 +939,14 @@ export class Game {
 
   /**
    * Whether a checkpoint is one this level can be reloaded from: the same map,
-   * the same skill (which decides which things exist at all) and the same WAD
-   * set by content, the identity rule every load matches on
+   * the same skill (which decides which things exist at all), and a WAD set
+   * `wadSetRefusal` accepts — the same gate a manual load goes through, so a
+   * checkpoint can't refuse where a load would work
    * (docs/savegames.md § WAD-set identity).
    */
   private matchesSession(save: SaveGame): boolean {
     if (save.map !== this.currentMap || save.skill !== this.skill) return false;
-    const wads = wadSetId(this.wad);
-    return save.wads.length === wads.length && save.wads.every((w, i) => w.id === wads[i].id);
+    return wadSetRefusal(save, wadSetId(this.wad), mapProvider(this.wad, save.map)) === null;
   }
 
   /**
@@ -1261,9 +1264,9 @@ export class Game {
   private recordCompletion(): BestTimeResult | null {
     if (!this.recordsEligible) return null;
     const map = this.currentMap;
-    const source = this.wad.find(map)?.source;
+    const source = mapProvider(this.wad, map);
     if (!source) return null;
-    return recordBestTime(bestTimeKey(wadId(source), map, this.skill), this.levelTime, {
+    return recordBestTime(bestTimeKey(source.id, map, this.skill), this.levelTime, {
       wad: source.name,
       map,
       skill: this.skill,

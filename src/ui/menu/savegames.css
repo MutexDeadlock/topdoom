@@ -131,6 +131,20 @@
   font-size: 12px;
 }
 
+/*
+ * An add-on the save doesn't need back (docs/savegames.md § WAD-set identity):
+ * still a warning — something the save was made with is gone — but amber rather
+ * than the accent's red, which is reserved for what actually blocks the load.
+ * A literal, like the profiler's status scale and for the same reason
+ * (docs/styles.md § Tokens): one site, and a caution colour must not move when
+ * the menu's accent is retuned. Lighter than a bar fill would be, matching how
+ * `--accent-text-hover` is the text-weight red.
+ */
+#menu .saves .save-label .caution {
+  color: #cfa23c;
+  font-size: 12px;
+}
+
 #menu .saves .save-actions {
   display: flex;
   align-items: center;

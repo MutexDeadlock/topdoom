@@ -8,12 +8,16 @@ import {
   exportSave,
   importSave,
   listSaves,
+  missingWadLabel,
+  missingWadText,
   overwriteSave,
   readAutosave,
   readSave,
   renameSave,
+  requiredWads,
   setSaveBackend,
   wadLabel,
+  wadSetRefusal,
   writeAutosave,
   writeSave,
   type SaveCapture,
@@ -75,6 +79,7 @@ const capture = (map = 'E1M1'): SaveCapture => ({
   map,
   skill: 3,
   wads: [{ name: 'DOOM.WAD', id: 'abc123' }],
+  mapWad: 'abc123',
   levelTime: 61.5,
   thumb: 'data:image/jpeg;base64,xyz',
   state,
@@ -127,12 +132,125 @@ describe('Savegames · the store', () => {
         { name: 'DOOM2.WAD', id: 'aaa' },
         { name: 'SCYTHE.WAD', id: 'bbb' },
       ],
+      mapWad: 'bbb',
     };
     // Nothing is added on the way in: `wadSetId`'s output is already the format,
     // so no library key can go stale inside a save.
     const meta = await writeSave(set, 'byid');
     assert.deepEqual(meta.wads, set.wads);
     assert.deepEqual((await readSave(meta.id)).wads, set.wads, 'and survives the round-trip');
+  });
+
+  test('only the game WAD and the map provider are required back', () => {
+    const wads = [
+      { name: 'DOOM2.WAD', id: 'aaa' },
+      { name: 'SCYTHE.WAD', id: 'bbb' },
+      { name: 'sounds.wad', id: 'ccc' },
+    ];
+    // The add-on that supplied the map is required; the one that supplied only
+    // sounds is not, and neither is a set whose map came from the IWAD itself.
+    assert.deepEqual(requiredWads(wads, 'bbb'), [true, true, false]);
+    assert.deepEqual(requiredWads(wads, 'aaa'), [true, false, false]);
+  });
+
+  test('a mapWad naming no file in the set requires all of them', () => {
+    // Both the pre-`mapWad` save (no provider named) and a damaged field land
+    // here, and must fail towards refusing loads — never towards allowing one
+    // whose map may have come from the file it dropped.
+    const wads = [
+      { name: 'DOOM2.WAD', id: 'aaa' },
+      { name: 'SCYTHE.WAD', id: 'bbb' },
+    ];
+    assert.deepEqual(requiredWads(wads, ''), [true, true]);
+    assert.deepEqual(requiredWads(wads, 'gone'), [true, true]);
+  });
+
+  test('the load gate passes a set short an add-on the level never came from', () => {
+    const save = {
+      map: 'MAP03',
+      wads: [
+        { name: 'DOOM2.WAD', id: 'aaa' },
+        { name: 'test_spectre.wad', id: 'ccc' },
+      ],
+      mapWad: 'aaa',
+    };
+    const iwad = { name: 'DOOM2.WAD', id: 'aaa' };
+    assert.equal(wadSetRefusal(save, [iwad], iwad), null, 'the add-on supplied no lump this save indexes into');
+    assert.match(
+      wadSetRefusal(save, [{ name: 'DOOM.WAD', id: 'zzz' }], iwad) ?? '',
+      /DOOM\.WAD differs from the game WAD/,
+      'but the game WAD is named when it is the wrong one',
+    );
+    assert.match(
+      wadSetRefusal(save, [iwad], { name: 'SCYTHE.WAD', id: 'bbb' }) ?? '',
+      /SCYTHE\.WAD provides MAP03/,
+      'and so is a file that provides the map in another version',
+    );
+    assert.match(wadSetRefusal(save, [iwad], null) ?? '', /no map MAP03/);
+  });
+
+  test('a save naming no provider is gated on its whole set, in order', () => {
+    // The pre-`mapWad` rule, which is also where a damaged field lands.
+    const wads = [
+      { name: 'DOOM2.WAD', id: 'aaa' },
+      { name: 'SCYTHE.WAD', id: 'bbb' },
+    ];
+    const save = { map: 'MAP03', wads, mapWad: '' };
+    assert.equal(wadSetRefusal(save, wads, { name: 'SCYTHE.WAD', id: 'bbb' }), null);
+    assert.match(wadSetRefusal(save, [wads[0]], null) ?? '', /different file count/);
+    assert.match(
+      wadSetRefusal(save, [wads[0], { name: 'SCYTHE.WAD', id: 'other' }], null) ?? '',
+      /SCYTHE\.WAD differs from the file this save was made with/,
+    );
+  });
+
+  test('a save from before mapWad still loads, under the whole-set rule', async () => {
+    const meta = await writeSave(capture(), 'pre-mapwad');
+    const { mapWad: _dropped, ...withoutField } = store.metas.get(meta.id) as Record<string, unknown>;
+    store.metas.set(meta.id, withoutField);
+
+    const [entry] = await listSaves();
+    assert.equal(entry.supported, true, 'the field costs no version bump');
+    assert.equal((await readSave(meta.id)).mapWad, '', 'and reads as "no provider named"');
+  });
+
+  test('a missing optional file reads as a note, a required one as something to go and find', () => {
+    const optional = { name: 'sounds.wad', role: 'PWAD' as const, wrongVersion: false, required: false };
+    // The optional sentences promise the level plays, and no more than that:
+    // what the absent file skinned or sounded is gone with it.
+    assert.match(missingWadText(optional), /plays without it, but content it added may be missing/);
+    assert.match(missingWadText({ ...optional, wrongVersion: true }), /content it added may differ/);
+    assert.match(missingWadText({ ...optional, required: true }), /load it from disk first/);
+    assert.match(
+      missingWadText({ ...optional, required: true, wrongVersion: true }),
+      /not the version this save was made with/,
+    );
+  });
+
+  test('the row label opens the tooltip sentence, so one file is never named two ways', () => {
+    for (const required of [false, true]) {
+      for (const wrongVersion of [false, true]) {
+        const file = { name: 'sounds.wad', role: 'PWAD' as const, required, wrongVersion };
+        assert.ok(
+          missingWadText(file).startsWith(missingWadLabel(file)),
+          `"${missingWadText(file)}" does not open with "${missingWadLabel(file)}"`,
+        );
+      }
+    }
+  });
+
+  test('every row label fits the save row, which ellipsizes what it cannot show', () => {
+    // ~55 characters is what the label column holds at 12px
+    // (docs/menu.md § Save and Load tabs); the advice lives in `missingWadText`
+    // precisely because it does not fit here.
+    const name = 'a-rather-long-addon.wad';
+    for (const required of [false, true]) {
+      for (const wrongVersion of [false, true]) {
+        const label = missingWadLabel({ name, role: 'PWAD', required, wrongVersion });
+        assert.ok(label.includes(name), `${label} names the file`);
+        assert.ok(label.length <= 55, `${label} is ${label.length} characters, too long for the row`);
+      }
+    }
   });
 
   test('a damaged WAD entry is blanked, not dropped — load order decides the role', async () => {

@@ -63,3 +63,13 @@ export function wadId(file: WadFile): string {
 export function wadSetId(wad: Wad): { name: string; id: string }[] {
   return wad.files.map((file) => ({ name: file.name, id: wadId(file) }));
 }
+
+/**
+ * The file providing `map`, in the same `{ name, id }` shape — what a saved game stores as its
+ * `mapWad` and compares a reassembled set against (docs/savegames.md § WAD-set identity). Null when
+ * the set has no such map at all.
+ */
+export function mapProvider(wad: Wad, map: string): { name: string; id: string } | null {
+  const file = wad.providerOf(map);
+  return file ? { name: file.name, id: wadId(file) } : null;
+}

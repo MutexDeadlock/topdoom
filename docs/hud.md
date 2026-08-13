@@ -189,8 +189,8 @@ too said the same thing twice. A first-ever completion is a record and so has no
 show.
 
 **The key is the content id of the WAD file that *provides* the map, plus the map lump, plus the
-skill** — `Game.recordCompletion` resolves the file as `wad.find(map)!.source` and hashes it
-(docs/wad.md § Content id). Keying on the whole loaded set instead would orphan every record the
+skill** — `Game.recordCompletion` takes both from `mapProvider(wad, map)`
+(docs/wad.md § Content id), the same lookup a save's `mapWad` is. Keying on the whole loaded set instead would orphan every record the
 moment an unrelated add-on is loaded; keying on the file name alone would let two different WADs
 that happen to share a basename fight over one record, and would lose every record on a rename.
 Skill is in the key because a time set on skill 1 says nothing about one set on Ultra-Violence.

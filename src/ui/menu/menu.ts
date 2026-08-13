@@ -20,7 +20,7 @@ import {
 } from '../../game/input.ts';
 import { getFpsCap, setFpsCap, type FpsCap } from '../../game.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
-import { wadLabel, type MissingWad, type SaveMeta, type SaveWad } from '../../game/savegames.ts';
+import { requiredWads, wadLabel, type MissingWad, type SaveMeta, type SaveWadSet } from '../../game/savegames.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
 import { DEVMODE, VERSION } from '../../constants.ts';
 
@@ -363,8 +363,14 @@ export class Menu {
    * but not by id is the same WAD in a different version, worth saying
    * precisely rather than reporting as missing (docs/savegames.md § WAD-set
    * identity). `wads[0]` is the game WAD, so a file's role is just its position.
+   *
+   * A missing file is also classified, by `requiredWads`: only the game WAD and
+   * the one `mapWad` names stop a load, since nothing else can have shaped what
+   * the snapshot indexes into.
    */
-  resolveSaveWads(wads: SaveWad[]): { iwad?: WadSource; pwads: WadSource[]; missing: MissingWad[] } {
+  resolveSaveWads(save: SaveWadSet): { iwad?: WadSource; pwads: WadSource[]; missing: MissingWad[] } {
+    const { wads, mapWad } = save;
+    const required = requiredWads(wads, mapWad);
     const missing: MissingWad[] = [];
     const found = wads.map((wad, i) => {
       const source = this.sources.find((s) => s.id !== '' && s.id === wad.id);
@@ -373,6 +379,7 @@ export class Menu {
         name: wadLabel(wad),
         role: i === 0 ? 'IWAD' : 'PWAD',
         wrongVersion: this.sources.some((s) => s.label.toLowerCase() === wad.name.toLowerCase()),
+        required: required[i],
       });
       return undefined;
     });
@@ -400,7 +407,7 @@ export class Menu {
    * `resolveSaveWads` reports as unavailable.
    */
   describeSave(meta: SaveMeta): SaveSetInfo {
-    const { iwad, pwads, missing } = this.resolveSaveWads(meta.wads);
+    const { iwad, pwads, missing } = this.resolveSaveWads(meta);
     // Without the game WAD there is no map list to resolve against; the row
     // falls back to the bare lump name and says which file is missing.
     if (!iwad) return { level: meta.map, missing };
@@ -442,7 +449,7 @@ export class Menu {
     if (this.selectedIwad) this.iwadSelect.value = this.selectedIwad.key;
   }
 
-  /** Fired when the game-WAD select changes; mirrors the old radio-row callback. */
+  /** Fired when the game-WAD select changes: adopts the pick and re-resolves the add-ons and level list under it. */
   private selectIwad(): void {
     const source = this.sources.find((s) => s.key === this.iwadSelect.value);
     if (!source) return;

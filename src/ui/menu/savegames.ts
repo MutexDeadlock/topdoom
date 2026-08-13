@@ -3,10 +3,12 @@
  * See docs/menu.md § Save and Load tabs and docs/savegames.md.
  */
 import {
+  blockingWad,
   deleteSave,
   exportSave,
   importSave,
   listSaves,
+  missingWadLabel,
   missingWadText,
   readSave,
   renameSave,
@@ -246,11 +248,17 @@ export class SavegamesUi {
     detail.textContent = parts.join(' · ');
 
     label.append(this.makeNameInput(meta), level, detail);
-    // One line per missing file, so a set short two add-ons names both.
+    // One line per missing file, so a set short two add-ons names both. Both are
+    // warnings; only a required one is the accent's red, since red is what says
+    // this save can't be loaded — the rest are amber, a file that is gone from a
+    // load that still works. The line is the short label — this column
+    // ellipsizes — with the full sentence on the tooltip, where there is room for
+    // what to do about it.
     for (const file of set.missing) {
       const warning = document.createElement('span');
-      warning.className = 'warning';
-      warning.textContent = missingWadText(file);
+      warning.className = file.required ? 'warning' : 'caution';
+      warning.textContent = missingWadLabel(file);
+      warning.title = missingWadText(file);
       label.append(warning);
     }
     row.append(label);
@@ -261,7 +269,10 @@ export class SavegamesUi {
       const load = document.createElement('button');
       load.className = 'primary';
       load.textContent = 'Load';
-      load.disabled = !entry.supported;
+      // Greyed for a file the load would refuse over, the same courtesy Save and
+      // Overwrite get: the row's red line beside it already names the file, and a
+      // disabled button shows no tooltip of its own. `loadSave` stays the gate.
+      load.disabled = !entry.supported || blockingWad(set.missing) !== undefined;
       load.addEventListener('click', () => this.load(meta.id));
       actions.append(load);
     } else {

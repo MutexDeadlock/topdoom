@@ -53,11 +53,14 @@ Everything else stays a literal. Values used two or three times inside a single 
 `#6f6a65`, `#1b1b21`, the `rgba()` scrims), are deliberately not folded in: collapsing them into the
 nearest token would be a visual change wearing a cleanup's clothes.
 
-Two documented exceptions, both commented at the site:
+Three documented exceptions, each commented at the site:
 
 - **The profiler's bar colours** (`devmode.css`) are a green/gold/red *status* scale. The red
   happens to be the accent's hex and stays literal anyway, so retuning the menu accent can't
   recolour a warning.
+- **The save row's `.caution` amber** (`savegames.css`) is the same argument at text weight: it
+  pairs with the red `.warning` as a status scale, not as a rung of the accent family, so retuning
+  the accent must not follow it. One site, so no token either way.
 - **`#changelog { z-index: 5 }`** is inside `#menu`'s stacking context, not on the global ladder.
 
 ### The stacking ladder

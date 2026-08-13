@@ -11,6 +11,11 @@ Features and improvements
     - "Nightmare!" respawns killed monsters back
   - if a game can't be saved (dead, intermission), the "Save"
     and "Overwrite" buttons are disabled now
+  - loading a savegame no longer demands every add-on that happened to
+    be loaded when it was made - only the game WAD and whichever file
+    provided the level itself
+    - a save whose game WAD or level file is gone now greys its "Load"
+      button out instead of failing on the click
   - tuned (auto-)aiming
 
 Fixed bugs

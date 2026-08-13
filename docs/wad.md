@@ -169,7 +169,8 @@ same buffer, a restart re-wraps the memoized fetch), and a wrapper-keyed memo mi
 re-walking ~14 MB on the level-start path. It is what per-level best times are keyed on (docs/hud.md § Best times), and it is
 what a saved game stores as its WAD set — `wadSetId(wad)` returns every loaded file's
 `{ name, id }` in load order, a list rather than one combined hash so a mismatch can name *which*
-file is wrong. A save uses the id as the file's **identity**, not merely as a check: it is what
+file is wrong. `mapProvider(wad, map)` is the same pair for the one file supplying a map — a save's
+`mapWad`, and what best times are keyed on. A save uses the id as the file's **identity**, not merely as a check: it is what
 `loadSave` re-resolves the library against, so a renamed WAD still loads and the same bytes match
 whether they come from the server or from disk (docs/savegames.md § WAD-set identity). That is also
 why `plugins/wad-manifest.ts` publishes each server WAD's id — the menu has to know a file's

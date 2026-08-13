@@ -135,6 +135,40 @@ axes), or the circle already overlaps the wall it's trying to slide along, so th
 progress. Every position the projection loop returns has been validated by `blockingLineAt`; the loop
 never falls out with an unchecked one.
 
+**`roundCorner` is the one step vanilla has no equivalent of, and it runs only after both of
+vanilla's have refused.** A collision *box* never rounds an outside corner; a circle can come to
+rest against a wall's **endpoint**, out past the wall's own length. There the projection is a no-op
+(the move is already parallel to the refused wall) and an axis-aligned push leaves the stairstep no
+second axis to try, so the player freezes solid: forward dead, backward and strafing fine. Rounding
+projects onto the tangent *at the contact* instead — perpendicular to the corner-to-circle radial,
+which preserves the distance to that corner exactly as the line direction preserves the distance to
+the wall — and the result is still validated by `circleBlocked` before it is taken. **Repro: DOOM2
+MAP01**, walking due west into the lift (sector 21) at any y below 648 jams on the corner at
+(184, 632), where the lift's south wall (line 125) meets the room's diagonal (line 158); from
+further north the corner is never touched, which made the bug look like a one-sided lift.
+
+**Two rules keep it a pure rescue.** "Both refused" is a share of the requested move
+(`SLIDE_MIN_PROGRESS_SQ`, 1%), not exact zero: `Player.update` writes the achieved displacement back
+as velocity, so after any wall contact a microscopic cross-axis residue survives (and savegames
+store it — one MAP01 report had `velY = 7e-6`), letting the stairstep "succeed" by ~1e-7 a tic,
+which an exact-zero gate counts as progress and so masks the jam. And rounding is only taken when it
+moves farther than the stairstep did. Together they mean it can only ever turn a (near-)dead stop
+into movement: measured over 1.17M wall-adjacent probes across 14 DOOM/DOOM2/freedoom2 maps, with
+and without a poisoned cross-axis residue, no probe moved *less* than before and none stopped that
+used to move, while 1.26% that had frozen now move.
+
+**It must stay that last resort, not become a per-contact direction choice inside the projection
+loop.** The tempting "root cause" refactor — line direction against the face, corner tangent at an
+endpoint, gate and comparison deleted — fails because at an endpoint contact **both** directions can
+be the correct slide, and only trying vanilla's first tells them apart: pushed head-on into a
+diagonal wall's corner, the move is anti-parallel to the corner radial, so the tangent projection is
+exactly zero and the per-contact version freezes — while the line's own direction still slides along
+the diagonal, as vanilla does. **Repro: DOOM2 MAP01**, at (1696, 1536) pushing due east into the
+west endpoint (1712, 1536) of line 204, which runs off to the south-east. Swept over 2.8M probes
+across seven DOOM2 maps, the per-contact version froze hundreds of moves that used to slide and
+shortened ~1.5% of them; salvaging it means trying both directions and keeping the better validated
+one — the same try-then-compare as above, relocated and paying extra collision probes per attempt.
+
 Unlike vanilla, the projection runs from the circle's *current* position instead of first advancing it
 to the contact point. At this engine's frame rate a move step is a few map units, so the skipped
 fraction is far below anything visible, and the perpendicular distance to the wall is preserved by the

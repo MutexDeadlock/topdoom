@@ -5,7 +5,7 @@
  */
 import { LF, NO_SIDE, SKY_FLAT, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
 import { sectorOfSubSector } from '../render/bsp.ts';
-import { distSqToSegment, segmentIntersect } from '../util/geom.ts';
+import { closestTOnSegment, distSqToSegment, segmentIntersect } from '../util/geom.ts';
 import { PLAYER_HEIGHT } from './player.ts';
 import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './thingtypes.ts';
@@ -843,6 +843,14 @@ const SLIDE_ATTEMPTS = 3;
 const SLIDE_EPSILON = 1e-6;
 
 /**
+ * Squared share of the requested move below which the per-axis fallback's
+ * progress counts as standing still, so `roundCorner` still gets its chance
+ * (docs/movement.md § slideMove). The exact share is uncritical: the
+ * farther-than comparison at the call site caps what it can change.
+ */
+const SLIDE_MIN_PROGRESS_SQ = 0.01 ** 2;
+
+/**
  * Moves a circle by (dx, dy) and slides along whatever it hits, returning the
  * position actually reached. `forMonster`/`avoidDropoff` — see
  * `circleBlocked`; the player's own movement never passes either, and nothing
@@ -851,7 +859,9 @@ const SLIDE_EPSILON = 1e-6;
  *
  * This is vanilla's `P_HitSlideLine`: the refused move is **projected onto the
  * blocking line's own direction** and retried, up to `SLIDE_ATTEMPTS` walls in
- * turn. See docs/movement.md § slideMove for why the projection (and not the
+ * turn, then vanilla's per-axis stairstep. Only once *both* have come up empty
+ * does `roundCorner` add the one step vanilla has no need of. See
+ * docs/movement.md § slideMove for that, for why the projection (and not the
  * per-axis split it replaced) is the only thing that works on a diagonal wall,
  * and why projecting from the current position rather than vanilla's contact
  * point is safe here.
@@ -877,7 +887,12 @@ export function slideMove(
     // A body/dropoff has no wall direction, and hitting the same wall twice
     // means the projection made no progress (the circle already overlaps it) —
     // either way the per-axis fallback below is the only thing left to try.
-    if (hit === SOLID_BODY || hit === lastHit) break;
+    // A body also leaves no corner to round, hence dropping `lastHit` with it.
+    if (hit === SOLID_BODY) {
+      lastHit = null;
+      break;
+    }
+    if (hit === lastHit) break;
     lastHit = hit;
     const line = world.map.linedefs[hit];
     const a = world.map.vertexes[line.v1];
@@ -899,7 +914,61 @@ export function slideMove(
   if (dx !== 0 && !circleBlocked(world, x + dx, y, radius, z, forMonster, avoidDropoff, blockers, from)) nx = x + dx;
   if (dy !== 0 && !circleBlocked(world, nx, y + dy, radius, z, forMonster, avoidDropoff, blockers, from)) ny = y + dy;
   if (ny === y && dy !== 0 && nx !== x && !circleBlocked(world, nx, y + dy, radius, z, forMonster, avoidDropoff, blockers, from)) ny = y + dy;
-  return { x: nx, y: ny };
+  const stepped = { x: nx, y: ny };
+  const steppedSq = (nx - x) * (nx - x) + (ny - y) * (ny - y);
+  if (lastHit === null || steppedSq > (dx * dx + dy * dy) * SLIDE_MIN_PROGRESS_SQ) return stepped;
+
+  // Rounding may only ever improve on the stairstep, never trade against it.
+  const rounded = roundCorner(world, from, dx, dy, radius, lastHit, forMonster, avoidDropoff, blockers);
+  const rdx = rounded.x - x;
+  const rdy = rounded.y - y;
+  return rdx * rdx + rdy * rdy > steppedSq ? rounded : stepped;
+}
+
+/**
+ * The one step vanilla's `P_SlideMove` has no equivalent of: with both the
+ * projection and the stairstep refused, a circle caught on the **endpoint** of
+ * `lineIndex` slides around that corner rather than freezing, along the tangent
+ * at its own position. Returns `from`'s own position when there is no corner to
+ * round or the rounded step is itself blocked. Deliberately a last resort, not
+ * a per-contact direction choice inside the projection loop: at an endpoint
+ * contact the line's own direction can still be the right slide, and only
+ * trying it first tells the two apart. See docs/movement.md § slideMove for
+ * why a circle reaches a state vanilla's collision box never does, and for
+ * the measured case against the in-loop refactor.
+ */
+function roundCorner(
+  world: World,
+  from: Pos3,
+  dx: number,
+  dy: number,
+  radius: number,
+  lineIndex: number,
+  forMonster: boolean,
+  avoidDropoff: boolean,
+  blockers?: readonly ThingBlocker[],
+): Pos2 {
+  const { x, y, z } = from;
+  const line = world.map.linedefs[lineIndex];
+  const a = world.map.vertexes[line.v1];
+  const b = world.map.vertexes[line.v2];
+  const t = closestTOnSegment(x, y, a.x, a.y, b.x, b.y);
+  // Pressed against the wall's length, not one of its ends: no corner here.
+  if (t > 0 && t < 1) return { x, y };
+  const corner = t === 0 ? a : b;
+  const cx = x - corner.x;
+  const cy = y - corner.y;
+  const lenSq = cx * cx + cy * cy;
+  if (lenSq === 0) return { x, y };
+  // The move projected onto the tangent (-cy, cx). Normalizing that tangent
+  // would cancel against the projection's own divide, so the squared length is
+  // the whole of it.
+  const along = (dx * -cy + dy * cx) / lenSq;
+  const rx = x + -cy * along;
+  const ry = y + cx * along;
+  if (Math.abs(rx - x) < SLIDE_EPSILON && Math.abs(ry - y) < SLIDE_EPSILON) return { x, y };
+  if (circleBlocked(world, rx, ry, radius, z, forMonster, avoidDropoff, blockers, from)) return { x, y };
+  return { x: rx, y: ry };
 }
 
 /** Vanilla's `MISSILERANGE` (`32*64`), what every *monster* hitscan attack passes to `P_LineAttack`. */

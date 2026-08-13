@@ -21,6 +21,7 @@ Features and improvements
 
 Fixed bugs
   - the camera drifted whenever the mouse passed over a monster
+  - fixed getting stuck at the outside corner of a wall
   - spectres were drawn as ordinary demons; they now shimmer as the
     original's fuzz effect, corpses included
   - a monster whose step was clear but whose first fraction of it

@@ -490,7 +490,7 @@ export class World {
    * ledge; see docs/movement.md § Collision.
    */
   groundFloor(x: number, y: number, radius: number, forMonster = false): number {
-    return checkPosition(this, x, y, radius, ANY_HEIGHT, forMonster, undefined, undefined, false).floorZ;
+    return checkPosition(this, x, y, radius, ANY_HEIGHT, ANY_HEIGHT, forMonster, undefined, undefined, false).floorZ;
   }
 
   /**
@@ -502,7 +502,7 @@ export class World {
    * just the rising sector's own ceiling — see docs/movement.md § Collision.
    */
   groundCeiling(x: number, y: number, radius: number, forMonster = false): number {
-    return checkPosition(this, x, y, radius, ANY_HEIGHT, forMonster, undefined, undefined, false).ceilingZ;
+    return checkPosition(this, x, y, radius, ANY_HEIGHT, ANY_HEIGHT, forMonster, undefined, undefined, false).ceilingZ;
   }
 
   /**
@@ -822,17 +822,45 @@ export function darkestNeighborLight(map: DoomMap, sectorIndex: number): number 
   return result;
 }
 
+const INFINITE_TALL_STORAGE_KEY = 'topdoom.infiniteTallActors';
+
+/**
+ * Whether solid bodies block over their entire vertical extent, vanilla's
+ * "infinitely tall actors". Off by default, a deliberate deviation —
+ * docs/movement.md § Collision has the rule and its sources. Read by
+ * `blockedByThings` and `bodyFloor`, the two functions it changes.
+ *
+ * Module-level rather than per-`World`, for the reason `getAutorun` is: it is a
+ * settings-tab preference that must apply to the level already running, and a
+ * `World` is rebuilt every map load.
+ */
+let infiniteTallActors = globalThis.localStorage?.getItem(INFINITE_TALL_STORAGE_KEY) === 'true';
+
+export function getInfiniteTallActors(): boolean {
+  return infiniteTallActors;
+}
+
+export function setInfiniteTallActors(enabled: boolean): void {
+  infiniteTallActors = enabled;
+  globalThis.localStorage?.setItem(INFINITE_TALL_STORAGE_KEY, String(enabled));
+}
+
 /**
  * A body (monster or player) that other bodies physically bump into —
  * vanilla's `MF_SOLID` things, tested by `PIT_CheckThing`. Callers pass the
  * set of *other* bodies; nothing here filters out the mover itself.
  *
- * **No height field, deliberately** — `PIT_CheckThing` returns before any z
- * comparison, so a DOOM actor blocks over its entire vertical extent
- * ("infinitely tall actors"). Adding a height check is a deviation, not a fix.
+ * `z`/`height` are the body's own vertical extent, read only while infinite-tall
+ * actors is off (`getInfiniteTallActors`) — vanilla compares neither.
+ *
+ * Every literal of this shape — `blockersFor`'s pool, `solidBodies`,
+ * `things.ts`'s hand-built player blocker, the fixtures — writes these five
+ * keys **in this order**: the two loops below are hot enough that one site
+ * spelled differently would make them polymorphic.
  */
-export interface ThingBlocker extends Pos2 {
+export interface ThingBlocker extends Pos3 {
   radius: number;
+  height: number;
 }
 
 /**
@@ -847,18 +875,63 @@ export interface ThingBlocker extends Pos2 {
  * (docs/movement.md § Collision). A blocker not yet touched at `from` is
  * unaffected — you still can't walk into a thing you weren't already
  * overlapping.
+ *
+ * Unless infinite-tall actors is on, the mover's own `z`/`height` span
+ * additionally passes a blocker it clears entirely, over or under —
+ * docs/movement.md § Collision. A span of `ANY_HEIGHT` at either end has
+ * nothing to clear with, so it keeps vanilla's blocking whatever the setting
+ * says; one `Number.isFinite` over the sum covers both.
  */
-function blockedByThings(x: number, y: number, radius: number, blockers: readonly ThingBlocker[] | undefined, from?: Pos2): boolean {
+function blockedByThings(
+  x: number,
+  y: number,
+  radius: number,
+  z: number,
+  height: number,
+  blockers: readonly ThingBlocker[] | undefined,
+  from?: Pos2,
+): boolean {
   if (!blockers) return false;
+  const zAware = !infiniteTallActors && Number.isFinite(z + height);
   for (const b of blockers) {
     const reach = radius + b.radius;
     if (Math.abs(b.x - x) >= reach || Math.abs(b.y - y) >= reach) continue;
+    if (zAware && (z >= b.z + b.height || z + height <= b.z)) continue;
     if (from && Math.abs(b.x - from.x) < reach && Math.abs(b.y - from.y) < reach) {
       if (Math.hypot(b.x - x, b.y - y) >= Math.hypot(b.x - from.x, b.y - from.y)) continue;
     }
     return true;
   }
   return false;
+}
+
+/**
+ * The highest solid body a mover of `radius` at (x, y) with its feet at `z` is
+ * standing on — `-Infinity` when none is, which is what a caller `Math.max`es
+ * against the sector's own `groundFloor`. Always `-Infinity` while infinite-tall
+ * actors is on, where a body is a wall rather than a surface.
+ *
+ * Only a body already below the mover counts (`top <= z`). Vanilla has no
+ * equivalent at all, and bodies are ground for the player alone — the rule and
+ * why it is shaped this way are docs/movement.md § Vertical physics: stairs,
+ * falling, gap-crossing.
+ */
+export function bodyFloor(
+  x: number,
+  y: number,
+  radius: number,
+  z: number,
+  blockers: readonly ThingBlocker[] | undefined,
+): number {
+  if (!blockers || infiniteTallActors) return -Infinity;
+  let best = -Infinity;
+  for (const b of blockers) {
+    const reach = radius + b.radius;
+    if (Math.abs(b.x - x) >= reach || Math.abs(b.y - y) >= reach) continue;
+    const top = b.z + b.height;
+    if (top <= z && top > best) best = top;
+  }
+  return best;
 }
 
 /**
@@ -893,6 +966,13 @@ const positionScratch: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0,
  * it: a `BLOCK_MONSTERS` line fences a monster's *movement* but its far side is
  * still real floor, so it must not read as a dropoff. That asymmetry predates
  * this unification and is preserved exactly.
+ *
+ * `moverHeight` is the mover's own body height and reaches nothing but
+ * `blockedByThings` — the opening gates below measure against `PLAYER_HEIGHT`
+ * whoever is asking (`openingRefuses`), and a monster's real height is applied
+ * separately by `monsters/ai.ts: testStep`. Pass the real height where the
+ * caller has one and `ANY_HEIGHT` where there is no body at all
+ * (`groundFloor`); it is unread either way once `z` is `ANY_HEIGHT`.
  */
 /**
  * `P_TryMove`'s three height gates against a `P_LineOpening`, in vanilla's
@@ -917,6 +997,7 @@ export function checkPosition(
   y: number,
   radius: number,
   z: number,
+  moverHeight: number,
   forMonster: boolean,
   blockers: readonly ThingBlocker[] | undefined,
   from: Pos2 | undefined,
@@ -925,7 +1006,7 @@ export function checkPosition(
 ): PositionCheck {
   // One BSP descent for both heights — `floorAt`/`ceilingAt` would walk it twice.
   const here = world.sectorAt(x, y);
-  out.blocked = blockedByThings(x, y, radius, blockers, from);
+  out.blocked = blockedByThings(x, y, radius, z, moverHeight, blockers, from);
   out.floorZ = here?.floorHeight ?? 0;
   out.ceilingZ = here?.ceilHeight ?? 0;
   out.dropoffZ = out.floorZ;
@@ -1007,12 +1088,13 @@ export function positionBlocked(
   y: number,
   radius: number,
   z: number,
+  moverHeight: number,
   forMonster = false,
   blockers?: readonly ThingBlocker[],
   from?: Pos2,
 ): boolean {
   // The first refusing line is the whole answer, so the walk stops there.
-  return checkPosition(world, x, y, radius, z, forMonster, blockers, from, true).blocked;
+  return checkPosition(world, x, y, radius, z, moverHeight, forMonster, blockers, from, true).blocked;
 }
 
 /** How many walls one `slideMove` projects against before giving up — vanilla's own `hitcount == 3`. */
@@ -1115,7 +1197,7 @@ export function slideMove(
   // the tic already overlapping another can still work free of it
   // (`blockedByThings`) without a multi-attempt slide creeping further in.
   const free = (x: number, y: number): boolean =>
-    !positionBlocked(world, x, y, radius, z, false, blockers, from);
+    !positionBlocked(world, x, y, radius, z, PLAYER_HEIGHT, false, blockers, from);
 
   // `P_XYMovement` only reaches `P_SlideMove` once the whole move is refused.
   if (free(curX + mx, curY + my)) return { x: curX + mx, y: curY + my };

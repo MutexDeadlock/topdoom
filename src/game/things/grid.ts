@@ -10,7 +10,7 @@
  * docs/monster-ai.md § Spatial indexing.
  */
 import type { DoomMap } from '../../wad/map.ts';
-import { PLAYER_RADIUS } from '../player.ts';
+import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
 import { MONSTER_DEATH_FRAME_SECONDS, MONSTER_TYPES, SOLID_DECORATION_TYPES } from '../thingdefs.ts';
 import { FAST_MONSTER_STATS, MONSTER_STATS, type RaiseCandidate } from '../monsters/defs.ts';
 import { positionBlocked, type ThingBlocker, type World } from '../world.ts';
@@ -275,13 +275,15 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
   const blockerPool: ThingBlocker[] = [];
   const blockerScratch: ThingBlocker[] = [];
 
-  function pushBlocker(x: number, y: number, radius: number): void {
+  function pushBlocker(x: number, y: number, z: number, radius: number, height: number): void {
     const i = blockerScratch.length;
     let b = blockerPool[i];
-    if (!b) blockerPool[i] = b = { x: 0, y: 0, radius: 0 };
+    if (!b) blockerPool[i] = b = { x: 0, y: 0, z: 0, radius: 0, height: 0 };
     b.x = x;
     b.y = y;
+    b.z = z;
     b.radius = radius;
+    b.height = height;
     blockerScratch.push(b);
   }
 
@@ -295,6 +297,10 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
    * The box is sized from the radii actually involved, not a fixed worst case,
    * and only the cells it covers are scanned. The single hottest thing in
    * monster AI; see docs/monster-ai.md § Spatial indexing.
+   *
+   * The box stays 2D even though bodies have heights — docs/movement.md
+   * § Collision. Each blocker's `z` is read live off the `PosedThing`, so a
+   * flier's current float height is what the caller compares against.
    */
   function blockersFor(p: PosedThing, player: Pos3 | null): readonly ThingBlocker[] {
     blockerScratch.length = 0;
@@ -311,7 +317,7 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
     if (player) {
       const playerReach = ownRadius + PLAYER_RADIUS + BLOCKER_MARGIN;
       if (Math.abs(player.x - p.x) <= playerReach && Math.abs(player.y - p.y) <= playerReach) {
-        pushBlocker(player.x, player.y, PLAYER_RADIUS);
+        pushBlocker(player.x, player.y, player.z, PLAYER_RADIUS, PLAYER_HEIGHT);
       }
     }
     const c0 = blockerCol(p.x - reach);
@@ -333,7 +339,7 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
           // (radius 128) would otherwise widen every 20-unit grunt's box too.
           const pairReach = ownRadius + other.blockRadius + BLOCKER_MARGIN;
           if (Math.abs(other.x - p.x) > pairReach || Math.abs(other.y - p.y) > pairReach) continue;
-          pushBlocker(other.x, other.y, other.blockRadius);
+          pushBlocker(other.x, other.y, other.z, other.blockRadius, other.bodyHeight);
         }
       }
     }
@@ -371,7 +377,7 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
           if (c.deadTime < c.deathFrameCount * MONSTER_DEATH_FRAME_SECONDS) continue;
           const pairReach = c.blockRadius + vileRadius;
           if (Math.abs(c.x - x) > pairReach || Math.abs(c.y - y) > pairReach) continue;
-          if (positionBlocked(world, c.x, c.y, c.blockRadius, c.z, true)) continue; // no room to stand back up
+          if (positionBlocked(world, c.x, c.y, c.blockRadius, c.z, c.bodyHeight, true)) continue; // no room to stand back up
           return { id: c.id, x: c.x, y: c.y };
         }
       }
@@ -391,7 +397,7 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
     for (const p of posed) {
       if (p.dead || (!MONSTER_TYPES.has(p.type) && p.type !== ThingType.barrel && !SOLID_DECORATION_TYPES.has(p.type))) continue;
       if (Math.abs(p.x - pos.x) > BLOCKER_SEARCH_RADIUS || Math.abs(p.y - pos.y) > BLOCKER_SEARCH_RADIUS) continue;
-      out.push({ x: p.x, y: p.y, radius: p.blockRadius });
+      out.push({ x: p.x, y: p.y, z: p.z, radius: p.blockRadius, height: p.bodyHeight });
     }
     return out;
   }

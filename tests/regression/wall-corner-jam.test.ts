@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap, type GridMap } from '../fixtures/gridmap.ts';
 import { SLIDE_FUDGE, World, positionBlocked, slideMove } from '../../src/game/world.ts';
-import { PLAYER_RADIUS } from '../../src/game/player.ts';
+import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import type { Pos2 } from '../../src/types.ts';
 
 /**
@@ -38,13 +38,13 @@ describe('Regressions · a box pressed into a wall corner', () => {
     const { world, corner } = scene();
 
     const overBlock = inLane(corner, corner.x - 24);
-    assert.equal(positionBlocked(world, overBlock.x, overBlock.y, PLAYER_RADIUS, 0), false, 'legal in the lane');
-    assert.ok(positionBlocked(world, overBlock.x, overBlock.y - 1, PLAYER_RADIUS, 0), 'a step south is refused');
+    assert.equal(positionBlocked(world, overBlock.x, overBlock.y, PLAYER_RADIUS, 0, PLAYER_HEIGHT), false, 'legal in the lane');
+    assert.ok(positionBlocked(world, overBlock.x, overBlock.y - 1, PLAYER_RADIUS, 0, PLAYER_HEIGHT), 'a step south is refused');
 
     // The same step one block-width east: the wall has ended, so it is free.
     // This is the geometry the circle used to catch on.
     const pastEnd = inLane(corner, corner.x + 24);
-    assert.equal(positionBlocked(world, pastEnd.x, pastEnd.y - 1, PLAYER_RADIUS, 0), false, 'past the end, nothing blocks');
+    assert.equal(positionBlocked(world, pastEnd.x, pastEnd.y - 1, PLAYER_RADIUS, 0, PLAYER_HEIGHT), false, 'past the end, nothing blocks');
   });
 
   test('pushing west past the wall’s end never stalls', () => {
@@ -63,7 +63,7 @@ describe('Regressions · a box pressed into a wall corner', () => {
 
     assert.ok(at.x < corner.x - PLAYER_RADIUS, `must end up west of the corner, got x=${at.x}`);
     assert.equal(at.y, start.y, 'and stay in the lane rather than drifting into the block');
-    assert.equal(positionBlocked(world, at.x, at.y, PLAYER_RADIUS, 0), false);
+    assert.equal(positionBlocked(world, at.x, at.y, PLAYER_RADIUS, 0, PLAYER_HEIGHT), false);
   });
 
   test('a microscopic cross-axis residue changes nothing', () => {
@@ -71,7 +71,7 @@ describe('Regressions · a box pressed into a wall corner', () => {
     const start = inLane(corner, corner.x + 24);
     const after = slideMove(world, { ...start, z: 0 }, -8, 2e-7, PLAYER_RADIUS);
     assert.ok(start.x - after.x > 7.99, 'still a full step, not a 2e-7 creep');
-    assert.equal(positionBlocked(world, after.x, after.y, PLAYER_RADIUS, 0), false);
+    assert.equal(positionBlocked(world, after.x, after.y, PLAYER_RADIUS, 0, PLAYER_HEIGHT), false);
   });
 
   test('a diagonal clearance the circle used to pass is refused by the box', () => {
@@ -82,9 +82,9 @@ describe('Regressions · a box pressed into a wall corner', () => {
     // straddles the block's north face here and the position is refused.
     const clearance = PLAYER_RADIUS / Math.SQRT2 + 0.09;
     const at = { x: corner.x + clearance, y: corner.y + clearance };
-    assert.ok(positionBlocked(world, at.x, at.y, PLAYER_RADIUS, 0));
+    assert.ok(positionBlocked(world, at.x, at.y, PLAYER_RADIUS, 0, PLAYER_HEIGHT));
     // Clear on both axes is what it takes now.
-    assert.equal(positionBlocked(world, corner.x + PLAYER_RADIUS + 0.05, corner.y + PLAYER_RADIUS + 0.05, PLAYER_RADIUS, 0), false);
+    assert.equal(positionBlocked(world, corner.x + PLAYER_RADIUS + 0.05, corner.y + PLAYER_RADIUS + 0.05, PLAYER_RADIUS, 0, PLAYER_HEIGHT), false);
   });
 
   test('a head-on push into a wall face still stops dead', () => {

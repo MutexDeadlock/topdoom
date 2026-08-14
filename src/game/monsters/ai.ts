@@ -184,7 +184,7 @@ const verticalCheck: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, d
 function settleVertical(body: MonsterBody, stats: MonsterStats, world: World, dt: number, target: Pos3): void {
   // One walk for both heights: the flier branch below wants the ceiling from
   // the same position, and two wrapper calls would walk the lines twice.
-  const at = checkPosition(world, body.x, body.y, stats.radius, ANY_HEIGHT, true, undefined, undefined, false, verticalCheck);
+  const at = checkPosition(world, body.x, body.y, stats.radius, ANY_HEIGHT, stats.height, true, undefined, undefined, false, verticalCheck);
   const groundZ = at.floorZ;
   if (!stats.flies) {
     if (body.z > groundZ) {
@@ -246,7 +246,7 @@ function testStep(
   //
   // One `P_CheckPosition` walk answers all three: the destination's headroom,
   // the blocking verdict against this body's own feet, and the dropoff.
-  const check = checkPosition(world, x, y, stats.radius, body.z, true, blockers, body, false);
+  const check = checkPosition(world, x, y, stats.radius, body.z, stats.height, true, blockers, body, false);
   if (check.ceilingZ - check.floorZ < stats.height) {
     return 'blocked';
   }
@@ -266,7 +266,7 @@ function testStep(
   // gates while leaving the wall, body and opening-height checks — exactly the
   // tests vanilla runs before it sets `floatok`. The one probe that still needs
   // a second walk, and only for a flier that was already refused.
-  return checkPosition(world, x, y, stats.radius, ANY_HEIGHT, true, blockers, body, true).blocked ? 'blocked' : 'adjust';
+  return checkPosition(world, x, y, stats.radius, ANY_HEIGHT, stats.height, true, blockers, body, true).blocked ? 'blocked' : 'adjust';
 }
 
 /**
@@ -410,7 +410,7 @@ function stepCharge(body: MonsterBody, stats: MonsterStats, dt: number, world: W
   const step = charge.speed * dt;
   const nx = body.x + Math.cos(body.chargeAngle) * step;
   const ny = body.y + Math.sin(body.chargeAngle) * step;
-  if (positionBlocked(world, nx, ny, stats.radius, body.z, true)) {
+  if (positionBlocked(world, nx, ny, stats.radius, body.z, stats.height, true)) {
     body.chargeTimer = 0;
     return null;
   }

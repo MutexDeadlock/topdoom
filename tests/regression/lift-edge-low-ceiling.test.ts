@@ -46,19 +46,19 @@ describe('a low-ceilinged neighbor blocks a body standing above it', () => {
 
   test('blocked at lift height', () => {
     const { world, x, y } = scene();
-    assert.ok(positionBlocked(world, x, y, PLAYER_RADIUS, LIFT_FLOOR), 'must not walk off the raised lift');
+    assert.ok(positionBlocked(world, x, y, PLAYER_RADIUS, LIFT_FLOOR, PLAYER_HEIGHT), 'must not walk off the raised lift');
   });
 
   test('free on the pit floor, which is the way through', () => {
     const { world, x, y } = scene();
-    assert.ok(!positionBlocked(world, x, y, PLAYER_RADIUS, PIT_FLOOR), 'the crawl-through must stay open');
+    assert.ok(!positionBlocked(world, x, y, PLAYER_RADIUS, PIT_FLOOR, PLAYER_HEIGHT), 'the crawl-through must stay open');
   });
 
   test('blocked while still airborne above the opening', () => {
     const { world, x, y } = scene();
     // Mid-fall the player's feet are above the opening's top by more than a
     // body height, which vanilla refuses the same way.
-    assert.ok(positionBlocked(world, x, y, PLAYER_RADIUS, CRAWL_CEIL - PLAYER_HEIGHT + 1), 'no room to fit yet');
-    assert.ok(!positionBlocked(world, x, y, PLAYER_RADIUS, CRAWL_CEIL - PLAYER_HEIGHT), 'exactly fits');
+    assert.ok(positionBlocked(world, x, y, PLAYER_RADIUS, CRAWL_CEIL - PLAYER_HEIGHT + 1, PLAYER_HEIGHT), 'no room to fit yet');
+    assert.ok(!positionBlocked(world, x, y, PLAYER_RADIUS, CRAWL_CEIL - PLAYER_HEIGHT, PLAYER_HEIGHT), 'exactly fits');
   });
 });

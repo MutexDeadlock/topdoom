@@ -142,9 +142,10 @@ docs/savegames.md § The format and its version) whenever one exists.
 **A deliberate deviation is fine; an undocumented one is not.** Where this engine knowingly departs
 from vanilla, the departure says so at the declaration, names what it follows instead, and explains
 why — `meleeReachesVertically` (`game/monsters/defs.ts`, follows ZDoom's `MF5_NOVERTICALMELEERANGE`
-rather than vanilla's no-vertical-check melee), `PLAYER_WEAPON_RANGE`, `CHANNELS` = 32, and a
-missing sound lump being silent rather than `DSPISTOL`. The rule above bans *guessing* at vanilla,
-not choosing against it on purpose.
+rather than vanilla's no-vertical-check melee), solid bodies having a real height by default rather
+than vanilla's infinitely tall actors (`game/world.ts`, docs/movement.md § Collision),
+`PLAYER_WEAPON_RANGE`, `CHANNELS` = 32, and a missing sound lump being silent rather than
+`DSPISTOL`. The rule above bans *guessing* at vanilla, not choosing against it on purpose.
 
 **Constants fall into exactly two marked categories.** Values derived from vanilla carry their
 source citation as a comment at the declaration (`g_game.c`'s ticcmd tables, `info.c`'s mobjinfo

@@ -284,14 +284,18 @@ keeps heading toward its target's *actual* current position (there's no remember
 position).
 
 **Bodies block bodies, using vanilla's box test.** `positionBlocked`/`slideMove` take an optional
-`blockers` list, and `blockedByThings` reproduces `PIT_CheckThing`'s check exactly: an axis-aligned
-**box** on the summed radii (`abs(dx) < r1+r2 && abs(dy) < r1+r2`), the same shape the line tests in
-the collision code uses, and with **no height comparison at all** — vanilla's solid-blocking path
-returns before any z check, the well-known "infinitely tall actors" behavior. Both deviations are
-deliberate: rounding the box off would change every contact range by up to ~40% on the diagonal,
-and a height check would quietly break map geometry that relies on the vanilla rule.
-`ThingLayer.solidBodies` is the outward-facing half; monsters get an equivalent list internally
-(`blockersFor`). The player *slides* along bodies while monsters don't, matching vanilla exactly.
+`blockers` list, and `blockedByThings` reproduces `PIT_CheckThing`'s horizontal check exactly: an
+axis-aligned **box** on the summed radii (`abs(dx) < r1+r2 && abs(dy) < r1+r2`), the same shape the
+line tests in the collision code use. Rounding that box off would change every contact range by up
+to ~40% on the diagonal, which is why it stays a box.
+
+Vertically, a blocker carries its own `bodyHeight` and a mover that clears it entirely passes it —
+**not** vanilla's infinitely tall actors, which the `Infinite tall actors (vanilla)` setting puts
+back. That rule, the exact-touch case and what does *not* follow the setting are all
+docs/movement.md § Collision; monsters only take part in the blocking half of it, since bodies are
+ground for the player alone. `ThingLayer.solidBodies` is the outward-facing half; monsters get an
+equivalent list internally (`blockersFor`), whose search box stays 2D. The player *slides* along
+bodies while monsters don't, matching vanilla exactly.
 
 ## Floating monsters
 

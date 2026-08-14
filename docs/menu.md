@@ -224,12 +224,18 @@ description, the autorun checkbox is the `Shift` row's. A player looking up what
 player changing it are the same person on the same trip to the menu — which is why those two did not
 move to General with the rest.
 
-**General is sfx volume and the frame rate limit**, stacked full width with the limit first. The
+**General is sfx volume, the frame rate limit and the collision toggle**, stacked full width with
+the limit first. The
 limit is `#fpscap-select`, and its `<option>` values *are* the capped rates (`0` = unlimited, the
 default), so the control needs no mapping table. It is owned by `game.ts` (`getFpsCap`/`setFpsCap`),
 whose frame loop is the only thing it changes, and is read live per frame — changing it mid-level
 applies to the level already running, like volume and autorun. See docs/frameloop.md § The FPS cap
 for how a cap is actually held.
+
+**Collision** is one checkbox, `Infinite tall actors (vanilla)` — off by default, and the one
+setting here that changes how the game plays rather than how it presents itself
+(docs/movement.md § Collision). It applies to the level already running, like volume and the cap:
+`blockedByThings` reads the flag per call.
 
 General ends with **`#settings-dev`, a DEVMODE-only section holding the profiler overlay's
 checkbox** (§ Profiling overlay), revealed by the same set-once toggle `#controls-dev` gets. Its
@@ -291,6 +297,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
 | `topdoom.fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
 | `topdoom.profiler` | `ui/devmode/profilerhud.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
+| `topdoom.infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
 | `topdoom.skill` | `ui/menu/menu.ts` | § Difficulty above |
 | `topdoom.selection` | `ui/menu/menu.ts` | § Remembered selection below |
 | `topdoom.bestTimes` | `game/besttimes.ts` | docs/hud.md § Best times |

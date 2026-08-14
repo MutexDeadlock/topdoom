@@ -78,7 +78,7 @@ describe('Regressions · a monster spawned flush against a wall', () => {
   test('the fixture really does start it inside the wall', () => {
     const { world, body } = scene(4);
     assert.ok(
-      positionBlocked(world, body.x, body.y, stats.radius, body.z, true),
+      positionBlocked(world, body.x, body.y, stats.radius, body.z, stats.height, true),
       'its own spawn point is blocked — otherwise this test proves nothing',
     );
   });
@@ -88,7 +88,7 @@ describe('Regressions · a monster spawned flush against a wall', () => {
       const { world, body, target } = scene(overlap);
       assert.ok(travelled(world, body, target, 2) > 32, `overlap of ${overlap}: must cover real ground in two seconds`);
       assert.equal(
-        positionBlocked(world, body.x, body.y, stats.radius, body.z, true),
+        positionBlocked(world, body.x, body.y, stats.radius, body.z, stats.height, true),
         false,
         `overlap of ${overlap}: must end up clear of the wall`,
       );
@@ -127,7 +127,7 @@ describe('Regressions · a monster spawned flush against a wall', () => {
     body.x = start.x;
     body.y = start.y;
     assert.equal(
-      positionBlocked(world, body.x, body.y, stats.radius, 0, true),
+      positionBlocked(world, body.x, body.y, stats.radius, 0, stats.height, true),
       false,
       'starts clear, so the escape hatch never applies',
     );

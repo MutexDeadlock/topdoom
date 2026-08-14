@@ -2,7 +2,7 @@
  * The player's body: camera-relative movement, running/straferunning, gravity and falling,
  * knockback, and the vanilla `PLAYER_*` constants. See docs/movement.md.
  */
-import { slideMove, type ThingBlocker, type World } from './world.ts';
+import { bodyFloor, slideMove, type ThingBlocker, type World } from './world.ts';
 import type { Input } from './input.ts';
 import type { PlayerSnapshot } from './snapshot.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
@@ -393,7 +393,13 @@ export class Player implements Pos3 {
     // box overlaps both edges at once the whole way across, so this never
     // reports the lower pit floor in between, the same "step over it" quirk
     // vanilla has.
-    const groundZ = this.world.groundFloor(this.x, this.y, PLAYER_RADIUS);
+    // A solid body the player is above is ground too (`bodyFloor`) — the
+    // player's alone, and inert while infinite-tall actors is on. See
+    // docs/movement.md § Vertical physics: stairs, falling, gap-crossing.
+    const groundZ = Math.max(
+      this.world.groundFloor(this.x, this.y, PLAYER_RADIUS),
+      bodyFloor(this.x, this.y, PLAYER_RADIUS, this.z, blockers),
+    );
     if (this.z > groundZ) {
       // Airborne: the ground dropped out from under the player (walked off a
       // ledge, or a straddled gap turned out too wide to glide over). Fall

@@ -13,7 +13,7 @@ import { buildSubSectorPolys } from '../src/render/bsp.ts';
 import { World, positionBlocked } from '../src/game/world.ts';
 import { SoundBank } from '../src/wad/sound.ts';
 import { SFX_NAMES } from '../src/audio/sfx.ts';
-import { PLAYER_RADIUS } from '../src/game/player.ts';
+import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../src/game/player.ts';
 
 function readWad(path: string): WadFile {
   const file = readFileSync(path);
@@ -132,13 +132,13 @@ console.log(
   `\nplayer start: (${start.x}, ${start.y}) angle ${Math.round((start.angle * 180) / Math.PI)}°\n` +
     `  sector ${world.sectorIndexAt(start.x, start.y)} floor ${sector?.floorHeight} ceil ${sector?.ceilHeight} light ${sector?.light}`,
 );
-console.log(`  blocked at spawn: ${positionBlocked(world, start.x, start.y, PLAYER_RADIUS, floor)}`);
+console.log(`  blocked at spawn: ${positionBlocked(world, start.x, start.y, PLAYER_RADIUS, floor, PLAYER_HEIGHT)}`);
 
 // Walk a ring around the spawn to see whether collision behaves sanely.
 let free = 0;
 const steps = 36;
 for (let i = 0; i < steps; i++) {
   const a = (i / steps) * Math.PI * 2;
-  if (!positionBlocked(world, start.x + Math.cos(a) * 64, start.y + Math.sin(a) * 64, PLAYER_RADIUS, floor)) free++;
+  if (!positionBlocked(world, start.x + Math.cos(a) * 64, start.y + Math.sin(a) * 64, PLAYER_RADIUS, floor, PLAYER_HEIGHT)) free++;
 }
 console.log(`  free directions at r=64: ${free}/${steps}`);

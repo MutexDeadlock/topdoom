@@ -8,6 +8,9 @@ Features and improvements
     table to blind its monsters on purpose now gets what it asked for
   - the settings menu is split into "General" and "Controls"
     - in "General" you can now toggle the profiler overlay (if DEVMODE)
+  - monsters no longer block you from a height you'd never touch them at
+    - the original blocks over the full height regardless ("infinitely
+      tall actors"); "General" has a setting to put that back
 
 Fixed bugs
   - coming back to a weapon slot selects the weapon you last used out

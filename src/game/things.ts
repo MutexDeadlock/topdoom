@@ -485,7 +485,8 @@ export function buildThingSprites(
     for (const p of posed) if (p.type === ThingType.lostSoul && !p.dead) skullCount++;
     if (skullCount > MAX_SKULLS_ON_LEVEL) return;
 
-    const skullRadius = monsterStats[ThingType.lostSoul].radius;
+    const skullStats = monsterStats[ThingType.lostSoul];
+    const skullRadius = skullStats.radius;
     const originRadius = monsterStats[origin.type]?.radius ?? skullRadius;
     // Vanilla's `4*FRACUNIT + 3*(actor->info->radius + skullRadius)/2` — both
     // radii are already plain map units here (not FRACUNIT-scaled), so the
@@ -494,7 +495,7 @@ export function buildThingSprites(
     const x = origin.x + Math.cos(angleRad) * prestep;
     const y = origin.y + Math.sin(angleRad) * prestep;
     const z = origin.z + 8;
-    if (positionBlocked(world, x, y, skullRadius, z, true)) return;
+    if (positionBlocked(world, x, y, skullRadius, z, skullStats.height, true)) return;
 
     // Already alerted, with reactionTicks/movecount pre-zeroed (pushThing's own
     // defaults) so its very first chase call is free to roll straight into
@@ -714,7 +715,7 @@ export function buildThingSprites(
   function applyKnockback(p: PosedThing, dt: number): void {
     const nx = p.x + p.velX * dt;
     const ny = p.y + p.velY * dt;
-    if (positionBlocked(world, nx, ny, p.blockRadius, p.z, true)) {
+    if (positionBlocked(world, nx, ny, p.blockRadius, p.z, p.bodyHeight, true)) {
       p.velX = 0;
       p.velY = 0;
       return;
@@ -834,8 +835,8 @@ export function buildThingSprites(
     // `solidBodies` skips the dead, so the corpse itself never blocks its own return; the player
     // isn't in `posed` at all and has to be added by hand.
     const blockers = grid.solidBodies({ x: p.spawnX, y: p.spawnY });
-    if (player) blockers.push({ x: player.x, y: player.y, radius: PLAYER_RADIUS });
-    if (positionBlocked(world, p.spawnX, p.spawnY, p.blockRadius, z, true, blockers)) return false;
+    if (player) blockers.push({ x: player.x, y: player.y, z: player.z, radius: PLAYER_RADIUS, height: PLAYER_HEIGHT });
+    if (positionBlocked(world, p.spawnX, p.spawnY, p.blockRadius, z, p.bodyHeight, true, blockers)) return false;
 
     onRespawn?.({ x: p.x, y: p.y, z: p.sector?.floorHeight ?? p.z }, { x: p.spawnX, y: p.spawnY, z });
 

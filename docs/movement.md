@@ -80,6 +80,37 @@ projection and its per-axis fallback) all pass their mover's own position as `fr
 yet touched at `from` is unaffected — this only lets an already-overlapping pair work free, it never
 lets a mover approach a thing it wasn't already touching.
 
+**Bodies have a real height, and that is a deliberate deviation.** Vanilla's `PIT_CheckThing`
+returns on `MF_SOLID` before comparing any z — its over/under pair lives in the `MF_MISSILE` branch
+alone, confirmed in `linuxdoom-1.10/p_map.c` — so a DOOM actor blocks over its entire vertical
+extent, the well-known "infinitely tall actors". Here a mover clearing a blocker entirely passes it
+instead:
+
+```
+z >= b.z + b.height  ||  z + height <= b.z    →  not blocked
+```
+
+which follows the finite-height actors of modern ports rather than the original, because in a
+top-down view a cacodemon hovering overhead reads as an invisible wall. The **`Infinite tall actors
+(vanilla)`** setting (Settings → General, `topdoom.infiniteTallActors`, off by default) restores the
+original rule; `blockedByThings` reads it per call, so it applies to the level already running.
+Rules that go with it:
+
+- **Touching exactly counts as clearing**, unlike vanilla's strict missile pair — a body resting on
+  another's top must read as *over* it, or standing on a monster would block every direction that
+  stays above it.
+- **An `ANY_HEIGHT` mover keeps vanilla blocking**: it has no span to clear a body with, so
+  `testStep`'s `floatok` probe answers exactly what it did before heights existed.
+- **Movement blocking only.** Every other z comparison in the engine is one vanilla makes too and is
+  untouched by the setting: a missile's over/under (`spritefxdefs.ts: stepTouchesBody`), a hitscan's
+  height band and auto-aim slope (docs/combat.md), `meleeReachesVertically`
+  (docs/monster-ai.md § Melee reach), `tryPickup`'s overhead gate (docs/items.md), and splash, which
+  is 2D in vanilla.
+- **The blocker broadphase stays 2D** (`things/grid.ts: blockersFor`). A z pre-filter would shrink
+  the candidate set but put the vertical rule in a second place; `blockedByThings` stays its one home.
+- The player can be **stood on**, and stands on bodies — § Vertical physics below. Nothing else
+  does: two vertically disjoint monsters simply pass through each other's column.
+
 ### Solid decorations
 
 `game/thingdefs.ts`'s `SOLID_DECORATION_TYPES` is every doomednum from the
@@ -261,6 +292,24 @@ rather than always snapping straight to it:
   at a constant `GRAVITY` and `z` integrates from it every frame, clamped to `groundFloor` once
   reached, instead of teleporting straight down. `velZ` is only ever negative — there's no jump input,
   so gravity is the only thing that ever moves `z` away from `groundFloor`.
+
+**A solid body under the player is ground too** (`world.ts: bodyFloor`, `Math.max`ed into
+`Player.update`'s `groundZ`), so walking off a ledge above a monster lands *on* it instead of
+falling through it and coming to rest inside it — the other half of finite body height (§ Collision
+above), and inert while infinite-tall actors is on. Vanilla has no equivalent at all: `tmfloorz`
+only ever comes from a line opening. What holds it together:
+
+- **Only a body already below the mover counts** (`top <= z`, this engine's own rule). That is what
+  makes a fall *land* rather than snap the player up onto a body that walked into its box, and it
+  means a cacodemon rising under the player stops qualifying — the player drops off rather than
+  being carried up.
+- **It is the player's alone.** Monsters ask `groundFloor` only, so one walks *under* a standing
+  player rather than onto it, and nothing else in the engine treats a body as a surface.
+- **You can fall onto a body but not step up onto one**: at floor level the two spans overlap, so
+  the move is refused — and a 56-unit top is past `MAX_STEP_UP` anyway.
+- **A body doesn't carry the player horizontally.** When it moves away or dies (`solidBodies` skips
+  the dead) `groundZ` drops back to the sector floor and the airborne branch below resumes the fall,
+  with no special case.
 
 `GRAVITY`'s value is tuned by feel (roughly a body height of fall in a third of a second), not
 converted from vanilla's fixed-point tics-per-second constant, which doesn't translate cleanly to a

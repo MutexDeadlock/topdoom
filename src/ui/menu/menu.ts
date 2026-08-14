@@ -19,6 +19,7 @@ import {
   type RightMouseAction,
 } from '../../game/input.ts';
 import { getFpsCap, setFpsCap, type FpsCap } from '../../game.ts';
+import { getInfiniteTallActors, setInfiniteTallActors } from '../../game/world.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
 import { requiredWads, wadLabel, type MissingWad, type SaveMeta, type SaveWadSet } from '../../game/savegames.ts';
 import { getProfilerVisible, setProfilerVisible } from '../devmode/profilerhud.ts';
@@ -76,6 +77,7 @@ export class Menu {
   private shiftAction = el<HTMLSpanElement>('shift-action');
   private rightMouseSelect = el<HTMLSelectElement>('rightmouse-select');
   private fpsCapSelect = el<HTMLSelectElement>('fpscap-select');
+  private infiniteTallCheckbox = el<HTMLInputElement>('infinitetall-checkbox');
   private profilerCheckbox = el<HTMLInputElement>('profiler-checkbox');
   private changelogRoot = el<HTMLDivElement>('changelog');
   private changelogText = el<HTMLPreElement>('changelog-text');
@@ -158,6 +160,7 @@ export class Menu {
     this.installAutorun();
     this.installRightMouse();
     this.installFpsCap();
+    this.installInfiniteTall();
     this.installProfiler();
     this.installChangelog();
     this.setTab('newgame');
@@ -315,6 +318,18 @@ export class Menu {
     this.fpsCapSelect.value = String(getFpsCap());
     this.fpsCapSelect.addEventListener('change', () => {
       setFpsCap(Number(this.fpsCapSelect.value) as FpsCap);
+    });
+  }
+
+  /**
+   * Whether solid bodies block over their whole vertical extent, vanilla's
+   * infinitely tall actors — off by default, and applied to the level already
+   * running. docs/movement.md § Collision.
+   */
+  private installInfiniteTall(): void {
+    this.infiniteTallCheckbox.checked = getInfiniteTallActors();
+    this.infiniteTallCheckbox.addEventListener('change', () => {
+      setInfiniteTallActors(this.infiniteTallCheckbox.checked);
     });
   }
 

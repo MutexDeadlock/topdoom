@@ -86,12 +86,13 @@ export class World {
   private lineSlope: Int8Array;
 
   /**
-   * Subsector index -> its sector index (vanilla's `subsector->sector`), so a
-   * REJECT lookup costs one typed-array read rather than the seg -> linedef ->
-   * sidedef walk `sectorOfSubSector` does. Null on a map with no REJECT table,
-   * the only thing that reads it.
+   * Subsector index -> its sector index (vanilla's `subsector->sector`), built
+   * once at load so every sector lookup — `sectorIndexAt`, `sectorAt` and the
+   * heights over them, the REJECT probe — costs one typed-array read rather
+   * than the seg -> linedef -> sidedef walk `sectorOfSubSector` does.
+   * See docs/world.md § Point-to-sector lookups.
    */
-  private subsectorSector: Int32Array | null = null;
+  private subsectorSector: Int32Array;
 
   readonly map: DoomMap;
 
@@ -118,13 +119,11 @@ export class World {
     this.lineV1X = new Float64Array(map.linedefs.length);
     this.lineV1Y = new Float64Array(map.linedefs.length);
     this.lineSlope = new Int8Array(map.linedefs.length);
+    this.subsectorSector = new Int32Array(map.subsectors.length);
+    for (let i = 0; i < map.subsectors.length; i++) this.subsectorSector[i] = sectorOfSubSector(map, i);
     this.buildLineData();
     this.buildGrid();
     this.buildSectorNeighbors();
-    if (map.reject) {
-      this.subsectorSector = new Int32Array(map.subsectors.length);
-      for (let i = 0; i < map.subsectors.length; i++) this.subsectorSector[i] = sectorOfSubSector(map, i);
-    }
   }
 
   /**
@@ -395,8 +394,17 @@ export class World {
     return child & ~SUBSECTOR_BIT;
   }
 
+  /**
+   * The sector a subsector belongs to, off the precomputed table. A subsector
+   * index this map doesn't have answers sector 0, matching what the seg walk
+   * this replaced returned for one. See docs/world.md § Point-to-sector lookups.
+   */
+  sectorIndexOfSubsector(subsector: number): number {
+    return subsector >= 0 && subsector < this.subsectorSector.length ? this.subsectorSector[subsector] : 0;
+  }
+
   sectorIndexAt(x: number, y: number): number {
-    return sectorOfSubSector(this.map, this.subsectorAt(x, y));
+    return this.sectorIndexOfSubsector(this.subsectorAt(x, y));
   }
 
   /**
@@ -410,8 +418,8 @@ export class World {
    */
   sightRejected(from: Pos2, to: Pos2, fromSubsector: number, toSubsector: number): boolean {
     const reject = this.map.reject;
+    if (!reject) return false;
     const table = this.subsectorSector;
-    if (!reject || !table) return false;
     const a = fromSubsector >= 0 ? fromSubsector : this.subsectorAt(from.x, from.y);
     const b = toSubsector >= 0 ? toSubsector : this.subsectorAt(to.x, to.y);
     // A hint naming no subsector this map has is rejected by nothing, rather
@@ -423,7 +431,7 @@ export class World {
 
   /** The sector a subsector belongs to, for a caller that already has the subsector `sectorAt` would descend the BSP to find. */
   sectorOfSubsector(subsector: number): Sector | undefined {
-    return this.map.sectors[sectorOfSubSector(this.map, subsector)];
+    return this.map.sectors[this.sectorIndexOfSubsector(subsector)];
   }
 
   sectorAt(x: number, y: number): Sector | undefined {

@@ -102,6 +102,28 @@ you're standing on" idea as `WALL_OVERLAP`/`BLOCKER_OVERLAP`. Tradeoff: a rocket
 *closed door* can in principle leak a sliver of splash through, since the door's self-hit is now the
 crossing being ignored — accepted as the same order of approximation.
 
+## Point-to-sector lookups
+
+`subsectorAt` descends the BSP; everything that wants a *sector* for a point goes through it and
+then resolves subsector -> sector. That second half is a table: `World.subsectorSector`, an
+`Int32Array` filled once in the constructor from `sectorOfSubSector` (`render/bsp.ts`, the seg ->
+linedef -> sidedef walk), so the resolution is one typed-array read. `sectorIndexOfSubsector` is the
+accessor; `sectorIndexAt`/`sectorAt` and the `floorAt`/`ceilingAt` over them, `sectorOfSubsector`,
+and the REJECT probe below all route through it.
+
+**The table is built for every map, not only ones with a REJECT table.** It arrived for the REJECT
+probe, but the per-frame sector lookups — damage floors, the sector under the player, sprite
+lighting, every mover's blocking test — pay the same walk, and that walk is unbounded: it scans a
+subsector's segs until one names a sidedef, so a subsector whose early segs are miniseg-like costs
+several linedef and sidedef derefs per query. The table is `4 * numsubsectors` bytes, well under a
+map's other load-time derivations.
+
+**A subsector index the map doesn't have answers sector 0**, matching what the seg walk returned for
+one — `subsectorAt` can produce an out-of-range index on a map with broken nodes, and sector 0 is a
+real sector, so the guard keeps that path from reading past the array. `sightRejected` does *not*
+use the accessor for exactly this reason: an out-of-range hint there must reject nothing rather than
+answer for sector 0's row, so it bounds-checks the table itself.
+
 ## REJECT
 
 `hasLineOfSight` opens with vanilla's own first test in `P_CheckSight`: the WAD's REJECT matrix

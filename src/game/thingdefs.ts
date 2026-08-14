@@ -598,13 +598,36 @@ export const MONSTER_PAIN_FRAMES: Record<number, string[]> = {
 };
 
 /**
- * Flat per-frame duration for both tables above — the same "one uniform rate
- * instead of vanilla's own per-state tic count" simplification
- * `MONSTER_DEATH_FRAME_SECONDS` already makes, just faster: vanilla's attack/
- * pain states mostly hold 3-10 tics (vs. death's 5-8), and a flinch or a
- * punch/muzzle-flash reads as snappier than a death collapse regardless.
+ * Flat per-frame duration for `MONSTER_PAIN_FRAMES` — the same "one uniform
+ * rate instead of vanilla's own per-state tic count" simplification
+ * `MONSTER_DEATH_FRAME_SECONDS` already makes, just faster: vanilla's pain
+ * states mostly hold 3-10 tics (vs. death's 5-8), and a flinch reads as
+ * snappier than a death collapse regardless. Also the fallback rate for
+ * `attackPoseFrameSeconds` below.
  */
 export const MONSTER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;
+
+/**
+ * Per-frame duration for `MONSTER_ATTACK_FRAMES`, which — unlike the pain pose
+ * — is **not** flat: the letters are spread evenly over `attackSeconds`, the
+ * length of the attack they pose for.
+ *
+ * The pose and the wait are the same vanilla states: `AttackStats.duration` is
+ * the `missilestate`/`meleestate` chain's summed tics, and those states are
+ * exactly the frames this table lists. A flat rate makes the two disagree, and
+ * the mismatch grows with the chain — the arch-vile's cast is 94 tics of `VILE`
+ * `G`-`P`, so 3 tics a frame left it posed for 30 of them and standing in its
+ * idle frame for the other 64, through the entire back half of the windup and
+ * the blast itself. docs/sprites.md § Pain, and attack/pain poses.
+ *
+ * The degenerate guard is not defensive tidiness: a zero rate would freeze the
+ * pose on its first frame *forever*, since `FrameSequence.advance` clears a
+ * one-shot sequence only by advancing past its end.
+ */
+export function attackPoseFrameSeconds(frames: readonly string[], attackSeconds: number): number {
+  if (frames.length === 0 || attackSeconds <= 0) return MONSTER_ACTION_FRAME_SECONDS;
+  return attackSeconds / frames.length;
+}
 
 /**
  * Resurrection frame letters — `mobjinfo.raisestate`, the arch-vile's

@@ -60,8 +60,9 @@ The store itself has no `indexedDB` to reach in Node, so it takes an injected ba
 around it are **not** stubbed, since `CompressionStream` is global in Node and a compression
 round-trip that isn't the real one proves nothing. The `ThingLayer` and `SpriteFxLayer` tests reach
 `buildThingSprites`/`spawn` headless through a name-only `SpriteBank` stub and a three-field
-`SpriteMaterialCache` stub, since both layers only ever *key* batches by lump name during a tic —
-which is also what lets the fog test read back the frame letter a restored puff resumes on.
+`SpriteMaterialCache` stub (`fixtures/spritestubs.ts`, plus its `recordingBank` variant that keeps
+the frame letters it was asked for), since both layers only ever *key* batches by lump name during a
+tic — which is also what lets the fog test read back the frame letter a restored puff resumes on.
 Deliberately **not** covered yet, and why:
 
 - **`SpecialsController`'s mover state machine** — `sectorActive`, `tickDoor`, `tickLift` and the

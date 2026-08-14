@@ -1,6 +1,5 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as THREE from 'three';
 import { World } from '../../src/game/world.ts';
 import { buildThingSprites } from '../../src/game/things.ts';
 import { MONSTER_HEALTH } from '../../src/game/thingdefs.ts';
@@ -8,28 +7,14 @@ import { ThingType } from '../../src/game/thingtypes.ts';
 import { clearRandom } from '../../src/util/random.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import type { Skill } from '../../src/game/skill.ts';
-import type { SpriteBank } from '../../src/wad/sprites.ts';
-import type { SpriteMaterialCache } from '../../src/render/sprites.ts';
 import type { Pos3 } from '../../src/types.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
+import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
 
 /**
  * Nightmare's respawning monsters: `P_MobjThinker`'s respawn branch and `P_NightmareRespawn`
  * (`p_mobj.c`). See docs/monster-ai.md § Respawning monsters.
  */
-
-/** Every lump "exists" — the layer only needs a name to key its batches by. */
-const BANK = {
-  lookup: (sprite: string, frame: string, digit: number) => ({ lump: `${sprite}${frame}${digit}`, flip: false }),
-} as unknown as SpriteBank;
-
-const MATERIALS = {
-  get: () => ({
-    material: new THREE.MeshBasicMaterial(),
-    geometry: new THREE.BufferGeometry(),
-    quad: { minX: -16, maxX: 16, height: 56 },
-  }),
-} as unknown as SpriteMaterialCache;
 
 /** A wide open room with one imp in it, and the player far enough east to be worth walking toward. */
 function arena(skill: Skill, fogs: [Pos3, Pos3][] = []) {

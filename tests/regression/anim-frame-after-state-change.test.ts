@@ -29,9 +29,11 @@ const DEATH = ['E', 'F', 'G'];
 /**
  * Records every frame letter `resolve` asks for, and rejects a non-string the
  * way the real `SpriteBank.lookup` does — it calls `frame.toUpperCase()`.
- * Returning `undefined` short-circuits `resolve` before it touches materials.
+ * Returning `undefined` short-circuits `resolve` before it touches materials,
+ * which is what this test wants and `fixtures/spritestubs.ts`'s `recordingBank`
+ * (every lump exists) deliberately does not do.
  */
-function recordingBank(): { bank: SpriteBank; asked: (string | undefined)[] } {
+function missingLumpBank(): { bank: SpriteBank; asked: (string | undefined)[] } {
   const asked: (string | undefined)[] = [];
   const bank = {
     lookup(_sprite: string, frame: string) {
@@ -47,7 +49,7 @@ const MATERIALS = { get: () => null } as unknown as SpriteMaterialCache;
 
 /** Walks the cycle until `animIndex` sits past the end of a 3-frame sequence. */
 function walkedToLastFrame(): { anim: SpriteAnimator; asked: (string | undefined)[] } {
-  const { bank, asked } = recordingBank();
+  const { bank, asked } = missingLumpBank();
   const anim = new SpriteAnimator(bank, MATERIALS, 'TROO', WALK, 4 * DOOM_TIC);
   for (let i = 0; i < 3; i++) anim.advance(4 * DOOM_TIC, true);
   return { anim, asked };

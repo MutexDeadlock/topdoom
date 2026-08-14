@@ -1,6 +1,5 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as THREE from 'three';
 import { World } from '../../src/game/world.ts';
 import { buildThingSprites } from '../../src/game/things.ts';
 import { MONSTER_FIELD_DEFAULTS } from '../../src/game/snapshot.ts';
@@ -8,10 +7,9 @@ import { MONSTER_HEALTH } from '../../src/game/thingdefs.ts';
 import { ThingType } from '../../src/game/thingtypes.ts';
 import { clearRandom, getRandomCursors, setRandomCursors } from '../../src/util/random.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
-import type { SpriteBank } from '../../src/wad/sprites.ts';
-import type { SpriteMaterialCache } from '../../src/render/sprites.ts';
 import type { Pos3 } from '../../src/types.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
+import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
 
 /**
  * The thing layer's savegame round-trip: a snapshot rebuilt through
@@ -19,19 +17,6 @@ import { gridMap, thingAt } from '../fixtures/gridmap.ts';
  * field, in `posed` order) and *behave* the same (lockstep AI stepping with the
  * RNG cursors restored). See docs/savegames.md § Apply order.
  */
-
-/** Every lump "exists": the layer only ever needs a name to key its batches by, not pixels. */
-const BANK = {
-  lookup: (sprite: string, frame: string, digit: number) => ({ lump: `${sprite}${frame}${digit}`, flip: false }),
-} as unknown as SpriteBank;
-
-const MATERIALS = {
-  get: () => ({
-    material: new THREE.MeshBasicMaterial(),
-    geometry: new THREE.BufferGeometry(),
-    quad: { minX: -16, maxX: 16, height: 56 },
-  }),
-} as unknown as SpriteMaterialCache;
 
 /** An arena with two imps, a demon, a barrel and a stimpack. */
 function arena() {

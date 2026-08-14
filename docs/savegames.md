@@ -119,11 +119,21 @@ nearly so:
   `SpriteAnimator` for this one caller. Pinned by `tests/game/spritefx-snapshot.test.ts`.
   `GameSnapshot.teleportFogs` is **optional**, which is what let it ship without a `SAVE_VERSION`
   bump: absent means no fogs, exactly what a save from before it restored to.
-- **Transient `playOnce` poses** (pain flinch, attack frames): a restored corpse replays its death
-  sequence fast-forwarded by `deadTime`, but a live monster restarts from its walk cycle. The replay
-  goes through `enterDeathPose`, the same function `damageThing` uses — `P_KillMobj`'s overkill-gib
-  rule has exactly one implementation, so a corpse can't look different after a load than before it
-  (docs/death.md § Monster death). This is why `health` is saved with its negative overkill intact.
+- **Transient `playOnce` poses**, with one exception: a pain flinch (4-12 tics) is dropped and the
+  monster restarts from its walk cycle. A restored corpse replays its death sequence fast-forwarded
+  by `deadTime`; the replay goes through `enterDeathPose`, the same function `damageThing` uses —
+  `P_KillMobj`'s overkill-gib rule has exactly one implementation, so a corpse can't look different
+  after a load than before it (docs/death.md § Monster death). This is why `health` is saved with its
+  negative overkill intact.
+  **The exception is an attack pose with shots still pending** (`restoreAttackPose`), replayed and
+  fast-forwarded the same way off `AttackStats.duration - attackPause` — the same "long enough to
+  save inside and notice" argument the teleport fog above makes, and for the same reason it is the
+  *only* pose that gets it: the arch-vile's cast is 94 tics, most of them after its warning flame
+  appears, so a save taken mid-cast otherwise loaded a vile standing in its idle frame with a flame
+  burning on the player (docs/monster-archvile.md § The windup flame). `burstLeft > 0` is the test —
+  shots pending only ever means a ranged attack under way, never a melee swing's tail or the
+  arch-vile's deliberately poseless `S_VILE_HEAL` hold. Saved-field-wise this is free: nothing new is
+  stored, the pose is re-derived from `attackPause`/`burstLeft`, which were always saved.
 - **`SpecialsController`'s one-frame flags** (`lastTeleport`, `lockedLine`) and the derived
   `moveSoundDue`/`crushDamageDue` booleans.
 - **`WeaponSystem.weaponLastFrame`** — derivable, not transient. `WeaponSystem.update` runs last in

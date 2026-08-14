@@ -44,6 +44,7 @@ export {
   type ThingLayer,
 } from './things/defs.ts';
 import {
+  attackPoseFrameSeconds,
   CEILING_HUNG_HEIGHT,
   COUNTITEM_TYPES,
   COUNTKILL_TYPES,
@@ -214,6 +215,24 @@ function enterDeathPose(p: PosedThing, deadTime = 0): boolean {
     p.visible = false;
   }
   return Boolean(gibbed);
+}
+
+/**
+ * Puts a monster into its attack pose, spread over `spanSeconds` — the length
+ * of the attack it poses for — and optionally fast-forwarded onto the frame
+ * `elapsed` seconds in, which is how a savegame taken mid-attack resumes.
+ * `enterDeathPose`'s shape and, more importantly, its single-owner property:
+ * the live trigger and the restore path must not derive the same pose two ways.
+ *
+ * The one place they still approximate each other is a volley: a live re-trigger
+ * on the second shot of a mancubus's three spans only what's *left* of the
+ * chain, where a restore has just its total to go on. Both stay inside the same
+ * attack and are cosmetic either way. docs/sprites.md § Pain, and attack/pain poses.
+ */
+function enterAttackPose(p: PosedThing, spanSeconds: number, elapsed = 0): void {
+  if (!p.attackFrames) return;
+  p.anim.playOnce(p.attackFrames, attackPoseFrameSeconds(p.attackFrames, spanSeconds));
+  if (elapsed > 0) p.anim.advance(elapsed, false);
 }
 
 /** One static upright plane per map THING whose type is a known, visible sprite. */
@@ -427,7 +446,28 @@ export function buildThingSprites(
       // recomputes the same way it did at the time of death (it also re-derives
       // `deathFrameCount`, the other field the save leaves out).
       if (p.dead) enterDeathPose(p, p.deadTime);
+      else restoreAttackPose(p);
     }
+  }
+
+  /**
+   * Re-enters the attack pose of a ranged attack that was still mid-state-chain
+   * when the save was taken, fast-forwarded by how much of it had already run —
+   * `enterDeathPose`'s `deadTime` treatment, for the one transient pose long
+   * enough to be worth it. `burstLeft > 0` is what identifies it: shots pending
+   * only ever means a ranged attack under way, never a melee swing's tail or
+   * the arch-vile's poseless `S_VILE_HEAL` hold. Without it the arch-vile — 94
+   * tics of cast, most of it after the warning flame appears — loads standing
+   * in its idle frame while the flame burns on the player.
+   * docs/savegames.md § What is saved and what is deliberately not.
+   */
+  function restoreAttackPose(p: PosedThing): void {
+    if (p.burstLeft <= 0) return;
+    const duration = monsterStats[p.type]?.ranged?.duration ?? 0;
+    // No span to spread the frames over means no way to say where in the pose
+    // this save sat, so it keeps the idle frame rather than guessing a rate.
+    if (duration <= 0) return;
+    enterAttackPose(p, duration, duration - p.attackPause);
   }
 
   if (restore) {
@@ -1164,7 +1204,7 @@ export function buildThingSprites(
                 // plays, unlike 'resurrect' — A_PainAttack has real dedicated
                 // art (MONSTER_ATTACK_FRAMES[71]), unlike the vile's raise.
                 spawnLostSoul(p, result.angleRad);
-                if (p.attackFrames) p.anim.playOnce(p.attackFrames, MONSTER_ACTION_FRAME_SECONDS);
+                enterAttackPose(p, p.attackPause);
               } else if (result) {
                 attacks.push({
                   ...result,
@@ -1183,8 +1223,12 @@ export function buildThingSprites(
                 // re-triggering playOnce there would snap the pose back to its
                 // first frame right as the explosion hits, instead of letting
                 // it finish naturally.
+                // `attackPause` is what's left of the state chain this pose
+                // covers: `stepMonsterAI` decrements it before the call that
+                // started the attack set it, so it's the full duration here and
+                // the remainder for a later shot of a volley.
                 const alreadyPosedAtWindup = result.kind === 'ranged' && result.blast;
-                if (p.attackFrames && !alreadyPosedAtWindup) p.anim.playOnce(p.attackFrames, MONSTER_ACTION_FRAME_SECONDS);
+                if (!alreadyPosedAtWindup) enterAttackPose(p, p.attackPause);
               }
             }
           } else {

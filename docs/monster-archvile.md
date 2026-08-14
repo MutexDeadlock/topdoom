@@ -99,6 +99,14 @@ player can use. `beginRangedAttack` reports a fourth, purely-cosmetic `MonsterAt
 `'vileWindup'` rather than at the blast landing, matching vanilla's timing (`S_VILE_ATK1`-`ATK10`
 play across the entire missilestate chain).
 
+The pose has to *last* the whole chain too, and originally didn't: at the flat 3-tics-a-frame rate
+every pose used, `VILE` `G`-`P` was over 30 tics into a 94-tic cast, so the vile stood in its idle
+frame for the back half of the windup — the half where the flame is the warning — and through the
+blast. `MONSTER_ATTACK_FRAMES` is now spread over the attack's own duration for every type
+(docs/sprites.md § Pain, and attack/pain poses), and a save taken mid-cast replays it fast-forwarded
+(docs/savegames.md § What is saved and what is deliberately not) rather than loading a vile that
+looks idle while it casts.
+
 `spawnWindupFire` (`monsters/vile.ts`, called from `attacks.ts`) reuses `SpriteFxLayer`'s ordinary
 one-shot `spawn`/`addImpact` machinery with
 two differences: its `lifetime` is overridden to `VILE_WINDUP_TRACK_SECONDS` (read from

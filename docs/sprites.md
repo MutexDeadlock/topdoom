@@ -313,6 +313,20 @@ own pain state — a genuine `info.c` quirk, exactly what a pure "eyeball the lu
 misses), and the chaingunner's death/xdeath split fell two letters too early, dropping `CPOSM0`/
 `CPOSN0` and duplicating them into the gib tail.
 
+**An attack pose lasts exactly as long as the attack it poses for.** The pain pose keeps the flat
+`MONSTER_ACTION_FRAME_SECONDS`, but `MONSTER_ATTACK_FRAMES` is spread over the attack's own remaining
+length (`attackPoseFrameSeconds`, fed `MonsterBody.attackPause` — which `stepMonsterAI` decrements
+*before* the call that starts an attack sets it, so it is the full `AttackStats.duration` at the
+trigger and the remainder for a later shot of a volley). Entering the pose goes through one function,
+`enterAttackPose`, for the reason `enterDeathPose` does: the live trigger and the savegame restore
+below must not derive the same pose two ways. The two are the same vanilla states:
+`duration` is the `missilestate`/`meleestate` chain's summed tics and those states are the frames
+this table lists, so a flat rate makes the pose and the wait disagree by a margin that grows with the
+chain. The arch-vile is where it became unmissable — 94 tics of `VILE` `G`-`P`, posed for 30 and
+standing in its idle frame for the other 64, through the back half of the windup and the blast itself
+(docs/monster-archvile.md § The attack). The mancubus had the same shape at 9 tics of 80. Covered by
+`tests/regression/vile-attack-pose.test.ts`.
+
 Both tables play through `SpriteAnimator.playOnce`, not `die`: a third animation mode alongside the
 permanent one-shot-then-hold `die` and the looping alive cycle, playing its frames forward once and
 handing back to the walk cycle on its own — which is what makes it reusable for both attack and pain

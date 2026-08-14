@@ -102,6 +102,37 @@ you're standing on" idea as `WALL_OVERLAP`/`BLOCKER_OVERLAP`. Tradeoff: a rocket
 *closed door* can in principle leak a sliver of splash through, since the door's self-hit is now the
 crossing being ignored — accepted as the same order of approximation.
 
+## REJECT
+
+`hasLineOfSight` opens with vanilla's own first test in `P_CheckSight`: the WAD's REJECT matrix
+(docs/wad.md § REJECT) carries one bit per ordered sector pair, set when those two sectors can never
+see each other, and a set bit returns `false` before any tracing happens. `World.sightRejected` is
+that lookup, and it takes **subsector** indices rather than sector ones because vanilla's own
+indexing is `t1->subsector->sector` — the subsector is what a thing already knows about itself.
+
+**The bit only ever answers "definitely not".** A clear bit says nothing at all, so this is a pure
+early-out: every `true` still comes from the full wall/wedge trace below it, and a map with no usable
+table (`DoomMap.reject === undefined`) behaves exactly as it did before REJECT existed. That is also
+why a table can't go stale as doors and lifts move: it is computed over the linedefs, which are
+static, and it can only *remove* sight the geometry would otherwise have allowed.
+
+An RMB-built table that deliberately blinds monsters in part of a map is therefore honored rather
+than worked around — the same gameplay effect vanilla gets from it.
+
+**The subsector hints are load-bearing on the wake sweep.** `hasLineOfSight`'s
+`fromSubsector`/`toSubsector` may be `-1` ("look it up"), and looking both up costs two BSP descents
+on every *non*-rejected call — a large enough share of a sight check to turn a thin table into a net
+loss. The one caller that runs at scale, `ThingLayer.update`'s idle wake sweep, therefore passes
+`PosedThing.subsector` (already kept current) and one player subsector resolved once per frame;
+`tryWake` threads both through. The occasional callers — splash damage, the arch-vile, the Icon of
+Sin, projectile checks — pass `-1` and take the lookup, which their call volume makes irrelevant.
+A map with no table returns before either hint is read, so it pays nothing anywhere.
+
+What REJECT is worth is a property of the WAD, not of the engine: a table's density ranges from
+all-zero (SCYTHE.WAD, every map) through ~15% of sector pairs (DOOM2.WAD) to ~88% (freedoom2.wad).
+`scripts/inspect-wad.ts` reports the loaded map's. Note that it buys least where sight checks cost
+most — a huge open arena is one sector, so NUTS.WAD MAP01's 11-sector map rejects nothing.
+
 ## Neighbor-height queries
 
 `world.ts`'s `lowestNeighborFloor`/`highestNeighborFloor`/`nextHigherFloor`/`nextLowerFloor`/

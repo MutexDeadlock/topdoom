@@ -31,6 +31,7 @@ function lineWorld(vertexes: Vertex[], pairs: readonly (readonly [number, number
     subsectors: [],
     nodes: [],
     things: [],
+    reject: undefined,
     bounds: { minX: -256, minY: -256, maxX: 256, maxY: 256 },
   };
   return new World(map);

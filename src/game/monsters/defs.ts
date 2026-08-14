@@ -361,6 +361,8 @@ export interface WakeCheckBody extends Pos3 {
   ambush: boolean;
   alerted: boolean;
   reactionTicks: number;
+  /** The thing's cached subsector, handed straight to `hasLineOfSight`'s REJECT test — see docs/world.md § REJECT. */
+  subsector: number;
 }
 
 /** Vanilla's `MELEERANGE` (`p_local.h`: `64*FRACUNIT`). Not the melee threshold itself — see `meleeThreshold`. */

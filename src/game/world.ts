@@ -85,6 +85,14 @@ export class World {
   private lineV1Y: Float64Array;
   private lineSlope: Int8Array;
 
+  /**
+   * Subsector index -> its sector index (vanilla's `subsector->sector`), so a
+   * REJECT lookup costs one typed-array read rather than the seg -> linedef ->
+   * sidedef walk `sectorOfSubSector` does. Null on a map with no REJECT table,
+   * the only thing that reads it.
+   */
+  private subsectorSector: Int32Array | null = null;
+
   readonly map: DoomMap;
 
   /**
@@ -113,6 +121,10 @@ export class World {
     this.buildLineData();
     this.buildGrid();
     this.buildSectorNeighbors();
+    if (map.reject) {
+      this.subsectorSector = new Int32Array(map.subsectors.length);
+      for (let i = 0; i < map.subsectors.length; i++) this.subsectorSector[i] = sectorOfSubSector(map, i);
+    }
   }
 
   /**
@@ -387,6 +399,33 @@ export class World {
     return sectorOfSubSector(this.map, this.subsectorAt(x, y));
   }
 
+  /**
+   * Vanilla's trivial sight rejection (`p_sight.c: P_CheckSight`), and the
+   * whole of what `hasLineOfSight` needs to decide it: the REJECT bit at
+   * `s1 * numsectors + s2`, false whenever the map ships no usable table.
+   *
+   * The two subsector arguments are the *hints* `hasLineOfSight` was handed —
+   * anything below zero is resolved here, so a map without a table never pays
+   * the descent. See docs/world.md § REJECT.
+   */
+  sightRejected(from: Pos2, to: Pos2, fromSubsector: number, toSubsector: number): boolean {
+    const reject = this.map.reject;
+    const table = this.subsectorSector;
+    if (!reject || !table) return false;
+    const a = fromSubsector >= 0 ? fromSubsector : this.subsectorAt(from.x, from.y);
+    const b = toSubsector >= 0 ? toSubsector : this.subsectorAt(to.x, to.y);
+    // A hint naming no subsector this map has is rejected by nothing, rather
+    // than answering for whatever sector the out-of-range read produces.
+    if (a >= table.length || b >= table.length) return false;
+    const pnum = table[a] * this.map.sectors.length + table[b];
+    return (reject[pnum >> 3] & (1 << (pnum & 7))) !== 0;
+  }
+
+  /** The sector a subsector belongs to, for a caller that already has the subsector `sectorAt` would descend the BSP to find. */
+  sectorOfSubsector(subsector: number): Sector | undefined {
+    return this.map.sectors[sectorOfSubSector(this.map, subsector)];
+  }
+
   sectorAt(x: number, y: number): Sector | undefined {
     return this.map.sectors[this.sectorIndexAt(x, y)];
   }
@@ -589,8 +628,21 @@ const SIGHT_MAX_HEIGHT_SAMPLES = 32;
  * const evaluated at module load (rather than deferred inside a function body,
  * as every other `PLAYER_HEIGHT` use in this file is) hits the cycle's
  * initialization order — "Cannot access 'PLAYER_HEIGHT' before initialization".
+ *
+ * It opens with `World.sightRejected`, vanilla's own first test. The two
+ * subsector arguments are hints for it: a caller that already keeps its
+ * subsector (`PosedThing.subsector`) passes it instead of paying a BSP descent
+ * to re-derive it, and `-1` means "look it up".
  */
-export function hasLineOfSight(world: World, from: Pos3, to: Pos3): boolean {
+export function hasLineOfSight(
+  world: World,
+  from: Pos3,
+  to: Pos3,
+  fromSubsector = -1,
+  toSubsector = -1,
+): boolean {
+  if (world.sightRejected(from, to, fromSubsector, toSubsector)) return false;
+
   const dist = Math.hypot(to.x - from.x, to.y - from.y);
   if (dist === 0) return true;
 

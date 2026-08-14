@@ -39,6 +39,9 @@ table.
 A monster stays inert until it spots the player, checked on a throttle (`LOOK_INTERVAL`, ~0.3s)
 rather than every frame — vanilla runs idle `A_Look` every 10 tics, not continuously.
 
+This sweep is the engine's largest consumer of `hasLineOfSight`, and the only caller that hands it
+subsector hints for the REJECT test — docs/world.md § REJECT.
+
 `canSpotPlayer` gates the check *before* `hasLineOfSight` runs: vanilla's `P_LookForPlayers` only
 lets a monster notice the player within roughly its forward 180° (the map-placed thing angle,
 unchanged until it wakes), unless the player is within melee range regardless of facing. Without

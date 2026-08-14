@@ -106,6 +106,8 @@ export interface DoomMap {
   subsectors: SubSector[];
   nodes: Node[];
   things: Thing[];
+  /** The REJECT matrix — one bit per ordered sector pair — or `undefined` when the map has none worth consulting (`readReject`). */
+  reject: Uint8Array | undefined;
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
 }
 
@@ -134,6 +136,23 @@ function mapLumps(wad: Wad, name: string): Map<string, number> {
     if (!out.has(l.name)) out.set(l.name, i);
   }
   return out;
+}
+
+/**
+ * The REJECT lump, or `undefined` when consulting it could not change an
+ * answer: absent, too short for `sectorCount²` bits, or all-zero.
+ *
+ * Dropping a *short* table is a deliberate departure — vanilla indexes
+ * `rejectmatrix` unchecked (`p_sight.c: P_CheckSight`). docs/wad.md § REJECT.
+ */
+function readReject(wad: Wad, lumps: Map<string, number>, sectorCount: number): Uint8Array | undefined {
+  const idx = lumps.get('REJECT');
+  if (idx === undefined) return undefined;
+  const lump = wad.lumpAt(idx)!;
+  const need = Math.ceil((sectorCount * sectorCount) / 8);
+  if (lump.size < need) return undefined;
+  const bytes = wad.data(lump).subarray(0, need);
+  return bytes.some((b) => b !== 0) ? bytes : undefined;
 }
 
 export function loadMap(wad: Wad, name: string): DoomMap {
@@ -232,6 +251,7 @@ export function loadMap(wad: Wad, name: string): DoomMap {
     subsectors,
     nodes,
     things,
+    reject: readReject(wad, lumps, sectors.length),
     bounds: { minX, minY, maxX, maxY },
   };
 }

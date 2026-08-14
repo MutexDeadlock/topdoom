@@ -97,12 +97,20 @@ export function canSpotPlayer(facingDeg: number, monsterX: number, monsterY: num
  * On success mutates `body.alerted` and seeds `reactionTicks`, the same
  * "mutate the body, report what happened" shape as `stepMonsterAI`.
  */
-export function tryWake(body: WakeCheckBody, world: World, sector: Sector | undefined, player: Pos3): boolean {
+export function tryWake(
+  body: WakeCheckBody,
+  world: World,
+  sector: Sector | undefined,
+  player: Pos3,
+  playerSubsector: number,
+): boolean {
   const heardIt = !!sector && world.isSoundAlerted(sector);
-  const seesDespiteDeaf = body.ambush && heardIt && hasLineOfSight(world, body, player);
+  const seesDespiteDeaf =
+    body.ambush && heardIt && hasLineOfSight(world, body, player, body.subsector, playerSubsector);
   const heardAndAware = !body.ambush && heardIt;
   const spottedNormally =
-    canSpotPlayer(body.facingDeg, body.x, body.y, player.x, player.y) && hasLineOfSight(world, body, player);
+    canSpotPlayer(body.facingDeg, body.x, body.y, player.x, player.y) &&
+    hasLineOfSight(world, body, player, body.subsector, playerSubsector);
   if (!seesDespiteDeaf && !heardAndAware && !spottedNormally) return false;
   body.alerted = true;
   body.reactionTicks = REACTION_CHASES;

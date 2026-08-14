@@ -729,6 +729,16 @@ export function buildThingSprites(
   }
 
   /**
+   * Re-derives the sector fields a thing that moved is now standing in. One BSP
+   * descent for both: `sectorAt` would walk the tree a second time to reach the
+   * sector this subsector already names.
+   */
+  function refreshSector(p: PosedThing): void {
+    p.subsector = world.subsectorAt(p.x, p.y);
+    p.sector = world.sectorOfSubsector(p.subsector);
+  }
+
+  /**
    * Where a monster should currently be heading, or `null` if it has nobody
    * left to want. `targetId` is non-null only after something other than the
    * player hurt it (`damage` → `shouldRetarget`), and a target that dies hands
@@ -962,6 +972,9 @@ export function buildThingSprites(
       // rather than floored — the simulation only ever advances whole tics, so this is an exact
       // tic index up to float noise.
       const respawnTic = respawns && Math.round(clock / DOOM_TIC) % RESPAWN_ROLL_INTERVAL_TICS === 0;
+      // One BSP descent for the whole sweep: the wake check's REJECT test wants the player's
+      // subsector, and the player moves once a frame rather than once per monster.
+      const playerSubsector = player ? world.subsectorAt(player.x, player.y) : -1;
       for (const p of posed) {
         // Every thing, every tic, before anything below can move it — `prev` is
         // no substitute (see its doc), and a thing that skips a tic via one of
@@ -1055,7 +1068,7 @@ export function buildThingSprites(
               // Waking is one of the two events that can reshuffle a
               // revenant's guided/unguided personality — see
               // MonsterBody.homingBias's doc. A no-op for every other type.
-              if (tryWake(p, world, p.sector, player)) {
+              if (tryWake(p, world, p.sector, player, playerSubsector)) {
                 p.homingBias = (pRandom() & 1) !== 0;
                 // A_Look's sight sound, randomized within its family (the
                 // zombieman/imp groups) and unattenuated for the two bosses.
@@ -1128,8 +1141,7 @@ export function buildThingSprites(
               }
               p.prev.x = p.x;
               p.prev.y = p.y;
-              p.sector = world.sectorAt(p.x, p.y);
-              p.subsector = world.subsectorAt(p.x, p.y);
+              refreshSector(p);
               p.facingDeg = (p.angle * 180) / Math.PI;
               animating = p.x !== beforeX || p.y !== beforeY;
               if (result?.kind === 'resurrect') {
@@ -1185,7 +1197,12 @@ export function buildThingSprites(
             // always sets velX/velY in `damage`, though in practice it also
             // always alerts the monster in that same call, so this mostly
             // guards the same-frame ordering rather than a state that lingers.
-            if (p.velX !== 0 || p.velY !== 0) applyKnockback(p, dt);
+            // Unlike the alerted branch, nothing below re-derives the sector it
+            // was shoved into, and the wake check answers from `subsector`.
+            if (p.velX !== 0 || p.velY !== 0) {
+              applyKnockback(p, dt);
+              refreshSector(p);
+            }
           }
         } else {
           // Ceiling-hung gore rides a moving ceiling (crusher, closing door) the same way
@@ -1202,7 +1219,10 @@ export function buildThingSprites(
           // source of horizontal motion; a freshly-dead monster (stats
           // undefined above) lands here too, finishing off whatever knockback
           // it had at the moment it died.
-          if (!p.dead && (p.velX !== 0 || p.velY !== 0)) applyKnockback(p, dt);
+          if (!p.dead && (p.velX !== 0 || p.velY !== 0)) {
+            applyKnockback(p, dt);
+            refreshSector(p);
+          }
         }
 
         // Whether this thing can be seen — and so shot, and so auto-aimed at.

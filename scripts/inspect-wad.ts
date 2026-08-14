@@ -110,6 +110,19 @@ console.log(
     `  total floor area ${Math.round(flatArea).toLocaleString('en-US')} map units²`,
 );
 
+// --- REJECT: how much sight this map's own table rules out up front ---
+// Absent/short/all-zero all arrive here as undefined; see docs/wad.md § REJECT.
+if (!map.reject) {
+  console.log(`\nREJECT: none usable (absent, short, or all-zero) — every sight check traces`);
+} else {
+  let set = 0;
+  for (const byte of map.reject) {
+    for (let bit = byte; bit !== 0; bit >>= 1) set += bit & 1;
+  }
+  const pairs = map.sectors.length * map.sectors.length;
+  console.log(`\nREJECT: ${map.reject.length}B, ${((set / pairs) * 100).toFixed(1)}% of sector pairs blind`);
+}
+
 // --- player start and its surroundings ---
 const world = new World(map);
 const start = world.playerStart();

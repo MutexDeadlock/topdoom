@@ -8,11 +8,12 @@
  */
 import { WadFile } from '../../src/wad/wad.ts';
 
-/** A lump: a bare name for an empty one, or a name with the text it holds. */
-export type Lump = string | { name: string; text?: string };
+/** A lump: a bare name for an empty one, or a name with the text or raw bytes it holds. */
+export type Lump = string | { name: string; text?: string; bytes?: Uint8Array };
 
 const nameOf = (lump: Lump): string => (typeof lump === 'string' ? lump : lump.name);
 const textOf = (lump: Lump): string => (typeof lump === 'string' ? '' : (lump.text ?? ''));
+const bytesOf = (lump: Lump): Uint8Array | undefined => (typeof lump === 'string' ? undefined : lump.bytes);
 
 /**
  * Lump payloads are laid down first and the directory after them, so an
@@ -20,7 +21,7 @@ const textOf = (lump: Lump): string => (typeof lump === 'string' ? '' : (lump.te
  */
 export function wadFile(type: 'IWAD' | 'PWAD', name: string, lumps: readonly Lump[]): WadFile {
   const encoder = new TextEncoder();
-  const payloads = lumps.map((lump) => encoder.encode(textOf(lump)));
+  const payloads = lumps.map((lump) => bytesOf(lump) ?? encoder.encode(textOf(lump)));
   const dirOffset = 12 + payloads.reduce((sum, p) => sum + p.length, 0);
   const buffer = new ArrayBuffer(dirOffset + lumps.length * 16);
   const bytes = new Uint8Array(buffer);

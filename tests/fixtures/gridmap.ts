@@ -42,6 +42,8 @@ export interface GridMapOptions {
   /** Glyphs whose adjacent linedefs also carry `LF.BLOCKING`. Default `'#'`. */
   solidGlyphs?: string;
   things?: Thing[];
+  /** A REJECT matrix for the finished map — one bit per ordered sector pair, as `loadMap` would hand one over. */
+  reject?: Uint8Array;
 }
 
 /**
@@ -238,6 +240,7 @@ export function gridMap(art: readonly string[], options: GridMapOptions = {}): G
       subsectors,
       nodes,
       things: options.things ?? [],
+      reject: options.reject,
       bounds: { minX: 0, minY: 0, maxX: cols * cell, maxY: rows * cell },
     },
     cell,

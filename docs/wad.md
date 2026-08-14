@@ -26,6 +26,28 @@ the first NUL silently corrupts names (e.g. turns `"-"` into `"-GRAY7"`) and bre
 for real PWADs. This was found by testing against community PWADs, not synthetic data, so don't assume
 synthetic WADs will catch a regression here.
 
+## REJECT
+
+`loadMap` decodes every map lump the engine reads straight into `DoomMap`; REJECT is the one that
+carries a policy with it. It is a bitmap of `numSectors²` bits, one per **ordered** pair, the bit at
+`s1 * numSectors + s2` set when a sight line between those two sectors is impossible — vanilla's
+`P_CheckSight` early-out, and what `World.sightRejected` reads (docs/world.md § REJECT).
+
+`readReject` hands over `undefined` — "reject nothing" — in three cases, and only the first is what
+vanilla does:
+
+- **Absent.** No REJECT lump for the map.
+- **Shorter than `ceil(numSectors² / 8)` bytes.** A deliberate departure: vanilla indexes
+  `rejectmatrix` with no bounds check whatsoever (`p_sight.c`), so a truncated table there reads
+  whatever happens to follow it in memory and blinds monsters at random. A short lump is a build
+  error rather than data, and dropping it is the safe reading.
+- **All-zero.** Behaviorally identical to keeping it — every bit is clear, so nothing is ever
+  rejected — but recognizing it at load keeps the check off the hot path entirely. Not a corner case:
+  SCYTHE.WAD ships correctly sized, entirely zero tables on all 32 maps, as node builders that skip
+  reject computation generally do.
+
+`scripts/inspect-wad.ts` prints the loaded map's table and how much of it is set.
+
 ## Art a WAD set doesn't have
 
 A thing whose sprite the merged set carries no lumps for is **skipped, and the level says so**:

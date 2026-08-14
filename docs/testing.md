@@ -100,9 +100,10 @@ const grid = gridMap([
 const world = new World(grid.map);
 ```
 
-**Every cell is its own sector and its own subsector.** That is what removes the need for a BSP
-compiler: the partition tree is a column chain with a row chain inside each column, `cells − 1`
-nodes from a trivial recursion. The cost is that the fixture can only express axis-aligned
+**Every cell is its own sector and its own subsector.** `grid.index(col, row)` is that one number,
+which is also what makes a REJECT matrix statable by cell (`gridMap`'s `reject` option, used by
+`sight-reject.test.ts`). It is what removes the need for a BSP compiler: the partition tree is a
+column chain with a row chain inside each column, `cells − 1` nodes from a trivial recursion. The cost is that the fixture can only express axis-aligned
 geometry — for anything diagonal, load one of the committed WADs instead.
 
 **There is no void space. A wall is a cell whose sector has `ceilHeight === floorHeight`.** Every
@@ -211,9 +212,11 @@ Load fixture WADs through
 `inspect-wad.ts`'s `file.buffer.slice(file.byteOffset, …)` step: `readFileSync` returns a view into
 a pooled `ArrayBuffer`, and passing `.buffer` raw hands `WadFile` the whole pool.
 
-[wad.md](wad.md) warns that synthetic WADs won't catch parser regressions. That still holds, and
-`reader.test.ts` is the one narrow exception it does not cover: `Reader` is pure byte→value
-decoding, where a hand-built buffer is exactly as good as a real one.
+[wad.md](wad.md) warns that synthetic WADs won't catch parser regressions. That still holds, with two
+narrow exceptions it does not cover, both of them decisions taken over a lump's *size* rather than
+its content: `reader.test.ts` (`Reader` is pure byte→value decoding, where a hand-built buffer is
+exactly as good as a real one) and `reject.test.ts`, which pins which REJECT tables `loadMap` keeps
+and which it drops (docs/wad.md § REJECT) by handing `wadFile` a `bytes` payload of each length.
 
 ## Private constants are pinned behaviourally
 

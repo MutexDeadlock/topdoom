@@ -205,25 +205,36 @@ touched the control.
 
 ## Settings tab
 
-**Mostly the full key list, and it is the only one the game itself shows** — it replaced two hint
-lines in the DEVMODE status text, which meant a shipped build listed its controls nowhere. Being a
-menu tab makes it reachable mid-level too, since the menu is the pause screen. README's table is the
-fuller reference; this one stays short enough not to stretch the other tab (see the grid-cell note
-above).
+The tab is split in two by its own row of **sub-tabs** (`.tabs.subtabs` inside `#tab-settings`,
+`Menu.setSettingsTab`): **General** holds the settings that aren't a key's behavior, **Controls**
+holds the key list and everything bound to it. The sub-panels are the same `.tab-panels`/`.tab-panel`
+grid-cell stack the top-level tabs use, nested one level — so General being much shorter than
+Controls costs the menu no resize when the player switches, exactly as above. The sub-tab row is
+styled a step quieter (smaller type, no rule under it) so it doesn't read as a second tab bar of
+equal rank, and like the tabs above it the pick survives an `open`.
 
-**The settings live inside that list rather than in sections of their own**, because nearly
-everything a player can change *is* a key's behavior: the right button's binding is the `right mouse`
-row's description, the autorun checkbox is the `Shift` row's. A player looking up what a control does
-and a player changing it are the same person on the same trip to the menu — which is why the tab that
-briefly held only a volume slider was folded into this one rather than kept beside it.
+**Controls is mostly the full key list, and it is the only one the game itself shows** — it replaced
+two hint lines in the DEVMODE status text, which meant a shipped build listed its controls nowhere.
+Being a menu tab makes it reachable mid-level too, since the menu is the pause screen. README's table
+is the fuller reference.
 
-**The two settings that aren't a key's behavior — sfx volume and the frame rate limit — share the
-bottom row** (`.columns even`), so the second costs the panel no extra height. The limit is
-`#fpscap-select`, and its `<option>` values *are* the capped rates (`0` = unlimited, the default), so
-the control needs no mapping table. It is owned by `game.ts` (`getFpsCap`/`setFpsCap`), whose frame
-loop is the only thing it changes, and is read live per frame — changing it mid-level applies to the
-level already running, like volume and autorun. See docs/frameloop.md § The FPS cap for how a cap is
-actually held.
+**The control-shaped settings live inside that list rather than in sections of their own**, because
+what they change *is* a key's behavior: the right button's binding is the `right mouse` row's
+description, the autorun checkbox is the `Shift` row's. A player looking up what a control does and a
+player changing it are the same person on the same trip to the menu — which is why those two did not
+move to General with the rest.
+
+**General is sfx volume and the frame rate limit**, stacked full width with the limit first. The
+limit is `#fpscap-select`, and its `<option>` values *are* the capped rates (`0` = unlimited, the
+default), so the control needs no mapping table. It is owned by `game.ts` (`getFpsCap`/`setFpsCap`),
+whose frame loop is the only thing it changes, and is read live per frame — changing it mid-level
+applies to the level already running, like volume and autorun. See docs/frameloop.md § The FPS cap
+for how a cap is actually held.
+
+General ends with **`#settings-dev`, a DEVMODE-only section holding the profiler overlay's
+checkbox** (§ Profiling overlay), revealed by the same set-once toggle `#controls-dev` gets. Its
+`.hidden` is `display: none` for the same reason: a hidden section must leave the flow rather than
+hold a gap under Sound.
 
 **The `Shift` row's description is the word autorun currently makes true** — `walk` when it's on,
 `run` when it's off — so `installAutorun` writes `#shift-action` from the same `show` helper that
@@ -244,11 +255,11 @@ which is why those descriptions are kept to a word or two. Move and fight stays 
 inside rather than a content-sized one a long map name would push past the panel.
 
 The rest is static markup with no `Menu` state — no field lookups, no listeners — except
-`#controls-dev`, the `N`/`P` map-jump row, which the constructor reveals when `DEVMODE` is set. That
-is the same set-once toggle `DebugHud` does for `#profiler-hud`; `DEVMODE` can't change at runtime,
-so neither is ever re-checked. **`#controls-dev.hidden` is `display: none`, not the `visibility`
-the tab panels use** — a panel has to keep reserving height, but a hidden section must drop out of
-the `.columns` flex line entirely.
+`#controls-dev`, the `N`/`P` map-jump row, which the constructor reveals when `DEVMODE` is set (as
+it does `#settings-dev` on General). `DEVMODE` can't change at runtime, so neither is ever
+re-checked. **`#controls-dev.hidden` is `display: none`, not the `visibility` the tab panels use** —
+a panel has to keep reserving height, but a hidden section must drop out of the `.columns` flex line
+entirely.
 
 ## Right mouse button
 
@@ -279,6 +290,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.autorun` | `game/player.ts` (`getAutorun`/`setAutorun`) | docs/movement.md § Movement speed and straferunning |
 | `topdoom.rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
 | `topdoom.fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
+| `topdoom.profiler` | `ui/devmode/profilerhud.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
 | `topdoom.skill` | `ui/menu/menu.ts` | § Difficulty above |
 | `topdoom.selection` | `ui/menu/menu.ts` | § Remembered selection below |
 | `topdoom.bestTimes` | `game/besttimes.ts` | docs/hud.md § Best times |
@@ -369,7 +381,7 @@ Rules that hold this together:
 
 `DEVMODE` reads `import.meta.env.VITE_DEVMODE`, defaulting to `false`; set `VITE_DEVMODE=true` in a
 git-ignored `.env.local` at the repo root to turn it on (Vite loads `.env.local` itself, no plugin
-needed). It gates four things — three in `ui/devmode/debughud.ts` and one in `ui/menu/menu.ts` — all because a
+needed). It gates five things — three in `ui/devmode/` and two in `ui/menu/menu.ts` — all because a
 player has no legitimate reason to reach for them:
 
 - **The debug overlay** (`DebugHud.update`, whose lines come from `Game.debugLines`) — off, `#hud`
@@ -378,9 +390,11 @@ player has no legitimate reason to reach for them:
   used to end with two static hotkey hint lines as well, which were the game's only controls
   reference and so invisible to exactly the players who needed them; that list is now the menu's
   Settings tab (docs/menu.md § Settings tab).
-- **The profiling overlay** (`#profiler-hud`, below) — visibility toggled once at startup.
+- **The profiling overlay** (`#profiler-hud`, below) — shown when `DEVMODE` *and* its checkbox agree.
 - **The Settings tab's `#controls-dev` section**, the only place `N`/`P` is listed in the UI —
   revealed once in the `Menu` constructor, so a shipped build never advertises a key it ignores.
+- **The General sub-tab's `#settings-dev` section**, the profiler checkbox — revealed by that same
+  constructor line, for the same reason.
 - **`N`/`P` (jump to next/prev map)** in `handleHotkeys` — behind the early-return on `!DEVMODE`, so
   they are simply inert outside dev mode. `+`/`-` (camera distance) and `[`/`]` (camera tilt)
   deliberately sit *ahead* of that gate: they are player-facing framing controls, not debug state,
@@ -408,9 +422,19 @@ and an unsmoothed bar graph would flicker faster than it could be read.
 
 **Measurement itself is not gated behind `DEVMODE`** — `performance.now()` calls are cheap enough not to
 bother branching around, the same call the fps counter already makes. Only the DOM panel's visibility
-(toggled once in `DebugHud`'s constructor, since `DEVMODE` never changes at runtime) and whether
-`DebugHud.update` bothers pushing samples to it are. `Game.debugLines` is passed as a closure for the
-same reason: its body walks the BSP for the player's sector, and must not run when the panel is off.
+and whether `DebugHud.update` bothers pushing samples to it are. `Game.debugLines` is passed as a
+closure for the same reason: its body walks the BSP for the player's sector, and must not run when
+the panel is off.
+
+**The panel can be switched off inside a dev build too**, from the General sub-tab's dev section
+(`#profiler-checkbox`), since the overlay covers the top-right corner of the level. The setting is
+`profilerhud.ts`'s own (`topdoom.profiler`, `getProfilerVisible`/`setProfilerVisible`) and
+**defaults on**, so a dev build behaves as it did before the checkbox existed; only an explicit
+`'0'` hides it. `applyProfilerVisible` is the single writer of `#profiler-hud`'s `visible` class —
+`DEVMODE && getProfilerVisible()` — called by `DebugHud`'s constructor to seed it and by the
+checkbox to change it live. **That class is also what `ProfilerHud.update` early-returns on**, so a
+hidden panel costs no per-frame DOM writes and the CSS and the render path can't disagree about
+whether the overlay is up.
 
 `ProfilerHud` renders each category as a horizontal bar sized against one 60fps frame's budget (16.6ms)
 rather than against each other — a bar reaching full width means that category *alone* would miss the

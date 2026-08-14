@@ -3,7 +3,7 @@
  * all of which collapse to "`N` fps" and the camera framing keys once DEVMODE
  * is off. See docs/menu.md § Dev mode.
  */
-import { ProfilerHud } from './profilerhud.ts';
+import { applyProfilerVisible, ProfilerHud } from './profilerhud.ts';
 import type { FrameProfiler } from '../../util/profiler.ts';
 import type { Input } from '../../game/input.ts';
 import type { TopDownCamera } from '../../render/camera.ts';
@@ -36,8 +36,9 @@ export class DebugHud {
   private fps = 0;
 
   constructor() {
-    // DEVMODE never changes at runtime, so the panel's visibility is set once.
-    document.getElementById('profiler-hud')!.classList.toggle('visible', DEVMODE);
+    // DEVMODE gates it, the menu's checkbox decides within that — the menu
+    // toggles the same class live, so this only has to seed it.
+    applyProfilerVisible();
   }
 
   /**

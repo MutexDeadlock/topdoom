@@ -3,6 +3,7 @@
  * See docs/menu.md § Profiling overlay.
  */
 import type { ProfileSample } from '../../util/profiler.ts';
+import { DEVMODE } from '../../constants.ts';
 
 /** A category's bar fills its row at this many ms — one whole 60fps frame budget, so a bar reaching full width means that category alone would miss it. */
 const BAR_BUDGET_MS = 1000 / 60;
@@ -10,6 +11,32 @@ const BAR_BUDGET_MS = 1000 / 60;
 const WARN_FRACTION = 0.25;
 /** Bar turns red once a category alone would miss the frame budget by itself. */
 const HOT_FRACTION = 1;
+
+const PROFILER_STORAGE_KEY = 'topdoom.profiler';
+
+/**
+ * Whether the overlay is wanted, DEVMODE permitting. Defaults **on**, so a dev
+ * build behaves as it did before the checkbox existed; only an explicit `'0'`
+ * hides it. See docs/menu.md § Profiling overlay.
+ */
+export function getProfilerVisible(): boolean {
+  return globalThis.localStorage?.getItem(PROFILER_STORAGE_KEY) !== '0';
+}
+
+export function setProfilerVisible(on: boolean): void {
+  globalThis.localStorage?.setItem(PROFILER_STORAGE_KEY, on ? '1' : '0');
+  applyProfilerVisible();
+}
+
+/**
+ * Puts the setting on `#profiler-hud`'s class, which is both what devmode.css
+ * shows the panel by and what `ProfilerHud.update` reads to skip its work — so
+ * the two can't disagree about whether the overlay is up. Safe to call before
+ * any `ProfilerHud` exists: the element is static markup.
+ */
+export function applyProfilerVisible(): void {
+  document.getElementById('profiler-hud')?.classList.toggle('visible', DEVMODE && getProfilerVisible());
+}
 
 /**
  * DEVMODE's per-category timing overlay (top-right — see devmode.css). Renders
@@ -44,6 +71,9 @@ export class ProfilerHud {
   }
 
   update(samples: ProfileSample[], totalMs: number): void {
+    // Toggled off in the menu: nothing on screen to update, and the panel's own
+    // class is the single source of that (`applyProfilerVisible`).
+    if (!this.root.classList.contains('visible')) return;
     this.totalEl.textContent = `frame ${totalMs.toFixed(1)} ms  (${Math.round(1000 / Math.max(totalMs, 0.001))} fps eq.)`;
 
     const sorted = [...samples].sort((a, b) => b.ms - a.ms);

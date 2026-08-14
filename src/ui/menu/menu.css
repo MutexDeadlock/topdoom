@@ -114,10 +114,25 @@
   display: none;
 }
 
+/* The Settings tab's own row of sub-tabs: same markup, one step quieter, and no
+   rule under the row so it doesn't read as a second tab bar of equal rank. */
+#menu .subtabs {
+  gap: 20px;
+  border-bottom: none;
+  margin-bottom: 14px;
+}
+
+#menu .subtabs .tab {
+  font-size: 11px;
+  letter-spacing: 1.5px;
+  padding-bottom: 6px;
+}
+
 /*
- * All three panels are stacked in the same grid cell (rather than one being
+ * Every panel is stacked in the same grid cell (rather than one being
  * display:none) so the panel container's height is always the tallest of
- * them — switching tabs changes what's visible, not the menu's size.
+ * them — switching tabs changes what's visible, not the menu's size. The
+ * Settings tab nests a second row of these for its own sub-tabs.
  */
 #menu .tab-panels {
   display: grid;
@@ -322,10 +337,12 @@
 
 /*
  * display, not the visibility the tab panels use: a panel stays laid out so
- * the menu keeps its height across a tab switch, but this section must drop
- * out of the .columns flex line entirely in a non-dev build.
+ * the menu keeps its height across a tab switch, but these sections must drop
+ * out of the flow entirely in a non-dev build — #controls-dev out of its
+ * .columns line, #settings-dev without leaving a gap under Sound.
  */
-#menu #controls-dev.hidden {
+#menu #controls-dev.hidden,
+#menu #settings-dev.hidden {
   display: none;
 }
 

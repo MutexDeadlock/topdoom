@@ -1,13 +1,17 @@
-v0.1?.? (2026-08-1?)
+v0.12.2 (2026-08-1?)
 
 Features and improvements
   - collision now clips the original's axis-aligned box instead of a
     circle, so you fit exactly where a DOOM marine fits
-  - coming back to a weapon slot selects the weapon you last used out
-    of it, instead of always the stronger one of the two
   - sight checks now honour the level's own REJECT table, the way the
     original does - cheaper on crowded maps, and a map that uses the
     table to blind its monsters on purpose now gets what it asked for
+  - the settings menu is split into "General" and "Controls"
+    - in "General" you can now toggle the profiler overlay (if DEVMODE)
+
+Fixed bugs
+  - coming back to a weapon slot selects the weapon you last used out
+    of it, instead of always the stronger one of the two
 
 
 ===============================================================================

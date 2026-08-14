@@ -21,6 +21,7 @@ import {
 import { getFpsCap, setFpsCap, type FpsCap } from '../../game.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
 import { requiredWads, wadLabel, type MissingWad, type SaveMeta, type SaveWadSet } from '../../game/savegames.ts';
+import { getProfilerVisible, setProfilerVisible } from '../devmode/profilerhud.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
 import { DEVMODE, VERSION } from '../../constants.ts';
 
@@ -41,6 +42,8 @@ export interface MenuDefaults {
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 type Tab = 'newgame' | 'save' | 'load' | 'settings';
+/** The Settings tab's own sub-tabs: everything key-related, and everything else. */
+type SettingsTab = 'general' | 'controls';
 
 const SKILL_STORAGE_KEY = 'topdoom.skill';
 const SELECTION_STORAGE_KEY = 'topdoom.selection';
@@ -73,6 +76,7 @@ export class Menu {
   private shiftAction = el<HTMLSpanElement>('shift-action');
   private rightMouseSelect = el<HTMLSelectElement>('rightmouse-select');
   private fpsCapSelect = el<HTMLSelectElement>('fpscap-select');
+  private profilerCheckbox = el<HTMLInputElement>('profiler-checkbox');
   private changelogRoot = el<HTMLDivElement>('changelog');
   private changelogText = el<HTMLPreElement>('changelog-text');
   private changelogLoaded = false;
@@ -89,6 +93,14 @@ export class Menu {
     settings: el<HTMLDivElement>('tab-settings'),
   };
   private activeTab: Tab = 'newgame';
+  private settingsTabButtons = {
+    general: el<HTMLButtonElement>('settings-tab-button-general'),
+    controls: el<HTMLButtonElement>('settings-tab-button-controls'),
+  };
+  private settingsTabPanels = {
+    general: el<HTMLDivElement>('settings-tab-general'),
+    controls: el<HTMLDivElement>('settings-tab-controls'),
+  };
   private savegames: SavegamesUi;
 
   private sources: WadSource[] = [];
@@ -137,16 +149,22 @@ export class Menu {
     for (const tab of Object.keys(this.tabButtons) as Tab[]) {
       this.tabButtons[tab].addEventListener('click', () => this.setTab(tab));
     }
+    for (const tab of Object.keys(this.settingsTabButtons) as SettingsTab[]) {
+      this.settingsTabButtons[tab].addEventListener('click', () => this.setSettingsTab(tab));
+    }
     this.installDropTarget();
     this.installSkillSelect();
     this.installVolume();
     this.installAutorun();
     this.installRightMouse();
     this.installFpsCap();
+    this.installProfiler();
     this.installChangelog();
     this.setTab('newgame');
-    // DEVMODE never changes at runtime, so the dev-only key row is revealed once.
+    this.setSettingsTab('general');
+    // DEVMODE never changes at runtime, so the dev-only rows are revealed once.
     el<HTMLElement>('controls-dev').classList.toggle('hidden', !DEVMODE);
+    el<HTMLElement>('settings-dev').classList.toggle('hidden', !DEVMODE);
     el<HTMLSpanElement>('menu-version').textContent = `v${VERSION}`;
   }
 
@@ -226,6 +244,17 @@ export class Menu {
   }
 
   /**
+   * The Settings tab's sub-tabs. Like the tabs above it, the pick is kept
+   * across opens rather than reset — nothing here is per-session state.
+   */
+  private setSettingsTab(tab: SettingsTab): void {
+    for (const key of Object.keys(this.settingsTabButtons) as SettingsTab[]) {
+      this.settingsTabButtons[key].classList.toggle('active', key === tab);
+      this.settingsTabPanels[key].classList.toggle('hidden', key !== tab);
+    }
+  }
+
+  /**
    * The sfx volume slider. Dragging it is itself a user gesture, so the engine
    * can start its context and preview the change right here rather than waiting
    * for the level to start — which is the only way to set volume by ear.
@@ -286,6 +315,19 @@ export class Menu {
     this.fpsCapSelect.value = String(getFpsCap());
     this.fpsCapSelect.addEventListener('change', () => {
       setFpsCap(Number(this.fpsCapSelect.value) as FpsCap);
+    });
+  }
+
+  /**
+   * The profiling overlay's on/off switch, in the DEVMODE-only section of the
+   * General sub-tab. `setProfilerVisible` applies it to `#profiler-hud` itself,
+   * so it takes effect on the running level like volume and the fps cap — the
+   * point of the checkbox being to get the panel out of the way mid-play.
+   */
+  private installProfiler(): void {
+    this.profilerCheckbox.checked = getProfilerVisible();
+    this.profilerCheckbox.addEventListener('change', () => {
+      setProfilerVisible(this.profilerCheckbox.checked);
     });
   }
 

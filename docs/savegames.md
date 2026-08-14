@@ -91,7 +91,9 @@ the snapshot inside is unchanged.
 
 Saved: the player (position, velocities, private knockback), inventory, teleport fogs still
 playing, `WeaponSystem`'s fire timing (including the super shotgun's reload clock, `reloadTic` —
-**optional** for the same no-bump reason `teleportFogs` is: absent means no reload in flight),
+**optional** for the same no-bump reason `teleportFogs` is: absent means no reload in flight) and
+its per-slot selection memory (`slotWeapon`, optional the same way: absent means only the restored
+weapon's own slot is remembered, docs/weapons.md § Slot keys),
 the *changed* sectors' mutable fields (`floorHeight`/`ceilHeight`/`light`/`special`/
 `floorTex` — `DoomMap` is mutated in place at runtime by specials and secrets), the specials controller (movers
 mid-motion, `usedOnce`, switch flashes, light states, the two shared sound/damage clocks,

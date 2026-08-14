@@ -114,8 +114,9 @@ Powerups (but not the backpack) run out at the end of a level, exactly as in the
 ## Weapons
 
 All nine weapons work. Picking one up selects it, as in the original; `1`–`7` pick a slot and
-pressing the same slot again toggles between the two weapons that share it, and the mouse wheel
-cycles through everything you own. Hold the left mouse button to fire at the weapon's own rate.
+pressing the same slot again toggles between the two weapons that share it — coming back to a slot
+later returns whichever of them you last used. The mouse wheel cycles through everything you own.
+Hold the left mouse button to fire at the weapon's own rate.
 
 **Aiming is by mouse, and putting the cursor on a monster locks onto it.** The shot is then aimed
 at that monster's actual position and height instead of at wherever the cursor's projection onto

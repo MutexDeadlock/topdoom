@@ -175,18 +175,13 @@ export const WEAPON_SLOTS: WeaponId[][] = [
   ['bfg'],
 ];
 
-/** Mouse-wheel cycling order, weakest to strongest; also the HUD's weapon-icon order. */
-export const WEAPON_CYCLE: WeaponId[] = [
-  'fist',
-  'chainsaw',
-  'pistol',
-  'shotgun',
-  'supershotgun',
-  'chaingun',
-  'rocketLauncher',
-  'plasmaRifle',
-  'bfg',
-];
+/**
+ * The mouse wheel's order, and the HUD icon strip's: the slot order above with
+ * each shared slot read weakest first, which is also weakest-to-strongest
+ * overall. Derived rather than written out, so a weapon added to a slot lands
+ * beside its slotmate here too — docs/weapons.md § The wheel walks the slot order
+ */
+export const WEAPON_CYCLE: WeaponId[] = WEAPON_SLOTS.flatMap((slot) => [...slot].reverse());
 
 /**
  * **Every number in this table is vanilla's** — fire rates from `info.c`'s
@@ -523,6 +518,13 @@ export class WeaponSystem {
    * the level.
    */
   private previousWeapon: WeaponId | null = null;
+  /**
+   * The weapon last selected out of each slot, indexed like `WEAPON_SLOTS` and
+   * null where the slot hasn't been used yet this level. Maintained off the
+   * same once-a-frame comparison `previousWeapon` is, for the same reason —
+   * docs/weapons.md § Slot keys
+   */
+  private slotWeapon: (WeaponId | null)[] = [];
   /** Counts down to the chainsaw's next idle rattle — see `SAW_IDLE_INTERVAL`. */
   private sawIdleTimer = 0;
   /**
@@ -555,6 +557,7 @@ export class WeaponSystem {
     this.cooldownTics = 0;
     this.weaponLastFrame = inv.currentWeapon;
     this.previousWeapon = null;
+    this.seedSlotMemory(inv.currentWeapon);
     this.sawIdleTimer = 0;
     this.reloadTic = -1;
     this.refire = 0;
@@ -562,13 +565,22 @@ export class WeaponSystem {
   }
 
   /**
-   * The fire-timing state a savegame keeps: `beginLevel`'s reset list minus
-   * `weaponLastFrame`, which `restore` derives rather than reads back.
+   * Forgets every slot but the one `weapon` sits in, which is left holding it:
+   * a level starts remembering only what it is carrying.
+   */
+  private seedSlotMemory(weapon: WeaponId): void {
+    this.slotWeapon = WEAPON_SLOTS.map((slot) => (slot.includes(weapon) ? weapon : null));
+  }
+
+  /**
+   * The fire-timing and selection state a savegame keeps: `beginLevel`'s reset
+   * list minus `weaponLastFrame`, which `restore` derives rather than reads back.
    */
   snapshot(): WeaponsSnapshot {
     return {
       cooldownTics: this.cooldownTics,
       previousWeapon: this.previousWeapon,
+      slotWeapon: [...this.slotWeapon],
       sawIdleTimer: this.sawIdleTimer,
       reloadTic: this.reloadTic,
       refire: this.refire,
@@ -588,6 +600,12 @@ export class WeaponSystem {
     // a save is captured on.
     this.weaponLastFrame = inv.currentWeapon;
     this.previousWeapon = s.previousWeapon;
+    // Absent in a save written before the per-slot memory existed, which the
+    // seed reproduces: every slot but the restored weapon's hands out its best,
+    // as it did then — docs/savegames.md § The format and its version.
+    const savedSlots = s.slotWeapon;
+    if (savedSlots) this.slotWeapon = WEAPON_SLOTS.map((_, i) => savedSlots[i] ?? null);
+    else this.seedSlotMemory(inv.currentWeapon);
     this.sawIdleTimer = s.sawIdleTimer;
     // Absent in a save written before the reload sounds existed, which is the
     // same thing as no reload in flight — docs/savegames.md § The format and
@@ -610,6 +628,7 @@ export class WeaponSystem {
     if (justSwitched) {
       this.previousWeapon = this.weaponLastFrame;
       this.weaponLastFrame = weapon;
+      this.slotWeapon[WEAPON_SLOTS.findIndex((slot) => slot.includes(weapon))] = weapon;
     }
     this.updateSounds(dt, firing, weapon, justSwitched, audio, at);
     this.updateReloadSounds(weapon, inv, audio, at);
@@ -693,10 +712,16 @@ export class WeaponSystem {
       const owned = WEAPON_SLOTS[i].filter((w) => inv.weapons.has(w));
       if (owned.length === 0) continue;
       const idx = owned.indexOf(inv.currentWeapon);
-      inv.currentWeapon = idx === -1 ? owned[0] : owned[(idx + 1) % owned.length];
+      // Coming from another slot: back to whichever of this one's weapons was
+      // last selected, its best until one has been — docs/weapons.md § Slot keys
+      const remembered = this.slotWeapon[i];
+      const returnTo = remembered !== null && owned.includes(remembered) ? remembered : owned[0];
+      // Already in the slot: step to its next weapon instead.
+      inv.currentWeapon = idx === -1 ? returnTo : owned[(idx + 1) % owned.length];
     }
 
     if (wheelDelta === 0) return;
+    // One notch is one weapon owned — docs/weapons.md § The wheel walks the slot order
     const owned = WEAPON_CYCLE.filter((w) => inv.weapons.has(w));
     if (owned.length === 0) return;
     const idx = owned.indexOf(inv.currentWeapon);

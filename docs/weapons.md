@@ -35,6 +35,31 @@ weapons best-first, but pressing a digit already showing one of that slot's weap
 shotgun/super shotgun) made their weaker weapon permanently unreachable once the upgrade was owned —
 which presented as "shotgun and super shotgun are the same weapon".
 
+Coming *back* to a slot from elsewhere selects **the weapon last used out of it**
+(`WeaponSystem.slotWeapon`, one entry per slot), falling back to the slot's best while it has never
+been used. So punching, switching to the pistol and pressing `1` again returns the fist rather than
+the chainsaw — without the memory, a slot's weaker weapon could only be held by pressing its digit
+twice every single time. The memory is maintained in `update`'s once-a-frame comparison, for the
+same reason `previousWeapon` is (below), and is per level: `beginLevel` clears it and seeds only the
+slot of whatever is being carried in.
+
+### The wheel walks the slot order
+
+One wheel notch is one **weapon**, and the order is the digit keys' slot order with each shared slot
+read **weakest first** — fist, chainsaw, pistol, shotgun, super shotgun, chaingun, … Weapons not
+owned are skipped rather than eating a notch, and every weapon owned is a stop, so scrolling alone
+reaches all of them.
+
+That is `WEAPON_CYCLE`, which the HUD icon strip also lays out (docs/hud.md) — one list, since
+weakest-first inside a slot makes the wheel's order and the strip's the same thing. It is **derived**
+from `WEAPON_SLOTS`, each slot reversed, rather than written out beside it: the two orders are one
+decision, and a weapon added to a slot has to land beside its slotmate here too. Note the reversal
+is the point — `WEAPON_SLOTS` flattened reads each slot best-first, which puts the chainsaw ahead of
+the fist, backwards from both the strip and the pickup progression.
+
+The wheel is an accumulate-and-drain channel sampled on the tic, not per frame — docs/frameloop.md
+§ Input runs on the tic.
+
 ### Switch to previous weapon
 
 The right button's default binding (docs/menu.md § Right mouse button)

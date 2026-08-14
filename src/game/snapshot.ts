@@ -52,13 +52,20 @@ export interface InventorySnapshot {
 }
 
 /**
- * `WeaponSystem`'s private fire-timing state — `beginLevel`'s reset list minus
+ * `WeaponSystem`'s private fire-timing and selection state — `beginLevel`'s reset list minus
  * `weaponLastFrame`, which `restore` derives from the restored inventory
  * instead (docs/savegames.md § Apply order).
  */
 export interface WeaponsSnapshot {
   cooldownTics: number;
   previousWeapon: WeaponId | null;
+  /**
+   * The weapon last selected out of each slot, indexed like `WEAPON_SLOTS`.
+   * Optional for the same no-bump reason `reloadTic` is: absent means only the
+   * restored weapon's own slot is remembered, which is what a save from before
+   * it restored to.
+   */
+  slotWeapon?: (WeaponId | null)[];
   sawIdleTimer: number;
   /**
    * Tics into the super shotgun's reload sequence, -1 for none in flight.

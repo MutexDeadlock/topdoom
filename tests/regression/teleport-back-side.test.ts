@@ -1,16 +1,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as THREE from 'three';
-import { World } from '../../src/game/world.ts';
-import { FogOfWar } from '../../src/game/fogofwar.ts';
-import { SpecialsController } from '../../src/game/specials.ts';
-import { computeMovableSectors } from '../../src/game/specials/mapscan.ts';
-import { buildMapMesh } from '../../src/render/mapmesh.ts';
-import type { MaterialBank } from '../../src/render/textures.ts';
-import type { Input } from '../../src/game/input.ts';
 import type { Placement } from '../../src/types.ts';
 import { NO_SIDE } from '../../src/wad/map.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
+import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
 import { ThingType } from '../../src/game/thingtypes.ts';
 
 /**
@@ -20,13 +13,6 @@ import { ThingType } from '../../src/game/thingtypes.ts';
  * Reported against freedoom2 MAP01's tag-3/tag-5 pair (sectors 167 and 133),
  * reproduced here on synthetic geometry. See docs/specials.md § Teleporters.
  */
-
-const BANK = {
-  size: () => ({ w: 64, h: 128 }),
-  get: () => new THREE.MeshBasicMaterial(),
-} as unknown as MaterialBank;
-
-const NO_INPUT = { pressed: () => false, rightMousePressed: () => false } as unknown as Input;
 
 const WR_TELEPORT = 97;
 
@@ -70,33 +56,11 @@ function setup() {
   map.linedefs[intoB].special = WR_TELEPORT;
   map.linedefs[intoB].tag = 1;
 
-  const world = new World(map);
-  const movableSectors = computeMovableSectors(map);
-  const built = buildMapMesh(map, BANK, { movableSectors });
   const start = { x: grid.centre(padACell, 1).x - 70, y: grid.centre(padACell, 1).y };
-  const fog = new FogOfWar(world, built.occluders, start.x, start.y);
   const teleports: Placement[] = [];
-  const specials = new SpecialsController(
-    map,
-    world,
-    BANK,
-    new THREE.Group(),
-    fog,
-    built.polys,
-    built,
-    {},
-    () => {},
-    (dest) => teleports.push(dest),
-    () => false,
-    () => false,
-    () => false,
-    start.x,
-    start.y,
-    movableSectors,
-  );
+  const rig = specialsRig(map, start, { onTeleport: (dest) => teleports.push(dest) });
 
-  /** One frame of the player standing at (x, y) — the same call `game.ts` makes. */
-  const tick = (x: number, y: number) => specials.update(1 / 35, x, y, 0, NO_INPUT, new Set());
+  const tick = (x: number, y: number) => rig.tick(TIC, x, y);
   return { grid, teleports, tick, start, padBCentre: grid.centre(padBCell, 1) };
 }
 

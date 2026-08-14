@@ -68,11 +68,11 @@ Deliberately **not** covered yet, and why:
 - **`SpecialsController`'s mover state machine** — `sectorActive`, `tickDoor`, `tickLift` and the
   `trigger*` guards are all private, and reaching them means extracting the per-mover tick into pure
   `(state, dt) → state` functions first. This is the biggest known gap. What *is* reachable already
-  is anything observable from the outside: its ~10 constructor arguments take a two-method
-  `MaterialBank` stub, a bare `THREE.Group` and a real `FogOfWar` (no GL context needed), and its
-  callbacks report what fired — `strobing-lift-light.test.ts` drives it through `update` for the
-  geometry it recolors, `teleport-back-side.test.ts` through the `onTeleport` callback. Prefer that
-  over widening the class's visibility.
+  is anything observable from the outside: the whole controller stands up headless through
+  `fixtures/specialsrig.ts` (§ The specials rig), and its callbacks report what fired —
+  `strobing-lift-light.test.ts` drives it through `update` for the geometry it recolors,
+  `teleport-back-side.test.ts` through the `onTeleport` callback. Prefer that over widening the
+  class's visibility.
 - **`ProjectileLayer` / `SpriteFxLayer`** — every `spawn*` short-circuits on `SpriteAnimator.resolve`,
   so a stubbed run would test the stubs. Test at `shotPath` level instead; `playerShotRange` exists
   as a separate exported function precisely so the range selection is reachable without the layer.
@@ -157,6 +157,27 @@ The same property means **a wall cell's interior is not blocked** — only its b
 Uniform cell heights also mean `hasLineOfSight`'s floor/ceiling sampling loop never narrows
 anything. A test meaning to exercise that half of the function must build a real step or low
 ceiling through the `heights` option, or it only looks like it covers it.
+
+## The specials rig
+
+`tests/fixtures/specialsrig.ts` puts a real `SpecialsController` over a `gridMap` in one call —
+`specialsRig(map, at, { onExit, onTeleport, onCrush, … })` — instead of the fifteen positional
+arguments its constructor takes. It also exports the two stubs that go with it (`BANK`, `NO_INPUT`)
+and `TIC`, so a test needing a mesh or an input for something else takes them from here rather than
+declaring its own.
+
+**It is a rig, not a mock.** The controller, `World`, `FogOfWar` and the built mesh below it are all
+the production objects; only the `MaterialBank` and `Input` are stubs, and only because the first
+wants a GL context and the second a keyboard. What the rig removes is the boilerplate, not the
+behavior under test — which is why the five tests that drive specials (`specials-snapshot`,
+`switch-gating`, `strobing-lift-light`, `teleport-back-side`, `boss-death-over-corpse`) all go
+through it. Every one of them had its own byte-identical copy of that constructor call before, so a
+sixteenth argument was a five-file edit.
+
+`tick(dt, x, y)` mirrors `update`'s own argument order and defaults to one `TIC` at the rig's start
+position: a test that moves nobody writes `tick()`, one that walks the player writes
+`tick(TIC, x, y)`. Pass `scene` in when the test needs to read back the mover meshes the controller
+hangs on it, as `strobing-lift-light` does; otherwise the rig makes its own.
 
 ## Doc references
 

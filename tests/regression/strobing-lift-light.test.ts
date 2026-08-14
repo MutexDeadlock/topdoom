@@ -1,14 +1,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { World } from '../../src/game/world.ts';
-import { FogOfWar } from '../../src/game/fogofwar.ts';
-import { SpecialsController } from '../../src/game/specials.ts';
-import { computeMovableSectors } from '../../src/game/specials/mapscan.ts';
-import { buildMapMesh, litColor } from '../../src/render/mapmesh.ts';
-import type { MaterialBank } from '../../src/render/textures.ts';
-import type { Input } from '../../src/game/input.ts';
+import { litColor } from '../../src/render/mapmesh.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
+import { specialsRig } from '../fixtures/specialsrig.ts';
 
 /**
  * A sector that both strobes and moves has its geometry in its own mover mesh,
@@ -18,14 +13,6 @@ import { gridMap } from '../fixtures/gridmap.ts';
  * DOOM1 E1M5 sectors 2 and 32, the tag-1 strobing lifts; reproduced here on
  * synthetic geometry. See docs/specials.md § Light changes.
  */
-
-/** `buildMoverMesh` only asks a bank for texture sizes and materials — neither needs a GPU. */
-const BANK = {
-  size: () => ({ w: 64, h: 128 }),
-  get: () => new THREE.MeshBasicMaterial(),
-} as unknown as MaterialBank;
-
-const NO_INPUT = { pressed: () => false, rightMousePressed: () => false } as unknown as Input;
 
 const BASE_LIGHT = 192;
 const NEIGHBOR_LIGHT = 160; // gridMap's default, and so the strobe's dark level
@@ -56,37 +43,13 @@ function strobingLift() {
   map.linedefs[0].special = 88; // WR lift, tag-matched — never triggered here
   map.linedefs[0].tag = 1;
 
-  const world = new World(map);
-  const movableSectors = computeMovableSectors(map);
-  assert.ok(movableSectors.has(lift), 'the strobing sector is a mover');
-
-  const built = buildMapMesh(map, BANK, { movableSectors });
-  const scene = new THREE.Group();
-  const start = grid.centre(1, 1);
-  const fog = new FogOfWar(world, built.occluders, start.x, start.y);
-  const specials = new SpecialsController(
-    map,
-    world,
-    BANK,
-    scene,
-    fog,
-    built.polys,
-    built,
-    {},
-    () => {},
-    () => {},
-    () => false,
-    () => false,
-    () => false,
-    start.x,
-    start.y,
-    movableSectors,
-  );
+  const rig = specialsRig(map, grid.centre(1, 1));
+  assert.ok(rig.movableSectors.has(lift), 'the strobing sector is a mover');
 
   // The player never moves and never presses use, so nothing triggers the lift:
   // this test is about the sector's light while its geometry sits still.
-  const tick = (dt: number) => specials.update(dt, start.x, start.y, 0, NO_INPUT, new Set());
-  return { map, lift, scene, tick };
+  const tick = (dt: number) => rig.tick(dt);
+  return { map, lift, scene: rig.scene, tick };
 }
 
 describe('Regressions · strobing lift light', () => {

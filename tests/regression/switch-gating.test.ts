@@ -1,15 +1,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as THREE from 'three';
-import { World } from '../../src/game/world.ts';
-import { FogOfWar } from '../../src/game/fogofwar.ts';
-import { SpecialsController } from '../../src/game/specials.ts';
-import { computeMovableSectors } from '../../src/game/specials/mapscan.ts';
-import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import { NO_SIDE, type DoomMap } from '../../src/wad/map.ts';
-import type { MaterialBank } from '../../src/render/textures.ts';
 import type { Input } from '../../src/game/input.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
+import { NO_INPUT, specialsRig, TIC } from '../fixtures/specialsrig.ts';
 
 /**
  * Two rules a crusher-and-switch pair has to keep, both confirmed against
@@ -24,14 +18,6 @@ import { gridMap } from '../fixtures/gridmap.ts';
  * See docs/specials.md § A switch only flips when it acts and § Crushers.
  */
 
-const BANK = {
-  size: () => ({ w: 64, h: 128 }),
-  get: () => new THREE.MeshBasicMaterial(),
-} as unknown as MaterialBank;
-
-const NO_INPUT = { pressed: () => false, rightMousePressed: () => false } as unknown as Input;
-const TIC = 1 / 35;
-
 /** The line between two grid cells, whichever way round its sidedefs happen to sit. */
 function boundary(map: DoomMap, a: number, b: number): number {
   const i = map.linedefs.findIndex((l) => {
@@ -45,15 +31,7 @@ function boundary(map: DoomMap, a: number, b: number): number {
 }
 
 function controller(map: DoomMap, startX: number, startY: number) {
-  const world = new World(map);
-  const movableSectors = computeMovableSectors(map);
-  const built = buildMapMesh(map, BANK, { movableSectors });
-  const fog = new FogOfWar(world, built.occluders, startX, startY);
-  return new SpecialsController(
-    map, world, BANK, new THREE.Group(), fog, built.polys, built, {},
-    () => {}, () => {}, () => false, () => false, () => false,
-    startX, startY, movableSectors,
-  );
+  return specialsRig(map, { x: startX, y: startY }).specials;
 }
 
 /**
@@ -161,17 +139,12 @@ describe('Regressions · switch gating and crusher stasis', () => {
     // learns about one through this callback.
     let caught = true;
     let damageTics = 0;
-    const world = new World(map);
-    const movableSectors = computeMovableSectors(map);
-    const built = buildMapMesh(map, BANK, { movableSectors });
-    const fog = new FogOfWar(world, built.occluders, start.x, start.y);
-    const specials = new SpecialsController(
-      map, world, BANK, new THREE.Group(), fog, built.polys, built, {},
-      () => {}, () => {},
-      (_s, dealDamage) => { if (caught && dealDamage) damageTics++; return caught; },
-      () => false, () => false,
-      start.x, start.y, movableSectors,
-    ) as unknown as {
+    const specials = specialsRig(map, start, {
+      onCrush: (_s, dealDamage) => {
+        if (caught && dealDamage) damageTics++;
+        return caught;
+      },
+    }).specials as unknown as {
       trigger(i: number, keys: Set<never>): unknown;
       movers: Map<number, { state: string; slowed?: boolean }>;
       update(dt: number, x: number, y: number, a: number, input: Input, keys: Set<never>): void;

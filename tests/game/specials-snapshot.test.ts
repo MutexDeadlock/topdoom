@@ -1,20 +1,19 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import * as THREE from 'three';
 import { World } from '../../src/game/world.ts';
 import { FogOfWar } from '../../src/game/fogofwar.ts';
 import { Player } from '../../src/game/player.ts';
 import { WeaponSystem } from '../../src/game/weapons.ts';
 import { createInventory } from '../../src/game/inventory.ts';
-import { SpecialsController } from '../../src/game/specials.ts';
 import { computeMovableSectors } from '../../src/game/specials/mapscan.ts';
 import { applySectors, sectorBaseline, snapshotSectors } from '../../src/game/snapshot.ts';
 import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import { NO_SIDE } from '../../src/wad/map.ts';
-import type { MaterialBank } from '../../src/render/textures.ts';
 import type { Input } from '../../src/game/input.ts';
 import type { AudioEngine } from '../../src/audio/audio.ts';
+import type { Pos2 } from '../../src/types.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
+import { BANK, specialsRig, TIC } from '../fixtures/specialsrig.ts';
 
 /**
  * Savegame round-trips for the headless-constructible subsystems: a specials
@@ -23,12 +22,6 @@ import { gridMap, thingAt } from '../fixtures/gridmap.ts';
  * See docs/savegames.md § Apply order.
  */
 
-const BANK = {
-  size: () => ({ w: 64, h: 128 }),
-  get: () => new THREE.MeshBasicMaterial(),
-} as unknown as MaterialBank;
-
-const NO_INPUT = { pressed: () => false, rightMousePressed: () => false } as unknown as Input;
 /** Right-clicking with the button bound to "switch to previous weapon", nothing else pressed. */
 const PREV_CLICK = {
   pressed: () => false,
@@ -58,30 +51,9 @@ function liftMap() {
   return { grid, map, lift };
 }
 
-function controllerOver(map: ReturnType<typeof liftMap>['map'], at: { x: number; y: number }) {
-  const world = new World(map);
-  const movableSectors = computeMovableSectors(map);
-  const built = buildMapMesh(map, BANK, { movableSectors });
-  const fog = new FogOfWar(world, built.occluders, at.x, at.y);
-  const specials = new SpecialsController(
-    map,
-    world,
-    BANK,
-    new THREE.Group(),
-    fog,
-    built.polys,
-    built,
-    {},
-    () => {},
-    () => {},
-    () => false,
-    () => false,
-    () => false,
-    at.x,
-    at.y,
-    movableSectors,
-  );
-  return { specials, tick: (x: number, y: number) => specials.update(1 / 35, x, y, 0, NO_INPUT, new Set()) };
+function controllerOver(map: ReturnType<typeof liftMap>['map'], at: Pos2) {
+  const rig = specialsRig(map, at);
+  return { specials: rig.specials, tick: (x: number, y: number) => rig.tick(TIC, x, y) };
 }
 
 describe('Savegames · specials round-trip', () => {

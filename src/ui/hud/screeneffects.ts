@@ -6,6 +6,7 @@
  */
 import type * as THREE from 'three';
 import { hasPower, type Inventory } from '../../game/inventory.ts';
+import { PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS } from '../../game/thingdefs.ts';
 import { DOOM_TIC } from '../../constants.ts';
 
 /**
@@ -41,6 +42,15 @@ const POWER_BLINK_WARNING_SECONDS = 3;
 const POWER_BLINK_HZ = 4;
 
 /**
+ * How long a death waits before its overlay appears — `PLAY`'s DIE sequence end to end, so the
+ * text arrives as the corpse settles rather than on the killing frame. Presentation only: vanilla
+ * has no such overlay, and `R` answers throughout the delay, so nothing is gated behind it. It is
+ * also what keeps a death the level's own ending is about to overtake from flashing an overlay up
+ * for a few tics — see docs/death.md § Dying on the way out.
+ */
+const DEATH_OVERLAY_DELAY = PLAYER_DEATH_FRAMES.length * PLAYER_DEATH_FRAME_SECONDS;
+
+/**
  * Whether a powerup's screen effect should currently show, given its
  * remaining seconds (`Inventory.powers[id]`). Once inside the warning
  * window, `floor(secs * Hz) % 2` alternates every `1/Hz` seconds as `secs`
@@ -63,6 +73,10 @@ export class ScreenEffects {
   private killerEl = document.querySelector<HTMLElement>('#death-overlay .killer')!;
   /** Current intensity of the damage flash, 0-1 — bumped by `addPain`, decayed by `update`. */
   private painFlash = 0;
+  /** Seconds until the armed death overlay is raised; negative once it is up, or when none is armed. */
+  private deathDelay = -1;
+  /** The killer line the armed overlay will carry — see `showDeath`. */
+  private deathKiller = '';
 
   /**
    * `setPlayerOpacity` writes partial invisibility to the player's own
@@ -86,6 +100,13 @@ export class ScreenEffects {
     this.setPlayerOpacity(powerBlinkVisible(inv.powers.invisibility) ? INVISIBILITY_OPACITY : 1);
     this.painFlash = Math.max(0, this.painFlash - dt / PAIN_FLASH_FADE_SECONDS);
     this.painEl.style.opacity = String(this.painFlash * PAIN_FLASH_MAX_ALPHA);
+    if (this.deathDelay >= 0) {
+      this.deathDelay -= dt;
+      if (this.deathDelay < 0) {
+        this.killerEl.textContent = this.deathKiller;
+        this.deathEl.classList.remove('hidden');
+      }
+    }
   }
 
   /** Bumps the damage flash by a hit that actually landed — see `PAIN_FLASH_MAX_DAMAGE`. */
@@ -94,17 +115,21 @@ export class ScreenEffects {
   }
 
   /**
-   * Raises the overlay, with `killer` as its middle line — an already-composed
+   * Arms the overlay, with `killer` as its middle line — an already-composed
    * sentence (`thingdefs.ts`'s `obituary`), since what killed the player is the
    * game layer's to know, not this one's. `''` leaves the line out entirely.
+   * `update` raises it `DEATH_OVERLAY_DELAY` later, so a `clearDeath` inside that
+   * window means it is never seen at all.
    */
   showDeath(killer: string): void {
-    this.killerEl.textContent = killer;
-    this.deathEl.classList.remove('hidden');
+    this.deathKiller = killer;
+    this.deathDelay = DEATH_OVERLAY_DELAY;
   }
 
-  /** Clears the death overlay and any lingering flash — every map (re)load starts from here. */
+  /** Clears the death overlay — armed or already up — and any lingering flash. Every map (re)load starts from here. */
   clearDeath(): void {
+    this.deathDelay = -1;
+    this.deathKiller = '';
     this.deathEl.classList.add('hidden');
     this.killerEl.textContent = '';
     this.painFlash = 0;

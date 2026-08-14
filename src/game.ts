@@ -405,6 +405,25 @@ export class Game {
   }
 
   /**
+   * Whether this level is already on its way out and nothing can stop it: an exit queued for the
+   * next tic, or the Icon of Sin's death cascade, which runs for `BRAIN_DEATH_TO_EXIT` before it
+   * calls `onExit`. A death inside that window raises no overlay and answers no `R` — the level is
+   * over, it just hasn't finished saying so. docs/death.md § Dying on the way out.
+   */
+  private get levelEnding(): boolean {
+    return this.pendingExit !== null || this.icon?.exiting === true;
+  }
+
+  /**
+   * Takes the death overlay down when the level starts ending under a corpse — the intermission is
+   * what the player should be looking at. Idempotent and self-guarded, so every place the level can
+   * start ending calls it unconditionally. docs/death.md § Dying on the way out.
+   */
+  private endingOverCorpse(): void {
+    if (this.playerDead && this.levelEnding) this.screen.clearDeath();
+  }
+
+  /**
    * Why this moment can't be saved, or null when it can. Death, a pending exit
    * and the intermission are refused — excluding those three from the save
    * format entirely is far cheaper than restoring them correctly
@@ -412,6 +431,9 @@ export class Game {
    * reason is a sentence rather than a flag because it is what the player is
    * told — `captureSave` throws it, and the menu also asks *before* the fact to
    * disable Save/Overwrite and name the reason (docs/menu.md § Save and Load tabs).
+   *
+   * Deliberately narrower than `levelEnding`: the Icon of Sin's death cascade stays saveable,
+   * since `IconSnapshot` carries `exitTimer` and a mid-cascade save restores mid-cascade.
    */
   saveRefusal(): string | null {
     if (this.playerDead) return "you can't save while dead";
@@ -497,9 +519,9 @@ export class Game {
     this.audio.stopAll();
     this.weaponSystem.beginLevel(this.inventory);
     // A fresh map always starts with a living player — covers both a normal
-    // level transition (which can't happen while dead; movement is frozen)
-    // and `restart`'s "reload the same map" call, defensively in one place
-    // rather than duplicated at each caller.
+    // level transition (a level can end over a corpse, and `enterLevel` has
+    // just reborn the inventory for it) and `restart`'s "reload the same map"
+    // call, defensively in one place rather than duplicated at each caller.
     this.playerDead = false;
     this.screen.clearDeath();
     this.message.clear();
@@ -648,14 +670,15 @@ export class Game {
       this.spriteMaterials,
       this.skill,
       this.audio,
-      // A_BossDeath — see docs/death.md § Boss death. Player-alive gate is vanilla's own
-      // "make sure there is a player alive for victory" check. Fanned out to both owners: the
-      // tag-driven actions (including Commander Keen's door) belong to `specials`, the Icon of
-      // Sin's own `A_BrainDie` to `icon`; each ignores the doomednums it doesn't handle.
+      // A_BossDeath — see docs/death.md § Boss death. Fanned out to both owners: the tag-driven
+      // actions (including Commander Keen's door) belong to `specials`, the Icon of Sin's own
+      // `A_BrainDie` to `icon`; each ignores the doomednums it doesn't handle. The player-alive
+      // gate is `A_BossDeath`'s alone and travels with it — `A_BrainDie` has none, so the icon
+      // is notified over a corpse too. docs/death.md § Dying on the way out.
       (type) => {
-        if (this.playerDead) return;
-        this.specials?.notifyBossDeath(type);
+        this.specials?.notifyBossDeath(type, !this.playerDead);
         this.icon?.notifyBossDeath(type);
+        this.endingOverCorpse();
       },
       restore?.things,
       // `P_NightmareRespawn`'s two `MT_TFOG`s, at the corpse and at the spawn point it returns to.
@@ -845,7 +868,7 @@ export class Game {
       // between the two cries.
       this.audio.play(amount > healthBefore + 50 ? 'pdiehi' : 'pldeth', this.player, PLAYER_ORIGIN);
       this.playerActor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
-      this.screen.showDeath(obituary(cause));
+      if (!this.levelEnding) this.screen.showDeath(obituary(cause));
       return true;
     }
     this.audio.play('plpain', this.player, PLAYER_ORIGIN);
@@ -859,8 +882,15 @@ export class Game {
    * written *after* the load, not before — `captureSave` refuses while the
    * intermission is up, and what a death on the new level should return to is
    * that level at tic 0, which is exactly the state now built.
+   *
+   * Advancing while dead is `G_DoLoadLevel`'s `PST_DEAD` → `PST_REBORN`, and is read off player
+   * state here for the same reason vanilla reads it at load rather than queueing it at the exit.
+   * `restart` does not come through here — it restores a checkpoint instead (docs/death.md §
+   * Player death).
    */
   private enterLevel(index: number): void {
+    // Before the load, which hands this very object to `weaponSystem.beginLevel`.
+    if (this.playerDead) this.inventory = createInventory();
     this.loadMapByIndex(index);
     this.writeCheckpoint();
   }
@@ -1068,6 +1098,10 @@ export class Game {
     // safe to dispose it and swap in the next map.
     if (this.pendingExit) {
       this.nextMapIndex = this.resolveNextMap(this.pendingExit === 'secret');
+      // Before `pendingExit` is cleared, which is half of what `levelEnding` reads. Catches a
+      // death that beat the exit here rather than at the boss-death fan-out: an exit-line
+      // walk-over is queued and consumed with nothing in between, but a crusher can kill between.
+      this.endingOverCorpse();
       this.pendingExit = null;
       // The next map isn't loaded here any more: the popup goes up on the level as it stands, and
       // the continue key at the top of `tic` is what loads it.
@@ -1080,7 +1114,7 @@ export class Game {
 
     // `R` is the only input a corpse still answers; everything else the player
     // drives is skipped below instead of branching here.
-    if (this.playerDead && input.pressed('KeyR')) {
+    if (this.playerDead && !this.levelEnding && input.pressed('KeyR')) {
       input.endTic();
       this.restart();
       return true;

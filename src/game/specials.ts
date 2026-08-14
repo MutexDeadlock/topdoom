@@ -1509,11 +1509,15 @@ export class SpecialsController {
   /**
    * Vanilla's `A_BossDeath` — see docs/death.md § Boss death. `game.ts` calls this once per
    * monster death that leaves none of its type alive on the level (`ThingLayer`'s own doomednum
-   * check), already gated on the player being alive, matching vanilla's own check.
+   * check).
+   *
+   * `playerAlive` is `A_BossDeath`'s "make sure there is a player alive for victory" loop, applied
+   * per row rather than to the whole call: only rows that came from that function carry
+   * `needsLivingPlayer` (see `bossDeathTriggersFor`).
    */
-  notifyBossDeath(type: number): void {
+  notifyBossDeath(type: number, playerAlive: boolean): void {
     for (const t of this.bossDeathTriggers) {
-      if (t.type !== type) continue;
+      if (t.type !== type || (t.needsLivingPlayer && !playerAlive)) continue;
       if (t.action.kind === 'exit') this.onExit(false);
       else this.triggerTag(t.action.tag, t.action.kind);
     }

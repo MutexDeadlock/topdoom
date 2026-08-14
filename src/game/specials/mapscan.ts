@@ -44,16 +44,22 @@ export type BossDeathAction =
 export interface BossDeathTrigger {
   type: number;
   action: BossDeathAction;
+  /**
+   * Whether `A_BossDeath`'s "make sure there is a player alive for victory" loop guards this row.
+   * Only rows that really come from that function carry it — Keen's does not. See `KEEN_DOOR_TAG`.
+   */
+  needsLivingPlayer: boolean;
 }
 
 /**
- * The door Commander Keen's death opens. `A_KeenDie` (`p_enemy.c`) is **not**
- * gated on `gameepisode`/`gamemap` the way `A_BossDeath` is — it builds a synthetic `line_t` with
- * `tag = 666` and calls `EV_DoDoor(&junk, open)` on any map at all, which is why this trigger is
- * appended to every table below rather than living in the per-map switch. `open` is `EV_DoDoor`'s
- * ordinary `VDOORSPEED` open-and-stay, not the blaze speed E4M6 uses.
+ * The door Commander Keen's death opens. `A_KeenDie` (`p_enemy.c`) is a separate action function
+ * from `A_BossDeath` and shares **neither** of its two gates: not the `gameepisode`/`gamemap`
+ * check — it builds a synthetic `line_t` with `tag = 666` and calls `EV_DoDoor(&junk, open)` on any
+ * map at all, which is why this trigger is appended to every table below rather than living in the
+ * per-map switch — and not the player-alive check, hence `needsLivingPlayer: false`. `open` is
+ * `EV_DoDoor`'s ordinary `VDOORSPEED` open-and-stay, not the blaze speed E4M6 uses.
  */
-const KEEN_DOOR_TAG = 666;
+export const KEEN_DOOR_TAG = 666;
 
 /**
  * Vanilla's `A_BossDeath` (`p_enemy.c`), confirmed against source — see docs/death.md §
@@ -66,13 +72,23 @@ const KEEN_DOOR_TAG = 666;
  * than through a tag, and `game/iconofsin.ts` owns it.
  */
 export function bossDeathTriggersFor(mapName: string): BossDeathTrigger[] {
-  const keen: BossDeathTrigger = { type: ThingType.commanderKeen, action: { kind: 'open', tag: KEEN_DOOR_TAG } };
+  /** A row of `A_BossDeath`'s own switch, and so one its player-alive loop guards. */
+  const boss = (type: number, action: BossDeathAction): BossDeathTrigger => ({
+    type,
+    action,
+    needsLivingPlayer: true,
+  });
+  const keen: BossDeathTrigger = {
+    type: ThingType.commanderKeen,
+    action: { kind: 'open', tag: KEEN_DOOR_TAG },
+    needsLivingPlayer: false,
+  };
   const commercial = /^MAP(\d+)$/i.exec(mapName);
   if (commercial) {
     if (Number(commercial[1]) !== 7) return [keen];
     return [
-      { type: BOSS_DEATH_TYPES.mancubus, action: { kind: 'lowerFloorToLowest', tag: 666 } },
-      { type: BOSS_DEATH_TYPES.arachnotron, action: { kind: 'raiseToTexture', tag: 667 } },
+      boss(BOSS_DEATH_TYPES.mancubus, { kind: 'lowerFloorToLowest', tag: 666 }),
+      boss(BOSS_DEATH_TYPES.arachnotron, { kind: 'raiseToTexture', tag: 667 }),
       keen,
     ];
   }
@@ -82,23 +98,20 @@ export function bossDeathTriggersFor(mapName: string): BossDeathTrigger[] {
   const map = Number(episodic[2]);
   switch (episode) {
     case 1:
-      return map === 8
-        ? [{ type: BOSS_DEATH_TYPES.baron, action: { kind: 'lowerFloorToLowest', tag: 666 } }, keen]
-        : [keen];
+      return map === 8 ? [boss(BOSS_DEATH_TYPES.baron, { kind: 'lowerFloorToLowest', tag: 666 }), keen] : [keen];
     case 2:
-      return map === 8 ? [{ type: BOSS_DEATH_TYPES.cyberdemon, action: { kind: 'exit' } }, keen] : [keen];
+      return map === 8 ? [boss(BOSS_DEATH_TYPES.cyberdemon, { kind: 'exit' }), keen] : [keen];
     case 3:
-      return map === 8 ? [{ type: BOSS_DEATH_TYPES.spiderMastermind, action: { kind: 'exit' } }, keen] : [keen];
+      return map === 8 ? [boss(BOSS_DEATH_TYPES.spiderMastermind, { kind: 'exit' }), keen] : [keen];
     case 4:
-      if (map === 6) return [{ type: BOSS_DEATH_TYPES.cyberdemon, action: { kind: 'blazeOpen', tag: 666 } }, keen];
-      if (map === 8)
-        return [{ type: BOSS_DEATH_TYPES.spiderMastermind, action: { kind: 'lowerFloorToLowest', tag: 666 } }, keen];
+      if (map === 6) return [boss(BOSS_DEATH_TYPES.cyberdemon, { kind: 'blazeOpen', tag: 666 }), keen];
+      if (map === 8) return [boss(BOSS_DEATH_TYPES.spiderMastermind, { kind: 'lowerFloorToLowest', tag: 666 }), keen];
       return [keen];
     default:
       // Vanilla's own `default:` case has no per-type check, only `gamemap != 8` — any
       // recognized boss type dying on map 8 of an unlisted episode (e.g. SIGIL's E5M8) exits.
       return map === 8
-        ? [...Object.values(BOSS_DEATH_TYPES).map((type) => ({ type, action: { kind: 'exit' as const } })), keen]
+        ? [...Object.values(BOSS_DEATH_TYPES).map((type) => boss(type, { kind: 'exit' })), keen]
         : [keen];
   }
 }

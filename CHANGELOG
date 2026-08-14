@@ -1,3 +1,17 @@
+v0.1x.x (2026-08-1?)
+
+Features and improvements
+  - the game-over screen now comes up as your corpse settles rather than
+    on the frame that killed you
+
+Fixed bugs
+  - a boss that dies in the same blast as you, now still triggers their 
+    boss-death specials (level exit)
+    - and dying that way no longer shows the game-over screen: the exit wins
+
+
+===============================================================================
+
 v0.12.2 (2026-08-14)
 
 Features and improvements

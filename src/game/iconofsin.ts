@@ -182,6 +182,15 @@ export class IconOfSin {
     this.shooter = map.things.find((t) => t.type === ThingType.bossShooter) ?? null;
   }
 
+  /**
+   * Whether the brain is dead and the level is on its way out — the `BRAIN_DEATH_TO_EXIT` cascade
+   * is running and `onExit` is now unavoidable. `game.ts` reads it to keep the death overlay and
+   * `R` off a level that is already ending. docs/death.md § Dying on the way out.
+   */
+  get exiting(): boolean {
+    return this.exitTimer >= 0;
+  }
+
   /** Everything mutable for a savegame, or null on a map with no eye (nothing to save). Cubes name their target by index into `targets`, since the live field is a reference into that array. */
   snapshot(): IconSnapshot | null {
     if (!this.shooter) return null;

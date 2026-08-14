@@ -118,8 +118,14 @@ through to `P_SetMobjState(spawnstate)`. It only wakes again via `damage`'s unco
 blast already in flight still lands and can still deal splash (or, for the vile's knockup, do nothing
 beyond the first killing blow — `resolveVileBlast` gates its knockup on `damagePlayer`'s return, and
 `resolveBullet`'s `!playerDead` guard for the hitscan equivalent) — a dead player can still be
-"hit" for nothing to happen, matching `damagePlayer`'s own early return. The death itself shows a
-`#death-overlay` div.
+"hit" for nothing to happen, matching `damagePlayer`'s own early return.
+
+The death itself shows a `#death-overlay` div, but not immediately: `showDeath` only *arms* it, and
+`ScreenEffects.update` raises it `DEATH_OVERLAY_DELAY` later — `PLAY`'s DIE sequence end to end, so
+the text arrives as the corpse settles instead of on the killing frame. Nothing is gated behind the
+delay (`R` answers throughout, since `tic` reads `playerDead`, not the overlay), and a `clearDeath`
+inside the window means the overlay is never seen at all, which is what § Dying on the way out
+needs. Vanilla has no overlay here, so none of this is a fidelity claim.
 
 `R` calls `restart`, which reloads the level **from the checkpoint** written when the player
 advanced into it (docs/savegames.md § The checkpoint) — so the health, armor, ammo and weapons
@@ -154,6 +160,48 @@ reuse `source`: `applyRadiusDamage` defaults `cause` to `source?.type`, but a ba
 barrel rather than whoever set it off, and a rocket of the player's own carries no `source` at all,
 so both pass it explicitly. Crushers and damage floors keep their `(amount) => void` callbacks —
 their cause is fixed per wiring site, so `game.ts` binds `'crush'`/`'slime'` where it builds them.
+
+### Dying on the way out
+
+**A level can end over the player's corpse, and when it does the exit wins: no overlay, no `R`, and
+a reborn player on the next map.** The repro is SCYTHE.WAD MAP10, whose intended exit is shooting
+the ring of barrels around the boss brain in sector 64 while standing close enough to die with it.
+Two separate things went wrong there, and both are worth keeping straight.
+
+**The exit has to survive the death at all.** The brain has 250 health and each of the eight
+adjacent barrels deals 112 at that range, so it takes three explosions to kill — while the player
+next to them usually dies on the second. `applyRadiusDamage` damages bodies before the player
+*within one blast*, but a chain is many blasts, so which of the two dies first is a matter of how
+the chain happens to run: the same map exited instantly on one attempt and became unexitable on the
+next. `A_BrainDie` is a bare `G_ExitLevel` with no player-alive check (§ Boss death), so the icon
+is now notified over a corpse and the exit fires either way.
+
+**The overlay must not appear in front of the exit.** `Game.levelEnding` — a queued `pendingExit`,
+or `IconOfSin.exiting` while the `BRAIN_DEATH_TO_EXIT` death cascade runs — is the window in which
+the level is over but hasn't finished saying so, and it is several seconds wide for the icon.
+`damagePlayer` arms no overlay inside it, and a death that got in first is taken back down by
+`endingOverCorpse`, which every site that can open the window calls unconditionally. `R` is refused
+there too, which is the real hazard: an overlay offering "press R" over a level the player has just
+*finished* would restart it. `saveRefusal` is deliberately **not** widened to `levelEnding` — a save
+taken mid-cascade restores mid-cascade, since `IconSnapshot` carries `exitTimer`.
+
+**The two deaths are usually a few tics apart, not simultaneous**, so cancelling the overlay is not
+enough on its own — MAP10's chain kills the player one blast before the brain, and an overlay raised
+on the killing frame flashes up for those tics before `endingOverCorpse` reaches it.
+`DEATH_OVERLAY_DELAY` (§ Player death) is what closes that: the overlay is armed on death and only
+raised once the corpse has finished falling, which is far longer than any barrel chain takes to
+finish, so the disarm always wins.
+
+**The reborn is `G_PlayerReborn`**, and it is read off player state at load rather than queued at
+the exit, exactly as vanilla does it: `G_ExitLevel` has no player-state check at all, and it is
+`G_DoLoadLevel` that turns a `PST_DEAD` player into `PST_REBORN` for the next map. So `enterLevel`
+simply asks whether the player is dead and, if so, installs a fresh `createInventory()` before the
+map load — before, because `loadMapByIndex` hands the inventory object it finds to
+`weaponSystem.beginLevel`. That fresh inventory is what vanilla's `memset(p, 0, …)` plus its
+explicit re-fills come to: 100 health, no armor, fist + pistol with 50 bullets, no backpack. Without
+it the player would walk into the next level alive on 0 health, dying to the first scratch.
+`restart` is untouched by this — it never goes through `enterLevel`, and restores its checkpoint
+(§ Player death).
 
 ## Exploding barrels
 
@@ -274,8 +322,17 @@ MAP07's Arachnotron platform (sector 1, tag 667).
   scanning `map.sectors` for the tag directly since there's no triggering linedef to run
   `resolveTargets` on. `triggerFloor`'s `line` parameter is optional for exactly this caller — it's
   only ever dereferenced for `changeTexture`, which a boss-death `lowerFloorToLowest` never sets.
-- `game.ts` holds the player-alive gate (vanilla's "make sure there is a player alive for victory"),
-  since `playerDead` is `Game`'s own state — the callback passed into `buildThingSprites` checks
-  `!this.playerDead` and then fans the doomednum out to **both** owners,
-  `this.specials.notifyBossDeath(type)` and `this.icon.notifyBossDeath(type)`. Each ignores the types
-  it doesn't handle, so neither needs to know the other's table.
+- `game.ts` fans the doomednum out to **both** owners from the callback passed into
+  `buildThingSprites` — `this.specials.notifyBossDeath(type, !this.playerDead)` and
+  `this.icon.notifyBossDeath(type)`. Each ignores the types it doesn't handle, so neither needs to
+  know the other's table. `playerDead` is `Game`'s own state, hence the gate being passed in rather
+  than read where it is used.
+
+**The player-alive gate is `A_BossDeath`'s alone.** Vanilla's "make sure there is a player alive for
+victory" loop is in that one function; `A_KeenDie` and `A_BrainDie` are separate action functions
+and neither has one (confirmed in `p_enemy.c`). So the icon is never gated at all, and inside
+`SpecialsController.notifyBossDeath` the flag is applied **per row**, not per call: rows that came
+from `A_BossDeath`'s own switch carry `needsLivingPlayer`, Keen's does not. That keeps the fact
+beside the row it describes — `bossDeathTriggersFor` builds Keen's entry at the `KEEN_DOOR_TAG`
+comment that already explains the *other* gate `A_KeenDie` skips. See § Dying on the way out for
+what the gate cost when it was applied to the whole call.

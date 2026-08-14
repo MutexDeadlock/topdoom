@@ -72,7 +72,7 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   beside the Save heading, which shares the rows' `.warning` styling — **a disabled button shows no
   tooltip**, so the Overwrite `title` alone would tell the player nothing, and it keeps the
   unconditional text. The throw stays in place regardless: the buttons are a courtesy,
-  `captureSave` is the actual gate.
+  `Game.saveVia`'s own capture is the actual gate.
 - Saving takes an optional name (defaulting to map + date), and both panels list every save the
   player made, newest first: thumbnail, name, the level · level time, then skill · date. The
   level-entry checkpoint is the one save neither tab ever shows — `listSaves` drops it, and it
@@ -135,9 +135,11 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
 - Every failure — quota, cap, version, missing WAD — lands in the shared `#menu-status` line;
   `SavegamesUi` never touches the running game. The three hooks (`onSave`, `onOverwrite`, `onLoad`)
   are `main.ts`'s (§ Session lifecycle below), which owns the `Game` instance and the selection the
-  save records; the first two share one `withCapture` body, differing only in what they write. A
-  refusal is **thrown**, never returned — by the store, by `withCapture` and by `Game.captureSave`
-  alike, which is why `captureSave` has no null return: one `catch (err) → setStatus` shape rather
+  save records; the first two share one `withCapture` body, which hands its store call to
+  `Game.saveVia` — the capture, the write and what a stored save makes `R` reload all belong to
+  `Game` (docs/death.md § Player death), so the session layer contributes only the writer. A
+  refusal is **thrown**, never returned — by the store, by `withCapture` and by `Game.saveVia`
+  alike, which is why the capture has no null return: one `catch (err) → setStatus` shape rather
   than two conventions for the same job, and the reason thrown is the specific one
   (`Game.saveRefusal`) rather than a list of everything it might have been. `SavegamesUi.attempt`
   is the single place that shape is written on the UI side; the store being async now, every hook

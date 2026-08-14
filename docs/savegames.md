@@ -164,6 +164,13 @@ nearly so:
 points. The order is load-bearing; the two rules are **geometry before anything that reads
 heights** and **RNG cursors dead last**.
 
+**A `GameSnapshot` is read-only to the restore, and the same object may be applied any number of
+times.** Every step below copies scalars, rebuilds through the ordinary spawner, or `structuredClone`s
+(`specials.restore`'s movers and light states, `projectiles.restore`) — none keeps a live reference
+into the snapshot for the running level to mutate. That is what lets `R` replay the same in-memory
+snapshot after each death (docs/death.md § Player death); a store-backed load gets a fresh object
+per read either way and does not depend on it.
+
 1. Normal preamble: `clearRandom`, `finishLevel`, `weaponSystem.beginLevel`, overlay clears,
    `loadMap`, then `sectorBaseline(map)` — taken here, off the untouched map, because that is
    precisely the state step 3 writes into and therefore the one a capture may omit.
@@ -246,7 +253,10 @@ NUTS.WAD with all 10k monsters wounded ~3 MB.
 Advancing into a level writes a **checkpoint**: an ordinary save, under the reserved id
 `AUTOSAVE_ID` (`'auto'`), taken by `Game.enterLevel` immediately *after* `loadMapByIndex` has built
 the new level. Dying and pressing `R` reloads it, so a death costs the level and not the run's
-inventory (docs/death.md § Player death). Both ways of arriving at the next level go through
+inventory (docs/death.md § Player death) — unless the level has a savegame of its own, which `R`
+prefers: `Game.savedState` holds the snapshot the level was loaded from plus any manual save
+`saveVia` has since stored, and only a level with neither falls back to the checkpoint.
+Both ways of arriving at the next level go through
 `enterLevel` — the exit the player took, and the DEVMODE `N`/`P` jump, which would otherwise leave
 a level with no checkpoint to restart from. The session's *first* level is deliberately not one of
 them: nothing was advanced into, so `R` there restarts as it always did.

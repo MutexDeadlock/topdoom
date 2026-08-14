@@ -3,6 +3,8 @@ v0.1x.x (2026-08-1?)
 Features and improvements
   - the game-over screen now comes up as your corpse settles rather than
     on the frame that killed you
+  - dying on a level you loaded or saved on: R now takes you back to that
+    savegame instead of to the start of the level
 
 Fixed bugs
   - a boss that dies in the same blast as you, now still triggers their 

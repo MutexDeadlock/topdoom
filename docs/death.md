@@ -127,17 +127,43 @@ delay (`R` answers throughout, since `tic` reads `playerDead`, not the overlay),
 inside the window means the overlay is never seen at all, which is what § Dying on the way out
 needs. Vanilla has no overlay here, so none of this is a fidelity claim.
 
-`R` calls `restart`, which reloads the level **from the checkpoint** written when the player
-advanced into it (docs/savegames.md § The checkpoint) — so the health, armor, ammo and weapons
-carried in are what the level restarts with, and the inventory comes out of the snapshot. With no
-checkpoint to use — none written this session (the first level of a run), one that no longer
-matches map/skill/WAD set, or a store that refused the read — it falls back to what `R` always did:
-a fresh `Inventory` and a plain `loadMapByIndex` reload. Either way it isn't a special case, just
-the ordinary map-load path, which already resets player/world/specials/fog for a normal transition
-and, via its own top-of-function reset, `playerDead`/the overlay/`playerActor`'s animation state
-too. The one wrinkle is that reading a checkpoint is async while `tic` is not: `restart` dispatches
-and returns, `restarting` swallows a second press, and `disposed`/`playerDead` are re-checked after
-the read because the menu can have started another level meanwhile.
+`R` calls `restart`, which reloads the level from one of three states, in this order.
+
+**A savegame of this level, when there is one.** `Game.savedState` is the snapshot the level is
+currently being played out of: what it was loaded from (the constructor's `restore`) and every
+manual save taken since. The latter is `saveVia`'s doing — the menu hands it the store call to
+make and it captures, writes and moves `savedState` only if the write came back, the same trio
+`writeCheckpoint` keeps together. Dying after loading or saving therefore returns the player to
+*that* moment rather than to the level's start, which is what "reload" means everywhere else and
+what the overlay's own hint promises. This path is synchronous: the snapshot is in memory and came
+from this very session, so there is no store read and no `matchesSession` check to make. It is
+dropped by `enterLevel`, the only way out of a level — a savegame belongs to the level it was taken
+on, and the checkpoint that call writes takes over from there. Applying the same snapshot twice is
+safe by construction: every `restore` on the load path copies or re-derives out of it and none
+retains a reference into it (docs/savegames.md § Apply order).
+
+**Otherwise the checkpoint** written when the player advanced into the level (docs/savegames.md §
+The checkpoint) — so the health, armor, ammo and weapons carried in are what the level restarts
+with, and the inventory comes out of the snapshot.
+
+**Otherwise a plain reload**, what `R` always did: a fresh `Inventory` and a bare `loadMapByIndex`.
+That covers no checkpoint written this session (the first level of a run), one that no longer
+matches map/skill/WAD set, and a store that refused the read.
+
+None of the three is a special case, just the ordinary map-load path, which already resets
+player/world/specials/fog for a normal transition and, via its own top-of-function reset,
+`playerDead`/the overlay/`playerActor`'s animation state too. The one wrinkle is the checkpoint's:
+reading it is async while `tic` is not, so `restart` dispatches and returns, `restarting` swallows a
+second press, and `disposed`/`playerDead` are re-checked after the read because the menu can have
+started another level meanwhile.
+
+**The overlay's hint names which of the two the press will do** — "press R to reload last savegame"
+against "press R to restart" — because reloading a save and restarting the level are different
+promises to make to a player standing over their own corpse. `damagePlayer` passes `showDeath`
+whether a savegame is in hand and `ScreenEffects` owns the wording, the same split the killer line
+uses. Only the savegame can be answered for at death time: whether a *checkpoint* is readable is a
+store read away, so both level-reload outcomes share the one hint, which is a distinction the
+player has no reason to care about anyway.
 
 ### Who killed the player
 

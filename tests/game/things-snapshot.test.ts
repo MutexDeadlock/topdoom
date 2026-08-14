@@ -151,6 +151,38 @@ describe('Savegames · things round-trip', () => {
     assert.ok(restored.monsterById(0), 'the wounded imp is still alive');
   });
 
+  test('the same in-memory snapshot restores identically however often it is applied', () => {
+    // What `R` after a death does: `Game.savedState` is one snapshot object,
+    // re-applied on every death of that level, so the restore must treat it as
+    // read-only (docs/savegames.md § Apply order, docs/death.md § Player death).
+    clearRandom();
+    const { grid, world, map } = arena();
+    const layer = build(world, map);
+    const player: Pos3 = { ...grid.centre(1, 1), z: 0 };
+    layer.damage(0, 20, undefined, undefined, player.x, player.y);
+    layer.damage(1, 1000);
+    for (let i = 0; i < 10; i++) layer.update(DOOM_TIC, player);
+
+    // Deliberately *not* JSON round-tripped: this is the live object, the way
+    // a savegame held in memory is handed back to `loadMapByIndex`.
+    const saved = layer.snapshot();
+    const cursors = getRandomCursors();
+
+    const first = arena();
+    const once = buildThingSprites(first.map, first.world, BANK, MATERIALS, 3, undefined, undefined, saved);
+    setRandomCursors(cursors);
+    const afterFirst = once.snapshot();
+    // Run the restored level on, which is what would corrupt a snapshot the
+    // restore had kept a reference into.
+    for (let i = 0; i < 35; i++) once.update(DOOM_TIC, player);
+    once.damage(2, 30, undefined, undefined, player.x, player.y);
+
+    const second = arena();
+    const twice = buildThingSprites(second.map, second.world, BANK, MATERIALS, 3, undefined, undefined, saved);
+    setRandomCursors(cursors);
+    assert.deepEqual(twice.snapshot(), afterFirst, 'the second restore lands on the same state as the first');
+  });
+
   test('a save naming a type this WAD set cannot draw refuses to restore', () => {
     clearRandom();
     const { world, map } = arena();

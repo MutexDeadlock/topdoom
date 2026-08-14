@@ -51,6 +51,17 @@ const POWER_BLINK_HZ = 4;
 const DEATH_OVERLAY_DELAY = PLAYER_DEATH_FRAMES.length * PLAYER_DEATH_FRAME_SECONDS;
 
 /**
+ * The overlay's bottom line, in the two things `R` can do: reload the savegame
+ * this level is being played out of, or reload the level itself (its checkpoint
+ * where there is one, a plain restart otherwise — a distinction the player has
+ * no reason to care about). Which one applies is the game layer's to know, so
+ * `showDeath` is told that and this layer keeps the wording.
+ * docs/death.md § Player death.
+ */
+const RESTART_HINT = 'press R to restart';
+const RELOAD_SAVE_HINT = 'press R to reload last savegame';
+
+/**
  * Whether a powerup's screen effect should currently show, given its
  * remaining seconds (`Inventory.powers[id]`). Once inside the warning
  * window, `floor(secs * Hz) % 2` alternates every `1/Hz` seconds as `secs`
@@ -71,12 +82,15 @@ export class ScreenEffects {
   private painEl = document.getElementById('pain-flash')!;
   private deathEl = document.getElementById('death-overlay')!;
   private killerEl = document.querySelector<HTMLElement>('#death-overlay .killer')!;
+  private hintEl = document.querySelector<HTMLElement>('#death-overlay .hint')!;
   /** Current intensity of the damage flash, 0-1 — bumped by `addPain`, decayed by `update`. */
   private painFlash = 0;
   /** Seconds until the armed death overlay is raised; negative once it is up, or when none is armed. */
   private deathDelay = -1;
   /** The killer line the armed overlay will carry — see `showDeath`. */
   private deathKiller = '';
+  /** Which hint the armed overlay will carry — see `showDeath` and `RESTART_HINT`. */
+  private deathHint = RESTART_HINT;
 
   /**
    * `setPlayerOpacity` writes partial invisibility to the player's own
@@ -104,6 +118,7 @@ export class ScreenEffects {
       this.deathDelay -= dt;
       if (this.deathDelay < 0) {
         this.killerEl.textContent = this.deathKiller;
+        this.hintEl.textContent = this.deathHint;
         this.deathEl.classList.remove('hidden');
       }
     }
@@ -118,11 +133,13 @@ export class ScreenEffects {
    * Arms the overlay, with `killer` as its middle line — an already-composed
    * sentence (`thingdefs.ts`'s `obituary`), since what killed the player is the
    * game layer's to know, not this one's. `''` leaves the line out entirely.
+   * `reloadsSave` says which of the two hints applies (`RESTART_HINT`).
    * `update` raises it `DEATH_OVERLAY_DELAY` later, so a `clearDeath` inside that
    * window means it is never seen at all.
    */
-  showDeath(killer: string): void {
+  showDeath(killer: string, reloadsSave: boolean): void {
     this.deathKiller = killer;
+    this.deathHint = reloadsSave ? RELOAD_SAVE_HINT : RESTART_HINT;
     this.deathDelay = DEATH_OVERLAY_DELAY;
   }
 
@@ -130,6 +147,7 @@ export class ScreenEffects {
   clearDeath(): void {
     this.deathDelay = -1;
     this.deathKiller = '';
+    this.deathHint = RESTART_HINT;
     this.deathEl.classList.add('hidden');
     this.killerEl.textContent = '';
     this.painFlash = 0;

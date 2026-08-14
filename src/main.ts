@@ -175,13 +175,15 @@ async function boot(): Promise<void> {
   /**
    * The shared body of the two save hooks: the only thing they need from the
    * session is that there *is* one, since a capture identifies its WAD set by
-   * content and needs nothing else from around it. `captureSave` throws its own
+   * content and needs nothing else from around it. Which store call to make is
+   * all that separates Save from Overwrite, so it is the one thing handed to
+   * `Game.saveVia`, which owns the capture around it. `saveVia` throws its own
    * reason when the moment is unsaveable, like the store's writers do — the
    * menu turns any of them into its status line (see `SaveHooks`).
    */
   const withCapture = async (write: (capture: SaveCapture) => Promise<unknown>): Promise<void> => {
     if (!game) throw new Error('no running game to save');
-    await write(game.captureSave());
+    await game.saveVia(write);
   };
 
   const menu: Menu = new Menu((selection) => startLevel(selection), resumeGame, audio, {

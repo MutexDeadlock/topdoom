@@ -286,6 +286,14 @@ export class Game {
    * run's inventory, which is not what "restart this level" means.
    */
   private hasCheckpoint = false;
+  /**
+   * The savegame this level is currently playing out of, if any: the one it was
+   * loaded from, and every manual save taken since. It is what `R` goes back to,
+   * ahead of the checkpoint — in memory, so no store read and no session match
+   * (docs/death.md § Player death). Dropped by `enterLevel`, which is the only
+   * way out of a level.
+   */
+  private savedState: GameSnapshot | null;
   /** Guards the two async gaps in `restart`: a held-down `R`, and a `Game` torn down mid-read. */
   private restarting = false;
   private disposed = false;
@@ -319,6 +327,7 @@ export class Game {
     this.skill = skill;
     this.startPos = startPos;
     this.checkpoint = checkpoint;
+    this.savedState = restore;
     // From the save when restoring: a `?pos=` run must not become eligible for
     // best times by being saved and loaded back (docs/hud.md § Best times).
     this.recordsEligible = restore ? restore.recordsEligible : startPos === null;
@@ -443,6 +452,25 @@ export class Game {
   }
 
   /**
+   * Saves this moment through the caller's writer — the menu's Save and
+   * Overwrite, whose store call is all that differs between them, handed in the
+   * same `(capture) => Promise` shape `CheckpointStore.write` already uses. The
+   * capture, the write and `savedState` stay together here for the reason
+   * `writeCheckpoint` keeps its own trio together: what a save *is* and what a
+   * successful one makes `R` reload are both this class's, and only a write that
+   * actually stored the bytes may move `savedState` (docs/death.md § Player death).
+   *
+   * Refuses by *throwing*, from `captureSave` below or from the writer itself —
+   * the same shape either way, which is what lets the menu turn any of it into
+   * one status line (docs/menu.md § Save and Load tabs).
+   */
+  async saveVia(write: (capture: SaveCapture) => Promise<unknown>): Promise<void> {
+    const capture = this.captureSave();
+    await write(capture);
+    this.savedState = capture.state;
+  }
+
+  /**
    * The full state of this moment plus a thumbnail, ready for the store.
    * Refuses by *throwing* the reason, the same convention the store's own
    * writers use, so the whole save path has one refusal shape and the player is
@@ -451,7 +479,7 @@ export class Game {
    * capture identifies its WAD set by content, so this class needs to know
    * nothing about the library it was picked from.
    */
-  captureSave(thumbnail = true): SaveCapture {
+  private captureSave(thumbnail = true): SaveCapture {
     const refusal = this.saveRefusal();
     if (refusal) throw new Error(refusal);
     return {
@@ -868,7 +896,10 @@ export class Game {
       // between the two cries.
       this.audio.play(amount > healthBefore + 50 ? 'pdiehi' : 'pldeth', this.player, PLAYER_ORIGIN);
       this.playerActor.die(PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS);
-      if (!this.levelEnding) this.screen.showDeath(obituary(cause));
+      // The hint depends on what `R` will actually do — a savegame to reload is
+      // known here and now, where a checkpoint is only a store read away
+      // (docs/death.md § Player death).
+      if (!this.levelEnding) this.screen.showDeath(obituary(cause), this.savedState !== null);
       return true;
     }
     this.audio.play('plpain', this.player, PLAYER_ORIGIN);
@@ -891,6 +922,9 @@ export class Game {
   private enterLevel(index: number): void {
     // Before the load, which hands this very object to `weaponSystem.beginLevel`.
     if (this.playerDead) this.inventory = createInventory();
+    // A savegame belongs to the level it was taken on; the checkpoint written
+    // below is what `R` reloads from here on (docs/death.md § Player death).
+    this.savedState = null;
     this.loadMapByIndex(index);
     this.writeCheckpoint();
   }
@@ -937,11 +971,19 @@ export class Game {
   }
 
   /**
-   * `R`, while dead. Dispatches the reload below; stays `void` because `tic`
+   * `R`, while dead. Reloads the level's savegame where there is one, and
+   * otherwise dispatches the checkpoint read below; stays `void` because `tic`
    * calls it, and re-entrant while a read is in flight is the same press twice.
    */
   private restart(): void {
     if (this.restarting) return;
+    // The savegame path is synchronous — the snapshot is already in memory, and
+    // it came from this very session, so there is nothing to match against
+    // (docs/death.md § Player death).
+    if (this.savedState) {
+      this.loadMapByIndex(this.mapIndex, this.savedState);
+      return;
+    }
     this.restarting = true;
     void this.resumeFromCheckpoint().finally(() => {
       this.restarting = false;

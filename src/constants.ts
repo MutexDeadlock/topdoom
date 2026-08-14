@@ -5,7 +5,7 @@
 import { ThingType } from './game/thingtypes.ts';
 
 /** Shown on the start menu. */
-export const VERSION = '0.12.1';
+export const VERSION = '0.12.2';
 
 /**
  * Set VITE_DEVMODE=true in .env.local to enable in-game debug info and dev hotkeys.

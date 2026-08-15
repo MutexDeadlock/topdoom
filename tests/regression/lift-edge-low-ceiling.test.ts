@@ -34,7 +34,7 @@ function scene(): { world: World; x: number; y: number } {
   return { world, x: grid.cell - 4, y: grid.centre(0, 0).y };
 }
 
-describe('a low-ceilinged neighbor blocks a body standing above it', () => {
+describe('Regressions · a low-ceilinged neighbor blocks a body standing above it', () => {
   test('neither pre-existing gate can account for the block', () => {
     const { world, x, y } = scene();
     // The opening is a full player tall, and crossing into it is a step *down*,

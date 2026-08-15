@@ -35,11 +35,6 @@ export interface SpecialsRigOptions {
   onTeleport?: (dest: Placement) => void;
   /** Whether a body is under the closing ceiling, and the hook for counting crush damage pulses. */
   onCrush?: (sectorIndex: number, dealDamage: boolean) => boolean;
-  /** The two "is the player in the way" predicates. Default `false`: nothing ever blocks a mover. */
-  blocksCeilingLower?: (sectorIndex: number, ceilingHeight: number) => boolean;
-  blocksFloorRise?: (sectorIndex: number, floorHeight: number) => boolean;
-  /** Pass one in to read back the mover meshes it receives; otherwise the rig makes its own. */
-  scene?: THREE.Group;
 }
 
 export interface SpecialsRig {
@@ -50,7 +45,7 @@ export interface SpecialsRig {
    * second `new World(map)`.
    */
   world: World;
-  /** Where mover meshes land — the `scene` option, or the group the rig made. */
+  /** The group the controller hangs its mover meshes on, for a test that reads them back. */
   scene: THREE.Group;
   movableSectors: Set<number>;
   /**
@@ -69,7 +64,7 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
   const world = new World(map);
   const movableSectors = computeMovableSectors(map);
   const built = buildMapMesh(map, BANK, { movableSectors });
-  const scene = options.scene ?? new THREE.Group();
+  const scene = new THREE.Group();
   const fog = new FogOfWar(world, built.occluders, at.x, at.y);
   const specials = new SpecialsController(
     map,
@@ -83,8 +78,10 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
     options.onExit ?? (() => {}),
     options.onTeleport ?? (() => {}),
     options.onCrush ?? (() => false),
-    options.blocksCeilingLower ?? (() => false),
-    options.blocksFloorRise ?? (() => false),
+    // The two "is the player in the way" predicates. No test drives a mover into
+    // the player yet, so both stand at "nothing ever blocks one".
+    () => false,
+    () => false,
     at.x,
     at.y,
     movableSectors,

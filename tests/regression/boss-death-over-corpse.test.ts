@@ -25,7 +25,7 @@ function bossMap(name: string, doorTag = 0) {
   return { grid, map: grid.map, door };
 }
 
-describe('Regression · a boss dying over the player’s corpse', () => {
+describe('Regressions · a boss dying over the player’s corpse', () => {
   test("Commander Keen's door still opens with the player dead — A_KeenDie has no player-alive check", () => {
     const { grid, map, door } = bossMap('MAP12', KEEN_DOOR_TAG);
     const rig = specialsRig(map, grid.centre(1, 1));

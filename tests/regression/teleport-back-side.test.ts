@@ -36,9 +36,7 @@ function edgeBetween(map: ReturnType<typeof gridMap>['map'], front: number, back
 function setup() {
   const padACell = 2;
   const padBCell = 4;
-  const grid = gridMap(['#######', '#.....#', '#######'], {
-    things: [],
-  });
+  const grid = gridMap(['#######', '#.....#', '#######']);
   const map = grid.map;
   const padA = grid.index(padACell, 1);
   const padB = grid.index(padBCell, 1);

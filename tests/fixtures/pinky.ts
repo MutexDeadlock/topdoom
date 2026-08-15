@@ -9,7 +9,7 @@ import { ThingType } from '../../src/game/things/doomednums.ts';
 import type { Pos3 } from '../../src/types.ts';
 
 /** Doomednum of the demon/pinky (`MT_SERGEANT`). */
-export const DEMON_TYPE = ThingType.demon;
+const DEMON_TYPE = ThingType.demon;
 
 /**
  * `pinky_{above,below}_test.wad`: two four-line rooms split at `y = 128`, with a

@@ -39,9 +39,6 @@ export interface GridMapOptions {
   cell?: number;
   /** Extra or overridden glyph heights, merged over the defaults. */
   heights?: Record<string, CellHeights>;
-  /** Glyphs whose adjacent linedefs also carry `LF.BLOCKING`. Default `'#'`. */
-  solidGlyphs?: string;
-  things?: Thing[];
   /** A REJECT matrix for the finished map — one bit per ordered sector pair, as `loadMap` would hand one over. */
   reject?: Uint8Array;
 }
@@ -57,6 +54,9 @@ const DEFAULT_HEIGHTS: Record<string, CellHeights> = {
   '+': { floor: 0, ceil: 0 },
 };
 
+/** The one glyph whose adjacent linedefs also carry `LF.BLOCKING`. */
+const SOLID_GLYPH = '#';
+
 export interface GridMap {
   map: DoomMap;
   cell: number;
@@ -71,7 +71,6 @@ export interface GridMap {
 export function gridMap(art: readonly string[], options: GridMapOptions = {}): GridMap {
   const cell = options.cell ?? 128;
   const heights = { ...DEFAULT_HEIGHTS, ...options.heights };
-  const solid = new Set((options.solidGlyphs ?? '#').split(''));
   const rows = art.length;
   const cols = art[0]?.length ?? 0;
   if (rows === 0 || cols === 0) throw new Error('gridMap: empty art');
@@ -118,7 +117,7 @@ export function gridMap(art: readonly string[], options: GridMapOptions = {}): G
   const flagsFor = (a: string | null, b: string | null): number =>
     a === null || b === null
       ? LF.BLOCKING
-      : LF.TWO_SIDED | (solid.has(a) || solid.has(b) ? LF.BLOCKING : 0);
+      : LF.TWO_SIDED | (a === SOLID_GLYPH || b === SOLID_GLYPH ? LF.BLOCKING : 0);
 
   const line = (
     key: string,
@@ -239,7 +238,7 @@ export function gridMap(art: readonly string[], options: GridMapOptions = {}): G
       segs,
       subsectors,
       nodes,
-      things: options.things ?? [],
+      things: [],
       reject: options.reject,
       bounds: { minX: 0, minY: 0, maxX: cols * cell, maxY: rows * cell },
     },

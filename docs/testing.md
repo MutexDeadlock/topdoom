@@ -176,8 +176,8 @@ sixteenth argument was a five-file edit.
 
 `tick(dt, x, y)` mirrors `update`'s own argument order and defaults to one `TIC` at the rig's start
 position: a test that moves nobody writes `tick()`, one that walks the player writes
-`tick(TIC, x, y)`. Pass `scene` in when the test needs to read back the mover meshes the controller
-hangs on it, as `strobing-lift-light` does; otherwise the rig makes its own.
+`tick(TIC, x, y)`. The rig's own `scene` is the group the controller hangs its mover meshes on, so a
+test that needs to read those back takes it from there, as `strobing-lift-light` does.
 
 ## Markup partials
 

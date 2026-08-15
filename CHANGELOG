@@ -11,7 +11,9 @@ Features and improvements
     - default volumes: 80% for sound and 60% for music
 
 Fixed bugs
-
+  - the monster counter no longer reads over 100% after an arch-vile
+    resurrection: a raised monster now adds one to the level's monster total
+    (ZDoom's rule), so clearing the level ends at exactly 100% again
 
 
 ===============================================================================

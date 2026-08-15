@@ -72,8 +72,15 @@ always lands exactly on center; `#hud-levelstats` sits in the left track, right-
   counted once, at map load, in `things.ts`'s `buildThingSprites` spawn loop (mirrors
   `P_SpawnMapThing`'s own `if (mobj->flags & MF_COUNTKILL) totalkills++`); `kills` increments in
   `ThingLayer.damage`'s death branch with **no** "already counted" guard, matching vanilla's
-  `P_KillMobj` exactly — an arch-vile-resurrected monster killed a second time legitimately counts
-  twice, the same reason vanilla's own kill percentage can read over 100%.
+  `P_KillMobj` exactly — an arch-vile-resurrected monster killed a second time counts twice.
+  **`ThingLayer.reviveCorpse` raises `totalKills` by one for every resurrection**, which is the one
+  deliberate deviation in these counters: it follows ZDoom's `AActor::Revive` ("[RH] If it's a
+  monster, it gets to count as another kill", `p_mobj.cpp`) rather than vanilla, whose `A_VileChase`
+  touches neither counter and therefore reads over 100% — a real save on SCYTHE.WAD MAP11 showed
+  75/67. With the raise counted, a monster raised *n* times costs *n* extra kills and adds *n* to
+  the total, so clearing the level still ends at exactly 100%. The Icon of Sin's cube is **not**
+  covered by this: `spawnMonster` deliberately leaves `totalKills` alone, so MAP30 keeps vanilla's
+  own >100% (docs/monster-iconofsin.md § The spawn cube).
 - **Items** — `COUNTITEM_TYPES` is the doomednums with vanilla's `MF_COUNTITEM` flag: health/armor
   bonus, soulsphere, invulnerability, berserk, invisibility, computer map, light visor, megasphere.
   Keys, the backpack, weapons, ammo and the radiation suit are deliberately excluded — none carry

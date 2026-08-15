@@ -44,6 +44,11 @@ one-shot-then-hand-back mechanism attack/pain poses use, just running dead-to-al
 26-28, past `Z` (25), with no corresponding WAD lumps at all — a genuine vanilla quirk, not a
 transcription slip — so the vile keeps its ordinary held pose during the hold.
 
+Its one deliberate deviation is the HUD's kill total: a resurrection increments `stats.totalKills`,
+following ZDoom's `AActor::Revive` rather than vanilla, which leaves both counters alone and so
+reads over 100% kills once a vile has raised anything. docs/hud.md § Level stats has the rule and
+why.
+
 ## The attack
 
 `A_VileAttack` is `AttackStats.blast`: guaranteed un-rolled direct damage

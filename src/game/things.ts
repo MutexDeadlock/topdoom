@@ -307,8 +307,8 @@ export function buildThingSprites(
    * Returns null when the WAD carries no art for the type, which is the
    * "silently don't spawn" every caller already wanted. Deliberately does
    * **not** touch `stats.totalKills`/`totalItems`: those are
-   * `P_SpawnMapThing`'s own level totals, so only the map-load loop increments
-   * them (docs/hud.md § Level stats).
+   * `P_SpawnMapThing`'s own level totals, raised only by the map-load loop and
+   * — by deliberate deviation — by `reviveCorpse` (docs/hud.md § Level stats).
    */
   function pushThing(
     type: number,
@@ -488,9 +488,9 @@ export function buildThingSprites(
       }
       // Vanilla's own `P_SpawnMapThing` totals — incremented only for a thing that actually spawns
       // (past every filter above, art included), matching `if (mobj->flags & MF_COUNTKILL)
-      // totalkills++` / `MF_COUNTITEM` in `info.c`. Fixed for the level: only the runtime kill/pickup
-      // counters change after this, which is why a cube-spawned monster (`spawnMonster`) can push
-      // the kill count past 100%.
+      // totalkills++` / `MF_COUNTITEM` in `info.c`. Nothing but a resurrection (`reviveCorpse`, a
+      // documented deviation) moves them afterwards, which is why a cube-spawned monster
+      // (`spawnMonster`) can push the kill count past 100%.
       if (COUNTKILL_TYPES.has(t.type)) stats.totalKills++;
       else if (COUNTITEM_TYPES.has(t.type)) stats.totalItems++;
     }
@@ -687,9 +687,10 @@ export function buildThingSprites(
     p.dead = true;
     p.deadTime = 0;
     // Vanilla P_KillMobj's unconditional `if (target->flags & MF_COUNTKILL) ... killcount++` —
-    // no "already counted" guard, so an arch-vile-resurrected monster killed again legitimately
-    // counts twice, matching vanilla's own >100%-kills quirk. Barrels never match (not in
-    // COUNTKILL_TYPES), so this sits before the barrel branch without needing its own guard.
+    // no "already counted" guard, so an arch-vile-resurrected monster killed again counts twice;
+    // `reviveCorpse` raises the *total* to match rather than vanilla's >100% (docs/hud.md §
+    // Level stats). Barrels never match (not in COUNTKILL_TYPES), so this sits before the barrel
+    // branch without needing its own guard.
     if (COUNTKILL_TYPES.has(p.type)) stats.kills++;
     if (isBarrel) {
       // BEXP, not BAR1 — see BARREL_DEATH_SPRITE's doc. The splash itself
@@ -817,8 +818,19 @@ export function buildThingSprites(
    * so `stepMonsterAI`'s existing "don't walk/attack while attackPause > 0"
    * gate holds it still until the animation actually finishes, the same way
    * it already holds an attacking monster still for its swing.
+   *
+   * The one deliberate deviation is the kill total — see the `totalKills` line
+   * below and docs/hud.md § Level stats.
    */
   function reviveCorpse(p: PosedThing): void {
+    // Deliberate deviation from vanilla, following ZDoom's `AActor::Revive`
+    // ("[RH] If it's a monster, it gets to count as another kill",
+    // `p_mobj.cpp`): a raised monster adds one to the level's kill *total*.
+    // Vanilla adjusts neither counter here, so its `kills` — incremented per
+    // death with no already-counted guard, which this engine keeps — reads
+    // over the total after any resurrection. Counting the raise instead keeps
+    // "cleared the level" at exactly 100%. docs/hud.md § Level stats.
+    if (COUNTKILL_TYPES.has(p.type)) stats.totalKills++;
     p.dead = false;
     p.health = MONSTER_HEALTH[p.type] ?? p.health;
     p.hidden = false;

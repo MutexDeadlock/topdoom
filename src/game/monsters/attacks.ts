@@ -13,7 +13,7 @@ import { triangularSpread } from '../../util/random.ts';
 import type { CombatContext } from '../combat.ts';
 import type { SpriteFxLayer } from '../spritefx.ts';
 import type { ProjectileLayer } from '../projectiles.ts';
-import { MONSTER_TRACER_COLOR } from '../spritefxdefs.ts';
+import { MONSTER_TRACER_COLOR } from '../spritefx/tables.ts';
 import { MONSTER_FIRE_HEIGHT, type MonsterAttackEvent } from './defs.ts';
 import { resolveVileBlast, spawnWindupFire, vileFlameFor } from './vile.ts';
 import type { AudioEngine } from '../../audio/audio.ts';

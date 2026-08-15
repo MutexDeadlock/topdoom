@@ -2,9 +2,10 @@ import { readFileSync } from 'node:fs';
 import { Wad, WadFile } from '../../src/wad/wad.ts';
 import { loadMap } from '../../src/wad/map.ts';
 import { World } from '../../src/game/world.ts';
-import { MONSTER_STATS, type MonsterBody, type MonsterStats } from '../../src/game/monsters/defs.ts';
+import { type MonsterBody, type MonsterStats } from '../../src/game/monsters/defs.ts';
+import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { PLAYER_RADIUS } from '../../src/game/player.ts';
-import { ThingType } from '../../src/game/thingtypes.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
 import type { Pos3 } from '../../src/types.ts';
 
 /** Doomednum of the demon/pinky (`MT_SERGEANT`). */

@@ -2,8 +2,8 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
-import { MONSTER_STATS } from '../../src/game/monsters/defs.ts';
-import { ThingType } from '../../src/game/thingtypes.ts';
+import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 
 /**

@@ -5,7 +5,8 @@
  */
 
 @import './ui/base.css';
-@import './ui/devmode/devmode.css';
+@import './ui/devmode/debughud.css';
+@import './ui/devmode/profilerhud.css';
 @import './ui/hud/hud.css';
 @import './ui/hud/screeneffects.css';
 @import './ui/hud/message.css';

@@ -1,13 +1,14 @@
 /**
  * The WAD-derived tables every thing type is looked up in: sprite names, health, drops, animation
- * frames, barrel and splash constants — data only, confirmed against `info.c`. The runtime layer
- * reading these is `game/things.ts`. See docs/sprites.md and docs/items.md.
+ * frames, barrel and splash constants — data only, confirmed against `info.c`, and keyed
+ * throughout on `things/doomednums.ts`. The runtime layer reading these is `game/things.ts`; the
+ * record shapes it passes around are `things/defs.ts`. See docs/sprites.md and docs/items.md.
  */
-import { DOOM_TIC } from '../constants.ts';
-import { ThingType } from './thingtypes.ts';
+import { DOOM_TIC } from '../../constants.ts';
+import { ThingType } from './doomednums.ts';
 // Type-only: `combat.ts` imports the barrel constants below at runtime, and a
 // value import back would close that loop.
-import type { DamageCause } from './combat.ts';
+import type { DamageCause } from '../combat.ts';
 
 /**
  * DOOM thing type (doomednum) to the sprite it spawns with, covering
@@ -484,7 +485,7 @@ export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
   // S_BRAIN_DIE1-4 all hold BBRN frame 0 — the brain has no death art at all,
   // it just sits there for 120 tics while A_BrainScream detonates around it.
   // Listed anyway so `damage()` holds the sprite instead of hiding it, and so
-  // `deathFrameCount` is 1 rather than 0. game/iconofsin.ts owns the rest.
+  // `deathFrameCount` is 1 rather than 0. game/monsters/iconofsin.ts owns the rest.
   [ThingType.bossBrain]: ['A'], // BBRN
 };
 
@@ -567,7 +568,7 @@ export const MONSTER_ATTACK_FRAMES: Record<number, string[]> = {
  * `S_HEAD_PAIN3` genuinely is a second, distinct recoil frame — confirmed
  * against the WAD, not an accident of the derivation. `ThingLayer.damage`
  * only plays this when a hit actually rolls past the monster's own
- * `painChance` (`game/monsters/defs.ts`) — a hit that fails the roll flinches by
+ * `painChance` (`game/monsters/tables.ts`) — a hit that fails the roll flinches by
  * vanilla rule, not just by art.
  */
 export const MONSTER_PAIN_FRAMES: Record<number, string[]> = {

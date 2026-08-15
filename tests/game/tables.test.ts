@@ -15,11 +15,11 @@ import {
   THING_NAMES,
   THING_SPRITES,
   obituary,
-} from '../../src/game/thingdefs.ts';
-import { INERT_SHOOTABLE, MONSTER_STATS } from '../../src/game/monsters/defs.ts';
-import { ThingType } from '../../src/game/thingtypes.ts';
+} from '../../src/game/things/tables.ts';
+import { INERT_SHOOTABLE, MONSTER_STATS } from '../../src/game/monsters/tables.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
 import { WEAPONS, WEAPON_CYCLE, WEAPON_SLOTS } from '../../src/game/weapons.ts';
-import { IMPACT_EFFECTS, PROJECTILE_SOUNDS } from '../../src/game/spritefxdefs.ts';
+import { IMPACT_EFFECTS, PROJECTILE_SOUNDS } from '../../src/game/spritefx/tables.ts';
 import { SFX_NAMES } from '../../src/audio/sfx.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import type { SfxId } from '../../src/audio/sfx.ts';

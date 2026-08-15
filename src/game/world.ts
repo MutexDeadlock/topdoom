@@ -8,7 +8,7 @@ import { sectorOfSubSector } from '../render/bsp.ts';
 import { segmentIntersect } from '../util/geom.ts';
 import { PLAYER_HEIGHT } from './player.ts';
 import { spawnAngleDeg } from './skill.ts';
-import { ThingType } from './thingtypes.ts';
+import { ThingType } from './things/doomednums.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
 
 /** Vanilla DOOM value, in map units. */

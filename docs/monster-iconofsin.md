@@ -1,6 +1,6 @@
 # The Icon of Sin
 
-`src/game/iconofsin.ts`, `src/game/thingdefs.ts`, `src/game/things.ts`, `src/game/specials.ts`
+`src/game/monsters/iconofsin.ts`, `src/game/things/tables.ts`, `src/game/things.ts`, `src/game/specials.ts`
 
 MAP30's boss: the spitter that launches spawn cubes, the cubes themselves, and the brain's death.
 Separate from docs/monster-ai.md because none of it goes through `MONSTER_STATS` or `stepMonsterAI` —
@@ -55,7 +55,7 @@ player arrives, which is what vanilla does.
 `MT_SPAWNSHOT` flies at 350 units/sec (`mobjinfo.speed` of 10 per tic) and is
 `MF_NOBLOCKMAP|MF_NOCLIP|MF_NOGRAVITY` — it passes through all geometry and collides with nothing.
 That is exactly why it is **not** a `ProjectileLayer` projectile: that layer exists to resolve
-wall-blocked flight and damage, and a cube does neither. It is a local record in `iconofsin.ts` with its
+wall-blocked flight and damage, and a cube does neither. It is a local record in `monsters/iconofsin.ts` with its
 own `SpriteAnimator`, drawn through `SpriteFxLayer.batchSprite` the same way `ProjectileLayer.update`
 draws a missile, at full light (vanilla's fullbright frame bit). `boscub` replays once per four-frame
 cycle, since `A_SpawnSound` sits on the looping `S_SPAWN1` alone.
@@ -66,7 +66,7 @@ Flying to the target point and arriving when the distance runs out is equivalent
 anywhere else.
 
 On arrival, `A_SpawnFly` spawns the `MT_SPAWNFIRE` puff (`FIRE A`-`H`), plays `telept`, and rolls one
-`P_Random()` against `thingdefs.ts`'s `SPAWN_CUBE_MONSTERS` — eleven ordered upper bounds summing to
+`P_Random()` against `things/tables.ts`'s `SPAWN_CUBE_MONSTERS` — eleven ordered upper bounds summing to
 exactly 256, transcribed from `p_enemy.c`'s if/else chain. The weights are deliberately lopsided (an
 imp is 50/256, an arch-vile 2/256) and stay that way. `ThingLayer.spawnMonster` creates the monster
 already alerted and **telefrags** whatever was standing there, so a spawn spot is lethal to stand on

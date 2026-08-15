@@ -3,13 +3,13 @@
  * damage, and the two obstruction tests that stall or reverse a mover. See docs/specials.md
  * § Crushers and § Every other mover stops instead.
  */
-import type { DoomMap } from '../wad/map.ts';
-import type { Pos2 } from '../types.ts';
-import type { World } from './world.ts';
-import type { ThingLayer } from './things.ts';
-import { TALLEST_BODY_HEIGHT } from './monsters/defs.ts';
-import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
-import { CRUSH_DAMAGE } from '../wad/specials.ts';
+import type { DoomMap } from '../../wad/map.ts';
+import type { Pos2 } from '../../types.ts';
+import type { World } from '../world.ts';
+import type { ThingLayer } from '../things.ts';
+import { TALLEST_BODY_HEIGHT } from '../monsters/tables.ts';
+import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
+import { CRUSH_DAMAGE } from '../../wad/specials.ts';
 
 /**
  * `SpecialsController`'s three "who is standing in this mover" callbacks. It

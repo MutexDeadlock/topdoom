@@ -11,11 +11,12 @@
  */
 import type { DoomMap } from '../../wad/map.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
-import { MONSTER_DEATH_FRAME_SECONDS, MONSTER_TYPES, SOLID_DECORATION_TYPES } from '../thingdefs.ts';
-import { FAST_MONSTER_STATS, MONSTER_STATS, type RaiseCandidate } from '../monsters/defs.ts';
+import { MONSTER_DEATH_FRAME_SECONDS, MONSTER_TYPES, SOLID_DECORATION_TYPES } from './tables.ts';
+import { type RaiseCandidate } from '../monsters/defs.ts';
+import { FAST_MONSTER_STATS, MONSTER_STATS } from '../monsters/tables.ts';
 import { positionBlocked, type ThingBlocker, type World } from '../world.ts';
 import { type PosedThing } from './defs.ts';
-import { ThingType } from '../thingtypes.ts';
+import { ThingType } from './doomednums.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
 
 /**

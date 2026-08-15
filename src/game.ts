@@ -25,28 +25,32 @@ import {
   PLAYER_DEATH_FRAMES,
   PLAYER_PAIN_FRAMES,
   obituary,
-} from './game/thingdefs.ts';
+} from './game/things/tables.ts';
 import { thrustSpeed } from './game/monsters/defs.ts';
 import { MonsterAttacks } from './game/monsters/attacks.ts';
 import { collectFadeTargets, FlatFader, TextureScroller, WallFader } from './render/occlusion.ts';
 import { World } from './game/world.ts';
-import { AIM_HEIGHT_OFFSET, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
+import { AIM_HEIGHT_OFFSET, HARD_LANDING_SPEED, Player, PLAYER_MASS } from './game/player.ts';
 import { applyBarrelExplosion, type CombatContext, type DamageCause } from './game/combat.ts';
 import { SpriteFxLayer } from './game/spritefx.ts';
 import { ProjectileLayer } from './game/projectiles.ts';
 import { FogOfWar } from './game/fogofwar.ts';
-import { SpecialsController } from './game/specials.ts';
+import {
+  applyCrushDamage,
+  blocksCeilingLower,
+  blocksFloorRise,
+  SectorEffects,
+  SpecialsController,
+} from './game/specials.ts';
 import { computeMovableSectors } from './game/specials/mapscan.ts';
-import { IconOfSin } from './game/iconofsin.ts';
-import { applyCrushDamage, blocksCeilingLower, blocksFloorRise } from './game/moverblocking.ts';
-import { SectorEffects } from './game/sectoreffects.ts';
+import { IconOfSin } from './game/monsters/iconofsin.ts';
 import { Hud, type LevelStats } from './ui/hud/hud.ts';
 import { Crosshair } from './ui/hud/crosshair.ts';
-import { Intermission } from './ui/hud/intermission.ts';
+import { Intermission, INTERMISSION_INPUT_DELAY } from './ui/hud/intermission.ts';
 import { LevelCard } from './ui/hud/levelcard.ts';
 import { LevelNames } from './wad/levelnames.ts';
 import { LevelProgression } from './wad/progression.ts';
-import { CenterMessage, lockedKeyMessage } from './ui/hud/message.ts';
+import { CenterMessage, lockedKeyMessage, SECRET_MESSAGE } from './ui/hud/message.ts';
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
 import { DeathOverlay } from './ui/hud/deathoverlay.ts';
@@ -69,44 +73,18 @@ import {
   createInventory,
   finishLevel,
   hasPower,
-  ITEM_PICKUP_RADIUS,
   pickupSound,
+  PICKUP_RANGE,
   tickPowers,
   type Inventory,
 } from './game/inventory.ts';
-import { ThingType } from './game/thingtypes.ts';
+import { ThingType } from './game/things/doomednums.ts';
 import { WEAPONS, WeaponSystem } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
 import { PLAYER_ORIGIN } from './audio/sfx.ts';
 import { SoundBank } from './wad/sound.ts';
 import type { Placement, Pos2 } from './types.ts';
-import { DOOM_TIC, VIEW_DISTANCE } from './constants.ts';
-
-/** Combined radius (map units) within which an item is close enough to pick up. */
-const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
-
-/**
- * Where the distance fog starts hazing, as a fraction of `VIEW_DISTANCE` (fully opaque at 1.0), so
- * moving the one dial keeps the fade band in proportion. Tuned by feel: wide enough that distant
- * geometry dissolves instead of meeting a wall of black, narrow enough that the room the player is
- * actually fighting in stays at full brightness.
- */
-const FOG_START_FRACTION = 0.54;
-
-/**
- * Shown center-screen (`ui/hud/message.ts`) with `radio` — vanilla's `DSRADIO`, which it uses for
- * DOOM 2's inter-level radio chatter, not for secrets, so both the message and the sound are this
- * engine's own. Vanilla announces a secret nowhere at all: the status bar's `S` count just ticks
- * up. docs/hud.md § Center messages.
- */
-const SECRET_MESSAGE = 'You found a secret area';
-
-/**
- * How long the intermission popup ignores the continue key. `Space` both uses the exit switch and
- * dismisses the popup, so without this a mashed switch skips past it before it can be read.
- * **Tuned by feel** — long enough to swallow a double tap, short enough not to feel stuck.
- */
-const INTERMISSION_INPUT_DELAY = 0.6;
+import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
 
 /**
  * The simulation's fixed step. Every gameplay system advances by exactly this
@@ -182,7 +160,7 @@ export class Game {
   private specials?: SpecialsController;
   /**
    * The Icon of Sin's cube spitter, rebuilt per level like `specials` — inert on every map with no
-   * `MT_BOSSSPIT` thing, which is all of them but MAP30. See game/iconofsin.ts.
+   * `MT_BOSSSPIT` thing, which is all of them but MAP30. See game/monsters/iconofsin.ts.
    */
   private icon?: IconOfSin;
   /** Teleport fog, impact explosions, the smoke trail, the vile's flame and hitscan tracers — see game/spritefx.ts. */
@@ -220,7 +198,7 @@ export class Game {
   private intermissionActive = false;
   /** Seconds the popup has been up, for `INTERMISSION_INPUT_DELAY`. The only thing that still advances while it is. */
   private intermissionTime = 0;
-  /** Damage floors and the secret counter for the current map — see game/sectoreffects.ts. */
+  /** Damage floors and the secret counter for the current map — see game/specials/sectoreffects.ts. */
   private sectorEffects!: SectorEffects;
   /**
    * Seconds spent in the current level, shown on the HUD as hh:mm:ss. Advanced below in `frame`,
@@ -1298,7 +1276,7 @@ export class Game {
 
   /**
    * The two things the player picks up by standing somewhere: items in reach, and whatever the
-   * sector underfoot does to them (damage floors, secrets, an exit) — see game/sectoreffects.ts.
+   * sector underfoot does to them (damage floors, secrets, an exit) — see game/specials/sectoreffects.ts.
    */
   private collectPickupsAndSectorEffects(dt: number): void {
     this.things?.tryPickup(this.player, PICKUP_RANGE, (type, dropped) => {

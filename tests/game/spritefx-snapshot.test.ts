@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { World } from '../../src/game/world.ts';
 import { SpriteFxLayer } from '../../src/game/spritefx.ts';
-import { TFOG_FRAMES, TFOG_FRAME_SECONDS } from '../../src/game/spritefxdefs.ts';
+import { TFOG_FRAME_SECONDS, TFOG_FRAMES } from '../../src/game/spritefx/tables.ts';
 import { VIEWER_ANGLE_DEG } from '../../src/render/sprites.ts';
 import type { SpriteBank } from '../../src/wad/sprites.ts';
 import type { SpriteMaterialCache } from '../../src/render/sprites.ts';

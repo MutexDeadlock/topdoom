@@ -1,8 +1,12 @@
 /**
  * Cross-cutting values and the tuned-by-feel dials. CLAUDE.md's constants rule says what may live
  * here — nothing identity-coupled to one module, however often it's imported.
+ *
+ * Cross-cutting, so there is no `docs/` page of its own: each dial is documented where it takes
+ * effect — docs/render.md § View distance, docs/render.md § Sector lighting,
+ * docs/sprites.md § Pickup scale, docs/menu.md § Dev mode, docs/frameloop.md.
  */
-import { ThingType } from './game/thingtypes.ts';
+import { ThingType } from './game/things/doomednums.ts';
 
 /** Shown on the start menu. */
 export const VERSION = '0.12.2';
@@ -34,6 +38,15 @@ export const BRIGHTNESS_LIFT = 0.12;
  * docs/render.md § View distance.
  */
 export const VIEW_DISTANCE = 12000;
+
+/**
+ * Where that fog starts hazing, as a fraction of `VIEW_DISTANCE` (fully opaque at 1.0), so moving
+ * the one dial above keeps the fade band in proportion — which is why it lives beside it rather
+ * than with the `game.ts` line that reads it. Tuned by feel: wide enough that distant geometry
+ * dissolves instead of meeting a wall of black, narrow enough that the room the player is actually
+ * fighting in stays at full brightness. docs/render.md § View distance.
+ */
+export const FOG_START_FRACTION = 0.54;
 
 /**
  * `PICKUP_SCALE_TYPES` (ammo, health/armor, keys, powerups) draw at vanilla's native patch size

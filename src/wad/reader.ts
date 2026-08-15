@@ -1,3 +1,9 @@
+/**
+ * The byte cursor every other `wad/` module reads its lumps through — WAD files are
+ * little-endian, so this is where that assumption is made once instead of at each field.
+ * See docs/wad.md § Loading and merging.
+ */
+
 /** Small little-endian cursor over an ArrayBuffer. */
 export class Reader {
   private view: DataView;

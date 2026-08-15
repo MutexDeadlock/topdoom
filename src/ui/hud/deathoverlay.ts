@@ -2,7 +2,7 @@
  * The full-screen panel raised a moment after the player dies: the killer line and
  * what `R` will do. See docs/death.md § Player death.
  */
-import { PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS } from '../../game/thingdefs.ts';
+import { PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS } from '../../game/things/tables.ts';
 
 /**
  * How long a death waits before its overlay appears — `PLAY`'s DIE sequence end to end, so the
@@ -48,7 +48,7 @@ export class DeathOverlay {
 
   /**
    * Arms the overlay, with `killer` as its middle line — an already-composed
-   * sentence (`thingdefs.ts`'s `obituary`), since what killed the player is the
+   * sentence (`things/tables.ts`'s `obituary`), since what killed the player is the
    * game layer's to know, not this one's. `''` leaves the line out entirely.
    * `reloadsSave` says which of the two hints applies (`RESTART_HINT`).
    * `update` raises it `DEATH_OVERLAY_DELAY` later, so a `clear` inside that

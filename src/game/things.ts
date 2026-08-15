@@ -1,7 +1,7 @@
 /**
  * `ThingLayer`: every live map thing — spawning by skill, pickups, damage and death, waking and
  * stepping monster AI, barrels, corpse raising — drawn through the shared sprite batch. The
- * record shapes and tables live in `things/defs.ts` and `thingdefs.ts`. See docs/sprites.md,
+ * record shapes and tables live in `things/defs.ts` and `things/tables.ts`. See docs/sprites.md,
  * docs/items.md, docs/monster-ai.md and docs/death.md.
  */
 import * as THREE from 'three';
@@ -69,19 +69,18 @@ import {
   SOLID_DECORATION_TYPES,
   THING_ANIM_FRAMES,
   THING_SPRITES,
-} from './thingdefs.ts';
-import { ThingType } from './thingtypes.ts';
+} from './things/tables.ts';
+import { ThingType } from './things/doomednums.ts';
 import { fastMonsters, isAmbush, isMultiplayerOnly, respawnMonsters, spawnAngleDeg, spawnsAtSkill, type Skill } from './skill.ts';
 import {
   DI_NODIR,
-  INERT_SHOOTABLE,
   MONSTER_FIRE_HEIGHT,
   BODY_HEIGHT_FALLBACK,
   MONSTER_HIT_RADIUS,
-  monsterStatsFor,
   thrustSpeed,
   type MonsterAttackEvent,
 } from './monsters/defs.ts';
+import { INERT_SHOOTABLE, monsterStatsFor } from './monsters/tables.ts';
 import { commitTarget, reactToDamage, shouldRetarget, stepMonsterAI, tryWake } from './monsters/ai.ts';
 import {
   MONSTER_FIELD_DEFAULTS,
@@ -552,7 +551,7 @@ export function buildThingSprites(
    * `A_SpawnFly`'s own monster creation: drops a fresh, already-awake `type` at
    * `at` and telefrags whatever was standing there, returning the new body (or
    * null if the WAD has no art for it). The Icon of Sin's spawn cube is the
-   * only caller — `game/iconofsin.ts` owns the rest of that sequence, including the
+   * only caller — `game/monsters/iconofsin.ts` owns the rest of that sequence, including the
    * fire puff, the `telept` sound and the *player* half of the telefrag, which
    * this layer holds no reference to.
    *

@@ -3,15 +3,15 @@
  * thing (`PosedThing`), the layer's public surface (`ThingLayer`), and the
  * handful of doomednums/tables that only this layer's own logic reads.
  *
- * Distinct from `game/thingdefs.ts`, which holds the *WAD-derived* tables
+ * Distinct from `things/tables.ts`, which holds the *WAD-derived* tables
  * every thing type is looked up in (sprites, health, drops, frame letters);
  * this file is runtime state and the API around it, the same division
  * `monsters/defs.ts` makes for the AI. See docs/items.md and docs/monster-ai.md.
  */
 import * as THREE from 'three';
 import type { Sector } from '../../wad/map.ts';
-import { BOSS_DEATH_TYPES } from '../thingdefs.ts';
-import { ThingType } from '../thingtypes.ts';
+import { BOSS_DEATH_TYPES } from './tables.ts';
+import { ThingType } from './doomednums.ts';
 import type { MonsterAttackEvent, MonsterBody } from '../monsters/defs.ts';
 import type { ThingsSnapshot } from '../snapshot.ts';
 import type { ThingBlocker } from '../world.ts';
@@ -367,7 +367,7 @@ export interface ThingLayer {
    * way to perform on its own. Backs crush damage (game.ts's `onCrush`
    * callback into `SpecialsController`) and the headroom-blocked check every
    * non-crushing mover uses to stop rather than clip through a monster
-   * (`game/moverblocking.ts`'s `headroomBlocked`) — either way, a mover only knows which
+   * (`game/specials/moverblocking.ts`'s `headroomBlocked`) — either way, a mover only knows which
    * sector it's squeezing, not who's standing in it.
    */
   monstersInSector(sector: Sector): MonsterRef[];
@@ -412,7 +412,7 @@ export interface ThingLayer {
    * Creates a fresh, already-awake monster of `type` at `at` and telefrags
    * whatever was standing there (`TELEFRAG_DAMAGE` to every overlapping body),
    * returning it — or null if the WAD carries no art for that doomednum.
-   * Vanilla's `A_SpawnFly` tail; the Icon of Sin's spawn cube (`game/iconofsin.ts`)
+   * Vanilla's `A_SpawnFly` tail; the Icon of Sin's spawn cube (`game/monsters/iconofsin.ts`)
    * is the only caller.
    *
    * Only the *monster* half of the telefrag happens here: this layer has no

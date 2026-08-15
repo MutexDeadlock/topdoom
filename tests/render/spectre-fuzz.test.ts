@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import type { CachedSprite } from '../../src/render/sprites.ts';
 import { SpriteBatch } from '../../src/render/spritebatch.ts';
-import { FUZZ_TYPES, THING_SPRITES } from '../../src/game/thingdefs.ts';
-import { ThingType } from '../../src/game/thingtypes.ts';
+import { FUZZ_TYPES, THING_SPRITES } from '../../src/game/things/tables.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 
 /**

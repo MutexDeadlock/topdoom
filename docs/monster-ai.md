@@ -1,6 +1,6 @@
 # Monster AI
 
-`src/game/monsters/ai.ts`, `src/game/monsters/defs.ts`, `src/game/monsters/vile.ts`,
+`src/game/monsters/ai.ts`, `src/game/monsters/defs.ts`, `src/game/monsters/tables.ts`, `src/game/monsters/vile.ts`,
 `src/game/things.ts`, `src/game/things/defs.ts`, `src/game/things/grid.ts`
 
 Realizing an attack once one is decided on is docs/monster-attacks.md; a monster's sprite poses are
@@ -22,11 +22,13 @@ testable headlessly. `attacks.ts` needs the thing list, the effect and projectil
 audio engine, and reads the live level through the same `CombatContext` `ProjectileLayer` does.
 Keep new code on the correct side of that line.
 
-**The four files.** `defs.ts` holds the record shapes, `MONSTER_STATS`/`INERT_SHOOTABLE` and the
-pure vanilla helpers, and imports nothing from the other three — the `things.ts`/`thingdefs.ts`
-pattern. `ai.ts` and `attacks.ts` are the two halves above. `vile.ts` is the arch-vile, the one
-type whose behavior does not fit the data-driven model the rest are expressed in; both halves call
-into it (§ The arch-vile).
+**The five files.** `defs.ts` holds the record shapes, the constants tied to them and the pure
+vanilla helpers; `tables.ts` holds the data read through those shapes —
+`MONSTER_STATS`/`INERT_SHOOTABLE` and nightmare's derived `FAST_MONSTER_STATS`. Neither imports
+anything from the other three, and `tables.ts` imports only `defs.ts` — the same `defs`/`tables`
+split the thing layer makes (docs/conventions.md § The role names). `ai.ts` and `attacks.ts` are
+the two halves above. `vile.ts` is the arch-vile, the one type whose behavior does not fit the
+data-driven model the rest are expressed in; both halves call into it (§ The arch-vile).
 
 **Sounds are the one exception to that split**: `stepMonsterAI` and `ThingLayer` raise them
 directly through a `SoundEmitter`, since several of vanilla's sit at moments that produce no event
@@ -95,7 +97,7 @@ barely half the player's own run speed.
 ## Fast monsters
 
 Nightmare's fast monsters are a far smaller change than the name suggests, and
-`FAST_MONSTER_STATS` (`monsters/defs.ts`) is derived from `MONSTER_STATS` rather than typed out so
+`FAST_MONSTER_STATS` (`monsters/tables.ts`) is derived from `MONSTER_STATS` rather than typed out so
 a stat corrected in one can't fail to reach the other. `G_InitNew` (`g_game.c`) makes exactly two
 edits to the global tables when the skill is nightmare (or `-fast` is passed, which this engine has
 no switch for):
@@ -628,7 +630,7 @@ level-wide special (a lowering floor, an exit) rather than anything AI-related �
 `MT_KEEN` (doomednum 72) and `MT_BOSSBRAIN` (88) are the two `MONSTER_TYPES` members with **no
 `MONSTER_STATS` entry**, and that is not an omission: neither has a `seestate`, `meleestate` or
 `missilestate` in `info.c`, so neither wakes, moves, chases or attacks in vanilla either. They are
-`MF_SOLID|MF_SHOOTABLE` targets that stand still, flinch and die. `monsters/defs.ts`'s `INERT_SHOOTABLE`
+`MF_SOLID|MF_SHOOTABLE` targets that stand still, flinch and die. `monsters/tables.ts`'s `INERT_SHOOTABLE`
 holds what a `MonsterStats` would otherwise carry for them — the real `mobjinfo.radius` (16 for both,
 not the 24-unit `MONSTER_HIT_RADIUS` fallback) and the two sounds `A_Pain`/`A_Scream` play — and
 `ThingLayer.damage` has a matching branch that skips pain rolls, retargeting, knockback and

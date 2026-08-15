@@ -1,6 +1,6 @@
 # The arch-vile
 
-`src/game/monsters/vile.ts`, plus its rows in `src/game/monsters/defs.ts` and its two branches in
+`src/game/monsters/vile.ts`, plus its rows in `src/game/monsters/tables.ts` and its two branches in
 `src/game/monsters/ai.ts`
 
 The one monster type that does not fit the data-driven `MONSTER_STATS` model docs/monster-ai.md
@@ -27,7 +27,7 @@ up (`positionBlocked` against the corpse's footprint) — and raises it *instead
 chase-call turn at all, matching vanilla exactly: a tic that resurrects skips the reactiontime/
 threshold aging and the melee/missile/walk decision entirely.
 
-`thingdefs.ts: MONSTER_RAISE_FRAMES` is vanilla's `raisestate` table for the 14 types that have one
+`things/tables.ts: MONSTER_RAISE_FRAMES` is vanilla's `raisestate` table for the 14 types that have one
 (13 monsters plus the spectre, which carries its own copy of the demon's sequence)
 (every boss, the lost soul, the arch-vile itself, Commander Keen and the boss brain don't). These
 had to be pulled from `info.c` directly — reusing `MONSTER_DEATH_FRAMES` reversed was tried first

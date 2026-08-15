@@ -7,6 +7,7 @@
  * downstream (e.g. dithered-discard alpha), where that residue would show up
  * as a faint permanent speckle. Shared by render/occlusion.ts's wall-occlusion
  * fade and game/fogofwar.ts's reveal fade — same smoothing, different rates.
+ * See docs/render.md § Wall occlusion fading and docs/fogofwar.md § How reveal reaches the geometry.
  */
 export function dampen(prev: number, target: number, rate: number, dt: number, snapEps: number): number {
   const lerpT = 1 - Math.exp(-rate * dt);

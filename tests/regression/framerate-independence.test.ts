@@ -2,10 +2,11 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { World } from '../../src/game/world.ts';
-import { MONSTER_STATS, type MonsterBody } from '../../src/game/monsters/defs.ts';
+import { type MonsterBody } from '../../src/game/monsters/defs.ts';
+import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
-import { ThingType } from '../../src/game/thingtypes.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
 import { clearRandom, pRandom } from '../../src/util/random.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 

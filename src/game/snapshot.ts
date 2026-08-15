@@ -19,7 +19,7 @@ import {
 import { DI_NODIR } from './monsters/defs.ts';
 import type { Mover, LightState } from './specials.ts';
 import type { LevelKillItemStats, PosedThing } from './things/defs.ts';
-import type { Projectile } from './spritefxdefs.ts';
+import type { Projectile } from './spritefx/defs.ts';
 import type { DoomMap } from '../wad/map.ts';
 import type { Pos3 } from '../types.ts';
 

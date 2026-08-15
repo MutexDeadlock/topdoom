@@ -60,16 +60,20 @@ src/wad/       WAD files, merged lump directory, content ids, map lumps, graphic
                decoding, MAPINFO + the vanilla level-title tables
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards + their instanced batching, shot tracers, camera, viewport
-src/game/      spatial queries + collision, player controller, input, the named doomednums every
-               type-keyed table keys through (thingtypes), thing world state, fog of war,
+src/game/      spatial queries + collision, player controller, input, thing world state, fog of war,
                inventory/pickups, weapons and firing, shots in flight + splash, damage/death,
-               transient effects, mover obstruction + crush damage, damage floors + secrets,
-               best times, the Icon of Sin's cube spitter, savegames
-src/game/monsters/   tables + record shapes (defs), chase/attack decisions (ai), attack resolution
-               (attacks), the arch-vile (vile)
-src/game/things/     the thing layer's record shapes + its own tables (defs), monster/corpse
+               transient effects, best times, savegames
+src/game/monsters/   record shapes + pure helpers (defs), the vanilla stat tables (tables),
+               chase/attack decisions (ai), attack resolution (attacks), the arch-vile (vile),
+               MAP30's cube spitter (iconofsin)
+src/game/things/     the named doomednums every type-keyed table keys through (doomednums), the
+               thing layer's record shapes (defs) + its WAD-derived tables (tables), monster/corpse
                spatial index (grid)
-src/game/specials/   load-time map analysis (mapscan), mover meshes + relighting (movergeometry)
+src/game/specials/   load-time map analysis (mapscan), mover meshes + relighting (movergeometry),
+               mover obstruction + crush damage (moverblocking), damage floors + secrets
+               (sectoreffects)
+src/game/spritefx/   the one-shot effect + projectile record shapes and their flight helpers
+               (defs), the effects' sprite/sound/timing tables (tables)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
                WebAudio playback (channels, attenuation, pan, volume)
 src/ui/        the page's own chrome (base styles + tokens, the fatal-error screen)
@@ -77,11 +81,12 @@ src/ui/hud/          everything over the running level: HUD, level card, intermi
                messages, screen tints/pain flash, death overlay, crosshair, WadFont glyph
                rasterizing
 src/ui/menu/         start menu + changelog popup
-src/ui/devmode/      DEVMODE hud + profiling overlay
+src/ui/devmode/      DEVMODE hud + hotkeys (debughud), profiling overlay (profilerhud)
 src/util/      small helpers shared across layers: 2D geometry, damped-lerp smoothing, per-frame
                profiling, vanilla's random table — the engine's only entropy source
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
-                   BRIGHTNESS_LIFT, PICKUP_SCALE + PICKUP_SCALE_TYPES, VIEW_DISTANCE)
+                   BRIGHTNESS_LIFT, PICKUP_SCALE + PICKUP_SCALE_TYPES, VIEW_DISTANCE +
+                   FOG_START_FRACTION)
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
 src/styles.css     the stylesheet index.html links; @imports the .css beside each ui module
 index.html         the page skeleton; @includes the .html beside each ui module
@@ -120,6 +125,7 @@ several record rules that look like accidents and aren't.
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
 | [docs/audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |
 | [docs/testing.md](docs/testing.md) | The test suite: runner, the ASCII-grid map fixture, which WADs are committed, the doc-pointer guard |
+| [docs/conventions.md](docs/conventions.md) | File and directory naming, the `defs`/`tables` roles, source order inside a file, known deviations |
 
 For what is and isn't implemented, see [README.md](README.md#state) and [CHANGELOG](CHANGELOG).
 
@@ -187,6 +193,12 @@ and the sprite batches all carry non-obvious shapes because the obvious version 
 and at least one obvious-looking optimization (an allocation-free `linesNear`) measured *slower*.
 Don't "simplify" these without measuring; the relevant docs say which is which.
 
+**A new file's name and layout follow docs/conventions.md**: a directory is named for the domain
+and its files for their role, never repeating the domain (`things/tables.ts`, not `thingtables.ts`);
+where a `<domain>.ts` sits beside a `<domain>/`, the parent is that layer's one public entry point.
+Deviations are listed at the bottom of that doc and get fixed when the file is next touched anyway,
+not in a rename pass.
+
 ## Documentation maintenance
 
 - After finishing a task that changes behavior, architecture, controls, or anything else these docs
@@ -209,7 +221,9 @@ Don't "simplify" these without measuring; the relevant docs say which is which.
 
 **Every `src/` file opens with a short header comment** — one to three sentences on what the file
 owns and where it sits, ending in a pointer to its subsystem doc(s). It is the router into `docs/`
-at the point of reading; keep it to purpose, not a table of contents.
+at the point of reading; keep it to purpose, not a table of contents. A one-function file may let
+that function's own JSDoc carry the pointer instead of repeating itself (`util/damping.ts`);
+`constants.ts` and `types.ts` are cross-cutting and point back here rather than at a `docs/` page.
 
 Beyond the header, comments are minimal. A rule that a subsystem doc covers is written **once**, in
 the doc. Two copies drift, and the code copy is the one nobody re-reads. Comments fall into three

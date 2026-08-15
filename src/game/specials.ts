@@ -57,7 +57,7 @@ import { PLAYER_RADIUS } from './player.ts';
 import type { SpecialsSnapshot } from './snapshot.ts';
 import { pRandom } from '../util/random.ts';
 import { spawnAngleDeg } from './skill.ts';
-import { ThingType } from './thingtypes.ts';
+import { ThingType } from './things/doomednums.ts';
 import type { Input } from './input.ts';
 import type { FogOfWar } from './fogofwar.ts';
 import type { KeyColor } from './inventory.ts';
@@ -69,6 +69,17 @@ import type { FadeTarget } from '../render/occlusion.ts';
 import { segmentIntersect } from '../util/geom.ts';
 import { sectorOrigin, SILENT, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
 import { DOOM_TIC } from '../constants.ts';
+
+export {
+  // Re-exported so `./specials.ts` stays the specials layer's one public entry
+  // point, the same arrangement `things.ts` makes for `things/`. Both of these
+  // are driven by `game.ts` rather than by `SpecialsController`, so this is a
+  // plain pass-through and nothing more: the tidier shape is for the controller
+  // to own the two outright, which is a bigger change than moving the files was.
+  SectorEffects,
+  type SectorEffectResult,
+} from './specials/sectoreffects.ts';
+export { applyCrushDamage, blocksCeilingLower, blocksFloorRise } from './specials/moverblocking.ts';
 
 /** How far ahead of the player a `use` press reaches, in map units. */
 const USE_RANGE = 64;

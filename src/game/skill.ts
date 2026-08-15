@@ -1,3 +1,10 @@
+/**
+ * The five skill levels and every rule that reads off one: which things spawn, the damage and
+ * ammo multipliers, ambush flags, and nightmare's fast/respawning monsters. A leaf of pure
+ * predicates — the systems applying them are `things.ts`, `world.ts` and `inventory.ts`.
+ * See docs/menu.md § Difficulty.
+ */
+
 /** DOOM skill levels, 1 (baby) through 5 (nightmare). */
 export type Skill = 1 | 2 | 3 | 4 | 5;
 
@@ -44,7 +51,7 @@ export function ammoAtSkill(amount: number, skill: Skill): number {
  * Whether this skill runs vanilla's fast monsters — `G_InitNew`'s
  * `if (fastparm || (skill == sk_nightmare && …))` (`g_game.c`). There is no `-fast` switch here,
  * so nightmare is the only way to get them. What "fast" actually changes is a much smaller list
- * than the name suggests: see `FAST_MONSTER_STATS` in game/monsters/defs.ts.
+ * than the name suggests: see `FAST_MONSTER_STATS` in game/monsters/tables.ts.
  */
 export function fastMonsters(skill: Skill): boolean {
   return skill === SKILL_NIGHTMARE;

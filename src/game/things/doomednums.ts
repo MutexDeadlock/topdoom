@@ -2,7 +2,7 @@
  * Every DOOM thing type (doomednum) this engine knows about, under a readable name.
  *
  * The number is what a map lump actually stores in `Thing.type` (`wad/map.ts`) and what every
- * type-keyed table in `thingdefs.ts`, `monsters/defs.ts`, `things/defs.ts` and `inventory.ts` is
+ * type-keyed table in `things/tables.ts`, `monsters/tables.ts`, `things/defs.ts` and `inventory.ts` is
  * keyed on; this table only gives those numbers names, so a table entry says which monster it is
  * without a comment having to. Nothing here is a rule about behavior — the rules live in the tables
  * that use these names. See docs/sprites.md § Thing types have names.

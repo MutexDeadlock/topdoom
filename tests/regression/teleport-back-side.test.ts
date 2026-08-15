@@ -4,7 +4,7 @@ import type { Placement } from '../../src/types.ts';
 import { NO_SIDE } from '../../src/wad/map.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
-import { ThingType } from '../../src/game/thingtypes.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
 
 /**
  * `EV_Teleport` ignores a crossing that came from the back of the line, "so you

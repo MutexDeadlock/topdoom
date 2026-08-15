@@ -1,3 +1,8 @@
+/**
+ * The per-frame timing `game.ts` feeds and DEVMODE's overlay reads back — the measuring side
+ * only, with no UI of its own. See docs/menu.md § Profiling overlay.
+ */
+
 /** One profiled category's smoothed per-frame cost, in milliseconds. */
 export interface ProfileSample {
   label: string;

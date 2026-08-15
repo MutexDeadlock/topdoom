@@ -170,7 +170,7 @@ the BFG ball as `8×30`; both were transcription guesses, and reading `mobjinfo`
 and chainsaw share `(P_Random()%10+1)<<1` (2-20), the fist ×10 under berserk.
 
 Projectile *speeds* come from the same `mobjinfo` rows, × 35 for units/sec exactly as
-`game/monsters/defs.ts` converts a monster's: rocket 700, plasma 875, BFG 875. The player's rocket used to
+`game/monsters/tables.ts` converts a monster's: rocket 700, plasma 875, BFG 875. The player's rocket used to
 fly at 1000 while the cyberdemon's — already converted correctly — flew at 700.
 
 **A melee swing is resolved entirely differently from every other shot**: `spawnPlayerShot` returns before

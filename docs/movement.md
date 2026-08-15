@@ -102,7 +102,7 @@ Rules that go with it:
 - **An `ANY_HEIGHT` mover keeps vanilla blocking**: it has no span to clear a body with, so
   `testStep`'s `floatok` probe answers exactly what it did before heights existed.
 - **Movement blocking only.** Every other z comparison in the engine is one vanilla makes too and is
-  untouched by the setting: a missile's over/under (`spritefxdefs.ts: stepTouchesBody`), a hitscan's
+  untouched by the setting: a missile's over/under (`spritefx/defs.ts: stepTouchesBody`), a hitscan's
   height band and auto-aim slope (docs/combat.md), `meleeReachesVertically`
   (docs/monster-ai.md § Melee reach), `tryPickup`'s overhead gate (docs/items.md), and splash, which
   is 2D in vanilla.
@@ -113,7 +113,7 @@ Rules that go with it:
 
 ### Solid decorations
 
-`game/thingdefs.ts`'s `SOLID_DECORATION_TYPES` is every doomednum from the
+`game/things/tables.ts`'s `SOLID_DECORATION_TYPES` is every doomednum from the
 "Obstacles & decorations" and "Gore & corpses" blocks of `THING_SPRITES` that carries vanilla's
 `MF_SOLID` flag — confirmed per-type against `linuxdoom-1.10/info.c`'s `mobjinfo` table: the
 column, candelabra, all six pillars, the evil eye, skull rock, all six torches, the stalagmite, the
@@ -146,7 +146,7 @@ different filters for exactly this reason — see `things/grid.ts`'s `rebuild` d
 straddled two-sided opening. It exists for the flip side of the same straddling bug — standing half
 on a rising lift/floor and half in a static neighbor sector with a lower ceiling, `groundFloor`
 correctly pins the player's `z` to the rising sector's floor, but a rise-blocking check that only
-compares against *that sector's own* ceiling (`game/moverblocking.ts: blocksFloorRise`) never notices the lower
+compares against *that sector's own* ceiling (`game/specials/moverblocking.ts: blocksFloorRise`) never notices the lower
 neighbor and lets the floor carry the player up into the neighbor's ceiling/upper wall — they end up
 visibly stuck inside geometry. `blocksFloorRise` additionally checks the prospective floor height
 against `groundCeiling` at the player's actual position, gated the same way `headroomBlocked` gates

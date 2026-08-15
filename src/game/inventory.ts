@@ -3,8 +3,9 @@
  * applies to it, vanilla's own amounts and caps. See docs/items.md.
  */
 import type { SfxId } from '../audio/sfx.ts';
-import { ThingType } from './thingtypes.ts';
+import { ThingType } from './things/doomednums.ts';
 import { DEFAULT_SKILL, ammoAtSkill, type Skill } from './skill.ts';
+import { PLAYER_RADIUS } from './player.ts';
 
 /** The four ammo classes DOOM tracks; matches vanilla's `ammotype_t`. */
 export const AMMO_TYPES = ['bullets', 'shells', 'rockets', 'cells'] as const;
@@ -120,6 +121,9 @@ export function tickPowers(inv: Inventory, dt: number): void {
 
 /** Item pickup radius (map units) vanilla uses for most pickups (health/armor/ammo/keys). */
 export const ITEM_PICKUP_RADIUS = 20;
+
+/** Combined radius (map units) within which an item is close enough for the player to pick up. */
+export const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
 
 /** Vanilla's `MAXHEALTH` (`d_player.h`) — the cap ordinary health pickups stop at. */
 const MAX_HEALTH = 100;

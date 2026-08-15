@@ -1,12 +1,12 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ThingType } from '../../src/game/thingtypes.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
 import {
   MELEE_RANGE,
-  MONSTER_STATS,
   meleeReachesVertically,
   meleeThreshold,
 } from '../../src/game/monsters/defs.ts';
+import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { hasLineOfSight } from '../../src/game/world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';

@@ -1,9 +1,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { PROJECTILE_RADIUS, stepTouchesBody } from '../../src/game/spritefxdefs.ts';
-import { MONSTER_STATS } from '../../src/game/monsters/defs.ts';
+import { stepTouchesBody } from '../../src/game/spritefx/defs.ts';
+import { PROJECTILE_RADIUS } from '../../src/game/spritefx/tables.ts';
+import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
-import { ThingType } from '../../src/game/thingtypes.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
 import type { Pos3 } from '../../src/types.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 

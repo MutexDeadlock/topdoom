@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { shotPath, World, type ShotPath } from '../../src/game/world.ts';
 import { AIM_HEIGHT_OFFSET } from '../../src/game/player.ts';
-import { MONSTER_STATS } from '../../src/game/monsters/defs.ts';
-import { ThingType } from '../../src/game/thingtypes.ts';
+import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
 import type { Pos3 } from '../../src/types.ts';
 
 /**

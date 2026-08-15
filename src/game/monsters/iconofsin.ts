@@ -2,22 +2,22 @@
  * MAP30's Icon of Sin: the boss eye's spitter, the spawn cube in flight, telefrag on landing and
  * the brain's death sequence. See docs/monster-iconofsin.md.
  */
-import type { DoomMap, Thing } from '../wad/map.ts';
-import type { SpriteBank } from '../wad/sprites.ts';
-import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../render/sprites.ts';
-import { hasLineOfSight } from './world.ts';
-import { PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
-import { SPAWN_CUBE_MONSTERS } from './thingdefs.ts';
-import { ThingType } from './thingtypes.ts';
-import { TELEFRAG_DAMAGE } from './things.ts';
-import type { CombatContext } from './combat.ts';
-import type { IconSnapshot } from './snapshot.ts';
-import type { SpriteFxLayer } from './spritefx.ts';
-import { SILENT, type SoundEmitter } from '../audio/sfx.ts';
-import type { Skill } from './skill.ts';
-import type { Pos3 } from '../types.ts';
-import { DOOM_TIC } from '../constants.ts';
-import { pRandom, triangularDraw } from '../util/random.ts';
+import type { DoomMap, Thing } from '../../wad/map.ts';
+import type { SpriteBank } from '../../wad/sprites.ts';
+import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../../render/sprites.ts';
+import { hasLineOfSight } from '../world.ts';
+import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
+import { SPAWN_CUBE_MONSTERS } from '../things/tables.ts';
+import { ThingType } from '../things/doomednums.ts';
+import { TELEFRAG_DAMAGE } from '../things.ts';
+import type { CombatContext } from '../combat.ts';
+import type { IconSnapshot } from '../snapshot.ts';
+import type { SpriteFxLayer } from '../spritefx.ts';
+import { SILENT, type SoundEmitter } from '../../audio/sfx.ts';
+import type { Skill } from '../skill.ts';
+import type { Pos3 } from '../../types.ts';
+import { DOOM_TIC } from '../../constants.ts';
+import { pRandom, triangularDraw } from '../../util/random.ts';
 
 /**
  * Three `ThingType` members drive this file. `bossShooter` (`MT_BOSSSPIT`) is the invisible eye that

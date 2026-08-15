@@ -2,18 +2,18 @@
  * What standing in a sector does to the player: damage floors (with the radiation suit's leak
  * roll) and the secret-found tally. See docs/specials.md § Damage floors and § Secret sectors.
  */
-import type { DoomMap } from '../wad/map.ts';
-import type { Pos3 } from '../types.ts';
-import type { World } from './world.ts';
-import { hasPower, type Inventory } from './inventory.ts';
+import type { DoomMap } from '../../wad/map.ts';
+import type { Pos3 } from '../../types.ts';
+import type { World } from '../world.ts';
+import { hasPower, type Inventory } from '../inventory.ts';
 import {
   DAMAGE_FLOOR_INTERVAL,
   SECTOR_DAMAGE_SPECIALS,
   SUIT_LEAK_CHANCE,
   type DamageFloorEffect,
-} from '../wad/specials.ts';
-import { pRandom } from '../util/random.ts';
-import type { SectorEffectsSnapshot } from './snapshot.ts';
+} from '../../wad/specials.ts';
+import { pRandom } from '../../util/random.ts';
+import type { SectorEffectsSnapshot } from '../snapshot.ts';
 
 /** What one frame's `SectorEffects.update` did, for the caller to realize (sound, message, level exit). */
 export interface SectorEffectResult {

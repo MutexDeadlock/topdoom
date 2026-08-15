@@ -1,4 +1,14 @@
 /**
+ * The 2D primitives more than one layer needs — segment crossings, point-to-segment distance,
+ * the swept box tests and the convex-polygon queries. Pure functions on scalars, deliberately:
+ * their callers compute coordinates inline thousands of times a frame, so a point-object
+ * parameter here would allocate in exactly the wrong place (CLAUDE.md § Position types).
+ * Each is documented at its own declaration; the rules built on them live with their callers —
+ * docs/movement.md § Collision, docs/render.md § Wall occlusion fading, docs/fogofwar.md and
+ * docs/monster-attacks.md § Monster projectiles in flight.
+ */
+
+/**
  * 2D segment intersection between (ax,ay)-(bx,by) and (cx,cy)-(dx,dy).
  * Returns the crossing's parameter `t` along the first segment, or null if
  * they don't cross within both segments' bounds. Shared by render/occlusion.ts

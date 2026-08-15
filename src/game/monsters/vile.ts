@@ -3,22 +3,22 @@
  * corpses mid-chase and the sight-checked windup blast. Both `monsters/ai.ts` and
  * `monsters/attacks.ts` call into here. See docs/monster-archvile.md.
  */
-import { ThingType } from '../thingtypes.ts';
+import { ThingType } from '../things/doomednums.ts';
 import {
   DIR_X,
   DIR_Y,
   DI_NODIR,
-  MONSTER_STATS,
   type MonsterAttack,
   type MonsterAttackEvent,
   type MonsterBody,
   type MonsterStats,
   type RaiseCandidate,
 } from './defs.ts';
+import { MONSTER_STATS } from './tables.ts';
 import { hasLineOfSight } from '../world.ts';
 import { applyRadiusDamage, type CombatContext } from '../combat.ts';
 import type { SpriteFxLayer } from '../spritefx.ts';
-import { IMPACT_FRAME_SECONDS, VILE_FIRE_FRAMES, VILE_FIRE_OFFSET } from '../spritefxdefs.ts';
+import { IMPACT_FRAME_SECONDS, VILE_FIRE_FRAMES, VILE_FIRE_OFFSET } from '../spritefx/tables.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
 import { monsterOrigin } from '../../audio/sfx.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
@@ -40,7 +40,7 @@ const VILE_HEAL_DURATION = 30 * DOOM_TIC;
  * How long the arch-vile's windup flame tracks its target — read off the
  * vile's own `startDelaySeconds` rather than duplicated, so the flame can't
  * drift away from the moment the real shot lands or fizzles. Derived from
- * `MONSTER_STATS` rather than sitting in `spritefxdefs.ts` beside the other
+ * `MONSTER_STATS` rather than sitting in `spritefx/tables.ts` beside the other
  * `VILE_FIRE_*` values: that file is otherwise free of `MONSTER_STATS`, and
  * keeping it that way is what lets this file import it.
  */

@@ -107,7 +107,7 @@ export interface WeaponDef {
   accurateFirstShot: boolean;
   /** Melee only: how far in front of the player the swing reaches (`PLAYER_MELEE_RANGE`); 0 for everything else. */
   meleeRange: number;
-  /** Projectile only: travel speed, map units/sec — the spawned missile's own `mobjinfo.speed` (units per tic) × 35, the same conversion `game/monsters/defs.ts` applies to theirs. */
+  /** Projectile only: travel speed, map units/sec — the spawned missile's own `mobjinfo.speed` (units per tic) × 35, the same conversion `game/monsters/tables.ts` applies to theirs. */
   projectileSpeed: number;
   /** Projectile only: SpriteBank name the flying shot is drawn as. */
   projectileSprite: string;
@@ -232,7 +232,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     accurateFirstShot: false,
     // `A_Saw` really traces MELEERANGE+1, with vanilla's own comment saying
     // why: "use meleerange + 1 se the puff doesn't skip the flash". The extra
-    // unit of reach is incidental; the puff is what it's for (spritefxdefs.ts's
+    // unit of reach is incidental; the puff is what it's for (spritefx/tables.ts's
     // PUFF_MELEE_FRAMES).
     meleeRange: PLAYER_MELEE_RANGE + 1,
     projectileSpeed: 0,

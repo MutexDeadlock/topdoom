@@ -12,19 +12,8 @@ import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import type { ShotPath, World } from './world.ts';
 import { triangularDraw } from '../util/random.ts';
-import {
-  BLOOD_FRAME_SECONDS,
-  bloodFrames,
-  HIT_Z_JITTER,
-  PUFF_FRAMES,
-  PUFF_FRAME_SECONDS,
-  PUFF_MELEE_FRAMES,
-  PUFF_WALL_OFFSET,
-  TFOG_FRAMES,
-  TFOG_FRAME_SECONDS,
-  TFOG_SPAWN_OFFSET,
-  type OneShotEffect,
-} from './spritefxdefs.ts';
+import { type OneShotEffect } from './spritefx/defs.ts';
+import { BLOOD_FRAME_SECONDS, bloodFrames, HIT_Z_JITTER, PUFF_FRAME_SECONDS, PUFF_FRAMES, PUFF_MELEE_FRAMES, PUFF_WALL_OFFSET, TFOG_FRAME_SECONDS, TFOG_FRAMES, TFOG_SPAWN_OFFSET } from './spritefx/tables.ts';
 import type { TeleportFogState } from './snapshot.ts';
 import type { Placement, Pos3 } from '../types.ts';
 

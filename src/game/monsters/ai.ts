@@ -30,7 +30,7 @@ import {
   type WakeCheckBody,
 } from './defs.ts';
 import { tryRaiseCorpse, type Resurrector } from './vile.ts';
-import { ThingType } from '../thingtypes.ts';
+import { ThingType } from '../things/doomednums.ts';
 import { monsterOrigin, SILENT, type SoundEmitter } from '../../audio/sfx.ts';
 import type { Pos3 } from '../../types.ts';
 import { DOOM_TIC } from '../../constants.ts';

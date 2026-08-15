@@ -5,7 +5,7 @@
  * sourced from vanilla. Its color reports player health at a glance without
  * spending any HUD space: blue above 100 (soulsphere/megasphere territory),
  * green at exactly 100, sliding through yellow down to red as health drops
- * to 0.
+ * to 0. See docs/hud.md § The crosshair.
  */
 
 /** Reticle size in CSS pixels. Tuned by feel, like the rest of the crosshair above. */

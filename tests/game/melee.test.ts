@@ -1,8 +1,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MELEE_RANGE, MONSTER_STATS, meleeReachesVertically, meleeThreshold } from '../../src/game/monsters/defs.ts';
+import { MELEE_RANGE, meleeReachesVertically, meleeThreshold } from '../../src/game/monsters/defs.ts';
+import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { PLAYER_RADIUS } from '../../src/game/player.ts';
-import { ThingType } from '../../src/game/thingtypes.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
 
 /**
  * The two pure predicates every monster's melee gate bottoms out in

@@ -26,9 +26,9 @@ cycle:
 - `ProjectileLayer` and `ThingLayer` are imported **`import type`** only. Both are used purely as
   parameter/field types, and `verbatimModuleSyntax` guarantees a type import is erased.
 - `combat.ts` imports `things.ts` **`import type` only** — its `BARREL_SPLASH_RADIUS`/`_DAMAGE`
-  live in `thingdefs.ts` (a leaf) precisely so that stays true. This is what lets `vile.ts`
+  live in `things/tables.ts` (a leaf) precisely so that stays true. This is what lets `vile.ts`
   call `applyRadiusDamage` as a real value.
-- `spritefxdefs.ts` imports **nothing** from the `monsters/` folder. `VILE_WINDUP_TRACK_SECONDS`,
+- `spritefx/tables.ts` imports **nothing** from the `monsters/` folder. `VILE_WINDUP_TRACK_SECONDS`,
   which is derived from `MONSTER_STATS`, lives in `monsters/vile.ts` for that reason rather than
   beside the other `VILE_FIRE_*` values.
 - **`defs.ts` imports nothing from its three siblings.** That is what makes it the folder's leaf,
@@ -200,7 +200,7 @@ rocket/plasma/BFG shots use, distinguished by a non-null `sourceId` (with the do
 `sourceType` for the species check). Arrival is re-checked every frame against the player's *live*
 position (`playerStruckBy`) and every other living body it might clip (`bodyStruckBy`,
 `sameSpecies`-gated), so stepping behind cover or outrunning a slower fireball actually works. Both
-run over `spritefxdefs.ts`'s `stepTouchesBody`, and **the player's own missiles now take the identical
+run over `spritefx/defs.ts`'s `stepTouchesBody`, and **the player's own missiles now take the identical
 path** — docs/combat.md § How a projectile finds its target covers the shared contact rule, the
 per-missile `PROJECTILE_RADIUS` and why the step is swept rather than sampled.
 

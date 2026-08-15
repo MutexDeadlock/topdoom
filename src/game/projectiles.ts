@@ -21,24 +21,8 @@ import { rollDamage } from '../util/random.ts';
 import { applyRadiusDamage, type CombatContext } from './combat.ts';
 import type { ProjectileSnapshot } from './snapshot.ts';
 import type { SpriteFxLayer } from './spritefx.ts';
-import {
-  BFG_SPRAY_HIT_FRAMES,
-  IMPACT_EFFECTS,
-  IMPACT_FRAME_SECONDS,
-  PROJECTILE_FRAMES,
-  PROJECTILE_RADIUS,
-  PROJECTILE_RADIUS_DEFAULT,
-  PROJECTILE_SOUNDS,
-  REVENANT_TRACER_TURN_RATE_RAD,
-  SMOKE_TRAIL_FRAMES,
-  SMOKE_TRAIL_FRAME_SECONDS,
-  SMOKE_TRAIL_INTERVAL,
-  stepTouchesBody,
-  TRACER_COLOR,
-  TRACER_HOMING_Z_OFFSET,
-  turnToward,
-  type Projectile,
-} from './spritefxdefs.ts';
+import { stepTouchesBody, turnToward, type Projectile } from './spritefx/defs.ts';
+import { BFG_SPRAY_HIT_FRAMES, IMPACT_EFFECTS, IMPACT_FRAME_SECONDS, PROJECTILE_FRAMES, PROJECTILE_RADIUS, PROJECTILE_RADIUS_DEFAULT, PROJECTILE_SOUNDS, REVENANT_TRACER_TURN_RATE_RAD, SMOKE_TRAIL_FRAME_SECONDS, SMOKE_TRAIL_FRAMES, SMOKE_TRAIL_INTERVAL, TRACER_COLOR, TRACER_HOMING_Z_OFFSET } from './spritefx/tables.ts';
 import type { Pos3 } from '../types.ts';
 import type { MonsterRef } from './things/defs.ts';
 

@@ -67,7 +67,7 @@ tracks stay equal width regardless of what's in them, so the middle `auto` colum
 always lands exactly on center; `#hud-levelstats` sits in the left track, right-aligned
 (`justify-self: end`) so it's flush against `#game-hud`'s own left edge.
 
-- **Kills** — `thingdefs.ts`'s `COUNTKILL_TYPES` is `MONSTER_TYPES` minus the lost soul (3006) and
+- **Kills** — `things/tables.ts`'s `COUNTKILL_TYPES` is `MONSTER_TYPES` minus the lost soul (3006) and
   the Icon of Sin's brain (88), neither of which carries vanilla's `MF_COUNTKILL`. `totalKills` is
   counted once, at map load, in `things.ts`'s `buildThingSprites` spawn loop (mirrors
   `P_SpawnMapThing`'s own `if (mobj->flags & MF_COUNTKILL) totalkills++`); `kills` increments in
@@ -169,10 +169,10 @@ The control flow is the part worth knowing:
   no specials, no monsters — and only re-renders the still scene under the popup. `Space`/`Enter`
   calls `loadMapByIndex(mapIndex + 1)`, which clears the popup and the flag along with every other
   per-level overlay.
-- The popup ignores that key for its first `INTERMISSION_INPUT_DELAY`. `Space` is *also* the use
-  key, so without the delay a mashed exit switch dismisses the popup on the frame after it appears.
-  The press that opened it can't leak through on its own — `Input.pressed` is edge-triggered and the
-  exit frame ends with `endFrame()` — but a second tap would.
+- The popup ignores that key for its first `INTERMISSION_INPUT_DELAY` (`intermission.ts`). `Space`
+  is *also* the use key, so without the delay a mashed exit switch dismisses the popup on the frame
+  after it appears. The press that opened it can't leak through on its own — `Input.pressed` is
+  edge-triggered and the exit frame ends with `endFrame()` — but a second tap would.
 - Deliberately not any-key, and deliberately not `pause()`: `Escape` belongs to the menu (`main.ts`)
   and would otherwise both pause and dismiss the popup in one press, and a paused `Game` stops
   reading input, which is the one thing this state needs.
@@ -216,8 +216,9 @@ since losing one level's time should not cost every other level's.
 view (`#hud-message`, horizontally centered, 40% down so it clears the player sprite the camera
 holds at dead center), for 3 seconds. Two callers so far:
 
-- the secret announcement — `Game.collectPickupsAndSectorEffects` shows `SECRET_MESSAGE` and plays
-  `radio` on the frame `SectorEffects.update` reports `secretFound`;
+- the secret announcement — `Game.collectPickupsAndSectorEffects` shows `SECRET_MESSAGE` (this
+  module's own, since it is display text) and plays `radio` on the frame `SectorEffects.update`
+  reports `secretFound`;
 - the locked door/switch line — `lockedKeyMessage(key, kind)` composes vanilla's own `PD_*K`/`PD_*O`
   text from the `LockedLine` `Game.frame` drained out of `specials` (docs/items.md § Locked doors
   and use triggers), and its `oof` was already played there.

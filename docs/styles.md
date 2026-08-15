@@ -27,7 +27,8 @@ src/ui/menu/
     changelog.css     #changelog's own rules and its #menu button.link trigger
     savegames.css     the save/load lists inside #menu's tab panels
 src/ui/devmode/
-    devmode.*         #hud, #profiler-hud
+    debughud.*        #hud
+    profilerhud.*     #profiler-hud
 ```
 
 Every file here is named after the module that shows and hides its elements, with no exceptions.
@@ -77,7 +78,7 @@ nearest token would be a visual change wearing a cleanup's clothes.
 
 Three documented exceptions, each commented at the site:
 
-- **The profiler's bar colours** (`devmode.css`) are a green/gold/red *status* scale. The red
+- **The profiler's bar colours** (`profilerhud.css`) are a green/gold/red *status* scale. The red
   happens to be the accent's hex and stays literal anyway, so retuning the menu accent can't
   recolour a warning.
 - **The save row's `.caution` amber** (`savegames.css`) is the same argument at text weight: it

@@ -8,11 +8,11 @@ import { PLAYER_RADIUS, type Player } from './player.ts';
 // Type-only, deliberately: a value import here would put `things.ts` — and so
 // `monsters/ai.ts`, which it imports — in the runtime graph of everything that
 // resolves damage, `monsters/attacks.ts` and `monsters/vile.ts` included. Its
-// splash constants live in `thingdefs.ts` to keep that true.
+// splash constants live in `things/tables.ts` to keep that true.
 // docs/monster-attacks.md § Resolving an attack.
 import type { BarrelExplosion, ThingLayer } from './things.ts';
-import { BARREL_SPLASH_DAMAGE, BARREL_SPLASH_RADIUS } from './thingdefs.ts';
-import { ThingType } from './thingtypes.ts';
+import { BARREL_SPLASH_DAMAGE, BARREL_SPLASH_RADIUS } from './things/tables.ts';
+import { ThingType } from './things/doomednums.ts';
 import type { Pos3 } from '../types.ts';
 import { blastDistanceToBox } from '../util/geom.ts';
 

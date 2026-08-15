@@ -1,8 +1,8 @@
 # Shots: paths, hits and effects
 
 `src/game/projectiles.ts`, `src/game/combat.ts`, `src/game/world.ts: shotPath`,
-`src/render/tracer.ts`, `src/game/spritefx.ts`, `src/game/spritefxdefs.ts`, `src/game/things.ts`,
-`src/game/thingdefs.ts`, `src/game.ts`
+`src/render/tracer.ts`, `src/game/spritefx.ts`, `src/game/spritefx/defs.ts`, `src/game/spritefx/tables.ts`, `src/game/things.ts`,
+`src/game/things/tables.ts`, `src/game.ts`
 
 This is the middle of the chain: a weapon has fired (docs/weapons.md) and something is about to die
 (docs/death.md). What happens in between — where the shot goes, what it is allowed to hit, and what
@@ -207,7 +207,7 @@ picking with a pointer instead of tracing down the facing, and none of them miss
   room, not a live sightline — so a monster can be locked through a wall the camera looks over. The
   shot is still stopped by that wall; what carries is the aim.
 
-**`NO_AUTO_AIM_TYPES` (`game/thingdefs.ts`) holds the one thing the cursor refuses to lock onto**:
+**`NO_AUTO_AIM_TYPES` (`game/things/tables.ts`) holds the one thing the cursor refuses to lock onto**:
 the Icon of Sin's brain (88). Its recess (DOOM2 MAP30 sector 8, floor 288) opens onto the arena only
 through the 32-unit slot at 384–416 that the eye watches through, and the brain's `BBRN` sprite is 87
 units tall, so its whole body sits *below* that opening. Measured over 4,891 standable sample
@@ -335,7 +335,7 @@ connecting.
 
 **A projectile has no target — it has a flight, and finds whatever is in it.** Every shot in the air,
 the player's own included, re-tests live bodies each frame in `ProjectileLayer.update`
-(`playerStruckBy`, `bodyStruckBy`, both over `spritefxdefs.ts`'s `stepTouchesBody`). What
+(`playerStruckBy`, `bodyStruckBy`, both over `spritefx/defs.ts`'s `stepTouchesBody`). What
 `spawnPlayerShot` fixes at launch is the slope and the wall (`shotPath`), never who gets hit.
 
 Resolving that at launch instead is what made **BFG balls pass through monsters**. The ball flies at

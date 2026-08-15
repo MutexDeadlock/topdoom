@@ -13,8 +13,8 @@
  * See docs/specials.md.
  */
 import { NO_SIDE, type DoomMap, type LineDef } from '../../wad/map.ts';
-import { BOSS_DEATH_TYPES } from '../thingdefs.ts';
-import { ThingType } from '../thingtypes.ts';
+import { BOSS_DEATH_TYPES } from '../things/tables.ts';
+import { ThingType } from '../things/doomednums.ts';
 import {
   LINE_SPECIALS,
   SECTOR_LIGHT_SPECIALS,
@@ -69,7 +69,7 @@ export const KEEN_DOOR_TAG = 666;
  *
  * Commander Keen's own trigger is appended to every map's table, for the reason at `KEEN_DOOR_TAG`
  * above. The Icon of Sin has no entry here at all: `A_BrainDie` exits the level directly rather
- * than through a tag, and `game/iconofsin.ts` owns it.
+ * than through a tag, and `game/monsters/iconofsin.ts` owns it.
  */
 export function bossDeathTriggersFor(mapName: string): BossDeathTrigger[] {
   /** A row of `A_BossDeath`'s own switch, and so one its player-alive loop guards. */

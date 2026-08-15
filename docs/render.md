@@ -289,7 +289,8 @@ therefore returns the plane point specifically, while `Player.angle` and the sho
 
 How far the player can see is the scene's **distance fog**, not a clipping plane: `game.ts` sets
 `THREE.Fog` to the same near-black as the scene background, hazing in from
-`VIEW_DISTANCE * FOG_START_FRACTION` and fully opaque at `VIEW_DISTANCE` (12000 map units). Geometry
+`VIEW_DISTANCE * FOG_START_FRACTION` and fully opaque at `VIEW_DISTANCE` (12000 map units) — both
+dials sit in `constants.ts`, the fraction beside the distance it is a fraction of. Geometry
 past it is black however lit or fog-of-war-revealed it happens to be, so **`VIEW_DISTANCE` is the
 one dial for how much *already-explored* level is on screen** — the fade start follows it as a
 fraction rather than being its own number.

@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyPickup, createInventory } from '../../src/game/inventory.ts';
-import { ThingType } from '../../src/game/thingtypes.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
 
 /**
  * What a pickup is worth, across the three paths that hand over ammo and the skills that double

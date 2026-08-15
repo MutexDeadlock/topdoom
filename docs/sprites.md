@@ -1,14 +1,14 @@
 # Things as sprites
 
 `src/wad/sprites.ts`, `src/render/sprites.ts`, `src/render/spritebatch.ts`, `src/game/things.ts`,
-`src/game/thingdefs.ts`, `src/game/thingtypes.ts`
+`src/game/things/tables.ts`, `src/game/things/doomednums.ts`
 
 How a thing gets *lit* is docs/render.md § Sector lighting; how one gets hidden behind geometry
 is docs/fogofwar.md.
 
 ## Thing types have names
 
-Every doomednum this engine knows sits in `game/thingtypes.ts` as a named member of one `as const`
+Every doomednum this engine knows sits in `game/things/doomednums.ts` as a named member of one `as const`
 object, and **every type-keyed table keys through it** — `THING_SPRITES`, `MONSTER_STATS`, the pickup
 records in `inventory.ts`, the membership sets, all of them — rather than spelling the number:
 
@@ -32,20 +32,20 @@ load-bearing, not laziness: a PWAD may contain doomednums this registry has neve
 `pushThing` already treats an unknown type as "does not spawn". A union type here would make legal
 map data unrepresentable.
 
-`thingtypes.ts` imports nothing, so any table module can take it without a cycle — the same leaf
-property `thingdefs.ts` has, for the same reason (docs/monster-attacks.md § Resolving an attack).
+`things/doomednums.ts` imports nothing, so any table module can take it without a cycle — the same leaf
+property `things/tables.ts` has, for the same reason (docs/monster-attacks.md § Resolving an attack).
 
 Names distinguish types that share art rather than collapsing them: `bloodyMess`/`bloodyMessAlt` (10
 and 12, one sprite under two editor numbers) and the two hanging-victim families — `…NoBlock` marks
 the five non-solid, wider-radius twins (59-63) of the solid 49-53, a distinction
 `SOLID_DECORATION_TYPES` turns on.
 
-## Things as sprites (`wad/sprites.ts`, `render/sprites.ts`, `game/things.ts`, `game/thingdefs.ts`)
+## Things as sprites (`wad/sprites.ts`, `render/sprites.ts`, `game/things.ts`, `game/things/tables.ts`)
 
 `SpriteBank` (`wad/sprites.ts`) indexes `S_START`/`S_END` lumps by sprite name + frame letter,
 resolving DOOM's `SSSSFR` / `SSSSFRfr` naming (a frame can list a second frame+rotation meaning "this
 same lump, mirrored, is also that rotation" — the usual way DOOM halves the art needed for symmetric
-actors). `thingdefs.ts` maps THING doomednums to their sprite name; a type absent from that table
+actors). `things/tables.ts` maps THING doomednums to their sprite name; a type absent from that table
 renders nothing, same as DOOM's own invisible spawn markers (player starts, deathmatch spots,
 teleport landings).
 
@@ -138,7 +138,7 @@ routine draws **none of the sprite's own pixels**. For every pixel of the silhou
 it through colormap 6, so a spectre reads as a dark, shimmering hole in the scene rather than as a
 monster, and `fuzzpos` walking the table each frame is what makes it shimmer.
 
-`FUZZ_TYPES` (`game/thingdefs.ts`) is that flag: `MT_SHADOWS` and nothing else in `info.c`, so the
+`FUZZ_TYPES` (`game/things/tables.ts`) is that flag: `MT_SHADOWS` and nothing else in `info.c`, so the
 spectre alone. It stays set through death — `P_KillMobj` clears `MF_SHOOTABLE|MF_FLOAT|MF_SKULLFLY`
 and never `MF_SHADOW` — so a spectre's **corpse is fuzzed too**, and the type-keyed set gets that
 right for free where a check on the live monster wouldn't have. The player's invisibility powerup is
@@ -218,7 +218,7 @@ far, tilted camera small collectibles get lost.
 
 **Both halves of that decision live in `src/constants.ts`** — the factor and `PICKUP_SCALE_TYPES`,
 the whitelist of which doomednums take it — rather than the whitelist sitting with the other thing
-tables in `thingdefs.ts`. They are one tuned-by-feel presentation choice and get retuned together;
+tables in `things/tables.ts`. They are one tuned-by-feel presentation choice and get retuned together;
 splitting them put the dial and the list of what it applies to in different files. It is a whitelist
 of exactly those four blocks, not "everything but monsters/weapons" — monsters are already large
 enough to read, weapons already stand out, and solid decorations/gore props (torches, columns, trees,
@@ -243,7 +243,7 @@ pose is also driven by attacking, pain and death (docs/sprites.md § Pain, and a
 Every non-monster thing (barrel sway, decoration flicker, item/key/
 powerup blink) instead animates unconditionally — vanilla's own idle art loops regardless of motion,
 there being none to gate on. Which doomednums get more than the single held `'A'` frame
-`buildThingSprites` defaults to, and their frame letters/timing, is data in `game/thingdefs.ts`'s
+`buildThingSprites` defaults to, and their frame letters/timing, is data in `game/things/tables.ts`'s
 `THING_ANIM_FRAMES` (cross-checked against `info.c`'s `states[]`, not the wiki). The same table also
 covers the opposite case — a corpse/gib prop (the "Dead …"/"Bloody mess" doomednums) whose vanilla
 `spawnstate` is a fixed frame that *isn't* `'A'` — with a single-element `frames` array naming that
@@ -284,7 +284,7 @@ replacing the attack state outright.
 
 **The walk cycle defaults to `A`-`D` and overrides per type.** `MONSTER_WALK_FRAMES` is DOOM's RUN-
 state convention, the same cycle `PLAY` uses and correct for most of the roster;
-`MONSTER_WALK_FRAMES_OVERRIDE` (both in `thingdefs.ts`) carries the eight types whose `seestate`
+`MONSTER_WALK_FRAMES_OVERRIDE` (both in `things/tables.ts`) carries the eight types whose `seestate`
 chain says otherwise, read off `info.c` by walking that chain to where it loops and keeping the
 distinct frames: cacodemon `A` alone, lost soul `A`-`B`, pain elemental `A`-`C`, and `A`-`F` for the
 arch-vile, revenant, mancubus, arachnotron and spider mastermind.
@@ -296,7 +296,7 @@ overlap is what `tables.test.ts` now pins: no type's walk letters may appear in 
 or death table. Every override letter was also confirmed to exist as real rotation frames in
 `DOOM2.WAD`, the same check the death tables get below.
 
-**Attack and pain each get a real, dedicated pose** (`thingdefs.ts`'s `MONSTER_ATTACK_FRAMES`/
+**Attack and pain each get a real, dedicated pose** (`things/tables.ts`'s `MONSTER_ATTACK_FRAMES`/
 `MONSTER_PAIN_FRAMES`). The blocker an earlier walk-cycle stand-in was working around was real:
 unlike death frames, which are derivable straight from the WAD because death art is structurally the
 rotation-0-only tail of a sprite's frame set, attack and pain frames are ordinary rotation 1-8 frames
@@ -338,6 +338,6 @@ which has no queueing either.
 fired attack, and the pain pose inside `damage()` right after `reactToDamage` — gated on
 `p.painTimer > 0` rather than every non-lethal hit, since `reactToDamage` only sets it when the hit
 rolls past the monster's `painChance` (a failed roll still alerts and retargets, just doesn't
-stagger). The player's own letters (`thingdefs.ts`'s `PLAYER_ATTACK_FRAMES`/`PLAYER_PAIN_FRAMES`, derived
+stagger). The player's own letters (`things/tables.ts`'s `PLAYER_ATTACK_FRAMES`/`PLAYER_PAIN_FRAMES`, derived
 and WAD-checked the same way) trigger analogously: attack whenever `WeaponSystem.fire` returns a
 nonempty `Shot[]`, pain inside `damagePlayer` whenever the player survives a hit.

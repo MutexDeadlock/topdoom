@@ -15,6 +15,9 @@
  * of it. Nothing in this file is a direction or a velocity: those are stored
  * as separate `velX`/`velY`/`velZ` fields by everything that has them, and
  * headings are plain `angle` numbers.
+ *
+ * Cross-cutting, so there is no `docs/` page of its own: the rule these follow — including when
+ * to take one as a parameter and when to stay on scalars — is CLAUDE.md § Position types.
  */
 
 /** A point on the DOOM map plane. */

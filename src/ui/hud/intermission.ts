@@ -10,6 +10,14 @@ import { WadFont, COLOR_YELLOW } from './wadfont.ts';
 /** What the player has to press to leave the popup — see `Game.frame`'s intermission branch. */
 const CONTINUE_HINT = 'Press SPACE to continue';
 
+/**
+ * How long the popup ignores that key. `Space` both uses the exit switch and dismisses the popup,
+ * so without this a mashed switch skips past it before it can be read. `game.ts` owns the timer
+ * and gates on this. **Tuned by feel** — long enough to swallow a double tap, short enough not to
+ * feel stuck.
+ */
+export const INTERMISSION_INPUT_DELAY = 0.6;
+
 const RECORD_TEXT = 'NEW BEST TIME!';
 
 /**

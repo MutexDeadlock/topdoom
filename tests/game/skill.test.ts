@@ -10,8 +10,8 @@ import {
   spawnsAtSkill,
   type Skill,
 } from '../../src/game/skill.ts';
-import { FAST_MONSTER_STATS, MONSTER_STATS } from '../../src/game/monsters/defs.ts';
-import { ThingType } from '../../src/game/thingtypes.ts';
+import { FAST_MONSTER_STATS, MONSTER_STATS } from '../../src/game/monsters/tables.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
 
 /**
  * Which THINGs a map spawns at each difficulty. Pure flag arithmetic against

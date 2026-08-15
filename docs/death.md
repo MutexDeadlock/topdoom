@@ -1,6 +1,6 @@
 # Death: monsters, the player, barrels and boss triggers
 
-`src/game/things.ts`, `src/game/thingdefs.ts`, `src/game/combat.ts`, `src/game/specials.ts`,
+`src/game/things.ts`, `src/game/things/tables.ts`, `src/game/combat.ts`, `src/game/specials.ts`,
 `src/game.ts`
 
 How the damage that gets here was dealt is docs/combat.md.
@@ -85,7 +85,7 @@ teleport's doing, not an attack, and naming the newly spawned monster as the sou
 infight it never picked.
 
 It is split across two files for the usual reason: `ThingLayer` has no player reference, so it
-telefrags every overlapping `PosedThing` itself and returns the new body, and `game/iconofsin.ts` does the
+telefrags every overlapping `PosedThing` itself and returns the new body, and `game/monsters/iconofsin.ts` does the
 player half against `PLAYER_RADIUS` and calls `damagePlayer`. That is what makes standing on a MAP30
 spawn spot a real way to die.
 
@@ -93,7 +93,7 @@ spawn spot a real way to die.
 
 **Reuses the exact same mechanism** on `game.ts`'s single persistent `playerActor`:
 `PLAYER_DEATH_FRAMES` (`H`-`N`) is `PLAY`'s own confirmed DIE half, derived the same way as the
-monster tables — and living beside them in `game/thingdefs.ts`, not in `game/player.ts`, which owns
+monster tables — and living beside them in `game/things/tables.ts`, not in `game/player.ts`, which owns
 no sprite.
 
 `Inventory.applyDamage` is vanilla's `P_DamageMobj` armor formula — green armor absorbs a third of
@@ -169,7 +169,7 @@ player has no reason to care about anyway.
 
 The overlay's middle line names the killer — "You were killed by an Arch-Vile". `damagePlayer`
 takes a `DamageCause` (`game/combat.ts`) alongside the hit and only the killing one reads it;
-`thingdefs.ts`'s `obituary` turns it into the sentence and `DeathOverlay.show` draws it, so
+`things/tables.ts`'s `obituary` turns it into the sentence and `DeathOverlay.show` draws it, so
 the view layer composes nothing. An unattributed cause renders as `''` and the overlay looks exactly
 as it did before the line existed.
 
@@ -181,7 +181,7 @@ Vanilla has no obituaries at all, so none of this text is a fidelity claim.
 Every attack path already carried the identity for `ThingLayer.damage`'s retaliation rule and simply
 dropped it on the player branch; each now passes it on: melee and the lost soul's charge plus
 hitscan (`monsters/attacks.ts`), a missile's arrival (`projectiles.ts`), the vile's blast
-(`monsters/vile.ts`), the spawn cube's telefrag (`iconofsin.ts`). Splash is the one that can't just
+(`monsters/vile.ts`), the spawn cube's telefrag (`monsters/iconofsin.ts`). Splash is the one that can't just
 reuse `source`: `applyRadiusDamage` defaults `cause` to `source?.type`, but a barrel blames the
 barrel rather than whoever set it off, and a rocket of the player's own carries no `source` at all,
 so both pass it explicitly. Crushers and damage floors keep their `(amount) => void` callbacks —
@@ -319,7 +319,7 @@ added to `things/defs.ts`'s `DEATH_NOTIFY_TYPES` rather than to `BOSS_DEATH_TYPE
 are what the `default` branch maps over to build the "any of the five exits on map 8" row, which must
 not pick Keen up. The `open` kind is `EV_DoDoor`'s ordinary `VDOORSPEED` open-and-stay, distinct from
 E4M6's `blazeOpen`. The Icon of Sin (88) is in `DEATH_NOTIFY_TYPES` too but has no row here at all:
-`A_BrainDie` exits the level directly rather than through a tag, and `game/iconofsin.ts` owns it — see
+`A_BrainDie` exits the level directly rather than through a tag, and `game/monsters/iconofsin.ts` owns it — see
 docs/monster-iconofsin.md.
 
 **A boss-death tag has no triggering linedef, and `computeMovableSectors` has to be told.** That

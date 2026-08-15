@@ -95,14 +95,9 @@ export interface MapInfoEntry {
   next?: string;
   /** Where the secret exit leads — ZDoom spells the key `secretnext`, UMAPINFO `nextsecret`; both are read. */
   secretNext?: string;
+  /** The `D_*` lump this level's music comes from, replacing the vanilla per-map choice (docs/music.md § Which track a level plays). */
+  music?: string;
 }
-
-/** The property keys `parseMapInfo` reads, in either syntax, mapped onto their `MapInfoEntry` field. */
-const EXIT_KEYS: Record<string, 'next' | 'secretNext'> = {
-  next: 'next',
-  secretnext: 'secretNext',
-  nextsecret: 'secretNext',
-};
 
 /**
  * A `next`/`secretnext` value as a map lump name. ZDoom also accepts finale keywords here
@@ -116,6 +111,41 @@ function exitValue(token: Token | undefined): string | undefined {
 }
 
 /**
+ * A `music` value as a lump name. Quoted or not (both syntaxes are in the wild), and ZDoom's
+ * `$MUSIC_…` string-table indirection is left alone: it names no lump, and a track that doesn't
+ * resolve simply falls back to the vanilla per-map choice.
+ */
+function musicValue(token: Token | undefined): string | undefined {
+  if (!token || token.text === '{' || token.text === '}' || token.text === '=') return undefined;
+  return token.text.toUpperCase();
+}
+
+/**
+ * The property keys `parseMapInfo` reads: each maps onto its `MapInfoEntry` field through its own
+ * value normalizer. One table for both syntax walkers below, so a new key can't end up read in the
+ * block form but forgotten in the brace-less one.
+ */
+const PROPERTY_KEYS: Record<
+  string,
+  { field: 'next' | 'secretNext' | 'music'; value: (token: Token | undefined) => string | undefined }
+> = {
+  next: { field: 'next', value: exitValue },
+  secretnext: { field: 'secretNext', value: exitValue },
+  nextsecret: { field: 'secretNext', value: exitValue },
+  music: { field: 'music', value: musicValue },
+};
+
+/** One `PROPERTY_KEYS` read at `keyIndex`, applied to `entry` — shared by both syntax walkers. */
+function readProperty(entry: MapInfoEntry, tokens: Token[], keyIndex: number): void {
+  const prop = PROPERTY_KEYS[tokens[keyIndex].text.toLowerCase()];
+  if (!prop) return;
+  // `=` is optional in both syntaxes: UMAPINFO always writes it, ZDoom's newer
+  // form usually does, and neither requires it.
+  const value = prop.value(tokens[keyIndex + 1]?.text === '=' ? tokens[keyIndex + 2] : tokens[keyIndex + 1]);
+  if (value !== undefined) entry[prop.field] = value;
+}
+
+/**
  * Every `map` entry one MAPINFO/ZMAPINFO/UMAPINFO lump's text defines, keyed by map lump name.
  * Covers the three syntaxes that actually name a level:
  *
@@ -123,9 +153,9 @@ function exitValue(token: Token | undefined): string | undefined {
  * - UMAPINFO: `map MAP01 { levelname = "Entryway" }`.
  * - Hexen numeric: `map 01 "Entryway"`.
  *
- * and, in both the block and the old brace-less form, the two properties that say where a level's
- * exits lead (`EXIT_KEYS`) — what lets a PWAD define its own progression instead of inheriting
- * vanilla's (docs/wad.md § Level progression).
+ * and, in both the block and the old brace-less form, the properties in `PROPERTY_KEYS`: where a
+ * level's exits lead — what lets a PWAD define its own progression instead of inheriting vanilla's
+ * (docs/wad.md § Level progression) — and which track it plays.
  *
  * `map MAP01 lookup HUSTR_1` names no literal at all — it defers to the engine's own string table,
  * which is exactly what `levelNameFor` falls back to anyway, so no title is recorded for those.
@@ -164,10 +194,7 @@ export function parseMapInfo(text: string): Map<string, MapInfoEntry> {
         else if (token.text.toLowerCase() === 'levelname' && tokens[i + 1]?.text === '=' && tokens[i + 2]?.quoted) {
           entry.title = tokens[i + 2].text;
         } else {
-          const key = EXIT_KEYS[token.text.toLowerCase()];
-          // `=` is optional even inside a block: UMAPINFO always writes it, ZDoom's newer syntax
-          // usually does, and neither requires it.
-          if (key) entry[key] = exitValue(tokens[i + 1]?.text === '=' ? tokens[i + 2] : tokens[i + 1]) ?? entry[key];
+          readProperty(entry, tokens, i);
         }
       }
       i--; // the loop above stopped one past the closing brace
@@ -178,12 +205,11 @@ export function parseMapInfo(text: string): Map<string, MapInfoEntry> {
         const token = tokens[j];
         if (token.quoted) continue;
         if (token.text.toLowerCase() === 'map' || token.text === '{') break;
-        const key = EXIT_KEYS[token.text.toLowerCase()];
-        if (key) entry[key] = exitValue(tokens[j + 1]?.text === '=' ? tokens[j + 2] : tokens[j + 1]) ?? entry[key];
+        readProperty(entry, tokens, j);
       }
     }
 
-    if (entry.title !== undefined || entry.next !== undefined || entry.secretNext !== undefined) maps.set(mapName, entry);
+    if (Object.keys(entry).length > 0) maps.set(mapName, entry);
   }
   return maps;
 }
@@ -232,4 +258,13 @@ export function mapInfoNames(wad: Wad): Map<string, string> {
     if (entry.title !== undefined) names.set(map, entry.title);
   }
   return names;
+}
+
+/** Just the music lumps out of `mapInfoEntries` — docs/music.md § Which track a level plays. */
+export function mapInfoMusic(wad: Wad): Map<string, string> {
+  const music = new Map<string, string>();
+  for (const [map, entry] of mapInfoEntries(wad)) {
+    if (entry.music !== undefined) music.set(map, entry.music);
+  }
+  return music;
 }

@@ -30,7 +30,7 @@ Node runs **one process per test file**, which is what contains `player.ts`'s mo
 
 ```
 tests/
-  util/  wad/  game/  ui/  render/   one file per src/ module under test
+  util/  wad/  game/  ui/  render/  audio/   one file per src/ module under test
   regression/            one file per fixed bug, named after the bug
   fixtures/              builders and test data, never tests
 ```
@@ -63,7 +63,11 @@ round-trip that isn't the real one proves nothing. The `ThingLayer` and `SpriteF
 `SpriteMaterialCache` stub (`fixtures/spritestubs.ts`, plus its `recordingBank` variant that keeps
 the frame letters it was asked for), since both layers only ever *key* batches by lump name during a
 tic — which is also what lets the fog test read back the frame letter a restored puff resumes on.
-Deliberately **not** covered yet, and why:
+The music subsystem joined with everything below `MusicPlayer` (`audio/music.test.ts`): the score
+decoders and the vanilla per-map table are pure, and the OPL chip and its synth need no DOM at all
+— a note is keyed on and the rendered samples are measured, which is how "a released note stops"
+and "channel volume scales it" are pinned without ears. Only `MusicPlayer` itself, which owns the
+`AudioContext`, stays out. Deliberately **not** covered yet, and why:
 
 - **`SpecialsController`'s mover state machine** — `sectorActive`, `tickDoor`, `tickLift` and the
   `trigger*` guards are all private, and reaching them means extracting the per-mover tick into pure
@@ -77,7 +81,7 @@ Deliberately **not** covered yet, and why:
   so a stubbed run would test the stubs. Test at `shotPath` level instead; `playerShotRange` exists
   as a separate exported function precisely so the range selection is reachable without the layer.
 - **`src/render/` (anything that needs a GL context), `src/ui/`, `main.ts`, `game.ts`,
-  `audio/audio.ts`** — need a DOM or a renderer. Three carve-outs: `render/bsp.ts` *is* covered,
+  `audio/audio.ts`, `audio/music.ts`** — need a DOM or a renderer. Three carve-outs: `render/bsp.ts` *is* covered,
   being pure geometry despite where it lives; so is any pure helper a DOM module happens to export —
   `tests/ui/hud.test.ts` covers `hud.ts`'s `formatClock`/`percentOf` while `Hud` itself stays out;
   and *constructing* THREE objects is fine on its own, only rendering them isn't, which is what lets

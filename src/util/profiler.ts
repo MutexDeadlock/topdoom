@@ -13,6 +13,25 @@ export interface ProfileSample {
 const SMOOTHING = 0.12;
 
 /**
+ * Fraction of the pending off-frame pool charged into each frame — see
+ * `offFrame`. **Tuned by feel**: at 60fps this spreads a burst over roughly the
+ * music pump's own 150 ms interval, so the charge per frame converges on the
+ * per-frame average the bursts amount to instead of spiking whichever frame
+ * happened to follow one.
+ */
+const OFF_FRAME_SPREAD = 0.12;
+
+/**
+ * Ceiling on the pending off-frame pool, in ms — a couple of 60fps frames'
+ * worth. **Tuned by feel.** Live play never accrues more than a pump interval's
+ * chunks between two frames; anything bigger is a stall's backlog (a tab hidden
+ * without the menu open keeps the synth timer running with no frame to drain
+ * it), and is dropped the way the frame loop drops its own accumulator debt
+ * rather than replayed against frames that didn't do the work.
+ */
+const OFF_FRAME_PENDING_CAP = 32;
+
+/**
  * Per-frame wall-clock breakdown DEVMODE's profiler overlay reads from
  * (`ui/devmode/profilerhud.ts`). A single frame's timing is noisy (GC pauses, OS
  * scheduling, browser compositing) — showing it raw would make the overlay's
@@ -34,11 +53,16 @@ export class FrameProfiler {
   private smoothedByLabel = new Map<string, number>();
   private currentByLabel = new Map<string, number>();
   private frameStart = 0;
+  /** Off-frame work reported but not yet charged into a frame — drained a fraction per frame by `endFrame`. */
+  private offFramePending = new Map<string, number>();
+  /** What `endFrame` charged out of that pool this frame, added to the frame's own wall clock. */
+  private offFrameMs = 0;
   private smoothedTotal = 0;
   private smoothedOther = 0;
 
   beginFrame(): void {
     this.currentByLabel.clear();
+    this.offFrameMs = 0;
     this.frameStart = performance.now();
   }
 
@@ -60,15 +84,46 @@ export class FrameProfiler {
   }
 
   /**
+   * Adds main-thread work that happened **between** frames, in the gap
+   * `beginFrame`/`endFrame` doesn't span — the music synth's chunk rendering,
+   * which a timer drives rather than the frame loop (docs/music.md § Getting it
+   * to the speakers). It counts towards the frame total as well as its own
+   * label, so the bars still sum to the total instead of quietly eating
+   * `Other`, and a zero costs nothing: a label is only registered once it has
+   * actually spent time, so a category that never runs never takes a row.
+   *
+   * The work arrives in bursts (a chunk every pump interval, a whole lookahead
+   * at track start), so it is pooled and charged into frames a fraction at a
+   * time (`OFF_FRAME_SPREAD`) rather than dumped on the frame that follows —
+   * dumped, every burst spiked the total and with it the "fps eq." readout,
+   * which divides by it. A stall's oversized backlog is capped away entirely
+   * (`OFF_FRAME_PENDING_CAP`). docs/menu.md § Profiling overlay.
+   */
+  offFrame(label: string, ms: number): void {
+    if (ms <= 0) return;
+    const pending = this.offFramePending.get(label) ?? 0;
+    this.offFramePending.set(label, Math.min(OFF_FRAME_PENDING_CAP, pending + ms));
+  }
+
+  /**
    * Finalizes the frame: smooths every measured label, plus an "Other"
    * bucket — whatever of the real total frame time (measured from
-   * `beginFrame` to here) isn't covered by any `time()`/`add()` call, e.g.
-   * input handling, HUD text updates, or a single small sprite pose that
-   * isn't worth its own category — so the panel's bars always sum to the
-   * true frame time instead of silently under-reporting it.
+   * `beginFrame` to here, plus whatever `offFrame` reported) isn't covered by
+   * any `time()`/`add()` call, e.g. input handling, HUD text updates, or a
+   * single small sprite pose that isn't worth its own category — so the
+   * panel's bars always sum to the true frame time instead of silently
+   * under-reporting it.
    */
   endFrame(): void {
-    const total = performance.now() - this.frameStart;
+    for (const [label, pending] of this.offFramePending) {
+      // Below display resolution: charge the tail whole instead of decaying forever.
+      const charge = pending < 0.01 ? pending : pending * OFF_FRAME_SPREAD;
+      this.add(label, charge);
+      this.offFrameMs += charge;
+      if (charge === pending) this.offFramePending.delete(label);
+      else this.offFramePending.set(label, pending - charge);
+    }
+    const total = performance.now() - this.frameStart + this.offFrameMs;
     let measured = 0;
     for (const label of this.labels) {
       const prev = this.smoothedByLabel.get(label)!;

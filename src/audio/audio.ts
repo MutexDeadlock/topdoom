@@ -5,6 +5,8 @@
 import type { SoundBank } from '../wad/sound.ts';
 import type { Pos2 } from '../types.ts';
 import { randomPlaybackRate, SFX, SFX_NAMES, type SfxId, type SoundEmitter } from './sfx.ts';
+import { MusicPlayer } from './music.ts';
+import { storedVolume } from './volume.ts';
 
 /**
  * Sounds that may play at once. **Tuned by feel**, not vanilla: `snd_channels`
@@ -34,8 +36,12 @@ const ATTENUATOR = CLIPPING_DIST - CLOSE_DIST;
  */
 const STEREO_SWING = 96 / 128;
 
-/** Default sfx volume — vanilla's own starting `snd_SfxVolume` of 8 out of 15. */
-const DEFAULT_VOLUME = 8 / 15;
+/**
+ * Default sfx volume. **Tuned by feel**, and above vanilla's own starting `snd_SfxVolume` of
+ * 8 of 15: this mixer has no analogue stage behind it, so vanilla's number lands quieter here
+ * than it did on a Sound Blaster.
+ */
+const DEFAULT_VOLUME = 0.8;
 
 const VOLUME_STORAGE_KEY = 'topdoom.sfxVolume';
 
@@ -67,11 +73,17 @@ export class AudioEngine implements SoundEmitter {
   private failed = false;
   private master: GainNode | null = null;
   /**
-   * Where sfx voices connect. Separate from `master` so music can later join
-   * it as a sibling bus with its own volume, rather than needing this graph
-   * rearranged — see docs/audio.md § Room for music.
+   * Where sfx voices connect. A sibling of the music player's own bus under
+   * `master`, so the two volumes are independent — docs/music.md § Volume.
    */
   private sfxBus: GainNode | null = null;
+
+  /**
+   * The level's music, on its own bus. Owned here because it needs this
+   * class's `AudioContext` and nothing else does; it stays silent until
+   * `attach` hands it one. See docs/music.md.
+   */
+  readonly music = new MusicPlayer();
 
   private bank: SoundBank | null = null;
   private buffers = new Map<SfxId, AudioBuffer | null>();
@@ -89,11 +101,7 @@ export class AudioEngine implements SoundEmitter {
   private _volume: number;
 
   constructor() {
-    // `getItem` returns null when unset, and `Number(null)` is 0 — which would
-    // read as a stored volume of "silent" rather than as "no preference yet".
-    const stored = globalThis.localStorage?.getItem(VOLUME_STORAGE_KEY);
-    const parsed = stored === null || stored === undefined ? NaN : Number(stored);
-    this._volume = Number.isFinite(parsed) && parsed >= 0 && parsed <= 1 ? parsed : DEFAULT_VOLUME;
+    this._volume = storedVolume(VOLUME_STORAGE_KEY, DEFAULT_VOLUME);
   }
 
   get volume(): number {
@@ -114,8 +122,12 @@ export class AudioEngine implements SoundEmitter {
     this.applyVolume();
   }
 
+  /**
+   * On the sfx bus, not on `master`: music hangs off `master` too, and putting
+   * this there would have the sfx slider quietly ride the music as well.
+   */
   private applyVolume(): void {
-    if (this.master) this.master.gain.value = this._volume;
+    if (this.sfxBus) this.sfxBus.gain.value = this._volume;
   }
 
   /**
@@ -147,15 +159,21 @@ export class AudioEngine implements SoundEmitter {
     this.forwardSin = Math.sin(rad);
   }
 
-  /** Starts the context (first call) or wakes it after `suspend`. Must be reached from a user gesture. */
+  /** Starts the context, or wakes one the browser suspended on its own. Must be reached from a user gesture. */
   resume(): void {
     const ctx = this.ensureContext();
     if (ctx && ctx.state !== 'running') void ctx.resume();
   }
 
+  /**
+   * Pausing. The sfx voices are cut, but the context is deliberately left
+   * running: music sits on its own bus and plays on behind the menu the way
+   * vanilla's does, and suspending the context would freeze it mid-bar. Nothing
+   * raises a sound while paused — the frame loop is stopped — so there is
+   * nothing else to silence. docs/music.md § Volume.
+   */
   suspend(): void {
     this.stopAll();
-    if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend();
   }
 
   stopAll(): void {
@@ -320,6 +338,7 @@ export class AudioEngine implements SoundEmitter {
     this.master.connect(this.ctx.destination);
     this.sfxBus = this.ctx.createGain();
     this.sfxBus.connect(this.master);
+    this.music.attach(this.ctx, this.master);
     this.applyVolume();
     // The bank was set before the context existed (a level loaded, then the
     // first resume created this) — start its container-format decodes now.

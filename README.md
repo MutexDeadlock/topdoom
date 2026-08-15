@@ -77,14 +77,19 @@ yourself) and restart `npm run dev` to turn on the debug overlay and the hotkeys
 *(dev mode only)* above. Without it those keys are simply inert.
 See [docs/menu.md](docs/menu.md#dev-mode-devmode).
 
-## Sound
+## Sound and music
 
 Sound effects are decoded from the loaded WAD, so they match whichever set is in use — and an
 add-on that replaces individual `DS*` lumps replaces those sounds, including modern Ogg/WAV/FLAC
 ones. Shareware `DOOM1.WAD` only carries 49 of the 108 sounds, so parts of it are quiet.
 
-Volume lives on the start menu and is remembered between sessions; drag it to 0 for silence. There
-is no music yet. See [docs/audio.md](docs/audio.md).
+Each level plays its own music, synthesized the way DOS DOOM did it: the `D_*` score is played on
+an emulated OPL2/OPL3 FM chip using the WAD's own `GENMIDI` instrument bank, so nothing outside the
+WAD is needed. MUS and MIDI lumps both play, and a music PWAD shipping Ogg/FLAC/MP3/WAV plays those
+directly.
+
+Both volumes live on the start menu and are remembered between sessions; drag one to 0 for silence.
+See [docs/audio.md](docs/audio.md) and [docs/music.md](docs/music.md).
 
 ## HUD
 
@@ -171,6 +176,5 @@ is drawn as the real `PLAY` sprite. Health, armor, ammo, keys, weapons, the back
 powerups are collectible and tracked on a HUD (see [Powerups](#powerups) above); doors, lifts,
 floor movers, crushers, switches and teleporters all work, including locked doors. All nine
 weapons fire, and every stock monster is in — including both DOOM II oddities, Commander Keen and
-the Icon of Sin. Sound effects come out of the loaded WAD (see [Sound](#sound) above).
-
-Not yet: music.
+the Icon of Sin. Sound effects and music both come out of the loaded WAD (see
+[Sound and music](#sound-and-music) above).

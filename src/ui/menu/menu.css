@@ -256,6 +256,12 @@
   gap: 12px;
 }
 
+/* Fixed width so the two sliders in the Sound section line up under each other. */
+#menu .slider .label {
+  min-width: 7ch;
+  color: var(--fg-dim);
+}
+
 #menu .slider input[type='range'] {
   flex: 1;
   accent-color: var(--accent);

@@ -227,8 +227,11 @@ description, the autorun checkbox is the `Shift` row's. A player looking up what
 player changing it are the same person on the same trip to the menu — which is why those two did not
 move to General with the rest.
 
-**General is sfx volume, the frame rate limit and the collision toggle**, stacked full width with
-the limit first. The
+**General is the two volume sliders, the frame rate limit and the collision toggle**, stacked full
+width with the limit first. Sound holds `#volume-slider` (effects) above `#music-volume-slider`,
+each with a `.label` wide enough that the two line up; the sfx one previews itself with `itemup` as
+it is dragged, the music one needs no preview because it rides the track already playing behind the
+menu (docs/music.md § Volume). The
 limit is `#fpscap-select`, and its `<option>` values *are* the capped rates (`0` = unlimited, the
 default), so the control needs no mapping table. It is owned by `game.ts` (`getFpsCap`/`setFpsCap`),
 whose frame loop is the only thing it changes, and is read live per frame — changing it mid-level
@@ -296,6 +299,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | Key | Owner | Documented in |
 |---|---|---|
 | `topdoom.sfxVolume` | `audio/audio.ts` | docs/audio.md § Volume and the context |
+| `topdoom.musicVolume` | `audio/music.ts` | docs/music.md § Volume |
 | `topdoom.autorun` | `game/player.ts` (`getAutorun`/`setAutorun`) | docs/movement.md § Movement speed and straferunning |
 | `topdoom.rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
 | `topdoom.fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
@@ -417,14 +421,32 @@ level's population has actually noticed the player.
 ## Profiling overlay
 
 A third DEVMODE-gated panel, top-right, breaks a frame's cost down by category — `Specials`, `Player`,
-`Weapons`, `Fog of War`, `Monsters`, `Effects`, `Fading`, `Render`, plus an `Other` bucket for whatever
-wasn't explicitly measured (input handling, HUD text, the player sprite's own pose) — so a slow frame
-can be traced to *which* system is responsible rather than just how many fps it costs.
+`Weapons`, `Fog of War`, `Monsters`, `Effects`, `Fading`, `Render`, `Music`, plus an `Other` bucket for
+whatever wasn't explicitly measured (input handling, HUD text, the player sprite's own pose) — so a slow
+frame can be traced to *which* system is responsible rather than just how many fps it costs.
 
 `FrameProfiler` (`util/profiler.ts`) is a plain per-frame timer, not tied to rendering or game state:
 `beginFrame()`, any number of `time(label, fn)`/`add(label, ms)` calls (the same label can be used more
 than once per frame — `game.ts`'s "Player" bucket covers both the movement block and the later
 pickup/damage-floor block, non-contiguous in `frame()` — and accumulates), then `endFrame()`.
+
+**`Music` is the one category measured outside the frame**, because the music synth renders on its own
+timer in the gaps between frames (docs/music.md § Getting it to the speakers). `MusicPlayer` accumulates
+what it spent and the next frame hands it over with `offFrame(label, ms)`, which counts it towards the
+frame total as well as its own label — otherwise a category that never ran inside `beginFrame`/`endFrame`
+would be silently subtracted from `Other`. It only appears once a track is actually being synthesized:
+a container-format track costs nothing here, and `offFrame` registers no label for a zero.
+
+Because that work arrives in **bursts** — a chunk every pump interval, a whole lookahead at track
+start — `offFrame` pools it and `endFrame` charges the pool a fraction per frame
+(`OFF_FRAME_SPREAD`) instead of dumping each burst on the frame that follows it. Dumped, every burst
+spiked the total, and the header's "fps eq." — which divides by that total — visibly lurched with
+each one and cratered at every track start. The pool is also capped (`OFF_FRAME_PENDING_CAP`): live
+play never accrues more than a pump interval's chunks between two frames, so anything bigger is a
+stall's backlog — a tab hidden without the menu open keeps the synth timer running with no frame to
+drain it — and is dropped the way the frame loop drops its accumulator debt, not replayed against
+frames that didn't do the work. The pause path separately discards what accumulated behind the menu
+(`Game.resume`), so the first frame back isn't charged for it at all.
 
 Every label is smoothed with a plain exponential moving average rather than shown raw, the same
 reasoning as `util/damping.ts`'s `dampen`: a single frame's timing is noisy (GC pauses, OS scheduling),

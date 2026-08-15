@@ -1,3 +1,21 @@
+v0.13.0 (2026-08-1?)
+
+Features and improvements
+  - MUSIC! 
+    - MUS and MIDI lumps both play, using OPL2/OPL3 emulation driven by 
+      the WAD's own GENMIDI instrument bank
+    - Ogg/FLAC/MP3/WAV lump from a music-replacement PWAD plays natively
+    - a WAD's MAPINFO can name a level's music, and the intermission gets its
+      own track like it does in vanilla
+    - Music volume slider in the settings menu, beside the sound effects one.
+    - default volumes: 80% for sound and 60% for music
+
+Fixed bugs
+
+
+
+===============================================================================
+
 v0.12.3 (2026-08-15)
 
 Mostly internal refactoring and cleanup.

@@ -83,6 +83,9 @@ import { WEAPONS, WeaponSystem } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
 import { PLAYER_ORIGIN } from './audio/sfx.ts';
 import { SoundBank } from './wad/sound.ts';
+import { MusicBank } from './wad/music.ts';
+import { mapInfoMusic } from './wad/mapinfo.ts';
+import { LevelMusic } from './audio/music.ts';
 import type { Placement, Pos2 } from './types.ts';
 import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
 
@@ -238,6 +241,8 @@ export class Game {
   private intermission: Intermission;
   /** Names levels for the card: MAPINFO, then the vanilla title table — see wad/levelnames.ts. */
   private levelNames: LevelNames;
+  /** The WAD set's `D_*` lumps, and the MAPINFO overrides of which one a level plays. */
+  private levelMusic: LevelMusic;
   /** Where each exit leads: MAPINFO, then vanilla's own tables — see wad/progression.ts. */
   private progression: LevelProgression;
   /**
@@ -321,6 +326,11 @@ export class Game {
     // The WAD set's own sound lumps, for as long as this Game owns the level.
     // The engine itself (and its AudioContext) outlives us — see AudioEngine.
     audio.setBank(new SoundBank(wad));
+    // Same for its music, plus whatever its MAPINFO says about which track goes
+    // with which map (docs/music.md § Which track a level plays).
+    const musicBank = new MusicBank(wad);
+    this.levelMusic = new LevelMusic(musicBank, mapInfoMusic(wad));
+    audio.music.setBank(musicBank);
 
     const gfx = new GraphicsBank(wad);
     this.materials = new MaterialBank(gfx, view.renderer);
@@ -544,6 +554,9 @@ export class Game {
     this.playerActor.revive();
     this.mapIndex = (index + this.mapNames.length) % this.mapNames.length;
     const name = this.mapNames[this.mapIndex];
+    // Before the map is built rather than after: the track outlives the load,
+    // and `play` is a no-op when the level being entered wants the same one.
+    this.audio.music.play(this.levelMusic.trackFor(name));
 
     if (this.built) {
       this.scene.remove(this.built.group);
@@ -767,6 +780,10 @@ export class Game {
     // Zero, not `lastTime + interval`: the first frame back is always due, and
     // `dueThisFrame` resyncs the deadline off its own timestamp.
     this.nextFrameAt = 0;
+    // Music kept playing behind the menu, and no frame was there to report what
+    // it cost; charging all of it to the first frame back would spike the
+    // profiler's `Music` bar for seconds. Discarded like the accumulator above.
+    this.audio.music.takeRenderMs();
     this.view.input.reset();
     requestAnimationFrame(this.frame);
   }
@@ -809,6 +826,8 @@ export class Game {
     // The engine is session-level and the next Game sets its own bank; this
     // only makes sure nothing from this level is left holding a channel.
     this.audio.stopAll();
+    // The music would otherwise keep playing over the menu once this level is gone.
+    this.audio.music.stop();
     this.screenEffects.reset();
     // Like `screenEffects`, these elements outlive the Game that drove them — without
     // this the menu (and the next level started from it) inherits the line.
@@ -1134,6 +1153,10 @@ export class Game {
       // The next map isn't loaded here any more: the popup goes up on the level as it stands, and
       // the continue key at the top of `tic` is what loads it.
       this.intermission.show(this.levelStats(), this.recordCompletion());
+      // Vanilla's own `S_ChangeMusic(mus_inter)` at the intermission, keeping
+      // the level's track when the set has no intermission lump.
+      const between = this.levelMusic.intermissionTrackFor(this.currentMap);
+      if (between) this.audio.music.play(between);
       this.intermissionActive = true;
       this.intermissionTime = 0;
       input.endTic();
@@ -1192,6 +1215,10 @@ export class Game {
     this.posePlayer(alpha, rawDt, camera.viewAngleDeg);
 
     this.profiler.time('Render', () => this.view.renderer.render(this.scene, camera.camera));
+    // The music synth runs off its own timer, in the gaps between frames, so it
+    // reports what it spent instead of being timed here (docs/music.md
+    // § Getting it to the speakers).
+    this.profiler.offFrame('Music', this.audio.music.takeRenderMs());
     this.profiler.endFrame();
 
     this.debugHud.update(rawDt, this.profiler, (fps) => this.debugLines(fps));

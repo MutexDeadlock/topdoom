@@ -234,7 +234,10 @@ means the message simply shows silently, which is the same way every other missi
 
 The menu's Settings tab has a volume slider, and the value is persisted in `localStorage` under
 `topdoom.sfxVolume` (docs/menu.md § Persisted settings covers the shared pattern). Default is
-vanilla's own starting `snd_SfxVolume`, 8 of 15.
+**0.8, tuned by feel** rather than taken from vanilla's own starting `snd_SfxVolume` of 8 of 15 —
+there is no sound card's analogue stage behind this mixer, so vanilla's number arrives quieter
+here than it did on the hardware. The music default is lower again (docs/music.md § Volume): it
+sits under the game rather than beside it.
 
 **There is no mute, deliberately** — an `M` key and a `_muted` flag existed and were removed as a
 second way to say what the slider already says at 0. **Volume 0 therefore has to do everything mute
@@ -256,16 +259,15 @@ all. `Game.pause()` suspends it and `resume()` wakes it, so Esc to the menu is s
 level change calls `stopAll()`, since anything still ringing belongs to the level being torn
 down and its origins are about to be reused.
 
-## Room for music
+## Music
 
-Nothing plays music yet, but the pieces it needs are already positioned:
+The level's `D_*` track has its own subsystem — see **docs/music.md**. Only two things about it
+belong here:
 
-- The graph is `voice → sfxBus → master → destination`, so a music bus joins as a sibling of
-  `sfxBus` with its own volume rather than needing the graph rearranged.
-- `SoundBank` is the model to copy, but **music can't reuse it**: `D_*` lumps are MUS, a
-  compact MIDI-like event format with no browser decoder — a player has to either convert MUS
-  to MIDI and synthesize it (a soundfont, or an OPL emulation for the authentic sound), or
-  accept a container-format replacement the way `SoundBank` already accepts Ogg for sfx.
-  DOOM2.WAD carries 35 `D_*` lumps, freedoom2 the same 35, and DOOM1.WAD 12.
-- `S_music[]` in `sounds.c` names them per map (`d_runnin` for MAP01 …); that table is the
-  music equivalent of `SFX` and belongs beside it.
+- The graph is `voice → sfxBus → master → destination`, and the music player's bus is a **sibling
+  of `sfxBus`** under `master`, so the two volumes are independent. That is why the sfx volume is
+  applied to `sfxBus` and not to `master`, where it would quietly ride the music as well.
+- **`suspend` no longer suspends the context.** It cuts the sfx voices and leaves the clock
+  running, so music plays on behind the menu the way vanilla's does; suspending would freeze it
+  mid-bar. Nothing raises a sound while paused — the frame loop is stopped — so there is nothing
+  else to silence.

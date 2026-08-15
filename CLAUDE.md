@@ -57,7 +57,7 @@ is still right for a one-off investigation — those go in the scratchpad, never
 
 ```
 src/wad/       WAD files, merged lump directory, content ids, map lumps, graphics + sprite + sound
-               decoding, MAPINFO + the vanilla level-title tables
+               + music decoding, MAPINFO + the vanilla level-title tables
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards + their instanced batching, shot tracers, camera, viewport
 src/game/      spatial queries + collision, player controller, input, thing world state, fog of war,
@@ -75,7 +75,10 @@ src/game/specials/   load-time map analysis (mapscan), mover meshes + relighting
 src/game/spritefx/   the one-shot effect + projectile record shapes and their flight helpers
                (defs), the effects' sprite/sound/timing tables (tables)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
-               WebAudio playback (channels, attenuation, pan, volume)
+               WebAudio playback (channels, attenuation, pan, volume), the level's music
+src/audio/music/     the OPL chip emulation (opl), MUS + MIDI score decoding (mus, midi) into the
+               shared event stream (defs), the MIDI-to-register synth (synth), S_music[] and DMX's
+               volume curve (tables)
 src/ui/        the page's own chrome (base styles + tokens, the fatal-error screen)
 src/ui/hud/          everything over the running level: HUD, level card, intermission, center
                messages, screen tints/pain flash, death overlay, crosshair, WadFont glyph
@@ -124,6 +127,7 @@ several record rules that look like accidents and aren't.
 | [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, the donut, damage floors, secrets |
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
 | [docs/audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |
+| [docs/music.md](docs/music.md) | The OPL chip and `GENMIDI`, MUS/MIDI decoding, which track a level plays, music volume |
 | [docs/testing.md](docs/testing.md) | The test suite: runner, the ASCII-grid map fixture, which WADs are committed, the doc-pointer guard |
 | [docs/conventions.md](docs/conventions.md) | File and directory naming, the `defs`/`tables` roles, source order inside a file, known deviations |
 

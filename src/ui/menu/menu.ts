@@ -73,6 +73,8 @@ export class Menu {
   private fileInput = el<HTMLInputElement>('file-input');
   private volumeSlider = el<HTMLInputElement>('volume-slider');
   private volumeValue = el<HTMLSpanElement>('volume-value');
+  private musicSlider = el<HTMLInputElement>('music-volume-slider');
+  private musicValue = el<HTMLSpanElement>('music-volume-value');
   private autorunCheckbox = el<HTMLInputElement>('autorun-checkbox');
   private shiftAction = el<HTMLSpanElement>('shift-action');
   private rightMouseSelect = el<HTMLSelectElement>('rightmouse-select');
@@ -258,24 +260,44 @@ export class Menu {
   }
 
   /**
-   * The sfx volume slider. Dragging it is itself a user gesture, so the engine
+   * The two volume sliders. Dragging one is itself a user gesture, so the engine
    * can start its context and preview the change right here rather than waiting
    * for the level to start — which is the only way to set volume by ear.
+   *
+   * The music slider needs no preview of its own: it rides the track that is
+   * already playing behind the menu, and there is nothing to audition on the
+   * first visit, where no WAD set is loaded yet.
    */
   private installVolume(): void {
-    const show = (v: number) => {
-      this.volumeSlider.value = String(Math.round(v * 100));
-      this.volumeValue.textContent = `${Math.round(v * 100)}%`;
+    const bind = (
+      slider: HTMLInputElement,
+      valueEl: HTMLSpanElement,
+      current: number,
+      set: (v: number) => void,
+      preview?: () => void,
+    ) => {
+      const show = (v: number) => {
+        slider.value = String(Math.round(v * 100));
+        valueEl.textContent = `${Math.round(v * 100)}%`;
+      };
+      show(current);
+      slider.addEventListener('input', () => {
+        const v = Number(slider.value) / 100;
+        set(v);
+        show(v);
+        this.audio.resume();
+        preview?.();
+      });
     };
-    show(this.audio.volume);
-    this.volumeSlider.addEventListener('input', () => {
-      const v = Number(this.volumeSlider.value) / 100;
-      this.audio.setVolume(v);
-      show(v);
-      this.audio.resume();
+    bind(
+      this.volumeSlider,
+      this.volumeValue,
+      this.audio.volume,
+      (v) => this.audio.setVolume(v),
       // The pickup blip: short, unmissable, and the sound a player hears most.
-      this.audio.play('itemup');
-    });
+      () => this.audio.play('itemup'),
+    );
+    bind(this.musicSlider, this.musicValue, this.audio.music.volume, (v) => this.audio.music.setVolume(v));
   }
 
   /**

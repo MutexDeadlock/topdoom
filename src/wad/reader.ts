@@ -9,9 +9,9 @@ export class Reader {
   private view: DataView;
   pos = 0;
 
-  private buf: ArrayBuffer;
+  private buf: ArrayBufferLike;
 
-  constructor(buf: ArrayBuffer, offset = 0, length?: number) {
+  constructor(buf: ArrayBufferLike, offset = 0, length?: number) {
     this.buf = buf;
     this.view = new DataView(buf, offset, length ?? buf.byteLength - offset);
   }

@@ -317,6 +317,11 @@ A monster's teleport deliberately does **not** touch `lastTeleport` — that exi
 *player's* walk-trigger tracking — but it does get the same `TFOG` puff at both ends, since vanilla
 spawns that for any thing that teleports.
 
+**An arrival telefrags what is standing on the pad** (`P_TeleportMove`), and off MAP30 a monster's
+arrival is *refused* by anything standing there instead — so `crossMonster` can return a landing spot
+that `game.ts` then declines to move the monster to. The rules, and why the line is spent either way,
+are in docs/death.md § Telefrag.
+
 **`lastTeleport`**: teleporting moves the player an arbitrary distance in a single frame, which breaks
 `SpecialsController`'s own walk-trigger detection. It tracks `prevX`/`prevY` to know what segment the
 player just crossed, and leaving those at the pre-teleport position would make the next frame test a

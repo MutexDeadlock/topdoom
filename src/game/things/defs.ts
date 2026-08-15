@@ -225,6 +225,18 @@ export interface MonsterRef extends Pos3 {
 }
 
 /**
+ * The monster that walked a segment `crossLines` reports: where it now stands, plus what resolving
+ * a teleport landing's telefrag needs (`ThingLayer.telefragAt` for every other body, `game.ts` for
+ * the player half, whose obituary wants `type`). `PosedThing` satisfies it structurally, so the
+ * callback allocates nothing on the once-per-alerted-monster, once-per-tic path it runs on.
+ */
+export interface CrossingBody extends Pos2 {
+  id: number;
+  type: number;
+  blockRadius: number;
+}
+
+/**
  * Live kill/item totals for the level, vanilla's own `totalkills`/`killcount` and
  * `totalitems`/`itemcount` — `total*` set once at spawn (`COUNTKILL_TYPES`/`COUNTITEM_TYPES`),
  * `kills`/`items` incremented as the level is played. docs/hud.md § Level stats.
@@ -278,8 +290,9 @@ export interface ThingLayer {
    *
    * `fogVisible` hides things in an unrevealed subsector, which would
    * otherwise spoil a secret room whose geometry is faded out. `crossLines`
-   * gets the segment each alerted monster walked, so the caller can fire walk
-   * triggers (docs/specials.md § Teleporters). Also ticks barrel death clocks
+   * gets each alerted monster and where it stepped from, so the caller can
+   * fire the walk triggers in between and resolve a teleport landing's
+   * telefrag (docs/specials.md § Teleporters). Also ticks barrel death clocks
    * and reports any `A_Explode` due this frame.
    *
    * **Advances the world only — it draws nothing.** `draw` is the other half,
@@ -289,7 +302,7 @@ export interface ThingLayer {
     dt: number,
     player: Pos3 | null,
     fogVisible?: (subsector: number) => boolean,
-    crossLines?: (prev: Pos2, pos: Pos2) => Placement | null,
+    crossLines?: (prev: Pos2, mover: CrossingBody) => Placement | null,
   ): ThingUpdateResult;
   /**
    * Fills the sprite batches from the state `update` left, with every position
@@ -409,6 +422,23 @@ export interface ThingLayer {
     fromY?: number,
   ): void;
   /**
+   * `P_TeleportMove`'s stomp for a body arriving at `at` with `radius`: every overlapping
+   * shootable thing — a monster or a barrel, vanilla's `MF_SHOOTABLE`, so a solid decoration is
+   * passed straight through — takes `TELEFRAG_DAMAGE`, unattributed. Returns whether the arrival
+   * may go ahead.
+   *
+   * `stomps` is `PIT_StompThing`'s own `!tmthing->player && gamemap != 30`: the player always
+   * stomps, a monster only on MAP30 (`monstersTelefrag`). When it is false the first body in the
+   * way ends the call — nothing is damaged and `false` comes back, which is the caller's cue to
+   * refuse the teleport outright, exactly as `EV_Teleport` does on a failed `P_TeleportMove`.
+   * `moverId` is the arriving body when it is one of this layer's own, so it can't stomp itself.
+   *
+   * Only the *thing* half happens here: this layer holds no player reference, so the caller tests
+   * the player against the same reach itself. 2D and height-blind, matching `PIT_StompThing`,
+   * which never looks at `z`. docs/death.md § Telefrag.
+   */
+  telefragAt(at: Pos2, radius: number, stomps: boolean, moverId?: number): boolean;
+  /**
    * Creates a fresh, already-awake monster of `type` at `at` and telefrags
    * whatever was standing there (`TELEFRAG_DAMAGE` to every overlapping body),
    * returning it — or null if the WAD carries no art for that doomednum.
@@ -471,11 +501,31 @@ export const DEATH_NOTIFY_TYPES: Set<number> = new Set([
 
 /**
  * Vanilla's own `P_TeleportMove` telefrag damage — the literal `10000` it deals to everything
- * standing where a body lands. Only `spawnMonster` (the Icon of Sin's spawn cube) reaches it here;
- * this engine has no player teleport that can land on an occupied spot. See docs/death.md §
- * Telefrag.
+ * standing where a body lands: a teleporter arrival (`telefragAt`) or the Icon of Sin's spawn cube
+ * (`spawnMonster`). See docs/death.md § Telefrag.
  */
 export const TELEFRAG_DAMAGE = 10000;
+
+/**
+ * Whether a body arriving at `at` overlaps the one of `radius` at `body` — `PIT_StompThing`'s own
+ * summed-radii box, which is the shape every body-vs-body test in this engine uses
+ * (docs/movement.md § Collision). Shared so both halves of a landing, the things and the player,
+ * agree on where the pad reaches. See docs/death.md § Telefrag.
+ */
+export function telefragReaches(at: Pos2, body: Pos2, reach: number): boolean {
+  return Math.abs(body.x - at.x) < reach && Math.abs(body.y - at.y) < reach;
+}
+
+/**
+ * `PIT_StompThing`'s `gamemap != 30`: a *monster* arriving on a teleport pad only stomps what is
+ * standing on it on map 30 — anywhere else the body in the way blocks its teleport instead. The
+ * player is never gated this way. Vanilla reads the raw map number whichever game is running, but
+ * `wad.ts`'s own `MAP_MARKER` only ever admits `MAPnn` and `ExMy`, so no episodic name can reach 30.
+ * See docs/death.md § Telefrag.
+ */
+export function monstersTelefrag(mapName: string): boolean {
+  return mapName === 'MAP30';
+}
 
 /** Vanilla's own hard cap on how many lost souls can exist on a level at once — `A_PainShootSkull`'s "count > 20" guard. */
 export const MAX_SKULLS_ON_LEVEL = 20;

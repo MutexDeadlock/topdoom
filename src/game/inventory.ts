@@ -361,9 +361,8 @@ export function finishLevel(inv: Inventory): void {
 /**
  * Vanilla's own `damage < 1000` gate on invulnerability (and godmode) in
  * `P_DamageMobj`: the powerup ignores every ordinary hit, but a big enough
- * one — a telefrag's 10000, which this engine doesn't model — still lands.
- * Kept as the literal vanilla threshold rather than "ignore everything",
- * since nothing here would behave differently and the number is the rule.
+ * one — `TELEFRAG_DAMAGE`'s 10000 — still lands, so invulnerability is no
+ * defence against being teleported onto (docs/death.md § Telefrag).
  */
 const INVULNERABLE_DAMAGE_LIMIT = 1000;
 

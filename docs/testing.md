@@ -63,6 +63,8 @@ round-trip that isn't the real one proves nothing. The `ThingLayer` and `SpriteF
 `SpriteMaterialCache` stub (`fixtures/spritestubs.ts`, plus its `recordingBank` variant that keeps
 the frame letters it was asked for), since both layers only ever *key* batches by lump name during a
 tic — which is also what lets the fog test read back the frame letter a restored puff resumes on.
+The telefrag rules ride that same headless layer (`game/telefrag.test.ts`): `telefragAt` is driven
+directly, while the player half of a landing lives in `game.ts` and stays out with the rest of it.
 The music subsystem joined with everything below `MusicPlayer` (`audio/music.test.ts`): the score
 decoders and the vanilla per-map table are pure, and the OPL chip and its synth need no DOM at all
 — a note is keyed on and the rendered samples are measured, which is how "a released note stops"

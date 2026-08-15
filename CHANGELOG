@@ -9,6 +9,7 @@ Features and improvements
       own track like it does in vanilla
     - Music volume slider in the settings menu, beside the sound effects one.
     - default volumes: 80% for sound and 60% for music
+  - telefragging: teleporting onto something kills it instantly
 
 Fixed bugs
   - the monster counter no longer reads over 100% after an arch-vile

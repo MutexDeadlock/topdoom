@@ -27,7 +27,9 @@ import {
   MAX_SKULLS_ON_LEVEL,
   pickupScaleFor,
   TELEFRAG_DAMAGE,
+  telefragReaches,
   type BarrelExplosion,
+  type CrossingBody,
   type LevelKillItemStats,
   type MonsterRef,
   type PosedThing,
@@ -38,8 +40,11 @@ export {
   // Re-exported so `./things.ts` stays the thing layer's one public entry
   // point for the rest of the engine — `game.ts` and `combat.ts` have no
   // reason to know which file inside `things/` a type happens to live in.
+  monstersTelefrag,
   TELEFRAG_DAMAGE,
+  telefragReaches,
   type BarrelExplosion,
+  type CrossingBody,
   type MonsterRef,
   type ThingLayer,
 } from './things/defs.ts';
@@ -547,6 +552,21 @@ export function buildThingSprites(
     });
   }
 
+  /** `P_TeleportMove`'s stomp — contract at `ThingLayer.telefragAt`, rules in docs/death.md § Telefrag. */
+  function telefragAt(at: Pos2, radius: number, stomps: boolean, moverId?: number): boolean {
+    for (const q of posed) {
+      if (q.id === moverId || q.dead || q.hidden) continue;
+      if (!MONSTER_TYPES.has(q.type) && q.type !== ThingType.barrel) continue;
+      if (!telefragReaches(at, q, radius + q.blockRadius)) continue;
+      if (!stomps) return false;
+      // Deliberately unattributed: a telefrag is `P_TeleportMove`'s doing, not
+      // an attack, and naming the arriving body as the source would start an
+      // infight it never picked.
+      damageThing(q, TELEFRAG_DAMAGE);
+    }
+    return true;
+  }
+
   /**
    * `A_SpawnFly`'s own monster creation: drops a fresh, already-awake `type` at
    * `at` and telefrags whatever was standing there, returning the new body (or
@@ -559,21 +579,14 @@ export function buildThingSprites(
    * spawn spot lethal to stand on: everything overlapping the new body takes
    * `TELEFRAG_DAMAGE` rather than the spawn being blocked or skipped. That is
    * also why there's no `positionBlocked` guard here, unlike `spawnLostSoul`.
+   * The stomp is unconditional because the cube only ever flies on the one map
+   * where `PIT_StompThing` lets a monster stomp anyway.
    * docs/monster-iconofsin.md § The spawn cube.
    */
   function spawnMonster(type: number, at: Pos3, angleRad: number): PosedThing | null {
     const spawned = pushThing(type, at, (angleRad * 180) / Math.PI, { alerted: true });
     if (!spawned) return null;
-    for (const q of posed) {
-      if (q === spawned || q.dead || q.hidden) continue;
-      if (!MONSTER_TYPES.has(q.type) && q.type !== ThingType.barrel) continue;
-      const reach = spawned.blockRadius + q.blockRadius;
-      if ((q.x - spawned.x) ** 2 + (q.y - spawned.y) ** 2 > reach * reach) continue;
-      // Deliberately unattributed: a telefrag is `P_TeleportMove`'s doing, not
-      // an attack, and naming the spawned body as the source would start an
-      // infight it never picked.
-      damageThing(q, TELEFRAG_DAMAGE);
-    }
+    telefragAt(spawned, spawned.blockRadius, true, spawned.id);
     return spawned;
   }
 
@@ -1011,7 +1024,7 @@ export function buildThingSprites(
       dt: number,
       player: Pos3 | null,
       fogVisible?: (subsector: number) => boolean,
-      crossLines?: (prev: Pos2, pos: Pos2) => Placement | null,
+      crossLines?: (prev: Pos2, mover: CrossingBody) => Placement | null,
     ): ThingUpdateResult {
       const attacks: MonsterAttackEvent[] = [];
       const barrelExplosions: BarrelExplosion[] = [];
@@ -1173,6 +1186,7 @@ export function buildThingSprites(
               if (p.velX !== 0 || p.velY !== 0) applyKnockback(p, dt);
               // Walk triggers this monster crossed on the way (teleports,
               // and the handful of doors/lifts vanilla lets a monster open).
+              // A teleport can still come back empty-handed — docs/death.md § Telefrag.
               const dest = crossLines?.(p.prev, p);
               if (dest) {
                 p.x = dest.x;
@@ -1504,6 +1518,7 @@ export function buildThingSprites(
       const p = posed[id];
       if (p) damageThing(p, amount, source, knockUpSpeed, fromX, fromY);
     },
+    telefragAt,
     spawnMonster(type: number, at: Pos3, angleRad: number): MonsterRef | null {
       const p = spawnMonster(type, at, angleRad);
       return p ? { id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius, height: p.bodyHeight } : null;

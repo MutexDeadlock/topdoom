@@ -17,7 +17,15 @@ import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import type { Viewport } from './render/viewport.ts';
 import type { TopDownCamera } from './render/camera.ts';
 import type { Input } from './game/input.ts';
-import { buildThingSprites, type MonsterRef, type ThingLayer } from './game/things.ts';
+import {
+  buildThingSprites,
+  monstersTelefrag,
+  TELEFRAG_DAMAGE,
+  telefragReaches,
+  type CrossingBody,
+  type MonsterRef,
+  type ThingLayer,
+} from './game/things.ts';
 import {
   PLAYER_ACTION_FRAME_SECONDS,
   PLAYER_ATTACK_FRAMES,
@@ -30,7 +38,7 @@ import { thrustSpeed } from './game/monsters/defs.ts';
 import { MonsterAttacks } from './game/monsters/attacks.ts';
 import { collectFadeTargets, FlatFader, TextureScroller, WallFader } from './render/occlusion.ts';
 import { World } from './game/world.ts';
-import { AIM_HEIGHT_OFFSET, HARD_LANDING_SPEED, Player, PLAYER_MASS } from './game/player.ts';
+import { AIM_HEIGHT_OFFSET, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { applyBarrelExplosion, type CombatContext, type DamageCause } from './game/combat.ts';
 import { SpriteFxLayer } from './game/spritefx.ts';
 import { ProjectileLayer } from './game/projectiles.ts';
@@ -144,6 +152,8 @@ export class Game {
   private mapIndex = 0;
 
   private map!: DoomMap;
+  /** Whether a *monster* arriving on a teleport pad telefrags rather than being turned back by what stands there — `monstersTelefrag`, resolved per level. */
+  private monsterStomps = false;
   /**
    * The current level's sectors as the WAD authored them, taken before anything
    * has touched them — what a capture diffs against so only sectors a special
@@ -575,6 +585,9 @@ export class Game {
     const t0 = performance.now();
     const map = loadMap(this.wad, name);
     this.map = map;
+    // Resolved once here rather than per teleport, the way the boss-death table is
+    // (`bossDeathTriggersFor`): a map-identity gate can't change while a level runs.
+    this.monsterStomps = monstersTelefrag(map.name);
     // Straight out of `loadMap`, ahead of the restore below and of everything
     // that mutates a sector — this is the state a later load starts from, so it
     // is what a capture may leave out (docs/savegames.md § Apply order).
@@ -649,6 +662,9 @@ export class Game {
         this.pendingExit = secret ? 'secret' : 'normal';
       },
       (dest) => {
+        // `P_TeleportMove` stomps whatever is standing on the landing pad; the
+        // player always stomps, so this arrival is never refused — docs/death.md § Telefrag.
+        this.things?.telefragAt(dest, PLAYER_RADIUS, true);
         // The origin puff's position has to be captured before teleportTo
         // overwrites it; the landing `z` only exists after. See
         // SpriteFxLayer.spawnTeleportPair for the pair itself.
@@ -854,13 +870,23 @@ export class Game {
    * types vanilla lets a monster activate). A teleport gets the same `TFOG`
    * puff at both ends the player's own does; vanilla spawns it for any thing
    * that teleports, not just the player.
+   *
+   * Returning null after a teleport *did* fire is `P_TeleportMove` refusing the
+   * landing, which leaves the monster where it stood — docs/death.md § Telefrag.
    */
-  private monsterCrossedLines(prev: Pos2, pos: Pos2): Placement | null {
-    const dest = this.specials?.crossMonster(prev, pos, this.inventory.keys);
+  private monsterCrossedLines(prev: Pos2, mover: CrossingBody): Placement | null {
+    const dest = this.specials?.crossMonster(prev, mover, this.inventory.keys);
     if (!dest) return null;
+    if (!this.things?.telefragAt(dest, mover.blockRadius, this.monsterStomps, mover.id)) return null;
+    // The player half of the stomp: `telefragAt` covered every other body, but the
+    // thing layer holds no player reference (same split as the spawn cube's).
+    if (!this.playerDead && telefragReaches(dest, this.player, mover.blockRadius + PLAYER_RADIUS)) {
+      if (!this.monsterStomps) return null;
+      this.damagePlayer(TELEFRAG_DAMAGE, dest.x, dest.y, mover.type);
+    }
     // A fog puff has no body, so the plain sector floor is the whole answer —
     // `groundFloor` at radius 0 would walk the lines to arrive at the same number.
-    const from = { x: pos.x, y: pos.y, z: this.world.floorAt(pos.x, pos.y) };
+    const from = { x: mover.x, y: mover.y, z: this.world.floorAt(mover.x, mover.y) };
     this.effects.spawnTeleportPair(from, dest, this.world.floorAt(dest.x, dest.y));
     return dest;
   }
@@ -1393,7 +1419,7 @@ export class Game {
           dt,
           this.playerDead ? null : this.player,
           (subsector) => this.fogOfWar.isVisible(subsector),
-          (prev, pos) => this.monsterCrossedLines(prev, pos),
+          (prev, mover) => this.monsterCrossedLines(prev, mover),
         ) ?? { attacks: [], barrelExplosions: [] },
     );
     this.profiler.time('Monsters', () => {

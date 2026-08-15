@@ -75,19 +75,45 @@ copy, for instance, had no `INERT_SHOOTABLE` radius lookup because it predated o
 
 ## Telefrag
 
-Vanilla's `P_TeleportMove` kills everything standing where a body lands, for a flat `10000` damage.
-This engine reaches it from exactly one place: `ThingLayer.spawnMonster`, the tail of the Icon of
-Sin's `A_SpawnFly` (docs/monster-ai.md § The spawn cube). There is no player teleport that can land on
-an occupied spot here, so no other caller exists.
+Vanilla's `P_TeleportMove` kills everything standing where a body lands, for a flat `10000` damage
+(`TELEFRAG_DAMAGE`). `ThingLayer.telefragAt` is that stomp — `PIT_StompThing`, the per-body half —
+and three arrivals reach it:
+
+| Arrival | Stomps? |
+|---|---|
+| The player off a teleport pad (`game.ts`'s `onTeleport`) | Always |
+| A monster off a teleport pad (`game.ts`'s `monsterCrossedLines`) | Only on map 30 |
+| The Icon of Sin's spawn cube (`ThingLayer.spawnMonster`, `A_SpawnFly`'s tail) | Always — it only flies on MAP30 anyway |
+
+**A monster that isn't allowed to stomp doesn't teleport at all.** `PIT_StompThing`'s
+`if (!tmthing->player && gamemap != 30) return false;` fails `P_TeleportMove`, and `EV_Teleport`
+returns 0 on a failed move — so anything standing on the far pad (another monster, a barrel, the
+player) leaves the monster exactly where it was, and *nothing* is damaged: vanilla bails on the
+first body in the way, before dealing any of the stomps it would otherwise have dealt. The gate is
+`monstersTelefrag(mapName)`, vanilla's `gamemap` check, resolved once per level at load the way the
+boss-death table is. The one-shot line is still spent (§ Teleporters in docs/specials.md), same as
+any other blocked teleport.
+
+Only **shootable** bodies are stomped or block: monsters and barrels, `MF_SHOOTABLE`. A solid
+decoration is neither — a floor lamp on the landing pad is passed straight through. The overlap is
+`telefragReaches`, the summed-radii **box** every body-vs-body test in this engine uses
+(docs/movement.md § Collision) and the one `PIT_StompThing` is written with; every half of every
+arrival goes through that one predicate, because a stomp that reached past what collision counts as
+occupied would leave a monster standing inside another one. The test is 2D and height-blind,
+matching `PIT_StompThing`, which never looks at `z`, so a cacodemon hovering over the pad still
+dies. Only the *reach* varies: the cube's player half uses a fixed `PLAYER_TELEFRAG_RADIUS` rather
+than the spawned body's own (see that constant).
 
 The kill is **deliberately unattributed** — no `source` is passed to `damageThing`. A telefrag is the
-teleport's doing, not an attack, and naming the newly spawned monster as the source would start an
-infight it never picked.
+teleport's doing, not an attack, and naming the arriving body as the source would start an infight
+it never picked. (Vanilla does pass `tmthing`, but nothing survives 10000 damage to act on it.)
 
-It is split across two files for the usual reason: `ThingLayer` has no player reference, so it
-telefrags every overlapping `PosedThing` itself and returns the new body, and `game/monsters/iconofsin.ts` does the
-player half against `PLAYER_RADIUS` and calls `damagePlayer`. That is what makes standing on a MAP30
-spawn spot a real way to die.
+Every arrival is split across two files for the usual reason: `ThingLayer` has no player reference,
+so it telefrags every overlapping `PosedThing` itself, and the caller does the player half against
+`PLAYER_RADIUS` — `game.ts` for a teleport, `game/monsters/iconofsin.ts` for the spawn cube. That is
+what makes standing on a MAP30 spawn spot, or on the pad a monster is about to arrive on, a real way
+to die. A dead player is neither stomped nor in the way: `P_KillMobj` strips the `MF_SHOOTABLE`
+`PIT_StompThing` gates on.
 
 ## Player death
 

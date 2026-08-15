@@ -9,7 +9,7 @@ import { hasLineOfSight } from '../world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
 import { SPAWN_CUBE_MONSTERS } from '../things/tables.ts';
 import { ThingType } from '../things/doomednums.ts';
-import { TELEFRAG_DAMAGE } from '../things.ts';
+import { TELEFRAG_DAMAGE, telefragReaches } from '../things.ts';
 import type { CombatContext } from '../combat.ts';
 import type { IconSnapshot } from '../snapshot.ts';
 import type { SpriteFxLayer } from '../spritefx.ts';
@@ -413,9 +413,7 @@ export class IconOfSin {
     const spawned = this.ctx.things?.spawnMonster(entry.type, at, angleRad);
     if (!spawned || this.ctx.playerDead) return;
     // The player half of the telefrag — `ThingLayer.spawnMonster` already did every other body.
-    const reach = PLAYER_RADIUS + PLAYER_TELEFRAG_RADIUS;
-    const { player } = this.ctx;
-    if ((player.x - spawned.x) ** 2 + (player.y - spawned.y) ** 2 <= reach * reach) {
+    if (telefragReaches(spawned, this.ctx.player, PLAYER_RADIUS + PLAYER_TELEFRAG_RADIUS)) {
       this.ctx.damagePlayer(TELEFRAG_DAMAGE, spawned.x, spawned.y, spawned.type);
     }
   }

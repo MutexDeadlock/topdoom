@@ -1,8 +1,16 @@
 # Line and sector specials
 
-`src/wad/specials.ts`, `src/game/specials.ts`, `src/game/specials/mapscan.ts`,
+`src/game/specials.ts`, `src/game/specials/defs.ts`, `src/game/specials/tables.ts`,
+`src/game/specials/mapscan.ts`,
 `src/game/specials/movergeometry.ts`, `src/game/specials/moverblocking.ts`, `src/game/specials/sectoreffects.ts`,
 `src/game.ts`, `src/render/occlusion.ts`
+
+**The data half.** `specials/defs.ts` holds the shapes a special is expressed as — `SpecialDef`, the
+`Effect` union, and the speeds/waits/damage amounts those carry. `specials/tables.ts` keys the
+vanilla numbers onto them (`LINE_SPECIALS`, `SECTOR_LIGHT_SPECIALS`, `SECTOR_DAMAGE_SPECIALS`,
+`SECTOR_DOOR_SPECIALS`). Neither reads a WAD: the linedef numbers are the only WAD-side thing about
+them, which is why they sit under `game/` with the controller that drives them rather than in
+`wad/`.
 
 **The three files.** `specials.ts` is `SpecialsController`: the movers, the trigger dispatch, the
 switch flashes and the light thinkers — everything with runtime state. `specials/mapscan.ts` is the
@@ -26,7 +34,7 @@ The vanilla-only line special table is confirmed against the Doom wiki's linedef
 where the two disagree, against the real `linuxdoom-1.10` source** — after a first pass briefly (and
 wrongly) listed 174 as a vanilla S1 teleport, which is Boom-only. Same story for crusher stop: 58
 looks like it could be a third stop-crusher alongside 57/74, but is an unrelated "floor up 24".
-`wad/specials.ts`'s own table comments carry the full numbers-to-mechanism mapping.
+`specials/tables.ts`'s own table comments carry the full numbers-to-mechanism mapping.
 
 **Use triggers fire on `Space` *or* the right mouse button**, the latter only while it is bound to
 `use`, which is not the default (docs/menu.md § Right mouse button). `handleUseTrigger` asks
@@ -405,7 +413,7 @@ is its own change, not an oversight to be fixed in passing.
 
 ## Lights
 
-The sector-type patterns (`SECTOR_LIGHT_SPECIALS`, `wad/specials.ts`) are assigned once at map load
+The sector-type patterns (`SECTOR_LIGHT_SPECIALS`, `game/specials/tables.ts`) are assigned once at map load
 and ticked by `updateLights` → `tickLight` (`game/specials.ts`). Each holds a `baseLight` (the
 sector's own level) and a `darkLight` (`darkestNeighborLight`, vanilla's `P_FindMinSurroundingLight`)
 and interpolates or toggles between them. Every random period draws from `pRandom()` —

@@ -16,10 +16,8 @@ import {
   type SwitchEntry,
 } from './specials/mapscan.ts';
 import { MoverGeometry } from './specials/movergeometry.ts';
+import { LINE_SPECIALS, SECTOR_LIGHT_SPECIALS, SECTOR_DOOR_SPECIALS } from './specials/tables.ts';
 import {
-  LINE_SPECIALS,
-  SECTOR_LIGHT_SPECIALS,
-  SECTOR_DOOR_SPECIALS,
   DOOR_SPEED,
   DOOR_SPEED_FAST,
   DOOR_WAIT,
@@ -42,7 +40,7 @@ import {
   type MoveTarget,
   type LightPattern,
   type SectorDoorTimer,
-} from '../wad/specials.ts';
+} from './specials/defs.ts';
 import {
   World,
   lowestNeighborFloor,

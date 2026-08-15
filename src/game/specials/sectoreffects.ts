@@ -6,12 +6,8 @@ import type { DoomMap } from '../../wad/map.ts';
 import type { Pos3 } from '../../types.ts';
 import type { World } from '../world.ts';
 import { hasPower, type Inventory } from '../inventory.ts';
-import {
-  DAMAGE_FLOOR_INTERVAL,
-  SECTOR_DAMAGE_SPECIALS,
-  SUIT_LEAK_CHANCE,
-  type DamageFloorEffect,
-} from '../../wad/specials.ts';
+import { DAMAGE_FLOOR_INTERVAL, SECTOR_DAMAGE_SPECIALS, SUIT_LEAK_CHANCE } from './tables.ts';
+import type { DamageFloorEffect } from './defs.ts';
 import { pRandom } from '../../util/random.ts';
 import type { SectorEffectsSnapshot } from '../snapshot.ts';
 

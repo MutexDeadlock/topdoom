@@ -9,7 +9,7 @@ import type { World } from '../world.ts';
 import type { ThingLayer } from '../things.ts';
 import { TALLEST_BODY_HEIGHT } from '../monsters/tables.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
-import { CRUSH_DAMAGE } from '../../wad/specials.ts';
+import { CRUSH_DAMAGE } from './defs.ts';
 
 /**
  * `SpecialsController`'s three "who is standing in this mover" callbacks. It

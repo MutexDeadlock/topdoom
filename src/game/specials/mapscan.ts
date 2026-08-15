@@ -15,13 +15,8 @@
 import { NO_SIDE, type DoomMap, type LineDef } from '../../wad/map.ts';
 import { BOSS_DEATH_TYPES } from '../things/tables.ts';
 import { ThingType } from '../things/doomednums.ts';
-import {
-  LINE_SPECIALS,
-  SECTOR_LIGHT_SPECIALS,
-  SECTOR_DOOR_SPECIALS,
-  switchPairTexture,
-  type SpecialDef,
-} from '../../wad/specials.ts';
+import { LINE_SPECIALS, SECTOR_LIGHT_SPECIALS, SECTOR_DOOR_SPECIALS } from './tables.ts';
+import { switchPairTexture, type SpecialDef } from './defs.ts';
 
 /** Which sectors a special's linedef affects: the line's own back sector for manual doors, tag matches otherwise. */
 export function resolveTargets(map: DoomMap, line: LineDef, def: SpecialDef): number[] {

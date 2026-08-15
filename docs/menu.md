@@ -1,6 +1,6 @@
 # Menu, settings, session lifecycle and dev mode
 
-`src/ui/menu/menu.ts`, `src/ui/menu/menu.html`, `src/ui/menu/menu.css` + `src/ui/menu/changelog.css`,
+`src/ui/menu/menu.ts`, `src/ui/menu/labels.ts`, `src/ui/menu/menu.html`, `src/ui/menu/menu.css` + `src/ui/menu/changelog.css`,
 `src/main.ts`, `src/constants.ts: DEVMODE`, `src/ui/devmode/`, `src/util/profiler.ts`
 
 The menu is plain DOM: every element is static markup in `src/ui/menu/menu.html` (pulled into the
@@ -186,7 +186,7 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
   title only when the WAD set knows one (docs/wad.md § Level names — resolved off the manifest
   alone, since nothing has been downloaded at this point), the provider only when an add-on took the
   map over. The lump name always comes first: it is what the level is selected by, what `?map=`
-  takes, and the only thing every map has. The label itself is `library.ts`'s `describeMap`, shared
+  takes, and the only thing every map has. The label itself is `ui/menu/labels.ts`'s `describeMap`, shared
   with the save rows (§ Save and Load tabs) so a level can't be named two ways in one menu.
 
 ## Difficulty

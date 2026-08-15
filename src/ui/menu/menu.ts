@@ -2,15 +2,8 @@
  * The start menu — launcher and pause screen in one: WAD/level/difficulty selection, the settings
  * and save/load tabs, and the changelog popup. See docs/menu.md.
  */
-import {
-  describeMap,
-  describeSource,
-  fetchLibrary,
-  mapStyle,
-  mergedMaps,
-  uploadedSource,
-  type WadSource,
-} from '../../wad/library.ts';
+import { fetchLibrary, mapStyle, mergedMaps, uploadedSource, type WadSource } from '../../wad/library.ts';
+import { describeMap, describeSource } from './labels.ts';
 import { DEFAULT_SKILL, SKILL_NAMES, type Skill } from '../../game/skill.ts';
 import { getAutorun, setAutorun } from '../../game/player.ts';
 import {

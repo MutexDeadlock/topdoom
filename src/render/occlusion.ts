@@ -11,7 +11,7 @@ import { dampen } from '../util/damping.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../game/player.ts';
 import type { Opening } from '../game/world.ts';
 import type { Pos3 } from '../types.ts';
-import { SCROLL_LINE_SPECIAL, SCROLL_SPEED } from '../wad/specials.ts';
+import { SCROLL_LINE_SPECIAL, SCROLL_SPEED } from '../game/specials/tables.ts';
 
 /**
  * Target coverage (0..1) once a wall sits on the camera-player sightline —

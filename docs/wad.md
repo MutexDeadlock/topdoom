@@ -151,7 +151,7 @@ tables rather than being read off a lump. `LevelProgression` is built once per `
 `LevelNames` and for the same reason — it depends on the loaded file set, not on the current map.
 
 A level has **two** exits, and until the flag was routed through they behaved identically. The four
-vanilla exit linedefs (11, 51, 52, 124 — `wad/specials.ts`) already carried `effect.secret`;
+vanilla exit linedefs (11, 51, 52, 124 — `game/specials/tables.ts`) already carried `effect.secret`;
 `game.ts` dropped it on the floor and advanced by index, so MAP15's secret exit led to MAP16 and
 MAP31 was reachable only from the level select.
 
@@ -236,6 +236,6 @@ maps); the plugin warns on mismatch but still serves it.
 
 **A WAD's own maps say which game it belongs to** (`library.ts: mapStyle`): `ExMy` → DOOM 1,
 `MAPxx` → DOOM II, and the two never mix within one game. A WAD with no maps of its own (textures,
-sounds, …) has no style and fits either — `describeSource` shows its lump count instead of a map
+sounds, …) has no style and fits either — `describeSource` (`ui/menu/labels.ts`) shows its lump count instead of a map
 count so it doesn't read as an empty file. What the menu *does* with that is docs/menu.md
 § Picking a WAD set.

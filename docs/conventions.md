@@ -69,7 +69,8 @@ Everything else is named for what it *does*: `ai.ts`, `attacks.ts`, `grid.ts`, `
 
 The `defs`/`tables` split earns its keep when both halves are large — the thing layer's are 555 and
 833 lines, the monsters' 491 and 503 — or when the subsystem needs a directory anyway and the split
-is what fills it, which is `spritefx/`'s case at 159 and 208. A subsystem needing neither keeps its
+is what fills it, which is `spritefx/`'s case at 159 and 208 and `specials/`'s at 360 and 392. A
+subsystem needing neither keeps its
 shapes and tables in one `defs.ts`. **`tables.ts` may import `defs.ts`, never the reverse**: the shapes
 have to stay usable by a module that wants nothing to do with the data, which is what lets
 `monsters/ai.ts` take `MonsterStats` without pulling the whole stat table's dependency on

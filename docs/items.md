@@ -88,7 +88,7 @@ every clip and health bonus in the level reads as noise rather than information.
 ## Locked doors and use triggers
 
 **Locked doors check the matching key** (`specials.ts: SpecialsController.trigger`).
-`wad/specials.ts`'s keyed door specials (26-28, 32-34, 99, 133-137) each carry a `requiredKey` colour
+`game/specials/tables.ts`'s keyed door specials (26-28, 32-34, 99, 133-137) each carry a `requiredKey` colour
 on their `DoorEffect` — resolved per-special against `P_UseSpecialLine` rather than guessed, since the
 two manual-door groups don't share an ordering (26/27/28 are Blue/Yellow/Red, 32/33/34 are
 Blue/Red/Yellow). `trigger` checks `ownedKeys.has(requiredKey)` before doing anything else — no

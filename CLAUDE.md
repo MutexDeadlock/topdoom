@@ -69,9 +69,10 @@ src/game/monsters/   record shapes + pure helpers (defs), the vanilla stat table
 src/game/things/     the named doomednums every type-keyed table keys through (doomednums), the
                thing layer's record shapes (defs) + its WAD-derived tables (tables), monster/corpse
                spatial index (grid)
-src/game/specials/   load-time map analysis (mapscan), mover meshes + relighting (movergeometry),
-               mover obstruction + crush damage (moverblocking), damage floors + secrets
-               (sectoreffects)
+src/game/specials/   the special record shapes + their speeds/waits (defs) and the vanilla
+               linedef/sector numbers keyed onto them (tables), load-time map analysis (mapscan),
+               mover meshes + relighting (movergeometry), mover obstruction + crush damage
+               (moverblocking), damage floors + secrets (sectoreffects)
 src/game/spritefx/   the one-shot effect + projectile record shapes and their flight helpers
                (defs), the effects' sprite/sound/timing tables (tables)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
@@ -83,7 +84,7 @@ src/ui/        the page's own chrome (base styles + tokens, the fatal-error scre
 src/ui/hud/          everything over the running level: HUD, level card, intermission, center
                messages, screen tints/pain flash, death overlay, crosshair, WadFont glyph
                rasterizing
-src/ui/menu/         start menu + changelog popup
+src/ui/menu/         start menu + changelog popup, the WAD/level row strings (labels)
 src/ui/devmode/      DEVMODE hud + hotkeys (debughud), profiling overlay (profilerhud)
 src/util/      small helpers shared across layers: 2D geometry, damped-lerp smoothing, per-frame
                profiling, vanilla's random table — the engine's only entropy source

@@ -142,7 +142,7 @@ the layer's five collaborators. `tests/regression/player-shot-range.test.ts` gua
 ## Shoot-triggered specials
 
 **`shotPath`'s returned `lineIndex` — whichever line stopped the shot, or null if it reached its
-target or ran out its range — drives `wad/specials.ts`'s three impact specials, 24/46/47**
+target or ran out its range — drives `game/specials/tables.ts`'s three impact specials, 24/46/47**
 (`SpecialsController.triggerShot`, vanilla's `P_ShootSpecialLine`). A hitscan pellet's trigger fires
 immediately in `spawnPlayerShot`/`MonsterAttacks.resolveHitscan` (resolved and gone within the same frame, matching
 `PTR_ShootTraverse`), but a projectile's is deferred to the frame it actually *arrives* at that wall

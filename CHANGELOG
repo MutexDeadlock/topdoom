@@ -1,15 +1,17 @@
-v0.1x.x (2026-08-1?)
+v0.12.3 (2026-08-15)
+
+Mostly internal refactoring and cleanup.
 
 Features and improvements
-  - the game-over screen now comes up as your corpse settles rather than
-    on the frame that killed you
   - dying on a level you loaded or saved on: R now takes you back to that
-    savegame instead of to the start of the level
+    savegame, instead to the start of the level
 
 Fixed bugs
-  - a boss that dies in the same blast as you, now still triggers their 
-    boss-death specials (level exit)
-    - and dying that way no longer shows the game-over screen: the exit wins
+  - levels that end with an monster/icon-of-sin death trigger now work
+    as intended... I think
+  - fixed "You died!" screen appears, even if death is level-exit condition
+
+Next Stop: Music, and BOOM compat! Also some visual stuff.
 
 
 ===============================================================================

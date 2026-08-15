@@ -179,6 +179,19 @@ position: a test that moves nobody writes `tick()`, one that walks the player wr
 `tick(TIC, x, y)`. Pass `scene` in when the test needs to read back the mover meshes the controller
 hangs on it, as `strobing-lift-light` does; otherwise the rig makes its own.
 
+## Markup partials
+
+`tests/ui/markup.test.ts` assembles `index.html` through `plugins/html-partials.ts`'s own
+`assemblePage` — the same expansion the build runs, so the test can't drift from it — and checks
+the result three ways: every id a module looks up exists in it, every id in it is reached from some
+`.ts` or `.css`, and every `src/ui/**/*.html` on disk is actually `@include`d somewhere.
+
+It exists because the markup is one file per owning module (docs/styles.md § One owner per
+element). A dropped `@include` removes a whole panel from the page while the build stays green, and
+the only symptom is a `null` in some module's field initializers — the hardest place to read it.
+Id lookups are matched as literals (`getElementById('x')` and the `el<T>('x')` helper), which is
+every lookup in the tree; `querySelector` selectors are not checked.
+
 ## Doc references
 
 `tests/docs/references.test.ts` asserts that every `docs/<name>.md § <Heading>` pointer in `src/`,

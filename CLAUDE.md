@@ -74,7 +74,8 @@ src/audio/     vanilla's sound table, the emitter game systems raise sounds thro
                WebAudio playback (channels, attenuation, pan, volume)
 src/ui/        the page's own chrome (base styles + tokens, the fatal-error screen)
 src/ui/hud/          everything over the running level: HUD, level card, intermission, center
-               messages, screen tints/pain flash, crosshair, WadFont glyph rasterizing
+               messages, screen tints/pain flash, death overlay, crosshair, WadFont glyph
+               rasterizing
 src/ui/menu/         start menu + changelog popup
 src/ui/devmode/      DEVMODE hud + profiling overlay
 src/util/      small helpers shared across layers: 2D geometry, damped-lerp smoothing, per-frame
@@ -83,7 +84,8 @@ src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DO
                    BRIGHTNESS_LIFT, PICKUP_SCALE + PICKUP_SCALE_TYPES, VIEW_DISTANCE)
 src/types.ts       structural position types shared across layers (Pos2/Pos3/Placement)
 src/styles.css     the stylesheet index.html links; @imports the .css beside each ui module
-plugins/       Vite plugin publishing the public/wads/{iwad,pwad} manifest
+index.html         the page skeleton; @includes the .html beside each ui module
+plugins/       Vite plugins: the public/wads/{iwad,pwad} manifest, index.html's @include expansion
 scripts/       headless WAD inspection (node scripts/inspect-wad.ts)
 ```
 
@@ -112,7 +114,7 @@ several record rules that look like accidents and aren't.
 | [docs/monster-iconofsin.md](docs/monster-iconofsin.md) | MAP30's boss: the spitter, the spawn cube, the brain's death |
 | [docs/items.md](docs/items.md) | Pickups, inventory, keys/locked doors, monster drops, powerups |
 | [docs/hud.md](docs/hud.md) | The HUD, level stats and timer, level card, intermission, best times, center messages, `WadFont`, screen effects |
-| [docs/styles.md](docs/styles.md) | Which stylesheet owns what, the `styles.css` entry, the palette/stacking tokens |
+| [docs/styles.md](docs/styles.md) | Which `.html`/`.css` owns which element, the `index.html`/`styles.css` entries, the palette/stacking tokens |
 | [docs/savegames.md](docs/savegames.md) | The save format and its version, the snapshot apply order, the IndexedDB store, download/import, WAD-set identity |
 | [docs/specials.md](docs/specials.md) | Doors, lifts, floors, crushers, teleporters, lights, the donut, damage floors, secrets |
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |

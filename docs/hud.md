@@ -5,13 +5,14 @@
 `src/game.ts`
 
 Everything on screen that isn't the world. What the readouts *report* — the inventory, pickups and
-powerups behind them — is docs/items.md.
+powerups behind them — is docs/items.md. The one other thing drawn over a running level,
+`src/ui/hud/deathoverlay.ts`, is documented with what raises it: docs/death.md § Player death.
 
 ## The HUD
 
 The HUD draws its icons from the same WAD pickup-sprite graphics the world renders items with
 (`MEDIA0`, `ARM1A0`/`ARM2A0`, `CLIPA0`, … via `GraphicsBank.picture`) rather than hand-drawn icons,
-decoded once into `<canvas>` elements whose markup lives statically in `index.html` (`#game-hud`)
+decoded once into `<canvas>` elements whose markup lives statically in `hud.html` (`#game-hud`)
 whether or not that WAD's graphics are loaded yet — `Hud`'s constructor draws into them once per
 `Game` instance. Finding the right lump names surfaced a pre-existing bug: the rocket pickup
 (doomednum 2010) was mapped to sprite `RCKT`, which isn't a real lump — the actual sprite is `ROCK`,
@@ -21,7 +22,7 @@ so rockets were invisible in the world.
 bottom third of the screen, this game's player sprite looks identical whatever it's holding — `PLAY`
 has no per-weapon art, and at this camera distance it wouldn't read anyway. The HUD icon is therefore
 the *only* indication of what's selected. Its markup is built in `Hud`'s constructor from
-`WEAPON_CYCLE` rather than written into `index.html` like the other panels: the weapon list is a
+`WEAPON_CYCLE` rather than written into `hud.html` like the other panels: the weapon list is a
 compile-time constant in `weapons.ts`, so duplicating it as static markup would be two lists to keep
 in sync. Icons reuse each weapon's own ground-pickup sprite (`WeaponDef.iconLump`); fist and pistol
 have no pickup, so they fall back to their first-person `PUNGA0`/`PISGA0` frames.

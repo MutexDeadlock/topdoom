@@ -120,11 +120,11 @@ beyond the first killing blow — `resolveVileBlast` gates its knockup on `damag
 `resolveBullet`'s `!playerDead` guard for the hitscan equivalent) — a dead player can still be
 "hit" for nothing to happen, matching `damagePlayer`'s own early return.
 
-The death itself shows a `#death-overlay` div, but not immediately: `showDeath` only *arms* it, and
-`ScreenEffects.update` raises it `DEATH_OVERLAY_DELAY` later — `PLAY`'s DIE sequence end to end, so
+The death itself shows a `#death-overlay` div (`ui/hud/deathoverlay.ts`), but not immediately:
+`DeathOverlay.show` only *arms* it, and `DeathOverlay.update` raises it `DEATH_OVERLAY_DELAY` later — `PLAY`'s DIE sequence end to end, so
 the text arrives as the corpse settles instead of on the killing frame. Nothing is gated behind the
-delay (`R` answers throughout, since `tic` reads `playerDead`, not the overlay), and a `clearDeath`
-inside the window means the overlay is never seen at all, which is what § Dying on the way out
+delay (`R` answers throughout, since `tic` reads `playerDead`, not the overlay), and a
+`DeathOverlay.clear` inside the window means the overlay is never seen at all, which is what § Dying on the way out
 needs. Vanilla has no overlay here, so none of this is a fidelity claim.
 
 `R` calls `restart`, which reloads the level from one of three states, in this order.
@@ -159,9 +159,9 @@ started another level meanwhile.
 
 **The overlay's hint names which of the two the press will do** — "press R to reload last savegame"
 against "press R to restart" — because reloading a save and restarting the level are different
-promises to make to a player standing over their own corpse. `damagePlayer` passes `showDeath`
-whether a savegame is in hand and `ScreenEffects` owns the wording, the same split the killer line
-uses. Only the savegame can be answered for at death time: whether a *checkpoint* is readable is a
+promises to make to a player standing over their own corpse. `damagePlayer` passes
+`DeathOverlay.show` whether a savegame is in hand and `DeathOverlay` owns the wording, the same
+split the killer line uses. Only the savegame can be answered for at death time: whether a *checkpoint* is readable is a
 store read away, so both level-reload outcomes share the one hint, which is a distinction the
 player has no reason to care about anyway.
 
@@ -169,7 +169,7 @@ player has no reason to care about anyway.
 
 The overlay's middle line names the killer — "You were killed by an Arch-Vile". `damagePlayer`
 takes a `DamageCause` (`game/combat.ts`) alongside the hit and only the killing one reads it;
-`thingdefs.ts`'s `obituary` turns it into the sentence and `ScreenEffects.showDeath` draws it, so
+`thingdefs.ts`'s `obituary` turns it into the sentence and `DeathOverlay.show` draws it, so
 the view layer composes nothing. An unattributed cause renders as `''` and the overlay looks exactly
 as it did before the line existed.
 

@@ -49,6 +49,7 @@ import { LevelProgression } from './wad/progression.ts';
 import { CenterMessage, lockedKeyMessage } from './ui/hud/message.ts';
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
+import { DeathOverlay } from './ui/hud/deathoverlay.ts';
 import { FrameProfiler } from './util/profiler.ts';
 import { clearRandom, getRandomCursors, setRandomCursors } from './util/random.ts';
 import {
@@ -268,7 +269,8 @@ export class Game {
    */
   private profiler = new FrameProfiler();
   private debugHud = new DebugHud();
-  private screen: ScreenEffects;
+  private screenEffects: ScreenEffects;
+  private deathOverlay = new DeathOverlay();
   private inventory: Inventory = createInventory();
   /** True once the player's health has hit 0 — freezes movement/aim/firing/pickups (see `frame`) until `restart`. */
   private playerDead = false;
@@ -400,7 +402,9 @@ export class Game {
     );
 
     // Bound once rather than per frame: `playerActor` is never reassigned.
-    this.screen = new ScreenEffects(view.renderer, (opacity) => this.playerActor.setOpacity(opacity));
+    this.screenEffects = new ScreenEffects(view.renderer, (opacity) =>
+      this.playerActor.setOpacity(opacity),
+    );
 
     const wanted = this.mapNames.indexOf(startMap.toUpperCase());
     // The first-map fallback is fine for a fresh start, but a restore's things
@@ -429,7 +433,9 @@ export class Game {
    * start ending calls it unconditionally. docs/death.md § Dying on the way out.
    */
   private endingOverCorpse(): void {
-    if (this.playerDead && this.levelEnding) this.screen.clearDeath();
+    if (!this.playerDead || !this.levelEnding) return;
+    this.deathOverlay.clear();
+    this.screenEffects.clearPain();
   }
 
   /**
@@ -551,7 +557,8 @@ export class Game {
     // just reborn the inventory for it) and `restart`'s "reload the same map"
     // call, defensively in one place rather than duplicated at each caller.
     this.playerDead = false;
-    this.screen.clearDeath();
+    this.deathOverlay.clear();
+    this.screenEffects.clearPain();
     this.message.clear();
     this.levelCard.clear();
     this.intermission.clear();
@@ -824,9 +831,10 @@ export class Game {
     // The engine is session-level and the next Game sets its own bank; this
     // only makes sure nothing from this level is left holding a channel.
     this.audio.stopAll();
-    this.screen.reset();
-    // Like `screen`, these elements outlive the Game that drove them — without
+    this.screenEffects.reset();
+    // Like `screenEffects`, these elements outlive the Game that drove them — without
     // this the menu (and the next level started from it) inherits the line.
+    this.deathOverlay.clear();
     this.message.clear();
     this.levelCard.clear();
     this.intermission.clear();
@@ -880,7 +888,7 @@ export class Game {
     if (fromX !== undefined && fromY !== undefined) {
       this.player.applyDamageThrust(thrustSpeed(amount, PLAYER_MASS), fromX, fromY);
     }
-    this.screen.addPain(amount);
+    this.screenEffects.addPain(amount);
     if (this.inventory.health <= 0) {
       this.playerDead = true;
       // `player.update` stops running from here on, so it never writes `prev*`
@@ -899,7 +907,7 @@ export class Game {
       // The hint depends on what `R` will actually do — a savegame to reload is
       // known here and now, where a checkpoint is only a store read away
       // (docs/death.md § Player death).
-      if (!this.levelEnding) this.screen.showDeath(obituary(cause), this.savedState !== null);
+      if (!this.levelEnding) this.deathOverlay.show(obituary(cause), this.savedState !== null);
       return true;
     }
     this.audio.play('plpain', this.player, PLAYER_ORIGIN);
@@ -1351,13 +1359,17 @@ export class Game {
     });
   }
 
-  /** The 2D layers over the level: status bar, crosshair, center message, level card, and the screen tints. */
+  /**
+   * The 2D layers over the level: status bar, crosshair, center message, level card,
+   * the screen tints and the death overlay.
+   */
   private updateOverlays(dt: number): void {
     this.hud.update(this.inventory, this.levelStats());
     this.crosshair.update(this.inventory.health);
     this.message.update(dt);
     this.levelCard.update(dt);
-    this.screen.update(dt, this.inventory);
+    this.screenEffects.update(dt, this.inventory);
+    this.deathOverlay.update(dt);
   }
 
   /**

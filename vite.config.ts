@@ -1,8 +1,9 @@
 import { defineConfig } from 'vite';
 import { wadManifest } from './plugins/wad-manifest.ts';
+import { htmlPartials } from './plugins/html-partials.ts';
 
 export default defineConfig({
-  plugins: [wadManifest()],
+  plugins: [wadManifest(), htmlPartials()],
   server: {
     port: 5173,
     // WADs live under public/ and are not checked into the repo.

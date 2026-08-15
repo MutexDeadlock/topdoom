@@ -1,12 +1,10 @@
 /**
  * Every powerup or damage effect whose whole result is a *view* change: the
  * two full-screen tints, the red damage flash, the light visor's exposure
- * lift, the player sprite's translucency and the death overlay. See
- * docs/hud.md § Screen effects.
+ * lift and the player sprite's translucency. See docs/hud.md § Screen effects.
  */
 import type * as THREE from 'three';
 import { hasPower, type Inventory } from '../../game/inventory.ts';
-import { PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS } from '../../game/thingdefs.ts';
 import { DOOM_TIC } from '../../constants.ts';
 
 /**
@@ -42,26 +40,6 @@ const POWER_BLINK_WARNING_SECONDS = 3;
 const POWER_BLINK_HZ = 4;
 
 /**
- * How long a death waits before its overlay appears — `PLAY`'s DIE sequence end to end, so the
- * text arrives as the corpse settles rather than on the killing frame. Presentation only: vanilla
- * has no such overlay, and `R` answers throughout the delay, so nothing is gated behind it. It is
- * also what keeps a death the level's own ending is about to overtake from flashing an overlay up
- * for a few tics — see docs/death.md § Dying on the way out.
- */
-const DEATH_OVERLAY_DELAY = PLAYER_DEATH_FRAMES.length * PLAYER_DEATH_FRAME_SECONDS;
-
-/**
- * The overlay's bottom line, in the two things `R` can do: reload the savegame
- * this level is being played out of, or reload the level itself (its checkpoint
- * where there is one, a plain restart otherwise — a distinction the player has
- * no reason to care about). Which one applies is the game layer's to know, so
- * `showDeath` is told that and this layer keeps the wording.
- * docs/death.md § Player death.
- */
-const RESTART_HINT = 'press R to restart';
-const RELOAD_SAVE_HINT = 'press R to reload last savegame';
-
-/**
  * Whether a powerup's screen effect should currently show, given its
  * remaining seconds (`Inventory.powers[id]`). Once inside the warning
  * window, `floor(secs * Hz) % 2` alternates every `1/Hz` seconds as `secs`
@@ -80,17 +58,8 @@ export class ScreenEffects {
   private setPlayerOpacity: (opacity: number) => void;
   private tintEl = document.getElementById('screen-tint')!;
   private painEl = document.getElementById('pain-flash')!;
-  private deathEl = document.getElementById('death-overlay')!;
-  private killerEl = document.querySelector<HTMLElement>('#death-overlay .killer')!;
-  private hintEl = document.querySelector<HTMLElement>('#death-overlay .hint')!;
   /** Current intensity of the damage flash, 0-1 — bumped by `addPain`, decayed by `update`. */
   private painFlash = 0;
-  /** Seconds until the armed death overlay is raised; negative once it is up, or when none is armed. */
-  private deathDelay = -1;
-  /** The killer line the armed overlay will carry — see `showDeath`. */
-  private deathKiller = '';
-  /** Which hint the armed overlay will carry — see `showDeath` and `RESTART_HINT`. */
-  private deathHint = RESTART_HINT;
 
   /**
    * `setPlayerOpacity` writes partial invisibility to the player's own
@@ -114,14 +83,6 @@ export class ScreenEffects {
     this.setPlayerOpacity(powerBlinkVisible(inv.powers.invisibility) ? INVISIBILITY_OPACITY : 1);
     this.painFlash = Math.max(0, this.painFlash - dt / PAIN_FLASH_FADE_SECONDS);
     this.painEl.style.opacity = String(this.painFlash * PAIN_FLASH_MAX_ALPHA);
-    if (this.deathDelay >= 0) {
-      this.deathDelay -= dt;
-      if (this.deathDelay < 0) {
-        this.killerEl.textContent = this.deathKiller;
-        this.hintEl.textContent = this.deathHint;
-        this.deathEl.classList.remove('hidden');
-      }
-    }
   }
 
   /** Bumps the damage flash by a hit that actually landed — see `PAIN_FLASH_MAX_DAMAGE`. */
@@ -130,26 +91,11 @@ export class ScreenEffects {
   }
 
   /**
-   * Arms the overlay, with `killer` as its middle line — an already-composed
-   * sentence (`thingdefs.ts`'s `obituary`), since what killed the player is the
-   * game layer's to know, not this one's. `''` leaves the line out entirely.
-   * `reloadsSave` says which of the two hints applies (`RESTART_HINT`).
-   * `update` raises it `DEATH_OVERLAY_DELAY` later, so a `clearDeath` inside that
-   * window means it is never seen at all.
+   * Drops the damage flash instantly, for the moments where letting it decay would leave
+   * red over something that isn't the fight it came from — a map (re)load, or a level
+   * ending under a corpse.
    */
-  showDeath(killer: string, reloadsSave: boolean): void {
-    this.deathKiller = killer;
-    this.deathHint = reloadsSave ? RELOAD_SAVE_HINT : RESTART_HINT;
-    this.deathDelay = DEATH_OVERLAY_DELAY;
-  }
-
-  /** Clears the death overlay — armed or already up — and any lingering flash. Every map (re)load starts from here. */
-  clearDeath(): void {
-    this.deathDelay = -1;
-    this.deathKiller = '';
-    this.deathHint = RESTART_HINT;
-    this.deathEl.classList.add('hidden');
-    this.killerEl.textContent = '';
+  clearPain(): void {
     this.painFlash = 0;
     this.painEl.style.opacity = '0';
   }

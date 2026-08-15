@@ -1,35 +1,57 @@
-# Stylesheets
+# Markup and stylesheets
 
-`src/styles.css`, `src/ui/base.css`, and one `.css` per `src/ui` module
+`index.html`, `src/styles.css`, `src/ui/base.css`, and one `.html` + one `.css` per `src/ui` module,
+assembled by `plugins/html-partials.ts`
 
-## One stylesheet per owning module
+## One owner per element
 
-Markup is static in `index.html`, looked up by id in a module's field initializers, and the module
-only ever toggles class names (`src/ui/menu/menu.ts`, `hud/hud.ts`, …). The stylesheets follow that
-same ownership: **the rules for an element live in the `.css` named after the `.ts` that drives it**,
-next to it.
+Markup is static, looked up by id in a module's field initializers, and the module only ever
+toggles class names and text (`src/ui/menu/menu.ts`, `hud/hud.ts`, …). Both the markup and the
+rules follow that ownership: **an element's `.html` and `.css` are named after the `.ts` that
+drives it, and sit next to it.**
 
 ```
-src/styles.css        the entry, and the only stylesheet index.html links
+index.html            the page skeleton: <head>, #app, the @include list, the module script
+src/styles.css        the stylesheet entry, and the only one index.html links
 src/ui/base.css       page reset, #app, canvas, and the tokens below
-src/ui/fatalerror.css #fatal-error — owned by src/main.ts, hence not in a subfolder
+src/ui/fatalerror.*   #fatal-error — owned by src/main.ts, hence not in a subfolder
 src/ui/hud/           everything drawn over the running level (docs/hud.md's own file list)
-    hud.css           #hud-bar, #game-hud, #hud-levelstats, #hud-timer
-    screeneffects.css #screen-tint, #pain-flash, #death-overlay
-    message.css       #hud-message
-    levelcard.css     #level-card
-    intermission.css  #intermission
+    hud.*             #hud-bar, #game-hud, #hud-levelstats, #hud-timer
+    screeneffects.*   #screen-tint, #pain-flash
+    message.*         #hud-message
+    levelcard.*       #level-card
+    intermission.*    #intermission
+    deathoverlay.*    #death-overlay
 src/ui/menu/
-    menu.css          #menu
-    changelog.css     #changelog and its #menu button.link trigger
+    menu.css/.html    #menu, and #changelog inside it
+    changelog.css     #changelog's own rules and its #menu button.link trigger
+    savegames.css     the save/load lists inside #menu's tab panels
 src/ui/devmode/
-    devmode.css       #hud, #profiler-hud
+    devmode.*         #hud, #profiler-hud
 ```
 
-`hud/screeneffects.css` holding the death overlay is the one case where a file boundary doesn't
-match what a reader would guess from the element names — it's there because `screeneffects.ts` shows
-and hides all three. `crosshair.ts` and `wadfont.ts` sit in `hud/` with no stylesheet of their own:
-one writes a data-URI cursor, the other only rasterizes glyphs.
+Every file here is named after the module that shows and hides its elements, with no exceptions.
+Two modules drive parts of markup they don't own the *element* of, and so have no `.html`:
+`savegames.ts` fills panels inside `#menu`, and the changelog popup is driven by `menu.ts` itself.
+`crosshair.ts` and `wadfont.ts` have neither file — one writes a data-URI cursor, the other only
+rasterizes glyphs.
+
+## Assembling the page
+
+HTML has no `@import`, so `plugins/html-partials.ts` supplies one: a line reading
+`<!-- @include ./src/ui/hud/hud.html -->` is replaced with that file's contents, indented to the
+directive's own column, recursively and with a named error on a cycle or a missing file. Partials
+are authored at column 0 and are fragments — no `<html>`/`<head>` of their own. It runs as a `pre`
+`transformIndexHtml`, so Vite still resolves whatever a partial contributes, and the assembled page
+is what both the dev server and the build emit.
+
+Editing a partial triggers a **full page reload**, not an HMR patch: the partials aren't in the
+module graph, and every module resolves its elements once in its field initializers — swapping
+markup under a live `Menu`/`Hud` would leave it holding detached nodes.
+
+`tests/ui/markup.test.ts` is what makes the spread safe: it assembles the page the same way the
+build does and checks every id modules look up against it in both directions, plus that no partial
+is left unreferenced. Without it a dropped `@include` builds green and fails as a `null` field.
 
 `styles.css` is at `src/` rather than in `ui/` because it belongs to the page, not to any one UI
 area: it is what `index.html` links, and everything else reaches the browser through its `@import`

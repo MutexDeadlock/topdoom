@@ -1,10 +1,11 @@
 # Menu, settings, session lifecycle and dev mode
 
-`src/ui/menu/menu.ts`, `src/ui/menu/menu.css` + `src/ui/menu/changelog.css`, `index.html`'s `#menu`,
+`src/ui/menu/menu.ts`, `src/ui/menu/menu.html`, `src/ui/menu/menu.css` + `src/ui/menu/changelog.css`,
 `src/main.ts`, `src/constants.ts: DEVMODE`, `src/ui/devmode/`, `src/util/profiler.ts`
 
-The menu is plain DOM: every element is static markup in `index.html`, looked up by id in `Menu`'s
-field initializers, so **an id renamed in the HTML fails at construction**, not lazily. Only the WAD
+The menu is plain DOM: every element is static markup in `src/ui/menu/menu.html` (pulled into the
+page by `index.html`'s `@include` list — docs/styles.md § Assembling the page), looked up by id in
+`Menu`'s field initializers, so **an id renamed in the HTML fails at construction**, not lazily. Only the WAD
 lists, the level list and the difficulty options are built in JS.
 
 ## One screen, two jobs

@@ -102,7 +102,7 @@ describe('Savegames · teleport fogs round-trip', () => {
     const { layer } = layerOn();
     layer.spawnTeleportFog({ x: 0, y: 0, z: 0 });
     layer.spawnPuff({ x: 50, y: 50, z: 0 });
-    layer.addTracer({ x: 0, y: 0, z: 0 }, { x: 90, y: 0, z: 0 }, 0xffffff);
+    layer.addTracer({ x: 0, y: 0, z: 0 }, { x: 90, y: 0, z: 0 }, 0xffffff, 16);
     assert.equal(layer.snapshotTeleportFogs().length, 1, 'the fog alone — puffs and tracers stay transient');
   });
 

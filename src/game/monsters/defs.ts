@@ -343,6 +343,8 @@ export interface MonsterAttackEvent extends MonsterAttack, Pos3 {
   /** The firing monster's own id and doomednum, so a shot that lands on another monster can be attributed (and species-checked) correctly. */
   sourceId: number;
   sourceType: number;
+  /** The firing body's own `PosedThing.blockRadius`, carried rather than re-looked-up — how far clear of it a hitscan tracer starts (docs/combat.md § Effects and their batching). */
+  sourceRadius: number;
   /** What it was aimed at: `null` for the player, otherwise another monster's id. */
   targetId: number | null;
 }

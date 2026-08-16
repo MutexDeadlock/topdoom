@@ -234,6 +234,57 @@ plasma bolt and BFG ball explode into dedicated `PLSE`/`BFE1` sprites. Hitscan `
 there too: not sprites, but the same spawn-animate-drop lifecycle and the same wholesale clear on a
 level change (`beginLevel`).
 
+**A tracer's two ends are not equally anchored, and the muzzle end has to move**
+(`render/tracer.ts`). The impact end is a genuine world point — the puff or blood splash sits there.
+The muzzle end is the shooter's position at trigger-pull, and the shooter keeps moving: a running
+player covers 75 map units over `TRACER_LIFETIME`'s 0.15 s, nearly five player radii, so a line
+frozen at both ends visibly detaches and hangs in the air behind them. Three rules keep it honest,
+all purely presentational and all inside `Tracer` itself, so a monster's tracer gets them for free
+with no live-shooter callback. The line **starts `MUZZLE_GAP` past the shooter's own body** —
+their radius *plus* the constant, clamped to a fraction of a point-blank shot's own length — so the
+eye never expects it to touch the gun in the first place. Added to the radius rather than compared
+against it, because the constant then means the same visible clearance whoever fired: measured from
+the centre it would be swallowed whole by a wide body, and the **spider mastermind's** radius of 128
+against an ordinary monster's 20 is enough to start the line inside its own sprite. That is the
+whole reason `addTracer` takes a radius — `PLAYER_RADIUS` for the player, and for a monster
+`MonsterAttackEvent.sourceRadius`, which `ThingLayer.update` fills from the firing body's own
+`blockRadius` rather than re-reading `MONSTER_STATS` (the sparse-key lookup `blockRadius` exists to
+avoid — `game/things/defs.ts`). It then **fades in over `FADE_LENGTH`** from that start, so the end most likely to be stale
+is also the faintest, and the tail **retracts toward the impact at `RETRACT_SPEED`**. Both
+lengths are absolute map units rather than fractions of the line, for the same reason: what they
+exist to cover is a distance the shooter walked, identical on a point-blank shot and one across the
+map, so as fractions they would over-treat a long shot and under-treat a short one. `RETRACT_SPEED`
+is additionally bounded from below by the player's own top speed, or the tail trails the shooter
+instead of clearing them. The line is full-length on the first frame it is *drawn*, which is what
+keeps hitscan reading as an instant line rather than as a slow projectile, the one thing that tells
+the chaingun apart from the plasma rifle at a glance.
+
+**The fade is three vertices, not a subdivided line.** Vertex 0 is the tail, vertex 1 sits
+`FADE_LENGTH` along from it and vertex 2 is the impact; alpha interpolates 0 → 1 across the first
+segment and stays at 1 over the second, so a two-segment polyline gives a ramp of fixed length at
+any shot length, and the whole thing stays three `setXYZ` calls a tic. RGB stays on `material.color`
+and only alpha varies, which still needs the 4-wide `color` attribute — three.js enables
+`USE_COLOR_ALPHA` on `itemSize === 4` alone, and a 3-wide one silently drops the fade. The fade
+point collapses onto the impact once less than `FADE_LENGTH` of line is left, so a nearly spent
+tracer ramps across whatever it has rather than clipping.
+
+**Nothing on a tracer's material is per-instance, so the materials are shared and session-lived**
+(`materialFor`) — one per tracer colour, and `Tracer.dispose` drops only its own geometry. A
+material built and disposed per tracer makes three.js release the shader program every time the
+live count returns to zero, which is every time the player stops firing; a 20-pellet SSG blast
+would relink it 20 times in one tic. The vertex layout is laid out *back from the impact* for the
+same ownership reason the fade lives in the attribute: the impact is the only end that is a real
+world anchor, so it is the one the other two vertices are measured from.
+
+**That "first drawn frame" is why retraction starts at `RETRACT_START`, not at zero.** `fireWeapons`
+spawns the tracer and `updateEffects` advances it in the *same* tic (docs/frameloop.md § What runs in
+a tic), so it is already one `DOOM_TIC` — a fifth of `TRACER_LIFETIME` — old when it first appears,
+and a retraction measured from spawn is visibly under way on the very first frame the player sees.
+With the blink hiding every other tic on top of that, an aggressive early retraction leaves nothing
+on screen but a stub beside the impact point, which reads as the shot having started meters away
+from the player. The tail only ever moves *toward* the impact, which is why the spawn-time bounding
+sphere is never recomputed.
+
 `SpriteFxLayer` only draws and ages what it is handed; who spawns what, and every rule about *why*
 (`A_Fire`'s sightline, `A_VileAttack`'s reposition) stays with the system that owns the mechanic —
 the arch-vile's flame tracks its target through a `VileFlameResolver` callback `MonsterAttacks`

@@ -1238,6 +1238,7 @@ export function buildThingSprites(
                   z: p.z + MONSTER_FIRE_HEIGHT,
                   sourceId: p.id,
                   sourceType: p.type,
+                  sourceRadius: p.blockRadius,
                   targetId: p.targetId,
                 });
                 // The arch-vile's own attack pose starts here, at the windup's

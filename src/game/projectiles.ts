@@ -197,7 +197,7 @@ export class ProjectileLayer {
         this.ctx.triggerShot(path.lineIndex);
         this.effects.spawnWallPuff(path, shot.angleRad);
       }
-      this.effects.addTracer(origin, { x: endX, y: endY, z: path.z }, TRACER_COLOR);
+      this.effects.addTracer(origin, { x: endX, y: endY, z: path.z }, TRACER_COLOR, PLAYER_RADIUS);
       return;
     }
 

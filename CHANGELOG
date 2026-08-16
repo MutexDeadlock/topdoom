@@ -10,6 +10,7 @@ Features and improvements
     - Music volume slider in the settings menu, beside the sound effects one.
     - default volumes: 80% for sound and 60% for music
   - telefragging: teleporting onto something kills it instantly
+  - improved projectile tracer animation
   - darker areas are slightly darker now
   - minor menu layout improvements
   - booting the game shows a "Loading..." message, instead of the 

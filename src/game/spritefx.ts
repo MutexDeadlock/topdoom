@@ -88,8 +88,8 @@ export class SpriteFxLayer {
   }
 
   dispose(): void {
-    // Tracers own per-instance geometry/material (unlike sprite actors, whose
-    // geometry/material come from the shared SpriteMaterialCache).
+    // Tracers own per-instance geometry (unlike sprite actors, whose geometry comes
+    // from the shared SpriteMaterialCache); their material is shared and outlives them.
     for (const t of this.tracers) t.dispose();
     // The batch's instance buffers and cloned materials are its own; the
     // geometry/textures behind them are spriteMaterials'.
@@ -233,8 +233,9 @@ export class SpriteFxLayer {
     });
   }
 
-  addTracer(from: Pos3, to: Pos3, color: number): void {
-    const tracer = new Tracer(from, to, color);
+  /** `shooterRadius` only sets how far short of the shooter the line starts — see `MUZZLE_GAP` (render/tracer.ts). */
+  addTracer(from: Pos3, to: Pos3, color: number, shooterRadius: number): void {
+    const tracer = new Tracer(from, to, color, shooterRadius);
     this.scene.add(tracer.line);
     this.tracers.push(tracer);
   }

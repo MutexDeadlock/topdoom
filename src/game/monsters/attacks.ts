@@ -215,6 +215,6 @@ export class MonsterAttacks {
       this.ctx.triggerShot(path.lineIndex, true);
       this.effects.spawnWallPuff(path, angleRad);
     }
-    this.effects.addTracer(atk, { x: endX, y: endY, z: endZ }, MONSTER_TRACER_COLOR);
+    this.effects.addTracer(atk, { x: endX, y: endY, z: endZ }, MONSTER_TRACER_COLOR, atk.sourceRadius);
   }
 }

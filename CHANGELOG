@@ -1,9 +1,11 @@
 v0.14.0 (2026-08-1?)
 
 Features and improvements
-  - initial BOOM compat 
+  - initial BOOM compat
 
 Fixed bugs
+  - fixed long cracks in the floor around very short walls, which could open a
+    room onto whatever lay below it
 
 
 

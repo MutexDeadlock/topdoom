@@ -10,6 +10,7 @@ import {
   segmentIntersect,
   traceHitsBox,
 } from '../../src/util/geom.ts';
+import { polygonArea } from '../fixtures/geometry.ts';
 
 /**
  * The five primitives under every sightline in the engine — wall occlusion, fog
@@ -18,17 +19,6 @@ import {
  */
 
 const UNIT_SQUARE = [0, 0, 10, 0, 10, 10, 0, 10];
-
-function polygonArea(poly: number[]): number {
-  const n = poly.length / 2;
-  if (n < 3) return 0;
-  let a = 0;
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    a += poly[i * 2] * poly[j * 2 + 1] - poly[j * 2] * poly[i * 2 + 1];
-  }
-  return Math.abs(a) / 2;
-}
 
 describe('Geometry · segments', () => {
   test('segmentIntersect finds the crossing parameter along the first segment', () => {

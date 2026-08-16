@@ -2,11 +2,11 @@
  * Reconstructs each subsector's convex floor polygon from the BSP: the node planes above it,
  * clipped against its own segs. See docs/render.md § BSP polygon reconstruction.
  */
-import { SUBSECTOR_BIT, type DoomMap } from '../wad/map.ts';
+import { SUBSECTOR_BIT, type DoomMap, type Vertex } from '../wad/map.ts';
 import { clipConvexPolygon as clip } from '../util/geom.ts';
 
 /**
- * Slack, in map units, on the clip against a subsector's own segs: how far the
+ * Least slack, in map units, on the clip against a subsector's own segs: how far the
  * node-clipped cell may stick out past a seg's line before that overhang is cut
  * away. Without it, a seg line that disagrees with the partition it shares an
  * edge with by a rounding error shaves a sliver off the cell that the neighbouring
@@ -14,6 +14,28 @@ import { clipConvexPolygon as clip } from '../util/geom.ts';
  * docs/render.md § Cracks between subsectors.
  */
 const SEG_CLIP_TOLERANCE = 4;
+/** Most slack `segClipTolerance` will hand one seg. Both bounds are measured, not tuned — docs/render.md § Cracks between subsectors. */
+const SEG_CLIP_MAX_TOLERANCE = 32;
+
+/**
+ * Slack for one seg's clip: how far past its own endpoints the seg's line has to be
+ * extrapolated to reach `cell`, in multiples of the seg's own length, clamped between
+ * the two tolerances above. That ratio is how far the line can have drifted by the
+ * time it gets there — docs/render.md § Cracks between subsectors.
+ */
+function segClipTolerance(cell: number[], a: Vertex, b: Vertex): number {
+  const lengthSq = (b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y);
+  if (lengthSq === 0) return SEG_CLIP_TOLERANCE;
+  // Compared squared, so the whole scan costs one square root rather than one per corner.
+  let reachSq = 0;
+  for (let i = 0; i < cell.length; i += 2) {
+    const x = cell[i];
+    const y = cell[i + 1];
+    const dSq = Math.min((x - a.x) * (x - a.x) + (y - a.y) * (y - a.y), (x - b.x) * (x - b.x) + (y - b.y) * (y - b.y));
+    if (dSq > reachSq) reachSq = dSq;
+  }
+  return Math.min(SEG_CLIP_MAX_TOLERANCE, Math.max(SEG_CLIP_TOLERANCE, Math.sqrt(reachSq / lengthSq)));
+}
 
 export interface SubSectorPoly {
   /** Sector this subsector belongs to. */
@@ -49,7 +71,7 @@ export function buildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
       const a = map.vertexes[seg.v1];
       const b = map.vertexes[seg.v2];
       if (!a || !b) continue;
-      clipped = clip(clipped, a.x, a.y, b.x - a.x, b.y - a.y, SEG_CLIP_TOLERANCE);
+      clipped = clip(clipped, a.x, a.y, b.x - a.x, b.y - a.y, segClipTolerance(clipped, a, b));
       if (clipped.length < 6) break;
     }
 

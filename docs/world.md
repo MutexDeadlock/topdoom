@@ -167,3 +167,27 @@ sector's own height is already the most extreme value, which is why these track 
 than seeding the reduction with the sector's own height: a closed door's sector has floor ==
 ceiling, so seeding a *lowest* ceiling search with it makes every real neighbor lose, pinning the
 door's "open" target at its own closed height instead of the corridor's actual ceiling.
+
+### The sector→lines index
+
+All of them — plus `neighborSectorIndices`, `findStairChain` and the shortest-texture scans in the
+specials layer — walk one sector's bordering linedefs through **`sectorLines(map, sectorIndex)`**,
+never the whole `map.linedefs` array. It is vanilla's `P_GroupLines` `sec->lines[]`: every line
+touching the sector, one- and two-sided alike, in ascending linedef order, which is the order
+several specials react to (`lowerAndChange`'s model search, the donut's ring walk). Callers keep
+their own two-sided filters, so filtering a subset preserves exactly the order and membership the
+full scan produced.
+
+The index is built once per `DoomMap` and memoized against it in a `WeakMap`. That is safe for the
+same reason the heights above are *not* cached: nothing at runtime writes `LineDef.left`/`right` or
+`SideDef.sector`, so a map's adjacency is fixed the moment it loads, while its heights change every
+tic. Keyed by the map object rather than held on `World` because the load-time scans reach it
+before any `World` exists (`computeMovableSectors`, called from `mapmesh.ts`).
+
+**This is a measured change, not a reasoned one** (CLAUDE.md § Hot paths): on EPIC.WAD MAP03
+(11,205 lines, 1,093 sectors) running one neighbor query per sector went from ~31 ms to ~0.3 ms,
+and a stair-chain walk from every sector from ~51 ms to ~0.4 ms; building the index costs ~0.45 ms
+once, against `loadMap`'s own ~3.4 ms. It matters because a single Boom generalized trigger can run
+three of these scans *per tagged sector* (target resolution, the shortest-texture scan, and the
+numeric change model), so a tag spanning tens of sectors was a multi-millisecond hitch on one
+switch press.

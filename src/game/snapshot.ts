@@ -8,11 +8,14 @@
 import {
   AMMO_TYPES,
   KEY_COLORS,
+  KEY_SLOTS,
   POWER_IDS,
   createInventory,
+  keySlotColor,
   type AmmoType,
   type Inventory,
   type KeyColor,
+  type KeySlot,
   type PowerId,
   type WeaponId,
 } from './inventory.ts';
@@ -44,7 +47,19 @@ export interface InventorySnapshot {
   armor: number;
   armorType: 0 | 1 | 2;
   ammo: Record<AmmoType, number>;
+  /**
+   * Key *colors*, what saves have always stored. Still written (derived from
+   * `keySlots`) so a save stays readable by builds from before card/skull
+   * tracking; a reader prefers `keySlots` when present.
+   */
   keys: KeyColor[];
+  /**
+   * Exact card/skull slots, optional per the no-`SAVE_VERSION`-bump rule
+   * (docs/savegames.md § The format and its version): absent means a pre-slot
+   * save, restored as both slots of each stored color — exactly what those
+   * builds' merged-slot semantics meant.
+   */
+  keySlots?: KeySlot[];
   weapons: WeaponId[];
   currentWeapon: WeaponId;
   powers: Record<PowerId, number>;
@@ -88,6 +103,12 @@ export interface SectorSnapshot {
   light: number;
   special: number;
   floorTex: string;
+  /**
+   * Only Boom's generalized ceiling changes rewrite this, so it's optional per
+   * the no-`SAVE_VERSION`-bump rule: absent (every pre-Boom save, and any
+   * sector whose ceiling flat is untouched) means the WAD's own.
+   */
+  ceilTex?: string;
 }
 
 /**
@@ -115,6 +136,12 @@ export interface SpecialsSnapshot {
   crushDamageTimer: number;
   prevX: number;
   prevY: number;
+  /**
+   * Line indices whose generalized stair direction is flipped from the
+   * authored special (Boom's retrigger alternation mutates `line.special`).
+   * Optional per the no-`SAVE_VERSION`-bump rule: absent means none flipped.
+   */
+  stairFlips?: number[];
 }
 
 /**
@@ -423,6 +450,7 @@ export function sectorBaseline(map: DoomMap): SectorSnapshot[] {
     light: sector.light,
     special: sector.special,
     floorTex: sector.floorTex,
+    ceilTex: sector.ceilTex,
   }));
 }
 
@@ -443,7 +471,8 @@ export function snapshotSectors(map: DoomMap, baseline: SectorSnapshot[]): Secto
       sector.ceilHeight === was.ceilHeight &&
       sector.light === was.light &&
       sector.special === was.special &&
-      sector.floorTex === was.floorTex
+      sector.floorTex === was.floorTex &&
+      sector.ceilTex === was.ceilTex
     ) {
       continue;
     }
@@ -455,6 +484,7 @@ export function snapshotSectors(map: DoomMap, baseline: SectorSnapshot[]): Secto
         light: sector.light,
         special: sector.special,
         floorTex: sector.floorTex,
+        ceilTex: sector.ceilTex,
       },
     ]);
   }
@@ -477,6 +507,7 @@ export function applySectors(map: DoomMap, entries: SectorEntry[]): void {
     sector.light = saved.light;
     sector.special = saved.special;
     sector.floorTex = saved.floorTex;
+    if (saved.ceilTex !== undefined) sector.ceilTex = saved.ceilTex;
   }
 }
 
@@ -488,7 +519,8 @@ export function serializeInventory(inv: Inventory): InventorySnapshot {
     armor: inv.armor,
     armorType: inv.armorType,
     ammo: { ...inv.ammo },
-    keys: [...inv.keys],
+    keys: [...new Set([...inv.keys].map(keySlotColor))],
+    keySlots: [...inv.keys],
     weapons: [...inv.weapons],
     currentWeapon: inv.currentWeapon,
     powers,
@@ -510,7 +542,13 @@ export function deserializeInventory(s: InventorySnapshot): Inventory {
   for (const t of AMMO_TYPES) {
     if (Number.isFinite(s.ammo?.[t])) inv.ammo[t] = s.ammo[t];
   }
-  inv.keys = new Set((s.keys ?? []).filter((k): k is KeyColor => (KEY_COLORS as readonly string[]).includes(k)));
+  inv.keys = Array.isArray(s.keySlots)
+    ? new Set(s.keySlots.filter((k): k is KeySlot => (KEY_SLOTS as readonly string[]).includes(k)))
+    : new Set(
+        (s.keys ?? [])
+          .filter((k): k is KeyColor => (KEY_COLORS as readonly string[]).includes(k))
+          .flatMap((c): KeySlot[] => [`${c}Card`, `${c}Skull`]),
+      );
   if (Array.isArray(s.weapons) && s.weapons.length > 0) inv.weapons = new Set(s.weapons);
   if (typeof s.currentWeapon === 'string') inv.currentWeapon = s.currentWeapon;
   for (const p of POWER_IDS) {

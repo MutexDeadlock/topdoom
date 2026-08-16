@@ -87,25 +87,35 @@ every clip and health bonus in the level reads as noise rather than information.
 
 ## Locked doors and use triggers
 
-**Locked doors check the matching key** (`specials.ts: SpecialsController.trigger`).
-`game/specials/tables.ts`'s keyed door specials (26-28, 32-34, 99, 133-137) each carry a `requiredKey` colour
-on their `DoorEffect` — resolved per-special against `P_UseSpecialLine` rather than guessed, since the
-two manual-door groups don't share an ordering (26/27/28 are Blue/Yellow/Red, 32/33/34 are
-Blue/Red/Yellow). `trigger` checks `ownedKeys.has(requiredKey)` before doing anything else — no
-flashing switch texture, no `usedOnce` mark — so a player without the key can walk off, find it, and
-press the same line later, matching vanilla. `ownedKeys` is threaded from `Game.frame` as
+**Keys are tracked per exact slot, and locks are `LockRule`s** (`game/inventory.ts: KeySlot`,
+`specials/defs.ts: LockRule` + `satisfiesLock`). Vanilla merges card and skull of a color at check
+time (`p_doors.c` tests both), but Boom's generalized locked doors can tell them apart
+(`P_CanUnlockGenDoor`), so the inventory holds up to six `KeySlot`s and the lock says what it
+demands: `color` (card *or* skull — every vanilla keyed number), `slot` (exact card/skull), `any`,
+or `all` (three colors or all six slots, Boom's SkullsAreCards bit). The lock lives on
+`SpecialDef.lock`, not on the door effect: in Boom a lock is not a door-only concept.
+
+`game/specials/tables.ts`'s keyed door specials (26-28, 32-34, 99, 133-137) each carry a color
+lock — resolved per-special against `P_UseSpecialLine` rather than guessed, since the two
+manual-door groups don't share an ordering (26/27/28 are Blue/Yellow/Red, 32/33/34 are
+Blue/Red/Yellow). `trigger` checks `satisfiesLock` before doing anything else — no flashing switch
+texture, no `usedOnce` mark — so a player without the key can walk off, find it, and press the
+same line later, matching vanilla. `ownedKeys` is threaded from `Game.frame` as
 `this.inventory.keys` on every `SpecialsController.update` call, same as `playerX`/`playerY`.
 
-**A refused line reports which key it wants** — vanilla's `oof` plus its message, both. `trigger`
-records the refusal as a `LockedLine` (color, plus `'door'` vs `'switch'`) rather than showing
-anything itself: it has no HUD, the same reason `onExit`/`onTeleport` are callbacks. `Game.frame`
+**A refused line reports what it wants** — vanilla's `oof` plus its message, both. `trigger`
+records the refusal as a `LockedLine` (the `LockRule`, plus `'door'` vs `'switch'`) rather than
+showing anything itself: it has no HUD, the same reason `onExit`/`onTeleport` are callbacks.
+`Game.frame`
 drains it with `consumeLockedLine()` right after `specials.update` — every keyed special is a `use`
 trigger, so that one call site catches all of them — and shows the text (docs/hud.md § Center
 messages). The
-text is `d_englsh.h`'s verbatim, including the door/switch split it already makes: `PD_*K` "You
+text is `d_englsh.h`'s verbatim: for color locks, vanilla's own door/switch split — `PD_*K` "You
 need a blue key to open this door" (`EV_VerticalDoor`, the manual doors 26-28/32-34) vs. `PD_*O`
 "...to activate this object" (`EV_DoLockedDoor`, the remote switches 99/133-137) — a split
-`def.manual` already draws exactly. It says "key" for a skull because vanilla's checks accept
+`def.manual` already draws exactly; for Boom's generalized locks, Boom's `PD_*C`/`PD_*S`/`PD_ANY`/
+`PD_ALL3`/`PD_ALL6` wordings (door-only, as in Boom — `ui/hud/message.ts: lockedLineMessage`).
+The vanilla ones say "key" for a skull because vanilla's checks accept
 either, testing both `it_*card` and `it_*skull`, which is also why `KeyColor` has three values and
 not six.
 

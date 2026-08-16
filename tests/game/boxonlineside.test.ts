@@ -23,6 +23,7 @@ function lineWorld(vertexes: Vertex[], pairs: readonly (readonly [number, number
   }));
   const map: DoomMap = {
     name: 'TEST',
+    nodeFormat: 'vanilla',
     vertexes,
     sectors: [],
     sidedefs: [],

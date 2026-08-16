@@ -6,7 +6,8 @@ import type { DoomMap } from '../../wad/map.ts';
 import type { Pos3 } from '../../types.ts';
 import type { World } from '../world.ts';
 import { hasPower, type Inventory } from '../inventory.ts';
-import { DAMAGE_FLOOR_INTERVAL, SECTOR_DAMAGE_SPECIALS, SUIT_LEAK_CHANCE } from './tables.ts';
+import { DAMAGE_FLOOR_INTERVAL, SUIT_LEAK_CHANCE } from './tables.ts';
+import { consumeSecret, decodeSectorType } from './sectortypes.ts';
 import type { DamageFloorEffect } from './defs.ts';
 import { pRandom } from '../../util/random.ts';
 import type { SectorEffectsSnapshot } from '../snapshot.ts';
@@ -26,7 +27,7 @@ export interface SectorEffectResult {
  * docs/specials.md § Damage floors and § Secret sectors.
  */
 export class SectorEffects {
-  /** Vanilla `totalsecret` — sectors with `special === 9`, counted once per level load. */
+  /** Vanilla `totalsecret` — secret sectors (vanilla 9 or the Boom secret bit), counted once per level load. */
   readonly totalSecrets: number;
   /** Vanilla `player->secretcount`. */
   secretsFound = 0;
@@ -39,9 +40,9 @@ export class SectorEffects {
   private timer = DAMAGE_FLOOR_INTERVAL;
 
   constructor(map: DoomMap) {
-    // Vanilla P_SpawnSpecials' own `case 9: totalsecret++`.
+    // Vanilla P_SpawnSpecials' `case 9: totalsecret++`, plus Boom's SECRET_MASK count.
     let secrets = 0;
-    for (const sector of map.sectors) if (sector.special === 9) secrets++;
+    for (const sector of map.sectors) if (decodeSectorType(sector.special).secret) secrets++;
     this.totalSecrets = secrets;
   }
 
@@ -80,14 +81,17 @@ export class SectorEffects {
       return { exit: false, secretFound: false };
     }
     let secretFound = false;
-    if (sector.special === 9) {
+    let decoded = decodeSectorType(sector.special);
+    if (decoded.secret) {
       // Vanilla's `case 9: player->secretcount++; sector->special = 0;` — clearing it here means
-      // the lookup below never matches 9 again, so this can't double-count on a later frame.
+      // the decode below never reports the secret again, so this can't double-count on a later
+      // frame. Boom's generalized bit clears just itself (`consumeSecret`).
       this.secretsFound++;
-      sector.special = 0;
+      sector.special = consumeSecret(sector.special);
+      decoded = decodeSectorType(sector.special);
       secretFound = true;
     }
-    const effect = SECTOR_DAMAGE_SPECIALS[sector.special];
+    const effect = decoded.damage;
     if (!effect) {
       this.timer = DAMAGE_FLOOR_INTERVAL;
       return { exit: false, secretFound };

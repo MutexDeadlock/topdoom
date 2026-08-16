@@ -3,20 +3,23 @@
  * the `defs.ts` shapes as flat data rather than per-type code; `game/specials.ts` drives off these
  * tables.
  *
- * **Every vanilla DOOM/DOOM2 special is covered, and nothing beyond** — the
- * scope, the audit behind it, and why Boom numbers are excluded are in
- * docs/specials.md. Two mechanisms sit outside `LINE_SPECIALS` because neither
+ * **Every vanilla DOOM/DOOM2 special is covered**, audited number by number —
+ * the scope and the audit behind it are in docs/specials.md § Scope, along
+ * with how Boom's numbers join through `lookupSpecial` without touching the
+ * vanilla table. Two mechanisms sit outside `LINE_SPECIALS` because neither
  * is a triggerable linedef effect: `SECTOR_DAMAGE_SPECIALS` (a sustained
- * per-tic hazard, dispatched straight from `game.ts`) and `SCROLL_LINE_SPECIAL`
- * (an always-on animation with no trigger of its own).
+ * per-tic hazard, dispatched straight from `game.ts`) and the
+ * `PARAM_LINE_SPECIALS` family (always-on level-spawn parameters like 48's
+ * scroll, no trigger of their own).
  *
- * Keyed door numbers (26-28, 32-34, 99, 133-137) carry a `requiredKey` checked
- * in `game/specials.ts`. 26-34 are manual (D1) and open their own back sector;
+ * Keyed door numbers (26-28, 32-34, 99, 133-137) carry a `lock` checked in
+ * `game/specials.ts`. 26-34 are manual (D1) and open their own back sector;
  * 99 and 133-137 are switches targeting sectors by tag despite also being
  * use-triggered — see docs/items.md § Locked doors and use triggers, which has
  * the evidence and the shipped bug that came of getting it wrong.
  */
 import { DOOM_TIC } from '../../constants.ts';
+import { decodeGeneralized, isGeneralized } from './generalized.ts';
 import {
   CEILING_SPEED,
   CRUSHER_SPEED,
@@ -24,6 +27,7 @@ import {
   DOOR_SPEED,
   DOOR_SPEED_FAST,
   DOOR_WAIT,
+  ELEVATOR_SPEED,
   FLOOR_SPEED,
   FLOOR_SPEED_FAST,
   FLOOR_SPEED_HALF,
@@ -39,23 +43,25 @@ import {
   type DoorMode,
   type FloorEffect,
   type LiftEffect,
+  type LiftTarget,
   type LightPattern,
   type MoveTarget,
+  type LockRule,
   type SectorDoorTimer,
   type SpecialDef,
 } from './defs.ts';
 
-function door(
-  speed: number,
-  mode: DoorMode = 'openClose',
-  waitSeconds = DOOR_WAIT,
-  requiredKey?: 'blue' | 'red' | 'yellow',
-): DoorEffect {
-  return { kind: 'door', speed, waitSeconds, mode, requiredKey };
+function door(speed: number, mode: DoorMode = 'openClose', waitSeconds = DOOR_WAIT): DoorEffect {
+  return { kind: 'door', speed, waitSeconds, mode };
 }
 
-function lift(speed = LIFT_SPEED, waitSeconds = LIFT_WAIT): LiftEffect {
-  return { kind: 'lift', speed, waitSeconds };
+/** Vanilla's color locks: card or skull of the color, interchangeably (see `LockRule`). */
+function color(c: 'blue' | 'red' | 'yellow'): LockRule {
+  return { kind: 'color', color: c };
+}
+
+function lift(speed = LIFT_SPEED, waitSeconds = LIFT_WAIT, target?: LiftTarget): LiftEffect {
+  return { kind: 'lift', speed, waitSeconds, target };
 }
 
 function floor(
@@ -75,23 +81,23 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   // Keyed manual doors — key colors per vanilla P_UseSpecialLine, confirmed
   // against source rather than guessed: note 26/27/28 order (Blue/Yellow/Red)
   // does not match 32/33/34's (Blue/Red/Yellow).
-  26: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED, 'openClose', DOOR_WAIT, 'blue') },
-  27: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED, 'openClose', DOOR_WAIT, 'yellow') },
-  28: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED, 'openClose', DOOR_WAIT, 'red') },
-  32: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly', DOOR_WAIT, 'blue') },
-  33: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly', DOOR_WAIT, 'red') },
-  34: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly', DOOR_WAIT, 'yellow') },
+  26: { trigger: 'use', repeatable: true, manual: true, lock: color('blue'), effect: door(DOOR_SPEED) },
+  27: { trigger: 'use', repeatable: true, manual: true, lock: color('yellow'), effect: door(DOOR_SPEED) },
+  28: { trigger: 'use', repeatable: true, manual: true, lock: color('red'), effect: door(DOOR_SPEED) },
+  32: { trigger: 'use', repeatable: false, manual: true, lock: color('blue'), effect: door(DOOR_SPEED, 'openOnly') },
+  33: { trigger: 'use', repeatable: false, manual: true, lock: color('red'), effect: door(DOOR_SPEED, 'openOnly') },
+  34: { trigger: 'use', repeatable: false, manual: true, lock: color('yellow'), effect: door(DOOR_SPEED, 'openOnly') },
   // Keyed remote doors (S1/SR switches, tag-targeted — see file doc comment
   // on why these are not `manual` despite being use-triggered like the ones above).
-  99: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED_FAST, 'openOnly', DOOR_WAIT, 'blue') },
-  133: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED_FAST, 'openOnly', DOOR_WAIT, 'blue') },
-  134: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED_FAST, 'openClose', DOOR_WAIT, 'red') },
-  135: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED_FAST, 'openOnly', DOOR_WAIT, 'red') },
-  136: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED_FAST, 'openClose', DOOR_WAIT, 'yellow') },
-  137: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED_FAST, 'openOnly', DOOR_WAIT, 'yellow') },
+  99: { trigger: 'use', repeatable: true, lock: color('blue'), effect: door(DOOR_SPEED_FAST, 'openOnly') },
+  133: { trigger: 'use', repeatable: false, lock: color('blue'), effect: door(DOOR_SPEED_FAST, 'openOnly') },
+  134: { trigger: 'use', repeatable: true, lock: color('red'), effect: door(DOOR_SPEED_FAST) },
+  135: { trigger: 'use', repeatable: false, lock: color('red'), effect: door(DOOR_SPEED_FAST, 'openOnly') },
+  136: { trigger: 'use', repeatable: true, lock: color('yellow'), effect: door(DOOR_SPEED_FAST) },
+  137: { trigger: 'use', repeatable: false, lock: color('yellow'), effect: door(DOOR_SPEED_FAST, 'openOnly') },
 
   // Remote doors (tag-targeted).
-  4: { trigger: 'walk', repeatable: false, effect: door(DOOR_SPEED) },
+  4: { trigger: 'walk', repeatable: false, monsterActivate: true, effect: door(DOOR_SPEED) },
   29: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED) },
   90: { trigger: 'walk', repeatable: true, effect: door(DOOR_SPEED) },
   63: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED) },
@@ -139,14 +145,29 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   47: { trigger: 'shoot', repeatable: false, effect: floor('nextHigherFloor', FLOOR_SPEED_HALF, { changeTexture: true }) },
 
   // Lifts (lower to lowest neighboring floor, wait, raise back).
-  10: { trigger: 'walk', repeatable: false, effect: lift() },
+  10: { trigger: 'walk', repeatable: false, monsterActivate: true, effect: lift() },
   21: { trigger: 'use', repeatable: false, effect: lift() },
   62: { trigger: 'use', repeatable: true, effect: lift() },
-  88: { trigger: 'walk', repeatable: true, effect: lift() },
+  88: { trigger: 'walk', repeatable: true, monsterActivate: true, effect: lift() },
   120: { trigger: 'walk', repeatable: true, effect: lift(LIFT_SPEED_FAST) },
   121: { trigger: 'walk', repeatable: false, effect: lift(LIFT_SPEED_FAST) },
   122: { trigger: 'use', repeatable: false, effect: lift(LIFT_SPEED_FAST) },
   123: { trigger: 'use', repeatable: true, effect: lift(LIFT_SPEED_FAST) },
+  // Perpetual plats and their stop lines — `p_plats.c: EV_DoPlat perpetualRaise`
+  // (plain PLATSPEED, i.e. FLOOR_SPEED, unlike the 4x downWaitUpStay lifts
+  // above) and `EV_StopPlat`. A long-standing vanilla gap here, closed when
+  // Boom's generalized lifts needed the same machinery —
+  // docs/specials.md § Scope.
+  53: { trigger: 'walk', repeatable: false, effect: lift(FLOOR_SPEED, LIFT_WAIT, 'perpetual') },
+  87: { trigger: 'walk', repeatable: true, effect: lift(FLOOR_SPEED, LIFT_WAIT, 'perpetual') },
+  54: { trigger: 'walk', repeatable: false, effect: { kind: 'liftStop' } },
+  89: { trigger: 'walk', repeatable: true, effect: { kind: 'liftStop' } },
+  // Ceiling lower to floor, S1/SR — `linuxdoom-1.10 p_switch.c` cases 41/43,
+  // `EV_DoCeiling(lowerToFloor)`: flush with the floor, unlike 44/72's
+  // floor+8 crush stop. The second vanilla gap the Boom audit found —
+  // docs/specials.md § Scope.
+  41: { trigger: 'use', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'ownFloor' } },
+  43: { trigger: 'use', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'ownFloor' } },
 
   // Generic floor movers — trigger/repeatability and target each confirmed
   // against the Doom wiki's linedef type table individually (a broad,
@@ -159,6 +180,10 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   19: { trigger: 'walk', repeatable: false, effect: floor('highestNeighborFloor') },
   45: { trigger: 'use', repeatable: true, effect: floor('highestNeighborFloor') },
   102: { trigger: 'use', repeatable: false, effect: floor('highestNeighborFloor') },
+  // The WR member of the family — `linuxdoom-1.10 p_spec.c` case 83, the
+  // third vanilla gap the Boom coverage audit surfaced (BOOMEDIT.WAD uses
+  // it) — docs/specials.md § Scope.
+  83: { trigger: 'walk', repeatable: true, effect: floor('highestNeighborFloor') },
 
   // "Lowest neighboring floor" quad (W1/WR/S1/SR).
   23: { trigger: 'use', repeatable: false, effect: floor('lowestNeighborFloor') },
@@ -284,10 +309,10 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   9: { trigger: 'use', repeatable: false, effect: { kind: 'donut' } },
 
   // Teleporters — 125/126 are the Doom II monster-only variants (see TeleportEffect doc).
-  39: { trigger: 'walk', repeatable: false, effect: { kind: 'teleport', monsterOnly: false } },
-  97: { trigger: 'walk', repeatable: true, effect: { kind: 'teleport', monsterOnly: false } },
-  125: { trigger: 'walk', repeatable: false, effect: { kind: 'teleport', monsterOnly: true } },
-  126: { trigger: 'walk', repeatable: true, effect: { kind: 'teleport', monsterOnly: true } },
+  39: { trigger: 'walk', repeatable: false, monsterActivate: true, effect: { kind: 'teleport', monsterOnly: false } },
+  97: { trigger: 'walk', repeatable: true, monsterActivate: true, effect: { kind: 'teleport', monsterOnly: false } },
+  125: { trigger: 'walk', repeatable: false, monsterActivate: true, effect: { kind: 'teleport', monsterOnly: true } },
+  126: { trigger: 'walk', repeatable: true, monsterActivate: true, effect: { kind: 'teleport', monsterOnly: true } },
 
   // Stair builders — confirmed against the Doom wiki: 7/8 are 8-unit steps,
   // 100/127 are 16-unit turbo steps. The wiki names 100/127 "...and Crush",
@@ -379,6 +404,206 @@ export const DAMAGE_FLOOR_INTERVAL = 32 * DOOM_TIC;
  */
 export const SCROLL_LINE_SPECIAL = 48;
 export const SCROLL_SPEED = 35;
+
+/**
+ * Boom's parameter lines: specials consumed once at level spawn
+ * (`P_SpawnSpecials`) to configure a permanent per-line/per-sector behavior —
+ * scrollers, friction, pushers, property transfers — rather than dispatched
+ * from a trigger. `lookupSpecial` deliberately returns `null` for these;
+ * listing them keeps "known, handled elsewhere (or not yet)" distinguishable
+ * from "unknown number" (the inspect-wad coverage report reads this set).
+ * Vanilla 48 is implemented (`TextureScroller`); the Boom numbers here are
+ * Phase 3/4 scope — scrollers (85, 214-218, 245-255), friction (223),
+ * pushers (224-226), transfers (213, 242, 261) and translucency (260).
+ */
+export const PARAM_LINE_SPECIALS: Set<number> = new Set([
+  SCROLL_LINE_SPECIAL,
+  85, // scroll wall right
+  213, // transfer floor light
+  214, 215, 216, 217, 218, // accelerative scrollers
+  223, // friction
+  224, 225, 226, // wind, current, point pusher
+  242, // transfer heights (deep water)
+  245, 246, 247, 248, 249, // displacement scrollers
+  250, 251, 252, 253, // scroll ceiling/floor/carry
+  254, 255, // wall scrollers (line vector / sidedef offsets)
+  260, // translucent midtexture
+  261, // transfer ceiling light
+]);
+
+/**
+ * Boom's extended (non-generalized, non-parameter) linedef numbers — the
+ * 142-259 families `p_spec.c`/`p_switch.c` added beside the vanilla cases.
+ * Kept apart from `LINE_SPECIALS` so the vanilla table's audit stays exactly
+ * what it claims; every entry here is transcribed from the Boom dispatch
+ * switches (`P_CrossSpecialLine`, `P_UseSpecialLine`, `P_ShootSpecialLine`),
+ * one case at a time. The teleport variants (207-210/243-244/262-269) and
+ * toggle plats (211/212) are knowingly absent until their mechanisms land —
+ * `DEFERRED_LINE_SPECIALS` below. docs/specials.md § Scope.
+ */
+export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
+  // ---- W1 ----------------------------------------------------------------
+  142: { trigger: 'walk', repeatable: false, effect: floor('plus512') },
+  143: { trigger: 'walk', repeatable: false, effect: floor('plus24', FLOOR_SPEED_HALF, { changeTexture: true }) },
+  144: { trigger: 'walk', repeatable: false, effect: floor('plus32', FLOOR_SPEED_HALF, { changeTexture: true }) },
+  145: { trigger: 'walk', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'ownFloor' } },
+  146: { trigger: 'walk', repeatable: false, effect: { kind: 'donut' } },
+  153: { trigger: 'walk', repeatable: false, effect: { kind: 'changeOnly', model: 'trigger' } },
+  199: { trigger: 'walk', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'lowestNeighborCeiling' } },
+  200: { trigger: 'walk', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborFloor' } },
+  219: { trigger: 'walk', repeatable: false, effect: floor('nextLowerFloor') },
+  227: { trigger: 'walk', repeatable: false, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextHigherFloor' } },
+  231: { trigger: 'walk', repeatable: false, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextLowerFloor' } },
+  235: { trigger: 'walk', repeatable: false, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'currentFloor' } },
+  239: { trigger: 'walk', repeatable: false, effect: { kind: 'changeOnly', model: 'numeric' } },
+
+  // ---- WR ----------------------------------------------------------------
+  147: { trigger: 'walk', repeatable: true, effect: floor('plus512') },
+  148: { trigger: 'walk', repeatable: true, effect: floor('plus24', FLOOR_SPEED_HALF, { changeTexture: true }) },
+  149: { trigger: 'walk', repeatable: true, effect: floor('plus32', FLOOR_SPEED_HALF, { changeTexture: true }) },
+  // The WR silent crusher — vanilla 141's W1 twin, and the number the old
+  // scope note singled out as Boom-only.
+  150: { trigger: 'walk', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: true, slowsWhenCrushing: true } },
+  // 151/166/186 are Boom's copies of vanilla 40's ceiling+floor combo; the
+  // floor half is dead there for the same reason as 40's (the ceiling's own
+  // mover already occupies the sector), so only the ceiling is modelled —
+  // see 40's entry.
+  151: { trigger: 'walk', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborCeiling' } },
+  152: { trigger: 'walk', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'ownFloor' } },
+  154: { trigger: 'walk', repeatable: true, effect: { kind: 'changeOnly', model: 'trigger' } },
+  155: { trigger: 'walk', repeatable: true, effect: { kind: 'donut' } },
+  156: { trigger: 'walk', repeatable: true, effect: { kind: 'lightChange', mode: 'startStrobe' } },
+  157: { trigger: 'walk', repeatable: true, effect: { kind: 'lightChange', mode: 'darkestNeighbor' } },
+  201: { trigger: 'walk', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'lowestNeighborCeiling' } },
+  202: { trigger: 'walk', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborFloor' } },
+  220: { trigger: 'walk', repeatable: true, effect: floor('nextLowerFloor') },
+  228: { trigger: 'walk', repeatable: true, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextHigherFloor' } },
+  232: { trigger: 'walk', repeatable: true, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextLowerFloor' } },
+  236: { trigger: 'walk', repeatable: true, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'currentFloor' } },
+  240: { trigger: 'walk', repeatable: true, effect: { kind: 'changeOnly', model: 'numeric' } },
+  256: { trigger: 'walk', repeatable: true, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
+  257: { trigger: 'walk', repeatable: true, effect: { kind: 'stairs', stepHeight: STAIR_STEP_TURBO, speed: STAIR_SPEED_TURBO } },
+
+  // ---- S1 ----------------------------------------------------------------
+  158: { trigger: 'use', repeatable: false, effect: { kind: 'raiseToTexture' } },
+  159: { trigger: 'use', repeatable: false, effect: { kind: 'lowerAndChange' } },
+  160: { trigger: 'use', repeatable: false, effect: floor('plus24', FLOOR_SPEED, { changeTexture: true }) },
+  161: { trigger: 'use', repeatable: false, effect: floor('plus24') },
+  162: { trigger: 'use', repeatable: false, effect: lift(FLOOR_SPEED, LIFT_WAIT, 'perpetual') },
+  163: { trigger: 'use', repeatable: false, effect: { kind: 'liftStop' } },
+  164: { trigger: 'use', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST, silent: false, slowsWhenCrushing: false } },
+  165: { trigger: 'use', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: true, slowsWhenCrushing: true } },
+  166: { trigger: 'use', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborCeiling' } },
+  167: { trigger: 'use', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'floorPlus8' } },
+  168: { trigger: 'use', repeatable: false, effect: { kind: 'crusherStop' } },
+  169: { trigger: 'use', repeatable: false, effect: { kind: 'lightChange', mode: 'brightestNeighbor' } },
+  170: { trigger: 'use', repeatable: false, effect: { kind: 'lightChange', mode: 'setLevel', level: 35 } },
+  171: { trigger: 'use', repeatable: false, effect: { kind: 'lightChange', mode: 'setLevel', level: 255 } },
+  172: { trigger: 'use', repeatable: false, effect: { kind: 'lightChange', mode: 'startStrobe' } },
+  173: { trigger: 'use', repeatable: false, effect: { kind: 'lightChange', mode: 'darkestNeighbor' } },
+  // The S1 teleport the old scope note flagged as the Boom-only number a
+  // first audit pass mistook for vanilla.
+  174: { trigger: 'use', repeatable: false, effect: { kind: 'teleport', monsterOnly: false } },
+  175: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED, 'closeThenOpen') },
+  189: { trigger: 'use', repeatable: false, effect: { kind: 'changeOnly', model: 'trigger' } },
+  203: { trigger: 'use', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'lowestNeighborCeiling' } },
+  204: { trigger: 'use', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborFloor' } },
+  221: { trigger: 'use', repeatable: false, effect: floor('nextLowerFloor') },
+  229: { trigger: 'use', repeatable: false, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextHigherFloor' } },
+  233: { trigger: 'use', repeatable: false, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextLowerFloor' } },
+  237: { trigger: 'use', repeatable: false, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'currentFloor' } },
+  241: { trigger: 'use', repeatable: false, effect: { kind: 'changeOnly', model: 'numeric' } },
+
+  // ---- SR ----------------------------------------------------------------
+  78: { trigger: 'use', repeatable: true, effect: { kind: 'changeOnly', model: 'numeric' } },
+  176: { trigger: 'use', repeatable: true, effect: { kind: 'raiseToTexture' } },
+  177: { trigger: 'use', repeatable: true, effect: { kind: 'lowerAndChange' } },
+  178: { trigger: 'use', repeatable: true, effect: floor('plus512') },
+  179: { trigger: 'use', repeatable: true, effect: floor('plus24', FLOOR_SPEED, { changeTexture: true }) },
+  180: { trigger: 'use', repeatable: true, effect: floor('plus24') },
+  181: { trigger: 'use', repeatable: true, effect: lift(FLOOR_SPEED, LIFT_WAIT, 'perpetual') },
+  182: { trigger: 'use', repeatable: true, effect: { kind: 'liftStop' } },
+  183: { trigger: 'use', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST, silent: false, slowsWhenCrushing: false } },
+  184: { trigger: 'use', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: false, slowsWhenCrushing: true } },
+  185: { trigger: 'use', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: true, slowsWhenCrushing: true } },
+  186: { trigger: 'use', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborCeiling' } },
+  187: { trigger: 'use', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'floorPlus8' } },
+  188: { trigger: 'use', repeatable: true, effect: { kind: 'crusherStop' } },
+  190: { trigger: 'use', repeatable: true, effect: { kind: 'changeOnly', model: 'trigger' } },
+  191: { trigger: 'use', repeatable: true, effect: { kind: 'donut' } },
+  192: { trigger: 'use', repeatable: true, effect: { kind: 'lightChange', mode: 'brightestNeighbor' } },
+  193: { trigger: 'use', repeatable: true, effect: { kind: 'lightChange', mode: 'startStrobe' } },
+  194: { trigger: 'use', repeatable: true, effect: { kind: 'lightChange', mode: 'darkestNeighbor' } },
+  195: { trigger: 'use', repeatable: true, effect: { kind: 'teleport', monsterOnly: false } },
+  196: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED, 'closeThenOpen') },
+  205: { trigger: 'use', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'lowestNeighborCeiling' } },
+  206: { trigger: 'use', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborFloor' } },
+  222: { trigger: 'use', repeatable: true, effect: floor('nextLowerFloor') },
+  230: { trigger: 'use', repeatable: true, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextHigherFloor' } },
+  234: { trigger: 'use', repeatable: true, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextLowerFloor' } },
+  238: { trigger: 'use', repeatable: true, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'currentFloor' } },
+  258: { trigger: 'use', repeatable: true, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
+  259: { trigger: 'use', repeatable: true, effect: { kind: 'stairs', stepHeight: STAIR_STEP_TURBO, speed: STAIR_SPEED_TURBO } },
+
+  // ---- G1 ----------------------------------------------------------------
+  197: { trigger: 'shoot', repeatable: false, effect: { kind: 'exit', secret: false } },
+  198: { trigger: 'shoot', repeatable: false, effect: { kind: 'exit', secret: true } },
+};
+
+/**
+ * Boom numbers whose *mechanism* hasn't landed yet: the silent/line-to-line
+ * teleport family (Phase 2) and the instant toggle plats (Phase 2).
+ * `lookupSpecial` returns null for them like any unknown number; this set
+ * exists so the inspect-wad coverage report can call them "deferred" instead
+ * of "unknown".
+ */
+export const DEFERRED_LINE_SPECIALS: Set<number> = new Set([
+  207, 208, 209, 210, // silent teleports
+  211, 212, // toggle plats
+  243, 244, 262, 263, 264, 265, 266, 267, 268, 269, // silent line-to-line + monster-only variants
+]);
+
+/**
+ * Decoded generalized defs, one per distinct number per session — the decode
+ * is pure, and memoizing also gives callers a stable identity per number
+ * (`computeMovableSectors` and the trigger paths re-look-up per line).
+ */
+const generalizedCache = new Map<number, SpecialDef | null>();
+
+/**
+ * Which family a linedef special belongs to — what `lookupSpecial` resolves
+ * against, named. `'unknown'` is the one that matters: it is the Boom-compat
+ * acceptance gate (`scripts/inspect-wad.ts`'s coverage report), so it lives
+ * here beside the tables rather than in the script, where it could drift out
+ * of step with the lookup and report a false pass.
+ */
+export type SpecialClass = 'none' | 'vanilla' | 'boom' | 'generalized' | 'param' | 'deferred' | 'unknown';
+
+export function classifyLineSpecial(special: number): SpecialClass {
+  if (special === 0) return 'none';
+  if (LINE_SPECIALS[special]) return 'vanilla';
+  if (BOOM_LINE_SPECIALS[special]) return 'boom';
+  if (isGeneralized(special)) return 'generalized';
+  if (PARAM_LINE_SPECIALS.has(special)) return 'param';
+  if (DEFERRED_LINE_SPECIALS.has(special)) return 'deferred';
+  return 'unknown';
+}
+
+/**
+ * The one lookup the trigger paths go through — the seam where Boom's
+ * extended numbers and the generalized bitfield ranges join the vanilla
+ * table without reshaping it. docs/specials.md § Scope.
+ */
+export function lookupSpecial(special: number): SpecialDef | null {
+  const table = LINE_SPECIALS[special] ?? BOOM_LINE_SPECIALS[special];
+  if (table) return table;
+  let gen = generalizedCache.get(special);
+  if (gen === undefined) {
+    gen = decodeGeneralized(special);
+    generalizedCache.set(special, gen);
+  }
+  return gen;
+}
 
 /**
  * `Sector.special` values spawning a one-shot delayed door at map load rather

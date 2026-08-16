@@ -18,6 +18,11 @@ whether or not that WAD's graphics are loaded yet — `Hud`'s constructor draws 
 (doomednum 2010) was mapped to sprite `RCKT`, which isn't a real lump — the actual sprite is `ROCK`,
 so rockets were invisible in the world.
 
+**The key strip is one panel per color, lit when either of that color's slots is owned** (cards
+and skulls are tracked separately — docs/items.md § Locked doors and use triggers). The panel
+shows the keycard sprite by default and swaps to the skull sprite (`BSKUA0`/`RSKUA0`/`YSKUA0`)
+while the skull is the only key of its color held, so what you see is what you actually carry.
+
 **The weapon icon is not decoration.** Unlike the original's status bar, where the weapon fills the
 bottom third of the screen, this game's player sprite looks identical whatever it's holding — `PLAY`
 has no per-weapon art, and at this camera distance it wouldn't read anyway. The HUD icon is therefore

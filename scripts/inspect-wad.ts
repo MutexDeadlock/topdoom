@@ -9,6 +9,8 @@ import { readFileSync } from 'node:fs';
 import { Wad, WadFile } from '../src/wad/wad.ts';
 import { GraphicsBank } from '../src/wad/graphics.ts';
 import { loadMap } from '../src/wad/map.ts';
+import { classifyLineSpecial, type SpecialClass } from '../src/game/specials/tables.ts';
+import { decodeSectorType, sectorTypeUnderstood } from '../src/game/specials/sectortypes.ts';
 import { buildSubSectorPolys } from '../src/render/bsp.ts';
 import { World, positionBlocked } from '../src/game/world.ts';
 import { SoundBank } from '../src/wad/sound.ts';
@@ -41,7 +43,7 @@ console.log(
   `\n${mapName} (from ${wad.providerOf(mapName)?.name}): ${map.vertexes.length} verts, ` +
     `${map.linedefs.length} lines, ${map.sidedefs.length} sides,\n` +
     `  ${map.sectors.length} sectors, ${map.segs.length} segs, ${map.subsectors.length} subsectors,\n` +
-    `  ${map.nodes.length} nodes, ${map.things.length} things`,
+    `  ${map.nodes.length} nodes (${map.nodeFormat}), ${map.things.length} things`,
 );
 console.log(`  bounds x[${map.bounds.minX}..${map.bounds.maxX}] y[${map.bounds.minY}..${map.bounds.maxY}]`);
 
@@ -142,3 +144,52 @@ for (let i = 0; i < steps; i++) {
   if (!positionBlocked(world, start.x + Math.cos(a) * 64, start.y + Math.sin(a) * 64, PLAYER_RADIUS, floor, PLAYER_HEIGHT)) free++;
 }
 console.log(`  free directions at r=64: ${free}/${steps}`);
+
+// --- specials coverage: which linedef/sector special numbers this engine knows ---
+// The acceptance gate for the Boom work: a target map "loads fully" when
+// nothing lands in `unknown` (docs/specials.md § Scope).
+{
+  // The classification itself is `tables.ts`'s (`classifyLineSpecial`), so this
+  // report can't drift out of step with what the engine actually resolves.
+  const LABELS: Record<SpecialClass, string> = {
+    none: 'none',
+    vanilla: 'vanilla',
+    boom: 'boom',
+    generalized: 'generalized',
+    param: 'param (later phase)',
+    deferred: 'deferred (later phase)',
+    unknown: 'UNKNOWN',
+  };
+  const lineClasses = new Map<SpecialClass, Map<number, number>>();
+  for (const line of map.linedefs) {
+    const cls = classifyLineSpecial(line.special);
+    if (cls === 'none') continue;
+    const bucket = lineClasses.get(cls) ?? new Map<number, number>();
+    bucket.set(line.special, (bucket.get(line.special) ?? 0) + 1);
+    lineClasses.set(cls, bucket);
+  }
+  console.log('\nlinedef specials:');
+  for (const cls of ['vanilla', 'boom', 'generalized', 'param', 'deferred', 'unknown'] as const) {
+    const bucket = lineClasses.get(cls);
+    if (!bucket) continue;
+    const total = [...bucket.values()].reduce((a, b) => a + b, 0);
+    const numbers = [...bucket.keys()].sort((a, b) => a - b);
+    const list = cls === 'vanilla' ? '' : ` — ${numbers.map((n) => (n >= 0x2f80 ? '0x' + n.toString(16) : n)).join(' ')}`;
+    console.log(`  ${LABELS[cls]}: ${total} lines, ${bucket.size} distinct${list}`);
+  }
+
+  const sectorUnknown = new Map<number, number>();
+  let sectorSpecials = 0;
+  for (const sector of map.sectors) {
+    if (sector.special === 0) continue;
+    sectorSpecials++;
+    if (!sectorTypeUnderstood(decodeSectorType(sector.special))) {
+      sectorUnknown.set(sector.special, (sectorUnknown.get(sector.special) ?? 0) + 1);
+    }
+  }
+  const unknownList = [...sectorUnknown.keys()].sort((a, b) => a - b).join(' ');
+  console.log(
+    `sector specials: ${sectorSpecials} non-zero` +
+      (sectorUnknown.size > 0 ? `, UNKNOWN: ${unknownList}` : ', all understood'),
+  );
+}

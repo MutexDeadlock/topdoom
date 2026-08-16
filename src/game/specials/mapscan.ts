@@ -13,9 +13,11 @@
  * See docs/specials.md.
  */
 import { NO_SIDE, type DoomMap, type LineDef } from '../../wad/map.ts';
+import { sectorLines } from '../world.ts';
 import { BOSS_DEATH_TYPES } from '../things/tables.ts';
 import { ThingType } from '../things/doomednums.ts';
-import { LINE_SPECIALS, SECTOR_LIGHT_SPECIALS, SECTOR_DOOR_SPECIALS } from './tables.ts';
+import { lookupSpecial } from './tables.ts';
+import { decodeSectorType } from './sectortypes.ts';
 import { switchPairTexture, type SpecialDef } from './defs.ts';
 
 /** Which sectors a special's linedef affects: the line's own back sector for manual doors, tag matches otherwise. */
@@ -142,7 +144,8 @@ function bossDeathSectors(map: DoomMap): number[] {
  */
 export function neighborSectorIndices(map: DoomMap, sectorIndex: number): number[] {
   const out: number[] = [];
-  for (const line of map.linedefs) {
+  for (const lineIndex of sectorLines(map, sectorIndex)) {
+    const line = map.linedefs[lineIndex];
     if (line.left === NO_SIDE || line.right === NO_SIDE) continue;
     const front = map.sidedefs[line.right]?.sector;
     const back = map.sidedefs[line.left]?.sector;
@@ -187,24 +190,37 @@ export interface StairStep {
  * (adjacency + floor textures), so it's safe to run once at load time
  * (`computeMovableSectors`) and again at trigger time without the two ever
  * disagreeing.
+ *
+ * Boom's generalized stairs (`EV_DoGenStairs`) add `direction` — steps
+ * descending by `stepHeight` instead — and `ignoreTexture`, which drops the
+ * floor-texture match from the walk (the Igno bit). Both default to the
+ * vanilla behavior.
  */
-export function findStairChain(map: DoomMap, startSectorIndex: number, stepHeight: number): StairStep[] {
+export function findStairChain(
+  map: DoomMap,
+  startSectorIndex: number,
+  stepHeight: number,
+  direction: 'up' | 'down' = 'up',
+  ignoreTexture = false,
+): StairStep[] {
   const texture = map.sectors[startSectorIndex]?.floorTex;
   if (texture === undefined) return [];
+  const perStep = direction === 'down' ? -stepHeight : stepHeight;
   const steps: StairStep[] = [];
   const visited = new Set<number>([startSectorIndex]);
   let sectorIndex = startSectorIndex;
   let height = map.sectors[startSectorIndex].floorHeight;
   for (;;) {
-    height += stepHeight;
+    height += perStep;
     steps.push({ sectorIndex, targetHeight: height });
     let next = -1;
-    for (const line of map.linedefs) {
+    for (const lineIndex of sectorLines(map, sectorIndex)) {
+      const line = map.linedefs[lineIndex];
       if (line.left === NO_SIDE || line.right === NO_SIDE) continue;
       if (map.sidedefs[line.right]?.sector !== sectorIndex) continue;
       const backSector = map.sidedefs[line.left]?.sector;
       if (backSector === undefined || visited.has(backSector)) continue;
-      if (map.sectors[backSector]?.floorTex !== texture) continue;
+      if (!ignoreTexture && map.sectors[backSector]?.floorTex !== texture) continue;
       next = backSector;
       break;
     }
@@ -251,16 +267,18 @@ export function computeMovableSectors(map: DoomMap): Set<number> {
     // Sector-type door timers (10/14) never wait for a linedef trigger, so
     // there's no `def`/tag-resolution step to hook into here — the sector
     // itself is the mover from the moment the map loads.
-    if (SECTOR_DOOR_SPECIALS[map.sectors[i].special] !== undefined) out.add(i);
+    if (decodeSectorType(map.sectors[i].special).doorTimer !== null) out.add(i);
   }
   for (const line of map.linedefs) {
-    const def = LINE_SPECIALS[line.special];
+    const def = lookupSpecial(line.special);
     if (!def) continue;
     if (def.effect.kind === 'stairs') {
       // The tag match only names the chain's start; the rest is discovered by
       // walking the same texture-matched adjacency the trigger will use.
       for (const startSector of resolveTargets(map, line, def)) {
-        for (const step of findStairChain(map, startSector, def.effect.stepHeight)) out.add(step.sectorIndex);
+        for (const step of findStairChain(map, startSector, def.effect.stepHeight, def.effect.direction, def.effect.ignoreTexture)) {
+          out.add(step.sectorIndex);
+        }
       }
     } else if (def.effect.kind === 'donut') {
       // Same reasoning as stairs above: the tag only names the "hole", and
@@ -295,7 +313,7 @@ export function computeMovableSectors(map: DoomMap): Set<number> {
 export function computeLightSectors(map: DoomMap): Set<number> {
   const out = new Set<number>();
   for (let i = 0; i < map.sectors.length; i++) {
-    if (SECTOR_LIGHT_SPECIALS[map.sectors[i].special] !== undefined) out.add(i);
+    if (decodeSectorType(map.sectors[i].special).lightPattern !== null) out.add(i);
   }
   return out;
 }

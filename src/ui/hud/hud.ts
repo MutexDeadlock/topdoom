@@ -11,6 +11,7 @@ import {
   type AmmoType,
   type Inventory,
   type KeyColor,
+  type KeySlot,
   type PowerId,
   type WeaponId,
 } from '../../game/inventory.ts';
@@ -79,6 +80,25 @@ const KEY_ICONS: Record<KeyColor, string> = {
   blue: 'BKEYA0',
   red: 'RKEYA0',
   yellow: 'YKEYA0',
+};
+
+/**
+ * The skull keys' own pickup sprites — shown in a color's slot when only the
+ * skull of that color is owned (cards and skulls are separate pickups now that
+ * Boom's generalized locks can tell them apart; a color's panel lights for
+ * either). docs/hud.md § The HUD.
+ */
+const KEY_SKULL_ICONS: Record<KeyColor, string> = {
+  blue: 'BSKUA0',
+  red: 'RSKUA0',
+  yellow: 'YSKUA0',
+};
+
+/** The two slot names per color, pre-built: `update` runs every frame and must not compose them per call. */
+const KEY_SLOTS_BY_COLOR: Record<KeyColor, { card: KeySlot; skull: KeySlot }> = {
+  blue: { card: 'blueCard', skull: 'blueSkull' },
+  red: { card: 'redCard', skull: 'redSkull' },
+  yellow: { card: 'yellowCard', skull: 'yellowSkull' },
 };
 
 /**
@@ -154,6 +174,8 @@ export class Hud {
   private armorIconBlue = this.root.querySelector<HTMLCanvasElement>('.hud-armor .icon-blue')!;
   private ammoValues: Record<AmmoType, HTMLElement>;
   private keyPanels: Record<KeyColor, HTMLElement>;
+  private keyVariantShown: Record<KeyColor, 'card' | 'skull'>;
+  private gfx: GraphicsBank;
   private weaponIcons: Record<WeaponId, HTMLCanvasElement>;
   private currentWeaponShown: WeaponId | null = null;
   private powerPanel = this.root.querySelector<HTMLElement>('.hud-powers')!;
@@ -180,7 +202,9 @@ export class Hud {
       this.ammoValues[t] = row.querySelector<HTMLElement>('.value')!;
     }
 
+    this.gfx = gfx;
     this.keyPanels = {} as Record<KeyColor, HTMLElement>;
+    this.keyVariantShown = { blue: 'card', red: 'card', yellow: 'card' };
     for (const c of KEY_COLORS) {
       const panel = this.root.querySelector<HTMLElement>(`.hud-keys .key-${c}`)!;
       drawIcon(panel.querySelector('canvas')!, gfx, KEY_ICONS[c]);
@@ -272,7 +296,18 @@ export class Hud {
     this.armorIconBlue.classList.toggle('hidden', inv.armorType !== 2);
     this.armorPanel.classList.toggle('empty', inv.armorType === 0);
     for (const t of AMMO_TYPES) this.ammoValues[t].textContent = String(inv.ammo[t]);
-    for (const c of KEY_COLORS) this.keyPanels[c].classList.toggle('collected', inv.keys.has(c));
+    for (const c of KEY_COLORS) {
+      const card = inv.keys.has(KEY_SLOTS_BY_COLOR[c].card);
+      const skull = inv.keys.has(KEY_SLOTS_BY_COLOR[c].skull);
+      this.keyPanels[c].classList.toggle('collected', card || skull);
+      // Skull art only when the skull is all we have of the color; a card
+      // (or nothing yet) shows the card icon, the panel's resting state.
+      const variant = skull && !card ? 'skull' : 'card';
+      if (variant !== this.keyVariantShown[c]) {
+        drawIcon(this.keyPanels[c].querySelector('canvas')!, this.gfx, variant === 'skull' ? KEY_SKULL_ICONS[c] : KEY_ICONS[c]);
+        this.keyVariantShown[c] = variant;
+      }
+    }
 
     if (inv.currentWeapon !== this.currentWeaponShown) {
       if (this.currentWeaponShown) this.weaponIcons[this.currentWeaponShown].classList.add('hidden');

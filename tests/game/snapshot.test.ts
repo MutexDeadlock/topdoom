@@ -58,7 +58,7 @@ describe('Savegames · state encoding', () => {
     inv.armor = 148;
     inv.armorType = 2;
     inv.ammo.shells = 23;
-    inv.keys.add('blue').add('yellow');
+    inv.keys.add('blueCard').add('yellowSkull');
     inv.weapons.add('shotgun').add('bfg');
     inv.currentWeapon = 'shotgun';
     inv.powers.berserk = Infinity;
@@ -73,9 +73,17 @@ describe('Savegames · state encoding', () => {
     const fresh = createInventory();
     const back = deserializeInventory(JSON.parse('{"health": "broken", "keys": ["blue", "purple"]}'));
     assert.equal(back.health, fresh.health);
-    assert.deepEqual([...back.keys], ['blue'], 'unknown key colors are dropped');
+    // A pre-slot save's color expands to both of its slots; unknown colors are dropped.
+    assert.deepEqual([...back.keys].sort(), ['blueCard', 'blueSkull'], 'unknown key colors are dropped');
     assert.deepEqual(back.ammo, fresh.ammo);
     assert.equal(back.currentWeapon, fresh.currentWeapon);
+  });
+
+  test('a save with exact key slots restores them exactly', () => {
+    const back = deserializeInventory(
+      JSON.parse('{"keys": ["red"], "keySlots": ["redSkull", "bogus"]}'),
+    );
+    assert.deepEqual([...back.keys], ['redSkull'], 'keySlots wins over the derived colors');
   });
 
   test('roundFloat trims float tails to 6 decimals throughout the serialized tree', () => {

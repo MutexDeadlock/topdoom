@@ -1,8 +1,12 @@
 /**
  * The map lumps decoded into a `DoomMap`: vertices, linedefs/sidedefs, sectors, the BSP
- * (nodes/segs/subsectors) and THINGS, exactly as the WAD stores them. See docs/wad.md.
+ * (nodes/segs/subsectors, any format `wad/nodes.ts` knows) and THINGS. Everything but the
+ * BSP is stored exactly as the WAD encodes it. See docs/wad.md.
  */
 import type { Wad } from './wad.ts';
+import { readBsp, type NodeFormat } from './nodes.ts';
+
+export { SUBSECTOR_BIT, type NodeFormat } from './nodes.ts';
 
 export const NO_SIDE = 0xffff;
 
@@ -91,13 +95,14 @@ export const LF = {
   BLOCK_SOUND: 0x0040,
   NEVER_ON_MAP: 0x0080,
   ALWAYS_ON_MAP: 0x0100,
+  /** Boom: a use action goes on to lines behind this one (`doomdata.h: ML_PASSUSE`). */
+  PASSUSE: 0x0200,
 } as const;
-
-/** Bit in a node child that marks a subsector reference instead of a node. */
-export const SUBSECTOR_BIT = 0x8000;
 
 export interface DoomMap {
   name: string;
+  /** Which on-disk BSP encoding the map shipped (`readBsp` normalizes them all). */
+  nodeFormat: NodeFormat;
   vertexes: Vertex[];
   sectors: Sector[];
   sidedefs: SideDef[];
@@ -202,25 +207,13 @@ export function loadMap(wad: Wad, name: string): DoomMap {
     left: r.u16(),
   }));
 
-  const segs = read('SEGS', 12, (r) => ({
-    v1: r.u16(),
-    v2: r.u16(),
-    angle: r.i16(),
-    linedef: r.u16(),
-    direction: r.u16(),
-    offset: r.i16(),
-  }));
-
-  const subsectors = read('SSECTORS', 4, (r) => ({ count: r.u16(), first: r.u16() }));
-
-  const nodes = read('NODES', 28, (r) => {
-    const x = r.i16();
-    const y = r.i16();
-    const dx = r.i16();
-    const dy = r.i16();
-    r.seek(r.pos + 16); // skip both bounding boxes
-    return { x, y, dx, dy, rightChild: r.u16(), leftChild: r.u16() };
-  });
+  const rawLump = (lumpName: string): Uint8Array | undefined => {
+    const idx = lumps.get(lumpName);
+    return idx === undefined ? undefined : wad.data(wad.lumpAt(idx)!);
+  };
+  // May append vertexes (XNOD/ZNOD carry their own split vertexes), so runs
+  // before the bounds pass below.
+  const bsp = readBsp(vertexes, rawLump('SEGS'), rawLump('SSECTORS'), rawLump('NODES'));
 
   const things = read('THINGS', 10, (r) => ({
     x: r.i16(),
@@ -243,13 +236,14 @@ export function loadMap(wad: Wad, name: string): DoomMap {
 
   return {
     name,
+    nodeFormat: bsp.format,
     vertexes,
     sectors,
     sidedefs,
     linedefs,
-    segs,
-    subsectors,
-    nodes,
+    segs: bsp.segs,
+    subsectors: bsp.subsectors,
+    nodes: bsp.nodes,
     things,
     reject: readReject(wad, lumps, sectors.length),
     bounds: { minX, minY, maxX, maxY },

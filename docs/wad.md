@@ -26,6 +26,31 @@ the first NUL silently corrupts names (e.g. turns `"-"` into `"-GRAY7"`) and bre
 for real PWADs. This was found by testing against community PWADs, not synthetic data, so don't assume
 synthetic WADs will catch a regression here.
 
+## Node formats
+
+`wad/nodes.ts` reads the three BSP lumps (SEGS/SSECTORS/NODES) in the four encodings Boom-era maps
+actually ship, detected per PrBoom+ `p_setup.c` — DeePBSP V4 and the ZDoom formats sign the NODES
+lump (`xNd4\0\0\0\0`, `XNOD`, `ZNOD`), GL nodes sign SSECTORS and are refused with a load error
+naming the format (this engine clips subsector polygons from plain nodes — docs/render.md § BSP
+polygon reconstruction — so GL segs have nothing to offer it):
+
+- **Vanilla**: 16-bit records, exactly what `linuxdoom-1.10` reads.
+- **DeePBSP V4**: 32-bit vertex indices in segs, 32-bit `firstseg`, 32-bit node children
+  (PrBoom+ `doomdata.h`: `mapseg_v4_t` / `mapsubsector_v4_t` / `mapnode_v4_t`).
+- **XNOD**: replaces the SEGS/SSECTORS content wholesale — the payload carries its own split
+  vertexes in 16.16 fixed point (appended to the map's `vertexes`, so vertex coordinates can be
+  fractional), per-subsector seg counts with the start index implicit, and segs that store no
+  angle/offset (nothing in the engine reads either; they load as 0).
+- **ZNOD**: XNOD with the payload zlib-compressed. Decoded by `util/inflate.ts`, which exists
+  because `loadMap` is synchronous all the way up through session start and therefore cannot await
+  a `DecompressionStream`.
+
+Everything is normalized at read time to **one in-memory convention**: node children are 32-bit
+with `SUBSECTOR_BIT = 0x80000000` marking subsector references, whatever the disk stored. Vanilla's
+quirks are folded in the way PrBoom+ `P_LoadNodes` does it — a `0xFFFF` child resolves to
+subsector 0 (where PrBoom's `-1` lands in `R_PointInSubsector`), an out-of-range subsector index is
+clamped to 0 — so `World.subsectorAt` and `render/bsp.ts` never see a format difference.
+
 ## REJECT
 
 `loadMap` decodes every map lump the engine reads straight into `DoomMap`; REJECT is the one that

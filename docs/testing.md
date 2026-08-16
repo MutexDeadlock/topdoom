@@ -216,7 +216,9 @@ Two matching rules it deliberately encodes, because both shapes are all over the
 
 ## WAD-backed tests
 
-`DOOM1.WAD`, `freedoom2.wad`, `SCYTHE.WAD`, `NUTS.WAD`, `oku2v31.wad` and the two hand-made
+`DOOM1.WAD`, `freedoom2.wad`, `SCYTHE.WAD`, `NUTS.WAD`, `oku2v31.wad`, `BOOMEDIT.WAD` (TeamTNT's
+own Boom feature exerciser — the manual soak map for the Boom-compat work, and what
+`inspect-wad`'s specials coverage report is run against) and the two hand-made
 fixtures `fauler_sound.wad`/`faulers_first_map.wad` are **committed to the repo**; only `DOOM.WAD` and `DOOM2.WAD` are gitignored. So a WAD-backed test runs everywhere by
 default, and only a test needing one of those two has to guard itself — with node:test's
 declaration-time option, since presence is a static fact:

@@ -45,14 +45,68 @@ Every mover here also makes noise, and *which* noise is part of the mechanism: d
 Specials has the per-mover rules, including the shared 8-tic grind clock and the silent crusher
 (141), whose sound is the only thing distinguishing it from 25.
 
-**Scope: every vanilla DOOM/DOOM2 linedef and sector special, and nothing beyond.** The table's gaps
-were closed by diffing every case in `P_CrossSpecialLine`/`P_UseSpecialLine` against its keys,
-directly against `p_spec.c`/`p_switch.c`/`p_floor.c`/`p_plats.c`/`p_ceilng.c`/`p_doors.c`/
-`p_lights.c` rather than assumed. That audit is what turned up `raiseToTexture`, `lowerAndChange`,
-the one-way `CeilingEffect`, the delayed doors, the instant `LightChangeEffect`s and the donut — each
-needing a genuinely new mechanism, all now modelled. Boom/MBF-only numbers (174, 195, the silent
-crusher at 150) are deliberately out of scope. Nothing vanilla-scoped remains knowingly unmodelled;
-if you find a gap, it's a bug, not a deferred decision.
+## Scope
+
+**Every vanilla DOOM/DOOM2 linedef and sector special is covered; Boom compatibility is being
+added on top.** The vanilla table's gaps were closed by diffing every case in
+`P_CrossSpecialLine`/`P_UseSpecialLine` against its keys, directly against
+`p_spec.c`/`p_switch.c`/`p_floor.c`/`p_plats.c`/`p_ceilng.c`/`p_doors.c`/`p_lights.c` rather than
+assumed. That audit is what turned up `raiseToTexture`, `lowerAndChange`, the one-way
+`CeilingEffect`, the delayed doors, the instant `LightChangeEffect`s and the donut — each needing a
+genuinely new mechanism, all now modelled. Three vanilla gaps it *missed* were found during the
+Boom work — the perpetual plats and plat-stop family (53/54/87/89, see § Perpetual lifts and the
+stop line), the S1/SR ceiling-to-floor pair (41/43, `EV_DoCeiling(lowerToFloor)`), and the WR
+lower-floor 83 (surfaced by BOOMEDIT.WAD through the coverage report below) — all closed, and the
+table is now pinned to be exactly the union of the three vanilla dispatch switches' 138 case
+numbers (`tests/game/boom-specials.test.ts`).
+
+Boom's extended non-generalized numbers live in **`BOOM_LINE_SPECIALS`**, a separate table merged
+by `lookupSpecial`, each entry transcribed from the Boom dispatch switches. Two genuinely new
+mechanisms came with them: **elevators** (227-238, § Elevators) and the **motionless change**
+(78/153/154/189/190/239-241, `EV_DoChange`) — each tagged sector instantly copies floor flat and
+special from its model (trigger = the line's front sector; numeric = the first neighbor at the
+sector's own floor height, nothing when no neighbor matches — though the activation still counts,
+so switches flip, vanilla's own `rtn = 1`). Change-only sectors are included in
+`computeMovableSectors` despite never moving: the flat swap needs a per-sector mesh to repaint.
+
+`scripts/inspect-wad.ts` prints a **specials coverage report** — every linedef special classified
+vanilla / boom / generalized / param (later phase) / deferred (later phase) / UNKNOWN, and sector
+specials checked through `decodeSectorType` — the acceptance gate for each Boom phase. The
+deferred set (`DEFERRED_LINE_SPECIALS`) is the silent-teleport family and the toggle plats,
+Phase 2 scope; the param set is Phase 3/4 (scrollers, friction, pushers, transfers, translucency).
+
+## Elevators
+
+Boom's `EV_DoElevator`/`T_MoveElevator` (`p_floor.c`, linedefs 227-238): floor and ceiling move
+in lockstep, preserving the sector's gap, at `ELEVATOR_SPEED` (4 u/tic), to the next floor up,
+the next floor down, or the activating line's front-sector floor height (`elevateCurrent`). The
+leading plane is checked against the blocking predicate first — ceiling leads going down, floor
+leads going up — and a blocked leader stalls the pair; an elevator never crushes. `ElevatorMover`
+is the one genuinely new mover kind of the Boom work (`sectorActive` treats it like a floor);
+older builds' savegame readers have never seen its shape, which is fine in the direction
+`SAVE_VERSION` tracks (new builds read all old saves).
+
+Every trigger path resolves a line's number through **`lookupSpecial` (`specials/tables.ts`)**,
+never by indexing `LINE_SPECIALS` directly — that is the seam where Boom's extended numbers and
+the generalized bitfield ranges join without reshaping the vanilla table (which stays exactly as
+audited, one entry per vanilla number). `PARAM_LINE_SPECIALS` sits beside it: the numbers that are
+*not* triggerable effects but level-spawn parameters (vanilla 48's scroll; Boom's scrollers,
+friction, pushers and transfers as they land), listed so a coverage report can tell "known,
+handled elsewhere" from "unknown number". Boom behaviors are confirmed against the boom202 /
+PrBoom+ source the same way vanilla ones are confirmed against `linuxdoom-1.10`.
+
+**Activation is data plus an activator.** A def says who a number admits (`monsterActivate` for
+walk lines — vanilla `P_CrossSpecialLine`'s seven-number monster allow-list, and Boom's
+generalized trigger bit; `monsterCanTrigger` for shoot lines — vanilla's lone `case 46`), and the
+trigger paths say who is at the line (`Activator`, `'player' | 'monster'`, with Boom's voodoo
+dolls to join). All walk crossings — player and monster — run through one scan,
+`SpecialsController.crossLines`.
+
+**PASSUSE (Boom).** A use press collects every use line the trace crosses, nearest first, and
+keeps triggering past a line only while that line carries `LF.PASSUSE` (`p_map.c:
+PTR_UseTraverse`); the vanilla nearest-line-shadows-everything behavior is the flagless case.
+Known divergence, predating this: vanilla's use trace also stops at solid non-special lines,
+which the scan here has never modeled.
 
 ## A switch only flips when it acts
 
@@ -347,6 +401,27 @@ lump names, all rotation-0 so no facing logic is needed) once before removing it
 clear any still-active puffs explicitly, since a teleport onto an exit line could otherwise leave one
 animating over the next level.
 
+## Perpetual lifts and the stop line
+
+Vanilla 53/87 (`p_plats.c: EV_DoPlat perpetualRaise`) bounce a lift between the lowest and
+highest neighbor floor forever — plain `PLATSPEED` (a quarter of the downWaitUpStay lifts'
+speed), waiting `PLATWAIT` at *both* ends, first direction random (`P_Random(pr_plats)&1`, 0 =
+up). Both travel bounds are clamped to include the sector's own floor, and every ordinary lift's
+down-target carries the same clamp (`plat->low > sec->floorheight` → own floor) — a down-stroke
+never opens by jumping up. `LiftEffect.target` names the down-target (`LiftTarget`); Boom's
+generalized lifts add `nextLowestFloor` and `lowestNeighborCeiling`, and `'perpetual'` is this
+family.
+
+54/89 (`EV_StopPlat`) freeze every tagged running lift in place: `LiftMover.state = 'stasis'`,
+direction remembered in `stasisFrom` (vanilla `oldstatus`). Only a perpetual trigger wakes them —
+`EV_DoPlat` calls `P_ActivateInStasis` for `perpetualRaise` alone — and the wake reports no hit,
+the same `rtn` shape as restarting an in-stasis crusher (§ Crushers). A lift saved mid-stasis
+restores mid-stasis: the new `LiftMover` fields are optional plain data like every mover field.
+
+These four numbers were a long-standing vanilla gap in this engine (the earlier "nothing
+vanilla-scoped unmodelled" audit claim was wrong here), closed when Boom's generalized lifts
+needed the same machinery.
+
 ## One-way ceiling movers
 
 **A ceiling can move on its own** (`CeilingEffect`/`CeilingMover`), separately from a door's ceiling
@@ -508,6 +583,55 @@ vanilla's two-sidedness filtering silently never fires. This engine does the che
 blindly porting the bug risks dereferencing a one-sided line's absent back sector. Checked against the
 two real donut sectors in the shipped IWADs (E1M2 tag 8, E2M2 tag 1; DOOM2.WAD has none) — both
 resolve to sane, non-degenerate ring/outer sectors.
+
+## Generalized linedefs
+
+Boom's generalized range (0x2F80–0x7FFF) is decoded on the fly by
+`specials/generalized.ts: decodeGeneralized` into the *same* `SpecialDef`/`Effect` shapes the
+vanilla table uses — the vanilla table itself is never touched, and `lookupSpecial` memoizes each
+decoded number for the session. Every mask, enum ordering and speed/wait tier is transcribed from
+boom202/PrBoom+ `p_spec.h`/`p_genlin.c`, never boomref alone. The trigger bits map onto
+`{trigger, repeatable, manual}` (Push = manual, acting on the line's back sector like a vanilla
+D1 door); the per-family monster bit becomes `monsterActivate` — for floors and ceilings the
+model bit doubles as "allow monsters" only when no change is set, and the locked-door family
+admits no monsters at all, both per `p_spec.c`'s generalized gates.
+
+Two Boom rules reach the controller as **data on the def** rather than as checks against the raw
+number, so `specials.ts` needs to know nothing about the bit layout: `requiresTag` (a line that
+acts by tag and has none does nothing — `p_spec.c`'s "all walk generalized types require tag",
+set for every non-Push generalized trigger) and `retriggerXor` (the mask Boom's generalized stairs
+alternate their build direction with on each successful activation, `EV_DoGenStairs`'
+`line->special ^= StairDirection`).
+
+Vanilla performs that alternation by mutating the linedef; this engine **does not touch the map**.
+`SpecialsController.retriggerFlips` holds the flipped lines and `lineSpecial(lineIndex)` applies
+the XOR on read, which every trigger path resolves through. So the authored number stays the truth
+for anything classifying lines (`classifyLineSpecial`, the coverage report, `findSwitchEntries`),
+and a restore is a plain Set assignment — `SpecialsSnapshot.stairFlips` needs no ordering
+guarantee about when the map was loaded, unlike a re-applied mutation would.
+
+Known divergences, deliberate: a generalized absolute target on the "wrong" side of the current
+height moves there (this engine's movers auto-direction toward their target), where Boom's
+directional `T_MovePlane` would finish instantly; and `FtoLnC` keeps the engine's own
+clamp-to-own-ceiling. Both only differ on degenerate maps.
+
+## Generalized sector types
+
+Every interpretation of `Sector.special` — the light seeding, the movable-sector scan, the
+delayed-door spawn, and `SectorEffects`' damage/secret checks — goes through **one decoder**,
+`decodeSectorType` (`specials/sectortypes.ts`), never an exact-equality table hit on the raw
+value. Below 32 the vanilla tables apply unchanged. From 32 up the value is Boom's bitfield
+(`p_spec.h`): bits 0-4 carry the vanilla behaviors (Boom runs its spawn switch on
+`special & 31`, so a generalized sector's low bits get the light patterns *and* the 10/14 door
+timers), bits 5-6 pick a damage class (none / 5 / 10 / 20 HP per interval — only the 20 tier
+rolls the radiation-suit leak, matching vanilla 16/4), bit 7 marks a secret, bit 8 enables
+per-sector friction and bit 9 pushers (both decoded now, consumed when those Phase-3 systems
+land).
+
+Consuming a secret differs by era, per `P_PlayerInSpecialSector`: vanilla 9 zeroes the whole
+special; the generalized bit clears only itself — and if nothing but low bits remain, Boom zeroes
+the special outright (`consumeSecret`). Secret totals count both forms once at load
+(`SectorEffects`' constructor).
 
 ## Damage floors
 

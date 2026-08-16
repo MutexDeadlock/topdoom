@@ -26,6 +26,9 @@ export const BANK = {
 /** Nothing held, nothing clicked — the input a test that isn't about the use key wants. */
 export const NO_INPUT = { pressed: () => false, rightMousePressed: () => false } as unknown as Input;
 
+/** The use key held — what a test drives a switch or manual door with. */
+export const USE_INPUT = { pressed: (k: string) => k === 'Space', rightMousePressed: () => false } as unknown as Input;
+
 /** One vanilla tic, the step `game.ts` drives specials at and this rig's default. */
 export const TIC = 1 / 35;
 

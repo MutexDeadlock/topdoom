@@ -7,6 +7,7 @@
  * reproducing it tic-for-tic. See docs/specials.md.
  */
 import { DOOM_TIC } from '../../constants.ts';
+import type { KeyColor, KeySlot } from '../inventory.ts';
 
 /** Map units/second. Vanilla speeds are per-tic at 35 tics/s. */
 export const DOOR_SPEED = 70; // 2 u/tic
@@ -59,6 +60,9 @@ export const CRUSH_SLOWDOWN = 8;
 /** Gap vanilla leaves between an open door's ceiling and the lowest neighboring ceiling. */
 export const DOOR_OPEN_GAP = 4;
 
+/** Boom `p_spec.h: ELEVATORSPEED` — FRACUNIT*4, i.e. 4 u/tic, same rate as the fast floors. */
+export const ELEVATOR_SPEED = FLOOR_SPEED * 4;
+
 /**
  * Vanilla hardcodes `35*30` tics (30 real seconds) in two unrelated places
  * that both end up meaning the same thing — "how long an already-open door
@@ -110,14 +114,39 @@ export interface DoorEffect {
   speed: number;
   waitSeconds: number;
   mode: DoorMode;
-  /** Card/skull key of this color the player must already have collected, for the keyed door specials. */
-  requiredKey?: 'blue' | 'red' | 'yellow';
+  /**
+   * `closeThenOpen` only: seconds shut before reopening. Absent means
+   * vanilla's hardcoded `DOOR_CLOSE_WAIT_SECONDS` (16/76); Boom's generalized
+   * CdO doors wait their own delay field instead (`EV_DoGenDoor`).
+   */
+  closeWaitSeconds?: number;
 }
+
+/**
+ * Where a lift's down-stroke goes (`EV_DoPlat`/`EV_DoGenLift`'s `plat->low`,
+ * always clamped to no higher than the sector's own floor). `'perpetual'` is
+ * vanilla `perpetualRaise` (53/87) and Boom's `LnF2HnF`: bounce between the
+ * lowest and highest neighbor floor forever, waiting at each end, starting in
+ * a random direction (`P_Random(pr_plats)&1`).
+ */
+export type LiftTarget = 'lowestNeighborFloor' | 'nextLowerFloor' | 'lowestNeighborCeiling' | 'perpetual';
 
 export interface LiftEffect {
   kind: 'lift';
   speed: number;
   waitSeconds: number;
+  /** Absent = `'lowestNeighborFloor'`, vanilla's downWaitUpStay — the default every pre-Boom entry relies on. */
+  target?: LiftTarget;
+}
+
+/**
+ * Vanilla `EV_StopPlat` (54/89, Boom 163): freezes every tagged running lift
+ * where it stands (`in_stasis`, direction remembered in `oldstatus`). Only a
+ * *perpetual* lift trigger wakes them again — `EV_DoPlat` calls
+ * `P_ActivateInStasis` for `perpetualRaise` alone.
+ */
+export interface LiftStopEffect {
+  kind: 'liftStop';
 }
 
 export type MoveTarget =
@@ -142,7 +171,37 @@ export type MoveTarget =
    */
   | 'plus24'
   | 'plus32'
-  | 'plus512';
+  | 'plus512'
+  /**
+   * Boom's generalized floors (`p_genlin.c: EV_DoGenFloor`): the down-direction
+   * relative moves (`Fby24`/`Fby32` with the direction bit clear), the sector's
+   * own ceiling (`FtoC`, no gap), and `FbyST` — the floor moves by the shortest
+   * lower-texture height found around the sector (`P_FindShortestTextureAround`,
+   * the same scan vanilla's `raiseToTexture` runs), up or down per the
+   * direction bit.
+   */
+  | 'minus24'
+  | 'minus32'
+  | 'ownCeiling'
+  | 'shortestLowerTexture'
+  | 'shortestLowerTextureDown';
+
+/**
+ * Boom's generalized texture/type change (`p_genlin.c`): the moved sector
+ * copies its surface texture — and per `type` its special — from a model
+ * sector, applied when the mover *arrives* (`T_MoveFloor`/`T_MoveCeiling`'s
+ * `pastdest` gen cases), unlike vanilla's at-trigger "AndChange" family.
+ * `'trigger'` models from the activating line's front sector; `'numeric'`
+ * models from the first neighbor already at the destination height
+ * (`P_FindModelFloorSector`/`P_FindModelCeilingSector` — ceiling-height match
+ * when the destination itself is ceiling-derived), and applies nothing when
+ * no such neighbor exists.
+ */
+export interface SurfaceChange {
+  model: 'trigger' | 'numeric';
+  /** FChgTxt / FChgZero / FChgTyp: texture only, texture + special cleared, texture + the model's special. */
+  type: 'texOnly' | 'texZeroType' | 'texAndType';
+}
 
 export interface FloorEffect {
   kind: 'floor';
@@ -166,6 +225,8 @@ export interface FloorEffect {
    * floor is moving, same as the ceiling crushers below.
    */
   crush: boolean;
+  /** Boom's arrival-time change — see `SurfaceChange`. Absent on every vanilla entry. */
+  change?: SurfaceChange;
 }
 
 export type LightPattern = 'blinkRandom' | 'blink05' | 'blink1' | 'glow' | 'syncBlink05' | 'syncBlink1' | 'flicker';
@@ -204,6 +265,13 @@ export interface CrusherEffect {
    * — docs/specials.md § Crushers.
    */
   slowsWhenCrushing: boolean;
+  /**
+   * Boom's generalized silent crusher is *fully* silent: unlike vanilla 141,
+   * which clacks `pstop` at each end of its stroke, `genSilentCrusher` is in
+   * neither of `T_MoveCeiling`'s end-sound cases. Only meaningful with
+   * `silent`; absent = vanilla 141's end clacks.
+   */
+  noEndClack?: boolean;
 }
 
 /** Freezes whatever crusher is currently active on the targeted sector(s) wherever it is. */
@@ -230,9 +298,34 @@ export interface StairsEffect {
   kind: 'stairs';
   stepHeight: number;
   speed: number;
+  /** Boom's generalized stairs build downward too (`EV_DoGenStairs`' direction bit). Absent = `'up'`, every vanilla number. */
+  direction?: 'up' | 'down';
+  /** `EV_DoGenStairs`' Igno bit: keep chaining across neighbors whose floor texture differs. Absent = vanilla's texture-matched walk. */
+  ignoreTexture?: boolean;
 }
 
-export type CeilingTarget = 'highestNeighborCeiling' | 'floorPlus8';
+export type CeilingTarget =
+  | 'highestNeighborCeiling'
+  | 'floorPlus8'
+  /**
+   * Boom's generalized ceilings (`p_genlin.c: EV_DoGenCeiling`), the full
+   * target set with the direction bit already resolved: neighbor ceilings
+   * (lowest / next up / next down), the highest neighbor *floor*, the
+   * sector's own floor (`CtoF`, no gap), relative 24/32 moves both ways, and
+   * `CbyST` — by the shortest *upper*-texture height around the sector
+   * (`P_FindShortestUpperAround`), up or down.
+   */
+  | 'lowestNeighborCeiling'
+  | 'nextHigherCeiling'
+  | 'nextLowerCeiling'
+  | 'highestNeighborFloor'
+  | 'ownFloor'
+  | 'plus24'
+  | 'plus32'
+  | 'minus24'
+  | 'minus32'
+  | 'shortestUpperTexture'
+  | 'shortestUpperTextureDown';
 
 /**
  * A one-way ceiling mover: moves once to `target`, then stops — no hold, no
@@ -252,6 +345,44 @@ export interface CeilingEffect {
   kind: 'ceiling';
   speed: number;
   target: CeilingTarget;
+  /**
+   * Boom's generalized ceilings can crush: the descent grinds on through a
+   * body at full speed, dealing periodic damage (`T_MoveCeiling`'s `crushed`
+   * branch pointedly excludes `genCeiling` from the slow-down the crusher
+   * types get). Absent = vanilla's stall-in-place, which is right for every
+   * vanilla number — see the class doc above on `lowerAndCrush`'s misleading
+   * name.
+   */
+  crush?: boolean;
+  /** Boom's arrival-time change — see `SurfaceChange`; ceilings copy `ceilTex`. Absent on every vanilla entry. */
+  change?: SurfaceChange;
+}
+
+/**
+ * Boom's motionless texture/type change (`p_floor.c: EV_DoChange` — linedefs
+ * 78/153/154/189/190/239/240/241): each tagged sector copies floor flat *and*
+ * special from a model, instantly, nothing moves. The numeric model is the
+ * first neighbor at the sector's *own current* floor height, and no model
+ * means no change — though the activation still counts as a hit (`rtn = 1`
+ * per tagged sector regardless), so a switch still flips.
+ */
+export interface ChangeOnlyEffect {
+  kind: 'changeOnly';
+  model: 'trigger' | 'numeric';
+}
+
+/**
+ * Boom's elevator (`p_floor.c: EV_DoElevator`, linedefs 227-232): floor and
+ * ceiling move in lockstep, preserving the sector's gap, at `ELEVATOR_SPEED`,
+ * to the next floor up, the next floor down, or the activating line's own
+ * front-sector floor height. Never crushes — a blocked plane stalls the pair
+ * (`T_MoveElevator` moves the ceiling first going down, the floor first going
+ * up, and skips the partner when the leader is blocked).
+ */
+export interface ElevatorEffect {
+  kind: 'elevator';
+  speed: number;
+  target: 'nextHigherFloor' | 'nextLowerFloor' | 'currentFloor';
 }
 
 /**
@@ -309,6 +440,9 @@ export interface LightChangeEffect {
 export type Effect =
   | DoorEffect
   | LiftEffect
+  | LiftStopEffect
+  | ElevatorEffect
+  | ChangeOnlyEffect
   | FloorEffect
   | ExitEffect
   | CrusherEffect
@@ -321,11 +455,60 @@ export type Effect =
   | DonutEffect
   | LightChangeEffect;
 
+/**
+ * What a locked line demands, on the def rather than the door effect: vanilla
+ * locks are always a color (card or skull interchangeably — `p_doors.c` tests
+ * both), while Boom's generalized locked doors add exact-slot locks, "any
+ * key" and "all keys" (`p_spec.c: P_CanUnlockGenDoor`). Boom's SkullsAreCards
+ * bit is resolved at decode time: with it set an exact lock becomes the
+ * color lock, without it `all` means all six slots (`colorsSuffice: false`).
+ */
+export type LockRule =
+  | { kind: 'any' }
+  | { kind: 'all'; colorsSuffice: boolean }
+  | { kind: 'color'; color: KeyColor }
+  | { kind: 'slot'; slot: KeySlot };
+
+/**
+ * Who is activating a line. Distinct from `SpecialDef.monsterCanTrigger`/
+ * `monsterActivate`, which say who a *number* admits — this says who is at the
+ * line right now, so `trigger` can gate and route (a monster's teleport is
+ * returned to the caller, the player's goes through `onTeleport`). Boom's
+ * voodoo dolls will join as a third member when conveyors land.
+ */
+export type Activator = 'player' | 'monster';
+
 export interface SpecialDef {
   trigger: 'use' | 'walk' | 'shoot';
   repeatable: boolean;
   /** Manual doors act on the linedef's own back sector instead of a tag lookup (vanilla `line->backsector`). */
   manual?: boolean;
+  /** What the line demands before it acts — see `LockRule`. Absent = never locked. */
+  lock?: LockRule;
+  /**
+   * The line does nothing without a tag. Boom requires one on every
+   * non-Push generalized line, on all three trigger paths (`p_spec.c`'s
+   * "all walk generalized types require tag"); vanilla numbers leave this
+   * unset and keep their own tag-0 behavior.
+   */
+  requiresTag?: boolean;
+  /**
+   * XORed into the line's own special after every activation that did
+   * something — Boom's generalized stairs alternating build direction
+   * (`EV_DoGenStairs`' `line->special ^= StairDirection`). The engine keeps
+   * the *authored* number and tracks the flip separately
+   * (`SpecialsController.retriggerFlips`), so a mask here is all the
+   * controller needs to know about the bit layout.
+   */
+  retriggerXor?: number;
+  /**
+   * Only meaningful for `trigger: 'walk'`. Vanilla `P_CrossSpecialLine`'s
+   * `!thing->player` allow-list — the seven numbers a monster may cross
+   * (teleports, one door, two lifts); every other walk line ignores monsters.
+   * Boom's generalized lines carry the same permission as a trigger bit, which
+   * is why this is data on the def rather than a hardcoded number set.
+   */
+  monsterActivate?: boolean;
   /**
    * Only meaningful for `trigger: 'shoot'`. Vanilla's `P_ShootSpecialLine`
    * rejects every shoot-triggered special from a non-player shooter except

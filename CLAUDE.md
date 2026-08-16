@@ -27,10 +27,11 @@ node scripts/inspect-wad.ts public/wads/iwad/DOOM.WAD E1M1
 node scripts/inspect-wad.ts public/wads/iwad/DOOM2.WAD MAP05 public/wads/pwad/SCYTHE.WAD
 ```
 
-Runs under Node's native TS support, no browser. It reports lump/map counts, lump provenance,
-missing textures, degenerate subsector polygons and whether the player start is walkable — the
-fastest check on a WAD-parsing, texture-merging or BSP change, and the way to reproduce a bug
-against a specific real-world WAD.
+Runs under Node's native TS support, no browser. It reports lump/map counts, lump provenance, the
+node format, missing textures, degenerate subsector polygons, whether the player start is walkable,
+and the specials coverage report (every linedef/sector special classified known/deferred/unknown —
+the Boom-compat acceptance gate) — the fastest check on a WAD-parsing, texture-merging or BSP
+change, and the way to reproduce a bug against a specific real-world WAD.
 
 For collision/movement bugs prefer synthetic geometry, where unrelated nearby geometry can't muddy
 the result: `tests/fixtures/gridmap.ts` builds a real `DoomMap` from ASCII art. A throwaway script

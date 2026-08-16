@@ -715,10 +715,54 @@ export function hasLineOfSight(
   return true;
 }
 
+/**
+ * Vanilla's `P_GroupLines` `sec->lines[]`: every linedef bordering a sector,
+ * by sector index, in ascending linedef order — the order vanilla itself
+ * enumerates a sector's lines in, which several specials react to (see
+ * `neighborSectorIndices`). One- and two-sided lines alike; callers keep their
+ * own filters.
+ *
+ * Built once per `DoomMap` and memoized against it. The adjacency is static —
+ * nothing at runtime writes `LineDef.left`/`right` or `SideDef.sector`, unlike
+ * the sector *heights* every query here reads live — so this is a pure
+ * function of the map that happens to be expensive to recompute. Keyed by the
+ * map object rather than held on `World` because the load-time scans
+ * (`computeMovableSectors`, reached from `mapmesh.ts`) run before any `World`
+ * exists. See docs/world.md § Neighbor-height queries.
+ */
+const sectorLineIndexes = new WeakMap<DoomMap, number[][]>();
+
+function buildSectorLines(map: DoomMap): number[][] {
+  const out: number[][] = Array.from({ length: map.sectors.length }, () => []);
+  for (let i = 0; i < map.linedefs.length; i++) {
+    const line = map.linedefs[i];
+    const front = line.right !== NO_SIDE ? map.sidedefs[line.right]?.sector : undefined;
+    const back = line.left !== NO_SIDE ? map.sidedefs[line.left]?.sector : undefined;
+    if (front !== undefined && out[front]) out[front].push(i);
+    // A line whose two sides name the same sector is one of that sector's
+    // lines once, not twice — matching `P_GroupLines`' own per-sector count.
+    if (back !== undefined && back !== front && out[back]) out[back].push(i);
+  }
+  return out;
+}
+
+const NO_LINES: readonly number[] = [];
+
+/** The linedefs bordering `sectorIndex` — see `sectorLineIndexes`. */
+export function sectorLines(map: DoomMap, sectorIndex: number): readonly number[] {
+  let index = sectorLineIndexes.get(map);
+  if (!index) {
+    index = buildSectorLines(map);
+    sectorLineIndexes.set(map, index);
+  }
+  return index[sectorIndex] ?? NO_LINES;
+}
+
 /** Sectors on the other side of a two-sided line from `sectorIndex`. */
 function neighborSectors(map: DoomMap, sectorIndex: number): Sector[] {
   const out: Sector[] = [];
-  for (const line of map.linedefs) {
+  for (const lineIndex of sectorLines(map, sectorIndex)) {
+    const line = map.linedefs[lineIndex];
     if (line.left === NO_SIDE || line.right === NO_SIDE) continue;
     const frontSec = map.sidedefs[line.right]?.sector;
     const backSec = map.sidedefs[line.left]?.sector;
@@ -806,6 +850,36 @@ export function highestNeighborCeiling(map: DoomMap, sectorIndex: number): numbe
   for (const n of neighborSectors(map, sectorIndex)) {
     if (!found || n.ceilHeight > result) result = n.ceilHeight;
     found = true;
+  }
+  return result;
+}
+
+/** Boom `P_FindNextHighestCeiling` — the generalized ceilings' `CtoNnC` with the direction bit up. Same no-candidate fallback shape as `nextHigherFloor`. */
+export function nextHigherCeiling(map: DoomMap, sectorIndex: number): number {
+  const sector = map.sectors[sectorIndex];
+  const base = sector?.ceilHeight ?? 0;
+  let result = base;
+  let found = false;
+  for (const n of neighborSectors(map, sectorIndex)) {
+    if (n.ceilHeight > base && (!found || n.ceilHeight < result)) {
+      result = n.ceilHeight;
+      found = true;
+    }
+  }
+  return result;
+}
+
+/** Boom `P_FindNextLowestCeiling` — `CtoNnC` with the direction bit down. */
+export function nextLowerCeiling(map: DoomMap, sectorIndex: number): number {
+  const sector = map.sectors[sectorIndex];
+  const base = sector?.ceilHeight ?? 0;
+  let result = base;
+  let found = false;
+  for (const n of neighborSectors(map, sectorIndex)) {
+    if (n.ceilHeight < base && (!found || n.ceilHeight > result)) {
+      result = n.ceilHeight;
+      found = true;
+    }
   }
   return result;
 }

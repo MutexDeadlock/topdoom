@@ -6,20 +6,56 @@ import type { SfxId } from '../audio/sfx.ts';
 import { ThingType } from './things/doomednums.ts';
 import { DEFAULT_SKILL, ammoAtSkill, type Skill } from './skill.ts';
 import { PLAYER_RADIUS } from './player.ts';
+import type { LockRule } from './specials/defs.ts';
 
 /** The four ammo classes DOOM tracks; matches vanilla's `ammotype_t`. */
 export const AMMO_TYPES = ['bullets', 'shells', 'rockets', 'cells'] as const;
 export type AmmoType = (typeof AMMO_TYPES)[number];
 
 /**
- * Card and skull keys of the same color are tracked as one slot, because vanilla's locked-door
- * checks accept either: every one of them tests both (`p_doors.c`'s
- * `!p->cards[it_bluecard] && !p->cards[it_blueskull]`), so nothing in the game can tell them
- * apart — which is also why vanilla's own locked-door message says "key" for a skull
- * (`ui/hud/message.ts`).
+ * The three key colors. Vanilla's own locked-door checks accept card or skull
+ * of a color interchangeably (`p_doors.c`'s
+ * `!p->cards[it_bluecard] && !p->cards[it_blueskull]`) — which is why its
+ * message says "key" for a skull — but Boom's generalized locks *can* tell
+ * them apart (`P_CanUnlockGenDoor`), so ownership is tracked per exact
+ * `KeySlot` below and the vanilla-style color locks accept either slot
+ * (`satisfiesLock`, below).
  */
 export const KEY_COLORS = ['blue', 'red', 'yellow'] as const;
 export type KeyColor = (typeof KEY_COLORS)[number];
+
+/** The six key things, vanilla's `card_t` roster, tracked exactly. */
+export const KEY_SLOTS = ['blueCard', 'redCard', 'yellowCard', 'blueSkull', 'redSkull', 'yellowSkull'] as const;
+export type KeySlot = (typeof KEY_SLOTS)[number];
+
+/** The color half of a slot — what the HUD tints and lock messages name. */
+export function keySlotColor(slot: KeySlot): KeyColor {
+  return (slot.startsWith('blue') ? 'blue' : slot.startsWith('red') ? 'red' : 'yellow') as KeyColor;
+}
+
+/** Whether a card *or* skull of `color` is owned — vanilla's every-lock-tests-both rule. */
+export function hasKeyColor(keys: ReadonlySet<KeySlot>, color: KeyColor): boolean {
+  return keys.has(`${color}Card`) || keys.has(`${color}Skull`);
+}
+
+/**
+ * Whether `keys` opens `lock` — the one lock check every trigger path uses.
+ * Lives here rather than beside `LockRule` (`specials/defs.ts`) because it is
+ * a question about the inventory, and keeping it here leaves that module's
+ * import of the key types type-only.
+ */
+export function satisfiesLock(keys: ReadonlySet<KeySlot>, lock: LockRule): boolean {
+  switch (lock.kind) {
+    case 'any':
+      return keys.size > 0;
+    case 'color':
+      return hasKeyColor(keys, lock.color);
+    case 'slot':
+      return keys.has(lock.slot);
+    case 'all':
+      return lock.colorsSuffice ? KEY_COLORS.every((c) => hasKeyColor(keys, c)) : keys.size === KEY_SLOTS.length;
+  }
+}
 
 /**
  * Every weapon the player can carry, including fist and pistol — vanilla
@@ -78,7 +114,7 @@ export interface Inventory {
   /** 0 = none, 1 = green/jacket armor, 2 = blue/security armor. */
   armorType: 0 | 1 | 2;
   ammo: Record<AmmoType, number>;
-  keys: Set<KeyColor>;
+  keys: Set<KeySlot>;
   weapons: Set<WeaponId>;
   /** Which owned weapon is selected — see game/weapons.ts for switching/firing. */
   currentWeapon: WeaponId;
@@ -167,13 +203,13 @@ const AMMO_PICKUPS: Record<number, { type: AmmoType; amount: number }> = {
   [ThingType.cellChargePack]: { type: 'cells', amount: 100 },
 };
 
-const KEY_PICKUPS: Record<number, KeyColor> = {
-  [ThingType.blueKeycard]: 'blue',
-  [ThingType.blueSkullKey]: 'blue',
-  [ThingType.redKeycard]: 'red',
-  [ThingType.redSkullKey]: 'red',
-  [ThingType.yellowKeycard]: 'yellow',
-  [ThingType.yellowSkullKey]: 'yellow',
+const KEY_PICKUPS: Record<number, KeySlot> = {
+  [ThingType.blueKeycard]: 'blueCard',
+  [ThingType.blueSkullKey]: 'blueSkull',
+  [ThingType.redKeycard]: 'redCard',
+  [ThingType.redSkullKey]: 'redSkull',
+  [ThingType.yellowKeycard]: 'yellowCard',
+  [ThingType.yellowSkullKey]: 'yellowSkull',
 };
 
 /** The powerup spheres/items, by doomednum — see `POWER_SECONDS` for how long each lasts. */

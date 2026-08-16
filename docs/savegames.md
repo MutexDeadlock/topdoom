@@ -89,15 +89,21 @@ the snapshot inside is unchanged.
 
 ## What is saved and what is deliberately not
 
-Saved: the player (position, velocities, private knockback), inventory, teleport fogs still
+Saved: the player (position, velocities, private knockback), inventory (whose exact card/skull
+keys ride the optional `keySlots` — the always-written `keys` colors keep the save readable by
+pre-slot builds, and a save without `keySlots` restores each color as both slots, exactly the
+merged semantics those builds had), teleport fogs still
 playing, `WeaponSystem`'s fire timing (including the super shotgun's reload clock, `reloadTic` —
 **optional** for the same no-bump reason `teleportFogs` is: absent means no reload in flight) and
 its per-slot selection memory (`slotWeapon`, optional the same way: absent means only the restored
 weapon's own slot is remembered, docs/weapons.md § Slot keys),
 the *changed* sectors' mutable fields (`floorHeight`/`ceilHeight`/`light`/`special`/
-`floorTex` — `DoomMap` is mutated in place at runtime by specials and secrets), the specials controller (movers
+`floorTex`, plus the optional `ceilTex` only Boom's generalized ceiling changes rewrite —
+`DoomMap` is mutated in place at runtime by specials and secrets), the specials controller (movers
 mid-motion, `usedOnce`, switch flashes, light states, the two shared sound/damage clocks,
-`prevX`/`prevY`), secrets found + damage-floor timer, fog of war's `explored`, sound-alerted
+`prevX`/`prevY`, and the optional `stairFlips` — the line indices Boom's retrigger alternation
+currently has flipped, restored as a plain Set since the map itself is never mutated
+(docs/specials.md § Generalized linedefs)), secrets found + damage-floor timer, fog of war's `explored`, sound-alerted
 sectors, every thing, the Icon of Sin, projectiles in flight, level time, camera yaw,
 `recordsEligible` (so a `?pos=` run can't launder eligibility through a save), and the RNG cursors.
 

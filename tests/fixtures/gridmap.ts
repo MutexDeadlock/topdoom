@@ -66,6 +66,12 @@ export interface GridMap {
   centre(col: number, row: number): Pos2;
   /** Sector index of a cell — the same number as its subsector index. */
   index(col: number, row: number): number;
+  /**
+   * The linedef on a cell's **west** edge — the boundary between `(col-1, row)`
+   * and `(col, row)`. What a test hangs a special on; keyed by grid position so
+   * it doesn't depend on the `cell` size the way a raw x-coordinate does.
+   */
+  westEdge(col: number, row: number): number;
 }
 
 export function gridMap(art: readonly string[], options: GridMapOptions = {}): GridMap {
@@ -231,6 +237,7 @@ export function gridMap(art: readonly string[], options: GridMapOptions = {}): G
   return {
     map: {
       name: options.name ?? 'TEST01',
+      nodeFormat: 'vanilla',
       vertexes,
       sectors,
       sidedefs,
@@ -247,6 +254,11 @@ export function gridMap(art: readonly string[], options: GridMapOptions = {}): G
     rows,
     centre: (c, r) => ({ x: c * cell + cell / 2, y: (rows - 1 - r) * cell + cell / 2 }),
     index,
+    westEdge: (c, r) => {
+      const edge = edges.get(`v:${c}:${r}`);
+      if (!edge) throw new Error(`gridMap: no west edge for cell (${c}, ${r})`);
+      return edge.line;
+    },
   };
 }
 

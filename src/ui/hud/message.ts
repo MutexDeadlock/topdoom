@@ -4,6 +4,8 @@
  */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 import type { KeyColor } from '../../game/inventory.ts';
+import { keySlotColor } from '../../game/inventory.ts';
+import type { LockRule } from '../../game/specials/defs.ts';
 import { WadFont, COLOR_YELLOW, type WadFontRecolor } from './wadfont.ts';
 
 /**
@@ -43,18 +45,32 @@ const KEY_TEXT_COLORS: Record<KeyColor, WadFontRecolor> = {
 export type MessageRun = string | { text: string; color: WadFontRecolor };
 
 /**
- * The line shown when a keyed door or switch is used without the key it wants: `d_englsh.h`'s
- * `PD_*K`/`PD_*O` verbatim, down to the "open this door" (`EV_VerticalDoor`) vs. "activate this
- * object" (`EV_DoLockedDoor`) split. The only departure is the color word, drawn in that key's own
- * color instead of the message's.
- *
- * Vanilla says "key" for a skull too, and it isn't being loose: its checks accept either
- * (`p_doors.c` tests `!p->cards[it_bluecard] && !p->cards[it_blueskull]`), so which of the two the
- * map placed is not something the linedef knows — see `KeyColor`'s own doc.
+ * The line shown when a locked door or switch is used without what it wants.
+ * Color locks are `d_englsh.h`'s `PD_*K`/`PD_*O` verbatim, down to the "open
+ * this door" (`EV_VerticalDoor`) vs. "activate this object" (`EV_DoLockedDoor`)
+ * split; vanilla says "key" for a skull there because its checks accept either
+ * (`p_doors.c` tests both cards) — see `KeyColor`'s own doc. Boom's generalized
+ * locks add the exact-slot ("card"/"skull"), any-key and all-keys wordings,
+ * Boom's `d_englsh.h` `PD_*C`/`PD_*S`/`PD_ANY`/`PD_ALL3`/`PD_ALL6` verbatim
+ * (those are door-only in Boom, hence no object variant). The one departure
+ * throughout is the color word, drawn in that key's own color instead of the
+ * message's.
  */
-export function lockedKeyMessage(key: KeyColor, kind: 'door' | 'switch'): MessageRun[] {
+export function lockedLineMessage(lock: LockRule, kind: 'door' | 'switch'): MessageRun[] {
   const what = kind === 'door' ? 'open this door' : 'activate this object';
-  return ['You need a ', { text: key, color: KEY_TEXT_COLORS[key] }, ` key to ${what}`];
+  const colored = (c: KeyColor): MessageRun => ({ text: c, color: KEY_TEXT_COLORS[c] });
+  switch (lock.kind) {
+    case 'color':
+      return ['You need a ', colored(lock.color), ` key to ${what}`];
+    case 'slot': {
+      const color = keySlotColor(lock.slot);
+      return ['You need a ', colored(color), ` ${lock.slot.endsWith('Card') ? 'card' : 'skull'} to open this door`];
+    }
+    case 'any':
+      return ['Any key will open this door'];
+    case 'all':
+      return [`You need all ${lock.colorsSuffice ? 'three' : 'six'} keys to open this door`];
+  }
 }
 
 /**

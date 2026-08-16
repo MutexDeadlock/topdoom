@@ -58,7 +58,7 @@ import { Intermission, INTERMISSION_INPUT_DELAY } from './ui/hud/intermission.ts
 import { LevelCard } from './ui/hud/levelcard.ts';
 import { LevelNames } from './wad/levelnames.ts';
 import { LevelProgression } from './wad/progression.ts';
-import { CenterMessage, lockedKeyMessage, SECRET_MESSAGE } from './ui/hud/message.ts';
+import { CenterMessage, lockedLineMessage, SECRET_MESSAGE } from './ui/hud/message.ts';
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
 import { DeathOverlay } from './ui/hud/deathoverlay.ts';
@@ -1171,7 +1171,7 @@ export class Game {
     // says *which* key it wants is this layer's, since that controller has no HUD. `undefined`
     // (no level loaded) and `null` (nothing refused) are the same non-event here.
     const locked = this.specials?.consumeLockedLine();
-    if (locked) this.message.show(...lockedKeyMessage(locked.key, locked.kind));
+    if (locked) this.message.show(...lockedLineMessage(locked.lock, locked.kind));
     // Deferred from the exit trigger's callback — see `pendingExit`'s doc.
     // The old SpecialsController's update() has now fully returned, so it's
     // safe to dispose it and swap in the next map.

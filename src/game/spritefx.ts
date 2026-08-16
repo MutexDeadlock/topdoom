@@ -25,11 +25,16 @@ import type { Placement, Pos3 } from '../types.ts';
  */
 export type VileFlameResolver = (vileId: number, targetId: number | null) => Pos3 | null;
 
+/** Whether a subsector has been revealed — `FogOfWar.isVisible`, handed in so this layer needn't know the fog exists. */
+export type FogVisibility = (subsector: number) => boolean;
+
 /**
  * One lifecycle for every transient visual: spawned by some other system, animated for a fixed
  * time, dropped on finish, cleared wholesale on level change. The player is deliberately *not* in
  * the shared batch — it needs `SpriteActor.setOpacity`, which has no per-instance equivalent
- * (docs/combat.md § Effects and their batching). Only the teleport fog is saved —
+ * (docs/combat.md § Effects and their batching). Every effect is animated wherever it was spawned
+ * but only *drawn* where the player has already seen (`fogVisible`), the gate `PosedThing.visible`
+ * uses. Only the teleport fog is saved —
  * docs/savegames.md § What is saved and what is deliberately not.
  */
 export class SpriteFxLayer {
@@ -38,7 +43,8 @@ export class SpriteFxLayer {
   private spriteMaterials: SpriteMaterialCache;
   private audio: AudioEngine;
   private resolveVileFlame: VileFlameResolver;
-  /** The current level's world, for the sector-light lookup a spawn does — swapped by `beginLevel`. */
+  private fogVisible: FogVisibility;
+  /** The current level's world, for the sector-light and subsector lookups a spawn does — swapped by `beginLevel`. */
   private world!: World;
 
   private batch = new SpriteBatch();
@@ -58,12 +64,14 @@ export class SpriteFxLayer {
     spriteMaterials: SpriteMaterialCache,
     audio: AudioEngine,
     resolveVileFlame: VileFlameResolver,
+    fogVisible: FogVisibility,
   ) {
     this.scene = scene;
     this.spriteBank = spriteBank;
     this.spriteMaterials = spriteMaterials;
     this.audio = audio;
     this.resolveVileFlame = resolveVileFlame;
+    this.fogVisible = fogVisible;
     scene.add(this.batch.group);
   }
 
@@ -106,7 +114,8 @@ export class SpriteFxLayer {
   spawn(sprite: string, frames: string[], frameSeconds: number, at: Pos3): OneShotEffect | null {
     const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, sprite, frames, frameSeconds);
     if (!anim.resolve(0, VIEWER_ANGLE_DEG)) return null;
-    const light = this.world.sectorAt(at.x, at.y)?.light ?? 128;
+    const subsector = this.world.subsectorAt(at.x, at.y);
+    const light = this.world.sectorOfSubsector(subsector)?.light ?? 128;
     // drawPrev seeded to the spawn point: a one-shot's first drawn frame must
     // sit where it was spawned, not interpolate in from the world origin.
     return {
@@ -118,6 +127,7 @@ export class SpriteFxLayer {
       drawPrevY: at.y,
       drawPrevZ: at.z,
       light,
+      subsector,
       elapsed: 0,
       lifetime: frames.length * frameSeconds,
     };
@@ -310,7 +320,8 @@ export class SpriteFxLayer {
           e.x = front.x;
           e.y = front.y;
           e.z = front.z;
-          e.light = this.world.sectorAt(e.x, e.y)?.light ?? e.light;
+          e.subsector = this.world.subsectorAt(e.x, e.y);
+          e.light = this.world.sectorOfSubsector(e.subsector)?.light ?? e.light;
         }
       }
       e.anim.advance(dt, true);
@@ -334,6 +345,9 @@ export class SpriteFxLayer {
 
   private drawList(list: OneShotEffect[], alpha: number): void {
     for (const e of list) {
+      // Skipped, not dropped, so a room revealed mid-animation still shows the
+      // rest of it — docs/fogofwar.md § How reveal reaches the geometry.
+      if (!this.fogVisible(e.subsector)) continue;
       this.drawAt.x = e.drawPrevX + (e.x - e.drawPrevX) * alpha;
       this.drawAt.y = e.drawPrevY + (e.y - e.drawPrevY) * alpha;
       this.drawAt.z = e.drawPrevZ + (e.z - e.drawPrevZ) * alpha;

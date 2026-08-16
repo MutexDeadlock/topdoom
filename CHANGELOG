@@ -17,6 +17,9 @@ Features and improvements
     empty HUD overlay
 
 Fixed bugs
+  - monster closets no longer give themselves away: the teleport fog (and any
+    other effect) in a room you have never seen is hidden by the fog of war,
+    like the monsters standing in it.
   - the monster counter no longer reads over 100% after an arch-vile
     resurrection: a raised monster now adds one to the level's monster total
     (ZDoom's rule), so clearing the level ends at exactly 100% again

@@ -20,6 +20,13 @@ export interface OneShotEffect extends Pos3 {
   /** A bare `SpriteAnimator` drawn through `SpriteFxLayer`'s own batch, no `THREE.Object3D` of its own — same arrangement as `PosedThing`. */
   anim: SpriteAnimator;
   light: number;
+  /**
+   * The subsector this effect sits in, resolved once at spawn (and re-derived
+   * only for the one effect that moves, the vile's flame). `drawList` gates
+   * drawing on it, so an effect in a room the player has never seen stays
+   * hidden — docs/fogofwar.md § How reveal reaches the geometry.
+   */
+  subsector: number;
   elapsed: number;
   lifetime: number;
   /**

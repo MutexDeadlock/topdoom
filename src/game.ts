@@ -367,11 +367,17 @@ export class Game {
     this.playerActor = new SpriteActor(this.spriteBank, this.spriteMaterials, 'PLAY', ['A', 'B', 'C', 'D']);
     this.scene.add(this.playerActor.mesh);
     // The vile-flame resolver is `monsterAttacks`', not the batch's — where the
-    // flame belongs depends on live monster/player state. Reached through a
-    // closure because `monsterAttacks` needs `effects` to exist first, and is
-    // only ever called from a frame, long after both are built.
-    this.effects = new SpriteFxLayer(this.scene, this.spriteBank, this.spriteMaterials, audio, (vileId, targetId) =>
-      this.monsterAttacks.vileFlameFor(vileId, targetId),
+    // flame belongs depends on live monster/player state. Both callbacks are
+    // reached through a closure because `monsterAttacks` and `fogOfWar` are both
+    // built after `effects` (the fog on every level load), and neither is called
+    // before a frame runs, long after all three exist.
+    this.effects = new SpriteFxLayer(
+      this.scene,
+      this.spriteBank,
+      this.spriteMaterials,
+      audio,
+      (vileId, targetId) => this.monsterAttacks.vileFlameFor(vileId, targetId),
+      (subsector) => this.fogOfWar.isVisible(subsector),
     );
     // `world`/`things`/`player`/`inventory` are all replaced on a map load (and
     // `inventory` again on restart), so the context reads them back off this

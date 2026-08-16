@@ -234,6 +234,11 @@ plasma bolt and BFG ball explode into dedicated `PLSE`/`BFE1` sprites. Hitscan `
 there too: not sprites, but the same spawn-animate-drop lifecycle and the same wholesale clear on a
 level change (`beginLevel`).
 
+Every one-shot effect carries the subsector it was spawned in and is **drawn only where the player
+has already seen**, the same fog-of-war gate thing sprites use — a teleport fog or a blood splash in
+an unexplored monster closet would otherwise hang lit in the black. Tracers and projectiles are
+ungated. See docs/fogofwar.md § How reveal reaches the geometry.
+
 **A tracer's two ends are not equally anchored, and the muzzle end has to move**
 (`render/tracer.ts`). The impact end is a genuine world point — the puff or blood splash sits there.
 The muzzle end is the shooter's position at trigger-pull, and the shooter keeps moving: a running

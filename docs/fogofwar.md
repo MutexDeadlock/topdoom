@@ -132,6 +132,17 @@ of them know it natively:
 Thing sprites get the simplest treatment: `ThingLayer.update` takes an optional `fogVisible` and just
 toggles visibility, since a monster or item doesn't need a smooth per-pixel fade the way geometry does.
 
+**Transient effects are gated the same way**, on the same flag: each `OneShotEffect` resolves its
+subsector at spawn (the vile's following flame re-resolves as it moves) and `SpriteFxLayer.drawList`
+**skips** it while that subsector is unexplored — skips, not declines to spawn it, so it keeps
+animating and expiring on its own clock and a room revealed mid-animation shows the rest of it rather
+than nothing. The case that forced this is the teleport fog: vanilla spawns a puff at *both* ends of
+a teleport, so a monster teleporting out of a closet left a lit puff hanging in the black over a room
+the player had never seen, announcing the ambush. The *sound* is deliberately not gated — `telept`
+still plays at both ends, attenuated by distance like every other cue (docs/audio.md § Specials); hearing a teleport you can't see is vanilla, seeing it is not. Projectiles and hitscan
+tracers are also left ungated on purpose: both are incoming fire, and a missile or tracer coming out
+of an unexplored room is the warning that something is shooting from there.
+
 ## What gameplay reads
 
 **`explored` is the gameplay gate; `alpha` is only ever drawn.** The two are split because `alpha` is

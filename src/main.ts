@@ -50,13 +50,15 @@ function verifySaveWads(wad: Wad, save: SaveGame): void {
  * `new Viewport` synchronously throws when the browser can't create a WebGL2
  * context (blocklisted GPU, disabled hardware acceleration, ...) — three.js's
  * own error is a raw `Error`, not something a player can act on. Without this,
- * `boot()` throws before the menu ever opens and the page is left showing only
- * the static HUD markup, which reads as "broken" rather than "your browser
- * can't run this". The `try` necessarily wraps all of `Viewport`'s
+ * `boot()` throws before the menu ever opens and the page is left sitting on the
+ * boot screen's `Loading …` forever, which reads as "hung" rather than "your
+ * browser can't run this". The `try` necessarily wraps all of `Viewport`'s
  * construction (camera setup, input listeners), not just the renderer call,
  * so the GPU-specific message and its chrome://gpu hint are only shown when
  * the error actually looks like a WebGL context failure — anything else gets
  * a generic message so it doesn't misreport an unrelated bug as a GPU issue.
+ * `#fatal-error` sits above `#loading` on the stacking ladder, so it covers the
+ * boot screen rather than having to take it down.
  */
 function showFatalError(err: unknown): void {
   const overlay = document.getElementById('fatal-error')!;
@@ -222,9 +224,14 @@ async function boot(): Promise<void> {
   });
 
   // A deep link with ?map= skips the menu; otherwise the menu is the entry point.
+  // Awaited, so the boot screen below covers the deep link's WAD load too.
   const deepLink = params.get('map');
-  if (deepLink && menu.isReady) menu.submit();
+  if (deepLink && menu.isReady) await menu.submit();
   else menu.open();
+
+  // Whatever just took the screen replaces `#loading`, which is in the page from
+  // the first paint (docs/menu.md § Session lifecycle).
+  document.getElementById('loading')!.classList.add('hidden');
 }
 
 void boot();

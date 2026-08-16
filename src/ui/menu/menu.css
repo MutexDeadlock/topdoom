@@ -137,18 +137,24 @@
 #menu .tab-panels {
   display: grid;
   /* The panel's flexible middle: it takes the height left over between header and
-     footer, and `min-height: 0` lets a taller panel shrink into it and scroll. */
+     footer, and `min-height: 0` lets the cell shrink below the tallest panel. */
   flex: 1;
   min-height: 0;
 }
 
-/* A column so a panel can hand its own leftover height to one child (`.saves-section`). */
+/*
+ * A column so a panel can hand its own leftover height to one child
+ * (`.saves-section`), and the scroller for a window too short to hold it — each
+ * panel scrolls its own content, never the cell they share.
+ * docs/menu.md § One screen, two jobs.
+ */
 #menu .tab-panel {
   grid-area: 1 / 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  overflow-y: auto;
 }
 
 #menu .tab-panel.hidden {

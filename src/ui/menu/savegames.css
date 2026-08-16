@@ -41,11 +41,17 @@
   margin-bottom: 0;
 }
 
+/*
+ * Two rows' worth is all the list *asks* for — the `auto` basis is what lets
+ * `height` be that ask, and `flex-grow` still fills the panel — so a long save
+ * list can't drag the menu's shared tab height to the whole viewport. Keep the
+ * basis: the usual `flex: 1` shorthand puts it back to 0 and the ask reverts to
+ * the content. docs/menu.md § One screen, two jobs.
+ */
 #menu .saves {
-  flex: 1;
+  flex: 1 0 auto;
+  height: 150px;
   max-height: none;
-  /* Two rows' worth, so a short list still looks like a list. */
-  min-height: 150px;
 }
 
 #menu .saves:empty::after {

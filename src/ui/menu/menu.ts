@@ -141,7 +141,7 @@ export class Menu {
       this.refreshButtons();
       this.saveSelection();
     });
-    this.startButton.addEventListener('click', () => this.startWithSkill(this.currentSkill()));
+    this.startButton.addEventListener('click', () => void this.startWithSkill(this.currentSkill()));
     this.resumeButton.addEventListener('click', () => this.onResume());
     for (const tab of Object.keys(this.tabButtons) as Tab[]) {
       this.tabButtons[tab].addEventListener('click', () => this.setTab(tab));
@@ -815,19 +815,21 @@ export class Menu {
 
   /**
    * Starts with whatever is currently selected — used by ?map= deep links,
-   * which skip the menu entirely and so run at the last skill picked.
+   * which skip the menu entirely and so run at the last skill picked. Settled
+   * either way when the start is over, which is how `main.ts` knows a
+   * deep-linked level has taken the screen (docs/menu.md § Session lifecycle).
    */
-  submit(): void {
-    this.startWithSkill(this.currentSkill());
+  submit(): Promise<void> {
+    return this.startWithSkill(this.currentSkill());
   }
 
-  private startWithSkill(skill: Skill): void {
-    if (!this.selectedIwad || !this.isReady) return;
+  private startWithSkill(skill: Skill): Promise<void> {
+    if (!this.selectedIwad || !this.isReady) return Promise.resolve();
     this.startButton.disabled = true;
     // The level being replaced is disposed part-way through this, so there is
     // nothing to return to until it either resolves or fails.
     this.resumeButton.disabled = true;
-    void Promise.resolve(
+    return Promise.resolve(
       this.onStart({
         iwad: this.selectedIwad,
         pwads: [...this.selectedPwads],

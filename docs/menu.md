@@ -25,6 +25,22 @@ lists, the level list and the difficulty options are built in JS.
   resize the menu under the cursor. That is also why the Settings tab's rows are kept compact, and
   why Level and Difficulty share a row on New Game: whatever height any tab costs, the others pay
   too — the save lists cap themselves with the `.list` scroller for the same reason.
+- **A scroller inside a panel grows into height the tabs have already paid for, and never creates
+  it** — it must offer a definite height while the menu measures itself, a `max-height` for the WAD
+  `.list` and `height: 150px` for `.saves` (savegames.css). Otherwise the shared cell stops being a
+  shared cost and becomes one tab's: the panel grows to the viewport cap and every *other* tab is a
+  full-height box with its content at the top. `.saves` needs `flex: 1 0 auto` for that, **not** the
+  usual `flex: 1` — measured: a `0` basis makes the ask fall back to the content and the `height`
+  does nothing, which is how a long save list used to pin the menu to the viewport.
+- **Each tab panel is its own scroller**: `#menu > .panel` is capped at the viewport, `.tab-panels`
+  takes the height left over between header and footer (`flex: 1; min-height: 0`), and each
+  `.tab-panel` carries the `overflow-y: auto`, so header, tab bar and footer stay pinned and a
+  window too short for a tab scrolls that tab's body. Where the `overflow-y` sits is load-bearing
+  twice over. Without it anywhere, the leftover-height sizing only shrinks the *box* and a panel
+  taller than the space left spills out of it and is painted over by the footer. On the
+  `.tab-panels` cell instead, a short visible tab would scroll into the hidden tabs' empty height,
+  since that cell is sized by the tallest of them. Scrolling the whole panel inside `#menu` is not
+  the fix either — an uncapped panel makes `.saves-section` grow without bound rather than scroll.
 
 `Esc` toggles between the menu and the game. With the menu open and no level loaded it does nothing
 — there is nothing to return to.
@@ -227,11 +243,13 @@ description, the autorun checkbox is the `Shift` row's. A player looking up what
 player changing it are the same person on the same trip to the menu — which is why those two did not
 move to General with the rest.
 
-**General is the two volume sliders, the frame rate limit and the collision toggle**, stacked full
-width with the limit first. Sound holds `#volume-slider` (effects) above `#music-volume-slider`,
-each with a `.label` wide enough that the two line up; the sfx one previews itself with `itemup` as
-it is dragged, the music one needs no preview because it rides the track already playing behind the
-menu (docs/music.md § Volume). The
+**General is the frame rate limit, the collision toggle and the two volume sliders**, stacked full
+width in that order — Sound last of the always-on sections (`#settings-dev` still follows it in a
+dev build), since it is the one a player reaches for mid-game and the bottom of the panel is
+nearest the footer. Sound holds `#volume-slider` (effects) above `#music-volume-slider`, each with
+a `.label` wide enough that the two line up; the sfx one previews itself with `itemup` as it is
+dragged, the music one needs no preview because it rides the track already playing behind the menu
+(docs/music.md § Volume). The
 limit is `#fpscap-select`, and its `<option>` values *are* the capped rates (`0` = unlimited, the
 default), so the control needs no mapping table. It is owned by `game.ts` (`getFpsCap`/`setFpsCap`),
 whose frame loop is the only thing it changes, and is read live per frame — changing it mid-level
@@ -358,9 +376,16 @@ built to be thrown away and replaced.
 
 Rules that hold this together:
 
+- **The page boots showing `#loading`, not the HUD.** Every other overlay is in the markup already
+  `hidden`; the boot screen (`ui/loading.html`) is the one that starts visible, because the static
+  HUD markup would otherwise be what the player sees — placeholder `100` health over an empty
+  level — for as long as the WAD manifest takes. `boot` takes it down at exactly one point, after
+  whatever replaces it is up: the menu, or a `?map=` level, which is why that branch **awaits**
+  `menu.submit()` — the deep link never opens the menu, so the boot screen is also what covers its
+  WAD load. The failure path needs no call of its own: `#fatal-error` is a rung above `#loading`.
 - **`new Viewport` is wrapped in `try`/`catch`** and routed to `#fatal-error`: three.js throws a raw
-  `Error` when the browser can't create a WebGL2 context, and without this the page is left showing
-  only the static HUD markup, which reads as "broken" rather than "your browser can't run this". The
+  `Error` when the browser can't create a WebGL2 context, and without this the page is left sitting
+  on `Loading …` forever, which reads as "hung" rather than "your browser can't run this". The
   GPU-specific message is only shown when the error actually looks like a WebGL failure, so an
   unrelated bug isn't misreported as a GPU problem.
 - **`audio.resume()` runs synchronously before `startLevel`'s first `await`**, while still inside the

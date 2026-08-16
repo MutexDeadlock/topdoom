@@ -28,7 +28,7 @@ export const DOOM_TIC = 1 / 35;
  * (`lightToColor`), which is accurate to vanilla but reads too dark for this game's top-down
  * camera.
  */
-export const BRIGHTNESS_LIFT = 0.12;
+export const BRIGHTNESS_LIFT = 0.06;
 
 /**
  * How far the player can see through explored territory, in map units: the scene's distance fog

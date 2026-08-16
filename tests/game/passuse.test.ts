@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { specialsRig, NO_INPUT, USE_INPUT, TIC } from '../fixtures/specialsrig.ts';
+import { specialsRig, crossingBody, NO_INPUT, USE_INPUT, TIC } from '../fixtures/specialsrig.ts';
 import { LINE_SPECIALS } from '../../src/game/specials/tables.ts';
 import { LF } from '../../src/wad/map.ts';
 
@@ -74,14 +74,14 @@ describe('specials · monster walk activation', () => {
 
   test('a monster crossing special 4 opens the door', () => {
     const { map, rig, prev, pos } = doorRig(4);
-    rig.specials.crossMonster(prev, pos, new Set());
+    rig.specials.crossMonster(prev, crossingBody(pos), new Set());
     for (let i = 0; i < 5; i++) rig.tick();
     assert.ok(map.sectors[2].ceilHeight > 0);
   });
 
   test('a monster crossing special 2 does nothing, but the player crossing it works', () => {
     const { map, rig, prev, pos } = doorRig(2);
-    rig.specials.crossMonster(prev, pos, new Set());
+    rig.specials.crossMonster(prev, crossingBody(pos), new Set());
     for (let i = 0; i < 5; i++) rig.tick();
     assert.equal(map.sectors[2].ceilHeight, 0);
     // Same crossing as the player: prev seeded by the rig's start, one update at the far side.

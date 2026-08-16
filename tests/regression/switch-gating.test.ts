@@ -146,7 +146,7 @@ describe('Regressions · switch gating and crusher stasis', () => {
       },
     }).specials as unknown as {
       trigger(i: number, keys: Set<never>): unknown;
-      movers: Map<number, { state: string; slowed?: boolean }>;
+      ceilingMovers: Map<number, { state: string; slowed?: boolean }>;
       update(dt: number, x: number, y: number, a: number, input: Input, keys: Set<never>): void;
     };
 
@@ -158,15 +158,15 @@ describe('Regressions · switch gating and crusher stasis', () => {
     const afterFirst = map.sectors[crush].ceilHeight;
     tick();
     const slowStep = afterFirst - map.sectors[crush].ceilHeight;
-    assert.equal(specials.movers.get(crush)!.slowed, true, 'a crush report slows the descent');
+    assert.equal(specials.ceilingMovers.get(crush)!.slowed, true, 'a crush report slows the descent');
     assert.ok(
       Math.abs(slowStep - 35 / 8 / 35) < 1e-6,
       `the slowed step is an eighth of CEILSPEED, got ${slowStep}`,
     );
 
     // Run to the bottom; the slowdown is cleared there, so the way up is full speed.
-    for (let i = 0; i < 20000 && specials.movers.get(crush)!.state === 'lowering'; i++) tick();
-    assert.equal(specials.movers.get(crush)!.slowed, false, 'reaching the bottom restores full speed');
+    for (let i = 0; i < 20000 && specials.ceilingMovers.get(crush)!.state === 'lowering'; i++) tick();
+    assert.equal(specials.ceilingMovers.get(crush)!.slowed, false, 'reaching the bottom restores full speed');
     const beforeUp = map.sectors[crush].ceilHeight;
     tick();
     assert.ok(
@@ -191,7 +191,7 @@ describe('Regressions · switch gating and crusher stasis', () => {
       trigger(i: number, keys: Set<never>): unknown;
       triggerCrusherStop(s: number): boolean;
       triggerCrusher(s: number, e: unknown): boolean;
-      movers: Map<number, { state: string; stoppedFrom?: string; speed: number; silent: boolean }>;
+      ceilingMovers: Map<number, { state: string; stoppedFrom?: string; speed: number; silent: boolean }>;
       update(dt: number, x: number, y: number, a: number, input: Input, keys: Set<never>): void;
     };
 
@@ -199,8 +199,8 @@ describe('Regressions · switch gating and crusher stasis', () => {
     // Read through accessors, not a captured `mover`: `assert/strict`'s `equal`
     // carries an `asserts actual is T` signature, so asserting on a captured
     // field pins its type to that literal for the rest of the test.
-    const state = () => specials.movers.get(crush)!.state;
-    const stoppedFrom = () => specials.movers.get(crush)!.stoppedFrom;
+    const state = () => specials.ceilingMovers.get(crush)!.state;
+    const stoppedFrom = () => specials.ceilingMovers.get(crush)!.stoppedFrom;
     assert.equal(state(), 'lowering');
 
     // Run to the bottom and into the up-stroke.

@@ -22,7 +22,8 @@ Real elapsed time is *banked*, not consumed. Each frame adds `rawDt` to `accumul
 whole `TIC_SECONDS` steps, and hands whatever is left over to `draw` as the interpolation alpha:
 
 ```ts
-this.accumulator += Math.max(0, rawDt);
+const rawDt = Math.max(0, (now - this.lastTime) / 1000);
+this.accumulator += rawDt;
 if (this.accumulator > MAX_TICS_PER_FRAME * TIC_SECONDS) this.accumulator = MAX_TICS_PER_FRAME * TIC_SECONDS;
 while (this.accumulator >= TIC_SECONDS && ran < MAX_TICS_PER_FRAME) { this.accumulator -= TIC_SECONDS; this.tic(...); }
 this.draw(this.accumulator / TIC_SECONDS, rawDt);
@@ -35,6 +36,17 @@ Three rules hold it together:
   and when `resume` runs inside a frame's own input task (a Start click whose WAD is already cached,
   so nothing awaits long enough to yield) that timestamp *predates* the stamp. Without the clamp the
   accumulator runs backwards.
+
+  **It belongs at the source, not on the accumulator alone.** `rawDt` is also handed to `draw`, and
+  from there to the overlays, the fog fade and both texture animators — a negative wall-clock delta
+  is meaningless to every one of them, and `AnimatedTextures` keeps a running total of it that it
+  *indexes an array by*. A negative total floors to a negative tic, JS's `%` keeps the sign, and
+  `names[-1]` is `undefined`: that crashed `GraphicsBank.flat` and killed the rAF chain, hanging the
+  game on a level's first frame. Reported against BOOMEDIT.WAD, whose `ANIMATED` runs two sequences
+  at 2 tics/frame rather than vanilla's uniform 8 — the threshold is `-2 × speedTics/35` seconds, so
+  its faster sequences reach it four times sooner. Covered by
+  `tests/regression/animated-negative-dt.test.ts`; `AnimatedTextures` also clamps its own
+  accumulator, since it owns the invariant the index depends on.
 - **A stall drops its debt rather than paying it back.** `MAX_TICS_PER_FRAME` caps both the burst
   after a backgrounded tab and the worst-case cost of one frame. This is the same "never take a
   giant step" the old `dt` clamp bought, expressed in tics.

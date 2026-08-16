@@ -72,6 +72,48 @@ function floor(
   return { kind: 'floor', speed, target, changeTexture: options.changeTexture ?? false, crush: options.crush ?? false };
 }
 
+/**
+ * Boom's silent teleport to a landing marker (207-210, 268/269). Every one is
+ * monster-activatable — `p_spec.c`'s crossing allow-list and `p_switch.c`'s
+ * use allow-list both name them — and every one clears its line only on
+ * success, unlike vanilla 39. See docs/specials.md § Silent and line-to-line
+ * teleporters.
+ */
+function silentTeleport(
+  trigger: 'walk' | 'use',
+  repeatable: boolean,
+  options: { monsterOnly?: boolean } = {},
+): SpecialDef {
+  return {
+    trigger,
+    repeatable,
+    monsterActivate: trigger === 'walk',
+    effect: {
+      kind: 'teleport',
+      monsterOnly: options.monsterOnly ?? false,
+      silent: true,
+      spendOnlyOnSuccess: true,
+    },
+  };
+}
+
+/** Boom's silent line-to-line teleport (243/244, 262-269) — all W1/WR, all silent. */
+function lineTeleport(repeatable: boolean, options: { reversed?: boolean; monsterOnly?: boolean } = {}): SpecialDef {
+  return {
+    trigger: 'walk',
+    repeatable,
+    monsterActivate: true,
+    effect: {
+      kind: 'teleport',
+      monsterOnly: options.monsterOnly ?? false,
+      silent: true,
+      destination: 'line',
+      reversed: options.reversed,
+      spendOnlyOnSuccess: true,
+    },
+  };
+}
+
 export const LINE_SPECIALS: Record<number, SpecialDef> = {
   // Manual doors (untagged, target the line's own back sector).
   1: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED) },
@@ -464,11 +506,18 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   // The WR silent crusher — vanilla 141's W1 twin, and the number the old
   // scope note singled out as Boom-only.
   150: { trigger: 'walk', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: true, slowsWhenCrushing: true } },
-  // 151/166/186 are Boom's copies of vanilla 40's ceiling+floor combo; the
-  // floor half is dead there for the same reason as 40's (the ceiling's own
-  // mover already occupies the sector), so only the ceiling is modelled —
-  // see 40's entry.
-  151: { trigger: 'walk', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborCeiling' } },
+  // 151/166/186 are Boom's copies of vanilla 40's ceiling+floor combo, and
+  // unlike 40's their floor half really runs: Boom gives floors and ceilings
+  // separate per-sector slots, so `EV_DoFloor` is no longer shut out by the
+  // ceiling that just claimed the sector (`SpecialDef.secondEffect`;
+  // docs/specials.md § One mover per sector). 151 calls both unconditionally,
+  // 166/186 short-circuit — see each entry.
+  151: {
+    trigger: 'walk',
+    repeatable: true,
+    effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborCeiling' },
+    secondEffect: { effect: floor('lowestNeighborFloor') },
+  },
   152: { trigger: 'walk', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'ownFloor' } },
   154: { trigger: 'walk', repeatable: true, effect: { kind: 'changeOnly', model: 'trigger' } },
   155: { trigger: 'walk', repeatable: true, effect: { kind: 'donut' } },
@@ -493,7 +542,14 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   163: { trigger: 'use', repeatable: false, effect: { kind: 'liftStop' } },
   164: { trigger: 'use', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST, silent: false, slowsWhenCrushing: false } },
   165: { trigger: 'use', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: true, slowsWhenCrushing: true } },
-  166: { trigger: 'use', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborCeiling' } },
+  166: {
+    trigger: 'use',
+    repeatable: false,
+    effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborCeiling' },
+    // `if (EV_DoCeiling(…) || EV_DoFloor(…))` — C short-circuits, so the
+    // floor only lowers when no tagged sector took the ceiling.
+    secondEffect: { effect: floor('lowestNeighborFloor'), onlyIfPrimaryFailed: true },
+  },
   167: { trigger: 'use', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'floorPlus8' } },
   168: { trigger: 'use', repeatable: false, effect: { kind: 'crusherStop' } },
   169: { trigger: 'use', repeatable: false, effect: { kind: 'lightChange', mode: 'brightestNeighbor' } },
@@ -526,7 +582,14 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   183: { trigger: 'use', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST, silent: false, slowsWhenCrushing: false } },
   184: { trigger: 'use', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: false, slowsWhenCrushing: true } },
   185: { trigger: 'use', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: true, slowsWhenCrushing: true } },
-  186: { trigger: 'use', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborCeiling' } },
+  186: {
+    trigger: 'use',
+    repeatable: true,
+    effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborCeiling' },
+    // `if (EV_DoCeiling(…) || EV_DoFloor(…))` — C short-circuits, so the
+    // floor only lowers when no tagged sector took the ceiling.
+    secondEffect: { effect: floor('lowestNeighborFloor'), onlyIfPrimaryFailed: true },
+  },
   187: { trigger: 'use', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'floorPlus8' } },
   188: { trigger: 'use', repeatable: true, effect: { kind: 'crusherStop' } },
   190: { trigger: 'use', repeatable: true, effect: { kind: 'changeOnly', model: 'trigger' } },
@@ -548,20 +611,46 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   // ---- G1 ----------------------------------------------------------------
   197: { trigger: 'shoot', repeatable: false, effect: { kind: 'exit', secret: false } },
   198: { trigger: 'shoot', repeatable: false, effect: { kind: 'exit', secret: true } },
+
+  // ---- Silent + line-to-line teleporters ----------------------------------
+  // Grouped by family rather than by trigger: the whole point of these
+  // fourteen numbers is the three axes below, and reading them down the
+  // columns is how they were checked against `p_spec.c`/`p_switch.c`.
+  // docs/specials.md § Silent and line-to-line teleporters.
+  207: silentTeleport('walk', false),
+  208: silentTeleport('walk', true),
+  209: silentTeleport('use', false),
+  210: silentTeleport('use', true),
+  268: silentTeleport('walk', false, { monsterOnly: true }),
+  269: silentTeleport('walk', true, { monsterOnly: true }),
+
+  // ---- Toggle plats -------------------------------------------------------
+  // `EV_DoPlat(toggleUpDn)`: speed and wait are set but never used, since each
+  // stroke is instant — docs/specials.md § Toggle plats.
+  211: { trigger: 'use', repeatable: true, effect: lift(LIFT_SPEED, LIFT_WAIT, 'toggle') },
+  212: { trigger: 'walk', repeatable: true, effect: lift(LIFT_SPEED, LIFT_WAIT, 'toggle') },
+
+  243: lineTeleport(false),
+  244: lineTeleport(true),
+  262: lineTeleport(false, { reversed: true }),
+  263: lineTeleport(true, { reversed: true }),
+  264: lineTeleport(false, { reversed: true, monsterOnly: true }),
+  265: lineTeleport(true, { reversed: true, monsterOnly: true }),
+  266: lineTeleport(false, { monsterOnly: true }),
+  267: lineTeleport(true, { monsterOnly: true }),
 };
 
 /**
- * Boom numbers whose *mechanism* hasn't landed yet: the silent/line-to-line
- * teleport family (Phase 2) and the instant toggle plats (Phase 2).
- * `lookupSpecial` returns null for them like any unknown number; this set
- * exists so the inspect-wad coverage report can call them "deferred" instead
- * of "unknown".
+ * Boom numbers whose *mechanism* hasn't landed yet. `lookupSpecial` returns
+ * null for them like any unknown number; this set exists so the inspect-wad
+ * coverage report can call them "deferred" instead of "unknown".
+ *
+ * Empty as of Phase 2 — every Boom number that is a triggerable linedef
+ * effect now resolves. What is left outside the tables is `PARAM_LINE_SPECIALS`
+ * (the always-on level-spawn parameters), which is a different thing, not a
+ * gap. docs/specials.md § Scope.
  */
-export const DEFERRED_LINE_SPECIALS: Set<number> = new Set([
-  207, 208, 209, 210, // silent teleports
-  211, 212, // toggle plats
-  243, 244, 262, 263, 264, 265, 266, 267, 268, 269, // silent line-to-line + monster-only variants
-]);
+export const DEFERRED_LINE_SPECIALS: Set<number> = new Set<number>();
 
 /**
  * Decoded generalized defs, one per distinct number per session — the decode

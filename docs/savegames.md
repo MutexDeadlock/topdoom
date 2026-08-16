@@ -101,9 +101,13 @@ the *changed* sectors' mutable fields (`floorHeight`/`ceilHeight`/`light`/`speci
 `floorTex`, plus the optional `ceilTex` only Boom's generalized ceiling changes rewrite —
 `DoomMap` is mutated in place at runtime by specials and secrets), the specials controller (movers
 mid-motion, `usedOnce`, switch flashes, light states, the two shared sound/damage clocks,
-`prevX`/`prevY`, and the optional `stairFlips` — the line indices Boom's retrigger alternation
+`prevX`/`prevY`, the optional `stairFlips` — the line indices Boom's retrigger alternation
 currently has flipped, restored as a plain Set since the map itself is never mutated
-(docs/specials.md § Generalized linedefs)), secrets found + damage-floor timer, fog of war's `explored`, sound-alerted
+(docs/specials.md § Generalized linedefs) — and the optional `ceilingMovers`, the second of the two
+per-sector mover slots Boom keeps apart. **That one is read back by `mover.kind`, not by which
+field it arrived in**: a save written before the split holds every kind in `movers`, so sorting on
+restore covers both shapes without a bump (docs/specials.md § One mover per sector)),
+secrets found + damage-floor timer, fog of war's `explored`, sound-alerted
 sectors, every thing, the Icon of Sin, projectiles in flight, level time, camera yaw,
 `recordsEligible` (so a `?pos=` run can't launder eligibility through a save), and the RNG cursors.
 

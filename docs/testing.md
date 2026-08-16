@@ -71,14 +71,20 @@ decoders and the vanilla per-map table are pure, and the OPL chip and its synth 
 and "channel volume scales it" are pinned without ears. Only `MusicPlayer` itself, which owns the
 `AudioContext`, stays out. Deliberately **not** covered yet, and why:
 
-- **`SpecialsController`'s mover state machine** — `sectorActive`, `tickDoor`, `tickLift` and the
-  `trigger*` guards are all private, and reaching them means extracting the per-mover tick into pure
-  `(state, dt) → state` functions first. This is the biggest known gap. What *is* reachable already
-  is anything observable from the outside: the whole controller stands up headless through
-  `fixtures/specialsrig.ts` (§ The specials rig), and its callbacks report what fired —
-  `strobing-lift-light.test.ts` drives it through `update` for the geometry it recolors,
-  `teleport-back-side.test.ts` through the `onTeleport` callback. Prefer that over widening the
-  class's visibility.
+- **`SpecialsController`'s mover state machine**, partly. The whole controller stands up headless
+  through `fixtures/specialsrig.ts` (§ The specials rig), and **anything observable from outside is
+  the way to test it**: `strobing-lift-light.test.ts` drives `update` for the geometry it recolors,
+  `teleport-back-side.test.ts` and `silent-teleport.test.ts` go through the `onTeleport` callback,
+  and most mover behavior is visible as `map.sectors[i].floorHeight` changing over ticks.
+
+  Where a rule genuinely has no outside face — which slot a mover landed in, whether a stasis wake
+  reported a hit — the tests reach the private field through a narrow
+  `as unknown as { … }` cast naming only what they touch (`switch-gating.test.ts` set the
+  precedent; `moverclasses.test.ts` and `toggle-plats.test.ts` follow it). That is deliberately
+  ugly, so it stays confined to rules that are otherwise unobservable, and is still preferred over
+  widening the class's visibility. `tickDoor`/`tickLift` remain untested as pure functions; doing
+  that properly means extracting the per-mover tick into `(state, dt) → state`, which nothing has
+  needed yet.
 - **`ProjectileLayer` / `SpriteFxLayer`** — every `spawn*` short-circuits on `SpriteAnimator.resolve`,
   so a stubbed run would test the stubs. Test at `shotPath` level instead; `playerShotRange` exists
   as a separate exported function precisely so the range selection is reachable without the layer.

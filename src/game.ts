@@ -49,8 +49,12 @@ import {
   blocksFloorRise,
   SectorEffects,
   SpecialsController,
+  type TeleportDest,
 } from './game/specials.ts';
 import { computeMovableSectors } from './game/specials/mapscan.ts';
+import { readAnimated } from './wad/animated.ts';
+import { readSwitches, switchPairs, type SwitchPairLookup } from './wad/switches.ts';
+import { switchPairTexture } from './game/specials/defs.ts';
 import { IconOfSin } from './game/monsters/iconofsin.ts';
 import { Hud, type LevelStats } from './ui/hud/hud.ts';
 import { Crosshair } from './ui/hud/crosshair.ts';
@@ -94,7 +98,7 @@ import { SoundBank } from './wad/sound.ts';
 import { MusicBank } from './wad/music.ts';
 import { mapInfoMusic } from './wad/mapinfo.ts';
 import { LevelMusic } from './audio/music.ts';
-import type { Placement, Pos2 } from './types.ts';
+import type { Pos2 } from './types.ts';
 import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
 
 /**
@@ -169,6 +173,8 @@ export class Game {
   private flatFader!: FlatFader;
   private textureScroller!: TextureScroller;
   private animatedTextures!: AnimatedTextures;
+  /** How a switch texture resolves to its opposite state — see the constructor. */
+  private switchPairs: SwitchPairLookup;
   private fogOfWar!: FogOfWar;
   private specials?: SpecialsController;
   /**
@@ -344,9 +350,15 @@ export class Game {
 
     const gfx = new GraphicsBank(wad);
     this.materials = new MaterialBank(gfx, view.renderer);
+    // Boom's two table lumps, both session-scoped like the banks around them:
+    // each replaces a built-in table outright when present, and neither
+    // depends on which map is loaded. docs/wad.md § ANIMATED and SWITCHES.
+    const animated = readAnimated(wad);
+    const switches = readSwitches(wad);
+    this.switchPairs = switches ? switchPairs(switches, (name) => gfx.hasTexture(name)) : switchPairTexture;
     // Session-scoped, same as `materials` above — depends only on the WAD
     // set's own graphics, not on which map is currently loaded.
-    this.animatedTextures = new AnimatedTextures(gfx, this.materials);
+    this.animatedTextures = new AnimatedTextures(gfx, this.materials, animated ?? undefined);
     this.spriteBank = new SpriteBank(wad);
     this.spriteMaterials = new SpriteMaterialCache(gfx, view.renderer);
     this.hud = new Hud(gfx);
@@ -620,11 +632,14 @@ export class Game {
     // Sectors a door/lift/floor mover will drive are pulled out of the static
     // batches up front — SpecialsController owns their geometry instead (see
     // render/mapmesh.ts's MapMeshOptions doc for why).
-    const movableSectors = computeMovableSectors(map);
+    const movableSectors = computeMovableSectors(map, this.switchPairs);
     // A saved mid-motion mover's sector may have had its authored special
     // consumed, dropping it from the scan above — union it back in so its
     // geometry stays mover-owned (docs/savegames.md § Apply order).
-    if (restore) for (const [sectorIndex] of restore.specials.movers) movableSectors.add(sectorIndex);
+    if (restore) {
+      const saved = [...restore.specials.movers, ...(restore.specials.ceilingMovers ?? [])];
+      for (const [sectorIndex] of saved) movableSectors.add(sectorIndex);
+    }
     this.built = buildMapMesh(map, this.materials, { movableSectors });
     this.scene.add(this.built.group);
     this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
@@ -676,14 +691,31 @@ export class Game {
         // SpriteFxLayer.spawnTeleportPair for the pair itself.
         const from = { x: this.player.x, y: this.player.y, z: this.player.z };
         this.player.teleportTo(dest);
-        this.effects.spawnTeleportPair(from, dest, this.player.z);
-        // Snap the camera onto the landing spot facing the way the player now
-        // does, same as the initial spawn — a teleport should cut, not leave
-        // the view aimed at wherever the old spot happened to be and then fly
-        // across the map to catch up (docs/render.md § The camera is
-        // simulation state). Yaw first: `snapTo` poses the camera with it.
-        this.view.camera.yawDeg = (dest.angle * 180) / Math.PI - 90;
-        this.view.camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
+        // Boom's silent family spawns neither puff and plays no `telept` —
+        // docs/specials.md § Silent and line-to-line teleporters.
+        if (!dest.silent) this.effects.spawnTeleportPair(from, dest, this.player.z);
+        // The camera's follow point always snaps — a teleport should cut, not
+        // fly across the map to catch up (docs/render.md § The camera is
+        // simulation state). The *yaw* differs by kind, and `yawDeg` is an
+        // orbit the player owns with Q/E rather than anything slaved to their
+        // facing:
+        //
+        // - A vanilla teleport reorients it to the landing angle, same as the
+        //   initial spawn. It is a cut; the arrival has an authored facing.
+        // - **A silent one turns it by the same angle the body turned**, so a
+        //   pair authored as one continuous doorway (`rotateBy` 0) leaves the
+        //   view completely still, and whatever orbit the player had chosen
+        //   survives. Reorienting it absolutely would inject that orbit offset
+        //   as a visible spin on every silent arrival, which is the opposite
+        //   of the point. docs/specials.md § Silent and line-to-line teleporters.
+        //
+        // Yaw first either way: `snapTo` poses the camera with it.
+        const camera = this.view.camera;
+        camera.yawDeg =
+          dest.rotateBy === undefined
+            ? (dest.angle * 180) / Math.PI - 90
+            : camera.yawDeg + (dest.rotateBy * 180) / Math.PI;
+        camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
       },
       (sectorIndex, dealDamage) =>
         applyCrushDamage(
@@ -705,6 +737,7 @@ export class Game {
       this.player.y,
       movableSectors,
       this.audio,
+      this.switchPairs,
     );
     if (restore) {
       this.specials.restore(restore.specials);
@@ -880,7 +913,7 @@ export class Game {
    * Returning null after a teleport *did* fire is `P_TeleportMove` refusing the
    * landing, which leaves the monster where it stood — docs/death.md § Telefrag.
    */
-  private monsterCrossedLines(prev: Pos2, mover: CrossingBody): Placement | null {
+  private monsterCrossedLines(prev: Pos2, mover: CrossingBody): TeleportDest | null {
     const dest = this.specials?.crossMonster(prev, mover, this.inventory.keys);
     if (!dest) return null;
     if (!this.things?.telefragAt(dest, mover.blockRadius, this.monsterStomps, mover.id)) return null;
@@ -890,10 +923,14 @@ export class Game {
       if (!this.monsterStomps) return null;
       this.damagePlayer(TELEFRAG_DAMAGE, dest.x, dest.y, mover.type);
     }
-    // A fog puff has no body, so the plain sector floor is the whole answer —
-    // `groundFloor` at radius 0 would walk the lines to arrive at the same number.
-    const from = { x: mover.x, y: mover.y, z: this.world.floorAt(mover.x, mover.y) };
-    this.effects.spawnTeleportPair(from, dest, this.world.floorAt(dest.x, dest.y));
+    // Boom's silent numbers puff at neither end (docs/specials.md § Silent and
+    // line-to-line teleporters). A fog puff has no body, so the plain sector
+    // floor is the whole answer — `groundFloor` at radius 0 would walk the
+    // lines to arrive at the same number.
+    if (!dest.silent) {
+      const from = { x: mover.x, y: mover.y, z: this.world.floorAt(mover.x, mover.y) };
+      this.effects.spawnTeleportPair(from, dest, this.world.floorAt(dest.x, dest.y));
+    }
     return dest;
   }
 
@@ -1094,12 +1131,15 @@ export class Game {
     // measuring real frames, not tics.
     //
     // The lower clamp is load-bearing, not defensive: `now` can predate the
-    // `performance.now()` `resume` stamped into `lastTime`, so without it a
-    // level's first frame would run the accumulator *backwards*. See
-    // docs/frameloop.md § The accumulator.
-    const rawDt = (now - this.lastTime) / 1000;
+    // `performance.now()` `resume` stamped into `lastTime`, so a level's first
+    // frame really can compute a negative delta. It is clamped **here**, at
+    // the source, rather than at the accumulator alone — a negative
+    // wall-clock delta is meaningless to every consumer `rawDt` reaches, and
+    // one of them (`AnimatedTextures`) indexes an array by its own running
+    // total of it. See docs/frameloop.md § The accumulator.
+    const rawDt = Math.max(0, (now - this.lastTime) / 1000);
     this.lastTime = now;
-    this.accumulator += Math.max(0, rawDt);
+    this.accumulator += rawDt;
     // A stall (backgrounded tab, a slow map load) must not be paid back as a
     // burst of catch-up tics — drop the debt instead, the same "never take a
     // giant step" the old 0.05s dt clamp bought.

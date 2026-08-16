@@ -191,3 +191,32 @@ once, against `loadMap`'s own ~3.4 ms. It matters because a single Boom generali
 three of these scans *per tagged sector* (target resolution, the shortest-texture scan, and the
 numeric change model), so a tag spanning tens of sectors was a multi-millisecond hitch on one
 switch press.
+
+### The tag indexes
+
+`sectorsByTag(map, tag)` and `linesByTag(map, tag)` are vanilla's `P_FindSectorFromLineTag` and
+`P_FindLineFromLineTag`, which both linear-scan their whole array on every call. Same `WeakMap`
+memo, same static-data argument as above: `Sector.tag` and `LineDef.tag` are written once by
+`loadMap`'s parse and never again. Both return **ascending index order**, matching those scans —
+"whichever match comes first" is the actual rule for a line-to-line teleport's destination, so the
+order is behavior, not an implementation detail.
+
+Because they are memoized, **a tag written after the first lookup is invisible** — which is fine for
+the engine (nothing writes one at runtime) but is a real trap for a test hanging specials on a
+`gridMap`: set tags before the rig is built, and vary something else if a test needs the
+destination to appear mid-run.
+
+`sectorsByTag` backs `resolveTargets` (`specials/mapscan.ts`), which every tag-driven trigger goes
+through, and the boss-death `triggerTag`. `linesByTag` exists for Boom's line-to-line teleporters
+(docs/specials.md § Silent and line-to-line teleporters), the one family whose tag names a linedef
+rather than a sector.
+
+Measured on the same EPIC.WAD MAP03: resolving one tag per tagged special line (218 of them, what
+`computeMovableSectors` does at load and what every trigger repeats at runtime) went from 0.35 ms
+to 0.007 ms, against a 0.04 ms build.
+
+**Tag 0 is deliberately absent from both.** Every caller already refuses it upstream —
+`resolveTargets` returns nothing, `SpecialDef.requiresTag` rejects the line, and vanilla's own
+`P_CheckTag` allows a zero tag only for a listed handful — while on a real map most sectors and
+most lines carry tag 0, so indexing it would build the one bucket nobody ever reads. Keeping the
+skip inside the index makes it one rule instead of two that have to agree.

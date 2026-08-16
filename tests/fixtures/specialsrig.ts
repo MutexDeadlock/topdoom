@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { World } from '../../src/game/world.ts';
 import { FogOfWar } from '../../src/game/fogofwar.ts';
-import { SpecialsController } from '../../src/game/specials.ts';
+import { SpecialsController, type TeleportDest } from '../../src/game/specials.ts';
 import { computeMovableSectors } from '../../src/game/specials/mapscan.ts';
 import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import type { DoomMap } from '../../src/wad/map.ts';
 import type { MaterialBank } from '../../src/render/textures.ts';
 import type { Input } from '../../src/game/input.ts';
-import type { Placement, Pos2 } from '../../src/types.ts';
+import type { Pos2 } from '../../src/types.ts';
+import type { CrossingBody } from '../../src/game/things/defs.ts';
 
 /**
  * Everything needed to get a real `SpecialsController` ticking over a `gridMap` in Node, in one
@@ -32,10 +33,19 @@ export const USE_INPUT = { pressed: (k: string) => k === 'Space', rightMousePres
 /** One vanilla tic, the step `game.ts` drives specials at and this rig's default. */
 export const TIC = 1 / 35;
 
+/**
+ * A `CrossingBody` for `SpecialsController.crossMonster`, which wants a whole
+ * monster where a test usually only cares about the position it walked to.
+ * `angle` matters only to Boom's silent teleports, which rotate relative to it.
+ */
+export function crossingBody(pos: Pos2, angle = 0): CrossingBody {
+  return { ...pos, id: 1, type: 3004, blockRadius: 20, angle };
+}
+
 export interface SpecialsRigOptions {
   /** `G_ExitLevel`. */
   onExit?: (secret: boolean) => void;
-  onTeleport?: (dest: Placement) => void;
+  onTeleport?: (dest: TeleportDest) => void;
   /** Whether a body is under the closing ceiling, and the hook for counting crush damage pulses. */
   onCrush?: (sectorIndex: number, dealDamage: boolean) => boolean;
 }
@@ -52,11 +62,12 @@ export interface SpecialsRig {
   scene: THREE.Group;
   movableSectors: Set<number>;
   /**
-   * One tic of the player standing at (`x`, `y`) — the same call `game.ts` makes, in `update`'s own
-   * argument order. Defaults to one `TIC` at the rig's start position, so a test that moves nobody
-   * writes `tick()` and one that moves the player writes `tick(TIC, x, y)`.
+   * One tic of the player standing at (`x`, `y`) facing `angle` — the same call `game.ts` makes, in
+   * `update`'s own argument order. Defaults to one `TIC` at the rig's start position facing east, so
+   * a test that moves nobody writes `tick()` and one that moves the player writes `tick(TIC, x, y)`.
+   * The facing only matters to Boom's silent teleports, which rotate the body relative to it.
    */
-  tick(dt?: number, x?: number, y?: number): void;
+  tick(dt?: number, x?: number, y?: number, angle?: number): void;
 }
 
 /**
@@ -94,6 +105,7 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
     world,
     scene,
     movableSectors,
-    tick: (dt = TIC, x = at.x, y = at.y) => specials.update(dt, x, y, 0, NO_INPUT, new Set()),
+    /** `angle` is the player's facing in radians — what Boom's silent teleports rotate relative to. */
+    tick: (dt = TIC, x = at.x, y = at.y, angle = 0) => specials.update(dt, x, y, angle, NO_INPUT, new Set()),
   };
 }

@@ -128,8 +128,17 @@ export interface DoorEffect {
  * vanilla `perpetualRaise` (53/87) and Boom's `LnF2HnF`: bounce between the
  * lowest and highest neighbor floor forever, waiting at each end, starting in
  * a random direction (`P_Random(pr_plats)&1`).
+ *
+ * `'toggle'` is Boom's `toggleUpDn` (211/212), the odd one out: it snaps the
+ * floor between its own start height and its ceiling with no travel time and
+ * no wait, crushing whatever is between — docs/specials.md § Toggle plats.
  */
-export type LiftTarget = 'lowestNeighborFloor' | 'nextLowerFloor' | 'lowestNeighborCeiling' | 'perpetual';
+export type LiftTarget =
+  | 'lowestNeighborFloor'
+  | 'nextLowerFloor'
+  | 'lowestNeighborCeiling'
+  | 'perpetual'
+  | 'toggle';
 
 export interface LiftEffect {
   kind: 'lift';
@@ -279,10 +288,40 @@ export interface CrusherStopEffect {
   kind: 'crusherStop';
 }
 
+/**
+ * Every teleport number, vanilla and Boom, in one effect — the three optional
+ * axes are exactly what separates Boom's silent family from vanilla's 39/97.
+ * Absent means the vanilla behavior, so the four vanilla entries are unchanged.
+ * See docs/specials.md § Silent and line-to-line teleporters.
+ */
 export interface TeleportEffect {
   kind: 'teleport';
-  /** 125/126: vanilla gates these to non-player things; with no monster AI to walk them, they never fire. */
+  /** 125/126 and Boom's 264-269: vanilla gates these to non-player things. */
   monsterOnly: boolean;
+  /**
+   * Boom's silent family (207-210, 243/244, 262-269, `p_telept.c`): no fog, no
+   * `telept`, no reaction-time freeze. The arrival *rotates* the body by the
+   * angle between the two ends instead of setting an absolute facing, carries
+   * its momentum through that rotation, and keeps its height above the floor.
+   */
+  silent?: boolean;
+  /**
+   * What the tag names. `'thing'` (the default) is vanilla's landing marker
+   * inside a tag-matched sector, `EV_Teleport`/`EV_SilentTeleport`; `'line'`
+   * is `EV_SilentLineTeleport`'s tag-matched *linedef*, which the body is
+   * placed along proportionally rather than dropped onto a marker.
+   */
+  destination?: 'thing' | 'line';
+  /** Line-to-line only — `EV_SilentLineTeleport`'s `reverse` (262-265). */
+  reversed?: boolean;
+  /**
+   * Boom's numbers clear `line->special` only when the teleport actually
+   * happened (`if (EV_Silent…(…)) line->special = 0;`). Vanilla 39/125 clear
+   * it either way — their `|| demo_compatibility` — which is the behavior the
+   * four vanilla entries keep and `tests/regression/teleport-back-side.test.ts`
+   * pins.
+   */
+  spendOnlyOnSuccess?: boolean;
 }
 
 /**
@@ -522,6 +561,21 @@ export interface SpecialDef {
    */
   monsterCanTrigger?: boolean;
   effect: Effect;
+  /**
+   * A second effect run over the same tag-matched sectors after `effect` —
+   * Boom's three "raise ceiling, lower floor" numbers (151/166/186), the only
+   * dispatch cases in the whole switch that call two `EV_` helpers. Each pass
+   * covers every target before the next begins, matching the real order.
+   *
+   * `onlyIfPrimaryFailed` is C's `||` short-circuit: 166/186 are
+   * `if (EV_DoCeiling(…) || EV_DoFloor(…))`, so their floor half runs only
+   * when no tagged sector could take the ceiling, while 151 calls both
+   * unconditionally. These are reachable at all only because floors and
+   * ceilings hold separate per-sector slots — docs/specials.md § One mover
+   * per sector. Vanilla 40 is *not* one of them: Boom deletes its
+   * `EV_DoFloor` call outside demo compatibility.
+   */
+  secondEffect?: { effect: Effect; onlyIfPrimaryFailed?: boolean };
 }
 
 /**

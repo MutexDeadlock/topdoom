@@ -4,6 +4,7 @@
  */
 import * as THREE from 'three';
 import { LF, NO_SIDE, type DoomMap, type LineDef, type Sector } from '../wad/map.ts';
+import type { SwitchPairLookup } from '../wad/switches.ts';
 import {
   bossDeathTriggersFor,
   computeLightSectors,
@@ -31,6 +32,7 @@ import {
   SWITCH_FLASH_SECONDS,
   FLOOR_SPEED,
   type Activator,
+  type Effect,
   type LockRule,
   type ChangeOnlyEffect,
   type DoorEffect,
@@ -45,7 +47,10 @@ import {
   type MoveTarget,
   type LightPattern,
   type SectorDoorTimer,
+  switchPairTexture,
+  type SpecialDef,
   type SurfaceChange,
+  type TeleportEffect,
 } from './specials/defs.ts';
 import {
   World,
@@ -59,12 +64,15 @@ import {
   nextLowerCeiling,
   darkestNeighborLight,
   sectorLines,
+  sectorsByTag,
+  linesByTag,
 } from './world.ts';
 import { PLAYER_RADIUS } from './player.ts';
 import type { SpecialsSnapshot } from './snapshot.ts';
 import { pRandom } from '../util/random.ts';
 import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './things/doomednums.ts';
+import type { CrossingBody } from './things/defs.ts';
 import type { Input } from './input.ts';
 import type { FogOfWar } from './fogofwar.ts';
 import { satisfiesLock, type KeySlot } from './inventory.ts';
@@ -90,6 +98,20 @@ export { applyCrushDamage, blocksCeilingLower, blocksFloorRise } from './special
 
 /** How far ahead of the player a `use` press reaches, in map units. */
 const USE_RANGE = 64;
+
+/**
+ * How far off an exit linedef a line-to-line teleport places a body that
+ * landed on the wrong side of it. Vanilla's `EV_SilentLineTeleport` nudges by
+ * up to `FUDGEFACTOR` = 10 *fixed-point* units — 10/65536 of a map unit — to
+ * settle a rounding error its own `FixedMul` interpolation created. That is a
+ * fixed-point artifact rather than a gameplay rule, so this is the float
+ * equivalent: one step along the exit line's normal, small against any body
+ * radius and large enough that the side test can't flip back.
+ */
+const LINE_TELEPORT_NUDGE = 0.01;
+
+/** The `TeleportSource` for a caller with no silent teleport in play — see `trigger`'s `at`. */
+const NO_SOURCE: TeleportSource = { x: 0, y: 0, angle: 0 };
 
 /**
  * Vanilla's own moving-floor/ceiling grind (`sfx_stnmov`) is retriggered on a
@@ -153,6 +175,22 @@ interface LiftMover {
   perpetual?: boolean;
   /** The direction a stop line froze this lift out of — see `LiftState`. */
   stasisFrom?: Exclude<LiftState, 'stasis'>;
+  /**
+   * Boom's `toggleUpDn` (211/212): each stroke completes in the tic it starts
+   * and parks in `'stasis'`, so the next activation reverses it. In vanilla
+   * the instantness is *emergent* — `T_MovePlane` is told to move down toward
+   * a destination that is above the floor, so its very first step clamps to
+   * the target and reports `pastdest`. This engine's movers auto-direction
+   * toward their target instead, so nothing would clamp; the flag says so
+   * explicitly. Optional, so an older save reads as an ordinary lift.
+   */
+  instant?: boolean;
+  /**
+   * `plat->crush`. Only a toggle plat sets it (`p_plats.c`), and it means the
+   * grind-through rule rather than the reverse-on-obstruction one every other
+   * lift follows — docs/specials.md § Toggle plats.
+   */
+  crush?: boolean;
 }
 
 interface FloorMover {
@@ -252,6 +290,27 @@ interface CrusherMover {
  * docs/savegames.md § What is saved and what is deliberately not.
  */
 export type Mover = DoorMover | LiftMover | FloorMover | CrusherMover | CeilingMover | ElevatorMover;
+
+/**
+ * Which of Boom's two per-sector "busy" slots a mover kind occupies —
+ * `sec->floordata` vs `sec->ceilingdata`, the split `P_SectorActive` reads.
+ * The elevator claims *both* in vanilla; it lives in the floor map here and
+ * `ceilingActive` looks for it there, since one object in two maps would
+ * `structuredClone` into two on save and then tick twice.
+ * docs/specials.md § One mover per sector.
+ */
+function moverClass(kind: Mover['kind']): 'floor' | 'ceiling' {
+  switch (kind) {
+    case 'floor':
+    case 'lift':
+    case 'elevator':
+      return 'floor';
+    case 'door':
+    case 'ceiling':
+    case 'crusher':
+      return 'ceiling';
+  }
+}
 
 export interface LightState {
   pattern: LightPattern;
@@ -453,8 +512,42 @@ function resolveCeilingTarget(
   }
 }
 
-/** A teleport landing spot: where to put the thing, and which way it should face on arrival (radians — see `Placement`). */
-export type TeleportDest = Placement;
+/**
+ * A teleport landing spot: where to put the thing and which way it faces on
+ * arrival (`angle`, radians — see `Placement`), plus what the Boom silent
+ * family needs on top. The three optional fields are absent for a vanilla
+ * teleport, which is exactly its old behavior.
+ * See docs/specials.md § Silent and line-to-line teleporters.
+ */
+export interface TeleportDest extends Placement {
+  /**
+   * No fog puffs and no `telept` — the whole point of Boom's silent numbers.
+   * It also means "preserve the body's height above the floor" (`p_telept.c`'s
+   * `z = thing->z - thing->floorz`, which loud `EV_Teleport` discards); the
+   * height itself is the caller's to measure, since this controller is never
+   * told it.
+   */
+  silent?: boolean;
+  /**
+   * How far the arrival turned the body, in radians. `angle` above already has
+   * it applied; this is here so the caller can turn the body's *momentum*
+   * through the same angle, which is what makes a silent teleport read as
+   * walking through a doorway. Absent means vanilla's landing, which sets an
+   * absolute facing and zeroes momentum outright.
+   */
+  rotateBy?: number;
+}
+
+/**
+ * Where the body was when it crossed the line, which only Boom's silent
+ * teleports need: they rotate the body relative to its current facing, where a
+ * vanilla teleport overwrites it. The position is the crossing point a
+ * line-to-line exit interpolates from.
+ */
+interface TeleportSource extends Pos2 {
+  /** Current facing, radians. */
+  angle: number;
+}
 
 /**
  * A locked line the player just used without what it wants — what `game.ts` needs to say so
@@ -502,7 +595,7 @@ export class SpecialsController {
   /** Everything this controller's height and light changes mean for what is actually drawn — see specials/movergeometry.ts. */
   private geometry: MoverGeometry;
   private onExit: (secret: boolean) => void;
-  private onTeleport: (dest: Placement) => void;
+  private onTeleport: (dest: TeleportDest) => void;
   private onCrush: (sectorIndex: number, dealDamage: boolean) => boolean;
   private blocksCeilingLower: (sectorIndex: number, ceilingHeight: number) => boolean;
   private blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean;
@@ -521,7 +614,13 @@ export class SpecialsController {
   private crushDamageTimer = CRUSH_DAMAGE_INTERVAL;
   private crushDamageDue = false;
 
-  private movers = new Map<number, Mover>();
+  /**
+   * The two independent mover slots per sector, Boom's `sec->floordata` /
+   * `sec->ceilingdata` — see `moverClass` for which kind lands where, and
+   * docs/specials.md § One mover per sector for why they are separate.
+   */
+  private floorMovers = new Map<number, Mover>();
+  private ceilingMovers = new Map<number, Mover>();
   private usedOnce = new Set<number>();
   /**
    * Lines currently flipped from their authored special by `SpecialDef.retriggerXor`
@@ -565,7 +664,7 @@ export class SpecialsController {
     built: BuiltMap,
     meshOptions: MapMeshOptions,
     onExit: (secret: boolean) => void,
-    onTeleport: (dest: Placement) => void,
+    onTeleport: (dest: TeleportDest) => void,
     onCrush: (sectorIndex: number, dealDamage: boolean) => boolean,
     blocksCeilingLower: (sectorIndex: number, ceilingHeight: number) => boolean,
     blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean,
@@ -582,6 +681,14 @@ export class SpecialsController {
      */
     movableSectors: Set<number>,
     sfx: SoundEmitter = SILENT,
+    /**
+     * How a switch texture resolves to its opposite state — **the same lookup
+     * the caller gave `computeMovableSectors`**, for the same "must not
+     * disagree" reason `movableSectors` is passed in. Defaults to the
+     * `SW1`/`SW2` name convention; a WAD set with a `SWITCHES` lump supplies
+     * its own (docs/wad.md § ANIMATED and SWITCHES).
+     */
+    switchPairs: SwitchPairLookup = switchPairTexture,
   ) {
     this.map = map;
     this.world = world;
@@ -598,7 +705,7 @@ export class SpecialsController {
 
     for (const [i, line] of map.linedefs.entries()) {
       if (!lookupSpecial(line.special)) continue;
-      const entries = findSwitchEntries(map, line);
+      const entries = findSwitchEntries(map, line, switchPairs);
       if (entries.length > 0) this.switchTextures.set(i, entries);
     }
 
@@ -629,7 +736,8 @@ export class SpecialsController {
    */
   snapshot(): SpecialsSnapshot {
     return structuredClone({
-      movers: [...this.movers.entries()],
+      movers: [...this.floorMovers.entries()],
+      ceilingMovers: [...this.ceilingMovers.entries()],
       usedOnce: [...this.usedOnce],
       switchFlashes: [...this.switchFlashes.entries()],
       lightStates: [...this.lightStates.entries()],
@@ -650,7 +758,16 @@ export class SpecialsController {
    * scan, not baked into the map up front. docs/savegames.md § Apply order.
    */
   restore(s: SpecialsSnapshot): void {
-    this.movers = new Map(structuredClone(s.movers));
+    // Sorted by kind rather than trusted by field: a save written before the
+    // floor/ceiling split put *every* mover in `movers`, so re-deriving the
+    // class here restores an old save into the right slots with no migration
+    // step and no `SAVE_VERSION` bump. Post-split saves already carry the two
+    // apart, and the same sort is then a no-op.
+    this.floorMovers = new Map();
+    this.ceilingMovers = new Map();
+    for (const [sectorIndex, mover] of structuredClone([...s.movers, ...(s.ceilingMovers ?? [])])) {
+      this.setMover(sectorIndex, mover);
+    }
     this.usedOnce = new Set(s.usedOnce);
     this.retriggerFlips = new Set(s.stairFlips ?? []);
     this.switchFlashes = new Map(s.switchFlashes);
@@ -695,7 +812,7 @@ export class SpecialsController {
     const sector = this.map.sectors[sectorIndex];
     const effect: DoorEffect = { kind: 'door', speed: DOOR_SPEED, waitSeconds: DOOR_WAIT, mode: 'openClose' };
     if (timer === 'closeIn30') {
-      this.movers.set(sectorIndex, {
+      this.setMover(sectorIndex, {
         kind: 'door',
         sectorIndex,
         effect,
@@ -705,7 +822,7 @@ export class SpecialsController {
         holdRemaining: DOOR_CLOSE_WAIT_SECONDS,
       });
     } else {
-      this.movers.set(sectorIndex, {
+      this.setMover(sectorIndex, {
         kind: 'door',
         sectorIndex,
         effect,
@@ -760,7 +877,7 @@ export class SpecialsController {
     this.tickMovers(dt, dirty);
     this.lastTeleport = null;
     this.handleUseTrigger(playerX, playerY, playerAngle, input, ownedKeys);
-    this.handleWalkTriggers(playerX, playerY, ownedKeys);
+    this.handleWalkTriggers(playerX, playerY, playerAngle, ownedKeys);
     this.geometry.rebuildAround(dirty);
     this.updateSwitchFlashes(dt);
     this.updateLights(dt);
@@ -830,14 +947,36 @@ export class SpecialsController {
     return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   }
 
+  /**
+   * An exhaustive `switch` rather than an if/else chain with a fallthrough:
+   * a new `Mover` kind must be a compile error here, the way it already is in
+   * `moverActive`, not something that silently ticks as a crusher.
+   */
   private tickMovers(dt: number, dirty: Set<number>): void {
-    for (const mover of this.movers.values()) {
-      if (mover.kind === 'door') this.tickDoor(mover, dt, dirty);
-      else if (mover.kind === 'lift') this.tickLift(mover, dt, dirty);
-      else if (mover.kind === 'floor') this.tickFloor(mover, dt, dirty);
-      else if (mover.kind === 'ceiling') this.tickCeiling(mover, dt, dirty);
-      else if (mover.kind === 'elevator') this.tickElevator(mover, dt, dirty);
-      else this.tickCrusher(mover, dt, dirty);
+    for (const mover of this.floorMovers.values()) this.tickMover(mover, dt, dirty);
+    for (const mover of this.ceilingMovers.values()) this.tickMover(mover, dt, dirty);
+  }
+
+  private tickMover(mover: Mover, dt: number, dirty: Set<number>): void {
+    switch (mover.kind) {
+      case 'door':
+        this.tickDoor(mover, dt, dirty);
+        break;
+      case 'lift':
+        this.tickLift(mover, dt, dirty);
+        break;
+      case 'floor':
+        this.tickFloor(mover, dt, dirty);
+        break;
+      case 'ceiling':
+        this.tickCeiling(mover, dt, dirty);
+        break;
+      case 'elevator':
+        this.tickElevator(mover, dt, dirty);
+        break;
+      case 'crusher':
+        this.tickCrusher(mover, dt, dirty);
+        break;
     }
   }
 
@@ -909,9 +1048,22 @@ export class SpecialsController {
     const sector = this.map.sectors[mover.sectorIndex];
     const before = sector.floorHeight;
     if (mover.state === 'lowering') {
-      sector.floorHeight = Math.max(mover.downHeight, sector.floorHeight - mover.effect.speed * dt);
+      sector.floorHeight = mover.instant
+        ? mover.downHeight
+        : Math.max(mover.downHeight, sector.floorHeight - mover.effect.speed * dt);
+      // A toggle plat crushes rather than reverses, and its move is over in
+      // this tic — so the damage has to land here, not on a later stroke.
+      if (mover.crush) this.tickCrush(mover.sectorIndex);
       if (sector.floorHeight <= mover.downHeight) {
         sector.floorHeight = mover.downHeight;
+        // `toggleUpDn` parks in stasis at each end rather than waiting: the
+        // next activation reverses it (`P_ActivateInStasis`), and it is silent.
+        if (mover.instant) {
+          mover.stasisFrom = 'lowering';
+          mover.state = 'stasis';
+          if (sector.floorHeight !== before) dirty.add(mover.sectorIndex);
+          return;
+        }
         mover.state = 'hold';
         mover.holdRemaining = mover.effect.waitSeconds;
         // T_PlatRaise: `pstop` at either end of the travel, `pstart` whenever it
@@ -928,14 +1080,18 @@ export class SpecialsController {
         this.playSector(mover.sectorIndex, 'pstart');
       }
     } else if (mover.state === 'raising') {
-      const next = Math.min(mover.restHeight, sector.floorHeight + mover.effect.speed * dt);
-      if (this.blocksFloorRise(mover.sectorIndex, next)) {
+      const next = mover.instant
+        ? mover.restHeight
+        : Math.min(mover.restHeight, sector.floorHeight + mover.effect.speed * dt);
+      if (mover.crush) {
+        this.tickCrush(mover.sectorIndex);
+      } else if (this.blocksFloorRise(mover.sectorIndex, next)) {
         // T_PlatRaise's own `res == crushed && !plat->crush` branch: unlike a
         // plain rising FloorMover/CeilingMover, which just stalls in place
         // (T_MoveFloor/T_MoveCeiling have no such branch), a lift immediately
         // reverses back down instead of waiting for the obstruction to clear —
-        // confirmed against p_plats.c. A lift is never a crusher (LiftMover
-        // has no crush flag at all), so this fires unconditionally.
+        // confirmed against p_plats.c. Only a toggle plat sets `crush`, and it
+        // grinds through instead, which is why this is the `else`.
         mover.state = 'lowering';
         this.playSector(mover.sectorIndex, 'pstart');
         return;
@@ -943,6 +1099,12 @@ export class SpecialsController {
       sector.floorHeight = next;
       if (sector.floorHeight >= mover.restHeight) {
         sector.floorHeight = mover.restHeight;
+        if (mover.instant) {
+          mover.stasisFrom = 'raising';
+          mover.state = 'stasis';
+          if (sector.floorHeight !== before) dirty.add(mover.sectorIndex);
+          return;
+        }
         // A perpetual lift waits at the top and goes again; everything else is
         // done (vanilla removes the plat here).
         if (mover.perpetual) {
@@ -1117,14 +1279,26 @@ export class SpecialsController {
     return this.onCrush(sectorIndex, this.crushDamageDue);
   }
 
+  /** The slot a class's movers live in — see `moverClass`. */
+  private moverMap(cls: 'floor' | 'ceiling'): Map<number, Mover> {
+    return cls === 'floor' ? this.floorMovers : this.ceilingMovers;
+  }
+
+  /** Registers a mover in whichever slot its kind claims, so no caller has to know the mapping. */
+  private setMover(sectorIndex: number, mover: Mover): void {
+    this.moverMap(moverClass(mover.kind)).set(sectorIndex, mover);
+  }
+
   /**
-   * Vanilla's `sec->specialdata`: this sector already has a mover thinker running on it, so a fresh
-   * trigger of *any* kind must do nothing at all. `EV_DoFloor`, `EV_DoPlat`, `EV_DoCeiling`,
-   * `EV_DoDonut` and `EV_BuildStairs` all `continue` past such a sector.
+   * `P_SectorActive(floor_special, sec)`: this sector already has a *floor*
+   * thinker running, so `EV_DoFloor`, `EV_DoPlat`, `EV_DoDonut` and
+   * `EV_BuildStairs` must `continue` past it. A closing door overhead does
+   * not block them — that is `ceilingActive`'s slot, and keeping the two
+   * apart is the whole point of Boom's split.
    *
    * A mover that has finished is **not** active — vanilla removes its thinker and clears
    * `specialdata` the moment it stops, freeing the sector to be triggered again. This engine keeps
-   * the finished record in `movers` instead (a lift re-triggers off its own `restHeight`), so the
+   * the finished record instead (a lift re-triggers off its own `restHeight`), so the
    * state has to be read rather than mere presence.
    *
    * The two re-triggers vanilla does honor are handled by their own callers *before* asking this: a
@@ -1132,8 +1306,22 @@ export class SpecialsController {
    *
    * See docs/specials.md § One mover per sector — DOOM2 MAP30's central pillar is the repro.
    */
-  private sectorActive(sectorIndex: number): boolean {
-    const mover = this.movers.get(sectorIndex);
+  private floorActive(sectorIndex: number): boolean {
+    return this.moverActive(this.floorMovers.get(sectorIndex));
+  }
+
+  /**
+   * `P_SectorActive(ceiling_special, sec)` — the door/ceiling/crusher slot.
+   * A running elevator counts, since vanilla's `EV_DoElevator` claims
+   * `ceilingdata` as well as `floordata` (`p_floor.c`).
+   */
+  private ceilingActive(sectorIndex: number): boolean {
+    const floor = this.floorMovers.get(sectorIndex);
+    if (floor?.kind === 'elevator' && this.moverActive(floor)) return true;
+    return this.moverActive(this.ceilingMovers.get(sectorIndex));
+  }
+
+  private moverActive(mover: Mover | undefined): boolean {
     if (!mover) return false;
     switch (mover.kind) {
       case 'floor':
@@ -1157,10 +1345,10 @@ export class SpecialsController {
   }
 
   private triggerDoor(sectorIndex: number, effect: DoorEffect): boolean {
-    const existing = this.movers.get(sectorIndex);
+    const existing = this.ceilingMovers.get(sectorIndex);
     const sounds = this.doorSounds(effect);
     if (!existing || existing.kind !== 'door') {
-      if (this.sectorActive(sectorIndex)) return false;
+      if (this.ceilingActive(sectorIndex)) return false;
       const sector = this.map.sectors[sectorIndex];
       const closeThenOpen = effect.mode === 'closeThenOpen';
       // A closeThenOpen door is authored already open, and reopens to
@@ -1169,7 +1357,7 @@ export class SpecialsController {
       // which always computes a fresh neighbor-ceiling target.
       const openHeight = closeThenOpen ? sector.ceilHeight : lowestNeighborCeiling(this.map, sectorIndex) - DOOR_OPEN_GAP;
       const closeHeight = sector.floorHeight;
-      this.movers.set(sectorIndex, {
+      this.setMover(sectorIndex, {
         kind: 'door',
         sectorIndex,
         effect,
@@ -1188,9 +1376,9 @@ export class SpecialsController {
     // A door this engine still has a record of is one vanilla either left a
     // thinker on (mid-motion: `EV_DoDoor` `continue`s, rtn 0) or had already
     // finished and removed (`'open'`/`'closed'`: a fresh thinker, rtn 1) —
-    // exactly `sectorActive`. The re-trigger behavior below is unchanged.
+    // exactly `ceilingActive`. The re-trigger behavior below is unchanged.
     const mover = existing;
-    const fresh = !this.sectorActive(sectorIndex);
+    const fresh = !this.ceilingActive(sectorIndex);
     if (effect.mode === 'closeOnly' || effect.mode === 'closeThenOpen') {
       mover.state = 'lowering';
       this.playSector(sectorIndex, sounds.close);
@@ -1220,9 +1408,9 @@ export class SpecialsController {
 
   private triggerLift(sectorIndex: number, effect: LiftEffect): boolean {
     const target = effect.target ?? 'lowestNeighborFloor';
-    const existing = this.movers.get(sectorIndex);
+    const existing = this.floorMovers.get(sectorIndex);
     if (!existing || existing.kind !== 'lift') {
-      if (this.sectorActive(sectorIndex)) return false;
+      if (this.floorActive(sectorIndex)) return false;
       const sector = this.map.sectors[sectorIndex];
       const floor = sector.floorHeight;
       if (target === 'perpetual') {
@@ -1230,7 +1418,7 @@ export class SpecialsController {
         // neighbor floor (each clamped to include the sector's own), starting
         // in a random direction — `plat->status = P_Random(pr_plats)&1`, where
         // 0 is up in vanilla's plat_e.
-        this.movers.set(sectorIndex, {
+        this.setMover(sectorIndex, {
           kind: 'lift',
           sectorIndex,
           effect,
@@ -1243,13 +1431,32 @@ export class SpecialsController {
         this.playSector(sectorIndex, 'pstart');
         return true;
       }
+      if (target === 'toggle') {
+        // `EV_DoPlat`'s toggleUpDn: `low = ceilingheight`, `high =
+        // floorheight`, moving *down*. Both bounds are on the wrong side of
+        // that direction, which is exactly what makes vanilla's `T_MovePlane`
+        // clamp on its first step — see `LiftMover.instant`. No sound at all;
+        // `EV_DoPlat` starts none for this type.
+        this.setMover(sectorIndex, {
+          kind: 'lift',
+          sectorIndex,
+          effect,
+          restHeight: floor,
+          downHeight: sector.ceilHeight,
+          state: 'lowering',
+          holdRemaining: 0,
+          instant: true,
+          crush: true,
+        });
+        return true;
+      }
       const low =
         target === 'nextLowerFloor'
           ? nextLowerFloor(this.map, sectorIndex)
           : target === 'lowestNeighborCeiling'
             ? lowestNeighborCeiling(this.map, sectorIndex)
             : lowestNeighborFloor(this.map, sectorIndex);
-      this.movers.set(sectorIndex, {
+      this.setMover(sectorIndex, {
         kind: 'lift',
         sectorIndex,
         effect,
@@ -1264,11 +1471,23 @@ export class SpecialsController {
       this.playSector(sectorIndex, 'pstart'); // EV_DoPlat's own downWaitUpStay sound
       return true;
     }
-    // P_ActivateInStasis: only a perpetual trigger wakes a stopped lift, and
-    // vanilla's rtn stays 0 for it — stasis never cleared the sector's
-    // specialdata, so the spawn loop skips the sector (same shape as the
-    // crusher's in-stasis restart). docs/specials.md § Perpetual lifts.
+    // P_ActivateInStasis: only the perpetual and toggle triggers wake a
+    // stopped lift — `EV_DoPlat` calls it for those two types alone.
     if (existing.state === 'stasis') {
+      if (target === 'toggle') {
+        // The toggle *reverses* out of stasis rather than resuming:
+        // `plat->status = plat->oldstatus==up ? down : up`. And unlike every
+        // other wake, this one reports a hit — `EV_DoPlat` sets `rtn = 1`
+        // unconditionally for toggleUpDn — so an SR 211 always flips its
+        // switch. docs/specials.md § Toggle plats.
+        existing.state = existing.stasisFrom === 'raising' ? 'lowering' : 'raising';
+        existing.stasisFrom = undefined;
+        return true;
+      }
+      // For the perpetual family vanilla's rtn stays 0: stasis never cleared
+      // the sector's specialdata, so the spawn loop skips the sector (same
+      // shape as the crusher's in-stasis restart).
+      // docs/specials.md § Perpetual lifts and the stop line.
       if (target === 'perpetual') {
         existing.state = existing.stasisFrom ?? 'lowering';
         existing.stasisFrom = undefined;
@@ -1291,7 +1510,7 @@ export class SpecialsController {
    * same walk-only callers.
    */
   private triggerLiftStop(sectorIndex: number): boolean {
-    const existing = this.movers.get(sectorIndex);
+    const existing = this.floorMovers.get(sectorIndex);
     if (!existing || existing.kind !== 'lift' || existing.state === 'stasis' || existing.state === 'rest') return false;
     existing.stasisFrom = existing.state;
     existing.state = 'stasis';
@@ -1299,14 +1518,14 @@ export class SpecialsController {
   }
 
   private triggerFloor(sectorIndex: number, effect: FloorEffect, line?: LineDef): boolean {
-    if (this.sectorActive(sectorIndex)) return false;
+    if (this.floorActive(sectorIndex)) return false;
     // `line` is only actually needed for `changeTexture` — the only caller without a real
     // linedef (`triggerTag`, for a boss-death `lowerFloorToLowest`) never sets that flag.
     if (effect.changeTexture && line) this.applyFloorChange(sectorIndex, line);
     const target = resolveFloorTarget(this.map, sectorIndex, effect.target, () =>
       this.shortestTextureAround(sectorIndex, 'lower'),
     );
-    this.movers.set(sectorIndex, {
+    this.setMover(sectorIndex, {
       kind: 'floor',
       sectorIndex,
       speed: effect.speed,
@@ -1447,7 +1666,7 @@ export class SpecialsController {
    * neither flips nor is spent. docs/specials.md § Crushers.
    */
   private triggerCrusher(sectorIndex: number, effect: CrusherEffect): boolean {
-    const existing = this.movers.get(sectorIndex);
+    const existing = this.ceilingMovers.get(sectorIndex);
     if (existing && existing.kind === 'crusher') {
       if (existing.state === 'stopped') {
         existing.state = existing.stoppedFrom ?? 'lowering';
@@ -1455,9 +1674,9 @@ export class SpecialsController {
       }
       return false;
     }
-    if (this.sectorActive(sectorIndex)) return false;
+    if (this.ceilingActive(sectorIndex)) return false;
     const sector = this.map.sectors[sectorIndex];
-    this.movers.set(sectorIndex, {
+    this.setMover(sectorIndex, {
       kind: 'crusher',
       sectorIndex,
       speed: effect.speed,
@@ -1473,7 +1692,7 @@ export class SpecialsController {
 
   /** `EV_CeilingCrushStop`: freezes a running crusher where it stands, remembering its direction. Already-stopped is not a hit — vanilla's own `direction != 0` guard, and so its `rtn`. */
   private triggerCrusherStop(sectorIndex: number): boolean {
-    const existing = this.movers.get(sectorIndex);
+    const existing = this.ceilingMovers.get(sectorIndex);
     if (!existing || existing.kind !== 'crusher' || existing.state === 'stopped') return false;
     existing.stoppedFrom = existing.state;
     existing.state = 'stopped';
@@ -1482,11 +1701,11 @@ export class SpecialsController {
 
   /** Vanilla's own `sec->specialdata` guard: a sector already driven by *any* mover ignores this — unlike doors/lifts/floors above, there's no interactive re-trigger behavior worth having for a one-way move. */
   private triggerCeiling(sectorIndex: number, effect: CeilingEffect, line?: LineDef): boolean {
-    if (this.sectorActive(sectorIndex)) return false;
+    if (this.ceilingActive(sectorIndex)) return false;
     const target = resolveCeilingTarget(this.map, sectorIndex, effect.target, () =>
       this.shortestTextureAround(sectorIndex, 'upper'),
     );
-    this.movers.set(sectorIndex, {
+    this.setMover(sectorIndex, {
       kind: 'ceiling',
       sectorIndex,
       speed: effect.speed,
@@ -1531,7 +1750,10 @@ export class SpecialsController {
    * (`elevateCurrent`) — and the ceiling target preserves the sector's gap.
    */
   private triggerElevator(sectorIndex: number, effect: ElevatorEffect, line?: LineDef): boolean {
-    if (this.sectorActive(sectorIndex)) return false;
+    // Both slots, matching `EV_DoElevator`'s own
+    // `if (sec->floordata || sec->ceilingdata) continue;` — it is the one
+    // trigger that claims a sector's floor *and* ceiling (see `moverClass`).
+    if (this.floorActive(sectorIndex) || this.ceilingActive(sectorIndex)) return false;
     const sector = this.map.sectors[sectorIndex];
     let floorTarget: number;
     if (effect.target === 'nextHigherFloor') {
@@ -1544,7 +1766,7 @@ export class SpecialsController {
       floorTarget = front.floorHeight;
     }
     if (floorTarget === sector.floorHeight) return false;
-    this.movers.set(sectorIndex, {
+    this.setMover(sectorIndex, {
       kind: 'elevator',
       sectorIndex,
       speed: effect.speed,
@@ -1567,10 +1789,10 @@ export class SpecialsController {
    * texture at all), which no real map actually does.
    */
   private triggerRaiseToTexture(sectorIndex: number): boolean {
-    if (this.sectorActive(sectorIndex)) return false;
+    if (this.floorActive(sectorIndex)) return false;
     const sector = this.map.sectors[sectorIndex];
     const target = sector.floorHeight + this.shortestTextureAround(sectorIndex, 'lower');
-    this.movers.set(sectorIndex, {
+    this.setMover(sectorIndex, {
       kind: 'floor',
       sectorIndex,
       speed: FLOOR_SPEED,
@@ -1587,7 +1809,7 @@ export class SpecialsController {
    * (`arrivalTexture`, applied by `tickFloor`).
    */
   private triggerLowerAndChange(sectorIndex: number): boolean {
-    if (this.sectorActive(sectorIndex)) return false;
+    if (this.floorActive(sectorIndex)) return false;
     const target = lowestNeighborFloor(this.map, sectorIndex);
     let arrivalTexture: { floorTex: string; special: number } | undefined;
     for (const neighborIndex of neighborSectorIndices(this.map, sectorIndex)) {
@@ -1597,7 +1819,7 @@ export class SpecialsController {
         break;
       }
     }
-    this.movers.set(sectorIndex, {
+    this.setMover(sectorIndex, {
       kind: 'floor',
       sectorIndex,
       speed: FLOOR_SPEED,
@@ -1617,7 +1839,7 @@ export class SpecialsController {
    * overwriting its mover.
    */
   private triggerDonut(holeIndex: number): boolean {
-    if (this.sectorActive(holeIndex)) return false;
+    if (this.floorActive(holeIndex)) return false;
     const ringIndex = neighborSectorIndices(this.map, holeIndex)[0];
     if (ringIndex === undefined) return false;
     let outerIndex: number | undefined;
@@ -1628,7 +1850,7 @@ export class SpecialsController {
     }
     if (outerIndex === undefined) return false;
     const outer = this.map.sectors[outerIndex];
-    this.movers.set(ringIndex, {
+    this.setMover(ringIndex, {
       kind: 'floor',
       sectorIndex: ringIndex,
       speed: FLOOR_SPEED / 2,
@@ -1637,7 +1859,7 @@ export class SpecialsController {
       crush: false,
       arrivalTexture: { floorTex: outer.floorTex, special: 0 },
     });
-    this.movers.set(holeIndex, {
+    this.setMover(holeIndex, {
       kind: 'floor',
       sectorIndex: holeIndex,
       speed: FLOOR_SPEED / 2,
@@ -1679,7 +1901,11 @@ export class SpecialsController {
         break;
       }
       case 'startStrobe':
-        if (this.movers.has(sectorIndex)) return false; // vanilla's sec->specialdata guard
+        // `EV_StartLightStrobing` guards on `P_SectorActive(lighting_special)`
+        // — the light thinker's own slot, which is this map. Only vanilla's
+        // demo-compat mode folds movers into that test, so a sector with a
+        // door running is free to start strobing.
+        if (this.lightStates.has(sectorIndex)) return false;
         this.lightStates.set(sectorIndex, makeLightState('blink1', sector.light, darkestNeighborLight(this.map, sectorIndex)));
         break;
     }
@@ -1694,10 +1920,10 @@ export class SpecialsController {
    * step is exactly a floor rising to a fixed target height.
    */
   private triggerStairs(startSectorIndex: number, effect: StairsEffect): boolean {
-    if (this.sectorActive(startSectorIndex)) return false; // vanilla's sec->specialdata guard
+    if (this.floorActive(startSectorIndex)) return false; // vanilla's sec->specialdata guard
     for (const step of findStairChain(this.map, startSectorIndex, effect.stepHeight, effect.direction, effect.ignoreTexture)) {
-      if (this.sectorActive(step.sectorIndex)) continue; // EV_BuildStairs' own per-step `tsec->specialdata` skip
-      this.movers.set(step.sectorIndex, {
+      if (this.floorActive(step.sectorIndex)) continue; // EV_BuildStairs' own per-step `tsec->specialdata` skip
+      this.setMover(step.sectorIndex, {
         kind: 'floor',
         sectorIndex: step.sectorIndex,
         speed: effect.speed,
@@ -1712,7 +1938,7 @@ export class SpecialsController {
   }
 
   /** First teleport-landing marker (`MT_TELEPORTMAN`) sitting in one of the tag-matched sectors — vanilla's own search is just as arbitrary when more than one exists. */
-  private findTeleportDestination(sectorIndices: number[]): Placement | null {
+  private findTeleportDestination(sectorIndices: readonly number[]): Placement | null {
     if (sectorIndices.length === 0) return null;
     const targets = new Set(sectorIndices);
     for (const t of this.map.things) {
@@ -1721,6 +1947,111 @@ export class SpecialsController {
       // `P_SpawnMapThing` — so the arrival facing is the snapped one, not the raw THING field.
       if (targets.has(this.world.sectorIndexAt(t.x, t.y)))
         return { x: t.x, y: t.y, angle: (spawnAngleDeg(t.angle) * Math.PI) / 180 };
+    }
+    return null;
+  }
+
+  /**
+   * Where a crossing of `line` puts the body — vanilla's loud landing, or one
+   * of Boom's two silent kinds. See docs/specials.md § Silent and line-to-line
+   * teleporters.
+   */
+  private teleportArrival(
+    lineIndex: number,
+    def: SpecialDef,
+    effect: TeleportEffect,
+    at: TeleportSource,
+    activator: Activator,
+  ): TeleportDest | null {
+    if (effect.destination === 'line') return this.lineArrival(lineIndex, effect, at, activator);
+    const dest = this.findTeleportDestination(resolveTargets(this.map, this.map.linedefs[lineIndex], def));
+    if (!dest) return null;
+    // `EV_Teleport`: aim the body at the marker, drop it to the floor and let
+    // the caller zero its momentum.
+    if (!effect.silent) return dest;
+    // `EV_SilentTeleport`: rotate rather than aim. The rotation is the crossed
+    // line's angle minus the marker's, plus a right angle — vanilla's comment
+    // says why: "walking perpendicularly across [the] teleporter linedef
+    // causes [the] thing to exit in the direction indicated by the exit thing".
+    const rotateBy = this.lineAngle(lineIndex) - dest.angle + Math.PI / 2;
+    return { x: dest.x, y: dest.y, angle: at.angle + rotateBy, silent: true, rotateBy };
+  }
+
+  /**
+   * A linedef's own heading, `R_PointToAngle2(0, 0, line->dx, line->dy)` —
+   * off `World`'s precomputed `ld->dx`/`ld->dy` rather than re-derived from
+   * the vertexes, like every other line-geometry read in this file.
+   */
+  private lineAngle(lineIndex: number): number {
+    return Math.atan2(this.world.lineDY[lineIndex], this.world.lineDX[lineIndex]);
+  }
+
+  /**
+   * `EV_SilentLineTeleport`: the body keeps its position *along* the crossed
+   * line and is re-laid onto the first tag-matched two-sided linedef that
+   * isn't this one, turned by the angle between them. `reversed` (262-265)
+   * flips both the position along the exit and the turn, so the pair reads as
+   * one continuous doorway rather than a mirror.
+   *
+   * Two details are load-bearing and come straight from the source: the
+   * landing floor is the **higher** of the exit line's two sectors
+   * (`sides[l->sidenum[stepdown]]`), and the body must end up on a specific
+   * *side* of the exit line — `reverse || (player && stepdown)` — or it
+   * oscillates back through the teleporter it just came out of.
+   */
+  private lineArrival(
+    lineIndex: number,
+    effect: TeleportEffect,
+    at: TeleportSource,
+    activator: Activator,
+  ): TeleportDest | null {
+    const line = this.map.linedefs[lineIndex];
+    const from = { a: this.map.vertexes[line.v1], b: this.map.vertexes[line.v2] };
+    if (!from.a || !from.b) return null;
+    const dx = this.world.lineDX[lineIndex];
+    const dy = this.world.lineDY[lineIndex];
+    for (const i of linesByTag(this.map, line.tag)) {
+      const exit = this.map.linedefs[i];
+      if (exit === line || exit.left === NO_SIDE || exit.right === NO_SIDE) continue;
+      const a = this.map.vertexes[exit.v1];
+      const b = this.map.vertexes[exit.v2];
+      const front = this.map.sectors[this.map.sidedefs[exit.right]?.sector];
+      const back = this.map.sectors[this.map.sidedefs[exit.left]?.sector];
+      if (!a || !b || !front || !back) continue;
+      const exitDx = this.world.lineDX[i];
+      const exitDy = this.world.lineDY[i];
+
+      // Where along the entry line the body crossed, taken on the dominant
+      // axis so a near-axis-aligned line doesn't divide by ~0.
+      let pos = Math.abs(dx) > Math.abs(dy) ? (at.x - from.a.x) / dx : (at.y - from.a.y) / dy;
+      if (!Number.isFinite(pos)) continue;
+      if (effect.reversed) pos = 1 - pos;
+      const rotateBy = (effect.reversed ? 0 : Math.PI) + Math.atan2(exitDy, exitDx) - Math.atan2(dy, dx);
+
+      // Interpolated back from v2, matching `l->v2 - FixedMul(pos, l->dx)`.
+      let px = b.x - pos * exitDx;
+      let py = b.y - pos * exitDy;
+
+      const stepdown = front.floorHeight < back.floorHeight;
+      const wantFront = !(effect.reversed || (activator === 'player' && stepdown));
+      // Vanilla nudges by up to 10 fixed-point units (10/65536 of a map unit)
+      // to settle which side of the exit line the rounding landed on. That is
+      // a fixed-point artifact, not a rule; the float equivalent is a single
+      // step along the line's normal, which is what the loop was converging on.
+      if (isFrontSide(a.x, a.y, b.x, b.y, px, py) !== wantFront) {
+        const len = Math.hypot(exitDx, exitDy) || 1;
+        const nudge = wantFront ? LINE_TELEPORT_NUDGE : -LINE_TELEPORT_NUDGE;
+        px += (exitDy / len) * nudge;
+        py += (-exitDx / len) * nudge;
+      }
+
+      // Vanilla measures the landing floor as "the higher of the two floor
+      // heights at the exit linedef" (`sides[l->sidenum[stepdown]]`). That is
+      // what `World.groundFloor` already returns for a body straddling a line,
+      // and the exit point sits a fraction of a unit off it against a 16-unit
+      // player radius — so the caller's own resting-height query lands on the
+      // same number, and preserving a height above it needs nothing from here.
+      return { x: px, y: py, angle: at.angle + rotateBy, silent: true, rotateBy };
     }
     return null;
   }
@@ -1745,12 +2076,17 @@ export class SpecialsController {
    * the thing was on *before* the move (`P_TryMove` passes `oldside`). Only the
    * teleport branch reads it, matching vanilla, where `side` reaches nothing but
    * `EV_Teleport`. See docs/specials.md § Teleporters.
+   *
+   * `at` is where the activator is standing and which way it faces — only the
+   * silent teleports read it (`TeleportSource`), so every other caller can
+   * leave it at the default.
    */
   private trigger(
     lineIndex: number,
     ownedKeys: ReadonlySet<KeySlot>,
     activator: Activator = 'player',
     fromBackSide = false,
+    at: TeleportSource = NO_SOURCE,
   ): TeleportDest | null {
     const line = this.map.linedefs[lineIndex];
     const def = lookupSpecial(this.lineSpecial(lineIndex));
@@ -1788,17 +2124,24 @@ export class SpecialsController {
     }
 
     if (def.effect.kind === 'teleport') {
-      // 125/126 are Doom II's monster-only teleport pair: vanilla lists them
-      // only in `P_CrossSpecialLine`'s non-player branch, so a player walking
-      // one does nothing at all. 39/97 work for either.
-      if (def.effect.monsterOnly && activator !== 'monster') return null;
+      const effect = def.effect;
+      // 125/126 and Boom's 264-269 are the monster-only numbers: vanilla lists
+      // them only in `P_CrossSpecialLine`'s non-player branch, so a player
+      // walking one does nothing at all. 39/97 work for either.
+      if (effect.monsterOnly && activator !== 'monster') return null;
       // A back-side crossing is `EV_Teleport`'s "so you can get out of
-      // teleporter" case: no teleport, but the line is still consumed, since
-      // vanilla's `case 39` clears `line->special` regardless of the result.
-      // Same for a tag that matches no landing thing. docs/specials.md § Teleporters.
-      const dest = fromBackSide ? null : this.findTeleportDestination(resolveTargets(this.map, line, def));
-      if (!def.repeatable) this.usedOnce.add(lineIndex);
+      // teleporter" case, shared by every variant here. docs/specials.md § Teleporters.
+      const dest = fromBackSide ? null : this.teleportArrival(lineIndex, def, effect, at, activator);
+      // Vanilla's `case 39` clears `line->special` regardless of the result
+      // (`|| demo_compatibility`), so a blocked crossing still spends the
+      // line; Boom's own numbers clear it only on success — see
+      // `TeleportEffect.spendOnlyOnSuccess`.
+      if (!def.repeatable && (dest || !effect.spendOnlyOnSuccess)) this.usedOnce.add(lineIndex);
       if (!dest) return null;
+      // A switch teleport (174/195, and Boom's silent 209/210) flips here
+      // rather than at the end of the method: this branch returns early, and
+      // `P_UseSpecialLine` flips inside `if (EV_…)`, i.e. only on success.
+      if (gated) this.flashSwitch(lineIndex, def.repeatable);
       // A monster's teleport is the caller's to perform, and must *not* touch
       // `lastTeleport` — that exists solely to reseed the player's own
       // walk-trigger tracking (see its doc); where a monster jumped to says
@@ -1814,56 +2157,14 @@ export class SpecialsController {
 
     // Vanilla's `rtn`: true once any target sector actually took the effect.
     let applied = false;
-    for (const sectorIndex of targets) {
-      switch (def.effect.kind) {
-        case 'door':
-          applied = this.triggerDoor(sectorIndex, def.effect) || applied;
-          break;
-        case 'lift':
-          applied = this.triggerLift(sectorIndex, def.effect) || applied;
-          break;
-        case 'liftStop':
-          applied = this.triggerLiftStop(sectorIndex) || applied;
-          break;
-        case 'floor':
-          applied = this.triggerFloor(sectorIndex, def.effect, line) || applied;
-          break;
-        case 'crusher':
-          applied = this.triggerCrusher(sectorIndex, def.effect) || applied;
-          break;
-        case 'crusherStop':
-          applied = this.triggerCrusherStop(sectorIndex) || applied;
-          break;
-        case 'ceiling':
-          applied = this.triggerCeiling(sectorIndex, def.effect, line) || applied;
-          break;
-        case 'elevator':
-          applied = this.triggerElevator(sectorIndex, def.effect, line) || applied;
-          break;
-        case 'changeOnly':
-          applied = this.triggerChangeOnly(sectorIndex, def.effect, line) || applied;
-          break;
-        case 'raiseToTexture':
-          applied = this.triggerRaiseToTexture(sectorIndex) || applied;
-          break;
-        case 'lowerAndChange':
-          applied = this.triggerLowerAndChange(sectorIndex) || applied;
-          break;
-        case 'stairs':
-          applied = this.triggerStairs(sectorIndex, def.effect) || applied;
-          break;
-        case 'donut':
-          // The tag match already resolved to the "hole" sector; the ring
-          // and outer sectors are discovered dynamically inside — see
-          // triggerDonut's doc.
-          applied = this.triggerDonut(sectorIndex) || applied;
-          break;
-        case 'lightChange':
-          applied = this.triggerLightChange(sectorIndex, def.effect) || applied;
-          break;
-        default:
-          break;
-      }
+    for (const sectorIndex of targets) applied = this.applyEffect(sectorIndex, def.effect, line) || applied;
+    // Boom's three ceiling-then-floor pairs — see `SpecialDef.secondEffect`.
+    // The second pass is its own loop over the same targets, matching the
+    // real dispatch: `EV_DoCeiling` runs over every tagged sector before
+    // `EV_DoFloor` is attempted on any of them.
+    const second = def.secondEffect;
+    if (second && !(second.onlyIfPrimaryFailed && applied)) {
+      for (const sectorIndex of targets) applied = this.applyEffect(sectorIndex, second.effect, line) || applied;
     }
     // Boom's retrigger alternation (generalized stairs' build direction): the
     // line's *effective* special flips on every activation that did something.
@@ -1878,11 +2179,55 @@ export class SpecialsController {
     return null;
   }
 
+  /** One effect against one tag-matched sector, returning that sector's share of vanilla's `rtn`. */
+  private applyEffect(sectorIndex: number, effect: Effect, line?: LineDef): boolean {
+    switch (effect.kind) {
+      case 'door':
+        return this.triggerDoor(sectorIndex, effect);
+      case 'lift':
+        return this.triggerLift(sectorIndex, effect);
+      case 'liftStop':
+        return this.triggerLiftStop(sectorIndex);
+      case 'floor':
+        return this.triggerFloor(sectorIndex, effect, line);
+      case 'crusher':
+        return this.triggerCrusher(sectorIndex, effect);
+      case 'crusherStop':
+        return this.triggerCrusherStop(sectorIndex);
+      case 'ceiling':
+        return this.triggerCeiling(sectorIndex, effect, line);
+      case 'elevator':
+        return this.triggerElevator(sectorIndex, effect, line);
+      case 'changeOnly':
+        return this.triggerChangeOnly(sectorIndex, effect, line);
+      case 'raiseToTexture':
+        return this.triggerRaiseToTexture(sectorIndex);
+      case 'lowerAndChange':
+        return this.triggerLowerAndChange(sectorIndex);
+      case 'stairs':
+        return this.triggerStairs(sectorIndex, effect);
+      case 'donut':
+        // The tag match already resolved to the "hole" sector; the ring and
+        // outer sectors are discovered dynamically inside — see triggerDonut.
+        return this.triggerDonut(sectorIndex);
+      case 'lightChange':
+        return this.triggerLightChange(sectorIndex, effect);
+      // Spelled out rather than left to a `default`, for the reason
+      // `tickMovers` gives: a new `Effect` kind must be a compile error here,
+      // not something that silently does nothing at every tagged sector. Both
+      // return out of `trigger` before the per-sector loop ever runs.
+      case 'exit':
+      case 'teleport':
+        return false;
+    }
+  }
+
   /**
    * A monster walking from `prev` to `pos` crosses whatever walk
    * triggers lie between — vanilla's `P_CrossSpecialLine` runs for any thing,
-   * not just the player, but gates non-players to a very short allow-list
-   * (`MONSTER_CROSSABLE`): teleports, one door type and two lift types.
+   * not just the player, but gates non-players to a short allow-list carried
+   * per number as `SpecialDef.monsterActivate`: teleports (vanilla's and
+   * Boom's silent family alike), one door type and two lift types.
    * Returns the landing spot if the crossing teleported it, so the caller can
    * move the monster and puff the fog; everything else (a door opening, a lift
    * dropping) happens as a side effect, exactly as it does under the player.
@@ -1891,8 +2236,10 @@ export class SpecialsController {
    * pack of monsters behind a 125/126 line that only they can walk, teleporting
    * them into the arena the moment they start chasing.
    */
-  crossMonster(prev: Pos2, pos: Pos2, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
-    return this.crossLines(prev.x, prev.y, pos.x, pos.y, 'monster', ownedKeys);
+  crossMonster(prev: Pos2, pos: CrossingBody, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
+    // The facing matters: Boom's silent numbers rotate a body rather than
+    // aiming it.
+    return this.crossLines(prev.x, prev.y, pos.x, pos.y, 'monster', ownedKeys, pos.angle);
   }
 
   /**
@@ -1902,6 +2249,10 @@ export class SpecialsController {
    * crossing teleported the activator — a monster's move is the caller's to
    * apply — or null. Boom's voodoo dolls will run their conveyor crossings
    * through here too.
+   *
+   * `facing` is the activator's heading in radians, the one thing a silent
+   * teleport needs from it that this scan can't derive; the *position* it
+   * reads is the crossing point below, never where the move ended.
    */
   private crossLines(
     prevX: number,
@@ -1910,6 +2261,7 @@ export class SpecialsController {
     y: number,
     activator: Activator,
     ownedKeys: ReadonlySet<KeySlot>,
+    facing = 0,
   ): TeleportDest | null {
     if (prevX === x && prevY === y) return null;
     const radius = activator === 'monster' ? MONSTER_CROSS_RADIUS : PLAYER_RADIUS + 8;
@@ -1921,9 +2273,15 @@ export class SpecialsController {
       const a = this.map.vertexes[line.v1];
       const b = this.map.vertexes[line.v2];
       if (!a || !b) continue;
-      if (!segmentIntersect(prevX, prevY, x, y, a.x, a.y, b.x, b.y)) continue;
+      const hit = segmentIntersect(prevX, prevY, x, y, a.x, a.y, b.x, b.y);
+      if (!hit) continue;
+      // A line-to-line teleport interpolates the body's position *along the
+      // crossed line*, so it wants the crossing point rather than wherever the
+      // move happened to end (`EV_SilentLineTeleport` runs from `thing->x/y`
+      // inside `P_CrossSpecialLine`, i.e. mid-crossing).
+      const source: TeleportSource = { x: prevX + (x - prevX) * hit.t, y: prevY + (y - prevY) * hit.t, angle: facing };
       // `oldside`: the side the activator was on before this move — see `trigger`.
-      const dest = this.trigger(i, ownedKeys, activator, !isFrontSide(a.x, a.y, b.x, b.y, prevX, prevY));
+      const dest = this.trigger(i, ownedKeys, activator, !isFrontSide(a.x, a.y, b.x, b.y, prevX, prevY), source);
       if (dest) return dest;
     }
     return null;
@@ -1948,8 +2306,7 @@ export class SpecialsController {
 
   /** The tag-matched half of `notifyBossDeath` — no triggering linedef exists, so this scans sector tags directly rather than going through `resolveTargets`/`trigger`. */
   private triggerTag(tag: number, kind: 'lowerFloorToLowest' | 'raiseToTexture' | 'blazeOpen' | 'open'): void {
-    for (let i = 0; i < this.map.sectors.length; i++) {
-      if (this.map.sectors[i].tag !== tag) continue;
+    for (const i of sectorsByTag(this.map, tag)) {
       switch (kind) {
         case 'lowerFloorToLowest':
           this.triggerFloor(i, {
@@ -2024,13 +2381,19 @@ export class SpecialsController {
     // non-special lines, which this scan has never modeled.
     hits.sort((p, q) => p.t - q.t);
     for (const h of hits) {
-      this.trigger(h.line, ownedKeys);
+      // The player's own stance, for a silent switch teleport (209/210).
+      this.trigger(h.line, ownedKeys, 'player', false, { x: playerX, y: playerY, angle: playerAngle });
       if (!(this.map.linedefs[h.line].flags & LF.PASSUSE)) break;
     }
   }
 
-  private handleWalkTriggers(playerX: number, playerY: number, ownedKeys: ReadonlySet<KeySlot>): void {
-    this.crossLines(this.prevX, this.prevY, playerX, playerY, 'player', ownedKeys);
+  private handleWalkTriggers(
+    playerX: number,
+    playerY: number,
+    playerAngle: number,
+    ownedKeys: ReadonlySet<KeySlot>,
+  ): void {
+    this.crossLines(this.prevX, this.prevY, playerX, playerY, 'player', ownedKeys, playerAngle);
   }
 
   // ---- Switch textures -------------------------------------------------

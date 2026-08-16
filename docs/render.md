@@ -362,6 +362,20 @@ water and blood flats and the fire/blood/rock wall patterns all cycle through a 
 named frames forever, no trigger, from map load, at 8 tics/frame (`animdefs[]`, `p_spec.c` —
 every entry happens to share that speed).
 
+**A WAD set carrying Boom's `ANIMATED` lump supplies its own table instead**, decoded by
+`wad/animated.ts` and handed to the constructor — which is why the table is a parameter rather than
+a module constant. `AnimDef` itself is declared there rather than here: the lump is where an
+animation is *defined*, so the record sits on the wad side of the line and this module imports it,
+never the reverse. The lump **replaces** `ANIM_DEFS` outright rather than
+adding to it, and its per-entry `speed` is honoured (real PWADs do vary it), so nothing else here
+changes. docs/wad.md § ANIMATED and SWITCHES.
+
+One known limit: `MaterialBank.setFrame` keeps whatever `alphaTest` a name's *first* frame decided
+and does not re-derive it per swap. No vanilla sequence has holes partway through; a Boom `ANIMATED`
+could legitimately author one, and that frame would render without its cutout. Re-deriving would
+mean a full alpha scan plus a shader recompile every animation tic, which is exactly the cost that
+comment rejects — so this is recorded rather than fixed.
+
 Vanilla's own comment on that table says the in-between frames are "all the flats/textures between
 the start and end entry, in the order found in the WAD file," not a naming pattern — confirmed
 necessary by entries like `FIREWALA..FIREWALL` and `FIRELAV3..FIRELAVA`, whose start/end names don't

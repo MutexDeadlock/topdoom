@@ -13,7 +13,8 @@
  * See docs/specials.md.
  */
 import { NO_SIDE, type DoomMap, type LineDef } from '../../wad/map.ts';
-import { sectorLines } from '../world.ts';
+import type { SwitchPairLookup } from '../../wad/switches.ts';
+import { sectorLines, sectorsByTag } from '../world.ts';
 import { BOSS_DEATH_TYPES } from '../things/tables.ts';
 import { ThingType } from '../things/doomednums.ts';
 import { lookupSpecial } from './tables.ts';
@@ -21,17 +22,14 @@ import { decodeSectorType } from './sectortypes.ts';
 import { switchPairTexture, type SpecialDef } from './defs.ts';
 
 /** Which sectors a special's linedef affects: the line's own back sector for manual doors, tag matches otherwise. */
-export function resolveTargets(map: DoomMap, line: LineDef, def: SpecialDef): number[] {
+export function resolveTargets(map: DoomMap, line: LineDef, def: SpecialDef): readonly number[] {
   if (def.manual) {
     const backSector = line.left !== NO_SIDE ? map.sidedefs[line.left]?.sector : undefined;
     return backSector !== undefined ? [backSector] : [];
   }
-  if (line.tag === 0) return [];
-  const out: number[] = [];
-  for (let i = 0; i < map.sectors.length; i++) {
-    if (map.sectors[i].tag === line.tag) out.push(i);
-  }
-  return out;
+  // Tag 0 resolves to nothing here and is not in the index either — see
+  // `sectorsByTag`'s doc for why that is one rule rather than two.
+  return sectorsByTag(map, line.tag);
 }
 
 export type BossDeathAction =
@@ -243,9 +241,19 @@ export interface SwitchEntry {
 /**
  * Switch-textured slots on either side of `line` — regardless of trigger
  * kind (walkover switches with real SW art exist too, if rarely). The
- * texture found at scan time is treated as "off"; its SW1/SW2 pair is "on".
+ * texture found at scan time is treated as "off"; its pair is "on".
+ *
+ * `pairs` resolves that pair: the `SW1`/`SW2` name convention by default, or
+ * the WAD set's own `SWITCHES` table when it ships one (`wad/switches.ts`),
+ * whose pairs need not share a suffix. Passed in rather than looked up here
+ * because this stays a pure function of the map — docs/wad.md § ANIMATED and
+ * SWITCHES.
  */
-export function findSwitchEntries(map: DoomMap, line: LineDef): SwitchEntry[] {
+export function findSwitchEntries(
+  map: DoomMap,
+  line: LineDef,
+  pairs: SwitchPairLookup = switchPairTexture,
+): SwitchEntry[] {
   const out: SwitchEntry[] = [];
   for (const sideIndex of [line.right, line.left]) {
     if (sideIndex === NO_SIDE) continue;
@@ -253,15 +261,20 @@ export function findSwitchEntries(map: DoomMap, line: LineDef): SwitchEntry[] {
     if (!side) continue;
     for (const slot of ['upper', 'lower', 'middle'] as const) {
       const offTexture = side[slot];
-      const onTexture = switchPairTexture(offTexture);
+      const onTexture = pairs(offTexture);
       if (onTexture) out.push({ sideIndex, slot, sectorIndex: side.sector, onTexture, offTexture });
     }
   }
   return out;
 }
 
-/** Sectors whose height a mover will drive, or whose wall carries a switch texture — must stay out of the static batch (see mapmesh.ts). */
-export function computeMovableSectors(map: DoomMap): Set<number> {
+/**
+ * Sectors whose height a mover will drive, or whose wall carries a switch
+ * texture — must stay out of the static batch (see mapmesh.ts). `pairs` is
+ * `findSwitchEntries`' switch-pair lookup, and must be the same one the
+ * controller is given or the two disagree about which sectors carry switches.
+ */
+export function computeMovableSectors(map: DoomMap, pairs?: SwitchPairLookup): Set<number> {
   const out = new Set<number>();
   for (let i = 0; i < map.sectors.length; i++) {
     // Sector-type door timers (10/14) never wait for a linedef trigger, so
@@ -302,7 +315,7 @@ export function computeMovableSectors(map: DoomMap): Set<number> {
       // for a mesh of its own.
       for (const sectorIndex of resolveTargets(map, line, def)) out.add(sectorIndex);
     }
-    for (const e of findSwitchEntries(map, line)) out.add(e.sectorIndex);
+    for (const e of findSwitchEntries(map, line, pairs)) out.add(e.sectorIndex);
   }
   // A boss-death tag has no triggering linedef for the loop above to find — see bossDeathSectors.
   for (const sectorIndex of bossDeathSectors(map)) out.add(sectorIndex);

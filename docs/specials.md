@@ -71,9 +71,11 @@ so switches flip, vanilla's own `rtn = 1`). Change-only sectors are included in
 
 `scripts/inspect-wad.ts` prints a **specials coverage report** — every linedef special classified
 vanilla / boom / generalized / param (later phase) / deferred (later phase) / UNKNOWN, and sector
-specials checked through `decodeSectorType` — the acceptance gate for each Boom phase. The
-deferred set (`DEFERRED_LINE_SPECIALS`) is the silent-teleport family and the toggle plats,
-Phase 2 scope; the param set is Phase 3/4 (scrollers, friction, pushers, transfers, translucency).
+specials checked through `decodeSectorType` — the acceptance gate for each Boom phase.
+**`DEFERRED_LINE_SPECIALS` is now empty**: every Boom number that is a triggerable linedef effect
+resolves. What remains outside the tables is `PARAM_LINE_SPECIALS` — the always-on level-spawn
+parameters (scrollers, friction, pushers, transfers, translucency), Phase 3/4 — which is a
+different kind of thing, not a gap.
 
 ## Elevators
 
@@ -311,17 +313,56 @@ check. See docs/movement.md § Collision for `groundCeiling` itself.
 
 ## One mover per sector
 
-**A sector already running a mover refuses every new trigger** — `SpecialsController.sectorActive`,
-vanilla's `sec->specialdata`. `EV_DoFloor`, `EV_DoPlat`, `EV_DoCeiling`, `EV_DoDonut` and
-`EV_BuildStairs` all `continue` past such a sector, so the second trigger does nothing at all rather
-than replacing what's running. Every `trigger*` method asks before creating a mover.
+**A sector already running a mover refuses every new trigger of the same class** — vanilla's
+`sec->specialdata`, which Boom splits into three independent slots (`P_SectorActive`, `p_spec.c`).
+`EV_DoFloor`, `EV_DoPlat`, `EV_DoCeiling`, `EV_DoDonut` and `EV_BuildStairs` all `continue` past a
+busy sector, so the second trigger does nothing at all rather than replacing what's running. Every
+`trigger*` method asks before creating a mover.
+
+**The classes are floor, ceiling and lighting**, and only vanilla's `demo_compatibility` folds them
+into one. `moverClass` (`game/specials.ts`) is the mapping, read off the C rather than inferred:
+
+| Class | Slot | Kinds |
+|---|---|---|
+| floor | `floorMovers` | `FloorMover`, `LiftMover`, `ElevatorMover` |
+| ceiling | `ceilingMovers` | `DoorMover`, `CeilingMover`, `CrusherMover` |
+| lighting | `lightStates` | the blink patterns and `'startStrobe'` |
+
+So a rising floor and a closing door can run on one sector at once, which real Boom maps rely on
+and a single slot silently dropped. `floorActive`/`ceilingActive` are the two predicates.
+**The elevator claims both** (`EV_DoElevator`'s own `if (sec->floordata || sec->ceilingdata)`); it
+is stored in `floorMovers` alone and `ceilingActive` looks for it there, because one object in two
+maps would `structuredClone` into two on save and then tick twice on restore.
+
+`'startStrobe'` (17) checks the **lighting** slot — `EV_StartLightStrobing`'s
+`P_SectorActive(lighting_special, sec)`, i.e. `lightStates` — so a sector with a door running is
+free to start strobing. This engine previously checked the mover map there, vanilla's unified
+behavior.
+
+**Three numbers only work because of the split**: 151/166/186, Boom's "raise ceiling, lower floor",
+are the only dispatch cases in the whole switch that call two `EV_` helpers (verified by scanning
+`p_spec.c`/`p_switch.c` for multi-`EV_` cases — 40 is the only other, and see below). Their floor
+half is dead under a unified slot and live under the split. `SpecialDef.secondEffect` carries it:
+151 calls both unconditionally, 166/186 are `if (EV_DoCeiling(…) || EV_DoFloor(…))` and so run the
+floor **only when no tagged sector could take the ceiling** — C's short-circuit, reproduced as
+`onlyIfPrimaryFailed`. Each pass covers every target sector before the next begins, matching the
+real order.
+
+**Vanilla 40 is not one of them.** It looks identical, but Boom *deleted* its `EV_DoFloor` call
+outside demo compatibility, having marked it `//jff 02/12/98 doesn't work` — so 40 is ceiling-only
+in both eras, and § One-way ceiling movers still describes it correctly.
 
 "Active" is about *state*, not presence. Vanilla removes a thinker and clears `specialdata` the
-instant it stops; this engine keeps the finished record in `movers` (a lift re-triggers off its own
-`restHeight`), so `sectorActive` reads the state: a `'done'` floor/ceiling, a `'rest'` lift, a
+instant it stops; this engine keeps the finished record (a lift re-triggers off its own
+`restHeight`), so the predicates read the state: a `'done'` floor/ceiling, a `'rest'` lift, a
 `'stopped'` crusher and an `'open'`/`'closed'` door are all free to be triggered again. The two
 re-triggers vanilla *does* honor are handled by their own callers before this is consulted — a door
 reverses (`EV_VerticalDoor`) and a stopped crusher restarts (`P_ActivateInStasis`).
+
+**The savegame reads the class back off `mover.kind`, not off which field it arrived in.** A save
+written before the split holds every kind in `SpecialsSnapshot.movers`; `ceilingMovers` is a new
+optional field. Sorting on restore makes both shapes land correctly with no `SAVE_VERSION` bump —
+docs/savegames.md § The format and its version.
 
 **Repro: DOOM2 MAP30's central pillar (sector 12, tag 2).** It carries two specials — a one-shot S1
 switch (140, `plus512`) that raises it from −96 to 416 over 14.6 s, and its own four sides (62), a
@@ -330,10 +371,14 @@ repeatable lift. Using the lift while the switch's slow rise was still running r
 pillar was stranded at whatever it had reached — around 128, the ledge with the radiation suits, for
 a player who walks straight over after pressing the switch. The guard was previously per-mover-kind
 and inconsistent: `triggerFloor` only refused another *floor*, and `triggerLift` refused nothing.
+The class split does not reopen this: `FloorMover` and `LiftMover` are both floor-class, so they
+still contend for the one slot exactly as they did.
 
 ## Teleporters
 
-39/97 for either the player or a monster; Doom II's 125/126 for monsters only. The destination is the
+39/97 for either the player or a monster; Doom II's 125/126 for monsters only. Boom's fourteen
+extra numbers share this machinery and every rule below, differing only in how they *arrive* —
+§ Silent and line-to-line teleporters. The destination is the
 first doomednum-14 landing thing found inside a tag-matched sector (`findTeleportDestination`);
 reaching it calls back into `game.ts` to move the player (`Player.teleportTo`) and snap the camera —
 both its yaw, to match the landing angle, and its follow point (`snapTo`), so the view cuts to the
@@ -358,14 +403,18 @@ rule (`P_UseSpecialLine`) that happens to share `isFrontSide`.
 the back (or one whose tag matches no landing thing) is spent all the same, and `trigger` adds to
 `usedOnce` before returning. The monster-only pair is the one exception: 125's clear sits *inside*
 its `if (!thing->player)`, so a player walking one leaves it intact, which is why the `monsterOnly`
-gate returns before the consume.
+gate returns before the consume. **Boom's own numbers invert this** — theirs clear only on success
+(`TeleportEffect.spendOnlyOnSuccess`), so the split is per number rather than a rule about
+teleports.
 
 **Monsters cross walk triggers too**, via `crossMonster` — `ThingLayer` keeps each monster's own
 `prevX`/`prevY` and hands the segment it just walked to a `crossLines` callback, the same "system
 reports, `game.ts` realizes" shape as `fogAlphaOf` and the crush callback. Vanilla runs
-`P_CrossSpecialLine` for *any* thing but gates non-players to a very short allow-list, reproduced
-verbatim as `MONSTER_CROSSABLE`: 39/97/125/126 (teleports), 4 (raise door) and 10/88 (the two
-down-wait-up-stay lifts). Everything else — exit lines, stair builders, most doors and floors — does
+`P_CrossSpecialLine` for *any* thing but gates non-players to a very short allow-list, carried per
+number as `SpecialDef.monsterActivate`: vanilla's 39/97/125/126 (teleports), 4 (raise door) and
+10/88 (the two down-wait-up-stay lifts), plus Boom's whole silent-teleport family (207/208,
+243/244, 262-269 — `p_spec.c`'s own list) and whatever a generalized line's monster bit permits.
+Everything else — exit lines, stair builders, most doors and floors — does
 nothing under a monster's feet, which is why a level's monsters can't wander around rearranging its
 geometry. **125/126 are the monster-only pair**: vanilla lists them *only* in the non-player branch,
 so a player walking one does nothing, which is what makes the classic monster-closet setup work.
@@ -400,6 +449,113 @@ through the `TFOG` sprite's frames (`A`-`J`, confirmed against the actual
 lump names, all rotation-0 so no facing logic is needed) once before removing itself. Map transitions
 clear any still-active puffs explicitly, since a teleport onto an exit line could otherwise leave one
 animating over the next level.
+
+## Silent and line-to-line teleporters
+
+Boom adds fourteen numbers to the four vanilla ones, along three independent axes carried as
+optional fields on the *same* `TeleportEffect` — absent means the vanilla behavior, so 39/97/125/126
+are untouched.
+
+| Numbers | Trigger | Destination | |
+|---|---|---|---|
+| 207 / 208 / 209 / 210 | W1 / WR / S1 / SR | landing thing | silent |
+| 243 / 244 | W1 / WR | linedef | silent |
+| 262 / 263 | W1 / WR | linedef | silent, reversed |
+| 264 / 265 | W1 / WR | linedef | silent, reversed, monster-only |
+| 266 / 267 | W1 / WR | linedef | silent, monster-only |
+| 268 / 269 | W1 / WR | landing thing | silent, monster-only |
+
+**"Silent" is four things, not just the missing sound** (`p_telept.c: EV_SilentTeleport`): no `TFOG`
+puff at either end, no `telept`, no reaction-time freeze, and — the part that actually matters — the
+body is **rotated rather than aimed**. A loud teleport sets an absolute facing from the landing
+marker and zeroes momentum; a silent one turns the body by the angle between the two ends and turns
+its momentum with it, so walking through comes out walking. `TeleportDest.rotateBy` carries that
+angle to the caller, which is what `Player.teleportTo` needs to rotate `velX`/`velY` instead of
+clearing them. `TeleportDest.silent` carries the second difference: the height above the floor is
+preserved for a body teleported mid-air (`z = thing->z - thing->floorz`, reapplied at the
+destination, where loud `EV_Teleport` sets `thing->z = thing->floorz`). The offset is measured by
+`Player.teleportTo` and reapplied unclamped, as in Boom, since the controller is never told the
+player's height.
+
+For the thing-destination kind the rotation is `srcLineAngle − markerAngle + 90°`, and vanilla's own
+comment explains the right angle: walking *perpendicularly* across the teleporter line should exit
+in the direction the marker points.
+
+**The line-to-line kind never touches a marker.** Its tag names a two-sided **linedef**
+(`linesByTag`, docs/world.md § The tag indexes — the first match that isn't the trigger line wins),
+and the body keeps its proportional position *along* the entry line, re-laid onto the exit line and
+turned by the angle between them. `reversed` (262-265) flips both the position and the turn, which
+is what makes a pair read as one continuous doorway rather than a mirror. Two details are
+load-bearing:
+
+- **The landing floor is the higher of the exit line's two sectors** — vanilla's
+  `sides[l->sidenum[stepdown]]`. That is exactly what `World.groundFloor` already returns for a body
+  straddling a line, and the exit point sits a fraction of a unit off it against a 16-unit player
+  radius, so the caller's own resting-height query lands on the same number and a preserved height
+  above it needs nothing from the arrival.
+- **The body must land on a specific side of the exit line** (`reverse || (player && stepdown)`), or
+  it oscillates back through the teleporter it just came out of. Vanilla settles this with a loop
+  nudging up to `FUDGEFACTOR` = 10 *fixed-point* units — 10/65536 of a map unit — to correct a
+  rounding error its own `FixedMul` interpolation created. That is a fixed-point artifact, not a
+  rule, so this engine uses one step along the exit line's normal instead
+  (`LINE_TELEPORT_NUDGE`); transcribing the constant into a float engine would be meaningless.
+
+**Boom's numbers spend a one-shot line only on success.** Their dispatch is
+`if (EV_Silent…(…)) line->special = 0;` with no `|| demo_compatibility`, unlike vanilla's `case 39`,
+whose clear is unconditional — the behavior § Teleporters describes and
+`tests/regression/teleport-back-side.test.ts` pins. `TeleportEffect.spendOnlyOnSuccess` is that
+split, per number rather than as a global rule.
+
+**209/210 flip their switch inside the teleport branch**, not at the end of `trigger`: the branch
+returns early, and `P_UseSpecialLine` calls `P_ChangeSwitchTexture` inside `if (EV_SilentTeleport(…))`
+— so a switch teleport that found no destination is left unflipped and unspent, the same rule as
+every other gated switch (§ A switch only flips when it acts).
+
+Two deliberate divergences:
+
+- **The camera's position cuts, but its yaw only turns by `rotateBy`.** Boom's silent teleport
+  exists to make rooms-over-rooms imperceptible in a first-person view; from overhead the
+  surrounding geometry visibly changes regardless, and not snapping the follow point would leave the
+  camera flying across the map (§ Teleporters). The yaw is the part that can genuinely be preserved,
+  and **must be turned relatively, not reoriented**: `TopDownCamera.yawDeg` is an orbit the player
+  owns with Q/E (docs/render.md § Camera orbit and camera-relative movement), not something slaved to their facing, so setting it
+  from the landing angle — what a vanilla teleport correctly does — injects that orbit offset as a
+  visible spin on every silent arrival. A pair authored as one continuous doorway has `rotateBy` 0
+  and now leaves the view completely still.
+- **A monster's momentum is not rotated**, because monsters have none in this engine (docs/movement.md).
+  Their facing rotates; the AI re-routes from the arrival anyway (`movedir = DI_NODIR`).
+
+Monsters can activate every one of these lines except through a *switch*: `p_switch.c` does list
+209/210 alongside 174/195 as monster-usable, but no monster here presses switches at all, so that
+gap predates this work and is unchanged.
+
+## Toggle plats
+
+211 (SR) and 212 (WR), `EV_DoPlat(toggleUpDn)`: the floor snaps between its own height and its
+ceiling — sealing the sector — and snaps back on the next activation. No travel time, no wait, no
+sound at all; `EV_DoPlat` starts none for this type and `T_PlatRaise` skips both `pstop` calls.
+
+**The instantness is emergent in vanilla, and explicit here.** `EV_DoPlat` sets `low = ceilingheight`,
+`high = floorheight` and a *downward* direction — so `T_MovePlane`'s first step is told to move down
+toward a destination *above* the floor, clamps straight to it and reports `pastdest`. This engine's
+movers auto-direction toward their target instead (§ Generalized linedefs lists that as a known
+divergence), so nothing would clamp; `LiftMover.instant` says so outright rather than reproducing a
+sign trick that no longer has the same effect.
+
+Each stroke parks in `'stasis'` with `stasisFrom` recording which way it went, and the next
+activation **reverses** it — `plat->status = plat->oldstatus==up ? down : up`, not the plain resume
+the perpetual family's stop line gets. That is the whole of the toggle.
+
+Two consequences worth knowing:
+
+- **A toggle plat always reports a hit.** `EV_DoPlat` sets `rtn = 1` unconditionally for
+  `toggleUpDn`, before the per-sector loop — unlike `perpetualRaise`, whose stasis wake leaves `rtn`
+  at 0. So an SR 211 flips its switch every press, including the presses that only woke something
+  (§ A switch only flips when it acts).
+- **It crushes rather than reversing.** `plat->crush = true` is set for this type alone, so
+  `LiftMover.crush` takes it down the grind-through path instead of the immediate reverse every
+  other blocked lift does (§ Every other mover stops instead). Because the move completes within
+  the tic it starts, the damage lands on that same tic.
 
 ## Perpetual lifts and the stop line
 

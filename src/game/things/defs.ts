@@ -16,7 +16,8 @@ import type { MonsterAttackEvent, MonsterBody } from '../monsters/defs.ts';
 import type { ThingsSnapshot } from '../snapshot.ts';
 import type { ThingBlocker } from '../world.ts';
 import type { SpriteAnimator } from '../../render/sprites.ts';
-import type { Placement, Pos2, Pos3 } from '../../types.ts';
+import type { Pos2, Pos3 } from '../../types.ts';
+import type { TeleportDest } from '../specials.ts';
 import { DOOM_TIC, PICKUP_SCALE, PICKUP_SCALE_TYPES } from '../../constants.ts';
 
 /**
@@ -234,6 +235,8 @@ export interface CrossingBody extends Pos2 {
   id: number;
   type: number;
   blockRadius: number;
+  /** Current facing, radians — what Boom's silent teleports rotate relative to. */
+  angle: number;
 }
 
 /**
@@ -302,7 +305,7 @@ export interface ThingLayer {
     dt: number,
     player: Pos3 | null,
     fogVisible?: (subsector: number) => boolean,
-    crossLines?: (prev: Pos2, mover: CrossingBody) => Placement | null,
+    crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null,
   ): ThingUpdateResult;
   /**
    * Fills the sprite batches from the state `update` left, with every position

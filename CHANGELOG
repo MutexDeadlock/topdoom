@@ -2,6 +2,12 @@ v0.14.0 (2026-08-1?)
 
 Features and improvements
   - initial BOOM compat
+    - generalized linedefs and sector types, extended linedef numbers,
+      six-slot keys and generalized locks, elevators, extended BSP nodes
+    - silent and line-to-line teleporters, instant toggle floors
+    - a WAD's own ANIMATED and SWITCHES tables are used when it ships them
+    - a sector can now run a floor and a ceiling special at the same time,
+      as BOOM does
 
 Fixed bugs
   - fixed long cracks in the floor around very short walls, which could open a

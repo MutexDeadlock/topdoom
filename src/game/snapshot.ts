@@ -126,8 +126,20 @@ export interface SectorEffectsSnapshot {
 }
 
 export interface SpecialsSnapshot {
-  /** `[sectorIndex, mover]` entries; `Mover` is plain data throughout (see its export note). */
+  /**
+   * `[sectorIndex, mover]` entries for the **floor** slot; `Mover` is plain
+   * data throughout (see its export note). A save written before the
+   * floor/ceiling split holds every kind here, which the reader handles by
+   * sorting on `mover.kind` rather than trusting the field —
+   * docs/specials.md § One mover per sector.
+   */
   movers: [number, Mover][];
+  /**
+   * The ceiling slot (doors, ceilings, crushers). Optional per the
+   * no-`SAVE_VERSION`-bump rule: absent is a pre-split save, whose ceiling
+   * movers are in `movers` above.
+   */
+  ceilingMovers?: [number, Mover][];
   usedOnce: number[];
   /** `[lineIndex, secondsLeft]` for switches currently showing their on-texture. */
   switchFlashes: [number, number][];

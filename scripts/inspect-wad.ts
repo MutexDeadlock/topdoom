@@ -8,6 +8,8 @@
 import { readFileSync } from 'node:fs';
 import { Wad, WadFile } from '../src/wad/wad.ts';
 import { GraphicsBank } from '../src/wad/graphics.ts';
+import { readAnimated } from '../src/wad/animated.ts';
+import { readSwitches } from '../src/wad/switches.ts';
 import { loadMap } from '../src/wad/map.ts';
 import { classifyLineSpecial, type SpecialClass } from '../src/game/specials/tables.ts';
 import { decodeSectorType, sectorTypeUnderstood } from '../src/game/specials/sectortypes.ts';
@@ -60,6 +62,16 @@ for (const s of map.sectors) {
   }
 }
 console.log(`\nmissing textures: ${missing.size === 0 ? 'none' : [...missing].join(', ')}`);
+
+// --- Boom's two table lumps, each replacing a built-in table when present ---
+// docs/wad.md § ANIMATED and SWITCHES.
+const animated = readAnimated(wad);
+const switches = readSwitches(wad);
+const unknownPairs = switches?.filter((p) => !gfx.hasTexture(p.off) || !gfx.hasTexture(p.on)).length ?? 0;
+console.log(
+  `ANIMATED: ${animated ? `${animated.length} sequences` : 'absent (built-in table)'}` +
+    `, SWITCHES: ${switches ? `${switches.length - unknownPairs} of ${switches.length} pairs usable` : 'absent (SW1/SW2 convention)'}`,
+);
 
 // --- sounds: which of vanilla's sfx this set can actually play ---
 // A missing lump is silent rather than substituted (see SoundBank), so this is

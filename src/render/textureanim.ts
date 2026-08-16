@@ -3,6 +3,7 @@
  * through `MaterialBank`. See docs/render.md § Animated textures.
  */
 import type { GraphicsBank } from '../wad/graphics.ts';
+import type { AnimDef } from '../wad/animated.ts';
 import type { MaterialBank, SurfaceKind } from './textures.ts';
 import { DOOM_TIC } from '../constants.ts';
 
@@ -12,14 +13,11 @@ import { DOOM_TIC } from '../constants.ts';
  * the in-between frames are resolved from WAD lump order at construction
  * time, not spelled out here. See docs/render.md § Animated textures for
  * why (e.g. `FIREWALA`..`FIREWALL` isn't a naming-pattern mismatch).
+ *
+ * The built-in table, used when the WAD set ships no `ANIMATED` lump. One
+ * that does replaces this outright rather than adding to it — see
+ * `wad/animated.ts`.
  */
-interface AnimDef {
-  kind: SurfaceKind;
-  start: string;
-  end: string;
-  speedTics: number;
-}
-
 const ANIM_DEFS: AnimDef[] = [
   { kind: 'flat', start: 'NUKAGE1', end: 'NUKAGE3', speedTics: 8 },
   { kind: 'flat', start: 'FWATER1', end: 'FWATER4', speedTics: 8 },
@@ -69,13 +67,19 @@ export class AnimatedTextures {
   private sequences: Sequence[] = [];
   private elapsed = 0;
 
-  constructor(gfx: GraphicsBank, bank: MaterialBank) {
+  /**
+   * `defs` is the table to animate: the WAD set's own `ANIMATED` lump when it
+   * has one (`wad/animated.ts: readAnimated`), the built-in vanilla table
+   * otherwise. Boom's lump *replaces* rather than extends, which is why this
+   * takes one table instead of merging two.
+   */
+  constructor(gfx: GraphicsBank, bank: MaterialBank, defs: readonly AnimDef[] = ANIM_DEFS) {
     this.bank = bank;
     const order: Record<SurfaceKind, string[]> = {
       wall: gfx.textureNamesInOrder(),
       flat: gfx.flatNamesInOrder(),
     };
-    for (const def of ANIM_DEFS) {
+    for (const def of defs) {
       const names = order[def.kind];
       const startIdx = names.indexOf(def.start);
       const endIdx = names.indexOf(def.end);
@@ -94,7 +98,12 @@ export class AnimatedTextures {
 
   update(dt: number): void {
     if (this.sequences.length === 0) return;
-    this.elapsed += dt;
+    // `elapsed` is what every frame index below is derived from, so it must
+    // never run backwards: a negative total floors to a negative `tic`, and
+    // JS's `%` keeps the sign, so `names[-1]` comes back undefined and the
+    // frame loop dies. `game.ts` already clamps `rawDt` at the source; this
+    // keeps the invariant with the accumulator that depends on it.
+    this.elapsed = Math.max(0, this.elapsed + dt);
     for (const seq of this.sequences) {
       const tic = Math.floor(this.elapsed / seq.speedSeconds);
       if (tic === seq.lastTic) continue;

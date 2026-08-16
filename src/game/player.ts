@@ -5,7 +5,9 @@
 import { bodyFloor, slideMove, type ThingBlocker, type World } from './world.ts';
 import type { Input } from './input.ts';
 import type { PlayerSnapshot } from './snapshot.ts';
-import type { Placement, Pos2, Pos3 } from '../types.ts';
+// Type-only, so the specials <-> player edge stays compile-time and no runtime cycle forms.
+import type { TeleportDest } from './specials.ts';
+import type { Pos2, Pos3 } from '../types.ts';
 
 /** Vanilla DOOM values, in map units. */
 export const PLAYER_RADIUS = 16;
@@ -224,9 +226,45 @@ export class Player implements Pos3 {
     this.syncInterpolation();
   }
 
-  /** Teleporter landing: drops the player at the destination facing `dest.angle`, matching vanilla's own view-angle snap on arrival. */
-  teleportTo(dest: Placement): void {
+  /**
+   * Teleporter landing: drops the player at the destination facing
+   * `dest.angle`, matching vanilla's own view-angle snap on arrival.
+   *
+   * **Boom's silent teleports arrive differently**, on two axes.
+   * `TeleportDest.rotateBy` turns the player's momentum through the same angle
+   * the facing turned, rather than `moveTo` clearing it — walking in comes out
+   * walking. `TeleportDest.silent` preserves the height above ground for a body
+   * that was mid-air: `EV_SilentTeleport`/`EV_SilentLineTeleport` both take
+   * `z = thing->z - thing->floorz` and reapply it at the destination, where
+   * loud `EV_Teleport` sets `thing->z = thing->floorz` outright. That offset is
+   * measured *here* because the specials controller is never told the player's
+   * height. Absent, the landing is vanilla's exactly.
+   * See docs/specials.md § Silent and line-to-line teleporters.
+   */
+  teleportTo(dest: TeleportDest): void {
+    // Read before `moveTo` overwrites them, reapplied after — the four velocity
+    // fields plus the height above ground are the whole of what a silent
+    // arrival carries across.
+    const vx = this.velX;
+    const vy = this.velY;
+    const vz = this.velZ;
+    const kx = this.knockVelX;
+    const ky = this.knockVelY;
+    const aboveFloor = this.z - this.world.groundFloor(this.x, this.y, PLAYER_RADIUS);
     this.moveTo(dest);
+    if (dest.rotateBy !== undefined) {
+      const cos = Math.cos(dest.rotateBy);
+      const sin = Math.sin(dest.rotateBy);
+      this.velX = vx * cos - vy * sin;
+      this.velY = vx * sin + vy * cos;
+      this.velZ = vz;
+      this.knockVelX = kx * cos - ky * sin;
+      this.knockVelY = kx * sin + ky * cos;
+    }
+    // Unclamped, as in Boom: the offset is reapplied as measured. A body
+    // resting on the ground has one of 0, so this is a no-op for every landing
+    // that isn't mid-air.
+    if (dest.silent) this.z += aboveFloor;
     this.angle = dest.angle;
     // After the angle, not just inside `moveTo`: a teleport snaps the facing too.
     this.syncInterpolation();

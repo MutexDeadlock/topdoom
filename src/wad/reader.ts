@@ -64,9 +64,19 @@ export class Reader {
    * docs/wad.md § Loading and merging.
    */
   name8(): string {
+    return this.name(8);
+  }
+
+  /**
+   * The same normalisation over an arbitrary field width. Boom's `ANIMATED`
+   * and `SWITCHES` records hold **9**-byte NUL-terminated names rather than
+   * the directory's 8-byte padded ones, and the upper-casing is load-bearing
+   * either way: every texture and flat lookup keys on upper case.
+   */
+  name(width: number): string {
     let s = '';
     let terminated = false;
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < width; i++) {
       const c = this.u8();
       if (c === 0) terminated = true;
       if (!terminated) s += String.fromCharCode(c);

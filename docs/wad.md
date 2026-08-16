@@ -73,6 +73,47 @@ vanilla does:
 
 `scripts/inspect-wad.ts` prints the loaded map's table and how much of it is set.
 
+## ANIMATED and SWITCHES
+
+Boom's two table lumps, both a WAD's own replacement for a table the engine otherwise hardcodes.
+`wad/animated.ts` and `wad/switches.ts` decode them; both are read once per WAD set in `game.ts`'s
+constructor, beside the graphics bank, since neither depends on which map is loaded. Absent — which
+is every stock IWAD — the built-in tables stand.
+
+Record layouts, both byte-packed (`p_spec.c: animdef_t`, `p_spec.h: switchlist_t`):
+
+| Lump | Record | Terminator |
+|---|---|---|
+| `ANIMATED` | 23 B — `int8 istexture`, `char endname[9]`, `char startname[9]`, `int32 speed` | `istexture == -1` |
+| `SWITCHES` | 20 B — `char name1[9]`, `char name2[9]`, `int16 episode` | `episode == 0` |
+
+Three things about these that are easy to get wrong:
+
+- **The names are 9-byte NUL-terminated, not the directory's 8-byte padded form**, so `Reader.name8`
+  does not fit; `Reader.name(width)` is the shared implementation both use. The upper-casing it does
+  is load-bearing — every texture and flat lookup keys on upper case.
+- **The terminator can be a partial record.** BOOMEDIT.WAD's `ANIMATED` is 510 bytes: 22 whole
+  records plus 4. So the reader tests the `istexture` byte *before* requiring the rest of its record.
+- **`ANIMATED` replaces the built-in table, it does not merge.** `P_InitPicAnims` builds its whole
+  list from the one lump, and `Wad.find` returning the last definition is exactly that rule. A PWAD
+  shipping a partial `ANIMATED` really does lose the vanilla animations — real Boom behavior, not
+  something to paper over. (Contrast `TEXTUREx`, which this engine *does* merge across files —
+  § Loading and merging.)
+
+**SWITCHES' `episode` field is deliberately ignored.** Vanilla filters on it (1 = shareware,
+2 = registered, 3 = commercial) to keep switches whose textures the running IWAD lacks out of the
+list — but PrBoom+ already drops unknown-texture entries outright, and texture existence is the only
+thing that number was ever a proxy for. `switchPairs` applies the existence check against the
+graphics bank and skips the episode. Honouring it would make switch behavior depend on the IWAD's
+*file name* (`missionOf`, already null for any renamed IWAD), a strictly worse signal.
+
+The decoded pairs become a bidirectional lookup replacing `switchPairTexture`'s `SW1`/`SW2` name
+convention — Boom pairs need not share a suffix, which is the whole reason a table beats the
+convention. It is threaded as a parameter through `findSwitchEntries` and `computeMovableSectors`
+rather than held as a module singleton, so both stay pure functions of the map; the controller takes
+the same lookup for the same "must not disagree" reason it takes `movableSectors`
+(docs/specials.md § A switch only flips when it acts).
+
 ## Art a WAD set doesn't have
 
 A thing whose sprite the merged set carries no lumps for is **skipped, and the level says so**:

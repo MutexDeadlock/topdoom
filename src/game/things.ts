@@ -109,7 +109,8 @@ import {
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import { blastDistanceToBox, boxReach, segmentEntersBox, traceHitsBox } from '../util/geom.ts';
-import type { Placement, Pos2, Pos3 } from '../types.ts';
+import type { Pos2, Pos3 } from '../types.ts';
+import type { TeleportDest } from './specials.ts';
 
 /**
  * Vanilla's own per-tic XY friction, `FRICTION = 0xE800/0x10000` — applied as
@@ -1024,7 +1025,7 @@ export function buildThingSprites(
       dt: number,
       player: Pos3 | null,
       fogVisible?: (subsector: number) => boolean,
-      crossLines?: (prev: Pos2, mover: CrossingBody) => Placement | null,
+      crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null,
     ): ThingUpdateResult {
       const attacks: MonsterAttackEvent[] = [];
       const barrelExplosions: BarrelExplosion[] = [];

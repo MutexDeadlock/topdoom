@@ -40,7 +40,12 @@ describe('specials · extended Boom table', () => {
     assert.equal(lookupSpecial(227)?.effect.kind, 'elevator');
     assert.equal(lookupSpecial(78)?.effect.kind, 'changeOnly');
     assert.equal(lookupSpecial(197)?.effect.kind, 'exit');
-    assert.equal(lookupSpecial(207), null, 'deferred numbers stay unknown until their phase');
+    assert.equal(lookupSpecial(207)?.effect.kind, 'teleport');
+    assert.equal(lookupSpecial(211)?.effect.kind, 'lift');
+    // Nothing is deferred any more: every Boom triggerable number resolves.
+    // A number outside every table still comes back null.
+    assert.equal(DEFERRED_LINE_SPECIALS.size, 0);
+    assert.equal(lookupSpecial(300), null, 'an unassigned number is still unknown');
   });
 });
 

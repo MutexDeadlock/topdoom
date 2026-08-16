@@ -758,6 +758,58 @@ export function sectorLines(map: DoomMap, sectorIndex: number): readonly number[
   return index[sectorIndex] ?? NO_LINES;
 }
 
+/**
+ * Sectors and linedefs grouped by tag — vanilla's `P_FindSectorFromLineTag`
+ * and `P_FindLineFromLineTag`, which both linear-scan on every call. Ascending
+ * index order, matching those scans, since "the first match" is load-bearing
+ * for several specials.
+ *
+ * **Tag 0 is deliberately not indexed.** Every caller already refuses it
+ * upstream (`resolveTargets`, `SpecialDef.requiresTag`, vanilla's own
+ * `P_CheckTag`), and on a large map most sectors and lines carry it — so
+ * indexing it would cost the one bucket nobody reads.
+ *
+ * Memoized against the `DoomMap` for the same reason `sectorLineIndexes` is,
+ * and safe for the same reason: `Sector.tag`/`LineDef.tag` are written once by
+ * `loadMap` and never at runtime. See docs/world.md § The tag indexes.
+ */
+const tagIndexes = new WeakMap<DoomMap, { sectors: Map<number, number[]>; lines: Map<number, number[]> }>();
+
+function buildTagIndex(map: DoomMap): { sectors: Map<number, number[]>; lines: Map<number, number[]> } {
+  const sectors = new Map<number, number[]>();
+  const lines = new Map<number, number[]>();
+  const push = (into: Map<number, number[]>, tag: number, index: number) => {
+    if (tag === 0) return;
+    const bucket = into.get(tag);
+    if (bucket) bucket.push(index);
+    else into.set(tag, [index]);
+  };
+  for (let i = 0; i < map.sectors.length; i++) push(sectors, map.sectors[i].tag, i);
+  for (let i = 0; i < map.linedefs.length; i++) push(lines, map.linedefs[i].tag, i);
+  return { sectors, lines };
+}
+
+function tagIndex(map: DoomMap): { sectors: Map<number, number[]>; lines: Map<number, number[]> } {
+  let index = tagIndexes.get(map);
+  if (!index) {
+    index = buildTagIndex(map);
+    tagIndexes.set(map, index);
+  }
+  return index;
+}
+
+const NO_MATCHES: readonly number[] = [];
+
+/** The sectors carrying `tag`, ascending — `P_FindSectorFromLineTag`. See `tagIndexes`. */
+export function sectorsByTag(map: DoomMap, tag: number): readonly number[] {
+  return tagIndex(map).sectors.get(tag) ?? NO_MATCHES;
+}
+
+/** The linedefs carrying `tag`, ascending — `P_FindLineFromLineTag`. See `tagIndexes`. */
+export function linesByTag(map: DoomMap, tag: number): readonly number[] {
+  return tagIndex(map).lines.get(tag) ?? NO_MATCHES;
+}
+
 /** Sectors on the other side of a two-sided line from `sectorIndex`. */
 function neighborSectors(map: DoomMap, sectorIndex: number): Sector[] {
   const out: Sector[] = [];

@@ -6,7 +6,7 @@
  */
 import type { DoomMap } from '../../wad/map.ts';
 import { NO_SIDE } from '../../wad/map.ts';
-import { sectorsByTag, linesByTag } from '../world.ts';
+import { sectorsByTag, linesByTag, sectorLines } from '../world.ts';
 
 /** The WAD's "no texture here" sidedef name, spelled out rather than imported from the render layer. */
 const NO_TEXTURE = '-';
@@ -58,6 +58,12 @@ export class Transfers {
   private floorLightSec: Int32Array;
   private ceilingLightSec: Int32Array;
   private heightSecs: Int32Array;
+  /**
+   * `heightSecs` again, narrowed to the sectors whose neighbours can follow a
+   * fake floor down — Boom's invisible-platform idiom, `markFakeFloors`. Dense
+   * for the same reason its siblings are. See docs/specials.md § The fake floor.
+   */
+  private fakeFloorSecs: Int32Array;
   /** Linedef indexes whose midtexture draws translucent (260), and those whose midtexture is a tranmap name. */
   private translucent = new Set<number>();
   private suppressed = new Set<number>();
@@ -92,8 +98,10 @@ export class Transfers {
     this.floorLightSec = new Int32Array(n).fill(-1);
     this.ceilingLightSec = new Int32Array(n).fill(-1);
     this.heightSecs = new Int32Array(n).fill(-1);
+    this.fakeFloorSecs = new Int32Array(n).fill(-1);
     this.spawnLightTransfers();
     this.spawnHeightTransfers(lumpSize);
+    this.markFakeFloors();
     this.spawnTranslucentLines(lumpSize);
     this.hasAny =
       this.tally.floorLight + this.tally.ceilingLight + this.tally.water + this.tally.translucent > 0;
@@ -135,6 +143,53 @@ export class Transfers {
         }
       }
     }
+  }
+
+  /**
+   * Picks the 242 sectors whose *below-floor* control sector is a fake floor to
+   * draw rather than a fake ceiling's leftover — the load-time half of
+   * `drawnFloor`. A sector qualifies when every neighbour across a two-sided
+   * line can follow it down: the neighbour sits at or below the fake floor, and
+   * carries no 242 of its own (so it is drawn at the floor read here, and not at
+   * one this scan may not have decided yet). See docs/specials.md § The fake
+   * floor for why both clauses keep the substitution from opening a hole.
+   *
+   * Only the half of the rule that is about **adjacency** is settled here, since
+   * nothing moves that; whether the control sector really is the lower of the two
+   * is a live comparison `drawnFloor` makes. The heights compared *here* are
+   * still load-time ones — a mover that lifts a neighbour above the fake floor
+   * afterwards is a case no map this covers has, and re-running the walk per mesh
+   * rebuild would put it in `processFlat`'s path.
+   */
+  private markFakeFloors(): void {
+    for (let s = 0; s < this.heightSecs.length; s++) {
+      const control = this.heightSecs[s];
+      if (control < 0) continue;
+      const fake = this.map.sectors[control]?.floorHeight;
+      if (fake === undefined || fake >= (this.map.sectors[s]?.floorHeight ?? 0)) continue;
+      if (this.neighboursFollow(s, fake)) this.fakeFloorSecs[s] = control;
+    }
+  }
+
+  /**
+   * Whether every sector across a two-sided line from `s` can be drawn against a
+   * floor at `fake`: it sits at or below that height, so lowering `s` to it opens
+   * no step the map has no lower texture for, and it carries no 242 of its own,
+   * so the floor read off it is the one it draws at.
+   */
+  private neighboursFollow(s: number, fake: number): boolean {
+    for (const lineIndex of sectorLines(this.map, s)) {
+      const line = this.map.linedefs[lineIndex];
+      if (line.right === NO_SIDE || line.left === NO_SIDE) continue;
+      const front = this.map.sidedefs[line.right]?.sector;
+      const back = this.map.sidedefs[line.left]?.sector;
+      // A self-referencing line names `s` on both sides and borders nothing.
+      const other = front === s ? back : front;
+      if (other === undefined || other === s) continue;
+      if ((this.map.sectors[other]?.floorHeight ?? 0) > fake) return false;
+      if (this.heightSecs[other] >= 0) return false;
+    }
+    return true;
   }
 
   /**
@@ -222,10 +277,39 @@ export class Transfers {
   }
 
   /**
+   * The height a sector's floor is *drawn* at when only one floor is drawn for
+   * it: its 242 control sector's where `markFakeFloors` cleared the substitution
+   * and that sector is still the lower of the two, else its own. The floor-side
+   * counterpart of `drawnCeiling`, and what sizes the walls across a two-sided
+   * line from it.
+   *
+   * Vanilla substitutes unconditionally (`r_bsp.c: R_FakeFlat`); this engine
+   * draws a pool bottom at the real floor, so it never substitutes *upwards*,
+   * which is why the comparison is live: a mover can raise the drawn floor over
+   * the real one. See docs/specials.md § The fake floor.
+   */
+  drawnFloor(sectorIndex: number): number {
+    const own = this.map.sectors[sectorIndex]?.floorHeight ?? 0;
+    const control = this.fakeFloorSecs[sectorIndex] ?? -1;
+    if (control < 0) return own;
+    const fake = this.map.sectors[control]?.floorHeight ?? own;
+    return fake < own ? fake : own;
+  }
+
+  /** Every sector drawing at a fake floor, and the control sector it takes it from. */
+  fakeFloorSectors(): { sector: number; control: number }[] {
+    const out: { sector: number; control: number }[] = [];
+    for (let s = 0; s < this.fakeFloorSecs.length; s++) {
+      if (this.fakeFloorSecs[s] >= 0) out.push({ sector: s, control: this.fakeFloorSecs[s] });
+    }
+    return out;
+  }
+
+  /**
    * The height a sector's water surface is drawn at, or null where there is
    * none to draw: no 242, or a control sector at or below the real floor, which
-   * is Boom's *fake ceiling* rather than deep water — see
-   * docs/specials.md § Deep water.
+   * is Boom's *fake ceiling* or *fake floor* rather than deep water — see
+   * docs/specials.md § Deep water and § The fake floor.
    */
   waterHeight(sectorIndex: number): number | null {
     const control = this.heightSec(sectorIndex);

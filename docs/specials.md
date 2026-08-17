@@ -1078,10 +1078,10 @@ shimmer against each other). Anything shallower keeps vanilla's plain above-wate
 drawn at the surface height wearing the sector's own flat.
 
 Boom's other use of 242 is a *fake ceiling*, whose control sector sits at or below the sector's
-floor. Its **floor** half is ignored — drawing it faithfully would sink the visible floor into a
-hole — and its ceiling is never rendered either, but the height still shows: the walls of every
-sector **across a two-sided line from it** are sized against the control sector's ceiling, not the
-real one (`r_bsp.c: R_AddLine` fakes the backsector of every seg). That is what makes BOOMEDIT MAP01
+floor (what its **floor** half then draws is § The fake floor below). Its ceiling is never
+rendered, but the height still shows: the walls of every sector
+**across a two-sided line from it** are sized against the control sector's ceiling, not the real one
+(`r_bsp.c: R_AddLine` fakes the backsector of every seg). That is what makes BOOMEDIT MAP01
 sector 111's `SFALL1` waterfall a single 256..32 band instead of an upper stopping at 192 with a
 32-unit hole under it; the rule, and the two limits this engine puts on it, are
 docs/render.md § Deep water. BOOMEDIT.WAD MAP01 has 13 fake-ceiling setups beside its 22 deep-water
@@ -1118,6 +1118,48 @@ for that reason. It matters for more than heights — a 242 pool's bottom wears 
 **flat**, so `EV_DoChange` and the arrival copies (`applyArrivalChange`, `applyFloorChange`) travel
 the same edge with nothing moving at all. Any site that mutates a sector's geometry and then picks
 the meshes to rebuild itself reintroduces the bug above, one texture at a time.
+
+### The fake floor
+
+A control sector **below** the sector's own floor is the other half of what 242 does, and vanilla
+does not distinguish the two: `R_FakeFlat`'s plain branch assigns *both* heights from the control
+sector unconditionally (`r_bsp.c`, `tempsec->floorheight = s->floorheight`). Used deliberately it is
+Boom's **invisible platform** — a raised floor drawn flush with the room around it, which the player
+then walks over as if on air. BOOMEDIT MAP01 sector 110 is the demo: a 32-unit platform inside
+sector 115, tagged to 115 itself as its control.
+
+**This engine substitutes only where every neighbour can follow the floor down** —
+`Transfers.drawnFloor`. A sector qualifies when, across every two-sided line, the neighbour's floor
+is at or below the fake floor *and* the neighbour carries no 242 of its own:
+
+- **A neighbour above the fake floor** would need a lower reaching further down than before, and
+  the maps that use 242 this way texture for the heights they expect to be drawn, not the real
+  ones. BOOMEDIT MAP01 sector 80 is the case — it draws 8 above its control sector but sits beside
+  sector 120 at the same height, whose sidedef has no lower at all.
+- **A neighbour with its own 242** is not drawn at the floor this scan can read off it, and whether
+  it is depends on a decision `markFakeFloors` may not have made yet. Excluding those costs the
+  idiom nothing — no map here builds one out of two overlapping 242 sectors — and keeps the test on
+  heights the map states outright.
+
+The adjacency half is settled once at load (`markFakeFloors`, `neighboursFollow`) because nothing
+moves it; **whether the control sector is still the lower of the two is compared live**, so a lift
+that raises a sector past its own fake floor stops substituting rather than drawing its floor above
+itself. BOOMEDIT MAP01 sector 110 is a lift, which is what makes that split worth having.
+
+Where both clauses hold, no step the map has no texture for can open: the fake floor only ever moves
+*down*, onto or below a neighbour already there, so every wall between them either shrinks or
+disappears. The substitution reaches **both sides** of every line it touches — a sector's own drawn
+floor as much as its neighbour's, unlike the ceiling half — but never a midtexture's peg anchor,
+only the opening it is clipped to. docs/render.md § Deep water has both asymmetries and what each
+one looks like applied wrongly.
+
+Without it, BOOMEDIT MAP01's platform draws at 32 while sector 115 draws at 0 and lines 673-676
+carry no lower texture — a 32-unit band of nothing under the platform's rim, which from overhead
+reads as a black hole around the grass. Across every WAD committed here the rule fires 8 times:
+BOOMEDIT MAP01 sector 110, literalism MAP06 sector 168, MAP09 sector 83 and MAP18 sectors
+1826-1830. It declines 59 others, nearly all of them literalism MAP18's colormap transfers — one
+control sector at floor -768 carrying `ZRICK10` to 661 sectors whose own floors run from -10000 to
++10000, none of which is describing a floor to draw.
 
 ### Translucent midtextures
 

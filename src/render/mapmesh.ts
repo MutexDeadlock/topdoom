@@ -175,6 +175,8 @@ export interface SectorTransfers {
   heightSec(sectorIndex: number): number;
   /** The ceiling this sector draws at — its 242 control sector's, else its own. */
   drawnCeiling(sectorIndex: number): number;
+  /** The floor this sector draws at where only one is drawn — a 242 fake floor, else its own. */
+  drawnFloor(sectorIndex: number): number;
   /** Where this sector's water surface is drawn, or null where there is none. */
   waterHeight(sectorIndex: number): number | null;
   translucentLine(lineIndex: number): boolean;
@@ -324,6 +326,7 @@ function ownTransfers(map: DoomMap): SectorTransfers {
     ceilingLightSector: (s) => s,
     heightSec: () => -1,
     drawnCeiling: (s) => map.sectors[s]?.ceilHeight ?? 0,
+    drawnFloor: (s) => map.sectors[s]?.floorHeight ?? 0,
     waterHeight: () => null,
     translucentLine: () => false,
     midtexSuppressed: () => false,
@@ -656,6 +659,8 @@ function processFlat(
   // is nothing to see between the two: that case falls back to vanilla's own
   // above-water view, one fan at the surface height wearing the sector's flat,
   // which is also the only way two planes a unit apart avoid z-fighting.
+  // Where the control sector sits *below* instead, the one fan goes to
+  // `drawnFloor` — vanilla's height for the invisible-platform idiom.
   // docs/specials.md § Deep water.
   const surfaceHeight = transfers.waterHeight(poly.sector);
   const deep = surfaceHeight !== null && surfaceHeight - sector.floorHeight >= WATER_MIN_DEPTH;
@@ -667,12 +672,15 @@ function processFlat(
   const bottomTex =
     bottom && bottom.floorTex !== SKY_FLAT && bottom.floorTex !== NO_TEXTURE ? bottom.floorTex : undefined;
   const floorLightFrom = bottom ? control : poly.sector;
+  // The pool bottom sits at the real floor; a shallow 242 draws its one floor at
+  // the surface, exactly as vanilla does; below-floor control sectors land on the
+  // fake floor.
+  const floorHeight = deep ? sector.floorHeight : (surfaceHeight ?? transfers.drawnFloor(poly.sector));
 
   for (const isCeiling of renderCeilings ? FLOOR_AND_CEILING : FLOOR_ONLY) {
     addFlatFan(poly, ss, batches, size, flatSurfaces, {
       texName: isCeiling ? sector.ceilTex : (bottomTex ?? sector.floorTex),
-      // A shallow 242 draws its one floor at the surface, exactly as vanilla does.
-      height: isCeiling ? sector.ceilHeight : (deep || surfaceHeight === null ? sector.floorHeight : surfaceHeight),
+      height: isCeiling ? sector.ceilHeight : floorHeight,
       light: isCeiling ? transfers.ceilingLight(poly.sector) : transfers.floorLight(floorLightFrom),
       lightSector: isCeiling
         ? transfers.ceilingLightSector(poly.sector)
@@ -870,8 +878,11 @@ function processLine(
 
   if (front && frontSec && !backSec) {
     if (includeSide && !includeSide(front.sector)) return;
-    // Solid wall: the middle texture spans the whole sector height.
+    // Solid wall: the middle texture spans the whole sector height — down to the
+    // *drawn* floor, so a 242 fake floor is not left ringed by the gap the flat
+    // moved away from (`Transfers.drawnFloor`, docs/render.md § Deep water).
     const unpegged = (line.flags & LF.LOWER_UNPEGGED) !== 0;
+    const floor = transfers.drawnFloor(front.sector);
     const dim = size('wall', front.middle);
     addWall(
       batches,
@@ -882,11 +893,11 @@ function processLine(
         bx: v2.x,
         by: v2.y,
         topH: cap(frontSec, frontSec.ceilHeight),
-        botH: frontSec.floorHeight,
+        botH: floor,
         texture: front.middle,
         xOffset: front.xOffset,
         yOffset: front.yOffset,
-        pegRef: unpegged ? frontSec.floorHeight + (dim?.h ?? 128) : frontSec.ceilHeight,
+        pegRef: unpegged ? floor + (dim?.h ?? 128) : frontSec.ceilHeight,
         light: frontSec.light,
         sector: front.sector,
         line: lineIndex,
@@ -900,14 +911,14 @@ function processLine(
   if (!front || !back || !frontSec || !backSec) return;
 
   // Two-sided line: each side gets its own step-up/step-down pieces, sized
-  // against the *drawn* ceiling opposite it (Boom's 242 — see `ceilingFacing`).
-  const backCeil = ceilingFacing(transfers, backSec, back.sector, front.sector);
-  const frontCeil = ceilingFacing(transfers, frontSec, front.sector, back.sector);
+  // against the *drawn* heights opposite it. `addTwoSidedSide` resolves those
+  // from the two sector indexes rather than taking them apart, so the only thing
+  // that differs between the two calls is which side is doing the looking.
   if (!includeSide || includeSide(front.sector)) {
-    addTwoSidedSide(batches, size, line.flags, v1, v2, front, front.sector, frontSec, backSec, backCeil, cap, occluders, lineIndex, true, transfers);
+    addTwoSidedSide(batches, size, line.flags, v1, v2, front, front.sector, frontSec, back.sector, backSec, cap, occluders, lineIndex, true, transfers);
   }
   if (!includeSide || includeSide(back.sector)) {
-    addTwoSidedSide(batches, size, line.flags, v2, v1, back, back.sector, backSec, frontSec, frontCeil, cap, occluders, lineIndex, false, transfers);
+    addTwoSidedSide(batches, size, line.flags, v2, v1, back, back.sector, backSec, front.sector, frontSec, cap, occluders, lineIndex, false, transfers);
   }
 }
 
@@ -935,15 +946,23 @@ function addTwoSidedSide(
   side: SideDef,
   secIndex: number,
   sec: Sector,
+  otherIndex: number,
   other: Sector,
-  /** The neighbour's *drawn* ceiling — `ceilingFacing`, not `other.ceilHeight`. */
-  otherCeil: number,
   cap: (sec: Sector, top: number) => number,
   occluders: WallOccluder[],
   lineIndex: number,
   frontSide: boolean,
   transfers: SectorTransfers,
 ): void {
+  // The heights this side is *sized* against. Boom's 242 moves the floors on
+  // both sides of the line and the ceiling only on the neighbour's: vanilla
+  // fakes front and back sector alike (`r_bsp.c: R_AddLine`), and only the
+  // ceiling half has a branch that turns on where the eye is (`ceilingFacing`).
+  // Everything below reads these, never `sec.floorHeight`/`other.ceilHeight` —
+  // except the midtexture's peg anchor, which is the one thing 242 leaves alone.
+  const otherCeil = ceilingFacing(transfers, other, otherIndex, secIndex);
+  const selfFloor = transfers.drawnFloor(secIndex);
+  const otherFloor = transfers.drawnFloor(otherIndex);
   const base = {
     ax: a.x,
     ay: a.y,
@@ -976,20 +995,21 @@ function addTwoSidedSide(
     );
   }
 
-  // Lower: the neighbour's floor is higher, so a step faces this side. Floors
-  // stay *real* where `otherCeil` is the drawn ceiling — a 242 pool is drawn
-  // bottom-and-all here, and a step sized to the surface would ring that bottom
-  // with a hole (docs/render.md § Deep water).
-  if (other.floorHeight > sec.floorHeight) {
+  // Lower: the neighbour's floor is higher, so a step faces this side. A 242
+  // pool's surface never moves this — its bottom is drawn at the real floor, and
+  // a step sized to the surface would ring that bottom with a hole. A 242 *fake
+  // floor* does, on both sides at once, because there the one drawn floor is the
+  // fake one (`Transfers.drawnFloor`, docs/render.md § Deep water).
+  if (otherFloor > selfFloor) {
     addWall(
       batches,
       size,
       {
         ...base,
-        topH: other.floorHeight,
-        botH: sec.floorHeight,
+        topH: otherFloor,
+        botH: selfFloor,
         texture: side.lower,
-        pegRef: lowerUnpegged ? sec.ceilHeight : other.floorHeight,
+        pegRef: lowerUnpegged ? sec.ceilHeight : otherFloor,
       },
       occluders,
     );
@@ -1003,13 +1023,20 @@ function addTwoSidedSide(
     const dim = size('wall', side.middle);
     if (dim) {
       const openTop = Math.min(sec.ceilHeight, otherCeil);
-      const openBot = Math.max(sec.floorHeight, other.floorHeight);
+      const openBot = Math.max(selfFloor, otherFloor);
       // The quad is the texture's own band — one copy hung off the pegged
       // anchor, sidedef y-offset included — clipped to the opening, never the
       // opening itself: vanilla draws a masked midtexture once and lets the
       // opening's clip arrays cut it (r_segs.c: R_RenderMaskedSegRange).
       // docs/render.md § Mesh building.
-      const pegRef = lowerUnpegged ? openBot + dim.h : openTop;
+      //
+      // The anchor is the seg's *real* sectors even where the opening is a 242's
+      // drawn one: `R_RenderMaskedSegRange` reads `curline->frontsector` and
+      // `->backsector` straight off the seg, and runs `R_FakeFlat` only to pick
+      // the light level. docs/render.md § Deep water.
+      const pegTop = Math.min(sec.ceilHeight, other.ceilHeight);
+      const pegBot = Math.max(sec.floorHeight, other.floorHeight);
+      const pegRef = lowerUnpegged ? pegBot + dim.h : pegTop;
       const texTop = pegRef + side.yOffset;
       const top = Math.min(openTop, texTop);
       const bot = Math.max(openBot, texTop - dim.h);

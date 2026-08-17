@@ -4,7 +4,7 @@ import { buildMapMesh, litColor, type FlatSurface } from '../../src/render/mapme
 import { FlatFader } from '../../src/render/occlusion.ts';
 import { transfersOf } from '../../src/game/specials/transfers.ts';
 import { WATER_SURFACE_ALPHA } from '../../src/constants.ts';
-import { NO_SIDE } from '../../src/wad/map.ts';
+import { LF, NO_SIDE } from '../../src/wad/map.ts';
 import { gridMap, addControlSector } from '../fixtures/gridmap.ts';
 import { BANK } from '../fixtures/specialsrig.ts';
 
@@ -65,6 +65,52 @@ function fakeCeiling({ viewerIsWater = false } = {}) {
   const built = buildMapMesh(map, BANK, { transfers: transfersOf(map) });
   const quads = built.occluders.filter((o) => o.line === line && o.frontSide);
   return { map, line, built, quads };
+}
+
+const STEP = 'STEP1';
+const SIGN = 'MIDGRATE';
+
+/**
+ * BOOMEDIT MAP01 sector 110 in miniature: a platform raised `platformFloor`
+ * above the room it sits in, tagged to a 242 control sector at the room's own
+ * floor so vanilla draws it flush and invisible. The room's side of the shared
+ * line carries a lower texture here that the real map leaves unset — the map
+ * needs none, which is exactly why an unsubstituted floor shows through as a
+ * band of nothing. Both sides carry the map's own midtexture, which hangs off
+ * the opening and so reads back whichever floor each side was sized against.
+ * `unpegged` is the real map's `0x14`, which hangs that midtexture off the
+ * bottom of the opening rather than the top. `neighbourFloor` lifts the room
+ * above the fake floor, the case the substitution has to decline.
+ */
+function invisiblePlatform({ platformFloor = 32, neighbourFloor = 0, unpegged = false } = {}) {
+  const map = gridMap(['..']).map;
+  const line = map.linedefs.findIndex((l) => l.left !== NO_SIDE);
+  const side = map.sidedefs[map.linedefs[line].right];
+  const far = map.sidedefs[map.linedefs[line].left];
+  const platform = far.sector;
+  const room = side.sector;
+  if (unpegged) map.linedefs[line].flags |= LF.LOWER_UNPEGGED;
+  map.sectors[room].floorHeight = neighbourFloor;
+  map.sectors[platform].floorHeight = platformFloor;
+  map.sectors[platform].tag = 11;
+  side.lower = STEP;
+  side.middle = SIGN;
+  far.middle = SIGN;
+  const control = addControlSector(map, { floorHeight: 0, ceilHeight: 128 }, 242, 11);
+  const transfers = transfersOf(map);
+  const built = buildMapMesh(map, BANK, { transfers });
+  const quads = built.occluders.filter((o) => o.line === line);
+  return {
+    platform,
+    control,
+    /** What `markFakeFloors` decided, rather than what the fans made of it. */
+    eligible: transfers.fakeFloorSectors(),
+    fan: built.flatSurfaces.find((f) => f.sector === platform && !f.isCeiling)!,
+    /** The room's side of the shared line — where a step up to the platform would be drawn. */
+    quads: quads.filter((o) => o.frontSide),
+    /** The platform's own side, which has to agree with it. */
+    back: quads.filter((o) => !o.frontSide),
+  };
 }
 
 const colorOf = (built: ReturnType<typeof pool>['built'], f: FlatSurface) => {
@@ -150,6 +196,78 @@ describe('render · deep water planes', () => {
     const { quads } = fakeCeiling({ viewerIsWater: true });
     assert.equal(quads.length, 2, 'the upper, and a midtexture hung in the full opening');
     assert.deepEqual([quads[0].botH, quads[0].topH], [192, 256], 'the neighbour’s real ceiling');
+  });
+
+  test('a 242 platform drawn at a control sector below it takes the walls down with it', () => {
+    // BOOMEDIT MAP01 sector 110: a 32-unit platform tagged to a control sector
+    // at the surrounding room's floor, so vanilla draws it flush and the mapper
+    // left lines 673-676 with no lower texture. Drawn at its real height the
+    // rim it exposes has nothing to cover it, and the room looks into a black
+    // band under the platform's edge.
+    const { fan, quads, back, eligible, platform, control } = invisiblePlatform();
+    assert.deepEqual(eligible, [{ sector: platform, control }], 'the rule accepts it');
+    assert.equal(fan.height, 0, 'the control sector’s floor, as `R_FakeFlat` hands it back');
+    assert.deepEqual(
+      quads.map((q) => [q.botH, q.topH]),
+      [[0, 128]],
+      'the midtexture hung off the drawn floor, and no step up to it',
+    );
+    // Vanilla fakes front and back sector alike (`r_bsp.c: R_AddLine`), so the
+    // sector's own side of the line hangs from the same opening as the room's.
+    // Sized against its real floor instead, the midtexture on whichever of the
+    // four sides faces the camera sits `platformFloor` clear of its neighbours,
+    // and re-seats itself as the camera orbits past the corner.
+    assert.deepEqual(
+      back.map((q) => [q.botH, q.topH]),
+      quads.map((q) => [q.botH, q.topH]),
+      'both sides of the line agree',
+    );
+  });
+
+  test('a midtexture over a fake floor hangs from the real floor, not the drawn one', () => {
+    // `R_RenderMaskedSegRange` pegs off `curline->frontsector`/`->backsector`,
+    // the seg's own sectors, and runs `R_FakeFlat` only for the light level
+    // (r_segs.c) — so only the opening the band is *clipped* to follows a 242.
+    // Pegged off the drawn floor instead, BOOMEDIT MAP01's four `242TEXTA`
+    // signs sit on the floor of the room whatever height the platform is at.
+    const up = invisiblePlatform({ unpegged: true });
+    assert.equal(up.fan.height, 0, 'the platform is still drawn flush');
+    assert.deepEqual(
+      up.quads.map((q) => [q.botH, q.topH]),
+      [[32, 128]],
+      'while the sign hangs off the platform’s real floor',
+    );
+    assert.deepEqual(up.back.map((q) => [q.botH, q.topH]), up.quads.map((q) => [q.botH, q.topH]));
+
+    // Sector 110 is a lift (lines 673-675 are a turbo lift on its own tag), so
+    // the anchor has to ride the real floor down with it while the drawn floor
+    // stays where the control sector put it.
+    const down = invisiblePlatform({ unpegged: true, platformFloor: 0 });
+    assert.deepEqual(
+      down.quads.map((q) => [q.botH, q.topH]),
+      [[0, 128]],
+      'lowered flush, the sign comes down with it',
+    );
+  });
+
+  test('a fake floor a neighbour sits above keeps the real floor', () => {
+    // The other reading of a below-floor control sector: junk left by a fake
+    // ceiling or a colormap transfer (literalism.wad MAP18 hangs 661 sectors off
+    // one such control). Following it would drop the floor out from under walls
+    // the neighbour has to cover, so the substitution declines.
+    const { fan, quads, back, eligible } = invisiblePlatform({ neighbourFloor: 16 });
+    assert.deepEqual(eligible, [], 'the rule declines it');
+    assert.equal(fan.height, 32, 'its own floor');
+    assert.deepEqual(
+      quads.map((q) => [q.botH, q.topH]),
+      [[16, 32], [32, 128]],
+      'and the step the map does texture stays exactly as tall as it was',
+    );
+    assert.deepEqual(
+      back.map((q) => [q.botH, q.topH]),
+      [[32, 128]],
+      'with the sector’s own side hung off the same real floor',
+    );
   });
 
   test('a map with no 242 line builds exactly one fan per subsector, as before', () => {

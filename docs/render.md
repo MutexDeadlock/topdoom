@@ -133,8 +133,9 @@ single-sided (facing DOOM's defined front), which is what culls walls between th
 player and produces the open dollhouse look — no extra logic needed. `F_SKY1` flats are skipped.
 
 A two-sided line's **masked middle texture** is one copy of the texture, not a fill of the opening.
-Its row 0 sits at the pegged anchor — the higher floor plus the texture height when `LOWER_UNPEGGED`
-is set, the lower ceiling otherwise — plus the sidedef's y-offset, and the quad is that band
+Its row 0 sits at the pegged anchor — the higher **real** floor plus the texture height when
+`LOWER_UNPEGGED` is set, the lower real ceiling otherwise (§ Deep water: the anchor is the one
+height a 242 does *not* move) — plus the sidedef's y-offset, and the quad is that band
 *clipped* to the opening (`r_segs.c: R_RenderMaskedSegRange`, which draws the texture once and lets
 the seg's clip arrays cut it). So the offset moves the quad itself, and an offset that carries the
 texture clear of the opening draws nothing at all: vanilla never tiles a midtexture vertically, and
@@ -392,7 +393,9 @@ into it, which a camera looking straight down cannot afford. So a water subsecto
 the pool bottom at the real floor height wearing the control sector's flat and light, and a
 translucent surface at the control sector's floor height wearing the sector's own. The full rule,
 including which vanilla branch each fan comes from and when no surface is drawn at all, is in
-docs/specials.md § Deep water.
+docs/specials.md § Deep water. A control sector *below* the real floor is the other idiom — an
+invisible platform, one fan at the fake floor and no surface at all (docs/specials.md § The fake
+floor).
 
 Mechanically it is one extra `FlatSurface` reusing the same subsector index, so fog of war and
 `FlatFader` need no notion of it, and the surface fades like any other raised floor. What it does
@@ -411,9 +414,30 @@ midtexture whose −32 y-offset has already carried it below the gap.
 
 Two limits on the substitution, both load-bearing:
 
-- **The floor is not substituted**, because this engine draws the pool bottom at the real floor
-  (above); walls sized to the control sector's floor instead would leave that bottom ringed by a
-  hole. The ceiling half has no such conflict — ceilings are never rendered.
+- **The floor is not substituted upwards**, because this engine draws the pool bottom at the real
+  floor (above); walls sized to the *surface* instead would leave that bottom ringed by a hole. A
+  control sector **below** the real floor draws no bottom and no surface — only the fake floor — so
+  there the walls do move, in step with the one fan `processFlat` puts at `Transfers.drawnFloor`.
+  Which sectors that covers, and why it is not simply every one of them, is
+  docs/specials.md § The fake floor.
+- **A fake floor moves both sides of a line, a fake ceiling only the neighbour's.** Vanilla fakes
+  front and back sector alike (`r_bsp.c: R_AddLine`); the ceiling half needs the exception above
+  because its branch turns on where the eye is, and the floor half does not — `R_FakeFlat`'s plain
+  branch assigns it whoever is looking. So `drawnFloor` resolves a side's *own* floor as well as its
+  neighbour's, in the lower step, the midtexture opening and a one-sided wall's bottom. Sizing only
+  the neighbour leaves each face of a fake-floor sector hanging at its real height while the room
+  around it sits at the drawn one: on BOOMEDIT MAP01 sector 110 the `242TEXTA` sign on whichever of
+  the four walls faces the camera sits 32 above its neighbours, and re-seats itself as the camera
+  orbits past a corner and the opposite face takes over.
+- **A midtexture's peg anchor is not substituted at all** — only the opening it is clipped to.
+  `R_RenderMaskedSegRange` reads `curline->frontsector`/`->backsector` off the seg and calls
+  `R_FakeFlat` purely for the light level (`r_segs.c`), so the band hangs from the *real* floors and
+  ceilings while `sprbottomclip`/`sprtopclip` — built from the faked ones in `R_StoreWallRange` —
+  decide how much of it survives. Pegging off the drawn floor instead drops all four of BOOMEDIT
+  MAP01 sector 110's signs to the room's floor and leaves them there whatever height the platform's
+  lift is at. The visible effect of the clip alone is literalism MAP06 line 1058, whose `MIDBARS3`
+  grate keeps its top at 64 and now reaches down to the drawn floor at −16 instead of stopping at
+  the real 24.
 - **Only the neighbour is faked, and only for a side whose own sector has no 242.** Vanilla's choice
   of branch depends on where the eye is, which a mesh built once cannot follow; but a wall quad is
   only ever seen from the sector it faces into, and an eye *inside* a 242 sector takes

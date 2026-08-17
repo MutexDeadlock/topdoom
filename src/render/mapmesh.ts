@@ -894,15 +894,15 @@ function addTwoSidedSide(
     if (dim) {
       const openTop = Math.min(sec.ceilHeight, other.ceilHeight);
       const openBot = Math.max(sec.floorHeight, other.floorHeight);
-      let top: number;
-      let bot: number;
-      if (lowerUnpegged) {
-        bot = openBot;
-        top = Math.min(openTop, openBot + dim.h);
-      } else {
-        top = openTop;
-        bot = Math.max(openBot, openTop - dim.h);
-      }
+      // The quad is the texture's own band — one copy hung off the pegged
+      // anchor, sidedef y-offset included — clipped to the opening, never the
+      // opening itself: vanilla draws a masked midtexture once and lets the
+      // opening's clip arrays cut it (r_segs.c: R_RenderMaskedSegRange).
+      // docs/render.md § Mesh building.
+      const pegRef = lowerUnpegged ? openBot + dim.h : openTop;
+      const texTop = pegRef + side.yOffset;
+      const top = Math.min(openTop, texTop);
+      const bot = Math.max(openBot, texTop - dim.h);
       addWall(
         batches,
         size,
@@ -911,7 +911,7 @@ function addTwoSidedSide(
           topH: top,
           botH: bot,
           texture: side.middle,
-          pegRef: top,
+          pegRef,
           baseAlpha: transfers.translucentLine(lineIndex) ? TRANSLUCENT_ALPHA : undefined,
         },
         occluders,

@@ -132,6 +132,16 @@ pegging rules (`UPPER_UNPEGGED`/`LOWER_UNPEGGED`) for vertical alignment. Walls 
 single-sided (facing DOOM's defined front), which is what culls walls between the camera and the
 player and produces the open dollhouse look — no extra logic needed. `F_SKY1` flats are skipped.
 
+A two-sided line's **masked middle texture** is one copy of the texture, not a fill of the opening.
+Its row 0 sits at the pegged anchor — the higher floor plus the texture height when `LOWER_UNPEGGED`
+is set, the lower ceiling otherwise — plus the sidedef's y-offset, and the quad is that band
+*clipped* to the opening (`r_segs.c: R_RenderMaskedSegRange`, which draws the texture once and lets
+the seg's clip arrays cut it). So the offset moves the quad itself, and an offset that carries the
+texture clear of the opening draws nothing at all: vanilla never tiles a midtexture vertically, and
+mappers use exactly that to hide one. Sizing the quad to the opening and letting the offset run off
+into the UVs instead makes a wrapped copy appear in the wrong place — BOOMEDIT.WAD MAP01 line 726's
+`ICESIGN` (48 tall, y-offset −88, opening −16..128) drew up under the ceiling instead of at −8..40.
+
 Coordinates: DOOM's `(x, y, z)` becomes three.js `(x, z, -y)`, so the map plane is XZ and Y is up.
 
 Ceilings are never rendered — `buildMapMesh`'s `renderCeilings` option still exists and is always
@@ -290,8 +300,8 @@ machinery for its own meshes.
 
 `WallFader.update` also takes an `openingOf` callback (`World.openingOf`, threaded through so this
 class needs no `World` reference) and skips fading any quad whose own `[botH, topH]` sits *inside*
-its line's vertical opening — a masked middle texture (grate, fence, barred window) is built to span
-exactly that opening, so a quad living inside it is the passable gap itself: a shot and a look
+its line's vertical opening — a masked middle texture (grate, fence, barred window) is built inside
+that opening (§ Mesh building), so a quad living inside it is the passable gap itself: a shot and a look
 already pass straight through it, so fading it has nothing left to reveal. This has to be a
 **per-quad** check, not a per-*line* one — an earlier version gated on `World.blocksSight(line)` for
 the whole line, which wrongly also suppressed fading for that line's upper/lower step quads (they sit

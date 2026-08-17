@@ -31,7 +31,7 @@ Features and improvements
 
 Fixed bugs
   - fixed various rendering problems
-  - a monster killed mid-knockback now slides to a stop instead of freezing 
+  - a monster killed mid-knockback now slides to a stop instead of freezing
     where it died
 
 

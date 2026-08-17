@@ -17,8 +17,23 @@ Features and improvements
     - wind, currents and point pushers that shove or pull you across a room
     - voodoo dolls — a map's extra player starts now walk lines and take
       damage on your behalf, so conveyor-driven scripts run
+    - deep water: a pool drawn at another sector's height, with a
+      see-through surface you stay visible under while wading — and water
+      that rises and falls when the sector driving it moves
+    - a sector can borrow another's lighting for its floor or its ceiling,
+      so a lava pit lights itself and whatever stands in it
+    - see-through midtextures: grates, windows and railings a BOOM map marks
+      translucent now draw that way
+    - a BOOM map's own colormaps tint the whole view while you stand in the
+      sector that names them
 
 Fixed bugs
+  - solid structures — pillars, crates, lamp posts — are no longer see-through
+    holes in the level: a DOOM map draws them as empty space with walls around
+    it, which vanilla never has to look down on, and they are now lidded
+  - the view no longer swings when you fall: the point the cursor aims at is
+    taken from the camera rather than from your own feet, so dropping into a
+    pit (or into BOOM deep water) pans the view instead of turning you
   - fixed long cracks in the floor around very short walls, which could open a
     room onto whatever lay below it
   - a monster killed mid-knockback now slides to a stop instead of freezing 

@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addControlLine, gridMap } from '../fixtures/gridmap.ts';
+import { addControlLine, addControlSector, gridMap } from '../fixtures/gridmap.ts';
 import { Forces } from '../../src/game/specials/forces.ts';
 import { World } from '../../src/game/world.ts';
 import { PLAYER_RADIUS } from '../../src/game/player.ts';
@@ -81,5 +81,30 @@ describe('Conveyors', () => {
     const expected = (impulse * FRICTION) / (1 - FRICTION);
     assert.ok(Math.abs(v - expected) < 1e-6, `settled at ${v}, expected ${expected}`);
     assert.ok(Math.abs(expected / TICS - 3.625) < 1e-9, `${expected / TICS} units/tic`);
+  });
+
+  test('a submerged body rides the belt even off the floor', () => {
+    // `sc_carry`'s "Underwater, carry things even w/o gravity": inside a Boom
+    // 242 sector, being under the water surface counts as being on the belt.
+    // Two separate maps, because the transfer scan is memoized per map.
+    const sunkenBelt = (flooded: boolean) => {
+      const grid = gridMap(['...'], { heights: { '.': { floor: 0, ceil: 256 } } });
+      const belt = grid.index(1, 0);
+      grid.map.sectors[belt].tag = 7;
+      grid.map.sectors[belt].floorHeight = -64;
+      addControlLine(grid.map, 128, 0, 252, 7);
+      if (flooded) addControlSector(grid.map, { floorHeight: 0 }, 242, 7);
+      const forces = new Forces(grid.map, new World(grid.map));
+      forces.tick();
+      return { forces, at: grid.centre(1, 0) };
+    };
+
+    const dry = sunkenBelt(false);
+    const floating = (z: number) => ({ x: dry.at.x, y: dry.at.y, z });
+    assert.equal(dry.forces.carryForBody(floating(-32), PLAYER_RADIUS, []), null, 'off the floor, no water: not carried');
+
+    const wet = sunkenBelt(true);
+    assert.ok(wet.forces.carryForBody(floating(-32), PLAYER_RADIUS, []), 'under the surface: carried');
+    assert.equal(wet.forces.carryForBody(floating(64), PLAYER_RADIUS, []), null, 'above the surface: not carried');
   });
 });

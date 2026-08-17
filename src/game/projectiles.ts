@@ -8,6 +8,7 @@ import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import { PLAYER_ORIGIN } from '../audio/sfx.ts';
 import { hasLineOfSight, playerShotRange, projectileStepBlocker, shotPath } from './world.ts';
+import { transfersOf } from './specials/transfers.ts';
 import { AIM_HEIGHT_OFFSET, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import {
   MONSTER_FIRE_HEIGHT,
@@ -324,6 +325,9 @@ export class ProjectileLayer {
     const { world, things } = this.ctx;
     const remaining: Projectile[] = [];
     const from = this.stepFrom;
+    // Hoisted: the sprite light of every missile in the air is looked up here
+    // each frame, and the table is per level (docs/specials.md § Transferred lighting).
+    const transfers = transfersOf(world.map);
     for (const p of this.projectiles) {
       let at: Pos3;
       if (p.homing) {
@@ -352,7 +356,8 @@ export class ProjectileLayer {
       // One lookup, shared with the sprite light below — `floorAt`/`ceilingAt`
       // are two wrappers around the same BSP walk, and this runs per missile
       // per frame with a crowded map holding thousands in the air.
-      const sector = world.sectorAt(at.x, at.y);
+      const sectorIndex = world.sectorIndexAt(at.x, at.y);
+      const sector = world.map.sectors[sectorIndex];
       // Vanilla's `P_ZMovement`: a missile meeting the floor or ceiling
       // explodes against it. Reachable because a monster's shot holds its
       // launch slope past the target that set it (`spawnMonsterShot`), so a
@@ -412,7 +417,7 @@ export class ProjectileLayer {
       p.anim.advance(dt, true);
       // Re-read every tic, not just at launch — a missile flying between
       // differently-lit sectors should shade like everything else does.
-      p.drawLight = sector?.light ?? 128;
+      p.drawLight = sector ? transfers.spriteLight(sectorIndex) : 128;
       // `from` is shared scratch reused across projectiles, so the previous
       // position has to be copied out per missile rather than referenced.
       p.drawPrevX = from.x;

@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addControlLine, gridMap } from '../fixtures/gridmap.ts';
+import { addControlLine, addControlSector, gridMap } from '../fixtures/gridmap.ts';
 import { Forces } from '../../src/game/specials/forces.ts';
 import { World } from '../../src/game/world.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
@@ -139,5 +139,43 @@ describe('Boom pushers', () => {
       const blocked = { x: grid.centre(0, 0).x, y: grid.centre(0, 0).y, z: 0 };
       assert.equal(forces.pushForBody(blocked, PLAYER_RADIUS, true, out), null);
     });
+  });
+
+  test('in a 242 sector the water surface stands in for the floor', () => {
+    // `T_Pusher`'s special-water branch: a current runs on anything under the
+    // surface, and wind drops to half while wading and to nothing once the eye
+    // goes under. The pool floor is at -64 and the surface at 0.
+    const flooded = (special: number) => {
+      const grid = gridMap(['...'], { heights: { '.': { floor: 0, ceil: 256 } } });
+      const middle = grid.index(1, 0);
+      grid.map.sectors[middle].tag = 7;
+      grid.map.sectors[middle].special = PUSH_MASK;
+      grid.map.sectors[middle].floorHeight = -64;
+      addControlLine(grid.map, 128, 0, special, 7);
+      addControlSector(grid.map, { floorHeight: 0 }, 242, 7);
+      return { forces: new Forces(grid.map, new World(grid.map)), at: grid.centre(1, 0) };
+    };
+    const full = (128 / PUSH_DIVISOR) * TICS;
+
+    const current = flooded(225);
+    const swimming = current.forces.pushForBody({ ...current.at, z: -32 }, PLAYER_RADIUS, false, []);
+    assert.ok(swimming, 'a current reaches a body floating under the surface');
+    assert.ok(Math.abs(swimming.x - full) < 1e-9, `x was ${swimming.x}`);
+    assert.equal(
+      current.forces.pushForBody({ ...current.at, z: 64 }, PLAYER_RADIUS, false, []),
+      null,
+      'and stops above it',
+    );
+
+    const wind = flooded(224);
+    const wading = wind.forces.pushForBody({ ...wind.at, z: -8 }, PLAYER_RADIUS, true, []);
+    assert.ok(wading && Math.abs(wading.x - full / 2) < 1e-9, 'wading takes half the wind');
+    assert.equal(
+      wind.forces.pushForBody({ ...wind.at, z: -64 }, PLAYER_RADIUS, true, []),
+      null,
+      'fully submerged takes none',
+    );
+    const above = wind.forces.pushForBody({ ...wind.at, z: 64 }, PLAYER_RADIUS, false, []);
+    assert.ok(above && Math.abs(above.x - full) < 1e-9, 'above the surface takes all of it');
   });
 });

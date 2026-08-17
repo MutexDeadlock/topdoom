@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { World } from '../../src/game/world.ts';
 import { FogOfWar } from '../../src/game/fogofwar.ts';
 import { SpecialsController, type TeleportDest } from '../../src/game/specials.ts';
+import { transfersOf } from '../../src/game/specials/transfers.ts';
 import { computeMovableSectors } from '../../src/game/specials/mapscan.ts';
-import { buildMapMesh } from '../../src/render/mapmesh.ts';
+import { buildMapMesh, type BuiltMap } from '../../src/render/mapmesh.ts';
 import type { DoomMap } from '../../src/wad/map.ts';
 import type { MaterialBank } from '../../src/render/textures.ts';
 import type { Input } from '../../src/game/input.ts';
@@ -60,6 +61,8 @@ export interface SpecialsRig {
   world: World;
   /** The group the controller hangs its mover meshes on, for a test that reads them back. */
   scene: THREE.Group;
+  /** The static batches, for a test that reads a fan or quad back off them. */
+  built: BuiltMap;
   movableSectors: Set<number>;
   /**
    * One tic of the player standing at (`x`, `y`) facing `angle` — the same call `game.ts` makes, in
@@ -77,7 +80,10 @@ export interface SpecialsRig {
 export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions = {}): SpecialsRig {
   const world = new World(map);
   const movableSectors = computeMovableSectors(map);
-  const built = buildMapMesh(map, BANK, { movableSectors });
+  // The same table `game.ts` hands both builders, so a rig test sees the Boom
+  // render transfers the real session would (docs/specials.md § Render transfers).
+  const transfers = transfersOf(map);
+  const built = buildMapMesh(map, BANK, { movableSectors, transfers });
   const scene = new THREE.Group();
   const fog = new FogOfWar(world, built.occluders, at.x, at.y);
   const specials = new SpecialsController(
@@ -88,7 +94,7 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
     fog,
     built.polys,
     built,
-    {},
+    { transfers },
     options.onExit ?? (() => {}),
     options.onTeleport ?? (() => {}),
     options.onCrush ?? (() => false),
@@ -104,6 +110,7 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
     specials,
     world,
     scene,
+    built,
     movableSectors,
     /** `angle` is the player's facing in radians — what Boom's silent teleports rotate relative to. */
     tick: (dt = TIC, x = at.x, y = at.y, angle = 0) => specials.update(dt, x, y, angle, NO_INPUT, new Set()),

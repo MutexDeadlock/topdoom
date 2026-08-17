@@ -98,6 +98,7 @@ import {
 } from './snapshot.ts';
 import { createThingGrid } from './things/grid.ts';
 import { positionBlocked } from './world.ts';
+import { transfersOf } from './specials/transfers.ts';
 import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import {
   BILLBOARD_MAX_REACH,
@@ -301,6 +302,10 @@ export function buildThingSprites(
   const stats: LevelKillItemStats = { totalKills: 0, kills: 0, totalItems: 0, items: 0 };
   /** Scratch for `doomToWorld`, reused across every sprite — this runs per thing per frame. */
   const worldPos = new THREE.Vector3();
+  // Sprite light is the average of the sector's drawn floor and ceiling light
+  // (`R_AddSprites`), which a Boom transfer can source from another sector
+  // entirely — docs/specials.md § Transferred lighting.
+  const transfers = transfersOf(map);
 
   /**
    * Builds and appends one `PosedThing`, returning it — the single place that
@@ -1399,7 +1404,7 @@ export function buildThingSprites(
         // singling out (docs/items.md § Making monster drops readable).
         // Read live off the sector rather than caching a `light` field on the
         // thing — see docs/render.md § Sector lighting on why every sprite must.
-        const light = litColor(p.sector?.light ?? 128);
+        const light = litColor(p.sector ? transfers.spriteLight(world.sectorIndexOfSubsector(p.subsector)) : 128);
         if (!p.dropped) {
           doomToWorld(x, y, z, worldPos);
           // A fuzzed thing (the spectre, alive or a corpse — `FUZZ_TYPES`)

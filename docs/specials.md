@@ -3,7 +3,8 @@
 `src/game/specials.ts`, `src/game/specials/defs.ts`, `src/game/specials/tables.ts`,
 `src/game/specials/mapscan.ts`,
 `src/game/specials/movergeometry.ts`, `src/game/specials/moverblocking.ts`, `src/game/specials/sectoreffects.ts`,
-`src/game/specials/forces.ts`, `src/game/voodoo.ts`, `src/game.ts`, `src/render/occlusion.ts`
+`src/game/specials/forces.ts`, `src/game/specials/transfers.ts`,
+`src/game/voodoo.ts`, `src/game.ts`, `src/render/occlusion.ts`
 
 **The data half.** `specials/defs.ts` holds the shapes a special is expressed as — `SpecialDef`, the
 `Effect` union, and the speeds/waits/damage amounts those carry. `specials/tables.ts` keys the
@@ -71,17 +72,19 @@ so switches flip, vanilla's own `rtn = 1`). Change-only sectors are included in
 
 Boom's **parameter lines** are the other family, and they sit outside `LINE_SPECIALS` on purpose:
 they configure a permanent property at level spawn rather than being dispatched from a trigger, so
-`lookupSpecial` returns null for every one and `specials/forces.ts` owns them instead. Scrollers and
-conveyors, friction and the pushers are implemented (§ Scrollers and conveyors, § Friction,
-§ Pushers), and they bring voodoo dolls with them (§ Voodoo dolls). `PARAM_LINE_SPECIALS` is that
-implemented set.
+`lookupSpecial` returns null for every one. Two modules own them: `specials/forces.ts` the ones that
+change how things *move* — scrollers and conveyors, friction and the pushers (§ Scrollers and
+conveyors, § Friction, § Pushers), which bring voodoo dolls with them (§ Voodoo dolls) — and
+`specials/transfers.ts` the ones that change how a sector is *drawn* (§ Render transfers).
+`PARAM_LINE_SPECIALS` is the union, and every number in it is implemented.
 
 `scripts/inspect-wad.ts` prints a **specials coverage report** — every linedef special classified
 vanilla / boom / generalized / param (spawn-time) / deferred (later phase) / UNKNOWN, and sector
-specials checked through `decodeSectorType` — the acceptance gate for each Boom phase, beside a
-line counting the scrollers, conveyors, friction sectors, pushers and dolls the level spawned.
-**`DEFERRED_LINE_SPECIALS` is down to four numbers**, all of them render transfers: 213/261
-(a sector drawing another's lighting), 242 (deep water) and 260 (translucent midtextures).
+specials checked through `decodeSectorType` — the acceptance gate for each Boom phase, beside lines
+counting the scrollers, conveyors, friction sectors, pushers and dolls the level spawned and the
+render transfers it carries. **`DEFERRED_LINE_SPECIALS` is now empty**: every Boom linedef number
+this engine can meet resolves to something. It stays declared as the seam for the next number that
+lands ahead of its mechanism.
 
 ## Elevators
 
@@ -99,8 +102,8 @@ never by indexing `LINE_SPECIALS` directly — that is the seam where Boom's ext
 the generalized bitfield ranges join without reshaping the vanilla table (which stays exactly as
 audited, one entry per vanilla number). `PARAM_LINE_SPECIALS` sits beside it: the numbers that are
 *not* triggerable effects but level-spawn parameters (vanilla 48's scroll, Boom's scrollers,
-friction and pushers — all `specials/forces.ts`), listed so a coverage report can tell "known,
-handled elsewhere" from "unknown number". Boom behaviors are confirmed against the boom202 /
+friction and pushers in `specials/forces.ts`; the render transfers in `specials/transfers.ts`),
+listed so a coverage report can tell "known, handled elsewhere" from "unknown number". Boom behaviors are confirmed against the boom202 /
 PrBoom+ source the same way vanilla ones are confirmed against `linuxdoom-1.10`.
 
 **Activation is data plus an activator.** A def says who a number admits (`monsterActivate` for
@@ -722,6 +725,12 @@ This covers **every** light effect, since `updateLights` (all the sector-type pa
 combination is not rare: 7 maps in DOOM1.WAD, 18 in DOOM2.WAD, 14 in Freedoom 2 and 8 in SCYTHE.WAD
 have at least one light-driven mover, `glow` being the most common by a wide margin.
 
+Both indexes are keyed by the sector a surface takes its **light** from, not the one it belongs to.
+For a wall those are always the same sector; for a flat they differ wherever a 213/261 transfer or a
+deep-water bottom is in play (§ Render transfers), and keying this way is the whole of what makes a
+transferred light live — recoloring the control sector reaches its dependents because they are
+filed under it.
+
 Only RGB is written (`setXYZ`); vertex alpha belongs to `WallFader`/`FlatFader` (render/occlusion.ts)
 and the two must not clobber each other.
 
@@ -850,6 +859,10 @@ Corpses ride belts too — `P_KillMobj` strips `MF_NOGRAVITY`, so `sc_carry`'s g
 is what finally made a dead thing's velocity load-bearing here: before conveyors nothing could move
 one, so it sat as inert unread data (docs/movement.md § Knockback).
 
+The gate is "standing on the belt's floor" — with one exception, `sc_carry`'s own "Underwater, carry
+things even w/o gravity": in a 242 sector anything **below the water surface** rides the belt
+whether or not its feet are down (§ Deep water).
+
 A `side` scroller's affectee is always `*l->sidenum`, the **front** sidedef, for every one of these
 numbers — which is why `Forces` records the linedef index and the renderer's existing
 `WallOccluder.frontSide` index is enough to find its quads. How the offsets reach the geometry is
@@ -942,6 +955,11 @@ Wind and current are constant over their sector and differ only in what being of
 | wind (224) | full force | half force |
 | current (225) | nothing | full force |
 
+In a **242 sector the water surface stands in for the floor** (§ Deep water): a current runs on
+anything under the surface rather than only on the pool floor, and wind gives full force above it,
+half while wading, and nothing at all once the eye is under — `T_Pusher`'s own special-water branch,
+and the one place a render transfer reaches movement.
+
 A **point** pusher (226) needs an `MT_PUSH` (doomednum 5001) or `MT_PULL` (5002) thing standing in
 the tagged sector — `P_GetPushThing`, and "no `MT_P*` means no effect". Its force radiates from (or
 pulls toward) that thing, falls off linearly to zero at **twice** the line's magnitude, **crosses
@@ -959,6 +977,110 @@ terms of it.
 `T_Pusher` skips every non-player outright, and `PIT_PushThing` widens to monsters only under
 `mbf_features`, which complevel 9 — the Boom target — does not set. A conveyor's carry has no such
 gate and moves every body on the belt. The asymmetry is vanilla's, not this engine's.
+
+## Render transfers
+
+The other half of Boom's parameter lines: four numbers that change how a sector or a line is
+**drawn** rather than how it behaves. Like the scrollers they are consumed once at level spawn and
+`lookupSpecial` returns null for all of them; `specials/transfers.ts` (`Transfers`) owns them, the
+way `forces.ts` owns the movement ones.
+
+| # | Effect |
+|---|---|
+| 213 | tagged sectors draw their **floor** with the control sector's light level |
+| 261 | tagged sectors draw their **ceiling** with the control sector's light level |
+| 242 | tagged sectors draw at the control sector's **heights** — Boom's deep water |
+| 260 | the line's **midtexture** draws translucent |
+
+All three sector transfers name their model the same way — the control sector is the one behind the
+special line's **front sidedef** (`sides[*l->sidenum].sector`, `p_spec.c: P_SpawnSpecials`), and the
+targets are every sector carrying the line's tag. 260 is per-line instead: tag 0 affects only the
+line it sits on, any other tag affects every line carrying it (`p_setup.c: P_LoadLineDefs2`).
+
+`Transfers` is scanned from the map alone and never ticked — nothing here has runtime state, so
+none of it is saved (docs/savegames.md). It is reached through `transfersOf(map)`, memoized against
+the `DoomMap` exactly as `world.ts`'s tag indexes are, because the sprite-lighting sites that need
+it are scattered across `game/` and the mesh builder needs it before any controller exists.
+
+### Transferred lighting
+
+`R_FakeFlat` resolves a surface's light as `lightsec === -1 ? sector.light : sectors[lightsec].light`,
+per **surface**, which is why `Transfers` exposes `floorLight`/`ceilingLight` rather than one
+"the sector's light". Three consumers, each matching a different line of the vanilla renderer:
+
+- **flats** take `floorLight` (`ceilingLight` for a ceiling) — `r_bsp.c`'s `R_Subsector`.
+- **walls take the sector's own light, untransferred** — `rw_lightlevel` in `r_segs.c` reads
+  `R_FakeFlat(frontsector)->lightlevel`, not the floor/ceiling values. A 213 lava floor lights
+  itself and not the walls around it; that asymmetry is vanilla's.
+- **sprites take the average of the two**, `(floorlightlevel + ceilinglightlevel) / 2`
+  (`r_bsp.c: R_AddSprites`) — `Transfers.spriteLight`. On a map with no transfer lines both halves
+  are the sector's own light, so the average is exactly what every sprite read before.
+
+That average is the only visible effect **261** has here: ceilings are never drawn
+(docs/render.md § Mesh building), so a transferred ceiling light can only move half the sprite light.
+
+A transferred light is *live* — the control sector may be a strobe. The plumbing for that is
+`FlatSurface.lightSector` (docs/render.md § Sector lighting): every fan records which sector its
+colour actually came from, and `MoverGeometry` indexes by that instead of by the sector the fan
+belongs to, so `recolorSector(control)` repaints its dependents with no extra bookkeeping
+(§ Relighting mover geometry).
+
+### Deep water
+
+A 242 sector is drawn at its control sector's heights. Vanilla picks **one** of two views by where
+the eye is: above the surface it draws the floor at the control sector's floor height with the
+sector's own flat and light; below it (`viewz <= control.floorheight`) it draws the real floor with
+the *control* sector's flat and light, and hides or clips every sprite across the surface
+(`r_things.c: R_ProjectSprite`).
+
+**This engine draws both at once, and that is a deliberate deviation.** The camera is always above
+the level, so vanilla's opaque surface would simply erase a player who waded in. Instead each
+water sector gets two fans: the **pool bottom** at the real floor height with the control sector's
+flat and light, and a translucent **surface** at the control sector's floor height with the
+sector's own flat and light (`WATER_SURFACE_ALPHA`, a feel dial in `constants.ts` — vanilla has no
+opacity to copy). Sprites are never clipped, so you can see yourself walk under water.
+
+The surface fan is only built when the control sector's floor is at least `WATER_MIN_DEPTH` above
+the sector's own — deep enough for the two planes to be worth drawing separately, and far enough
+apart not to z-fight (BOOMEDIT MAP01 sector 405 is **one map unit** deep, and two fans that close
+shimmer against each other). Anything shallower keeps vanilla's plain above-water view: one floor
+drawn at the surface height wearing the sector's own flat. Boom's other use of 242 is a *fake ceiling*, whose control sector sits at or below the
+sector's floor; with ceilings unrendered that half has nothing to draw, and drawing its floor half
+faithfully would sink the visible floor into a hole. BOOMEDIT.WAD MAP01 has 13 such setups beside
+its 22 deep-water ones.
+
+**The player still falls in.** 242 changes nothing about collision, so a pool drawn as a flat sheet
+of water is physically as deep as its real floor — the camera follows the player down, and on
+BOOMEDIT's deepest pools that is 200+ map units. Vanilla has the same split (the view sinks while
+the surface stays drawn above) and it reads as intended in first person; from overhead the descent
+has no visible cause, which is worth knowing before reading it as a camera bug.
+
+Water is render-only in Boom too — `heightsec` never reaches `p_map.c`, so collision, resting
+heights and sight are untouched. The two places it *does* reach gameplay are the conveyor and
+pusher channels (§ Scrollers and conveyors, § Pushers), which treat a submerged thing as being on
+the floor.
+
+**Moving water works**: a control sector whose floor is dragged by a mover moves the drawn surface.
+That costs two small load-time rules — `computeMovableSectors` pulls a water sector in when its
+control sector is movable (iterated to a fixpoint, since a water sector can itself control another),
+and `MoverGeometry` links control → dependents so `rebuildAround` reaches geometry that shares no
+linedef with what moved.
+
+### Translucent midtextures
+
+A 260 line's masked middle texture draws at **66%** — `tran_filter_pct`'s default, the percentage
+Boom's own `TRANMAP` is generated at. The alpha rides the same per-vertex channel occlusion fading
+and fog-of-war already multiply into (docs/render.md § Wall occlusion fading), so no material
+becomes `transparent` and the batching rule holds.
+
+Two deliberate simplifications:
+
+- **Custom `TRANMAP` lumps are not read.** A 64 KB palette-blend table has no meaning to an RGBA
+  renderer; every 260 line gets the same 66%. BOOMEDIT's `HTRANMAP` is the only one in a committed
+  WAD.
+- Boom overloads the **sidedef's midtexture name** on a 260 line to name that lump, and draws no
+  midtexture when the name resolves to one (`p_setup.c: P_LoadSideDefs2`). That rule *is* modelled —
+  without it `HTRANMAP` renders as a missing texture.
 
 ## Damage floors
 

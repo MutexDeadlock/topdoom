@@ -19,6 +19,7 @@ import { BOSS_DEATH_TYPES } from '../things/tables.ts';
 import { ThingType } from '../things/doomednums.ts';
 import { lookupSpecial } from './tables.ts';
 import { decodeSectorType } from './sectortypes.ts';
+import { transfersOf } from './transfers.ts';
 import { switchPairTexture, type SpecialDef } from './defs.ts';
 
 /** Which sectors a special's linedef affects: the line's own back sector for manual doors, tag matches otherwise. */
@@ -319,7 +320,32 @@ export function computeMovableSectors(map: DoomMap, pairs?: SwitchPairLookup): S
   }
   // A boss-death tag has no triggering linedef for the loop above to find — see bossDeathSectors.
   for (const sectorIndex of bossDeathSectors(map)) out.add(sectorIndex);
+  addWaterDependents(map, out);
   return out;
+}
+
+/**
+ * A Boom 242 sector draws its water surface at its control sector's floor
+ * height, so a *movable* control sector makes the water movable too — it needs
+ * a mesh of its own to rebuild, exactly like a sector that moves itself.
+ *
+ * Iterated to a fixpoint because a water sector can itself be another one's
+ * control sector; the loop is bounded by the set only ever growing.
+ * docs/specials.md § Deep water.
+ */
+function addWaterDependents(map: DoomMap, out: Set<number>): void {
+  const transfers = transfersOf(map);
+  if (!transfers.hasAny) return;
+  const water = transfers.waterSectors();
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const { sector, control } of water) {
+      if (out.has(control) && !out.has(sector)) {
+        out.add(sector);
+        changed = true;
+      }
+    }
+  }
 }
 
 /** Sectors animating their light level — no geometry impact, just a recolor. */

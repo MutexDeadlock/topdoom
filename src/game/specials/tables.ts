@@ -447,19 +447,24 @@ export const DAMAGE_FLOOR_INTERVAL = 32 * DOOM_TIC;
  * is what lets the inspect-wad coverage report tell "handled elsewhere" from
  * "unknown number".
  *
- * Everything in this set is implemented. The parameter numbers that are *not*
- * are in `DEFERRED_LINE_SPECIALS` below.
- * docs/specials.md § Scrollers and conveyors, § Friction, § Pushers.
+ * Everything in this set is implemented, by one of two owners: `forces.ts` for
+ * the numbers that change how things move, `transfers.ts` for the ones that
+ * change how a sector is drawn.
+ * docs/specials.md § Scrollers and conveyors, § Friction, § Pushers, § Render transfers.
  */
 export const PARAM_LINE_SPECIALS: Set<number> = new Set([
   48, // scroll wall left — vanilla's own, and Boom's `Add_Scroller(sc_side, FRACUNIT, 0)`
   85, // scroll wall right
+  213, // transfer floor light
   214, 215, 216, 217, 218, // accelerative scrollers
   223, // friction
   224, 225, 226, // wind, current, point pusher
+  242, // transfer heights (deep water)
   245, 246, 247, 248, 249, // displacement scrollers
   250, 251, 252, 253, // scroll ceiling/floor/carry
   254, 255, // wall scrollers (line vector / sidedef offsets)
+  260, // translucent midtexture
+  261, // transfer ceiling light
 ]);
 
 /**
@@ -634,17 +639,13 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
  * null for them like any unknown number; this set exists so the inspect-wad
  * coverage report can call them "deferred" instead of "unknown".
  *
- * Every triggerable linedef effect resolves, and so does every parameter line
- * that changes how things *move*. What is left is the four render transfers —
- * a sector drawing another's lighting or heights, and translucent midtextures.
+ * **Empty**: every Boom linedef number this engine can meet now resolves to
+ * something — the triggerables through `lookupSpecial`, the parameter lines
+ * through `forces.ts` and `transfers.ts`. Kept declared as the seam for the
+ * next number that lands ahead of its mechanism.
  * docs/specials.md § Scope.
  */
-export const DEFERRED_LINE_SPECIALS: Set<number> = new Set<number>([
-  213, // transfer floor light
-  242, // transfer heights (deep water)
-  260, // translucent midtexture
-  261, // transfer ceiling light
-]);
+export const DEFERRED_LINE_SPECIALS: Set<number> = new Set<number>([]);
 
 /**
  * Decoded generalized defs, one per distinct number per session — the decode

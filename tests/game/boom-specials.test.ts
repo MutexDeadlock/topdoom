@@ -5,6 +5,7 @@ import {
   DEFERRED_LINE_SPECIALS,
   LINE_SPECIALS,
   PARAM_LINE_SPECIALS,
+  classifyLineSpecial,
   lookupSpecial,
 } from '../../src/game/specials/tables.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
@@ -42,11 +43,14 @@ describe('specials · extended Boom table', () => {
     assert.equal(lookupSpecial(197)?.effect.kind, 'exit');
     assert.equal(lookupSpecial(207)?.effect.kind, 'teleport');
     assert.equal(lookupSpecial(211)?.effect.kind, 'lift');
-    // Every Boom *triggerable* number resolves; what is still deferred is the
-    // four render transfers, which are parameter lines rather than effects and
-    // which `lookupSpecial` is right to answer null for.
-    assert.deepEqual([...DEFERRED_LINE_SPECIALS].sort((a, b) => a - b), [213, 242, 260, 261]);
-    for (const n of DEFERRED_LINE_SPECIALS) assert.equal(lookupSpecial(n), null, `deferred ${n} resolves to nothing`);
+    // Nothing is deferred any more: the render transfers are parameter lines
+    // now, classified `param` and owned by `specials/transfers.ts`, which
+    // `lookupSpecial` is still right to answer null for.
+    assert.deepEqual([...DEFERRED_LINE_SPECIALS], []);
+    for (const n of [213, 242, 260, 261]) {
+      assert.equal(classifyLineSpecial(n), 'param', `${n} is a parameter line`);
+      assert.equal(lookupSpecial(n), null, `param ${n} is not a trigger`);
+    }
     assert.equal(lookupSpecial(300), null, 'an unassigned number is still unknown');
   });
 });

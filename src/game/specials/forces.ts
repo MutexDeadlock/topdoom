@@ -7,6 +7,8 @@ import type { DoomMap, Thing } from '../../wad/map.ts';
 import { NO_SIDE } from '../../wad/map.ts';
 import { sectorsByTag, linesByTag, hasLineOfSight, type World } from '../world.ts';
 import { decodeSectorType } from './sectortypes.ts';
+import { transfersOf, type Transfers } from './transfers.ts';
+import { EYE_HEIGHT } from '../player.ts';
 import { NO_FRICTION, ORIG_FRICTION, type FrictionEffect } from './defs.ts';
 import { ThingType } from '../things/doomednums.ts';
 import { DOOM_TIC } from '../../constants.ts';
@@ -157,10 +159,18 @@ export class Forces {
   private moveFactor = new Float64Array(0);
   /** Whether any 223 line exists at all, so the per-body query costs nothing on the maps that have none. */
   private hasFriction = false;
+  /**
+   * The level's render transfers, for the one thing they change about
+   * *movement*: a Boom 242 sector's water surface, which both the conveyor and
+   * the pusher channels test against instead of the real floor
+   * (docs/specials.md § Deep water).
+   */
+  private transfers: Transfers;
 
   constructor(map: DoomMap, world: World) {
     this.map = map;
     this.world = world;
+    this.transfers = transfersOf(map);
     this.spawnScrollers();
     this.boundCarrySectors();
     this.spawnPushers();
@@ -633,7 +643,11 @@ export class Forces {
       const carry = this.carry.get(sectorIndex);
       if (!carry) continue;
       const sector = this.map.sectors[sectorIndex];
-      if (!sector || pos.z > sector.floorHeight) continue;
+      if (!sector) continue;
+      // "Underwater, carry things even w/o gravity": a body below a 242 sector's
+      // water surface rides the belt whether or not it is standing on the floor.
+      const water = this.transfers.waterHeight(sectorIndex);
+      if (pos.z > sector.floorHeight && !(water !== null && pos.z < water)) continue;
       cx += carry.x;
       cy += carry.y;
     }
@@ -695,8 +709,13 @@ export class Forces {
       if (!touching.includes(p.sector)) continue;
       // Wind blows at full strength in the air and half on the ground; a
       // current is the other way round — nothing in the air, full on the floor.
-      if (p.kind === 'current' && !onGround) continue;
-      const scale = p.kind === 'wind' && onGround ? 0.5 : 1;
+      // In a 242 sector the water surface stands in for the floor, and wind
+      // stops entirely once the eye is under it.
+      const water = this.transfers.waterHeight(p.sector);
+      const grounded = water === null ? onGround : pos.z <= water;
+      if (p.kind === 'current' && !grounded) continue;
+      if (p.kind === 'wind' && water !== null && pos.z + EYE_HEIGHT < water) continue;
+      const scale = p.kind === 'wind' && grounded ? 0.5 : 1;
       px += (p.xMag / PUSH_DIVISOR) * scale * TICS_PER_SECOND;
       py += (p.yMag / PUSH_DIVISOR) * scale * TICS_PER_SECOND;
     }

@@ -114,6 +114,26 @@ rather than held as a module singleton, so both stay pure functions of the map; 
 the same lookup for the same "must not disagree" reason it takes `movableSectors`
 (docs/specials.md § A switch only flips when it acts).
 
+## Colormap lumps
+
+Beside `COLORMAP` itself, a Boom WAD can ship **named colormap lumps** — 34 rows of 256 palette
+indexes each (32 light levels, the invulnerability row, one spare) — and point a 242 line's sidedef
+at them to recolour the view inside, under or over that sector
+(docs/specials.md § Deep water). BOOMEDIT.WAD ships seven (`BLUMAP`, `REDMAP`, `GRNMAP`, …).
+
+`wad/colormaps.ts: colormapTint` decodes one to a single **per-channel multiplier**, not to a
+remap table: for each of the 256 palette entries it sums the channel through row 0 and without it,
+and returns the ratio. A blue water colormap pushes the whole palette toward its blues, so its red
+and green sums collapse while blue holds — which is exactly the multiply a full-screen tint wants.
+The full remap is a per-pixel palette lookup an RGBA renderer has no place for; the cast is the part
+that survives into RGB, and the plain IWAD `COLORMAP` correctly comes out as no tint at all.
+
+Lookup is by name against the whole merged directory rather than by scanning the `C_START`/`C_END`
+markers vanilla's `R_ColormapNumForName` uses — this engine has no lump namespaces — with the
+34×256 length as the check. A name that resolves to nothing, or to a lump of the wrong size, is an
+ordinary texture name instead, which is the same fallback Boom applies (`p_setup.c:
+P_LoadSideDefs2`). That is also what keeps those names out of the missing-texture report.
+
 ## Art a WAD set doesn't have
 
 A thing whose sprite the merged set carries no lumps for is **skipped, and the level says so**:

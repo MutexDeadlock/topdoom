@@ -125,6 +125,12 @@ waterfall's texture happens to be — and an accelerative or displacement one re
 the control sector the next time that sector moves. What a restore loses is the phase of a
 scrolling texture and an accelerative scroller's built-up speed, and both are visual.
 
+**The render transfers are not saved either, and need no field.** 213/242/260/261 are read straight
+off the map at load (docs/specials.md § Render transfers), and the one thing about them that can
+change at runtime — a 242 control sector's floor height, which sets the water level — is already an
+ordinary `SectorEntry.floorHeight`. The apply order does the rest: `applySectors` runs before
+`buildMapMesh`, so a restored save bakes its water surfaces at the heights it was saved with.
+
 Deliberately not saved, each a sub-second transient whose absence on restore is invisible or
 nearly so:
 

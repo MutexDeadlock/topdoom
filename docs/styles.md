@@ -19,7 +19,7 @@ src/ui/loading.*      #loading, the boot screen — main.ts's too, and the one e
                       markup that starts visible (docs/menu.md § Session lifecycle)
 src/ui/hud/           everything drawn over the running level (docs/hud.md's own file list)
     hud.*             #hud-bar, #game-hud, #hud-levelstats, #hud-timer
-    screeneffects.*   #screen-tint, #pain-flash
+    screeneffects.*   #screen-tint, #colormap-tint, #pain-flash
     message.*         #hud-message
     levelcard.*       #level-card
     intermission.*    #intermission
@@ -90,7 +90,7 @@ Three documented exceptions, each commented at the site:
 
 ### The stacking ladder
 
-`--z-tint: 5` (`#screen-tint`, `#pain-flash`) → `--z-hud: 10` (`#hud`, `#profiler-hud`, `#hud-bar`)
+`--z-tint: 5` (`#screen-tint`, `#colormap-tint`, `#pain-flash`) → `--z-hud: 10` (`#hud`, `#profiler-hud`, `#hud-bar`)
 → `--z-message: 12` (`#hud-message`, `#level-card`) → `--z-overlay: 15` (`#intermission`,
 `#death-overlay`, which can never be up at the same time) → `--z-menu: 20` → `--z-loading: 25`
 (`#loading`, over the menu it hands the page to) → `--z-fatal: 30`.

@@ -1,7 +1,8 @@
 /**
  * Every powerup or damage effect whose whole result is a *view* change: the
- * two full-screen tints, the red damage flash, the light visor's exposure
- * lift and the player sprite's translucency. See docs/hud.md § Screen effects.
+ * two full-screen tints, Boom's 242 colormap cast, the red damage flash, the
+ * light visor's exposure lift and the player sprite's translucency.
+ * See docs/hud.md § Screen effects.
  */
 import type * as THREE from 'three';
 import { hasPower, type Inventory } from '../../game/inventory.ts';
@@ -57,6 +58,7 @@ export class ScreenEffects {
   private renderer: THREE.WebGLRenderer;
   private setPlayerOpacity: (opacity: number) => void;
   private tintEl = document.getElementById('screen-tint')!;
+  private colormapEl = document.getElementById('colormap-tint')!;
   private painEl = document.getElementById('pain-flash')!;
   /** Current intensity of the damage flash, 0-1 — bumped by `addPain`, decayed by `update`. */
   private painFlash = 0;
@@ -85,6 +87,22 @@ export class ScreenEffects {
     this.painEl.style.opacity = String(this.painFlash * PAIN_FLASH_MAX_ALPHA);
   }
 
+  /**
+   * The colour cast of the Boom colormap the player is currently under, or null
+   * for none — `R_SetupFrame`'s view colormap, which a 242 sector picks by eye
+   * height (docs/specials.md § Deep water). Driven from `game.ts` rather than
+   * from `update`, which only ever sees the inventory.
+   */
+  setColormapTint(tint: { r: number; g: number; b: number } | null): void {
+    if (!tint) {
+      this.colormapEl.style.display = 'none';
+      return;
+    }
+    const channel = (v: number) => Math.round(Math.max(0, Math.min(1, v)) * 255);
+    this.colormapEl.style.background = `rgb(${channel(tint.r)}, ${channel(tint.g)}, ${channel(tint.b)})`;
+    this.colormapEl.style.display = 'block';
+  }
+
   /** Bumps the damage flash by a hit that actually landed — see `PAIN_FLASH_MAX_DAMAGE`. */
   addPain(amount: number): void {
     this.painFlash = Math.min(1, this.painFlash + amount / PAIN_FLASH_MAX_DAMAGE);
@@ -107,6 +125,7 @@ export class ScreenEffects {
    */
   reset(): void {
     this.tintEl.classList.remove('invulnerable', 'suited');
+    this.setColormapTint(null);
     this.painEl.style.opacity = '0';
     this.renderer.toneMappingExposure = 1;
   }

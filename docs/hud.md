@@ -322,6 +322,13 @@ pickup/expiry, so clearing the powers needs no teardown path of its own. **`Game
 `ScreenEffects.reset`**, since the `Viewport` and these overlay elements outlive a `Game` —
 otherwise the menu, and the next level started from it, inherit whatever powerup was running.
 
+Boom's 242 colormaps get a third element, `#colormap-tint`, at the same `--z-tint`. It differs from
+the powerup tints in being a **multiply** blend rather than a wash, because that is all a colormap
+can do — take light away — and in being driven from `game.ts` rather than from inventory state:
+which of the control sector's three colormaps applies depends on the player's eye height against
+that sector (docs/specials.md § Deep water). `Game.viewColormap` resolves it, `ScreenEffects.setColormapTint`
+writes it, and `reset` clears it with the rest.
+
 **Invulnerability's tint, the suit's tint and invisibility's sprite translucency all blink for their
 last `POWER_BLINK_WARNING_SECONDS` (3s)**, via the shared `powerBlinkVisible(secondsLeft)`. Not a
 vanilla mechanic (vanilla's own "running low" blink flickers a HUD number, not a screen effect) —

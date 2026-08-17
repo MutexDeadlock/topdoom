@@ -1,7 +1,7 @@
 # Rendering
 
-`src/render/bsp.ts`, `src/render/mapmesh.ts`, `src/render/occlusion.ts`, `src/render/camera.ts`,
-`src/render/textures.ts`, `src/render/textureanim.ts`
+`src/render/bsp.ts`, `src/render/solids.ts`, `src/render/mapmesh.ts`, `src/render/occlusion.ts`,
+`src/render/camera.ts`, `src/render/textures.ts`, `src/render/textureanim.ts`
 
 The level's own geometry: rebuilding it, lighting it, fading it and framing it. Things drawn *in*
 that level are docs/sprites.md; the loop that drives a frame is docs/frameloop.md.
@@ -70,13 +70,58 @@ Coordinates: DOOM's `(x, y, z)` becomes three.js `(x, z, -y)`, so the map plane 
 
 Ceilings are never rendered — `buildMapMesh`'s `renderCeilings` option still exists and is always
 `false`. From directly above, a rendered ceiling would hide everything under it; this is a permanent
-view choice, not a debug convenience.
+view choice, not a debug convenience. It is also why the ceiling half of Boom's transfers has no
+visible effect here: a 261 transfer only moves sprite light, and a 242 *fake ceiling* draws nothing
+at all (§ Deep water).
+
+## Solid structures (`solids.ts`)
+
+A pillar, a crate, a lamp post: DOOM draws them as a closed ring of **one-sided** linedefs with no
+sector inside at all. Vanilla never has to draw the top of one, because you can never get above it.
+This camera always is. Walls are drawn single-sided facing into their sector — the whole reason the
+level reads as a dollhouse — so from overhead you look straight into a structure, past the inside of
+its near wall, and out through the far one: a black hole where a solid block should be.
+
+`solids.ts: findSolidCaps` reconstructs those rings and `mapmesh.ts: buildSolidCaps` lids them.
+Three rules decide what a lid looks like, and each has a reason:
+
+- **A ring is only a structure if its sector is outside it.** The same shape — a closed ring of
+  one-sided lines — is also how a room's outer wall is drawn, and lidding *that* would roof the
+  level. The two are told apart by probing a map unit off the front side of the ring's longest edge:
+  the front side is the side the sidedef faces, so where that probe lands says which side the sector
+  is on.
+- **The lid sits at the lowest ceiling the ring borders**, since that is where the shortest of its
+  walls stops. Taking the highest would float the lid above a wall top and leave the gap open again.
+- **It wears the ring's own wall texture**, not a flat: over half of these structures stand outdoors
+  under `F_SKY1`, so there is no ceiling flat to continue, and a solid block's top reading as the
+  same material as its sides is what the shape wants anyway.
+
+Only rings whose every vertex joins exactly two one-sided lines are reconstructed. A structure
+welded onto a wall shares a vertex with a third line, and where the ring is ambiguous this leaves it
+alone rather than guessing — the hole stays, which is what it did before. Lids are also built once,
+into the static batches only: a structure never moves, and if the ceiling *around* one does, its lid
+keeps the height the level loaded with.
+
+Each lid is emitted as one `FlatSurface` **per triangle** (`THREE.ShapeUtils.triangulateShape`),
+because these rings are frequently concave and `FlatFader` tests a surface's footprint with the
+convex-only `pointNearConvexPolygon`. Triangles keep that contract, so a structure between the
+camera and the player dithers away exactly as a raised floor does — without that, capping them would
+trade a hole for something worse: a pillar you cannot see your own player behind.
 
 ## Sector lighting (`mapmesh.ts: lightToColor`)
 
-Walls, flats and sprites are all tinted by their sector's light level through this one function, so
+Walls, flats and sprites are all tinted by a sector's light level through this one function, so
 it decides how the whole game reads. Two things about it are easy to get wrong, and both were shipped
 bugs.
+
+*Which* sector's, though, is not always the surface's own: Boom's 213/261 hand a floor or a ceiling
+another sector's light, and each of the three consumers reads a different one — flats take
+`floorLight`/`ceilingLight`, walls take the sector's own level untransferred, and sprites take the
+average of the two. The rules and their vanilla sources are in
+docs/specials.md § Transferred lighting; what the renderer carries for them is
+`FlatSurface.lightSector`, the sector a fan's colour actually came from, which is also what
+`MoverGeometry` files its relight index under. On a map with no transfer line all three are the
+sector's own light and nothing about this changes.
 
 **The ramp is vanilla's own `COLORMAP`, measured from the lump rather than modelled.** Vanilla never
 multiplies a colour by the light level: it picks one of `COLORMAP`'s 32 rows and remaps every palette
@@ -200,7 +245,7 @@ mesh spanning the entire level that order is meaningless — plus both meshes st
 default, so whichever draws first can win the depth test and blank out the other. `MaterialBank`
 instead injects a fragment-shader snippet (`onBeforeCompile`) that discards a per-pixel fraction of
 fragments using interleaved-gradient-noise dithering, keyed off a per-vertex alpha `WallFader` writes
-into the (otherwise unused) 4th colour channel. That keeps walls in the ordinary opaque,
+into the 4th colour channel. That keeps walls in the ordinary opaque,
 depth-tested/written pass — no batching or sort-order concerns, just fewer pixels drawn. `holes`
 textures (masked middles) already alpha-test on the *combined* texture × vertex alpha, so a faded
 grate discards outright instead of dithering.
@@ -209,6 +254,29 @@ Fade amount is exponentially smoothed (`FADE_SPEED`) so walls don't pop, but a p
 never actually reaches its target — `update` snaps once the remaining gap drops below a threshold,
 otherwise a wall settles a hair short of fully opaque forever and shows a permanent faint speckle
 (the dither test is a strict `<`).
+
+**Three inputs share that one channel, and `commit` writes their product.** Occlusion fading and
+fog of war are the two that change per frame; the third is a surface's *base* alpha, fixed at build
+time — a Boom 260 midtexture's 66% (`WallOccluder.baseAlpha`) or a deep-water surface's
+`WATER_SURFACE_ALPHA` (`FlatSurface.baseAlpha`). Being constant, it costs nothing: `commit` already
+skips a surface whose alpha has not moved. Note that a midtexture quad is exempted from occlusion
+fading by `update`'s passable-gap test, so for a 260 grate the base is usually the only factor
+below 1.
+
+## Deep water (`mapmesh.ts: processFlat`)
+
+Boom's 242 makes a sector draw at another sector's heights. Vanilla picks one of two views by where
+the eye is; this engine draws both at once — an opaque water surface would hide a player who waded
+into it, which a camera looking straight down cannot afford. So a water subsector gets **two** fans:
+the pool bottom at the real floor height wearing the control sector's flat and light, and a
+translucent surface at the control sector's floor height wearing the sector's own. The full rule,
+including which vanilla branch each fan comes from and when no surface is drawn at all, is in
+docs/specials.md § Deep water.
+
+Mechanically it is one extra `FlatSurface` reusing the same subsector index, so fog of war and
+`FlatFader` need no notion of it, and the surface fades like any other raised floor. What it does
+need is a rebuild edge: a water sector shares no linedef with its control sector, so
+`MoverGeometry` links the two explicitly (§ Wall occlusion fading's product is otherwise unaffected).
 
 ## Camera orbit and camera-relative movement (`camera.ts`, `game/input.ts`, `game/player.ts`)
 
@@ -293,6 +361,16 @@ the view lurch every time the cursor crossed a monster and again when it left �
 never asked for, from a system that is supposed to be invisible. `game.ts: updateLivingPlayer`
 therefore returns the plane point specifically, while `Player.angle` and the shot keep the lock
 (docs/combat.md § Auto-aim).
+
+**The aim plane sits at `TopDownCamera.followHeight`, not at the player's own `z`.** The two are the
+same height once the follow smoother has caught up — the camera is handed `eyeZ` and the plane sits
+`AIM_HEIGHT_OFFSET` below that — but they part company during a fall, and that is exactly when it
+matters: the camera lags by up to the whole drop for about a third of a second, so a plane pinned to
+the player's live `z` drifts away from the camera under it, moving the cursor's world point and
+turning the player toward it. Deriving the plane from the camera locks the two together, so a fall
+pans the view and changes nothing else. Boom's deep water (docs/specials.md § Deep water) is what
+surfaced this: 242 is render-only, so walking into a pool drawn as a flat sheet of water still drops
+the player up to 200 units, with nothing on screen to explain the swing.
 
 ## View distance (`constants.ts: VIEW_DISTANCE`, `game.ts`)
 

@@ -10,12 +10,14 @@ import { Wad, WadFile } from '../src/wad/wad.ts';
 import { GraphicsBank } from '../src/wad/graphics.ts';
 import { readAnimated } from '../src/wad/animated.ts';
 import { readSwitches } from '../src/wad/switches.ts';
-import { loadMap } from '../src/wad/map.ts';
+import { loadMap, NO_SIDE } from '../src/wad/map.ts';
 import { classifyLineSpecial, type SpecialClass } from '../src/game/specials/tables.ts';
 import { Forces } from '../src/game/specials/forces.ts';
+import { Transfers } from '../src/game/specials/transfers.ts';
 import { VoodooDolls } from '../src/game/voodoo.ts';
 import { decodeSectorType, sectorTypeUnderstood } from '../src/game/specials/sectortypes.ts';
 import { buildSubSectorPolys } from '../src/render/bsp.ts';
+import { findSolidCaps } from '../src/render/solids.ts';
 import { World, positionBlocked } from '../src/game/world.ts';
 import { SoundBank } from '../src/wad/sound.ts';
 import { SFX_NAMES } from '../src/audio/sfx.ts';
@@ -52,15 +54,29 @@ console.log(
 console.log(`  bounds x[${map.bounds.minX}..${map.bounds.maxX}] y[${map.bounds.minY}..${map.bounds.maxY}]`);
 
 // --- textures referenced by the map must all resolve ---
-const missing = new Set<string>();
-for (const s of map.sidedefs) {
-  for (const t of [s.upper, s.lower, s.middle]) {
-    if (t !== '-' && t !== '' && !gfx.texture(t)) missing.add(`wall:${t}`);
-  }
+// Boom overloads sidedef texture names on two parameter lines: a 242 control
+// line names colormaps and a 260 line can name a translucency map. Neither is a
+// texture, and neither is missing art (docs/specials.md § Render transfers).
+const transfers = new Transfers(map, (name) => wad.find(name)?.size ?? null);
+const lineOfSide = new Map<number, number>();
+for (const [i, l] of map.linedefs.entries()) {
+  if (l.right !== NO_SIDE) lineOfSide.set(l.right, i);
 }
-for (const s of map.sectors) {
-  for (const t of [s.floorTex, s.ceilTex]) {
-    if (t !== 'F_SKY1' && t !== '-' && t !== '' && !gfx.flat(t)) missing.add(`flat:${t}`);
+const missing = new Set<string>();
+for (const [i, s] of map.sidedefs.entries()) {
+  const line = lineOfSide.get(i);
+  const tranmapNamed = line !== undefined && transfers.midtexSuppressed(line);
+  for (const [slot, t] of [
+    ['upper', s.upper],
+    ['lower', s.lower],
+    ['middle', s.middle],
+  ] as const) {
+    if (t === '-' || t === '' || gfx.texture(t)) continue;
+    // A 242 control line's slots name colormaps; a 260 line's middle can name
+    // the translucency map. Neither is missing art.
+    if (transfers.colormapName(t)) continue;
+    if (slot === 'middle' && tranmapNamed) continue;
+    missing.add(`wall:${t}`);
   }
 }
 console.log(`\nmissing textures: ${missing.size === 0 ? 'none' : [...missing].join(', ')}`);
@@ -123,7 +139,8 @@ for (const p of polys) {
 }
 console.log(
   `subsector polys: ${polys.length} total, ${empty} degenerate, ${minVerts}..${maxVerts} verts,\n` +
-    `  total floor area ${Math.round(flatArea).toLocaleString('en-US')} map units²`,
+    `  total floor area ${Math.round(flatArea).toLocaleString('en-US')} map units²,\n` +
+    `  ${findSolidCaps(map, polys).length} solid structures lidded`,
 );
 
 // --- REJECT: how much sight this map's own table rules out up front ---
@@ -168,6 +185,18 @@ console.log(`  free directions at r=64: ${free}/${steps}`);
     `forces: ${scrollers.side} wall + ${scrollers.floorTex} floor + ${scrollers.ceilTex} ceiling scrollers, ` +
       `${scrollers.carry} conveyors, ${forces.frictionSectors} friction sectors, ${forces.pusherCount} pushers, ` +
       `${dolls} voodoo doll${dolls === 1 ? '' : 's'}`,
+  );
+}
+
+// --- the render transfers: what `specials/transfers.ts` found here ---
+{
+  const t = transfers.counts();
+  const water = transfers.waterSectors();
+  const surfaces = water.filter((w) => transfers.waterHeight(w.sector) !== null).length;
+  console.log(
+    `transfers: ${t.floorLight} floor-light + ${t.ceilingLight} ceiling-light lines, ` +
+      `${t.water} fake-height lines (${water.length} sectors, ${surfaces} drawing water), ` +
+      `${t.translucent} translucent lines`,
   );
 }
 

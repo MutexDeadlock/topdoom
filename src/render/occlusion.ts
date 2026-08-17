@@ -121,18 +121,22 @@ export class WallFader {
   }
 
   /**
-   * Writes occlusion × fog-of-war combined alpha into each wall's vertex-colour
-   * alpha channel. `fogAlphaOf` is keyed by the wall's index in this list, not
-   * by sector: which subsector a wall quad faces into is geometry FogOfWar
-   * works out for itself (see its `wallAlpha`), so the mesh builder doesn't
-   * have to carry a fog-specific field around.
+   * Writes base × occlusion × fog-of-war combined alpha into each wall's
+   * vertex-colour alpha channel. `fogAlphaOf` is keyed by the wall's index in
+   * this list, not by sector: which subsector a wall quad faces into is
+   * geometry FogOfWar works out for itself (see its `wallAlpha`), so the mesh
+   * builder doesn't have to carry a fog-specific field around.
+   *
+   * The base is the quad's own permanent translucency (a Boom 260 midtexture)
+   * — a *third* input to this one channel, and the only one that never changes
+   * after the build. docs/render.md § Wall occlusion fading.
    */
   commit(fogAlphaOf: (occluderIndex: number) => number): void {
     const dirty = new Set<string>();
 
     for (let i = 0; i < this.occluders.length; i++) {
       const o = this.occluders[i];
-      const combined = this.occlusionAlpha[i] * fogAlphaOf(i);
+      const combined = (o.baseAlpha ?? 1) * this.occlusionAlpha[i] * fogAlphaOf(i);
       const attr = this.meshes.get(o.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
       if (!attr) continue;
       if (attr.getW(o.vertexStart) === combined) continue;
@@ -189,13 +193,13 @@ export class FlatFader {
     }
   }
 
-  /** Same combined occlusion × fog-of-war write as `WallFader.commit`. */
+  /** Same base × occlusion × fog-of-war write as `WallFader.commit` — here the base is a water surface's. */
   commit(fogAlphaOf: (subsector: number) => number): void {
     const dirty = new Set<string>();
 
     for (let i = 0; i < this.surfaces.length; i++) {
       const s = this.surfaces[i];
-      const combined = this.alpha[i] * fogAlphaOf(s.subsector);
+      const combined = (s.baseAlpha ?? 1) * this.alpha[i] * fogAlphaOf(s.subsector);
       const attr = this.meshes.get(s.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
       if (!attr) continue;
       if (attr.getW(s.vertexStart) === combined) continue;

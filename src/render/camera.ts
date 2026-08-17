@@ -167,6 +167,21 @@ export class TopDownCamera {
   }
 
   /**
+   * The DOOM-space height the camera is currently pointed at — the eye height
+   * it was last given, after follow smoothing, at the pose `applyToCamera` last
+   * struck.
+   *
+   * The aim plane is derived from this rather than from the player's own live
+   * `z` (`game.ts`). The two agree once the smoother has caught up, but during
+   * a fall they do not, and a plane that moves while the camera lags swings the
+   * cursor's world point — and with it the player's facing — for the third of a
+   * second it takes to settle. docs/render.md § Aim lead.
+   */
+  get followHeight(): number {
+    return this.initialised ? this.viewPoint.y : this.smoothed.y;
+  }
+
+  /**
    * `viewerAngleDeg` at the interpolated pose the camera is actually drawn at,
    * for billboard orientation. Using the tic-exact angle instead would leave
    * every sprite a fraction of a yaw snap out of line with the walls behind it.

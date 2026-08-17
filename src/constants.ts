@@ -95,3 +95,12 @@ export const PICKUP_SCALE_TYPES: Set<number> = new Set([
   ThingType.radiationSuit,
   ThingType.lightAmpVisor,
 ]);
+
+/**
+ * How solid a Boom deep-water surface draws over the pool bottom beneath it
+ * (0 = invisible, 1 = opaque). **Tuned by feel** — vanilla's water surface is
+ * opaque and hides whatever wades into it, which a camera looking straight down
+ * cannot afford; this is the dial that decides how much of a submerged player
+ * still reads through. docs/specials.md § Deep water.
+ */
+export const WATER_SURFACE_ALPHA = 0.5;

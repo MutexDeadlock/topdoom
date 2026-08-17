@@ -92,6 +92,7 @@ export class MoverGeometry {
     // is its own — see its doc; the caller only passes render preferences.
     this.meshOptions = { ...meshOptions, movableSectors };
     this.indexMovableNeighbors();
+    this.indexWaterDependents();
     for (const sectorIndex of movableSectors) this.createMoverMesh(sectorIndex);
     this.indexLightGeometry();
   }
@@ -124,9 +125,9 @@ export class MoverGeometry {
       this.sectorOccluders.set(o.sector, arr);
     }
     for (const f of this.built.flatSurfaces) {
-      const arr = this.sectorFlats.get(f.sector) ?? [];
+      const arr = this.sectorFlats.get(f.lightSector) ?? [];
       arr.push(f);
-      this.sectorFlats.set(f.sector, arr);
+      this.sectorFlats.set(f.lightSector, arr);
     }
   }
 
@@ -165,7 +166,7 @@ export class MoverGeometry {
     // not just `sectorIndex` — see `recolorSector`. Rebuilding a mesh never
     // changes which sectors those are, so the sets only ever grow once.
     for (const q of mesh.wallQuads) this.trackMoverLight(q.sector, sectorIndex);
-    for (const f of mesh.flatFans) this.trackMoverLight(f.sector, sectorIndex);
+    for (const f of mesh.flatFans) this.trackMoverLight(f.lightSector, sectorIndex);
   }
 
   private trackMoverLight(sectorIndex: number, moverIndex: number): void {
@@ -214,6 +215,24 @@ export class MoverGeometry {
     }
   }
 
+  /**
+   * The one rebuild edge that isn't adjacency: a Boom 242 water sector draws
+   * its surface at its *control* sector's floor height, and the two share no
+   * linedef — usually not even a room. Linked one way only (control →
+   * dependent): moving the water does not move the control sector.
+   * docs/specials.md § Deep water.
+   */
+  private indexWaterDependents(): void {
+    const transfers = this.meshOptions.transfers;
+    if (!transfers) return;
+    for (const sectorIndex of this.movableSectors) {
+      const control = transfers.heightSec(sectorIndex);
+      if (control >= 0 && control !== sectorIndex && this.movableSectors.has(control)) {
+        this.link(control, sectorIndex);
+      }
+    }
+  }
+
   private link(from: number, to: number): void {
     const set = this.movableNeighbors.get(from) ?? new Set<number>();
     set.add(to);
@@ -239,6 +258,9 @@ export class MoverGeometry {
       dirty.add(o.key);
     }
     for (const f of this.sectorFlats.get(sectorIndex) ?? []) {
+      // Indexed by the sector the fan's *light* came from, so this is that
+      // sector's level even where the fan belongs to another one (a 213
+      // transfer, a deep-water bottom).
       const c = litColor(sector.light);
       const attr = this.built.flatMeshes.get(f.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
       if (!attr) continue;
@@ -281,7 +303,7 @@ export class MoverGeometry {
         dirty.add(q.key);
       }
       for (const f of g.mesh.flatFans) {
-        if (f.sector !== sectorIndex) continue;
+        if (f.lightSector !== sectorIndex) continue;
         const attr = g.mesh.meshes.get(f.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
         if (!attr) continue;
         const c = litColor(light);

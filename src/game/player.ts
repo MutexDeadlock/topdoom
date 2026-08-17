@@ -46,7 +46,7 @@ const MAX_PL_MOVE = 50;
 const MOVE_UNIT_SPEED = 10;
 
 const ACCELERATION = 12; // per second, as a lerp factor
-const EYE_HEIGHT = 41;
+export const EYE_HEIGHT = 41;
 /**
  * Map units per second^2. Tuned by feel rather than lifted from vanilla's fixed-point
  * tic-based gravity (1 unit/tic^2 at 35 tics/s), which doesn't translate to a dt-scaled

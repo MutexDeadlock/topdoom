@@ -294,3 +294,59 @@ export function addControlLine(
   const side = map.sidedefs.push({ xOffset: 0, yOffset: 0, upper: '-', lower: '-', middle: '-', sector: 0 }) - 1;
   map.linedefs.push({ v1: v, v2: v + 1, flags: 0, special, tag, right: side, left: NO_SIDE });
 }
+
+/**
+ * The same, for the transfers (213/242/261), which read their model off the
+ * control line's front **sector** rather than its vector — so this appends a
+ * real dummy sector for it to name, and returns its index for the caller to
+ * pose. `textures` fills the sidedef, where 242 carries its colormap names.
+ *
+ * Append before building the `World`, so the two agree how many linedefs exist.
+ */
+export function addControlSector(
+  map: DoomMap,
+  sector: Partial<Sector>,
+  special: number,
+  tag: number,
+  textures: { upper?: string; middle?: string; lower?: string } = {},
+): number {
+  const index =
+    map.sectors.push({
+      floorHeight: 0,
+      ceilHeight: 128,
+      floorTex: 'FLOOR0_1',
+      ceilTex: 'CEIL1_1',
+      light: 160,
+      special: 0,
+      tag: 0,
+      ...sector,
+    }) - 1;
+  addTransferLine(map, index, special, tag, textures);
+  return index;
+}
+
+/**
+ * `addControlSector` for a sector that already exists — when the model has to
+ * be a real cell of the grid (one with neighbours, so its light pattern has a
+ * dark level to fall to) rather than a floating dummy.
+ */
+export function addTransferLine(
+  map: DoomMap,
+  controlSector: number,
+  special: number,
+  tag: number,
+  textures: { upper?: string; middle?: string; lower?: string } = {},
+): void {
+  const v = map.vertexes.length;
+  map.vertexes.push({ x: -4096, y: -4096 }, { x: -4096, y: -4032 });
+  const side =
+    map.sidedefs.push({
+      xOffset: 0,
+      yOffset: 0,
+      upper: textures.upper ?? '-',
+      lower: textures.lower ?? '-',
+      middle: textures.middle ?? '-',
+      sector: controlSector,
+    }) - 1;
+  map.linedefs.push({ v1: v, v2: v + 1, flags: 0, special, tag, right: side, left: NO_SIDE });
+}

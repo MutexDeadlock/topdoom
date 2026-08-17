@@ -38,7 +38,7 @@ import { thrustSpeed } from './game/monsters/defs.ts';
 import { MonsterAttacks } from './game/monsters/attacks.ts';
 import { collectFadeTargets, FlatFader, SurfaceScroller, WallFader } from './render/occlusion.ts';
 import { World } from './game/world.ts';
-import { AIM_HEIGHT_OFFSET, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
+import { AIM_HEIGHT_OFFSET, EYE_HEIGHT, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { applyBarrelExplosion, type CombatContext, type DamageCause } from './game/combat.ts';
 import { SpriteFxLayer } from './game/spritefx.ts';
 import { ProjectileLayer } from './game/projectiles.ts';
@@ -53,6 +53,8 @@ import {
 } from './game/specials.ts';
 import { computeMovableSectors } from './game/specials/mapscan.ts';
 import { Forces } from './game/specials/forces.ts';
+import { transfersOf, type Transfers } from './game/specials/transfers.ts';
+import { colormapTint, type ColorTint } from './wad/colormaps.ts';
 import { VoodooDolls } from './game/voodoo.ts';
 import { readAnimated } from './wad/animated.ts';
 import { readSwitches, switchPairs, type SwitchPairLookup } from './wad/switches.ts';
@@ -176,6 +178,14 @@ export class Game {
   private surfaceScroller!: SurfaceScroller;
   /** The level's always-on parameter lines — scrollers and conveyors (game/specials/forces.ts). */
   private forces!: Forces;
+  /** The level's Boom render transfers (game/specials/transfers.ts) — read per frame for the view colormap. */
+  private transfers!: Transfers;
+  /**
+   * The colour cast of each 242 control sector's three colormaps, resolved once
+   * per level: `R_SetupFrame` picks one of them per frame, and a WAD lookup per
+   * frame to answer that would be pure waste. Empty on the maps with none.
+   */
+  private colormapTints = new Map<number, { bottom: ColorTint | null; mid: ColorTint | null; top: ColorTint | null }>();
   /** Scratch for `Forces`' per-body sector walk, reused by every caller in a tic — see `World.sectorsTouching`. */
   private touchedSectors: number[] = [];
   /** The level's voodoo dolls, if it places any (game/voodoo.ts). */
@@ -641,6 +651,22 @@ export class Game {
     // Sectors a door/lift/floor mover will drive are pulled out of the static
     // batches up front — SpecialsController owns their geometry instead (see
     // render/mapmesh.ts's MapMeshOptions doc for why).
+    // Boom's render transfers, resolved before anything is built: the mesh
+    // takes its transferred lighting and water planes from here, and the
+    // movable-sector scan above already consulted the same memoized table.
+    // docs/specials.md § Render transfers.
+    const transfers = transfersOf(map, (name) => this.wad.find(name)?.size ?? null);
+    this.transfers = transfers;
+    this.colormapTints.clear();
+    for (const { control } of transfers.waterSectors()) {
+      const names = transfers.colormapsOf(control);
+      if (!names || this.colormapTints.has(control)) continue;
+      this.colormapTints.set(control, {
+        bottom: colormapTint(this.wad, names.bottom),
+        mid: colormapTint(this.wad, names.mid),
+        top: colormapTint(this.wad, names.top),
+      });
+    }
     const movableSectors = computeMovableSectors(map, this.switchPairs);
     // A saved mid-motion mover's sector may have had its authored special
     // consumed, dropping it from the scan above — union it back in so its
@@ -649,7 +675,7 @@ export class Game {
       const saved = [...restore.specials.movers, ...(restore.specials.ceilingMovers ?? [])];
       for (const [sectorIndex] of saved) movableSectors.add(sectorIndex);
     }
-    this.built = buildMapMesh(map, this.materials, { movableSectors });
+    this.built = buildMapMesh(map, this.materials, { movableSectors, transfers });
     this.scene.add(this.built.group);
     this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
     this.flatFader = new FlatFader(this.built.flatSurfaces, this.built.flatMeshes);
@@ -699,7 +725,7 @@ export class Game {
       this.fogOfWar,
       this.built.polys,
       this.built,
-      {},
+      { transfers },
       (secret) => {
         this.pendingExit = secret ? 'secret' : 'normal';
       },
@@ -1353,7 +1379,13 @@ export class Game {
       // the camera was posed at alpha 1 above.
       const ray = camera.rayFor(input.pointer.x, input.pointer.y);
       const m = this.things?.pickMonster(ray, camera.viewerAngleDeg) ?? null;
-      const onPlane = camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
+      // The aim plane hangs off the camera's own follow height, not the
+      // player's live `z`: identical once the follow smoother has caught up,
+      // but during a fall — into a Boom water pool, off any ledge — a plane
+      // that drops while the camera lags swings the cursor's world point and
+      // turns the player with it. docs/render.md § Aim lead.
+      const aimPlaneZ = camera.followHeight - EYE_HEIGHT + AIM_HEIGHT_OFFSET;
+      const onPlane = camera.pointerToPlane(input.pointer.x, input.pointer.y, aimPlaneZ);
       const at = m ?? onPlane;
       // Whatever the world is pushing the player with this tic — a conveyor
       // underfoot — onto the same momentum channel a hit's knockback uses.
@@ -1517,7 +1549,24 @@ export class Game {
     this.message.update(dt);
     this.levelCard.update(dt);
     this.screenEffects.update(dt, this.inventory);
+    this.screenEffects.setColormapTint(this.viewColormap());
     this.deathOverlay.update(dt);
+  }
+
+  /**
+   * The colour cast the whole view draws under, or null for none: the colormap
+   * of the 242 control sector the player is standing in, chosen by eye height
+   * against that sector's floor and ceiling exactly as `R_SetupFrame` does.
+   * docs/specials.md § Deep water.
+   */
+  private viewColormap(): ColorTint | null {
+    if (this.colormapTints.size === 0) return null;
+    const control = this.transfers.heightSec(this.world.sectorIndexAt(this.player.x, this.player.y));
+    const tints = control < 0 ? undefined : this.colormapTints.get(control);
+    if (!tints) return null;
+    const sector = this.world.map.sectors[control];
+    const eye = this.player.eyeZ;
+    return eye < sector.floorHeight ? tints.bottom : eye > sector.ceilHeight ? tints.top : tints.mid;
   }
 
   /**
@@ -1634,7 +1683,8 @@ export class Game {
     // not that it would matter anyway, since setPose ignores `animating`
     // entirely once `die()` has been called (see SpriteActor's doc).
     const walking = !this.playerDead && Math.hypot(this.player.velX, this.player.velY) > 1;
-    this.playerActor.setPose(x, y, z, facingDeg, sector?.light ?? 128, rawDt, walking, viewAngleDeg);
+    const light = sector ? transfersOf(this.world.map).spriteLight(this.world.sectorIndexAt(x, y)) : 128;
+    this.playerActor.setPose(x, y, z, facingDeg, light, rawDt, walking, viewAngleDeg);
   }
 
   /** DEVMODE's status text. Only ever called while the panel is shown — see `DebugHud.update`. */

@@ -11,6 +11,7 @@ import { Tracer } from '../render/tracer.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import type { ShotPath, World } from './world.ts';
+import { transfersOf } from './specials/transfers.ts';
 import { triangularDraw } from '../util/random.ts';
 import { type OneShotEffect } from './spritefx/defs.ts';
 import { BLOOD_FRAME_SECONDS, bloodFrames, HIT_Z_JITTER, PUFF_FRAME_SECONDS, PUFF_FRAMES, PUFF_MELEE_FRAMES, PUFF_WALL_OFFSET, TFOG_FRAME_SECONDS, TFOG_FRAMES, TFOG_SPAWN_OFFSET } from './spritefx/tables.ts';
@@ -115,7 +116,11 @@ export class SpriteFxLayer {
     const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, sprite, frames, frameSeconds);
     if (!anim.resolve(0, VIEWER_ANGLE_DEG)) return null;
     const subsector = this.world.subsectorAt(at.x, at.y);
-    const light = this.world.sectorOfSubsector(subsector)?.light ?? 128;
+    const sectorIndex = this.world.sectorIndexOfSubsector(subsector);
+    const light =
+      this.world.map.sectors[sectorIndex] !== undefined
+        ? transfersOf(this.world.map).spriteLight(sectorIndex)
+        : 128;
     // drawPrev seeded to the spawn point: a one-shot's first drawn frame must
     // sit where it was spawned, not interpolate in from the world origin.
     return {
@@ -321,7 +326,10 @@ export class SpriteFxLayer {
           e.y = front.y;
           e.z = front.z;
           e.subsector = this.world.subsectorAt(e.x, e.y);
-          e.light = this.world.sectorOfSubsector(e.subsector)?.light ?? e.light;
+          const sectorIndex = this.world.sectorIndexOfSubsector(e.subsector);
+          if (this.world.map.sectors[sectorIndex] !== undefined) {
+            e.light = transfersOf(this.world.map).spriteLight(sectorIndex);
+          }
         }
       }
       e.anim.advance(dt, true);

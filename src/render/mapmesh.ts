@@ -6,9 +6,10 @@
 import * as THREE from 'three';
 import { LF, NO_SIDE, SKY_FLAT, type DoomMap, type LineDef, type SideDef, type Sector } from '../wad/map.ts';
 import { buildSubSectorPolys, type SubSectorPoly } from './bsp.ts';
+import { findSolidCaps, pointInPolygon, type SolidCap } from './solids.ts';
 import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
 import type { Pos2 } from '../types.ts';
-import { BRIGHTNESS_LIFT } from '../constants.ts';
+import { BRIGHTNESS_LIFT, WATER_SURFACE_ALPHA } from '../constants.ts';
 
 /** DOOM's sentinel for "no texture assigned" in a sidedef texture slot — also used by `game/specials.ts`'s `raiseToTexture` to skip unset bottom textures. */
 export const NO_TEXTURE = '-';
@@ -128,15 +129,62 @@ export function litColor(light: number, contrast = 0): number {
   return applyBrightnessLift(lightToColor(light, contrast), BRIGHTNESS_LIFT);
 }
 
+/**
+ * How opaque a Boom 260 midtexture draws. Vanilla blends it through a `TRANMAP`
+ * generated at `tran_filter_pct` percent, whose default is 66 (`m_misc.c`'s
+ * config table); custom tranmap lumps have no meaning to an RGBA renderer, so
+ * every 260 line gets this one value — docs/specials.md § Translucent midtextures.
+ */
+const TRANSLUCENT_ALPHA = 0.66;
+
+/**
+ * How much water a Boom 242 sector needs before its surface is drawn over a
+ * pool bottom rather than simply *being* the drawn floor. **Tuned by feel**,
+ * against the artifact it exists to stop: BOOMEDIT MAP01 sector 405 is one map
+ * unit deep, and two fans that close together z-fight into a shimmering mess.
+ * docs/specials.md § Deep water.
+ */
+const WATER_MIN_DEPTH = 8;
+
 function pushVertex(b: Batch, x: number, y: number, z: number, u: number, v: number, c: number, alpha = 1): void {
   b.positions.push(x, y, z);
   b.uvs.push(u, v);
   b.colors.push(c, c, c, alpha);
 }
 
+/**
+ * Boom's render transfers, as much of them as the mesh builder needs:
+ * a sector's drawn floor/ceiling light, the height its water surface sits at,
+ * and which linedefs draw a translucent midtexture.
+ *
+ * Declared structurally here, like `ScrollOffsets` in render/occlusion.ts, so
+ * the renderer keeps no import edge into `game/` — `game/specials/transfers.ts`
+ * implements it. See docs/render.md § Sector lighting and § Deep water.
+ */
+export interface SectorTransfers {
+  floorLight(sectorIndex: number): number;
+  ceilingLight(sectorIndex: number): number;
+  /** Which sector that light came from, for the relight indexes. */
+  floorLightSector(sectorIndex: number): number;
+  ceilingLightSector(sectorIndex: number): number;
+  /** The 242 control sector, or -1. */
+  heightSec(sectorIndex: number): number;
+  /** Where this sector's water surface is drawn, or null where there is none. */
+  waterHeight(sectorIndex: number): number | null;
+  translucentLine(lineIndex: number): boolean;
+  midtexSuppressed(lineIndex: number): boolean;
+  /** Whether a sidedef texture name is really a colormap lump (a 242 control line's own). */
+  colormapName(name: string): boolean;
+}
+
 export interface MapMeshOptions {
   /** Ceilings block a top-down camera, so they are off by default. */
   renderCeilings?: boolean;
+  /**
+   * The level's Boom render transfers. Omitted (tests, and any caller that has
+   * no map-wide scan handy) means every sector lights and draws itself.
+   */
+  transfers?: SectorTransfers;
   /** Walls above this height above their floor are omitted (0 = no limit). */
   wallHeightCap?: number;
   /**
@@ -193,6 +241,11 @@ export interface WallOccluder {
   line: number;
   /** True if this quad came from the linedef's front (right) sidedef — vanilla's `sidenum[0]`, the only side a scrolling special ever animates. */
   frontSide: boolean;
+  /**
+   * Permanent translucency, multiplied into the vertex alpha the faders write
+   * (render/occlusion.ts). Only a Boom 260 midtexture has one.
+   */
+  baseAlpha?: number;
 }
 
 /**
@@ -208,11 +261,23 @@ export interface FlatSurface {
   subsector: number;
   /** Sector this fan belongs to — for specials-driven relight. */
   sector: number;
+  /**
+   * Sector this fan's colour was taken from — its own, unless a Boom light
+   * transfer or a deep-water bottom borrowed another's (docs/specials.md
+   * § Render transfers). This is what `MoverGeometry` files its relight index
+   * under, so recoloring the *source* repaints everything drawing from it.
+   */
+  lightSector: number;
   /** DOOM (x, y) footprint of this subsector, flattened — see FlatFader. */
   points: Float64Array;
   /** World height (floor or ceiling) this surface sits at. */
   height: number;
   isCeiling: boolean;
+  /**
+   * Permanent translucency, multiplied into the vertex alpha the faders write
+   * (render/occlusion.ts). Only a 242 water surface has one.
+   */
+  baseAlpha?: number;
 }
 
 /** One sector's worth of dynamic geometry — see `buildMoverMesh`. */
@@ -223,8 +288,30 @@ export interface MoverMesh {
   flatFans: FlatSurface[];
 }
 
+/**
+ * What a map with no Boom transfer lines resolves to: every sector lights and
+ * draws itself. Handed to the builders so they never branch on "is there a
+ * transfer table", and so a caller that has no scan (tests, tools) is not a
+ * special case.
+ */
+function ownTransfers(map: DoomMap): SectorTransfers {
+  const light = (s: number) => map.sectors[s]?.light ?? 0;
+  return {
+    floorLight: light,
+    ceilingLight: light,
+    floorLightSector: (s) => s,
+    ceilingLightSector: (s) => s,
+    heightSec: () => -1,
+    waterHeight: () => null,
+    translucentLine: () => false,
+    midtexSuppressed: () => false,
+    colormapName: () => false,
+  };
+}
+
 export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshOptions = {}): BuiltMap {
   const { renderCeilings = false, wallHeightCap = 0, movableSectors } = options;
+  const transfers = options.transfers ?? ownTransfers(map);
   const batches = new BatchSet();
   const missing = new Set<string>();
   const occluders: WallOccluder[] = [];
@@ -232,13 +319,16 @@ export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshO
 
   const texSize = (kind: SurfaceKind, name: string) => {
     const s = bank.size(kind, name);
-    if (!s) missing.add(kind + ':' + name);
+    // A 242 control line's sidedef names colormaps, not textures — absent art
+    // there is the feature working, not a hole in the WAD.
+    if (!s && !transfers.colormapName(name)) missing.add(kind + ':' + name);
     return s;
   };
 
   const polys = buildSubSectorPolys(map);
-  buildFlats(map, polys, batches, texSize, renderCeilings, flatSurfaces, movableSectors);
-  buildWalls(map, batches, texSize, wallHeightCap, occluders, movableSectors);
+  buildFlats(map, polys, batches, texSize, renderCeilings, flatSurfaces, transfers, movableSectors);
+  buildWalls(map, batches, texSize, wallHeightCap, occluders, transfers, movableSectors);
+  buildSolidCaps(map, polys, batches, texSize, flatSurfaces, transfers);
 
   const group = new THREE.Group();
   group.name = 'map:' + map.name;
@@ -266,6 +356,17 @@ export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshO
     else flatMeshes.set(b.key, mesh);
   }
 
+  // A solid structure's lid is drawn with a *wall* texture (`buildSolidCaps`),
+  // so its batch is registered above as a wall mesh — but the lid is a
+  // `FlatSurface`, and both `FlatFader` and `MoverGeometry`'s relight index
+  // look a surface's mesh up in `flatMeshes`. Register it under both, so a lid
+  // fades and relights like the floors it is filed with.
+  for (const surface of flatSurfaces) {
+    if (flatMeshes.has(surface.key)) continue;
+    const mesh = wallMeshes.get(surface.key);
+    if (mesh) flatMeshes.set(surface.key, mesh);
+  }
+
   return { group, missingTextures: [...missing].sort(), triangles, occluders, wallMeshes, flatSurfaces, flatMeshes, polys };
 }
 
@@ -288,6 +389,7 @@ export function buildMoverMesh(
   options: MapMeshOptions = {},
 ): MoverMesh {
   const { renderCeilings = false, wallHeightCap = 0, movableSectors } = options;
+  const transfers = options.transfers ?? ownTransfers(map);
   const batches = new BatchSet();
   const texSize = (kind: SurfaceKind, name: string) => bank.size(kind, name);
   const wallQuads: WallOccluder[] = [];
@@ -295,7 +397,7 @@ export function buildMoverMesh(
 
   for (let ss = 0; ss < polys.length; ss++) {
     if (polys[ss].sector !== sectorIndex) continue;
-    processFlat(map, polys[ss], ss, batches, texSize, renderCeilings, flatFans);
+    processFlat(map, polys[ss], ss, batches, texSize, renderCeilings, flatFans, transfers);
   }
 
   // Own sides always; a neighbour's side only when that neighbour is static —
@@ -307,7 +409,7 @@ export function buildMoverMesh(
 
   for (const [lineIndex, line] of map.linedefs.entries()) {
     if (!touchesSector(map, line, sectorIndex)) continue;
-    processLine(map, line, lineIndex, batches, texSize, wallHeightCap, wallQuads, includeSide);
+    processLine(map, line, lineIndex, batches, texSize, wallHeightCap, wallQuads, transfers, includeSide);
   }
 
   const group = new THREE.Group();
@@ -356,12 +458,94 @@ function buildFlats(
   size: SizeFn,
   renderCeilings: boolean,
   flatSurfaces: FlatSurface[],
+  transfers: SectorTransfers,
   movableSectors?: Set<number>,
 ): void {
   for (let ss = 0; ss < polys.length; ss++) {
     if (movableSectors && movableSectors.has(polys[ss].sector)) continue;
-    processFlat(map, polys[ss], ss, batches, size, renderCeilings, flatSurfaces);
+    processFlat(map, polys[ss], ss, batches, size, renderCeilings, flatSurfaces, transfers);
   }
+}
+
+/**
+ * Lids over the map's solid structures — the rings of one-sided linedefs that
+ * enclose no sector (render/solids.ts). Without them the overhead camera looks
+ * straight into a pillar and out the far side, since its walls are drawn
+ * single-sided and face away from the inside. docs/render.md § Solid structures.
+ *
+ * One surface **per triangle**, not one per lid: a ring is often concave, and
+ * `FlatFader` tests a surface's footprint with the convex-only helper that
+ * every other flat here satisfies. Triangles keep that contract, at the cost of
+ * a big lid dissolving in pieces rather than all at once.
+ */
+function buildSolidCaps(
+  map: DoomMap,
+  polys: SubSectorPoly[],
+  batches: BatchSet,
+  size: SizeFn,
+  flatSurfaces: FlatSurface[],
+  transfers: SectorTransfers,
+): void {
+  for (const cap of findSolidCaps(map, polys)) {
+    if (!size('wall', cap.texture)) continue;
+    const subsector = subsectorNear(polys, cap);
+    if (subsector < 0) continue;
+    const light = transfers.ceilingLight(cap.sector);
+    const lightSector = transfers.ceilingLightSector(cap.sector);
+    for (const triangle of triangulate(cap.points)) {
+      addFlatFan(
+        { points: triangle, sector: cap.sector },
+        subsector,
+        batches,
+        size,
+        flatSurfaces,
+        { texName: cap.texture, height: cap.height, light, lightSector, isCeiling: false },
+        'wall',
+      );
+    }
+  }
+}
+
+/** The subsector the lid's outside probe lands in — how fog of war decides whether it has been seen. */
+function subsectorNear(polys: SubSectorPoly[], cap: SolidCap): number {
+  let fallback = -1;
+  for (const [ss, poly] of polys.entries()) {
+    if (poly.sector !== cap.sector) continue;
+    if (fallback < 0) fallback = ss;
+    if (pointInPolygon(poly.points, cap.probeX, cap.probeY)) return ss;
+  }
+  return fallback;
+}
+
+/** Ear-clips a ring into triangles, using three's own routine rather than a second copy of one. */
+function triangulate(points: Float64Array): Float64Array[] {
+  const contour: THREE.Vector2[] = [];
+  for (let i = 0; i < points.length; i += 2) contour.push(new THREE.Vector2(points[i], points[i + 1]));
+  let faces: number[][];
+  try {
+    faces = THREE.ShapeUtils.triangulateShape(contour, []);
+  } catch {
+    return [];
+  }
+  return faces.map((face) => {
+    const tri = new Float64Array(6);
+    for (const [i, index] of face.entries()) {
+      tri[i * 2] = contour[index].x;
+      tri[i * 2 + 1] = contour[index].y;
+    }
+    return tri;
+  });
+}
+
+/** One flat fan's parameters — everything `addFlatFan` needs that isn't the footprint. */
+interface FlatSpec {
+  texName: string;
+  height: number;
+  light: number;
+  /** Sector the light came from, which a transfer makes different from the fan's own. */
+  lightSector: number;
+  isCeiling: boolean;
+  baseAlpha?: number;
 }
 
 function processFlat(
@@ -372,47 +556,106 @@ function processFlat(
   size: SizeFn,
   renderCeilings: boolean,
   flatSurfaces: FlatSurface[],
+  transfers: SectorTransfers,
 ): void {
   const n = poly.points.length / 2;
   if (n < 3) return;
   const sector = map.sectors[poly.sector];
   if (!sector) return;
 
+  // Boom's 242: `R_FakeFlat` picks one of two views by where the eye is, and
+  // this draws both at once — the pool bottom below a translucent surface — so
+  // the player stays visible under water. Too shallow to hold a body, and there
+  // is nothing to see between the two: that case falls back to vanilla's own
+  // above-water view, one fan at the surface height wearing the sector's flat,
+  // which is also the only way two planes a unit apart avoid z-fighting.
+  // docs/specials.md § Deep water.
+  const surfaceHeight = transfers.waterHeight(poly.sector);
+  const deep = surfaceHeight !== null && surfaceHeight - sector.floorHeight >= WATER_MIN_DEPTH;
+  const control = deep ? transfers.heightSec(poly.sector) : -1;
+  const bottom = control >= 0 ? map.sectors[control] : undefined;
+  // The bottom wears the control sector's flat, except where that sector has
+  // none to lend (sky, or an unset slot) — falling back to the sector's own
+  // keeps a pool with a floor rather than a hole in the level.
+  const bottomTex =
+    bottom && bottom.floorTex !== SKY_FLAT && bottom.floorTex !== NO_TEXTURE ? bottom.floorTex : undefined;
+  const floorLightFrom = bottom ? control : poly.sector;
+
   for (const isCeiling of renderCeilings ? [false, true] : [false]) {
-    const texName = isCeiling ? sector.ceilTex : sector.floorTex;
-    if (texName === SKY_FLAT || texName === NO_TEXTURE || texName === '') continue;
-    if (!size('flat', texName)) continue;
+    addFlatFan(poly, ss, batches, size, flatSurfaces, {
+      texName: isCeiling ? sector.ceilTex : (bottomTex ?? sector.floorTex),
+      // A shallow 242 draws its one floor at the surface, exactly as vanilla does.
+      height: isCeiling ? sector.ceilHeight : (deep || surfaceHeight === null ? sector.floorHeight : surfaceHeight),
+      light: isCeiling ? transfers.ceilingLight(poly.sector) : transfers.floorLight(floorLightFrom),
+      lightSector: isCeiling
+        ? transfers.ceilingLightSector(poly.sector)
+        : transfers.floorLightSector(floorLightFrom),
+      isCeiling,
+    });
+  }
 
-    const height = isCeiling ? sector.ceilHeight : sector.floorHeight;
-    const color = litColor(sector.light);
-    const batch = batches.get('flat', texName);
-    const vertexStart = batch.positions.length / 3;
+  if (deep && surfaceHeight !== null) {
+    addFlatFan(poly, ss, batches, size, flatSurfaces, {
+      texName: sector.floorTex,
+      height: surfaceHeight,
+      light: transfers.floorLight(poly.sector),
+      lightSector: transfers.floorLightSector(poly.sector),
+      isCeiling: false,
+      baseAlpha: WATER_SURFACE_ALPHA,
+    });
+  }
+}
 
-    // Fan triangulation around vertex 0. Floors keep the polygon's winding
-    // (normal up), ceilings are reversed so their normal points down.
-    for (let i = 1; i < n - 1; i++) {
-      const idx = isCeiling ? [0, i + 1, i] : [0, i, i + 1];
-      for (const k of idx) {
-        const x = poly.points[k * 2];
-        const y = poly.points[k * 2 + 1];
-        // Flats are 64x64 and aligned to the world grid, never to the sector.
-        pushVertex(batch, x, height, -y, x / 64, -y / 64, color);
-      }
+function addFlatFan(
+  poly: SubSectorPoly,
+  ss: number,
+  batches: BatchSet,
+  size: SizeFn,
+  flatSurfaces: FlatSurface[],
+  spec: FlatSpec,
+  /** Which bank the texture comes from: a solid structure's lid wears a *wall* texture (see `buildSolidCaps`). */
+  kind: SurfaceKind = 'flat',
+): void {
+  const { texName, height, isCeiling } = spec;
+  if (texName === SKY_FLAT || texName === NO_TEXTURE || texName === '') return;
+  const dim = size(kind, texName);
+  if (!dim) return;
+  // Flats are 64x64 by definition and aligned to the world grid; a wall
+  // texture borrowed for a lid tiles at its own size instead.
+  const uw = kind === 'flat' ? 64 : dim.w;
+  const uh = kind === 'flat' ? 64 : dim.h;
+
+  const n = poly.points.length / 2;
+  const color = litColor(spec.light);
+  const alpha = spec.baseAlpha ?? 1;
+  const batch = batches.get(kind, texName);
+  const vertexStart = batch.positions.length / 3;
+
+  // Fan triangulation around vertex 0. Floors keep the polygon's winding
+  // (normal up), ceilings are reversed so their normal points down.
+  for (let i = 1; i < n - 1; i++) {
+    const idx = isCeiling ? [0, i + 1, i] : [0, i, i + 1];
+    for (const k of idx) {
+      const x = poly.points[k * 2];
+      const y = poly.points[k * 2 + 1];
+      pushVertex(batch, x, height, -y, x / uw, -y / uh, color, alpha);
     }
+  }
 
-    const vertexCount = batch.positions.length / 3 - vertexStart;
-    if (vertexCount > 0) {
-      flatSurfaces.push({
-        key: batch.key,
-        vertexStart,
-        vertexCount,
-        subsector: ss,
-        sector: poly.sector,
-        points: poly.points,
-        height,
-        isCeiling,
-      });
-    }
+  const vertexCount = batch.positions.length / 3 - vertexStart;
+  if (vertexCount > 0) {
+    flatSurfaces.push({
+      key: batch.key,
+      vertexStart,
+      vertexCount,
+      subsector: ss,
+      sector: poly.sector,
+      lightSector: spec.lightSector,
+      points: poly.points,
+      height,
+      isCeiling,
+      baseAlpha: spec.baseAlpha,
+    });
   }
 }
 
@@ -434,6 +677,8 @@ interface WallSpec {
   /** Linedef this quad belongs to, and whether it's the front (right) side — carried onto the occluder record for `SurfaceScroller`. */
   line: number;
   frontSide: boolean;
+  /** Permanent translucency — a Boom 260 midtexture, and nothing else. */
+  baseAlpha?: number;
 }
 
 function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: WallOccluder[]): void {
@@ -468,7 +713,7 @@ function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: Wal
 
   const vertexStart = batch.positions.length / 3;
   for (const v of [A, D, C, A, C, B]) {
-    pushVertex(batch, v[0], v[1], v[2], v[3], v[4], color);
+    pushVertex(batch, v[0], v[1], v[2], v[3], v[4], color, spec.baseAlpha ?? 1);
   }
   occluders.push({
     key: batch.key,
@@ -483,6 +728,7 @@ function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: Wal
     sector: spec.sector,
     line: spec.line,
     frontSide: spec.frontSide,
+    baseAlpha: spec.baseAlpha,
   });
 }
 
@@ -492,6 +738,7 @@ function buildWalls(
   size: SizeFn,
   wallHeightCap: number,
   occluders: WallOccluder[],
+  transfers: SectorTransfers,
   movableSectors?: Set<number>,
 ): void {
   for (const [lineIndex, line] of map.linedefs.entries()) {
@@ -499,7 +746,7 @@ function buildWalls(
     // moving sector's heights, so it can't stay in a batch nobody rebuilds
     // (see MapMeshOptions.movableSectors).
     if (movableSectors && touchesAny(map, line, movableSectors)) continue;
-    processLine(map, line, lineIndex, batches, size, wallHeightCap, occluders);
+    processLine(map, line, lineIndex, batches, size, wallHeightCap, occluders, transfers);
   }
 }
 
@@ -511,6 +758,7 @@ function processLine(
   size: SizeFn,
   wallHeightCap: number,
   occluders: WallOccluder[],
+  transfers: SectorTransfers,
   /**
    * Per-side filter: a side is only built if this returns true for its owning
    * sector (undefined = build every side, the static-batch case, which now
@@ -566,10 +814,10 @@ function processLine(
 
   // Two-sided line: each side gets its own step-up/step-down pieces.
   if (!includeSide || includeSide(front.sector)) {
-    addTwoSidedSide(batches, size, line.flags, v1, v2, front, front.sector, frontSec, backSec, cap, occluders, lineIndex, true);
+    addTwoSidedSide(batches, size, line.flags, v1, v2, front, front.sector, frontSec, backSec, cap, occluders, lineIndex, true, transfers);
   }
   if (!includeSide || includeSide(back.sector)) {
-    addTwoSidedSide(batches, size, line.flags, v2, v1, back, back.sector, backSec, frontSec, cap, occluders, lineIndex, false);
+    addTwoSidedSide(batches, size, line.flags, v2, v1, back, back.sector, backSec, frontSec, cap, occluders, lineIndex, false, transfers);
   }
 }
 
@@ -587,6 +835,7 @@ function addTwoSidedSide(
   occluders: WallOccluder[],
   lineIndex: number,
   frontSide: boolean,
+  transfers: SectorTransfers,
 ): void {
   const base = {
     ax: a.x,
@@ -636,8 +885,11 @@ function addTwoSidedSide(
     );
   }
 
-  // Middle: optional masked texture (grates, bars) inside the opening.
-  if (side.middle !== NO_TEXTURE && side.middle !== '') {
+  // Middle: optional masked texture (grates, bars) inside the opening. Boom's
+  // 260 makes one translucent, and overloads this same name to point at the
+  // translucency map — in which case there is no texture to draw at all.
+  // docs/specials.md § Translucent midtextures.
+  if (side.middle !== NO_TEXTURE && side.middle !== '' && !transfers.midtexSuppressed(lineIndex)) {
     const dim = size('wall', side.middle);
     if (dim) {
       const openTop = Math.min(sec.ceilHeight, other.ceilHeight);
@@ -651,7 +903,19 @@ function addTwoSidedSide(
         top = openTop;
         bot = Math.max(openBot, openTop - dim.h);
       }
-      addWall(batches, size, { ...base, topH: top, botH: bot, texture: side.middle, pegRef: top }, occluders);
+      addWall(
+        batches,
+        size,
+        {
+          ...base,
+          topH: top,
+          botH: bot,
+          texture: side.middle,
+          pegRef: top,
+          baseAlpha: transfers.translucentLine(lineIndex) ? TRANSLUCENT_ALPHA : undefined,
+        },
+        occluders,
+      );
     }
   }
 }

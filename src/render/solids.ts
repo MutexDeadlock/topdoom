@@ -4,6 +4,7 @@
  * a camera looking down does. See docs/render.md § Solid structures.
  */
 import { NO_SIDE, type DoomMap } from '../wad/map.ts';
+import { polygonCentroid } from '../util/geom.ts';
 import type { SubSectorPoly } from './bsp.ts';
 
 /** How far outside an edge the side probe steps, in map units — far enough to clear the line, short enough to stay in the sector it borders. */
@@ -39,16 +40,17 @@ export interface SolidCap {
  * kind has a top to draw, and the two are told apart by probing just off an
  * edge's front side: land outside the ring and the sector is outside it.
  *
- * Deliberately conservative, in two ways. Only rings where every vertex joins
- * exactly two one-sided lines are reconstructed — a structure welded to a wall
- * shares a vertex with a third line and is left alone rather than guessed at.
- * And only rings enclosing **no floor at all** are lidded: a building's outer
- * wall is also a ring with the map outside it, and the void there is just the
- * wall's thickness, so roofing it over would bury every room it contains. A
- * solid block encloses no subsector; a building encloses its rooms'.
+ * A ring is closed by the simple walk where every vertex joins exactly two
+ * one-sided lines, and by `traceVoidFace` where a weld puts a third there.
+ *
+ * Only rings enclosing **no floor at all** are lidded: a building's outer wall
+ * is also a ring with the map outside it, and the void there is just the wall's
+ * thickness, so roofing it over would bury every room it contains. A solid
+ * block encloses no subsector; a building encloses its rooms'.
  */
 export function findSolidCaps(map: DoomMap, polys: SubSectorPoly[]): SolidCap[] {
   const linesAt = new Map<number, number[]>();
+  const outgoing = new Map<number, number[]>();
   const solid: number[] = [];
   for (const [i, line] of map.linedefs.entries()) {
     if (line.left !== NO_SIDE || line.right === NO_SIDE) continue;
@@ -58,14 +60,18 @@ export function findSolidCaps(map: DoomMap, polys: SubSectorPoly[]): SolidCap[] 
       if (at) at.push(i);
       else linesAt.set(v, [i]);
     }
+    const out = outgoing.get(line.v1);
+    if (out) out.push(i);
+    else outgoing.set(line.v1, [i]);
   }
 
   const caps: SolidCap[] = [];
   const visited = new Set<number>();
   for (const start of solid) {
     if (visited.has(start)) continue;
-    const ring = traceRing(map, linesAt, visited, start);
+    const ring = traceRing(map, linesAt, visited, start) ?? traceVoidFace(map, outgoing, start);
     if (!ring) continue;
+    for (const line of ring.lines) visited.add(line);
     const cap = capFor(map, polys, ring);
     if (cap) caps.push(cap);
   }
@@ -90,7 +96,7 @@ function traceRing(
     const line = map.linedefs[current];
     const next = line.v1 === from ? line.v2 : line.v1;
     const at = linesAt.get(next);
-    // A junction (or a dead end) means this is not a ring on its own.
+    // A junction (or a dead end) means this is not a simple ring.
     if (!at || at.length !== 2) return null;
     const other = at[0] === current ? at[1] : at[0];
     if (other === start) break;
@@ -99,6 +105,62 @@ function traceRing(
     from = next;
   }
   return lines.length >= 3 ? { lines, vertexes } : null;
+}
+
+/**
+ * The same outline where a junction stopped the simple walk: a structure welded
+ * to a wall, or to another structure, shares a vertex with a third one-sided
+ * line, and which line continues *its* outline is then a real choice.
+ *
+ * A one-sided line has its sector on the right of `v1 -> v2`, so void is always
+ * on the left of that direction, and a structure's outline is the void face
+ * lying to the left of every line on it. Keeping to one face means taking the
+ * **rightmost turn** available at each vertex: hugging the face on the left is
+ * turning as far from it as the lines there allow. Take the leftmost instead and
+ * a stub welded to the corner is followed out of the structure entirely.
+ *
+ * Only ever a fallback, never a replacement: over the committed WADs it
+ * reproduces all 6505 rings the simple walk closes, line for line, but four
+ * rings it closes are ones this declines — a ring wound inconsistently has no
+ * single void side to follow. docs/render.md § Solid structures.
+ */
+function traceVoidFace(map: DoomMap, outgoing: Map<number, number[]>, start: number): { lines: number[]; vertexes: number[] } | null {
+  const lines: number[] = [];
+  const vertexes: number[] = [];
+  let current = start;
+  for (;;) {
+    const line = map.linedefs[current];
+    const a = map.vertexes[line.v1];
+    const b = map.vertexes[line.v2];
+    if (!a || !b) return null;
+    lines.push(current);
+    vertexes.push(line.v1);
+
+    const candidates = outgoing.get(line.v2);
+    if (!candidates || candidates.length === 0) return null;
+    let next = candidates[0];
+    if (candidates.length > 1) {
+      const inAngle = Math.atan2(b.y - a.y, b.x - a.x);
+      let bestTurn = Infinity;
+      for (const candidate of candidates) {
+        const other = map.linedefs[candidate];
+        const oa = map.vertexes[other.v1];
+        const ob = map.vertexes[other.v2];
+        if (!oa || !ob) continue;
+        let turn = Math.atan2(ob.y - oa.y, ob.x - oa.x) - inAngle;
+        while (turn <= -Math.PI) turn += 2 * Math.PI;
+        while (turn > Math.PI) turn -= 2 * Math.PI;
+        if (turn < bestTurn) {
+          bestTurn = turn;
+          next = candidate;
+        }
+      }
+    }
+    if (next === start) return lines.length >= 3 ? { lines, vertexes } : null;
+    // Rejoining anywhere but the start means the walk is not tracing one face.
+    if (lines.includes(next)) return null;
+    current = next;
+  }
 }
 
 function capFor(map: DoomMap, polys: SubSectorPoly[], ring: { lines: number[]; vertexes: number[] }): SolidCap | null {
@@ -168,16 +230,8 @@ function enclosesFloor(polys: SubSectorPoly[], points: Float64Array): boolean {
     maxY = Math.max(maxY, points[i + 1]);
   }
   for (const poly of polys) {
-    const n = poly.points.length / 2;
-    if (n < 3) continue;
-    let cx = 0;
-    let cy = 0;
-    for (let i = 0; i < n; i++) {
-      cx += poly.points[i * 2];
-      cy += poly.points[i * 2 + 1];
-    }
-    cx /= n;
-    cy /= n;
+    if (poly.points.length < 6) continue;
+    const { x: cx, y: cy } = polygonCentroid(poly.points);
     if (cx <= minX || cx >= maxX || cy <= minY || cy >= maxY) continue;
     if (pointInPolygon(points, cx, cy)) return true;
   }

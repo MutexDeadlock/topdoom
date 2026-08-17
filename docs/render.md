@@ -58,6 +58,72 @@ it), scaling the tolerance this way cuts total crack area by 29% against a flat 
 74%, the `oku2` wedge to nothing — while average overhang goes from 4 units of floor past a wall to
 about 5.
 
+### Walls that stop inside their cell
+
+Slack is not enough where the wall doesn't reach across the cell at all. A BSP leaf is convex and
+disjoint from every other, but it is not free of walls: a node builder that never split along a
+short wall stub leaves that stub sitting inside the leaf, with the *same sector's floor on both
+sides* of where its line would run. Clipping by the stub's infinite line then takes the floor past
+the wall's own end — a black patch in the middle of a lawn. Vanilla never notices, because a
+one-sided wall masks the floor behind it only over the screen columns it actually occupies; a
+polygon has no such per-column option. `BOOMEDIT.WAD` MAP01 leaf 206 is the case this was found on:
+the leaf wraps around the outside corner of a diagonal block, and lines 104 and 110 each cut ~3200
+units² of grass off it — the black spots reported in sector 0.
+
+`wallBoundsCell` decides it, and only where the line crosses the cell beyond the span the leaf's own
+segs on that line cover — a wall that spans its cell is clipped by as before. There, the ground just
+past the covered end is probed, a little onto the side the clip would remove: **this sector's floor
+there means the wall has ended and the leaf carries on around it**, so the cut is spared. Void or
+another sector means the level's own outer wall, which is what the seg clips are *for*, and the cut
+stands. The probe is geometric (nearest linedef, and which side of it) rather than a BSP lookup —
+the tree is what is being rebuilt, so it cannot be the authority on where a point is. It lives in
+`sectorprobe.ts` as `SectorProbe`, which buckets the linedefs at 256 units so a probe scans a
+neighbourhood, and is built lazily: most maps have neither a stub nor a self-referencing sector and
+never ask it anything.
+
+A spared cut keeps the floor *under* the stub's structure too — the test case is a 64-unit block
+standing in a 512-unit cell, and the whole cell survives. On screen that reads right only because
+`solids.ts` lids such a block (§ Solid structures); where it declines a ring, the floor now paints
+through the structure rather than leaving the old hole.
+
+**A spared cut is spared whole**, since the cell has to stay convex, so it is only allowed while the
+overhang it keeps could be this sector's floor at all: every corner of the removed piece has to fall
+inside the sector's own extent, padded by `SEG_CLIP_MAX_TOLERANCE` so this can never cut into the
+overshoot the tolerances above deliberately leave behind. Without that bound one fooled probe among
+`EPIC.WAD` MAP03's bank of 8-unit sectors handed a 32-unit² sector a 192 × 96 floor (leaf 2192).
+
+Measured the same way as the tolerances: over `DOOM1.WAD`, `freedoom2.wad` and the committed PWADs
+this changes nothing at all except on the two maps that have such stubs — BOOMEDIT MAP01 recovers
+4736 units² of floor with no new overhang, and EPIC MAP03 recovers 1152 for 5504 units² of overhang
+spread over five leaves, none of it further past a wall than the overhangs already there. It costs
+about 9 ms of level load on EPIC MAP03, the largest committed map, and under 2 ms elsewhere.
+
+### Self-referencing sectors
+
+A Boom-era map hides things in plain sight by giving a line the *same* sector on both sides: the
+line bounds a real sector (a monster closet, an invisible lift, a fake-water bed) whose leaves sit
+in the middle of some other room. Vanilla never draws any of it — `r_bsp.c: R_AddLine` rejects a
+seg whose two sides have identical flats and light, which two sides of one sector trivially do — so
+no seg of the construct ever breaks the enclosing sector's floor spans, and the room's flat paints
+straight across. A polygon per leaf has no spans to lean on: drawing such a leaf as its BSP sector
+renders the *hidden* floor — `BOOMEDIT.WAD` MAP01's leaves 166/168, the middle of the sector-30
+window sill, drew sector 33's floor as a bright 32-deep pit in the sill (the "invis areas" report).
+
+So a leaf whose segs **all** lie on self-referencing lines takes its drawn sector from whatever
+*encloses* it instead: the leaf's centroid is probed with the same `SectorProbe.sectorIndexAt` the
+wall-stub sparing uses, skipping self-referencing lines so the probe cannot land back on the
+construct itself. Only the drawn sector moves — `sectorOfSubSector` still answers with the BSP
+sector, and `game/world.ts` keeps using it, which is the trick's whole point: a monster standing in
+the closet is *under* the drawn floor, exactly as invisible as vanilla makes it. A leaf with even
+one ordinary seg is left alone; its real border is authoritative. Across the committed WADs only
+BOOMEDIT MAP01 and EPIC MAP03-05 have such leaves at all; the stock IWADs are untouched.
+
+`SubSectorPoly.sector` is the *drawn* sector, so everything reading it follows the remap — including
+`mapmesh.ts`'s mover meshes, which key their flats off it. A self-referencing sector that is itself a
+mover (an invisible lift is the stock example) therefore contributes no flats of its own to raise:
+its leaves are baked into the enclosing sector's static flats, which is what vanilla shows too,
+since none of them were ever drawn.
+
 ## Mesh building (`mapmesh.ts`)
 
 Walls are built per linedef from sidedefs: one-sided lines get their middle texture over the full
@@ -96,11 +162,25 @@ Three rules decide what a lid looks like, and each has a reason:
   under `F_SKY1`, so there is no ceiling flat to continue, and a solid block's top reading as the
   same material as its sides is what the shape wants anyway.
 
-Only rings whose every vertex joins exactly two one-sided lines are reconstructed. A structure
-welded onto a wall shares a vertex with a third line, and where the ring is ambiguous this leaves it
-alone rather than guessing — the hole stays, which is what it did before. Lids are also built once,
-into the static batches only: a structure never moves, and if the ceiling *around* one does, its lid
-keeps the height the level loaded with.
+A ring whose every vertex joins exactly two one-sided lines is walked directly. A structure welded
+onto a wall, or onto another structure, shares a vertex with a third line, and there the walk has a
+real choice to make, so it falls back to tracing the **void face**: a one-sided line has its sector
+on the right of `v1 → v2`, so void is always on its left, and a structure's outline is the face
+lying to the left of every line on it. Keeping to one face means taking the **rightmost turn** at
+each vertex — hugging the face on the left is turning as far from it as the lines allow. Taking the
+leftmost instead follows a welded stub straight out of the structure, which is what the fixture in
+`solids.test.ts` pins: against a pillar corner's 90° turn, its stub offers 154°.
+
+The face walk is a fallback, never a replacement. Over the committed WADs it reproduces all 6505
+rings the simple walk closes, line for line, and closes 706 walks that one gives up on; but four
+rings the simple walk closes are ones it declines, since a ring wound inconsistently has no single
+void side to follow. Net over those WADs: 31 new lids, no lid lost, and none of the new ones covers
+any floor — checked by sampling each footprint and resolving the sector by ray crossing, the same
+way `freedoom2.wad` MAP19's 124-vertex structure was confirmed to be solid rather than a roofed
+building.
+
+Lids are built once, into the static batches only: a structure never moves, and if the ceiling
+*around* one does, its lid keeps the height the level loaded with.
 
 Each lid is emitted as one `FlatSurface` **per triangle** (`THREE.ShapeUtils.triangulateShape`),
 because these rings are frequently concave and `FlatFader` tests a surface's footprint with the

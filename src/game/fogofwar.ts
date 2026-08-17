@@ -3,7 +3,7 @@
  * sticky on sight. See docs/fogofwar.md.
  */
 import { buildSubSectorPolys } from '../render/bsp.ts';
-import { segmentIntersect } from '../util/geom.ts';
+import { polygonCentroid, segmentIntersect } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
 import { decodeRuns, encodeRuns } from './snapshot.ts';
 import type { WallOccluder } from '../render/mapmesh.ts';
@@ -89,14 +89,7 @@ export class FogOfWar {
         continue;
       }
 
-      let cx = 0;
-      let cy = 0;
-      for (let i = 0; i < n; i++) {
-        cx += poly.points[i * 2];
-        cy += poly.points[i * 2 + 1];
-      }
-      cx /= n;
-      cy /= n;
+      const { x: cx, y: cy } = polygonCentroid(poly.points);
 
       // Centroid first — one ray settles the common case, and the loop that
       // uses these stops at the first sample that comes back clear, so the

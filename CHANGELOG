@@ -1,7 +1,7 @@
 v0.14.0 (2026-08-1?)
 
 Features and improvements
-  - initial BOOM compat
+  - full BOOM compat (experimental)
     - generalized linedefs and sector types, extended linedef numbers,
       six-slot keys and generalized locks, elevators, extended BSP nodes
     - silent and line-to-line teleporters, instant toggle floors
@@ -26,19 +26,13 @@ Features and improvements
       translucent now draw that way
     - a BOOM map's own colormaps tint the whole view while you stand in the
       sector that names them
+  - solid structures — pillars, crates, lamp posts — are no longer see-through
+    holes in the level. Thias change came in by accident, but may be helpful
 
 Fixed bugs
-  - solid structures — pillars, crates, lamp posts — are no longer see-through
-    holes in the level: a DOOM map draws them as empty space with walls around
-    it, which vanilla never has to look down on, and they are now lidded
-  - the view no longer swings when you fall: the point the cursor aims at is
-    taken from the camera rather than from your own feet, so dropping into a
-    pit (or into BOOM deep water) pans the view instead of turning you
-  - fixed long cracks in the floor around very short walls, which could open a
-    room onto whatever lay below it
+  - fixed various rendering problems
   - a monster killed mid-knockback now slides to a stop instead of freezing 
     where it died
-
 
 
 ===============================================================================

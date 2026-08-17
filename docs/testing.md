@@ -178,6 +178,22 @@ tagged sectors without becoming geometry any body can touch. Its `dx`/`dy` are t
 those specials reads (length and direction, not a speed), which is why it takes a vector rather than
 a magnitude. Append it before building the `World`, so the two agree how many linedefs exist.
 
+## The BSP fixture
+
+`tests/fixtures/bspmap.ts` builds a `DoomMap` from a hand-written BSP: `bspMap({vertexes, floors,
+sidedefs, linedefs, segs, subsectors, nodes, half})` plus the record builders `wall`, `twoSided`,
+`seg`, `leaf` and `plane`. It fills in everything `buildSubSectorPolys` never reads (name, node
+format, things, reject), so a fixture states only its geometry, and it takes sectors as floor
+heights and sidedefs as sector indexes rather than whole records.
+
+The grid fixture above cannot stand in for it: `gridMap` always emits a *correct* tree, one
+subsector per cell with every edge as a seg. The render rules that need this one are precisely
+about what a node builder left behind — a wall stub sitting inside a leaf that never got split
+along it, or a line whose two sides face the same sector (docs/render.md § Walls that stop inside
+their cell, § Self-referencing sectors). Both are stated by choosing the nodes and segs by hand,
+which is also why these fixtures are deliberately tiny: a wrong node here is a wrong test, and the
+partition convention (a node's right side is `cross <= 0`) is easy to get backwards.
+
 ## The specials rig
 
 `tests/fixtures/specialsrig.ts` puts a real `SpecialsController` over a `gridMap` in one call —

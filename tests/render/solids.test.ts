@@ -108,13 +108,28 @@ describe('render · solid structure lids', () => {
     assert.equal(findSolidCaps(map, outside).length, 1);
   });
 
-  test('a structure welded to other geometry is left alone', () => {
+  test('a structure welded to other geometry is lidded from its own void face', () => {
     const map = mapWith([{ points: square(0, 0, 64) }]);
-    // A stub line off one corner: that vertex now joins three one-sided lines.
+    // A stub line off the (-64, 64) corner: that vertex now joins three one-sided
+    // lines, so which one continues the pillar's outline is a real choice. The
+    // simple walk gives up here; the void face keeps to the pillar by taking the
+    // rightmost turn — the stub is the leftward one, 154° against the corner's 90°.
     const v = map.vertexes.push({ x: 200, y: -64 }) - 1;
     const side = map.sidedefs.push({ xOffset: 0, yOffset: 0, upper: '-', lower: '-', middle: WALL, sector: 0 }) - 1;
     map.linedefs.push({ v1: 3, v2: v, flags: 0, special: 0, tag: 0, right: side, left: NO_SIDE });
-    assert.deepEqual(findSolidCaps(map, []), [], 'ambiguous, so the hole stays rather than being guessed at');
+
+    const caps = findSolidCaps(map, []);
+    assert.equal(caps.length, 1, 'the weld no longer costs the structure its lid');
+    assert.equal(caps[0].points.length / 2, 4, 'and the lid is the pillar itself, not a walk off down the stub');
+    assert.ok(pointInPolygon(caps[0].points, 0, 0));
+  });
+
+  test('an open chain of one-sided lines is still left alone', () => {
+    // Two lines meeting at a corner and going nowhere: no face to close, so
+    // there is nothing to lid and nothing to guess at.
+    const map = mapWith([{ points: square(0, 0, 64) }]);
+    map.linedefs.length = 2;
+    assert.deepEqual(findSolidCaps(map, []), []);
   });
 
   test('lids reach the geometry as fadeable, fog-aware flat surfaces', () => {

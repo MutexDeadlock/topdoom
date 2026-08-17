@@ -7,6 +7,7 @@
  * docs/movement.md § Collision, docs/render.md § Wall occlusion fading, docs/fogofwar.md and
  * docs/monster-attacks.md § Monster projectiles in flight.
  */
+import type { Pos2 } from '../types.ts';
 
 /**
  * 2D segment intersection between (ax,ay)-(bx,by) and (cx,cy)-(dx,dy).
@@ -176,6 +177,24 @@ export function segmentEntersBox(
   }
 
   return t0 < t1 ? t0 : null;
+}
+
+/**
+ * Mean of a flat [x0,y0, x1,y1, …] polygon's vertexes — inside it for a convex
+ * one, which every subsector polygon is. The one primitive here that returns a
+ * point rather than scalars: its three callers (render/bsp.ts, render/solids.ts,
+ * game/fogofwar.ts) all want both coordinates and all run once per subsector at
+ * level build, never per frame, so the object costs nothing where it is used.
+ */
+export function polygonCentroid(poly: ArrayLike<number>): Pos2 {
+  const n = poly.length / 2;
+  let x = 0;
+  let y = 0;
+  for (let i = 0; i < n; i++) {
+    x += poly[i * 2];
+    y += poly[i * 2 + 1];
+  }
+  return { x: x / n, y: y / n };
 }
 
 /**

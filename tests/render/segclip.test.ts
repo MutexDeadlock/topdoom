@@ -1,12 +1,16 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { NO_SIDE, SUBSECTOR_BIT, type DoomMap, type Vertex } from '../../src/wad/map.ts';
+import { type DoomMap, type Vertex } from '../../src/wad/map.ts';
 import { buildSubSectorPolys } from '../../src/render/bsp.ts';
+import { pointInConvexPolygon } from '../../src/util/geom.ts';
+import { bspMap, leaf, plane, seg, wall } from '../fixtures/bspmap.ts';
 import { polygonArea } from '../fixtures/geometry.ts';
 
 /**
- * `segClipTolerance`: a seg only bounds the cell it is clipping as tightly as its own
- * length pins its angle. See docs/render.md § Cracks between subsectors.
+ * The two rules that decide how hard a subsector's own segs cut its cell:
+ * `segClipTolerance` — a seg only bounds the cell as tightly as its own length
+ * pins its angle — and `wallBoundsCell`, which spares the cut where the wall
+ * ends inside the cell. See docs/render.md § Cracks between subsectors.
  */
 
 /**
@@ -16,24 +20,19 @@ import { polygonArea } from '../fixtures/geometry.ts';
  * padded map quad between them. Everything else is the minimum `buildSubSectorPolys`
  * reads.
  */
-function twoCellMap(dir: Vertex, wall: [Vertex, Vertex], half: number): DoomMap {
-  return {
-    name: 'TEST',
-    nodeFormat: 'vanilla',
-    vertexes: [wall[0], wall[1]],
-    sectors: [{ floorHeight: 0, ceilHeight: 128, floorTex: 'FLAT1', ceilTex: 'FLAT1', light: 160, special: 0, tag: 0 }],
-    sidedefs: [{ xOffset: 0, yOffset: 0, upper: '-', lower: '-', middle: 'WALL', sector: 0 }],
-    linedefs: [{ v1: 0, v2: 1, flags: 0, special: 0, tag: 0, right: 0, left: NO_SIDE }],
-    segs: [{ v1: 0, v2: 1, angle: 0, linedef: 0, direction: 0, offset: 0 }],
+function twoCellMap(dir: Vertex, edge: [Vertex, Vertex], half: number): DoomMap {
+  return bspMap({
+    vertexes: [edge[0], edge[1]],
+    sidedefs: [0],
+    linedefs: [wall(0, 1)],
+    segs: [seg(0, 1, 0)],
     subsectors: [
-      { count: 0, first: 0 },
-      { count: 1, first: 0 },
+      [0, 0],
+      [0, 1],
     ],
-    nodes: [{ x: 0, y: 0, dx: dir.x, dy: dir.y, rightChild: (SUBSECTOR_BIT | 1) >>> 0, leftChild: (SUBSECTOR_BIT | 0) >>> 0 }],
-    things: [],
-    reject: undefined,
-    bounds: { minX: -half, minY: -half, maxX: half, maxY: half },
-  };
+    nodes: [plane(0, 0, dir.x, dir.y, leaf(1), leaf(0))],
+    half,
+  });
 }
 
 /** `buildSubSectorPolys` starts from the map bounds padded by 512 on every side. */
@@ -65,5 +64,69 @@ describe('Rendering · seg clip slack', () => {
 
     assert.ok(cell > 0, 'the cell is not clipped away entirely');
     assert.ok(cell < (quadArea(half) / 2) * 0.8, `expected the wall to cut the cell down, got ${cell}`);
+  });
+});
+
+/**
+ * A 1024-square room with a 64-square block standing in the middle of it, and one
+ * subsector whose only seg is the block's east wall — the shape of BOOMEDIT MAP01's
+ * leaf 206, where a node builder left a wall stub inside a leaf that has the same
+ * sector's floor on both sides of it. `box` is the cell four node planes leave that
+ * leaf. Everything is one-sided: the room's walls face in, the block's face out.
+ */
+function blockInRoom(box: number): DoomMap {
+  return bspMap({
+    vertexes: [
+      { x: -512, y: -512 },
+      { x: 512, y: -512 },
+      { x: 512, y: 512 },
+      { x: -512, y: 512 },
+      { x: 0, y: 0 },
+      { x: 64, y: 0 },
+      { x: 64, y: 64 },
+      { x: 0, y: 64 },
+    ],
+    sidedefs: [0],
+    // The room's four walls face in, the block's four face out; all of one sector.
+    linedefs: [wall(0, 3), wall(3, 2), wall(2, 1), wall(1, 0), wall(4, 5), wall(5, 6), wall(6, 7), wall(7, 4)],
+    segs: [seg(5, 6, 5)],
+    subsectors: [
+      [0, 1],
+      [0, 0],
+      [0, 0],
+      [0, 0],
+      [0, 0],
+    ],
+    nodes: [
+      plane(0, box, 1, 0, leaf(0), leaf(1)), // y <= box
+      plane(0, -box, -1, 0, 0, leaf(2)), //     y >= -box
+      plane(box, 0, 0, -1, 1, leaf(3)), //      x <= box
+      plane(-box, 0, 0, 1, 2, leaf(4)), //      x >= -box
+    ],
+    half: 512,
+  });
+}
+
+describe('Rendering · walls that stop inside their cell', () => {
+  test('a leaf keeps the floor past the end of a wall stub', () => {
+    // The block's east wall is 64 units long and the leaf's cell is 512 across, so
+    // clipping by the wall's infinite line would take the whole western half of the
+    // cell — floor the player walks on, south and north of a block they can walk
+    // round. Vanilla never notices: a one-sided wall masks the floor behind it only
+    // over the columns it occupies.
+    const polys = buildSubSectorPolys(blockInRoom(256));
+    assert.equal(polygonArea(polys[0].points), 512 * 512, 'the cell survives whole');
+    assert.ok(pointInConvexPolygon(0, -128, polys[0].points), 'including the floor south of the block');
+  });
+
+  test('a cell reaching past its own sector does not get the cut spared', () => {
+    // Same room, same wall, a cell four times as wide — wider than the sector it
+    // belongs to. Sparing a cut spares the *whole* overhang, so it is only ever
+    // spared where the overhang could be this sector's floor at all; without that,
+    // one wall stub hands a small sector a floor the size of the map.
+    const polys = buildSubSectorPolys(blockInRoom(1024));
+    const cell = polygonArea(polys[0].points);
+    assert.ok(cell > 0, 'the cell is not clipped away entirely');
+    assert.ok(cell < 2048 * 2048 * 0.6, `expected the wall to cut the cell down, got ${cell}`);
   });
 });

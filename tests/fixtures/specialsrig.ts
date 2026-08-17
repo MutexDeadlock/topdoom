@@ -49,6 +49,12 @@ export interface SpecialsRigOptions {
   onTeleport?: (dest: TeleportDest) => void;
   /** Whether a body is under the closing ceiling, and the hook for counting crush damage pulses. */
   onCrush?: (sectorIndex: number, dealDamage: boolean) => boolean;
+  /**
+   * Whether a body would be left without headroom at `floorHeight`. Defaults
+   * to "nothing is ever in the way"; a test that wants a mover refused
+   * supplies its own, without needing a real body anywhere near the sector.
+   */
+  blocksFloorRise?: (sectorIndex: number, floorHeight: number) => boolean;
 }
 
 export interface SpecialsRig {
@@ -98,10 +104,10 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
     options.onExit ?? (() => {}),
     options.onTeleport ?? (() => {}),
     options.onCrush ?? (() => false),
-    // The two "is the player in the way" predicates. No test drives a mover into
-    // the player yet, so both stand at "nothing ever blocks one".
+    // The two "is the player in the way" predicates. No test drives a *ceiling*
+    // into the player yet, so that one stands at "nothing ever blocks one".
     () => false,
-    () => false,
+    options.blocksFloorRise ?? (() => false),
     at.x,
     at.y,
     movableSectors,

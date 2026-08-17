@@ -45,6 +45,7 @@ describe('specials · generalized decode', () => {
       kind: 'floor',
       speed: 35,
       target: 'nextHigherFloor',
+      direction: 'up',
       changeTexture: false,
       crush: true,
       change: { model: 'numeric', type: 'texAndType' },

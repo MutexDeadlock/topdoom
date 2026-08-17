@@ -201,6 +201,16 @@ interface FloorMover {
   state: 'moving' | 'done';
   crush: boolean;
   /**
+   * `floor->direction`, copied from the effect that started this mover and
+   * fixed for its life — what `tickFloor` steps along instead of re-deriving a
+   * direction from `target` each tick. It only shows when `target` sits on the
+   * *far* side of it, which `T_MovePlane` then takes in one step rather than
+   * travelling the wrong way at mover speed. Absent on a mover from a save
+   * written before this field existed, where re-deriving is the old behavior.
+   * docs/specials.md § Inverted floor moves.
+   */
+  direction?: 'up' | 'down';
+  /**
    * Texture/special applied only once this mover reaches `target`, never at
    * trigger time — vanilla's `lowerAndChange` and the donut's ring riser
    * (`donutRaise`), both of which apply `floor->texture`/`newspecial` in
@@ -1123,7 +1133,17 @@ export class SpecialsController {
     if (mover.state === 'done') return;
     const sector = this.map.sectors[mover.sectorIndex];
     const before = sector.floorHeight;
-    const dir = mover.target > sector.floorHeight ? 1 : -1;
+    const dir = mover.direction ? (mover.direction === 'up' ? 1 : -1) : mover.target > sector.floorHeight ? 1 : -1;
+    if (dir > 0 ? mover.target < sector.floorHeight : mover.target > sector.floorHeight) {
+      // `T_MovePlane`'s clamp branch: a target on the far side of the fixed
+      // direction is reached in the step it starts and put straight back if a
+      // body no longer fits — the `pastdest` revert has no `crush` exception,
+      // unlike the per-step one below. docs/specials.md § Inverted floor moves.
+      if (!this.blocksFloorRise(mover.sectorIndex, mover.target)) sector.floorHeight = mover.target;
+      this.finishFloor(mover);
+      if (sector.floorHeight !== before) dirty.add(mover.sectorIndex);
+      return;
+    }
     const next = sector.floorHeight + dir * mover.speed * dt;
     if (dir > 0 && !mover.crush && this.blocksFloorRise(mover.sectorIndex, next)) {
       // Same un-crush rule as the lift above — but only while `crush` is
@@ -1137,14 +1157,19 @@ export class SpecialsController {
     // T_MoveFloor grinds on the shared 8-tic clock the whole time it moves, and
     // clacks `pstop` once on arrival.
     if (this.moveSoundDue) this.playSector(mover.sectorIndex, 'stnmov');
-    if ((dir > 0 && sector.floorHeight >= mover.target) || (dir < 0 && sector.floorHeight <= mover.target)) {
+    if (dir > 0 ? sector.floorHeight >= mover.target : sector.floorHeight <= mover.target) {
       sector.floorHeight = mover.target;
-      mover.state = 'done';
-      this.playSector(mover.sectorIndex, 'pstop');
-      if (mover.arrivalTexture) this.applyArrivalChange(mover.sectorIndex, mover.arrivalTexture);
+      this.finishFloor(mover);
     }
     if (sector.floorHeight !== before) dirty.add(mover.sectorIndex);
     if (mover.crush) this.tickCrush(mover.sectorIndex);
+  }
+
+  /** `T_MoveFloor`'s `pastdest` branch: park the mover, clack, apply any arrival change. */
+  private finishFloor(mover: FloorMover): void {
+    mover.state = 'done';
+    this.playSector(mover.sectorIndex, 'pstop');
+    if (mover.arrivalTexture) this.applyArrivalChange(mover.sectorIndex, mover.arrivalTexture);
   }
 
   /**
@@ -1532,6 +1557,7 @@ export class SpecialsController {
       target,
       state: 'moving',
       crush: effect.crush,
+      direction: effect.direction,
       arrivalTexture: effect.change ? this.resolveFloorChange(sectorIndex, effect, target, line) : undefined,
     });
     return true;
@@ -1799,6 +1825,7 @@ export class SpecialsController {
       target,
       state: 'moving',
       crush: false,
+      direction: 'up',
     });
     return true;
   }
@@ -1826,6 +1853,7 @@ export class SpecialsController {
       target,
       state: 'moving',
       crush: false,
+      direction: 'down',
       arrivalTexture,
     });
     return true;
@@ -1857,6 +1885,9 @@ export class SpecialsController {
       target: outer.floorHeight,
       state: 'moving',
       crush: false,
+      // `donutRaise` is direction +1 and the hole's `lowerFloor` -1 below,
+      // both aimed at the same outer floor.
+      direction: 'up',
       arrivalTexture: { floorTex: outer.floorTex, special: 0 },
     });
     this.setMover(holeIndex, {
@@ -1866,6 +1897,7 @@ export class SpecialsController {
       target: outer.floorHeight,
       state: 'moving',
       crush: false,
+      direction: 'down',
     });
     return true;
   }
@@ -1929,6 +1961,11 @@ export class SpecialsController {
         speed: effect.speed,
         target: step.targetHeight,
         state: 'moving',
+        // `EV_BuildStairs` is direction +1 throughout; Boom's generalized
+        // stairs build downward on their own bit. A step already past its
+        // accumulated target (Boom's `Igno` chains across arbitrary heights)
+        // is the same clamp every other inverted move gets.
+        direction: effect.direction ?? 'up',
         // Despite the wiki naming 100/127 "...and Crush", real vanilla
         // stairs never set a crush flag — see StairsEffect's doc.
         crush: false,
@@ -2322,6 +2359,7 @@ export class SpecialsController {
             kind: 'floor',
             speed: FLOOR_SPEED,
             target: 'lowestNeighborFloor',
+            direction: 'down',
             changeTexture: false,
             crush: false,
           });

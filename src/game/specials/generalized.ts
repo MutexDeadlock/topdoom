@@ -165,6 +165,7 @@ function genFloor(special: number): SpecialDef {
       kind: 'floor',
       speed,
       target: floorTarget(targ, up),
+      direction: up ? 'up' : 'down',
       changeTexture: false,
       crush,
       change: changeBits(chg, model),

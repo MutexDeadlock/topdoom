@@ -566,6 +566,27 @@ Two consequences worth knowing:
   other blocked lift does (§ Every other mover stops instead). Because the move completes within
   the tic it starts, the damage lands on that same tic.
 
+## Inverted floor moves
+
+A floor mover's direction is **fixed by its vanilla `EV_DoFloor` case, not derived from the height
+it is chasing** — `FloorEffect.direction`, which `tables.ts` reads off the target name (every
+"lower" case runs -1, every "raise" one +1) and Boom's generalized floors take straight from their
+own direction bit.
+
+It only matters when the resolved target lands on the far side of that direction, and then it
+matters a lot: `T_MovePlane`'s first step hits the `newheight < dest` branch — id's own comment
+there reads *"reached dest, or start was below dest"* — clamps straight to the destination, reverts
+the whole jump if a body no longer fits, and reports `pastdest`. So an inverted move happens **whole
+or not at all**, in the tic it starts; it is never travelled at mover speed, and nothing standing
+there is ever carried along. `tickFloor` steps along `FloorMover.direction` for exactly that reason
+rather than re-deriving a direction from the target each tick.
+
+Repro: `BOOMEDIT.WAD` MAP01 linedef 357, a WR 83 ("lower floor to highest floor") on
+self-referencing sector 78, whose only real neighbor is a dummy sector 128 units *above* it. Travel
+that gradually and the sector's lines — decoration around a cage in the middle of sector 84, drawn
+as the enclosing sector (docs/render.md § Self-referencing sectors), so nothing on screen moves —
+become an invisible rising platform that lifts the player into a 55-unit gap and wedges them there.
+
 ## Perpetual lifts and the stop line
 
 Vanilla 53/87 (`p_plats.c: EV_DoPlat perpetualRaise`) bounce a lift between the lowest and
@@ -781,10 +802,11 @@ for anything classifying lines (`classifyLineSpecial`, the coverage report, `fin
 and a restore is a plain Set assignment — `SpecialsSnapshot.stairFlips` needs no ordering
 guarantee about when the map was loaded, unlike a re-applied mutation would.
 
-Known divergences, deliberate: a generalized absolute target on the "wrong" side of the current
-height moves there (this engine's movers auto-direction toward their target), where Boom's
-directional `T_MovePlane` would finish instantly; and `FtoLnC` keeps the engine's own
-clamp-to-own-ceiling. Both only differ on degenerate maps.
+Known divergences, deliberate: a generalized *ceiling* target on the "wrong" side of the current
+height is travelled to (this engine's ceiling movers auto-direction toward their target), where
+Boom's directional `T_MovePlane` would finish instantly — floors no longer do this, see § Inverted
+floor moves; and `FtoLnC` keeps the engine's own clamp-to-own-ceiling. Both only differ on
+degenerate maps.
 
 ## Generalized sector types
 

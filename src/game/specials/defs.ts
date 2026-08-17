@@ -252,6 +252,15 @@ export interface FloorEffect {
   speed: number;
   target: MoveTarget;
   /**
+   * `floor->direction`, fixed by the vanilla `EV_DoFloor` case this number
+   * belongs to (`p_floor.c`) and never re-derived from the height the mover is
+   * chasing. It only bites when the resolved target lands on the *far* side of
+   * it — `T_MovePlane`'s first step then clamps straight there and reports
+   * `pastdest` instead of travelling the wrong way at mover speed
+   * (`FloorMover.instant`). docs/specials.md § Inverted floor moves.
+   */
+  direction: 'up' | 'down';
+  /**
    * Vanilla's "AndChange" specials (20/22/68/95 — `raiseToNearestAndChange`):
    * on trigger, copy the *triggering linedef's own front-sector* floor
    * texture onto the sector(s) about to move, and clear their `special`

@@ -210,6 +210,10 @@ behavior under test — which is why the five tests that drive specials (`specia
 through it. Every one of them had its own byte-identical copy of that constructor call before, so a
 sixteenth argument was a five-file edit.
 
+The one predicate a test is likely to want back is `blocksFloorRise`, which defaults to "nothing is
+ever in the way": `inverted-floor.test.ts` holds a mover against a body without headroom by
+supplying it, rather than putting a real body near the sector.
+
 `tick(dt, x, y)` mirrors `update`'s own argument order and defaults to one `TIC` at the rig's start
 position: a test that moves nobody writes `tick()`, one that walks the player writes
 `tick(TIC, x, y)`. The rig's own `scene` is the group the controller hangs its mover meshes on, so a

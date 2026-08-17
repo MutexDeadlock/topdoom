@@ -64,12 +64,45 @@ function lift(speed = LIFT_SPEED, waitSeconds = LIFT_WAIT, target?: LiftTarget):
   return { kind: 'lift', speed, waitSeconds, target };
 }
 
+/**
+ * The `floor->direction` each target's vanilla `EV_DoFloor` case sets
+ * (`p_floor.c`): every "lower" case runs -1, every "raise" one +1. Exhaustive
+ * over `MoveTarget` so a new one can't be added without answering this, though
+ * the targets only Boom's generalized floors reach take their direction from
+ * its own bit instead (`generalized.ts: genFloor`). See `FloorEffect.direction`.
+ */
+const FLOOR_TARGET_DIRECTION: Record<MoveTarget, 'up' | 'down'> = {
+  lowestNeighborFloor: 'down',
+  highestNeighborFloor: 'down',
+  highestNeighborFloorPlus8: 'down',
+  nextLowerFloor: 'down',
+  minus24: 'down',
+  minus32: 'down',
+  shortestLowerTextureDown: 'down',
+  nextHigherFloor: 'up',
+  lowestNeighborCeiling: 'up',
+  lowestNeighborCeilingMinus8: 'up',
+  highestNeighborCeiling: 'up',
+  ownCeiling: 'up',
+  shortestLowerTexture: 'up',
+  plus24: 'up',
+  plus32: 'up',
+  plus512: 'up',
+};
+
 function floor(
   target: MoveTarget,
   speed = FLOOR_SPEED,
   options: { changeTexture?: boolean; crush?: boolean } = {},
 ): FloorEffect {
-  return { kind: 'floor', speed, target, changeTexture: options.changeTexture ?? false, crush: options.crush ?? false };
+  return {
+    kind: 'floor',
+    speed,
+    target,
+    direction: FLOOR_TARGET_DIRECTION[target],
+    changeTexture: options.changeTexture ?? false,
+    crush: options.crush ?? false,
+  };
 }
 
 /**

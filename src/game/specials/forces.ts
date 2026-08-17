@@ -5,7 +5,7 @@
  */
 import type { DoomMap, Thing } from '../../wad/map.ts';
 import { NO_SIDE } from '../../wad/map.ts';
-import { sectorsByTag, linesByTag, hasLineOfSight, type World } from '../world.ts';
+import { sectorsByTag, linesByTag, hasLineOfSight, type SectorTouchCache, type World } from '../world.ts';
 import { decodeSectorType } from './sectortypes.ts';
 import { transfersOf, type Transfers } from './transfers.ts';
 import { EYE_HEIGHT } from '../player.ts';
@@ -219,13 +219,15 @@ export class Forces {
    * better footing". The thresholds are low enough (8, 16, 32 units/sec) that
    * anything actually walking sits in the top step.
    *
-   * The result is **shared** scratch overwritten by the next call.
+   * The result is **shared** scratch overwritten by the next call. `cache` is
+   * the caller's per-body touch cache, shared with the other two body queries —
+   * see `carryForBody`.
    */
-  frictionUnder(pos: Pos3, radius: number, speed: number, out: number[]): Readonly<FrictionEffect> {
+  frictionUnder(pos: Pos3, radius: number, speed: number, cache: SectorTouchCache): Readonly<FrictionEffect> {
     if (!this.hasFriction) return NO_FRICTION;
     let friction = ORIG_FRICTION;
     let moveFactor = ORIG_FRICTION_FACTOR;
-    for (const sectorIndex of this.world.sectorsTouching(pos.x, pos.y, radius, out)) {
+    for (const sectorIndex of this.world.sectorsTouchingCached(pos.x, pos.y, radius, cache)) {
       const candidate = this.friction[sectorIndex];
       // The array read first: a sector still at the normal pair can never
       // displace anything below, so this skips `decodeSectorType`'s per-call
@@ -625,12 +627,17 @@ export class Forces {
    * stepping onto a ledge inside a conveyor sector takes you off the belt.
    * Overlapping belts sum, as several `sc_carry` thinkers on one sector do.
    *
-   * The caller supplies `out` (any scratch array) and gets back **shared**
-   * scratch that the next call overwrites — this runs for every thing every
-   * tic, so neither allocates. `MF_NOGRAVITY` bodies are the caller's to skip;
-   * this has no thing table.
+   * The caller supplies `cache` — its **own body's** `SectorTouchCache`, never
+   * a shared scratch: the touched-sector walk is the expensive half of this
+   * query, and the cache elides it entirely for a body that hasn't moved
+   * (`World.sectorsTouchingCached`), which on a belt-heavy map is most of them
+   * most tics. The floor/water tests still read live heights every call, so a
+   * lift or rising water under a stationary body changes the answer without
+   * invalidating anything. The return is **shared** scratch that the next call
+   * overwrites. `MF_NOGRAVITY` bodies are the caller's to skip; this has no
+   * thing table.
    */
-  carryForBody(pos: Pos3, radius: number, out: number[]): Readonly<Vec2> | null {
+  carryForBody(pos: Pos3, radius: number, cache: SectorTouchCache): Readonly<Vec2> | null {
     if (this.carry.size === 0) return null;
     // Cheap reject before the BSP descent: most things on a conveyor map are
     // nowhere near a belt. See `carryBounds`.
@@ -639,7 +646,7 @@ export class Forces {
     if (pos.y + radius < b.minY || pos.y - radius > b.maxY) return null;
     let cx = 0;
     let cy = 0;
-    for (const sectorIndex of this.world.sectorsTouching(pos.x, pos.y, radius, out)) {
+    for (const sectorIndex of this.world.sectorsTouchingCached(pos.x, pos.y, radius, cache)) {
       const carry = this.carry.get(sectorIndex);
       if (!carry) continue;
       const sector = this.map.sectors[sectorIndex];
@@ -674,15 +681,15 @@ export class Forces {
    * conveyor's carry has no such gate (`carryForBody`); this is the deliberate
    * asymmetry, not an oversight. See docs/specials.md § Pushers.
    *
-   * Like `carryForBody`, the caller supplies `out` and gets back **shared**
-   * scratch that this method's next call overwrites — read it before calling
-   * again.
+   * Like `carryForBody`, the caller supplies its per-body `cache` and gets
+   * back **shared** scratch that this method's next call overwrites — read it
+   * before calling again.
    */
-  pushForBody(pos: Pos3, radius: number, onGround: boolean, out: number[]): Readonly<Vec2> | null {
+  pushForBody(pos: Pos3, radius: number, onGround: boolean, cache: SectorTouchCache): Readonly<Vec2> | null {
     if (this.pushers.length === 0) return null;
     let px = 0;
     let py = 0;
-    const touching = this.world.sectorsTouching(pos.x, pos.y, radius, out);
+    const touching = this.world.sectorsTouchingCached(pos.x, pos.y, radius, cache);
     for (const p of this.pushers) {
       // "Be sure the special sector type is still turned on" — a switch can
       // rewrite the sector's special out from under a live pusher.

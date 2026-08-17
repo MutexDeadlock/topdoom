@@ -142,6 +142,12 @@ The result is written into a caller-owned array so the per-tic queries reuse one
 check inside is a linear `includes` rather than a `Set`, since the list is a handful of entries even
 on pathological geometry.
 
+`sectorsTouchingCached` is the same query behind a per-body `SectorTouchCache`: the list is a pure
+function of (x, y, radius) over static line geometry, so it stays valid for as long as the body
+stands still, and the force queries all take the calling body's own cache rather than a shared
+scratch. What made this worth having, and the memo built on top of it for bodies a conveyor pins
+against a wall, is docs/movement.md § Pinned-body memo.
+
 ## REJECT
 
 `hasLineOfSight` opens with vanilla's own first test in `P_CheckSight`: the WAD's REJECT matrix

@@ -385,6 +385,28 @@ skips a surface whose alpha has not moved. Note that a midtexture quad is exempt
 fading by `update`'s passable-gap test, so for a 260 grate the base is usually the only factor
 below 1.
 
+### Skipping invisible mover meshes
+
+Because that product is what decides whether a surface shows at all, `commit` also records the
+highest alpha it resolved per mesh key (`maxAlphaByKey` on both faders). A mover mesh whose every
+quad came out at 0 — fog of war has not revealed the sector, or view distance has faded it out —
+draws nothing, and `MoverGeometry.updateFading` sets `visible = false` on it rather than paying a
+draw call for no pixels. One mesh can hold both wall quads and flat fans, so both faders' verdicts
+are consulted. The flag is set immediately before the frame's render (`game.ts: draw` calls
+`updateFading` and then `renderer.render`), so it is never a frame stale.
+
+Two details are load-bearing. The max is accumulated **before** `commit`'s unchanged-alpha
+early-out: a mesh whose alpha simply did not move this frame is as visible as it was, and taking
+the early-out first would report it invisible and blink it out. And the tracking is **opt-in**
+(`trackVisibility`, on only for the mover faders): the static batches are per texture across the
+whole map (§ Mesh building), so one is almost never wholly invisible, and keeping the map for them
+costs a lookup per quad per frame across tens of thousands of quads for an answer nobody reads.
+
+Why it matters is a mover-count problem rather than a geometry one: a Boom map's movable sectors
+each get their own small mesh (§ Mover meshes), so literalism.wad MAP18's 973 of them add ~2,150
+meshes averaging 8 triangles. Measured there at spawn, 2,144 of those 2,147 were fully transparent
+while ~1,600 draw calls a frame were still being issued for them.
+
 ## Deep water (`mapmesh.ts: processFlat`, `ceilingFacing`)
 
 Boom's 242 makes a sector draw at another sector's heights. Vanilla picks one of two views by where

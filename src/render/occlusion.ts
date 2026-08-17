@@ -73,11 +73,23 @@ export class WallFader {
   private occluders: WallOccluder[];
   private meshes: Map<string, THREE.Mesh>;
   private occlusionAlpha: Float32Array;
+  /**
+   * The highest combined alpha the last `commit` resolved for each mesh key —
+   * zero means every quad that mesh draws is currently invisible, which is what
+   * lets a caller skip drawing it entirely (`MoverGeometry.updateFading`).
+   * Only filled when `trackVisibility` is on, since maintaining it costs a map
+   * lookup per quad per frame and the static batches have tens of thousands of
+   * them with no use for the answer.
+   * See docs/render.md § Skipping invisible mover meshes.
+   */
+  readonly maxAlphaByKey = new Map<string, number>();
+  private trackVisibility: boolean;
 
-  constructor(occluders: WallOccluder[], meshes: Map<string, THREE.Mesh>) {
+  constructor(occluders: WallOccluder[], meshes: Map<string, THREE.Mesh>, trackVisibility = false) {
     this.occluders = occluders;
     this.meshes = meshes;
     this.occlusionAlpha = new Float32Array(occluders.length).fill(1);
+    this.trackVisibility = trackVisibility;
   }
 
   /**
@@ -133,10 +145,18 @@ export class WallFader {
    */
   commit(fogAlphaOf: (occluderIndex: number) => number): void {
     const dirty = new Set<string>();
+    if (this.trackVisibility) this.maxAlphaByKey.clear();
 
     for (let i = 0; i < this.occluders.length; i++) {
       const o = this.occluders[i];
       const combined = (o.baseAlpha ?? 1) * this.occlusionAlpha[i] * fogAlphaOf(i);
+      // Before the unchanged-alpha early-out below, not after: a mesh whose
+      // alpha happens not to have moved this frame is still as visible as it
+      // was, and skipping it here would report it as invisible.
+      if (this.trackVisibility) {
+        const seen = this.maxAlphaByKey.get(o.key);
+        if (seen === undefined || combined > seen) this.maxAlphaByKey.set(o.key, combined);
+      }
       const attr = this.meshes.get(o.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
       if (!attr) continue;
       if (attr.getW(o.vertexStart) === combined) continue;
@@ -160,11 +180,15 @@ export class FlatFader {
   private surfaces: FlatSurface[];
   private meshes: Map<string, THREE.Mesh>;
   private alpha: Float32Array;
+  /** `WallFader.maxAlphaByKey`'s twin, same opt-in — the two are read together, since one mesh can hold both kinds. */
+  readonly maxAlphaByKey = new Map<string, number>();
+  private trackVisibility: boolean;
 
-  constructor(surfaces: FlatSurface[], meshes: Map<string, THREE.Mesh>) {
+  constructor(surfaces: FlatSurface[], meshes: Map<string, THREE.Mesh>, trackVisibility = false) {
     this.surfaces = surfaces;
     this.meshes = meshes;
     this.alpha = new Float32Array(surfaces.length).fill(1);
+    this.trackVisibility = trackVisibility;
   }
 
   /**
@@ -196,10 +220,16 @@ export class FlatFader {
   /** Same base × occlusion × fog-of-war write as `WallFader.commit` — here the base is a water surface's. */
   commit(fogAlphaOf: (subsector: number) => number): void {
     const dirty = new Set<string>();
+    if (this.trackVisibility) this.maxAlphaByKey.clear();
 
     for (let i = 0; i < this.surfaces.length; i++) {
       const s = this.surfaces[i];
       const combined = (s.baseAlpha ?? 1) * this.alpha[i] * fogAlphaOf(s.subsector);
+      // Ahead of the early-out, for the reason `WallFader.commit` gives.
+      if (this.trackVisibility) {
+        const seen = this.maxAlphaByKey.get(s.key);
+        if (seen === undefined || combined > seen) this.maxAlphaByKey.set(s.key, combined);
+      }
       const attr = this.meshes.get(s.key)?.geometry.getAttribute('color') as THREE.BufferAttribute | undefined;
       if (!attr) continue;
       if (attr.getW(s.vertexStart) === combined) continue;

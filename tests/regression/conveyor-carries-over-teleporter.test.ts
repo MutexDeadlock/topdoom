@@ -57,7 +57,7 @@ describe('Regressions · a conveyor carries a thing over a teleporter', () => {
         null,
         undefined,
         (prev, mover) => rigged.specials.crossMonster(prev, mover, new Set()),
-        (pos, radius) => forces.carryForBody(pos, radius, []),
+        (pos, radius, cache) => forces.carryForBody(pos, radius, cache),
       );
       rigged.tick();
     };
@@ -93,7 +93,7 @@ describe('Regressions · a conveyor carries a thing over a teleporter', () => {
     const startX = layer.snapshot().things[0].x;
     for (let i = 0; i < 100; i++) {
       forces.tick();
-      layer.update(TIC, null, undefined, undefined, (pos, radius) => forces.carryForBody(pos, radius, []));
+      layer.update(TIC, null, undefined, undefined, (pos, radius, cache) => forces.carryForBody(pos, radius, cache));
     }
     const after = layer.snapshot();
     assert.equal(after.stats.kills, 1, 'the imp should have died before the belt ran');
@@ -111,7 +111,7 @@ describe('Regressions · a conveyor carries a thing over a teleporter', () => {
     const layer = buildThingSprites(map, world, BANK, MATERIALS, 3);
     for (let i = 0; i < 200; i++) {
       forces.tick();
-      layer.update(TIC, null, undefined, undefined, (pos, radius) => forces.carryForBody(pos, radius, []));
+      layer.update(TIC, null, undefined, undefined, (pos, radius, cache) => forces.carryForBody(pos, radius, cache));
     }
     const eye = layer.snapshot().things[0];
     // Carried east out of the belt sector and stopped by the corridor's end wall.

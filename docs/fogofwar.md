@@ -129,6 +129,23 @@ of them know it natively:
   of `a->b`) and asking the BSP what's there — which is why `WallFader.commit` takes a callback keyed
   by *occluder index* rather than by sector, and why `mapmesh.ts` carries no fog-specific field at all.
 
+### Mover wall quads
+
+The static wall quads are probed **once at load** and their subsectors kept in `wallSubsector`.
+Mover geometry (doors, lifts — docs/render.md § Mover meshes) is built and rebuilt after that, so it
+misses that pass and `MoverGeometry.updateFading` probes its quads through
+`FogOfWar.wallSubsectorAt` instead. That probe is a BSP descent, and it is **memoized per mover**
+(`MoverGeometry`'s `fogSubsectors`, parallel to the mover's quads — kept there, not on the quad, so
+`mapmesh.ts` stays fog-free): the answer is fixed by the quad's endpoints, which are the linedef's
+own, so a door moving vertically never invalidates it. `MoverGeometry.rebuild` — the one place a
+quad slot can be repointed at different geometry, whether by refresh or full rebuild — clears the
+memo, and the next fading pass re-probes.
+
+Asking per frame instead — which is what this did originally, on the reasoning that a mover has only
+a handful of quads — costs one descent per mover quad per frame. That holds for a vanilla map's few
+dozen; literalism.wad MAP18 has 973 movable sectors and thousands of such quads, and the descents
+dominated the fading pass.
+
 Thing sprites get the simplest treatment: `ThingLayer.update` takes an optional `fogVisible` and just
 toggles visibility, since a monster or item doesn't need a smooth per-pixel fade the way geometry does.
 

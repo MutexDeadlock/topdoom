@@ -45,6 +45,63 @@ export interface Opening {
 }
 
 /**
+ * One body's cached `sectorsTouching` result — see `World.sectorsTouchingCached`.
+ * `x`/`y`/`radius` are the query the list was computed for; NaN (the
+ * `makeTouchCache` seed) matches nothing, so the first call always fills it.
+ */
+export interface SectorTouchCache {
+  x: number;
+  y: number;
+  radius: number;
+  sectors: number[];
+}
+
+export function makeTouchCache(): SectorTouchCache {
+  return { x: NaN, y: NaN, radius: NaN, sectors: [] };
+}
+
+/** One body's captured neighborhood heights — see `World.captureHeights`. */
+export interface HeightsStamp {
+  sectors: number[];
+  /** floorHeight, ceilHeight per stamped sector, interleaved. */
+  heights: number[];
+}
+
+export function makeHeightsStamp(): HeightsStamp {
+  return { sectors: [], heights: [] };
+}
+
+/**
+ * One body's pinned-body memo: a proven "this exact position under this exact
+ * push goes nowhere" outcome, valid until any stamped nearby sector height
+ * changes (`World.capturePin`/`pinMatches`). `velX`/`velY` are whatever push
+ * the caller proved the outcome under — a knockback velocity, a tic's summed
+ * impulse. Allocated once per body and refilled in place, never per capture;
+ * `active` gates whether the rest means anything.
+ * docs/movement.md § Pinned-body memo.
+ */
+export interface PinnedMemo {
+  active: boolean;
+  x: number;
+  y: number;
+  z: number;
+  velX: number;
+  velY: number;
+  stamp: HeightsStamp;
+}
+
+export function makePinnedMemo(): PinnedMemo {
+  return { active: false, x: 0, y: 0, z: 0, velX: 0, velY: 0, stamp: makeHeightsStamp() };
+}
+
+/**
+ * Broadphase slop (map units) widening a pin's stamped box past the attempted
+ * move — generous on purpose: stamping an extra sector is harmless, while
+ * missing one leaves a body pinned against a door that has since opened.
+ */
+const PIN_STAMP_SLOP = 4;
+
+/**
  * The map plus the queries the game logic needs: where am I, how high is the
  * floor here, and which lines are close enough to bump into.
  */
@@ -478,6 +535,102 @@ export class World {
     // Linear scan rather than a Set: this list is a handful of entries long
     // even on the worst geometry, and it runs every tic per body.
     if (sector !== undefined && !out.includes(sector)) out.push(sector);
+  }
+
+  /**
+   * `sectorsTouching` through a per-body cache: the touched-sector list is a
+   * pure function of (x, y, radius) over *static* line geometry — sector
+   * heights play no part in it — so it stays valid for as long as the body
+   * stands still, which for most bodies on a level is almost always.
+   * Recomputed only when the position the cache was filled at differs.
+   * The cache belongs to **one body**; sharing one across bodies re-derives
+   * the list every call and silently loses the whole point.
+   * See docs/world.md § Sectors under a body.
+   */
+  sectorsTouchingCached(x: number, y: number, radius: number, cache: SectorTouchCache): readonly number[] {
+    if (cache.x !== x || cache.y !== y || cache.radius !== radius) {
+      this.sectorsTouching(x, y, radius, cache.sectors);
+      cache.x = x;
+      cache.y = y;
+      cache.radius = radius;
+    }
+    return cache.sectors;
+  }
+
+  /**
+   * Fills `stamp` with every sector adjacent to a line within `radius` of
+   * (x, y) — plus the sector under the point itself — and their current
+   * floor/ceiling heights. `heightsMatch` then answers whether any of them has
+   * moved since. Together they are the invalidation half of a "this body's
+   * blocked move is a proven no-op" memo: a blocked `slideMove`/
+   * `positionBlocked`/`groundFloor` outcome can only change if a sector height
+   * inside its query box changes (line geometry is static), so a caller that
+   * captures the box once may skip the re-derivation every tic the stamp still
+   * matches. docs/movement.md § Pinned-body memo.
+   */
+  captureHeights(x: number, y: number, radius: number, stamp: HeightsStamp): void {
+    const sectors = stamp.sectors;
+    sectors.length = 0;
+    sectors.push(this.sectorIndexAt(x, y));
+    for (const i of this.linesNear(x, y, radius)) {
+      const line = this.map.linedefs[i];
+      this.addTouchedSector(sectors, line.right);
+      this.addTouchedSector(sectors, line.left);
+    }
+    stamp.heights.length = sectors.length * 2;
+    for (let k = 0; k < sectors.length; k++) {
+      const s = this.map.sectors[sectors[k]];
+      stamp.heights[k * 2] = s ? s.floorHeight : 0;
+      stamp.heights[k * 2 + 1] = s ? s.ceilHeight : 0;
+    }
+  }
+
+  /**
+   * Whether `memo` still proves the caller's blocked state a no-op: same
+   * position, same push, and no stamped nearby sector height has changed.
+   * `capturePin`'s other half — anything the caller's outcome additionally
+   * depends on (a doll's residual momentum, a teleport) stays a gate at the
+   * call site. docs/movement.md § Pinned-body memo.
+   */
+  pinMatches(memo: PinnedMemo, x: number, y: number, z: number, velX: number, velY: number): boolean {
+    return (
+      memo.active &&
+      memo.x === x &&
+      memo.y === y &&
+      memo.z === z &&
+      memo.velX === velX &&
+      memo.velY === velY &&
+      this.heightsMatch(memo.stamp)
+    );
+  }
+
+  /**
+   * Records a proven no-op into `memo`: this position under this push went
+   * nowhere. The stamp's radius covers everything the blocked move could have
+   * read — the body box plus the attempted step, plus `PIN_STAMP_SLOP` — so
+   * `pinMatches` holds exactly until a height inside that box changes. Refills
+   * the caller-owned memo in place; nothing is allocated.
+   */
+  capturePin(memo: PinnedMemo, x: number, y: number, z: number, velX: number, velY: number, radius: number, dt: number): void {
+    this.captureHeights(x, y, radius + Math.hypot(velX, velY) * dt + PIN_STAMP_SLOP, memo.stamp);
+    memo.active = true;
+    memo.x = x;
+    memo.y = y;
+    memo.z = z;
+    memo.velX = velX;
+    memo.velY = velY;
+  }
+
+  /** Whether every sector `captureHeights` stamped still has the heights it had then. */
+  heightsMatch(stamp: HeightsStamp): boolean {
+    const { sectors, heights } = stamp;
+    for (let k = 0; k < sectors.length; k++) {
+      const s = this.map.sectors[sectors[k]];
+      const floor = s ? s.floorHeight : 0;
+      const ceil = s ? s.ceilHeight : 0;
+      if (heights[k * 2] !== floor || heights[k * 2 + 1] !== ceil) return false;
+    }
+    return true;
   }
 
   floorAt(x: number, y: number): number {

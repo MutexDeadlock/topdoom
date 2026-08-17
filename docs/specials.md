@@ -910,7 +910,9 @@ mapper scripting, and it is why conveyors and dolls landed in the same phase.
 `game/voodoo.ts: VoodooDolls` owns them. Each tic a doll takes the same conveyor and pusher impulses
 the player does, slides with `slideMove` (it is a player mobj, so it gets `P_SlideMove`), rides
 whatever floor it is standing on, and decays its momentum by that floor's friction. It has no
-gravity, no input and no AI — the world is the only thing that moves it.
+gravity, no input and no AI — the world is the only thing that moves it. A doll a belt pins against
+a wall — the resting state of most dolls on a script map — skips that whole re-derivation via the
+pinned-body memo (docs/movement.md § Pinned-body memo), which is what keeps a 466-doll map ticking.
 
 **Triggering** goes through `SpecialsController.crossVoodoo`, the third `Activator`. A doll gates
 exactly like the player it copies — the player's own keys, every line a player may cross, and it is

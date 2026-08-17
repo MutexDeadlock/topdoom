@@ -484,3 +484,37 @@ Two details that are not shared with knockback:
 **`PlayerSnapshot` still names the pair `knockVelX`/`knockVelY`.** That is the saved wire format from
 before the channel widened past knockback, and renaming it would orphan every existing save
 (docs/savegames.md § The format and its version); `Player.snapshot`/`restore` map the two names.
+
+### Pinned-body memo
+
+A belt-heavy Boom map pins whole closets of bodies against walls forever: a conveyor feeds the same
+impulse every tic, the blocked body re-attempts the same move, and the move fails the same way. On
+literalism.wad MAP18 (466 voodoo dolls, ~2,000 things standing on 756 conveyor sectors) that
+re-derivation — `slideMove`/`positionBlocked` plus `groundFloor` per body per tic — measured ~8 ms
+per tic before anything else ran. Two structures make it cheap, both derived state that is never
+saved:
+
+- **`SectorTouchCache`** (`World.sectorsTouchingCached`): a body's touched-sector list is a pure
+  function of (x, y, radius) over *static* line geometry — heights play no part — so it stays valid
+  until the body moves. Every per-tic force query (`carryForBody`, `pushForBody`, `frictionUnder`)
+  takes the calling body's own cache instead of a shared scratch array; sharing one across bodies
+  re-derives the list every call and silently loses the whole point. The floor/water gates inside
+  those queries still read live heights every call, so a lift or rising water under a stationary
+  body changes the answer with no invalidation step.
+- **The pinned memo** (`VoodooDolls.update`'s `rest`, `ThingLayer.applyKnockback`'s `pinned` — both
+  a shared `PinnedMemo` driven by `World.capturePin`/`pinMatches`, allocated once per body and
+  refilled in place): once a tic proves itself a no-op — same position, same impulse, blocked
+  outcome, nothing crossed — the body records a `HeightsStamp` (`World.captureHeights`) of every
+  sector adjacent to a line within its query box (body radius + attempted step + slop) and skips
+  the whole re-derivation while the stamp still matches. The invariant that makes this sound: a blocked move's outcome can only change
+  if a sector height inside that box changes, because line geometry is static and neither `slideMove`
+  nor `positionBlocked` reads anything else. The impulse itself is still recomputed live each tic
+  (through the touch cache, so it is cheap), which is what breaks the memo when a belt's rate
+  changes or water rises over the body — those flow through the impulse compare, not the stamp.
+  A voodoo doll's memo is additionally never captured on a tic whose crossing teleported it: a
+  teleporter loop that lands a doll back exactly where it started is a periodic-script idiom whose
+  triggers must keep firing.
+
+Neither memo covers a body that is actually moving — a rider on an open belt pays full cost, which
+is correct: it is genuinely simulating. Dolls' caches are dropped on `restore`; a `PosedThing`'s
+live in fields the savegame's explicit `ThingState` never copies.

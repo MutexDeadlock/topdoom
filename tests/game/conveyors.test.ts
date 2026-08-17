@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addControlLine, addControlSector, gridMap } from '../fixtures/gridmap.ts';
 import { Forces } from '../../src/game/specials/forces.ts';
-import { World } from '../../src/game/world.ts';
+import { makeTouchCache, World } from '../../src/game/world.ts';
 import { PLAYER_RADIUS } from '../../src/game/player.ts';
 
 /**
@@ -24,13 +24,13 @@ describe('Conveyors', () => {
     addControlLine(grid.map, dx, 0, 252, 7);
     const forces = new Forces(grid.map, new World(grid.map));
     forces.tick();
-    return { grid, forces, out: [] as number[] };
+    return { grid, forces, cache: makeTouchCache() };
   }
 
   test('a body on the belt is carried at CARRYFACTOR × the scroll rate', () => {
-    const { grid, forces, out } = rig();
+    const { grid, forces, cache } = rig();
     const at = grid.centre(1, 0);
-    const carry = forces.carryForBody({ x: at.x, y: at.y, z: 0 }, PLAYER_RADIUS, out);
+    const carry = forces.carryForBody({ x: at.x, y: at.y, z: 0 }, PLAYER_RADIUS, cache);
     assert.ok(carry, 'expected the body to be carried');
     // 128/32 = 4 units/tic scroll, × 3/32 = 0.375 units/tic of impulse.
     assert.ok(Math.abs(carry.x - 0.375 * TICS) < 1e-9, `carry.x was ${carry.x}`);
@@ -38,24 +38,24 @@ describe('Conveyors', () => {
   });
 
   test('a body in the next sector over is not', () => {
-    const { grid, forces, out } = rig();
+    const { grid, forces, cache } = rig();
     const at = grid.centre(0, 0);
-    assert.equal(forces.carryForBody({ x: at.x - 32, y: at.y, z: 0 }, PLAYER_RADIUS, out), null);
+    assert.equal(forces.carryForBody({ x: at.x - 32, y: at.y, z: 0 }, PLAYER_RADIUS, cache), null);
   });
 
   test('a body straddling the belt’s edge rides it — the centre point is not the test', () => {
-    const { grid, forces, out } = rig();
+    const { grid, forces, cache } = rig();
     const edgeX = (grid.centre(0, 0).x + grid.centre(1, 0).x) / 2;
     // Centre still in the neighbouring cell, box overlapping the belt.
     const at = { x: edgeX - 4, y: grid.centre(1, 0).y };
-    assert.ok(forces.carryForBody({ x: at.x, y: at.y, z: 0 }, PLAYER_RADIUS, out), 'expected the straddling body to be carried');
+    assert.ok(forces.carryForBody({ x: at.x, y: at.y, z: 0 }, PLAYER_RADIUS, cache), 'expected the straddling body to be carried');
   });
 
   test('a body standing above the belt’s floor is not carried', () => {
-    const { grid, forces, out } = rig();
+    const { grid, forces, cache } = rig();
     const at = grid.centre(1, 0);
     // `T_Scroll`'s own `thing->z > height` skip: on a step inside the sector.
-    assert.equal(forces.carryForBody({ x: at.x, y: at.y, z: 8 }, PLAYER_RADIUS, out), null);
+    assert.equal(forces.carryForBody({ x: at.x, y: at.y, z: 8 }, PLAYER_RADIUS, cache), null);
   });
 
   test('the gate is the belt’s own floor height, not zero', () => {
@@ -65,15 +65,15 @@ describe('Conveyors', () => {
     const forces = new Forces(raised.map, new World(raised.map));
     forces.tick();
     const at = raised.centre(1, 0);
-    const out: number[] = [];
-    assert.ok(forces.carryForBody({ x: at.x, y: at.y, z: 24 }, PLAYER_RADIUS, out), 'resting on a raised belt still rides it');
-    assert.equal(forces.carryForBody({ x: at.x, y: at.y, z: 32 }, PLAYER_RADIUS, out), null, 'hovering above it does not');
+    const cache = makeTouchCache();
+    assert.ok(forces.carryForBody({ x: at.x, y: at.y, z: 24 }, PLAYER_RADIUS, cache), 'resting on a raised belt still rides it');
+    assert.equal(forces.carryForBody({ x: at.x, y: at.y, z: 32 }, PLAYER_RADIUS, cache), null, 'hovering above it does not');
   });
 
   test('a sustained impulse settles at vanilla’s own equilibrium', () => {
-    const { grid, forces, out } = rig();
+    const { grid, forces, cache } = rig();
     const at = grid.centre(1, 0);
-    const impulse = forces.carryForBody({ x: at.x, y: at.y, z: 0 }, PLAYER_RADIUS, out)!.x;
+    const impulse = forces.carryForBody({ x: at.x, y: at.y, z: 0 }, PLAYER_RADIUS, cache)!.x;
     // The momentum channel: add the impulse each tic, then decay by FRICTION.
     let v = 0;
     for (let i = 0; i < 400; i++) v = (v + impulse) * FRICTION;
@@ -101,10 +101,10 @@ describe('Conveyors', () => {
 
     const dry = sunkenBelt(false);
     const floating = (z: number) => ({ x: dry.at.x, y: dry.at.y, z });
-    assert.equal(dry.forces.carryForBody(floating(-32), PLAYER_RADIUS, []), null, 'off the floor, no water: not carried');
+    assert.equal(dry.forces.carryForBody(floating(-32), PLAYER_RADIUS, makeTouchCache()), null, 'off the floor, no water: not carried');
 
     const wet = sunkenBelt(true);
-    assert.ok(wet.forces.carryForBody(floating(-32), PLAYER_RADIUS, []), 'under the surface: carried');
-    assert.equal(wet.forces.carryForBody(floating(64), PLAYER_RADIUS, []), null, 'above the surface: not carried');
+    assert.ok(wet.forces.carryForBody(floating(-32), PLAYER_RADIUS, makeTouchCache()), 'under the surface: carried');
+    assert.equal(wet.forces.carryForBody(floating(64), PLAYER_RADIUS, makeTouchCache()), null, 'above the surface: not carried');
   });
 });

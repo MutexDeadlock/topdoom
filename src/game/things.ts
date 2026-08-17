@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import type { DoomMap, Sector } from '../wad/map.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
-import type { World } from './world.ts';
+import type { SectorTouchCache, World } from './world.ts';
 import { GRAVITY, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import { pRandom } from '../util/random.ts';
 import { DOOM_TIC } from '../constants.ts';
@@ -97,7 +97,7 @@ import {
   type ThingState,
 } from './snapshot.ts';
 import { createThingGrid } from './things/grid.ts';
-import { positionBlocked } from './world.ts';
+import { makePinnedMemo, makeTouchCache, positionBlocked } from './world.ts';
 import { transfersOf } from './specials/transfers.ts';
 import { monsterOrigin, randomVariant, SILENT, type SoundEmitter } from '../audio/sfx.ts';
 import {
@@ -373,6 +373,8 @@ export function buildThingSprites(
       visible: true,
       hidden: false,
       queryStamp: 0,
+      touch: makeTouchCache(),
+      pinned: makePinnedMemo(),
       x,
       y,
       z,
@@ -772,13 +774,26 @@ export function buildThingSprites(
    * worth the query. docs/movement.md § Knockback.
    */
   function applyKnockback(p: PosedThing, dt: number): void {
-    const nx = p.x + p.velX * dt;
-    const ny = p.y + p.velY * dt;
-    if (positionBlocked(world, nx, ny, p.blockRadius, p.z, p.bodyHeight, true)) {
+    // The pinned-body memo: this exact state already proved blocked, and no
+    // stamped nearby height has changed since, so replay the outcome without
+    // re-deriving it. A belt-pinned closet monster hits this every tic; any
+    // hit's knockback or the belt's own rate changing misses on the velocity
+    // compare, a door opening in reach misses on the stamp.
+    // docs/movement.md § Pinned-body memo.
+    if (world.pinMatches(p.pinned, p.x, p.y, p.z, p.velX, p.velY)) {
       p.velX = 0;
       p.velY = 0;
       return;
     }
+    const nx = p.x + p.velX * dt;
+    const ny = p.y + p.velY * dt;
+    if (positionBlocked(world, nx, ny, p.blockRadius, p.z, p.bodyHeight, true)) {
+      world.capturePin(p.pinned, p.x, p.y, p.z, p.velX, p.velY, p.blockRadius, dt);
+      p.velX = 0;
+      p.velY = 0;
+      return;
+    }
+    p.pinned.active = false;
     p.x = nx;
     p.y = ny;
     const decay = Math.pow(FRICTION, dt * 35);
@@ -850,6 +865,25 @@ export function buildThingSprites(
     pushedFrom.y = fromY;
     const dest = cross(pushedFrom, p);
     if (dest) arriveAt(p, dest);
+  }
+
+  /**
+   * `applyKnockback` plus its aftermath, for a body with no AI walk of its own
+   * (a dormant monster, a barrel, a corpse): fire whatever lines the push
+   * crossed, then re-derive the sector — but only when the body actually went
+   * somewhere, since a blocked (pinned) push moved nothing and the BSP descent
+   * would answer what `p.sector` already says.
+   */
+  function pushAndSettle(
+    p: PosedThing,
+    dt: number,
+    cross: ((prev: Pos2, mover: CrossingBody) => TeleportDest | null) | undefined,
+  ): void {
+    const fromX = p.x;
+    const fromY = p.y;
+    applyKnockback(p, dt);
+    crossAfterPush(p, fromX, fromY, cross);
+    if (p.x !== fromX || p.y !== fromY) refreshSector(p);
   }
 
   /**
@@ -1095,7 +1129,11 @@ export function buildThingSprites(
       player: Pos3 | null,
       fogVisible?: (subsector: number) => boolean,
       crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null,
-      carry?: (pos: Pos3, radius: number) => { readonly x: number; readonly y: number } | null,
+      carry?: (
+        pos: Pos3,
+        radius: number,
+        cache: SectorTouchCache,
+      ) => { readonly x: number; readonly y: number } | null,
     ): ThingUpdateResult {
       const attacks: MonsterAttackEvent[] = [];
       const barrelExplosions: BarrelExplosion[] = [];
@@ -1194,7 +1232,7 @@ export function buildThingSprites(
         // A body still falling isn't carried either, but that gate belongs to
         // the sector's own floor height and lives in `carryForBody`.
         if (carry && !stats?.flies) {
-          const impulse = carry(p, p.blockRadius);
+          const impulse = carry(p, p.blockRadius, p.touch);
           if (impulse) {
             p.velX += impulse.x;
             p.velY += impulse.y;
@@ -1339,13 +1377,7 @@ export function buildThingSprites(
             // guards the same-frame ordering rather than a state that lingers.
             // Unlike the alerted branch, nothing below re-derives the sector it
             // was shoved into, and the wake check answers from `subsector`.
-            if (p.velX !== 0 || p.velY !== 0) {
-              const fromX = p.x;
-              const fromY = p.y;
-              applyKnockback(p, dt);
-              crossAfterPush(p, fromX, fromY, crossLines);
-              refreshSector(p);
-            }
+            if (p.velX !== 0 || p.velY !== 0) pushAndSettle(p, dt, crossLines);
           }
         } else {
           // Ceiling-hung gore rides a moving ceiling (crusher, closing door) the same way
@@ -1363,13 +1395,7 @@ export function buildThingSprites(
           // here too, finishing off whatever knockback it had at the moment it
           // died and riding whatever conveyor it fell onto —
           // docs/movement.md § Knockback.
-          if (p.velX !== 0 || p.velY !== 0) {
-            const fromX = p.x;
-            const fromY = p.y;
-            applyKnockback(p, dt);
-            crossAfterPush(p, fromX, fromY, crossLines);
-            refreshSector(p);
-          }
+          if (p.velX !== 0 || p.velY !== 0) pushAndSettle(p, dt, crossLines);
         }
 
         // Whether this thing can be seen — and so shot, and so auto-aimed at.

@@ -14,7 +14,7 @@ import { BOSS_DEATH_TYPES } from './tables.ts';
 import { ThingType } from './doomednums.ts';
 import type { MonsterAttackEvent, MonsterBody } from '../monsters/defs.ts';
 import type { ThingsSnapshot } from '../snapshot.ts';
-import type { ThingBlocker } from '../world.ts';
+import type { PinnedMemo, SectorTouchCache, ThingBlocker } from '../world.ts';
 import type { SpriteAnimator } from '../../render/sprites.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
 import type { TeleportDest } from '../specials.ts';
@@ -73,6 +73,19 @@ export interface PosedThing extends Pos3, MonsterBody {
   hidden: boolean;
   /** Scratch dedupe marker for `forEachMonsterAlongRay`, whose stepped cell neighbourhoods overlap. Meaningless between queries. */
   queryStamp: number;
+  /**
+   * This body's cached touched-sector list for the per-tic conveyor query
+   * (`World.sectorsTouchingCached`). Derived state, never saved.
+   */
+  touch: SectorTouchCache;
+  /**
+   * The pinned-body memo for `applyKnockback` (`World.capturePin`): this exact
+   * position, feet height and velocity produced a blocked, velocity-zeroing
+   * outcome, valid until any stamped nearby sector height changes — a
+   * belt-pinned closet monster skips its `positionBlocked` re-check every tic
+   * on this. Derived state, never saved. docs/movement.md § Pinned-body memo.
+   */
+  pinned: PinnedMemo;
   /**
    * Feet height (`Pos3.z`). While not an alerted monster: refreshed each frame from
    * `sector.floorHeight` (the "ride a moving floor for free" trick). Once alerted,
@@ -312,9 +325,15 @@ export interface ThingLayer {
      * Forces.carryForBody`. A callback rather than a `Forces` reference for the
      * same reason `crossLines` is one: this layer owns bodies, not specials.
      * The return is structural (and not `Pos2`, which is a position) so no
-     * import edge into `specials/` forms.
+     * import edge into `specials/` forms. `cache` is the body's own
+     * `PosedThing.touch`, threaded through so the query can skip its sector
+     * walk for a body that hasn't moved.
      */
-    carry?: (pos: Pos3, radius: number) => { readonly x: number; readonly y: number } | null,
+    carry?: (
+      pos: Pos3,
+      radius: number,
+      cache: SectorTouchCache,
+    ) => { readonly x: number; readonly y: number } | null,
   ): ThingUpdateResult;
   /**
    * Fills the sprite batches from the state `update` left, with every position

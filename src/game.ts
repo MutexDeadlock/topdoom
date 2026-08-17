@@ -37,7 +37,7 @@ import {
 import { thrustSpeed } from './game/monsters/defs.ts';
 import { MonsterAttacks } from './game/monsters/attacks.ts';
 import { collectFadeTargets, FlatFader, SurfaceScroller, WallFader } from './render/occlusion.ts';
-import { World } from './game/world.ts';
+import { makeTouchCache, World, type SectorTouchCache } from './game/world.ts';
 import { AIM_HEIGHT_OFFSET, EYE_HEIGHT, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { applyBarrelExplosion, type CombatContext, type DamageCause } from './game/combat.ts';
 import { SpriteFxLayer } from './game/spritefx.ts';
@@ -186,8 +186,13 @@ export class Game {
    * frame to answer that would be pure waste. Empty on the maps with none.
    */
   private colormapTints = new Map<number, { bottom: ColorTint | null; mid: ColorTint | null; top: ColorTint | null }>();
-  /** Scratch for `Forces`' per-body sector walk, reused by every caller in a tic — see `World.sectorsTouching`. */
-  private touchedSectors: number[] = [];
+  /**
+   * The player's cached touched-sector list for the three per-tic force
+   * queries — one body, one cache (`World.sectorsTouchingCached`), so
+   * carry/push/friction share one sector walk per tic instead of three.
+   * Reset per level: the positions it was keyed on are the old map's.
+   */
+  private playerTouch: SectorTouchCache = makeTouchCache();
   /** The level's voodoo dolls, if it places any (game/voodoo.ts). */
   private voodoo!: VoodooDolls;
   private animatedTextures!: AnimatedTextures;
@@ -641,6 +646,8 @@ export class Game {
     }
     this.levelTime = restore ? restore.levelTime : 0;
     this.world = new World(map);
+    // A fresh world invalidates every cached sector walk — see `playerTouch`.
+    this.playerTouch = makeTouchCache();
     // Both drop whatever was still in flight or mid-animation in the level
     // being torn down, which would otherwise carry over into the new one.
     this.effects.beginLevel(this.world);
@@ -1390,7 +1397,7 @@ export class Game {
       // Whatever the world is pushing the player with this tic — a conveyor
       // underfoot — onto the same momentum channel a hit's knockback uses.
       // Applied before the move, as `T_Scroll` runs before `P_PlayerThink`.
-      const carry = this.forces.carryForBody(this.player, PLAYER_RADIUS, this.touchedSectors);
+      const carry = this.forces.carryForBody(this.player, PLAYER_RADIUS, this.playerTouch);
       if (carry) this.player.applyForce(carry.x, carry.y);
       // Wind, current and point pushers, which unlike a conveyor reach the
       // player alone (`Forces.pushForBody`). "On the ground" is vanilla's
@@ -1398,7 +1405,7 @@ export class Game {
       // full `checkPosition`, so it is only asked for where a pusher exists.
       if (this.forces.pusherCount > 0) {
         const onGround = this.player.z <= this.world.groundFloor(this.player.x, this.player.y, PLAYER_RADIUS);
-        const push = this.forces.pushForBody(this.player, PLAYER_RADIUS, onGround, this.touchedSectors);
+        const push = this.forces.pushForBody(this.player, PLAYER_RADIUS, onGround, this.playerTouch);
         if (push) this.player.applyForce(push.x, push.y);
       }
       // What the floor underfoot does to the player's own movement — ice, mud,
@@ -1407,7 +1414,7 @@ export class Game {
         this.player,
         PLAYER_RADIUS,
         Math.hypot(this.player.velX, this.player.velY),
-        this.touchedSectors,
+        this.playerTouch,
       );
       // Monsters are solid: the player walks around them, not through them.
       this.player.update(
@@ -1586,7 +1593,7 @@ export class Game {
           this.playerDead ? null : this.player,
           (subsector) => this.fogOfWar.isVisible(subsector),
           (prev, mover) => this.thingCrossedLines(prev, mover),
-          (pos, radius) => this.forces.carryForBody(pos, radius, this.touchedSectors),
+          (pos, radius, cache) => this.forces.carryForBody(pos, radius, cache),
         ) ?? { attacks: [], barrelExplosions: [] },
     );
     this.profiler.time('Monsters', () => {

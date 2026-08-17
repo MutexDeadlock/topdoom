@@ -28,6 +28,16 @@ Features and improvements
       sector that names them
   - solid structures — pillars, crates, lamp posts — are no longer see-through
     holes in the level. Thias change came in by accident, but may be helpful
+  - big performance win on conveyor-heavy BOOM maps (literalism.wad MAP18:
+    466 voodoo dolls and ~2,000 things standing on 756 conveyor sectors):
+    a body pinned against a wall by a belt no longer re-derives its blocked
+    move every tic, and the per-thing conveyor query caches its sector walk
+    while the body stands still — together ~8 ms of every tic gone
+  - and a matching one on BOOM maps with many doors and lifts (MAP18 again,
+    973 of them): geometry that fog of war or view distance has faded to
+    nothing is no longer drawn, and a door's wall quads no longer re-walk the
+    BSP every frame to find out where they are. 1598 draw calls a frame down
+    to 118, and the frame roughly a third faster overall
 
 Fixed bugs
   - fixed various rendering problems

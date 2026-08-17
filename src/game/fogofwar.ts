@@ -133,7 +133,7 @@ export class FogOfWar {
     this.wallSubsector = new Int32Array(occluders.length);
     for (let i = 0; i < occluders.length; i++) {
       const o = occluders[i];
-      this.wallSubsector[i] = this.probeWallSubsector(o.ax, o.ay, o.bx, o.by);
+      this.wallSubsector[i] = this.wallSubsectorAt(o.ax, o.ay, o.bx, o.by);
     }
 
     // Seed the spawn's surroundings fully revealed instead of fading up from
@@ -294,17 +294,19 @@ export class FogOfWar {
   }
 
   /**
-   * Reveal alpha for a wall quad that isn't in the static occluder list —
-   * game/specials.ts's mover geometry (door/lift walls), which is built and
-   * rebuilt on its own and so was never indexed in the constructor loop
-   * above. Same probe, computed on demand instead of cached; movers only
-   * ever have a handful of quads, so this costs nothing per frame.
+   * The subsector a wall quad faces into, for quads that aren't in the static
+   * occluder list — game/specials.ts's mover geometry (door/lift walls), which
+   * is built and rebuilt on its own and so was never indexed in the
+   * constructor loop above.
+   *
+   * This is a BSP descent, and the caller is expected to **memo the answer**
+   * (`MoverGeometry`'s per-mover `fogSubsectors`) rather than ask per frame:
+   * it depends only on the quad's endpoints, which a mover moving vertically
+   * never changes. A Boom map with hundreds of movable sectors has thousands
+   * of these quads, where the original per-frame probe was written for the
+   * handful a vanilla map has. docs/fogofwar.md § Mover wall quads.
    */
-  wallAlphaAt(ax: number, ay: number, bx: number, by: number): number {
-    return this.alphaOf(this.probeWallSubsector(ax, ay, bx, by));
-  }
-
-  private probeWallSubsector(ax: number, ay: number, bx: number, by: number): number {
+  wallSubsectorAt(ax: number, ay: number, bx: number, by: number): number {
     const dx = bx - ax;
     const dy = by - ay;
     const len = Math.hypot(dx, dy) || 1;

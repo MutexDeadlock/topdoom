@@ -330,7 +330,14 @@ crossing, so `groundFloor` reports the high side throughout and the low pit floo
 wider gap does lose that straddle partway across, and the player falls in — there's no jump input to
 clear it, unlike some later source ports.
 
-## Knockback
+## External momentum
+
+Everything that moves a body **without** its own input goes through one channel — vanilla's
+`momx`/`momy`, which this engine keeps separate from the input-driven velocity for the reason spelled
+out at the end of this section. Two things feed it: damage knockback, and the world forces Boom's
+parameter lines apply (conveyors, wind, current — docs/specials.md § Scrollers and conveyors).
+
+### Knockback
 
 Every hit with a real physical source — a shot, an explosion, a melee swing — also shoves its victim,
 vanilla's `P_DamageMobj` horizontal thrust (`p_inter.c`): `thrust = damage*(FRACUNIT>>3)*100/mass`,
@@ -380,10 +387,10 @@ position stands in.
 
 **Integrating and decaying the resulting velocity is a second, separate step from computing the
 impulse**, and deliberately not the same velocity a monster/barrel/player already tracks for its own
-movement. `PosedThing.velX`/`velY` and `Player`'s `knockVelX`/`knockVelY` are dedicated knockback-only
-state, decayed every frame by vanilla's per-tic `FRICTION` (`0.90625`) raised to the `dt*35` power —
+movement. `PosedThing.velX`/`velY` and `Player`'s `momX`/`momY` are the channel's own
+state, never the input velocity, decayed every frame by vanilla's per-tic `FRICTION` (`0.90625`) raised to the `dt*35` power —
 reproducing the exact discrete recurrence at any frame rate rather than converting to a continuous
-rate first, which would only approximate it. Below `KNOCKBACK_STOP_SPEED` (1 u/s) the velocity snaps
+rate first, which would only approximate it. Below `MOMENTUM_STOP_SPEED` (1 u/s) the velocity snaps
 to exactly 0 rather than crawling forever, the same reasoning as `WallFader`'s fade snap.
 
 - **`ThingLayer.applyKnockback`** integrates a monster or barrel's velocity as a plain displacement,
@@ -396,14 +403,84 @@ to exactly 0 rather than crawling forever, the same reasoning as `WallFader`'s f
   within the same tic, so the two genuinely sum. A barrel has no AI movement, so this is its only
   source of horizontal motion. Deliberately skips `blockersFor`'s thing-vs-thing check (a knockback
   nudge is small, transient and rare enough that two shoved bodies briefly overlapping isn't worth the
-  query). A dead thing's velocity is left as inert, unread data — **except** `reviveCorpse`, which
-  zeroes it, the same "stale velocity could sit unused and then jump on revival" bug the arch-vile
-  resurrection fix already caught for `velZ`.
+  query). **A corpse integrates it too**, which is `P_XYMovement` still running for a dead mobj: a
+  monster killed mid-knockback slides to a stop rather than freezing where it died, and a corpse that
+  falls onto a conveyor rides it (§ World forces). It arrived with the belts — before them nothing
+  could move a dead thing, so the velocity was left as inert unread data and the difference was
+  invisible. `reviveCorpse` still zeroes it, the same "stale velocity could sit unused and then jump
+  on revival" bug the arch-vile resurrection fix already caught for `velZ`.
 - **`Player.applyKnockback`** is kept entirely separate from the player's own `velX`/`velY`
   (input-driven, an exponential approach toward a *target* velocity) rather than added into them:
   folding an impulse into that model would have it absorbed or fought by whatever the player is
   pressing within a frame or two, which isn't how vanilla's momentum-based movement behaves.
-  `knockVelX`/`knockVelY` get their own `slideMove` call and their own `FRICTION` decay, run as an
+  `momX`/`momY` get their own `slideMove` call and their own `FRICTION` decay, run as an
   additional displacement right after the ordinary movement block — still sliding along walls rather
   than stopping dead, since the player is the one thing in vanilla that always gets `P_SlideMove`
   regardless of what set its momentum in motion.
+
+### Friction
+
+Boom's linedef 223 gives a sector a friction other than vanilla's 0.90625 — ice or mud. The scan
+and the per-sector arrays are docs/specials.md § Friction; what reaches *movement* is
+`FrictionEffect`, three numbers `specials/forces.ts: frictionUnder` hands `Player.update` for
+whatever floor the player is standing on. On any floor with no 223 line it is `NO_FRICTION`,
+`{0.90625, 1, 1}` — one declaration in `specials/defs.ts` serving as both `frictionUnder`'s
+no-op return and `Player.update`'s default, so "every existing map moves bit-identically to before
+the system existed" is an identity rather than two literals kept in step.
+
+The awkward part is that this engine's input model is **not** vanilla's. Vanilla thrusts
+`forwardmove × movefactor` into momentum every tic and lets friction decay it, settling at
+`thrust/(1 − f)`; `Player.update` instead approaches a target velocity exponentially
+(`ACCELERATION`), and that target *is* its terminal speed. So the two things a friction sector
+changes are mapped onto the two knobs that mean the same things:
+
+- **`targetScale`** is the ratio of the two vanilla terminal speeds — this sector's
+  `movefactor/(1 − friction)` over a normal floor's `2048/(1 − 0.90625)`. Applied to the target
+  velocity, it reproduces exactly how much faster or slower the sector lets you end up going.
+- **`accelScale`** is `ln(friction)/ln(0.90625)`. A per-tic decay of `f` is a continuous rate of
+  `−ln(f)·35`, so this is that rate over the normal floor's, and it makes the *ramp* as long as
+  vanilla's is on that surface. Ice is the whole point of this one: `~0.28×` the approach rate, which
+  is what "slippery" actually feels like.
+- **`friction`** itself is used unchanged as the external momentum channel's per-tic decay, so a
+  knockback or a conveyor slides much further across ice.
+
+Worked out for the two ends of the dial: an icy sector (friction 0.973, movefactor 631) gives a 5%
+higher top speed reached 3.5× more slowly; a muddy one (friction 0.875, movefactor 95, boosted) gives
+28% of the speed, reached faster. Mud's boost is vanilla's own `P_GetMoveFactor` step function —
+`movefactor` doubles, quadruples, then octuples as momentum passes 8, 16 and 32 units/sec, "you start
+off slowly, then increase as you get better footing". Those thresholds are so low against walking
+speed (250-500) that anything actually moving sits in the top step.
+
+**Only the player is affected.** Monster walking is direct AI displacement, and it is in vanilla too
+(`A_Chase` moves by `P_TryMove`, never through momentum), so friction correctly does not slow a
+monster down — it only changes how far a monster's *knockback* slides.
+
+The alternative considered and rejected was replacing the exponential model with a true vanilla
+momentum channel. It would match vanilla everywhere rather than only at the terminal speed, but it
+changes the base feel of the whole game (a ramp rate of ~3.44/s against the tuned 12/s), which is a
+much larger change than Boom compatibility asks for.
+
+### World forces
+
+`Player.applyForce` and the `carry` callback `ThingLayer.update` takes push onto that same channel,
+once per tic, from `specials/forces.ts`. Sustained against the channel's own friction decay this
+lands on vanilla's exact equilibrium — an impulse `a` per tic against a per-tic multiplier `f`
+settles at `v* = a·f/(1−f)`, which is what `T_Scroll` produces too — and it is *exact* rather than
+approximate only because the simulation runs a fixed tic (docs/frameloop.md § What runs in a tic).
+
+Two details that are not shared with knockback:
+
+- **The stop-speed snap is suspended while a force is feeding the channel.** A slow belt's
+  equilibrium can sit under `MOMENTUM_STOP_SPEED` (1 u/s), and snapping to zero every tic would
+  stall it outright instead of letting it creep. `Player.forced` is that one-tic flag; a knockback,
+  which nothing sustains, still ends exactly as it always did.
+- **Monsters are carried but not slowed.** A conveyor moves any non-flying body standing on it —
+  monsters, barrels, decorations and corpses alike, since `P_KillMobj` strips `MF_NOGRAVITY` from
+  what it kills — because `sc_carry` moves every mobj in the sector, and a thing it carries fires
+  walk lines exactly as a monster's own step does (docs/specials.md § Scrollers and conveyors).
+  Monster *walking* is unaffected by sector friction — that is vanilla too, since `A_Chase` moves by
+  `P_TryMove` rather than by momentum.
+
+**`PlayerSnapshot` still names the pair `knockVelX`/`knockVelY`.** That is the saved wire format from
+before the channel widened past knockback, and renaming it would orphan every existing save
+(docs/savegames.md § The format and its version); `Player.snapshot`/`restore` map the two names.

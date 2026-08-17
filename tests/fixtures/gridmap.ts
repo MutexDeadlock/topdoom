@@ -273,3 +273,24 @@ export function thingAt(
   const p = grid.centre(col, row);
   return { x: p.x, y: p.y, angle, type, flags: 7 };
 }
+
+/**
+ * A Boom parameter line (a scroller, a conveyor, friction, a pusher) placed
+ * **outside** the playfield, so it configures its tagged sectors without
+ * becoming geometry any body can touch. Its length and direction are the dial
+ * every one of those specials reads, hence `dx`/`dy` rather than a speed.
+ *
+ * Append before building the `World`, so the two agree how many linedefs exist.
+ */
+export function addControlLine(
+  map: DoomMap,
+  dx: number,
+  dy: number,
+  special: number,
+  tag: number,
+): void {
+  const v = map.vertexes.length;
+  map.vertexes.push({ x: -4096, y: -4096 }, { x: -4096 + dx, y: -4096 + dy });
+  const side = map.sidedefs.push({ xOffset: 0, yOffset: 0, upper: '-', lower: '-', middle: '-', sector: 0 }) - 1;
+  map.linedefs.push({ v1: v, v2: v + 1, flags: 0, special, tag, right: side, left: NO_SIDE });
+}

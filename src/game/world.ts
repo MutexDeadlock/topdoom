@@ -438,6 +438,48 @@ export class World {
     return this.map.sectors[this.sectorIndexAt(x, y)];
   }
 
+  /**
+   * Every sector a body of this radius overlaps, centre sector first — vanilla's
+   * `touching_sectorlist` (`P_CreateSecNodeList`/`PIT_GetSectors`), filtered by
+   * the same two tests: the box must overlap the line's bounding box, and must
+   * not lie wholly on one side of it. Both of a crossed line's sectors count.
+   *
+   * The point queries beside this one answer for the centre alone, which is
+   * wrong for anything a body can straddle — a conveyor's edge, an ice patch
+   * half underfoot. Written into the caller's `out` (cleared first) and
+   * returned, so the per-tic force queries don't allocate a fresh array each
+   * time. See docs/world.md § Sectors under a body.
+   */
+  sectorsTouching(x: number, y: number, radius: number, out: number[]): number[] {
+    out.length = 0;
+    out.push(this.sectorIndexAt(x, y));
+    const left = x - radius;
+    const right = x + radius;
+    const bottom = y - radius;
+    const top = y + radius;
+    // The `+ 1` is broadphase slop only, as in `checkPosition`.
+    for (const i of this.linesNear(x, y, radius + 1)) {
+      if (!this.boxOverlapsLine(left, bottom, right, top, i)) continue;
+      if (this.boxOnLineSide(left, bottom, right, top, i) !== -1) continue;
+      const line = this.map.linedefs[i];
+      // Both sides written out rather than looped over a `[right, left]` pair:
+      // that pair would be a fresh array per candidate line, in the method whose
+      // whole point is not to allocate per tic per body.
+      this.addTouchedSector(out, line.right);
+      this.addTouchedSector(out, line.left);
+    }
+    return out;
+  }
+
+  /** `sectorsTouching`'s accumulator: the sector behind one sidedef, if it isn't already listed. */
+  private addTouchedSector(out: number[], side: number): void {
+    if (side === NO_SIDE) return;
+    const sector = this.map.sidedefs[side]?.sector;
+    // Linear scan rather than a Set: this list is a handful of entries long
+    // even on the worst geometry, and it runs every tic per body.
+    if (sector !== undefined && !out.includes(sector)) out.push(sector);
+  }
+
   floorAt(x: number, y: number): number {
     return this.sectorAt(x, y)?.floorHeight ?? 0;
   }

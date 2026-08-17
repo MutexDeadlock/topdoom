@@ -439,38 +439,27 @@ export const SUIT_LEAK_CHANCE = 5 / 256;
 export const DAMAGE_FLOOR_INTERVAL = 32 * DOOM_TIC;
 
 /**
- * Vanilla's `P_UpdateSpecials`: scrolls the line's *front* sidedef texture
- * offset forever — no trigger, no tag. Purely cosmetic, so unlike everything
- * else here it bypasses `SpecialsController` entirely (`TextureScroller`).
- * docs/render.md § Scrolling textures.
- */
-export const SCROLL_LINE_SPECIAL = 48;
-export const SCROLL_SPEED = 35;
-
-/**
  * Boom's parameter lines: specials consumed once at level spawn
  * (`P_SpawnSpecials`) to configure a permanent per-line/per-sector behavior —
  * scrollers, friction, pushers, property transfers — rather than dispatched
- * from a trigger. `lookupSpecial` deliberately returns `null` for these;
- * listing them keeps "known, handled elsewhere (or not yet)" distinguishable
- * from "unknown number" (the inspect-wad coverage report reads this set).
- * Vanilla 48 is implemented (`TextureScroller`); the Boom numbers here are
- * Phase 3/4 scope — scrollers (85, 214-218, 245-255), friction (223),
- * pushers (224-226), transfers (213, 242, 261) and translucency (260).
+ * from a trigger. `lookupSpecial` deliberately returns `null` for all of them:
+ * they are `specials/forces.ts`'s, not the trigger funnel's. Listing them here
+ * is what lets the inspect-wad coverage report tell "handled elsewhere" from
+ * "unknown number".
+ *
+ * Everything in this set is implemented. The parameter numbers that are *not*
+ * are in `DEFERRED_LINE_SPECIALS` below.
+ * docs/specials.md § Scrollers and conveyors, § Friction, § Pushers.
  */
 export const PARAM_LINE_SPECIALS: Set<number> = new Set([
-  SCROLL_LINE_SPECIAL,
+  48, // scroll wall left — vanilla's own, and Boom's `Add_Scroller(sc_side, FRACUNIT, 0)`
   85, // scroll wall right
-  213, // transfer floor light
   214, 215, 216, 217, 218, // accelerative scrollers
   223, // friction
   224, 225, 226, // wind, current, point pusher
-  242, // transfer heights (deep water)
   245, 246, 247, 248, 249, // displacement scrollers
   250, 251, 252, 253, // scroll ceiling/floor/carry
   254, 255, // wall scrollers (line vector / sidedef offsets)
-  260, // translucent midtexture
-  261, // transfer ceiling light
 ]);
 
 /**
@@ -645,12 +634,17 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
  * null for them like any unknown number; this set exists so the inspect-wad
  * coverage report can call them "deferred" instead of "unknown".
  *
- * Empty as of Phase 2 — every Boom number that is a triggerable linedef
- * effect now resolves. What is left outside the tables is `PARAM_LINE_SPECIALS`
- * (the always-on level-spawn parameters), which is a different thing, not a
- * gap. docs/specials.md § Scope.
+ * Every triggerable linedef effect resolves, and so does every parameter line
+ * that changes how things *move*. What is left is the four render transfers —
+ * a sector drawing another's lighting or heights, and translucent midtextures.
+ * docs/specials.md § Scope.
  */
-export const DEFERRED_LINE_SPECIALS: Set<number> = new Set<number>();
+export const DEFERRED_LINE_SPECIALS: Set<number> = new Set<number>([
+  213, // transfer floor light
+  242, // transfer heights (deep water)
+  260, // translucent midtexture
+  261, // transfer ceiling light
+]);
 
 /**
  * Decoded generalized defs, one per distinct number per session — the decode

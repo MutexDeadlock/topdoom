@@ -2142,11 +2142,11 @@ export class SpecialsController {
       // rather than at the end of the method: this branch returns early, and
       // `P_UseSpecialLine` flips inside `if (EV_…)`, i.e. only on success.
       if (gated) this.flashSwitch(lineIndex, def.repeatable);
-      // A monster's teleport is the caller's to perform, and must *not* touch
-      // `lastTeleport` — that exists solely to reseed the player's own
-      // walk-trigger tracking (see its doc); where a monster jumped to says
-      // nothing about where the player just walked.
-      if (activator === 'monster') return dest;
+      // A monster's or voodoo doll's teleport is the caller's to perform, and
+      // must *not* touch `lastTeleport` — that exists solely to reseed the
+      // player's own walk-trigger tracking (see its doc); where another body
+      // jumped to says nothing about where the player just walked.
+      if (activator !== 'player') return dest;
       this.lastTeleport = dest;
       this.onTeleport(dest);
       return null;
@@ -2243,12 +2243,21 @@ export class SpecialsController {
   }
 
   /**
+   * `crossMonster`'s voodoo-doll twin: whatever walk lines the doll was carried
+   * across this tic fire as though the player had walked them — same keys, same
+   * lines — but the landing spot of a teleport comes back for the caller to
+   * move the *doll*, not the player. See docs/specials.md § Voodoo dolls.
+   */
+  crossVoodoo(prev: Pos2, pos: Placement, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
+    return this.crossLines(prev.x, prev.y, pos.x, pos.y, 'voodoo', ownedKeys, pos.angle);
+  }
+
+  /**
    * The one walk-trigger scan every activator goes through: whatever walk
    * lines lie between `(prevX, prevY)` and `(x, y)` fire, gated per activator
    * (`SpecialDef.monsterActivate` for monsters). Returns the landing spot if a
-   * crossing teleported the activator — a monster's move is the caller's to
-   * apply — or null. Boom's voodoo dolls will run their conveyor crossings
-   * through here too.
+   * crossing teleported the activator — a monster's or voodoo doll's move is
+   * the caller's to apply — or null.
    *
    * `facing` is the activator's heading in radians, the one thing a silent
    * teleport needs from it that this scan can't derive; the *position* it

@@ -107,9 +107,23 @@ currently has flipped, restored as a plain Set since the map itself is never mut
 per-sector mover slots Boom keeps apart. **That one is read back by `mover.kind`, not by which
 field it arrived in**: a save written before the split holds every kind in `movers`, so sorting on
 restore covers both shapes without a bump (docs/specials.md § One mover per sector)),
-secrets found + damage-floor timer, fog of war's `explored`, sound-alerted
-sectors, every thing, the Icon of Sin, projectiles in flight, level time, camera yaw,
+secrets found + damage-floor timer (with the optional `dollTimer` beside it, the voodoo dolls'
+own countdown), fog of war's `explored`, sound-alerted
+sectors, every thing, the Icon of Sin, projectiles in flight, the optional `voodoo` block — where
+each of the level's dolls has been carried to and the momentum it is carrying, absent in any save
+from before dolls existed, which leaves them standing on their own player starts exactly as a fresh
+load does (docs/specials.md § Voodoo dolls) — level time, camera yaw,
 `recordsEligible` (so a `?pos=` run can't launder eligibility through a save), and the RNG cursors.
+
+**The player's external momentum is still stored as `knockVelX`/`knockVelY`.** That channel widened
+past knockback into the general one conveyors and pushers feed (`Player.momX`/`momY`,
+docs/movement.md § External momentum), and the wire names were deliberately left alone: renaming
+them would orphan every existing save for a field whose meaning only grew.
+
+**Scroller state is deliberately not saved.** A plain scroller's offset is presentation — where a
+waterfall's texture happens to be — and an accelerative or displacement one rebuilds its rate from
+the control sector the next time that sector moves. What a restore loses is the phase of a
+scrolling texture and an accelerative scroller's built-up speed, and both are visual.
 
 Deliberately not saved, each a sub-second transient whose absence on restore is invisible or
 nearly so:

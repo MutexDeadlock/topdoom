@@ -79,6 +79,41 @@ export const DOOR_RAISE_WAIT_SECONDS = 5 * 60;
 export const SWITCH_FLASH_SECONDS = 35 * DOOM_TIC;
 
 /**
+ * `doomdef.h`'s `ORIG_FRICTION` (`0xE800`): vanilla's own per-tic momentum
+ * multiplier, the value a floor with no Boom 223 line still decays by — and the
+ * same number `game/things.ts` cites for its own knockback decay.
+ */
+export const ORIG_FRICTION = 0xe800 / 0x10000;
+
+/**
+ * What the floor under a body does to its movement, already converted out of
+ * Boom's fixed-point `friction`/`movefactor` pair into this engine's own
+ * movement model — produced by `specials/forces.ts: frictionUnder`, consumed by
+ * `game/player.ts: update`.
+ *
+ * `friction` is the per-tic momentum multiplier, used directly. The other two
+ * translate vanilla's thrust-against-friction model onto the exponential
+ * approach `player.ts` actually runs on — see docs/movement.md § Friction for
+ * the derivation.
+ */
+export interface FrictionEffect {
+  friction: number;
+  /** Multiplier on the target velocity: vanilla's terminal speed here over vanilla's terminal speed on a normal floor. */
+  targetScale: number;
+  /** Multiplier on the approach rate, matching the time constant of vanilla's own decay here. */
+  accelScale: number;
+}
+
+/**
+ * The normal-floor answer: what `frictionUnder` returns where no 223 line
+ * applies and what `player.update` assumes when no caller names a floor. One
+ * declaration for both, so "a map without a friction line moves exactly as it
+ * did before friction existed" is an identity rather than two literals kept in
+ * step. Never mutated.
+ */
+export const NO_FRICTION: Readonly<FrictionEffect> = { friction: ORIG_FRICTION, targetScale: 1, accelScale: 1 };
+
+/**
  * Vanilla switch textures always come in SW1xxxx/SW2xxxx pairs sharing a
  * suffix (e.g. SW1BRCOM/SW2BRCOM) — no exceptions in the stock IWADs, so this
  * is derived from the naming convention rather than a hardcoded pair list
@@ -512,10 +547,21 @@ export type LockRule =
  * Who is activating a line. Distinct from `SpecialDef.monsterCanTrigger`/
  * `monsterActivate`, which say who a *number* admits — this says who is at the
  * line right now, so `trigger` can gate and route (a monster's teleport is
- * returned to the caller, the player's goes through `onTeleport`). Boom's
- * voodoo dolls will join as a third member when conveyors land.
+ * returned to the caller, the player's goes through `onTeleport`).
+ *
+ * **`'monster'` means "any non-player body"**, which is `P_CrossSpecialLine`'s
+ * own distinction — its allow-list branch is `if (!thing->player)` and excludes
+ * only projectiles, so a barrel or a decoration a conveyor carried over a line
+ * activates exactly what a monster would. The name follows Boom's own "monster
+ * only" numbering, which means the same thing.
+ *
+ * A **voodoo doll** gates like the player it is a copy of — same keys, same
+ * lines, and it is not a monster for any monster-only number — but its teleport
+ * destination comes back to the caller the way a monster's does, since the doll
+ * moves rather than the player. It also raises no HUD feedback: a doll bumping a
+ * locked door must not print "you need the blue key". docs/specials.md § Voodoo dolls.
  */
-export type Activator = 'player' | 'monster';
+export type Activator = 'player' | 'monster' | 'voodoo';
 
 export interface SpecialDef {
   trigger: 'use' | 'walk' | 'shoot';

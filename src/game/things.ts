@@ -784,6 +784,70 @@ export function buildThingSprites(
   }
 
   /**
+   * Puts a thing down where a walk-line teleport sent it. Momentum follows
+   * vanilla's two arrivals: `P_Teleport` zeroes it outright, while a silent one
+   * rotates it by the same angle the body turned (`TeleportDest.rotateBy`) — the
+   * difference between a conveyor's cargo stopping dead on arrival and coming
+   * out of the far end still moving. docs/specials.md § Silent and line-to-line
+   * teleporters.
+   */
+  function arriveAt(p: PosedThing, dest: TeleportDest): void {
+    p.x = dest.x;
+    p.y = dest.y;
+    p.angle = dest.angle;
+    p.velZ = 0;
+    if (dest.rotateBy === undefined) {
+      p.velX = 0;
+      p.velY = 0;
+    } else {
+      const cos = Math.cos(dest.rotateBy);
+      const sin = Math.sin(dest.rotateBy);
+      const vx = p.velX;
+      const vy = p.velY;
+      p.velX = vx * cos - vy * sin;
+      p.velY = vx * sin + vy * cos;
+    }
+    // Collapse the interpolation window onto the arrival point, or the render
+    // layer draws the thing gliding across the whole map over one tic instead
+    // of appearing at the far end. docs/frameloop.md § Interpolation.
+    p.drawPrevX = p.x;
+    p.drawPrevY = p.y;
+    p.drawPrevZ = p.z;
+    // Re-route from scratch: the heading it had is meaningless on the far side
+    // of the map. Inert for anything without AI.
+    p.movedir = DI_NODIR;
+    p.movecount = 0;
+  }
+
+  /** Reused by `crossAfterPush`, which runs for every pushed thing every tic. */
+  const pushedFrom: Pos2 = { x: 0, y: 0 };
+
+  /**
+   * The walk lines a thing crossed while the *world* moved it — a conveyor's
+   * carry, or a knockback — as opposed to walking there itself.
+   *
+   * `P_CrossSpecialLine` fires for **every** non-player mobj that moves, not
+   * just monsters: its only exclusions are the six projectile types (which are
+   * not `PosedThing`s here at all — game/projectiles.ts owns those), and the
+   * "monster only" numbers mean "not the player" rather than "monsters only".
+   * So a barrel or a decoration riding a Boom conveyor over a line teleporter
+   * really does teleport, which is exactly what BOOMEDIT's 252/253 and 216/217
+   * belts are built to demonstrate. docs/specials.md § Scrollers and conveyors.
+   */
+  function crossAfterPush(
+    p: PosedThing,
+    fromX: number,
+    fromY: number,
+    cross: ((prev: Pos2, mover: CrossingBody) => TeleportDest | null) | undefined,
+  ): void {
+    if (!cross || (p.x === fromX && p.y === fromY)) return;
+    pushedFrom.x = fromX;
+    pushedFrom.y = fromY;
+    const dest = cross(pushedFrom, p);
+    if (dest) arriveAt(p, dest);
+  }
+
+  /**
    * Re-derives the sector fields a thing that moved is now standing in. One BSP
    * descent for both: `sectorAt` would walk the tree a second time to reach the
    * sector this subsector already names.
@@ -1026,6 +1090,7 @@ export function buildThingSprites(
       player: Pos3 | null,
       fogVisible?: (subsector: number) => boolean,
       crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null,
+      carry?: (pos: Pos3, radius: number) => { readonly x: number; readonly y: number } | null,
     ): ThingUpdateResult {
       const attacks: MonsterAttackEvent[] = [];
       const barrelExplosions: BarrelExplosion[] = [];
@@ -1116,6 +1181,20 @@ export function buildThingSprites(
         // whether it actually stepped this frame.
         let animating = !MONSTER_TYPES.has(p.type);
         const stats = !p.dead ? monsterStats[p.type] : undefined;
+        // A conveyor under this thing feeds the same momentum channel a hit's
+        // knockback does, so the integration below carries it for free —
+        // `T_Scroll`'s `sc_carry` moves every mobj standing on the belt, not
+        // just the player. Only fliers are exempt (`MF_NOGRAVITY`); a corpse is
+        // not, since `P_KillMobj` strips that flag from everything it kills.
+        // A body still falling isn't carried either, but that gate belongs to
+        // the sector's own floor height and lives in `carryForBody`.
+        if (carry && !stats?.flies) {
+          const impulse = carry(p, p.blockRadius);
+          if (impulse) {
+            p.velX += impulse.x;
+            p.velY += impulse.y;
+          }
+        }
         if (stats) {
           // Only the wake check itself needs a living player — vanilla's
           // `P_LookForPlayers` (which `A_Look`/idle monsters call) explicitly
@@ -1189,23 +1268,7 @@ export function buildThingSprites(
               // and the handful of doors/lifts vanilla lets a monster open).
               // A teleport can still come back empty-handed — docs/death.md § Telefrag.
               const dest = crossLines?.(p.prev, p);
-              if (dest) {
-                p.x = dest.x;
-                p.y = dest.y;
-                p.angle = dest.angle;
-                p.velZ = 0;
-                // Collapse the interpolation window onto the arrival point, or
-                // the render layer draws the monster gliding across the whole
-                // map over one tic instead of appearing at the far end.
-                // docs/frameloop.md § Interpolation.
-                p.drawPrevX = p.x;
-                p.drawPrevY = p.y;
-                p.drawPrevZ = p.z;
-                // Re-route from scratch: the heading it had is meaningless on
-                // the far side of the map.
-                p.movedir = DI_NODIR;
-                p.movecount = 0;
-              }
+              if (dest) arriveAt(p, dest);
               p.prev.x = p.x;
               p.prev.y = p.y;
               refreshSector(p);
@@ -1272,7 +1335,10 @@ export function buildThingSprites(
             // Unlike the alerted branch, nothing below re-derives the sector it
             // was shoved into, and the wake check answers from `subsector`.
             if (p.velX !== 0 || p.velY !== 0) {
+              const fromX = p.x;
+              const fromY = p.y;
               applyKnockback(p, dt);
+              crossAfterPush(p, fromX, fromY, crossLines);
               refreshSector(p);
             }
           }
@@ -1288,11 +1354,15 @@ export function buildThingSprites(
             p.z = p.sector?.floorHeight ?? p.z;
           }
           // Barrels have no AI movement of their own, so this is their only
-          // source of horizontal motion; a freshly-dead monster (stats
-          // undefined above) lands here too, finishing off whatever knockback
-          // it had at the moment it died.
-          if (!p.dead && (p.velX !== 0 || p.velY !== 0)) {
+          // source of horizontal motion; a corpse (stats undefined above) lands
+          // here too, finishing off whatever knockback it had at the moment it
+          // died and riding whatever conveyor it fell onto —
+          // docs/movement.md § Knockback.
+          if (p.velX !== 0 || p.velY !== 0) {
+            const fromX = p.x;
+            const fromY = p.y;
             applyKnockback(p, dt);
+            crossAfterPush(p, fromX, fromY, crossLines);
             refreshSector(p);
           }
         }

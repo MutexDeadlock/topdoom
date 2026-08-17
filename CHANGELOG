@@ -8,10 +8,21 @@ Features and improvements
     - a WAD's own ANIMATED and SWITCHES tables are used when it ships them
     - a sector can now run a floor and a ceiling special at the same time,
       as BOOM does
+    - scrolling walls, floors and ceilings, including the ones a moving
+      sector drives or accelerates
+    - conveyor belts, which carry the player, monsters, barrels, props and
+      corpses — and whatever they push over a teleporter is teleported by it
+    - icy and muddy floors: friction changes how you accelerate and how
+      fast you end up going, and how far a hit slides you
+    - wind, currents and point pushers that shove or pull you across a room
+    - voodoo dolls — a map's extra player starts now walk lines and take
+      damage on your behalf, so conveyor-driven scripts run
 
 Fixed bugs
   - fixed long cracks in the floor around very short walls, which could open a
     room onto whatever lay below it
+  - a monster killed mid-knockback now slides to a stop instead of freezing 
+    where it died
 
 
 

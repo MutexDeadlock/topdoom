@@ -38,6 +38,13 @@ export class SectorEffects {
    * from a stale visit.
    */
   private timer = DAMAGE_FLOOR_INTERVAL;
+  /**
+   * The same countdown for the voodoo dolls, kept apart from the player's so
+   * one body standing on lava can't reset the other's grace period. Shared by
+   * every doll rather than one each, which is closer to vanilla's own global
+   * `leveltime & 0x1f` pulse than per-body clocks would be.
+   */
+  private dollTimer = DAMAGE_FLOOR_INTERVAL;
 
   constructor(map: DoomMap) {
     // Vanilla P_SpawnSpecials' `case 9: totalsecret++`, plus Boom's SECRET_MASK count.
@@ -55,11 +62,49 @@ export class SectorEffects {
   restore(s: SectorEffectsSnapshot): void {
     this.secretsFound = s.secretsFound;
     this.timer = s.timer;
+    // Optional per the no-`SAVE_VERSION`-bump rule: a save from before voodoo
+    // dolls existed restores the dolls' clock to a full fresh interval, which is
+    // what a level load gives them anyway.
+    this.dollTimer = s.dollTimer ?? DAMAGE_FLOOR_INTERVAL;
   }
 
   /** The counterpart snapshot — docs/savegames.md § What is saved and what is deliberately not. */
   snapshot(): SectorEffectsSnapshot {
-    return { secretsFound: this.secretsFound, timer: this.timer };
+    return { secretsFound: this.secretsFound, timer: this.timer, dollTimer: this.dollTimer };
+  }
+
+  /**
+   * The damage half of `P_PlayerInSpecialSector` for the voodoo dolls: every
+   * doll standing on a damage floor hurts the real player, on the shared
+   * `dollTimer` pulse. Deliberately only the damage: a secret belongs to
+   * whoever walked into it, and an `exitBelowHealth` floor ends the level for
+   * the player who is dying on it. docs/specials.md § Voodoo dolls.
+   */
+  private updateDolls(
+    dt: number,
+    world: World,
+    dolls: readonly Pos3[],
+    inv: Inventory,
+    damage: (amount: number) => void,
+  ): void {
+    if (dolls.length === 0) return;
+    const effects: DamageFloorEffect[] = [];
+    for (const doll of dolls) {
+      const sector = world.sectorAt(doll.x, doll.y);
+      if (!sector || doll.z !== sector.floorHeight) continue;
+      const effect = decodeSectorType(sector.special).damage;
+      if (effect) effects.push(effect);
+    }
+    if (effects.length === 0) {
+      this.dollTimer = DAMAGE_FLOOR_INTERVAL;
+      return;
+    }
+    this.dollTimer -= dt;
+    if (this.dollTimer > 0) return;
+    this.dollTimer += DAMAGE_FLOOR_INTERVAL;
+    for (const effect of effects) {
+      if (!suitBlocks(effect, inv)) damage(effect.amount);
+    }
   }
 
   /**
@@ -74,7 +119,16 @@ export class SectorEffects {
     player: Pos3,
     inv: Inventory,
     damage: (amount: number) => void,
+    /**
+     * The level's voodoo dolls. `P_PlayerInSpecialSector` runs per *player mobj*,
+     * so a doll parked on a damage floor bleeds the real player — the other half
+     * of the classic doll script beside the crusher. Only the damage half: a
+     * secret is the player's own to find, and vanilla's own `player->secretcount`
+     * belongs to whoever walked in. docs/specials.md § Voodoo dolls.
+     */
+    dolls: readonly Pos3[] = [],
   ): SectorEffectResult {
+    this.updateDolls(dt, world, dolls, inv, damage);
     const sector = world.sectorAt(player.x, player.y);
     if (!sector || player.z !== sector.floorHeight) {
       this.timer = DAMAGE_FLOOR_INTERVAL;

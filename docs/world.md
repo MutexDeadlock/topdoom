@@ -124,6 +124,24 @@ real sector, so the guard keeps that path from reading past the array. `sightRej
 use the accessor for exactly this reason: an out-of-range hint there must reject nothing rather than
 answer for sector 0's row, so it bounds-checks the table itself.
 
+## Sectors under a body
+
+`sectorsTouching(x, y, radius, out)` answers **every** sector a body of that radius overlaps, not
+just the one under its centre — vanilla's `touching_sectorlist`, built by `P_CreateSecNodeList` and
+`PIT_GetSectors`. It walks `linesNear` and keeps a line under exactly the two filters vanilla's own
+iterator applies: the body's box must overlap the line's bounding box, and `boxOnLineSide` must not
+put the box wholly on one side. Both sectors of a surviving line join the list, centre sector first.
+
+Every force that belongs to a *sector* rather than a point reads this (docs/specials.md § Friction,
+§ Scrollers and conveyors, § Pushers), and it exists because the centre-point answer is genuinely
+wrong for them: a player straddling the edge of a conveyor or an ice patch is standing on it in
+vanilla, and `sectorAt` alone would say they aren't. That is the same straddle rule `groundFloor`
+already follows for heights, arrived at from the other direction.
+
+The result is written into a caller-owned array so the per-tic queries reuse one; the membership
+check inside is a linear `includes` rather than a `Set`, since the list is a handful of entries even
+on pathological geometry.
+
 ## REJECT
 
 `hasLineOfSight` opens with vanilla's own first test in `P_CheckSight`: the WAD's REJECT matrix

@@ -65,6 +65,14 @@ The whole simulation, in the order it has always run — several orderings are l
 - the aim ray runs **before** `player.update`, so `player.angle` is this tic's.
 - `projectiles.update` runs **before** `effects.updateImpacts`, so an explosion spawned by an
   arrival this tic is drawn on the very next frame rather than one late.
+- `forces.tick` runs **after** the movers, since a displacement scroller's rate is the height change
+  its control sector just made this tic; the voodoo dolls run after *that*, so a conveyor's impulse
+  and the walk lines it pushes a doll across land in the same tic
+  (docs/specials.md § Scrollers and conveyors, § Voodoo dolls).
+
+Only the *visual* half of scrolling stays on the frame clock — `Forces.advanceOffsets`, drawn by
+`SurfaceScroller` — so a waterfall doesn't step at 35 Hz. Nothing the simulation reads is frame-paced;
+`Forces.tick` takes no delta at all.
 
 Also in the tic, and worth knowing because they look like presentation: the **camera**
 (docs/render.md § The camera is simulation state), the **fog-of-war reveal scan**

@@ -189,7 +189,7 @@ export interface WallOccluder {
   topH: number;
   /** Sector whose light level this quad was coloured from — for specials-driven relight. */
   sector: number;
-  /** Linedef this quad was built from — for `TextureScroller` (render/occlusion.ts) to find special-48's front side. */
+  /** Linedef this quad was built from — for `SurfaceScroller` (render/occlusion.ts) to find a scrolling line's front side. */
   line: number;
   /** True if this quad came from the linedef's front (right) sidedef — vanilla's `sidenum[0]`, the only side a scrolling special ever animates. */
   frontSide: boolean;
@@ -431,7 +431,7 @@ interface WallSpec {
   light: number;
   /** Sector whose light level `light` was read from — carried onto the occluder record. */
   sector: number;
-  /** Linedef this quad belongs to, and whether it's the front (right) side — carried onto the occluder record for `TextureScroller`. */
+  /** Linedef this quad belongs to, and whether it's the front (right) side — carried onto the occluder record for `SurfaceScroller`. */
   line: number;
   frontSide: boolean;
 }

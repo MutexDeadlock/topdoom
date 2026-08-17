@@ -121,6 +121,8 @@ export type SectorEntry = [number, SectorSnapshot];
 
 /** `SectorEffects`' own two counters; `totalSecrets` is re-counted from the map, not saved. */
 export interface SectorEffectsSnapshot {
+  /** The voodoo dolls' shared damage-floor countdown. Optional: absent is a save from before dolls existed. */
+  dollTimer?: number;
   secretsFound: number;
   timer: number;
 }
@@ -380,8 +382,25 @@ export interface GameSnapshot {
    * exactly what a save from before it restored to.
    */
   teleportFogs?: TeleportFogState[];
+  /**
+   * Where the level's voodoo dolls have been carried to, in map order. Optional
+   * because it was added without a `SAVE_VERSION` bump: absent means every doll
+   * is still standing on its own player start, which is exactly what a save
+   * from before dolls existed restored to.
+   */
+  voodoo?: VoodooSnapshot[];
   /** The two random-table cursors. Restored after every other step — docs/savegames.md § Apply order. */
   rng: { p: number; m: number };
+}
+
+/** One voodoo doll's mutable state — `game/voodoo.ts`. */
+export interface VoodooSnapshot {
+  x: number;
+  y: number;
+  z: number;
+  angle: number;
+  momX: number;
+  momY: number;
 }
 
 /**

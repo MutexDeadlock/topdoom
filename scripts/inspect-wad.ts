@@ -12,6 +12,8 @@ import { readAnimated } from '../src/wad/animated.ts';
 import { readSwitches } from '../src/wad/switches.ts';
 import { loadMap } from '../src/wad/map.ts';
 import { classifyLineSpecial, type SpecialClass } from '../src/game/specials/tables.ts';
+import { Forces } from '../src/game/specials/forces.ts';
+import { VoodooDolls } from '../src/game/voodoo.ts';
 import { decodeSectorType, sectorTypeUnderstood } from '../src/game/specials/sectortypes.ts';
 import { buildSubSectorPolys } from '../src/render/bsp.ts';
 import { World, positionBlocked } from '../src/game/world.ts';
@@ -157,6 +159,18 @@ for (let i = 0; i < steps; i++) {
 }
 console.log(`  free directions at r=64: ${free}/${steps}`);
 
+// --- the always-on parameter lines: what `specials/forces.ts` found here ---
+{
+  const forces = new Forces(map, world);
+  const scrollers = forces.counts();
+  const dolls = new VoodooDolls(world).dolls.length;
+  console.log(
+    `forces: ${scrollers.side} wall + ${scrollers.floorTex} floor + ${scrollers.ceilTex} ceiling scrollers, ` +
+      `${scrollers.carry} conveyors, ${forces.frictionSectors} friction sectors, ${forces.pusherCount} pushers, ` +
+      `${dolls} voodoo doll${dolls === 1 ? '' : 's'}`,
+  );
+}
+
 // --- specials coverage: which linedef/sector special numbers this engine knows ---
 // The acceptance gate for the Boom work: a target map "loads fully" when
 // nothing lands in `unknown` (docs/specials.md § Scope).
@@ -168,7 +182,7 @@ console.log(`  free directions at r=64: ${free}/${steps}`);
     vanilla: 'vanilla',
     boom: 'boom',
     generalized: 'generalized',
-    param: 'param (later phase)',
+    param: 'param (spawn-time)',
     deferred: 'deferred (later phase)',
     unknown: 'UNKNOWN',
   };

@@ -170,6 +170,14 @@ Uniform cell heights also mean `hasLineOfSight`'s floor/ceiling sampling loop ne
 anything. A test meaning to exercise that half of the function must build a real step or low
 ceiling through the `heights` option, or it only looks like it covers it.
 
+### Control lines
+
+`addControlLine(map, dx, dy, special, tag)` appends a Boom parameter line — a scroller, a conveyor,
+a friction or a pusher line — **outside** the playfield, at `(-4096, -4096)`, so it configures its
+tagged sectors without becoming geometry any body can touch. Its `dx`/`dy` are the dial every one of
+those specials reads (length and direction, not a speed), which is why it takes a vector rather than
+a magnitude. Append it before building the `World`, so the two agree how many linedefs exist.
+
 ## The specials rig
 
 `tests/fixtures/specialsrig.ts` puts a real `SpecialsController` over a `gridMap` in one call —
@@ -312,6 +320,14 @@ Two things in it are load-bearing and easy to remove by accident:
 A test that drives a simulation system directly should step it at `DOOM_TIC`, since that is the only
 delta the engine ever passes. Several already did; `monster-flush-against-wall.test.ts` used `1/60`
 and was retimed.
+
+`scroll-frame-delta.test.ts` guards the same property from the other direction. `Forces`
+deliberately runs on **two** clocks — the fixed tic for anything the simulation reads, the frame
+delta for scrolling textures' visual offsets alone (docs/specials.md § Scrollers and conveyors) — and
+collapsing that into one "advance everything by `dt`" call is an easy accident that would make a
+conveyor's strength depend on the display. The tests pin that a conveyor impulse never moves however
+many frames are drawn, that a scroller's visual offset integrates identically at any step size, and
+that a negative first-frame delta leaves it finite (the same hazard as `animated-negative-dt`).
 
 ## Writing a new test
 

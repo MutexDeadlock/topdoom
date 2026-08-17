@@ -7,6 +7,7 @@ import type { Input } from './input.ts';
 import type { PlayerSnapshot } from './snapshot.ts';
 // Type-only, so the specials <-> player edge stays compile-time and no runtime cycle forms.
 import type { TeleportDest } from './specials.ts';
+import { NO_FRICTION, type FrictionEffect } from './specials/defs.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 
 /** Vanilla DOOM values, in map units. */
@@ -65,16 +66,8 @@ export const GRAVITY = 1600;
  */
 export const HARD_LANDING_SPEED = Math.sqrt(2 * GRAVITY * 32);
 
-/**
- * Vanilla's own per-tic XY friction, `FRICTION = 0xE800/0x10000` — see
- * `game/things.ts`'s identical constant (that file can't import this one
- * without a circular dependency, since `game/monsters/ai.ts` already imports
- * `GRAVITY` from here) for the full doc on why `applyKnockback` raises it to
- * the `dt*35` power rather than converting it to a continuous rate.
- */
-const FRICTION = 0.90625;
-/** Below this, `knockVelX`/`knockVelY` snap to exactly 0 rather than crawling on forever — see `game/things.ts`'s identical constant. */
-const KNOCKBACK_STOP_SPEED = 1;
+/** Below this, `momX`/`momY` snap to exactly 0 rather than crawling on forever — see `game/things.ts`'s identical constant, and `applyForce` for the one case exempt from it. `game/voodoo.ts` shares it, a doll's channel being a copy of this one. */
+export const MOMENTUM_STOP_SPEED = 1;
 
 const AUTORUN_STORAGE_KEY = 'topdoom.autorun';
 
@@ -110,22 +103,34 @@ export class Player implements Pos3 {
   /** Vertical velocity, map units/sec. Otherwise only ever negative — there's no jump input, only gravity once a step drops out from under the player — except `launchUpward`'s arch-vile knockback, the one thing that ever sets it positive. */
   private velZ = 0;
   /**
-   * Vanilla's `P_DamageMobj` horizontal knockback (`momx`/`momy`), map
-   * units/sec — kept entirely separate from `velX`/`velY` above rather than
-   * added into them, since those track the player's own held-key input via
-   * an exponential approach to a target velocity (`update`'s `k`), and
-   * folding a knockback impulse into that model would just have it absorbed
-   * or fought by whatever the player is currently pressing within a frame or
-   * two. This instead integrates and decays (`FRICTION`) on its own, as a
-   * displacement genuinely additive to ordinary movement — matching vanilla,
-   * where the momentum-driven and input-driven parts of a player's motion
-   * are two separate contributions summed into the same `momx`/`momy`, only
-   * split apart here because this engine's own input model isn't itself
-   * momentum-based (see `update`'s doc on why forward/side are targets, not
-   * thrusts).
+   * Vanilla's `momx`/`momy` for everything that is **not** the player's own
+   * held-key input, map units/sec: damage knockback (`P_DamageMobj`), and the
+   * forces the world applies — conveyors, wind and current
+   * (`applyForce`, docs/specials.md § Scrollers and conveyors).
+   *
+   * Kept entirely separate from `velX`/`velY` above rather than added into
+   * them, since those track held-key input via an exponential approach to a
+   * target velocity (`update`'s `k`), and folding an impulse into that model
+   * would just have it absorbed or fought by whatever the player is currently
+   * pressing within a frame or two. This instead integrates and decays
+   * (`ORIG_FRICTION`) on its own, as a displacement genuinely additive to ordinary
+   * movement — matching vanilla, where the momentum-driven and input-driven
+   * parts of a player's motion are two separate contributions summed into the
+   * same `momx`/`momy`, only split apart here because this engine's own input
+   * model isn't itself momentum-based (see `update`'s doc on why forward/side
+   * are targets, not thrusts).
+   *
+   * `PlayerSnapshot` still calls the pair `knockVelX`/`knockVelY`: that is the
+   * saved wire format from before the channel widened, and renaming it would
+   * orphan every existing save — docs/movement.md § External momentum.
    */
-  private knockVelX = 0;
-  private knockVelY = 0;
+  private momX = 0;
+  private momY = 0;
+  /**
+   * Whether a world force fed the channel this tic — see `applyForce`. Set by
+   * it, cleared at the end of `update`.
+   */
+  private forced = false;
   /**
    * How fast the player was falling (map units/sec, positive) at the moment
    * this frame's fall ended, or 0 if it didn't end in one. Vanilla's
@@ -172,8 +177,8 @@ export class Player implements Pos3 {
       velX: this.velX,
       velY: this.velY,
       velZ: this.velZ,
-      knockVelX: this.knockVelX,
-      knockVelY: this.knockVelY,
+      knockVelX: this.momX,
+      knockVelY: this.momY,
     };
   }
 
@@ -186,8 +191,8 @@ export class Player implements Pos3 {
     this.velX = s.velX;
     this.velY = s.velY;
     this.velZ = s.velZ;
-    this.knockVelX = s.knockVelX;
-    this.knockVelY = s.knockVelY;
+    this.momX = s.knockVelX;
+    this.momY = s.knockVelY;
     this.syncInterpolation();
   }
 
@@ -220,8 +225,8 @@ export class Player implements Pos3 {
     this.velX = 0;
     this.velY = 0;
     this.velZ = 0;
-    this.knockVelX = 0;
-    this.knockVelY = 0;
+    this.momX = 0;
+    this.momY = 0;
     this.z = this.world.groundFloor(pos.x, pos.y, PLAYER_RADIUS);
     this.syncInterpolation();
   }
@@ -248,8 +253,8 @@ export class Player implements Pos3 {
     const vx = this.velX;
     const vy = this.velY;
     const vz = this.velZ;
-    const kx = this.knockVelX;
-    const ky = this.knockVelY;
+    const kx = this.momX;
+    const ky = this.momY;
     const aboveFloor = this.z - this.world.groundFloor(this.x, this.y, PLAYER_RADIUS);
     this.moveTo(dest);
     if (dest.rotateBy !== undefined) {
@@ -258,8 +263,8 @@ export class Player implements Pos3 {
       this.velX = vx * cos - vy * sin;
       this.velY = vx * sin + vy * cos;
       this.velZ = vz;
-      this.knockVelX = kx * cos - ky * sin;
-      this.knockVelY = kx * sin + ky * cos;
+      this.momX = kx * cos - ky * sin;
+      this.momY = kx * sin + ky * cos;
     }
     // Unclamped, as in Boom: the offset is reapplied as measured. A body
     // resting on the ground has one of 0, so this is a no-op for every landing
@@ -287,15 +292,31 @@ export class Player implements Pos3 {
 
   /**
    * Vanilla's `P_DamageMobj` horizontal knockback: adds an impulse (`vx, vy`,
-   * already pointed away from whatever dealt the hit) onto
-   * `knockVelX`/`knockVelY` rather than setting them, so a quick follow-up hit
-   * stacks on top of a knockback still playing out instead of replacing it,
-   * matching vanilla's own `momx += ...`. `update` integrates and decays the
-   * result every frame.
+   * already pointed away from whatever dealt the hit) onto `momX`/`momY`
+   * rather than setting them, so a quick follow-up hit stacks on top of a
+   * knockback still playing out instead of replacing it, matching vanilla's own
+   * `momx += ...`. `update` integrates and decays the result every frame.
    */
   applyKnockback(vx: number, vy: number): void {
-    this.knockVelX += vx;
-    this.knockVelY += vy;
+    this.momX += vx;
+    this.momY += vy;
+  }
+
+  /**
+   * A world force — a conveyor's carry, wind, a current — pushed onto the same
+   * momentum channel, in map units/sec, **once per tic**. Sustained against the
+   * channel's own friction decay this settles at vanilla's own equilibrium
+   * (`v* = a·f/(1−f)`), which is exact rather than approximate because the
+   * simulation runs a fixed tic (docs/frameloop.md § What runs in a tic).
+   *
+   * Separate from `applyKnockback` only so the stop-speed snap can tell them
+   * apart: a slow belt's equilibrium can sit below `MOMENTUM_STOP_SPEED`, and
+   * snapping it to zero every tic would stall the belt outright. See `update`.
+   */
+  applyForce(vx: number, vy: number): void {
+    this.momX += vx;
+    this.momY += vy;
+    this.forced = true;
   }
 
   /**
@@ -340,6 +361,11 @@ export class Player implements Pos3 {
    * never renormalized**, which is the whole of vanilla's straferunning;
    * normalizing the input vector takes SR40 and SR50 away with it.
    * docs/movement.md § Movement speed and straferunning.
+   *
+   * `ground` is what the floor underfoot does to all of this — an icy or muddy
+   * Boom sector (`specials/forces.ts: frictionUnder`). Omitted, or on any floor
+   * with no friction line, it is the identity and every number below is exactly
+   * what it was before friction existed. docs/movement.md § Friction.
    */
   update(
     dt: number,
@@ -347,6 +373,7 @@ export class Player implements Pos3 {
     aim: Pos2 | null,
     forwardDeg: number,
     blockers?: readonly ThingBlocker[],
+    ground: Readonly<FrictionEffect> = NO_FRICTION,
   ): void {
     this.landingSpeed = 0;
     this.prevX = this.x;
@@ -371,11 +398,15 @@ export class Player implements Pos3 {
 
     const forwardRad = (forwardDeg * Math.PI) / 180;
     const rightRad = forwardRad - Math.PI / 2;
-    const targetX = side * Math.cos(rightRad) + forward * Math.cos(forwardRad);
-    const targetY = side * Math.sin(rightRad) + forward * Math.sin(forwardRad);
+    // The floor's own scale on the terminal speed: ice barely changes it, mud
+    // cuts it hard. Applied to the target rather than the thrust, since the
+    // target *is* this model's terminal speed.
+    const targetX = (side * Math.cos(rightRad) + forward * Math.cos(forwardRad)) * ground.targetScale;
+    const targetY = (side * Math.sin(rightRad) + forward * Math.sin(forwardRad)) * ground.targetScale;
 
     // Exponential approach gives DOOM-ish inertia without a full physics model.
-    const k = 1 - Math.exp(-ACCELERATION * dt);
+    // Ice stretches the ramp out, mud shortens it — see `ground`.
+    const k = 1 - Math.exp(-ACCELERATION * ground.accelScale * dt);
     this.velX += (targetX - this.velX) * k;
     this.velY += (targetY - this.velY) * k;
 
@@ -396,33 +427,44 @@ export class Player implements Pos3 {
       this.y = moved.y;
     }
 
-    // A knockback impulse (`applyKnockback`) is a fully separate displacement
-    // from the input-driven movement above — see `knockVelX`'s own doc for
-    // why the two aren't combined — but still slides along walls through the
-    // same `slideMove`, matching vanilla: the player always gets
-    // `P_SlideMove`, whether the momentum came from a hit or from the
-    // player's own thrust. Decayed by vanilla's real per-tic `FRICTION`
+    // The external momentum channel (`applyKnockback`, `applyForce`) is a fully
+    // separate displacement from the input-driven movement above — see `momX`'s
+    // own doc for why the two aren't combined — but still slides along walls
+    // through the same `slideMove`, matching vanilla: the player always gets
+    // `P_SlideMove`, whether the momentum came from a hit, a conveyor or the
+    // player's own thrust. Decayed by the floor's own per-tic friction (`ORIG_FRICTION` where no 223 line applies)
     // (`Math.pow` rather than a continuous-rate conversion, for the same
     // "survives conversion out of tics intact" reason `game/things.ts`'s
     // identical decay does), unlike `velX`/`velY`'s own feel-tuned
     // `ACCELERATION` model.
-    if (Math.abs(this.knockVelX) > KNOCKBACK_STOP_SPEED || Math.abs(this.knockVelY) > KNOCKBACK_STOP_SPEED) {
-      const moved = slideMove(this.world, this, this.knockVelX * dt, this.knockVelY * dt, PLAYER_RADIUS, blockers);
+    //
+    // The stop-speed snap is skipped while a world force is feeding the channel
+    // (`forced`): a slow belt settles at an equilibrium that can sit below
+    // `MOMENTUM_STOP_SPEED`, and zeroing it every tic would stall the belt
+    // rather than let it creep. A knockback, which nothing sustains, still ends
+    // exactly as it always did.
+    if (this.forced || Math.abs(this.momX) > MOMENTUM_STOP_SPEED || Math.abs(this.momY) > MOMENTUM_STOP_SPEED) {
+      const moved = slideMove(this.world, this, this.momX * dt, this.momY * dt, PLAYER_RADIUS, blockers);
       if (dt > 0) {
-        this.knockVelX = (moved.x - this.x) / dt;
-        this.knockVelY = (moved.y - this.y) / dt;
+        this.momX = (moved.x - this.x) / dt;
+        this.momY = (moved.y - this.y) / dt;
       }
       this.x = moved.x;
       this.y = moved.y;
-      const decay = Math.pow(FRICTION, dt * 35);
-      this.knockVelX *= decay;
-      this.knockVelY *= decay;
-      if (Math.abs(this.knockVelX) < KNOCKBACK_STOP_SPEED) this.knockVelX = 0;
-      if (Math.abs(this.knockVelY) < KNOCKBACK_STOP_SPEED) this.knockVelY = 0;
+      const decay = Math.pow(ground.friction, dt * 35);
+      this.momX *= decay;
+      this.momY *= decay;
+      if (!this.forced) {
+        if (Math.abs(this.momX) < MOMENTUM_STOP_SPEED) this.momX = 0;
+        if (Math.abs(this.momY) < MOMENTUM_STOP_SPEED) this.momY = 0;
+      }
     } else {
-      this.knockVelX = 0;
-      this.knockVelY = 0;
+      this.momX = 0;
+      this.momY = 0;
     }
+    // Consumed: the next tic's forces have to announce themselves again, or a
+    // player who steps off a belt would keep its no-snap exemption forever.
+    this.forced = false;
 
     // groundFloor (not the bare sector floor) keeps the resting height pinned to
     // a ledge's high side for as long as the player's box still spans it,

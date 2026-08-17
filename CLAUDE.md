@@ -73,7 +73,8 @@ src/game/things/     the named doomednums every type-keyed table keys through (d
 src/game/specials/   the special record shapes + their speeds/waits (defs) and the vanilla
                linedef/sector numbers keyed onto them (tables), load-time map analysis (mapscan),
                mover meshes + relighting (movergeometry), mover obstruction + crush damage
-               (moverblocking), damage floors + secrets (sectoreffects)
+               (moverblocking), damage floors + secrets (sectoreffects), the always-on parameter
+               lines — scrollers, conveyors, friction, pushers (forces)
 src/game/spritefx/   the one-shot effect + projectile record shapes and their flight helpers
                (defs), the effects' sprite/sound/timing tables (tables)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,

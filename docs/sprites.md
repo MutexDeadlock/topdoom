@@ -47,7 +47,10 @@ resolving DOOM's `SSSSFR` / `SSSSFRfr` naming (a frame can list a second frame+r
 same lump, mirrored, is also that rotation" — the usual way DOOM halves the art needed for symmetric
 actors). `things/tables.ts` maps THING doomednums to their sprite name; a type absent from that table
 renders nothing, same as DOOM's own invisible spawn markers (player starts, deathmatch spots,
-teleport landings).
+teleport landings) and Boom's two point-pusher control things, 5001/5002 — those exist only as the
+source a type-226 line radiates its force from (docs/specials.md § Pushers), and a map's *extra*
+player starts exist only as voodoo dolls (docs/specials.md § Voodoo dolls), which are deliberately
+not drawn either.
 
 **The split between `render/sprites.ts` and `game/things.ts` follows the same rendering/game divide as
 the rest of the tree.** `render/sprites.ts` only knows how to turn a (sprite name, frame letter,

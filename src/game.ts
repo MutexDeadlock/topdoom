@@ -36,7 +36,7 @@ import {
 } from './game/things/tables.ts';
 import { thrustSpeed } from './game/monsters/defs.ts';
 import { MonsterAttacks } from './game/monsters/attacks.ts';
-import { collectFadeTargets, FlatFader, TextureScroller, WallFader } from './render/occlusion.ts';
+import { collectFadeTargets, FlatFader, SurfaceScroller, WallFader } from './render/occlusion.ts';
 import { World } from './game/world.ts';
 import { AIM_HEIGHT_OFFSET, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { applyBarrelExplosion, type CombatContext, type DamageCause } from './game/combat.ts';
@@ -52,6 +52,8 @@ import {
   type TeleportDest,
 } from './game/specials.ts';
 import { computeMovableSectors } from './game/specials/mapscan.ts';
+import { Forces } from './game/specials/forces.ts';
+import { VoodooDolls } from './game/voodoo.ts';
 import { readAnimated } from './wad/animated.ts';
 import { readSwitches, switchPairs, type SwitchPairLookup } from './wad/switches.ts';
 import { switchPairTexture } from './game/specials/defs.ts';
@@ -171,7 +173,13 @@ export class Game {
   private playerActor: SpriteActor;
   private wallFader!: WallFader;
   private flatFader!: FlatFader;
-  private textureScroller!: TextureScroller;
+  private surfaceScroller!: SurfaceScroller;
+  /** The level's always-on parameter lines — scrollers and conveyors (game/specials/forces.ts). */
+  private forces!: Forces;
+  /** Scratch for `Forces`' per-body sector walk, reused by every caller in a tic — see `World.sectorsTouching`. */
+  private touchedSectors: number[] = [];
+  /** The level's voodoo dolls, if it places any (game/voodoo.ts). */
+  private voodoo!: VoodooDolls;
   private animatedTextures!: AnimatedTextures;
   /** How a switch texture resolves to its opposite state — see the constructor. */
   private switchPairs: SwitchPairLookup;
@@ -533,6 +541,7 @@ export class Game {
         icon: this.icon!.snapshot(),
         projectiles: this.projectiles.snapshot(),
         teleportFogs: this.effects.snapshotTeleportFogs(),
+        voodoo: this.voodoo.snapshot(),
         rng: getRandomCursors(),
       },
     };
@@ -644,7 +653,19 @@ export class Game {
     this.scene.add(this.built.group);
     this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
     this.flatFader = new FlatFader(this.built.flatSurfaces, this.built.flatMeshes);
-    this.textureScroller = new TextureScroller(map, this.built.occluders, this.built.wallMeshes, this.materials);
+    this.forces = new Forces(map, this.world);
+    this.voodoo = new VoodooDolls(this.world);
+    // Absent in a save from before dolls existed, which leaves them on their own
+    // player starts — the same state a fresh load gives them.
+    this.voodoo.restore(restore?.voodoo);
+    this.surfaceScroller = new SurfaceScroller(
+      this.forces,
+      this.built.occluders,
+      this.built.wallMeshes,
+      this.built.flatSurfaces,
+      this.built.flatMeshes,
+      this.materials,
+    );
     this.player = new Player(this.world);
     if (restore) {
       // The saved position and camera replace both the map's own start and any
@@ -728,6 +749,8 @@ export class Game {
           // helpers take stay `(amount) => void` and bind it here instead.
           (amount) => this.damagePlayer(amount, undefined, undefined, 'crush'),
           dealDamage,
+          // A crusher over a voodoo doll kills the player it stands for.
+          this.voodoo.dolls,
         ),
       (sectorIndex, ceilingHeight) =>
         blocksCeilingLower(this.world, this.map, this.things, this.player, sectorIndex, ceilingHeight),
@@ -904,16 +927,19 @@ export class Game {
   }
 
   /**
-   * Runs the walk triggers a monster crossed this frame
-   * (`SpecialsController.crossMonster` — teleports plus the few door/lift
-   * types vanilla lets a monster activate). A teleport gets the same `TFOG`
-   * puff at both ends the player's own does; vanilla spawns it for any thing
-   * that teleports, not just the player.
+   * Runs the walk triggers **any non-player thing** crossed this tic
+   * (`SpecialsController.crossMonster` — teleports plus the few door/lift types
+   * vanilla lets one activate). Usually that is a monster walking, but a barrel
+   * or a decoration a conveyor carried counts too: `P_CrossSpecialLine` excludes
+   * only projectiles, and its "monster only" numbers mean "not the player"
+   * (docs/specials.md § Scrollers and conveyors). A teleport gets the same
+   * `TFOG` puff at both ends the player's own does; vanilla spawns it for any
+   * thing that teleports, not just the player.
    *
    * Returning null after a teleport *did* fire is `P_TeleportMove` refusing the
-   * landing, which leaves the monster where it stood — docs/death.md § Telefrag.
+   * landing, which leaves the thing where it stood — docs/death.md § Telefrag.
    */
-  private monsterCrossedLines(prev: Pos2, mover: CrossingBody): TeleportDest | null {
+  private thingCrossedLines(prev: Pos2, mover: CrossingBody): TeleportDest | null {
     const dest = this.specials?.crossMonster(prev, mover, this.inventory.keys);
     if (!dest) return null;
     if (!this.things?.telefragAt(dest, mover.blockRadius, this.monsterStomps, mover.id)) return null;
@@ -1204,9 +1230,19 @@ export class Game {
 
     // Runs before player.update so a lift/door the player is standing on has
     // already moved this tic by the time groundFloor is sampled below.
-    this.profiler.time('Specials', () =>
-      this.specials?.update(TIC_SECONDS, this.player.x, this.player.y, this.player.angle, input, this.inventory.keys),
-    );
+    this.profiler.time('Specials', () => {
+      this.specials?.update(TIC_SECONDS, this.player.x, this.player.y, this.player.angle, input, this.inventory.keys);
+      // After the movers, not before: a displacement scroller's rate is the
+      // height change its control sector just made this tic.
+      this.forces.tick();
+      // And the dolls after the forces that carry them, so a conveyor's
+      // impulse and the walk lines it pushes a doll across land in one tic.
+      if (!this.voodoo.empty) {
+        this.voodoo.update(TIC_SECONDS, this.forces, (prev, doll) =>
+          this.specials?.crossVoodoo(prev, doll, this.inventory.keys) ?? null,
+        );
+      }
+    });
     // The `oof` a refused keyed line already played is raised inside `specials`; the message that
     // says *which* key it wants is this layer's, since that controller has no HUD. `undefined`
     // (no level loaded) and `null` (nothing refused) are the same non-event here.
@@ -1319,8 +1355,37 @@ export class Game {
       const m = this.things?.pickMonster(ray, camera.viewerAngleDeg) ?? null;
       const onPlane = camera.pointerToPlane(input.pointer.x, input.pointer.y, this.player.z + AIM_HEIGHT_OFFSET);
       const at = m ?? onPlane;
+      // Whatever the world is pushing the player with this tic — a conveyor
+      // underfoot — onto the same momentum channel a hit's knockback uses.
+      // Applied before the move, as `T_Scroll` runs before `P_PlayerThink`.
+      const carry = this.forces.carryForBody(this.player, PLAYER_RADIUS, this.touchedSectors);
+      if (carry) this.player.applyForce(carry.x, carry.y);
+      // Wind, current and point pushers, which unlike a conveyor reach the
+      // player alone (`Forces.pushForBody`). "On the ground" is vanilla's
+      // `thing->z > thing->floorz` test, which `groundFloor` answers here — a
+      // full `checkPosition`, so it is only asked for where a pusher exists.
+      if (this.forces.pusherCount > 0) {
+        const onGround = this.player.z <= this.world.groundFloor(this.player.x, this.player.y, PLAYER_RADIUS);
+        const push = this.forces.pushForBody(this.player, PLAYER_RADIUS, onGround, this.touchedSectors);
+        if (push) this.player.applyForce(push.x, push.y);
+      }
+      // What the floor underfoot does to the player's own movement — ice, mud,
+      // or (on every map with no 223 line) nothing at all.
+      const ground = this.forces.frictionUnder(
+        this.player,
+        PLAYER_RADIUS,
+        Math.hypot(this.player.velX, this.player.velY),
+        this.touchedSectors,
+      );
       // Monsters are solid: the player walks around them, not through them.
-      this.player.update(dt, input, at, camera.viewerAngleDeg + 180, this.things?.solidBodies(this.player));
+      this.player.update(
+        dt,
+        input,
+        at,
+        camera.viewerAngleDeg + 180,
+        this.things?.solidBodies(this.player),
+        ground,
+      );
       return { monster: m, cursor: onPlane };
     });
 
@@ -1389,8 +1454,14 @@ export class Game {
       if (taken) this.audio.play(pickupSound(type));
       return taken;
     });
-    const sectorEffect = this.sectorEffects.update(dt, this.world, this.player, this.inventory, (amount) =>
-      this.damagePlayer(amount, undefined, undefined, 'slime'),
+    const sectorEffect = this.sectorEffects.update(
+      dt,
+      this.world,
+      this.player,
+      this.inventory,
+      (amount) => this.damagePlayer(amount, undefined, undefined, 'slime'),
+      // A doll standing on a damage floor bleeds the real player.
+      this.voodoo.dolls,
     );
     if (sectorEffect.secretFound) {
       this.message.show(SECRET_MESSAGE);
@@ -1465,7 +1536,8 @@ export class Game {
           dt,
           this.playerDead ? null : this.player,
           (subsector) => this.fogOfWar.isVisible(subsector),
-          (prev, mover) => this.monsterCrossedLines(prev, mover),
+          (prev, mover) => this.thingCrossedLines(prev, mover),
+          (pos, radius) => this.forces.carryForBody(pos, radius, this.touchedSectors),
         ) ?? { attacks: [], barrelExplosions: [] },
     );
     this.profiler.time('Monsters', () => {
@@ -1523,8 +1595,13 @@ export class Game {
       this.wallFader.commit((i) => fog.wallAlpha(i));
       this.flatFader.commit((i) => fog.alphaOf(i));
       // Independent of camera/player position — a scrolling wall animates
-      // whether or not it's currently faded or in view.
-      this.textureScroller.update(dt);
+      // whether or not it's currently faded or in view. The offsets advance on
+      // the frame clock (`Forces.advanceOffsets`) rather than the tic, so this
+      // stays as smooth as the rest of the presentation layer.
+      if (this.forces.hasScrollers) {
+        this.forces.advanceOffsets(dt);
+        this.surfaceScroller.update(this.forces);
+      }
       // Same independence, and session-scoped rather than per-map (see its
       // construction in the constructor) — an animated liquid/fire texture keeps
       // cycling across a level transition exactly as it does within one.

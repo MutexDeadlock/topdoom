@@ -306,6 +306,15 @@ export interface ThingLayer {
     player: Pos3 | null,
     fogVisible?: (subsector: number) => boolean,
     crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null,
+    /**
+     * This tic's conveyor impulse for a body of this radius standing at `pos`,
+     * map units/sec, or null where nothing carries it — `specials/forces.ts:
+     * Forces.carryForBody`. A callback rather than a `Forces` reference for the
+     * same reason `crossLines` is one: this layer owns bodies, not specials.
+     * The return is structural (and not `Pos2`, which is a position) so no
+     * import edge into `specials/` forms.
+     */
+    carry?: (pos: Pos3, radius: number) => { readonly x: number; readonly y: number } | null,
   ): ThingUpdateResult;
   /**
    * Fills the sprite batches from the state `update` left, with every position

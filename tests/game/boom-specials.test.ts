@@ -42,9 +42,11 @@ describe('specials · extended Boom table', () => {
     assert.equal(lookupSpecial(197)?.effect.kind, 'exit');
     assert.equal(lookupSpecial(207)?.effect.kind, 'teleport');
     assert.equal(lookupSpecial(211)?.effect.kind, 'lift');
-    // Nothing is deferred any more: every Boom triggerable number resolves.
-    // A number outside every table still comes back null.
-    assert.equal(DEFERRED_LINE_SPECIALS.size, 0);
+    // Every Boom *triggerable* number resolves; what is still deferred is the
+    // four render transfers, which are parameter lines rather than effects and
+    // which `lookupSpecial` is right to answer null for.
+    assert.deepEqual([...DEFERRED_LINE_SPECIALS].sort((a, b) => a - b), [213, 242, 260, 261]);
+    for (const n of DEFERRED_LINE_SPECIALS) assert.equal(lookupSpecial(n), null, `deferred ${n} resolves to nothing`);
     assert.equal(lookupSpecial(300), null, 'an unassigned number is still unknown');
   });
 });

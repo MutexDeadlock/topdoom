@@ -114,6 +114,11 @@ export function blocksFloorRise(
   sectorIndex: number,
   floorHeight: number,
 ): boolean {
+  // Voodoo dolls deliberately do **not** obstruct movers. Vanilla's
+  // `PIT_ChangeSector` would let one stall a rising floor, but a doll is parked
+  // by the mapper precisely where the script needs it and is usually meant to be
+  // crushed there — having it silently jam the level's own machinery is the
+  // worse failure. Crush *damage* still reaches it (`applyCrushDamage`).
   if (headroomBlocked(world, map, things, player, sectorIndex, floorHeight, map.sectors[sectorIndex].ceilHeight)) {
     return true;
   }
@@ -143,6 +148,8 @@ export function applyCrushDamage(
   sectorIndex: number,
   damagePlayer: (amount: number) => void,
   dealDamage: boolean,
+  /** The level's voodoo dolls: each is a player mobj, so a crusher catching one hurts the real player. */
+  dolls: readonly Pos2[] = [],
 ): boolean {
   const sector = map.sectors[sectorIndex];
   const gap = sector.ceilHeight - sector.floorHeight;
@@ -150,9 +157,20 @@ export function applyCrushDamage(
   // reported whether or not this tic is a damage tic, because the crusher
   // slowdown keys off it every tic — see `SpecialsController.tickCrush`.
   let caught = false;
-  if (gap < PLAYER_HEIGHT && world.sectorIndexAt(player.x, player.y) === sectorIndex) {
-    caught = true;
-    if (dealDamage) damagePlayer(CRUSH_DAMAGE);
+  if (gap < PLAYER_HEIGHT) {
+    // The doll and the player are the same mobj as far as `PIT_ChangeSector` is
+    // concerned — and a crusher over a doll is the classic instant-death script,
+    // so this is not an edge case. Damage is dealt once per body caught, exactly
+    // as vanilla's per-mobj loop does. docs/specials.md § Voodoo dolls.
+    for (const body of dolls) {
+      if (world.sectorIndexAt(body.x, body.y) !== sectorIndex) continue;
+      caught = true;
+      if (dealDamage) damagePlayer(CRUSH_DAMAGE);
+    }
+    if (world.sectorIndexAt(player.x, player.y) === sectorIndex) {
+      caught = true;
+      if (dealDamage) damagePlayer(CRUSH_DAMAGE);
+    }
   }
   if (gap < TALLEST_BODY_HEIGHT) {
     for (const m of things?.crushablesInSector(sector) ?? []) {

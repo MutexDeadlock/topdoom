@@ -332,27 +332,50 @@ quadrupling the sight-test area for three maps out of seventy-six, against the p
 
 ## Scrolling textures
 
-`SCROLL_LINE_SPECIAL` = 48 (`occlusion.ts: TextureScroller`) is vanilla's `P_UpdateSpecials`: a linedef
-with this special scrolls its front sidedef's texture 35 map-units/second (`FRACUNIT`/tic), forever, no
-trigger, active from map load. Used surprisingly often in the stock IWADs (250 linedefs across both
-games) for waterfalls, lava streams and conveyor-look walls.
+`occlusion.ts: SurfaceScroller` draws every scrolling surface: vanilla's linedef 48 (a front sidedef
+scrolling 35 map-units/second forever, no trigger, active from map load — used surprisingly often in
+the stock IWADs, 250 linedefs across both games, for waterfalls and lava streams) and Boom's whole
+scroller family beside it, walls and floor/ceiling flats alike.
 
-Mechanically the same shape as `WallFader`/`FlatFader`: index the affected quads' vertex ranges once,
-rewrite one attribute on them every frame — here the `uv` attribute's U component instead of vertex
-alpha, computed from each quad's own texture width (`MaterialBank.size`) so a narrow texture's pattern
-visibly cycles faster than a wide one for the same 35 units/sec, matching vanilla's offset-over-width
-UV math.
+**It computes nothing.** Which surfaces scroll and by how much is simulation state owned by
+`game/specials/forces.ts: Forces` (docs/specials.md § Scrollers and conveyors); this class indexes
+the affected geometry once and applies the offsets it is handed. The read side is the structural
+`ScrollOffsets` interface declared here and satisfied by `Forces`, so the render layer keeps no
+import edge into the game layer — the same shape as `SwitchPairLookup`.
 
-`WallOccluder` gained `line`/`frontSide` fields (threaded through `mapmesh.ts`'s
-`processLine`/`addTwoSidedSide`/`addWall`) so `TextureScroller` can find exactly the linedef's *front*
-(vanilla's `sidenum[0]`) quad — the only side vanilla ever scrolls — among the batched geometry.
-**Static-batch geometry only** — unlike `recolorSector`, which also reaches mover meshes (§ Relighting
-mover geometry), `TextureScroller` indexes the static batch alone. In practice this never excludes
-anything real: a mapper only puts 48 on a decorative wall, never one whose sector also needs to move.
+Mechanically it is `WallFader`/`FlatFader` again: index the affected vertex ranges once, rewrite one
+attribute every frame — here `uv` instead of vertex alpha. Walls convert map units to UV through
+each quad's own texture size (`MaterialBank.size`), so a narrow texture's pattern visibly cycles
+faster than a wide one at the same rate, matching vanilla's offset-over-dimension math; flats divide
+by a flat 64, since every DOOM flat is 64×64 and `processFlat` built their UVs with the same
+constant. Both U and V scroll — Boom's `sc_side` writes `rowoffset` as well as `textureoffset`.
+
+`WallOccluder` carries `line`/`frontSide` (threaded through `mapmesh.ts`'s
+`processLine`/`addTwoSidedSide`/`addWall`) so the linedef's *front* (vanilla's `sidenum[0]`) quads —
+the only side any of these numbers ever scrolls — can be found among the batched geometry; flats are
+found through `FlatSurface`'s `sector`/`isCeiling`. A flat fan is an arbitrary-length triangle fan
+rather than a fixed quad, so its untouched UVs are kept whole in a `Float32Array` and every frame's
+offset is added to that base.
+
+**Static-batch geometry only** — unlike `recolorSector`, which also reaches mover meshes
+(§ Relighting mover geometry), this indexes the static batch alone, so a sector that both scrolls and
+moves keeps its mover mesh unscrolled. In practice this excludes almost nothing real: a mapper puts a
+scroller on decorative or conveyor geometry, rarely on a sector that also has to move.
 
 The accumulated offset is wrapped to `[0, 1)` before being written into the single-precision `uv`
 buffer, purely to avoid float32 precision loss over a long session — `RepeatWrapping` already renders
 an unwrapped UV outside `[0, 1]` correctly, so the wrap isn't needed for correctness.
+
+Each indexed surface remembers the wrapped offset it last wrote and **skips both the rewrite and the
+re-upload when it hasn't changed** — the same shape as `WallFader.commit`. That is not a
+micro-optimization: a batch key is `<kind>:<texture>`, so one mesh covers every wall sharing a
+texture and `needsUpdate` re-uploads that whole buffer. A displacement or accelerative scroller
+(245-249 / 214-218) sits at rate 0 for as long as its control sector is idle, which without the skip
+would pay that upload 60×/s to write the numbers already there.
+
+Whether the offsets advance at all is gated on `Forces.hasScrollers`, not on this class finding
+geometry: the two differ exactly in the static-batch case above, and gating the *simulation* on a
+render-side index would freeze every other scrolling surface along with the one that has no mesh.
 
 ## Animated textures
 

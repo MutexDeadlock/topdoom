@@ -184,6 +184,7 @@ function genCeiling(special: number): SpecialDef {
       kind: 'ceiling',
       speed,
       target: ceilingTarget(targ, up),
+      direction: up ? 'up' : 'down',
       crush,
       change: changeBits(chg, model),
     },

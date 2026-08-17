@@ -45,6 +45,8 @@ import {
   type LiftEffect,
   type LiftTarget,
   type LightPattern,
+  type CeilingEffect,
+  type CeilingTarget,
   type MoveTarget,
   type LockRule,
   type SectorDoorTimer,
@@ -65,11 +67,17 @@ function lift(speed = LIFT_SPEED, waitSeconds = LIFT_WAIT, target?: LiftTarget):
 }
 
 /**
- * The `floor->direction` each target's vanilla `EV_DoFloor` case sets
- * (`p_floor.c`): every "lower" case runs -1, every "raise" one +1. Exhaustive
- * over `MoveTarget` so a new one can't be added without answering this, though
- * the targets only Boom's generalized floors reach take their direction from
- * its own bit instead (`generalized.ts: genFloor`). See `FloorEffect.direction`.
+ * `floor()`'s **default** `floor->direction` per target: every vanilla "lower"
+ * case runs -1, every "raise" one +1 (`p_floor.c`). Exhaustive over
+ * `MoveTarget` so a new one can't be added without answering this, though the
+ * targets only Boom's generalized floors reach take their direction from its
+ * own bit instead (`generalized.ts: genFloor`).
+ *
+ * It is a default and not the rule because vanilla hangs the direction on the
+ * `EV_DoFloor` **case**, not on the height it aims at — the two agree across
+ * every number in this file, which is what makes the table safe, but a future
+ * number whose case disagrees must say so with `floor`'s `direction` option
+ * rather than be quietly given the target's sign. See `FloorEffect.direction`.
  */
 const FLOOR_TARGET_DIRECTION: Record<MoveTarget, 'up' | 'down'> = {
   lowestNeighborFloor: 'down',
@@ -90,16 +98,49 @@ const FLOOR_TARGET_DIRECTION: Record<MoveTarget, 'up' | 'down'> = {
   plus512: 'up',
 };
 
+/**
+ * `FLOOR_TARGET_DIRECTION`'s ceiling half, off `EV_DoCeiling`'s cases
+ * (`p_ceilng.c`): `raiseToHighest` runs +1, while `lowerToFloor`,
+ * `lowerAndCrush` and Boom's `lowerToLowest`/`lowerToMaxFloor` all run -1.
+ * Note `lowestNeighborCeiling` is a *lowering* target here and a raising one
+ * for floors, which is why the two tables can't be shared. Same default-only
+ * status, same `direction` override, same generalized-bit exemption.
+ */
+const CEILING_TARGET_DIRECTION: Record<CeilingTarget, 'up' | 'down'> = {
+  ownFloor: 'down',
+  floorPlus8: 'down',
+  lowestNeighborCeiling: 'down',
+  highestNeighborFloor: 'down',
+  nextLowerCeiling: 'down',
+  minus24: 'down',
+  minus32: 'down',
+  shortestUpperTextureDown: 'down',
+  highestNeighborCeiling: 'up',
+  nextHigherCeiling: 'up',
+  shortestUpperTexture: 'up',
+  plus24: 'up',
+  plus32: 'up',
+};
+
+function ceiling(
+  target: CeilingTarget,
+  speed = CEILING_SPEED,
+  options: { direction?: 'up' | 'down' } = {},
+): CeilingEffect {
+  return { kind: 'ceiling', speed, target, direction: options.direction ?? CEILING_TARGET_DIRECTION[target] };
+}
+
+/** `direction` overrides `FLOOR_TARGET_DIRECTION` — see that table for when a number needs to. */
 function floor(
   target: MoveTarget,
   speed = FLOOR_SPEED,
-  options: { changeTexture?: boolean; crush?: boolean } = {},
+  options: { changeTexture?: boolean; crush?: boolean; direction?: 'up' | 'down' } = {},
 ): FloorEffect {
   return {
     kind: 'floor',
     speed,
     target,
-    direction: FLOOR_TARGET_DIRECTION[target],
+    direction: options.direction ?? FLOOR_TARGET_DIRECTION[target],
     changeTexture: options.changeTexture ?? false,
     crush: options.crush ?? false,
   };
@@ -241,8 +282,8 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   // `EV_DoCeiling(lowerToFloor)`: flush with the floor, unlike 44/72's
   // floor+8 crush stop. The second vanilla gap the Boom audit found —
   // docs/specials.md § Scope.
-  41: { trigger: 'use', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'ownFloor' } },
-  43: { trigger: 'use', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'ownFloor' } },
+  41: { trigger: 'use', repeatable: false, effect: ceiling('ownFloor') },
+  43: { trigger: 'use', repeatable: true, effect: ceiling('ownFloor') },
 
   // Generic floor movers — trigger/repeatability and target each confirmed
   // against the Doom wiki's linedef type table individually (a broad,
@@ -375,9 +416,9 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   // EV_DoFloor gets a turn — so the floor half is *never* reachable in real
   // vanilla, confirmed by tracing both functions' own guards rather than
   // assumed from the special's "...LowerFloor" name.
-  40: { trigger: 'walk', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborCeiling' } },
-  44: { trigger: 'walk', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'floorPlus8' } },
-  72: { trigger: 'walk', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'floorPlus8' } },
+  40: { trigger: 'walk', repeatable: false, effect: ceiling('highestNeighborCeiling') },
+  44: { trigger: 'walk', repeatable: false, effect: ceiling('floorPlus8') },
+  72: { trigger: 'walk', repeatable: true, effect: ceiling('floorPlus8') },
 
   // Donut — see DonutEffect's doc. Vanilla only ever exposes this as a
   // switch (S1); there's no walkover or repeatable variant.
@@ -515,11 +556,11 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   142: { trigger: 'walk', repeatable: false, effect: floor('plus512') },
   143: { trigger: 'walk', repeatable: false, effect: floor('plus24', FLOOR_SPEED_HALF, { changeTexture: true }) },
   144: { trigger: 'walk', repeatable: false, effect: floor('plus32', FLOOR_SPEED_HALF, { changeTexture: true }) },
-  145: { trigger: 'walk', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'ownFloor' } },
+  145: { trigger: 'walk', repeatable: false, effect: ceiling('ownFloor') },
   146: { trigger: 'walk', repeatable: false, effect: { kind: 'donut' } },
   153: { trigger: 'walk', repeatable: false, effect: { kind: 'changeOnly', model: 'trigger' } },
-  199: { trigger: 'walk', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'lowestNeighborCeiling' } },
-  200: { trigger: 'walk', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborFloor' } },
+  199: { trigger: 'walk', repeatable: false, effect: ceiling('lowestNeighborCeiling') },
+  200: { trigger: 'walk', repeatable: false, effect: ceiling('highestNeighborFloor') },
   219: { trigger: 'walk', repeatable: false, effect: floor('nextLowerFloor') },
   227: { trigger: 'walk', repeatable: false, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextHigherFloor' } },
   231: { trigger: 'walk', repeatable: false, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextLowerFloor' } },
@@ -542,16 +583,16 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   151: {
     trigger: 'walk',
     repeatable: true,
-    effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborCeiling' },
+    effect: ceiling('highestNeighborCeiling'),
     secondEffect: { effect: floor('lowestNeighborFloor') },
   },
-  152: { trigger: 'walk', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'ownFloor' } },
+  152: { trigger: 'walk', repeatable: true, effect: ceiling('ownFloor') },
   154: { trigger: 'walk', repeatable: true, effect: { kind: 'changeOnly', model: 'trigger' } },
   155: { trigger: 'walk', repeatable: true, effect: { kind: 'donut' } },
   156: { trigger: 'walk', repeatable: true, effect: { kind: 'lightChange', mode: 'startStrobe' } },
   157: { trigger: 'walk', repeatable: true, effect: { kind: 'lightChange', mode: 'darkestNeighbor' } },
-  201: { trigger: 'walk', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'lowestNeighborCeiling' } },
-  202: { trigger: 'walk', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborFloor' } },
+  201: { trigger: 'walk', repeatable: true, effect: ceiling('lowestNeighborCeiling') },
+  202: { trigger: 'walk', repeatable: true, effect: ceiling('highestNeighborFloor') },
   220: { trigger: 'walk', repeatable: true, effect: floor('nextLowerFloor') },
   228: { trigger: 'walk', repeatable: true, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextHigherFloor' } },
   232: { trigger: 'walk', repeatable: true, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextLowerFloor' } },
@@ -572,12 +613,12 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   166: {
     trigger: 'use',
     repeatable: false,
-    effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborCeiling' },
+    effect: ceiling('highestNeighborCeiling'),
     // `if (EV_DoCeiling(…) || EV_DoFloor(…))` — C short-circuits, so the
     // floor only lowers when no tagged sector took the ceiling.
     secondEffect: { effect: floor('lowestNeighborFloor'), onlyIfPrimaryFailed: true },
   },
-  167: { trigger: 'use', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'floorPlus8' } },
+  167: { trigger: 'use', repeatable: false, effect: ceiling('floorPlus8') },
   168: { trigger: 'use', repeatable: false, effect: { kind: 'crusherStop' } },
   169: { trigger: 'use', repeatable: false, effect: { kind: 'lightChange', mode: 'brightestNeighbor' } },
   170: { trigger: 'use', repeatable: false, effect: { kind: 'lightChange', mode: 'setLevel', level: 35 } },
@@ -589,8 +630,8 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   174: { trigger: 'use', repeatable: false, effect: { kind: 'teleport', monsterOnly: false } },
   175: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED, 'closeThenOpen') },
   189: { trigger: 'use', repeatable: false, effect: { kind: 'changeOnly', model: 'trigger' } },
-  203: { trigger: 'use', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'lowestNeighborCeiling' } },
-  204: { trigger: 'use', repeatable: false, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborFloor' } },
+  203: { trigger: 'use', repeatable: false, effect: ceiling('lowestNeighborCeiling') },
+  204: { trigger: 'use', repeatable: false, effect: ceiling('highestNeighborFloor') },
   221: { trigger: 'use', repeatable: false, effect: floor('nextLowerFloor') },
   229: { trigger: 'use', repeatable: false, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextHigherFloor' } },
   233: { trigger: 'use', repeatable: false, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextLowerFloor' } },
@@ -612,12 +653,12 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   186: {
     trigger: 'use',
     repeatable: true,
-    effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborCeiling' },
+    effect: ceiling('highestNeighborCeiling'),
     // `if (EV_DoCeiling(…) || EV_DoFloor(…))` — C short-circuits, so the
     // floor only lowers when no tagged sector took the ceiling.
     secondEffect: { effect: floor('lowestNeighborFloor'), onlyIfPrimaryFailed: true },
   },
-  187: { trigger: 'use', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'floorPlus8' } },
+  187: { trigger: 'use', repeatable: true, effect: ceiling('floorPlus8') },
   188: { trigger: 'use', repeatable: true, effect: { kind: 'crusherStop' } },
   190: { trigger: 'use', repeatable: true, effect: { kind: 'changeOnly', model: 'trigger' } },
   191: { trigger: 'use', repeatable: true, effect: { kind: 'donut' } },
@@ -626,8 +667,8 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   194: { trigger: 'use', repeatable: true, effect: { kind: 'lightChange', mode: 'darkestNeighbor' } },
   195: { trigger: 'use', repeatable: true, effect: { kind: 'teleport', monsterOnly: false } },
   196: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED, 'closeThenOpen') },
-  205: { trigger: 'use', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'lowestNeighborCeiling' } },
-  206: { trigger: 'use', repeatable: true, effect: { kind: 'ceiling', speed: CEILING_SPEED, target: 'highestNeighborFloor' } },
+  205: { trigger: 'use', repeatable: true, effect: ceiling('lowestNeighborCeiling') },
+  206: { trigger: 'use', repeatable: true, effect: ceiling('highestNeighborFloor') },
   222: { trigger: 'use', repeatable: true, effect: floor('nextLowerFloor') },
   230: { trigger: 'use', repeatable: true, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextHigherFloor' } },
   234: { trigger: 'use', repeatable: true, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'nextLowerFloor' } },

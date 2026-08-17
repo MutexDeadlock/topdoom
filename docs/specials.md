@@ -566,20 +566,28 @@ Two consequences worth knowing:
   other blocked lift does (§ Every other mover stops instead). Because the move completes within
   the tic it starts, the damage lands on that same tic.
 
-## Inverted floor moves
+## Inverted plane moves
 
-A floor mover's direction is **fixed by its vanilla `EV_DoFloor` case, not derived from the height
-it is chasing** — `FloorEffect.direction`, which `tables.ts` reads off the target name (every
-"lower" case runs -1, every "raise" one +1) and Boom's generalized floors take straight from their
-own direction bit.
+A floor or ceiling mover's direction is **fixed by its vanilla `EV_DoFloor`/`EV_DoCeiling` case, not
+derived from the height it is chasing** — `FloorEffect.direction` and `CeilingEffect.direction`,
+which `tables.ts` reads off the target name (every "lower" case runs -1, every "raise" one +1) and
+Boom's generalized floors and ceilings take straight from their own direction bit. The two target
+tables are separate and must stay so: `lowestNeighborCeiling` is a *raising* floor target
+(`raiseFloor`) and a *lowering* ceiling one (Boom's `lowerToLowest`).
 
 It only matters when the resolved target lands on the far side of that direction, and then it
 matters a lot: `T_MovePlane`'s first step hits the `newheight < dest` branch — id's own comment
 there reads *"reached dest, or start was below dest"* — clamps straight to the destination, reverts
 the whole jump if a body no longer fits, and reports `pastdest`. So an inverted move happens **whole
 or not at all**, in the tic it starts; it is never travelled at mover speed, and nothing standing
-there is ever carried along. `tickFloor` steps along `FloorMover.direction` for exactly that reason
-rather than re-deriving a direction from the target each tick.
+there is ever carried along. `tickFloor`/`tickCeiling` step along the mover's own `direction` for
+exactly that reason rather than re-deriving one from the target each tick.
+
+A ceiling reaches this more easily than a floor: `raiseToHighest` (40) on a sector already taller
+than every neighbor, or Boom's `lowerToLowest` (199-206) on one already lower than every neighbor,
+both resolve a target on the wrong side without anything degenerate in the map. **`ElevatorMover` is
+the one plane mover deliberately left auto-directioning**, because for it the two models coincide —
+`ElevatorMover`'s own doc has the argument.
 
 Repro: `BOOMEDIT.WAD` MAP01 linedef 357, a WR 83 ("lower floor to highest floor") on
 self-referencing sector 78, whose only real neighbor is a dummy sector 128 units *above* it. Travel
@@ -802,11 +810,9 @@ for anything classifying lines (`classifyLineSpecial`, the coverage report, `fin
 and a restore is a plain Set assignment — `SpecialsSnapshot.stairFlips` needs no ordering
 guarantee about when the map was loaded, unlike a re-applied mutation would.
 
-Known divergences, deliberate: a generalized *ceiling* target on the "wrong" side of the current
-height is travelled to (this engine's ceiling movers auto-direction toward their target), where
-Boom's directional `T_MovePlane` would finish instantly — floors no longer do this, see § Inverted
-floor moves; and `FtoLnC` keeps the engine's own clamp-to-own-ceiling. Both only differ on
-degenerate maps.
+Known divergence, deliberate: `FtoLnC` keeps the engine's own clamp-to-own-ceiling, which only
+differs on degenerate maps. Generalized floors and ceilings otherwise honour their direction bit in
+full, including the clamp a target on the "wrong" side of it gets — § Inverted plane moves.
 
 ## Generalized sector types
 

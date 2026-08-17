@@ -207,7 +207,7 @@ interface FloorMover {
    * *far* side of it, which `T_MovePlane` then takes in one step rather than
    * travelling the wrong way at mover speed. Absent on a mover from a save
    * written before this field existed, where re-deriving is the old behavior.
-   * docs/specials.md § Inverted floor moves.
+   * docs/specials.md § Inverted plane moves.
    */
   direction?: 'up' | 'down';
   /**
@@ -240,6 +240,8 @@ interface CeilingMover {
   speed: number;
   target: number;
   state: 'moving' | 'done';
+  /** `ceiling->direction` — `FloorMover.direction`'s mirror, absent on an older save for the same reason. */
+  direction?: 'up' | 'down';
   /** Boom generalized ceilings only — grind through a body, full speed, periodic damage (see `CeilingEffect.crush`). Absent = vanilla's stall. */
   crush?: boolean;
   /** Boom's arrival-time change, ceiling flavor (`SurfaceChange`) — applied like `FloorMover.arrivalTexture`. */
@@ -249,8 +251,18 @@ interface CeilingMover {
 /**
  * Boom's elevator (`p_floor.c: T_MoveElevator`): floor and ceiling in
  * lockstep, gap preserved. One target pair fixed at trigger time, one-way,
- * done on arrival — the direction falls out of `floorTarget` vs. the live
- * floor each tick, like `FloorMover`.
+ * done on arrival.
+ *
+ * **The one plane mover with no `direction` of its own**, and the one that
+ * doesn't need one. `EV_DoElevator` fixes +1/-1 for `elevateUp`/`elevateDown`,
+ * but their targets come from `P_FindNextHighestFloor`/`P_FindNextLowestFloor`,
+ * which are strictly above/below the sector's own floor by construction (and
+ * `triggerElevator` refuses the equal case outright), so a target on the wrong
+ * side is unreachable. `elevateCurrent` (236) then derives its direction from
+ * the target in Boom itself — `floordestheight > floorheight ? 1 : -1`. Reading
+ * the direction off the target each tick is therefore exactly Boom for all
+ * three, and the clamp `tickFloor`/`tickCeiling` carry has nothing to catch
+ * here. docs/specials.md § Inverted plane moves.
  */
 interface ElevatorMover {
   kind: 'elevator';
@@ -1138,7 +1150,7 @@ export class SpecialsController {
       // `T_MovePlane`'s clamp branch: a target on the far side of the fixed
       // direction is reached in the step it starts and put straight back if a
       // body no longer fits — the `pastdest` revert has no `crush` exception,
-      // unlike the per-step one below. docs/specials.md § Inverted floor moves.
+      // unlike the per-step one below. docs/specials.md § Inverted plane moves.
       if (!this.blocksFloorRise(mover.sectorIndex, mover.target)) sector.floorHeight = mover.target;
       this.finishFloor(mover);
       if (sector.floorHeight !== before) dirty.add(mover.sectorIndex);
@@ -1186,7 +1198,15 @@ export class SpecialsController {
     if (mover.state === 'done') return;
     const sector = this.map.sectors[mover.sectorIndex];
     const before = sector.ceilHeight;
-    const dir = mover.target > sector.ceilHeight ? 1 : -1;
+    const dir = mover.direction ? (mover.direction === 'up' ? 1 : -1) : mover.target > sector.ceilHeight ? 1 : -1;
+    if (dir > 0 ? mover.target < sector.ceilHeight : mover.target > sector.ceilHeight) {
+      // `T_MovePlane`'s clamp branch, `tickFloor`'s exactly — the plane is
+      // shared in vanilla. docs/specials.md § Inverted plane moves.
+      if (!this.blocksCeilingLower(mover.sectorIndex, mover.target)) sector.ceilHeight = mover.target;
+      this.finishCeiling(mover);
+      if (sector.ceilHeight !== before) dirty.add(mover.sectorIndex);
+      return;
+    }
     const next = sector.ceilHeight + dir * mover.speed * dt;
     // A crushing generalized ceiling grinds through at full speed —
     // `T_MoveCeiling`'s `crushed` branch pointedly leaves `genCeiling` out of
@@ -1198,13 +1218,18 @@ export class SpecialsController {
     // no arrival sound: only vanilla's *silent* crusher gets a `pstop` at an end
     // (see tickCrusher), which is exactly the type that stays quiet in between.
     if (this.moveSoundDue) this.playSector(mover.sectorIndex, 'stnmov');
-    if ((dir > 0 && sector.ceilHeight >= mover.target) || (dir < 0 && sector.ceilHeight <= mover.target)) {
+    if (dir > 0 ? sector.ceilHeight >= mover.target : sector.ceilHeight <= mover.target) {
       sector.ceilHeight = mover.target;
-      mover.state = 'done';
-      if (mover.arrivalTexture) this.applyArrivalChange(mover.sectorIndex, mover.arrivalTexture);
+      this.finishCeiling(mover);
     }
     if (sector.ceilHeight !== before) dirty.add(mover.sectorIndex);
     if (mover.crush && dir < 0) this.tickCrush(mover.sectorIndex);
+  }
+
+  /** `T_MoveCeiling`'s `pastdest` branch — no clack, unlike `finishFloor`: see `tickCeiling`. */
+  private finishCeiling(mover: CeilingMover): void {
+    mover.state = 'done';
+    if (mover.arrivalTexture) this.applyArrivalChange(mover.sectorIndex, mover.arrivalTexture);
   }
 
   /**
@@ -1737,6 +1762,7 @@ export class SpecialsController {
       speed: effect.speed,
       target,
       state: 'moving',
+      direction: effect.direction,
       crush: effect.crush,
       arrivalTexture: effect.change ? this.resolveCeilingChange(sectorIndex, effect, target, line) : undefined,
     });

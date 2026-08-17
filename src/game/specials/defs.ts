@@ -257,7 +257,7 @@ export interface FloorEffect {
    * chasing. It only bites when the resolved target lands on the *far* side of
    * it — `T_MovePlane`'s first step then clamps straight there and reports
    * `pastdest` instead of travelling the wrong way at mover speed
-   * (`FloorMover.instant`). docs/specials.md § Inverted floor moves.
+   * (`FloorMover.direction`). docs/specials.md § Inverted plane moves.
    */
   direction: 'up' | 'down';
   /**
@@ -428,6 +428,13 @@ export interface CeilingEffect {
   kind: 'ceiling';
   speed: number;
   target: CeilingTarget;
+  /**
+   * `ceiling->direction`, the mirror of `FloorEffect.direction` and fixed the
+   * same way — by the `EV_DoCeiling` case this number belongs to
+   * (`p_ceilng.c`), never re-derived from the height being chased.
+   * docs/specials.md § Inverted plane moves.
+   */
+  direction: 'up' | 'down';
   /**
    * Boom's generalized ceilings can crush: the descent grinds on through a
    * body at full speed, dealing periodic damage (`T_MoveCeiling`'s `crushed`

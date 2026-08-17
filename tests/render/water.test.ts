@@ -4,13 +4,15 @@ import { buildMapMesh, litColor, type FlatSurface } from '../../src/render/mapme
 import { FlatFader } from '../../src/render/occlusion.ts';
 import { transfersOf } from '../../src/game/specials/transfers.ts';
 import { WATER_SURFACE_ALPHA } from '../../src/constants.ts';
+import { NO_SIDE } from '../../src/wad/map.ts';
 import { gridMap, addControlSector } from '../fixtures/gridmap.ts';
 import { BANK } from '../fixtures/specialsrig.ts';
 
 /**
  * Boom's 242 as geometry: the two fans this engine draws where vanilla picks
- * one of them by eye height, and the alpha that keeps a submerged player
- * visible through the surface. See docs/specials.md § Deep water.
+ * one of them by eye height, the alpha that keeps a submerged player visible
+ * through the surface, and the fake ceiling the walls across from one are sized
+ * against. See docs/specials.md § Deep water.
  */
 
 const POOL_FLAT = 'FLAT14';
@@ -33,6 +35,36 @@ function pool({ surfaceHeight = 0, poolLight = 90, ownLight = 200 } = {}) {
   const built = buildMapMesh(map, BANK, { transfers: transfersOf(map) });
   const fans = built.flatSurfaces.filter((f) => f.sector === 0);
   return { map, control, built, fans };
+}
+
+const FALL = 'SFALL1';
+
+/**
+ * BOOMEDIT MAP01's waterfall box in miniature: a room at ceiling 256 looking at
+ * a 242 sector whose real ceiling is 192 and whose control sector's is 32, with
+ * the fall's texture in both the upper and the middle slot at the map's own
+ * −32 y-offset. `viewerIsWater` gives the room a 242 of its own, which is the
+ * case vanilla resolves through `R_FakeFlat`'s above-ceiling branch instead.
+ */
+function fakeCeiling({ viewerIsWater = false } = {}) {
+  const map = gridMap(['..']).map;
+  const line = map.linedefs.findIndex((l) => l.left !== NO_SIDE);
+  const side = map.sidedefs[map.linedefs[line].right];
+  const far = map.sidedefs[map.linedefs[line].left].sector;
+  map.sectors[side.sector].ceilHeight = 256;
+  map.sectors[far].ceilHeight = 192;
+  map.sectors[far].tag = 7;
+  side.upper = FALL;
+  side.middle = FALL;
+  side.yOffset = -32;
+  addControlSector(map, { floorHeight: 0, ceilHeight: 32 }, 242, 7);
+  if (viewerIsWater) {
+    map.sectors[side.sector].tag = 8;
+    addControlSector(map, { floorHeight: 0, ceilHeight: 256 }, 242, 8);
+  }
+  const built = buildMapMesh(map, BANK, { transfers: transfersOf(map) });
+  const quads = built.occluders.filter((o) => o.line === line && o.frontSide);
+  return { map, line, built, quads };
 }
 
 const colorOf = (built: ReturnType<typeof pool>['built'], f: FlatSurface) => {
@@ -97,6 +129,27 @@ describe('render · deep water planes', () => {
 
     fader.commit(() => 0.5);
     assert.equal(alphaOf(), WATER_SURFACE_ALPHA * 0.5, 'half-revealed by fog: the product');
+  });
+
+  test('a control sector below the real ceiling still reaches the walls across from it', () => {
+    // BOOMEDIT MAP01 lines 677-680: sector 111 (real ceiling 192) draws at
+    // control sector 112's ceiling of 32, so the SFALL1 fall facing it runs
+    // 256..32 as one band. Sized against the real 192 instead, the upper stops
+    // short and the midtexture's own y-offset drops it clear of the opening,
+    // leaving a 32-unit hole between the two halves of the waterfall.
+    const { quads } = fakeCeiling();
+    assert.equal(quads.length, 1, 'the upper alone — the opening is too short to hold the midtexture');
+    assert.deepEqual([quads[0].botH, quads[0].topH], [32, 256]);
+  });
+
+  test('a sector with a 242 of its own keeps the real ceiling it looks out with', () => {
+    // Standing inside a 242 sector is `R_FakeFlat`'s above-ceiling branch,
+    // which hands the real ceiling straight back — which is what keeps
+    // BOOMEDIT MAP01's colormap room (444-452, control ceilings at floor
+    // level) from losing every wall it has.
+    const { quads } = fakeCeiling({ viewerIsWater: true });
+    assert.equal(quads.length, 2, 'the upper, and a midtexture hung in the full opening');
+    assert.deepEqual([quads[0].botH, quads[0].topH], [192, 256], 'the neighbour’s real ceiling');
   });
 
   test('a map with no 242 line builds exactly one fan per subsector, as before', () => {

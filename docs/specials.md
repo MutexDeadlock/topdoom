@@ -1072,10 +1072,17 @@ The surface fan is only built when the control sector's floor is at least `WATER
 the sector's own — deep enough for the two planes to be worth drawing separately, and far enough
 apart not to z-fight (BOOMEDIT MAP01 sector 405 is **one map unit** deep, and two fans that close
 shimmer against each other). Anything shallower keeps vanilla's plain above-water view: one floor
-drawn at the surface height wearing the sector's own flat. Boom's other use of 242 is a *fake ceiling*, whose control sector sits at or below the
-sector's floor; with ceilings unrendered that half has nothing to draw, and drawing its floor half
-faithfully would sink the visible floor into a hole. BOOMEDIT.WAD MAP01 has 13 such setups beside
-its 22 deep-water ones.
+drawn at the surface height wearing the sector's own flat.
+
+Boom's other use of 242 is a *fake ceiling*, whose control sector sits at or below the sector's
+floor. Its **floor** half is ignored — drawing it faithfully would sink the visible floor into a
+hole — and its ceiling is never rendered either, but the height still shows: the walls of every
+sector **across a two-sided line from it** are sized against the control sector's ceiling, not the
+real one (`r_bsp.c: R_AddLine` fakes the backsector of every seg). That is what makes BOOMEDIT MAP01
+sector 111's `SFALL1` waterfall a single 256..32 band instead of an upper stopping at 192 with a
+32-unit hole under it; the rule, and the two limits this engine puts on it, are
+docs/render.md § Deep water. BOOMEDIT.WAD MAP01 has 13 fake-ceiling setups beside its 22 deep-water
+ones.
 
 **The player still falls in.** 242 changes nothing about collision, so a pool drawn as a flat sheet
 of water is physically as deep as its real floor — the camera follows the player down, and on

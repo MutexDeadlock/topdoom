@@ -169,6 +169,8 @@ export interface SectorTransfers {
   ceilingLightSector(sectorIndex: number): number;
   /** The 242 control sector, or -1. */
   heightSec(sectorIndex: number): number;
+  /** The ceiling this sector draws at — its 242 control sector's, else its own. */
+  drawnCeiling(sectorIndex: number): number;
   /** Where this sector's water surface is drawn, or null where there is none. */
   waterHeight(sectorIndex: number): number | null;
   translucentLine(lineIndex: number): boolean;
@@ -302,6 +304,7 @@ function ownTransfers(map: DoomMap): SectorTransfers {
     floorLightSector: (s) => s,
     ceilingLightSector: (s) => s,
     heightSec: () => -1,
+    drawnCeiling: (s) => map.sectors[s]?.ceilHeight ?? 0,
     waterHeight: () => null,
     translucentLine: () => false,
     midtexSuppressed: () => false,
@@ -812,13 +815,31 @@ function processLine(
 
   if (!front || !back || !frontSec || !backSec) return;
 
-  // Two-sided line: each side gets its own step-up/step-down pieces.
+  // Two-sided line: each side gets its own step-up/step-down pieces, sized
+  // against the *drawn* ceiling opposite it (Boom's 242 — see `ceilingFacing`).
+  const backCeil = ceilingFacing(transfers, backSec, back.sector, front.sector);
+  const frontCeil = ceilingFacing(transfers, frontSec, front.sector, back.sector);
   if (!includeSide || includeSide(front.sector)) {
-    addTwoSidedSide(batches, size, line.flags, v1, v2, front, front.sector, frontSec, backSec, cap, occluders, lineIndex, true, transfers);
+    addTwoSidedSide(batches, size, line.flags, v1, v2, front, front.sector, frontSec, backSec, backCeil, cap, occluders, lineIndex, true, transfers);
   }
   if (!includeSide || includeSide(back.sector)) {
-    addTwoSidedSide(batches, size, line.flags, v2, v1, back, back.sector, backSec, frontSec, cap, occluders, lineIndex, false, transfers);
+    addTwoSidedSide(batches, size, line.flags, v2, v1, back, back.sector, backSec, frontSec, frontCeil, cap, occluders, lineIndex, false, transfers);
   }
+}
+
+/**
+ * The ceiling a side of a two-sided line is sized against: the neighbour's
+ * *drawn* ceiling, which a Boom 242 moves (`Transfers.drawnCeiling`), except
+ * where the sector doing the looking has a 242 of its own.
+ *
+ * That exception is where a mesh built once has to stand in for a branch
+ * vanilla picks per frame: an eye *inside* a 242 sector takes `R_FakeFlat`'s
+ * above-ceiling branch, which hands the real ceiling straight back. Resolving
+ * it against the sector the quads face into costs nothing, because that is the
+ * only place they are ever seen from. docs/render.md § Deep water.
+ */
+function ceilingFacing(transfers: SectorTransfers, other: Sector, otherIndex: number, viewerSector: number): number {
+  return transfers.heightSec(viewerSector) >= 0 ? other.ceilHeight : transfers.drawnCeiling(otherIndex);
 }
 
 function addTwoSidedSide(
@@ -831,6 +852,8 @@ function addTwoSidedSide(
   secIndex: number,
   sec: Sector,
   other: Sector,
+  /** The neighbour's *drawn* ceiling — `ceilingFacing`, not `other.ceilHeight`. */
+  otherCeil: number,
   cap: (sec: Sector, top: number) => number,
   occluders: WallOccluder[],
   lineIndex: number,
@@ -853,7 +876,7 @@ function addTwoSidedSide(
   const lowerUnpegged = (flags & LF.LOWER_UNPEGGED) !== 0;
 
   // Upper: this sector's ceiling is higher than the neighbour's.
-  if (sec.ceilHeight > other.ceilHeight && !(sec.ceilTex === SKY_FLAT && other.ceilTex === SKY_FLAT)) {
+  if (sec.ceilHeight > otherCeil && !(sec.ceilTex === SKY_FLAT && other.ceilTex === SKY_FLAT)) {
     const dim = size('wall', side.upper);
     addWall(
       batches,
@@ -861,15 +884,18 @@ function addTwoSidedSide(
       {
         ...base,
         topH: cap(sec, sec.ceilHeight),
-        botH: Math.min(cap(sec, sec.ceilHeight), other.ceilHeight),
+        botH: Math.min(cap(sec, sec.ceilHeight), otherCeil),
         texture: side.upper,
-        pegRef: upperUnpegged ? sec.ceilHeight : other.ceilHeight + (dim?.h ?? 128),
+        pegRef: upperUnpegged ? sec.ceilHeight : otherCeil + (dim?.h ?? 128),
       },
       occluders,
     );
   }
 
-  // Lower: the neighbour's floor is higher, so a step faces this side.
+  // Lower: the neighbour's floor is higher, so a step faces this side. Floors
+  // stay *real* where `otherCeil` is the drawn ceiling — a 242 pool is drawn
+  // bottom-and-all here, and a step sized to the surface would ring that bottom
+  // with a hole (docs/render.md § Deep water).
   if (other.floorHeight > sec.floorHeight) {
     addWall(
       batches,
@@ -892,7 +918,7 @@ function addTwoSidedSide(
   if (side.middle !== NO_TEXTURE && side.middle !== '' && !transfers.midtexSuppressed(lineIndex)) {
     const dim = size('wall', side.middle);
     if (dim) {
-      const openTop = Math.min(sec.ceilHeight, other.ceilHeight);
+      const openTop = Math.min(sec.ceilHeight, otherCeil);
       const openBot = Math.max(sec.floorHeight, other.floorHeight);
       // The quad is the texture's own band — one copy hung off the pegged
       // anchor, sidedef y-offset included — clipped to the opening, never the

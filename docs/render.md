@@ -141,14 +141,16 @@ texture clear of the opening draws nothing at all: vanilla never tiles a midtext
 mappers use exactly that to hide one. Sizing the quad to the opening and letting the offset run off
 into the UVs instead makes a wrapped copy appear in the wrong place — BOOMEDIT.WAD MAP01 line 726's
 `ICESIGN` (48 tall, y-offset −88, opening −16..128) drew up under the ceiling instead of at −8..40.
+The opening a side is clipped to, and the neighbour's ceiling its upper stands on, are the **drawn**
+ones: a Boom 242 sector hands out its control sector's ceiling (§ Deep water).
 
 Coordinates: DOOM's `(x, y, z)` becomes three.js `(x, z, -y)`, so the map plane is XZ and Y is up.
 
 Ceilings are never rendered — `buildMapMesh`'s `renderCeilings` option still exists and is always
 `false`. From directly above, a rendered ceiling would hide everything under it; this is a permanent
 view choice, not a debug convenience. It is also why the ceiling half of Boom's transfers has no
-visible effect here: a 261 transfer only moves sprite light, and a 242 *fake ceiling* draws nothing
-at all (§ Deep water).
+*plane* to show for itself: a 261 transfer only moves sprite light, and a 242 *fake ceiling* draws
+no surface — though its height still sizes the walls across from it (§ Deep water).
 
 ## Solid structures (`solids.ts`)
 
@@ -353,7 +355,7 @@ skips a surface whose alpha has not moved. Note that a midtexture quad is exempt
 fading by `update`'s passable-gap test, so for a 260 grate the base is usually the only factor
 below 1.
 
-## Deep water (`mapmesh.ts: processFlat`)
+## Deep water (`mapmesh.ts: processFlat`, `ceilingFacing`)
 
 Boom's 242 makes a sector draw at another sector's heights. Vanilla picks one of two views by where
 the eye is; this engine draws both at once — an opaque water surface would hide a player who waded
@@ -367,6 +369,28 @@ Mechanically it is one extra `FlatSurface` reusing the same subsector index, so 
 `FlatFader` need no notion of it, and the surface fades like any other raised floor. What it does
 need is a rebuild edge: a water sector shares no linedef with its control sector, so
 `MoverGeometry` links the two explicitly (§ Wall occlusion fading's product is otherwise unaffected).
+
+**242 reaches the walls too**, and not only the flats: `R_FakeFlat` replaces the drawn *ceiling* as
+well as the floor, and `r_bsp.c: R_AddLine` runs it over the backsector of every seg. So a
+two-sided line facing a 242 sector sizes its upper — and caps the midtexture's opening — against the
+control sector's ceiling. `Transfers.drawnCeiling` resolves that height — the ceiling-side
+counterpart of the `waterHeight` the fans use — and `ceilingFacing` is what each side asks in place
+of reading `Sector.ceilHeight` off its neighbour. Without it BOOMEDIT MAP01 lines 677-680 leave a
+32-unit hole in the middle of a waterfall: sector 111's real ceiling is 192 but it draws at 32, so
+`SFALL1` has to run 256..32 as one tiled upper rather than stopping at 192 and handing the rest to a
+midtexture whose −32 y-offset has already carried it below the gap.
+
+Two limits on the substitution, both load-bearing:
+
+- **The floor is not substituted**, because this engine draws the pool bottom at the real floor
+  (above); walls sized to the control sector's floor instead would leave that bottom ringed by a
+  hole. The ceiling half has no such conflict — ceilings are never rendered.
+- **Only the neighbour is faked, and only for a side whose own sector has no 242.** Vanilla's choice
+  of branch depends on where the eye is, which a mesh built once cannot follow; but a wall quad is
+  only ever seen from the sector it faces into, and an eye *inside* a 242 sector takes
+  `R_FakeFlat`'s above-ceiling branch, which returns the real ceiling. Faking unconditionally
+  instead flattens BOOMEDIT MAP01's colormap room (sectors 444-452, whose control sectors sit at
+  floor level only to carry `GRYMAP`/`REDMAP`/`BLUMAP`/`GRNMAP`) into a room with no walls.
 
 ## Camera orbit and camera-relative movement (`camera.ts`, `game/input.ts`, `game/player.ts`)
 

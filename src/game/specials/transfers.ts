@@ -210,6 +210,18 @@ export class Transfers {
   }
 
   /**
+   * The height a sector's ceiling is *drawn* at — its 242 control sector's,
+   * else its own (`r_bsp.c: R_FakeFlat`). The ceiling-side counterpart of
+   * `waterHeight`, and what sizes the walls across a two-sided line from it —
+   * see docs/specials.md § Deep water.
+   */
+  drawnCeiling(sectorIndex: number): number {
+    const own = this.map.sectors[sectorIndex]?.ceilHeight ?? 0;
+    const control = this.heightSec(sectorIndex);
+    return control < 0 ? own : (this.map.sectors[control]?.ceilHeight ?? own);
+  }
+
+  /**
    * The height a sector's water surface is drawn at, or null where there is
    * none to draw: no 242, or a control sector at or below the real floor, which
    * is Boom's *fake ceiling* rather than deep water — see

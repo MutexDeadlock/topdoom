@@ -152,6 +152,35 @@ view choice, not a debug convenience. It is also why the ceiling half of Boom's 
 *plane* to show for itself: a 261 transfer only moves sprite light, and a 242 *fake ceiling* draws
 no surface — though its height still sizes the walls across from it (§ Deep water).
 
+## Mover meshes (`mapmesh.ts: buildMoverMesh`, `refreshMoverMesh`)
+
+Every sector a specials mover can drive is left out of the static batches entirely and drawn from
+its own small mesh instead (`MapMeshOptions.movableSectors`, `specials/movergeometry.ts`), which
+`MoverGeometry.rebuild` brings up to date on each tic the sector's height changed. That call is on
+the tic path for *every* moving sector at once, so two things about it are load-bearing:
+
+**A rebuild costs the sector's own size, never the map's.** `buildMoverMesh` walks a `MoverIndex`
+rather than scanning: its subsectors, grouped once per level, and its linedefs, which are vanilla's
+`sec->lines[]` straight off `World`'s memo (docs/world.md § Neighbor-height queries). The index is
+declared structurally in `mapmesh.ts` and supplied by `specials/movergeometry.ts: buildMoverIndex`,
+the same split `SectorTransfers` uses to keep the renderer free of `game/` imports. Scanning instead
+means all subsectors and all linedefs per sector per tic — quadratic in exactly the situation that
+matters, since a bigger map has both more geometry to scan and more movers scanning it.
+
+**A moving sector rewrites its buffers instead of reallocating them.** `refreshMoverMesh` writes the
+new positions/UVs/colours into the existing attributes and updates the `WallOccluder`/`FlatSurface`
+records field-by-field — the faders hold both the arrays and per-quad smoothing state indexed into
+them, so replacing either would restart a moving wall's fade. It returns false, changing nothing,
+whenever the sector's batches no longer line up with the buffers they were built from (a quad
+appearing or vanishing — an upper step shrinking to nothing as a door finishes opening); only then
+does `rebuild` throw the mesh away and build a fresh one. Which means the fresh-build path stays the
+definition of correct geometry: the refresh is only ever allowed to reproduce it exactly.
+
+Repro for both: literalism.wad MAP18, whose voodoo-doll scripts (docs/specials.md § Voodoo dolls)
+keep ~95 sectors moving per tic over 10.6k subsectors and 14.5k linedefs. Before the two, that map
+spent the entire frame in `rebuildAround` and the DEVMODE profiler's "Specials" row read in the
+hundreds of milliseconds.
+
 ## Solid structures (`solids.ts`)
 
 A pillar, a crate, a lamp post: DOOM draws them as a closed ring of **one-sided** linedefs with no

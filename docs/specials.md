@@ -680,6 +680,9 @@ sprite, and interpolating would mean lerping heights and rebuilding meshes on th
 most invasive change available in the riskiest code here. If a door ever *does* need smoothing, that
 is its own change, not an oversight to be fixed in passing.
 
+What that per-tic rebuild is allowed to cost is a rendering matter, and it is a real constraint on
+heavily scripted maps, where hundreds of sectors move at once — docs/render.md § Mover meshes.
+
 ## Lights
 
 The sector-type patterns (`SECTOR_LIGHT_SPECIALS`, `game/specials/tables.ts`) are assigned once at map load
@@ -1100,6 +1103,21 @@ That costs two small load-time rules — `computeMovableSectors` pulls a water s
 control sector is movable (iterated to a fixpoint, since a water sector can itself control another),
 and `MoverGeometry` links control → dependents so `rebuildAround` reaches geometry that shares no
 linedef with what moved.
+
+That second link reaches one step further than the dependent itself: **the dependent's movable
+neighbours are on the same edge**, because their upper steps are sized against the pool's *drawn*
+ceiling, i.e. the control sector's (§ Deep water's fake-ceiling paragraph above). A movable
+neighbour owns its own side of that line, so a moving control sector left it drawing the old height
+indefinitely — it never moves, the pool never moves, and neither shares a line with the control.
+Repro: literalism.wad MAP18, sector 176's quads onto water sector 189 (control 187), covered by
+`tests/game/moving-water.test.ts`.
+
+The general rule those edges serve: **`MoverGeometry.rebuildAround` is the only way to invalidate a
+mesh, and it takes the sectors that *changed*, not the meshes to rebuild.** Its `rebuild` is private
+for that reason. It matters for more than heights — a 242 pool's bottom wears its control sector's
+**flat**, so `EV_DoChange` and the arrival copies (`applyArrivalChange`, `applyFloorChange`) travel
+the same edge with nothing moving at all. Any site that mutates a sector's geometry and then picks
+the meshes to rebuild itself reintroduces the bug above, one texture at a time.
 
 ### Translucent midtextures
 

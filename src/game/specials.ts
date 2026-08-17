@@ -810,7 +810,7 @@ export class SpecialsController {
         dirty.add(e.sectorIndex);
       }
     }
-    for (const sectorIndex of dirty) this.geometry.rebuild(sectorIndex);
+    this.geometry.rebuildAround(dirty);
   }
 
   /** The mover meshes' own per-frame occlusion/fog fade — see `MoverGeometry.updateFading`. Called from `game.ts` after the camera has settled, not from `update`. */
@@ -1603,7 +1603,7 @@ export class SpecialsController {
     if (change.floorTex !== undefined) sector.floorTex = change.floorTex;
     if (change.ceilTex !== undefined) sector.ceilTex = change.ceilTex;
     if (change.special !== undefined) sector.special = change.special;
-    this.geometry.rebuild(sectorIndex);
+    this.geometry.rebuildAround(new Set([sectorIndex]));
   }
 
   /**
@@ -1703,7 +1703,7 @@ export class SpecialsController {
     // vanilla's own decoupling between a sector's `special` field and an
     // already-spawned light thinker.
     sector.special = 0;
-    this.geometry.rebuild(sectorIndex);
+    this.geometry.rebuildAround(new Set([sectorIndex]));
   }
 
   /**
@@ -2486,7 +2486,7 @@ export class SpecialsController {
       this.map.sidedefs[e.sideIndex][e.slot] = e.onTexture;
       dirty.add(e.sectorIndex);
     }
-    for (const sectorIndex of dirty) this.geometry.rebuild(sectorIndex);
+    this.geometry.rebuildAround(dirty);
     // `P_ChangeSwitchTexture` only starts a `P_StartButton` timer when
     // `useAgain` is set — that is, for a *repeatable* switch, which reverts
     // after BUTTONTIME so it can visibly be pressed again. A one-shot switch is
@@ -2510,7 +2510,7 @@ export class SpecialsController {
         dirty.add(e.sectorIndex);
       }
     }
-    for (const sectorIndex of dirty) this.geometry.rebuild(sectorIndex);
+    this.geometry.rebuildAround(dirty);
   }
 
   // ---- Lights --------------------------------------------------------

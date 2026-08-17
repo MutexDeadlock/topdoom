@@ -146,6 +146,10 @@ const TRANSLUCENT_ALPHA = 0.66;
  */
 const WATER_MIN_DEPTH = 8;
 
+/** `processFlat`'s two loop bodies, hoisted out of a function a mover rebuild runs per subsector per tic. */
+const FLOOR_ONLY = [false];
+const FLOOR_AND_CEILING = [false, true];
+
 function pushVertex(b: Batch, x: number, y: number, z: number, u: number, v: number, c: number, alpha = 1): void {
   b.positions.push(x, y, z);
   b.uvs.push(u, v);
@@ -282,6 +286,21 @@ export interface FlatSurface {
   baseAlpha?: number;
 }
 
+/**
+ * Which subsectors and linedefs a sector owns — what a mover rebuild would
+ * otherwise re-derive by scanning the whole map, once per rebuilt sector.
+ *
+ * Declared structurally here, like `SectorTransfers` above, so the renderer
+ * keeps no import edge into `game/`: the linedef half is vanilla's own
+ * `sec->lines[]`, which `game/world.ts` already builds and memoizes.
+ * `game/specials/movergeometry.ts` supplies both. See docs/render.md
+ * § Mover meshes.
+ */
+export interface MoverIndex {
+  subsectorsOf(sectorIndex: number): readonly number[];
+  linesOf(sectorIndex: number): readonly number[];
+}
+
 /** One sector's worth of dynamic geometry — see `buildMoverMesh`. */
 export interface MoverMesh {
   group: THREE.Group;
@@ -383,45 +402,24 @@ export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshO
  * `options.movableSectors` is required (not merely honoured): it is what
  * decides which of a shared line's two sides this mover owns, and without it
  * a line between two movers would have both of them build both sides.
+ *
+ * `index` is what keeps a rebuild proportional to the sector rather than to the
+ * map — see `MoverIndex`.
  */
 export function buildMoverMesh(
   map: DoomMap,
   polys: SubSectorPoly[],
   sectorIndex: number,
   bank: MaterialBank,
-  options: MapMeshOptions = {},
+  options: MapMeshOptions,
+  index: MoverIndex,
 ): MoverMesh {
-  const { renderCeilings = false, wallHeightCap = 0, movableSectors } = options;
-  const transfers = options.transfers ?? ownTransfers(map);
-  const batches = new BatchSet();
-  const texSize = (kind: SurfaceKind, name: string) => bank.size(kind, name);
-  const wallQuads: WallOccluder[] = [];
-  const flatFans: FlatSurface[] = [];
-
-  for (let ss = 0; ss < polys.length; ss++) {
-    if (polys[ss].sector !== sectorIndex) continue;
-    processFlat(map, polys[ss], ss, batches, texSize, renderCeilings, flatFans, transfers);
-  }
-
-  // Own sides always; a neighbour's side only when that neighbour is static —
-  // it has no mover of its own to build it, and its upper/lower step is sized
-  // from *this* sector's moving heights. A neighbour that is itself movable
-  // builds its own side and is rebuilt alongside this one (see
-  // SpecialsController's neighbour propagation).
-  const includeSide = (s: number) => s === sectorIndex || !movableSectors?.has(s);
-
-  for (const [lineIndex, line] of map.linedefs.entries()) {
-    if (!touchesSector(map, line, sectorIndex)) continue;
-    processLine(map, line, lineIndex, batches, texSize, wallHeightCap, wallQuads, transfers, includeSide);
-  }
+  const { batches, wallQuads, flatFans } = buildMoverBatches(map, polys, sectorIndex, bank, options, index);
 
   const group = new THREE.Group();
   const meshes = new Map<string, THREE.Mesh>();
-  for (const b of batches.all()) {
-    if (b.positions.length === 0) continue;
-    const material = bank.get(b.kind, b.texture);
-    if (!material) continue;
-
+  for (const b of batches) {
+    const material = bank.get(b.kind, b.texture)!;
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.Float32BufferAttribute(b.positions, 3));
     geom.setAttribute('uv', new THREE.Float32BufferAttribute(b.uvs, 2));
@@ -437,11 +435,97 @@ export function buildMoverMesh(
   return { group, meshes, wallQuads, flatFans };
 }
 
-/** True if either side of `line` belongs to `sectorIndex`. */
-function touchesSector(map: DoomMap, line: LineDef, sectorIndex: number): boolean {
-  const front = line.right !== NO_SIDE ? map.sidedefs[line.right] : undefined;
-  const back = line.left !== NO_SIDE ? map.sidedefs[line.left] : undefined;
-  return front?.sector === sectorIndex || back?.sector === sectorIndex;
+/**
+ * Rewrites an existing mover mesh from the sector's current heights **in
+ * place**, and returns false — leaving `mesh` untouched — when the sector's
+ * geometry no longer fits the buffers it was built with, which is the caller's
+ * cue to build a fresh one.
+ *
+ * The records are updated field-by-field rather than replaced because
+ * `WallFader`/`FlatFader` hold the arrays and index smoothing state into them.
+ * See docs/render.md § Mover meshes for when the buffers stop fitting and why
+ * a moving sector must not reallocate.
+ */
+export function refreshMoverMesh(
+  mesh: MoverMesh,
+  map: DoomMap,
+  polys: SubSectorPoly[],
+  sectorIndex: number,
+  bank: MaterialBank,
+  options: MapMeshOptions,
+  index: MoverIndex,
+): boolean {
+  const { batches, wallQuads, flatFans } = buildMoverBatches(map, polys, sectorIndex, bank, options, index);
+  if (
+    batches.length !== mesh.meshes.size ||
+    wallQuads.length !== mesh.wallQuads.length ||
+    flatFans.length !== mesh.flatFans.length
+  ) {
+    return false;
+  }
+  // Validated before anything is written, so a refusal can't leave the mesh
+  // half-rewritten.
+  for (const b of batches) {
+    const attr = mesh.meshes.get(b.key)?.geometry.getAttribute('position');
+    if (!attr || attr.array.length !== b.positions.length) return false;
+  }
+
+  for (const b of batches) {
+    const geom = mesh.meshes.get(b.key)!.geometry;
+    writeAttribute(geom, 'position', b.positions);
+    writeAttribute(geom, 'uv', b.uvs);
+    writeAttribute(geom, 'color', b.colors);
+    geom.computeBoundingSphere();
+  }
+  for (let i = 0; i < wallQuads.length; i++) Object.assign(mesh.wallQuads[i], wallQuads[i]);
+  for (let i = 0; i < flatFans.length; i++) Object.assign(mesh.flatFans[i], flatFans[i]);
+  return true;
+}
+
+function writeAttribute(geom: THREE.BufferGeometry, name: string, values: number[]): void {
+  const attr = geom.getAttribute(name) as THREE.BufferAttribute;
+  (attr.array as Float32Array).set(values);
+  attr.needsUpdate = true;
+}
+
+/**
+ * `buildMoverMesh`'s geometry pass, shared with `refreshMoverMesh` — everything
+ * up to the three.js objects. Only batches that will actually be drawn come
+ * back, so both callers agree on what "the sector's batches" are without
+ * re-deriving it.
+ */
+function buildMoverBatches(
+  map: DoomMap,
+  polys: SubSectorPoly[],
+  sectorIndex: number,
+  bank: MaterialBank,
+  options: MapMeshOptions,
+  index: MoverIndex,
+): { batches: Batch[]; wallQuads: WallOccluder[]; flatFans: FlatSurface[] } {
+  const { renderCeilings = false, wallHeightCap = 0, movableSectors } = options;
+  const transfers = options.transfers ?? ownTransfers(map);
+  const batches = new BatchSet();
+  const texSize = (kind: SurfaceKind, name: string) => bank.size(kind, name);
+  const wallQuads: WallOccluder[] = [];
+  const flatFans: FlatSurface[] = [];
+
+  for (const ss of index.subsectorsOf(sectorIndex)) {
+    processFlat(map, polys[ss], ss, batches, texSize, renderCeilings, flatFans, transfers);
+  }
+
+  // Own sides always; a neighbour's side only when that neighbour is static —
+  // it has no mover of its own to build it, and its upper/lower step is sized
+  // from *this* sector's moving heights. A neighbour that is itself movable
+  // builds its own side and is rebuilt alongside this one (see
+  // SpecialsController's neighbour propagation).
+  const includeSide = (s: number) => s === sectorIndex || !movableSectors?.has(s);
+
+  for (const lineIndex of index.linesOf(sectorIndex)) {
+    processLine(map, map.linedefs[lineIndex], lineIndex, batches, texSize, wallHeightCap, wallQuads, transfers, includeSide);
+  }
+
+  const drawn = batches.all().filter((b) => b.positions.length > 0 && bank.get(b.kind, b.texture));
+  return { batches: drawn, wallQuads, flatFans };
 }
 
 /** True if either side of `line` belongs to a sector in `sectors`. */
@@ -584,7 +668,7 @@ function processFlat(
     bottom && bottom.floorTex !== SKY_FLAT && bottom.floorTex !== NO_TEXTURE ? bottom.floorTex : undefined;
   const floorLightFrom = bottom ? control : poly.sector;
 
-  for (const isCeiling of renderCeilings ? [false, true] : [false]) {
+  for (const isCeiling of renderCeilings ? FLOOR_AND_CEILING : FLOOR_ONLY) {
     addFlatFan(poly, ss, batches, size, flatSurfaces, {
       texName: isCeiling ? sector.ceilTex : (bottomTex ?? sector.floorTex),
       // A shallow 242 draws its one floor at the surface, exactly as vanilla does.

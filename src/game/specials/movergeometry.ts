@@ -10,18 +10,22 @@
  * has to be rebuilt or recoloured. Nothing here knows what a door or a
  * crusher is; it takes sector indices.
  *
- * See docs/specials.md § Relighting mover geometry and § Light changes.
+ * See docs/render.md § Mover meshes for what a rebuild costs and when it can be
+ * done in place, and docs/specials.md § Relighting mover geometry and § Light
+ * changes for the colour half.
  */
 import * as THREE from 'three';
 import { NO_SIDE, type DoomMap } from '../../wad/map.ts';
-import type { World } from '../world.ts';
+import { sectorLines, type World } from '../world.ts';
 import type { FogOfWar } from '../fogofwar.ts';
 import {
   buildMoverMesh,
+  refreshMoverMesh,
   litColor,
   wallContrast,
   type BuiltMap,
   type MapMeshOptions,
+  type MoverIndex,
   type MoverMesh,
 } from '../../render/mapmesh.ts';
 import type { SubSectorPoly } from '../../render/bsp.ts';
@@ -43,6 +47,22 @@ interface MoverEntry {
   flats: FlatFader;
 }
 
+const NO_SUBSECTORS: readonly number[] = [];
+
+/**
+ * The renderer's `MoverIndex`: the subsectors grouped once from `polys` (their
+ * *drawn* sector, which a self-referencing sector redirects — render/bsp.ts),
+ * and the linedefs straight off `World`'s memoized `sec->lines[]`.
+ */
+export function buildMoverIndex(map: DoomMap, polys: SubSectorPoly[]): MoverIndex {
+  const subsectors: number[][] = Array.from({ length: map.sectors.length }, () => []);
+  for (let ss = 0; ss < polys.length; ss++) subsectors[polys[ss].sector]?.push(ss);
+  return {
+    subsectorsOf: (sectorIndex) => subsectors[sectorIndex] ?? NO_SUBSECTORS,
+    linesOf: (sectorIndex) => sectorLines(map, sectorIndex),
+  };
+}
+
 function disposeGroup(group: THREE.Group): void {
   group.traverse((obj) => {
     if (obj instanceof THREE.Mesh) obj.geometry.dispose();
@@ -58,6 +78,8 @@ export class MoverGeometry {
   private polys: SubSectorPoly[];
   private built: BuiltMap;
   private meshOptions: MapMeshOptions;
+  /** See `buildMoverIndex`. */
+  private moverIndex: MoverIndex;
 
   private movableSectors: Set<number>;
   /** Movable sectors sharing a linedef with a given movable sector — see `rebuildAround`. */
@@ -91,6 +113,7 @@ export class MoverGeometry {
     // buildMoverMesh needs the full set to decide which side of a shared line
     // is its own — see its doc; the caller only passes render preferences.
     this.meshOptions = { ...meshOptions, movableSectors };
+    this.moverIndex = buildMoverIndex(map, polys);
     this.indexMovableNeighbors();
     this.indexWaterDependents();
     for (const sectorIndex of movableSectors) this.createMoverMesh(sectorIndex);
@@ -154,7 +177,7 @@ export class MoverGeometry {
   }
 
   private createMoverMesh(sectorIndex: number): void {
-    const mesh = buildMoverMesh(this.map, this.polys, sectorIndex, this.bank, this.meshOptions);
+    const mesh = buildMoverMesh(this.map, this.polys, sectorIndex, this.bank, this.meshOptions, this.moverIndex);
     this.scene.add(mesh.group);
     this.moverMeshes.set(sectorIndex, {
       mesh,
@@ -175,10 +198,17 @@ export class MoverGeometry {
     this.moverLightTargets.set(sectorIndex, set);
   }
 
-  /** Rebuilds exactly one sector's mesh — the floor-change specials, which swap a flat without moving anything. */
-  rebuild(sectorIndex: number): void {
+  /**
+   * Brings exactly one sector's mesh up to date. Private, and the whole reason
+   * is the doc on `rebuildAround`: the set of meshes a changed sector
+   * invalidates is never just its own, so nothing outside may pick a sector to
+   * rebuild without going through the closure. Only a sector whose set of drawn
+   * quads changed pays for a fresh mesh — docs/render.md § Mover meshes.
+   */
+  private rebuild(sectorIndex: number): void {
     const old = this.moverMeshes.get(sectorIndex);
     if (old) {
+      if (refreshMoverMesh(old.mesh, this.map, this.polys, sectorIndex, this.bank, this.meshOptions, this.moverIndex)) return;
       this.scene.remove(old.mesh.group);
       disposeGroup(old.mesh.group);
     }
@@ -186,13 +216,16 @@ export class MoverGeometry {
   }
 
   /**
-   * Rebuilds the meshes invalidated by a set of sectors having changed height.
-   * That is never just those sectors: a two-sided line's *other* side is drawn
-   * from both sectors' heights, so a movable neighbour's own quads on a shared
-   * line go stale too (a switch mounted on the wall of the lift it operates is
-   * the common case — the switch's own sector owns that quad, but its height
-   * comes from the lift). Static neighbours need no entry here: their side of
-   * such a line is built into this mover's mesh, not the static batch.
+   * Rebuilds every mesh invalidated by a set of sectors having changed —
+   * whether that change was a height, a flat or a wall texture, and **the only
+   * way in**. It is never just those sectors: a two-sided line's *other* side
+   * is drawn from both sectors' heights, so a movable neighbour's own quads on
+   * a shared line go stale too (a switch mounted on the wall of the lift it
+   * operates is the common case — the switch's own sector owns that quad, but
+   * its height comes from the lift), and a Boom 242 sector draws from a control
+   * sector it shares no line with at all (`indexWaterDependents`). Static
+   * neighbours need no entry here: their side of such a line is built into this
+   * mover's mesh, not the static batch.
    */
   rebuildAround(dirty: Set<number>): void {
     if (dirty.size === 0) return;
@@ -216,21 +249,27 @@ export class MoverGeometry {
   }
 
   /**
-   * The one rebuild edge that isn't adjacency: a Boom 242 water sector draws
-   * its surface at its *control* sector's floor height, and the two share no
-   * linedef — usually not even a room. Linked one way only (control →
+   * The rebuild edges that aren't adjacency: a Boom 242 sector draws from its
+   * *control* sector, which it shares no linedef with — and so do the
+   * dependent's own movable neighbours, whose upper steps are sized against the
+   * ceiling it draws rather than the one it has. Linked one way only (control →
    * dependent): moving the water does not move the control sector.
    * docs/specials.md § Deep water.
    */
   private indexWaterDependents(): void {
     const transfers = this.meshOptions.transfers;
     if (!transfers) return;
+    // Collected first, applied after: `link` writes the very sets this reads.
+    const edges: [number, number][] = [];
     for (const sectorIndex of this.movableSectors) {
       const control = transfers.heightSec(sectorIndex);
-      if (control >= 0 && control !== sectorIndex && this.movableSectors.has(control)) {
-        this.link(control, sectorIndex);
+      if (control < 0 || control === sectorIndex || !this.movableSectors.has(control)) continue;
+      edges.push([control, sectorIndex]);
+      for (const n of this.movableNeighbors.get(sectorIndex) ?? []) {
+        if (n !== control) edges.push([control, n]);
       }
     }
+    for (const [from, to] of edges) this.link(from, to);
   }
 
   private link(from: number, to: number): void {

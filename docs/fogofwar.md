@@ -48,31 +48,51 @@ player start**.
 
 ## Reveal radius
 
-**`SIGHT_RADIUS` (5100) is derived from what the camera frames, not tuned by feel**, and it has to
-cover the *furthest* thing on screen rather than a comfortable average. With `TopDownCamera`'s
-defaults (`tiltDeg` 60, `distance` 480, 55° vertical FOV) the eye sits `cos(60°)·480 = 240` above the
-followed point and `sin(60°)·480 = 416` behind it, looking 30° below horizontal; the top edge of the
-frustum is then 2.5° below horizontal and meets the floor `240/tan(2.5°) ≈ 5500` units out, i.e.
-~5080 past the player. It is a radius rather than a frustum test because the camera yaws (`Q`/`E`,
-and the reorient on spawn/teleport), so any direction can become the forward one.
+**The reveal reaches `constants.ts: VIEW_DISTANCE`, and `fogofwar.ts` reads that dial directly
+rather than keeping a radius of its own.** The fog exists
+only to keep the whole map off the screen at once; it is not a second, shorter limit on what the
+player may engage. So the reveal reaches exactly as far as the view does, and **both directions are
+gameplay bugs**:
 
-**That derivation assumes flat ground**, and only flat ground: looking down a drop of `h` puts the
-frustum's ground reach at `(240 + h)/tan(2.5°)` from the eye, so any drop at all frames further than
-the radius covers. This is knowingly not chased, because walls bound reveal long before the radius
-does — the measurement, and the three wide-open maps where it does surface, are in
-docs/render.md § View distance.
+- **Reveal short of the view** puts a black hole in the middle of a view the player plainly has, and
+  it is not cosmetic: `ThingLayer` gates rendering, `pickMonster` and `raycastMonster` all on fog
+  alpha, so a monster standing there is invisible, un-lockable *and* unhittable while it shoots back.
+  The reported case: the radius was 3000 and a chaingunner 3,584 units down a straight corridor was
+  exactly that — audible, firing, and impossible to see or shoot
+  (`tests/fixtures/wads/long_corridor_with_chaingunner.wad`).
+- **Reveal past the view** permanently lights map the player never actually saw — reveal is sticky —
+  which is the one thing the fog is there to prevent.
 
-**Anything inside that distance and outside `SIGHT_RADIUS` is a black hole in the middle of a view
-the player plainly has** — and it is not only cosmetic: `ThingLayer` gates rendering, `pickMonster`
-and `raycastMonster` all on fog alpha, so a monster standing there is invisible, un-lockable *and*
-unhittable while it shoots back. The radius was 3000 and a chaingunner 3,584 units down a straight
-corridor was exactly that: audible, firing, and impossible to see or shoot. Covering the real frame
-costs nearly nothing — measured 3000 → 5100 across four maps, reveal time and count barely moved,
-because on real geometry it is walls and not the radius that bound reveal.
+It is a radius rather than a frustum test because the camera yaws (`Q`/`E`, and the reorient on
+spawn/teleport), so any direction can become the forward one.
 
-`SIGHT_RADIUS` is module-private, so `tests/regression/fog-reveal-radius.test.ts` brackets it from both
-sides instead: revealed at 5120 units, dark at 5248. Changing what the camera frames means updating
-those two numbers, not dropping the test — see docs/testing.md § Private constants.
+**The tie holds only while the fog is what bounds the view, i.e. up to about 5100 units.** With
+`TopDownCamera`'s defaults (`tiltDeg` 60, `distance` 480, 55° vertical FOV) the eye sits
+`cos(60°)·480 = 240` above the followed point and `sin(60°)·480 = 416` behind it, looking 30° below
+horizontal; the top edge of the frustum is then 2.5° below horizontal and meets the floor
+`240/tan(2.5°) ≈ 5500` units out, i.e. ~5080 past the player. Below that, the fog goes opaque before
+the frame runs out and `VIEW_DISTANCE` is the honest answer to "what can the player see". Raise the
+dial past it and the *frame* becomes the binding limit, so reveal would start running ahead of what
+is on screen — that is the point at which this identity needs revisiting, and a reveal bound of its
+own is what revisiting it would mean. (The frame figure assumes flat ground: looking down a drop of
+`h` reaches `(240 + h)/tan(2.5°)` from the eye, so a vantage over a drop frames further still —
+measured across four map sets in docs/render.md § View distance.)
+
+**Monsters are not bounded by any of this.** Vanilla gives `P_CheckSight` no range cap, a monster
+hitscan reaches `WEAPON_RANGE` (2048, vanilla's `MISSILERANGE`) and a missile once fired is unbounded
+— so with `VIEW_DISTANCE` set below 2048, a hitscanner can wake and hit the player from outside the
+revealed view. That asymmetry is the cost of a short view distance, not a fog bug.
+
+Reveal cost barely moves with the radius, because on real geometry it is walls and not the radius that
+bound reveal: measured across DOOM2 MAP01/MAP15/MAP29, E1M1, SCYTHE MAP01/MAP26, EPIC MAP01 and
+freedoom2 MAP16, raising 5100 → 12000 changed the spawn seed sweep by under 0.5 ms and the count of
+subsectors revealed at spawn **not at all** on any of them; only NUTS.WAD MAP01, wide open with a
+vantage over a drop, moved (8 → 21).
+
+The reveal distance is not readable from outside, so `tests/regression/fog-reveal-radius.test.ts`
+brackets it from both sides — against `VIEW_DISTANCE` rather than literals, since the reveal tracking
+the dial *is* the rule: a cell inside the view must be revealed, a cell past it must be dark. It
+holds wherever the dial is set; see docs/testing.md § Private constants.
 
 Each subsector is sampled at its centroid first (one ray settles the common case, and the search stops
 at the first sample that comes back clear, so the rest cost nothing usually), then at every corner
@@ -96,8 +116,8 @@ worst case (nothing explored yet) measures ~0.4 ms on DOOM2 MAP02.
 tuned by feel) caps how many not-yet-explored subsectors get their sample rays tested per `tick`;
 `scanCursor` remembers where the round-robin left off, and a subsector that fails every sample is
 simply retried on a later pass. Without the cap, cost is `unexplored subsectors × samples per
-subsector × blockers within SIGHT_RADIUS`, and on a level where all three factors are large at once —
-freedoom2 MAP03 (315 sectors, 2855 linedefs, 1531 subsectors) — the one-time reveal sweep measured
+subsector × blockers within the view distance`, and on a level where all three factors are large at
+once — freedoom2 MAP03 (315 sectors, 2855 linedefs, 1531 subsectors) — the one-time reveal sweep measured
 8.6 ms in a single call, over half a 60fps budget before rendering even runs. Spreading it across
 several tics is invisible, because reveal already fades in over `FADE_SPEED` seconds. The budget is
 counted **per tic, not per frame**, forced by the split below: `explored` is a gameplay input, so a

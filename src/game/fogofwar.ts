@@ -6,15 +6,10 @@ import { buildSubSectorPolys } from '../render/bsp.ts';
 import { polygonCentroid, segmentIntersect } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
 import { decodeRuns, encodeRuns } from './snapshot.ts';
+import { VIEW_DISTANCE } from '../constants.ts';
 import type { WallOccluder } from '../render/mapmesh.ts';
 import type { World } from './world.ts';
 
-/**
- * How far the player can reveal, in map units — derived from what the camera actually frames, not
- * tuned by feel; the geometry, and why falling short of the frame is a gameplay bug, is
- * docs/fogofwar.md § Reveal radius. Bracketed by tests/regression/fog-reveal-radius.test.ts.
- */
-const SIGHT_RADIUS = 5100;
 /** Exponential smoothing rate (1/seconds) for the reveal, gentler than wall occlusion. */
 const FADE_SPEED = 3;
 /** Snap-to-target threshold for `dampen` — see its doc for why this matters. */
@@ -189,7 +184,9 @@ export class FogOfWar {
       for (let steps = 0; steps < n && budget > 0; steps++) {
         if (!this.explored[ss]) {
           const s = this.sights[ss];
-          if (s && !(Math.hypot(s.cx - playerX, s.cy - playerY) - s.radius > SIGHT_RADIUS)) {
+          // Reveal reaches exactly as far as the player can see, so the bound
+          // is `VIEW_DISTANCE` itself. docs/fogofwar.md § Reveal radius.
+          if (s && !(Math.hypot(s.cx - playerX, s.cy - playerY) - s.radius > VIEW_DISTANCE)) {
             budget--;
             for (let i = 0; i < s.samples.length; i += 2) {
               if (this.sightClear(playerX, playerY, s.samples[i], s.samples[i + 1])) {
@@ -238,7 +235,7 @@ export class FogOfWar {
   private refreshBlockers(playerX: number, playerY: number): void {
     const map = this.world.map;
     this.blockers.length = 0;
-    for (const i of this.world.linesNear(playerX, playerY, SIGHT_RADIUS)) {
+    for (const i of this.world.linesNear(playerX, playerY, VIEW_DISTANCE)) {
       if (!this.world.blocksSight(i)) continue;
       const line = map.linedefs[i];
       const a = map.vertexes[line.v1];

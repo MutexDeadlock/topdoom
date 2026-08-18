@@ -579,23 +579,22 @@ plane below it would clip geometry the fog hasn't finished hiding, and the two w
 maintained literals that drifted into being exactly equal by luck. Deriving it is what keeps raising
 the dial safe.
 
-**What bounds an *unexplored* view is `game/fogofwar.ts: SIGHT_RADIUS` (5100), not this.** The two
-are independent: `SIGHT_RADIUS` is derived from what the camera frames on flat ground
-(docs/fogofwar.md § Reveal radius), while `VIEW_DISTANCE` is a feel dial that sits far above it. So
-raising `VIEW_DISTANCE` extends the view only through territory already revealed; unexplored
-geometry past 5100 stays black either way, and a monster standing there is invisible *and*
-unhittable because `ThingLayer` gates on fog alpha.
+**The fog of war's reveal is this same number** — `game/fogofwar.ts` reads this dial directly rather
+than keeping a radius of its own — because the player shoots what they can see, so unexplored
+geometry is revealed out to exactly where the view ends and no further. Moving this dial therefore
+moves what is revealed — and, because `ThingLayer` gates rendering, `pickMonster` and
+`raycastMonster` on fog alpha, what is shootable — not just how far the view fades. The argument for
+the identity, and the ~5100-unit ceiling past which the camera's frame rather than the fog bounds
+the view, are in docs/fogofwar.md § Reveal radius.
 
-That gap is deliberate and was measured rather than assumed. `SIGHT_RADIUS` covers the framed ground
-only where the player and what they are looking at stand at the same height; any drop pushes the
-frustum's ground reach further out than the radius. On real geometry that almost never surfaces,
-because walls bound reveal long before the radius does: sampling ~60 vantage points per map across
-`DOOM1.WAD`, `DOOM2.WAD`, `SCYTHE.WAD` and `oku2v31.wad` for subsectors that are sight-clear, framed
-*and* past 5100 finds **none at all in the stock DOOM, DOOM2 and SCYTHE map sets**. The exceptions
-are all wide-open maps with a vantage over a drop — freedoom2 MAP16 (5465 units, a 144-unit drop),
-NUTS.WAD MAP01 (7306, 300) and oku2v31 MAP01 (10679, 640). Closing those would mean roughly
-quadrupling the sight-test area for three maps out of seventy-six, against the per-frame cost
-`docs/fogofwar.md § Reveal radius` already measures for 3000 → 5100.
+The reveal cost that identity implies was measured rather than assumed, and it is nearly flat in the
+radius: on real geometry walls bound reveal long before the radius does. Sampling ~60 vantage points
+per map across `DOOM1.WAD`, `DOOM2.WAD`, `SCYTHE.WAD` and `oku2v31.wad` for subsectors that are
+sight-clear, framed *and* past 5100 finds **none at all in the stock DOOM, DOOM2 and SCYTHE map
+sets** — the exceptions are all wide-open maps with a vantage over a drop: freedoom2 MAP16 (5465
+units, a 144-unit drop), NUTS.WAD MAP01 (7306, 300) and oku2v31 MAP01 (10679, 640). Correspondingly,
+raising the reveal 5100 → 12000 across eight maps moved the spawn seed sweep by under 0.5 ms and the
+subsector count revealed at spawn not at all, except on NUTS MAP01 (8 → 21).
 
 ## Scrolling textures
 

@@ -31,13 +31,14 @@ export const DOOM_TIC = 1 / 35;
 export const BRIGHTNESS_LIFT = 0.06;
 
 /**
- * How far the player can see through explored territory, in map units: the scene's distance fog
- * (`game.ts`) is fully opaque at this range, and `TopDownCamera`'s far plane follows it. Tuned by
- * feel — it is what keeps a big open map from reading as a floorplan. What bounds an *unexplored*
- * view is `game/fogofwar.ts: SIGHT_RADIUS`, a much shorter and separately derived number.
- * docs/render.md § View distance.
+ * How far the player can see, in map units: the scene's distance fog (`game.ts`) is fully opaque at
+ * this range, `TopDownCamera`'s far plane follows it, and so does the fog of war's reveal, which
+ * reads this dial rather than keeping a radius of its own — the player shoots what they can see.
+ * Tuned by feel — it is what keeps a big open map from reading as a floorplan — but moving it moves
+ * what is revealed, and so what is shootable, not just how far the view fades.
+ * docs/render.md § View distance, docs/fogofwar.md § Reveal radius.
  */
-export const VIEW_DISTANCE = 12000;
+export const VIEW_DISTANCE = 16000;
 
 /**
  * Where that fog starts hazing, as a fraction of `VIEW_DISTANCE` (fully opaque at 1.0), so moving

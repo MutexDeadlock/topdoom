@@ -297,11 +297,14 @@ and which it drops (docs/wad.md § REJECT) by handing `wadFile` a `bytes` payloa
 
 ## Private constants are pinned behaviourally
 
-`SIGHT_RADIUS` (fogofwar.ts), `WALL_OVERLAP` (world.ts) and the sight-sampling step are module-
-private, so a test can only bracket them from both sides. `fog-reveal-radius.test.ts` asserts a
-subsector 5120 units out is revealed and one 5248 out is not — **any radius outside (5120, 5248]
-fails**. That is deliberate. A change to what the camera frames should update those numbers along
-with the constant; it should not delete the test.
+`WALL_OVERLAP` (world.ts), the sight-sampling step and the fog's reveal distance are not readable
+from outside their modules, so a test can only bracket them from both sides.
+`fog-reveal-radius.test.ts` brackets the reveal against `constants.ts: VIEW_DISTANCE` — the last grid
+cell inside the view must be revealed, the first cell a full cell past it must be dark — because the
+reveal *is* that dial, read straight out of `constants.ts` (docs/fogofwar.md § Reveal radius).
+Deriving the two columns from the dial rather than hardcoding them is what lets that dial be retuned
+without touching the test, while a reveal that falls short of the view or runs past it still fails.
+Retuning `VIEW_DISTANCE` should not need an edit here; breaking the identity should.
 
 ## Determinism
 

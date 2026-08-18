@@ -27,7 +27,7 @@ const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as
  * feel: long enough that a stray click can't destroy a save, short enough that
  * nobody wonders whether the button is broken.
  */
-const HOLD_MS = 1000;
+const HOLD_MS = 750;
 
 /**
  * What the menu's owner (main.ts) does with a save request/pick — the UI itself

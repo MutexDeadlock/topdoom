@@ -30,6 +30,7 @@ Features and improvements
   - solid structures are no longer see-through holes in the level. 
     This change came in by accident, but may be helpful
   - increased view distance
+  - sexy scrollbars for the menues
 
 Fixed bugs
   - fixed various rendering problems

@@ -13,7 +13,7 @@ drives it, and sit next to it.**
 ```
 index.html            the page skeleton: <head>, #app, the @include list, the module script
 src/styles.css        the stylesheet entry, and the only one index.html links
-src/ui/base.css       page reset, #app, canvas, and the tokens below
+src/ui/base.css       page reset, #app, canvas, the page-wide scrollbar look, and the tokens below
 src/ui/fatalerror.*   #fatal-error — owned by src/main.ts, hence not in a subfolder
 src/ui/loading.*      #loading, the boot screen — main.ts's too, and the one element in the
                       markup that starts visible (docs/menu.md § Session lifecycle)
@@ -108,3 +108,11 @@ There is also **no global `.hidden` rule**; every element scopes its own (`#menu
 `#intermission canvas.hidden`, …), because what "hidden" has to mean differs — `display: none` for
 most, `visibility: hidden` for the menu's tab panels so both keep reserving the grid cell
 (docs/menu.md § One screen, two jobs).
+
+The **scrollbars are the one exception** — a look declared page-wide in `base.css`, right after
+the reset, because the menu panels, the changelog reader and the error screen would otherwise each
+repeat it: `scrollbar-width`/`scrollbar-color` on `html` (the latter inherits, so the root
+declaration reaches every scroller), plus a `::-webkit-scrollbar` block giving the same slim,
+track-less bar on engines that don't support the standard properties. The two are alternatives, not
+a duplicated declaration: an engine that honours `scrollbar-color` ignores the pseudo-elements. A
+new scrolling element inherits the look with no rule of its own.

@@ -54,3 +54,42 @@ body {
 canvas {
   display: block;
 }
+
+/*
+ * Scrollbars, styled once for the whole page: the menu's tab panels and WAD/save lists, the
+ * changelog reader and the error screen all scroll, and the platform default reads as chrome
+ * bolted onto the panel. `scrollbar-color` is inherited, so declaring it on the root reaches every
+ * scroller. The `::-webkit-scrollbar` block below is not a duplicate of it — engines that support
+ * the standard properties ignore those pseudo-elements entirely, and the ones that don't get the
+ * same look from them.
+ */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* A transparent border clipped away from the background is what insets the bar from the panel edge
+   — the same slim thumb `scrollbar-width: thin` gives the standard path. */
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  background-clip: content-box;
+  border: 3px solid transparent;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-ghost);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}

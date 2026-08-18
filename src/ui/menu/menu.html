@@ -73,6 +73,14 @@
         <div class="tab-panels">
           <div class="tab-panel" id="settings-tab-general">
             <section>
+              <h2>Camera</h2>
+              <select id="cameramode-select">
+                <option value="auto">Automatic zoom + tilt</option>
+                <option value="manual">Manual</option>
+              </select>
+            </section>
+
+            <section>
               <h2>Frame rate</h2>
               <select id="fpscap-select">
                 <option value="0">Unlimited</option>
@@ -148,7 +156,7 @@
 
             <div class="columns">
               <section>
-                <h2>Camera</h2>
+                <h2>Camera (manual camera mode)</h2>
                 <dl class="keys">
                   <dt>+ -</dt>
                   <dd>zoom</dd>

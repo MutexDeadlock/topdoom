@@ -243,10 +243,15 @@ description, the autorun checkbox is the `Shift` row's. A player looking up what
 player changing it are the same person on the same trip to the menu — which is why those two did not
 move to General with the rest.
 
-**General is the frame rate limit, the collision toggle and the two volume sliders**, stacked full
-width in that order — Sound last of the always-on sections (`#settings-dev` still follows it in a
-dev build), since it is the one a player reaches for mid-game and the bottom of the panel is
-nearest the footer. Sound holds `#volume-slider` (effects) above `#music-volume-slider`, each with
+**General is the camera mode, the frame rate limit, the collision toggle and the two volume
+sliders**, stacked full width in that order — Sound last of the always-on sections
+(`#settings-dev` still follows it in a dev build), since it is the one a player reaches for
+mid-game and the bottom of the panel is nearest the footer. **Camera** is `#cameramode-select`,
+whose `<option>` values are the `CameraMode` strings themselves (`auto`, the default, vs
+`manual`); it is owned by `game/autocamera.ts` (`getCameraMode`/`setCameraMode`) and read per tic,
+so a change applies to the level already running (docs/render.md § Auto camera). It sits in
+General rather than the Controls key list because the mode is not a key's behavior — the `+ - [ ]`
+rows there note they act in manual mode only. Sound holds `#volume-slider` (effects) above `#music-volume-slider`, each with
 a `.label` wide enough that the two line up; the sfx one previews itself with `itemup` as it is
 dragged, the music one needs no preview because it rides the track already playing behind the menu
 (docs/music.md § Volume). The
@@ -320,6 +325,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.musicVolume` | `audio/music.ts` | docs/music.md § Volume |
 | `topdoom.autorun` | `game/player.ts` (`getAutorun`/`setAutorun`) | docs/movement.md § Movement speed and straferunning |
 | `topdoom.rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
+| `topdoom.cameraMode` | `game/autocamera.ts` (`getCameraMode`/`setCameraMode`) | docs/render.md § Auto camera |
 | `topdoom.fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
 | `topdoom.profiler` | `ui/devmode/profilerhud.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
 | `topdoom.infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |

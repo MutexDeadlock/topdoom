@@ -621,18 +621,107 @@ pans the view and changes nothing else. Boom's deep water (docs/specials.md § D
 surfaced this: 242 is render-only, so walking into a pool drawn as a flat sheet of water still drops
 the player up to 200 units, with nothing on screen to explain the swing.
 
+## Auto camera (`game/autocamera.ts`, `camera.ts`)
+
+The default camera mode frames the view from the space around the player: shut-in geometry pulls
+the camera down to `AUTO_NARROW_DISTANCE`/`AUTO_NARROW_TILT` (350u / 50°), open areas push it out
+to `AUTO_WIDE_DISTANCE`/`AUTO_WIDE_TILT` (720u / 70°). The "Camera mode" menu setting
+(`topdoom.cameraMode`, owned by `game/autocamera.ts`) switches between `auto` and `manual`;
+manual keeps the 480u / 60° constructor defaults and the `+ - [ ]` keys. **The framing keys are
+inert in auto mode** — they act only while the mode is manual, the same inert-not-error shape the
+DEVMODE map keys have outside dev mode.
+
+**The probe** (`measureOpenness`) casts `OPENNESS_RAY_COUNT` (24) rays from the player, every 15°
+at **fixed world angles**. Each ray walks the linedef grid
+(`World.forEachLineAlongSegment` + `segmentCrossT` over `lineOverlapEnds`, the
+`projectileStepBlocker` shape) out to `OPENNESS_RANGE` (2560u) and stops at the nearest line that
+`blocksSight` — the *sight* predicate, which reads live sector heights, so a door opening widens
+the framing on the next tic; `isSolidWall` (movement) and `blocksShot` (bullets pass railings)
+are both deliberately not it. The full fan costs ~0.04 ms per tic on NUTS.WAD MAP01, runs under
+the `Camera` profiler label, and in manual mode never runs at all.
+
+**Two aggregates come out of that one fan, and each drives one dial**, because the two dials do
+different jobs:
+
+- **`spread`**, the **median** ray, drives the **zoom**. How much room surrounds the player is a
+  property of the place, not of where they happen to be looking. It is a median and not a mean
+  because a mean is dominated by whichever few directions happen to be long: standing in the
+  north-west corner of DOOM2 MAP01's opening room, 15 of the 24 rays stop inside 256 units and
+  six run 1100–1540 down the length of the room, which pulls the *mean* to 478 (zoom 603u, as
+  open as a hall) while the median is 128 (zoom 420u, correctly boxed in). The median reads as
+  "the radius within which half of all directions are walled off", which is the question the zoom
+  is actually asking. Order statistics are continuous in their inputs, so it cannot pop as the
+  player walks and the ray ordering churns.
+- **`ahead`**, the mean weighted by `max(0, cos)` of each ray's angle off the bearing the camera
+  looks along, drives the **tilt**. Tilt is what trades a top-down view of the player's
+  surroundings for reach up the screen, so it is inherently directional: an open room ahead is
+  worth leaning into, a wall two steps ahead is not. A single undirected measure cannot express
+  that, and measurably did not — standing in E1M1's corridor at (1516, -2503), opening the door
+  into the room east moves `spread` from 0.00 to 0.15 but `ahead` from 0.00 to 0.50, and turning
+  the camera 180° to face the near wall drops `ahead` back to 0.06 with `spread` untouched.
+
+**The rays stay world-fixed; only the `ahead` weights rotate.** That is what keeps the
+measurement steady: no ray ever sweeps across a doorjamb as the camera turns, and the cosine lobe
+falls off smoothly rather than at a cone edge, so a Q/E step glides instead of popping. The
+bearing is `camera.viewerAngleDeg + 180` — the camera's own orbit, the same expression the
+movement basis and the audio listener take, **not** the player's facing, which follows the mouse
+and would twitch the framing with every flick of the crosshair. `ahead` is normalised by the
+weight actually used rather than a constant, since a cosine lobe's sum over a fixed ray fan
+ripples slightly as the lobe rotates between rays.
+
+Each aggregate maps to 0..1 through **its own** shut-in/wide-open window — `SPREAD_NEAR`/`FAR`
+(64/400) and `AHEAD_NEAR`/`FAR` (128/640). They cannot share one: a median runs roughly half of
+what the cosine-weighted mean does, so a window that suits one saturates the other. Both were
+picked off measured distributions rather than guessed — sampling every thing position in E1M1,
+DOOM2 MAP01/MAP07 and EPIC MAP01 — which is also how the original 192/960 was caught leaving the
+wide end of the framing unreachable on every one of those maps.
+
+**Two smoothing rates on purpose.** Both measured opennesses are damped at `OPENNESS_SMOOTH_RATE`
+(1.5/s) inside `AutoCamera` — the ~1 s "breathing" of the framing — while the camera's own
+`distance`/`tiltDeg` chase their targets at the much faster `FRAMING_SMOOTH_RATE` (10/s,
+`camera.ts`). The split keeps the two dials independent: manual-mode key response stays snappy
+while auto stays gentle.
+
+**Framing is simulation state**, exactly like the follow point and yaw (§ The camera is
+simulation state): `AutoCamera.tick` runs on the tic clock — after movement, so the probe sees
+this tic's position, and before `camera.tick`, whose damping step advances toward the fresh
+target — and `TopDownCamera` interpolates `prevDistance`/`prevTiltDeg` per frame in
+`applyToCamera`. The aim ray reads last tic's settled framing at alpha 1, the same one-tic lag
+the yaw has. `distance`/`tiltDeg` mirror `yawDeg`'s two routes: plain assignment **jumps** (value,
+target and prev together), `targetDistance`/`targetTiltDeg` glide.
+
+**A level load seeds, a teleport glides.** `AutoCamera.seed` runs one unsmoothed measurement and
+*assigns* the mapped framing, called after the spawn yaw is set (so `ahead` already looks the way
+the level opens) and before the follow point's `snapTo` so the snap poses the
+camera already framed and a level never opens mid-zoom. `seed` and `tick` are both no-ops in
+manual mode, so the mode gate lives with the setting's owner rather than at each call site. A
+teleport deliberately does *not* re-seed: the position must cut, but a zoom/tilt cut is itself a
+lurch, and the damped settle to the destination's framing reads as intended.
+
+**Framing is not in the save format**, and does not need to be in auto mode: it is a pure
+function of world state, position and yaw, so a restore recomputes it through `seed`. In manual
+mode it is a player choice that simply isn't persisted — a restore keeps whatever the session's
+camera already holds, since the camera outlives the level.
+
+The hard envelope — `MIN/MAX_CAMERA_DISTANCE` (200/2400), `MIN/MAX_TILT_DEG` (10/70) — is
+enforced by `TopDownCamera`'s own framing setters, on both the jump route (`distance`/`tiltDeg`)
+and the glide route (`targetDistance`/`targetTiltDeg`), so no writer has to remember it: the
+manual keys just add their step and saturate. The auto camera's own endpoints sit inside it, so
+in practice only the manual keys ever reach it.
+
 ## View distance (`constants.ts: VIEW_DISTANCE`, `game.ts`)
 
 How far the player can see is the scene's **distance fog**, not a clipping plane: `game.ts` sets
 `THREE.Fog` to the same near-black as the scene background, hazing in from
-`VIEW_DISTANCE * FOG_START_FRACTION` and fully opaque at `VIEW_DISTANCE` (12000 map units) — both
+`VIEW_DISTANCE * FOG_START_FRACTION` and fully opaque at `VIEW_DISTANCE` (16000 map units) — both
 dials sit in `constants.ts`, the fraction beside the distance it is a fraction of. Geometry
 past it is black however lit or fog-of-war-revealed it happens to be, so **`VIEW_DISTANCE` is the
 one dial for how much *already-explored* level is on screen** — the fade start follows it as a
 fraction rather than being its own number.
 
-Fog range is measured from the camera *eye*, which hangs `TopDownCamera.distance` (480) back from
-the player, so the view actually reaches ~480 units less than `VIEW_DISTANCE` out in front.
+Fog range is measured from the camera *eye*, which hangs `TopDownCamera.distance` (480 in manual
+mode, 360–720 under the auto camera) back from the player, so the view actually reaches that much
+less than `VIEW_DISTANCE` out in front.
 
 **The camera's far plane is `VIEW_DISTANCE` itself**, not a number of its own (`camera.ts`): a far
 plane below it would clip geometry the fog hasn't finished hiding, and the two were once separately

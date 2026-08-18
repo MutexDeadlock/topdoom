@@ -1,14 +1,17 @@
 v0.14.2 (2026-08-1?)
 
 Features and improvements
-
+  - auto camera mode (the new default): the zoom follows how open the area
+    around the player is, the tilt how far the view reaches the way you look
 
 Fixed bugs
   - a monster whose box hangs over a ledge no longer freezes solid
-  - barred gates are drawn again: an untextured step no longer cuts a midtexture
+  - an untextured step no longer cuts a midtexture
   - various lightning fixes
-    - a strobe sector as bright as its neighbours blinks to black instead of standing still
-    - a light pattern no longer dims *up* to a neighbour brighter than the sector itself
+    - a strobe sector as bright as its neighbours blinks to black instead 
+      of standing still
+    - a light pattern no longer dims *up* to a neighbour brighter than 
+      the sector itself
     - sector types 12/13 had their synced strobe speeds the wrong way round
 
 

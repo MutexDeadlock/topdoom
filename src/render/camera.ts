@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import type { Input } from '../game/input.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import { VIEW_DISTANCE } from '../constants.ts';
+import { dampen } from '../util/damping.ts';
 
 export interface TopDownCameraOptions {
   /** Tilt away from straight down, in degrees. Small values stay top-down. */
@@ -22,6 +23,31 @@ export interface TopDownCameraOptions {
 /** How fast `yawDeg` catches up to a `stepYaw` target, as a lerp-per-second rate. */
 const YAW_STEP_SMOOTH_RATE = 18;
 
+/**
+ * How fast `distance`/`tiltDeg` catch up to their targets, as a lerp-per-second
+ * rate — tuned by feel. Deliberately fast: the slow "breathing" of the auto
+ * camera lives in its own openness smoothing (game/autocamera.ts), so this only
+ * has to make target changes read as motion rather than steps.
+ */
+const FRAMING_SMOOTH_RATE = 10;
+/** Snap epsilons for the framing dampers, in map units / degrees — tuned by feel (imperceptible). */
+const DISTANCE_SNAP_EPS = 0.01;
+const TILT_SNAP_EPS = 0.001;
+
+/**
+ * The hard zoom/tilt envelope — all four tuned by feel. Enforced here, by both
+ * framing setters, rather than by each writer: the manual keys and the auto
+ * camera would otherwise each have to remember it. docs/render.md § Auto camera.
+ */
+export const MIN_CAMERA_DISTANCE = 200;
+export const MAX_CAMERA_DISTANCE = 2400;
+export const MIN_TILT_DEG = 10;
+export const MAX_TILT_DEG = 70;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
 /** Degrees Q/E snap the camera per press. */
 const KEY_YAW_STEP = 45;
 /** Seconds between auto-repeated Q/E steps while the key stays held, after the initial tap. */
@@ -33,7 +59,8 @@ const KEY_YAW_REPEAT_INTERVAL = 0.26;
  * `yawDeg` lets it orbit around the followed point (Q/E, see `applyYawInput`)
  * so geometry facing away from the default south view stays reachable.
  *
- * **This camera's follow point and yaw are simulation state, not view state**,
+ * **This camera's follow point, yaw and framing (distance/tilt) are simulation
+ * state, not view state**,
  * and advance in `tick` on the tic clock; `applyToCamera` interpolates them into
  * the actual `THREE` camera for display. That split is forced rather than
  * stylistic: the pointer ray is cast through this camera, and the ray decides
@@ -43,9 +70,17 @@ const KEY_YAW_REPEAT_INTERVAL = 0.26;
  */
 export class TopDownCamera {
   readonly camera: THREE.PerspectiveCamera;
-  tiltDeg: number;
-  distance: number;
   aimLead: number;
+
+  private _tiltDeg: number;
+  private _distance: number;
+  /**
+   * Where `distance`/`tiltDeg` are animating towards — the framing twin of
+   * `stepYaw`'s target. Written every tic by the auto camera, or by the manual
+   * framing keys; a plain `distance`/`tiltDeg` assignment jumps instead.
+   */
+  private _targetDistance: number;
+  private _targetTiltDeg: number;
 
   private _yawDeg: number;
   /** Where `yawDeg` is animating towards — see `stepYaw`. Equal to `_yawDeg` outside of a Q/E snap. */
@@ -53,9 +88,11 @@ export class TopDownCamera {
 
   private target = new THREE.Vector3();
   private smoothed = new THREE.Vector3();
-  /** Last tic's `smoothed`/`_yawDeg`, the interpolation source for `applyToCamera`. */
+  /** Last tic's `smoothed`/`_yawDeg`/`_distance`/`_tiltDeg`, the interpolation source for `applyToCamera`. */
   private prevSmoothed = new THREE.Vector3();
   private prevYawDeg: number;
+  private prevDistance: number;
+  private prevTiltDeg: number;
   private initialised = false;
   /** Seconds Q/E has been continuously held, for auto-repeat — see `applyYawInput`. */
   private qHoldTime = 0;
@@ -66,8 +103,12 @@ export class TopDownCamera {
   private viewYawDeg: number;
 
   constructor(aspect: number, options: TopDownCameraOptions = {}) {
-    this.tiltDeg = options.tiltDeg ?? 60;
-    this.distance = options.distance ?? 480;
+    this._tiltDeg = clamp(options.tiltDeg ?? 60, MIN_TILT_DEG, MAX_TILT_DEG);
+    this._distance = clamp(options.distance ?? 480, MIN_CAMERA_DISTANCE, MAX_CAMERA_DISTANCE);
+    this._targetTiltDeg = this._tiltDeg;
+    this._targetDistance = this._distance;
+    this.prevTiltDeg = this._tiltDeg;
+    this.prevDistance = this._distance;
     this.aimLead = options.aimLead ?? 0.18;
     this._yawDeg = options.yawDeg ?? 0;
     this.targetYawDeg = this._yawDeg;
@@ -106,6 +147,53 @@ export class TopDownCamera {
    */
   stepYaw(deltaDeg: number): void {
     this.targetYawDeg += deltaDeg;
+  }
+
+  /**
+   * Camera distance from the follow point, in map units, clamped to the
+   * envelope. Assigning jumps immediately — the framing twin of the `yawDeg`
+   * setter; `targetDistance` is the animated route.
+   */
+  get distance(): number {
+    return this._distance;
+  }
+
+  set distance(value: number) {
+    this._distance = clamp(value, MIN_CAMERA_DISTANCE, MAX_CAMERA_DISTANCE);
+    this._targetDistance = this._distance;
+    this.prevDistance = this._distance;
+  }
+
+  /** Where `distance` is animating towards, clamped to the same envelope. */
+  get targetDistance(): number {
+    return this._targetDistance;
+  }
+
+  set targetDistance(value: number) {
+    this._targetDistance = clamp(value, MIN_CAMERA_DISTANCE, MAX_CAMERA_DISTANCE);
+  }
+
+  /**
+   * Tilt away from straight down, in degrees, clamped to the envelope.
+   * Assigning jumps immediately; `targetTiltDeg` is the animated route.
+   */
+  get tiltDeg(): number {
+    return this._tiltDeg;
+  }
+
+  set tiltDeg(value: number) {
+    this._tiltDeg = clamp(value, MIN_TILT_DEG, MAX_TILT_DEG);
+    this._targetTiltDeg = this._tiltDeg;
+    this.prevTiltDeg = this._tiltDeg;
+  }
+
+  /** Where `tiltDeg` is animating towards, clamped to the same envelope. */
+  get targetTiltDeg(): number {
+    return this._targetTiltDeg;
+  }
+
+  set targetTiltDeg(value: number) {
+    this._targetTiltDeg = clamp(value, MIN_TILT_DEG, MAX_TILT_DEG);
   }
 
   /**
@@ -207,6 +295,10 @@ export class TopDownCamera {
   tick(dt: number, pos: Pos3, cursor: Pos2 | null): void {
     this.prevSmoothed.copy(this.smoothed);
     this.prevYawDeg = this._yawDeg;
+    this.prevDistance = this._distance;
+    this.prevTiltDeg = this._tiltDeg;
+    this._distance = dampen(this._distance, this.targetDistance, FRAMING_SMOOTH_RATE, dt, DISTANCE_SNAP_EPS);
+    this._tiltDeg = dampen(this._tiltDeg, this.targetTiltDeg, FRAMING_SMOOTH_RATE, dt, TILT_SNAP_EPS);
 
     this.setTarget(pos);
 
@@ -246,12 +338,13 @@ export class TopDownCamera {
     const yawDeg = this.prevYawDeg + (this._yawDeg - this.prevYawDeg) * alpha;
     this.viewYawDeg = yawDeg;
 
-    const tilt = THREE.MathUtils.degToRad(this.tiltDeg);
+    const distance = this.prevDistance + (this._distance - this.prevDistance) * alpha;
+    const tilt = THREE.MathUtils.degToRad(this.prevTiltDeg + (this._tiltDeg - this.prevTiltDeg) * alpha);
     const yaw = THREE.MathUtils.degToRad(yawDeg);
     // The offset sits yawDeg around the target from due south (yaw=0) so the
     // camera can orbit while staying tilted the same amount off vertical.
-    const horiz = Math.sin(tilt) * this.distance;
-    const offsetY = Math.cos(tilt) * this.distance;
+    const horiz = Math.sin(tilt) * distance;
+    const offsetY = Math.cos(tilt) * distance;
     const offsetX = horiz * Math.sin(yaw);
     const offsetZ = horiz * Math.cos(yaw);
 

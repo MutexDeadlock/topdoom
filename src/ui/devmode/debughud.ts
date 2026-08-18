@@ -7,22 +7,31 @@ import { applyProfilerVisible, ProfilerHud } from './profilerhud.ts';
 import type { FrameProfiler } from '../../util/profiler.ts';
 import type { Input } from '../../game/input.ts';
 import type { TopDownCamera } from '../../render/camera.ts';
+import { getCameraMode } from '../../game/autocamera.ts';
 import { DEVMODE } from '../../constants.ts';
 
 /**
  * Camera framing, then the level switching DEVMODE gates. Zoom and tilt are
  * player-facing controls, so they sit ahead of that gate — the camera
- * distance/tilt they set are framing preferences, not debug state.
+ * distance/tilt they set are framing preferences, not debug state. They act in
+ * manual camera mode only and are inert while the auto camera drives the
+ * framing (the same inert-not-error shape N/P have outside dev mode) —
+ * docs/render.md § Auto camera. They write the *targets* so a held key rides
+ * the camera's framing smoother instead of stepping raw at the tic rate.
  */
 export function handleHotkeys(
   input: Input,
   camera: TopDownCamera,
   changeMap: (delta: number) => void,
 ): void {
-  if (input.held('Equal', 'NumpadAdd')) camera.distance = Math.max(200, camera.distance - 8);
-  if (input.held('Minus', 'NumpadSubtract')) camera.distance = Math.min(2400, camera.distance + 8);
-  if (input.held('BracketLeft')) camera.tiltDeg = Math.max(0, camera.tiltDeg - 0.5);
-  if (input.held('BracketRight')) camera.tiltDeg = Math.min(70, camera.tiltDeg + 0.5);
+  if (getCameraMode() === 'manual') {
+    // The camera clamps both targets to its own envelope, so a held key just
+    // saturates there.
+    if (input.held('Equal', 'NumpadAdd')) camera.targetDistance -= 8;
+    if (input.held('Minus', 'NumpadSubtract')) camera.targetDistance += 8;
+    if (input.held('BracketLeft')) camera.targetTiltDeg -= 0.5;
+    if (input.held('BracketRight')) camera.targetTiltDeg += 0.5;
+  }
   if (!DEVMODE) return;
   if (input.pressed('KeyN')) changeMap(1);
   if (input.pressed('KeyP')) changeMap(-1);

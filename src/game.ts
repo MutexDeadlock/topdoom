@@ -43,6 +43,7 @@ import { applyBarrelExplosion, type CombatContext, type DamageCause } from './ga
 import { SpriteFxLayer } from './game/spritefx.ts';
 import { ProjectileLayer } from './game/projectiles.ts';
 import { FogOfWar } from './game/fogofwar.ts';
+import { AutoCamera, getCameraMode } from './game/autocamera.ts';
 import {
   applyCrushDamage,
   blocksCeilingLower,
@@ -199,6 +200,7 @@ export class Game {
   /** How a switch texture resolves to its opposite state — see the constructor. */
   private switchPairs: SwitchPairLookup;
   private fogOfWar!: FogOfWar;
+  private autoCamera!: AutoCamera;
   private specials?: SpecialsController;
   /**
    * The Icon of Sin's cube spitter, rebuilt per level like `specials` — inert on every map with no
@@ -729,6 +731,10 @@ export class Game {
     // the session, not the level, so its smoothed follow point still holds the
     // outgoing level's — a load would open with the camera flying to the
     // player. docs/render.md § The camera is simulation state.
+    this.autoCamera = new AutoCamera(this.world);
+    // Seeded before snapTo, which poses the camera — so a level opens already
+    // framed rather than mid-zoom. docs/render.md § Auto camera.
+    this.autoCamera.seed(this.player.x, this.player.y, this.view.camera);
     this.view.camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
     this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player.x, this.player.y);
     if (restore) this.fogOfWar.restoreExplored(restore.fog);
@@ -1338,6 +1344,10 @@ export class Game {
     const cursor = this.playerDead ? null : this.updateLivingPlayer(TIC_SECONDS, input, camera);
 
     if (!this.playerDead) this.levelTime += TIC_SECONDS;
+    // After movement (the probe runs from this tic's position) and before
+    // camera.tick, whose damping advances toward the fresh target.
+    // docs/render.md § Auto camera.
+    this.profiler.time('Camera', () => this.autoCamera.tick(this.player.x, this.player.y, camera));
     camera.tick(TIC_SECONDS, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, cursor);
 
     this.profiler.time('Fog of War', () => this.fogOfWar.tick(this.player.x, this.player.y));
@@ -1710,7 +1720,11 @@ export class Game {
       `${this.currentMap}   ${this.title}`,
       `${fps} fps   ${this.built?.triangles ?? 0} tris   monsters awake ${this.things?.awakeMonsterCount() ?? 0}`,
       `pos ${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}   z ${this.player.z.toFixed(0)}   sector ${sector}`,
-      `cam ${camera.distance.toFixed(0)}u ${camera.tiltDeg.toFixed(0)}°tilt ${camera.yawDeg.toFixed(0)}°yaw`,
+      `cam ${camera.distance.toFixed(0)}u ${camera.tiltDeg.toFixed(0)}°tilt ${camera.yawDeg.toFixed(0)}°yaw ${
+        getCameraMode() === 'auto'
+          ? `auto spread ${this.autoCamera.spread.toFixed(2)} ahead ${this.autoCamera.ahead.toFixed(2)}`
+          : 'manual'
+      }`,
     ];
   }
 }

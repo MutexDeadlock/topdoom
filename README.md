@@ -59,8 +59,8 @@ does (autorun and the right mouse button), so both are there while you play — 
 | `1`–`7` | select weapon; pressing a slot again toggles within it (fist/chainsaw, shotgun/super shotgun) |
 | mouse wheel | cycle through the weapons you own |
 | `Q` / `E` | orbit the camera around the player |
-| `+` / `-` | camera distance |
-| `[` / `]` | camera tilt |
+| `+` / `-` | camera distance *(manual camera mode)* |
+| `[` / `]` | camera tilt *(manual camera mode)* |
 | `N` / `P` | next / previous map *(dev mode only)* |
 | `R` | restart the level (once dead) |
 | `Esc` | menu / resume |

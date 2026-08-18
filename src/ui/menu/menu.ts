@@ -11,6 +11,7 @@ import {
   setRightMouseAction,
   type RightMouseAction,
 } from '../../game/input.ts';
+import { getCameraMode, setCameraMode, type CameraMode } from '../../game/autocamera.ts';
 import { getFpsCap, setFpsCap, type FpsCap } from '../../game.ts';
 import { getInfiniteTallActors, setInfiniteTallActors } from '../../game/world.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
@@ -71,6 +72,7 @@ export class Menu {
   private autorunCheckbox = el<HTMLInputElement>('autorun-checkbox');
   private shiftAction = el<HTMLSpanElement>('shift-action');
   private rightMouseSelect = el<HTMLSelectElement>('rightmouse-select');
+  private cameraModeSelect = el<HTMLSelectElement>('cameramode-select');
   private fpsCapSelect = el<HTMLSelectElement>('fpscap-select');
   private infiniteTallCheckbox = el<HTMLInputElement>('infinitetall-checkbox');
   private profilerCheckbox = el<HTMLInputElement>('profiler-checkbox');
@@ -154,6 +156,7 @@ export class Menu {
     this.installVolume();
     this.installAutorun();
     this.installRightMouse();
+    this.installCameraMode();
     this.installFpsCap();
     this.installInfiniteTall();
     this.installProfiler();
@@ -320,6 +323,19 @@ export class Menu {
     this.rightMouseSelect.value = getRightMouseAction();
     this.rightMouseSelect.addEventListener('change', () => {
       setRightMouseAction(this.rightMouseSelect.value as RightMouseAction);
+    });
+  }
+
+  /**
+   * Whether the camera frames itself from the openness around the player
+   * (`auto`, the default) or stays on the manual `+ - [ ]` keys — applied to
+   * the level already running, read per tic. The `<option>` values are the
+   * `CameraMode` strings themselves. docs/render.md § Auto camera.
+   */
+  private installCameraMode(): void {
+    this.cameraModeSelect.value = getCameraMode();
+    this.cameraModeSelect.addEventListener('change', () => {
+      setCameraMode(this.cameraModeSelect.value as CameraMode);
     });
   }
 

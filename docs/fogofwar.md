@@ -79,6 +79,14 @@ own is what revisiting it would mean. (The frame figure assumes flat ground: loo
 `h` reaches `(240 + h)/tan(2.5°)` from the eye, so a vantage over a drop frames further still —
 measured across four map sets in docs/render.md § View distance.)
 
+**The auto camera moves the framing inside that ceiling, not past it** (docs/render.md § Auto
+camera). At its wide end (tilt 70°, distance 720) the eye sits `cos(70°)·720 ≈ 246` up looking 20°
+below horizontal, so the top frustum edge points `27.5° − 20° = 7.5°` *above* horizontal and never
+meets the floor — the fog stays the binding limit and the identity holds exactly. At the narrow
+end (50°/350) the frame binds around `225/tan(12.5°) ≈ 1010` units — well short of the fog, but
+that is the shut-in case where walls bound reveal long before either does, the same accepted,
+measured-harmless direction as the flat-ground gap above.
+
 **Monsters are not bounded by any of this.** Vanilla gives `P_CheckSight` no range cap, a monster
 hitscan reaches `WEAPON_RANGE` (2048, vanilla's `MISSILERANGE`) and a missile once fired is unbounded
 — so with `VIEW_DISTANCE` set below 2048, a hitscanner can wake and hit the player from outside the

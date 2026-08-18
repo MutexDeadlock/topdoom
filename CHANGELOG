@@ -1,7 +1,7 @@
 v0.14.0 (2026-08-1?)
 
 Features and improvements
-  - initial BOOM compat
+  - initial BOOM compatibility
     - generalized linedefs and sector types, extended linedef numbers,
       six-slot keys and generalized locks, elevators, extended BSP nodes
     - silent and line-to-line teleporters, instant toggle floors
@@ -10,8 +10,7 @@ Features and improvements
       as BOOM does
     - scrolling walls, floors and ceilings, including the ones a moving
       sector drives or accelerates
-    - conveyor belts, which carry the player, monsters, barrels, props and
-      corpses
+    - conveyor belts, which carry all types of objects
     - icy and muddy floors: friction changes how you accelerate and how
       fast you end up going, and how far a hit slides you
     - wind, currents and point pushers that shove or pull you across a room
@@ -26,13 +25,13 @@ Features and improvements
     - a BOOM map's own colormaps tint the whole view while you stand in the
       sector that names them
     - MISSING: DEH/BEX support
+  - a monster killed mid-knockback now slides to a stop instead of freezing
+    where it died
   - solid structures are no longer see-through holes in the level. 
     This change came in by accident, but may be helpful
 
 Fixed bugs
   - fixed various rendering problems
-  - a monster killed mid-knockback now slides to a stop instead of freezing
-    where it died
 
 
 ===============================================================================

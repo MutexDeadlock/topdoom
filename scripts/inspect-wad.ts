@@ -213,7 +213,7 @@ console.log(`  free directions at r=64: ${free}/${steps}`);
     boom: 'boom',
     generalized: 'generalized',
     param: 'param (spawn-time)',
-    deferred: 'deferred (later phase)',
+    noop: 'no-op here (nothing this renderer draws)',
     unknown: 'UNKNOWN',
   };
   const lineClasses = new Map<SpecialClass, Map<number, number>>();
@@ -225,7 +225,7 @@ console.log(`  free directions at r=64: ${free}/${steps}`);
     lineClasses.set(cls, bucket);
   }
   console.log('\nlinedef specials:');
-  for (const cls of ['vanilla', 'boom', 'generalized', 'param', 'deferred', 'unknown'] as const) {
+  for (const cls of ['vanilla', 'boom', 'generalized', 'param', 'noop', 'unknown'] as const) {
     const bucket = lineClasses.get(cls);
     if (!bucket) continue;
     const total = [...bucket.values()].reduce((a, b) => a + b, 0);

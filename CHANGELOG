@@ -1,7 +1,7 @@
 v0.14.0 (2026-08-1?)
 
 Features and improvements
-  - full BOOM compat (experimental)
+  - initial BOOM compat
     - generalized linedefs and sector types, extended linedef numbers,
       six-slot keys and generalized locks, elevators, extended BSP nodes
     - silent and line-to-line teleporters, instant toggle floors
@@ -11,33 +11,23 @@ Features and improvements
     - scrolling walls, floors and ceilings, including the ones a moving
       sector drives or accelerates
     - conveyor belts, which carry the player, monsters, barrels, props and
-      corpses — and whatever they push over a teleporter is teleported by it
+      corpses
     - icy and muddy floors: friction changes how you accelerate and how
       fast you end up going, and how far a hit slides you
     - wind, currents and point pushers that shove or pull you across a room
-    - voodoo dolls — a map's extra player starts now walk lines and take
+    - voodoo dolls: a map's extra player starts now walk lines and take
       damage on your behalf, so conveyor-driven scripts run
     - deep water: a pool drawn at another sector's height, with a
-      see-through surface you stay visible under while wading — and water
-      that rises and falls when the sector driving it moves
+      see-through surface you stay visible under while wading
+      - and water that rises and falls when the sector driving it moves
     - a sector can borrow another's lighting for its floor or its ceiling,
       so a lava pit lights itself and whatever stands in it
-    - see-through midtextures: grates, windows and railings a BOOM map marks
-      translucent now draw that way
+    - see-through midtextures
     - a BOOM map's own colormaps tint the whole view while you stand in the
       sector that names them
-  - solid structures — pillars, crates, lamp posts — are no longer see-through
-    holes in the level. Thias change came in by accident, but may be helpful
-  - big performance win on conveyor-heavy BOOM maps (literalism.wad MAP18:
-    466 voodoo dolls and ~2,000 things standing on 756 conveyor sectors):
-    a body pinned against a wall by a belt no longer re-derives its blocked
-    move every tic, and the per-thing conveyor query caches its sector walk
-    while the body stands still — together ~8 ms of every tic gone
-  - and a matching one on BOOM maps with many doors and lifts (MAP18 again,
-    973 of them): geometry that fog of war or view distance has faded to
-    nothing is no longer drawn, and a door's wall quads no longer re-walk the
-    BSP every frame to find out where they are. 1598 draw calls a frame down
-    to 118, and the frame roughly a third faster overall
+    - MISSING: DEH/BEX support
+  - solid structures are no longer see-through holes in the level. 
+    This change came in by accident, but may be helpful
 
 Fixed bugs
   - fixed various rendering problems

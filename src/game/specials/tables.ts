@@ -547,9 +547,7 @@ export const PARAM_LINE_SPECIALS: Set<number> = new Set([
  * Kept apart from `LINE_SPECIALS` so the vanilla table's audit stays exactly
  * what it claims; every entry here is transcribed from the Boom dispatch
  * switches (`P_CrossSpecialLine`, `P_UseSpecialLine`, `P_ShootSpecialLine`),
- * one case at a time. The teleport variants (207-210/243-244/262-269) and
- * toggle plats (211/212) are knowingly absent until their mechanisms land —
- * `DEFERRED_LINE_SPECIALS` below. docs/specials.md § Scope.
+ * one case at a time. docs/specials.md § Scope.
  */
 export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   // ---- W1 ----------------------------------------------------------------
@@ -709,17 +707,21 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
 };
 
 /**
- * Boom numbers whose *mechanism* hasn't landed yet. `lookupSpecial` returns
- * null for them like any unknown number; this set exists so the inspect-wad
- * coverage report can call them "deferred" instead of "unknown".
+ * Numbers this engine resolves by *doing nothing*, on purpose — the effect they
+ * configure has no counterpart in a top-down renderer, so nothing is missing.
+ * `lookupSpecial` returns null for them like any unknown number; the set exists
+ * so the inspect-wad coverage report can call them "no-op" instead of
+ * "UNKNOWN". A number whose mechanism simply hasn't been built stays `unknown`
+ * and keeps failing the gate, which is the point of the gate.
  *
- * **Empty**: every Boom linedef number this engine can meet now resolves to
- * something — the triggerables through `lookupSpecial`, the parameter lines
- * through `forces.ts` and `transfers.ts`. Kept declared as the seam for the
- * next number that lands ahead of its mechanism.
+ * MBF's sky transfer (`p_spec.c`, killough 10/98: `case 271: // Regular sky`,
+ * `case 272: // Same, only flipped`) points every tagged sector's sky at the
+ * line's own sidedef texture. This engine draws no sky at all: an `F_SKY1`
+ * ceiling is simply not built (`wad/map.ts`'s `SKY_FLAT`, docs/render.md), so
+ * which texture a sector *would* have shown there can never be seen.
  * docs/specials.md § Scope.
  */
-export const DEFERRED_LINE_SPECIALS: Set<number> = new Set<number>([]);
+export const NOOP_LINE_SPECIALS: Set<number> = new Set<number>([271, 272]);
 
 /**
  * Decoded generalized defs, one per distinct number per session — the decode
@@ -735,7 +737,7 @@ const generalizedCache = new Map<number, SpecialDef | null>();
  * here beside the tables rather than in the script, where it could drift out
  * of step with the lookup and report a false pass.
  */
-export type SpecialClass = 'none' | 'vanilla' | 'boom' | 'generalized' | 'param' | 'deferred' | 'unknown';
+export type SpecialClass = 'none' | 'vanilla' | 'boom' | 'generalized' | 'param' | 'noop' | 'unknown';
 
 export function classifyLineSpecial(special: number): SpecialClass {
   if (special === 0) return 'none';
@@ -743,7 +745,7 @@ export function classifyLineSpecial(special: number): SpecialClass {
   if (BOOM_LINE_SPECIALS[special]) return 'boom';
   if (isGeneralized(special)) return 'generalized';
   if (PARAM_LINE_SPECIALS.has(special)) return 'param';
-  if (DEFERRED_LINE_SPECIALS.has(special)) return 'deferred';
+  if (NOOP_LINE_SPECIALS.has(special)) return 'noop';
   return 'unknown';
 }
 

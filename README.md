@@ -3,8 +3,10 @@
 A top-down DOOM built on the original IWADs. The camera hangs above the player and is
 tilted slightly off vertical, so walls show some of their height and levels read as
 spaces rather than floor plans; it can also orbit around the player with `Q`/`E`. Level
-geometry, textures and flats come straight out of `DOOM.WAD` / `DOOM2.WAD`; the game logic
-is new.
+geometry, textures and flats come straight out of `DOOM.WAD` / `DOOM2.WAD`. The code is new —
+no vanilla C is ported — but the behavior is vanilla's wherever a WAD can tell the difference:
+monster stats, weapon rates, the specials, even the random table are reproduced from the original
+source. Movement, collision and the camera are the deliberate exceptions, rebuilt for the view.
 
 ## Running it
 
@@ -153,8 +155,9 @@ node scripts/inspect-wad.ts public/wads/iwad/DOOM2.WAD MAP05 public/wads/pwad/SC
 ```
 
 Reports lump and map counts, which file a map came from, any textures it references but the
-WAD set lacks, how many subsector polygons came out degenerate, and whether the player start
-is walkable.
+WAD set lacks, how many subsector polygons came out degenerate, whether the player start is
+walkable, and a specials coverage report — every linedef and sector special the map uses,
+classified by whether this engine understands it.
 
 ## Running the tests
 
@@ -178,3 +181,11 @@ floor movers, crushers, switches and teleporters all work, including locked door
 weapons fire, and every stock monster is in — including both DOOM II oddities, Commander Keen and
 the Icon of Sin. Sound effects and music both come out of the loaded WAD (see
 [Sound and music](#sound-and-music) above).
+
+**BOOM-format maps load and play** (experimental): extended BSP nodes, generalized linedefs and
+sector types, the extended linedef numbers, six-slot keys and generalized locks, elevators,
+silent and line-to-line teleporters, a WAD's own `ANIMATED` and `SWITCHES` tables, scrolling
+surfaces, conveyors, friction, wind and pushers, voodoo dolls, deep water, transfer lighting,
+translucent midtextures and custom colormaps. What is deliberately **not** in: `DEHACKED`/BEX
+patches, and MBF's sky transfer — nothing draws sky in a top-down view. See
+[docs/specials.md](docs/specials.md) for the per-number detail.

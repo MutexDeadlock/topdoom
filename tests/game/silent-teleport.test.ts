@@ -135,7 +135,7 @@ describe('specials · silent teleporters', () => {
     assert.equal(rig.arrivals.length, 1, 'a successful crossing does spend it');
   });
 
-  test('the deferred set no longer claims the teleport family', () => {
+  test('the whole line-to-line teleport family resolves', () => {
     for (const n of [207, 208, 209, 210, 243, 244, 262, 263, 264, 265, 266, 267, 268, 269]) {
       assert.equal(lookupSpecial(n)?.effect.kind, 'teleport', `${n} resolves`);
     }

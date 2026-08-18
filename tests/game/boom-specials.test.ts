@@ -2,8 +2,8 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   BOOM_LINE_SPECIALS,
-  DEFERRED_LINE_SPECIALS,
   LINE_SPECIALS,
+  NOOP_LINE_SPECIALS,
   PARAM_LINE_SPECIALS,
   classifyLineSpecial,
   lookupSpecial,
@@ -30,10 +30,10 @@ describe('specials · extended Boom table', () => {
       assert.equal(LINE_SPECIALS[Number(key)], undefined, `${key} in both tables`);
     }
     for (const n of PARAM_LINE_SPECIALS) {
-      assert.ok(!LINE_SPECIALS[n] && !BOOM_LINE_SPECIALS[n] && !DEFERRED_LINE_SPECIALS.has(n), `param ${n} unique`);
+      assert.ok(!LINE_SPECIALS[n] && !BOOM_LINE_SPECIALS[n] && !NOOP_LINE_SPECIALS.has(n), `param ${n} unique`);
     }
-    for (const n of DEFERRED_LINE_SPECIALS) {
-      assert.ok(!LINE_SPECIALS[n] && !BOOM_LINE_SPECIALS[n], `deferred ${n} unique`);
+    for (const n of NOOP_LINE_SPECIALS) {
+      assert.ok(!LINE_SPECIALS[n] && !BOOM_LINE_SPECIALS[n], `no-op ${n} unique`);
     }
   });
 
@@ -43,15 +43,22 @@ describe('specials · extended Boom table', () => {
     assert.equal(lookupSpecial(197)?.effect.kind, 'exit');
     assert.equal(lookupSpecial(207)?.effect.kind, 'teleport');
     assert.equal(lookupSpecial(211)?.effect.kind, 'lift');
-    // Nothing is deferred any more: the render transfers are parameter lines
-    // now, classified `param` and owned by `specials/transfers.ts`, which
-    // `lookupSpecial` is still right to answer null for.
-    assert.deepEqual([...DEFERRED_LINE_SPECIALS], []);
+    // The render transfers are parameter lines, classified `param` and owned by
+    // `specials/transfers.ts`, which `lookupSpecial` is still right to answer
+    // null for.
     for (const n of [213, 242, 260, 261]) {
       assert.equal(classifyLineSpecial(n), 'param', `${n} is a parameter line`);
       assert.equal(lookupSpecial(n), null, `param ${n} is not a trigger`);
     }
+    // MBF's sky transfer: settled as a no-op, since this engine draws no sky
+    // for it to transfer (docs/specials.md § Scope).
+    for (const n of [271, 272]) {
+      assert.equal(classifyLineSpecial(n), 'noop', `${n} is a settled no-op`);
+      assert.equal(lookupSpecial(n), null, `no-op ${n} is not a trigger`);
+      assert.ok(!PARAM_LINE_SPECIALS.has(n), `${n} is only a no-op`);
+    }
     assert.equal(lookupSpecial(300), null, 'an unassigned number is still unknown');
+    assert.equal(classifyLineSpecial(300), 'unknown', 'and still reports as unknown');
   });
 });
 

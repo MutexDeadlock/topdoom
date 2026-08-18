@@ -215,6 +215,35 @@ describe('Boom scrollers', () => {
     assert.deepEqual(forces.counts(), { side: 1, floorTex: 1, ceilTex: 0, carry: 1 });
   });
 
+  test('an accelerative conveyor keeps its built-up speed across a save', () => {
+    // 216 is the accelerative twin of 252, the carry-only conveyor.
+    const spec = (): Spec => ({ lines: [[0, 0, 128, 0, 216, 7]], tags: [7, 0], sectorOf: [1] });
+    const map = build(spec());
+    const forces = forcesFor(map);
+    map.sectors[1].floorHeight += 8;
+    forces.tick();
+    const running = forces.carryInSector(0)!.x;
+    assert.ok(running !== 0, 'the belt should be moving');
+
+    // A restore rebuilds `Forces` from the map, so a fresh one starts at rest —
+    // this is the state the saved block exists to undo.
+    const reloaded = forcesFor(build(spec()));
+    reloaded.tick();
+    assert.equal(reloaded.carryInSector(0), null, 'a fresh spawn has no built-up speed');
+
+    reloaded.restore(forces.snapshot());
+    reloaded.tick();
+    assert.ok(Math.abs(reloaded.carryInSector(0)!.x - running) < 1e-9, 'the restored belt runs at the saved speed');
+  });
+
+  test('a scroller at rest saves no block at all', () => {
+    const forces = forcesFor(build({ lines: [[0, 0, 128, 0, 252, 7]], tags: [7] }));
+    forces.tick();
+    assert.equal(forces.snapshot(), undefined, 'a plain conveyor has no integrator to save');
+    // And a save from before the block existed restores to exactly that.
+    assert.doesNotThrow(() => forces.restore(undefined));
+  });
+
   test('a scroller with no tagged sector spawns nothing', () => {
     const forces = forcesFor(build({ lines: [[0, 0, 128, 0, 251, 9]], tags: [7] }));
     assert.equal(forces.hasScrollers, false);

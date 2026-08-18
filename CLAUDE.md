@@ -6,8 +6,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A top-down DOOM built on the original IWADs. The camera hangs above the player, tilted
 slightly off vertical. Level geometry, textures and flats are parsed straight out of
-`DOOM.WAD` / `DOOM2.WAD` (or any PWAD); the game logic (movement, collision, camera) is
-entirely new — none of vanilla DOOM's game code is ported.
+`DOOM.WAD` / `DOOM2.WAD` (or any PWAD).
+
+**No vanilla C is transliterated — but little of the behavior is invented.** Movement, collision
+and the camera are this engine's own, because the view needs them to be; nearly everything else is
+reproduced from `linuxdoom-1.10` and Boom/MBF *by behavior* — the specials tables off the dispatch
+switches, `mobjinfo` stats, weapon rates, `P_RadiusAttack`, the random table, `T_Scroll`, `GENMIDI`.
+Read it as "written fresh, matched to the source", which is what the fidelity rule below costs.
 
 ## Commands
 
@@ -29,7 +34,7 @@ node scripts/inspect-wad.ts public/wads/iwad/DOOM2.WAD MAP05 public/wads/pwad/SC
 
 Runs under Node's native TS support, no browser. It reports lump/map counts, lump provenance, the
 node format, missing textures, degenerate subsector polygons, whether the player start is walkable,
-and the specials coverage report (every linedef/sector special classified known/deferred/unknown —
+and the specials coverage report (every linedef/sector special classified known/no-op/unknown —
 the Boom-compat acceptance gate) — the fastest check on a WAD-parsing, texture-merging or BSP
 change, and the way to reproduce a bug against a specific real-world WAD.
 

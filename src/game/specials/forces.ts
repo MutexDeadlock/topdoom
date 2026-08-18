@@ -13,6 +13,7 @@ import { NO_FRICTION, ORIG_FRICTION, type FrictionEffect } from './defs.ts';
 import { ThingType } from '../things/doomednums.ts';
 import { DOOM_TIC } from '../../constants.ts';
 import type { Pos3 } from '../../types.ts';
+import type { ScrollerSnapshot } from '../snapshot.ts';
 
 /**
  * `P_SpawnScrollers`' `SCROLL_SHIFT` of 5: a scroller's rate is its control
@@ -730,6 +731,47 @@ export class Forces {
     this.pushScratch.x = px;
     this.pushScratch.y = py;
     return this.pushScratch;
+  }
+
+  /**
+   * The accelerative scrollers' integrators — the one piece of scroller state a
+   * restore can't re-derive, since a belt that has built up speed keeps it
+   * until its control sector moves again. Sparse and index-keyed against the
+   * spawn order, and `undefined` when nothing has built up, so the overwhelming
+   * majority of saves carry no block at all.
+   * docs/savegames.md § What is saved and what is deliberately not.
+   */
+  snapshot(): ScrollerSnapshot[] | undefined {
+    let saved: ScrollerSnapshot[] | undefined;
+    for (const [i, s] of this.scrollers.entries()) {
+      if (s.vdx === 0 && s.vdy === 0) continue;
+      (saved ??= []).push([i, s.vdx, s.vdy]);
+    }
+    return saved;
+  }
+
+  /**
+   * The restore twin. Absent block means every integrator is at zero, which is
+   * both what a fresh spawn produces and what a save from before this field
+   * existed restored to — the reason it needs no `SAVE_VERSION` bump. Indices
+   * outside the list are ignored: the scroller list comes from the map, not
+   * from the save.
+   *
+   * `lastHeight` needs no equivalent, but only because of the apply order:
+   * `Forces` is constructed *after* `applySectors` has written the restored
+   * heights (docs/savegames.md § Apply order), so every displacement scroller
+   * spawns already watching the height it was saved at. Spawning it earlier
+   * would make the first restored tic see the whole saved-to-authored
+   * difference as one tic's movement.
+   */
+  restore(saved: readonly ScrollerSnapshot[] | undefined): void {
+    if (!saved) return;
+    for (const [i, vdx, vdy] of saved) {
+      const s = this.scrollers[i];
+      if (!s) continue;
+      s.vdx = vdx;
+      s.vdy = vdy;
+    }
   }
 }
 

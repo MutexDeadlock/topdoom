@@ -557,6 +557,7 @@ export class Game {
         projectiles: this.projectiles.snapshot(),
         teleportFogs: this.effects.snapshotTeleportFogs(),
         voodoo: this.voodoo.snapshot(),
+        scrollers: this.forces.snapshot(),
         rng: getRandomCursors(),
       },
     };
@@ -687,6 +688,10 @@ export class Game {
     this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
     this.flatFader = new FlatFader(this.built.flatSurfaces, this.built.flatMeshes);
     this.forces = new Forces(map, this.world);
+    // Constructed after `applySectors` on purpose, so a displacement scroller
+    // spawns watching the restored control-sector height rather than the
+    // authored one — `Forces.restore` covers what that ordering can't.
+    this.forces.restore(restore?.scrollers);
     this.voodoo = new VoodooDolls(this.world);
     // Absent in a save from before dolls existed, which leaves them on their own
     // player starts — the same state a fresh load gives them.

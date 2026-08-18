@@ -389,9 +389,24 @@ export interface GameSnapshot {
    * from before dolls existed restored to.
    */
   voodoo?: VoodooSnapshot[];
+  /**
+   * The accelerative scrollers' built-up speed, `[scrollerIndex, vdx, vdy]` for
+   * each one that has any. Optional because it was added without a
+   * `SAVE_VERSION` bump: absent means every integrator is at zero, which is
+   * what a save from before it restored to.
+   */
+  scrollers?: ScrollerSnapshot[];
   /** The two random-table cursors. Restored after every other step — docs/savegames.md § Apply order. */
   rng: { p: number; m: number };
 }
+
+/**
+ * One accelerative scroller's integrator: its index in the level's spawn order,
+ * then `vdx`/`vdy` — `game/specials/forces.ts`. A tuple rather than a record
+ * because a conveyor-heavy map can carry hundreds and this rides in every save
+ * of it.
+ */
+export type ScrollerSnapshot = [number, number, number];
 
 /** One voodoo doll's mutable state — `game/voodoo.ts`. */
 export interface VoodooSnapshot {

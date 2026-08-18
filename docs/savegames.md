@@ -112,7 +112,8 @@ own countdown), fog of war's `explored`, sound-alerted
 sectors, every thing, the Icon of Sin, projectiles in flight, the optional `voodoo` block — where
 each of the level's dolls has been carried to and the momentum it is carrying, absent in any save
 from before dolls existed, which leaves them standing on their own player starts exactly as a fresh
-load does (docs/specials.md § Voodoo dolls) — level time, camera yaw,
+load does (docs/specials.md § Voodoo dolls) — the optional `scrollers` block (the accelerative
+scrollers' built-up speed, below), level time, camera yaw,
 `recordsEligible` (so a `?pos=` run can't launder eligibility through a save), and the RNG cursors.
 
 **The player's external momentum is still stored as `knockVelX`/`knockVelY`.** That channel widened
@@ -120,10 +121,17 @@ past knockback into the general one conveyors and pushers feed (`Player.momX`/`m
 docs/movement.md § External momentum), and the wire names were deliberately left alone: renaming
 them would orphan every existing save for a field whose meaning only grew.
 
-**Scroller state is deliberately not saved.** A plain scroller's offset is presentation — where a
-waterfall's texture happens to be — and an accelerative or displacement one rebuilds its rate from
-the control sector the next time that sector moves. What a restore loses is the phase of a
-scrolling texture and an accelerative scroller's built-up speed, and both are visual.
+**Scroller state is saved only where it isn't presentation.** A plain scroller's offset *is*
+presentation — where a waterfall's texture happens to be — and a displacement one re-derives its
+rate the next time its control sector moves, so neither is stored: what a restore loses is the
+phase of a scrolling texture, and nothing else. **The accelerative scrollers are the exception**,
+because their integrator is not visual — an accelerative conveyor (216/217) keeps carrying at its
+built-up speed with the control sector standing still, so dropping it on load would park everything
+on the belt until that sector moved again. The optional `scrollers` block holds those integrators
+and only those: `[scrollerIndex, vdx, vdy]` per scroller that has built up any, indexed against the
+level's spawn order, absent when none has (`Forces.snapshot`, docs/specials.md § Scrollers and
+conveyors). `lastHeight` — what a displacement scroller watches — needs no field at all, because
+`Forces` is constructed *after* `applySectors` (§ Apply order, step 6).
 
 **The render transfers are not saved either, and need no field.** 213/242/260/261 are read straight
 off the map at load (docs/specials.md § Render transfers), and the one thing about them that can
@@ -217,7 +225,11 @@ per read either way and does not depend on it.
 5. `computeMovableSectors(map)` **unioned with every saved mover's sector** — a mid-motion mover
    whose authored sector special was consumed would otherwise land back in the static batch. The
    union is handed to both `buildMapMesh` and the `SpecialsController` constructor.
-6. `buildMapMesh` / faders, unchanged, over restored geometry.
+6. `buildMapMesh` / faders, unchanged, over restored geometry — then `new Forces(map, world)` →
+   `forces.restore(...)` and `new VoodooDolls(world)` → `voodoo.restore(...)`. **Both after step 3**:
+   a displacement scroller samples its control sector's height at spawn, so building it against the
+   authored heights would make the first restored tic read the whole saved-to-authored difference as
+   one tic of movement. Only the accelerative integrators need the explicit restore on top.
 7. `new Player(world)` → `player.restore(...)`; camera yaw from the snapshot rather than the spawn
    angle, and `camera.snapTo` on the restored position so the view doesn't fly in from the outgoing
    level (docs/render.md § The camera is simulation state).

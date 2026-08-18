@@ -78,13 +78,26 @@ conveyors, § Friction, § Pushers), which bring voodoo dolls with them (§ Vood
 `specials/transfers.ts` the ones that change how a sector is *drawn* (§ Render transfers).
 `PARAM_LINE_SPECIALS` is the union, and every number in it is implemented.
 
+**One number is settled as a no-op rather than implemented.** MBF's sky transfer (271 regular,
+272 flipped — `p_spec.c`, killough 10/98) points every tagged sector's sky at the transfer line's
+own sidedef texture. This engine draws no sky at all: an `F_SKY1` ceiling is simply not built
+(`SKY_FLAT` in `wad/map.ts`, docs/render.md § Mesh building), so the transferred texture could
+never be seen. `NOOP_LINE_SPECIALS` holds those numbers, and they classify as `noop`. Real WADs do
+use it: `literalism.wad` carries 271 on twelve of its maps, up to 107 lines on one, which is how it
+surfaced.
+
+**There is no "deferred" bucket, deliberately.** One existed while the Boom work was in phases and
+was retired empty when they finished: a number whose mechanism simply hasn't been built classifies
+as `unknown` and fails the gate, which is the whole point of the gate. `noop` is not a softer
+`unknown` — it is the claim that the number is *settled*, and it costs a paragraph here saying why
+each entry can never be seen.
+
 `scripts/inspect-wad.ts` prints a **specials coverage report** — every linedef special classified
-vanilla / boom / generalized / param (spawn-time) / deferred (later phase) / UNKNOWN, and sector
-specials checked through `decodeSectorType` — the acceptance gate for each Boom phase, beside lines
+vanilla / boom / generalized / param (spawn-time) / no-op / UNKNOWN, and sector specials checked
+through `decodeSectorType` — the acceptance gate the Boom work was accepted against, beside lines
 counting the scrollers, conveyors, friction sectors, pushers and dolls the level spawned and the
-render transfers it carries. **`DEFERRED_LINE_SPECIALS` is now empty**: every Boom linedef number
-this engine can meet resolves to something. It stays declared as the seam for the next number that
-lands ahead of its mechanism.
+render transfers it carries. **Nothing lands in UNKNOWN** on the WADs checked so far: every Boom
+linedef number this engine can meet either resolves to something or is a settled no-op.
 
 ## Elevators
 
@@ -862,7 +875,11 @@ engine's long-standing 35 units/sec comes from.
 245-249 and 214-218 are remapped onto 250-254 up front, exactly as Boom does, so only one set of
 cases is written out. A displacement scroller's rate is its authored rate times the change in its
 control sector's `floorHeight + ceilHeight` since last tic; an accelerative one *accumulates* that
-into `vdx`/`vdy` and keeps scrolling at the built-up rate after the control sector stops.
+into `vdx`/`vdy` and keeps scrolling at the built-up rate after the control sector stops. **Those
+integrators are the one piece of `Forces` a savegame carries** (`Forces.snapshot`/`restore`): an
+accelerative conveyor still running with its control sector at rest is simulation state, not
+presentation, so a restore that dropped it would stop the belt. Everything else here re-derives
+itself from the map — docs/savegames.md § What is saved and what is deliberately not.
 
 **The carry rate is not the scroll rate.** `CARRYFACTOR` is 3/32, "so scrolling floors and objects
 on them can move at same speed" — and 253 applies it only to the conveyor half, after the flat half

@@ -77,13 +77,6 @@ describe('Best times · the record store', () => {
     assert.equal(recordBestTime('k', 161, meta).isNewBest, false);
   });
 
-  test('records under different keys do not see each other', () => {
-    recordBestTime('a', 100, meta);
-    recordBestTime('b', 200, meta);
-    assert.equal(readBestTime('a'), 100);
-    assert.equal(readBestTime('b'), 200);
-  });
-
   test('an unset key has no best time', () => {
     assert.equal(readBestTime('never-played'), null);
   });

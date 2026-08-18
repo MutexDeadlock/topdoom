@@ -204,11 +204,8 @@ describe('Geometry · blast range', () => {
   test('it measures to the body’s edge, so a wide body is caught further out', () => {
     // A 48-radius mancubus 100 units east of a 128-unit barrel blast.
     assert.equal(blastDistanceToBox(0, 0, 100, 0, 48), 52);
-    // vanilla deals `128 - 52` = 76 there; centre-to-centre would have said 100,
-    // i.e. 28 damage.
-    const damage = (dist: number, radius = 128) => radius * (1 - dist / radius);
-    assert.equal(damage(52), 76);
-    assert.equal(damage(100), 28);
+    // `PIT_RadiusAttack` deals `radius - dist`, so a 128-unit blast does 76 there;
+    // centre-to-centre would have said 100, i.e. 28 damage.
 
     // A narrow body at the same spot is hurt less — the subtraction is per-body.
     assert.equal(blastDistanceToBox(0, 0, 100, 0, 16), 84);

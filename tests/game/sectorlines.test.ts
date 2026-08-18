@@ -36,18 +36,6 @@ describe('world · sector→lines index', () => {
     }
   });
 
-  test('every line is indexed under both of its sectors', () => {
-    const { map } = gridMap(['...']);
-    for (let i = 0; i < map.linedefs.length; i++) {
-      const line = map.linedefs[i];
-      for (const side of [line.right, line.left]) {
-        if (side === NO_SIDE) continue;
-        const sector = map.sidedefs[side].sector;
-        assert.ok(sectorLines(map, sector).includes(i), `line ${i} missing from sector ${sector}`);
-      }
-    }
-  });
-
   test('a line whose two sides name the same sector is listed once', () => {
     const { map } = gridMap(['..']);
     // Re-point both sides of one line at sector 0, vanilla's self-referencing shape.

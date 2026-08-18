@@ -322,6 +322,15 @@ for the tests, and the table removes the motive entirely.
 `tests/util/random.test.ts` also asserts that **no file in `src/` mentions `Math.random`**. The repo
 runs no linter, so that test is the only thing keeping a second, undocumented entropy source out.
 
+The wall clock is the other entropy source, and gets the same treatment. `tests/util/profiler.test.ts`
+patches `performance.now` to a counter a test moves by hand, so a frame's duration is *stated*
+rather than spun out in a busy-wait loop — `FrameProfiler` reads the clock in three places and
+nowhere else, so the smoothed figures then converge on the stated numbers to within 1e-11 and the
+assertions are exact instead of tolerance-bracketed. Node runs one process per test file, so the
+patch reaches nothing else; restore it in an `after()` so the runner's own timings are unaffected.
+This is what keeps a test of *timing bookkeeping* out of the "Performance" carve-out above: nothing
+here asserts that code is fast, and no assertion can go red because the machine was busy.
+
 ## Framerate independence
 
 `tests/regression/framerate-independence.test.ts` is the one test that protects the whole tic lock,

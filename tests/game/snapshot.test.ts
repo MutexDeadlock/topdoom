@@ -18,15 +18,16 @@ import { clearRandom, getRandomCursors, pRandom, mRandom, setRandomCursors } fro
  * mangling it exists to avoid. See docs/savegames.md § The format and its version.
  */
 describe('Savegames · state encoding', () => {
-  test('JSON drops Infinity — the reason the sentinel exists', () => {
-    // Not our code: the platform behavior the -1 sentinel guards against.
-    assert.equal(JSON.parse(JSON.stringify({ v: Infinity })).v, null);
-  });
-
-  test('the forever sentinel round-trips and leaves real seconds alone', () => {
-    assert.equal(decodeSeconds(encodeSeconds(Infinity)), Infinity);
-    assert.equal(decodeSeconds(encodeSeconds(0)), 0);
-    assert.equal(decodeSeconds(encodeSeconds(42.5)), 42.5);
+  test('the forever sentinel survives the serializer, and leaves real seconds alone', () => {
+    // Through `JSON`, not around it. `JSON.stringify(Infinity)` yields `null`,
+    // so a pair that encoded nothing at all would still satisfy
+    // `decodeSeconds(encodeSeconds(Infinity)) === Infinity` on its own — the
+    // sentinel only earns its place once the value has been through a string.
+    const stored = (seconds: number): number =>
+      decodeSeconds(JSON.parse(JSON.stringify(encodeSeconds(seconds))));
+    assert.equal(stored(Infinity), Infinity);
+    assert.equal(stored(0), 0);
+    assert.equal(stored(42.5), 42.5);
   });
 
   test('run-length encoding round-trips typical fog bitmaps', () => {

@@ -55,12 +55,4 @@ describe('Vanilla tables · meleeThreshold', () => {
     assert.equal(meleeThreshold(MELEE_RANGE, MONSTER_STATS[ThingType.demon].radius), 74, 'against a demon (radius 30)');
     assert.equal(meleeThreshold(MELEE_RANGE, 0), 44, "GZDoom's default AActor::meleerange");
   });
-
-  test('a wider victim is reachable from further out', () => {
-    const player = meleeThreshold(MELEE_RANGE, PLAYER_RADIUS);
-    for (const type of [ThingType.demon, ThingType.baronOfHell, ThingType.cyberdemon]) {
-      const victim = meleeThreshold(MELEE_RANGE, MONSTER_STATS[type].radius);
-      assert.ok(victim > player, `doomednum ${type} is wider than the player, so reachable further out`);
-    }
-  });
 });

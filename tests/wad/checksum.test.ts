@@ -12,33 +12,31 @@ import { wadFile } from '../fixtures/wadfile.ts';
  * See docs/wad.md § Content id.
  */
 describe('WAD parsing · content ids', () => {
-  test('the same bytes always hash the same', () => {
+  test('the same bytes always hash to the same 16 hex chars, empty buffer included', () => {
     const bytes = Uint8Array.from([1, 2, 3, 4, 5]);
     assert.equal(hashBytes(bytes), hashBytes(Uint8Array.from(bytes)));
-  });
-
-  test('the hash is 16 hex chars', () => {
-    assert.match(hashBytes(Uint8Array.from([0])), /^[0-9a-f]{16}$/);
-  });
-
-  test('one flipped byte changes it', () => {
-    const a = Uint8Array.from([1, 2, 3, 4, 5]);
-    const b = Uint8Array.from([1, 2, 9, 4, 5]);
-    assert.notEqual(hashBytes(a), hashBytes(b));
-  });
-
-  test('a byte moved between positions changes it', () => {
-    assert.notEqual(hashBytes(Uint8Array.from([1, 2, 3])), hashBytes(Uint8Array.from([1, 3, 2])));
-  });
-
-  test('a buffer that is a prefix of another hashes differently', () => {
-    // The length fold is what guarantees this; without it a run of trailing zero bytes would be
-    // the only thing separating an early-truncated file from the whole one.
-    assert.notEqual(hashBytes(Uint8Array.from([7, 7, 7])), hashBytes(Uint8Array.from([7, 7, 7, 0, 0])));
-  });
-
-  test('an empty buffer still hashes', () => {
+    assert.match(hashBytes(bytes), /^[0-9a-f]{16}$/);
     assert.match(hashBytes(new Uint8Array(0)), /^[0-9a-f]{16}$/);
+  });
+
+  test('a different value, a different order or a different length all change it', () => {
+    assert.notEqual(
+      hashBytes(Uint8Array.from([1, 2, 3, 4, 5])),
+      hashBytes(Uint8Array.from([1, 2, 9, 4, 5])),
+      'one flipped byte',
+    );
+    assert.notEqual(
+      hashBytes(Uint8Array.from([1, 2, 3])),
+      hashBytes(Uint8Array.from([1, 3, 2])),
+      'a byte moved between positions',
+    );
+    // The length fold is what guarantees the last one; without it a run of trailing zero bytes
+    // would be the only thing separating an early-truncated file from the whole one.
+    assert.notEqual(
+      hashBytes(Uint8Array.from([7, 7, 7])),
+      hashBytes(Uint8Array.from([7, 7, 7, 0, 0])),
+      'a prefix of another buffer',
+    );
   });
 
   test('a file keeps one id, and two files with the same bytes share it', () => {

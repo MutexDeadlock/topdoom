@@ -135,15 +135,35 @@ player and produces the open dollhouse look — no extra logic needed. `F_SKY1` 
 A two-sided line's **masked middle texture** is one copy of the texture, not a fill of the opening.
 Its row 0 sits at the pegged anchor — the higher **real** floor plus the texture height when
 `LOWER_UNPEGGED` is set, the lower real ceiling otherwise (§ Deep water: the anchor is the one
-height a 242 does *not* move) — plus the sidedef's y-offset, and the quad is that band
-*clipped* to the opening (`r_segs.c: R_RenderMaskedSegRange`, which draws the texture once and lets
-the seg's clip arrays cut it). So the offset moves the quad itself, and an offset that carries the
-texture clear of the opening draws nothing at all: vanilla never tiles a midtexture vertically, and
-mappers use exactly that to hide one. Sizing the quad to the opening and letting the offset run off
-into the UVs instead makes a wrapped copy appear in the wrong place — BOOMEDIT.WAD MAP01 line 726's
-`ICESIGN` (48 tall, y-offset −88, opening −16..128) drew up under the ceiling instead of at −8..40.
-The opening a side is clipped to, and the neighbour's ceiling its upper stands on, are the **drawn**
-ones: a Boom 242 sector hands out its control sector's ceiling (§ Deep water).
+height a 242 does *not* move) — plus the sidedef's y-offset, and the quad is that band *clipped* to
+the range below (`r_segs.c: R_RenderMaskedSegRange`, which draws the texture once and lets the seg's
+clip arrays cut it). So the offset moves the quad itself, and an offset that carries the texture
+clear of that range draws nothing at all: vanilla never tiles a midtexture vertically, and mappers
+use exactly that to hide one. Sizing the quad to the opening and letting the offset run off into the
+UVs instead makes a wrapped copy appear in the wrong place — BOOMEDIT.WAD MAP01 line 726's `ICESIGN`
+(48 tall, y-offset −88, opening −16..128) drew up under the ceiling instead of at −8..40.
+The opening a side is measured against, and the neighbour's ceiling its upper stands on, are the
+**drawn** ones: a Boom 242 sector hands out its control sector's ceiling (§ Deep water).
+
+### What cuts a midtexture
+
+**The opening cuts a midtexture only where the upper and lower steps are actually drawn.** Vanilla's
+clip arrays are a side effect of drawing those tiers: `R_RenderSegLoop` sets `ceilingclip` to the
+bottom of the upper wall it just drew, but to `yl - 1` — this sector's **own** ceiling — where the
+sidedef has no upper texture, and symmetrically `floorclip` to `yh + 1` with no lower. So a step the
+mapper left untextured cuts nothing, and the midtexture runs on past it to this sector's floor and
+ceiling. Two sky ceilings are the one exception: `R_StoreWallRange`'s "hack to allow height changes
+in outdoor areas" pulls `worldtop` down to the neighbour's ceiling before any tier is chosen, so
+that is where the cut lands.
+
+This is what the **barred gate** idiom is built on, and it inverts without it. `EPIC.WAD` MAP02
+sector 14 (tag 6, opened by line 66) is a 4-unit door strip closed at ceiling 1 in a sector 72 tall,
+carrying `MIDBARS3` — 72 tall, y-offset 72 — on the neighbour's side of lines 75/76 with no upper
+texture. Closed, the bars hang from the door's underside at 1 up to 73 and fill the doorway; open at
+68 they ride up to 68..140 and only a 4-unit sliver stays under the ceiling. Clipped to the opening
+instead, both states draw a degenerate quad and the gate is a hole you can see through either way.
+Nothing across the committed WADs loses a midtexture to this rule — it only ever widens the cut, on
+about 15 quads per DOOM2-based set (MAP22's `METAL2`, MAP31's `MIDGRATE`) and 46 in EPIC.
 
 Coordinates: DOOM's `(x, y, z)` becomes three.js `(x, z, -y)`, so the map plane is XZ and Y is up.
 

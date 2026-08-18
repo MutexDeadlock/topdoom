@@ -8,8 +8,8 @@ import { gridMap } from '../fixtures/gridmap.ts';
 
 /**
  * Where a two-sided line's masked middle texture hangs: one copy off the pegged
- * anchor, y-offset included, clipped to the opening — never stretched to fill
- * it. See docs/render.md § Mesh building.
+ * anchor, y-offset included, cut by the tiers the side actually draws — never
+ * stretched to fill the opening. See docs/render.md § Mesh building.
  */
 
 const GRATE = 'MIDGRATE';
@@ -21,9 +21,16 @@ const BANK = {
   get: () => new THREE.MeshBasicMaterial(),
 } as unknown as MaterialBank;
 
+/**
+ * EPIC.WAD MAP02's gate in miniature: a cell exactly as tall as the texture,
+ * facing a door shut at ceiling 1 — where `g` is that door.
+ */
+const GATE = ['og'];
+
 /** Two open cells (floor 0, ceiling 128) with a grate hung in the opening between them. */
-function grate(setup: (map: DoomMap, line: number) => void) {
-  const map = gridMap(['..']).map;
+function grate(setup: (map: DoomMap, line: number) => void, grid: string[] = ['..']) {
+  const heights = { o: { floor: 0, ceil: TEX_H }, g: { floor: 0, ceil: 1 } };
+  const map = gridMap(grid, { heights }).map;
   const line = map.linedefs.findIndex((l) => l.left !== NO_SIDE);
   map.sidedefs[map.linedefs[line].right].middle = GRATE;
   setup(map, line);
@@ -78,5 +85,26 @@ describe('render · midtexture placement', () => {
       map.sidedefs[map.linedefs[line].right].yOffset = -128;
     });
     assert.equal(quad, undefined, 'vanilla never tiles a masked midtexture, so nothing is left to draw');
+  });
+
+  // EPIC.WAD MAP02's gate (sector 14, line 66): the bars hang off the shut
+  // door's underside, above an opening 1 unit tall, and only reach the doorway
+  // because the untextured upper step draws nothing to cut them.
+  // docs/render.md § What cuts a midtexture.
+  test('an untextured upper step does not cut the midtexture — the barred gate', () => {
+    const { band, v } = grate((map, line) => {
+      map.sidedefs[map.linedefs[line].right].yOffset = TEX_H;
+    }, GATE);
+    assert.deepEqual(band, [1, TEX_H], 'hung off the shut door, cut by this sector rather than by the 1-unit opening');
+    assert.deepEqual(round(v!), round([1 / TEX_H, 1]), 'only the row that overshoots the ceiling is cut');
+  });
+
+  test('a textured upper step cuts it back to the opening', () => {
+    const { quad } = grate((map, line) => {
+      const side = map.sidedefs[map.linedefs[line].right];
+      side.yOffset = TEX_H;
+      side.upper = 'UPPER';
+    }, GATE);
+    assert.equal(quad, undefined, 'the band now sits wholly above the opening the upper wall leaves');
   });
 });

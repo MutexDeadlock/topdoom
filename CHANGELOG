@@ -1,3 +1,14 @@
+v0.14.2 (2026-08-1?)
+
+Features and improvements
+
+
+Fixed bugs
+  - barred gates are drawn again: an untextured step no longer cuts a midtexture
+
+
+===============================================================================
+
 v0.14.1 (2026-08-18)
 
 Features and improvements

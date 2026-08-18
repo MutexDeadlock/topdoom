@@ -841,16 +841,17 @@ interface WallSpec {
   baseAlpha?: number;
 }
 
-function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: WallOccluder[]): void {
-  if (spec.topH <= spec.botH) return;
-  if (spec.texture === NO_TEXTURE || spec.texture === '') return;
+/** True when the quad was drawn — what vanilla's `toptexture`/`bottomtexture` being non-zero decides (see `addTwoSidedSide`'s midtexture clip). */
+function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: WallOccluder[]): boolean {
+  if (spec.topH <= spec.botH) return false;
+  if (spec.texture === NO_TEXTURE || spec.texture === '') return false;
   const dim = size('wall', spec.texture);
-  if (!dim) return;
+  if (!dim) return false;
 
   const dx = spec.bx - spec.ax;
   const dy = spec.by - spec.ay;
   const len = Math.hypot(dx, dy);
-  if (len < 1e-6) return;
+  if (len < 1e-6) return false;
 
   // DOOM darkens east-west walls and brightens north-south ones so that
   // corners stay legible without real lighting (r_segs.c: R_StoreWallRange).
@@ -890,6 +891,7 @@ function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: Wal
     frontSide: spec.frontSide,
     baseAlpha: spec.baseAlpha,
   });
+  return true;
 }
 
 function buildWalls(
@@ -1044,9 +1046,10 @@ function addTwoSidedSide(
   const lowerUnpegged = (flags & LF.LOWER_UNPEGGED) !== 0;
 
   // Upper: this sector's ceiling is higher than the neighbour's.
+  let upperDrawn = false;
   if (sec.ceilHeight > otherCeil && !(sec.ceilTex === SKY_FLAT && other.ceilTex === SKY_FLAT)) {
     const dim = size('wall', side.upper);
-    addWall(
+    upperDrawn = addWall(
       batches,
       size,
       {
@@ -1065,8 +1068,9 @@ function addTwoSidedSide(
   // a step sized to the surface would ring that bottom with a hole. A 242 *fake
   // floor* does, on both sides at once, because there the one drawn floor is the
   // fake one (`Transfers.drawnFloor`, docs/render.md § Deep water).
+  let lowerDrawn = false;
   if (otherFloor > selfFloor) {
-    addWall(
+    lowerDrawn = addWall(
       batches,
       size,
       {
@@ -1080,20 +1084,29 @@ function addTwoSidedSide(
     );
   }
 
-  // Middle: optional masked texture (grates, bars) inside the opening. Boom's
+  // Middle: optional masked texture (grates, bars) hung across the line. Boom's
   // 260 makes one translucent, and overloads this same name to point at the
   // translucency map — in which case there is no texture to draw at all.
   // docs/specials.md § Translucent midtextures.
   if (side.middle !== NO_TEXTURE && side.middle !== '' && !transfers.midtexSuppressed(lineIndex)) {
     const dim = size('wall', side.middle);
     if (dim) {
-      const openTop = Math.min(sec.ceilHeight, otherCeil);
-      const openBot = Math.max(selfFloor, otherFloor);
+      // What the midtexture is cut to: the tiers this side actually drew, which
+      // is the opening only where both of them are there. A step whose texture
+      // the mapper left off draws nothing and so cuts nothing, and the
+      // midtexture runs on to this sector's own floor/ceiling — the barred-gate
+      // idiom depends on it (`r_segs.c: R_RenderSegLoop`'s `ceilingclip =
+      // yl - 1` / `floorclip = yh + 1`, docs/render.md § Mesh building). Two
+      // sky ceilings are vanilla's one exception: `R_StoreWallRange` pulls the
+      // front ceiling down to the back's before any of this ("hack to allow
+      // height changes in outdoor areas"), so the cut lands there instead.
+      const skyPair = sec.ceilTex === SKY_FLAT && other.ceilTex === SKY_FLAT;
+      const clipTop = skyPair ? otherCeil : upperDrawn ? Math.min(sec.ceilHeight, otherCeil) : sec.ceilHeight;
+      const clipBot = lowerDrawn ? Math.max(selfFloor, otherFloor) : selfFloor;
       // The quad is the texture's own band — one copy hung off the pegged
-      // anchor, sidedef y-offset included — clipped to the opening, never the
-      // opening itself: vanilla draws a masked midtexture once and lets the
-      // opening's clip arrays cut it (r_segs.c: R_RenderMaskedSegRange).
-      // docs/render.md § Mesh building.
+      // anchor, sidedef y-offset included — clipped to that range, never sized
+      // to it: vanilla draws a masked midtexture once and lets the seg's clip
+      // arrays cut it (r_segs.c: R_RenderMaskedSegRange).
       //
       // The anchor is the seg's *real* sectors even where the opening is a 242's
       // drawn one: `R_RenderMaskedSegRange` reads `curline->frontsector` and
@@ -1103,8 +1116,8 @@ function addTwoSidedSide(
       const pegBot = Math.max(sec.floorHeight, other.floorHeight);
       const pegRef = lowerUnpegged ? pegBot + dim.h : pegTop;
       const texTop = pegRef + side.yOffset;
-      const top = Math.min(openTop, texTop);
-      const bot = Math.max(openBot, texTop - dim.h);
+      const top = Math.min(clipTop, texTop);
+      const bot = Math.max(clipBot, texTop - dim.h);
       addWall(
         batches,
         size,

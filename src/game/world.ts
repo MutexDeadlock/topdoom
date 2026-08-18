@@ -1450,7 +1450,7 @@ export function checkPosition(
  * **Geometry and bodies only.** `P_TryMove`'s dropoff rule is not here: it is
  * a monster's alone and lives with the rest of the chase step in
  * `monsters/ai.ts: testStep`, which reads `dropoffZ` off its own
- * `checkPosition` walk (docs/monster-ai.md § Movement).
+ * `checkPosition` walk (docs/monster-ai.md § The dropoff rule).
  *
  * `from` — see `blockedByThings`: the mover's current position, so a body
  * already touching one of `blockers` can still move away from it.

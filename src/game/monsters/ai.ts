@@ -227,6 +227,48 @@ function settleVertical(body: MonsterBody, stats: MonsterStats, world: World, dt
  */
 type StepResult = 'clear' | 'adjust' | 'blocked';
 
+/**
+ * The heights the body itself stands at — vanilla keeps them on the actor
+ * (`thing->floorz`/`thing->dropoffz`) and this recomputes them, memoized for
+ * one `stepMonsterAI` call: every reader runs before that call's single
+ * movement commit, so they all ask at the same position over the same
+ * geometry. Invalidated by `standingMoved`.
+ */
+const standingCheck: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0 };
+let standingValid = false;
+
+/** Drops the `standingCheck` memo: the body is about to be, or has been, moved. */
+function standingMoved(): void {
+  standingValid = false;
+}
+
+/** One `P_CheckPosition` at the body's own position. `z` is `ANY_HEIGHT` because no height it reads depends on it. */
+function standingAt(body: MonsterBody, stats: MonsterStats, world: World): PositionCheck {
+  if (!standingValid) {
+    checkPosition(world, body.x, body.y, stats.radius, ANY_HEIGHT, stats.height, true, undefined, undefined, false, standingCheck);
+    standingValid = true;
+  }
+  return standingCheck;
+}
+
+/**
+ * Whether the dropoff rule refuses a step to (`x`, `y`): each height the walk
+ * reports may not sit more than `MAX_STEP_UP` below the same height where the
+ * body stands. Relative rather than vanilla's destination-only test, which
+ * freezes a monster already hanging over a ledge — MBF's `monkeys` clipping
+ * (`p_map.c`) for the two accumulated heights, and this engine's own for the
+ * floor under the body's centre, which bounds how far past a ledge the other
+ * two let it shuffle. docs/monster-ai.md § The dropoff rule.
+ */
+function dropoffRefuses(body: MonsterBody, stats: MonsterStats, world: World, x: number, y: number, dest: PositionCheck): boolean {
+  const standing = standingAt(body, stats, world);
+  return (
+    standing.floorZ - dest.floorZ > MAX_STEP_UP ||
+    standing.dropoffZ - dest.dropoffZ > MAX_STEP_UP ||
+    world.floorAt(body.x, body.y) - world.floorAt(x, y) > MAX_STEP_UP
+  );
+}
+
 function testStep(
   body: MonsterBody,
   stats: MonsterStats,
@@ -250,7 +292,11 @@ function testStep(
   if (check.ceilingZ - check.floorZ < stats.height) {
     return 'blocked';
   }
-  const overDropoff = !stats.flies && check.floorZ - check.dropoffZ > MAX_STEP_UP;
+  // Cheap necessary condition for `dropoffRefuses`, off the walk already in
+  // hand, so the standing walk stays off every step taken away from a ledge —
+  // docs/monster-ai.md § The dropoff rule.
+  const mayDrop = !stats.flies && (body.z - check.floorZ > MAX_STEP_UP || body.z - check.dropoffZ > MAX_STEP_UP);
+  const overDropoff = mayDrop && dropoffRefuses(body, stats, world, x, y, check);
   if (!check.blocked && !overDropoff) {
     if (!stats.flies) return 'clear';
     // `tmceilingz - thing->z < thing->height`, vanilla's "mobj must lower
@@ -416,6 +462,7 @@ function stepCharge(body: MonsterBody, stats: MonsterStats, dt: number, world: W
   }
   body.x = nx;
   body.y = ny;
+  standingMoved();
   return null;
 }
 
@@ -493,6 +540,9 @@ export function stepMonsterAI(
   resurrect?: Resurrector,
   sfx: SoundEmitter = SILENT,
 ): MonsterAttack | null {
+  // This is another monster than the last call stepped, and a tic of movers may
+  // have run since — nothing about the previous body's standing walk survives.
+  standingMoved();
   if (body.painTimer > 0) {
     body.painTimer = Math.max(0, body.painTimer - dt);
     settleVertical(body, stats, world, dt, target);
@@ -610,6 +660,7 @@ export function stepMonsterAI(
     } else {
       body.x = nx;
       body.y = ny;
+      standingMoved();
       body.inFloat = false;
       body.angle = Math.atan2(DIR_Y[body.movedir], DIR_X[body.movedir]);
       // Footsteps are paced by *walking*, not by wall-clock time: a monster

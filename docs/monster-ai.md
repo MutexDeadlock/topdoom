@@ -264,18 +264,8 @@ Two arguments the player's own movement never sets:
 
 - **`forMonster: true`** makes `isSolidWall` additionally treat `LF.BLOCK_MONSTERS` as solid
   (`ML_BLOCKMONSTERS`, used to fence monsters off a ledge while the player walks through freely).
-- **The dropoff rule** — every type except the cacodemon, lost soul and pain elemental
-  (`MonsterStats.flies`) — refuses a step whose rest height (`PositionCheck.floorZ`) would sit more
-  than `MAX_STEP_UP` above the lowest floor the box touches (`dropoffZ`). `checkPosition`
-  accumulates `dropoffZ` **only for a monster**, since nothing else consults it, and deliberately
-  counts the far side of an `LF.BLOCK_MONSTERS` line as real floor: that line fences a monster's
-  movement, but it is not a ledge. Vanilla's `P_TryMove` dropoff
-  rule, same 24-unit threshold and the same `MF_DROPOFF`/`MF_FLOAT` exemption. This is why a
-  grounded monster won't walk off a high ledge chasing the player, which the player themselves
-  deliberately can. `tryWalk` treats a dropoff refusal exactly like a wall refusal, so
-  `newChaseDir`'s ordinary re-routing already covers a monster balking at a ledge. The three
-  exempt types don't just skip this check — they answer a blocked step by changing height
-  instead; see § Floating monsters.
+- **The dropoff rule**, which keeps a grounded monster from walking off a ledge the player
+  themselves deliberately can — § The dropoff rule below.
 
 **A monster always keeps closing distance — it never "keeps its distance."** Vanilla has no such
 instinct: a ranged monster walks right up to the player if nothing stops it. What stops it is real
@@ -298,6 +288,68 @@ docs/movement.md § Collision; monsters only take part in the blocking half of i
 ground for the player alone. `ThingLayer.solidBodies` is the outward-facing half; monsters get an
 equivalent list internally (`blockersFor`), whose search box stays 2D. The player *slides* along
 bodies while monsters don't, matching vanilla exactly.
+
+## The dropoff rule
+
+Every type except the cacodemon, lost soul and pain elemental (`MonsterStats.flies`) refuses a step
+that would leave it standing over a drop of more than `MAX_STEP_UP` — vanilla's `P_TryMove` "don't
+stand over a dropoff", same 24-unit threshold and the same `MF_DROPOFF`/`MF_FLOAT` exemption. It is
+what stops a monster following the player off a high ledge. `checkPosition` accumulates the lowest
+floor the box touches (`PositionCheck.dropoffZ`) **only for a monster**, since nothing else consults
+it, and deliberately counts the far side of an `LF.BLOCK_MONSTERS` line as real floor: that line
+fences a monster's *movement*, but it is not a ledge. `tryWalk` treats a dropoff refusal exactly
+like a wall refusal, so `newChaseDir`'s ordinary re-routing already covers a monster balking at a
+ledge. The three exempt types don't just skip the check — they answer a blocked step by changing
+height instead; see § Floating monsters.
+
+**What the rule is measured against is a deliberate deviation, and it has to be.** Vanilla judges
+the *destination* alone (`tmfloorz - tmdropoffz > 24`), which permanently freezes a monster whose
+box already hangs over a ledge: every direction it could shuffle still hangs over that same ledge,
+so every one of them is refused, including the ones leading away. `dropoffRefuses` uses MBF's
+`monkeys` clipping instead (`p_map.c`, under killough's own "Prevent monsters from getting stuck
+hanging off ledges") — the destination against the floor and ledge the body is *standing* on
+(`thing->floorz`/`thing->dropoffz`), refusing a step down of more than `MAX_STEP_UP` or one hanging
+over a worse ledge than the current one.
+
+The relaxation reaches **only** a body that already hangs: from anywhere else the two forms agree
+exactly, because a monster on flat ground stepping onto a ledge line has `dropoffz` equal to its own
+floor, so the new ledge is a fresh drop under both. A hanging monster gains the ability to shuffle
+along and off the ledge, and still cannot descend it — the moment its box clears the line entirely
+the destination's floor is the low one, more than a step below where it stands.
+
+**A third comparison bounds how far past the ledge that shuffle reaches, and it is this engine's
+own.** The two MBF clauses only stop a body *descending*; nothing in them stops it sliding outward
+until a sliver of its box is all that is still on floor, and with `z` pinned to the straddled
+opening (docs/movement.md § Collision) that reads on screen as a monster walking on air over the
+pit. So the floor under the body's own centre (`World.floorAt` — the height it would rest at with
+no ledge holding it up) gets the same relative treatment as the other two: a step may not carry
+the centre more than `MAX_STEP_UP` below the ground its centre is over now. A hanging body may therefore reach the ledge line and no further, so it hangs at most
+half its box over — exactly what a monster standing at any ledge edge already shows. Stated
+relatively for the same reason the others are: a body whose centre is *already* past a ledge (a
+sector moved under it, a teleport) has to be able to walk back off.
+
+**Repro: DOOM1 E1M5**, the alcove in front of the yellow door (sector 13, x -704..-656). It is 48
+units wide against a demon's 60, so a demon in there always straddles the lift line (161) on one
+side or the door line (158) on the other. With the lift (sector 12) parked down at -104 the vanilla
+form refused all eight directions and the demon stood frozen until the lift came back up.
+
+**MBF pairs its clipping change with `P_AvoidDropoff`, which steers a hanging monster away from the
+ledge, and this engine deliberately does not.** That half exists to stop the outward drift the two
+relative clauses leave open, and the centre comparison above stops it at the source instead —
+measured against the alcove and open-ledge fixtures, adding the steer on top moved the time a
+monster spends overhanging from 1.6% of frames to 1.0% and changed nothing a test could pin. It is
+the better fix to leave out: `newChaseDir` keeps vanilla's single heading, and a hanging monster is
+simply bounded rather than nudged.
+
+**The rule wants the heights at the body's own position**, which is one more `checkPosition` than
+`testStep` already makes. Two things keep that off the common path. `mayDrop` gates it on the walk
+already in hand — a grounded body's `z` is never below the floor it stands on (`settleVertical`
+clamps it) and `dropoffZ` is never above the other heights, so no comparison can fire unless the
+destination sits more than a step under the body's feet. And the walk is **memoized for one
+`stepMonsterAI` call** (`standingAt`): every reader runs before that call's single movement commit,
+so a re-route asking eleven times pays for one walk. On the alcove fixture that is 3.7 line walks
+per monster per frame against 5.6 without the memo — and against the 5.5 the *frozen* monster
+burned before the fix, re-routing through every direction each chase call.
 
 ## Floating monsters
 

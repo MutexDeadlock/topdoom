@@ -10,11 +10,43 @@
 import type { Pos2 } from '../types.ts';
 
 /**
- * 2D segment intersection between (ax,ay)-(bx,by) and (cx,cy)-(dx,dy).
- * Returns the crossing's parameter `t` along the first segment, or null if
- * they don't cross within both segments' bounds. Shared by render/occlusion.ts
- * (camera-player sightline vs. wall) and game/fogofwar.ts (player-sample
- * sightline vs. solid wall) — same primitive, different segments.
+ * 2D segment crossing between (ax,ay)-(bx,by) and (cx,cy)-(dx,dy): the crossing's parameter along
+ * the first segment, or **-1** when they don't cross within both segments' bounds.
+ *
+ * The form every per-line inner loop uses — sightlines, shot and projectile traces, the fog's
+ * sight sweep, the wall fader — because the `{ t }` its wrapper returns would allocate one object
+ * per crossing in code that runs thousands of times a frame. `segmentIntersect` wraps it for the
+ * callers that read `t` off a record instead.
+ */
+export function segmentCrossT(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  cx: number,
+  cy: number,
+  dx: number,
+  dy: number,
+): number {
+  const rx = bx - ax;
+  const ry = by - ay;
+  const sx = dx - cx;
+  const sy = dy - cy;
+
+  const denom = rx * sy - ry * sx;
+  if (denom > -1e-9 && denom < 1e-9) return -1;
+
+  const t = ((cx - ax) * sy - (cy - ay) * sx) / denom;
+  if (t < 0 || t > 1) return -1;
+  const u = ((cx - ax) * ry - (cy - ay) * rx) / denom;
+  if (u < 0 || u > 1) return -1;
+  return t;
+}
+
+/**
+ * `segmentCrossT` as a nullable record: the crossing's parameter `t` along the first segment, or
+ * null if they don't cross within both segments' bounds. For the callers outside a hot loop —
+ * `specials.ts`'s walk and use triggers, `world.ts`'s sliding moves.
  */
 export function segmentIntersect(
   ax: number,
@@ -26,18 +58,8 @@ export function segmentIntersect(
   dx: number,
   dy: number,
 ): { t: number } | null {
-  const rx = bx - ax;
-  const ry = by - ay;
-  const sx = dx - cx;
-  const sy = dy - cy;
-
-  const denom = rx * sy - ry * sx;
-  if (Math.abs(denom) < 1e-9) return null;
-
-  const t = ((cx - ax) * sy - (cy - ay) * sx) / denom;
-  const u = ((cx - ax) * ry - (cy - ay) * rx) / denom;
-  if (t < 0 || t > 1 || u < 0 || u > 1) return null;
-  return { t };
+  const t = segmentCrossT(ax, ay, bx, by, cx, cy, dx, dy);
+  return t < 0 ? null : { t };
 }
 
 /** Where along the segment a→b its closest point to (px, py) lies, clamped to [0, 1]. */

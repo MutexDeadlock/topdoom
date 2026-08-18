@@ -7,7 +7,7 @@
 import * as THREE from 'three';
 import type { FlatSurface, WallOccluder } from './mapmesh.ts';
 import type { MaterialBank } from './textures.ts';
-import { pointNearConvexPolygon, segmentIntersect } from '../util/geom.ts';
+import { pointNearConvexPolygon, segmentCrossT } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../game/player.ts';
 import type { Opening } from '../game/world.ts';
@@ -117,9 +117,9 @@ export class WallFader {
       let occluding = false;
       if (!isPassableGap) {
         for (const t of targets) {
-          const cross = segmentIntersect(camX, camY, t.x, t.y, o.ax, o.ay, o.bx, o.by);
-          if (!cross) continue;
-          const height = camZ + (t.z - camZ) * cross.t;
+          const cross = segmentCrossT(camX, camY, t.x, t.y, o.ax, o.ay, o.bx, o.by);
+          if (cross < 0) continue;
+          const height = camZ + (t.z - camZ) * cross;
           if (height > o.botH && height < o.topH) {
             occluding = true;
             break;

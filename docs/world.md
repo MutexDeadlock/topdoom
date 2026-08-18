@@ -85,6 +85,19 @@ the refire loop and by `runChaseCall`, and the chase call is quantized to `chase
 `stepMonsterAI` runs every rendered frame, so evaluating it eagerly threw the answer away most
 frames. Vanilla has the same structure for the same reason.
 
+**`forEachLineAlongSegment` returns what the walk cost** — cells stepped plus lines handed to the
+visitor. Only `FogOfWar`'s reveal sweep reads it, to cap how much sight testing one tic may do
+(docs/fogofwar.md § Sight testing); the alternative was for the fog to estimate that figure from the
+grid's cell size, which is this module's own tuning knob and would have mis-charged silently if it
+ever changed. Everyone else ignores the return.
+
+**Every ray-vs-wall crossing tests against `World.lineOverlapEnds`**, the per-linedef table of
+endpoints extended `WALL_OVERLAP` (0.25) past both ends: two walls meeting at a shared vertex
+otherwise let a ray aimed right at that point pass outside the end of both and hit neither. It is
+precomputed with the rest of the per-linedef geometry because vertexes never move — shots
+(docs/combat.md), projectile steps and the fog's sight rays all read the same table rather than each
+running the normalize-and-extend per candidate line, which is what they used to do.
+
 Both `forEachLineAlongSegment` and the lazy accessor exist because these run thousands of times a
 frame: the segment walk dedupes through a per-linedef stamp array rather than allocating a `Set` and
 spreading it per call, the way `linesNear` does. **An equivalent allocation-free `linesNear` for the
@@ -97,8 +110,8 @@ that wall, and a raw segment-intersection test then reports the blast blocked by
 started on (the ray's own origin is a valid crossing at `t≈0`) — so `hasLineOfSight` said "blocked"
 in every direction, including straight out into the open room. Splash only ever worked when a shot
 connected directly with a monster and never when it hit geometry, which for a free shot is the common
-case. The margin skips a crossing within 1 unit of the ray's start, the same "nudge off the geometry
-you're standing on" idea as `WALL_OVERLAP`/`BLOCKER_OVERLAP`. Tradeoff: a rocket exploding against a
+case. The margin skips a crossing within 1 unit of the ray's start, the far-end counterpart to
+`WALL_OVERLAP`'s "nudge off the geometry you're standing on". Tradeoff: a rocket exploding against a
 *closed door* can in principle leak a sliver of splash through, since the door's self-hit is now the
 crossing being ignored — accepted as the same order of approximation.
 
@@ -123,6 +136,14 @@ one — `subsectorAt` can produce an out-of-range index on a map with broken nod
 real sector, so the guard keeps that path from reading past the array. `sightRejected` does *not*
 use the accessor for exactly this reason: an out-of-range hint there must reject nothing rather than
 answer for sector 0's row, so it bounds-checks the table itself.
+
+**`openingInto(line, out)` is the allocation-free form of `openingOf`**, writing vanilla's
+`P_LineOpening` pair into a caller-owned record. `openingOf` is the wrapper that hands out a fresh
+one, and `blocksSight` — which runs per candidate line inside both `hasLineOfSight` and the fog
+sweep — is a predicate over it. The point is that the min-ceiling/max-floor rule is written once:
+the copies that remain inline (`checkPosition`'s, and the sector pair `hasLineOfSight` resolves for
+its wedge narrowing) are there because those callers need the sectors themselves, not just the
+opening.
 
 ## Sectors under a body
 

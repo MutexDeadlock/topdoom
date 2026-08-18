@@ -3,7 +3,7 @@
  * sticky on sight. See docs/fogofwar.md.
  */
 import { buildSubSectorPolys } from '../render/bsp.ts';
-import { polygonCentroid, segmentIntersect } from '../util/geom.ts';
+import { polygonCentroid, segmentCrossT } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
 import { decodeRuns, encodeRuns } from './snapshot.ts';
 import { VIEW_DISTANCE } from '../constants.ts';
@@ -17,11 +17,18 @@ const SNAP_EPS = 0.004;
 
 /**
  * Cap on how many not-yet-explored subsectors get their sample rays tested in one `tick` call
- * (tuned by feel; `scanCursor` round-robins the rest onto later tics). Counted per tic, not per
- * frame — `explored` is a gameplay input, so the sweep rate must not depend on framerate.
- * See docs/fogofwar.md § Reveal radius.
+ * (tuned by feel; `scanCursor` round-robins the rest onto later tics), alongside the work cap
+ * below. Counted per tic, not per frame — `explored` is a gameplay input, so the sweep rate must
+ * not depend on framerate. See docs/fogofwar.md § Sight testing.
  */
 const MAX_SIGHT_TESTS_PER_TIC = 350;
+
+/**
+ * Second cap on the same sweep, in the work its rays actually do rather than the subsectors they
+ * cover — `forEachLineAlongSegment`'s own count of cells stepped and lines tested (tuned by feel).
+ * A subsector count bounds the wrong quantity; see docs/fogofwar.md § Sight testing.
+ */
+const MAX_SIGHT_WORK_PER_TIC = 150000;
 
 /**
  * How far a wall's probe point is pushed off its own face, so it lands inside
@@ -30,8 +37,6 @@ const MAX_SIGHT_TESTS_PER_TIC = 350;
 const WALL_PROBE_OFFSET = 1.5;
 /** How far a boundary sample is pulled toward the centroid, to keep it off the walls. */
 const BOUNDARY_INSET = 0.25;
-/** Map units each sight blocker is extended past both ends — see refreshBlockers. */
-const BLOCKER_OVERLAP = 0.25;
 
 interface SubSectorSight {
   /**
@@ -57,8 +62,20 @@ export class FogOfWar {
   private pending: number;
   private wallSubsector: Int32Array;
 
-  /** Sight-blocking lines near the player, refreshed each frame as x1,y1,x2,y2 runs. */
-  private blockers: number[] = [];
+  /** Which tic each line's `blocksSight` answer was computed on, and what it was — see `testBlocker`. */
+  private blockStamp: Int32Array;
+  private blockFlag: Uint8Array;
+  /** Bumped once per `tick`, so a line's `blocksSight` is read at most once per tic. */
+  private scanId = 0;
+
+  /** The ray `testBlocker` is testing, and whether it has been blocked — see `sightClear`. */
+  private rayX1 = 0;
+  private rayY1 = 0;
+  private rayX2 = 0;
+  private rayY2 = 0;
+  private rayBlocked = false;
+  /** What is left of this tic's `MAX_SIGHT_WORK_PER_TIC`; `sightClear` charges what each ray cost. */
+  private workLeft = 0;
 
   /** Round-robin resume point into `sights` for `tick`'s budgeted scan — see `MAX_SIGHT_TESTS_PER_TIC`. */
   private scanCursor = 0;
@@ -71,6 +88,9 @@ export class FogOfWar {
     this.sights = new Array(polys.length).fill(null);
     this.explored = new Uint8Array(polys.length);
     this.alpha = new Float32Array(polys.length);
+
+    this.blockStamp = new Int32Array(map.linedefs.length);
+    this.blockFlag = new Uint8Array(map.linedefs.length);
 
     for (let ss = 0; ss < polys.length; ss++) {
       const poly = polys[ss];
@@ -103,12 +123,11 @@ export class FogOfWar {
         const j = (k + 1) % n;
         const kx = poly.points[k * 2];
         const ky = poly.points[k * 2 + 1];
-        const mx = (kx + poly.points[j * 2]) / 2;
-        const my = (ky + poly.points[j * 2 + 1]) / 2;
-        for (const [px, py] of [
-          [kx, ky],
-          [mx, my],
-        ]) {
+        // The corner, then the midpoint of the edge leaving it. Written out rather than looped
+        // over a pair of pairs: this runs per edge of every subsector on the map at level load.
+        for (let half = 0; half < 2; half++) {
+          const px = half === 0 ? kx : (kx + poly.points[j * 2]) / 2;
+          const py = half === 0 ? ky : (ky + poly.points[j * 2 + 1]) / 2;
           const sx = px + (cx - px) * BOUNDARY_INSET;
           const sy = py + (cy - py) * BOUNDARY_INSET;
           samples[w++] = sx;
@@ -132,11 +151,10 @@ export class FogOfWar {
     }
 
     // Seed the spawn's surroundings fully revealed instead of fading up from
-    // black on frame one. `Infinity` bypasses `MAX_SIGHT_TESTS_PER_TIC` so this
-    // one call reveals everything visible from spawn rather than leaving some of
-    // it to fade in over the first few tics; the alpha snap below is what skips
-    // the fade itself.
-    this.tick(startX, startY, Infinity);
+    // black on frame one: unbounded on both caps, so this one call reveals
+    // everything visible from spawn rather than leaving some of it to fade in
+    // over the first few tics. The alpha snap below skips the fade itself.
+    this.sweep(startX, startY, Infinity, Infinity);
     this.alpha.set(this.explored);
   }
 
@@ -168,39 +186,50 @@ export class FogOfWar {
    * (`isVisible`). The visual fade is `updateFade`, which is not.
    * docs/fogofwar.md § What gameplay reads.
    */
-  tick(playerX: number, playerY: number, sightTestBudget = MAX_SIGHT_TESTS_PER_TIC): void {
+  tick(playerX: number, playerY: number): void {
+    this.sweep(playerX, playerY, MAX_SIGHT_TESTS_PER_TIC, MAX_SIGHT_WORK_PER_TIC);
+  }
+
+  /**
+   * `tick`'s body, with both caps named rather than defaulted, so the constructor's spawn seed can
+   * ask for an unbounded pass on both without an in-band flag.
+   */
+  private sweep(playerX: number, playerY: number, subsectorBudget: number, workBudget: number): void {
     const currentSS = this.world.subsectorAt(playerX, playerY);
     if (currentSS >= 0 && currentSS < this.explored.length && !this.explored[currentSS]) {
       this.explored[currentSS] = 1;
       this.pending--;
     }
+    if (this.pending <= 0) return;
 
-    if (this.pending > 0) {
-      this.refreshBlockers(playerX, playerY);
+    this.scanId++;
+    this.workLeft = workBudget;
+    const n = this.sights.length;
+    let budget = subsectorBudget;
+    let ss = this.scanCursor;
+    for (let steps = 0; steps < n && budget > 0 && this.workLeft > 0; steps++, ss = ss + 1 < n ? ss + 1 : 0) {
+      const s = this.explored[ss] ? undefined : this.sights[ss];
+      if (!s) continue;
+      // Reveal reaches exactly as far as the player can see, so the bound is
+      // `VIEW_DISTANCE` itself. docs/fogofwar.md § Reveal radius. Squared, so
+      // the subsectors this rejects never pay for a root.
+      const dx = s.cx - playerX;
+      const dy = s.cy - playerY;
+      const reach = VIEW_DISTANCE + s.radius;
+      if (dx * dx + dy * dy > reach * reach) continue;
 
-      const n = this.sights.length;
-      let budget = sightTestBudget;
-      let ss = this.scanCursor;
-      for (let steps = 0; steps < n && budget > 0; steps++) {
-        if (!this.explored[ss]) {
-          const s = this.sights[ss];
-          // Reveal reaches exactly as far as the player can see, so the bound
-          // is `VIEW_DISTANCE` itself. docs/fogofwar.md § Reveal radius.
-          if (s && !(Math.hypot(s.cx - playerX, s.cy - playerY) - s.radius > VIEW_DISTANCE)) {
-            budget--;
-            for (let i = 0; i < s.samples.length; i += 2) {
-              if (this.sightClear(playerX, playerY, s.samples[i], s.samples[i + 1])) {
-                this.explored[ss] = 1;
-                this.pending--;
-                break;
-              }
-            }
-          }
+      budget--;
+      // Both budgets are spent a whole subsector at a time: stopping between its samples would
+      // leave it dark though visible until a later pass reaches it again.
+      for (let i = 0; i < s.samples.length; i += 2) {
+        if (this.sightClear(playerX, playerY, s.samples[i], s.samples[i + 1])) {
+          this.explored[ss] = 1;
+          this.pending--;
+          break;
         }
-        ss = ss + 1 < n ? ss + 1 : 0;
       }
-      this.scanCursor = ss;
     }
+    this.scanCursor = ss;
   }
 
   /**
@@ -228,47 +257,43 @@ export class FogOfWar {
   }
 
   /**
-   * Collects the sight-blocking lines within reach once per frame — rebuilt live rather than
-   * cached because `blocksSight` reads current sector heights — each stored `BLOCKER_OVERLAP`
-   * overlong so a ray can't squirt through a shared-vertex junction. See docs/fogofwar.md.
+   * True if no sight-blocking line lies between the player and (tx, ty), walking only the grid
+   * cells the ray crosses and charging what that cost against this tic's work budget.
+   * docs/fogofwar.md § Sight testing.
    */
-  private refreshBlockers(playerX: number, playerY: number): void {
-    const map = this.world.map;
-    this.blockers.length = 0;
-    for (const i of this.world.linesNear(playerX, playerY, VIEW_DISTANCE)) {
-      if (!this.world.blocksSight(i)) continue;
-      const line = map.linedefs[i];
-      const a = map.vertexes[line.v1];
-      const b = map.vertexes[line.v2];
-      if (!a || !b) continue;
-      const dx = b.x - a.x;
-      const dy = b.y - a.y;
-      const len = Math.hypot(dx, dy);
-      const ex = len > 0 ? (dx / len) * BLOCKER_OVERLAP : 0;
-      const ey = len > 0 ? (dy / len) * BLOCKER_OVERLAP : 0;
-      this.blockers.push(a.x - ex, a.y - ey, b.x + ex, b.y + ey);
-    }
-  }
-
-  /** True if no sight-blocking line lies between the player and (tx, ty). */
   private sightClear(px: number, py: number, tx: number, ty: number): boolean {
-    const minX = px < tx ? px : tx;
-    const maxX = px < tx ? tx : px;
-    const minY = py < ty ? py : ty;
-    const maxY = py < ty ? ty : py;
-
-    for (let i = 0; i < this.blockers.length; i += 4) {
-      const ax = this.blockers[i];
-      const ay = this.blockers[i + 1];
-      const bx = this.blockers[i + 2];
-      const by = this.blockers[i + 3];
-      // Bounding-box reject first: most candidates are nowhere near this ray.
-      if ((ax < minX && bx < minX) || (ax > maxX && bx > maxX)) continue;
-      if ((ay < minY && by < minY) || (ay > maxY && by > maxY)) continue;
-      if (segmentIntersect(px, py, tx, ty, ax, ay, bx, by)) return false;
-    }
-    return true;
+    this.rayX1 = px;
+    this.rayY1 = py;
+    this.rayX2 = tx;
+    this.rayY2 = ty;
+    this.rayBlocked = false;
+    this.workLeft -= this.world.forEachLineAlongSegment(px, py, tx, ty, this.testBlocker);
+    return !this.rayBlocked;
   }
+
+  /**
+   * `forEachLineAlongSegment`'s visitor, a bound field rather than a closure per call: the sweep
+   * runs thousands of rays a tic and a fresh closure each would allocate in exactly the wrong
+   * place. docs/fogofwar.md § Sight testing.
+   */
+  private testBlocker = (i: number): boolean | void => {
+    if (this.blockStamp[i] !== this.scanId) {
+      this.blockStamp[i] = this.scanId;
+      this.blockFlag[i] = this.world.blocksSight(i) ? 1 : 0;
+    }
+    if (this.blockFlag[i] === 0) return;
+    // `World.lineOverlapEnds` carries the shared-vertex overhang every ray-vs-wall
+    // test in the engine needs — see `WALL_OVERLAP`, docs/fogofwar.md § Sight testing.
+    const e = i * 4;
+    const ends = this.world.lineOverlapEnds;
+    const ax = ends[e];
+    const ay = ends[e + 1];
+    const bx = ends[e + 2];
+    const by = ends[e + 3];
+    if (segmentCrossT(this.rayX1, this.rayY1, this.rayX2, this.rayY2, ax, ay, bx, by) >= 0) {
+      return (this.rayBlocked = true);
+    }
+  };
 
   /**
    * Marks the whole level explored — the computer area map powerup (vanilla's `pw_allmap`, which

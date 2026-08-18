@@ -312,8 +312,8 @@ and which it drops (docs/wad.md § REJECT) by handing `wadFile` a `bytes` payloa
 
 ## Private constants are pinned behaviourally
 
-`WALL_OVERLAP` (world.ts), the sight-sampling step and the fog's reveal distance are not readable
-from outside their modules, so a test can only bracket them from both sides.
+The sight-sampling step and the fog's reveal distance are not readable from outside their modules,
+so a test can only bracket them from both sides.
 `fog-reveal-radius.test.ts` brackets the reveal against `constants.ts: VIEW_DISTANCE` — the last grid
 cell inside the view must be revealed, the first cell a full cell past it must be dark — because the
 reveal *is* that dial, read straight out of `constants.ts` (docs/fogofwar.md § Reveal radius).

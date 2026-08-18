@@ -5,7 +5,7 @@
  */
 import { LF, NO_SIDE, SKY_FLAT, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
 import { sectorOfSubSector } from '../render/bsp.ts';
-import { segmentIntersect } from '../util/geom.ts';
+import { segmentCrossT, segmentIntersect } from '../util/geom.ts';
 import { PLAYER_HEIGHT } from './player.ts';
 import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './things/doomednums.ts';
@@ -22,6 +22,15 @@ export const MAX_STEP_UP = 24;
 export const ANY_HEIGHT = Infinity;
 
 const GRID_CELL = 128;
+
+/**
+ * Each candidate wall is extended this far past both endpoints before a ray is tested against it.
+ * Two walls meeting at a shared vertex otherwise let a ray aimed right at that point pass outside
+ * the end of both and hit neither — one constant for every trace that has the problem: shots and
+ * projectiles here, sight blockers in `game/fogofwar.ts`. The extended endpoints themselves are
+ * precomputed in `lineOverlapEnds`.
+ */
+export const WALL_OVERLAP = 0.25;
 
 /**
  * Vanilla's `slopetype_t` (`p_local.h`), assigned per linedef by
@@ -143,6 +152,14 @@ export class World {
   private lineSlope: Int8Array;
 
   /**
+   * Every linedef's endpoints extended `WALL_OVERLAP` past both ends, packed x1,y1,x2,y2 per line:
+   * what every ray-vs-wall crossing test in the engine actually tests against. Precomputed with
+   * the rest because vertexes never move, so the normalize-and-extend it replaces was pure
+   * repeated work — per candidate line, per shot, per projectile step and per fog sight ray.
+   */
+  readonly lineOverlapEnds: Float64Array;
+
+  /**
    * Subsector index -> its sector index (vanilla's `subsector->sector`), built
    * once at load so every sector lookup — `sectorIndexAt`, `sectorAt` and the
    * heights over them, the REJECT probe — costs one typed-array read rather
@@ -150,6 +167,14 @@ export class World {
    * See docs/world.md § Point-to-sector lookups.
    */
   private subsectorSector: Int32Array;
+
+  /**
+   * Scratch `Opening` records for `openingInto`'s two allocation-free callers. Two rather than
+   * one because `openingOf` hands its copy out while `blocksSight` runs per candidate line inside
+   * traces that `openingOf` itself appears in.
+   */
+  private openingScratch: Opening = { top: 0, bottom: 0 };
+  private sightScratch: Opening = { top: 0, bottom: 0 };
 
   readonly map: DoomMap;
 
@@ -176,6 +201,7 @@ export class World {
     this.lineV1X = new Float64Array(map.linedefs.length);
     this.lineV1Y = new Float64Array(map.linedefs.length);
     this.lineSlope = new Int8Array(map.linedefs.length);
+    this.lineOverlapEnds = new Float64Array(map.linedefs.length * 4);
     this.subsectorSector = new Int32Array(map.subsectors.length);
     for (let i = 0; i < map.subsectors.length; i++) this.subsectorSector[i] = sectorOfSubSector(map, i);
     this.buildLineData();
@@ -208,6 +234,14 @@ export class World {
       this.lineBox[base + BOX_BOTTOM] = Math.min(a.y, b.y);
       this.lineBox[base + BOX_LEFT] = Math.min(a.x, b.x);
       this.lineBox[base + BOX_RIGHT] = Math.max(a.x, b.x);
+
+      const len = Math.hypot(dx, dy);
+      const ex = len > 0 ? (dx / len) * WALL_OVERLAP : 0;
+      const ey = len > 0 ? (dy / len) * WALL_OVERLAP : 0;
+      this.lineOverlapEnds[base] = a.x - ex;
+      this.lineOverlapEnds[base + 1] = a.y - ey;
+      this.lineOverlapEnds[base + 2] = b.x + ex;
+      this.lineOverlapEnds[base + 3] = b.y + ey;
     }
   }
 
@@ -385,6 +419,11 @@ export class World {
    * on a crowded map. Allocation-free by design (stamp array, callback), since
    * it runs thousands of times per frame. docs/world.md § hasLineOfSight
    * covers why this is both sound and necessary.
+   *
+   * Returns what the walk cost — cells stepped plus lines handed to `visit` — so a caller that
+   * budgets its traces can charge the real figure instead of estimating one from the cell size,
+   * which is this class's own business (`FogOfWar`'s sweep; docs/fogofwar.md § Sight testing).
+   * Callers that don't budget ignore it.
    */
   forEachLineAlongSegment(
     x1: number,
@@ -392,7 +431,7 @@ export class World {
     x2: number,
     y2: number,
     visit: (lineIndex: number) => boolean | void,
-  ): void {
+  ): number {
     const stamp = ++this.queryId;
     let cx = this.cellX(x1);
     let cy = this.cellY(y1);
@@ -416,16 +455,19 @@ export class World {
     // the grid, so a segment starting or ending outside the map can otherwise
     // never reach its end cell.
     const maxSteps = this.gridCols + this.gridRows + 2;
+    let work = 0;
     for (let step = 0; ; step++) {
+      work++;
       const bucket = this.grid.get(cy * this.gridCols + cx);
       if (bucket) {
         for (const i of bucket) {
           if (this.lineStamp[i] === stamp) continue;
           this.lineStamp[i] = stamp;
-          if (visit(i) === true) return;
+          work++;
+          if (visit(i) === true) return work;
         }
       }
-      if ((cx === ex && cy === ey) || step >= maxSteps) return;
+      if ((cx === ex && cy === ey) || step >= maxSteps) return work;
       if (tMaxX < tMaxY) {
         tMaxX += tDeltaX;
         cx += stepX;
@@ -664,16 +706,25 @@ export class World {
 
   /** Gap a two-sided line leaves free, or null if the line is impassable. */
   openingOf(lineIndex: number): Opening | null {
+    return this.openingInto(lineIndex, this.openingScratch) ? { ...this.openingScratch } : null;
+  }
+
+  /**
+   * `openingOf` without the record: writes vanilla's `P_LineOpening` pair into a caller-owned
+   * `Opening` and answers whether the line has one at all. The predicates that run per candidate
+   * line — `blocksSight` above all — call this so the allocation stays with the callers that
+   * actually want a record. See docs/world.md § Point-to-sector lookups.
+   */
+  openingInto(lineIndex: number, out: Opening): boolean {
     const line = this.map.linedefs[lineIndex];
-    if (!line) return null;
-    if (line.left === NO_SIDE || line.right === NO_SIDE) return null;
+    if (!line) return false;
+    if (line.left === NO_SIDE || line.right === NO_SIDE) return false;
     const front = this.map.sectors[this.map.sidedefs[line.right]?.sector];
     const back = this.map.sectors[this.map.sidedefs[line.left]?.sector];
-    if (!front || !back) return null;
-    return {
-      top: Math.min(front.ceilHeight, back.ceilHeight),
-      bottom: Math.max(front.floorHeight, back.floorHeight),
-    };
+    if (!front || !back) return false;
+    out.top = front.ceilHeight < back.ceilHeight ? front.ceilHeight : back.ceilHeight;
+    out.bottom = front.floorHeight > back.floorHeight ? front.floorHeight : back.floorHeight;
+    return true;
   }
 
   /**
@@ -725,11 +776,8 @@ export class World {
    * has both cases.
    */
   blocksSight(lineIndex: number): boolean {
-    const line = this.map.linedefs[lineIndex];
-    if (!line) return true;
-    if (line.left === NO_SIDE || line.right === NO_SIDE) return true;
-    const opening = this.openingOf(lineIndex);
-    return !opening || opening.top <= opening.bottom;
+    const o = this.sightScratch;
+    return !this.openingInto(lineIndex, o) || o.top <= o.bottom;
   }
 
   thingsOfType(type: number): Thing[] {
@@ -865,9 +913,16 @@ export function hasLineOfSight(
     const a = world.map.vertexes[line.v1];
     const b = world.map.vertexes[line.v2];
     if (!a || !b) return;
-    if (world.blocksSight(i)) {
-      const hit = segmentIntersect(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
-      if (hit && hit.t * dist > SELF_HIT_MARGIN) return (blocked = true);
+    // The two sectors are resolved once here and the blocking test done inline off them, rather
+    // than through `blocksSight` — which would resolve the same pair and throw it away, leaving
+    // the open branch below to look it up a second time for every line the trace walks.
+    const front = world.map.sectors[world.map.sidedefs[line.right]?.sector ?? -1];
+    const back = world.map.sectors[world.map.sidedefs[line.left]?.sector ?? -1];
+    const openTop = front && back ? Math.min(front.ceilHeight, back.ceilHeight) : 0;
+    const openBottom = front && back ? Math.max(front.floorHeight, back.floorHeight) : 0;
+    if (line.left === NO_SIDE || line.right === NO_SIDE || !front || !back || openTop <= openBottom) {
+      const t = segmentCrossT(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
+      if (t >= 0 && t * dist > SELF_HIT_MARGIN) return (blocked = true);
       return;
     }
     // Two-sided and open. Skip the segment math entirely for a flat
@@ -875,17 +930,12 @@ export function hasLineOfSight(
     // can't narrow the wedge, and it's most of a level's connective tissue —
     // mirroring `P_SightTraverse`'s own frontsector/backsector inequality
     // guards.
-    const front = world.map.sectors[world.map.sidedefs[line.right]?.sector ?? -1];
-    const back = world.map.sectors[world.map.sidedefs[line.left]?.sector ?? -1];
-    if (!front || !back) return;
     if (front.floorHeight === back.floorHeight && front.ceilHeight === back.ceilHeight) return;
-    const hit = segmentIntersect(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
-    if (!hit || hit.t * dist <= SELF_HIT_MARGIN) return;
-    const crossDist = hit.t * dist;
-    const bottomOpen = Math.max(front.floorHeight, back.floorHeight);
-    const topOpen = Math.min(front.ceilHeight, back.ceilHeight);
-    const crossBottomSlope = (bottomOpen - eyeZ) / crossDist;
-    const crossTopSlope = (topOpen - eyeZ) / crossDist;
+    const t = segmentCrossT(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
+    if (t < 0 || t * dist <= SELF_HIT_MARGIN) return;
+    const crossDist = t * dist;
+    const crossBottomSlope = (openBottom - eyeZ) / crossDist;
+    const crossTopSlope = (openTop - eyeZ) / crossDist;
     if (crossBottomSlope > bottomSlope) bottomSlope = crossBottomSlope;
     if (crossTopSlope < topSlope) topSlope = crossTopSlope;
     if (topSlope <= bottomSlope) return (blocked = true);
@@ -1604,14 +1654,6 @@ export function playerShotRange(
 }
 
 /**
- * Each candidate wall is extended this far past both endpoints before the ray
- * is tested against it — same fix and distance as FogOfWar's `BLOCKER_OVERLAP`.
- * Two walls meeting at a shared vertex otherwise let a ray aimed right at that
- * point pass outside the end of both and hit neither.
- */
-const WALL_OVERLAP = 0.25;
-
-/**
  * True if this line stops a shot passing through it at height `z` — wherever
  * *this* shot's (possibly sloped) line is when it crosses, not one height for
  * the whole flight. The **single-ray** form, for a shot whose slope is already
@@ -1664,21 +1706,12 @@ export function projectileStepBlocker(
   let nearestT = Infinity;
   let hitLine = -1;
   world.forEachLineAlongSegment(from.x, from.y, to.x, to.y, (i) => {
-    const line = world.map.linedefs[i];
-    const a = world.map.vertexes[line.v1];
-    const b = world.map.vertexes[line.v2];
-    if (!a || !b) return;
-    // WALL_OVERLAP-extended for the shared-vertex corner-leak reason
-    // documented on `shotPath`'s own crossing test.
-    const ldx = b.x - a.x;
-    const ldy = b.y - a.y;
-    const len = Math.hypot(ldx, ldy);
-    const ex = len > 0 ? (ldx / len) * WALL_OVERLAP : 0;
-    const ey = len > 0 ? (ldy / len) * WALL_OVERLAP : 0;
-    const hit = segmentIntersect(from.x, from.y, to.x, to.y, a.x - ex, a.y - ey, b.x + ex, b.y + ey);
-    if (!hit || hit.t >= nearestT || hit.t * dist <= SELF_HIT_MARGIN) return;
-    if (!blocksShot(world, i, from.z + (to.z - from.z) * hit.t)) return;
-    nearestT = hit.t;
+    const e = i * 4;
+    const ends = world.lineOverlapEnds;
+    const t = segmentCrossT(from.x, from.y, to.x, to.y, ends[e], ends[e + 1], ends[e + 2], ends[e + 3]);
+    if (t < 0 || t >= nearestT || t * dist <= SELF_HIT_MARGIN) return;
+    if (!blocksShot(world, i, from.z + (to.z - from.z) * t)) return;
+    nearestT = t;
     hitLine = i;
   });
   if (hitLine < 0) return null;
@@ -1747,19 +1780,12 @@ export function shotPath(
   let nearestT = 1;
   let blockingLine: number | null = null;
 
-  /** This line's crossing point along the shot, or null — `WALL_OVERLAP`-extended for the corner-leak reason documented on `hasLineOfSight`'s own blocker set. */
+  /** This line's crossing point along the shot, or null — off `World.lineOverlapEnds`, which carries the corner-leak extension documented on `WALL_OVERLAP`. */
   const crossingT = (i: number): number | null => {
-    const line = world.map.linedefs[i];
-    const a = world.map.vertexes[line.v1];
-    const b = world.map.vertexes[line.v2];
-    if (!a || !b) return null;
-    const ldx = b.x - a.x;
-    const ldy = b.y - a.y;
-    const len = Math.hypot(ldx, ldy);
-    const ex = len > 0 ? (ldx / len) * WALL_OVERLAP : 0;
-    const ey = len > 0 ? (ldy / len) * WALL_OVERLAP : 0;
-    const hit = segmentIntersect(x, y, tx, ty, a.x - ex, a.y - ey, b.x + ex, b.y + ey);
-    return hit ? hit.t : null;
+    const e = i * 4;
+    const ends = world.lineOverlapEnds;
+    const t = segmentCrossT(x, y, tx, ty, ends[e], ends[e + 1], ends[e + 2], ends[e + 3]);
+    return t < 0 ? null : t;
   };
 
   if (!lock) {

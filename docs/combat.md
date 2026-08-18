@@ -90,9 +90,11 @@ against exact line openings.
 Both modes start at the shooter's own height, never the target's — using the target's made tracers
 and projectiles visibly begin in mid-air rather than at the gun. Blocking is evaluated at the
 interpolated height where the ray crosses each candidate line, not one height for the whole flight.
-Candidate lines are extended `WALL_OVERLAP` past both ends for the same reason `FogOfWar` extends
-its sight blockers: two walls meeting at a shared vertex otherwise let a shot aimed at that corner
-slip between them.
+Candidate lines are extended `WALL_OVERLAP` past both ends — two walls meeting at a shared vertex
+otherwise let a shot aimed at that corner slip between them. Shots, projectile steps and the fog's
+sight rays all read the same precomputed extended endpoints (`World.lineOverlapEnds`), since the
+vertexes never move; it is one constant and one table for all three, not a coincidence between
+them.
 
 Candidates come from `World.forEachLineAlongSegment`, not `linesNear`, for the reason spelled out
 under `hasLineOfSight` below — and here it is load-bearing rather than merely faster: a missile's

@@ -6,7 +6,7 @@ The dollhouse camera can see the entire level at once, including rooms the playe
 secrets a wide top-down view would spoil. `FogOfWar` reveals a region once the player has line of
 sight to it, tested with a straight 2D raycast (reusing the segment-intersection primitive
 `WallFader` uses for its camera-player sightline, factored out to `util/geom.ts`) against the
-sight-blocking lines near the player.
+sight-blocking lines along that ray.
 
 **State is per subsector, not per sector**, and that distinction is load-bearing. A DOOM sector is a
 logical grouping, not a place: one sector number routinely covers scattered, disconnected chunks of a
@@ -28,8 +28,9 @@ wrong for sight in *both* directions:
   sight-blocking would black out a courtyard the player is plainly looking into.
 
 So the test is the vertical opening (`opening.top <= opening.bottom`), which is what `P_CheckSight`
-keys off. The blocker set is rebuilt each frame rather than cached at load, because it reads live
-sector heights — once doors move, an opening door must stop blocking on the next frame.
+keys off. Whether a line blocks is asked live rather than cached at load, because it reads current
+sector heights — once doors move, an opening door must stop blocking on the next tic (§ Sight
+testing covers what *is* precomputed, and how often the live answer is asked).
 
 **Reveal is sticky on sight**: a subsector once seen stays lit, like DOOM's automap filling in as you
 explore. An earlier design kept sight-only reveals transient (fading back to black out of view) and
@@ -94,12 +95,33 @@ brackets it from both sides — against `VIEW_DISTANCE` rather than literals, si
 the dial *is* the rule: a cell inside the view must be revealed, a cell past it must be dark. It
 holds wherever the dial is set; see docs/testing.md § Private constants.
 
+## Sight testing
+
 Each subsector is sampled at its centroid first (one ray settles the common case, and the search stops
 at the first sample that comes back clear, so the rest cost nothing usually), then at every corner
 *and every edge midpoint*, each pulled slightly inward. **Corners alone leave holes**: a long subsector
 seen edge-on through a doorway typically has its centroid and all its corners outside the visible wedge
 while its edges cross it — adding edge midpoints roughly halved the count of wrongly-dark subsectors on
 every map measured.
+
+**A sample ray tests only the lines in the grid cells it crosses** (`World.forEachLineAlongSegment`),
+which is the same query `hasLineOfSight` uses and for the same reason — docs/world.md §
+hasLineOfSight. The sweep used to keep a flat list of every sight blocker within `VIEW_DISTANCE`,
+rebuilt each tic and rescanned per ray; with the dial where it is that list is *every line on the
+map*, so one tic cost `rays × all lines` (EPIC.WAD MAP02, arriving in sector 6 with the level
+unexplored: 2377 blockers rescanned by ~3000 rays, 4.8 ms in a single tic — the reported case). The
+walk stops at the first cell that blocks, which is usually one of the first few, and the same tic
+costs ~0.55 ms.
+
+What is *live* about a blocker is only whether it blocks: its endpoints are the linedef's own
+vertexes, which never move, so they come from `World.lineOverlapEnds` — the one table of
+overlap-extended endpoints every ray-vs-wall test in the engine shares (docs/combat.md § What a shot
+hits uses it too) — rather than being rebuilt per tic. `World.blocksSight` does read current sector
+heights, so an opening door stops blocking on the next tic, and it is **memoized per tic per line**
+(`blockStamp`): rays revisit the same lines constantly, and dropping the memo costs 0.70 → 1.15–1.37
+ms mean per tic across EPIC MAP02/04/05. A per-ray bounding-box reject used to sit in front of that
+test and was removed for the opposite reason — it measured as noise once the cell walk was doing the
+filtering.
 
 Sight blockers are stored **a quarter-unit overlong at both ends**. Where two of them meet at a shared
 vertex — a door leaf and its frame — a ray aimed near that point passes just outside the end of both
@@ -109,23 +131,54 @@ room behind it). A quarter unit closes those junctions and stays far under the w
 opening; going to a half unit starts clipping sight that legitimately grazes along a wall, for no
 further leak closed.
 
-Explored subsectors are skipped forever after, so the per-frame cost falls as a level is explored; the
-worst case (nothing explored yet) measures ~0.4 ms on DOOM2 MAP02.
+**The overhang is not visible to the cell walk, and that residual is accepted.** A line is bucketed
+into the cells its own bounding box covers, so an intersection that falls in the quarter unit *past*
+a vertex is missed whenever that vertex sits exactly on a cell boundary and the ray never enters the
+cell the line was bucketed into — DOOM's integer vertexes on a 128-unit grid make the coincidence
+rare rather than impossible, and every missed blocker measured had an endpoint sitting exactly there.
+Measured against the exhaustive scan over whole WAD sets (spawn-seeded reveal from up to 200 positions
+per map, ~1.5M subsector decisions on EPIC alone): 0 subsectors revealed early on DOOM, DOOM2 and
+NUTS, 1 on freedoom2, 2 on Hadron, 3 on SCYTHE, 13 on EPIC — against the 24 the *exhaustive* per-tic
+blocker list got wrong in the other direction on EPIC, where two maps are larger than `VIEW_DISTANCE`
+and its player-centred box quietly dropped the blockers past it. Inflating the linedef grid's own
+buckets to cover the overhang closes the residual and **must not be done**: `specials.ts: crossLines`
+filters walk triggers through `linesNear`, so widening the buckets makes a lift's stop line fire its
+neighbour too (`tests/game/perpetual-lifts.test.ts`).
 
-**The sight-sampling sweep is budgeted, not run to completion** — `MAX_SIGHT_TESTS_PER_TIC` (350,
-tuned by feel) caps how many not-yet-explored subsectors get their sample rays tested per `tick`;
-`scanCursor` remembers where the round-robin left off, and a subsector that fails every sample is
-simply retried on a later pass. Without the cap, cost is `unexplored subsectors × samples per
-subsector × blockers within the view distance`, and on a level where all three factors are large at
-once — freedoom2 MAP03 (315 sectors, 2855 linedefs, 1531 subsectors) — the one-time reveal sweep measured
-8.6 ms in a single call, over half a 60fps budget before rendering even runs. Spreading it across
-several tics is invisible, because reveal already fades in over `FADE_SPEED` seconds. The budget is
-counted **per tic, not per frame**, forced by the split below: `explored` is a gameplay input, so a
-per-frame budget would make what is revealed — and so what is shootable — depend on framerate. The
-constructor's one-time spawn seed (`this.tick(startX, startY, Infinity)`) passes an unbounded budget
-deliberately: it has to reveal everything visible from spawn in that single call, and the
-`alpha.set(explored)` right after skips the fade so the surroundings don't rise out of black on
-frame one.
+Explored subsectors are skipped forever after, so the per-frame cost falls as a level is explored.
+
+**The sight-sampling sweep is budgeted, not run to completion**, under two caps that a `tick` stops
+at whichever it reaches first. `MAX_SIGHT_TESTS_PER_TIC` (350, tuned by feel) caps how many
+not-yet-explored subsectors get their sample rays tested; `scanCursor` remembers where the
+round-robin left off, and a subsector that fails every sample is simply retried on a later pass.
+Without a cap, cost is `unexplored subsectors × samples per subsector × the cost of a ray`, and on a
+level where all three are large at once — freedoom2 MAP03 (315 sectors, 2855 linedefs, 1531
+subsectors) — the one-time reveal sweep measured 8.6 ms in a single call, over half a 60fps budget
+before rendering even runs.
+
+`MAX_SIGHT_WORK_PER_TIC` (150000, tuned by feel) caps the same sweep in the units that actually cost
+time, because **a subsector count bounds the wrong quantity**: a ray costs the grid cells it steps
+through plus the lines it tests in them, and either half can dominate on its own — EPIC.WAD MAP04's
+rays test ~320 lines each, MAP05's cross a 23000-unit map. Under the subsector cap alone those two
+still spent 3–6 ms in a single tic.
+
+The figure charged is **`forEachLineAlongSegment`'s own count of what the walk did**, not an estimate
+derived from the cell size: the grid's spacing is `World`'s business, and a fog-side constant
+restating it would mis-charge silently if it ever changed. `sightClear` subtracts what each ray
+reports, so the visitor stays a pure predicate. Over ~40 arrival positions per map on EPIC MAP01–05
+the p99 tic falls from 2.9–17.7 ms to 1.0–1.8 ms and the mean from 1.4–7.1 ms to 0.5–0.8 ms, while
+reveal latency after arriving somewhere new stays where the subsector cap had it (MAP02: 12.7 → 15.6
+tics on average, i.e. under half a second). An ordinary level never reaches the work cap — DOOM2
+MAP01 measures the same 0.16 ms/tic either way.
+
+Both budgets are counted **per tic, not per frame**, forced by the split below: `explored` is a
+gameplay input, so a per-frame budget would make what is revealed — and so what is shootable — depend
+on framerate. Spreading a sweep over several tics is invisible, because reveal already fades in over
+`FADE_SPEED` seconds. Both are parameters of the private `sweep` that `tick` delegates to, so the
+constructor's one-time spawn seed can ask for an unbounded pass on both by name rather than by
+passing `Infinity` for one and having the other infer it: the seed has to reveal everything visible
+from spawn in that single call, and the `alpha.set(explored)` right after skips the fade so the
+surroundings don't rise out of black on frame one.
 
 ## How reveal reaches the geometry
 

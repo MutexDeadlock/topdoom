@@ -365,7 +365,18 @@ const FLASH_BRIGHT_MASK = 64;
 const FLICKER_INTERVAL = 4 * DOOM_TIC;
 const FLICKER_STEP = 16;
 
-function makeLightState(pattern: LightPattern, baseLight: number, darkLight: number): LightState {
+/**
+ * The four patterns `P_SpawnStrobeFlash` spawns, and so the only ones carrying
+ * its `minlight == maxlight` rule — see `makeLightState`.
+ */
+const STROBE_PATTERNS = new Set<LightPattern>(['blink05', 'blink1', 'syncBlink05', 'syncBlink1']);
+
+function makeLightState(pattern: LightPattern, baseLight: number, minLight: number): LightState {
+  // A strobe with nothing darker around it blinks to black instead of standing
+  // still: `P_SpawnStrobeFlash`'s `if (minlight == maxlight) minlight = 0`, and
+  // its alone — `P_SpawnLightFlash`, `P_SpawnGlowingLight` and
+  // `P_SpawnFireFlicker` all leave the two equal. docs/specials.md § Lights.
+  const darkLight = minLight === baseLight && STROBE_PATTERNS.has(pattern) ? 0 : minLight;
   // `P_SpawnLightFlash` seeds its counter with the same `(P_Random()&64)+1` the
   // tick uses, so a map's broken lights start out of phase with each other.
   const timer = pattern === 'blinkRandom' ? ((pRandom() & FLASH_BRIGHT_MASK) + 1) * DOOM_TIC : pattern === 'flicker' ? FLICKER_INTERVAL : 0;

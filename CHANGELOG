@@ -5,6 +5,10 @@ Features and improvements
 
 Fixed bugs
   - barred gates are drawn again: an untextured step no longer cuts a midtexture
+  - various lightning fixes
+    - a strobe sector as bright as its neighbours blinks to black instead of standing still
+    - a light pattern no longer dims *up* to a neighbour brighter than the sector itself
+    - sector types 12/13 had their synced strobe speeds the wrong way round
 
 
 ===============================================================================

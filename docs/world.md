@@ -203,8 +203,8 @@ most — a huge open arena is one sector, so NUTS.WAD MAP01's 11-sector map reje
 ## Neighbor-height queries
 
 `world.ts`'s `lowestNeighborFloor`/`highestNeighborFloor`/`nextHigherFloor`/`nextLowerFloor`/
-`lowestNeighborCeiling`/`highestNeighborCeiling`/`darkestNeighborLight` are vanilla's
-`P_FindLowestFloorSurrounding` family — how a mover resolves its target height.
+`lowestNeighborCeiling`/`highestNeighborCeiling` are vanilla's `P_FindLowestFloorSurrounding`
+family — how a mover resolves its target height.
 
 **Each falls back to the sector's own current height only when it has no two-sided neighbors at
 all**, never leaving a mover with nowhere to go. The fallback must *not* kick in merely because the
@@ -212,6 +212,12 @@ sector's own height is already the most extreme value, which is why these track 
 than seeding the reduction with the sector's own height: a closed door's sector has floor ==
 ceiling, so seeding a *lowest* ceiling search with it makes every real neighbor lose, pinning the
 door's "open" target at its own closed height instead of the corridor's actual ceiling.
+
+**`darkestNeighborLight` is the exception, and seeds.** It is `P_FindMinSurroundingLight`, which
+vanilla never calls with anything but the sector's own light level as its `max` — so it only ever
+lowers from there, and a sector surrounded entirely by brighter ones dims to its own level rather
+than *up* to the darkest neighbour. Nothing here is left with nowhere to go, since a light pattern
+with min == max is a legal outcome — one the strobes then override (docs/specials.md § Lights).
 
 ### The sector→lines index
 

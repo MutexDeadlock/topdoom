@@ -705,8 +705,18 @@ and interpolates or toggles between them. Every random period draws from `pRando
 docs/random.md § The table and the two cursors.
 
 The strobes (`blink05`, `blink1` and their synced variants) are the easy ones: a fixed 5-tic lit
-period against a 15- or 35-tic dark one, straight off vanilla's `STROBEBRIGHT`/`FASTDARK`/`SLOWDARK`.
-`glow` ramps continuously. The two that are **not** simple toggles are worth knowing:
+period against a 15- or 35-tic dark one, straight off vanilla's `STROBEBRIGHT`/`FASTDARK`/`SLOWDARK`
+— `FASTDARK` (15) for sector types 2, 4 and 13, `SLOWDARK` (35) for 3 and 12, so the *synced* pair
+runs slow-then-fast where the unsynced one runs fast-then-slow (`P_SpawnSpecials`).
+`glow` ramps continuously.
+
+**A strobe whose `darkLight` equals its `baseLight` blinks to black**, vanilla's
+`if (minlight == maxlight) minlight = 0` — and `P_SpawnStrobeFlash` is the only spawn that carries
+it, `P_SpawnLightFlash`/`P_SpawnGlowingLight`/`P_SpawnFireFlicker` all leaving the two equal and so
+standing still. Without it a strobing sector as dark as everything it touches simply does not strobe:
+`EPIC.WAD` MAP02 sector 0 is type 2 at light 240 with one neighbour, also at 240.
+
+The two patterns that are **not** simple toggles are worth knowing:
 
 - **`blinkRandom`** (sector type 1) is `T_LightFlash`, and vanilla's `mintime`/`maxtime` are used as
   **bit masks, not durations**. Dark is `(P_Random()&7)+1` — 1 to 8 tics. Lit is

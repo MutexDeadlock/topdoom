@@ -488,8 +488,8 @@ export const SECTOR_LIGHT_SPECIALS: Record<number, LightPattern> = {
   3: 'blink1',
   4: 'blink05',
   8: 'glow',
-  12: 'syncBlink05',
-  13: 'syncBlink1',
+  12: 'syncBlink1', // SYNC STROBE SLOW — `SLOWDARK`, 35 dark tics
+  13: 'syncBlink05', // SYNC STROBE FAST — `FASTDARK`, 15
   17: 'flicker',
 };
 

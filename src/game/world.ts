@@ -1181,14 +1181,16 @@ export function nextLowerCeiling(map: DoomMap, sectorIndex: number): number {
   return result;
 }
 
-/** Darkest neighboring sector's light level — the "minlight" a blink/glow special dims to. */
+/**
+ * The "minlight" a blink/glow special dims to: `P_FindMinSurroundingLight`,
+ * which vanilla always calls with the sector's own level as its `max` and only
+ * ever lowers from there. So a sector whose neighbours are all *brighter* dims
+ * to its own level — i.e. not at all — rather than up to the darkest of them.
+ */
 export function darkestNeighborLight(map: DoomMap, sectorIndex: number): number {
-  const sector = map.sectors[sectorIndex];
-  let result = sector?.light ?? 0;
-  let found = false;
+  let result = map.sectors[sectorIndex]?.light ?? 0;
   for (const n of neighborSectors(map, sectorIndex)) {
-    if (!found || n.light < result) result = n.light;
-    found = true;
+    if (n.light < result) result = n.light;
   }
   return result;
 }

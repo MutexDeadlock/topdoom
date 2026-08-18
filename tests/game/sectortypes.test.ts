@@ -18,6 +18,11 @@ describe('specials · generalized sector types', () => {
     assert.equal(decodeSectorType(9).damage, null);
     assert.equal(decodeSectorType(7).damage?.amount, 5);
     assert.equal(decodeSectorType(2).lightPattern, 'blink05');
+    // P_SpawnSpecials pairs the *synced* types the other way round from the
+    // unsynced ones: 12 is SLOWDARK and 13 FASTDARK.
+    assert.equal(decodeSectorType(3).lightPattern, 'blink1');
+    assert.equal(decodeSectorType(12).lightPattern, 'syncBlink1');
+    assert.equal(decodeSectorType(13).lightPattern, 'syncBlink05');
     assert.equal(decodeSectorType(10).doorTimer, 'closeIn30');
     assert.equal(decodeSectorType(0).secret, false);
   });

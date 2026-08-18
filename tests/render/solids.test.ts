@@ -1,13 +1,13 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { findSolidCaps, pointInPolygon } from '../../src/render/solids.ts';
 import { buildSubSectorPolys } from '../../src/render/bsp.ts';
 import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import { FlatFader } from '../../src/render/occlusion.ts';
 import { loadMap, NO_SIDE, type DoomMap } from '../../src/wad/map.ts';
-import { Wad, WadFile } from '../../src/wad/wad.ts';
+import { Wad } from '../../src/wad/wad.ts';
+import { fixtureWad } from '../fixtures/wadfile.ts';
 import { BANK } from '../fixtures/specialsrig.ts';
 
 /**
@@ -134,9 +134,9 @@ describe('render · solid structure lids', () => {
 
   test('lids reach the geometry as fadeable, fog-aware flat surfaces', () => {
     // A real map: DOOM1 E1M1's pillars, through the whole builder.
-    const bytes = readFileSync('public/wads/iwad/DOOM1.WAD');
-    const file = new WadFile(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer, 'DOOM1.WAD');
-    const map = loadMap(new Wad([file]), 'E1M1');
+    // `doom1_e1m1.wad` is that map's own lumps and nothing else, so it loads
+    // with no IWAD behind it — the mesh builder never looks a texture up.
+    const map = loadMap(new Wad([fixtureWad('doom1_e1m1.wad')]), 'E1M1');
     const caps = findSolidCaps(map, buildSubSectorPolys(map));
     assert.ok(caps.length > 0, 'E1M1 has solid structures');
     // A ring is traced from an arbitrary direction, so every footprint must

@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { Wad, WadFile } from '../../src/wad/wad.ts';
+import { Wad } from '../../src/wad/wad.ts';
 import { MusicBank, parseGenMidi, PERCUSSION_FIRST_NOTE } from '../../src/wad/music.ts';
 import { decodeMus } from '../../src/audio/music/mus.ts';
 import { decodeMidi } from '../../src/audio/music/midi.ts';
@@ -9,7 +8,7 @@ import { channelRegisters, OplChip, OPL_CHANNELS, OPL_RATE } from '../../src/aud
 import { blockAndFnum, OplSynth } from '../../src/audio/music/synth.ts';
 import { vanillaMusicFor } from '../../src/audio/music/tables.ts';
 import { LevelMusic } from '../../src/audio/music.ts';
-import { wadFile } from '../fixtures/wadfile.ts';
+import { fixtureWad, wadFile } from '../fixtures/wadfile.ts';
 
 /**
  * The music subsystem, whose fidelity reference is Chocolate Doom's `i_oplmusic.c` rather than
@@ -18,11 +17,8 @@ import { wadFile } from '../fixtures/wadfile.ts';
  * score format's own decoding, which is where a silent track usually comes from.
  */
 
-function doom1(): Wad {
-  const bytes = readFileSync(new URL('../../public/wads/iwad/DOOM1.WAD', import.meta.url));
-  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-  return new Wad([new WadFile(buffer, 'DOOM1.WAD')]);
-}
+/** `doom1_lumps.wad`: the shareware IWAD's own `GENMIDI` and `D_E1M1`, the two lumps asserted against below. */
+const doom1 = (): Wad => new Wad([fixtureWad('doom1_lumps.wad')]);
 
 /** A MUS score from event bytes, with the header this engine's decoder reads. */
 function musLump(score: number[]): Uint8Array {
@@ -339,9 +335,9 @@ describe('music · the synth', () => {
     // fall. It did once: an operator's envelope and feedback history only moved
     // on the samples its channel was collected as live, which differs with the
     // block size. docs/music.md § The chip.
-    const bytes = readFileSync(new URL('../../public/wads/iwad/freedoom2.wad', import.meta.url));
-    const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-    const bank = new MusicBank(new Wad([new WadFile(buffer, 'freedoom2.wad')]));
+    // freedoom2's `D_RUNNIN` and its own `GENMIDI`: a real MIDI-format score,
+    // dense enough that a chunk boundary lands mid-envelope many times over.
+    const bank = new MusicBank(new Wad([fixtureWad('freedoom_d_runnin.wad')]));
     const song = decodeMidi(bank.get('D_RUNNIN')!.bytes)!;
     const instruments = bank.genmidi()!;
     const rate = 48000;

@@ -10,7 +10,8 @@ import { parseMapInfoNames, preferredMapInfoLump } from '../../src/wad/campaign/
  */
 describe('WAD parsing · MAPINFO level names', () => {
   test('reads the ZDoom form, with and without a property block', () => {
-    // Verbatim from public/wads/pwad/faulers_first_map.wad, the repo's own MAPINFO sample.
+    // Quoted verbatim from `faulers_first_map.wad`'s own MAPINFO — the text only, since a test never
+    // reads `public/wads/` (docs/testing.md § WAD-backed tests).
     const names = parseMapInfoNames(`
 defaultmap
 {

@@ -1,10 +1,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { Wad, WadFile } from '../../src/wad/wad.ts';
+import { Wad } from '../../src/wad/wad.ts';
 import { loadMap, LF, NO_SIDE } from '../../src/wad/map.ts';
 import { World, slideMove } from '../../src/game/world.ts';
 import { PLAYER_RADIUS } from '../../src/game/player.ts';
+import { fixtureWad } from '../fixtures/wadfile.ts';
 
 /**
  * Running straight at a **two-sided wall carrying `ML_BLOCKING`** stopped the
@@ -22,19 +22,14 @@ import { PLAYER_RADIUS } from '../../src/game/player.ts';
 /** freedoom2 MAP01 line 514, a diagonal two-sided `ML_BLOCKING` wall. */
 const LINE = 514;
 
-/** Parsed once: freedoom2 is 28 MB, and both cases below read the same map. */
+/** Parsed once: both cases below read the same map. */
 let cached: { world: World; a: { x: number; y: number }; b: { x: number; y: number } } | null = null;
 
 function scene(): { world: World; a: { x: number; y: number }; b: { x: number; y: number } } {
   if (cached) return cached;
-  const bytes = readFileSync(new URL('../../public/wads/iwad/freedoom2.wad', import.meta.url));
-  // `readFileSync` hands back a view into a pooled ArrayBuffer — the slice keeps
-  // `WadFile` from seeing the whole pool.
-  const file = new WadFile(
-    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-    'freedoom2.wad',
-  );
-  const world = new World(loadMap(new Wad(file), 'MAP01'));
+  // `freedoom_map01.wad` is that map's own lumps lifted out of freedoom2, so
+  // the line numbering is the IWAD's and it loads with no IWAD behind it.
+  const world = new World(loadMap(new Wad([fixtureWad('freedoom_map01.wad')]), 'MAP01'));
   const line = world.map.linedefs[LINE];
   cached = { world, a: world.map.vertexes[line.v1], b: world.map.vertexes[line.v2] };
   return cached;

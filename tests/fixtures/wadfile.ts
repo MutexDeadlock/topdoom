@@ -1,11 +1,14 @@
 /**
- * Builds a `WadFile` in memory from a lump list, for the tests that only need a
- * directory (name resolution, content ids) or a lump or two of real text (a
- * MAPINFO the progression reader has to parse). Real WADs belong in
- * `tests/fixtures/wads/`; docs/wad.md's warning that synthetic WADs won't catch
- * parser regressions still stands, and none of these callers is testing the
- * parser. See docs/testing.md § WAD-backed tests.
+ * The two ways a test gets a `WadFile`: `wadFile` builds one in memory from a
+ * lump list, for the tests that only need a directory (name resolution, content
+ * ids) or a lump or two of real text (a MAPINFO the progression reader has to
+ * parse); `fixtureWad` reads a real one out of `tests/fixtures/wads/`, which is
+ * the only place a test takes WAD bytes from. docs/wad.md's warning that
+ * synthetic WADs won't catch parser regressions still stands, and none of
+ * `wadFile`'s callers is testing the parser. See docs/testing.md § WAD-backed
+ * tests.
  */
+import { readFileSync } from 'node:fs';
 import { WadFile } from '../../src/wad/wad.ts';
 
 /** A lump: a bare name for an empty one, or a name with the text or raw bytes it holds. */
@@ -42,4 +45,17 @@ export function wadFile(type: 'IWAD' | 'PWAD', name: string, lumps: readonly Lum
     at += payload.length;
   });
   return new WadFile(buffer, name);
+}
+
+/**
+ * A real WAD out of `tests/fixtures/wads/`, by file name. Resolved against this
+ * module rather than the cwd, so the suite runs from anywhere, and sliced out of
+ * the pooled buffer `readFileSync` returns — passing `.buffer` raw would hand
+ * `WadFile` the whole pool. Tests read their WADs from here and never from
+ * `public/wads/`; docs/testing.md § WAD-backed tests says why.
+ */
+export function fixtureWad(file: string): WadFile {
+  const bytes = readFileSync(new URL(`./wads/${file}`, import.meta.url));
+  const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+  return new WadFile(buffer, file);
 }

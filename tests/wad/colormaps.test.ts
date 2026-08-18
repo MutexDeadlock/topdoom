@@ -1,8 +1,8 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
 import { colormapTint } from '../../src/wad/colormaps.ts';
 import { Wad, WadFile } from '../../src/wad/wad.ts';
+import { fixtureWad } from '../fixtures/wadfile.ts';
 
 /**
  * The colour cast of a named Boom colormap lump — what a 242 sector tints the
@@ -78,13 +78,9 @@ describe('WAD parsing · colormap tints', () => {
   });
 
   test("BOOMEDIT's own colormaps come out the colours they are named for", () => {
-    const path = 'public/wads/pwad/BOOMEDIT.WAD';
-    assert.ok(existsSync(path), 'BOOMEDIT.WAD is committed');
-    const files = ['public/wads/iwad/DOOM1.WAD', path].map((p) => {
-      const b = readFileSync(p);
-      return new WadFile(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) as ArrayBuffer, p);
-    });
-    const wad = new Wad(files);
+    // The real lumps, over a real palette: `doom1_lumps.wad` carries the
+    // shareware IWAD's PLAYPAL and COLORMAP, `boomedit.wad` the named maps.
+    const wad = new Wad([fixtureWad('doom1_lumps.wad'), fixtureWad('boomedit.wad')]);
 
     const blue = colormapTint(wad, 'BLUMAP')!;
     assert.ok(blue.b > 0.9 && blue.r < 0.1 && blue.g < 0.1, `BLUMAP is blue: ${JSON.stringify(blue)}`);

@@ -1,8 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { Wad, WadFile } from '../../src/wad/wad.ts';
-import { wadFile } from '../fixtures/wadfile.ts';
+import { Wad } from '../../src/wad/wad.ts';
+import { fixtureWad, wadFile } from '../fixtures/wadfile.ts';
 import { readAnimated } from '../../src/wad/animated.ts';
 import { readSwitches, switchPairs } from '../../src/wad/switches.ts';
 
@@ -144,11 +143,7 @@ describe('WAD parsing · SWITCHES', () => {
 });
 
 describe('WAD parsing · BOOMEDIT.WAD ships both lumps', () => {
-  function boomedit(): Wad {
-    const file = readFileSync('public/wads/pwad/BOOMEDIT.WAD');
-    const buffer = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer;
-    return new Wad([new WadFile(buffer, 'BOOMEDIT.WAD')]);
-  }
+  const boomedit = (): Wad => new Wad([fixtureWad('boomedit.wad')]);
 
   test('its ANIMATED decodes to the vanilla set plus its own speeds', () => {
     const defs = readAnimated(boomedit())!;

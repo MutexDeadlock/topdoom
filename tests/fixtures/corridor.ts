@@ -1,9 +1,9 @@
-import { readFileSync } from 'node:fs';
-import { Wad, WadFile } from '../../src/wad/wad.ts';
+import { Wad } from '../../src/wad/wad.ts';
 import { loadMap } from '../../src/wad/map.ts';
 import { World } from '../../src/game/world.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import type { Pos3 } from '../../src/types.ts';
+import { fixtureWad } from './wadfile.ts';
 
 /**
  * `long_corridor_with_chaingunner.wad`: a 3648-unit straight corridor with a
@@ -21,16 +21,7 @@ export interface Corridor {
 }
 
 export function loadCorridor(): Corridor {
-  const bytes = readFileSync(
-    new URL('./wads/long_corridor_with_chaingunner.wad', import.meta.url),
-  );
-  // `readFileSync` hands back a view into a pooled ArrayBuffer, so the slice is
-  // load-bearing: passing `.buffer` raw would give `WadFile` the whole pool.
-  const file = new WadFile(
-    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-    'long_corridor_with_chaingunner.wad',
-  );
-  const map = loadMap(new Wad([file]), 'MAP01');
+  const map = loadMap(new Wad([fixtureWad('long_corridor_with_chaingunner.wad')]), 'MAP01');
   const world = new World(map);
   const start = world.playerStart();
   const chaingunner = map.things.find((t) => t.type === ThingType.heavyWeaponDude)!;

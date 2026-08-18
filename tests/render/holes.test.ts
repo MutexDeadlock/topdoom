@@ -1,13 +1,10 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { buildMapMesh, buildMoverMesh, NO_TEXTURE, type FlatSurface } from '../../src/render/mapmesh.ts';
+import { buildMapMesh, buildMoverMesh, type FlatSurface } from '../../src/render/mapmesh.ts';
 import { buildSubSectorPolys } from '../../src/render/bsp.ts';
 import { buildMoverIndex } from '../../src/game/specials/movergeometry.ts';
 import { transfersOf } from '../../src/game/specials/transfers.ts';
-import { computeMovableSectors } from '../../src/game/specials/mapscan.ts';
-import { loadMap, NO_SIDE, type DoomMap } from '../../src/wad/map.ts';
-import { Wad, WadFile } from '../../src/wad/wad.ts';
+import { NO_SIDE, type DoomMap } from '../../src/wad/map.ts';
 import { gridMap, type GridMap } from '../fixtures/gridmap.ts';
 import { BANK } from '../fixtures/specialsrig.ts';
 
@@ -102,51 +99,37 @@ describe('Rendering · closed holes', () => {
 });
 
 /**
- * The map the black-pit report was made on, checked against GZDoom: EPIC.WAD
- * MAP01's sector 88 is three 64×64 pits sunk 128 below the grass of sector 14,
- * with no lower textures on any of their twelve lines. It is also tagged, so
- * its flats come from a mover mesh rather than the static batches.
+ * The same pit, but as a *mover* — the shape EPIC.WAD MAP01's sector 88 has,
+ * the map this was reported on (docs/render.md § Closed holes): a tagged sector
+ * whose flats come from its own mover mesh rather than the static batches, and
+ * whose lid has to come and go with its floor.
  */
-describe('Regressions · EPIC MAP01 black pits', () => {
-  const path = new URL('../../public/wads/pwad/EPIC.WAD', import.meta.url);
-  const file = readFileSync(path);
-  const wad = new Wad([
-    new WadFile(file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength) as ArrayBuffer, 'EPIC.WAD'),
-  ]);
-  const map = loadMap(wad, 'MAP01');
+describe('Regressions · a pit that is also a mover', () => {
+  /** The pit sector's own mover mesh, the one the running game would draw its flats from. */
+  function moverFans(map: DoomMap, sector: number) {
+    const polys = buildSubSectorPolys(map);
+    const options = { transfers: transfersOf(map), movableSectors: new Set([sector]) };
+    return buildMoverMesh(map, polys, sector, BANK, options, buildMoverIndex(map, polys)).flatFans;
+  }
 
-  test('the WAD still holds the geometry this is about', () => {
-    assert.equal(map.sectors[88].floorHeight, -144);
-    assert.equal(map.sectors[88].floorTex, 'GRASS1');
-    assert.equal(map.sectors[14].floorHeight, -16);
-    assert.equal(map.sectors[14].floorTex, 'GRASS1');
-    const rim = map.linedefs.flatMap((l, i) =>
-      l.left !== NO_SIDE && [l.right, l.left].some((s) => map.sidedefs[s].sector === 88) ? [i] : [],
+  test('the mover mesh lids it too, not just the static batches', () => {
+    const { grid, centre } = pit();
+    const fans = moverFans(grid.map, centre);
+    assert.deepEqual(
+      fans.map((f) => f.height).sort((a, b) => a - b),
+      [-DEPTH, 0],
+      'its own floor, and the lid over it',
     );
-    assert.equal(rim.length, 12);
-    for (const line of rim) {
-      assert.equal(sideFacing(map, line, 88).lower, NO_TEXTURE, 'the pit sides draw nothing — that is the bug');
-    }
+    assert.equal(fans.find((f) => f.height === 0)?.key, 'flat:' + RIM_FLAT);
   });
 
-  /** Sector 88's own mover mesh, the one the running game draws its flats from. */
-  const moverFans = (m: DoomMap) => {
-    const polys = buildSubSectorPolys(m);
-    const movableSectors = computeMovableSectors(m);
-    assert.ok(movableSectors.has(88), 'sector 88 is tagged by line 585, so it builds a mover mesh');
-    const options = { transfers: transfersOf(m), movableSectors };
-    return buildMoverMesh(m, polys, 88, BANK, options, buildMoverIndex(m, polys)).flatFans;
-  };
-
-  test('each pit is lidded at the grass around it', () => {
-    const lids = moverFans(map).filter((f) => f.height === -16);
-    assert.equal(lids.length, 3, 'one per pit');
-    for (const lid of lids) assert.equal(lid.key, 'flat:GRASS1');
-  });
-
-  test('and loses the lid once line 585 has raised the pits flush', () => {
-    const raised = { ...map, sectors: map.sectors.map((s, i) => (i === 88 ? { ...s, floorHeight: -16 } : s)) };
-    const fans = moverFans(raised).filter((f) => f.height === -16);
-    assert.equal(fans.length, 3, 'the real floors, and nothing on top');
+  test('and drops the lid once the floor has risen flush', () => {
+    const { grid, centre } = pit();
+    grid.map.sectors[centre].floorHeight = 0;
+    assert.deepEqual(
+      moverFans(grid.map, centre).map((f) => f.height),
+      [0],
+      'the real floor, and nothing on top of it',
+    );
   });
 });

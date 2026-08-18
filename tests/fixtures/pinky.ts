@@ -1,5 +1,4 @@
-import { readFileSync } from 'node:fs';
-import { Wad, WadFile } from '../../src/wad/wad.ts';
+import { Wad } from '../../src/wad/wad.ts';
 import { loadMap } from '../../src/wad/map.ts';
 import { World } from '../../src/game/world.ts';
 import { type MonsterBody, type MonsterStats } from '../../src/game/monsters/defs.ts';
@@ -7,6 +6,7 @@ import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { PLAYER_RADIUS } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import type { Pos3 } from '../../src/types.ts';
+import { fixtureWad } from './wadfile.ts';
 
 /** Doomednum of the demon/pinky (`MT_SERGEANT`). */
 const DEMON_TYPE = ThingType.demon;
@@ -40,14 +40,7 @@ export interface PinkyFixture {
 }
 
 export function loadPinky(which: PinkyMap): PinkyFixture {
-  const bytes = readFileSync(new URL(`./wads/${which}.wad`, import.meta.url));
-  // `readFileSync` hands back a view into a pooled ArrayBuffer, so the slice is
-  // load-bearing — same reason `corridor.ts` does it.
-  const file = new WadFile(
-    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-    `${which}.wad`,
-  );
-  const map = loadMap(new Wad([file]), 'MAP01');
+  const map = loadMap(new Wad([fixtureWad(`${which}.wad`)]), 'MAP01');
   const world = new World(map);
   const stats = MONSTER_STATS[DEMON_TYPE];
   const thing = map.things.find((t) => t.type === DEMON_TYPE)!;

@@ -33,6 +33,7 @@ tests/
   util/  wad/  game/  ui/  render/  audio/   one file per src/ module under test
   regression/            one file per fixed bug, named after the bug
   fixtures/              builders and test data, never tests
+  docs/                  the tree-wide guards: doc pointers, WAD fixtures
 ```
 
 **Every test file wraps its tests in one or more `describe` blocks named
@@ -250,20 +251,25 @@ Two matching rules it deliberately encodes, because both shapes are all over the
 
 ## WAD-backed tests
 
-`DOOM1.WAD`, `freedoom2.wad`, `SCYTHE.WAD`, `NUTS.WAD`, `oku2v31.wad`, `EPIC.WAD`, `BOOMEDIT.WAD` (TeamTNT's
-own Boom feature exerciser — the manual soak map for the Boom-compat work, and what
-`inspect-wad`'s specials coverage report is run against) and the two hand-made
-fixtures `fauler_sound.wad`/`faulers_first_map.wad` are **committed to the repo**; only `DOOM.WAD` and `DOOM2.WAD` are gitignored. So a WAD-backed test runs everywhere by
-default, and only a test needing one of those two has to guard itself — with node:test's
-declaration-time option, since presence is a static fact:
+**A test never reads `public/wads/`, and every WAD a test reads lives in `tests/fixtures/wads/`.**
+That directory is the *game's* content — what a player drops WADs into and what the manifest plugin
+serves — so a test reaching into it couples the suite to the shipped set, and a WAD added or removed
+there for gameplay reasons breaks tests that have nothing to do with it. It also means no test has
+to guard itself against a missing file: everything under `tests/fixtures/wads/` is committed, so a
+WAD-backed test runs everywhere, unconditionally. `tests/docs/fixturewads.test.ts` enforces both
+halves — no `public/wads` path outside a comment anywhere in `tests/`, and no committed fixture WAD
+that nothing loads.
 
-```ts
-test('…', { skip: existsSync(p) ? false : `${p} not present` }, () => { … });
-```
+Fixture WADs are loaded through **`fixtureWad(name)`** (`fixtures/wadfile.ts`), which resolves the
+name against `./wads/` with `new URL(…, import.meta.url)` so the suite is cwd-independent and slices
+the bytes out of the pooled buffer — `readFileSync` returns a view into a shared `ArrayBuffer`, and
+passing `.buffer` raw hands `WadFile` the whole pool. Both steps are easy to forget and neither
+fails loudly, which is why every WAD-backed test goes through the one helper.
 
-Four tiny purpose-built maps live in `tests/fixtures/wads/`, each carrying its own map and loading
-with **no IWAD**, with a loader beside it in `tests/fixtures/` (or, for the newest, inside the one
-test that uses it):
+### The fixtures
+
+Four tiny purpose-built maps, each carrying its own map and loading with **no IWAD**, with a loader
+beside them in `tests/fixtures/` (or, for the newest, inside the one test that uses it):
 
 | WAD | Geometry | Loader | Covers |
 |---|---|---|---|
@@ -272,13 +278,24 @@ test that uses it):
 | `pinky_above_test.wad` | same, far floor **+88** (ledge) | `pinky.ts` | vertical melee reach |
 | `caco_pit_test.wad` | one room split at `y=32`, far floor **-48**, cacodemon in it (`E1M1`) | in-test | floating monsters over a ledge |
 
-Two regressions are backed by a **committed WAD** rather than a purpose-built map, both because the
-grid fixture cannot build the geometry and both asserting the WAD's own numbers first so the fixture
-cannot drift silently: `blocking-line-slide.test.ts` needs a diagonal two-sided `ML_BLOCKING` wall
-and uses `freedoom2.wad` MAP01 line 514 (it parses in ~15ms, so the cost is not worth authoring a
-map for), and `holes.test.ts` uses `EPIC.WAD` MAP01 sector 88 — three untextured pits, checked
-against GZDoom (docs/render.md § Closed holes) — loaded with **no IWAD at all**, since a map lump
-needs none.
+Plus five holding **real lumps**, for the assertions whose whole point is that a shipped WAD's own
+bytes decode the way the engine claims. `boomedit.wad` is TeamTNT's BOOMEDIT.WAD copied verbatim —
+the Boom feature exerciser, and the only fixture that is a whole WAD; the other four were lifted out
+of `DOOM1.WAD` and `freedoom2.wad` lump by lump, so each is the lumps its test names and nothing
+else:
+
+| WAD | Holds | Covers |
+|---|---|---|
+| `boomedit.wad` | all of BOOMEDIT.WAD | `ANIMATED`/`SWITCHES` as a real WAD ships them, its named colormaps |
+| `doom1_lumps.wad` | `PLAYPAL`, `COLORMAP`, `GENMIDI`, `D_E1M1` | colormap tints against a real palette; the OPL bank and a real MUS score |
+| `doom1_e1m1.wad` | E1M1's eleven map lumps | solid-structure lids through the whole mesh builder |
+| `freedoom_map01.wad` | freedoom2 MAP01's eleven map lumps | the diagonal blocking line, below |
+| `freedoom_d_runnin.wad` | freedoom2's `GENMIDI` + `D_RUNNIN` | a real MIDI-format score, dense enough to land chunk boundaries mid-envelope |
+
+Lifting map lumps out verbatim keeps the **IWAD's own numbering**, which is what lets a test name a
+sector or a line: `blocking-line-slide.test.ts` needs a diagonal two-sided `ML_BLOCKING` wall, which
+the grid fixture cannot build, and takes freedoom2 MAP01 line 514 — still line 514 in
+`freedoom_map01.wad`. It asserts the line's flags first, so the fixture cannot drift silently.
 
 The pinky pair are the maps a demon-bites-through-a-height-gap report was made on, checked against
 GZDoom (docs/monster-ai.md § Melee reach); `caco_pit_test.wad` is the map a cacodemon-stuck-in-a-pit
@@ -286,11 +303,6 @@ report was made on, checked against vanilla (docs/monster-ai.md § Floating mons
 tests drive the real `stepMonsterAI` rather than re-implementing its melee gate — worth copying: a
 test that restates the condition it is checking passes for the wrong reason. Both were confirmed to
 fail with the fix reverted before being committed.
-
-Load fixture WADs through
-`new URL('./wads/…', import.meta.url)` so the suite is cwd-independent, and keep
-`inspect-wad.ts`'s `file.buffer.slice(file.byteOffset, …)` step: `readFileSync` returns a view into
-a pooled `ArrayBuffer`, and passing `.buffer` raw hands `WadFile` the whole pool.
 
 [wad.md](wad.md) warns that synthetic WADs won't catch parser regressions. That still holds, with two
 narrow exceptions it does not cover, both of them decisions taken over a lump's *size* rather than

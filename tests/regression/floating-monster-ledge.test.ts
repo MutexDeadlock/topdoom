@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { Wad, WadFile } from '../../src/wad/wad.ts';
+import { Wad } from '../../src/wad/wad.ts';
 import { loadMap } from '../../src/wad/map.ts';
 import { World } from '../../src/game/world.ts';
 import { type MonsterBody } from '../../src/game/monsters/defs.ts';
@@ -10,6 +9,7 @@ import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import type { Pos3 } from '../../src/types.ts';
+import { fixtureWad } from '../fixtures/wadfile.ts';
 
 /**
  * A cacodemon parked in a pit could never leave it. Fliers were exempt from the
@@ -31,14 +31,7 @@ const ROOM_FLOOR = 0;
 const LEDGE_Y = 32;
 
 function loadCacoPit(): { world: World; body: MonsterBody; player: Pos3 } {
-  const bytes = readFileSync(new URL('../fixtures/wads/caco_pit_test.wad', import.meta.url));
-  // `readFileSync` hands back a view into a pooled ArrayBuffer, so the slice is
-  // load-bearing — same reason the other WAD fixtures do it.
-  const file = new WadFile(
-    bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
-    'caco_pit_test.wad',
-  );
-  const map = loadMap(new Wad([file]), 'E1M1');
+  const map = loadMap(new Wad([fixtureWad('caco_pit_test.wad')]), 'E1M1');
   const world = new World(map);
   const stats = MONSTER_STATS[ThingType.cacodemon];
   const thing = map.things.find((t) => t.type === ThingType.cacodemon)!;

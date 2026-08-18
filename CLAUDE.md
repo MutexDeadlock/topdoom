@@ -138,7 +138,7 @@ several record rules that look like accidents and aren't.
 | [docs/fogofwar.md](docs/fogofwar.md) | Subsector-based reveal, sight blocking, how alpha reaches the geometry |
 | [docs/audio.md](docs/audio.md) | Sound lumps, the vanilla mixer model, which sound every event plays, volume/mute |
 | [docs/music.md](docs/music.md) | The OPL chip and `GENMIDI`, MUS/MIDI decoding, which track a level plays, music volume |
-| [docs/testing.md](docs/testing.md) | The test suite: runner, the ASCII-grid map fixture, which WADs are committed, the doc-pointer guard |
+| [docs/testing.md](docs/testing.md) | The test suite: runner, the ASCII-grid map fixture, the fixture WADs, the tree-wide guards |
 | [docs/conventions.md](docs/conventions.md) | File and directory naming, the `defs`/`tables` roles, source order inside a file, known deviations |
 
 For what is and isn't implemented, see [README.md](README.md#state) and [CHANGELOG](CHANGELOG).

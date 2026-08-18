@@ -24,7 +24,7 @@ Features and improvements
     - see-through midtextures
     - a BOOM map's own colormaps tint the whole view while you stand in the
       sector that names them
-    - MISSING: DEH/BEX support
+    - MISSING: DEH/BEX support (soon!)
   - a monster killed mid-knockback now slides to a stop instead of freezing
     where it died
   - solid structures are no longer see-through holes in the level. 

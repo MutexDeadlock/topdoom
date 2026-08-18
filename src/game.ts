@@ -64,8 +64,8 @@ import { Hud, type LevelStats } from './ui/hud/hud.ts';
 import { Crosshair } from './ui/hud/crosshair.ts';
 import { Intermission, INTERMISSION_INPUT_DELAY } from './ui/hud/intermission.ts';
 import { LevelCard } from './ui/hud/levelcard.ts';
-import { LevelNames } from './wad/levelnames.ts';
-import { LevelProgression } from './wad/progression.ts';
+import { LevelNames } from './wad/campaign/names.ts';
+import { LevelProgression } from './wad/campaign/progression.ts';
 import { CenterMessage, lockedLineMessage, SECRET_MESSAGE } from './ui/hud/message.ts';
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
@@ -100,7 +100,7 @@ import type { AudioEngine } from './audio/audio.ts';
 import { PLAYER_ORIGIN } from './audio/sfx.ts';
 import { SoundBank } from './wad/sound.ts';
 import { MusicBank } from './wad/music.ts';
-import { mapInfoMusic } from './wad/mapinfo.ts';
+import { MapInfo } from './wad/campaign/mapinfo.ts';
 import { LevelMusic } from './audio/music.ts';
 import type { Pos2 } from './types.ts';
 import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
@@ -278,11 +278,11 @@ export class Game {
   private levelCard: LevelCard;
   /** The end-of-level popup — see ui/hud/intermission.ts and `intermissionActive`. */
   private intermission: Intermission;
-  /** Names levels for the card: MAPINFO, then the vanilla title table — see wad/levelnames.ts. */
+  /** Names levels for the card: MAPINFO, then the vanilla title table — see wad/campaign/names.ts. */
   private levelNames: LevelNames;
   /** The WAD set's `D_*` lumps, and the MAPINFO overrides of which one a level plays. */
   private levelMusic: LevelMusic;
-  /** Where each exit leads: MAPINFO, then vanilla's own tables — see wad/progression.ts. */
+  /** Where each exit leads: MAPINFO, then vanilla's own tables — see wad/campaign/progression.ts. */
   private progression: LevelProgression;
   /**
    * Measurement itself always runs — `performance.now()` calls are cheap enough
@@ -365,10 +365,13 @@ export class Game {
     // The WAD set's own sound lumps, for as long as this Game owns the level.
     // The engine itself (and its AudioContext) outlives us — see AudioEngine.
     audio.setBank(new SoundBank(wad));
+    // What the set's own MAPINFO lumps say about its levels, parsed once here and projected by
+    // the three consumers below — titles, exits, music (docs/wad.md § Level names).
+    const mapInfo = new MapInfo(wad);
     // Same for its music, plus whatever its MAPINFO says about which track goes
     // with which map (docs/music.md § Which track a level plays).
     const musicBank = new MusicBank(wad);
-    this.levelMusic = new LevelMusic(musicBank, mapInfoMusic(wad));
+    this.levelMusic = new LevelMusic(musicBank, mapInfo.music());
     audio.music.setBank(musicBank);
 
     const gfx = new GraphicsBank(wad);
@@ -390,12 +393,12 @@ export class Game {
     this.intermission = new Intermission(gfx);
     // Session-scoped like the banks above: which titles apply depends on the loaded file set
     // (its MAPINFO lumps and which IWAD it is), not on the current map.
-    this.levelNames = new LevelNames(wad);
+    this.levelNames = new LevelNames(wad, mapInfo);
     this.crosshair = new Crosshair(view.renderer.domElement);
     this.mapNames = wad.mapNames();
     if (this.mapNames.length === 0) throw new Error('no maps in the selected WADs');
     // After `mapNames`: a progression may only name a level the loaded set actually provides.
-    this.progression = new LevelProgression(wad, this.mapNames);
+    this.progression = new LevelProgression(mapInfo, this.mapNames);
 
     // PLAY's own walk cycle: DOOM has no separate idle art, it just holds
     // frame A (this list's first entry) until the player is actually moving.

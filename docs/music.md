@@ -270,8 +270,9 @@ it plays through both — silence would be the letter of the spec and no use to 
 `LevelProgression`, so `Game` holds one object and asks one question. Three sources, in order,
 each gated on the lump actually existing in the set:
 
-1. **The set's MAPINFO**, if it names a `music` lump for this map (`mapInfoMusic`) — how a
-   modern PWAD ships its own soundtrack.
+1. **The set's MAPINFO**, if it names a `music` lump for this map (`MapInfo.music`, the same parse
+   `LevelNames` and `LevelProgression` read — docs/wad.md § Level names) — how a modern PWAD ships
+   its own soundtrack.
 2. **Vanilla's own choice**, `S_Start`'s: `mus_runnin + gamemap - 1` for a `MAPxx` level, and
    `mus_e1m1 + (episode - 1) * 9 + map - 1` for `ExMy` — except **episode 4**, which has no music
    of its own and replays nine of the first three episodes' tracks in `spmus[]`'s order.

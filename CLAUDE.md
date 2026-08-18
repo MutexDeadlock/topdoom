@@ -63,7 +63,9 @@ is still right for a one-off investigation — those go in the scratchpad, never
 
 ```
 src/wad/       WAD files, merged lump directory, content ids, map lumps, graphics + sprite + sound
-               + music decoding, MAPINFO + the vanilla level-title tables
+               + music decoding, the menu's WAD library
+src/wad/campaign/    the MAPINFO lump family parsed once (mapinfo), level titles + the vanilla
+               title tables (names), where each exit leads (progression)
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards + their instanced batching, shot tracers, camera, viewport
 src/game/      spatial queries + collision, player controller, input, thing world state, fog of war,

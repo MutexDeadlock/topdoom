@@ -2,8 +2,8 @@
  * Vanilla's level-title tables (`d_englsh.h`) and the IWAD identification they key off, plus the
  * per-WAD-set title resolution that folds MAPINFO in. See docs/wad.md § Level names.
  */
-import type { Wad } from './wad.ts';
-import { mapInfoNames } from './mapinfo.ts';
+import type { Wad } from '../wad.ts';
+import type { MapInfo } from './mapinfo.ts';
 
 /**
  * Which of the four commercial map sets a loaded IWAD is. They all reuse the same `MAP01`-`MAP32`
@@ -232,17 +232,17 @@ export function levelNameFor(mapName: string, sources: LevelNameSources): string
 }
 
 /**
- * Names the levels of one loaded WAD set. Built once per `Game` (the MAPINFO parse and the IWAD
- * identification depend on the file set, not on which map is loaded) and asked per map load.
+ * Names the levels of one loaded WAD set. Built once per `Game` (the IWAD identification depends on
+ * the file set, not on which map is loaded) and asked per map load.
  */
 export class LevelNames {
   private wad: Wad;
-  private mapInfo: Map<string, string>;
+  private titles: Map<string, string>;
   private mission: LevelMission | null;
 
-  constructor(wad: Wad) {
+  constructor(wad: Wad, mapInfo: MapInfo) {
     this.wad = wad;
-    this.mapInfo = mapInfoNames(wad);
+    this.titles = mapInfo.titles();
     const iwad = wad.files.find((f) => f.type === 'IWAD');
     this.mission = iwad ? missionOf(iwad.name) : null;
   }
@@ -251,7 +251,7 @@ export class LevelNames {
     const upper = mapName.toUpperCase();
     const provider = this.wad.providerOf(upper);
     return levelNameFor(upper, {
-      mapInfoTitle: this.mapInfo.get(upper),
+      mapInfoTitle: this.titles.get(upper),
       mission: this.mission,
       providerName: provider?.name,
       providerIsPwad: provider?.type === 'PWAD',

@@ -1,6 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LEVEL_NAMES, LevelNames, levelNameFor, levelNamePatch, levelTitleFor, missionOf } from '../../src/wad/levelnames.ts';
+import { LEVEL_NAMES, LevelNames, levelNameFor, levelNamePatch, levelTitleFor, missionOf } from '../../src/wad/campaign/names.ts';
+import { MapInfo } from '../../src/wad/campaign/mapinfo.ts';
 import { Wad } from '../../src/wad/wad.ts';
 import { wadFile } from '../fixtures/wadfile.ts';
 
@@ -100,16 +101,18 @@ describe('WAD parsing · level name resolution', () => {
   });
 
   test('a level-name graphic is used only when it belongs to the map', () => {
+    /** `LevelNames` takes the set's already-parsed MAPINFO alongside the set itself. */
+    const namesOf = (wad: Wad) => new LevelNames(wad, new MapInfo(wad));
     const iwad = wadFile('IWAD', 'DOOM2.WAD', ['MAP01', 'MAP02', 'CWILV00', 'CWILV01']);
-    assert.equal(new LevelNames(new Wad(iwad)).graphicFor('MAP01'), 'CWILV00');
+    assert.equal(namesOf(new Wad(iwad)).graphicFor('MAP01'), 'CWILV00');
 
     // A PWAD that brings its own name graphics: its map, its patch.
     const withArt = wadFile('PWAD', 'SCYTHE.WAD', ['MAP01', 'CWILV00']);
-    assert.equal(new LevelNames(new Wad([iwad, withArt])).graphicFor('MAP01'), 'CWILV00');
+    assert.equal(namesOf(new Wad([iwad, withArt])).graphicFor('MAP01'), 'CWILV00');
 
     // One that doesn't must not announce itself with the IWAD's name for a different level.
     const noArt = wadFile('PWAD', 'NUTS.WAD', ['MAP01']);
-    const names = new LevelNames(new Wad([iwad, noArt]));
+    const names = namesOf(new Wad([iwad, noArt]));
     assert.equal(names.graphicFor('MAP01'), undefined);
     assert.equal(names.graphicFor('MAP02'), 'CWILV01', "the IWAD's own maps still get theirs");
   });

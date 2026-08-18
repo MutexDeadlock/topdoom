@@ -376,7 +376,7 @@ export class MusicPlayer {
 export class LevelMusic {
   /** Only `has` is needed of the bank — structural, so tests can pass a plain lump-name set. */
   private bank: Pick<MusicBank, 'has'>;
-  /** `mapInfoMusic`'s map-name → track projection of the set's MAPINFO. */
+  /** `MapInfo.music`'s map-name → track projection of the set's MAPINFO. */
   private byMap: Map<string, string>;
 
   constructor(bank: Pick<MusicBank, 'has'>, byMap: Map<string, string>) {

@@ -1,8 +1,9 @@
 /**
- * Parses the MAPINFO lump family (UMAPINFO/ZMAPINFO/MAPINFO) for the level titles a PWAD defines.
- * See docs/wad.md § Level names.
+ * Parses the MAPINFO lump family (UMAPINFO/ZMAPINFO/MAPINFO) for what a WAD set says about its own
+ * levels: titles, where each exit leads, which track plays. `MapInfo` reads the set's lumps once
+ * and the three consumers in this directory project it. See docs/wad.md § Level names.
  */
-import type { Wad, WadFile } from './wad.ts';
+import type { Wad, WadFile } from '../wad.ts';
 
 /**
  * The lump names carrying level definitions, **most preferred first**: a file that ships several
@@ -223,6 +224,7 @@ export function parseMapInfoNames(text: string): Map<string, string> {
   return names;
 }
 
+
 /**
  * Every `map` entry the loaded WAD set defines. Files are read in load order and later ones win,
  * the same rule the merged lump directory itself follows; within one file, exactly one lump is
@@ -231,7 +233,7 @@ export function parseMapInfoNames(text: string): Map<string, string> {
  * progression (its own `next`, the IWAD's `secretnext`) is not something any file asked for.
  * docs/wad.md § Level names.
  */
-export function mapInfoEntries(wad: Wad): Map<string, MapInfoEntry> {
+function readEntries(wad: Wad): Map<string, MapInfoEntry> {
   // Keyed by source file, in first-appearance order, which is load order.
   const perFile = new Map<WadFile, string[]>();
   for (const lump of wad.lumps) {
@@ -251,20 +253,41 @@ export function mapInfoEntries(wad: Wad): Map<string, MapInfoEntry> {
   return maps;
 }
 
-/** Just the level names out of `mapInfoEntries` — see `parseMapInfoNames`. */
-export function mapInfoNames(wad: Wad): Map<string, string> {
-  const names = new Map<string, string>();
-  for (const [map, entry] of mapInfoEntries(wad)) {
-    if (entry.title !== undefined) names.set(map, entry.title);
-  }
-  return names;
-}
+/**
+ * What a loaded WAD set's MAPINFO lumps say about its levels, parsed once. The three consumers —
+ * `LevelNames`, `LevelProgression` and `LevelMusic` — each want a different field of the same
+ * entries, so the set's lumps are read on construction and projected below rather than re-parsed
+ * per consumer. Built once per `Game`, beside the banks: which lumps apply depends on the file
+ * set, not on which map is loaded. docs/wad.md § Level names.
+ */
+export class MapInfo {
+  private entries: Map<string, MapInfoEntry>;
 
-/** Just the music lumps out of `mapInfoEntries` — docs/music.md § Which track a level plays. */
-export function mapInfoMusic(wad: Wad): Map<string, string> {
-  const music = new Map<string, string>();
-  for (const [map, entry] of mapInfoEntries(wad)) {
-    if (entry.music !== undefined) music.set(map, entry.music);
+  constructor(wad: Wad) {
+    this.entries = readEntries(wad);
   }
-  return music;
+
+  /** What the set defines for one map, or undefined for a map no file names. Keys are upper-case. */
+  entry(mapName: string): MapInfoEntry | undefined {
+    return this.entries.get(mapName);
+  }
+
+  /** The map-name → title projection — see `parseMapInfoNames`. */
+  titles(): Map<string, string> {
+    return this.project((entry) => entry.title);
+  }
+
+  /** The map-name → `D_*` lump projection — docs/music.md § Which track a level plays. */
+  music(): Map<string, string> {
+    return this.project((entry) => entry.music);
+  }
+
+  private project(field: (entry: MapInfoEntry) => string | undefined): Map<string, string> {
+    const picked = new Map<string, string>();
+    for (const [map, entry] of this.entries) {
+      const value = field(entry);
+      if (value !== undefined) picked.set(map, value);
+    }
+    return picked;
+  }
 }

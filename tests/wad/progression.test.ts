@@ -1,8 +1,12 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LevelProgression, vanillaNextMap } from '../../src/wad/progression.ts';
+import { LevelProgression, vanillaNextMap } from '../../src/wad/campaign/progression.ts';
+import { MapInfo } from '../../src/wad/campaign/mapinfo.ts';
 import { Wad } from '../../src/wad/wad.ts';
 import { wadFile } from '../fixtures/wadfile.ts';
+
+/** `LevelProgression` takes the set's already-parsed MAPINFO, so each set under test needs one. */
+const progressionFor = (wad: Wad, maps: readonly string[]) => new LevelProgression(new MapInfo(wad), maps);
 
 /** The map markers a DOOM II IWAD's worth of levels needs, so `LevelProgression` can find them. */
 const DOOM2_MAPS = Array.from({ length: 32 }, (_, i) => ({ name: `MAP${String(i + 1).padStart(2, '0')}` }));
@@ -60,7 +64,7 @@ describe('WAD parsing · level progression', () => {
   const doom2 = () => new Wad(wadFile('IWAD', 'DOOM2.WAD', DOOM2_MAPS));
 
   test('follows the vanilla tables for a stock IWAD', () => {
-    const progression = new LevelProgression(doom2(), DOOM2_MAPS.map((m) => m.name));
+    const progression = progressionFor(doom2(), DOOM2_MAPS.map((m) => m.name));
     assert.equal(progression.nextMap('MAP01', false), 'MAP02');
     assert.equal(progression.nextMap('MAP15', true), 'MAP31');
     assert.equal(progression.nextMap('MAP31', false), 'MAP16');
@@ -70,7 +74,7 @@ describe('WAD parsing · level progression', () => {
   test('a secret exit the set cannot honour exits normally, as in the German edition', () => {
     // `G_SecretExitLevel`: no MAP31 lump, no secret exit — the switch still ends the level.
     const maps = DOOM2_MAPS.slice(0, 20).map((m) => m.name);
-    const progression = new LevelProgression(new Wad(wadFile('IWAD', 'DOOM2.WAD', DOOM2_MAPS.slice(0, 20))), maps);
+    const progression = progressionFor(new Wad(wadFile('IWAD', 'DOOM2.WAD', DOOM2_MAPS.slice(0, 20))), maps);
     assert.equal(progression.nextMap('MAP15', true), 'MAP16');
   });
 
@@ -84,7 +88,7 @@ describe('WAD parsing · level progression', () => {
       { name: 'MAP02' },
     ]);
     const wad = new Wad([wadFile('IWAD', 'DOOM2.WAD', DOOM2_MAPS), pwad, umapinfo]);
-    const progression = new LevelProgression(wad, DOOM2_MAPS.map((m) => m.name));
+    const progression = progressionFor(wad, DOOM2_MAPS.map((m) => m.name));
     assert.equal(progression.nextMap('MAP01', false), 'MAP05');
     assert.equal(progression.nextMap('MAP01', true), 'MAP07');
     assert.equal(progression.nextMap('MAP02', false), 'MAP09');
@@ -98,7 +102,7 @@ describe('WAD parsing · level progression', () => {
       { name: 'MAPINFO', text: 'map MAP01 "One"\ncluster 1\nnext MAP04\nsecretnext MAP31\n\nmap MAP02 "Two"\nnext MAP03\n' },
       { name: 'MAP01' },
     ]);
-    const progression = new LevelProgression(new Wad([wadFile('IWAD', 'DOOM2.WAD', DOOM2_MAPS), pwad]), DOOM2_MAPS.map((m) => m.name));
+    const progression = progressionFor(new Wad([wadFile('IWAD', 'DOOM2.WAD', DOOM2_MAPS), pwad]), DOOM2_MAPS.map((m) => m.name));
     assert.equal(progression.nextMap('MAP01', false), 'MAP04');
     assert.equal(progression.nextMap('MAP01', true), 'MAP31');
     assert.equal(progression.nextMap('MAP02', false), 'MAP03');
@@ -109,7 +113,7 @@ describe('WAD parsing · level progression', () => {
       { name: 'MAPINFO', text: 'map MAP01 "One" { next = "EndGame" }\nmap MAP02 "Two" { next = "MAP99" }' },
       { name: 'MAP01' },
     ]);
-    const progression = new LevelProgression(new Wad([wadFile('IWAD', 'DOOM2.WAD', DOOM2_MAPS), pwad]), DOOM2_MAPS.map((m) => m.name));
+    const progression = progressionFor(new Wad([wadFile('IWAD', 'DOOM2.WAD', DOOM2_MAPS), pwad]), DOOM2_MAPS.map((m) => m.name));
     assert.equal(progression.nextMap('MAP01', false), 'MAP02', 'falls through to the vanilla table');
     assert.equal(progression.nextMap('MAP02', false), 'MAP03');
   });
@@ -117,14 +121,14 @@ describe('WAD parsing · level progression', () => {
   test('a PWAD map set with no rule of its own runs out rather than guessing', () => {
     const maps = ['MAP01', 'MAP02'];
     const wad = new Wad(wadFile('PWAD', 'two.wad', maps.map((name) => ({ name }))));
-    const progression = new LevelProgression(wad, maps);
+    const progression = progressionFor(wad, maps);
     assert.equal(progression.nextMap('MAP01', false), 'MAP02');
     assert.equal(progression.nextMap('MAP02', false), null, 'MAP03 is not in the set');
   });
 
   test('DOOM episodes route through the loaded set', () => {
     const names = DOOM_MAPS.map((m) => m.name);
-    const progression = new LevelProgression(new Wad(wadFile('IWAD', 'DOOM.WAD', DOOM_MAPS)), names);
+    const progression = progressionFor(new Wad(wadFile('IWAD', 'DOOM.WAD', DOOM_MAPS)), names);
     assert.equal(progression.nextMap('E1M3', true), 'E1M9');
     assert.equal(progression.nextMap('E1M9', false), 'E1M4');
     assert.equal(progression.nextMap('E1M8', false), null);

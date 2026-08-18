@@ -166,7 +166,7 @@ voodoo-doll row and the 27th the real start.
 
 ## Level names
 
-`levelnames.ts` answers "what is this map called" for the level card (docs/hud.md § Level card)
+`campaign/names.ts` answers "what is this map called" for the level card (docs/hud.md § Level card)
 and for the menu's level list (docs/menu.md § Picking a WAD set). A map lump name is not an answer
 on its own: DOOM II, Plutonia and TNT all ship `MAP01`-`MAP32` with completely different titles, and
 a PWAD's `MAP01` is not the IWAD's level of that name at all.
@@ -174,7 +174,7 @@ a PWAD's `MAP01` is not the IWAD's level of that name at all.
 A file may ship several MAPINFO flavours (`UMAPINFO`, `ZMAPINFO`, `MAPINFO`), which are alternatives
 for different engines rather than layers, so **exactly one of them is read per file** — the first
 `MAPINFO_LUMPS` lists, most preferred first (`preferredMapInfoLump`). That subsumes ZDoom's own
-`ZMAPINFO`-instead-of-`MAPINFO` rule without a special case. It matters that `mapinfo.ts` and
+`ZMAPINFO`-instead-of-`MAPINFO` rule without a special case. It matters that `campaign/mapinfo.ts` and
 `plugins/wad-manifest.ts` share the function rather than each implementing the order: they were once
 separate, one iterating the WAD's directory and one iterating the array, so a file carrying both
 `UMAPINFO` and `MAPINFO` could show one title in the menu and a different one on the level card.
@@ -198,7 +198,7 @@ level — the same trap rule 2 below exists for.
 
 Text resolution order, highest authority first:
 
-1. **The WAD set's own MAPINFO** (`mapinfo.ts`). `UMAPINFO`, `ZMAPINFO` and `MAPINFO` lumps are read
+1. **The WAD set's own MAPINFO** (`campaign/mapinfo.ts`). `UMAPINFO`, `ZMAPINFO` and `MAPINFO` lumps are read
    by one tokenizer covering every syntax that names a level: ZDoom's `map MAP01 "Title"` (with or
    without a `{ … }` block), UMAPINFO's `map MAP01 { levelname = "Title" }`, and Hexen-format
    numeric `map 01 "Title"`. `map MAP01 lookup HUSTR_1` names no literal and is **skipped**, falling
@@ -223,15 +223,18 @@ With no title from either, there is nothing to append in the menu, and the card 
 true thing left to say about it) or the bare lump name for anything else: an unrecognised IWAD, or a
 map outside its mission's table such as `E5M1`.
 
-`LevelNames` is built once per `Game`: both the MAPINFO parse and the IWAD identification depend on
-the loaded file set, not on which map is current. The menu can't build one — it hasn't downloaded
+`LevelNames` is built once per `Game`, from a `MapInfo` built alongside it: both the MAPINFO parse
+and the IWAD identification depend on the loaded file set, not on which map is current. `MapInfo`
+reads the set's lumps **once** and projects them — titles for `LevelNames`, exits for
+`LevelProgression`, `D_*` lumps for `LevelMusic` (docs/music.md § Which track a level plays) — so
+the three consumers of one lump family don't each re-tokenize it. The menu can't build one — it hasn't downloaded
 anything yet — so it resolves off the manifest instead, which is why `WadManifestEntry` carries each
 file's own MAPINFO titles (§ The `public/wads/` manifest) and `mergedMaps` (`library.ts`) merges
 them the same way, later files winning.
 
 ## Level progression
 
-Which level an exit leads to (`progression.ts`). Vanilla keeps this nowhere in the WAD: it is two
+Which level an exit leads to (`campaign/progression.ts`). Vanilla keeps this nowhere in the WAD: it is two
 hard-coded tables in `G_DoCompleted` (`g_game.c`), which is why the rules live beside the title
 tables rather than being read off a lump. `LevelProgression` is built once per `Game`, next to
 `LevelNames` and for the same reason — it depends on the loaded file set, not on the current map.

@@ -5,8 +5,8 @@
  */
 import { Wad, WadFile, type WadType } from './wad.ts';
 import { wadId } from './checksum.ts';
-import { mapInfoNames } from './mapinfo.ts';
-import { levelTitleFor, missionOf } from './levelnames.ts';
+import { MapInfo } from './campaign/mapinfo.ts';
+import { levelTitleFor, missionOf } from './campaign/names.ts';
 
 const MANIFEST_URL = '/wads/index.json';
 
@@ -109,7 +109,7 @@ export function uploadedSource(name: string, buffer: ArrayBuffer): WadSource {
     lumpCount: file.entries.length,
     // The manifest plugin does this server-side for the WADs on disk; a file picked here has to
     // read its own MAPINFO, and the bytes are already in memory.
-    levelNames: Object.fromEntries(mapInfoNames(new Wad(file))),
+    levelNames: Object.fromEntries(new MapInfo(new Wad(file)).titles()),
     size: buffer.byteLength,
     origin: 'upload',
     bytes: () => Promise.resolve(buffer),
@@ -140,7 +140,7 @@ export interface MergedMap {
  * Map list for an IWAD plus its add-ons: the IWAD's own maps in order, then any
  * extra maps a PWAD introduces. Each map is attributed to the file that wins.
  *
- * Titles resolve exactly as they do in-game (`wad/levelnames.ts`), off the manifest alone so the
+ * Titles resolve exactly as they do in-game (`wad/campaign/names.ts`), off the manifest alone so the
  * list can be built without downloading anything: MAPINFO from anywhere in the set (later files
  * winning, as with lumps), else the vanilla title for the IWAD's own maps.
  */

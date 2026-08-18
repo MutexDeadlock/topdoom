@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
-import { MAPINFO_LUMPS, parseMapInfoNames, preferredMapInfoLump } from '../src/wad/mapinfo.ts';
+import { MAPINFO_LUMPS, parseMapInfoNames, preferredMapInfoLump } from '../src/wad/campaign/mapinfo.ts';
 import { hashBytes } from '../src/wad/checksum.ts';
 
 export const MANIFEST_PATH = 'wads/index.json';

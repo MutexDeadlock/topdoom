@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseMapInfoNames, preferredMapInfoLump } from '../../src/wad/mapinfo.ts';
+import { parseMapInfoNames, preferredMapInfoLump } from '../../src/wad/campaign/mapinfo.ts';
 
 /**
  * The MAPINFO reader only ever pulls one thing out of a lump — each map's level name — so these

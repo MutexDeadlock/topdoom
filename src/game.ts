@@ -1513,7 +1513,7 @@ export class Game {
     if (sectorEffect.secretFound) {
       this.message.show(SECRET_MESSAGE);
       // Unattenuated, like a pickup: it's an announcement to the player, not a sound in the world.
-      this.audio.play('radio');
+      this.audio.playAsset('secret');
     }
     // Vanilla's sector type 11 calls `G_ExitLevel`, not `G_SecretExitLevel` — a damage floor that
     // ends the level never leads to the secret one.

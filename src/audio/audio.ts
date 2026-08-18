@@ -45,6 +45,22 @@ const DEFAULT_VOLUME = 0.8;
 
 const VOLUME_STORAGE_KEY = 'topdoom.sfxVolume';
 
+/**
+ * Sounds this engine ships itself, as `public/` URLs → the priority they take
+ * in the same channel pool `SFX` priorities are read on. Not WAD lumps: a
+ * secret's chime has no vanilla original at all (docs/audio.md § Player and
+ * pickups), so it cannot be an `SfxId` without a made-up name in what is
+ * otherwise `sounds.c` verbatim. Fetched and decoded once, when the context
+ * comes up — long before a level's first secret, so the first one isn't the
+ * one that plays silently.
+ */
+const ASSETS = {
+  /** Entering a secret sector. Priority is `getpow`'s 60: an announcement, cut off by almost nothing. */
+  secret: { url: '/secret.ogg', priority: 60 },
+} as const;
+
+export type AssetSfxId = keyof typeof ASSETS;
+
 interface Voice {
   /** `SoundEmitter.play`'s origin key, or undefined for a positional sound with no origin. */
   origin: number | undefined;
@@ -89,6 +105,8 @@ export class AudioEngine implements SoundEmitter {
   private buffers = new Map<SfxId, AudioBuffer | null>();
   /** Names whose async `decodeAudioData` is in flight, so a second play doesn't start a second decode. */
   private decoding = new Set<SfxId>();
+  /** `ASSETS`' decoded buffers, null while one is still loading or failed to. Populated once per context. */
+  private assetBuffers = new Map<AssetSfxId, AudioBuffer | null>();
 
   private voices: (Voice | null)[] = new Array(CHANNELS).fill(null);
 
@@ -205,12 +223,39 @@ export class AudioEngine implements SoundEmitter {
 
     const buffer = this.bufferFor(id);
     if (!buffer) return;
-    const channel = this.allocate(origin, SFX[id]);
+    this.start(buffer, SFX[id], randomPlaybackRate(id), gain, pan, origin);
+  }
+
+  /**
+   * One of the engine's own sounds (`ASSETS`) rather than a WAD lump, played
+   * unattenuated and centred like a pickup: these announce something to the
+   * player instead of happening somewhere in the world. Silent while the file
+   * is still loading or failed to decode, the same way a missing lump is.
+   */
+  playAsset(id: AssetSfxId): void {
+    if (this._volume === 0) return;
+    const buffer = this.assetBuffers.get(id);
+    if (!buffer) return;
+    this.start(buffer, ASSETS[id].priority, 1, 1, 0, undefined);
+  }
+
+  /** Takes a channel for `buffer` and starts it — the half of `play` that has nothing left to decide. */
+  private start(
+    buffer: AudioBuffer,
+    priority: number,
+    rate: number,
+    gain: number,
+    pan: number,
+    origin: number | undefined,
+  ): void {
+    const ctx = this.ctx;
+    if (!ctx || ctx.state !== 'running' || !this.sfxBus) return;
+    const channel = this.allocate(origin, priority);
     if (channel < 0) return;
 
     const source = ctx.createBufferSource();
     source.buffer = buffer;
-    source.playbackRate.value = randomPlaybackRate(id);
+    source.playbackRate.value = rate;
     const gainNode = ctx.createGain();
     gainNode.gain.value = gain;
     const chain: AudioNode[] = [source, gainNode];
@@ -228,7 +273,7 @@ export class AudioEngine implements SoundEmitter {
       released = true;
       for (const node of chain) node.disconnect();
     };
-    this.voices[channel] = { origin, priority: SFX[id], source, release };
+    this.voices[channel] = { origin, priority, source, release };
     source.onended = () => {
       // Only clear the slot if this voice still owns it: eviction hands the
       // channel to someone else before this fires.
@@ -323,6 +368,24 @@ export class AudioEngine implements SoundEmitter {
       .finally(() => this.decoding.delete(id));
   }
 
+  /**
+   * Fetches and decodes `ASSETS` once the context exists. Failure is logged and
+   * cached as null, like an undecodable lump: the sound is simply never heard.
+   */
+  private loadAssets(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    for (const id of Object.keys(ASSETS) as AssetSfxId[]) {
+      if (this.assetBuffers.has(id)) continue;
+      this.assetBuffers.set(id, null);
+      void fetch(ASSETS[id].url)
+        .then((res) => res.arrayBuffer())
+        .then((bytes) => ctx.decodeAudioData(bytes))
+        .then((buffer) => this.assetBuffers.set(id, buffer))
+        .catch((err: unknown) => console.warn(`${ASSETS[id].url}: could not be loaded`, err));
+    }
+  }
+
   private ensureContext(): AudioContext | null {
     if (this.ctx || this.failed) return this.ctx;
     try {
@@ -343,6 +406,7 @@ export class AudioEngine implements SoundEmitter {
     // The bank was set before the context existed (a level loaded, then the
     // first resume created this) — start its container-format decodes now.
     if (this.bank) for (const name of this.bank.encodedNames(SFX_NAMES)) this.decodeEncoded(name);
+    this.loadAssets();
     return this.ctx;
   }
 }

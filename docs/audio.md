@@ -4,7 +4,8 @@
 `game.ts`, `game/things.ts`, `game/monsters/ai.ts`, `game/monsters/attacks.ts`, `game/specials.ts`, `game/weapons.ts`,
 `game/projectiles.ts` and `game/spritefx.ts`
 
-Every sound comes out of the loaded WAD, and every sound's *timing and choice* comes from
+Every sound but one comes out of the loaded WAD (the exception is the secret chime, § Player and
+pickups), and every sound's *timing and choice* comes from
 `linuxdoom-1.10` — `sounds.c`'s `S_sfx[]` table, `info.c`'s `mobjinfo` fields, and the
 `S_StartSound` call sites in `p_enemy.c`/`p_pspr.c`/`p_inter.c`/`p_doors.c`/`p_plats.c`/
 `p_floor.c`/`p_ceilng.c`/`p_switch.c`/`p_mobj.c`. Nothing here is picked by ear except the
@@ -224,11 +225,19 @@ Pickups follow `P_TouchSpecialThing` (`inventory.ts: pickupSound`): `getpow` for
 powerups plus the soulsphere and megasphere, `wpnup` for the seven weapons, `itemup` for
 everything else — all **unattenuated**, as vanilla plays them, since you are standing on it.
 
-Entering a secret sector plays `radio`, also unattenuated, alongside the center-screen message.
-Vanilla plays no sound for a secret at all and uses `DSRADIO` for DOOM 2's inter-level chatter, so
-this is a deliberate addition, not a fidelity reproduction — docs/hud.md § Center messages. Not
-every WAD set has the lump (the shareware `DOOM1.WAD` doesn't); `bufferFor` returning null there
-means the message simply shows silently, which is the same way every other missing lump degrades.
+Entering a secret sector plays the **`secret` chime**, also unattenuated, alongside the
+center-screen message. Vanilla plays no sound for a secret at all, so this is a deliberate
+addition, not a fidelity reproduction — docs/hud.md § Center messages.
+
+It is the one sound that is **not** a WAD lump: `audio.ts`'s `ASSETS` table maps it to
+`public/secret.ogg`, and `playAsset` starts it. It can't be an `SfxId` — `SFX` is `sounds.c`
+verbatim and a name vanilla never had would quietly turn that table into an approximation — and
+sourcing it from a lump would mean either a made-up `DS*` name no WAD carries or borrowing an
+unrelated one (`DSRADIO`, DOOM 2's inter-level chatter, which is what this used to play and which
+the shareware `DOOM1.WAD` doesn't even have). Everything downstream is shared with lump sounds: the
+same channel pool, priority (60, `getpow`'s), sfx bus and volume. Loading is a `fetch` +
+`decodeAudioData` kicked off when the `AudioContext` comes up, and a failure is cached as null and
+logged — the message then shows silently, the same way a missing lump degrades.
 
 ## Volume and the context
 

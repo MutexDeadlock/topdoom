@@ -229,7 +229,7 @@ view (`#hud-message`, horizontally centered, 40% down so it clears the player sp
 holds at dead center), for 3 seconds. Two callers so far:
 
 - the secret announcement — `Game.collectPickupsAndSectorEffects` shows `SECRET_MESSAGE` (this
-  module's own, since it is display text) and plays `radio` on the frame `SectorEffects.update`
+  module's own, since it is display text) and plays the `secret` chime on the frame `SectorEffects.update`
   reports `secretFound`;
 - the locked door/switch line — `lockedKeyMessage(key, kind)` composes vanilla's own `PD_*K`/`PD_*O`
   text from the `LockedLine` `Game.frame` drained out of `specials` (docs/items.md § Locked doors
@@ -245,9 +245,9 @@ exception: `BKEYA0`'s brightest pixel is pure `0,0,255`, unreadable over the pla
 opacity, so blue takes the light end of the same palette ramp instead.
 
 Both halves of the secret announcement are this engine's own, not vanilla reproductions: vanilla
-announces a secret nowhere at all (its status bar's `S` count just ticks up), prints what messages
-it does have in the top-left in
-STCFN's native red, and uses `DSRADIO` for DOOM 2's inter-level radio chatter. Placement is
+announces a secret nowhere at all (its status bar's `S` count just ticks up) and prints what
+messages it does have in the top-left in STCFN's native red; the chime isn't a WAD lump either
+(docs/audio.md § Player and pickups). Placement is
 center-screen in `COLOR_YELLOW`, where a top-down player is already looking, and 3 seconds rather than
 vanilla's 4-second `HU_MSGTIMEOUT` because text in the middle of the view outstays its welcome
 faster than text in a corner. Its CSS size (`13px` glyph height, roughly the level-stats strip's

@@ -1240,4 +1240,5 @@ Level stats for where these numbers surface on screen.
 
 `update` reports the entry back to `game.ts` (`SectorEffectResult.secretFound`, true on that one
 frame only) rather than just bumping the counter, because finding a secret also announces itself —
-a center-screen message and `radio`, neither of which vanilla does. docs/hud.md § Center messages.
+a center-screen message and the `secret` chime, neither of which vanilla does. docs/hud.md §
+Center messages.

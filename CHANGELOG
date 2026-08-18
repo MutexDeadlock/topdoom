@@ -31,6 +31,7 @@ Features and improvements
     This change came in by accident, but may be helpful
   - increased view distance
   - sexy scrollbars for the menues
+  - finding a secret plays its own chime instead of a borrowed WAD sound
 
 Fixed bugs
   - fixed various rendering problems

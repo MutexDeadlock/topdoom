@@ -1,4 +1,4 @@
-v0.14.0 (2026-08-1?)
+v0.14.0 (2026-08-18)
 
 Features and improvements
   - initial BOOM compatibility
@@ -28,7 +28,7 @@ Features and improvements
   - a monster killed mid-knockback now slides to a stop instead of freezing
     where it died
   - solid structures are no longer see-through holes in the level. 
-    This change came in by accident, but may be helpful
+    This change came in by accident, but may be nice
   - increased view distance
   - sexy scrollbars for the menues
   - finding a secret plays its own chime instead of a borrowed WAD sound

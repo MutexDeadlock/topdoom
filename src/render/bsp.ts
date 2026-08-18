@@ -6,7 +6,7 @@
  * See docs/render.md § BSP polygon reconstruction, § Walls that stop inside their cell and
  * § Self-referencing sectors.
  */
-import { SUBSECTOR_BIT, type DoomMap, type Vertex } from '../wad/map.ts';
+import { segSide, SUBSECTOR_BIT, type DoomMap, type Vertex } from '../wad/map.ts';
 import { clipConvexPolygon as clip, polygonCentroid } from '../util/geom.ts';
 import { SectorProbe, selfReferencing } from './sectorprobe.ts';
 
@@ -284,8 +284,7 @@ export function sectorOfSubSector(map: DoomMap, ssIndex: number): number {
     if (!seg) continue;
     const line = map.linedefs[seg.linedef];
     if (!line) continue;
-    const sideIndex = seg.direction === 0 ? line.right : line.left;
-    const side = map.sidedefs[sideIndex];
+    const side = map.sidedefs[segSide(line, seg.direction)];
     if (side) return side.sector;
   }
   return 0;

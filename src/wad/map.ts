@@ -62,6 +62,18 @@ export interface Seg {
   offset: number;
 }
 
+/**
+ * The sidedef a seg uses, and the one across the line from it (`NO_SIDE` on a
+ * one-sided line) — the one home for `Seg.direction`'s winding convention.
+ */
+export function segSide(line: LineDef, direction: number): number {
+  return direction === 0 ? line.right : line.left;
+}
+
+export function segBackSide(line: LineDef, direction: number): number {
+  return direction === 0 ? line.left : line.right;
+}
+
 export interface SubSector {
   count: number;
   first: number;

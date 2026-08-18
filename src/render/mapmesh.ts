@@ -4,7 +4,7 @@
  * conversion. See docs/render.md § Mesh building and § Sector lighting.
  */
 import * as THREE from 'three';
-import { LF, NO_SIDE, SKY_FLAT, type DoomMap, type LineDef, type SideDef, type Sector } from '../wad/map.ts';
+import { LF, NO_SIDE, segBackSide, segSide, SKY_FLAT, type DoomMap, type LineDef, type SideDef, type Sector } from '../wad/map.ts';
 import { buildSubSectorPolys, type SubSectorPoly } from './bsp.ts';
 import { findSolidCaps, pointInPolygon, type SolidCap } from './solids.ts';
 import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
@@ -206,7 +206,9 @@ export interface MapMeshOptions {
    * the lift's. Leaving that side static froze the lift's front wall at its
    * raised height while the platform slid down behind it. `buildMoverMesh`
    * builds those sides too, in its own small per-sector mesh the mover
-   * rebuilds on demand.
+   * rebuilds on demand. It also suppresses a lid baked against a movable
+   * neighbour's height (`closedHoleFill`), so an incomplete set leaves stale
+   * ones behind.
    */
   movableSectors?: Set<number>;
 }
@@ -512,6 +514,8 @@ function buildMoverBatches(
   const wallQuads: WallOccluder[] = [];
   const flatFans: FlatSurface[] = [];
 
+  // No `movableSectors` here on purpose: a mover is rebuilt alongside its
+  // movable neighbours, so its lids cannot go stale against one.
   for (const ss of index.subsectorsOf(sectorIndex)) {
     processFlat(map, polys[ss], ss, batches, texSize, renderCeilings, flatFans, transfers);
   }
@@ -553,7 +557,7 @@ function buildFlats(
 ): void {
   for (let ss = 0; ss < polys.length; ss++) {
     if (movableSectors && movableSectors.has(polys[ss].sector)) continue;
-    processFlat(map, polys[ss], ss, batches, size, renderCeilings, flatSurfaces, transfers);
+    processFlat(map, polys[ss], ss, batches, size, renderCeilings, flatSurfaces, transfers, movableSectors);
   }
 }
 
@@ -627,6 +631,52 @@ function triangulate(points: Float64Array): Float64Array[] {
   });
 }
 
+/**
+ * The neighbouring sector a leaf closes itself over, or -1 where it is ordinary
+ * geometry. A leaf whose *every* seg is a two-sided drop with no lower texture
+ * is a hole the mapper never meant to be looked into, and this camera looks
+ * into every pit; the lid follows GZDoom's own render hack
+ * (`hw_renderhacks.cpp: HandleMissingTextures` / `DoOneSectorLower`).
+ * docs/render.md § Closed holes.
+ */
+function closedHoleFill(
+  map: DoomMap,
+  ss: number,
+  sectorIndex: number,
+  ownFloor: number,
+  transfers: SectorTransfers,
+  movableSectors?: Set<number>,
+): number {
+  const sub = map.subsectors[ss];
+  // Boom's 242 idioms are built *on* missing textures, so the hack keeps clear.
+  if (!sub || transfers.heightSec(sectorIndex) >= 0) return -1;
+
+  let from = -1;
+  for (let i = 0; i < sub.count; i++) {
+    const seg = map.segs[sub.first + i];
+    const line = seg ? map.linedefs[seg.linedef] : undefined;
+    // A one-sided wall means the leaf is a room, not a hole.
+    if (!line || line.right === NO_SIDE || line.left === NO_SIDE) return -1;
+    const side = map.sidedefs[segSide(line, seg.direction)];
+    const back = map.sidedefs[segBackSide(line, seg.direction)];
+    if (!side || !back || side.sector !== sectorIndex) return -1;
+    if (back.sector === side.sector) continue;
+    const other = map.sectors[back.sector];
+    if (!other || transfers.heightSec(back.sector) >= 0) return -1;
+    // The lid is baked at this neighbour's height, so a movable one would leave
+    // it stale — only `buildMoverBatches`, rebuilt alongside its movable
+    // neighbours, passes no set.
+    if (movableSectors?.has(back.sector)) return -1;
+    // Every side a step down into the leaf that draws nothing, and every one of
+    // them the same step: the lid is one plane, so it has one height.
+    if (other.floorHeight <= ownFloor || other.floorTex === SKY_FLAT) return -1;
+    if (side.lower !== NO_TEXTURE && side.lower !== '') return -1;
+    if (from >= 0 && other.floorHeight !== map.sectors[from].floorHeight) return -1;
+    from = back.sector;
+  }
+  return from;
+}
+
 /** One flat fan's parameters — everything `addFlatFan` needs that isn't the footprint. */
 interface FlatSpec {
   texName: string;
@@ -647,6 +697,7 @@ function processFlat(
   renderCeilings: boolean,
   flatSurfaces: FlatSurface[],
   transfers: SectorTransfers,
+  movableSectors?: Set<number>,
 ): void {
   const n = poly.points.length / 2;
   if (n < 3) return;
@@ -686,6 +737,20 @@ function processFlat(
         ? transfers.ceilingLightSector(poly.sector)
         : transfers.floorLightSector(floorLightFrom),
       isCeiling,
+    });
+  }
+
+  // The lid over a hole in the map (`closedHoleFill`), drawn on top of the real
+  // floor as GZDoom draws its own. An ordinary `FlatSurface`, so `FlatFader`
+  // dissolves it for a body underneath.
+  const fill = closedHoleFill(map, ss, poly.sector, sector.floorHeight, transfers, movableSectors);
+  if (fill >= 0) {
+    addFlatFan(poly, ss, batches, size, flatSurfaces, {
+      texName: map.sectors[fill].floorTex,
+      height: map.sectors[fill].floorHeight,
+      light: transfers.floorLight(fill),
+      lightSector: transfers.floorLightSector(fill),
+      isCeiling: false,
     });
   }
 

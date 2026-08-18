@@ -250,7 +250,7 @@ Two matching rules it deliberately encodes, because both shapes are all over the
 
 ## WAD-backed tests
 
-`DOOM1.WAD`, `freedoom2.wad`, `SCYTHE.WAD`, `NUTS.WAD`, `oku2v31.wad`, `BOOMEDIT.WAD` (TeamTNT's
+`DOOM1.WAD`, `freedoom2.wad`, `SCYTHE.WAD`, `NUTS.WAD`, `oku2v31.wad`, `EPIC.WAD`, `BOOMEDIT.WAD` (TeamTNT's
 own Boom feature exerciser — the manual soak map for the Boom-compat work, and what
 `inspect-wad`'s specials coverage report is run against) and the two hand-made
 fixtures `fauler_sound.wad`/`faulers_first_map.wad` are **committed to the repo**; only `DOOM.WAD` and `DOOM2.WAD` are gitignored. So a WAD-backed test runs everywhere by
@@ -272,10 +272,13 @@ test that uses it):
 | `pinky_above_test.wad` | same, far floor **+88** (ledge) | `pinky.ts` | vertical melee reach |
 | `caco_pit_test.wad` | one room split at `y=32`, far floor **-48**, cacodemon in it (`E1M1`) | in-test | floating monsters over a ledge |
 
-One regression is backed by a **committed IWAD** rather than a purpose-built map:
-`blocking-line-slide.test.ts` needs a diagonal two-sided `ML_BLOCKING` wall, which the grid fixture
-cannot build, and uses `freedoom2.wad` MAP01 line 514 (it parses in ~15ms, so the cost is not worth
-authoring a map for). It asserts the line's flags first, so the fixture cannot drift silently.
+Two regressions are backed by a **committed WAD** rather than a purpose-built map, both because the
+grid fixture cannot build the geometry and both asserting the WAD's own numbers first so the fixture
+cannot drift silently: `blocking-line-slide.test.ts` needs a diagonal two-sided `ML_BLOCKING` wall
+and uses `freedoom2.wad` MAP01 line 514 (it parses in ~15ms, so the cost is not worth authoring a
+map for), and `holes.test.ts` uses `EPIC.WAD` MAP01 sector 88 — three untextured pits, checked
+against GZDoom (docs/render.md § Closed holes) — loaded with **no IWAD at all**, since a map lump
+needs none.
 
 The pinky pair are the maps a demon-bites-through-a-height-gap report was made on, checked against
 GZDoom (docs/monster-ai.md § Melee reach); `caco_pit_test.wad` is the map a cacodemon-stuck-in-a-pit

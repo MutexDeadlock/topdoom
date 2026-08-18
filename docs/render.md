@@ -230,6 +230,46 @@ convex-only `pointNearConvexPolygon`. Triangles keep that contract, so a structu
 camera and the player dithers away exactly as a raised floor does — without that, capping them would
 trade a hole for something worse: a pillar you cannot see your own player behind.
 
+## Closed holes (`mapmesh.ts: closedHoleFill`)
+
+A leaf whose **every** seg is a two-sided drop with no lower texture is a hole the mapper never
+meant anyone to look into. Vanilla HOMs it, which is invisible from the floor of a first-person
+view; from overhead it is a black pit in the middle of the level, because the sides draw nothing and
+the pit's own floor is too far down to be in view — a 64-wide, 128-deep pit needs a ray steeper than
+`atan(128/64)` to show any of its bottom, and this camera's steepest is 57.5° below horizontal.
+Repro: EPIC.WAD MAP01 sector 88, three 64×64 pits at floor −144 in the −16 grass of sector 14, which
+line 585 (a `19` W1 "lower floor to highest" that, the floor being *below* its neighbours already,
+snaps it up instead) fills in later.
+
+So the leaf is lidded with the surrounding sector's floor plane, drawn on top of its real floor.
+**This follows GZDoom** (`hw_renderhacks.cpp: HandleMissingTextures` → `DoOneSectorLower` →
+`AddOtherFloorPlane`), which is what the map was checked against, and not vanilla, which has no such
+hack. Its conditions are GZDoom's:
+
+- every seg two-sided, its own side of the line facing this leaf's drawn sector,
+- every neighbour's floor **above** this one and all of them at the **same** height — the lid is one
+  plane, so one height,
+- that step drawing **no** lower texture (a textured one is ordinary geometry), and the neighbour's
+  floor flat not being sky.
+
+Three restrictions are this engine's, and each closes a way the baked lid could go stale or fight
+something else:
+
+- **No lid where a Boom 242 is involved** on either side. A 242 draws its floors at borrowed heights
+  and the invisible-platform idiom *wants* its missing textures.
+- **No lid over a movable neighbour** from the static batches — its height is what the lid is baked
+  at. A mover's own leaves have no such guard (`buildMoverBatches` passes no set): `MoverGeometry`
+  already rebuilds a mover whenever a movable neighbour moves.
+- **The lid is not gated on where the eye is.** GZDoom re-decides per frame and skips the hack when
+  the viewpoint is *below* the fill height; baked geometry cannot. What covers the case is that the
+  lid is an ordinary `FlatSurface`, so `FlatFader` dissolves it out of the way of a body underneath
+  exactly as it does a solid structure's lid — a player who falls into the pit stays visible.
+
+Neither is GZDoom's fallback path reproduced: where the neighbours sit at *different* heights,
+GZDoom projects one of the floors through the gap from the viewpoint (`CreateFloodPoly`, per frame,
+through a stencil) and this engine leaves the hole black. It is rare — over every committed WAD the
+lid fires on 10–47 leaves per WAD set (18 of DOOM2's 13,253, none of DOOM1's 3,423).
+
 ## Sector lighting (`mapmesh.ts: lightToColor`)
 
 Walls, flats and sprites are all tinted by a sector's light level through this one function, so

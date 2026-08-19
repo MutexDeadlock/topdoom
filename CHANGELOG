@@ -1,4 +1,4 @@
-v0.14.2 (2026-08-1?)
+v0.14.2 (2026-08-19)
 
 Features and improvements
   - auto camera mode (the new default): the zoom follows how open the area
@@ -10,13 +10,8 @@ Features and improvements
 
 Fixed bugs
   - fixed various rendering problems (again)
+  - fixed various lightning issues
   - a monster whose box hangs over a ledge no longer freezes solid
-  - various lightning fixes
-    - a strobe sector as bright as its neighbours blinks to black instead
-      of standing still
-    - a light pattern no longer dims *up* to a neighbour brighter than
-      the sector itself
-    - sector types 12/13 had their synced strobe speeds the wrong way round
 
 
 ===============================================================================

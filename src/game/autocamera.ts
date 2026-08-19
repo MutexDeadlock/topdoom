@@ -50,7 +50,7 @@ const AUTO_WIDE_TILT = 70;
 
 /** The probe fan: ray count and per-ray reach in map units — tuned by feel. */
 const OPENNESS_RAY_COUNT = 24;
-const OPENNESS_RANGE = 2560;
+const OPENNESS_RANGE = 1280;
 
 /**
  * Clear distances that count as fully shut-in / fully open — tuned by feel.

@@ -39,8 +39,8 @@ though vanilla's `A_Look` passes `allaround == false` — gating the whole boss 
 mapper happened to give a thing that draws nothing is not worth reproducing.
 
 **The sight origin must be `MT_BOSSSPIT`'s own, not a player-shaped one.** `hasLineOfSight` lifts
-whatever `z` it is handed by `PLAYER_HEIGHT * 0.75`, which is the right approximation everywhere
-else in the game. The eye is 32 tall standing on a floor at 384 under a ceiling at 416, so that lift
+whatever `z` it is handed by `player.ts`'s `SIGHT_EYE_HEIGHT`, which is the right approximation
+everywhere else in the game. The eye is 32 tall standing on a floor at 384 under a ceiling at 416, so that lift
 sights it from 426 — *above its own ceiling*, with the wedge out of the slot pinched shut against
 almost the whole arena. `SHOOTER_SIGHT_Z` (`height - (height >> 2)`, `P_CheckSight`'s own
 `sightzstart`) minus that lift cancels it back out and puts the origin at 408, inside the slot.

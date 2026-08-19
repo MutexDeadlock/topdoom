@@ -6,7 +6,7 @@
 import { LF, NO_SIDE, SKY_FLAT, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
 import { sectorOfSubSector } from '../render/bsp.ts';
 import { segmentCrossT, segmentIntersect } from '../util/geom.ts';
-import { PLAYER_HEIGHT } from './player.ts';
+import { PLAYER_HEIGHT, SIGHT_EYE_HEIGHT } from './player.ts';
 import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './things/doomednums.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
@@ -867,18 +867,17 @@ const SIGHT_MAX_HEIGHT_SAMPLES = 32;
  * sight-blocking line (`World.blocksSight`) **and** keeps an unbroken sight
  * wedge through the floor/ceiling of every sector along the way.
  *
- * The wedge starts from a *fixed eye height* (`3/4` of `PLAYER_HEIGHT`,
- * vanilla's `sightzstart` fraction) rather than interpolating toward `z2` —
- * vanilla's `P_CheckSight` (`sightzstart`/`topslope`/`bottomslope`). Both the
- * fixed origin and the floor/ceiling half are load-bearing, and this is the
- * engine's most performance-sensitive query: docs/world.md § hasLineOfSight
- * covers why, and what keeps it affordable.
+ * The wedge starts from a *fixed eye height* (`player.ts`'s `SIGHT_EYE_HEIGHT`,
+ * vanilla's `sightzstart`) rather than interpolating toward `z2` — vanilla's
+ * `P_CheckSight` (`sightzstart`/`topslope`/`bottomslope`). Both the fixed
+ * origin and the floor/ceiling half are load-bearing, and this is the engine's
+ * most performance-sensitive query: docs/world.md § hasLineOfSight covers why,
+ * and what keeps it affordable.
  *
- * The eye-height fraction is computed inline rather than as a module-level
- * const: `world.ts` and `player.ts` import from each other, and a top-level
- * const evaluated at module load (rather than deferred inside a function body,
- * as every other `PLAYER_HEIGHT` use in this file is) hits the cycle's
- * initialization order — "Cannot access 'PLAYER_HEIGHT' before initialization".
+ * That constant is read *inside* this body, like every other `player.ts` value
+ * in this file: `world.ts` and `player.ts` import from each other, so hoisting
+ * one to module scope here hits the cycle's initialization order — "Cannot
+ * access 'PLAYER_HEIGHT' before initialization".
  *
  * It opens with `World.sightRejected`, vanilla's own first test. The two
  * subsector arguments are hints for it: a caller that already keeps its
@@ -897,7 +896,7 @@ export function hasLineOfSight(
   const dist = Math.hypot(to.x - from.x, to.y - from.y);
   if (dist === 0) return true;
 
-  const eyeZ = from.z + PLAYER_HEIGHT * 0.75;
+  const eyeZ = from.z + SIGHT_EYE_HEIGHT;
   let topSlope = (to.z + PLAYER_HEIGHT - eyeZ) / dist;
   let bottomSlope = (to.z - eyeZ) / dist;
 

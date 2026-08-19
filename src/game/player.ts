@@ -46,7 +46,20 @@ const MAX_PL_MOVE = 50;
 const MOVE_UNIT_SPEED = 10;
 
 const ACCELERATION = 12; // per second, as a lerp factor
+/** Vanilla's `VIEWHEIGHT`: where the player *views* from, and what `Player.eyeZ` hands the camera. */
 export const EYE_HEIGHT = 41;
+/**
+ * Where a **sight trace** starts above the feet — `P_CheckSight`'s `sightzstart`
+ * (`z + height - (height>>2)`). `world.ts`'s `hasLineOfSight` lifts every actor it is
+ * handed by this one, player-sized or not (docs/world.md § hasLineOfSight), which is why
+ * `monsters/iconofsin.ts` has to subtract it back off for a 32-tall eye.
+ *
+ * A unit off `EYE_HEIGHT` above and **not** interchangeable with it: this is a vanilla
+ * citation, that is the view height. It lives here, not in `world.ts`, because a
+ * module-level const derived from `PLAYER_HEIGHT` over there is read during the
+ * `world.ts`/`player.ts` cycle's initialization — see `hasLineOfSight`'s declaration.
+ */
+export const SIGHT_EYE_HEIGHT = PLAYER_HEIGHT * 0.75;
 /**
  * Map units per second^2. Tuned by feel rather than lifted from vanilla's fixed-point
  * tic-based gravity (1 unit/tic^2 at 35 tics/s), which doesn't translate to a dt-scaled

@@ -6,7 +6,7 @@ import type { DoomMap, Thing } from '../../wad/map.ts';
 import type { SpriteBank } from '../../wad/sprites.ts';
 import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../../render/sprites.ts';
 import { hasLineOfSight } from '../world.ts';
-import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
+import { PLAYER_RADIUS, SIGHT_EYE_HEIGHT } from '../player.ts';
 import { SPAWN_CUBE_MONSTERS } from '../things/tables.ts';
 import { ThingType } from '../things/doomednums.ts';
 import { TELEFRAG_DAMAGE, telefragReaches } from '../things.ts';
@@ -32,13 +32,12 @@ import { pRandom, triangularDraw } from '../../util/random.ts';
  * Where the eye sights from, above its own floor: `MT_BOSSSPIT`'s `mobjinfo.height` of 32, less the
  * `height >> 2` `P_CheckSight` docks off its `sightzstart`.
  *
- * `hasLineOfSight` always lifts the origin it is handed by a player-sized eye height, which is the
- * right approximation for everything else in the game and wrong for a 32-tall thing sitting in a
- * 32-tall ceiling slot — it would sight from *above* its own ceiling. `PLAYER_EYE_LIFT` cancels that
- * lift back out so the wedge really starts inside the slot. See docs/monster-iconofsin.md § Waking the eye.
+ * `hasLineOfSight` always lifts the origin it is handed by `SIGHT_EYE_HEIGHT`, which is the right
+ * approximation for everything else in the game and wrong for a 32-tall thing sitting in a 32-tall
+ * ceiling slot — it would sight from *above* its own ceiling. Subtracting that lift back off is what
+ * makes the wedge really start inside the slot. See docs/monster-iconofsin.md § Waking the eye.
  */
 const SHOOTER_SIGHT_Z = 32 - (32 >> 2);
-const PLAYER_EYE_LIFT = PLAYER_HEIGHT * 0.75;
 
 /** `S_BRAINEYESEE`'s own 181 tics: how long after waking the eye takes to spit the first cube. */
 const FIRST_SPIT_DELAY = 181 * DOOM_TIC;
@@ -312,7 +311,7 @@ export class IconOfSin {
     const sector = world.sectorAt(this.shooter.x, this.shooter.y);
     if (sector && world.isSoundAlerted(sector)) return true;
     const floor = world.floorAt(this.shooter.x, this.shooter.y);
-    const at = { x: this.shooter.x, y: this.shooter.y, z: floor + SHOOTER_SIGHT_Z - PLAYER_EYE_LIFT };
+    const at = { x: this.shooter.x, y: this.shooter.y, z: floor + SHOOTER_SIGHT_Z - SIGHT_EYE_HEIGHT };
     return hasLineOfSight(world, at, this.ctx.player);
   }
 

@@ -27,11 +27,13 @@ platform's floor was misreported as blocking sight to the monster standing on it
 bug: a pair of E1M1 zombiemen one step up on a 24-unit platform never woke no matter how long the
 player stood in plain view.
 
-The origin is fixed at `from.z + PLAYER_HEIGHT * 0.75` (vanilla's own fraction — this engine has no
-per-species heights, so both ends reuse the player's) instead of sliding toward `z2`. That eye
-height is written inline rather than named as a constant, deliberately: `hasLineOfSight` lives in
-`world.ts` for the import-cycle reason noted at its declaration, and a module-level constant derived
-from `player.ts`'s `PLAYER_HEIGHT` would be read during that cycle's initialization. The target bound uses the full `[z2, z2 + PLAYER_HEIGHT]` span rather than a
+The origin is fixed at `from.z + SIGHT_EYE_HEIGHT` (vanilla's own `sightzstart` fraction — this
+engine has no per-species heights, so both ends reuse the player's) instead of sliding toward `z2`.
+That constant lives in `player.ts` beside `PLAYER_HEIGHT` it derives from, and is read *inside*
+`hasLineOfSight`'s body: `world.ts` and `player.ts` import from each other, so a `player.ts` value
+hoisted to module scope in `world.ts` would be read during that cycle's initialization. It is not
+`EYE_HEIGHT`, the view height a unit below it — `game/autocamera.ts`'s probe wants that one
+(docs/render.md § Auto camera), a sight trace wants this one. The target bound uses the full `[z2, z2 + PLAYER_HEIGHT]` span rather than a
 single point, so any part of that range clearing every opening crossed is enough.
 
 **The wedge narrows at two different things, and both are load-bearing.** The primary one walks the

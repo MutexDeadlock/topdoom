@@ -374,9 +374,10 @@ otherwise the menu, and the next level started from it, inherit whatever powerup
 Boom's 242 colormaps get a third element, `#colormap-tint`, at the same `--z-tint`. It differs from
 the powerup tints in being a **multiply** blend rather than a wash, because that is all a colormap
 can do — take light away — and in being driven from `game.ts` rather than from inventory state:
-which of the control sector's three colormaps applies depends on the player's eye height against
+which of the control sector's colormaps applies depends on the player's eye height against
 that sector (docs/specials.md § Deep water). `Game.viewColormap` resolves it, `ScreenEffects.setColormapTint`
-writes it, and `reset` clears it with the rest.
+writes it, and `reset` clears it with the rest. **The underwater colormap is deliberately never
+applied** — see docs/specials.md § Deep water for why the top-down camera can't wear it.
 
 **Invulnerability's tint, the suit's tint and invisibility's sprite translucency all blink for their
 last `POWER_BLINK_WARNING_SECONDS` (3s)**, via the shared `powerBlinkVisible(secondsLeft)`. Not a

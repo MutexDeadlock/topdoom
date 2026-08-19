@@ -184,11 +184,12 @@ export class Game {
   /** The level's Boom render transfers (game/specials/transfers.ts) — read per frame for the view colormap. */
   private transfers!: Transfers;
   /**
-   * The colour cast of each 242 control sector's three colormaps, resolved once
-   * per level: `R_SetupFrame` picks one of them per frame, and a WAD lookup per
-   * frame to answer that would be pure waste. Empty on the maps with none.
+   * The colour cast of each 242 control sector's colormaps, resolved once per
+   * level: `R_SetupFrame` picks one of them per frame, and a WAD lookup per
+   * frame to answer that would be pure waste. Empty on the maps with none. The
+   * third, underwater colormap is not kept — `viewColormap` never applies it.
    */
-  private colormapTints = new Map<number, { bottom: ColorTint | null; mid: ColorTint | null; top: ColorTint | null }>();
+  private colormapTints = new Map<number, { mid: ColorTint | null; top: ColorTint | null }>();
   /**
    * The player's cached touched-sector list for the three per-tic force
    * queries — one body, one cache (`World.sectorsTouchingCached`), so
@@ -669,6 +670,12 @@ export class Game {
     // that mutates a sector — this is the state a later load starts from, so it
     // is what a capture may leave out (docs/savegames.md § Apply order).
     this.sectorBaseline = sectorBaseline(map);
+    // Boom's render transfers, resolved here rather than where they are first
+    // read below: the two scans in `Transfers`' constructor compare sector
+    // heights (`markFakeFloors`, `markPools`), and those have to be the map's
+    // authored ones — after the restore below, a saved mover's sector reads at
+    // the height it had stopped at. docs/savegames.md § Apply order.
+    transfersOf(map, (name) => this.wad.find(name)?.size ?? null);
     // Before the sector snapshot below, so `totalSecrets` counts the map's
     // authored secrets — a found secret zeroes its sector's `special`.
     this.sectorEffects = new SectorEffects(map);
@@ -693,10 +700,9 @@ export class Game {
     // Sectors a door/lift/floor mover will drive are pulled out of the static
     // batches up front — SpecialsController owns their geometry instead (see
     // render/mapmesh.ts's MapMeshOptions doc for why).
-    // Boom's render transfers, resolved before anything is built: the mesh
-    // takes its transferred lighting and water planes from here, and the
-    // movable-sector scan above already consulted the same memoized table.
-    // docs/specials.md § Render transfers.
+    // The same memoized table the pre-restore call above built: the mesh takes
+    // its transferred lighting and water planes from here, as does the
+    // movable-sector scan. docs/specials.md § Render transfers.
     const transfers = transfersOf(map, (name) => this.wad.find(name)?.size ?? null);
     this.transfers = transfers;
     this.colormapTints.clear();
@@ -704,7 +710,6 @@ export class Game {
       const names = transfers.colormapsOf(control);
       if (!names || this.colormapTints.has(control)) continue;
       this.colormapTints.set(control, {
-        bottom: colormapTint(this.wad, names.bottom),
         mid: colormapTint(this.wad, names.mid),
         top: colormapTint(this.wad, names.top),
       });
@@ -1664,7 +1669,8 @@ export class Game {
   /**
    * The colour cast the whole view draws under, or null for none: the colormap
    * of the 242 control sector the player is standing in, chosen by eye height
-   * against that sector's floor and ceiling exactly as `R_SetupFrame` does.
+   * against that sector's floor and ceiling as `R_SetupFrame` does — except
+   * that the underwater (bottom) colormap is deliberately not applied here.
    * docs/specials.md § Deep water.
    */
   private viewColormap(): ColorTint | null {
@@ -1674,7 +1680,12 @@ export class Game {
     if (!tints) return null;
     const sector = this.world.map.sectors[control];
     const eye = this.player.eyeZ;
-    return eye < sector.floorHeight ? tints.bottom : eye > sector.ceilHeight ? tints.top : tints.mid;
+    // Below the surface vanilla would cast the whole view through the control
+    // sector's bottom colormap; this camera stays above the water while the
+    // player sinks, so that blue would recolour a view that is mostly still
+    // dry land. docs/specials.md § Deep water.
+    if (eye < sector.floorHeight) return null;
+    return eye > sector.ceilHeight ? tints.top : tints.mid;
   }
 
   /**

@@ -61,12 +61,21 @@ export class FogOfWar {
   private alpha: Float32Array;
   private pending: number;
   private wallSubsector: Int32Array;
+  /** Which sector each subsector belongs to — what `closedTarget` reads to spot a solid one. */
+  private sectorOf: Int32Array;
 
   /** Which tic each line's `blocksSight` answer was computed on, and what it was — see `testBlocker`. */
   private blockStamp: Int32Array;
   private blockFlag: Uint8Array;
   /** Bumped once per `tick`, so a line's `blocksSight` is read at most once per tic. */
   private scanId = 0;
+
+  /**
+   * The sector whose own lines this ray is allowed through, or -1 — set only
+   * while sampling a *closed* subsector, which nothing else can see into.
+   * See `sweep` and docs/fogofwar.md § Closed sectors.
+   */
+  private rayTargetSector = -1;
 
   /** The ray `testBlocker` is testing, and whether it has been blocked — see `sightClear`. */
   private rayX1 = 0;
@@ -88,6 +97,8 @@ export class FogOfWar {
     this.sights = new Array(polys.length).fill(null);
     this.explored = new Uint8Array(polys.length);
     this.alpha = new Float32Array(polys.length);
+    this.sectorOf = new Int32Array(polys.length);
+    for (let ss = 0; ss < polys.length; ss++) this.sectorOf[ss] = polys[ss].sector;
 
     this.blockStamp = new Int32Array(map.linedefs.length);
     this.blockFlag = new Uint8Array(map.linedefs.length);
@@ -219,6 +230,7 @@ export class FogOfWar {
       if (dx * dx + dy * dy > reach * reach) continue;
 
       budget--;
+      this.rayTargetSector = this.closedTarget(ss);
       // Both budgets are spent a whole subsector at a time: stopping between its samples would
       // leave it dark though visible until a later pass reaches it again.
       for (let i = 0; i < s.samples.length; i += 2) {
@@ -229,7 +241,23 @@ export class FogOfWar {
         }
       }
     }
+    this.rayTargetSector = -1;
     this.scanCursor = ss;
+  }
+
+  /**
+   * The sector of a subsector that has no vertical opening — a pillar, a shut
+   * door, a mapper's block of solid geometry — else -1. Every line bounding one
+   * blocks sight by definition, so no ray can ever land inside it and it would
+   * stay dark for the whole level, drawing as a hole. Seeing such a sector from
+   * outside is seeing all there is of it, so `testBlocker` waives its own lines
+   * while sampling it. Live, not load-time: a door that opens becomes an
+   * ordinary subsector again. docs/fogofwar.md § Closed sectors.
+   */
+  private closedTarget(ss: number): number {
+    const index = this.sectorOf[ss];
+    const sector = this.world.map.sectors[index];
+    return sector && sector.ceilHeight <= sector.floorHeight ? index : -1;
   }
 
   /**
@@ -277,6 +305,10 @@ export class FogOfWar {
    * place. docs/fogofwar.md § Sight testing.
    */
   private testBlocker = (i: number): boolean | void => {
+    // The closed subsector's own boundary, waived — see `closedTarget`. Ahead
+    // of the memo, which is keyed by line alone and shared with rays that are
+    // not exempt.
+    if (this.rayTargetSector >= 0 && this.bordersTarget(i)) return;
     if (this.blockStamp[i] !== this.scanId) {
       this.blockStamp[i] = this.scanId;
       this.blockFlag[i] = this.world.blocksSight(i) ? 1 : 0;
@@ -294,6 +326,16 @@ export class FogOfWar {
       return (this.rayBlocked = true);
     }
   };
+
+  /** Whether a line has `rayTargetSector` on either side — the waiver in `testBlocker`. */
+  private bordersTarget(lineIndex: number): boolean {
+    const line = this.world.map.linedefs[lineIndex];
+    if (!line) return false;
+    const sides = this.world.map.sidedefs;
+    return (
+      sides[line.right]?.sector === this.rayTargetSector || sides[line.left]?.sector === this.rayTargetSector
+    );
+  }
 
   /**
    * Marks the whole level explored — the computer area map powerup (vanilla's `pw_allmap`, which

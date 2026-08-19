@@ -194,10 +194,12 @@ console.log(`  free directions at r=64: ${free}/${steps}`);
   const water = transfers.waterSectors();
   const surfaces = water.filter((w) => transfers.waterHeight(w.sector) !== null).length;
   const fakeFloors = transfers.fakeFloorSectors().length;
+  const islands = transfers.poolIslands().length;
   console.log(
     `transfers: ${t.floorLight} floor-light + ${t.ceilingLight} ceiling-light lines, ` +
       `${t.water} fake-height lines (${water.length} sectors, ${surfaces} drawing water, ` +
-      `${fakeFloors} drawn at a fake floor), ${t.translucent} translucent lines`,
+      `${fakeFloors} drawn at a fake floor, ${islands} enclosed by a pool), ` +
+      `${t.translucent} translucent lines`,
   );
 }
 

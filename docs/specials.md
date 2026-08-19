@@ -1153,13 +1153,55 @@ the level, so vanilla's opaque surface would simply erase a player who waded in.
 water sector gets two fans: the **pool bottom** at the real floor height with the control sector's
 flat and light, and a translucent **surface** at the control sector's floor height with the
 sector's own flat and light (`WATER_SURFACE_ALPHA`, a feel dial in `constants.ts` — vanilla has no
-opacity to copy). Sprites are never clipped, so you can see yourself walk under water.
+opacity to copy). Sprites are never clipped, so you can see yourself walk under water. The surface
+is also exempt from occlusion fading, which would otherwise dissolve the fans right over a submerged
+player (docs/render.md § Wall occlusion fading).
+
+**A pool bottom a mover raises out of the water keeps drawing as a pool bottom.** Once its floor
+reaches the surface there is no water left over it, so `waterHeight` is null and one fan is drawn at
+the real floor — but the flat and light still come from the control sector, not from the sector's
+own, which in every deep-water setup is the *water* flat the surface wears. Boom draws that water
+flat instead — `R_FakeFlat`'s plain branch keeps `sec`'s own `floorpic` and only moves the height to
+`s->floorheight` (`r_bsp.c`) — so this is the same deviation the two fans above are, carried to the
+case where the bottom has risen through the surface. `Transfers.poolBottom`
+is what remembers this: `markPools` records at load which 242 sectors had water over them, since the
+live heights no longer say so. Repro: BOOMEDIT MAP01's stairs in sector 35's pool (sectors 34, 37-40,
+42, 43) — the top step comes to rest exactly at the surface, and drew a patch of FWATER1 beside
+siblings still showing their RROCK13. **The load-time half of that has to be resolved before a
+savegame's sector heights are applied**, which is why `Game.beginLevel` calls `transfersOf` ahead of
+`applySectors` (docs/savegames.md § Apply order); after it, a restored save classifies the risen step
+as a sector that was never water.
+
+**A sector walled in by a pool gets that pool's surface drawn over it**, even though it carries none
+of the pool's tag. Boom draws water only for a tagged sector, so an untagged one inside a pool is a
+square the sheet stops at — visible only from overhead, where this camera looks straight down at it.
+`Transfers.markPoolIslands` finds them: no 242 of its own, and every side facing a 242 sector that
+borrows the *same* control sector. The adjacency alone is settled at load; the two height tests stay
+live in `processFlat` — the island's floor must be `WATER_MIN_DEPTH` under the surface, and its
+**ceiling at or below** it, so a sealed chamber whose roof clears the water stays dry inside whatever
+surrounds it. The surface fan wears the *pool* sector's flat and light, not the island's, which is
+the whole point: the island's own floor keeps drawing underneath it, seen through the water.
+
+Repro: BOOMEDIT MAP01 sector 121, a closed 4-sided pillar in sector 93's pool, floor and ceiling
+both at −80 with the surface at −16. It is a vanilla sky pit (a sky ceiling over a sky ceiling draws
+no upper, so a first-person player sees sky through the water); ceilings and sky are never drawn here
+at all, so the only choice this camera has is between a void-looking hole and water running over it.
+It is the one sector across every committed WAD that qualifies — `inspect-wad`'s transfers line
+counts them ("enclosed by a pool").
 
 The surface fan is only built when the control sector's floor is at least `WATER_MIN_DEPTH` above
 the sector's own — deep enough for the two planes to be worth drawing separately, and far enough
 apart not to z-fight (BOOMEDIT MAP01 sector 405 is **one map unit** deep, and two fans that close
 shimmer against each other). Anything shallower keeps vanilla's plain above-water view: one floor
 drawn at the surface height wearing the sector's own flat.
+
+**The underwater colormap is dropped, and that is a second deliberate deviation.** A 242 sidedef
+names three colormaps and vanilla casts the whole view through the *bottom* one once the eye sinks
+below the surface (`R_SetupFrame`). Here the camera stays above the water while the player wades in,
+so most of what is on screen is still dry land — turning it all blue reads as a bug rather than as
+submersion. `Game.viewColormap` applies only the mid and top colormaps and returns no tint below the
+surface; the bottom name is never even decoded (docs/hud.md § Screen effects, docs/wad.md § Colormap
+lumps).
 
 Boom's other use of 242 is a *fake ceiling*, whose control sector sits at or below the sector's
 floor (what its **floor** half then draws is § The fake floor below). Its ceiling is never

@@ -139,6 +139,14 @@ change at runtime — a 242 control sector's floor height, which sets the water 
 ordinary `SectorEntry.floorHeight`. The apply order does the rest: `applySectors` runs before
 `buildMapMesh`, so a restored save bakes its water surfaces at the heights it was saved with.
 
+**`transfersOf` is nevertheless called before `applySectors`**, once, purely to fix the two scans in
+`Transfers`' constructor that compare sector heights — `markFakeFloors` and `markPools`. Those
+classify the map as *authored*; run against restored heights instead, a saved mover reads at the
+height it stopped at and a raised pool bottom comes back as a sector that never had water over it
+(docs/specials.md § Deep water). Everything read from the table afterwards is a live height lookup,
+so nothing else about it depends on when it was built — `transfersOf` memoizes per map, and the
+later call in `beginLevel` gets the same instance.
+
 Deliberately not saved, each a sub-second transient whose absence on restore is invisible or
 nearly so:
 

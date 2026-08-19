@@ -1,15 +1,29 @@
 v0.14.3 (2026-08-19)
 
+Some fixes and improvements before starting DEH/BEX support
+
 Features and improvements
+  - various "underwater" improvements:
+    - the view no longer turns blue when the player wades under a 242 water
+      surface; the camera stays above it, so the tint only read as a bug
+    - a water surface no longer breaks up over a submerged player: it is already
+      translucent, so occlusion fading has nothing to reveal there
 
 Fixed bugs
-  - a door reopened after a close line no longer shuts itself again a few
-    seconds later, which could seal the player in (EPIC.WAD MAP01)
-  - close-door lines close straight away instead of pausing at the top first
-  - pressing use on an open door now shuts it, as in vanilla, instead of
-    restarting its wait
-  - a lift triggered a second time now uses that line's speed and re-reads how
-    far down it goes, instead of repeating its first trigger
+  - resolved some problems with doors and switches:
+    - a door reopened after a close line no longer shuts itself again a few
+      seconds later
+    - close-door lines close straight away instead of pausing at the top first
+    - pressing use on an open door now shuts it, as in vanilla, instead of
+      restarting its wait
+    - a lift triggered a second time now uses that line's speed and re-reads how
+      far down it goes, instead of repeating its first trigger
+  - closed sectors (pillars, shut doors, solid blocks) are no longer left dark
+    forever by the fog of war, which drew them as holes in the level
+  - a stair step built up out of deep water keeps the pool bottom's flat and
+    light instead of turning into a patch of water
+  - a sector walled in by a pool no longer leaves a hole in the water surface
+    over it (BOOMEDIT MAP01 sector 121)
 
 
 

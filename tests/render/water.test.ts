@@ -177,6 +177,147 @@ describe('render · deep water planes', () => {
     assert.equal(alphaOf(), WATER_SURFACE_ALPHA * 0.5, 'half-revealed by fog: the product');
   });
 
+  /**
+   * BOOMEDIT MAP01's stairs inside sector 35's pool: the transfers are resolved
+   * at the authored heights (as `Game.beginLevel` does, ahead of any restore),
+   * then a mover raises the step's floor to `floorHeight`.
+   */
+  function risenStep(floorHeight: number) {
+    const map = gridMap(['..']).map;
+    map.sectors[0].tag = 3;
+    map.sectors[0].floorHeight = -64;
+    map.sectors[0].floorTex = WATER_FLAT;
+    map.sectors[0].light = 200;
+    const control = addControlSector(
+      map,
+      { floorHeight: 0, ceilHeight: 128, floorTex: POOL_FLAT, light: 90 },
+      242,
+      3,
+    );
+    const transfers = transfersOf(map);
+    map.sectors[0].floorHeight = floorHeight;
+    const built = buildMapMesh(map, BANK, { transfers });
+    return { built, control, fans: built.flatSurfaces.filter((f) => f.sector === 0) };
+  }
+
+  test('a pool bottom raised to the water line keeps the pool bottom’s flat', () => {
+    // BOOMEDIT MAP01's stair steps are 242 sectors of sector 35's pool, and its
+    // top step comes to rest exactly at the surface. Drawn with the sector's own
+    // flat it wears FWATER1 — a patch of water on a dry step, beside steps still
+    // showing the rock they are built from.
+    const { built, control, fans } = risenStep(0);
+    assert.equal(fans.length, 1, 'no water left over it, so no surface fan');
+    assert.equal(fans[0].height, 0);
+    assert.equal(fans[0].key, 'flat:' + POOL_FLAT, 'the control sector’s flat, as while it was submerged');
+    assert.equal(fans[0].baseAlpha, undefined, 'and solid — it is dry ground now');
+    assert.equal(fans[0].lightSector, control, 'lit like the pool bottom it is, not like the surface');
+    assert.equal(colorOf(built, fans[0]), Math.fround(litColor(90)));
+  });
+
+  test('a pool bottom raised clear of the water line keeps it too', () => {
+    const { fans } = risenStep(32);
+    assert.equal(fans.length, 1);
+    assert.equal(fans[0].height, 32, 'at its real floor — the drawn floor never substitutes upwards');
+    assert.equal(fans[0].key, 'flat:' + POOL_FLAT);
+  });
+
+  test('a sector that never had water over it is untouched by that rule', () => {
+    // BOOMEDIT MAP01 sectors 449-452: a 242 whose control sector sits at the
+    // sector's own floor from the start (a colormap room, not a pool). Its own
+    // flat is the one to draw — the control's is only a pool bottom's.
+    const map = gridMap(['..']).map;
+    map.sectors[0].tag = 3;
+    map.sectors[0].floorHeight = 0;
+    map.sectors[0].floorTex = WATER_FLAT;
+    addControlSector(map, { floorHeight: 0, ceilHeight: 128, floorTex: POOL_FLAT }, 242, 3);
+    const built = buildMapMesh(map, BANK, { transfers: transfersOf(map) });
+    const fans = built.flatSurfaces.filter((f) => f.sector === 0);
+    assert.equal(fans.length, 1);
+    assert.equal(fans[0].key, 'flat:' + WATER_FLAT, 'its own flat, not the control sector’s');
+  });
+
+  /**
+   * BOOMEDIT MAP01 sector 121 in miniature: a sector walled in on every side by
+   * one pool and left out of its tag. `untagged` leaves one cell out of the
+   * pool — passed a *neighbouring* cell, that makes the middle one an ordinary
+   * sector bordering water rather than an island in it.
+   */
+  function island({ floor = -32, ceil = -32, untagged = [-1, -1] } = {}) {
+    const grid = gridMap(['...', '...', '...']);
+    const map = grid.map;
+    const centre = grid.index(1, 1);
+    const dry = untagged[0] < 0 ? -1 : grid.index(untagged[0], untagged[1]);
+    for (let i = 0; i < 9; i++) {
+      if (i === centre || i === dry) continue;
+      map.sectors[i].tag = 3;
+      map.sectors[i].floorHeight = -64;
+      map.sectors[i].floorTex = WATER_FLAT;
+    }
+    map.sectors[centre].floorHeight = floor;
+    map.sectors[centre].ceilHeight = ceil;
+    map.sectors[centre].floorTex = POOL_FLAT;
+    addControlSector(map, { floorHeight: 0, ceilHeight: 128, floorTex: WATER_FLAT }, 242, 3);
+    const built = buildMapMesh(map, BANK, { transfers: transfersOf(map) });
+    return { grid, centre, fans: built.flatSurfaces.filter((f) => f.sector === centre) };
+  }
+
+  test('the pool’s surface runs over an island the mapper left out of its tag', () => {
+    // BOOMEDIT MAP01 sector 121: a closed sky pillar standing in sector 93's
+    // pool, 64 units under the surface and carrying none of its tag. Boom draws
+    // no surface over it — from overhead that is a square hole in the water.
+    const { fans } = island();
+    assert.equal(fans.length, 2, 'its own top, and the pool’s surface over it');
+    assert.equal(fans[0].height, -32, 'the island’s own floor');
+    assert.equal(fans[0].key, 'flat:' + POOL_FLAT, 'wearing its own flat, seen through the water');
+    assert.equal(fans[1].height, 0, 'the pool’s surface, at the control sector’s floor');
+    assert.equal(fans[1].key, 'flat:' + WATER_FLAT, 'wearing the pool sector’s flat, not the island’s');
+    assert.equal(fans[1].baseAlpha, WATER_SURFACE_ALPHA);
+  });
+
+  test('an island standing out of the water gets no surface over it', () => {
+    // A chamber whose ceiling clears the surface is dry inside whatever is
+    // around it, so the sheet has to stop at its wall.
+    const { fans } = island({ floor: -32, ceil: 64 });
+    assert.equal(fans.length, 1, 'its own floor alone');
+  });
+
+  test('a sector bordering water but not walled in by it is not an island', () => {
+    // The cell north of it is not water, so the sheet around it is not one pool
+    // closing over it — the same test `markPoolIslands` makes.
+    const { fans } = island({ untagged: [1, 0] });
+    assert.equal(fans.length, 1);
+  });
+
+  test('the surface over a submerged player is never faded away', () => {
+    // The camera stays above the water while the player wades under it, so the
+    // sightline crosses the surface — but it is already see-through, and fading
+    // only the fans the line crosses punches a hole in the sheet.
+    const { built, fans } = pool();
+    const surface = fans.find((f) => f.height === 0)!;
+    let sx = 0;
+    let sy = 0;
+    for (let i = 0; i < surface.points.length; i += 2) {
+      sx += surface.points[i];
+      sy += surface.points[i + 1];
+    }
+    const cx = sx / (surface.points.length / 2);
+    const cy = sy / (surface.points.length / 2);
+    const submerged = { x: cx, y: cy, z: -32 };
+    const alphaOf = () => built.flatMeshes.get(surface.key)!.geometry.getAttribute('color').getW(surface.vertexStart);
+
+    const fader = new FlatFader(built.flatSurfaces, built.flatMeshes);
+    fader.update(1, cx, cy, 500, [submerged]);
+    fader.commit(() => 1);
+    assert.equal(alphaOf(), WATER_SURFACE_ALPHA, 'still the base alpha, not dithered away');
+
+    // The same fan on the same sightline without its base alpha: an ordinary
+    // floor there does fade, so it is the exemption sparing the surface.
+    const opaque = new FlatFader([{ ...surface, baseAlpha: undefined }], built.flatMeshes);
+    opaque.update(1, cx, cy, 500, [submerged]);
+    opaque.commit(() => 1);
+    assert.ok(alphaOf() < 0.5, 'the sightline really does cross this fan');
+  });
+
   test('a control sector below the real ceiling still reaches the walls across from it', () => {
     // BOOMEDIT MAP01 lines 677-680: sector 111 (real ceiling 192) draws at
     // control sector 112's ceiling of 32, so the SFALL1 fall facing it runs

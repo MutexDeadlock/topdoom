@@ -199,6 +199,15 @@ export class FlatFader {
   update(dt: number, camX: number, camY: number, camZ: number, targets: FadeTarget[]): void {
     for (let i = 0; i < this.surfaces.length; i++) {
       const s = this.surfaces[i];
+      // A surface that is already see-through hides nothing, so fading it has
+      // nothing to reveal — and a 242 water surface, the only flat with a base
+      // alpha, would lose whichever fans the sightline crosses while the sheet
+      // around them stayed, punching a hole over a submerged player.
+      // docs/render.md § Wall occlusion fading.
+      if ((s.baseAlpha ?? 1) < 1) {
+        this.alpha[i] = 1;
+        continue;
+      }
       let occluding = false;
       for (const pt of targets) {
         if (s.isCeiling || s.height <= pt.z || s.height >= camZ) continue;

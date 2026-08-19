@@ -193,6 +193,29 @@ passing `Infinity` for one and having the other infer it: the seed has to reveal
 from spawn in that single call, and the `alpha.set(explored)` right after skips the fade so the
 surroundings don't rise out of black on frame one.
 
+## Closed sectors
+
+**A subsector whose sector has no vertical opening waives that sector's own lines as blockers**
+while it is being sampled (`closedTarget`, `bordersTarget`). Every line bounding such a sector blocks
+sight by definition — that is what `blocksSight` tests — so no ray can ever land inside one, and
+without the waiver it stays unexplored for the whole level: a permanent **hole** in the view, its
+floor fan and anything drawn over it invisible where the geometry plainly is. Seeing a solid block
+from outside is all there is to seeing it.
+
+Repro: BOOMEDIT MAP01 sector 121, a closed pillar standing in sector 93's pool. Its `METAL` sides
+draw (a wall's probe point lands in the *pool's* subsector, § How reveal reaches the geometry), so
+what the player sees is a pale strip with the water missing around its top — reported twice as a
+hole in the water, and not fixed by anything done to the water itself. 24 of BOOMEDIT MAP01's 32
+closed subsectors were dark this way.
+
+The waiver is deliberately narrow in two ways. It is **live**, not load-time: a shut door is a closed
+sector, and the tic it opens it goes back to being sampled like any other subsector (already explored
+by then, `explored` being sticky). And it waives only the lines of the sector *being sampled* — the
+ray still stops at everything else, and only that subsector is marked, so nothing beyond a door leaf
+is revealed by passing through it. Waiving blockers by anything coarser than the target's own sector
+would leak sight through shut doors, which is the failure the quarter-unit overhang above exists to
+prevent.
+
 ## How reveal reaches the geometry
 
 Reveal drives the *same* per-vertex alpha channel the dithered-discard technique already reads (see

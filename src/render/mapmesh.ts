@@ -173,12 +173,16 @@ export interface SectorTransfers {
   ceilingLightSector(sectorIndex: number): number;
   /** The 242 control sector, or -1. */
   heightSec(sectorIndex: number): number;
+  /** The control sector a pool bottom draws with, or -1 where the sector never had water over it. */
+  poolBottom(sectorIndex: number): number;
   /** The ceiling this sector draws at — its 242 control sector's, else its own. */
   drawnCeiling(sectorIndex: number): number;
   /** The floor this sector draws at where only one is drawn — a 242 fake floor, else its own. */
   drawnFloor(sectorIndex: number): number;
   /** Where this sector's water surface is drawn, or null where there is none. */
   waterHeight(sectorIndex: number): number | null;
+  /** The water sector this one is walled in by, or -1 where it is not an island in a pool. */
+  poolIsland(sectorIndex: number): number;
   translucentLine(lineIndex: number): boolean;
   midtexSuppressed(lineIndex: number): boolean;
   /** Whether a sidedef texture name is really a colormap lump (a 242 control line's own). */
@@ -335,6 +339,8 @@ function ownTransfers(map: DoomMap): SectorTransfers {
     floorLightSector: (s) => s,
     ceilingLightSector: (s) => s,
     heightSec: () => -1,
+    poolBottom: () => -1,
+    poolIsland: () => -1,
     drawnCeiling: (s) => map.sectors[s]?.ceilHeight ?? 0,
     drawnFloor: (s) => map.sectors[s]?.floorHeight ?? 0,
     waterHeight: () => null,
@@ -769,7 +775,17 @@ function processFlat(
   // docs/specials.md § Deep water.
   const surfaceHeight = transfers.waterHeight(poly.sector);
   const deep = surfaceHeight !== null && surfaceHeight - sector.floorHeight >= WATER_MIN_DEPTH;
-  const control = deep ? transfers.heightSec(poly.sector) : -1;
+  // A pool bottom a mover has raised clear of the surface (`waterHeight` is null
+  // once it reaches it) is the same ground it was, so it keeps the control
+  // sector's flat and light rather than snapping to the water flat this sector
+  // wears for its surface — a deviation from `R_FakeFlat`'s plain branch, which
+  // draws that water flat. BOOMEDIT MAP01's stairs in sector 35's pool.
+  // docs/specials.md § Deep water.
+  const control = deep
+    ? transfers.heightSec(poly.sector)
+    : surfaceHeight === null
+      ? transfers.poolBottom(poly.sector)
+      : -1;
   const bottom = control >= 0 ? map.sectors[control] : undefined;
   // The bottom wears the control sector's flat, except where that sector has
   // none to lend (sky, or an unset slot) — falling back to the sector's own
@@ -807,12 +823,22 @@ function processFlat(
     });
   }
 
-  if (deep && surfaceHeight !== null) {
+  // Which pool's surface covers this fan: this sector's own, or — for a sector
+  // walled in by a pool but left out of its tag — that pool's, so the sheet runs
+  // over the island instead of stopping at it. The island has to be *under* the
+  // water for that: a chamber whose ceiling stands above the surface is dry
+  // inside, whatever it is surrounded by. docs/specials.md § Deep water.
+  const island = deep ? -1 : transfers.poolIsland(poly.sector);
+  const islandSurface = island < 0 ? null : transfers.waterHeight(island);
+  const submerged = islandSurface !== null && sector.ceilHeight <= islandSurface;
+  const pool = deep ? poly.sector : submerged ? island : -1;
+  const surfaceAt = deep ? surfaceHeight : islandSurface;
+  if (pool >= 0 && surfaceAt !== null && surfaceAt - sector.floorHeight >= WATER_MIN_DEPTH) {
     addFlatFan(poly, ss, batches, size, flatSurfaces, {
-      texName: sector.floorTex,
-      height: surfaceHeight,
-      light: transfers.floorLight(poly.sector),
-      lightSector: transfers.floorLightSector(poly.sector),
+      texName: map.sectors[pool].floorTex,
+      height: surfaceAt,
+      light: transfers.floorLight(pool),
+      lightSector: transfers.floorLightSector(pool),
       isCeiling: false,
       baseAlpha: WATER_SURFACE_ALPHA,
     });

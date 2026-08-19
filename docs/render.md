@@ -286,6 +286,10 @@ vanilla, which has no such hack. Its conditions are GZDoom's:
 - that step drawing **no** lower texture (a textured one is ordinary geometry), and the neighbour's
   floor flat not being sky.
 
+A sector *inside a pool* is left alone by all of this — `closedHoleFill` declines the moment a
+neighbour carries a 242, Boom's idioms being built on missing textures. What it gets instead is the
+pool's own surface drawn over it, docs/specials.md § Deep water's island rule.
+
 **The test is per sector, never per BSP leaf**, and that is what makes it safe rather than tidy.
 GZDoom decides per leaf but then floods across minisegs into the rest of the sector
 (`DoOneSectorLower` recurses through every partner seg) and gives up at the first one-sided wall it
@@ -445,6 +449,14 @@ physical platform into several subsector polygons, and a plain point-in-polygon 
 whichever fragment contained the crossing, leaving its siblings solid beside it (DOOM2 MAP05's
 rocket-ammo balcony: one platform, 3 subsectors). `pointNearConvexPolygon` inflates the test by
 `PLAYER_RADIUS` so fragments within the player's own width of the sightline fade together.
+
+**A flat with a base alpha below 1 is exempt from the fade entirely.** The only one is a 242 water
+surface (§ Deep water), which is translucent precisely so a submerged player stays visible through
+it — there is nothing left for a fade to reveal, and fading punches a *hole*: only the fans the
+sightline actually crosses dissolve, so the sheet loses a patch around the player while the rest of
+it stays. The `PLAYER_RADIUS` inflation above widens that patch but cannot close it, since a pool is
+many subsectors wide. Repro: wade into any BOOMEDIT MAP01 pool and watch the water break up
+overhead.
 
 **`awakeMonsters` only returns monsters fog of war is actually drawing** (`p.actor.mesh.visible`,
 which `ThingLayer.update` sets from `fogAlphaOf` earlier in the same frame). A monster in a subsector

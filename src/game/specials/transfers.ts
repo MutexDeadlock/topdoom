@@ -64,6 +64,18 @@ export class Transfers {
    * for the same reason its siblings are. See docs/specials.md § The fake floor.
    */
   private fakeFloorSecs: Int32Array;
+  /**
+   * `heightSecs` again, narrowed to the sectors that had water over them when
+   * the level loaded — `markPools`, read by `poolBottom`. Dense for the same
+   * reason its siblings are. See docs/specials.md § Deep water.
+   */
+  private poolSecs: Int32Array;
+  /**
+   * The water sector each *island* sits inside — a sector the mapper left out of
+   * a pool's tag but walled in by it, `markPoolIslands`, read by `poolIsland`.
+   * Dense for the same reason its siblings are. See docs/specials.md § Deep water.
+   */
+  private islandSecs: Int32Array;
   /** Linedef indexes whose midtexture draws translucent (260), and those whose midtexture is a tranmap name. */
   private translucent = new Set<number>();
   private suppressed = new Set<number>();
@@ -99,9 +111,13 @@ export class Transfers {
     this.ceilingLightSec = new Int32Array(n).fill(-1);
     this.heightSecs = new Int32Array(n).fill(-1);
     this.fakeFloorSecs = new Int32Array(n).fill(-1);
+    this.poolSecs = new Int32Array(n).fill(-1);
+    this.islandSecs = new Int32Array(n).fill(-1);
     this.spawnLightTransfers();
     this.spawnHeightTransfers(lumpSize);
     this.markFakeFloors();
+    this.markPools();
+    this.markPoolIslands();
     this.spawnTranslucentLines(lumpSize);
     this.hasAny =
       this.tally.floorLight + this.tally.ceilingLight + this.tally.water + this.tally.translucent > 0;
@@ -168,6 +184,63 @@ export class Transfers {
       const fake = this.map.sectors[control]?.floorHeight;
       if (fake === undefined || fake >= (this.map.sectors[s]?.floorHeight ?? 0)) continue;
       if (this.neighboursFollow(s, fake)) this.fakeFloorSecs[s] = control;
+    }
+  }
+
+  /**
+   * The 242 sectors that had water over them at load: the control sector's floor
+   * stood above the real one. That is a *height* comparison and a mover can undo
+   * it, which is exactly why it is settled here — a raised pool bottom is still
+   * the ground it was, and `poolBottom` is what keeps it drawing that way.
+   * See docs/specials.md § Deep water.
+   */
+  private markPools(): void {
+    for (let s = 0; s < this.heightSecs.length; s++) {
+      const control = this.heightSecs[s];
+      if (control < 0) continue;
+      const surface = this.map.sectors[control]?.floorHeight;
+      if (surface === undefined || surface <= (this.map.sectors[s]?.floorHeight ?? 0)) continue;
+      this.poolSecs[s] = control;
+    }
+  }
+
+  /**
+   * The sectors walled in by one pool and left out of its tag: no 242 of their
+   * own, and every side facing a 242 sector that borrows the *same* control
+   * sector. Boom draws no surface over one, which from overhead is a hole in the
+   * water rather than the island it is — see docs/specials.md § Deep water for
+   * what the renderer then does with it, and why only adjacency is settled here.
+   */
+  private markPoolIslands(): void {
+    for (let s = 0; s < this.heightSecs.length; s++) {
+      if (this.heightSecs[s] >= 0) continue;
+      let pool = -1;
+      let control = -1;
+      let enclosed = true;
+      for (const lineIndex of sectorLines(this.map, s)) {
+        const line = this.map.linedefs[lineIndex];
+        const front = line.right === NO_SIDE ? undefined : this.map.sidedefs[line.right]?.sector;
+        const back = line.left === NO_SIDE ? undefined : this.map.sidedefs[line.left]?.sector;
+        const other = front === s ? back : front;
+        // A self-referencing line borders nothing; a one-sided one is a wall the
+        // pool does not reach behind, which is what makes this sector a room.
+        if (other === s) continue;
+        if (other === undefined) {
+          enclosed = false;
+          break;
+        }
+        const theirs = this.heightSecs[other] ?? -1;
+        if (theirs < 0 || (control >= 0 && theirs !== control)) {
+          enclosed = false;
+          break;
+        }
+        control = theirs;
+        // The flat and light the surface draws with come off the pool sector
+        // itself, so one of them has to be picked: the first, they being
+        // interchangeable in every respect this reads them for.
+        if (pool < 0) pool = other;
+      }
+      if (enclosed && pool >= 0) this.islandSecs[s] = pool;
     }
   }
 
@@ -294,6 +367,35 @@ export class Transfers {
     if (control < 0) return own;
     const fake = this.map.sectors[control]?.floorHeight ?? own;
     return fake < own ? fake : own;
+  }
+
+  /**
+   * The control sector a pool bottom takes its flat and light from, or -1 for a
+   * sector that never had water over it. Fixed at load (`markPools`), so a
+   * mover raising the floor clear of the surface leaves the ground it exposes
+   * looking like the pool bottom it is rather than like the water flat the
+   * sector wears for its surface. See docs/specials.md § Deep water.
+   */
+  poolBottom(sectorIndex: number): number {
+    return this.poolSecs[sectorIndex] ?? -1;
+  }
+
+  /**
+   * The water sector this one is an island inside of, or -1. Whether the island
+   * is really under that pool's surface is left to the caller, the heights being
+   * live — see docs/specials.md § Deep water.
+   */
+  poolIsland(sectorIndex: number): number {
+    return this.islandSecs[sectorIndex] ?? -1;
+  }
+
+  /** Every island in a pool, and the water sector enclosing it — see `poolIsland`. */
+  poolIslands(): { sector: number; pool: number }[] {
+    const out: { sector: number; pool: number }[] = [];
+    for (let s = 0; s < this.islandSecs.length; s++) {
+      if (this.islandSecs[s] >= 0) out.push({ sector: s, pool: this.islandSecs[s] });
+    }
+    return out;
   }
 
   /** Every sector drawing at a fake floor, and the control sector it takes it from. */

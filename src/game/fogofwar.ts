@@ -6,6 +6,7 @@ import { buildSubSectorPolys } from '../render/bsp.ts';
 import { polygonCentroid, segmentCrossT } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
 import { decodeRuns, encodeRuns } from './snapshot.ts';
+import { computeMovableSectors } from './specials/mapscan.ts';
 import { VIEW_DISTANCE } from '../constants.ts';
 import type { WallOccluder } from '../render/mapmesh.ts';
 import type { World } from './world.ts';
@@ -63,6 +64,12 @@ export class FogOfWar {
   private wallSubsector: Int32Array;
   /** Which sector each subsector belongs to — what `closedTarget` reads to spot a solid one. */
   private sectorOf: Int32Array;
+  /**
+   * Sectors a special can drive (`computeMovableSectors`) — the half of "no vertical opening"
+   * that is shut space rather than solid geometry, and so excluded from `closedTarget`'s waiver.
+   * docs/fogofwar.md § Closed sectors.
+   */
+  private movableSectors: ReadonlySet<number>;
 
   /** Which tic each line's `blocksSight` answer was computed on, and what it was — see `testBlocker`. */
   private blockStamp: Int32Array;
@@ -89,9 +96,19 @@ export class FogOfWar {
   /** Round-robin resume point into `sights` for `tick`'s budgeted scan — see `MAX_SIGHT_TESTS_PER_TIC`. */
   private scanCursor = 0;
 
-  constructor(world: World, occluders: WallOccluder[], startX: number, startY: number) {
+  constructor(
+    world: World,
+    occluders: WallOccluder[],
+    startX: number,
+    startY: number,
+    movableSectors?: ReadonlySet<number>,
+  ) {
     this.world = world;
     const map = world.map;
+    // Passed in by `game.ts`, which has already run this scan for the mesh
+    // build; derived here only so a caller that has no reason to care (a test,
+    // a tool) still gets the right answer rather than a silently permissive one.
+    this.movableSectors = movableSectors ?? computeMovableSectors(map);
     const polys = buildSubSectorPolys(map);
 
     this.sights = new Array(polys.length).fill(null);
@@ -246,18 +263,20 @@ export class FogOfWar {
   }
 
   /**
-   * The sector of a subsector that has no vertical opening — a pillar, a shut
-   * door, a mapper's block of solid geometry — else -1. Every line bounding one
-   * blocks sight by definition, so no ray can ever land inside it and it would
-   * stay dark for the whole level, drawing as a hole. Seeing such a sector from
-   * outside is seeing all there is of it, so `testBlocker` waives its own lines
-   * while sampling it. Live, not load-time: a door that opens becomes an
-   * ordinary subsector again. docs/fogofwar.md § Closed sectors.
+   * The sector of a subsector that is **permanently** solid — no vertical opening, and no special
+   * that could ever give it one — else -1. Every line bounding one blocks sight by definition, so
+   * no ray can ever land inside it and it would stay dark for the whole level, drawing as a hole;
+   * seeing such a sector from outside is seeing all there is of it, so `testBlocker` waives its own
+   * lines while sampling it. A sector a mover can drive is excluded however shut it is now: that is
+   * space the player may yet explore, and lighting it early shows a room through its own door.
+   * The opening test is live, not load-time, so a mover's sector still reveals normally the tic it
+   * opens. docs/fogofwar.md § Closed sectors.
    */
   private closedTarget(ss: number): number {
     const index = this.sectorOf[ss];
     const sector = this.world.map.sectors[index];
-    return sector && sector.ceilHeight <= sector.floorHeight ? index : -1;
+    if (!sector || sector.ceilHeight > sector.floorHeight) return -1;
+    return this.movableSectors.has(index) ? -1 : index;
   }
 
   /**

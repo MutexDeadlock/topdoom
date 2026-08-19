@@ -195,12 +195,12 @@ surroundings don't rise out of black on frame one.
 
 ## Closed sectors
 
-**A subsector whose sector has no vertical opening waives that sector's own lines as blockers**
-while it is being sampled (`closedTarget`, `bordersTarget`). Every line bounding such a sector blocks
-sight by definition — that is what `blocksSight` tests — so no ray can ever land inside one, and
-without the waiver it stays unexplored for the whole level: a permanent **hole** in the view, its
-floor fan and anything drawn over it invisible where the geometry plainly is. Seeing a solid block
-from outside is all there is to seeing it.
+**A subsector whose sector is permanently solid waives that sector's own lines as blockers** while
+it is being sampled (`closedTarget`, `bordersTarget`). Every line bounding a sector with no vertical
+opening blocks sight by definition — that is what `blocksSight` tests — so no ray can ever land
+inside one, and without the waiver it stays unexplored for the whole level: a permanent **hole** in
+the view, its floor fan and anything drawn over it invisible where the geometry plainly is. Seeing a
+solid block from outside is all there is to seeing it.
 
 Repro: BOOMEDIT MAP01 sector 121, a closed pillar standing in sector 93's pool. Its `METAL` sides
 draw (a wall's probe point lands in the *pool's* subsector, § How reveal reaches the geometry), so
@@ -208,13 +208,30 @@ what the player sees is a pale strip with the water missing around its top — r
 hole in the water, and not fixed by anything done to the water itself. 24 of BOOMEDIT MAP01's 32
 closed subsectors were dark this way.
 
-The waiver is deliberately narrow in two ways. It is **live**, not load-time: a shut door is a closed
-sector, and the tic it opens it goes back to being sampled like any other subsector (already explored
-by then, `explored` being sticky). And it waives only the lines of the sector *being sampled* — the
-ray still stops at everything else, and only that subsector is marked, so nothing beyond a door leaf
-is revealed by passing through it. Waiving blockers by anything coarser than the target's own sector
-would leak sight through shut doors, which is the failure the quarter-unit overhang above exists to
-prevent.
+**"No vertical opening" alone is the wrong test, and a sector a mover can drive is excluded however
+shut it is now** (`computeMovableSectors`, the same load-time scan `mapmesh.ts` uses to keep mover
+geometry out of the static batch — `game.ts` passes it in rather than paying for it twice). A shut
+door, a lift parked flush, a secret closet winched to its floor are all zero-opening, and all of them
+are *space the player may yet explore*: waiving their lines lights a room through its own door.
+E1M3 sector 51 is the reported case — a 96×512 secret corridor, shut, whose whole length lit up the
+moment the player stood in front of the door at its south end, drawing as a structure behind a wall
+they could not see past. Every one of E1M3's 20 closed sectors is a door or a closet of that kind, so
+the map now reveals none of them early; BOOMEDIT MAP01's genuinely solid pillars keep the waiver.
+(The scan is slightly over-inclusive — it also carries sectors whose walls wear switch art — but a
+switch on a pillar sits on the *room's* sidedef, so a solid block does not pick one up that way.)
+
+The waiver is deliberately narrow in two further ways. The opening test is **live**, not load-time:
+the tic a mover opens, its sector goes back to being sampled like any other subsector, so a door
+reveals what is behind it exactly when the player can see through it. And it waives only the lines of
+the sector *being sampled* — the ray still stops at everything else, and only that subsector is
+marked, so nothing beyond a solid block is revealed by passing through it. Waiving blockers by
+anything coarser than the target's own sector would leak sight through shut doors, which is the
+failure the quarter-unit overhang above exists to prevent.
+
+What is deliberately *not* done is to bound the waiver by the target subsector's own linedefs, so a
+solid mass split across several subsectors lights only the near one. The BSP splits such a mass on
+minisegs, which are not blockers at all, and the camera hangs above: the player looks down on the
+whole cap of a block at once, so lighting part of it is the same hole this section exists to close.
 
 ## How reveal reaches the geometry
 

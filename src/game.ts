@@ -770,7 +770,7 @@ export class Game {
     // framed rather than mid-zoom. docs/render.md § Auto camera.
     this.autoCamera.seed(this.player, this.view.camera);
     this.view.camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
-    this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player.x, this.player.y);
+    this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player.x, this.player.y, movableSectors);
     if (restore) this.fogOfWar.restoreExplored(restore.fog);
     this.specials = new SpecialsController(
       map,

@@ -18,8 +18,8 @@ Fixed bugs
       restarting its wait
     - a lift triggered a second time now uses that line's speed and re-reads how
       far down it goes, instead of repeating its first trigger
-  - closed sectors (pillars, shut doors, solid blocks) are no longer left dark
-    forever by the fog of war, which drew them as holes in the level
+  - solid sectors (pillars, mapper-made blocks) are no longer left dark forever
+    by the fog of war, which drew them as holes in the level
   - a stair step built up out of deep water keeps the pool bottom's flat and
     light instead of turning into a patch of water
   - a sector walled in by a pool no longer leaves a hole in the water surface

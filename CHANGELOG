@@ -3,16 +3,18 @@ v0.14.2 (2026-08-1?)
 Features and improvements
   - auto camera mode (the new default): the zoom follows how open the area
     around the player is, the tilt how far the view reaches the way you look
+  - finishing a campaign ends it: an episode/game-complete card instead of
+    walking on into E1M9 or MAP31, and a pistol start in DOOM's next episode
+    where the set has one
+  - added new "Pistol start every level" setting
 
 Fixed bugs
   - fixed various rendering problems (again)
-  - dying in the finale pit in E1M8 now properly ends the episode
-  - a monster whose box hangs over a ledge: no longer freezes solid
-  - an untextured step no longer cuts a midtexture
+  - a monster whose box hangs over a ledge no longer freezes solid
   - various lightning fixes
-    - a strobe sector as bright as its neighbours blinks to black instead 
+    - a strobe sector as bright as its neighbours blinks to black instead
       of standing still
-    - a light pattern no longer dims *up* to a neighbour brighter than 
+    - a light pattern no longer dims *up* to a neighbour brighter than
       the sector itself
     - sector types 12/13 had their synced strobe speeds the wrong way round
 

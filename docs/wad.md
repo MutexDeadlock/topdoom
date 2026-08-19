@@ -250,15 +250,34 @@ Resolution order for `nextMap(map, secret)`, highest authority first:
    (UMAPINFO) for the secret one, both spellings read. `parseMapInfo` picks them up in the `{ … }`
    block form and in the old brace-less ZDoom form, with or without the `=`. A value is only used
    if it names a map **the loaded set actually has**: a `next` pointing at a level nobody provides
-   would strand the player, and it also disposes of ZDoom's finale keywords (`next = EndGame`),
-   which name no map and fall through to the rules below.
+   would strand the player. ZDoom's finale keywords (`next = EndGame`/`EndPic`/`EndBunny`/`EndCast`)
+   and UMAPINFO's own `endgame`/`endpic`/`endbunny`/`endcast` keys name no map on purpose and are
+   read as one value, `MAPINFO_END` — the set saying the campaign ends here, which needs no map to
+   exist for it. This engine runs no finale of its own (docs/hud.md § End card), so which of the
+   four a set asked for makes no difference; only an explicit `endgame = false` records nothing.
 2. **Vanilla's tables** (`vanillaNextMap`), applied by map-name scheme, again only when the level
    they name is in the set. `MAP<nn>` follows DOOM II: MAP15's secret exit leads to MAP31, MAP31's
    to MAP32, and a normal exit out of either secret level returns to MAP16. `E<x>M<y>` follows the
    episodes: any secret exit leads to `E<x>M9`, and M9's normal exit returns to the level *after*
    the one hiding its entrance — E1M4, E2M6, E3M7, E4M3, one per episode.
-3. **Nothing**, which is `null`. Vanilla ends the game at `MAP30` and at every `E<x>M8`; a PWAD map
-   set simply runs out.
+3. **Nothing**, and *which* nothing is the point.
+
+The answer is a `NextLevel`, and its three cases must stay distinct — collapsing the last two into
+one `null` is what sent MAP30 to MAP31 and E1M8 to E1M9:
+
+- `{ kind: 'map' }` — load that level.
+- `{ kind: 'end' }` — **vanilla ends the run here**: `G_DoCompleted`'s `case 8: gameaction =
+  ga_victory` for every `E<x>M8`, and its missing MAP30 case (the Icon of Sin's death *is* the
+  ending). `scope` says which of the two, and `next` carries the following episode's first map
+  (`E1M8` → `E2M1`) — named unconditionally and uncapped by the table, then kept only if the loaded
+  set provides it, so Ultimate DOOM's E1M8 continues into E2M1 while shareware's ends there. That
+  is a deliberate deviation: vanilla returns to the title screen and makes the player pick the next
+  episode (docs/hud.md § End card).
+- `{ kind: 'unknown' }` — no rule at all, for a PWAD naming its maps its own way.
+
+`case 8` sits **before** `G_DoCompleted` reads `secretexit`, so *either* exit out of an `E<x>M8`
+ends the episode — a secret exit there never reaches M9. No stock map has one, but a PWAD's E1M8
+might, and the table's order says so.
 
 A secret exit that resolves to nothing falls back to the normal one rather than doing nothing —
 `G_SecretExitLevel`'s own check, written for the German edition of DOOM II, which shipped without
@@ -266,10 +285,11 @@ the two Wolfenstein levels: with no MAP31 present the secret switch still ends t
 doesn't lead anywhere special. Here the same rule covers every PWAD that defines part of a
 progression.
 
-Where `nextMap` returns null, `Game.resolveNextMap` advances to the **next map in load order**,
-which is what every exit did before there was a progression at all. This engine has no finale to
-run instead — no victory text, no cast call — so ending the game is not yet something it can do,
-and killing the Icon of Sin drops the player into whatever map follows MAP30 in the set.
+Only on `unknown` does `Game.resolveExit` advance to the **next map in load order**, which is what
+every exit did before there was a progression at all. An `end` raises the end card instead
+(docs/hud.md § End card), and loads `next` after it where the set had one — this engine still runs
+no vanilla finale, no victory text and no cast call, but ending the run is no longer something it
+cannot do.
 
 ## Content id
 

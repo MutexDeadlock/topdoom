@@ -31,6 +31,10 @@ const DOOM2_MUSIC = [
 const INTERMISSION_MUSIC = 'D_INTER';
 const INTERMISSION_MUSIC_COMMERCIAL = 'D_DM2INT';
 
+/** `F_StartFinale`'s two: `mus_victor` after a DOOM episode, `mus_read_m` after DOOM II. */
+const FINALE_MUSIC = 'D_VICTOR';
+const FINALE_MUSIC_COMMERCIAL = 'D_READ_M';
+
 /**
  * DMX's own volume curve, from Chocolate Doom's `i_oplmusic.c`
  * (`volume_mapping_table`) — the only place it is written down, since DMX
@@ -89,4 +93,14 @@ export function vanillaMusicFor(mapName: string): string | null {
  */
 export function intermissionMusicFor(mapName: string): string {
   return COMMERCIAL_MAP.test(mapName) ? INTERMISSION_MUSIC_COMMERCIAL : INTERMISSION_MUSIC;
+}
+
+/**
+ * The track the campaign's last screen plays — `F_StartFinale`'s own `S_ChangeMusic`, keyed on the
+ * map-name shape for the same want-of-a-gamemode reason as `intermissionMusicFor`. This engine's
+ * end card is not vanilla's finale (docs/hud.md § End card), but it is the screen that stands in
+ * for it, so it takes the same music.
+ */
+export function finaleMusicFor(mapName: string): string {
+  return COMMERCIAL_MAP.test(mapName) ? FINALE_MUSIC_COMMERCIAL : FINALE_MUSIC;
 }

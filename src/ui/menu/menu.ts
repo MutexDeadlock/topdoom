@@ -14,6 +14,7 @@ import {
 import { getCameraMode, setCameraMode, type CameraMode } from '../../game/autocamera.ts';
 import { getFpsCap, setFpsCap, type FpsCap } from '../../game.ts';
 import { getInfiniteTallActors, setInfiniteTallActors } from '../../game/world.ts';
+import { getPistolStart, setPistolStart } from '../../game/inventory.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
 import { requiredWads, wadLabel, type MissingWad, type SaveMeta, type SaveWadSet } from '../../game/savegames.ts';
 import { getProfilerVisible, setProfilerVisible } from '../devmode/profilerhud.ts';
@@ -75,6 +76,7 @@ export class Menu {
   private cameraModeSelect = el<HTMLSelectElement>('cameramode-select');
   private fpsCapSelect = el<HTMLSelectElement>('fpscap-select');
   private infiniteTallCheckbox = el<HTMLInputElement>('infinitetall-checkbox');
+  private pistolStartCheckbox = el<HTMLInputElement>('pistolstart-checkbox');
   private profilerCheckbox = el<HTMLInputElement>('profiler-checkbox');
   private changelogRoot = el<HTMLDivElement>('changelog');
   private changelogText = el<HTMLPreElement>('changelog-text');
@@ -159,6 +161,7 @@ export class Menu {
     this.installCameraMode();
     this.installFpsCap();
     this.installInfiniteTall();
+    this.installPistolStart();
     this.installProfiler();
     this.installChangelog();
     this.setTab('newgame');
@@ -361,6 +364,18 @@ export class Menu {
     this.infiniteTallCheckbox.checked = getInfiniteTallActors();
     this.infiniteTallCheckbox.addEventListener('change', () => {
       setInfiniteTallActors(this.infiniteTallCheckbox.checked);
+    });
+  }
+
+  /**
+   * Whether every level is entered on a fresh inventory rather than carrying one over — off by
+   * default, read at each level transition, so it applies to the run already in progress.
+   * docs/items.md § Pistol start.
+   */
+  private installPistolStart(): void {
+    this.pistolStartCheckbox.checked = getPistolStart();
+    this.pistolStartCheckbox.addEventListener('change', () => {
+      setPistolStart(this.pistolStartCheckbox.checked);
     });
   }
 

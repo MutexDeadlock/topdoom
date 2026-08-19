@@ -1,0 +1,54 @@
+/*
+ * The campaign-over card: #intermission's own backdrop and panel, since it is the screen that
+ * replaces it once the run is over and the two are never up together. Dismissed by a key that
+ * game.ts reads, so `pointer-events: none` like every other overlay.
+ */
+#end-card {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(6, 6, 10, 0.45);
+}
+
+#end-card.hidden {
+  display: none;
+}
+
+#end-card .panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 24px 32px;
+  background: rgba(13, 13, 16, 0.9);
+  border: 1px solid var(--border);
+}
+
+/*
+ * All three lines are drawn native-size and scaled here, the level card's own pair of rules — which
+ * is also what lets the `.subject` line be either text or the episode's `M_EPI` patch without
+ * either knowing about the other.
+ */
+#end-card canvas {
+  image-rendering: pixelated;
+  width: auto;
+  display: block;
+}
+
+#end-card .title {
+  height: 26px;
+}
+
+#end-card .subject {
+  height: 20px;
+}
+
+#end-card .hint {
+  height: 13px;
+  margin-top: 10px;
+  opacity: 0.6;
+}

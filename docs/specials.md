@@ -1222,6 +1222,16 @@ alive left that player dead in the pit with the level never ending, which is the
 players meet this sector. The corpse still gets its exit: `pendingExit` is queued on the same frame
 and `Game.endingOverCorpse` takes the death overlay back down (docs/death.md § Dying on the way out).
 
+**A death from anything else in that sector ends the level too** — `SectorEffects.exitsOnDeath`,
+asked by `damagePlayer` on the killing hit. This one is a deliberate deviation: vanilla only ever
+runs the check from `P_PlayerInSpecialSector`, and `P_PlayerThink` returns at `PST_DEAD` before
+reaching it, so a monster finishing the player off in E1M8's pit leaves them dead in it with the
+episode unwon. The sector exists to end the episode over the player's body; *what* killed them there
+is not a distinction the player can see. It is also the one check deliberately **not** gated on
+`player.z === floorHeight`, unlike the damage above — the corpse need not have landed. `pendingExit`
+is set before the death overlay is armed, so `levelEnding` keeps it from being raised at all rather
+than clearing it a frame later.
+
 **Player-only**, matching vanilla, which passes a `player_t*` and never damages monsters this way.
 Dealt directly in `game/specials/sectoreffects.ts: SectorEffects.update` rather than through `SpecialsController` — a damage
 floor has no mover, nothing for that machinery to own, just `sector.special` plus the player's live

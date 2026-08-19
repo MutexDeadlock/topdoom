@@ -35,6 +35,25 @@ caps do** (`finishLevel`, called from `loadMapByIndex` before the new map loads)
 nothing else; `player->backpack`/`maxammo` are deliberately not among them. This does mean a locked
 door on the far side of a transition needs its key collected again, same as vanilla requires.
 
+## Pistol start
+
+**Settings → General → "Pistol start every level"** (`topdoom.pistolStart`, off by default) throws
+that carry-over away: every level is entered on a fresh `createInventory()` — 100 health, no armor,
+fist + pistol with 50 bullets — the way each map is balanced to be played on its own, and the way
+DOOM's own level select has always started one.
+
+The setting lives in `game/inventory.ts` (`getPistolStart`/`setPistolStart`) beside the inventory it
+replaces, and `game.ts: enterLevel` is the only reader: the one place a level *transition* installs
+an inventory, which is why loading a savegame and continuing from a checkpoint are untouched by it.
+Read at each transition rather than captured per `Game`, so toggling it mid-run applies from the
+next level on. The three ways a fresh inventory happens meet there and nowhere else — a dead
+player's reborn (docs/death.md § Player death), an episode crossing (docs/hud.md § End card), and
+this setting.
+
+The DEVMODE `N`/`P` map jump goes through `enterLevel` too, so it pistol-starts along with
+everything else while this is on. `R` after a death is unaffected on purpose: it restores the
+checkpoint written when the level was entered, which under this setting *is* a pistol start.
+
 ## Collecting things
 
 Removing a picked-up item from the world is `ThingLayer`'s job, not `Inventory`'s: each posed thing

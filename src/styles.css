@@ -12,6 +12,7 @@
 @import './ui/hud/message.css';
 @import './ui/hud/levelcard.css';
 @import './ui/hud/intermission.css';
+@import './ui/hud/endcard.css';
 @import './ui/hud/deathoverlay.css';
 @import './ui/fatalerror.css';
 @import './ui/menu/menu.css';

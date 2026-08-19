@@ -95,6 +95,19 @@ async function boot(): Promise<void> {
   const checkpoint: CheckpointStore = { write: writeAutosave, read: readAutosave };
 
   /**
+   * The campaign is over and nothing follows it: the finished `Game` is torn down and the menu
+   * reopens as a launcher — `open(false)`, so there is no "Return to game" back into a run that
+   * has ended. Called from inside the finished `Game`'s own tic, which is why `game` is nulled
+   * before `dispose()`, the same order `startLevel` uses (docs/menu.md § Session lifecycle).
+   */
+  const endSession = (): void => {
+    const finished = game;
+    game = null;
+    finished?.dispose();
+    menu.open(false);
+  };
+
+  /**
    * The one session lifecycle, for both a fresh start and a load: assemble the
    * WAD set, tear the old level down, build the new one. With `save` given it
    * additionally verifies the set against what the save was made with and
@@ -130,6 +143,7 @@ async function boot(): Promise<void> {
         save ? null : startPos,
         save?.state ?? null,
         checkpoint,
+        endSession,
       );
 
       menu.setStatus('');

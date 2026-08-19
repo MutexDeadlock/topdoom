@@ -147,6 +147,20 @@ export function drawIcon(canvas: HTMLCanvasElement, gfx: GraphicsBank, lump: str
 }
 
 /**
+ * Draws one line of `WadFont` text into a canvas sized to fit it exactly, at native pixel size for
+ * CSS to scale like `drawIcon`'s art. The shared half of every card and popup that prints a line —
+ * `ui/hud/intermission.ts`, `ui/hud/levelcard.ts`, `ui/hud/endcard.ts` — which is why it sits here
+ * beside `drawIcon` rather than in any one of them. See docs/hud.md.
+ */
+export function drawText(canvas: HTMLCanvasElement, font: WadFont, text: string): void {
+  canvas.width = Math.max(1, font.measure(text));
+  canvas.height = Math.max(1, font.height);
+  const ctx = canvas.getContext('2d')!;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  font.draw(ctx, 0, 0, text);
+}
+
+/**
  * The in-game status readout: health, armor, ammo, collected keys, and the kill/item/secret
  * strip. Static markup lives in index.html (`#hud-bar`, containing `#hud-levelstats` and
  * `#game-hud` as siblings — the strip sits outside `#game-hud`'s own bordered box); this class

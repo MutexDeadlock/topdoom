@@ -176,11 +176,12 @@ The control flow is the part worth knowing:
 
 - `Game.pendingExit` no longer loads the next map. On the frame it is consumed (still right after
   `specials.update()` has returned — see that field's own doc for why the teardown can't happen
-  inside the callback) it shows the popup and sets `intermissionActive`.
-- While `intermissionActive`, a branch at the **top** of `frame` advances nothing at all — no clock,
-  no specials, no monsters — and only re-renders the still scene under the popup. `Space`/`Enter`
-  calls `loadMapByIndex(mapIndex + 1)`, which clears the popup and the flag along with every other
-  per-level overlay.
+  inside the callback) it shows the popup and sets `popup` to `'intermission'`.
+- While `popup` is set, a branch at the **top** of `frame` advances nothing at all — no clock, no
+  specials, no monsters — and only re-renders the still scene under the popup. `Space`/`Enter`
+  enters the next level, which clears the popup and the field along with every other per-level
+  overlay. `popup` is **one field, not a flag per screen** (§ End card adds the second): the two are
+  mutually exclusive, and a field makes that unrepresentable instead of merely documented.
 - The popup ignores that key for its first `INTERMISSION_INPUT_DELAY` (`intermission.ts`). `Space`
   is *also* the use key, so without the delay a mashed exit switch dismisses the popup on the frame
   after it appears. The press that opened it can't leak through on its own — `Input.pressed` is
@@ -191,6 +192,54 @@ The control flow is the part worth knowing:
 
 Secret exits still advance by `+1` like any other (the `secret` flag is dropped in `specials.ts`),
 so there is no secret-level routing for the popup to announce.
+
+## End card
+
+`src/ui/hud/endcard.ts` (`#end-card`) is what the intermission hands over to when the exit just
+taken was the campaign's last — `NextLevel`'s `end` case, which is DOOM's `E<x>M8`, DOOM II's MAP30,
+or a MAPINFO finale keyword (docs/wad.md § Level progression). Three lines: `Episode complete` or
+`Game complete` by the `scope` the progression reported, then the episode's own `M_EPI<x>` menu
+graphic (`LevelNames.episodeGraphicFor`, under `graphicFor`'s provenance rule) falling back to the
+WAD set's label, then a hint that names what the continue key will do.
+
+**It is deliberately not vanilla's `f_finale.c`.** No typed-out `E1TEXT`/`C4TEXT` over a tiled flat,
+no `HELP2`/`VICTORY2`/`ENDPIC`, no E3 bunny scroll, no DOOM II cast call. What is reproduced is the
+one thing whose absence was a bug: that these exits end the run at all, instead of walking off the
+end of the table into E1M9/MAP31. The finale's *music* is taken (`LevelMusic.finaleTrackFor` —
+`F_StartFinale`'s `mus_victor`/`mus_read_m`), since the card is the screen standing in for it.
+
+Two deliberate deviations from vanilla, both about where the player ends up:
+
+- **The intermission still runs on `E<x>M8`.** `G_DoCompleted`'s `case 8: gameaction = ga_victory;
+  return;` returns *before* `WI_Start`, so vanilla shows no stats screen for an episode's last
+  level. This engine's intermission carries the level clock and best times, which vanilla's has no
+  equivalent of, and skipping it would silently swallow a record set on the level that most deserves
+  one. The card comes after it, on the same frozen level.
+- **A DOOM episode end carries on into the next episode** (`E<x>M8` → `E<x+1>M1`) when the loaded
+  set actually provides it, where vanilla drops to the title screen and makes the player pick.
+  `LevelProgression` is what decides whether the set has that map; the card's hint says "continue"
+  when it does and "return to the menu" when it doesn't, and the heading is unaffected either way —
+  an episode ended regardless of what follows. It **pistol-starts**: crossing into a new episode is
+  vanilla's `G_DeferedInitNew`, a new game rather than a level transition, so `enterLevel`'s
+  `reborn` gives the player a fresh `Inventory` exactly as a death does. Both continues come through
+  that one call, so which of them reborns is read off `pendingEnd` — what the *exit* ended — and not
+  off which popup happens to be up.
+
+Control flow, continuing § Intermission's:
+
+- `Game.resolveExit` (still on the frame `pendingExit` is consumed, the last moment `currentMap`
+  names the level being left) writes `nextMapIndex` — `-1` when nothing follows — and `pendingEnd`,
+  which is *only* the scope. Everything else on the card is rebuilt in `showEndCard`, which still
+  runs on the finished level, so there is no snapshot to keep in step.
+- The intermission's own continue key raises the card instead of loading anything when `pendingEnd`
+  is set (`showEndCard`), restarting the shared `intermissionTime` so that press can't carry through
+  both popups.
+- The card's continue key loads `nextMapIndex` where there is one, and otherwise calls `Game`'s
+  `onCampaignEnd` port — the session layer's cue to dispose the `Game` and reopen the menu as a
+  launcher (docs/menu.md § Session lifecycle).
+- Both popups freeze the level identically — `tic` advances nothing, `frame` draws at the tic-exact
+  pose, `saveRefusal` refuses both — and both print their lines with `hud.ts: drawText`, the shared
+  half of every card in this directory.
 
 ## Best times
 

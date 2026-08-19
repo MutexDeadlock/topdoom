@@ -64,6 +64,7 @@ import { IconOfSin } from './game/monsters/iconofsin.ts';
 import { Hud, type LevelStats } from './ui/hud/hud.ts';
 import { Crosshair } from './ui/hud/crosshair.ts';
 import { Intermission, INTERMISSION_INPUT_DELAY } from './ui/hud/intermission.ts';
+import { EndCard, type EndScope } from './ui/hud/endcard.ts';
 import { LevelCard } from './ui/hud/levelcard.ts';
 import { LevelNames } from './wad/campaign/names.ts';
 import { LevelProgression } from './wad/campaign/progression.ts';
@@ -89,6 +90,7 @@ import {
   applyPickup,
   createInventory,
   finishLevel,
+  getPistolStart,
   hasPower,
   pickupSound,
   PICKUP_RANGE,
@@ -229,18 +231,30 @@ export class Game {
    */
   private pendingExit: 'normal' | 'secret' | null = null;
   /**
-   * The map the intermission's continue key loads, resolved the moment the popup goes up rather
-   * than when it is dismissed — that is the last moment `currentMap` is still the level just
-   * finished. docs/wad.md § Level progression.
+   * The map the continue key loads, or -1 when nothing follows the exit just taken. Resolved the
+   * moment the popup goes up rather than when it is dismissed — that is the last moment
+   * `currentMap` is still the level just finished. docs/wad.md § Level progression.
    */
   private nextMapIndex = 0;
   /**
-   * True while the end-of-level popup is up: the level is finished and frozen, and `frame` advances
-   * nothing until the player presses the continue key, which is what loads the next map. Not
-   * `pause()`, which is the menu's — the popup has to keep reading input.
+   * What the exit just taken ended, or null when it merely led somewhere. Resolved with
+   * `nextMapIndex`, and for the same reason: both are answers about the level being left. Outlives
+   * the popups — it is also what makes the transition off the card a rebirth rather than an
+   * ordinary level change (`enterLevel`'s `reborn`). docs/hud.md § End card.
    */
-  private intermissionActive = false;
-  /** Seconds the popup has been up, for `INTERMISSION_INPUT_DELAY`. The only thing that still advances while it is. */
+  private pendingEnd: EndScope | null = null;
+  /**
+   * Which end-of-level popup is up, or null while the level is running. The level is finished and
+   * frozen behind either: `frame` advances nothing until the player presses the continue key. Not
+   * `pause()`, which is the menu's — a popup has to keep reading input. One field rather than a
+   * flag each, so "both at once" isn't a state that can be reached. docs/hud.md § Intermission.
+   */
+  private popup: 'intermission' | 'endcard' | null = null;
+  /**
+   * Seconds the popup has been up, for `INTERMISSION_INPUT_DELAY`. The only thing that still
+   * advances while it is. Shared by both popups, and restarted when the card takes over so one
+   * press can't dismiss them both.
+   */
   private intermissionTime = 0;
   /** Damage floors and the secret counter for the current map — see game/specials/sectoreffects.ts. */
   private sectorEffects!: SectorEffects;
@@ -278,8 +292,10 @@ export class Game {
   private message: CenterMessage;
   /** The "Entering / <level name>" card every map load raises — see ui/hud/levelcard.ts. */
   private levelCard: LevelCard;
-  /** The end-of-level popup — see ui/hud/intermission.ts and `intermissionActive`. */
+  /** The end-of-level popup — see ui/hud/intermission.ts and `popup`. */
   private intermission: Intermission;
+  /** The campaign-over card the popup hands over to — see ui/hud/endcard.ts and `popup`. */
+  private endCard: EndCard;
   /** Names levels for the card: MAPINFO, then the vanilla title table — see wad/campaign/names.ts. */
   private levelNames: LevelNames;
   /** The WAD set's `D_*` lumps, and the MAPINFO overrides of which one a level plays. */
@@ -305,6 +321,8 @@ export class Game {
    * one (the tests, mainly). docs/savegames.md § The checkpoint.
    */
   private checkpoint: CheckpointStore | null;
+  /** What the last exit of the last level calls — see the constructor parameter. */
+  private onCampaignEnd: (() => void) | null;
   /**
    * Whether *this session* has written a checkpoint, i.e. has advanced a level
    * at least once. What stops `restart` from restoring a checkpoint left in the
@@ -345,6 +363,12 @@ export class Game {
     restore: GameSnapshot | null = null,
     /** The checkpoint store, taken as a port so this class still knows nothing about IndexedDB. */
     checkpoint: CheckpointStore | null = null,
+    /**
+     * Called when the campaign is over and nothing follows: the session layer's cue to tear this
+     * `Game` down and put the menu back up (docs/menu.md § Session lifecycle). A port like
+     * `checkpoint` — this class knows nothing about the menu.
+     */
+    onCampaignEnd: (() => void) | null = null,
   ) {
     this.view = view;
     this.audio = audio;
@@ -353,6 +377,7 @@ export class Game {
     this.skill = skill;
     this.startPos = startPos;
     this.checkpoint = checkpoint;
+    this.onCampaignEnd = onCampaignEnd;
     this.savedState = restore;
     // From the save when restoring: a `?pos=` run must not become eligible for
     // best times by being saved and loaded back (docs/hud.md § Best times).
@@ -393,6 +418,7 @@ export class Game {
     this.message = new CenterMessage(gfx);
     this.levelCard = new LevelCard(gfx);
     this.intermission = new Intermission(gfx);
+    this.endCard = new EndCard(gfx);
     // Session-scoped like the banks above: which titles apply depends on the loaded file set
     // (its MAPINFO lumps and which IWAD it is), not on the current map.
     this.levelNames = new LevelNames(wad, mapInfo);
@@ -496,7 +522,8 @@ export class Game {
    */
   saveRefusal(): string | null {
     if (this.playerDead) return "you can't save while dead";
-    if (this.intermissionActive) return "you can't save during the intermission";
+    if (this.popup === 'intermission') return "you can't save during the intermission";
+    if (this.popup === 'endcard') return "you can't save once the campaign is over";
     if (this.pendingExit) return "you can't save while the level is exiting";
     return null;
   }
@@ -608,7 +635,9 @@ export class Game {
     this.message.clear();
     this.levelCard.clear();
     this.intermission.clear();
-    this.intermissionActive = false;
+    this.endCard.clear();
+    this.popup = null;
+    this.pendingEnd = null;
     this.playerActor.revive();
     this.mapIndex = (index + this.mapNames.length) % this.mapNames.length;
     const name = this.mapNames[this.mapIndex];
@@ -960,6 +989,7 @@ export class Game {
     this.message.clear();
     this.levelCard.clear();
     this.intermission.clear();
+    this.endCard.clear();
     this.playerActor.dispose();
     this.specials?.dispose();
     this.built?.group.traverse((obj) => {
@@ -1030,6 +1060,11 @@ export class Game {
     this.screenEffects.addPain(amount);
     if (this.inventory.health <= 0) {
       this.playerDead = true;
+      // Dying on an `exitBelowHealth` floor ends the level whatever killed the player, not only
+      // when that floor's own damage did it — E1M8's pit is the ending, and a baron finishing the
+      // job there must not leave the episode unwon. Set before the overlay below, which `levelEnding`
+      // then keeps from being armed at all. docs/specials.md § Damage floors.
+      if (this.sectorEffects.exitsOnDeath(this.world, this.player)) this.pendingExit = 'normal';
       // `player.update` stops running from here on, so it never writes `prev*`
       // again: leaving the window open would have every frame lerp the corpse
       // somewhere else between the last two live tics. docs/frameloop.md §
@@ -1065,10 +1100,15 @@ export class Game {
    * state here for the same reason vanilla reads it at load rather than queueing it at the exit.
    * `restart` does not come through here — it restores a checkpoint instead (docs/death.md §
    * Player death).
+   *
+   * `reborn` forces the same fresh `Inventory` on a living player: crossing into a new episode is
+   * vanilla's `G_DeferedInitNew`, not a level transition, and starts on the pistol
+   * (docs/hud.md § End card). The pistol-start setting makes *every* transition do that
+   * (docs/items.md § Pistol start) — read here, so toggling it applies to the run in progress.
    */
-  private enterLevel(index: number): void {
+  private enterLevel(index: number, reborn = false): void {
     // Before the load, which hands this very object to `weaponSystem.beginLevel`.
-    if (this.playerDead) this.inventory = createInventory();
+    if (this.playerDead || reborn || getPistolStart()) this.inventory = createInventory();
     // A savegame belongs to the level it was taken on; the checkpoint written
     // below is what `R` reloads from here on (docs/death.md § Player death).
     this.savedState = null;
@@ -1077,17 +1117,47 @@ export class Game {
   }
 
   /**
-   * Which map in the loaded set the exit just taken leads to. `LevelProgression` answers for the
-   * WAD set's own MAPINFO and for vanilla's tables; where neither knows one — the end of the game
-   * in vanilla, or a PWAD map set that runs out — the next map in load order stands in, which is
-   * what every exit did before there was a progression at all. There is no finale to run instead.
-   * docs/wad.md § Level progression.
+   * Where the exit just taken leads, into `nextMapIndex` and `pendingEnd`. `LevelProgression`
+   * answers for the WAD set's own MAPINFO and for vanilla's tables; where neither knows one — a
+   * PWAD map set naming its levels its own way — the next map in load order stands in, which is
+   * what every exit did before there was a progression at all.
+   *
+   * An exit vanilla ends the game on is the case that is *not* that fallback: it raises the end
+   * card, and only then loads the next episode's first map if the set has one.
+   * docs/wad.md § Level progression, docs/hud.md § End card.
    */
-  private resolveNextMap(secret: boolean): number {
-    const name = this.progression.nextMap(this.currentMap, secret);
-    // Non-negative whenever `name` is non-null: `LevelProgression` only ever names a map it was
-    // built from this very list.
-    return name ? this.mapNames.indexOf(name) : this.mapIndex + 1;
+  private resolveExit(secret: boolean): void {
+    const next = this.progression.nextMap(this.currentMap, secret);
+    // `indexOf` is non-negative for every name given: `LevelProgression` only ever names a map it
+    // was built from this very list. -1 is "nothing follows", which only an ending produces.
+    if (next.kind === 'end') {
+      this.pendingEnd = next.scope;
+      this.nextMapIndex = next.next ? this.mapNames.indexOf(next.next) : -1;
+      return;
+    }
+    this.pendingEnd = null;
+    this.nextMapIndex = next.kind === 'map' ? this.mapNames.indexOf(next.name) : this.mapIndex + 1;
+  }
+
+  /**
+   * Swaps the intermission for the campaign-over card, on the same frozen level and the same
+   * continue key — `intermissionTime` restarts so the press that dismissed the popup can't carry
+   * straight through this one. docs/hud.md § End card.
+   */
+  private showEndCard(scope: EndScope): void {
+    this.intermission.clear();
+    this.endCard.show({
+      scope,
+      // Still the level just finished — `enterLevel` is what moves on, and it hasn't run yet.
+      episodeGraphic: this.levelNames.episodeGraphicFor(this.currentMap),
+      subtitle: this.title,
+      continues: this.nextMapIndex >= 0,
+    });
+    this.popup = 'endcard';
+    this.intermissionTime = 0;
+    // `F_StartFinale`'s own music change, over the intermission track that is playing by now.
+    const finale = this.levelMusic.finaleTrackFor(this.currentMap);
+    if (finale) this.audio.music.play(finale);
   }
 
   /**
@@ -1237,7 +1307,7 @@ export class Game {
     // accumulator: with no further tic coming, the last two tics stay apart
     // forever while `alpha` keeps changing every frame, so the still scene
     // shakes between them. docs/frameloop.md § Interpolation.
-    this.draw(this.intermissionActive ? 1 : this.accumulator / TIC_SECONDS, rawDt);
+    this.draw(this.popup ? 1 : this.accumulator / TIC_SECONDS, rawDt);
     requestAnimationFrame(this.frame);
   };
 
@@ -1257,15 +1327,28 @@ export class Game {
     // specials, not a monster — only the still scene is redrawn under it. Space/Enter rather than
     // any key, since Escape belongs to the menu (main.ts) and would otherwise both pause and eat
     // the popup in the same press.
-    if (this.intermissionActive) {
+    if (this.popup) {
       this.intermissionTime += TIC_SECONDS;
       const go = input.pressed('Space') || input.pressed('Enter');
       input.endTic();
-      if (this.intermissionTime >= INTERMISSION_INPUT_DELAY && go) {
-        this.enterLevel(this.nextMapIndex); // clears the popup and the flag, like every other per-level overlay
+      if (this.intermissionTime < INTERMISSION_INPUT_DELAY || !go) return false;
+      // The campaign's last exit shows the card *after* the level's own stats, so the intermission
+      // hands over to it here instead of loading anything. docs/hud.md § End card.
+      if (this.popup === 'intermission' && this.pendingEnd) {
+        this.showEndCard(this.pendingEnd);
+        return false;
+      }
+      // Nothing follows the card on the last level of a set: the session is over, and the callback
+      // (main.ts) tears this `Game` down and reopens the menu.
+      if (this.nextMapIndex < 0) {
+        this.onCampaignEnd?.();
         return true;
       }
-      return false;
+      // Crossing into a new episode is a new game in vanilla, so it pistol-starts where an ordinary
+      // exit carries health, armor and weapons over — read off what the *exit* ended rather than
+      // off which popup is up, since both continues land here. docs/hud.md § End card.
+      this.enterLevel(this.nextMapIndex, this.pendingEnd !== null); // clears both popups, like every other per-level overlay
+      return true;
     }
     handleHotkeys(input, camera, (delta) => this.enterLevel(this.mapIndex + delta));
     // Set before any system runs, since specials/monsters/weapons all raise
@@ -1299,7 +1382,7 @@ export class Game {
     // The old SpecialsController's update() has now fully returned, so it's
     // safe to dispose it and swap in the next map.
     if (this.pendingExit) {
-      this.nextMapIndex = this.resolveNextMap(this.pendingExit === 'secret');
+      this.resolveExit(this.pendingExit === 'secret');
       // Before `pendingExit` is cleared, which is half of what `levelEnding` reads. Catches a
       // death that beat the exit here rather than at the boss-death fan-out: an exit-line
       // walk-over is queued and consumed with nothing in between, but a crusher can kill between.
@@ -1312,7 +1395,7 @@ export class Game {
       // the level's track when the set has no intermission lump.
       const between = this.levelMusic.intermissionTrackFor(this.currentMap);
       if (between) this.audio.music.play(between);
-      this.intermissionActive = true;
+      this.popup = 'intermission';
       this.intermissionTime = 0;
       input.endTic();
       return false;

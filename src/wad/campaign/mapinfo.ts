@@ -92,23 +92,45 @@ function normalizeMapName(name: string): string {
 export interface MapInfoEntry {
   /** The level's own title — see `parseMapInfo`'s list of the syntaxes that carry one. */
   title?: string;
-  /** Where the normal exit leads (`next`), as a map lump name. */
+  /** Where the normal exit leads (`next`), as a map lump name — or `MAPINFO_END` for a finale. */
   next?: string;
-  /** Where the secret exit leads — ZDoom spells the key `secretnext`, UMAPINFO `nextsecret`; both are read. */
+  /** Where the secret exit leads — ZDoom spells the key `secretnext`, UMAPINFO `nextsecret`; both are read. Also takes `MAPINFO_END`. */
   secretNext?: string;
   /** The `D_*` lump this level's music comes from, replacing the vanilla per-map choice (docs/music.md § Which track a level plays). */
   music?: string;
 }
 
 /**
- * A `next`/`secretnext` value as a map lump name. ZDoom also accepts finale keywords here
- * (`EndGame`, `EndPic`, `EndBunny`), which normalize to something no map is called — that is
- * deliberate: `LevelProgression` only takes a value that names a map the loaded set actually has,
- * so a finale keyword falls through to the vanilla rules rather than being mistaken for a level.
+ * The `next`/`secretNext` value meaning "the campaign ends here" rather than naming a level:
+ * ZDoom's finale keywords (`next = EndGame`, `EndPic`, `EndBunny`, `EndCast`) and UMAPINFO's own
+ * `endgame`/`endpic`/`endbunny`/`endcast` keys, which this engine treats alike — it runs no finale
+ * of its own, so which one a set asked for makes no difference (docs/hud.md § End card). No map
+ * can collide with it: `@` is not a character a lump name carries.
+ */
+export const MAPINFO_END = '@END';
+
+/** ZDoom's finale keywords as an exit value; anything else there is a map name. */
+const FINALE_KEYWORD = /^end(game|pic|bunny|cast|demon|title)/i;
+
+/**
+ * A `next`/`secretnext` value as a map lump name, or `MAPINFO_END` for one of ZDoom's finale
+ * keywords. `LevelProgression` only takes a name the loaded set actually provides, so anything
+ * else unrecognised falls through to the vanilla rules rather than being mistaken for a level.
  */
 function exitValue(token: Token | undefined): string | undefined {
   if (!token || token.text === '{' || token.text === '}' || token.text === '=') return undefined;
+  if (FINALE_KEYWORD.test(token.text)) return MAPINFO_END;
   return normalizeMapName(token.text);
+}
+
+/**
+ * UMAPINFO spells the same thing as a key of its own — `endgame = true`, `endpic = "CREDIT"`,
+ * `endbunny`/`endcast` — which overrides whatever `next` said. The key alone is the statement, so
+ * its value is only read to spot an explicit `false`/`0`, which records nothing at all.
+ */
+function endValue(token: Token | undefined): string | undefined {
+  const off = token && /^(false|0)$/i.test(token.text);
+  return off ? undefined : MAPINFO_END;
 }
 
 /**
@@ -134,6 +156,10 @@ const PROPERTY_KEYS: Record<
   secretnext: { field: 'secretNext', value: exitValue },
   nextsecret: { field: 'secretNext', value: exitValue },
   music: { field: 'music', value: musicValue },
+  endgame: { field: 'next', value: endValue },
+  endpic: { field: 'next', value: endValue },
+  endbunny: { field: 'next', value: endValue },
+  endcast: { field: 'next', value: endValue },
 };
 
 /** One `PROPERTY_KEYS` read at `keyIndex`, applied to `entry` — shared by both syntax walkers. */

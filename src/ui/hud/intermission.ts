@@ -4,11 +4,15 @@
  */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 import type { BestTimeResult } from '../../game/besttimes.ts';
-import { formatClock, percentOf, LEVEL_STATS_GREEN, type LevelStats } from './hud.ts';
+import { drawText, formatClock, percentOf, LEVEL_STATS_GREEN, type LevelStats } from './hud.ts';
 import { WadFont, COLOR_YELLOW } from './wadfont.ts';
 
-/** What the player has to press to leave the popup — see `Game.frame`'s intermission branch. */
-const CONTINUE_HINT = 'Press SPACE to continue';
+/**
+ * What the player has to press to leave the popup — see `Game.frame`'s intermission branch. Shared
+ * with `ui/hud/endcard.ts`, the other half of that one continue-key flow (docs/hud.md § End card):
+ * both popups are dismissed by the same key and must not describe it differently.
+ */
+export const CONTINUE_HINT = 'Press SPACE to continue';
 
 /**
  * How long the popup ignores that key. `Space` both uses the exit switch and dismisses the popup,
@@ -59,16 +63,8 @@ export class Intermission {
     // with either value font gives the same column.
     this.percentColumnWidth = this.yellowFont.measure('100%');
     // Neither of these depends on the level, so they're drawn once per Game rather than per exit.
-    this.drawText(this.timeLabelCanvas, this.redFont, 'Your time');
-    this.drawText(this.hintCanvas, this.redFont, CONTINUE_HINT);
-  }
-
-  private drawText(canvas: HTMLCanvasElement, font: WadFont, text: string): void {
-    canvas.width = Math.max(1, font.measure(text));
-    canvas.height = Math.max(1, font.height);
-    const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    font.draw(ctx, 0, 0, text);
+    drawText(this.timeLabelCanvas, this.redFont, 'Your time');
+    drawText(this.hintCanvas, this.redFont, CONTINUE_HINT);
   }
 
   /**
@@ -112,7 +108,7 @@ export class Intermission {
    */
   private drawBestLines(record: BestTimeResult | null): void {
     this.recordCanvas.classList.toggle('hidden', !record?.isNewBest);
-    if (record?.isNewBest) this.drawText(this.recordCanvas, this.greenFont, RECORD_TEXT);
+    if (record?.isNewBest) drawText(this.recordCanvas, this.greenFont, RECORD_TEXT);
 
     // With no previous time there is nothing to show: the run that just ended *is* the record, and
     // the line above already says so.
@@ -130,7 +126,7 @@ export class Intermission {
     this.drawStatLine(this.itemsCanvas, 'Items', stats.items, stats.totalItems);
     this.drawStatLine(this.secretsCanvas, 'Secrets', stats.secrets, stats.totalSecrets);
     // Always yellow, records included — the green `NEW BEST TIME!` line below is what announces one.
-    this.drawText(this.timeCanvas, this.yellowFont, formatClock(stats.elapsedSeconds));
+    drawText(this.timeCanvas, this.yellowFont, formatClock(stats.elapsedSeconds));
     this.drawBestLines(record);
     this.root.classList.remove('hidden');
   }

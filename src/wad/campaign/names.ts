@@ -197,6 +197,17 @@ export function levelNamePatch(mapName: string): string | undefined {
   return undefined;
 }
 
+/**
+ * The menu graphic naming the episode `mapName` belongs to (`M_EPI1`-`M_EPI4`, `m_menu.c`'s own
+ * `EpiDef` patches), or undefined for a map outside the `E<x>M<y>` scheme. The episode's *name*
+ * exists nowhere as a string in vanilla — only as these four graphics — which is why the end card
+ * blits one rather than printing a title (docs/hud.md § End card).
+ */
+function episodeNamePatch(mapName: string): string | undefined {
+  const doom1 = /^E(\d)M\d$/.exec(mapName);
+  return doom1 ? `M_EPI${doom1[1]}` : undefined;
+}
+
 /** Everything the two resolvers below need about one map, gathered from the loaded WAD set. */
 export interface LevelNameSources {
   /** The map's `levelname` from a MAPINFO/UMAPINFO lump, if any file in the set defines one. */
@@ -268,11 +279,24 @@ export class LevelNames {
    * docs/wad.md § Level names.
    */
   graphicFor(mapName: string): string | undefined {
-    const upper = mapName.toUpperCase();
-    const patch = levelNamePatch(upper);
+    return this.patchFor(mapName, levelNamePatch(mapName.toUpperCase()));
+  }
+
+  /**
+   * The `M_EPI` graphic naming this map's episode, under the same provenance rule as `graphicFor`:
+   * a PWAD's own `E1M8` must not announce itself with the IWAD's "Knee-Deep in the Dead". DOOM II's
+   * IWAD carries `M_EPI1`-`M_EPI3` unused, which costs nothing here — no `MAP<nn>` has an episode
+   * to ask about. docs/hud.md § End card.
+   */
+  episodeGraphicFor(mapName: string): string | undefined {
+    return this.patchFor(mapName, episodeNamePatch(mapName.toUpperCase()));
+  }
+
+  /** The shared half of the two lookups above: the patch, if the set has it and it belongs to this map. */
+  private patchFor(mapName: string, patch: string | undefined): string | undefined {
     const lump = patch ? this.wad.find(patch) : undefined;
     if (!lump) return undefined;
-    const provider = this.wad.providerOf(upper);
+    const provider = this.wad.providerOf(mapName.toUpperCase());
     if (provider?.type === 'PWAD' && lump.source !== provider) return undefined;
     return patch;
   }

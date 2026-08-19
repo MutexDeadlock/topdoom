@@ -287,6 +287,11 @@ The **intermission** plays `D_INTER` (`D_DM2INT` on a `MAPxx` set — `intermiss
 reading the map-name shape the way `vanillaMusicFor` does), vanilla's own
 `S_ChangeMusic(mus_inter)` — and keeps the level's track when the set carries no such lump.
 
+The **end card** takes it one further with `F_StartFinale`'s own change: `D_VICTOR` after a DOOM
+episode, `D_READ_M` after DOOM II (`finaleMusicFor`, keyed the same way), again keeping whatever is
+playing when the lump is missing. The card is not vanilla's finale (docs/hud.md § End card), but it
+is the screen standing in for it, so it takes that screen's music.
+
 ## Getting it to the speakers
 
 There is no `AudioWorklet`. The chip renders **quarter-second chunks on the main thread**, each

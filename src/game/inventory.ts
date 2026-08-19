@@ -394,6 +394,29 @@ export function finishLevel(inv: Inventory): void {
   for (const p of POWER_IDS) inv.powers[p] = 0;
 }
 
+const PISTOL_START_STORAGE_KEY = 'topdoom.pistolStart';
+
+/**
+ * Whether every level is entered on a fresh `createInventory()` instead of carrying health, armor,
+ * ammo and weapons over — the speedrunners' "pistol start", off by default and not vanilla's
+ * behavior for an ordinary exit (it is what vanilla does between *episodes*, and what its level
+ * select has always done). Read by `game.ts: enterLevel`, the one place a level transition installs
+ * an inventory. docs/items.md § Pistol start.
+ *
+ * Module-level rather than per-`Game`, for the reason `getInfiniteTallActors` is: it is a
+ * settings-tab preference that has to apply to the run already in progress.
+ */
+let pistolStart = globalThis.localStorage?.getItem(PISTOL_START_STORAGE_KEY) === 'true';
+
+export function getPistolStart(): boolean {
+  return pistolStart;
+}
+
+export function setPistolStart(enabled: boolean): void {
+  pistolStart = enabled;
+  globalThis.localStorage?.setItem(PISTOL_START_STORAGE_KEY, String(enabled));
+}
+
 /**
  * Vanilla's own `damage < 1000` gate on invulnerability (and godmode) in
  * `P_DamageMobj`: the powerup ignores every ordinary hit, but a big enough

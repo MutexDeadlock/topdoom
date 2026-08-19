@@ -3,7 +3,7 @@
  * See docs/hud.md § Level card.
  */
 import type { GraphicsBank } from '../../wad/graphics.ts';
-import { drawIcon } from './hud.ts';
+import { drawIcon, drawText } from './hud.ts';
 import { WadFont, type WadFontRecolor } from './wadfont.ts';
 
 /**
@@ -55,15 +55,7 @@ export class LevelCard {
     this.gfx = gfx;
     this.redFont = new WadFont(gfx);
     this.greyFont = new WadFont(gfx, LEVEL_NAME_GREY);
-    this.draw(this.enterCanvas, this.redFont, ENTERING);
-  }
-
-  private draw(canvas: HTMLCanvasElement, font: WadFont, text: string): void {
-    canvas.width = Math.max(1, font.measure(text));
-    canvas.height = Math.max(1, font.height);
-    const ctx = canvas.getContext('2d')!;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    font.draw(ctx, 0, 0, text);
+    drawText(this.enterCanvas, this.redFont, ENTERING);
   }
 
   /**
@@ -74,7 +66,7 @@ export class LevelCard {
    */
   show(name: string, patch?: string): void {
     if (!patch || !drawIcon(this.nameCanvas, this.gfx, patch)) {
-      this.draw(this.nameCanvas, this.greyFont, name);
+      drawText(this.nameCanvas, this.greyFont, name);
     }
     this.secondsLeft = CARD_SECONDS;
     this.root.style.opacity = '1';

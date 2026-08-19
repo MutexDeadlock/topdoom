@@ -8,7 +8,7 @@ import { decodeMidi } from './music/midi.ts';
 import { decodeMus } from './music/mus.ts';
 import { OplChip } from './music/opl.ts';
 import { OplSynth } from './music/synth.ts';
-import { intermissionMusicFor, vanillaMusicFor } from './music/tables.ts';
+import { finaleMusicFor, intermissionMusicFor, vanillaMusicFor } from './music/tables.ts';
 import type { Song } from './music/defs.ts';
 
 /**
@@ -401,6 +401,15 @@ export class LevelMusic {
    */
   intermissionTrackFor(mapName: string): string | null {
     const track = intermissionMusicFor(mapName);
+    return this.bank.has(track) ? track : null;
+  }
+
+  /**
+   * The track the end card after `mapName` plays — `F_StartFinale`'s `mus_victor`/`mus_read_m` —
+   * or null to keep whatever is playing when the set carries no such lump.
+   */
+  finaleTrackFor(mapName: string): string | null {
+    const track = finaleMusicFor(mapName);
     return this.bank.has(track) ? track : null;
   }
 }

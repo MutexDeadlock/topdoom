@@ -329,6 +329,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
 | `topdoom.profiler` | `ui/devmode/profilerhud.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
 | `topdoom.infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
+| `topdoom.pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |
 | `topdoom.skill` | `ui/menu/menu.ts` | § Difficulty above |
 | `topdoom.selection` | `ui/menu/menu.ts` | § Remembered selection below |
 | `topdoom.bestTimes` | `game/besttimes.ts` | docs/hud.md § Best times |
@@ -394,6 +395,11 @@ Rules that hold this together:
   on `Loading …` forever, which reads as "hung" rather than "your browser can't run this". The
   GPU-specific message is only shown when the error actually looks like a WebGL failure, so an
   unrelated bug isn't misreported as a GPU problem.
+- **A finished campaign ends the session.** `Game` takes an `onCampaignEnd` port beside its
+  checkpoint store, called when the end card's continue key has nowhere left to go (docs/hud.md
+  § End card). `endSession` nulls `game` *before* disposing it — the call arrives from inside that
+  very `Game`'s tic — and reopens the menu with `open(false)`, as a launcher: there is no returning
+  to a run that is over.
 - **`audio.resume()` runs synchronously before `startLevel`'s first `await`**, while still inside the
   click handler — the only moment a browser reliably lets an `AudioContext` start. A `?map=` deep link
   never gets that click, so `boot` also arms one-shot `pointerdown`/`keydown` unlockers.

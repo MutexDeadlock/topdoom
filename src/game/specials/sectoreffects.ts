@@ -3,7 +3,7 @@
  * roll) and the secret-found tally. See docs/specials.md § Damage floors and § Secret sectors.
  */
 import type { DoomMap } from '../../wad/map.ts';
-import type { Pos3 } from '../../types.ts';
+import type { Pos2, Pos3 } from '../../types.ts';
 import type { World } from '../world.ts';
 import { hasPower, type Inventory } from '../inventory.ts';
 import { DAMAGE_FLOOR_INTERVAL, SUIT_LEAK_CHANCE } from './tables.ts';
@@ -105,6 +105,19 @@ export class SectorEffects {
     for (const effect of effects) {
       if (!suitBlocks(effect, inv)) damage(effect.amount);
     }
+  }
+
+  /**
+   * Whether dying at this point ends the level: the sector there is an `exitBelowHealth` floor,
+   * E1M8's sector 66 and nothing else in stock DOOM. A deliberate deviation — vanilla checks this
+   * only from `P_PlayerInSpecialSector`, which `P_PlayerThink` skips for a dead player, so a
+   * monster killing the player in the pit leaves them dead in it with the episode unfinished.
+   * Deliberately not gated on `player.z`, unlike the damage above: the sector's whole purpose is
+   * the ending, whether or not the corpse had landed. docs/specials.md § Damage floors.
+   */
+  exitsOnDeath(world: World, at: Pos2): boolean {
+    const sector = world.sectorAt(at.x, at.y);
+    return sector ? decodeSectorType(sector.special).damage?.exitBelowHealth !== undefined : false;
   }
 
   /**

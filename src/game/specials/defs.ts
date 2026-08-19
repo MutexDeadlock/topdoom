@@ -647,8 +647,9 @@ export interface SpecialDef {
  * **`suit` is deliberately not uniform**, matching vanilla: blocked outright,
  * leaking `SUIT_LEAK_CHANCE` of hits, or ignored entirely for E1M8's finale
  * type, which is scripted to end the level rather than survived.
- * `exitBelowHealth` is that same finale quirk. See docs/specials.md § Damage
- * floors.
+ * `exitBelowHealth` is that same finale quirk — tested every frame the player
+ * stands there and down to 0 health, so the pulse that kills them still exits.
+ * See docs/specials.md § Damage floors.
  */
 export interface DamageFloorEffect {
   amount: number;

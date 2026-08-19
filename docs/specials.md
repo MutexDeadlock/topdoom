@@ -1213,6 +1213,15 @@ Two deliberate simplifications:
 plus E1M8's finale special (11, 20 HP, which also ends the level once it drops the player to 10 HP or
 below — vanilla's inline `G_ExitLevel()` in that same case).
 
+That exit test sits **outside** the damage pulse and has **no lower bound**, both as in vanilla's
+`case 11`, where `if (player->health <= 10) G_ExitLevel();` follows the `!(leveltime&0x1f)` hit
+rather than living inside it. So a player who steps in already under 10 HP exits on the spot, and —
+the case that matters on E1M8's own sector 66 — a full-health player, whose 100 HP the 20-HP pulses
+walk straight down through 20 to 0, exits on the pulse that kills them. Requiring them to still be
+alive left that player dead in the pit with the level never ending, which is the one way most
+players meet this sector. The corpse still gets its exit: `pendingExit` is queued on the same frame
+and `Game.endingOverCorpse` takes the death overlay back down (docs/death.md § Dying on the way out).
+
 **Player-only**, matching vanilla, which passes a `player_t*` and never damages monsters this way.
 Dealt directly in `game/specials/sectoreffects.ts: SectorEffects.update` rather than through `SpecialsController` — a damage
 floor has no mover, nothing for that machinery to own, just `sector.special` plus the player's live

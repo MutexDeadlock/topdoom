@@ -14,7 +14,7 @@ import type { SectorEffectsSnapshot } from '../snapshot.ts';
 
 /** What one frame's `SectorEffects.update` did, for the caller to realize (sound, message, level exit). */
 export interface SectorEffectResult {
-  /** An `exitBelowHealth` floor just dropped the player to its threshold — end the level. */
+  /** The player is standing on an `exitBelowHealth` floor at or below its threshold, dead or alive — end the level. */
   exit: boolean;
   /** The player just entered a secret sector, on that single frame only (`sector.special` is cleared with it). */
   secretFound: boolean;
@@ -151,15 +151,16 @@ export class SectorEffects {
       return { exit: false, secretFound };
     }
     this.timer -= dt;
-    if (this.timer > 0) return { exit: false, secretFound };
-    // The interval keeps running even when a suit blocks the hit, matching
-    // vanilla's own global `leveltime&0x1f` clock: the suit skips the damage,
-    // it doesn't bank it up for the moment it expires.
-    this.timer += DAMAGE_FLOOR_INTERVAL;
-    if (suitBlocks(effect, inv)) return { exit: false, secretFound };
-    damage(effect.amount);
-    const exit =
-      effect.exitBelowHealth !== undefined && inv.health > 0 && inv.health <= effect.exitBelowHealth;
+    if (this.timer <= 0) {
+      // The interval keeps running even when a suit blocks the hit, matching
+      // vanilla's own global `leveltime&0x1f` clock: the suit skips the damage,
+      // it doesn't bank it up for the moment it expires.
+      this.timer += DAMAGE_FLOOR_INTERVAL;
+      if (!suitBlocks(effect, inv)) damage(effect.amount);
+    }
+    // Tested every frame the player stands here and at any health down to 0, *outside* the damage
+    // pulse above — both are load-bearing on E1M8's sector 66. docs/specials.md § Damage floors.
+    const exit = effect.exitBelowHealth !== undefined && inv.health <= effect.exitBelowHealth;
     return { exit, secretFound };
   }
 }

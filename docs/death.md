@@ -237,6 +237,10 @@ there too, which is the real hazard: an overlay offering "press R" over a level 
 *finished* would restart it. `saveRefusal` is deliberately **not** widened to `levelEnding` — a save
 taken mid-cascade restores mid-cascade, since `IconSnapshot` carries `exitTimer`.
 
+E1M8's sector 66 is the other site of the same shape, and the vanilla one: its special-11 floor
+exits at 10 HP or below, which for a full-health player is the 20-HP pulse that takes them from 20
+to 0 (docs/specials.md § Damage floors). The queued exit and the death land on the same frame there.
+
 **The two deaths are usually a few tics apart, not simultaneous**, so cancelling the overlay is not
 enough on its own — MAP10's chain kills the player one blast before the brain, and an overlay raised
 on the killing frame flashes up for those tics before `endingOverCorpse` reaches it.

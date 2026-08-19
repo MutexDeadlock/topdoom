@@ -6,6 +6,7 @@ Features and improvements
 
 Fixed bugs
   - fixed various rendering problems (again)
+  - dying in the finale pit in E1M8 now properly ends the episode
   - a monster whose box hangs over a ledge: no longer freezes solid
   - an untextured step no longer cuts a midtexture
   - various lightning fixes

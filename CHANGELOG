@@ -1,3 +1,20 @@
+v0.14.3 (2026-08-19)
+
+Features and improvements
+
+Fixed bugs
+  - a door reopened after a close line no longer shuts itself again a few
+    seconds later, which could seal the player in (EPIC.WAD MAP01)
+  - close-door lines close straight away instead of pausing at the top first
+  - pressing use on an open door now shuts it, as in vanilla, instead of
+    restarting its wait
+  - a lift triggered a second time now uses that line's speed and re-reads how
+    far down it goes, instead of repeating its first trigger
+
+
+
+===============================================================================
+
 v0.14.2 (2026-08-19)
 
 Features and improvements

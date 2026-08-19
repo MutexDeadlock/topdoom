@@ -155,6 +155,15 @@ export interface DoorEffect {
    * CdO doors wait their own delay field instead (`EV_DoGenDoor`).
    */
   closeWaitSeconds?: number;
+  /**
+   * Whether this trigger takes over a door that is still moving instead of
+   * being refused — `EV_VerticalDoor`'s reuse branch, which Boom narrowed to
+   * the five repeatable raise numbers it names literally (1/26-28/117), so
+   * this is set on exactly those and nothing else. Absent everywhere else on
+   * purpose: a generalized Push door is `manual` and `openClose` too, but
+   * falls outside that switch. See docs/specials.md § Retriggering a door.
+   */
+  reverseWhenMoving?: true;
 }
 
 /**

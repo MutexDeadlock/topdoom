@@ -375,11 +375,13 @@ outside demo compatibility, having marked it `//jff 02/12/98 doesn't work` — s
 in both eras, and § One-way ceiling movers still describes it correctly.
 
 "Active" is about *state*, not presence. Vanilla removes a thinker and clears `specialdata` the
-instant it stops; this engine keeps the finished record (a lift re-triggers off its own
-`restHeight`), so the predicates read the state: a `'done'` floor/ceiling, a `'rest'` lift, a
-`'stopped'` crusher and an `'open'`/`'closed'` door are all free to be triggered again. The two
+instant it stops; this engine keeps the finished record, so the predicates read the state: a
+`'done'` floor/ceiling, a `'rest'` lift, a `'stopped'` crusher and an `'open'`/`'closed'` door are
+all free to be triggered again — and being triggered again means being **rebuilt from the new
+trigger's effect**, never resumed on the spent one's terms (§ Retriggering a door). The two
 re-triggers vanilla *does* honor are handled by their own callers before this is consulted — a door
-reverses (`EV_VerticalDoor`) and a stopped crusher restarts (`P_ActivateInStasis`).
+reverses (`EV_VerticalDoor`, § Retriggering a door) and a stopped crusher restarts
+(`P_ActivateInStasis`).
 
 **The savegame reads the class back off `mover.kind`, not off which field it arrived in.** A save
 written before the split holds every kind in `SpecialsSnapshot.movers`; `ceilingMovers` is a new
@@ -395,6 +397,59 @@ a player who walks straight over after pressing the switch. The guard was previo
 and inconsistent: `triggerFloor` only refused another *floor*, and `triggerLift` refused nothing.
 The class split does not reopen this: `FloorMover` and `LiftMover` are both floor-class, so they
 still contend for the one slot exactly as they did.
+
+## Retriggering a door
+
+**A finished door is rebuilt, never reused.** `triggerDoor`'s split is vanilla's
+`if (sec->specialdata) continue;`: a sector whose ceiling mover is still *moving* refuses the
+trigger outright, and one whose door record has settled (`'open'`/`'closed'` — a thinker vanilla
+would have removed) gets a **fresh mover carrying the new trigger's own mode, speed and wait**.
+Keeping the record around is this engine's own bookkeeping, and it must not leak the spent
+trigger's terms into the next one.
+
+**Repro: EPIC.WAD MAP01, sector 168 (tag 30)** — the 8×8 pillar that seals alcove 167, leaving
+28-unit gaps either side, narrower than the player. Line 1148 (W1 blazing close) shuts it; line 1166
+(S1 open-stay) is the switch that reopens it. Reusing the close's record left the reopened pillar on
+`closeOnly`, so it rose, sat out `DOOR_WAIT` and shut again a few seconds later — sealing in anyone
+who had stepped through, with the one-shot switch already spent. The same reuse ran the reopen at
+the *blazing* speed and sound the close line had asked for.
+
+**A closing door heads straight down.** `EV_DoDoor`'s `close`/`blazeClose`/`close30ThenOpen` set
+`direction = -1` at trigger time (`p_doors.c`), so `closeOnly` starts in `'lowering'` — it never
+moves to the open height first, and never waits there.
+
+**Only a repeatable raise press takes over a live door.** `EV_DoDoor` `continue`s past a moving
+sector and reports nothing, which leaves an S1 switch unflipped and unspent for the next attempt.
+`EV_VerticalDoor` is the one path that takes over a door already in motion, and Boom narrowed even
+that to the **repeatable raise** numbers it names literally — 1/26-28/117 (`p_doors.c`, cph
+2001/04/05).
+
+That set is **enumerated, not inferred**: `DoorEffect.reverseWhenMoving` is set on those five table
+entries (`raiseDoor` in `specials/tables.ts`) and nowhere else, because "manual and open-wait-close"
+is not the same set — a generalized Push door (0x3C0F, say) is both, and still falls outside Boom's
+switch. Everything not flagged is refused while the door moves; vanilla instead stacks a second
+thinker on the sector, which is a leak this engine has no reason to reproduce.
+
+It writes `door->direction` and nothing else — the running door keeps its own type, speed and wait:
+
+| Door is | The press does |
+|---|---|
+| going down | back up |
+| going up, or waiting at the top | straight down — shutting the door behind you |
+
+**Both reversals are silent**, vanilla returning before its sound switch; the *automatic* close at
+the end of the wait still announces itself from `tickDoor`. A press does not restart the wait, and
+a door parked at the bottom on a delay timer (`'holdClosed'`, § Delayed doors) is left alone rather
+than reproducing vanilla's reading of it — which restarts a `close30ThenOpen`'s 30s wait and bricks
+a `raiseIn5Mins` outright.
+
+**The rule is not the door's alone: `triggerLift` follows it too.** A `'rest'`ing lift used to be
+restarted in place, keeping the *previous* trigger's speed, wait and cached `downHeight`; it is now
+rebuilt like a door, so `EV_DoPlat`'s `plat->low = P_FindLowestFloorSurrounding` is re-read per
+trigger and a blazing line no longer runs at a slow line's speed (`tests/game/lifts.test.ts`). That
+leaves one invariant across every mover here — **`moverActive` false ⇒ rebuild from the new
+effect** — whose only exceptions are the two vanilla itself makes: stasis (a lift or crusher frozen
+by 54/89/57/74, where `specialdata` was never cleared) and the raise press above.
 
 ## Teleporters
 

@@ -1405,136 +1405,68 @@ export class SpecialsController {
     return DOOR_SOUNDS[effect.speed >= DOOR_SPEED_FAST ? 'fast' : 'normal'];
   }
 
+  /**
+   * `EV_DoDoor` against one tag-matched sector, and `EV_VerticalDoor` against a
+   * manual door's own back sector — returning that sector's share of vanilla's
+   * `rtn`. A settled door record is rebuilt from this trigger's effect rather
+   * than reused, and only a `reverseWhenMoving` press touches a door still in
+   * motion. See docs/specials.md § Retriggering a door.
+   */
   private triggerDoor(sectorIndex: number, effect: DoorEffect): boolean {
-    const existing = this.ceilingMovers.get(sectorIndex);
-    const sounds = this.doorSounds(effect);
-    if (!existing || existing.kind !== 'door') {
-      if (this.ceilingActive(sectorIndex)) return false;
-      const sector = this.map.sectors[sectorIndex];
-      const closeThenOpen = effect.mode === 'closeThenOpen';
-      // A closeThenOpen door is authored already open, and reopens to
-      // wherever it already sits — vanilla's own `door->topheight =
-      // sec->ceilingheight;` (p_doors.c), unlike every other DoorMode here,
-      // which always computes a fresh neighbor-ceiling target.
-      const openHeight = closeThenOpen ? sector.ceilHeight : lowestNeighborCeiling(this.map, sectorIndex) - DOOR_OPEN_GAP;
-      const closeHeight = sector.floorHeight;
-      this.setMover(sectorIndex, {
-        kind: 'door',
-        sectorIndex,
-        effect,
-        openHeight,
-        closeHeight,
-        state: closeThenOpen ? 'lowering' : 'raising',
-        holdRemaining: 0,
-      });
-      // EV_DoDoor's own per-direction sound. Vanilla suppresses the *opening*
-      // one for a door already at its target height (`if (door->topheight !=
-      // sec->ceilingheight)`); that case can't reach here, since a door with
-      // nothing to open is one this engine gives no mover at all.
-      this.playSector(sectorIndex, closeThenOpen ? sounds.close : sounds.open);
+    // `ceilingActive` is vanilla's `sec->specialdata`, so a settled
+    // ('open'/'closed') record falls through to a new mover below.
+    if (this.ceilingActive(sectorIndex)) {
+      const running = this.ceilingMovers.get(sectorIndex);
+      if (!effect.reverseWhenMoving || running?.kind !== 'door' || !this.moverActive(running)) return false;
+      // `EV_VerticalDoor`'s reuse branch writes `door->direction` and nothing
+      // else, and returns before its sound switch — hence no `playSector`
+      // here. `holdClosed` is left out: a door parked at the bottom on a delay
+      // timer (§ Delayed doors) has no direction to reverse.
+      if (running.state !== 'holdClosed') running.state = running.state === 'lowering' ? 'raising' : 'lowering';
       return true;
     }
-    // A door this engine still has a record of is one vanilla either left a
-    // thinker on (mid-motion: `EV_DoDoor` `continue`s, rtn 0) or had already
-    // finished and removed (`'open'`/`'closed'`: a fresh thinker, rtn 1) —
-    // exactly `ceilingActive`. The re-trigger behavior below is unchanged.
-    const mover = existing;
-    const fresh = !this.ceilingActive(sectorIndex);
-    if (effect.mode === 'closeOnly' || effect.mode === 'closeThenOpen') {
-      mover.state = 'lowering';
-      this.playSector(sectorIndex, sounds.close);
-      return fresh;
-    }
-    if (effect.mode === 'openOnly') {
-      if (mover.state === 'closed' || mover.state === 'lowering') {
-        mover.state = 'raising';
-        this.playSector(sectorIndex, sounds.open);
-      }
-      return fresh;
-    }
-    // Retriggering an open door only resets its wait — no sound, matching
-    // vanilla, which just writes `door->topcountdown` and never reaches
-    // EV_DoDoor's sound switch for an already-running thinker.
-    if (mover.state === 'closed' || mover.state === 'open') {
-      mover.state = 'raising';
-      this.playSector(sectorIndex, sounds.open);
-    } else if (mover.state === 'hold') {
-      mover.holdRemaining = effect.waitSeconds;
-    } else if (mover.state === 'lowering') {
-      mover.state = 'raising';
-      this.playSector(sectorIndex, sounds.open);
-    }
-    return fresh;
+    const sector = this.map.sectors[sectorIndex];
+    const closeThenOpen = effect.mode === 'closeThenOpen';
+    // EV_DoDoor's `close`/`blazeClose`/`close30ThenOpen` set `direction = -1`
+    // at trigger time: a closing door heads straight down, with no stop at the
+    // open height on the way.
+    const closing = closeThenOpen || effect.mode === 'closeOnly';
+    // A closeThenOpen door is authored already open, and reopens to
+    // wherever it already sits — vanilla's own `door->topheight =
+    // sec->ceilingheight;` (p_doors.c), unlike every other DoorMode here,
+    // which always computes a fresh neighbor-ceiling target.
+    const openHeight = closeThenOpen ? sector.ceilHeight : lowestNeighborCeiling(this.map, sectorIndex) - DOOR_OPEN_GAP;
+    this.setMover(sectorIndex, {
+      kind: 'door',
+      sectorIndex,
+      effect,
+      openHeight,
+      closeHeight: sector.floorHeight,
+      state: closing ? 'lowering' : 'raising',
+      holdRemaining: 0,
+    });
+    // EV_DoDoor's own per-direction sound. Vanilla suppresses the *opening*
+    // one for a door already at its target height (`if (door->topheight !=
+    // sec->ceilingheight)`); that case can't reach here, since a door with
+    // nothing to open is one this engine gives no mover at all.
+    this.playSector(sectorIndex, this.doorSounds(effect)[closing ? 'close' : 'open']);
+    return true;
   }
 
+  /**
+   * `EV_DoPlat` against one tag-matched sector, returning that sector's share
+   * of vanilla's `rtn`. Like `triggerDoor`, a settled record is rebuilt from
+   * this trigger's own effect rather than restarted in place — see
+   * docs/specials.md § Retriggering a door.
+   */
   private triggerLift(sectorIndex: number, effect: LiftEffect): boolean {
     const target = effect.target ?? 'lowestNeighborFloor';
     const existing = this.floorMovers.get(sectorIndex);
-    if (!existing || existing.kind !== 'lift') {
-      if (this.floorActive(sectorIndex)) return false;
-      const sector = this.map.sectors[sectorIndex];
-      const floor = sector.floorHeight;
-      if (target === 'perpetual') {
-        // EV_DoPlat's perpetualRaise: bounce between the lowest and highest
-        // neighbor floor (each clamped to include the sector's own), starting
-        // in a random direction — `plat->status = P_Random(pr_plats)&1`, where
-        // 0 is up in vanilla's plat_e.
-        this.setMover(sectorIndex, {
-          kind: 'lift',
-          sectorIndex,
-          effect,
-          restHeight: Math.max(highestNeighborFloor(this.map, sectorIndex), floor),
-          downHeight: Math.min(lowestNeighborFloor(this.map, sectorIndex), floor),
-          state: (pRandom() & 1) === 0 ? 'raising' : 'lowering',
-          holdRemaining: 0,
-          perpetual: true,
-        });
-        this.playSector(sectorIndex, 'pstart');
-        return true;
-      }
-      if (target === 'toggle') {
-        // `EV_DoPlat`'s toggleUpDn: `low = ceilingheight`, `high =
-        // floorheight`, moving *down*. Both bounds are on the wrong side of
-        // that direction, which is exactly what makes vanilla's `T_MovePlane`
-        // clamp on its first step — see `LiftMover.instant`. No sound at all;
-        // `EV_DoPlat` starts none for this type.
-        this.setMover(sectorIndex, {
-          kind: 'lift',
-          sectorIndex,
-          effect,
-          restHeight: floor,
-          downHeight: sector.ceilHeight,
-          state: 'lowering',
-          holdRemaining: 0,
-          instant: true,
-          crush: true,
-        });
-        return true;
-      }
-      const low =
-        target === 'nextLowerFloor'
-          ? nextLowerFloor(this.map, sectorIndex)
-          : target === 'lowestNeighborCeiling'
-            ? lowestNeighborCeiling(this.map, sectorIndex)
-            : lowestNeighborFloor(this.map, sectorIndex);
-      this.setMover(sectorIndex, {
-        kind: 'lift',
-        sectorIndex,
-        effect,
-        restHeight: floor,
-        // Every EV_DoPlat/EV_DoGenLift down-target carries the same clamp:
-        // `if (plat->low > sec->floorheight) plat->low = sec->floorheight` —
-        // a "down" stroke never starts by jumping up.
-        downHeight: Math.min(low, floor),
-        state: 'lowering',
-        holdRemaining: 0,
-      });
-      this.playSector(sectorIndex, 'pstart'); // EV_DoPlat's own downWaitUpStay sound
-      return true;
-    }
     // P_ActivateInStasis: only the perpetual and toggle triggers wake a
-    // stopped lift — `EV_DoPlat` calls it for those two types alone.
-    if (existing.state === 'stasis') {
+    // stopped lift — `EV_DoPlat` calls it for those two types alone. This
+    // comes first because stasis is `floorActive`, so the wake would otherwise
+    // be refused below.
+    if (existing?.kind === 'lift' && existing.state === 'stasis') {
       if (target === 'toggle') {
         // The toggle *reverses* out of stasis rather than resuming:
         // `plat->status = plat->oldstatus==up ? down : up`. And unlike every
@@ -1555,12 +1487,70 @@ export class SpecialsController {
       }
       return false;
     }
-    // A resting lift is one vanilla had already removed (`P_RemoveActivePlat`),
-    // so re-triggering it is a fresh thinker; one still running is `EV_DoPlat`'s
-    // own `continue`.
-    if (existing.state !== 'rest') return false;
-    existing.state = 'lowering';
-    this.playSector(sectorIndex, 'pstart');
+    // `EV_DoPlat`'s own `continue` past a busy sector. A lift at `'rest'` is
+    // not busy — vanilla had already removed that thinker
+    // (`P_RemoveActivePlat`) — so it falls through to the fresh mover below,
+    // which is what re-reads the neighbor heights and takes this trigger's own
+    // speed, wait and target.
+    if (this.floorActive(sectorIndex)) return false;
+    const sector = this.map.sectors[sectorIndex];
+    const floor = sector.floorHeight;
+    if (target === 'perpetual') {
+      // EV_DoPlat's perpetualRaise: bounce between the lowest and highest
+      // neighbor floor (each clamped to include the sector's own), starting
+      // in a random direction — `plat->status = P_Random(pr_plats)&1`, where
+      // 0 is up in vanilla's plat_e.
+      this.setMover(sectorIndex, {
+        kind: 'lift',
+        sectorIndex,
+        effect,
+        restHeight: Math.max(highestNeighborFloor(this.map, sectorIndex), floor),
+        downHeight: Math.min(lowestNeighborFloor(this.map, sectorIndex), floor),
+        state: (pRandom() & 1) === 0 ? 'raising' : 'lowering',
+        holdRemaining: 0,
+        perpetual: true,
+      });
+      this.playSector(sectorIndex, 'pstart');
+      return true;
+    }
+    if (target === 'toggle') {
+      // `EV_DoPlat`'s toggleUpDn: `low = ceilingheight`, `high =
+      // floorheight`, moving *down*. Both bounds are on the wrong side of
+      // that direction, which is exactly what makes vanilla's `T_MovePlane`
+      // clamp on its first step — see `LiftMover.instant`. No sound at all;
+      // `EV_DoPlat` starts none for this type.
+      this.setMover(sectorIndex, {
+        kind: 'lift',
+        sectorIndex,
+        effect,
+        restHeight: floor,
+        downHeight: sector.ceilHeight,
+        state: 'lowering',
+        holdRemaining: 0,
+        instant: true,
+        crush: true,
+      });
+      return true;
+    }
+    const low =
+      target === 'nextLowerFloor'
+        ? nextLowerFloor(this.map, sectorIndex)
+        : target === 'lowestNeighborCeiling'
+          ? lowestNeighborCeiling(this.map, sectorIndex)
+          : lowestNeighborFloor(this.map, sectorIndex);
+    this.setMover(sectorIndex, {
+      kind: 'lift',
+      sectorIndex,
+      effect,
+      restHeight: floor,
+      // Every EV_DoPlat/EV_DoGenLift down-target carries the same clamp:
+      // `if (plat->low > sec->floorheight) plat->low = sec->floorheight` —
+      // a "down" stroke never starts by jumping up.
+      downHeight: Math.min(low, floor),
+      state: 'lowering',
+      holdRemaining: 0,
+    });
+    this.playSector(sectorIndex, 'pstart'); // EV_DoPlat's own downWaitUpStay sound
     return true;
   }
 

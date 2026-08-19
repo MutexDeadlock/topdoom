@@ -8,6 +8,7 @@ import { buildMapMesh, type BuiltMap } from '../../src/render/mapmesh.ts';
 import type { DoomMap } from '../../src/wad/map.ts';
 import type { MaterialBank } from '../../src/render/textures.ts';
 import type { Input } from '../../src/game/input.ts';
+import type { SfxId, SoundEmitter } from '../../src/audio/sfx.ts';
 import type { Pos2 } from '../../src/types.ts';
 import type { CrossingBody } from '../../src/game/things/defs.ts';
 
@@ -55,6 +56,19 @@ export interface SpecialsRigOptions {
    * supplies its own, without needing a real body anywhere near the sector.
    */
   blocksFloorRise?: (sectorIndex: number, floorHeight: number) => boolean;
+  /** Where the controller's sounds go. Defaults to `SILENT`; `soundLog()` is the recorder a test that asserts on them wants. */
+  sfx?: SoundEmitter;
+}
+
+/**
+ * A `SoundEmitter` that just remembers what it was asked to play, for a test
+ * whose subject is which sound an event makes — or, as often, that it makes
+ * none (`EV_VerticalDoor`'s silent reversal, docs/specials.md § Retriggering a
+ * door). Pass it as `sfx` and read the array.
+ */
+export function soundLog(): { sfx: SoundEmitter; played: SfxId[] } {
+  const played: SfxId[] = [];
+  return { sfx: { play: (id) => played.push(id) }, played };
 }
 
 export interface SpecialsRig {
@@ -111,6 +125,7 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
     at.x,
     at.y,
     movableSectors,
+    options.sfx,
   );
   return {
     specials,

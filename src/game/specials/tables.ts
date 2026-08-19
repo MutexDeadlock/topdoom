@@ -57,6 +57,15 @@ function door(speed: number, mode: DoorMode = 'openClose', waitSeconds = DOOR_WA
   return { kind: 'door', speed, waitSeconds, mode };
 }
 
+/**
+ * The repeatable raise doors — the five numbers `EV_VerticalDoor`'s reuse
+ * branch names literally, and so the only triggers that take over a door still
+ * in motion (`DoorEffect.reverseWhenMoving`).
+ */
+function raiseDoor(speed: number): DoorEffect {
+  return { ...door(speed), reverseWhenMoving: true };
+}
+
 /** Vanilla's color locks: card or skull of the color, interchangeably (see `LockRule`). */
 function color(c: 'blue' | 'red' | 'yellow'): LockRule {
   return { kind: 'color', color: c };
@@ -190,16 +199,16 @@ function lineTeleport(repeatable: boolean, options: { reversed?: boolean; monste
 
 export const LINE_SPECIALS: Record<number, SpecialDef> = {
   // Manual doors (untagged, target the line's own back sector).
-  1: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED) },
+  1: { trigger: 'use', repeatable: true, manual: true, effect: raiseDoor(DOOR_SPEED) },
   31: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly') },
-  117: { trigger: 'use', repeatable: true, manual: true, effect: door(DOOR_SPEED_FAST) },
+  117: { trigger: 'use', repeatable: true, manual: true, effect: raiseDoor(DOOR_SPEED_FAST) },
   118: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED_FAST, 'openOnly') },
   // Keyed manual doors — key colors per vanilla P_UseSpecialLine, confirmed
   // against source rather than guessed: note 26/27/28 order (Blue/Yellow/Red)
   // does not match 32/33/34's (Blue/Red/Yellow).
-  26: { trigger: 'use', repeatable: true, manual: true, lock: color('blue'), effect: door(DOOR_SPEED) },
-  27: { trigger: 'use', repeatable: true, manual: true, lock: color('yellow'), effect: door(DOOR_SPEED) },
-  28: { trigger: 'use', repeatable: true, manual: true, lock: color('red'), effect: door(DOOR_SPEED) },
+  26: { trigger: 'use', repeatable: true, manual: true, lock: color('blue'), effect: raiseDoor(DOOR_SPEED) },
+  27: { trigger: 'use', repeatable: true, manual: true, lock: color('yellow'), effect: raiseDoor(DOOR_SPEED) },
+  28: { trigger: 'use', repeatable: true, manual: true, lock: color('red'), effect: raiseDoor(DOOR_SPEED) },
   32: { trigger: 'use', repeatable: false, manual: true, lock: color('blue'), effect: door(DOOR_SPEED, 'openOnly') },
   33: { trigger: 'use', repeatable: false, manual: true, lock: color('red'), effect: door(DOOR_SPEED, 'openOnly') },
   34: { trigger: 'use', repeatable: false, manual: true, lock: color('yellow'), effect: door(DOOR_SPEED, 'openOnly') },

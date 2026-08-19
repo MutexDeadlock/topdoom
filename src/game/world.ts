@@ -169,9 +169,9 @@ export class World {
   private subsectorSector: Int32Array;
 
   /**
-   * Scratch `Opening` records for `openingInto`'s two allocation-free callers. Two rather than
+   * Scratch `Opening` records for `openingInto`'s two callers in this file. Two rather than
    * one because `openingOf` hands its copy out while `blocksSight` runs per candidate line inside
-   * traces that `openingOf` itself appears in.
+   * traces that `openingOf` itself appears in. Callers elsewhere bring their own record.
    */
   private openingScratch: Opening = { top: 0, bottom: 0 };
   private sightScratch: Opening = { top: 0, bottom: 0 };

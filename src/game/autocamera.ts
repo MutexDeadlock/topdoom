@@ -7,9 +7,11 @@
  */
 import { DOOM_TIC } from '../constants.ts';
 import type { TopDownCamera } from '../render/camera.ts';
+import type { Pos3 } from '../types.ts';
 import { dampen } from '../util/damping.ts';
 import { segmentCrossT } from '../util/geom.ts';
-import type { World } from './world.ts';
+import { EYE_HEIGHT } from './player.ts';
+import type { Opening, World } from './world.ts';
 
 /** Which camera mode is active — a menu setting, see docs/menu.md § Persisted settings. */
 export type CameraMode = 'auto' | 'manual';
@@ -90,15 +92,28 @@ let rayX = 0;
 let rayY = 0;
 let rayToX = 0;
 let rayToY = 0;
+let rayEyeZ = 0;
 let rayNearestT = 1;
+const rayOpening: Opening = { top: 0, bottom: 0 };
 
 function traceRay(i: number): void {
   const ends = rayWorld.lineOverlapEnds;
   const e = i * 4;
   const t = segmentCrossT(rayX, rayY, rayToX, rayToY, ends[e], ends[e + 1], ends[e + 2], ends[e + 3]);
   if (t < 0 || t >= rayNearestT) return;
-  if (!rayWorld.blocksSight(i)) return;
+  if (!blocksProbe(i)) return;
   rayNearestT = t;
+}
+
+/**
+ * Whether this line ends the ray: its opening has to straddle the eye, so a
+ * ledge the player cannot see over bounds the measurement even though the
+ * space above it is wide open. `World.blocksSight` — the height-blind test the
+ * fog of war wants — is deliberately not it. docs/render.md § Auto camera.
+ */
+function blocksProbe(i: number): boolean {
+  if (!rayWorld.openingInto(i, rayOpening)) return true;
+  return rayOpening.bottom >= rayEyeZ || rayOpening.top <= rayEyeZ;
 }
 
 /**
@@ -119,15 +134,17 @@ function toOpenness(distance: number, near: number, far: number): number {
 }
 
 /**
- * How open the space around `(x, y)` is, looking along `viewDeg` (DOOM-space
- * degrees, the bearing the camera looks into). Each fan ray is traced to the
- * nearest line that `blocksSight` — live sector heights, so a door opening
- * widens the measurement on the next tic. docs/render.md § Auto camera.
+ * How open the space around `from` is, looking along `viewDeg` (DOOM-space
+ * degrees, the bearing the camera looks into). Each fan ray is traced from the
+ * player's eye to the nearest line that `blocksProbe` — live sector heights,
+ * so a door opening widens the measurement on the next tic.
+ * docs/render.md § Auto camera.
  */
-export function measureOpenness(world: World, x: number, y: number, viewDeg: number): Openness {
+export function measureOpenness(world: World, from: Pos3, viewDeg: number): Openness {
   rayWorld = world;
-  rayX = x;
-  rayY = y;
+  rayX = from.x;
+  rayY = from.y;
+  rayEyeZ = from.z + EYE_HEIGHT;
   const viewRad = (viewDeg * Math.PI) / 180;
   const vx = Math.cos(viewRad);
   const vy = Math.sin(viewRad);
@@ -136,10 +153,10 @@ export function measureOpenness(world: World, x: number, y: number, viewDeg: num
 
   for (let r = 0; r < OPENNESS_RAY_COUNT; r++) {
     const dir = RAY_DIRS[r];
-    rayToX = x + dir.dx * OPENNESS_RANGE;
-    rayToY = y + dir.dy * OPENNESS_RANGE;
+    rayToX = rayX + dir.dx * OPENNESS_RANGE;
+    rayToY = rayY + dir.dy * OPENNESS_RANGE;
     rayNearestT = 1;
-    world.forEachLineAlongSegment(x, y, rayToX, rayToY, traceRay);
+    world.forEachLineAlongSegment(rayX, rayY, rayToX, rayToY, traceRay);
     const clear = rayNearestT * OPENNESS_RANGE;
     clearances[r] = clear;
 
@@ -196,10 +213,10 @@ export class AutoCamera {
    * `snapTo`, so a level never opens mid-zoom. `initialised = false` is what
    * makes the `tick` below measure unsmoothed; the jump is `snapFraming`.
    */
-  seed(px: number, py: number, camera: TopDownCamera): void {
+  seed(from: Pos3, camera: TopDownCamera): void {
     if (getCameraMode() !== 'auto') return;
     this.initialised = false;
-    this.tick(px, py, camera);
+    this.tick(from, camera);
     camera.snapFraming(camera.targetDistance, camera.targetTiltDeg);
   }
 
@@ -212,9 +229,9 @@ export class AutoCamera {
    * its opposite — reading the camera's orbit rather than the player's facing
    * is what keeps the mouse from twitching the framing.
    */
-  tick(px: number, py: number, camera: TopDownCamera): void {
+  tick(from: Pos3, camera: TopDownCamera): void {
     if (getCameraMode() !== 'auto') return;
-    const openness = measureOpenness(this.world, px, py, camera.viewerAngleDeg + 180);
+    const openness = measureOpenness(this.world, from, camera.viewerAngleDeg + 180);
     // Unsmoothed until there is something to smooth from: a level loaded in
     // manual mode and switched to auto mid-level was never seeded.
     this.smoothedSpread = this.initialised

@@ -139,8 +139,10 @@ answer for sector 0's row, so it bounds-checks the table itself.
 
 **`openingInto(line, out)` is the allocation-free form of `openingOf`**, writing vanilla's
 `P_LineOpening` pair into a caller-owned record. `openingOf` is the wrapper that hands out a fresh
-one, and `blocksSight` — which runs per candidate line inside both `hasLineOfSight` and the fog
-sweep — is a predicate over it. The point is that the min-ceiling/max-floor rule is written once:
+one, and `blocksSight` — which runs per candidate line inside the fog sweep — is a predicate over
+it, as is the auto camera's own `blocksProbe` (docs/render.md § Auto camera), which brings its own
+record rather than a third `World` scratch. The point is that the min-ceiling/max-floor rule is
+written once:
 the copies that remain inline (`checkPosition`'s, and the sector pair `hasLineOfSight` resolves for
 its wedge narrowing) are there because those callers need the sectors themselves, not just the
 opening.

@@ -763,7 +763,7 @@ export class Game {
     this.autoCamera = new AutoCamera(this.world);
     // Seeded before snapTo, which poses the camera — so a level opens already
     // framed rather than mid-zoom. docs/render.md § Auto camera.
-    this.autoCamera.seed(this.player.x, this.player.y, this.view.camera);
+    this.autoCamera.seed(this.player, this.view.camera);
     this.view.camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
     this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player.x, this.player.y);
     if (restore) this.fogOfWar.restoreExplored(restore.fog);
@@ -1430,7 +1430,7 @@ export class Game {
     // After movement (the probe runs from this tic's position) and before
     // camera.tick, whose damping advances toward the fresh target.
     // docs/render.md § Auto camera.
-    this.profiler.time('Camera', () => this.autoCamera.tick(this.player.x, this.player.y, camera));
+    this.profiler.time('Camera', () => this.autoCamera.tick(this.player, camera));
     camera.tick(TIC_SECONDS, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, cursor);
 
     this.profiler.time('Fog of War', () => this.fogOfWar.tick(this.player.x, this.player.y));

@@ -26,6 +26,11 @@ wrong for sight in *both* directions:
   room behind the locked door showed from the corridor.
 - A **window or railing** is two-sided *and* `BLOCKING`: it stops a body, not an eye. Treating it as
   sight-blocking would black out a courtyard the player is plainly looking into.
+- A **ledge** the player could never see past at eye level is still on screen, because the eye that
+  matters here is the *camera's*, hanging `TopDownCamera.distance` up and behind. So `blocksSight`
+  stays height-blind on purpose, and the height-aware sibling the auto camera's probe uses
+  (`blocksProbe`, docs/render.md § Auto camera) is deliberately not it — reveal short of the frame
+  is the gameplay bug § Reveal radius describes, and a raised step is exactly where it would open.
 
 So the test is the vertical opening (`opening.top <= opening.bottom`), which is what `P_CheckSight`
 keys off. Whether a line blocks is asked live rather than cached at load, because it reads current

@@ -668,11 +668,27 @@ DEVMODE map keys have outside dev mode.
 **The probe** (`measureOpenness`) casts `OPENNESS_RAY_COUNT` (24) rays from the player, every 15°
 at **fixed world angles**. Each ray walks the linedef grid
 (`World.forEachLineAlongSegment` + `segmentCrossT` over `lineOverlapEnds`, the
-`projectileStepBlocker` shape) out to `OPENNESS_RANGE` (2560u) and stops at the nearest line that
-`blocksSight` — the *sight* predicate, which reads live sector heights, so a door opening widens
-the framing on the next tic; `isSolidWall` (movement) and `blocksShot` (bullets pass railings)
-are both deliberately not it. The full fan costs ~0.04 ms per tic on NUTS.WAD MAP01, runs under
-the `Camera` profiler label, and in manual mode never runs at all.
+`projectileStepBlocker` shape) out to `OPENNESS_RANGE` (1280u) and stops at the nearest line whose
+opening no longer straddles the player's eye (`blocksProbe`). Sector heights are read live, so a
+door opening widens the framing on the next tic; `isSolidWall` (movement) and `blocksShot`
+(bullets pass railings) are both deliberately not it. The full fan costs ~0.04 ms per tic on
+NUTS.WAD MAP01, runs under the `Camera` profiler label, and in manual mode never runs at all.
+
+**The fan runs at the player's eye, not flat through the map.** It starts at `player.ts`'s
+`EYE_HEIGHT` over the feet — the same eye `Player.eyeZ` gives the camera to follow — and a ray
+ends at the first line whose opening lies wholly above or wholly below it. `World.blocksSight` is
+**not** the test, even though it is the one the fog of war uses: it asks only whether a line has
+*any* vertical opening, which on a map built out of height steps rather than closed rooms is
+nearly never. EPIC.WAD MAP02 at `(-4018, -3014)` is the case this was found on — a railed pen 48
+to 144 units below the ground around it, where every one of the 24 rays ran the full 1280 units
+over the pen wall and pinned both dials at 1, framing a two-cell pen as wide open. With the eye
+test the same spot reads `spread` 0.43 / `ahead` 0.16. A step **down** still reads open, which is
+right: the player really can see out over a drop.
+
+The camera does see over that pen wall, and that is not a contradiction: these two dials answer
+how much *room the player has*, not how much is on screen. The fog of war is the query that
+answers the latter, which is why it keeps the height-blind test (docs/fogofwar.md § Sight
+blocking).
 
 **Two aggregates come out of that one fan, and each drives one dial**, because the two dials do
 different jobs:
@@ -708,7 +724,9 @@ Each aggregate maps to 0..1 through **its own** shut-in/wide-open window — `SP
 what the cosine-weighted mean does, so a window that suits one saturates the other. Both were
 picked off measured distributions rather than guessed — sampling every thing position in E1M1,
 DOOM2 MAP01/MAP07 and EPIC MAP01 — which is also how the original 192/960 was caught leaving the
-wide end of the framing unreachable on every one of those maps.
+wide end of the framing unreachable on every one of those maps. The eye test above left both
+windows where they were — on maps built out of rooms, whose walls close in 2D anyway, it barely
+moves the distributions at all. What it changes is the maps that aren't.
 
 **Two smoothing rates on purpose.** Both measured opennesses are damped at `OPENNESS_SMOOTH_RATE`
 (1.5/s) inside `AutoCamera` — the ~1 s "breathing" of the framing — while the camera's own

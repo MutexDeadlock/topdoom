@@ -4,6 +4,7 @@ import { gridMap } from '../fixtures/gridmap.ts';
 import { World } from '../../src/game/world.ts';
 import { AutoCamera, measureOpenness, setCameraMode } from '../../src/game/autocamera.ts';
 import { TopDownCamera } from '../../src/render/camera.ts';
+import type { Pos2, Pos3 } from '../../src/types.ts';
 
 /**
  * The auto camera's openness probe and its mapping onto the framing envelope:
@@ -11,6 +12,9 @@ import { TopDownCamera } from '../../src/render/camera.ts';
  * bearing drives the tilt. Asserts monotonicity and the clamps rather than
  * pinning the tuned-by-feel digits. See docs/render.md § Auto camera.
  */
+
+/** A grid cell centre as the probe wants it, standing on a floor-0 cell. */
+const at = (p: Pos2): Pos3 => ({ ...p, z: 0 });
 
 /** DOOM bearings, degrees: +x is east, +y north. */
 const EAST = 0;
@@ -48,11 +52,11 @@ describe('game · auto camera openness', () => {
   test('a corridor reads shut-in, an open room reads open', () => {
     const c = corridor();
     const pc = c.centre(4, 1);
-    const corridorOpenness = measureOpenness(new World(c.map), pc.x, pc.y, EAST);
+    const corridorOpenness = measureOpenness(new World(c.map), at(pc), EAST);
 
     const r = room();
     const pr = r.centre(6, 6);
-    const roomOpenness = measureOpenness(new World(r.map), pr.x, pr.y, EAST);
+    const roomOpenness = measureOpenness(new World(r.map), at(pr), EAST);
 
     assert.ok(corridorOpenness.spread < 0.1, `a one-cell corridor reads shut-in (got ${corridorOpenness.spread})`);
     assert.ok(roomOpenness.spread > 0.5, `an open room reads open (got ${roomOpenness.spread})`);
@@ -63,8 +67,8 @@ describe('game · auto camera openness', () => {
     const world = new World(g.map);
     // Standing at the west end: the hall runs east, a wall sits immediately west.
     const p = g.centre(0, 2);
-    const east = measureOpenness(world, p.x, p.y, EAST);
-    const west = measureOpenness(world, p.x, p.y, WEST);
+    const east = measureOpenness(world, at(p), EAST);
+    const west = measureOpenness(world, at(p), WEST);
 
     assert.ok(
       east.ahead > west.ahead,
@@ -92,13 +96,39 @@ describe('game · auto camera openness', () => {
     const world = new World(g.map);
     // Standing in the south half, looking north at the doors.
     const p = g.centre(5, 8);
-    const shut = measureOpenness(world, p.x, p.y, NORTH);
+    const shut = measureOpenness(world, at(p), NORTH);
     // Raise the door sectors' ceilings — the probe must see through on the
     // very next measurement, the way an opening door does mid-level.
     for (let col = 0; col < g.cols; col++) g.map.sectors[g.index(col, 5)].ceilHeight = 128;
-    const open = measureOpenness(world, p.x, p.y, NORTH);
+    const open = measureOpenness(world, at(p), NORTH);
     assert.ok(shut.ahead > 0, 'the half room already reads somewhat open');
     assert.ok(open.ahead > shut.ahead, `opening the doors widens the view north (${shut.ahead} -> ${open.ahead})`);
+  });
+
+  test('a ledge the player cannot see over bounds the fan', () => {
+    // A pen inside an open field, walled by a step 64 units up: every one of
+    // those lines has a wide vertical opening, so a height-blind probe runs
+    // straight over them and calls the pen as open as the field beyond it.
+    // EPIC.WAD MAP02 around (-4018, -3014) is the case this was found on, a
+    // railed pen whose whole fan read 1280 and pinned both dials at 1.
+    const g = gridMap(
+      [
+        '.........',
+        '.........',
+        '..^^^^^..',
+        '..^...^..',
+        '..^...^..',
+        '..^...^..',
+        '..^^^^^..',
+        '.........',
+        '.........',
+      ],
+      { heights: { '^': { floor: 64, ceil: 128 } } },
+    );
+    const pen = measureOpenness(new World(g.map), at(g.centre(4, 4)), EAST);
+
+    assert.ok(pen.spread < 0.5, `the pen is not wide open (got ${pen.spread})`);
+    assert.ok(pen.ahead < 0.5, `and the view does not reach past its wall (got ${pen.ahead})`);
   });
 
   test('a corner of a big room reads boxed in, not open', () => {
@@ -109,8 +139,8 @@ describe('game · auto camera openness', () => {
     const world = new World(r.map);
     const mid = r.centre(6, 6);
     const edge = r.centre(0, 0);
-    const centre = measureOpenness(world, mid.x, mid.y, EAST);
-    const corner = measureOpenness(world, edge.x, edge.y, EAST);
+    const centre = measureOpenness(world, at(mid), EAST);
+    const corner = measureOpenness(world, at(edge), EAST);
 
     assert.ok(
       corner.spread < centre.spread / 2,
@@ -123,7 +153,7 @@ describe('game · auto camera openness', () => {
 
     const c = corridor();
     const pc = c.centre(4, 1);
-    new AutoCamera(new World(c.map)).seed(pc.x, pc.y, camera);
+    new AutoCamera(new World(c.map)).seed(at(pc), camera);
     const corridorDistance = camera.distance;
     const corridorTilt = camera.tiltDeg;
     assert.equal(camera.targetDistance, corridorDistance, 'seed leaves nothing to glide to');
@@ -131,7 +161,7 @@ describe('game · auto camera openness', () => {
 
     const r = room();
     const pr = r.centre(6, 6);
-    new AutoCamera(new World(r.map)).seed(pr.x, pr.y, camera);
+    new AutoCamera(new World(r.map)).seed(at(pr), camera);
     assert.ok(camera.distance > corridorDistance, 'an open room frames wider than a corridor');
     assert.ok(camera.tiltDeg > corridorTilt, 'and more top-down');
   });
@@ -143,8 +173,8 @@ describe('game · auto camera openness', () => {
     const camera = new TopDownCamera(16 / 9);
     setCameraMode('manual');
     try {
-      auto.seed(pc.x, pc.y, camera);
-      auto.tick(pc.x, pc.y, camera);
+      auto.seed(at(pc), camera);
+      auto.tick(at(pc), camera);
       assert.equal(camera.distance, 480, 'the constructor default stands');
       assert.equal(camera.targetDistance, 480, 'and nothing was queued to glide to');
       assert.equal(camera.targetTiltDeg, 60);
@@ -160,9 +190,9 @@ describe('game · auto camera openness', () => {
 
     // yawDeg + 90 is the bearing the camera looks along, so -90 looks east.
     const facingHall = new TopDownCamera(16 / 9, { yawDeg: -90 });
-    new AutoCamera(world).seed(p.x, p.y, facingHall);
+    new AutoCamera(world).seed(at(p), facingHall);
     const facingWall = new TopDownCamera(16 / 9, { yawDeg: 90 });
-    new AutoCamera(world).seed(p.x, p.y, facingWall);
+    new AutoCamera(world).seed(at(p), facingWall);
 
     assert.ok(
       facingHall.tiltDeg > facingWall.tiltDeg,
@@ -177,7 +207,7 @@ describe('game · auto camera openness', () => {
     const pc = c.centre(4, 1);
     const auto = new AutoCamera(new World(c.map));
     const before = camera.distance;
-    auto.tick(pc.x, pc.y, camera);
+    auto.tick(at(pc), camera);
     assert.equal(camera.distance, before, 'tick writes the target, not the field');
     assert.ok(camera.targetDistance < before, 'a corridor pulls the default framing in');
   });

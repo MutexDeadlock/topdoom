@@ -55,6 +55,36 @@ describe('Rendering · seg clip slack', () => {
     assert.equal(covered, quadArea(half));
   });
 
+  test('a wall the cell is not already cut along keeps the plain slack', () => {
+    // DOOM1 E1M6's closet at (3448, -1536), reduced: the last partition runs along
+    // one wall and nothing bounds the cell on the other three, so the reach the
+    // slack scales on is the whole map. Slack there is not a rounding error between
+    // a partition and its linedef — it is floor standing in the void, which this
+    // camera sees over a 72-unit wall.
+    const half = 512;
+    const polys = buildSubSectorPolys(
+      bspMap({
+        vertexes: [{ x: 0, y: 0 }, { x: 64, y: 0 }, { x: 64, y: 128 }, { x: 0, y: 128 }],
+        sidedefs: [0],
+        // Wound so the box's inside is on the right of every wall, the side a clip keeps.
+        linedefs: [wall(0, 3), wall(3, 2), wall(2, 1), wall(1, 0)],
+        segs: [seg(0, 3, 0), seg(3, 2, 1), seg(2, 1, 2), seg(1, 0, 3)],
+        subsectors: [
+          [0, 4],
+          [0, 0],
+        ],
+        nodes: [plane(0, 0, 0, 1, leaf(0), leaf(1))],
+        half,
+      }),
+    );
+
+    for (let i = 0; i < polys[0].points.length; i += 2) {
+      const x = polys[0].points[i];
+      const y = polys[0].points[i + 1];
+      assert.ok(x >= -8 && x <= 72 && y >= -8 && y <= 136, `floor stands at (${x}, ${y}), well past the box`);
+    }
+  });
+
   test('a long seg still clips its cell, so floor does not run past a wall', () => {
     // A 1448-unit wall diagonally across a cell it spans end to end: reach/length is
     // about 1, so this clips with the plain 4-unit slack and really does cut.

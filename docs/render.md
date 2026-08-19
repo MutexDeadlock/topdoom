@@ -44,19 +44,33 @@ linedef 99's 8-unit seg cut a ~350 × 100 wedge out of the floor around `(-400, 
 and 1° off the partition that shares its corner — cut a ~500-unit-long wedge between subsectors 911
 and 912, opening the floor onto the blood pit two sectors below it.
 
+**Only a seg the cell is already cut along is scaled up** (`cellCutAlong`): an edge of the cell has
+to run within `PARTITION_MATCH` (2 units) of both of the seg's endpoints, which is what a partition
+built from the seg's own linedef leaves behind. That is the whole premise of the scaling — two
+boundaries that are meant to be the same line, disagreeing by rounding. Where the cell has *no*
+boundary on that line, the seg is the only thing bounding it there, no drift can have happened, and
+slack only leaves floor standing past the wall. Repro: DOOM1 E1M6's closet at `(3448, -1536)`, an
+80 × 128 room whose leaf gets the whole east of the map as its cell because nothing out there needs
+a partition — its floor stood 11 to 22 units past all four walls, in the open void, under a camera
+that looks over a 72-unit wall.
+
 **The tolerance can never make two subsectors overlap**, which is why it can be this blunt. Node
 clipping alone partitions the plane into disjoint cells, and a subsector's polygon is only ever that
 cell with pieces cut away — so slack on the seg clip returns territory that belongs to this cell and
 that no other subsector can draw. What it can do is leave floor standing past a wall, in space that
-would otherwise be a hole: hidden behind the wall from this camera, and a straight improvement where
-the hole was in the open. That is what `SEG_CLIP_MAX_TOLERANCE` bounds. The clip against the *node*
-partitions stays exact — give that slack and neighbouring cells really would overlap.
+would otherwise be a hole — which is a straight improvement only where that hole was somewhere the
+map has floor. That is what the gate above and `SEG_CLIP_MAX_TOLERANCE` between them bound. The clip
+against the *node* partitions stays exact — give that slack and neighbouring cells really would
+overlap.
 
 Measured over `DOOM1.WAD`, `DOOM2.WAD` and the committed PWADs by sampling each map on a 4-unit grid
 (crack = a point inside the map that no subsector polygon covers; overhang = a covered point outside
 it), scaling the tolerance this way cuts total crack area by 29% against a flat 4 units — MAP24 by
 74%, the `oku2` wedge to nothing — while average overhang goes from 4 units of floor past a wall to
-about 5.
+about 5. Gating the scaling on `cellCutAlong` then removes 8.5M units² of that overhang across the
+same WADs (2-unit sampling of every leaf whose polygon changed, counting only area no other leaf
+draws) and opens 23k units² of new crack — 370:1, and the crack it opens is in places the map's own
+leaves already fail to cover, which the slack was papering over with a neighbour's floor.
 
 ### Walls that stop inside their cell
 
@@ -252,7 +266,7 @@ trade a hole for something worse: a pillar you cannot see your own player behind
 
 ## Closed holes (`mapmesh.ts: closedHoleFill`)
 
-A leaf whose **every** seg is a two-sided drop with no lower texture is a hole the mapper never
+A sector whose **every** side is a two-sided drop with no lower texture is a hole the mapper never
 meant anyone to look into. Vanilla HOMs it, which is invisible from the floor of a first-person
 view; from overhead it is a black pit in the middle of the level, because the sides draw nothing and
 the pit's own floor is too far down to be in view — a 64-wide, 128-deep pit needs a ray steeper than
@@ -261,16 +275,36 @@ Repro: EPIC.WAD MAP01 sector 88, three 64×64 pits at floor −144 in the −16 
 line 585 (a `19` W1 "lower floor to highest" that, the floor being *below* its neighbours already,
 snaps it up instead) fills in later.
 
-So the leaf is lidded with the surrounding sector's floor plane, drawn on top of its real floor.
-**This follows GZDoom** (`hw_renderhacks.cpp: HandleMissingTextures` → `DoOneSectorLower` →
-`AddOtherFloorPlane`), which is what the map was checked against, and not vanilla, which has no such
-hack. Its conditions are GZDoom's:
+So every leaf of that sector is lidded with the surrounding sector's floor plane, drawn on top of
+its real floor. **This follows GZDoom** (`hw_renderhacks.cpp: HandleMissingTextures` →
+`DoOneSectorLower` → `AddOtherFloorPlane`), which is what the map was checked against, and not
+vanilla, which has no such hack. Its conditions are GZDoom's:
 
-- every seg two-sided, its own side of the line facing this leaf's drawn sector,
+- every side two-sided, i.e. no one-sided wall anywhere on the sector,
 - every neighbour's floor **above** this one and all of them at the **same** height — the lid is one
   plane, so one height,
 - that step drawing **no** lower texture (a textured one is ordinary geometry), and the neighbour's
   floor flat not being sky.
+
+**The test is per sector, never per BSP leaf**, and that is what makes it safe rather than tidy.
+GZDoom decides per leaf but then floods across minisegs into the rest of the sector
+(`DoOneSectorLower` recurses through every partner seg) and gives up at the first one-sided wall it
+reaches. Vanilla SEGS carry no minisegs, so a leaf's splits into the rest of its own sector are
+simply *absent* here — a leaf left holding a single seg reads as fully enclosed by it, and an open
+room gets its floor painted over at the neighbour's height. Repro: DOOM2 MAP01 subsector 22, whose
+one seg is line 335 (the barred alcove's floor, 48 units up), which lidded ~23,000 map units² of the
+courtyard's grass with the alcove's flat; DOOM2 MAP31 subsector 31 was a 128×1536 slab of the same.
+Scanning the whole sector's linedefs instead is GZDoom's flood with the recursion already done —
+stricter only for a sector whose leaves fall into disconnected pieces, where GZDoom would still lid
+the enclosed piece and this does not.
+
+Those linedefs are vanilla's `sec->lines[]`, reached through `MapMeshOptions.linesOf` — the same
+structural seam `MoverIndex.linesOf` uses, and for the same reason: `game/world.ts: sectorLines`
+already builds and memoizes the index per map, and the renderer keeps no import edge into `game/`.
+A caller that supplies none (tests, tools) gets a plain local adjacency list, which is deliberately
+*not* a second `sec->lines[]`: `closedHoleFill` reads each line from one sector's side and is
+idempotent in it, so a line listed twice changes no answer and the `P_GroupLines` ordering/dedupe
+rule keeps a single implementation.
 
 Three restrictions are this engine's, and each closes a way the baked lid could go stale or fight
 something else:
@@ -278,7 +312,7 @@ something else:
 - **No lid where a Boom 242 is involved** on either side. A 242 draws its floors at borrowed heights
   and the invisible-platform idiom *wants* its missing textures.
 - **No lid over a movable neighbour** from the static batches — its height is what the lid is baked
-  at. A mover's own leaves have no such guard (`buildMoverBatches` passes no set): `MoverGeometry`
+  at. A mover's own sector has no such guard (`buildMoverBatches` passes no set): `MoverGeometry`
   already rebuilds a mover whenever a movable neighbour moves.
 - **The lid is not gated on where the eye is.** GZDoom re-decides per frame and skips the hack when
   the viewpoint is *below* the fill height; baked geometry cannot. What covers the case is that the
@@ -288,7 +322,7 @@ something else:
 Neither is GZDoom's fallback path reproduced: where the neighbours sit at *different* heights,
 GZDoom projects one of the floors through the gap from the viewpoint (`CreateFloodPoly`, per frame,
 through a stencil) and this engine leaves the hole black. It is rare — over every committed WAD the
-lid fires on 10–47 leaves per WAD set (18 of DOOM2's 13,253, none of DOOM1's 3,423).
+lid fires on 6–43 leaves per WAD set (13 of DOOM2's 13,253, none of DOOM1's 3,423).
 
 ## Sector lighting (`mapmesh.ts: lightToColor`)
 
@@ -687,11 +721,13 @@ simulation state): `AutoCamera.tick` runs on the tic clock — after movement, s
 this tic's position, and before `camera.tick`, whose damping step advances toward the fresh
 target — and `TopDownCamera` interpolates `prevDistance`/`prevTiltDeg` per frame in
 `applyToCamera`. The aim ray reads last tic's settled framing at alpha 1, the same one-tic lag
-the yaw has. `distance`/`tiltDeg` mirror `yawDeg`'s two routes: plain assignment **jumps** (value,
-target and prev together), `targetDistance`/`targetTiltDeg` glide.
+the yaw has. `distance`/`tiltDeg` are read-only, and have the two routes `yawDeg` has:
+`snapFraming(distance, tiltDeg)` **jumps** (value, target and prev together, the framing twin of
+`snapTo`), `targetDistance`/`targetTiltDeg` glide.
 
-**A level load seeds, a teleport glides.** `AutoCamera.seed` runs one unsmoothed measurement and
-*assigns* the mapped framing, called after the spawn yaw is set (so `ahead` already looks the way
+**A level load seeds, a teleport glides.** `AutoCamera.seed` clears `initialised` and delegates to
+`tick` — which is what makes that one measurement unsmoothed — then `snapFraming`s the result,
+called after the spawn yaw is set (so `ahead` already looks the way
 the level opens) and before the follow point's `snapTo` so the snap poses the
 camera already framed and a level never opens mid-zoom. `seed` and `tick` are both no-ops in
 manual mode, so the mode gate lives with the setting's owner rather than at each call site. A
@@ -704,8 +740,8 @@ mode it is a player choice that simply isn't persisted — a restore keeps whate
 camera already holds, since the camera outlives the level.
 
 The hard envelope — `MIN/MAX_CAMERA_DISTANCE` (200/2400), `MIN/MAX_TILT_DEG` (10/70) — is
-enforced by `TopDownCamera`'s own framing setters, on both the jump route (`distance`/`tiltDeg`)
-and the glide route (`targetDistance`/`targetTiltDeg`), so no writer has to remember it: the
+enforced by `TopDownCamera` itself, on both the jump route (`snapFraming`) and the glide route
+(`targetDistance`/`targetTiltDeg`), so no writer has to remember it: the
 manual keys just add their step and saturate. The auto camera's own endpoints sit inside it, so
 in practice only the manual keys ever reach it.
 

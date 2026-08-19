@@ -1320,9 +1320,16 @@ export interface PositionCheck {
   floorZ: number;
   ceilingZ: number;
   dropoffZ: number;
+  /**
+   * The floor under (x, y) alone, before the box walk raises `floorZ` — i.e.
+   * `floorAt(x, y)`, off the descent this walk already made. Kept so a caller
+   * comparing centre floors (`monsters/ai.ts: dropoffRefuses`) needn't re-descend
+   * the BSP at a point this call just resolved.
+   */
+  centreFloorZ: number;
 }
 
-const positionScratch: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0 };
+const positionScratch: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0, centreFloorZ: 0 };
 
 /**
  * One `P_CheckPosition` over the lines a body's box at (x, y) spans, filling
@@ -1383,6 +1390,7 @@ export function checkPosition(
   out.floorZ = here?.floorHeight ?? 0;
   out.ceilingZ = here?.ceilHeight ?? 0;
   out.dropoffZ = out.floorZ;
+  out.centreFloorZ = out.floorZ;
   if (out.blocked && stopOnBlock) return out;
 
   const left = x - radius;

@@ -23,14 +23,55 @@ const SEG_CLIP_TOLERANCE = 4;
 const SEG_CLIP_MAX_TOLERANCE = 32;
 
 /**
+ * How far off a seg's own endpoints a cell edge may sit and still count as the
+ * same line, in map units. A node partition built from a linedef stores integer
+ * `(x, y, dx, dy)`, so it can only be a rounding error off that linedef where the
+ * two meet; two units is that with headroom.
+ * docs/render.md § Cracks between subsectors.
+ */
+const PARTITION_MATCH = 2;
+
+/**
+ * Whether `cell` is already cut along this seg's own line — an edge of it running
+ * within `PARTITION_MATCH` of both the seg's endpoints, which is what a node
+ * partition built from the seg's linedef leaves. Only then is the seg's line and
+ * the cell's boundary the *same* boundary, disagreeing by rounding, which is the
+ * case `segClipTolerance` hands slack to.
+ */
+function cellCutAlong(cell: number[], a: Vertex, b: Vertex): boolean {
+  const n = cell.length / 2;
+  for (let i = 0; i < n; i++) {
+    const px = cell[i * 2];
+    const py = cell[i * 2 + 1];
+    const qx = cell[((i + 1) % n) * 2];
+    const qy = cell[((i + 1) % n) * 2 + 1];
+    const ex = qx - px;
+    const ey = qy - py;
+    const edgeLength = Math.sqrt(ex * ex + ey * ey);
+    if (edgeLength === 0) continue;
+    const offA = Math.abs(ex * (a.y - py) - ey * (a.x - px)) / edgeLength;
+    if (offA > PARTITION_MATCH) continue;
+    const offB = Math.abs(ex * (b.y - py) - ey * (b.x - px)) / edgeLength;
+    if (offB <= PARTITION_MATCH) return true;
+  }
+  return false;
+}
+
+/**
  * Slack for one seg's clip: how far past its own endpoints the seg's line has to be
  * extrapolated to reach `cell`, in multiples of the seg's own length, clamped between
  * the two tolerances above. That ratio is how far the line can have drifted by the
  * time it gets there — docs/render.md § Cracks between subsectors.
+ *
+ * **Only a seg the cell is already cut along is scaled up.** Where the cell has no
+ * boundary on the seg's line, the seg is the only thing bounding it there and the
+ * drift the scaling pays for cannot have happened; slack would just leave floor
+ * standing past the wall, which this camera sees over it — DOOM1 E1M6's closet at
+ * (3448, −1536) stood 22 units out into the void.
  */
 function segClipTolerance(cell: number[], a: Vertex, b: Vertex): number {
   const lengthSq = (b.x - a.x) * (b.x - a.x) + (b.y - a.y) * (b.y - a.y);
-  if (lengthSq === 0) return SEG_CLIP_TOLERANCE;
+  if (lengthSq === 0 || !cellCutAlong(cell, a, b)) return SEG_CLIP_TOLERANCE;
   // Compared squared, so the whole scan costs one square root rather than one per corner.
   let reachSq = 0;
   for (let i = 0; i < cell.length; i += 2) {

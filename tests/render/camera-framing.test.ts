@@ -53,24 +53,22 @@ describe('render · camera framing', () => {
 
   test('the envelope is the camera’s own invariant, on both routes', () => {
     const camera = new TopDownCamera(16 / 9);
-    camera.distance = 99999;
+    camera.snapFraming(99999, 90);
     assert.equal(camera.distance, MAX_CAMERA_DISTANCE, 'the jump route clamps');
+    assert.equal(camera.tiltDeg, MAX_TILT_DEG);
     camera.targetDistance = -5;
     assert.equal(camera.targetDistance, MIN_CAMERA_DISTANCE, 'and so does the glide route');
-    camera.tiltDeg = 90;
-    assert.equal(camera.tiltDeg, MAX_TILT_DEG);
     camera.targetTiltDeg = 0;
     assert.equal(camera.targetTiltDeg, MIN_TILT_DEG);
     // Out-of-range construction is clamped too, so no caller can seed past it.
     assert.equal(new TopDownCamera(16 / 9, { distance: 10, tiltDeg: 89 }).distance, MIN_CAMERA_DISTANCE);
   });
 
-  test('a plain assignment jumps with nothing left to interpolate or glide', () => {
+  test('snapFraming jumps with nothing left to interpolate or glide', () => {
     const camera = new TopDownCamera(16 / 9);
     camera.snapTo({ x: 0, y: 0, z: 41 });
     camera.tick(TIC, { x: 0, y: 0, z: 41 }, null);
-    camera.distance = 700;
-    camera.tiltDeg = 30;
+    camera.snapFraming(700, 30);
     assert.equal(camera.targetDistance, 700, 'the target follows the jump');
     assert.equal(camera.targetTiltDeg, 30);
     assert.ok(Math.abs(eyeHeight(camera, 0) - eyeHeight(camera, 1)) < 1e-9, 'no interpolation window remains');

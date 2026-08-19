@@ -149,42 +149,23 @@ export class TopDownCamera {
     this.targetYawDeg += deltaDeg;
   }
 
-  /**
-   * Camera distance from the follow point, in map units, clamped to the
-   * envelope. Assigning jumps immediately — the framing twin of the `yawDeg`
-   * setter; `targetDistance` is the animated route.
-   */
+  /** Camera distance from the follow point, in map units. Read-only: `targetDistance` glides, `snapFraming` jumps. */
   get distance(): number {
     return this._distance;
   }
 
-  set distance(value: number) {
-    this._distance = clamp(value, MIN_CAMERA_DISTANCE, MAX_CAMERA_DISTANCE);
-    this._targetDistance = this._distance;
-    this.prevDistance = this._distance;
+  /** Tilt away from straight down, in degrees. Read-only: `targetTiltDeg` glides, `snapFraming` jumps. */
+  get tiltDeg(): number {
+    return this._tiltDeg;
   }
 
-  /** Where `distance` is animating towards, clamped to the same envelope. */
+  /** Where `distance` is animating towards, clamped to the envelope. */
   get targetDistance(): number {
     return this._targetDistance;
   }
 
   set targetDistance(value: number) {
     this._targetDistance = clamp(value, MIN_CAMERA_DISTANCE, MAX_CAMERA_DISTANCE);
-  }
-
-  /**
-   * Tilt away from straight down, in degrees, clamped to the envelope.
-   * Assigning jumps immediately; `targetTiltDeg` is the animated route.
-   */
-  get tiltDeg(): number {
-    return this._tiltDeg;
-  }
-
-  set tiltDeg(value: number) {
-    this._tiltDeg = clamp(value, MIN_TILT_DEG, MAX_TILT_DEG);
-    this._targetTiltDeg = this._tiltDeg;
-    this.prevTiltDeg = this._tiltDeg;
   }
 
   /** Where `tiltDeg` is animating towards, clamped to the same envelope. */
@@ -194,6 +175,21 @@ export class TopDownCamera {
 
   set targetTiltDeg(value: number) {
     this._targetTiltDeg = clamp(value, MIN_TILT_DEG, MAX_TILT_DEG);
+  }
+
+  /**
+   * Poses the framing with nothing left to glide — the framing twin of
+   * `snapTo`, and the only route that writes value, target and `prev` at once
+   * (a mid-glide `prev` would otherwise make `applyToCamera` interpolate out of
+   * a stale pose). `AutoCamera.seed` uses it so a level never opens mid-zoom.
+   */
+  snapFraming(distance: number, tiltDeg: number): void {
+    this.targetDistance = distance;
+    this.targetTiltDeg = tiltDeg;
+    this._distance = this._targetDistance;
+    this._tiltDeg = this._targetTiltDeg;
+    this.prevDistance = this._distance;
+    this.prevTiltDeg = this._tiltDeg;
   }
 
   /**

@@ -168,12 +168,6 @@ export function commitTarget(body: MonsterBody): void {
 const FLOAT_SPEED = 4;
 
 /**
- * `settleVertical`'s own `PositionCheck`, so its one walk can't be clobbered by
- * `checkPosition`'s shared default between the floor read and the ceiling read.
- */
-const verticalCheck: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0 };
-
-/**
  * Settles vertical position/velocity. A grounded monster does what
  * `Player.update` does — snap while grounded, integrate gravity while airborne.
  * A `flies` monster instead never falls (`MF_NOGRAVITY`) and drifts toward its
@@ -183,8 +177,9 @@ const verticalCheck: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, d
  */
 function settleVertical(body: MonsterBody, stats: MonsterStats, world: World, dt: number, target: Pos3): void {
   // One walk for both heights: the flier branch below wants the ceiling from
-  // the same position, and two wrapper calls would walk the lines twice.
-  const at = checkPosition(world, body.x, body.y, stats.radius, ANY_HEIGHT, stats.height, true, undefined, undefined, false, verticalCheck);
+  // the same position, and two wrapper calls would walk the lines twice. It is
+  // the *same* walk the dropoff rule asks for, so both share `standingAt`'s memo.
+  const at = standingAt(body, stats, world);
   const groundZ = at.floorZ;
   if (!stats.flies) {
     if (body.z > groundZ) {
@@ -230,23 +225,23 @@ type StepResult = 'clear' | 'adjust' | 'blocked';
 /**
  * The heights the body itself stands at — vanilla keeps them on the actor
  * (`thing->floorz`/`thing->dropoffz`) and this recomputes them, memoized for
- * one `stepMonsterAI` call: every reader runs before that call's single
- * movement commit, so they all ask at the same position over the same
- * geometry. Invalidated by `standingMoved`.
+ * one `stepMonsterAI` call. Keyed on the body *and its position*, so a
+ * committed move self-invalidates it; `stepMonsterAI` clears `standingBody` on
+ * entry as well, because a tic of movers may have changed the geometry under a
+ * body that never moved.
  */
-const standingCheck: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0 };
-let standingValid = false;
-
-/** Drops the `standingCheck` memo: the body is about to be, or has been, moved. */
-function standingMoved(): void {
-  standingValid = false;
-}
+const standingCheck: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0, centreFloorZ: 0 };
+let standingBody: MonsterBody | null = null;
+let standingX = 0;
+let standingY = 0;
 
 /** One `P_CheckPosition` at the body's own position. `z` is `ANY_HEIGHT` because no height it reads depends on it. */
 function standingAt(body: MonsterBody, stats: MonsterStats, world: World): PositionCheck {
-  if (!standingValid) {
+  if (standingBody !== body || standingX !== body.x || standingY !== body.y) {
     checkPosition(world, body.x, body.y, stats.radius, ANY_HEIGHT, stats.height, true, undefined, undefined, false, standingCheck);
-    standingValid = true;
+    standingBody = body;
+    standingX = body.x;
+    standingY = body.y;
   }
   return standingCheck;
 }
@@ -260,12 +255,13 @@ function standingAt(body: MonsterBody, stats: MonsterStats, world: World): Posit
  * floor under the body's centre, which bounds how far past a ledge the other
  * two let it shuffle. docs/monster-ai.md § The dropoff rule.
  */
-function dropoffRefuses(body: MonsterBody, stats: MonsterStats, world: World, x: number, y: number, dest: PositionCheck): boolean {
+function dropoffRefuses(body: MonsterBody, stats: MonsterStats, world: World, dest: PositionCheck): boolean {
   const standing = standingAt(body, stats, world);
   return (
     standing.floorZ - dest.floorZ > MAX_STEP_UP ||
     standing.dropoffZ - dest.dropoffZ > MAX_STEP_UP ||
-    world.floorAt(body.x, body.y) - world.floorAt(x, y) > MAX_STEP_UP
+    // Both centre floors come off walks already in hand — see `PositionCheck.centreFloorZ`.
+    standing.centreFloorZ - dest.centreFloorZ > MAX_STEP_UP
   );
 }
 
@@ -296,7 +292,7 @@ function testStep(
   // hand, so the standing walk stays off every step taken away from a ledge —
   // docs/monster-ai.md § The dropoff rule.
   const mayDrop = !stats.flies && (body.z - check.floorZ > MAX_STEP_UP || body.z - check.dropoffZ > MAX_STEP_UP);
-  const overDropoff = mayDrop && dropoffRefuses(body, stats, world, x, y, check);
+  const overDropoff = mayDrop && dropoffRefuses(body, stats, world, check);
   if (!check.blocked && !overDropoff) {
     if (!stats.flies) return 'clear';
     // `tmceilingz - thing->z < thing->height`, vanilla's "mobj must lower
@@ -462,7 +458,6 @@ function stepCharge(body: MonsterBody, stats: MonsterStats, dt: number, world: W
   }
   body.x = nx;
   body.y = ny;
-  standingMoved();
   return null;
 }
 
@@ -540,9 +535,9 @@ export function stepMonsterAI(
   resurrect?: Resurrector,
   sfx: SoundEmitter = SILENT,
 ): MonsterAttack | null {
-  // This is another monster than the last call stepped, and a tic of movers may
-  // have run since — nothing about the previous body's standing walk survives.
-  standingMoved();
+  // A tic of movers may have run since the last call, so even an unmoved body's
+  // standing walk is stale — the position key alone would not catch that.
+  standingBody = null;
   if (body.painTimer > 0) {
     body.painTimer = Math.max(0, body.painTimer - dt);
     settleVertical(body, stats, world, dt, target);
@@ -660,7 +655,6 @@ export function stepMonsterAI(
     } else {
       body.x = nx;
       body.y = ny;
-      standingMoved();
       body.inFloat = false;
       body.angle = Math.atan2(DIR_Y[body.movedir], DIR_X[body.movedir]);
       // Footsteps are paced by *walking*, not by wall-clock time: a monster

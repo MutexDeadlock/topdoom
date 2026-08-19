@@ -346,10 +346,18 @@ simply bounded rather than nudged.
 already in hand — a grounded body's `z` is never below the floor it stands on (`settleVertical`
 clamps it) and `dropoffZ` is never above the other heights, so no comparison can fire unless the
 destination sits more than a step under the body's feet. And the walk is **memoized for one
-`stepMonsterAI` call** (`standingAt`): every reader runs before that call's single movement commit,
-so a re-route asking eleven times pays for one walk. On the alcove fixture that is 3.7 line walks
-per monster per frame against 5.6 without the memo — and against the 5.5 the *frozen* monster
-burned before the fix, re-routing through every direction each chase call.
+`stepMonsterAI` call** (`standingAt`), so a re-route asking eleven times pays for one walk. On the
+alcove fixture that is 3.7 line walks per monster per frame against 5.6 without the memo — and
+against the 5.5 the *frozen* monster burned before the fix, re-routing through every direction each
+chase call.
+
+The memo is keyed on the body **and its position**, so a committed move self-invalidates it rather
+than obliging every future `body.x`/`body.y` write to say so; `stepMonsterAI` additionally clears it
+on entry, because a tic of movers may have changed the geometry under a body that never moved.
+`settleVertical` shares it — its walk is argument-for-argument the same one — so the two ask the
+line grid once between them. All three comparisons come off walks already in hand: the centre-floor
+clause reads `PositionCheck.centreFloorZ`, the floor under (x, y) alone that `checkPosition` records
+on the descent it already makes, rather than re-descending the BSP through `floorAt`.
 
 ## Floating monsters
 

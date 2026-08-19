@@ -80,6 +80,28 @@ const RAY_DIRS: readonly { dx: number; dy: number }[] = Array.from({ length: OPE
 const clearances = new Float64Array(OPENNESS_RAY_COUNT);
 
 /**
+ * The ray currently being traced, and one bound visitor over it rather than a
+ * closure per ray — `fogofwar.ts`'s `testBlocker` does the same for the same
+ * reason. `measureOpenness` is not reentrant, which is what lets this be module
+ * scratch.
+ */
+let rayWorld!: World;
+let rayX = 0;
+let rayY = 0;
+let rayToX = 0;
+let rayToY = 0;
+let rayNearestT = 1;
+
+function traceRay(i: number): void {
+  const ends = rayWorld.lineOverlapEnds;
+  const e = i * 4;
+  const t = segmentCrossT(rayX, rayY, rayToX, rayToY, ends[e], ends[e + 1], ends[e + 2], ends[e + 3]);
+  if (t < 0 || t >= rayNearestT) return;
+  if (!rayWorld.blocksSight(i)) return;
+  rayNearestT = t;
+}
+
+/**
  * How open a place is, in the two senses the framing needs — both 0 (shut in)
  * to 1 (wide open), and each mapped through its own window.
  * docs/render.md § Auto camera.
@@ -103,6 +125,9 @@ function toOpenness(distance: number, near: number, far: number): number {
  * widens the measurement on the next tic. docs/render.md § Auto camera.
  */
 export function measureOpenness(world: World, x: number, y: number, viewDeg: number): Openness {
+  rayWorld = world;
+  rayX = x;
+  rayY = y;
   const viewRad = (viewDeg * Math.PI) / 180;
   const vx = Math.cos(viewRad);
   const vy = Math.sin(viewRad);
@@ -111,18 +136,11 @@ export function measureOpenness(world: World, x: number, y: number, viewDeg: num
 
   for (let r = 0; r < OPENNESS_RAY_COUNT; r++) {
     const dir = RAY_DIRS[r];
-    const tx = x + dir.dx * OPENNESS_RANGE;
-    const ty = y + dir.dy * OPENNESS_RANGE;
-    let nearestT = 1;
-    world.forEachLineAlongSegment(x, y, tx, ty, (i) => {
-      const e = i * 4;
-      const ends = world.lineOverlapEnds;
-      const t = segmentCrossT(x, y, tx, ty, ends[e], ends[e + 1], ends[e + 2], ends[e + 3]);
-      if (t < 0 || t >= nearestT) return;
-      if (!world.blocksSight(i)) return;
-      nearestT = t;
-    });
-    const clear = nearestT * OPENNESS_RANGE;
+    rayToX = x + dir.dx * OPENNESS_RANGE;
+    rayToY = y + dir.dy * OPENNESS_RANGE;
+    rayNearestT = 1;
+    world.forEachLineAlongSegment(x, y, rayToX, rayToY, traceRay);
+    const clear = rayNearestT * OPENNESS_RANGE;
     clearances[r] = clear;
 
     // `max(0, cos)` off the view bearing, so rays behind the camera fall out
@@ -175,26 +193,28 @@ export class AutoCamera {
    * One unsmoothed measurement that *jumps* the camera straight to its mapped
    * framing — called on level load, after the spawn yaw is set (so `ahead`
    * already looks the way the level opens) and before the follow point's
-   * `snapTo`, so a level never opens mid-zoom.
+   * `snapTo`, so a level never opens mid-zoom. `initialised = false` is what
+   * makes the `tick` below measure unsmoothed; the jump is `snapFraming`.
    */
   seed(px: number, py: number, camera: TopDownCamera): void {
     if (getCameraMode() !== 'auto') return;
-    const openness = this.measure(px, py, camera);
-    this.smoothedSpread = openness.spread;
-    this.smoothedAhead = openness.ahead;
-    this.initialised = true;
-    camera.distance = this.mapDistance();
-    camera.tiltDeg = this.mapTilt();
+    this.initialised = false;
+    this.tick(px, py, camera);
+    camera.snapFraming(camera.targetDistance, camera.targetTiltDeg);
   }
 
   /**
    * One tic: measure, smooth, and retarget the camera's framing. A no-op in
    * manual mode, so callers need not know the mode — the gate lives with the
    * setting's owner, as every other settings-tab preference does.
+   *
+   * `viewerAngleDeg` is the bearing *to* the camera, so the view looks along
+   * its opposite — reading the camera's orbit rather than the player's facing
+   * is what keeps the mouse from twitching the framing.
    */
   tick(px: number, py: number, camera: TopDownCamera): void {
     if (getCameraMode() !== 'auto') return;
-    const openness = this.measure(px, py, camera);
+    const openness = measureOpenness(this.world, px, py, camera.viewerAngleDeg + 180);
     // Unsmoothed until there is something to smooth from: a level loaded in
     // manual mode and switched to auto mid-level was never seeded.
     this.smoothedSpread = this.initialised
@@ -206,15 +226,6 @@ export class AutoCamera {
     this.initialised = true;
     camera.targetDistance = this.mapDistance();
     camera.targetTiltDeg = this.mapTilt();
-  }
-
-  /**
-   * `viewerAngleDeg` is the bearing *to* the camera, so the view looks along
-   * its opposite — reading the camera's orbit rather than the player's facing
-   * is what keeps the mouse from twitching the framing.
-   */
-  private measure(px: number, py: number, camera: TopDownCamera): Openness {
-    return measureOpenness(this.world, px, py, camera.viewerAngleDeg + 180);
   }
 
   // Both endpoint pairs sit inside the camera's own envelope, which clamps.

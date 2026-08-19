@@ -133,3 +133,43 @@ describe('Regressions · a pit that is also a mover', () => {
     );
   });
 });
+
+/**
+ * The false positive the per-leaf test used to have: vanilla SEGS carry no
+ * minisegs, so a BSP leaf's splits into the rest of its own sector are invisible
+ * here, and a leaf left with a single seg reads as fully enclosed by it.
+ * Repro: DOOM2 MAP01 subsector 22, one seg on line 335 (the barred alcove's
+ * higher floor), which lidded 23,000 map units² of the courtyard's grass with
+ * the alcove's flat. docs/render.md § Closed holes.
+ */
+describe('Regressions · a leaf of an open room is not a hole', () => {
+  /**
+   * Three cells in a row: the west one raised, the other two one room, whose
+   * east leaf keeps only the seg on the drop — the shape a node split leaves.
+   */
+  function room(): { grid: GridMap; leaf: number } {
+    const grid = gridMap(['...']);
+    const map = grid.map;
+    const raised = grid.index(0, 0);
+    const leaf = grid.index(1, 0);
+    const rest = grid.index(2, 0);
+    map.sectors[raised].floorHeight = 128;
+    map.sectors[raised].floorTex = RIM_FLAT;
+    // One room over both open cells, so the line between them has it on both sides.
+    for (const side of map.sidedefs) {
+      if (side.sector === rest) side.sector = leaf;
+    }
+    const drop = map.subsectors[leaf].first;
+    assert.equal(map.segs[drop].linedef, grid.westEdge(1, 0), 'the west edge is the leaf’s first seg');
+    map.subsectors[leaf] = { first: drop, count: 1 };
+    return { grid, leaf };
+  }
+
+  test('a leaf whose one seg is an untextured drop gets no lid', () => {
+    const { grid, leaf } = room();
+    const lids = buildMapMesh(grid.map, BANK, { transfers: transfersOf(grid.map) }).flatSurfaces.filter(
+      (f) => f.subsector === leaf && f.height !== 0,
+    );
+    assert.deepEqual(lids, [], 'the room has one-sided walls elsewhere, so it is not a pit');
+  });
+});

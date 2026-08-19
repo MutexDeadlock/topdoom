@@ -4,7 +4,7 @@
  * conversion. See docs/render.md § Mesh building and § Sector lighting.
  */
 import * as THREE from 'three';
-import { LF, NO_SIDE, segBackSide, segSide, SKY_FLAT, type DoomMap, type LineDef, type SideDef, type Sector } from '../wad/map.ts';
+import { LF, NO_SIDE, SKY_FLAT, type DoomMap, type LineDef, type SideDef, type Sector } from '../wad/map.ts';
 import { buildSubSectorPolys, type SubSectorPoly } from './bsp.ts';
 import { findSolidCaps, pointInPolygon, type SolidCap } from './solids.ts';
 import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
@@ -211,6 +211,14 @@ export interface MapMeshOptions {
    * ones behind.
    */
   movableSectors?: Set<number>;
+  /**
+   * The linedefs bordering a sector — vanilla's `sec->lines[]`, the same seam
+   * `MoverIndex.linesOf` uses and for the same reason: `game/world.ts` already
+   * builds and memoizes this per map, and the renderer keeps no import edge
+   * into `game/`. Omitted (tests, tools) means build a plain adjacency list
+   * locally — see `borderingLines`.
+   */
+  linesOf?: (sectorIndex: number) => readonly number[];
 }
 
 export interface BuiltMap {
@@ -337,7 +345,7 @@ function ownTransfers(map: DoomMap): SectorTransfers {
 }
 
 export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshOptions = {}): BuiltMap {
-  const { renderCeilings = false, wallHeightCap = 0, movableSectors } = options;
+  const { renderCeilings = false, wallHeightCap = 0, movableSectors, linesOf } = options;
   const transfers = options.transfers ?? ownTransfers(map);
   const batches = new BatchSet();
   const missing = new Set<string>();
@@ -353,7 +361,7 @@ export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshO
   };
 
   const polys = buildSubSectorPolys(map);
-  buildFlats(map, polys, batches, texSize, renderCeilings, flatSurfaces, transfers, movableSectors);
+  buildFlats(map, polys, batches, texSize, renderCeilings, flatSurfaces, transfers, linesOf, movableSectors);
   buildWalls(map, batches, texSize, wallHeightCap, occluders, transfers, movableSectors);
   buildSolidCaps(map, polys, batches, texSize, flatSurfaces, transfers);
 
@@ -516,8 +524,9 @@ function buildMoverBatches(
 
   // No `movableSectors` here on purpose: a mover is rebuilt alongside its
   // movable neighbours, so its lids cannot go stale against one.
+  const holeFill = closedHoleFill(map, sectorIndex, index.linesOf(sectorIndex), transfers);
   for (const ss of index.subsectorsOf(sectorIndex)) {
-    processFlat(map, polys[ss], ss, batches, texSize, renderCeilings, flatFans, transfers);
+    processFlat(map, polys[ss], ss, batches, texSize, renderCeilings, flatFans, transfers, holeFill);
   }
 
   // Own sides always; a neighbour's side only when that neighbour is static —
@@ -553,11 +562,13 @@ function buildFlats(
   renderCeilings: boolean,
   flatSurfaces: FlatSurface[],
   transfers: SectorTransfers,
+  linesOf: ((sectorIndex: number) => readonly number[]) | undefined,
   movableSectors?: Set<number>,
 ): void {
+  const fills = closedHoleFills(map, transfers, linesOf, movableSectors);
   for (let ss = 0; ss < polys.length; ss++) {
     if (movableSectors && movableSectors.has(polys[ss].sector)) continue;
-    processFlat(map, polys[ss], ss, batches, size, renderCeilings, flatSurfaces, transfers, movableSectors);
+    processFlat(map, polys[ss], ss, batches, size, renderCeilings, flatSurfaces, transfers, fills[polys[ss].sector]);
   }
 }
 
@@ -632,49 +643,91 @@ function triangulate(points: Float64Array): Float64Array[] {
 }
 
 /**
- * The neighbouring sector a leaf closes itself over, or -1 where it is ordinary
- * geometry. A leaf whose *every* seg is a two-sided drop with no lower texture
- * is a hole the mapper never meant to be looked into, and this camera looks
- * into every pit; the lid follows GZDoom's own render hack
+ * The neighbouring sector a **sector** closes itself over, or -1 where it is
+ * ordinary geometry. A sector whose *every* side is a two-sided drop with no
+ * lower texture is a hole the mapper never meant to be looked into, and this
+ * camera looks into every pit; the lid follows GZDoom's own render hack
  * (`hw_renderhacks.cpp: HandleMissingTextures` / `DoOneSectorLower`).
+ * `lines` is every linedef bordering the sector — vanilla's `sec->lines[]`.
  * docs/render.md § Closed holes.
  */
 function closedHoleFill(
   map: DoomMap,
-  ss: number,
   sectorIndex: number,
-  ownFloor: number,
+  lines: readonly number[],
   transfers: SectorTransfers,
   movableSectors?: Set<number>,
 ): number {
-  const sub = map.subsectors[ss];
+  const self = map.sectors[sectorIndex];
   // Boom's 242 idioms are built *on* missing textures, so the hack keeps clear.
-  if (!sub || transfers.heightSec(sectorIndex) >= 0) return -1;
+  if (!self || transfers.heightSec(sectorIndex) >= 0) return -1;
 
   let from = -1;
-  for (let i = 0; i < sub.count; i++) {
-    const seg = map.segs[sub.first + i];
-    const line = seg ? map.linedefs[seg.linedef] : undefined;
-    // A one-sided wall means the leaf is a room, not a hole.
-    if (!line || line.right === NO_SIDE || line.left === NO_SIDE) return -1;
-    const side = map.sidedefs[segSide(line, seg.direction)];
-    const back = map.sidedefs[segBackSide(line, seg.direction)];
-    if (!side || !back || side.sector !== sectorIndex) return -1;
-    if (back.sector === side.sector) continue;
+  for (const lineIndex of lines) {
+    const line = map.linedefs[lineIndex];
+    if (!line) continue;
+    const right = line.right === NO_SIDE ? undefined : map.sidedefs[line.right];
+    const left = line.left === NO_SIDE ? undefined : map.sidedefs[line.left];
+    // The line seen from this sector: whichever side it owns, and the one behind
+    // it. A line with both sides here falls out at `back.sector` below.
+    const side = right?.sector === sectorIndex ? right : left;
+    if (!side || side.sector !== sectorIndex) continue;
+    const back = side === right ? left : right;
+    // A one-sided wall means the sector is a room, not a hole.
+    if (!back) return -1;
+    if (back.sector === sectorIndex) continue;
     const other = map.sectors[back.sector];
     if (!other || transfers.heightSec(back.sector) >= 0) return -1;
     // The lid is baked at this neighbour's height, so a movable one would leave
     // it stale — only `buildMoverBatches`, rebuilt alongside its movable
     // neighbours, passes no set.
     if (movableSectors?.has(back.sector)) return -1;
-    // Every side a step down into the leaf that draws nothing, and every one of
-    // them the same step: the lid is one plane, so it has one height.
-    if (other.floorHeight <= ownFloor || other.floorTex === SKY_FLAT) return -1;
+    // Every side a step down into the sector that draws nothing, and every one
+    // of them the same step: the lid is one plane, so it has one height.
+    if (other.floorHeight <= self.floorHeight || other.floorTex === SKY_FLAT) return -1;
     if (side.lower !== NO_TEXTURE && side.lower !== '') return -1;
     if (from >= 0 && other.floorHeight !== map.sectors[from].floorHeight) return -1;
     from = back.sector;
   }
   return from;
+}
+
+/**
+ * Sector→bordering-linedefs for a caller that supplied no `linesOf`. Plain
+ * adjacency, and deliberately **not** a second `sec->lines[]`: `closedHoleFill`
+ * reads each line from one sector's side and is idempotent in it, so a line
+ * listed twice changes no answer. The `P_GroupLines` ordering/dedupe rule has
+ * one implementation, `game/world.ts: sectorLines`, which `linesOf` routes to.
+ */
+function borderingLines(map: DoomMap): number[][] {
+  const lines: number[][] = Array.from({ length: map.sectors.length }, () => []);
+  for (let i = 0; i < map.linedefs.length; i++) {
+    const line = map.linedefs[i];
+    for (const sideIndex of [line.right, line.left]) {
+      if (sideIndex === NO_SIDE) continue;
+      lines[map.sidedefs[sideIndex]?.sector]?.push(i);
+    }
+  }
+  return lines;
+}
+
+/**
+ * Every sector's `closedHoleFill` in one pass, indexed by sector — what
+ * `buildFlats` hands each leaf. A mover builds its one sector's answer straight
+ * from `MoverIndex.linesOf` instead.
+ */
+function closedHoleFills(
+  map: DoomMap,
+  transfers: SectorTransfers,
+  linesOf: ((sectorIndex: number) => readonly number[]) | undefined,
+  movableSectors?: Set<number>,
+): Int32Array {
+  const fallback = linesOf ? undefined : borderingLines(map);
+  const fills = new Int32Array(map.sectors.length);
+  for (let s = 0; s < fills.length; s++) {
+    fills[s] = closedHoleFill(map, s, linesOf ? linesOf(s) : fallback![s], transfers, movableSectors);
+  }
+  return fills;
 }
 
 /** One flat fan's parameters — everything `addFlatFan` needs that isn't the footprint. */
@@ -697,7 +750,8 @@ function processFlat(
   renderCeilings: boolean,
   flatSurfaces: FlatSurface[],
   transfers: SectorTransfers,
-  movableSectors?: Set<number>,
+  /** The sector this leaf's own sector closes itself over (`closedHoleFill`), or -1. */
+  holeFill: number,
 ): void {
   const n = poly.points.length / 2;
   if (n < 3) return;
@@ -743,13 +797,12 @@ function processFlat(
   // The lid over a hole in the map (`closedHoleFill`), drawn on top of the real
   // floor as GZDoom draws its own. An ordinary `FlatSurface`, so `FlatFader`
   // dissolves it for a body underneath.
-  const fill = closedHoleFill(map, ss, poly.sector, sector.floorHeight, transfers, movableSectors);
-  if (fill >= 0) {
+  if (holeFill >= 0) {
     addFlatFan(poly, ss, batches, size, flatSurfaces, {
-      texName: map.sectors[fill].floorTex,
-      height: map.sectors[fill].floorHeight,
-      light: transfers.floorLight(fill),
-      lightSector: transfers.floorLightSector(fill),
+      texName: map.sectors[holeFill].floorTex,
+      height: map.sectors[holeFill].floorHeight,
+      light: transfers.floorLight(holeFill),
+      lightSector: transfers.floorLightSector(holeFill),
       isCeiling: false,
     });
   }

@@ -209,10 +209,6 @@ export function parseDehacked(
   /** Whether the open record was already reported, so its field lines add nothing. */
   let skipping = false;
 
-  const count = (name: string): void => {
-    applied[name] = (applied[name] ?? 0) + 1;
-  };
-
   /** Files the open `Thing` edit, if it turned out to carry anything beyond its identity. */
   const closeThing = (): void => {
     if (edit && editTouched) thingEdits.push(edit);
@@ -248,14 +244,8 @@ export function parseDehacked(
       label = word;
       row = undefined;
 
-      if (classified.support === 'unsupported' || classified.support === 'unknown') {
-        warnings.add(
-          word,
-          classified.support,
-          classified.support === 'unknown'
-            ? `unrecognised record \`${trimmed}\``
-            : `\`${word}\` records edit the frame table, which this engine does not have`,
-        );
+      if (classified.support !== 'applied') {
+        warnings.add(word, classified.support, recordDetailFor(word, trimmed, classified.support));
         // Its own field lines say nothing the record header hasn't: seven `Frame` records would
         // otherwise contribute a second row per distinct field name on top of the one that matters.
         skipping = true;
@@ -274,7 +264,7 @@ export function parseDehacked(
         }
         edit = { index };
       } else if (kind === 'text') {
-        readText(trimmed, cursor, titleLookup, strings, warnings, count);
+        readText(trimmed, cursor, titleLookup, strings, warnings);
       }
       continue;
     }
@@ -294,14 +284,14 @@ export function parseDehacked(
       continue;
     }
     // A BEX `[SOUNDS]`/`[MUSIC]` entry is `mnemonic = lump`, keyed by name rather than by index.
-    if (kind === 'sound' && label.startsWith('[')) {
+    // Only the bracketed form reaches here — `RECORD_KINDS` classifies the numeric `Sound N` /
+    // `Music N` records `noTarget`, so `skipping` above has already dropped their field lines.
+    if (kind === 'sound') {
       soundLumps.set(pair.key.trim().toLowerCase(), pair.value.trim());
-      count('sound');
       continue;
     }
-    if (kind === 'music' && label.startsWith('[')) {
+    if (kind === 'music') {
       musicLumps.set(pair.key.trim().toLowerCase(), pair.value.trim());
-      count('music');
       continue;
     }
 
@@ -324,7 +314,6 @@ export function parseDehacked(
       // and half-resolving it here is what let `BFG Cells/Shot` report as applied while landing
       // nowhere. `classifyDehackedField` has already rejected any name with no sink.
       misc[key] = value;
-      count('misc');
     }
   }
 
@@ -332,6 +321,9 @@ export function parseDehacked(
   if (thingEdits.length) applied.thing = thingEdits.length;
   if (ammoEdits.length) applied.ammo = ammoEdits.length;
   if (weaponEdits.length) applied.weapon = weaponEdits.length;
+  if (Object.keys(misc).length) applied.misc = Object.keys(misc).length;
+  if (soundLumps.size) applied.sound = soundLumps.size;
+  if (musicLumps.size) applied.music = musicLumps.size;
   if (pars.size) applied.pars = pars.size;
   if (strings.size) applied.strings = strings.size;
 
@@ -347,6 +339,17 @@ export function parseDehacked(
     warnings: warnings.drain(),
     applied,
   };
+}
+
+/**
+ * One sentence naming why a whole record class is skipped, so `RECORD_KINDS`' classification is
+ * what decides — including `noTarget`, which is the numeric `Sound`/`Music`/`Cheat` records: those
+ * only move a pointer into the exe's own string table, which this engine has no equivalent of.
+ */
+function recordDetailFor(word: string, line: string, support: DehShortfall): string {
+  if (support === 'unknown') return `unrecognised record \`${line}\``;
+  if (support === 'noTarget') return `\`${word}\` records index a table this engine does not have`;
+  return `\`${word}\` records edit the frame table, which this engine does not have`;
 }
 
 /** One sentence naming what was skipped, rather than restating the class. */
@@ -369,7 +372,6 @@ function readText(
   titleLookup: (title: string) => string | undefined,
   strings: Map<string, string>,
   warnings: WarningLog,
-  count: (name: string) => void,
 ): void {
   const lengths = /^Text\s+(\d+)\s+(\d+)/i.exec(headerLine);
   if (!lengths) {
@@ -382,7 +384,6 @@ function readText(
   const mapName = pair ? titleLookup(pair.from) : undefined;
   if (pair && mapName) {
     strings.set(mapName, pair.to);
-    count('text');
     return;
   }
   warnings.add(
@@ -486,10 +487,11 @@ function readString(
     .replace(/\\t/g, '\t')
     .replace(/\\"/g, '"')
     .replace(/\\\\/g, '\\');
-  const { support, group } = classifyDehackedString(key);
+  const support = classifyDehackedString(key);
   if (support !== 'applied') {
-    // Keyed by group, not by mnemonic: one row saying "38 pickup messages" beats 38 rows.
-    warnings.add('[STRINGS]', support, 'no string this engine has anywhere to show', group);
+    // Only an unrecognised mnemonic earns a row. A `GOT*` or an `OB_MPFIST` is recognised and
+    // deliberately homeless, and reporting those said nothing a reader could act on.
+    if (support === 'unknown') warnings.add('[STRINGS]', support, 'mnemonic this parser does not recognise');
     return;
   }
   strings.set(key.trim().toUpperCase(), expanded);

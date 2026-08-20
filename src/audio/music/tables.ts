@@ -7,7 +7,7 @@
  * `sounds.c`'s `S_music[]`, DOOM 1's own 27 level tracks in `mus_e1m1` order.
  * Lump names are these prefixed with `D_` (`i_sound.c`'s `sprintf(buf, "d_%s", …)`).
  */
-export const DOOM1_MUSIC = [
+const DOOM1_MUSIC = [
   'e1m1', 'e1m2', 'e1m3', 'e1m4', 'e1m5', 'e1m6', 'e1m7', 'e1m8', 'e1m9',
   'e2m1', 'e2m2', 'e2m3', 'e2m4', 'e2m5', 'e2m6', 'e2m7', 'e2m8', 'e2m9',
   'e3m1', 'e3m2', 'e3m3', 'e3m4', 'e3m5', 'e3m6', 'e3m7', 'e3m8', 'e3m9',
@@ -20,7 +20,7 @@ export const DOOM1_MUSIC = [
 const EPISODE4_MUSIC = ['e3m4', 'e3m2', 'e3m3', 'e1m5', 'e2m7', 'e2m4', 'e2m6', 'e2m5', 'e1m9'];
 
 /** `S_music[]` continued: DOOM 2's 32 level tracks, `mus_runnin` (MAP01) onward. */
-export const DOOM2_MUSIC = [
+const DOOM2_MUSIC = [
   'runnin', 'stalks', 'countd', 'betwee', 'doom', 'the_da', 'shawn', 'ddtblu',
   'in_cit', 'dead', 'stlks2', 'theda2', 'doom2', 'ddtbl2', 'runni2', 'dead2',
   'stlks3', 'romero', 'shawn2', 'messag', 'count2', 'ddtbl3', 'ampie', 'theda3',

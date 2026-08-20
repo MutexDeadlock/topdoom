@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import { MAPINFO_LUMPS, parseMapInfoNames, preferredMapInfoLump } from '../src/wad/campaign/mapinfo.ts';
-import { dehTitlesFor, missionOf, titleLookupFor } from '../src/wad/campaign/names.ts';
+import { mergeLevelTitles, titleLookupFor } from '../src/wad/campaign/names.ts';
 import { parseDehacked } from '../src/game/dehacked.ts';
 import { hashBytes } from '../src/wad/checksum.ts';
 
@@ -69,27 +69,21 @@ function describeWad(path: string, folder: WadFolder): WadManifestEntry | null {
 
   // Exactly one lump per file, chosen by `preferredMapInfoLump` — the menu's titles and the
   // in-game ones come from the same rule, or a WAD shipping two flavours gets two different names.
-  const levelNames: Record<string, string> = {};
   const wanted = preferredMapInfoLump([...mapInfoLumps.keys()]);
   const at = wanted ? mapInfoLumps.get(wanted) : undefined;
-  if (at && at.offset >= 0 && at.offset + at.size <= buf.length) {
-    for (const [map, title] of parseMapInfoNames(buf.toString('latin1', at.offset, at.offset + at.size))) {
-      levelNames[map] = title;
-    }
-  }
+  const mapInfoTitles =
+    at && at.offset >= 0 && at.offset + at.size <= buf.length
+      ? parseMapInfoNames(buf.toString('latin1', at.offset, at.offset + at.size))
+      : [];
 
-  // A DEHACKED patch fills the gaps MAPINFO left, never overwrites them — the same order
-  // `levelTitleFor` applies in-game, so the menu and the level card name a level alike.
-  // Projected against this file's own name, which for an IWAD is exactly the mission
-  // (`plutonia.wad` picks its `PHUSTR_*` set) and for a PWAD is the plain `HUSTR_*` one.
   const file = path.split('/').pop()!;
-  if (dehLump && dehLump.offset >= 0 && dehLump.offset + dehLump.size <= buf.length) {
-    const text = buf.toString('latin1', dehLump.offset, dehLump.offset + dehLump.size);
-    const patch = parseDehacked(text, titleLookupFor());
-    for (const [map, title] of dehTitlesFor(missionOf(file), patch.strings)) {
-      levelNames[map] ??= title;
-    }
-  }
+  const patch =
+    dehLump && dehLump.offset >= 0 && dehLump.offset + dehLump.size <= buf.length
+      ? parseDehacked(buf.toString('latin1', dehLump.offset, dehLump.offset + dehLump.size), titleLookupFor())
+      : undefined;
+  // `mergeLevelTitles` owns the MAPINFO-then-DEHACKED order, shared with `library.ts`'s
+  // `uploadedLevelInfo` so the same file cannot list differently uploaded than served.
+  const levelNames = mergeLevelTitles(file, mapInfoTitles, patch?.strings);
 
   return {
     file,

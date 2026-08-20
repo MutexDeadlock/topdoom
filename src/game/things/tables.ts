@@ -786,49 +786,53 @@ export const BARREL_SPLASH_RADIUS = 128;
 export const BARREL_SPLASH_DAMAGE = 128;
 
 /**
- * What to call a thing that killed the player, on the death overlay. The
- * article is part of the value rather than derived, so the two names that don't
- * take "a"/"an" (Commander Keen, the Icon of Sin) need no exception.
+ * The death overlay's middle line, in full, keyed by the `DamageCause` it answers — plus
+ * `'default'`, which is not a cause but what a death no call site attributed, or a doomednum with
+ * no line of its own, falls back to. See docs/death.md § Who killed the player.
  *
- * Vanilla has no obituaries at all, so nothing here is a fidelity claim: these
- * are the standard manual/editor names for the types, as player-facing text.
- * Only what can actually land a killing blow is listed — every monster, plus
- * the exploding barrel. See docs/death.md § Player death.
+ * Only what can actually land a killing blow is listed: every monster, plus the exploding barrel.
+ * Whole sentences rather than "You were killed by " plus a name, because a DEH patch's `OB_*`
+ * string replaces a line **entire** and there would be no fragment for it to slot into —
+ * docs/dehacked.md § Obituaries
+ *
+ * Vanilla has no obituaries at all, so nothing here is a fidelity claim: the wording is this
+ * engine's own, over the standard manual/editor names for the types.
  */
-export const THING_NAMES: Record<number, string> = {
-  [ThingType.zombieman]: 'a Zombieman',
-  [ThingType.shotgunGuy]: 'a Shotgun Guy',
-  [ThingType.imp]: 'an Imp',
-  [ThingType.demon]: 'a Demon',
-  [ThingType.spectre]: 'a Spectre',
-  [ThingType.lostSoul]: 'a Lost Soul',
-  [ThingType.cacodemon]: 'a Cacodemon',
-  [ThingType.baronOfHell]: 'a Baron of Hell',
-  [ThingType.hellKnight]: 'a Hell Knight',
-  [ThingType.spiderMastermind]: 'a Spider Mastermind',
-  [ThingType.cyberdemon]: 'a Cyberdemon',
-  [ThingType.painElemental]: 'a Pain Elemental',
-  [ThingType.heavyWeaponDude]: 'a Heavy Weapon Dude',
-  [ThingType.revenant]: 'a Revenant',
-  [ThingType.mancubus]: 'a Mancubus',
-  [ThingType.arachnotron]: 'an Arachnotron',
-  [ThingType.archVile]: 'an Arch-Vile',
-  [ThingType.wolfensteinSS]: 'a Wolfenstein SS',
-  [ThingType.commanderKeen]: 'Commander Keen',
-  [ThingType.bossBrain]: 'the Icon of Sin',
-  [ThingType.barrel]: 'an exploding barrel',
+export const OBITUARIES: Record<number | string, string> = {
+  self: 'You blew yourself up',
+  crush: 'You were crushed',
+  slime: 'You forgot to wear a protection suit',
+  default: '',
+
+  [ThingType.zombieman]: 'You were killed by a Zombieman',
+  [ThingType.shotgunGuy]: 'You were killed by a Shotgun Guy',
+  [ThingType.imp]: 'You were killed by an Imp',
+  [ThingType.demon]: 'You were killed by a Demon',
+  [ThingType.spectre]: 'You were killed by a Spectre',
+  [ThingType.lostSoul]: 'You were killed by a Lost Soul',
+  [ThingType.cacodemon]: 'You were killed by a Cacodemon',
+  [ThingType.baronOfHell]: 'You were killed by a Baron of Hell',
+  [ThingType.hellKnight]: 'You were killed by a Hell Knight',
+  [ThingType.spiderMastermind]: 'You were killed by a Spider Mastermind',
+  [ThingType.cyberdemon]: 'You were killed by a Cyberdemon',
+  [ThingType.painElemental]: 'You were killed by a Pain Elemental',
+  [ThingType.heavyWeaponDude]: 'You were killed by a Heavy Weapon Dude',
+  [ThingType.revenant]: 'You were killed by a Revenant',
+  [ThingType.mancubus]: 'You were killed by a Mancubus',
+  [ThingType.arachnotron]: 'You were killed by an Arachnotron',
+  [ThingType.archVile]: 'You were killed by an Arch-Vile',
+  [ThingType.wolfensteinSS]: 'You were killed by a Wolfenstein SS',
+  [ThingType.commanderKeen]: 'You were killed by Commander Keen',
+  [ThingType.bossBrain]: 'You were killed by the Icon of Sin',
+  [ThingType.barrel]: 'You were killed by an exploding barrel',
 };
 
 /**
- * The death overlay's line under "YOU DIED", or `''` when there is nothing to
- * say — a cause no call site attributed, or a doomednum with no name here,
- * which the overlay then draws exactly as it did before there was a line at
- * all. See docs/death.md § Player death.
+ * The death overlay's middle line, or `''` when there is nothing to say — which the overlay then
+ * draws exactly as it did before there was a line at all. `OBITUARIES` holds the text, so a patch
+ * that replaced a line is read here without this having to know.
+ * See docs/death.md § Who killed the player.
  */
 export function obituary(cause: DamageCause | undefined): string {
-  if (cause === 'self') return 'You blew yourself up';
-  if (cause === 'crush') return 'You were crushed';
-  if (cause === 'slime') return 'You forgot to wear a protection suit';
-  const name = typeof cause === 'number' ? THING_NAMES[cause] : undefined;
-  return name ? `You were killed by ${name}` : '';
+  return (cause === undefined ? undefined : OBITUARIES[cause]) ?? OBITUARIES.default;
 }

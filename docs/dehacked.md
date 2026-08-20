@@ -157,10 +157,19 @@ This engine has **no flags bitfield anywhere** — vanilla's flags live here as 
 `Set`s in `things/tables.ts` plus a field or two on `MonsterStats` — so applying a mask means
 walking `MF_FLAGS` and adding or removing each row's sink. The three groups:
 
-- **A real sink**: `MF_SOLID` → `SOLID_DECORATION_TYPES`, `MF_SHOOTABLE` → `MONSTER_TYPES`,
+- **A real sink**: `MF_SOLID` **and not `MF_SHOOTABLE`** → `SOLID_DECORATION_TYPES`, `MF_SHOOTABLE`
+  → `MONSTER_TYPES`,
   `MF_COUNTKILL`/`MF_COUNTITEM` → their `Set`s, `MF_SHADOW` → `FUZZ_TYPES`, `MF_SPAWNCEILING` →
   `CEILING_HUNG_HEIGHT`, and `MF_FLOAT` **together with** `MF_NOGRAVITY` → `MonsterStats.flies`.
   `MF_MISSILE` is not a sink of its own; it decides how this record's `Speed` is read.
+
+  The pair on the `MF_SOLID` row is the one sink that isn't a single bit, and it is load-bearing:
+  `SOLID_DECORATION_TYPES` means *solid and not shootable* — `things.ts` skips its members in the
+  hitscan, projectile and splash paths (docs/movement.md § Solid decorations). Every monster in
+  `info.c` carries `MF_SOLID` as well, so keying membership on that bit alone made **any** `Bits`
+  line on a monster unkillable and 16 units wide. `Width` reads the same predicate over the record's
+  own mask rather than the current membership, because `Bits` is applied last — a record that turns
+  a prop solid and resizes it in one go has to write the radius override too.
 - **Quiet** (`FlagRow.quiet`, filtered out of the report): vanilla's own blockmap and sector
   bookkeeping, which this engine's monster grid replaces; per-actor runtime state that is zero in
   every `info.c` entry; `MF_AMBUSH`, which is a per-*thing* map flag rather than a type property;
@@ -212,7 +221,7 @@ to the applier, rather than half-resolving it on the way through.
 
 ## Sounds and music
 
-`SFX_ORDER` and `MUSIC_ORDER` bridge `sfxenum_t` and `musicenum_t` onto this engine's names.
+`SFX_ORDER` bridges `sfxenum_t` onto this engine's names.
 
 `SFX_ORDER` is **derived** from `audio/sfx.ts`'s `SFX` rather than transcribed a second time: that
 table already *is* `S_sfx[]` in `sounds.h` order, and a second copy of 108 names would only be a
@@ -221,11 +230,10 @@ vanilla's, which is exactly what the pinned indices in `tests/game/dehacked-tabl
 Slot 0 is `sfx_None` and is `null`: a patch setting a sound field to 0 is asking for silence, and
 `MonsterSounds`' fields are already optional, so that maps to deleting the field.
 
-`MUSIC_ORDER` is **composed** the same way, out of `audio/music/tables.ts`' `DOOM1_MUSIC` and
-`DOOM2_MUSIC`: those two hold 59 of its 67 names already, and only the entries between and after
-them — the intermission, title and finale tracks — are listed at the bridge. It has no reader yet;
-it is the index bridge a `Music N` sink would need, and the numeric form classifies `noTarget`
-outright today (below).
+There is no `musicenum_t` bridge: a numeric `Music N` record only moves a pointer into the exe's
+own string table, so it classifies `noTarget` outright (below) and only BEX's `[MUSIC]` mnemonic
+form names a lump this engine can resolve. A `Music N` sink would need one composed out of
+`audio/music/tables.ts`' `DOOM1_MUSIC`/`DOOM2_MUSIC` the way `SFX_ORDER` composes `SFX`.
 
 A `Thing` record's five sound fields resolve through `SFX_ORDER` onto `MonsterSounds` (and onto
 `INERT_SHOOTABLE`'s own pain/death sounds for the two types that carry them outside the stat table).
@@ -235,6 +243,14 @@ BEX's `[SOUNDS]` and `[MUSIC]` redirect **which lump a name resolves to**, throu
 in `audio/sfx.ts` (`soundLumpName`) and `audio/music/tables.ts` (`musicLumpName`). Both are empty
 unless a patch said otherwise, so with none loaded each is exactly the template literal vanilla's
 `i_sound.c` builds.
+
+The value on either side is a **name, not a lump name**: `d_deh.c`'s `deh_procBexSounds`/`Music`
+write it into `S_sfx[].name`/`S_music[].name` — capped at six characters for exactly this reason —
+and the prefix is what `I_GetSfxLumpNum`/`S_ChangeMusic` then put in front of it. So `pistol =
+newgun` means lump `DSNEWGUN`, and `DS` is prepended unconditionally: `dshtgn` is a real sfx name,
+so a "don't double the prefix" rule would silently mean the super shotgun's lump instead.
+`[MUSIC]` is the one that can afford that tolerance — no `mus_*` mnemonic begins with `d_` — and
+takes it, so a patch writing `runnin = D_OTHER` gets what it plainly meant rather than `D_D_OTHER`.
 
 A numeric `Sound N` or `Music N` record classifies `noTarget`: those move a pointer into the exe's
 own string table, which means nothing outside it. Only the BEX mnemonic form names a lump.
@@ -284,6 +300,79 @@ defines *only* `PHUSTR_*` or `THUSTR_*` contributes no menu title, because at bu
 knows it will be loaded on Plutonia or TNT. It still names the level on the card, where the real
 mission is known. A missing title, never a wrong one.
 
+## Obituaries
+
+`OB_*` replaces the death overlay's killer line — the one under "YOU DIED" — whole.
+`dehacked/tables.ts`'s `OBITUARY_SINKS` maps each mnemonic onto the `DamageCause` whose line it
+takes over, and `things/tables.ts`'s `OBITUARIES` holds the lines themselves.
+
+**The table is keyed by whole sentence for this reason.** It used to be `THING_NAMES`, a doomednum
+to `"an Arch-Vile"`, with `obituary` interpolating `You were killed by …` around it. A patch's
+string is a complete line and there is no fragment in it for that to slot into, so the interpolation
+had to go: `OBITUARIES` now holds `You were killed by an Arch-Vile` in full, plus `'crush'`,
+`'slime'`, `'self'` and a `'default'` key that is not a `DamageCause` at all but the fallback for an
+unattributed death.
+
+**Two reference sets, both accepted.** Vanilla DOOM has no obituaries, and the two ports that
+define them disagree about scope: Eternity's BEX string mnemonics table has only the attacker-less
+causes (`OB_CRUSH`, `OB_SLIME`, `OB_BARREL`, `OB_ROCKET_SELF`, `OB_DEFAULT`), while ZDoom's
+`LANGUAGE` adds a per-monster set (`OB_VILE`, `OB_ZOMBIE`, `OB_CYBORG`, …). Both are read. Where
+the two name one sink twice — `OB_ROCKET_SELF` and ZDoom's `OB_R_SPLASH` — they are aliases, and
+the order of `OBITUARY_SINKS` decides rather than the order of the patch: a patch that sets both
+meant the same thing by them.
+
+**The `*HIT` melee variants are `noTarget`, except two.** A `DamageCause` is the killer's doomednum
+and nothing else; it does not carry which of that type's attacks landed, so `OB_IMPHIT` has nowhere
+to go that `OB_IMP` isn't already. `OB_DEMONHIT` and `OB_SPECTREHIT` do apply, because the demon
+and the spectre never attack at range and ZDoom gives them no other mnemonic. Three types have no
+mnemonic in either set and so keep this engine's wording unconditionally: the pain elemental,
+Commander Keen and the Icon of Sin.
+
+**A patched line is put into the second person, so it reads like the engine's own.** The text is
+written about a third-person victim — ZDoom's `%o was squished.` — and `%o` *is* that victim, who
+here is only ever the one player the line is being shown to. So `%o` resolves to `you`, and
+`%g`/`%h`/`%p`/`%s` to `you`/`you`/`your`/`yours`, with `%hself` matched ahead of `%h` so it reads
+`yourself`. The result is capitalised wherever `%o` left it, which for every stock string in either
+set is the front: `You were squished.`
+
+**No subject is invented for a string that names none.** Eternity's table lists the bare predicate
+(`was squished`) because its port prepends the player's name; this engine has no name to prepend and
+does not guess one, so such a line shows as written — `Was squished`. Every real patch measured here
+writes `%o`, freedoom2's forty-eight `OB_*` lines included.
+
+**One verb correction, and the corpus says one is enough.** `you was` becomes `you were`, the only
+disagreement either reference set produces on a mnemonic that has a sink. Everything else they write
+is past tense (`stood in awe of`, `went boom`, `met a Nazi`, `got trilo-bitten`, `died`) or a modal
+(`couldn't evade`, `should have stood back`), and those read the same in either person. The
+third-person-singular forms that *would* need more — `suicides`, `admires` — sit only on
+`OB_SUICIDE` and mnemonics with no sink here, so they never reach this. If that stops being true the
+answer is to widen the audit, not to reach for a conjugator.
+
+## Locked-door lines
+
+`PD_*` replaces the center message a locked door or switch raises. All fifteen apply — vanilla's six
+color lines (`PD_BLUEK`/`PD_BLUEO` and their red and yellow twins, the "open this door" against
+"activate this object" split) and Boom's nine generalized ones (`PD_*C`, `PD_*S`, `PD_ANY`,
+`PD_ALL3`, `PD_ALL6`). `specials/tables.ts`'s `LOCKED_LINES` holds them keyed by mnemonic, verbatim
+from `d_englsh.h`, and `lockedLine` resolves a `LockRule` to one.
+
+**No transform on the way in**, unlike § Obituaries: these strings are already whole second-person
+sentences addressed to the player, with no format tokens and no third-person victim to convert.
+
+**The color words survive a patch** because they are found rather than composed.
+`ui/hud/message.ts: lockedLineMessage` used to build `['You need a ', blue, ' key to open this door']`
+as three runs, which is precisely why `PD_*` could not be honored: a patch writes one string and
+there was no seam in it for the colored fragment. Now the finished line is split on whole color
+words — `blue`, `red`, `yellow` in their key colors, `green` in `ARM1A0`'s green for a patch that
+names a color DOOM has no key for — so a rewritten line still colors correctly, and one that names
+no color simply draws in the message's own yellow.
+
+**Why the table is in `src/game/` and not beside the module that draws it.** `dehacked/apply.ts`
+writes it, and nothing under `src/game/` may import `src/ui/`. The mirror of that constraint is that
+`dehacked/tables.ts` cannot import the specials tables either — it is on the read side, where the
+menu classifies a patch with no `Game` (§ The two entry points) — so it spells the fifteen mnemonics
+out itself and a test cross-checks the two lists.
+
 ## Par times
 
 `[PARS]` is read in both forms the format allows — `par <map> <secs>` and
@@ -320,12 +409,15 @@ ignores EPIC.WAD's `Radius = 2` line for the same reason this does.
 
 **Strings with no home.** `GOT*` pickup messages have nowhere to go because this engine shows
 nothing on pickup; `E1TEXT`–`C6TEXT` because there is no finale screen; `AMSTR_*` because there is
-no automap; `CC_*` because there is no cast call.
+no automap; `CC_*` because there is no cast call; `OB_MP*` and the deathmatch weapon obituaries
+because there is no deathmatch. **This paragraph and the `noTarget` rows of `STRING_PREFIXES` are
+where that list lives** — the reader is told once, here, rather than on every run (§ The coverage
+report).
 
-Two of these are the cheapest follow-ons and are worth naming as such. `PD_*` (the locked-door
-lines, `ui/hud/message.ts`) and `OB_*` (obituaries, `things/tables.ts`'s `THING_NAMES`) both have a
-real sink — but both are currently split into interpolated fragments rather than held as whole
-format strings, so honoring them means restructuring those two sites first.
+Every prefix still on that list has nowhere to go at all. The two that had a real sink and were
+merely awkward to reach — `OB_*` and `PD_*` — are done: see § Obituaries and § Locked-door lines,
+which both had to hold whole lines rather than interpolated fragments before a patch had anything
+to replace.
 
 ## Applying: reset, then patch
 
@@ -361,7 +453,10 @@ redirects.
 
 The patch has to land **before `createThingLayer`**, which resolves the stat table once per level
 and snapshots each thing's radius and height at spawn, and before the `SoundBank`, which pre-decodes
-on construction.
+on construction. It also has to land before the session's `createInventory()`, which reads `Misc`'s
+`Initial Health` and `Initial Bullets` off `LIMITS` — which is why `Game.inventory` is assigned in
+the constructor **body** and not as a field initializer: those run first, and did, so the starting
+kit came from whatever the previous session left behind.
 
 ## Savegames and patched tables
 
@@ -403,10 +498,27 @@ has with the specials table, so a report can't drift out of step with what actua
 The distinction between the middle two is the one worth keeping: only `unsupported` is ever worth
 revisiting.
 
-Warnings are **deduped by `(record, field)` and counted**, and `[STRINGS]` rows group by
-*category* rather than by mnemonic. Both exist for the same reason: freedoom2's patch sets 132
-strings with no home and carries 7 `Frame` records, and a report that named each one would bury the
-row that matters under 193 rows. Grouped, it is fourteen.
+Warnings are **deduped by `(record, field)` and counted**, so a patch with seven `Frame` records is
+one row saying seven and not seven rows.
+
+**A `[STRINGS]` shortfall is reported only when it is `unknown`.** A recognised mnemonic this engine
+has no home for — `GOT*`, `CC_*`, `AMSTR_*`, the deathmatch obituaries — is passed over in silence.
+It went the other way first, one grouped row per family, and that was wrong twice over. It was
+**noise**: freedoom2's patch produced sixteen rows whose entire content was a restatement of the
+scope this document already fixes, burying the one `Frame` row a reader can act on. And once a
+family became *partly* applied it was **misleading**: 31 obituary mnemonics reporting "no string
+this engine has anywhere to show" read as though obituaries were unimplemented, when in fact every
+one naming a killer this engine has had landed. Freedoom2's report is now a single `Frame` line.
+
+The rule: **the report names what a reader can act on.** `unknown` qualifies — the parser did not
+recognise the mnemonic, which is either a patch this engine should learn or a bug in the reader.
+`unsupported` qualifies, since it is the list of things worth revisiting. A `noTarget` string does
+not: the answer is "this engine is single-player and has no cast call", it will not change, and the
+tables in `dehacked/tables.ts` are where that list belongs — not in every run's output.
+
+`noTarget` still classifies, and still reports for the record kinds where it is *specific* rather
+than categorical (a `Thing` field on a type with no table row, a `Misc` cheat value). What was
+dropped is the per-family string row, not the class.
 
 Three surfaces:
 

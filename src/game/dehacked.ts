@@ -9,14 +9,13 @@
  * re-exporting the applier here would make them evaluate every game table to get it.
  * docs/dehacked.md § The two entry points.
  */
-import type { Wad } from '../wad/wad.ts';
-import type { WadFile } from '../wad/wad.ts';
+import type { Wad, WadFile } from '../wad/wad.ts';
 import type { DehPatch, DehShortfall } from './dehacked/defs.ts';
 import { parseDehacked, WarningLog } from './dehacked/parse.ts';
 
 export { parseDehacked } from './dehacked/parse.ts';
 
-export type { DehPatch, DehShortfall, DehSupport, DehThingEdit, DehWarning } from './dehacked/defs.ts';
+export type { DehPatch, DehShortfall, DehWarning } from './dehacked/defs.ts';
 
 /** Lump name a WAD-embedded patch travels under. BOOM made this the standard place for one. */
 const DEHACKED_LUMP = 'DEHACKED';

@@ -62,6 +62,18 @@ describe('keys · refusal messages', () => {
   const text = (runs: ReturnType<typeof lockedLineMessage>): string =>
     runs.map((r) => (typeof r === 'string' ? r : r.text)).join('');
 
+  test('a color word is drawn in that color, the rest in the message default', () => {
+    // Found in the finished line rather than composed into it, which is what lets a patched
+    // `PD_*` keep the coloring — docs/dehacked.md § Locked-door lines.
+    assert.deepEqual(lockedLineMessage({ kind: 'slot', slot: 'yellowCard' }, 'door'), [
+      'You need a ',
+      { text: 'yellow', color: [215, 187, 67] },
+      ' card to open this door',
+    ]);
+    // "Any key will open this door" names no color, so it is one plain run.
+    assert.deepEqual(lockedLineMessage({ kind: 'any' }, 'door'), ['Any key will open this door']);
+  });
+
   test("the Boom wordings are d_englsh.h's own", () => {
     assert.equal(text(lockedLineMessage({ kind: 'color', color: 'blue' }, 'door')), 'You need a blue key to open this door');
     assert.equal(

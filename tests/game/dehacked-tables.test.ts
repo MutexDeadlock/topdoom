@@ -6,7 +6,6 @@ import {
   MISC_SINKS,
   MISSILE_SINKS,
   MOBJ_INFO,
-  MUSIC_ORDER,
   SFX_ORDER,
   WEAPON_ORDER,
   classifyDehackedField,
@@ -109,14 +108,6 @@ describe('Vanilla tables · the DEHACKED index bridges', () => {
     assert.equal(new Set(SFX_ORDER.slice(1)).size, SFX_NAMES.length);
   });
 
-  test('the music order is S_music[] with mus_None at slot 0', () => {
-    assert.equal(MUSIC_ORDER.length, 68); // NUMMUSIC
-    assert.equal(MUSIC_ORDER[0], null);
-    assert.equal(MUSIC_ORDER[1], 'e1m1');
-    assert.equal(MUSIC_ORDER[33], 'runnin'); // mus_runnin, DOOM II's MAP01
-    assert.equal(MUSIC_ORDER[67], 'dm2int');
-  });
-
   test('every mobjflag is a distinct single bit, bar the one that is a field', () => {
     const bits = new Map<number, string>();
     for (const [name, row] of Object.entries(MF_FLAGS)) {
@@ -163,15 +154,21 @@ describe('DEHACKED · classification', () => {
     assert.equal(classifyDehackedField('weapon', 'Shooting frame'), 'unsupported');
   });
 
-  test('string mnemonics group by prefix, longest first', () => {
-    assert.equal(classifyDehackedString('HUSTR_1').support, 'applied');
-    assert.equal(classifyDehackedString('HUSTR_E1M1').support, 'applied');
-    assert.equal(classifyDehackedString('PHUSTR_5').support, 'applied');
+  test('string mnemonics classify by prefix, longest first', () => {
+    assert.equal(classifyDehackedString('HUSTR_1'), 'applied');
+    assert.equal(classifyDehackedString('HUSTR_E1M1'), 'applied');
+    assert.equal(classifyDehackedString('PHUSTR_5'), 'applied');
     // `HUSTR_PLRRED` must not be swept up by the `HUSTR_` title rule.
-    assert.equal(classifyDehackedString('HUSTR_PLRRED').support, 'noTarget');
-    assert.equal(classifyDehackedString('GOTARMOR').group, 'pickup messages');
-    assert.equal(classifyDehackedString('OB_IMP').group, 'obituaries');
-    assert.equal(classifyDehackedString('E1TEXT').group, 'finale text');
-    assert.equal(classifyDehackedString('WOBBLE').support, 'unknown');
+    assert.equal(classifyDehackedString('HUSTR_PLRRED'), 'noTarget');
+    assert.equal(classifyDehackedString('GOTARMOR'), 'noTarget');
+    assert.equal(classifyDehackedString('E1TEXT'), 'noTarget');
+    // A mnemonic with a sink is a whole key and applies; the rest of its family falls to the
+    // prefix row, which is what marks it recognised-and-homeless so nothing reports it.
+    assert.equal(classifyDehackedString('OB_IMP'), 'applied');
+    assert.equal(classifyDehackedString('OB_MPFIST'), 'noTarget');
+    assert.equal(classifyDehackedString('PD_BLUEK'), 'applied');
+    assert.equal(classifyDehackedString('PD_GREENK'), 'noTarget');
+    // The one shortfall still worth reporting: not recognised at all.
+    assert.equal(classifyDehackedString('WOBBLE'), 'unknown');
   });
 });

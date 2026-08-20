@@ -320,8 +320,13 @@ export class Game {
   private profiler = new FrameProfiler();
   private debugHud = new DebugHud();
   private screenEffects: ScreenEffects;
-  private deathOverlay = new DeathOverlay();
-  private inventory: Inventory = createInventory();
+  private deathOverlay: DeathOverlay;
+  /**
+   * Built in the constructor body rather than here: a field initializer runs *before* it, and the
+   * starting health and bullets come off `LIMITS`, which a `Misc` patch has not yet moved at that
+   * point. docs/dehacked.md § Applying: reset, then patch.
+   */
+  private inventory: Inventory;
   /** True once the player's health has hit 0 — freezes movement/aim/firing/pickups (see `frame`) until `restart`. */
   private playerDead = false;
   readonly title: string;
@@ -413,6 +418,9 @@ export class Game {
       if (applied) console.info(applied);
       if (skipped) console.warn(skipped);
     }
+    // After the patch, never as a field initializer: `Misc`'s `Initial Health`/`Initial Bullets`
+    // are read here (see the field's own note).
+    this.inventory = createInventory();
     // The WAD set's own sound lumps, for as long as this Game owns the level.
     // The engine itself (and its AudioContext) outlives us — see AudioEngine.
     audio.setBank(new SoundBank(wad));
@@ -443,6 +451,7 @@ export class Game {
     this.levelCard = new LevelCard(gfx);
     this.intermission = new Intermission(gfx);
     this.endCard = new EndCard(gfx);
+    this.deathOverlay = new DeathOverlay(gfx);
     // Session-scoped like the banks above: which titles apply depends on the loaded file set
     // (its MAPINFO lumps and which IWAD it is), not on the current map.
     this.levelNames = new LevelNames(wad, mapInfo, this.dehacked?.strings);
@@ -1421,7 +1430,7 @@ export class Game {
       this.pendingExit = null;
       // The next map isn't loaded here any more: the popup goes up on the level as it stands, and
       // the continue key at the top of `tic` is what loads it.
-      this.intermission.show(this.levelStats(), this.recordCompletion(), this.parFor(this.currentMap));
+      this.intermission.show(this.levelStats(), this.recordCompletion(), this.parFor());
       // Vanilla's own `S_ChangeMusic(mus_inter)` at the intermission, keeping
       // the level's track when the set has no intermission lump.
       const between = this.levelMusic.intermissionTrackFor(this.currentMap);
@@ -1648,8 +1657,9 @@ export class Game {
    * This level's par time in seconds, or null when nothing knows one — the intermission omits the
    * row then. docs/wad.md § Par times.
    */
-  private parFor(mapName: string): number | null {
-    return parSecondsFor(mapName, { mission: this.levelNames.levelMission, dehPars: this.dehacked?.pars }) ?? null;
+  private parFor(): number | null {
+    const opts = { mission: this.levelNames.levelMission, dehPars: this.dehacked?.pars };
+    return parSecondsFor(this.currentMap, opts) ?? null;
   }
 
   /**

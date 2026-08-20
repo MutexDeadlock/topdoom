@@ -275,6 +275,29 @@ export function dehTitlesFor(
   return out;
 }
 
+/**
+ * A file's level titles: what its own MAPINFO defines, and where that names nothing, what its
+ * DEHACKED patch names. **The patch fills gaps, it never overwrites** — the same order
+ * `levelTitleFor` applies in-game, stated here once so the menu's uploaded files and the
+ * build-time manifest cannot name the same level differently.
+ *
+ * The mission is projected from the file's own name, which for an IWAD is exactly the mission
+ * (`plutonia.wad` picks its `PHUSTR_*` set) and for a PWAD is the plain `HUSTR_*` one.
+ * docs/wad.md § Level names.
+ */
+export function mergeLevelTitles(
+  fileName: string,
+  mapInfoTitles: Iterable<readonly [string, string]>,
+  patchStrings?: ReadonlyMap<string, string>,
+): Record<string, string> {
+  const levelNames: Record<string, string> = {};
+  for (const [map, title] of mapInfoTitles) levelNames[map] = title;
+  if (patchStrings) {
+    for (const [map, title] of dehTitlesFor(missionOf(fileName), patchStrings)) levelNames[map] ??= title;
+  }
+  return levelNames;
+}
+
 /** Which map lump a `[STRINGS]` mnemonic names under this mission, or undefined for none. */
 function dehTitleKey(key: string, mission: LevelMission | null): string | undefined {
   if (/^(MAP\d\d|E\dM\d)$/.test(key)) return key;

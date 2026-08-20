@@ -53,9 +53,17 @@ export function soundLumpName(name: string): string {
   return SOUND_LUMP_OVERRIDES.get(name) ?? `DS${name.toUpperCase()}`;
 }
 
-/** Redirects one sfx to a different lump — a BEX `[SOUNDS]` entry. */
+/**
+ * Redirects one sfx to a different lump — a BEX `[SOUNDS]` entry.
+ *
+ * The value is a **sfx name, not a lump name**: `d_deh.c`'s `deh_procBexSounds` writes it into
+ * `S_sfx[].name` (capped at six characters for exactly this reason), and the lump is what
+ * `I_GetSfxLumpNum` then builds from it. So `DS` is always prepended, never conditionally — unlike
+ * `setMusicLump`, which can tolerate an already-prefixed value because no `mus_*` mnemonic starts
+ * with `d_`, where `dshtgn` is a real sfx name. docs/dehacked.md § Sounds and music.
+ */
 export function setSoundLump(name: string, lump: string): void {
-  SOUND_LUMP_OVERRIDES.set(name, lump.toUpperCase());
+  SOUND_LUMP_OVERRIDES.set(name, `DS${lump.toUpperCase()}`);
 }
 
 /** Drops every redirect, before a new patch is applied. docs/dehacked.md § Applying: reset, then patch. */

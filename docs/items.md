@@ -20,6 +20,12 @@ from. Picking up a weapon **not already owned** selects it, matching `P_GiveWeap
 you have doesn't yank the selection away. `fist` and `pistol` are in `WeaponId` even though neither
 has a map pickup — every game starts owning both, and they still need ids to be `currentWeapon`-able.
 
+Both armor shirts and the megasphere go through `P_GiveArmor(class)`, whose amount is
+`armortype*100` and follows from the class — so a `Misc` patch moving `Green`/`Blue Armor Class`
+moves the amount and the absorption together, and `Max Armor` is *only* the armor bonus' own cap
+(docs/dehacked.md § Weapon, Ammo and Misc). Armor already above what the class is worth is left
+alone; the megasphere is consumed either way.
+
 `applyPickup` follows `P_TouchSpecialThing`: most importantly, a Stimpack/Medikit at full health, an
 armor pickup weaker than what's worn, or a weapon whose ammo type is already capped and which is
 already owned **isn't consumed** (returns `false`), leaving the item on the ground exactly like
@@ -129,14 +135,21 @@ showing anything itself: it has no HUD, the same reason `onExit`/`onTeleport` ar
 drains it with `consumeLockedLine()` right after `specials.update` — every keyed special is a `use`
 trigger, so that one call site catches all of them — and shows the text (docs/hud.md § Center
 messages). The
-text is `d_englsh.h`'s verbatim: for color locks, vanilla's own door/switch split — `PD_*K` "You
-need a blue key to open this door" (`EV_VerticalDoor`, the manual doors 26-28/32-34) vs. `PD_*O`
-"...to activate this object" (`EV_DoLockedDoor`, the remote switches 99/133-137) — a split
-`def.manual` already draws exactly; for Boom's generalized locks, Boom's `PD_*C`/`PD_*S`/`PD_ANY`/
-`PD_ALL3`/`PD_ALL6` wordings (door-only, as in Boom — `ui/hud/message.ts: lockedLineMessage`).
+text is `d_englsh.h`'s verbatim, and **whole lines keyed by their own `PD_*` mnemonic**
+(`specials/tables.ts: LOCKED_LINES`, resolved by `lockedLine`): for color locks, vanilla's own
+door/switch split — `PD_*K` "You need a blue key to open this door" (`EV_VerticalDoor`, the manual
+doors 26-28/32-34) vs. `PD_*O` "...to activate this object" (`EV_DoLockedDoor`, the remote switches
+99/133-137) — a split `def.manual` already draws exactly; for Boom's generalized locks, Boom's
+`PD_*C`/`PD_*S`/`PD_ANY`/`PD_ALL3`/`PD_ALL6` wordings (door-only, as in Boom).
 The vanilla ones say "key" for a skull because vanilla's checks accept
 either, testing both `it_*card` and `it_*skull`, which is also why `KeyColor` has three values and
 not six.
+
+The lines sit in the game layer rather than beside the module that draws them for two reasons that
+point the same way: a DEH patch replaces them by mnemonic (docs/dehacked.md § Locked-door lines) and
+`game/dehacked/apply.ts` cannot import `src/ui/`. `ui/hud/message.ts: lockedLineMessage` takes the
+finished line and splits *that* into colored runs, rather than composing one from colored fragments
+— which is exactly what lets a patched line keep the coloring (docs/hud.md § Center messages).
 
 Getting the key check to fire surfaced a second bug in the same table: 99 and 133-137 were missing or
 mismarked `manual: true`. Unlike 26-34 (real D1 manual doors, which open the *linedef's own* back

@@ -4,7 +4,7 @@
  */
 import type { SoundBank } from '../wad/sound.ts';
 import type { Pos2 } from '../types.ts';
-import { randomPlaybackRate, SFX, SFX_NAMES, type SfxId, type SoundEmitter } from './sfx.ts';
+import { randomPlaybackRate, SFX, SFX_NAMES, soundLumpName, type SfxId, type SoundEmitter } from './sfx.ts';
 import { MusicPlayer } from './music.ts';
 import { storedVolume } from './volume.ts';
 
@@ -362,7 +362,7 @@ export class AudioEngine implements SoundEmitter {
       .decodeAudioData(lump.bytes.slice().buffer)
       .then((buffer) => this.buffers.set(id, buffer))
       .catch((err: unknown) => {
-        console.warn(`DS${id.toUpperCase()}: unsupported sound format`, err);
+        console.warn(`${soundLumpName(id)}: unsupported sound format`, err);
         this.buffers.set(id, null);
       })
       .finally(() => this.decoding.delete(id));

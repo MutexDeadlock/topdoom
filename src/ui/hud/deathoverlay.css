@@ -20,25 +20,35 @@
   display: none;
 }
 
+/*
+ * All three lines are drawn native-size in the WAD's own font and scaled here — #end-card's pair of
+ * rules, and the same reason: the type is the IWAD's, so its size belongs to CSS and not to a
+ * second glyph set.
+ */
+#death-overlay canvas {
+  image-rendering: pixelated;
+  width: auto;
+  display: block;
+  filter: drop-shadow(0 2px 6px #000);
+}
+
 #death-overlay .title {
-  font-size: 48px;
-  letter-spacing: 8px;
-  color: var(--accent);
-  text-shadow: 0 2px 8px #000;
+  height: 39px;
 }
 
-/* Empty whenever nothing attributed the killing blow: the overlay then looks
-   exactly as it did before this line existed, rather than leaving a gap. */
 #death-overlay .killer {
-  color: var(--fg);
-  letter-spacing: 2px;
+  height: 20px;
 }
 
-#death-overlay .killer:empty {
+/* Set whenever nothing attributed the killing blow: the overlay then looks exactly as it did
+   before this line existed, rather than leaving a gap. A canvas is always `:empty`, so the state
+   is a class the drawing code sets and not a selector. */
+#death-overlay .killer.blank {
   display: none;
 }
 
 #death-overlay .hint {
-  color: var(--fg);
-  letter-spacing: 2px;
+  height: 13px;
+  margin-top: 6px;
+  opacity: 0.6;
 }

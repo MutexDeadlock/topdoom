@@ -6,7 +6,7 @@
 import { Wad, WadFile, type WadType } from './wad.ts';
 import { wadId } from './checksum.ts';
 import { MapInfo } from './campaign/mapinfo.ts';
-import { dehTitlesFor, levelTitleFor, missionOf, titleLookupFor } from './campaign/names.ts';
+import { levelTitleFor, mergeLevelTitles, missionOf, titleLookupFor } from './campaign/names.ts';
 import { readDehacked } from '../game/dehacked.ts';
 
 const MANIFEST_URL = '/wads/index.json';
@@ -134,13 +134,11 @@ export function uploadedSource(name: string, buffer: ArrayBuffer): WadSource {
  */
 function uploadedLevelInfo(file: WadFile): { levelNames: Record<string, string>; dehacked: boolean } {
   const wad = new Wad(file);
-  const levelNames = Object.fromEntries(new MapInfo(wad).titles());
   const patch = readDehacked(wad, titleLookupFor());
-  if (patch) {
-    const titles = dehTitlesFor(missionOf(file.name), patch.strings);
-    for (const [map, title] of titles) levelNames[map] ??= title;
-  }
-  return { levelNames, dehacked: patch !== null };
+  return {
+    levelNames: mergeLevelTitles(file.name, new MapInfo(wad).titles(), patch?.strings),
+    dehacked: patch !== null,
+  };
 }
 
 /** WADs the server offers under public/wads/. Empty if the manifest is missing. */

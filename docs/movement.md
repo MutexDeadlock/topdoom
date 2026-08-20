@@ -142,6 +142,11 @@ closing door carries a hanging corpse along too.
 `MF_SOLID` and `MF_SHOOTABLE`). Movement blocking and shot blocking read the same grid but are two
 different filters for exactly this reason — see `things/grid.ts`'s `rebuild` doc.
 
+That makes the set's real membership rule **`MF_SOLID` and not `MF_SHOOTABLE`**, which the DEHACKED
+applier has to honour when a `Bits` line rewrites it: every monster carries `MF_SOLID` too, so
+adding on that bit alone would put a patched monster in here and every shot would pass through it.
+docs/dehacked.md § Bits.
+
 **`groundCeiling`** mirrors `groundFloor`: the local sector's ceiling, lowered to the top of any
 straddled two-sided opening. It exists for the flip side of the same straddling bug — standing half
 on a rising lift/floor and half in a static neighbor sector with a lower ceiling, `groundFloor`

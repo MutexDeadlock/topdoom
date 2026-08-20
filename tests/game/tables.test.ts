@@ -11,8 +11,8 @@ import {
   MONSTER_TYPES,
   MONSTER_WALK_FRAMES,
   MONSTER_WALK_FRAMES_OVERRIDE,
+  OBITUARIES,
   SPAWN_CUBE_MONSTERS,
-  THING_NAMES,
   THING_SPRITES,
   obituary,
 } from '../../src/game/things/tables.ts';
@@ -95,8 +95,8 @@ describe('Vanilla tables · monsters', () => {
 
   test('every monster type can be named on the death overlay', () => {
     // A monster missing here still kills the player, the overlay just says
-    // nothing about it — the quiet failure THING_NAMES is easiest to forget in.
-    assert.deepEqual(missing(MONSTER_TYPES, new Set(numericKeys(THING_NAMES))), []);
+    // nothing about it — the quiet failure OBITUARIES is easiest to forget in.
+    assert.deepEqual(missing(MONSTER_TYPES, new Set(numericKeys(OBITUARIES))), []);
     assert.equal(obituary(ThingType.archVile), 'You were killed by an Arch-Vile');
     assert.equal(obituary(ThingType.barrel), 'You were killed by an exploding barrel');
     assert.equal(obituary(ThingType.bossBrain), 'You were killed by the Icon of Sin');

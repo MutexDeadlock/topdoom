@@ -146,7 +146,11 @@ beyond the first killing blow — `resolveVileBlast` gates its knockup on `damag
 `resolveBullet`'s `!playerDead` guard for the hitscan equivalent) — a dead player can still be
 "hit" for nothing to happen, matching `damagePlayer`'s own early return.
 
-The death itself shows a `#death-overlay` div (`ui/hud/deathoverlay.ts`), but not immediately:
+The death itself shows `#death-overlay` (`ui/hud/deathoverlay.ts`) — three `WadFont` canvases in
+the `EndCard` arrangement, the IWAD's own type rather than DOM text: the heading in STCFN's native
+HUD red, the killer line in `COLOR_YELLOW`, the hint in red dimmed by CSS. A canvas is always
+`:empty`, so the "nothing attributed the blow" case that used to be a `:empty` selector is now a
+`blank` class the drawing code sets. It does not go up immediately:
 `DeathOverlay.show` only *arms* it, and `DeathOverlay.update` raises it `DEATH_OVERLAY_DELAY` later — `PLAY`'s DIE sequence end to end, so
 the text arrives as the corpse settles instead of on the killing frame. Nothing is gated behind the
 delay (`R` answers throughout, since `tic` reads `playerDead`, not the overlay), and a
@@ -195,14 +199,18 @@ player has no reason to care about anyway.
 
 The overlay's middle line names the killer — "You were killed by an Arch-Vile". `damagePlayer`
 takes a `DamageCause` (`game/combat.ts`) alongside the hit and only the killing one reads it;
-`things/tables.ts`'s `obituary` turns it into the sentence and `DeathOverlay.show` draws it, so
-the view layer composes nothing. An unattributed cause renders as `''` and the overlay looks exactly
-as it did before the line existed.
+`things/tables.ts`'s `obituary` looks the line up and `DeathOverlay.show` draws it, so the view
+layer composes nothing. An unattributed cause renders as `''` and the overlay looks exactly as it
+did before the line existed.
 
-A cause is either a doomednum — named through `THING_NAMES`, whose values carry their own article
-so "Commander Keen" and "the Icon of Sin" need no exception — or one of three strings for the
-killers with no attacker behind them: `'self'` (the player's own splash), `'crush'`, `'slime'`.
-Vanilla has no obituaries at all, so none of this text is a fidelity claim.
+A cause is either a doomednum or one of three strings for the killers with no attacker behind them:
+`'self'` (the player's own splash), `'crush'`, `'slime'`. Either way it keys straight into
+`OBITUARIES`, which holds each line **whole** rather than a name to interpolate — a DEH patch's
+`OB_*` string replaces a line entire, and docs/dehacked.md § Obituaries is why the table is shaped
+that way. `OBITUARIES.default` is the fallback for a cause with no line of its own; it is `''`
+until a patch sets `OB_DEFAULT`.
+
+Vanilla has no obituaries at all, so none of the wording here is a fidelity claim.
 
 Every attack path already carried the identity for `ThingLayer.damage`'s retaliation rule and simply
 dropped it on the player branch; each now passes it on: melee and the lost soul's charge plus

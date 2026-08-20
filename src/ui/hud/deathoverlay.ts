@@ -2,7 +2,13 @@
  * The full-screen panel raised a moment after the player dies: the killer line and
  * what `R` will do. See docs/death.md § Player death.
  */
+import type { GraphicsBank } from '../../wad/graphics.ts';
 import { PLAYER_DEATH_FRAMES, PLAYER_DEATH_FRAME_SECONDS } from '../../game/things/tables.ts';
+import { drawText } from './hud.ts';
+import { WadFont, COLOR_YELLOW } from './wadfont.ts';
+
+/** The heading, which never changes — the two lines under it are what `show` is told. */
+const TITLE = 'You died';
 
 /**
  * How long a death waits before its overlay appears — `PLAY`'s DIE sequence end to end, so the
@@ -26,8 +32,11 @@ const RELOAD_SAVE_HINT = 'press R to reload last savegame';
 
 export class DeathOverlay {
   private rootEl = document.getElementById('death-overlay')!;
-  private killerEl = document.querySelector<HTMLElement>('#death-overlay .killer')!;
-  private hintEl = document.querySelector<HTMLElement>('#death-overlay .hint')!;
+  private titleCanvas = this.rootEl.querySelector<HTMLCanvasElement>('.title')!;
+  private killerCanvas = this.rootEl.querySelector<HTMLCanvasElement>('.killer')!;
+  private hintCanvas = this.rootEl.querySelector<HTMLCanvasElement>('.hint')!;
+  private redFont: WadFont;
+  private yellowFont: WadFont;
   /** Seconds until the armed overlay is raised; negative once it is up, or when none is armed. */
   private delay = -1;
   /** The killer line the armed overlay will carry — see `show`. */
@@ -35,13 +44,26 @@ export class DeathOverlay {
   /** Which hint the armed overlay will carry — see `show` and `RESTART_HINT`. */
   private hint = RESTART_HINT;
 
+  /**
+   * The IWAD's own `STCFN*` type, the same three-canvas arrangement `EndCard` uses: the heading in
+   * the font's native HUD red, the killer line in the yellow this UI reads as "the thing you came
+   * here to know" (`ui/hud/wadfont.ts`'s `COLOR_YELLOW`, as on the intermission's values), the hint
+   * dimmed by `deathoverlay.css`. The title never changes, so it is drawn once here.
+   */
+  constructor(gfx: GraphicsBank) {
+    this.redFont = new WadFont(gfx);
+    this.yellowFont = new WadFont(gfx, COLOR_YELLOW);
+    drawText(this.titleCanvas, this.redFont, TITLE);
+  }
+
   /** Counts the arming delay down and raises the overlay when it runs out. */
   update(dt: number): void {
     if (this.delay < 0) return;
     this.delay -= dt;
     if (this.delay < 0) {
-      this.killerEl.textContent = this.killer;
-      this.hintEl.textContent = this.hint;
+      drawText(this.killerCanvas, this.yellowFont, this.killer);
+      this.killerCanvas.classList.toggle('blank', this.killer === '');
+      drawText(this.hintCanvas, this.redFont, this.hint);
       this.rootEl.classList.remove('hidden');
     }
   }
@@ -66,6 +88,5 @@ export class DeathOverlay {
     this.killer = '';
     this.hint = RESTART_HINT;
     this.rootEl.classList.add('hidden');
-    this.killerEl.textContent = '';
   }
 }

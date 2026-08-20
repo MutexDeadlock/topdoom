@@ -149,8 +149,8 @@ export function drawIcon(canvas: HTMLCanvasElement, gfx: GraphicsBank, lump: str
 /**
  * Draws one line of `WadFont` text into a canvas sized to fit it exactly, at native pixel size for
  * CSS to scale like `drawIcon`'s art. The shared half of every card and popup that prints a line —
- * `ui/hud/intermission.ts`, `ui/hud/levelcard.ts`, `ui/hud/endcard.ts` — which is why it sits here
- * beside `drawIcon` rather than in any one of them. See docs/hud.md.
+ * `ui/hud/intermission.ts`, `ui/hud/levelcard.ts`, `ui/hud/endcard.ts`, `ui/hud/deathoverlay.ts` —
+ * which is why it sits here beside `drawIcon` rather than in any one of them. See docs/hud.md.
  */
 export function drawText(canvas: HTMLCanvasElement, font: WadFont, text: string): void {
   canvas.width = Math.max(1, font.measure(text));

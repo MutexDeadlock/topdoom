@@ -287,13 +287,19 @@ holds at dead center), for 3 seconds. Two callers so far:
 - the secret announcement — `Game.collectPickupsAndSectorEffects` shows `SECRET_MESSAGE` (this
   module's own, since it is display text) and plays the `secret` chime on the frame `SectorEffects.update`
   reports `secretFound`;
-- the locked door/switch line — `lockedKeyMessage(key, kind)` composes vanilla's own `PD_*K`/`PD_*O`
-  text from the `LockedLine` `Game.frame` drained out of `specials` (docs/items.md § Locked doors
-  and use triggers), and its `oof` was already played there.
+- the locked door/switch line — `lockedLineMessage(lock, kind)` resolves the `LockedLine`
+  `Game.frame` drained out of `specials` through `specials/tables.ts`'s `LOCKED_LINES`, where
+  vanilla's and Boom's `PD_*` text lives and where a DEH patch will have replaced it (docs/items.md
+  § Locked doors and use triggers, docs/dehacked.md § Locked-door lines); its `oof` was already
+  played there.
 
 `show` takes **runs**, not one string: a bare string draws in `COLOR_YELLOW`, a `{text, color}` run
 in whatever color it names, and they're laid out left to right on one canvas — which is what lets
-the locked-door line print the key's color word in that key's color. Each distinct color costs one
+the locked-door line print a color word in that color. `lockedLineMessage` produces those runs by
+**splitting the finished line** on whole color words (`COLOR_WORDS`) rather than composing it from
+colored fragments, and the difference is load-bearing: a patch writes one string, so a composed line
+would lose its coloring the moment `PD_*` replaced it. `green` is in that table for the same reason
+— no vanilla or Boom line names it, but a patched one might. Each distinct color costs one
 `WadFont` (all 63 `STCFN` patches decoded and retinted), so they're built on first use and cached
 for the level rather than per message. The key colors themselves are sampled from the key pickup
 sprites, the same convention `COLOR_YELLOW` and `LEVEL_STATS_GREEN` follow, with one documented
@@ -338,9 +344,10 @@ STCFN's own pixels are already vanilla's HUD-message red, so the red `"M: "`/`"I
 need no recoloring. There is no full-charset yellow font in vanilla WADs (`WINUM`/`STYSNUM` are
 digits-only, and mixing font families within one line would visibly mismatch STCFN's glyph height),
 so the strip's numbers instead recolor STCFN itself — `WadFont`'s optional `recolor` — tinted to
-`STYSNUM1`'s own sampled yellow (`COLOR_YELLOW`, `255,255,115`, exported from `wadfont.ts` since the
-center message recolors to it too), so the color still comes from the WAD rather than being
-invented. Recoloring is **not** a flat fill: each opaque pixel is scaled by its own brightness
+`STYSNUM1`'s own sampled yellow (`COLOR_YELLOW`, `255,255,115`, exported from `wadfont.ts` because
+the center message, the end card's heading and the death overlay's killer line all recolor to it
+too — yellow is what this UI reads as "the thing you came here to know"), so the color still comes
+from the WAD rather than being invented. Recoloring is **not** a flat fill: each opaque pixel is scaled by its own brightness
 (`max(r,g,b)/255`) before tinting, so STCFN's anti-aliased edges (its glyphs shade from a dark red
 core out to a brighter edge) still shade from a dark tint to a bright one rather than flattening to
 one solid color — a flat fill was tried first and read as illegible pixel mush. This repo has no

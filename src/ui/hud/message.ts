@@ -4,8 +4,9 @@
  */
 import type { GraphicsBank } from '../../wad/graphics.ts';
 import type { KeyColor } from '../../game/inventory.ts';
-import { keySlotColor } from '../../game/inventory.ts';
 import type { LockRule } from '../../game/specials/defs.ts';
+import { lockedLine } from '../../game/specials/tables.ts';
+import { LEVEL_STATS_GREEN } from './hud.ts';
 import { WadFont, COLOR_YELLOW, type WadFontRecolor } from './wadfont.ts';
 
 /**
@@ -45,32 +46,42 @@ const KEY_TEXT_COLORS: Record<KeyColor, WadFontRecolor> = {
 export type MessageRun = string | { text: string; color: WadFontRecolor };
 
 /**
- * The line shown when a locked door or switch is used without what it wants.
- * Color locks are `d_englsh.h`'s `PD_*K`/`PD_*O` verbatim, down to the "open
- * this door" (`EV_VerticalDoor`) vs. "activate this object" (`EV_DoLockedDoor`)
- * split; vanilla says "key" for a skull there because its checks accept either
- * (`p_doors.c` tests both cards) — see `KeyColor`'s own doc. Boom's generalized
- * locks add the exact-slot ("card"/"skull"), any-key and all-keys wordings,
- * Boom's `d_englsh.h` `PD_*C`/`PD_*S`/`PD_ANY`/`PD_ALL3`/`PD_ALL6` verbatim
- * (those are door-only in Boom, hence no object variant). The one departure
- * throughout is the color word, drawn in that key's own color instead of the
- * message's.
+ * The words a message draws in a color of their own rather than the message's. The three key
+ * colors are `KEY_TEXT_COLORS`; `green` is the only other color this repo has a WAD-derived value
+ * for (`hud.ts`'s `LEVEL_STATS_GREEN`, sampled from `ARM1A0`) and is here for a **patched** line —
+ * no vanilla or Boom string names it, since DOOM has no green key.
+ */
+const COLOR_WORDS: Record<string, WadFontRecolor> = {
+  blue: KEY_TEXT_COLORS.blue,
+  red: KEY_TEXT_COLORS.red,
+  yellow: KEY_TEXT_COLORS.yellow,
+  green: LEVEL_STATS_GREEN,
+};
+
+/** Built from `COLOR_WORDS` rather than spelled twice; whole words only, so "redo" stays plain. */
+const COLOR_WORD = new RegExp(`\\b(?:${Object.keys(COLOR_WORDS).join('|')})\\b`, 'gi');
+
+/**
+ * The line shown when a locked door or switch is used without what it wants — `specials/tables.ts`'s
+ * `LOCKED_LINES`, which is where the vanilla/Boom wording and its `PD_*` mnemonics live, and where
+ * a DEH patch will have replaced it.
+ *
+ * The one departure from those strings is presentational and applies to whatever text comes back:
+ * a color word is drawn in that color instead of the message's. Splitting the finished line rather
+ * than composing it from colored fragments is what lets a patched line keep the effect — the patch
+ * writes "You need a blue card", not the three pieces this used to assemble.
  */
 export function lockedLineMessage(lock: LockRule, kind: 'door' | 'switch'): MessageRun[] {
-  const what = kind === 'door' ? 'open this door' : 'activate this object';
-  const colored = (c: KeyColor): MessageRun => ({ text: c, color: KEY_TEXT_COLORS[c] });
-  switch (lock.kind) {
-    case 'color':
-      return ['You need a ', colored(lock.color), ` key to ${what}`];
-    case 'slot': {
-      const color = keySlotColor(lock.slot);
-      return ['You need a ', colored(color), ` ${lock.slot.endsWith('Card') ? 'card' : 'skull'} to open this door`];
-    }
-    case 'any':
-      return ['Any key will open this door'];
-    case 'all':
-      return [`You need all ${lock.colorsSuffice ? 'three' : 'six'} keys to open this door`];
+  const line = lockedLine(lock, kind);
+  const runs: MessageRun[] = [];
+  let at = 0;
+  for (const match of line.matchAll(COLOR_WORD)) {
+    if (match.index > at) runs.push(line.slice(at, match.index));
+    runs.push({ text: match[0], color: COLOR_WORDS[match[0].toLowerCase()] });
+    at = match.index + match[0].length;
   }
+  if (at < line.length) runs.push(line.slice(at));
+  return runs;
 }
 
 /**

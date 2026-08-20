@@ -193,12 +193,17 @@ describe('DEHACKED · the committed patches', () => {
     assert.equal(frames?.count, 7);
   });
 
-  test('strings with no target report as one row per group, not one per mnemonic', () => {
-    // freedoom2's real lump sets 132 of them; naming each would bury the row that matters.
+  test('a string this engine deliberately has no home for is skipped in silence', () => {
+    // freedoom2's real lump sets 161 of them — pickup messages, cast-call names, deathmatch
+    // obituaries. Reporting those only ever restated the scope, and once part of a family *did*
+    // apply (the obituaries) the rows read as though the feature were missing.
     const patch = parseDehacked(dehFixture('freedoom2'), lookup);
-    const rows = patch.warnings.filter((w) => w.record === '[STRINGS]');
-    assert.ok(rows.length < 12, `expected a handful of grouped rows, got ${rows.length}`);
-    assert.ok(rows.some((w) => w.field === 'pickup messages'));
+    assert.deepEqual(patch.warnings.filter((w) => w.record === '[STRINGS]'), []);
+    // What the patch did land is still counted, so silence is not the same as nothing happening.
+    assert.ok(patch.applied.strings > 100, `expected the applied strings to be counted, got ${patch.applied.strings}`);
+    // And an unrecognised mnemonic is still reported — that one a reader can act on.
+    const wobble = parseDehacked('[STRINGS]\nWOBBLE = nope\n', lookup).warnings;
+    assert.deepEqual(wobble.map((w) => [w.record, w.support, w.count]), [['[STRINGS]', 'unknown', 1]]);
   });
 });
 

@@ -176,11 +176,19 @@ export function ammoMax(inv: Inventory, type: AmmoType): number {
   return inv.backpack ? AMMO_MAX[type] * 2 : AMMO_MAX[type];
 }
 
-const HEALTH_PICKUPS: Record<number, { amount: number; bonus: boolean }> = {
+/**
+ * A health pickup grants either a fixed amount or whatever a `LIMITS` field currently says — the
+ * soulsphere is the one `Misc` can move (`Soulsphere health`), so it names the field and is read at
+ * the point of use rather than mirrored here, exactly as `ARMOR_PICKUP_CLASS` below.
+ * `bonus` picks which cap applies. docs/items.md § Collecting things.
+ */
+type HealthPickup = { bonus: boolean } & ({ amount: number } | { limit: keyof InventoryLimits });
+
+const HEALTH_PICKUPS: Record<number, HealthPickup> = {
   [ThingType.stimpack]: { amount: 10, bonus: false },
   [ThingType.medikit]: { amount: 25, bonus: false },
   [ThingType.healthBonus]: { amount: 1, bonus: true },
-  [ThingType.soulsphere]: { amount: 100, bonus: true },
+  [ThingType.soulsphere]: { limit: 'soulsphereHealth', bonus: true },
 };
 
 /**
@@ -295,8 +303,6 @@ export function setClipAmmo(type: AmmoType, per: number): void {
 /** Writes the `Misc` limits a patch supplied, leaving the rest alone. */
 export function setInventoryLimits(limits: Partial<InventoryLimits>): void {
   Object.assign(LIMITS, limits);
-  // The one mirror left: every other patchable amount is read off `LIMITS` where it is used.
-  HEALTH_PICKUPS[ThingType.soulsphere].amount = LIMITS.soulsphereHealth;
 }
 
 /** Everything the two `set*` functions above can move, as vanilla leaves it. */
@@ -337,8 +343,14 @@ export function applyPickup(inv: Inventory, type: number, dropped = false, skill
   // DOOM II only: full health *and* blue armor at once, both past what any single pickup gives.
   if (type === ThingType.megasphere) {
     inv.health = LIMITS.megasphereHealth;
-    inv.armor = LIMITS.maxArmor;
-    inv.armorType = 2;
+    // `P_GiveArmor(blue_armor_class)`, the same call the blue shirt makes — so the amount follows
+    // from the class rather than from `maxArmor`, which is only the armor bonus' own cap, and
+    // armor already above it is left alone. The pickup is taken either way.
+    const armorType = LIMITS.blueArmorClass as 1 | 2;
+    if (inv.armor < armorType * 100) {
+      inv.armor = armorType * 100;
+      inv.armorType = armorType;
+    }
     return true;
   }
   // The one armor pickup that adds a point past a shirt's own amount, up to `maxArmor`.
@@ -352,7 +364,8 @@ export function applyPickup(inv: Inventory, type: number, dropped = false, skill
   if (health) {
     const cap = health.bonus ? LIMITS.maxHealthBonus : LIMITS.maxHealth;
     if (inv.health >= cap) return false;
-    inv.health = Math.min(inv.health + health.amount, cap);
+    const amount = 'limit' in health ? LIMITS[health.limit] : health.amount;
+    inv.health = Math.min(inv.health + amount, cap);
     return true;
   }
 

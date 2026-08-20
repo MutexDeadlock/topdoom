@@ -19,6 +19,7 @@
  * the evidence and the shipped bug that came of getting it wrong.
  */
 import { DOOM_TIC } from '../../constants.ts';
+import { keySlotColor } from '../inventory.ts';
 import { decodeGeneralized, isGeneralized } from './generalized.ts';
 import {
   CEILING_SPEED,
@@ -784,3 +785,52 @@ export const SECTOR_DOOR_SPECIALS: Record<number, SectorDoorTimer> = {
   10: 'closeIn30',
   14: 'raiseIn5Min',
 };
+
+/**
+ * `d_englsh.h`'s locked-line text, keyed by its own `PD_*` mnemonic — the fifteen strings vanilla
+ * and Boom define between them, verbatim. Vanilla has the six color lines, split by
+ * `EV_VerticalDoor`'s "open this door" against `EV_DoLockedDoor`'s "activate this object"; Boom's
+ * generalized locks add the exact-slot ("card"/"skull"), any-key and all-keys wordings, which are
+ * door-only there and so have no object variant. Vanilla says "key" for a skull because its checks
+ * accept either (`p_doors.c` tests both cards) — see `KeyColor`'s own doc.
+ *
+ * **Whole lines keyed by mnemonic, so a DEH patch can replace one by name** (docs/dehacked.md
+ * § Locked-door lines) — which is also why they sit in the game layer at all rather than with the
+ * module that draws them: `game/dehacked/apply.ts` writes here, and nothing under `src/game/` may
+ * import `src/ui/`. `ui/hud/message.ts` reads the line and decides its colors.
+ */
+export const LOCKED_LINES: Record<string, string> = {
+  PD_BLUEO: 'You need a blue key to activate this object',
+  PD_REDO: 'You need a red key to activate this object',
+  PD_YELLOWO: 'You need a yellow key to activate this object',
+  PD_BLUEK: 'You need a blue key to open this door',
+  PD_REDK: 'You need a red key to open this door',
+  PD_YELLOWK: 'You need a yellow key to open this door',
+  PD_BLUEC: 'You need a blue card to open this door',
+  PD_REDC: 'You need a red card to open this door',
+  PD_YELLOWC: 'You need a yellow card to open this door',
+  PD_BLUES: 'You need a blue skull to open this door',
+  PD_REDS: 'You need a red skull to open this door',
+  PD_YELLOWS: 'You need a yellow skull to open this door',
+  PD_ANY: 'Any key will open this door',
+  PD_ALL3: 'You need all three keys to open this door',
+  PD_ALL6: 'You need all six keys to open this door',
+};
+
+/**
+ * The line a lock raises when it turns the player away, already resolved through `LOCKED_LINES` so
+ * a patched string comes back instead. `kind` is vanilla's own door/object split, which only the
+ * color locks have. See docs/items.md § Locked doors and use triggers.
+ */
+export function lockedLine(lock: LockRule, kind: 'door' | 'switch'): string {
+  switch (lock.kind) {
+    case 'color':
+      return LOCKED_LINES[`PD_${lock.color.toUpperCase()}${kind === 'door' ? 'K' : 'O'}`];
+    case 'slot':
+      return LOCKED_LINES[`PD_${keySlotColor(lock.slot).toUpperCase()}${lock.slot.endsWith('Card') ? 'C' : 'S'}`];
+    case 'any':
+      return LOCKED_LINES.PD_ANY;
+    case 'all':
+      return lock.colorsSuffice ? LOCKED_LINES.PD_ALL3 : LOCKED_LINES.PD_ALL6;
+  }
+}

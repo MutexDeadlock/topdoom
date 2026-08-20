@@ -16,10 +16,12 @@ import {
   FUZZ_TYPES,
   MONSTER_HEALTH,
   MONSTER_TYPES,
+  OBITUARIES,
   SOLID_DECORATION_RADIUS_OVERRIDE,
   SOLID_DECORATION_TYPES,
 } from '../things/tables.ts';
 import { PROJECTILE_RADIUS } from '../spritefx/tables.ts';
+import { LOCKED_LINES } from '../specials/tables.ts';
 import {
   resetInventoryLimits,
   setClipAmmo,
@@ -32,41 +34,75 @@ import { resetSoundLumps, setSoundLump, type SfxId } from '../../audio/sfx.ts';
 import { resetMusicLumps, setMusicLump } from '../../audio/music/tables.ts';
 import { WEAPONS } from '../weapons.ts';
 import type { DehAmmoEdit, DehPatch, DehThingEdit } from './defs.ts';
-import { AMMO_ORDER, MF_FLAGS, MISC_SINKS, MISSILE_SINKS, MOBJ_INFO, WEAPON_ORDER } from './tables.ts';
+import {
+  AMMO_ORDER,
+  MF_FLAGS,
+  MISC_SINKS,
+  MISSILE_SINKS,
+  MOBJ_INFO,
+  OBITUARY_SINKS,
+  WEAPON_ORDER,
+} from './tables.ts';
 
 /**
  * The five flag `Set`s a `Bits` mask can add a doomednum to or remove it from — this engine has no
- * flags bitfield, so every `MF_*` with a sink is a membership edit somewhere. The one list both
- * `applyBits` and the pristine snapshot walk, so a `Set` can never be patched without being
- * restored.
+ * flags bitfield, so every `MF_*` with a sink is a membership edit somewhere. Each row carries the
+ * predicate over the mask that decides membership, because one of them is not a single bit
+ * (`isSolidDecoration`). The one list both `applyBits` and the pristine snapshot walk, so a `Set`
+ * can never be patched without being restored.
  */
-const FLAG_SETS: readonly (readonly [keyof typeof MF_FLAGS, Set<number>])[] = [
-  ['COUNTKILL', COUNTKILL_TYPES],
-  ['COUNTITEM', COUNTITEM_TYPES],
-  ['SHOOTABLE', MONSTER_TYPES],
-  ['SOLID', SOLID_DECORATION_TYPES],
-  ['SHADOW', FUZZ_TYPES],
+const FLAG_SETS: readonly (readonly [Set<number>, (mask: number) => boolean])[] = [
+  [COUNTKILL_TYPES, (mask) => Boolean(mask & MF_FLAGS.COUNTKILL.bit)],
+  [COUNTITEM_TYPES, (mask) => Boolean(mask & MF_FLAGS.COUNTITEM.bit)],
+  [MONSTER_TYPES, (mask) => Boolean(mask & MF_FLAGS.SHOOTABLE.bit)],
+  [SOLID_DECORATION_TYPES, isSolidDecoration],
+  [FUZZ_TYPES, (mask) => Boolean(mask & MF_FLAGS.SHADOW.bit)],
 ];
 
 /**
- * Every patchable table as it reads with no patch applied, deep-cloned once at import — before any
- * `Game` exists, so it can only ever capture the vanilla values.
+ * Whether a mask makes its type a member of `SOLID_DECORATION_TYPES`, which is `MF_SOLID` **and not
+ * `MF_SHOOTABLE`** — a prop that blocks movement but that a shot passes through, not vanilla's
+ * `MF_SOLID` alone (docs/movement.md § Solid decorations). Every monster in `info.c` carries
+ * `MF_SOLID` too, so keying membership on that bit by itself would put any patched monster in the
+ * set and `things.ts` would then skip it in the hitscan, projectile and splash paths.
+ */
+function isSolidDecoration(mask: number): boolean {
+  return Boolean(mask & MF_FLAGS.SOLID.bit) && !(mask & MF_FLAGS.SHOOTABLE.bit);
+}
+
+/**
+ * Pairs one patchable record table with its pristine clone, taken at import — before any `Game`
+ * exists, so it can only ever capture the vanilla values — and returns the function that puts it
+ * back.
  *
  * `structuredClone` rather than a shallow copy because `MonsterStats` nests three levels deep
  * (`ranged.projectile.pairOffsetsRad` is an array of arrays, `sounds.walk.sounds` an array); a
- * shallow copy would hand a patched sub-object straight back on reset. `Set`s are kept as arrays
- * because `structuredClone` is not used on them.
+ * shallow copy would hand a patched sub-object straight back on reset.
  */
-const PRISTINE = {
-  monsterStats: structuredClone(MONSTER_STATS),
-  inertShootable: structuredClone(INERT_SHOOTABLE),
-  monsterHealth: { ...MONSTER_HEALTH },
-  ceilingHung: { ...CEILING_HUNG_HEIGHT },
-  solidRadius: { ...SOLID_DECORATION_RADIUS_OVERRIDE },
-  projectileRadius: { ...PROJECTILE_RADIUS },
-  weapons: structuredClone(WEAPONS),
-  sets: FLAG_SETS.map(([, set]) => [...set]),
-};
+function patchable<T>(table: Record<number | string, T>): () => void {
+  const pristine = structuredClone(table);
+  return () => restore(table, pristine);
+}
+
+/**
+ * Every patchable record table, as the one list `resetDehacked` walks — the shape `FLAG_SETS` has
+ * for the `Set`s, and for the same reason: registering a table here is the only edit needed, so a
+ * table can never be patched without being restored.
+ */
+const PATCHED_TABLES: readonly (() => void)[] = [
+  patchable(MONSTER_STATS),
+  patchable(INERT_SHOOTABLE),
+  patchable(MONSTER_HEALTH),
+  patchable(CEILING_HUNG_HEIGHT),
+  patchable(SOLID_DECORATION_RADIUS_OVERRIDE),
+  patchable(PROJECTILE_RADIUS),
+  patchable(WEAPONS),
+  patchable(OBITUARIES),
+  patchable(LOCKED_LINES),
+];
+
+/** The flag `Set`s as arrays, since `structuredClone` is not used on them. */
+const PRISTINE_SETS = FLAG_SETS.map(([set]) => [...set]);
 
 /**
  * Whether the session applied any `Thing` record — that is, whether `MONSTER_HEALTH` and the stat
@@ -98,17 +134,11 @@ function restore<T>(table: Record<number | string, T>, from: Record<number | str
  * mutating shared tables is most exposed to, so it is closed by ordering rather than by cleanup.
  */
 export function resetDehacked(): void {
-  restore(MONSTER_STATS, PRISTINE.monsterStats);
-  restore(INERT_SHOOTABLE, PRISTINE.inertShootable);
-  restore(MONSTER_HEALTH, PRISTINE.monsterHealth);
-  restore(CEILING_HUNG_HEIGHT, PRISTINE.ceilingHung);
-  restore(SOLID_DECORATION_RADIUS_OVERRIDE, PRISTINE.solidRadius);
-  restore(PROJECTILE_RADIUS, PRISTINE.projectileRadius);
-  restore(WEAPONS, PRISTINE.weapons);
+  for (const restoreTable of PATCHED_TABLES) restoreTable();
 
-  FLAG_SETS.forEach(([, set], i) => {
+  FLAG_SETS.forEach(([set], i) => {
     set.clear();
-    for (const value of PRISTINE.sets[i]) set.add(value);
+    for (const value of PRISTINE_SETS[i]) set.add(value);
   });
 
   resetInventoryLimits();
@@ -131,6 +161,8 @@ export function applyDehacked(patch: DehPatch): void {
   for (const edit of patch.ammoEdits) applyAmmo(edit);
   for (const edit of patch.weaponEdits) applyWeapon(edit.index, edit.ammoType);
   applyMisc(patch.misc);
+  applyObituaries(patch.strings);
+  applyLockedLines(patch.strings);
   for (const [name, lump] of patch.soundLumps) setSoundLump(name, lump);
   for (const [mnemonic, lump] of patch.musicLumps) setMusicLump(mnemonic, lump);
   // Last, because `MONSTER_STATS` is what it derives from and every edit above may have moved it.
@@ -157,7 +189,11 @@ function applyThing(edit: DehThingEdit): void {
   if (edit.radius !== undefined) {
     if (stats) stats.radius = edit.radius;
     if (inert) inert.radius = edit.radius;
-    if (SOLID_DECORATION_TYPES.has(dn)) SOLID_DECORATION_RADIUS_OVERRIDE[dn] = edit.radius;
+    // The membership this record *ends* with, not the one it started with: `Bits` is applied last
+    // (it needs the patched height), so a record that turns a prop solid and resizes it in one go
+    // would otherwise write no override and leave it at the shared 16 units.
+    const solid = edit.bits === undefined ? SOLID_DECORATION_TYPES.has(dn) : isSolidDecoration(edit.bits);
+    if (solid) SOLID_DECORATION_RADIUS_OVERRIDE[dn] = edit.radius;
   }
   if (edit.height !== undefined) {
     if (stats) stats.height = edit.height;
@@ -172,7 +208,7 @@ function applyThing(edit: DehThingEdit): void {
     stats.speed *= edit.speed / row.speed;
   }
 
-  if (edit.sounds) applySounds(dn, edit.sounds);
+  if (edit.sounds) applySounds(stats, inert, edit.sounds);
   if (edit.bits !== undefined) applyBits(dn, edit.bits, edit.height ?? stats?.height ?? inert?.height);
 }
 
@@ -181,9 +217,11 @@ function applyThing(edit: DehThingEdit): void {
  * own pain/death sounds outside the stat table — `INERT_SHOOTABLE`. A `null` is `sfx_None`, and
  * deletes the field rather than setting it, which is what makes the monster silent there.
  */
-function applySounds(dn: number, sounds: NonNullable<DehThingEdit['sounds']>): void {
-  const stats = MONSTER_STATS[dn];
-  const inert = INERT_SHOOTABLE[dn];
+function applySounds(
+  stats: (typeof MONSTER_STATS)[number] | undefined,
+  inert: (typeof INERT_SHOOTABLE)[number] | undefined,
+  sounds: NonNullable<DehThingEdit['sounds']>,
+): void {
   for (const [slot, name] of Object.entries(sounds)) {
     if (stats) {
       if (name === null) delete stats.sounds[slot as 'see'];
@@ -201,7 +239,7 @@ function applySounds(dn: number, sounds: NonNullable<DehThingEdit['sounds']>): v
  * imp's fireball wherever it comes from, so every `MONSTER_STATS` entry naming that sprite moves
  * together — which is the faithful answer, not an approximation.
  */
-function applyMissile(sink: { sprite: string; weapons?: readonly string[] }, edit: DehThingEdit): void {
+function applyMissile(sink: (typeof MISSILE_SINKS)[string], edit: DehThingEdit): void {
   if (edit.radius !== undefined) PROJECTILE_RADIUS[sink.sprite] = edit.radius;
 
   for (const stats of Object.values(MONSTER_STATS)) {
@@ -215,8 +253,7 @@ function applyMissile(sink: { sprite: string; weapons?: readonly string[] }, edi
   }
 
   for (const id of sink.weapons ?? []) {
-    const weapon = WEAPONS[id as keyof typeof WEAPONS];
-    if (!weapon) continue;
+    const weapon = WEAPONS[id];
     if (edit.speed !== undefined) weapon.projectileSpeed = edit.speed;
     if (edit.damage !== undefined) weapon.damageDiceMultiplier = edit.damage;
   }
@@ -228,8 +265,8 @@ function applyMissile(sink: { sprite: string; weapons?: readonly string[] }, edi
  * docs/dehacked.md § Bits.
  */
 function applyBits(dn: number, mask: number, height: number | undefined): void {
-  for (const [name, set] of FLAG_SETS) {
-    if (mask & MF_FLAGS[name].bit) set.add(dn);
+  for (const [set, member] of FLAG_SETS) {
+    if (member(mask)) set.add(dn);
     else set.delete(dn);
   }
 
@@ -263,6 +300,56 @@ function applyMisc(misc: Readonly<Record<string, number>>): void {
   if (Object.keys(limits).length) setInventoryLimits(limits);
 }
 
+/**
+ * ZDoom's obituary format tokens, in the second person the overlay speaks. `%o` is the victim,
+ * which here is only ever the player being shown the line. `%hself` is matched ahead of `%h` by the
+ * alternation that reads this, which is what makes it `yourself` rather than `youself`.
+ * docs/dehacked.md § Obituaries.
+ */
+const OBITUARY_TOKENS: Record<string, string> = {
+  '%hself': 'yourself',
+  '%o': 'you',
+  '%g': 'you',
+  '%h': 'you',
+  '%p': 'your',
+  '%s': 'yours',
+};
+
+/**
+ * Every `OB_*` string the patch set, onto the `DamageCause` line each one replaces. Whole lines,
+ * not names: `OBITUARIES` is shaped that way precisely so a patch has something to replace.
+ *
+ * The text is written about a third-person victim (ZDoom's `%o was squished.`) and this overlay
+ * has one player and speaks to them, so the tokens go to second person and the line is capitalised
+ * wherever `%o` left it. One verb then disagrees and gets corrected — `you was` becomes
+ * `you were` — and that single rule covers both reference sets end to end; see
+ * docs/dehacked.md § Obituaries for the audit behind it.
+ */
+function applyObituaries(strings: ReadonlyMap<string, string>): void {
+  for (const [mnemonic, sink] of Object.entries(OBITUARY_SINKS)) {
+    const text = strings.get(mnemonic);
+    if (text === undefined) continue;
+    const line = text
+      .replace(/%hself|%[oghps]/g, (token) => OBITUARY_TOKENS[token])
+      .trim()
+      .replace(/\byou was\b/, 'you were');
+    OBITUARIES[sink] = line.charAt(0).toUpperCase() + line.slice(1);
+  }
+}
+
+/**
+ * Every `PD_*` string the patch set, onto the locked-door line it names. No transform: unlike an
+ * `OB_*` these are already whole second-person sentences addressed to the player, and the color
+ * words `ui/hud/message.ts` picks out are found in the finished text rather than composed into it.
+ * docs/dehacked.md § Locked-door lines.
+ */
+function applyLockedLines(strings: ReadonlyMap<string, string>): void {
+  for (const mnemonic of Object.keys(LOCKED_LINES)) {
+    const text = strings.get(mnemonic);
+    if (text !== undefined) LOCKED_LINES[mnemonic] = text;
+  }
+}
+
 /** `Ammo N`'s two fields, `d_deh.c`'s `deh_ammo[]`. */
 function applyAmmo(edit: DehAmmoEdit): void {
   const type: AmmoType | undefined = AMMO_ORDER[edit.index];
@@ -275,7 +362,7 @@ function applyAmmo(edit: DehAmmoEdit): void {
 function applyWeapon(index: number, ammoIndex: number): void {
   const id = WEAPON_ORDER[index];
   const type = AMMO_ORDER[ammoIndex];
-  if (!id || !WEAPONS[id]) return;
+  if (!id) return;
   // vanilla's `am_noammo` is 5, past the four real classes — the fist and chainsaw use it.
   WEAPONS[id].ammoType = type ?? null;
 }

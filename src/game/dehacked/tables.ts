@@ -4,9 +4,10 @@
  * `scripts/inspect-wad.ts`'s coverage report can't drift out of step with what actually lands —
  * the arrangement `classifyLineSpecial` has with the specials table. See docs/dehacked.md.
  */
-import { DOOM1_MUSIC, DOOM2_MUSIC } from '../../audio/music/tables.ts';
 import { SFX_NAMES, type SfxId } from '../../audio/sfx.ts';
+import type { DamageCause } from '../combat.ts';
 import type { AmmoType, InventoryLimits, WeaponId } from '../inventory.ts';
+import { ThingType } from '../things/doomednums.ts';
 import type { DehRecordKind, DehShortfall, DehSupport } from './defs.ts';
 
 /** One row of `linuxdoom-1.10/info.c`'s `mobjinfo[]`, in `info.h`'s `mobjtype_t` order. */
@@ -240,28 +241,6 @@ export const AMMO_ORDER: readonly AmmoType[] = ['bullets', 'shells', 'cells', 'r
  */
 export const SFX_ORDER: readonly (SfxId | null)[] = [null, ...SFX_NAMES];
 
-/**
- * `musicenum_t` order, which a DEH `Music N` record indexes. Slot 0 is `mus_None`. Values are the
- * lump name minus its `D_` prefix, the form `i_sound.c`'s `sprintf(buf, "d_%s", …)` takes.
- *
- * Composed from `audio/music/tables.ts`' own `S_music[]` slices the way `SFX_ORDER` composes
- * `SFX_NAMES`, rather than transcribed a second time: the level tracks are the same 59 names, and
- * two copies would let one be corrected without the other. Only the non-level entries between and
- * after them — the intermission, title and finale tracks — are listed here.
- *
- * No reader yet: a numeric `Music N` record only moves a pointer into the exe's own string table,
- * so `RECORD_KINDS` classifies it `noTarget` outright and only BEX's `[MUSIC]` mnemonic form names
- * a lump this engine can resolve. Kept as the index bridge a `Music N` sink would need.
- * docs/dehacked.md § Sounds and music.
- */
-export const MUSIC_ORDER: readonly (string | null)[] = [
-  null,
-  ...DOOM1_MUSIC,
-  'inter', 'intro', 'bunny', 'victor', 'introa',
-  ...DOOM2_MUSIC,
-  'read_m', 'dm2ttl', 'dm2int',
-];
-
 /** One `mobjflag_t` bit and what this engine can do about it. */
 interface FlagRow {
   /** The bit `p_mobj.h` gives it. */
@@ -471,49 +450,113 @@ const MISC_FIELDS: Record<string, DehSupport> = {
 };
 
 /**
+ * `OB_*` obituary mnemonics and the `DamageCause` whose whole line each one replaces
+ * (`things/tables.ts`'s `OBITUARIES`, `game/combat.ts`'s `DamageCause`). `'default'` is not a
+ * cause but the fallback line an unattributed death draws.
+ *
+ * Neither reference set is vanilla — DOOM has no obituaries — and the two disagree about scope, so
+ * both are accepted: Eternity's BEX string table defines only the attacker-less causes, ZDoom's
+ * `LANGUAGE` adds the per-monster ones. Where the two name one sink twice the aliases sit on
+ * separate rows and the later row here wins — a patch setting both meant the same thing by them.
+ * docs/dehacked.md § Obituaries.
+ */
+export const OBITUARY_SINKS: Record<string, DamageCause | 'default'> = {
+  OB_CRUSH: 'crush',
+  OB_SLIME: 'slime',
+  OB_BARREL: ThingType.barrel,
+  OB_ROCKET_SELF: 'self', // Eternity's BEX name for the player's own splash
+  OB_R_SPLASH: 'self', // ZDoom's
+  OB_DEFAULT: 'default',
+
+  OB_ZOMBIE: ThingType.zombieman,
+  OB_SHOTGUY: ThingType.shotgunGuy,
+  OB_VILE: ThingType.archVile,
+  OB_UNDEAD: ThingType.revenant,
+  OB_FATSO: ThingType.mancubus,
+  OB_CHAINGUY: ThingType.heavyWeaponDude,
+  OB_SKULL: ThingType.lostSoul,
+  OB_IMP: ThingType.imp,
+  OB_CACO: ThingType.cacodemon,
+  OB_BARON: ThingType.baronOfHell,
+  OB_KNIGHT: ThingType.hellKnight,
+  OB_SPIDER: ThingType.spiderMastermind,
+  OB_BABY: ThingType.arachnotron,
+  OB_CYBORG: ThingType.cyberdemon,
+  OB_WOLFSS: ThingType.wolfensteinSS,
+  // The demon and the spectre never attack at range, so ZDoom gives them no ranged mnemonic and
+  // the `*HIT` form is the type's only obituary. Every other `*HIT` stays `noTarget`: a
+  // `DamageCause` is the doomednum alone and does not carry which of the type's attacks landed,
+  // so a melee-only line for a type that also has a ranged one has nowhere separate to go.
+  OB_DEMONHIT: ThingType.demon,
+  OB_SPECTREHIT: ThingType.spectre,
+};
+
+/**
+ * The `PD_*` mnemonics this engine has a line for — `specials/tables.ts`'s `LOCKED_LINES`, the
+ * fifteen `d_englsh.h` strings vanilla and Boom define between them.
+ *
+ * Spelled out here rather than read off that table because this module is on the **read** side:
+ * `wad/library.ts` and the manifest plugin classify a patch without a `Game`, and importing the
+ * specials tables to do it would pull the game layer into the menu's graph
+ * (docs/dehacked.md § The two entry points). `tests/game/dehacked-apply.test.ts` cross-checks the
+ * two lists, which is what keeps the duplication honest.
+ */
+const LOCK_LINE_MNEMONICS: readonly string[] = [
+  'PD_BLUEO', 'PD_REDO', 'PD_YELLOWO',
+  'PD_BLUEK', 'PD_REDK', 'PD_YELLOWK',
+  'PD_BLUEC', 'PD_REDC', 'PD_YELLOWC',
+  'PD_BLUES', 'PD_REDS', 'PD_YELLOWS',
+  'PD_ANY', 'PD_ALL3', 'PD_ALL6',
+];
+
+/**
  * BEX `[STRINGS]` mnemonic prefixes and what this engine can do with them. Checked longest-prefix
  * first, so `HUSTR_E1M1` and `HUSTR_1` both land on the level-title row while `HUSTR_PLRRED`
  * doesn't. Anything unlisted is `unknown`.
  *
- * `PD_*` (the locked-door lines, `ui/hud/message.ts`) and `OB_*` (obituaries, `things/tables.ts`'s
- * `THING_NAMES`) are the two that genuinely have a sink and are still `noTarget`: both are split
- * into interpolated fragments here rather than held as whole format strings, so honoring them
- * means restructuring those first. They are the cheapest follow-ons — docs/dehacked.md § What is
- * not supported.
+ * **A `noTarget` row here is this table's whole purpose**: it is what marks a mnemonic as
+ * recognised-and-deliberately-homeless, so the parser can pass over it in silence and report only
+ * what it failed to recognise. The `OB_*` and `PD_*` rows catch the mnemonics with no sink; the
+ * ones that have one are whole keys in `STRING_KEYS` below.
  */
-const STRING_PREFIXES: readonly (readonly [string, DehSupport, string])[] = [
-  ['HUSTR_PLR', 'noTarget', 'multiplayer player names'],
-  ['HUSTR_', 'applied', 'level titles'],
-  ['PHUSTR_', 'applied', 'level titles'],
-  ['THUSTR_', 'applied', 'level titles'],
-  ['GOT', 'noTarget', 'pickup messages'],
-  ['PD_', 'noTarget', 'locked-door messages'],
-  ['OB_', 'noTarget', 'obituaries'],
-  ['CC_', 'noTarget', 'cast-call names'],
-  ['TAG_', 'noTarget', 'weapon names'],
-  ['STSTR_', 'noTarget', 'cheat responses'],
-  ['AMSTR_', 'noTarget', 'automap messages'],
-  ['BGFLAT', 'noTarget', 'intermission backgrounds'],
-  ['QUITMSG', 'noTarget', 'quit messages'],
-  ['STARTUP', 'noTarget', 'startup banner'],
-  ['SKILL_', 'noTarget', 'skill names'],
-  ['TXT_', 'noTarget', 'episode text'],
+const STRING_PREFIXES: readonly (readonly [string, DehSupport])[] = [
+  ['HUSTR_PLR', 'noTarget'], // multiplayer player names
+  ['HUSTR_', 'applied'], // level titles, and the two mission-specific sets below
+  ['PHUSTR_', 'applied'],
+  ['THUSTR_', 'applied'],
+  ['GOT', 'noTarget'], // pickup messages
+  ['PD_', 'noTarget'], // locked-door lines with no lock rule here
+  ['OB_', 'noTarget'], // obituaries with no killer here to name
+  ['CC_', 'noTarget'], // cast-call names
+  ['TAG_', 'noTarget'], // weapon names
+  ['STSTR_', 'noTarget'], // cheat responses
+  ['AMSTR_', 'noTarget'], // automap messages
+  ['BGFLAT', 'noTarget'], // intermission backgrounds
+  ['QUITMSG', 'noTarget'], // quit messages
+  ['STARTUP', 'noTarget'], // startup banner
+  ['SKILL_', 'noTarget'], // skill names
+  ['TXT_', 'noTarget'], // episode text
 ];
 
-/** Whole-mnemonic `[STRINGS]` keys that no prefix covers, each with the group it reports under. */
-const STRING_KEYS: Record<string, readonly [DehSupport, string]> = {
-  NIGHTMARE: ['noTarget', 'skill names'],
-  DOSY: ['noTarget', 'quit messages'],
-  E1TEXT: ['noTarget', 'finale text'],
-  E2TEXT: ['noTarget', 'finale text'],
-  E3TEXT: ['noTarget', 'finale text'],
-  E4TEXT: ['noTarget', 'finale text'],
-  C1TEXT: ['noTarget', 'finale text'],
-  C2TEXT: ['noTarget', 'finale text'],
-  C3TEXT: ['noTarget', 'finale text'],
-  C4TEXT: ['noTarget', 'finale text'],
-  C5TEXT: ['noTarget', 'finale text'],
-  C6TEXT: ['noTarget', 'finale text'],
+/** Whole-mnemonic `[STRINGS]` keys that no prefix covers, or that a prefix would classify wrong. */
+const STRING_KEYS: Record<string, DehSupport> = {
+  // Every mnemonic with a sink, so the `OB_`/`PD_` prefix rows are left holding exactly the rest.
+  ...Object.fromEntries(Object.keys(OBITUARY_SINKS).map((key) => [key, 'applied'])),
+  ...Object.fromEntries(LOCK_LINE_MNEMONICS.map((key) => [key, 'applied'])),
+
+  NIGHTMARE: 'noTarget', // a skill name
+  DOSY: 'noTarget', // a quit message
+  // The finale text, `E1TEXT`-`C6TEXT`: no finale screen here to crawl it over.
+  E1TEXT: 'noTarget',
+  E2TEXT: 'noTarget',
+  E3TEXT: 'noTarget',
+  E4TEXT: 'noTarget',
+  C1TEXT: 'noTarget',
+  C2TEXT: 'noTarget',
+  C3TEXT: 'noTarget',
+  C4TEXT: 'noTarget',
+  C5TEXT: 'noTarget',
+  C6TEXT: 'noTarget',
 };
 
 /** Which record kinds are read at all, and how far a record of that kind gets on its own. */
@@ -581,16 +624,20 @@ export function classifyDehackedFlag(mnemonic: string): FlagRow | undefined {
 }
 
 /**
- * How far one `[STRINGS]` mnemonic gets, and which group it reports under. The group is what keeps
- * the report readable: freedoom2's DEHACKED sets 132 strings this engine has no home for, and
- * naming each one would bury the seven `Frame` records that actually matter under 132 rows.
+ * How far one `[STRINGS]` mnemonic gets.
+ *
+ * **A `noTarget` here is reported nowhere** — `parse.ts` passes over it silently. The tables above
+ * are the standing list of what this engine deliberately has no home for, and a report row per
+ * family only ever repeated that: no cast call, no automap, no deathmatch. `unknown` is the one
+ * shortfall worth a reader's attention, because it means the parser did not recognise the mnemonic
+ * at all. docs/dehacked.md § The coverage report.
  */
-export function classifyDehackedString(key: string): { support: DehSupport; group: string } {
+export function classifyDehackedString(key: string): DehSupport {
   const upper = key.trim().toUpperCase();
   const whole = STRING_KEYS[upper];
-  if (whole) return { support: whole[0], group: whole[1] };
-  for (const [prefix, support, group] of STRING_PREFIXES) {
-    if (upper.startsWith(prefix)) return { support, group };
+  if (whole) return whole;
+  for (const [prefix, support] of STRING_PREFIXES) {
+    if (upper.startsWith(prefix)) return support;
   }
-  return { support: 'unknown', group: 'unrecognised' };
+  return 'unknown';
 }

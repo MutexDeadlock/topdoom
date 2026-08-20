@@ -3,25 +3,23 @@ v0.15.0 (2026-08-20)
 DEHACKED/BEX patches are read, and levels now show a par time.
 
 Features and improvements
-  - a WAD's DEHACKED/BEX patch is read and applied
-    - level titles, from the BEX [STRINGS] form and vanilla's Text substitution
-      alike, and par times from [PARS]
-    - monster stats: health, speed, size, mass, pain chance, sounds and flags,
-      including the missiles a monster and a weapon share
+  - DEHACKED/BEX patches are read and applied
+    - level titles
+    - par times
+    - monster stats
     - ammo counts and caps, a weapon's ammo class, the starting kit, the
       health and armour limits, and the BFG's cells per shot
-    - which lump a sound or a music track resolves to, from [SOUNDS]/[MUSIC]
-    - EPIC.WAD's levels now carry their own names instead of DOOM II's, and
-      freedoom2's carry its own names and par times — in the level picker as
-      well as on the level card
-  - the intermission shows the level's par time, green if you beat it
-  - what a patch asks for that this engine cannot do is reported rather than
-    dropped silently, and the level still loads and plays either way
-    - MISSING: frame edits (Frame, Pointer, [CODEPTR]) and sprite renames —
+    - which lump a sound or a music track resolves to
+    - the death overlay's killer line
+    - the locked-door and locked-switch lines
+    - MISSING: frame edits (Frame, Pointer, [CODEPTR]) and sprite renames:
       this engine animates from sprite lists, not a frame table
+    - a save made with a patch loaded now requires that file back, since without
+      it every patched stat would silently revert
   - the menu marks a WAD that carries a DEHACKED lump
-  - a save made with a patch loaded now requires that file back, since without
-    it every patched stat would silently revert
+  - the intermission shows the level's par time, green if you beat it
+  - the death overlay is drawn in the WAD's own font, like the other cards
+
 
 ===============================================================================
 

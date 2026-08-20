@@ -1,6 +1,16 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { LEVEL_NAMES, LevelNames, levelNameFor, levelNamePatch, levelTitleFor, missionOf } from '../../src/wad/campaign/names.ts';
+import {
+  LEVEL_NAMES,
+  LevelNames,
+  dehTitlesFor,
+  levelNameFor,
+  levelNamePatch,
+  levelTitleFor,
+  missionOf,
+  stripTitlePrefix,
+  titleLookupFor,
+} from '../../src/wad/campaign/names.ts';
 import { MapInfo } from '../../src/wad/campaign/mapinfo.ts';
 import { Wad } from '../../src/wad/wad.ts';
 import { wadFile } from '../fixtures/wadfile.ts';
@@ -124,5 +134,76 @@ describe('WAD parsing · level name resolution', () => {
       'SIGIL.WAD E5M1',
     );
     assert.equal(levelNameFor('E5M1', { mission: 'doom', providerIsPwad: false }), 'E5M1');
+  });
+});
+
+/**
+ * How a DEHACKED patch's titles reach the level card, and where they sit against the two sources
+ * that were already there. See docs/dehacked.md § Strings.
+ */
+describe('WAD parsing · DEHACKED level titles', () => {
+  test('stripTitlePrefix applies the two edits LEVEL_NAMES was generated with', () => {
+    assert.equal(stripTitlePrefix('level 1: entryway'), 'Entryway');
+    assert.equal(stripTitlePrefix('MAP01: Hydroelectric Plant'), 'Hydroelectric Plant');
+    assert.equal(stripTitlePrefix('E1M1: Hangar'), 'Hangar');
+    // A title naming no level identifier is kept verbatim — EPIC.WAD's form.
+    assert.equal(stripTitlePrefix("1 - a fool's paradise"), "1 - a fool's paradise");
+  });
+
+  test('a mnemonic only names a map under the mission it belongs to', () => {
+    const strings = new Map([
+      ['HUSTR_1', 'MAP01: Doom II One'],
+      ['PHUSTR_1', 'MAP01: Plutonia One'],
+      ['THUSTR_1', 'MAP01: TNT One'],
+      ['HUSTR_E1M1', 'E1M1: Doom One'],
+    ]);
+    assert.deepEqual([...dehTitlesFor('doom2', strings)], [['MAP01', 'Doom II One']]);
+    assert.deepEqual([...dehTitlesFor('plutonia', strings)], [['MAP01', 'Plutonia One']]);
+    assert.deepEqual([...dehTitlesFor('tnt', strings)], [['MAP01', 'TNT One']]);
+    assert.deepEqual([...dehTitlesFor('doom', strings)], [['E1M1', 'Doom One']]);
+  });
+
+  test('an unrecognised IWAD keeps the plain HUSTR_ set rather than dropping every title', () => {
+    // The case EPIC.WAD lands in whenever the IWAD is not literally named `doom2.wad`.
+    const strings = new Map([['HUSTR_1', 'MAP01: Kept'], ['PHUSTR_1', 'MAP01: Dropped']]);
+    assert.deepEqual([...dehTitlesFor(null, strings)], [['MAP01', 'Kept']]);
+  });
+
+  test('a lump name passes straight through, which is how a Text substitution arrives', () => {
+    assert.deepEqual([...dehTitlesFor('doom2', new Map([['MAP07', 'Renamed']]))], [['MAP07', 'Renamed']]);
+  });
+
+  test('MAPINFO beats DEHACKED, and DEHACKED beats the vanilla table', () => {
+    const base = { mission: 'doom2' as const, providerIsPwad: false };
+    assert.equal(levelTitleFor('MAP01', { ...base, mapInfoTitle: 'From MAPINFO', dehTitle: 'From DEH' }), 'From MAPINFO');
+    assert.equal(levelTitleFor('MAP01', { ...base, dehTitle: 'From DEH' }), 'From DEH');
+    assert.equal(levelTitleFor('MAP01', base), 'Entryway');
+  });
+
+  test("a DEH title applies to a PWAD's own map, where the vanilla table deliberately does not", () => {
+    // Renaming the base game's levels is what such a patch is for, so the IWAD-provided guard
+    // stays on the vanilla table alone.
+    const pwad = { mission: 'doom2' as const, providerIsPwad: true };
+    assert.equal(levelTitleFor('MAP01', pwad), undefined);
+    assert.equal(levelTitleFor('MAP01', { ...pwad, dehTitle: 'From DEH' }), 'From DEH');
+  });
+
+  test("a PWAD's DEH title survives the IWAD's name graphic, by the provenance rule already there", () => {
+    // EPIC.WAD provides MAP01 but no CWILV00, so `graphicFor` already declines the IWAD's — and
+    // the card falls through to the text, which is where the DEH title is. No new rule needed.
+    const iwad = wadFile('IWAD', 'doom2.wad', ['MAP01', 'MAP02', 'CWILV00']);
+    const pwad = wadFile('PWAD', 'EPIC.WAD', ['MAP01']);
+    const wad = new Wad([iwad, pwad]);
+    const names = new LevelNames(wad, new MapInfo(wad), new Map([['MAP01', "1 - a fool's paradise"]]));
+    assert.equal(names.graphicFor('MAP01'), undefined);
+    assert.equal(names.nameFor('MAP01'), "1 - a fool's paradise");
+  });
+
+  test('the reverse lookup resolves a vanilla title back to the map that carries it', () => {
+    const lookup = titleLookupFor();
+    assert.equal(lookup('level 1: entryway'), 'MAP01');
+    assert.equal(lookup('Entryway'), 'MAP01');
+    assert.equal(lookup('E1M1: Hangar'), 'E1M1');
+    assert.equal(lookup('Not A Level'), undefined);
   });
 });

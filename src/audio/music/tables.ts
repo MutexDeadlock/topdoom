@@ -7,7 +7,7 @@
  * `sounds.c`'s `S_music[]`, DOOM 1's own 27 level tracks in `mus_e1m1` order.
  * Lump names are these prefixed with `D_` (`i_sound.c`'s `sprintf(buf, "d_%s", …)`).
  */
-const DOOM1_MUSIC = [
+export const DOOM1_MUSIC = [
   'e1m1', 'e1m2', 'e1m3', 'e1m4', 'e1m5', 'e1m6', 'e1m7', 'e1m8', 'e1m9',
   'e2m1', 'e2m2', 'e2m3', 'e2m4', 'e2m5', 'e2m6', 'e2m7', 'e2m8', 'e2m9',
   'e3m1', 'e3m2', 'e3m3', 'e3m4', 'e3m5', 'e3m6', 'e3m7', 'e3m8', 'e3m9',
@@ -20,20 +20,24 @@ const DOOM1_MUSIC = [
 const EPISODE4_MUSIC = ['e3m4', 'e3m2', 'e3m3', 'e1m5', 'e2m7', 'e2m4', 'e2m6', 'e2m5', 'e1m9'];
 
 /** `S_music[]` continued: DOOM 2's 32 level tracks, `mus_runnin` (MAP01) onward. */
-const DOOM2_MUSIC = [
+export const DOOM2_MUSIC = [
   'runnin', 'stalks', 'countd', 'betwee', 'doom', 'the_da', 'shawn', 'ddtblu',
   'in_cit', 'dead', 'stlks2', 'theda2', 'doom2', 'ddtbl2', 'runni2', 'dead2',
   'stlks3', 'romero', 'shawn2', 'messag', 'count2', 'ddtbl3', 'ampie', 'theda3',
   'adrian', 'messg2', 'romer2', 'tense', 'shawn3', 'openin', 'evil', 'ultima',
 ];
 
-/** The two intermission tracks, `mus_inter` and `mus_dm2int`. */
-const INTERMISSION_MUSIC = 'D_INTER';
-const INTERMISSION_MUSIC_COMMERCIAL = 'D_DM2INT';
+/**
+ * The intermission's and finale's tracks. Held as `mus_*` mnemonics, like every other row in this
+ * file, so they resolve through `musicLumpName` and a BEX `[MUSIC]` redirect reaches them too —
+ * as literal `D_*` lump names they were the one path that silently ignored one.
+ */
+const INTERMISSION_MUSIC = 'inter';
+const INTERMISSION_MUSIC_COMMERCIAL = 'dm2int';
 
 /** `F_StartFinale`'s two: `mus_victor` after a DOOM episode, `mus_read_m` after DOOM II. */
-const FINALE_MUSIC = 'D_VICTOR';
-const FINALE_MUSIC_COMMERCIAL = 'D_READ_M';
+const FINALE_MUSIC = 'victor';
+const FINALE_MUSIC_COMMERCIAL = 'read_m';
 
 /**
  * DMX's own volume curve, from Chocolate Doom's `i_oplmusic.c`
@@ -58,6 +62,29 @@ const EPISODE_MAP = /^E(\d)M(\d)$/;
 const COMMERCIAL_MAP = /^MAP(\d\d)$/;
 
 /**
+ * Lump names a DEHACKED/BEX `[MUSIC]` section has redirected, keyed by the `mus_*` mnemonic (the
+ * lump name without its `D_`). Empty unless a patch said otherwise.
+ * docs/dehacked.md § Sounds and music.
+ */
+const MUSIC_LUMP_OVERRIDES = new Map<string, string>();
+
+/** The lump a `mus_*` mnemonic resolves to — `i_sound.c`'s `sprintf(buf, "d_%s", …)`, unless patched. */
+function musicLumpName(mnemonic: string): string {
+  return MUSIC_LUMP_OVERRIDES.get(mnemonic) ?? `D_${mnemonic.toUpperCase()}`;
+}
+
+/** Redirects one track — a BEX `[MUSIC]` entry, or a `Music N` record. */
+export function setMusicLump(mnemonic: string, lump: string): void {
+  const upper = lump.toUpperCase();
+  MUSIC_LUMP_OVERRIDES.set(mnemonic, upper.startsWith('D_') ? upper : `D_${upper}`);
+}
+
+/** Drops every redirect, before a new patch is applied. docs/dehacked.md § Applying: reset, then patch. */
+export function resetMusicLumps(): void {
+  MUSIC_LUMP_OVERRIDES.clear();
+}
+
+/**
  * The `D_*` lump `S_Start` would play on this map, or null for a map name in
  * neither of vanilla's two shapes (a PWAD is free to call a map anything).
  *
@@ -71,16 +98,16 @@ export function vanillaMusicFor(mapName: string): string | null {
   if (commercial) {
     const index = Number(commercial[1]) - 1;
     if (index < 0) return null;
-    return `D_${DOOM2_MUSIC[index % DOOM2_MUSIC.length].toUpperCase()}`;
+    return musicLumpName(DOOM2_MUSIC[index % DOOM2_MUSIC.length]);
   }
   const episode = EPISODE_MAP.exec(mapName);
   if (episode) {
     const e = Number(episode[1]);
     const m = Number(episode[2]);
     if (e < 1 || m < 1) return null;
-    if (e === 4) return `D_${EPISODE4_MUSIC[(m - 1) % EPISODE4_MUSIC.length].toUpperCase()}`;
+    if (e === 4) return musicLumpName(EPISODE4_MUSIC[(m - 1) % EPISODE4_MUSIC.length]);
     const index = ((e - 1) * 9 + (m - 1)) % DOOM1_MUSIC.length;
-    return `D_${DOOM1_MUSIC[index].toUpperCase()}`;
+    return musicLumpName(DOOM1_MUSIC[index]);
   }
   return null;
 }
@@ -92,7 +119,7 @@ export function vanillaMusicFor(mapName: string): string | null {
  * `vanillaMusicFor` makes.
  */
 export function intermissionMusicFor(mapName: string): string {
-  return COMMERCIAL_MAP.test(mapName) ? INTERMISSION_MUSIC_COMMERCIAL : INTERMISSION_MUSIC;
+  return musicLumpName(COMMERCIAL_MAP.test(mapName) ? INTERMISSION_MUSIC_COMMERCIAL : INTERMISSION_MUSIC);
 }
 
 /**
@@ -102,5 +129,5 @@ export function intermissionMusicFor(mapName: string): string {
  * for it, so it takes the same music.
  */
 export function finaleMusicFor(mapName: string): string {
-  return COMMERCIAL_MAP.test(mapName) ? FINALE_MUSIC_COMMERCIAL : FINALE_MUSIC;
+  return musicLumpName(COMMERCIAL_MAP.test(mapName) ? FINALE_MUSIC_COMMERCIAL : FINALE_MUSIC);
 }

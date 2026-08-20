@@ -386,8 +386,16 @@ index into *one map's* lumps — a sector index, a `posed` index, a subsector in
 the only files that can change what a stored index means are the game WAD and whatever supplied
 that map. An add-on which supplied neither gave the session textures, sprites, sounds or MAPINFO at
 most: without it the level looks or sounds different, but every index still points at the same
-thing. `requiredWads(wads, mapWad)` is that rule, positionally, and it is why a save made with a
-test PWAD loaded still loads when the map came from the IWAD.
+thing. `requiredWads(wads, mapWad, patchWads)` is that rule, positionally, and it is why a save made
+with a test PWAD loaded still loads when the map came from the IWAD.
+
+**A file carrying a `DEHACKED` lump is the exception**, and the optional `patchWads` names those.
+A patch rewrites the stat tables a restore re-derives every monster from, so dropping it changes
+what the save *means* rather than only how it looks — and `snapshotThings`' `health` elision runs
+against `spawnHealthFor`, a patched value. Requiring the file back is what keeps that baseline the
+same one the save was written against. Absent means no patch was applied, which is exactly what
+every save written before the field existed meant, so an older save keeps the looser rule and stays
+loadable at `SAVE_VERSION` 1. docs/dehacked.md § Savegames and patched tables.
 
 Its hedge is also what keeps the field **compatible**, at `SAVE_VERSION` 1: `requiresWholeSet` — a
 `mapWad` that is blank or names no entry in the set — puts a save back under the old whole-set

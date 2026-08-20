@@ -64,11 +64,18 @@ const MAX_FRAME_DT = 1 / 35;
  * per-type sum: the monster probing and the monster that drifted are different
  * monsters, so nothing requires them to be the same type. See
  * docs/monster-ai.md § Spatial indexing.
+ *
+ * Computed per grid rather than at import, because a DEHACKED patch may have rewritten either
+ * table by the time one is built (docs/dehacked.md § Applying: reset, then patch). A grid is
+ * built once per level and this is a reduce over some forty entries, so it costs nothing.
  */
-const EVERY_STAT = [...Object.values(MONSTER_STATS), ...Object.values(FAST_MONSTER_STATS)];
-const BLOCKER_MARGIN =
-  EVERY_STAT.reduce((max, s) => Math.max(max, s.speed * s.chaseInterval), 0) +
-  EVERY_STAT.reduce((max, s) => Math.max(max, s.speed), 0) * MAX_FRAME_DT;
+function blockerMargin(): number {
+  const every = [...Object.values(MONSTER_STATS), ...Object.values(FAST_MONSTER_STATS)];
+  return (
+    every.reduce((max, s) => Math.max(max, s.speed * s.chaseInterval), 0) +
+    every.reduce((max, s) => Math.max(max, s.speed), 0) * MAX_FRAME_DT
+  );
+}
 
 /** The queries `createThingGrid` hands back — see each method's own doc. */
 export interface ThingGrid {
@@ -107,6 +114,9 @@ export interface ThingGrid {
  * bookkeeping.
  */
 export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[]): ThingGrid {
+  // Per grid, not per module: a DEHACKED patch may have rewritten the stat tables since import.
+  const BLOCKER_MARGIN = blockerMargin();
+
   /**
    * Solid bodies bucketed by `BLOCKER_GRID_CELL`, rebuilt once per `update()`
    * and read by `blockersFor` below — vanilla's blockmap, for vanilla's

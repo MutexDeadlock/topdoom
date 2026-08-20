@@ -42,15 +42,20 @@ describe('Suite hygiene · WAD fixtures', () => {
     assert.deepEqual(offenders, [], 'read WAD bytes from tests/fixtures/wads/ instead');
   });
 
-  test('every WAD in tests/fixtures/wads is loaded by something', () => {
+  test('every committed fixture is loaded by something', () => {
     const sources = walk('tests').map((path) => readFileSync(path, 'utf8'));
-    for (const wad of readdirSync(join('tests', 'fixtures', 'wads'))) {
-      // Matched without the extension: `pinky.ts` builds its two names from a union.
-      const stem = wad.replace(/\.wad$/i, '');
-      assert.ok(
-        sources.some((source) => source.includes(stem)),
-        `${wad} is committed but nothing loads it`,
-      );
+    // Both directories a test takes real bytes from: WAD fixtures, and the DEHACKED patches
+    // lifted out as text (docs/testing.md § The DEHACKED fixtures).
+    for (const dir of ['wads', 'dehacked']) {
+      for (const file of readdirSync(join('tests', 'fixtures', dir))) {
+        // Matched without the extension: `pinky.ts` builds its two names from a union, and
+        // `dehFixture` takes `'epic' | 'freedoom2'`.
+        const stem = file.replace(/\.(wad|deh)$/i, '');
+        assert.ok(
+          sources.some((source) => source.includes(stem)),
+          `${dir}/${file} is committed but nothing loads it`,
+        );
+      }
     }
   });
 });

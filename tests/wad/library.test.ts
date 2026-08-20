@@ -47,8 +47,24 @@ describe('WAD parsing · the menu level list', () => {
     ]);
   });
 
-  test('an unrecognised IWAD contributes no titles', () => {
+  test('an unrecognised IWAD with no patch contributes no titles', () => {
     const maps = mergedMaps(source('freedoom2.wad', 'IWAD', ['MAP01']), []);
     assert.deepEqual(maps, [{ name: 'MAP01', provider: 'freedoom2.wad' }]);
+  });
+
+  test("a file's DEHACKED titles arrive as levelNames, so they name levels like a MAPINFO does", () => {
+    // freedoom2's real shape: no MAPINFO, a name `missionOf` doesn't know, and a DEHACKED that
+    // names every level — which the manifest folds into `levelNames`. Without it the menu showed
+    // a bare `MAP01`. docs/dehacked.md § Strings.
+    const maps = mergedMaps(source('freedoom2.wad', 'IWAD', ['MAP01'], { MAP01: 'Hydroelectric Plant' }), []);
+    assert.deepEqual(maps, [{ name: 'MAP01', provider: 'freedoom2.wad', title: 'Hydroelectric Plant' }]);
+  });
+
+  test("an add-on's titles reach a map it does not itself provide", () => {
+    // EPIC.WAD ships five maps but its DEHACKED renames all 32, and in-game the title applies to
+    // every one of them — the menu has to agree, so the provider is not consulted here.
+    const epic = source('EPIC.WAD', 'PWAD', ['MAP01'], { MAP17: '17 - the miners' });
+    const maps = mergedMaps(source('DOOM2.WAD', 'IWAD', ['MAP01', 'MAP17']), [epic]);
+    assert.deepEqual(maps[1], { name: 'MAP17', provider: 'DOOM2.WAD', title: '17 - the miners' });
   });
 });

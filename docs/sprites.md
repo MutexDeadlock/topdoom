@@ -40,6 +40,12 @@ and 12, one sprite under two editor numbers) and the two hanging-victim families
 the five non-solid, wider-radius twins (59-63) of the solid 49-53, a distinction
 `SOLID_DECORATION_TYPES` turns on.
 
+Each `ThingType` entry carries its vanilla `MT_*` name as a comment. `MOBJ_INFO`
+(`game/dehacked/tables.ts`) is the checkable data twin of those comments — all 137 rows of
+`info.c`'s `mobjinfo[]` in `mobjtype_t` order, which a DEHACKED `Thing N` record indexes into, and
+which a test cross-checks against this table so the prose and the data cannot drift.
+docs/dehacked.md § Thing records.
+
 ## Things as sprites (`wad/sprites.ts`, `render/sprites.ts`, `game/things.ts`, `game/things/tables.ts`)
 
 `SpriteBank` (`wad/sprites.ts`) indexes `S_START`/`S_END` lumps by sprite name + frame letter,

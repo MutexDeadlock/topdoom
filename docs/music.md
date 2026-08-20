@@ -292,6 +292,18 @@ episode, `D_READ_M` after DOOM II (`finaleMusicFor`, keyed the same way), again 
 playing when the lump is missing. The card is not vanilla's finale (docs/hud.md § End card), but it
 is the screen standing in for it, so it takes that screen's music.
 
+A BEX `[MUSIC]` entry redirects which lump a `mus_*` mnemonic resolves to, through
+`musicLumpName` — the one place the `D_` prefix is applied, and empty unless a patch said
+otherwise. It sits *below* MAPINFO in authority, since MAPINFO names a lump outright rather than
+renaming one. A numeric `Music N` record has no effect: it moves a pointer into the exe's own
+string table. docs/dehacked.md § Sounds and music.
+
+**Every track in this file is held as a `mus_*` mnemonic and resolved through `musicLumpName`**,
+the intermission's and the end card's four included. They were literal `D_*` names once, which
+made them the one path a `[MUSIC]` redirect was counted as applying to and then silently ignored
+on. Storing the mnemonic is what makes the redirect reach them by construction rather than at
+whichever call site remembered to ask.
+
 ## Getting it to the speakers
 
 There is no `AudioWorklet`. The chip renders **quarter-second chunks on the main thread**, each

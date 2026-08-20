@@ -151,6 +151,31 @@ describe('Savegames · the store', () => {
     assert.deepEqual(requiredWads(wads, 'aaa'), [true, false, false]);
   });
 
+  test('a file carrying a DEHACKED patch is required back too', () => {
+    // A patch rewrites the stat tables a restore re-derives every monster from, so dropping it
+    // changes what the save means rather than how it looks.
+    // docs/dehacked.md § Savegames and patched tables.
+    const wads = [
+      { name: 'DOOM2.WAD', id: 'aaa' },
+      { name: 'EPIC.WAD', id: 'bbb' },
+      { name: 'sounds.wad', id: 'ccc' },
+    ];
+    assert.deepEqual(requiredWads(wads, 'aaa', ['bbb']), [true, true, false]);
+    // Absent means no patch was applied, which is what every save written before the field
+    // existed meant — those keep exactly the looser rule above.
+    assert.deepEqual(requiredWads(wads, 'aaa'), [true, false, false]);
+  });
+
+  test('the load gate names a dropped DEHACKED file, and ignores the field when absent', () => {
+    const iwad = { name: 'DOOM2.WAD', id: 'aaa' };
+    const wads = [iwad, { name: 'EPIC.WAD', id: 'bbb' }];
+    const patched = { map: 'MAP03', wads, mapWad: 'aaa', patchWads: ['bbb'] };
+    assert.match(wadSetRefusal(patched, [iwad], iwad) ?? '', /EPIC\.WAD carries a DEHACKED patch/);
+    assert.equal(wadSetRefusal(patched, [iwad, wads[1]], iwad), null, 'and passes once it is back');
+    // The same save without the field is an older one, and keeps loading as it always did.
+    assert.equal(wadSetRefusal({ map: 'MAP03', wads, mapWad: 'aaa' }, [iwad], iwad), null);
+  });
+
   test('a mapWad naming no file in the set requires all of them', () => {
     // Both the pre-`mapWad` save (no provider named) and a damaged field land
     // here, and must fail towards refusing loads — never towards allowing one

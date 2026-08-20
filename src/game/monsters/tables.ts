@@ -469,9 +469,13 @@ const FAST_TIC_TYPES = new Set<number>([ThingType.demon, ThingType.spectre]);
  * is a doubled `speed` and a halved `chaseInterval`; the attack and pain states in the same range
  * become half as long. See docs/monster-ai.md § Fast monsters.
  */
-export const FAST_MONSTER_STATS: Record<number, MonsterStats> = Object.fromEntries(
-  Object.entries(MONSTER_STATS).map(([key, stats]) => [key, fastVariant(Number(key), stats)]),
-);
+export let FAST_MONSTER_STATS: Record<number, MonsterStats> = deriveFastStats();
+
+function deriveFastStats(): Record<number, MonsterStats> {
+  return Object.fromEntries(
+    Object.entries(MONSTER_STATS).map(([key, stats]) => [key, fastVariant(Number(key), stats)]),
+  );
+}
 
 /** One type's entry as fast mode leaves it — the two edits `G_InitNew` makes, applied in turn. */
 function fastVariant(type: number, stats: MonsterStats): MonsterStats {
@@ -500,4 +504,19 @@ export function monsterStatsFor(fast: boolean): Record<number, MonsterStats> {
 }
 
 /** The tallest body in the roster (the cyberdemon's 110), derived from the table so it can't drift — a cheap "nobody can be caught in a gap this big" early-out. */
-export const TALLEST_BODY_HEIGHT = Math.max(...Object.values(MONSTER_STATS).map((s) => s.height));
+export let TALLEST_BODY_HEIGHT = Math.max(...Object.values(MONSTER_STATS).map((s) => s.height));
+
+/**
+ * Re-derives everything above that is computed from `MONSTER_STATS`, after something has written
+ * into it. The one caller is the DEHACKED applier (docs/dehacked.md § Applying: reset, then
+ * patch) — a patch edits `MONSTER_STATS` in place, and both values here were otherwise frozen at
+ * import, so a patched imp would stay fast-mode-vanilla and a patched cyberdemon would leave the
+ * gap early-out short.
+ *
+ * These are `let` for that reason alone. Nothing else assigns them, and `monsterStatsFor` is
+ * still the single accessor every reader goes through.
+ */
+export function rebuildDerivedMonsterStats(): void {
+  FAST_MONSTER_STATS = deriveFastStats();
+  TALLEST_BODY_HEIGHT = Math.max(...Object.values(MONSTER_STATS).map((s) => s.height));
+}

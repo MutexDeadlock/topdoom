@@ -310,6 +310,24 @@ its content: `reader.test.ts` (`Reader` is pure byte→value decoding, where a h
 exactly as good as a real one) and `reject.test.ts`, which pins which REJECT tables `loadMap` keeps
 and which it drops (docs/wad.md § REJECT) by handing `wadFile` a `bytes` payload of each length.
 
+### The DEHACKED fixtures
+
+`tests/fixtures/dehacked/` holds two real patches as **text**, not as WADs, loaded through
+`dehFixture(name)`. The parser is a pure function of a string, so a committed `.deh` reads in a
+diff where a WAD does not; and both of these were lifted out of `public/wads/`, which a test may
+never read directly.
+
+| File | Holds | Covers |
+|---|---|---|
+| `epic.deh` | EPIC.WAD's lump, **verbatim** | vanilla `Text` byte-count substitution, both `Bits` forms, a repeated version header mid-file |
+| `freedoom2.deh` | freedoom2's, trimmed | `[PARS]`, every `HUSTR_`/`PHUSTR_`/`THUSTR_` title, `Frame` records as the warning corpus, one string per no-target group |
+
+`epic.deh` goes in **verbatim on purpose**: it is the byte-count corpus, and trimming it risks
+breaking one of the counts a `Text` record declares. Both are read as **latin1** — EPIC's
+wolfenstein and grosse titles carry bytes above 0x7f, and a UTF-8 read would corrupt them and shift
+every byte count after. The trimmed one carries a header comment recording where it came from,
+which `fixturewads.test.ts`'s comment exemption allows for exactly this.
+
 ## Private constants are pinned behaviourally
 
 The sight-sampling step and the fog's reveal distance are not readable from outside their modules,

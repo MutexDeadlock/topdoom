@@ -186,6 +186,12 @@ the Icon of Sin. Sound effects and music both come out of the loaded WAD (see
 sector types, the extended linedef numbers, six-slot keys and generalized locks, elevators,
 silent and line-to-line teleporters, a WAD's own `ANIMATED` and `SWITCHES` tables, scrolling
 surfaces, conveyors, friction, wind and pushers, voodoo dolls, deep water, transfer lighting,
-translucent midtextures and custom colormaps. What is deliberately **not** in: `DEHACKED`/BEX
-patches, and MBF's sky transfer — nothing draws sky in a top-down view. See
-[docs/specials.md](docs/specials.md) for the per-number detail.
+translucent midtextures and custom colormaps. What is deliberately **not** in: MBF's sky transfer —
+nothing draws sky in a top-down view. See [docs/specials.md](docs/specials.md) for the per-number
+detail.
+
+**`DEHACKED`/BEX patches are read** from a WAD that ships one: level titles, par times, and monster,
+weapon and ammo stats. What a patch does with vanilla's *frame* table — `Frame`, `Pointer`,
+`[CODEPTR]`, sprite renames — is out, because this engine animates from per-type sprite lists rather
+than a state machine. A patch asking for those still loads and plays; what was skipped is reported
+rather than dropped silently. See [docs/dehacked.md](docs/dehacked.md).

@@ -41,6 +41,7 @@ export class Intermission {
   private secretsCanvas = this.root.querySelector<HTMLCanvasElement>('.line-secrets')!;
   private timeLabelCanvas = this.root.querySelector<HTMLCanvasElement>('.line-timelabel')!;
   private timeCanvas = this.root.querySelector<HTMLCanvasElement>('.line-time')!;
+  private parCanvas = this.root.querySelector<HTMLCanvasElement>('.line-par')!;
   private recordCanvas = this.root.querySelector<HTMLCanvasElement>('.line-record')!;
   private bestCanvas = this.root.querySelector<HTMLCanvasElement>('.line-best')!;
   private hintCanvas = this.root.querySelector<HTMLCanvasElement>('.line-hint')!;
@@ -102,6 +103,21 @@ export class Intermission {
   }
 
   /**
+   * The level's par time, hidden when nothing knows one — Ultimate Doom's episode 4, an
+   * unrecognised IWAD, or a PWAD map with no `[PARS]` entry (docs/wad.md § Par times).
+   *
+   * Green at or under par and yellow over it. That colouring is this engine's, not vanilla's:
+   * `WI_drawStats` prints par in one font however the run went. Same call as `LEVEL_STATS_GREEN`
+   * makes for the stat lines — the popup already speaks in green for "you got it".
+   */
+  private drawParLine(parSeconds: number | null, elapsedSeconds: number): void {
+    this.parCanvas.classList.toggle('hidden', parSeconds === null);
+    if (parSeconds === null) return;
+    const font = elapsedSeconds <= parSeconds ? this.greenFont : this.yellowFont;
+    this.drawPair(this.parCanvas, 'Par', formatClock(parSeconds), font, this.redFont.measure('Your time  '));
+  }
+
+  /**
    * The time-to-beat block. `record` is null for a run that can't set one (see docs/hud.md
    * § Best times), and both lines stay hidden then — a player who started somewhere other than the
    * level's own start is better told nothing than shown a record they can't touch.
@@ -121,12 +137,13 @@ export class Intermission {
     this.drawPair(this.bestCanvas, label, formatClock(record.previous), this.yellowFont, this.redFont.measure(`${label}  `));
   }
 
-  show(stats: LevelStats, record: BestTimeResult | null): void {
+  show(stats: LevelStats, record: BestTimeResult | null, parSeconds: number | null): void {
     this.drawStatLine(this.killsCanvas, 'Kills', stats.kills, stats.totalKills);
     this.drawStatLine(this.itemsCanvas, 'Items', stats.items, stats.totalItems);
     this.drawStatLine(this.secretsCanvas, 'Secrets', stats.secrets, stats.totalSecrets);
     // Always yellow, records included — the green `NEW BEST TIME!` line below is what announces one.
     drawText(this.timeCanvas, this.yellowFont, formatClock(stats.elapsedSeconds));
+    this.drawParLine(parSeconds, stats.elapsedSeconds);
     this.drawBestLines(record);
     this.root.classList.remove('hidden');
   }

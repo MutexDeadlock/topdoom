@@ -1,0 +1,234 @@
+# Trimmed from the DEHACKED lump of public/wads/iwad/freedoom2.wad, which is BSD-3-Clause
+# (the lump carries its own SPDX line, kept below). A test may never read public/wads/, so the
+# corpora that matter are lifted here verbatim: the version header, all seven Frame records,
+# the whole [PARS] section, every HUSTR_/PHUSTR_/THUSTR_ title, and one string from each group
+# that has no target. docs/testing.md § The fixtures.
+
+Patch File for DeHackEd v3.0
+Doom version = 19
+Patch format = 6
+
+# SPDX-License-Identifier: BSD-3-Clause
+
+# The following changes turn on full brightness for a few firing frames,
+# since these they show gun flashes and it looks weird if they aren't full
+# brightness. Doom itself has this problem too but it's more noticeable with
+# the Freedoom sprites.
+
+# Zombie
+Frame 185
+Sprite subnumber = 32773
+
+# Minigun zombie
+Frame 419
+Sprite subnumber = 32773
+
+# Assault tripod
+Frame 685
+Sprite subnumber = 32773
+
+Frame 687
+Sprite subnumber = 32773
+
+Frame 689
+Sprite subnumber = 32773
+
+# The super shotgun's first frame is 7 tics long before it
+# begins its reload sequence, but the muzzle flash animation
+# totals 9 tics, causing the flash to trail behind the gun.
+# This shortens the flash down to exactly 7 tics.
+
+Frame 47
+Duration = 4
+
+Frame 48
+Duration = 3
+
+# This is a magic comment recognized by Chocolate Doom, so that the
+# BEX [STRINGS] section below will be parsed:
+#
+#   *allow-extended-strings*
+
+[PARS]
+# Par times. The BEX format requires these to be specified in number
+# of seconds, but for convenience we include the min:sec value in a
+# comment. Comment also indicates when the run was done - ideally
+# this should be re-done for every new release. Times are rounded
+# to nearest half-minute.
+par  1   30  # 00:30  - Voros for v0.11 - 2017/02
+par  2   90  # 01:30  - Voros for v0.11 - 2017/02
+par  3  120  # 02:00  - Voros for v0.11 - 2017/02
+par  4  120  # 02:00  - Voros for v0.11 - 2017/02
+par  5  150  # 02:30  - Voros for v0.11 - 2017/02
+par  6  90   # 01:30  - Voros for v0.11 - 2017/02
+par  7  150  # 02:30  - Voros for v0.11 - 2017/02
+par  8  330  # 05:30  - Voros for v0.11 - 2017/02
+par  9  150  # 02:30  - Voros for v0.11 - 2017/02
+par 10  120  # 02:00  - Voros for v0.11 - 2017/02
+par 11  420  # 07:00  - Voros for v0.11 - 2017/02
+par 12  630  # 10:30  - Voros for v0.11 - 2017/02
+par 13  180  # 03:00  - Voros for v0.11 - 2017/02
+par 14  150  # 02:30  - Voros for v0.11 - 2017/02
+par 15  510  # 08:30  - Voros for v0.11 - 2017/02
+par 16  120  # 02:00  - Voros for v0.11 - 2017/02
+par 17  120  # 02:00  - Voros for v0.11 - 2017/02
+par 18  180  # 03:00  - Voros for v0.11 - 2017/02
+par 19  210  # 03:30  - Voros for v0.11 - 2017/02
+par 20  420  # 07:00  - Voros for v0.11 - 2017/02
+par 21  330  # 05:30  - Voros for v0.11 - 2017/02
+par 22  420  # 07:00  - Voros for v0.11 - 2017/02
+par 23  240  # 04:00  - Voros for v0.11 - 2017/02
+par 24  420  # 07:00  - Catoptromancy OLD run for v0.7
+par 25  600  # 10:00  - Voros for v0.11 - 2017/02
+par 26  270  # 04:30  - Voros for v0.11 - 2017/02
+par 27  690  # 11:30  - Voros for v0.11 - 2017/02
+par 28  450  # 07:30  - Voros for v0.11 - 2017/02
+par 29  300  # 05:00  - Voros for v0.11 - 2017/02
+par 30   60  # 01:00  - Voros for v0.11 - 2017/02
+par 31   60  # 01:00  - Voros for v0.11 - 2017/02
+par 32  210  # 03:30  - Voros for v0.11 - 2017/02
+
+[STRINGS]
+GOTARMOR = Put on a force field vest.
+GOTMEDIKIT = Took a large health refill.
+TAG_FIST = fist
+PD_BLUEK = Blue key needed for this door.
+HUSTR_E1M1 = E1M1: Outer Prison
+HUSTR_E1M2 = E1M2: Communications Center
+HUSTR_E1M3 = E1M3: Waste Disposal
+HUSTR_E1M4 = E1M4: Supply Depot
+HUSTR_E1M5 = E1M5: Armory
+HUSTR_E1M6 = E1M6: Training Facility
+HUSTR_E1M7 = E1M7: Xenobiotic Materials Lab
+HUSTR_E1M8 = E1M8: Outpost Quarry
+HUSTR_E1M9 = E1M9: Nutrient Recycling
+HUSTR_E2M1 = E2M1: Elemental Gate
+HUSTR_E2M2 = E2M2: Shifter
+HUSTR_E2M3 = E2M3: Reclaimed Facilities
+HUSTR_E2M4 = E2M4: Flooded Installation
+HUSTR_E2M5 = E2M5: Underground Hub
+HUSTR_E2M6 = E2M6: Hidden Sector
+HUSTR_E2M7 = E2M7: Control Complex
+HUSTR_E2M8 = E2M8: Containment Cell
+HUSTR_E2M9 = E2M9: Fortress 31
+HUSTR_E3M1 = E3M1: Land of the Lost
+HUSTR_E3M2 = E3M2: Geothermal Tunnels
+HUSTR_E3M3 = E3M3: Sacrificial Bastion
+HUSTR_E3M4 = E3M4: Oblation Temple
+HUSTR_E3M5 = E3M5: Infernal Hallows
+HUSTR_E3M6 = E3M6: Igneous Intrusion
+HUSTR_E3M7 = E3M7: No Regrets
+HUSTR_E3M8 = E3M8: Ancient Lair
+HUSTR_E3M9 = E3M9: Acquainted With Grief
+HUSTR_E4M1 = E4M1: Maintenance Area
+HUSTR_E4M2 = E4M2: Research Complex
+HUSTR_E4M3 = E4M3: Central Computing
+HUSTR_E4M4 = E4M4: Hydroponic Facility
+HUSTR_E4M5 = E4M5: Engineering Station
+HUSTR_E4M6 = E4M6: Command Center
+HUSTR_E4M7 = E4M7: Waste Treatment
+HUSTR_E4M8 = E4M8: Launch Bay
+HUSTR_E4M9 = E4M9: Operations
+CC_IMP = serpentipede
+HUSTR_1 = MAP01: Hydroelectric Plant
+HUSTR_2 = MAP02: Filtration Tunnels
+HUSTR_3 = MAP03: Crude Processing Center
+HUSTR_4 = MAP04: Containment Bay
+HUSTR_5 = MAP05: Sludge Burrow
+HUSTR_6 = MAP06: Janus Terminal
+HUSTR_7 = MAP07: Logic Gate
+HUSTR_8 = MAP08: Astronomy Complex
+HUSTR_9 = MAP09: Datacenter
+HUSTR_10 = MAP10: Deadly Outlands
+HUSTR_11 = MAP11: Dimensional Rift Observatory
+HUSTR_12 = MAP12: Railroads
+HUSTR_13 = MAP13: Station Earth
+HUSTR_14 = MAP14: Nuclear Zone
+HUSTR_15 = MAP15: Hostile Takeover
+HUSTR_16 = MAP16: Urban Jungle
+HUSTR_17 = MAP17: City Capitol
+HUSTR_18 = MAP18: Aquatics Lab
+HUSTR_19 = MAP19: Sewage Control
+HUSTR_20 = MAP20: Blood Ember Fortress
+HUSTR_21 = MAP21: Under Realm
+HUSTR_22 = MAP22: Remanasu
+HUSTR_23 = MAP23: Underground Facility
+HUSTR_24 = MAP24: Abandoned Teleporter Lab
+HUSTR_25 = MAP25: Persistence of Memory
+HUSTR_26 = MAP26: Dark Depths
+HUSTR_27 = MAP27: Palace of Red
+HUSTR_28 = MAP28: Grim Redoubt
+HUSTR_29 = MAP29: Melting Point
+HUSTR_30 = MAP30: Jaws of Defeat
+HUSTR_31 = MAP31: Be Quiet
+HUSTR_32 = MAP32: Not Sure
+PHUSTR_1 = MAP01
+PHUSTR_2 = MAP02
+PHUSTR_3 = MAP03
+PHUSTR_4 = MAP04
+PHUSTR_5 = MAP05
+PHUSTR_6 = MAP06
+PHUSTR_7 = MAP07
+PHUSTR_8 = MAP08
+PHUSTR_9 = MAP09
+PHUSTR_10 = MAP10
+PHUSTR_11 = MAP11
+PHUSTR_12 = MAP12
+PHUSTR_13 = MAP13
+PHUSTR_14 = MAP14
+PHUSTR_15 = MAP15
+PHUSTR_16 = MAP16
+PHUSTR_17 = MAP17
+PHUSTR_18 = MAP18
+PHUSTR_19 = MAP19
+PHUSTR_20 = MAP20
+PHUSTR_21 = MAP21
+PHUSTR_22 = MAP22
+PHUSTR_23 = MAP23
+PHUSTR_24 = MAP24
+PHUSTR_25 = MAP25
+PHUSTR_26 = MAP26
+PHUSTR_27 = MAP27
+PHUSTR_28 = MAP28
+PHUSTR_29 = MAP29
+PHUSTR_30 = MAP30
+PHUSTR_31 = MAP31
+PHUSTR_32 = MAP32
+THUSTR_1 = MAP01
+THUSTR_2 = MAP02
+THUSTR_3 = MAP03
+THUSTR_4 = MAP04
+THUSTR_5 = MAP05
+THUSTR_6 = MAP06
+THUSTR_7 = MAP07
+THUSTR_8 = MAP08
+THUSTR_9 = MAP09
+THUSTR_10 = MAP10
+THUSTR_11 = MAP11
+THUSTR_12 = MAP12
+THUSTR_13 = MAP13
+THUSTR_14 = MAP14
+THUSTR_15 = MAP15
+THUSTR_16 = MAP16
+THUSTR_17 = MAP17
+THUSTR_18 = MAP18
+THUSTR_19 = MAP19
+THUSTR_20 = MAP20
+THUSTR_21 = MAP21
+THUSTR_22 = MAP22
+THUSTR_23 = MAP23
+THUSTR_24 = MAP24
+THUSTR_25 = MAP25
+THUSTR_26 = MAP26
+THUSTR_27 = MAP27
+THUSTR_28 = MAP28
+THUSTR_29 = MAP29
+THUSTR_30 = MAP30
+THUSTR_31 = MAP31
+THUSTR_32 = MAP32
+HUSTR_PLRGREEN = g:
+HUSTR_PLRINDIGO = i:
+HUSTR_PLRBROWN = b:
+HUSTR_PLRRED = r:
+E1TEXT = Free at last from that dreadful outpost!\n\
+OB_IMP = %o was scorched by a serpentipede.

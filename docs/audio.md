@@ -46,6 +46,12 @@ absent — the fastest way to tell a WAD with fewer sounds from a decoding bug.
 `DOOM1.WAD` carries 49 of the 108 sounds, so being faithful here would have cacodemons dying
 with a pistol shot.
 
+A DEHACKED/BEX patch can redirect which lump a sfx name resolves to: `soundLumpName(name)`
+(`audio/sfx.ts`) is the one place the `DS`-prefix rule is applied, and a BEX `[SOUNDS]` entry
+overrides it per name. With no patch loaded the override map is empty and the function is exactly
+`i_sound.c`'s own `sprintf`. A `Thing` record's five sound fields are separate — those resolve
+through `sfxenum_t` onto `MonsterSounds`. docs/dehacked.md § Sounds and music.
+
 ## The mixer model
 
 `AudioEngine` reproduces vanilla's mixer rather than using a 3D audio scene — one gain node

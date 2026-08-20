@@ -131,10 +131,12 @@ export interface Inventory {
 /** Vanilla DOOM's own new-game defaults: full health, no armor, fist + pistol with 50 bullets. */
 export function createInventory(): Inventory {
   return {
-    health: 100,
+    // Vanilla's `initial_health` / `initial_bullets`, both of which a DEHACKED `Misc` record can
+    // move — docs/dehacked.md § Weapon, Ammo and Misc.
+    health: LIMITS.initialHealth,
     armor: 0,
     armorType: 0,
-    ammo: { bullets: 50, shells: 0, rockets: 0, cells: 0 },
+    ammo: { bullets: LIMITS.initialBullets, shells: 0, rockets: 0, cells: 0 },
     keys: new Set(),
     weapons: new Set(['fist', 'pistol']),
     currentWeapon: 'pistol',
@@ -161,12 +163,6 @@ export const ITEM_PICKUP_RADIUS = 20;
 /** Combined radius (map units) within which an item is close enough for the player to pick up. */
 export const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
 
-/** Vanilla's `MAXHEALTH` (`d_player.h`) — the cap ordinary health pickups stop at. */
-const MAX_HEALTH = 100;
-/** Bonus items (health bonus, soulsphere, megasphere) push health past the normal cap, up to this. */
-const MAX_HEALTH_BONUS = 200;
-/** Vanilla's blue-armor cap, `P_GiveArmor`'s `armortype*100` for `armortype` 2. */
-const MAX_ARMOR = 200;
 const AMMO_MAX: Record<AmmoType, number> = { bullets: 200, shells: 50, rockets: 50, cells: 300 };
 
 /**
@@ -187,20 +183,32 @@ const HEALTH_PICKUPS: Record<number, { amount: number; bonus: boolean }> = {
   [ThingType.soulsphere]: { amount: 100, bonus: true },
 };
 
-const ARMOR_PICKUPS: Record<number, { amount: number; armorType: 1 | 2 }> = {
-  [ThingType.greenArmor]: { amount: 100, armorType: 1 },
-  [ThingType.blueArmor]: { amount: 200, armorType: 2 },
+/**
+ * Which `LIMITS` armor class each armor shirt grants — `P_GiveArmor(1)` for the green one and
+ * `(2)` for the blue. The amount it hands over is `armortype*100` and so follows from the class,
+ * which is why it is read off `LIMITS` at the point of use rather than mirrored into a second
+ * table that a `Misc` patch would then have to keep in step. docs/items.md § Collecting things.
+ */
+const ARMOR_PICKUP_CLASS: Record<number, 'greenArmorClass' | 'blueArmorClass'> = {
+  [ThingType.greenArmor]: 'greenArmorClass',
+  [ThingType.blueArmor]: 'blueArmorClass',
 };
 
-const AMMO_PICKUPS: Record<number, { type: AmmoType; amount: number }> = {
-  [ThingType.clip]: { type: 'bullets', amount: 10 },
-  [ThingType.boxOfBullets]: { type: 'bullets', amount: 50 },
-  [ThingType.shells]: { type: 'shells', amount: 4 },
-  [ThingType.boxOfShells]: { type: 'shells', amount: 20 },
-  [ThingType.rocket]: { type: 'rockets', amount: 1 },
-  [ThingType.boxOfRockets]: { type: 'rockets', amount: 5 },
-  [ThingType.cellCharge]: { type: 'cells', amount: 20 },
-  [ThingType.cellChargePack]: { type: 'cells', amount: 100 },
+/**
+ * Each ammo pickup's `num` as `P_TouchSpecialThing` passes it to `P_GiveAmmo`, which multiplies it
+ * by `clipammo[type]` — so these are **clip counts, not amounts**: a clip is one, a box is five.
+ * Vanilla's own indirection, kept rather than folded flat, because `CLIP_AMMO` is patchable and
+ * everything computed off it has to follow.
+ */
+const AMMO_PICKUPS: Record<number, { type: AmmoType; clips: number }> = {
+  [ThingType.clip]: { type: 'bullets', clips: 1 },
+  [ThingType.boxOfBullets]: { type: 'bullets', clips: 5 },
+  [ThingType.shells]: { type: 'shells', clips: 1 },
+  [ThingType.boxOfShells]: { type: 'shells', clips: 5 },
+  [ThingType.rocket]: { type: 'rockets', clips: 1 },
+  [ThingType.boxOfRockets]: { type: 'rockets', clips: 5 },
+  [ThingType.cellCharge]: { type: 'cells', clips: 1 },
+  [ThingType.cellChargePack]: { type: 'cells', clips: 5 },
 };
 
 const KEY_PICKUPS: Record<number, KeySlot> = {
@@ -223,32 +231,101 @@ const POWERUP_PICKUPS: Record<number, PowerId> = {
 };
 
 /**
- * Vanilla's `clipammo[]` — one pickup's worth of each ammo class, which is
- * exactly what a backpack hands over on top of raising the caps
- * (`P_GiveAmmo(player, i, 1)` per class, and `P_GiveAmmo` multiplies its
- * `num` by this table). Deliberately spelled out rather than read back off
- * `AMMO_PICKUPS` above: those two happening to hold the same numbers is
- * vanilla's own coincidence (the clip/shells/rocket/cell items *are* one
- * `clipammo` each), not a relationship worth encoding.
+ * Vanilla's `clipammo[]` — one clip's worth of each ammo class. Every ammo grant in this file goes
+ * through it, because `P_GiveAmmo` multiplies its `num` by this table: `AMMO_PICKUPS` above counts
+ * clips, `WEAPON_PICKUPS` below hands over two of them, and a backpack gives one of each
+ * (`P_GiveAmmo(player, i, 1)` per class) on top of raising the caps.
+ *
+ * Patchable: a DEHACKED `Ammo N / Per ammo` line writes here, and the multipliers above are why
+ * that reaches the pickups too. docs/dehacked.md § Weapon, Ammo and Misc.
  */
 const CLIP_AMMO: Record<AmmoType, number> = { bullets: 10, shells: 4, rockets: 1, cells: 20 };
 
 /**
  * Ammo granted alongside a weapon pickup follows vanilla's `P_GiveWeapon`:
- * it hands over `2 * clipammo[type]` — twice the amount a single ammo
- * pickup of that type gives — for a weapon placed directly on the map, or
- * exactly half that (`1 * clipammo[type]`) for one a dead monster dropped
- * (`applyPickup`'s `dropped` param). The chainsaw needs no ammo at all.
+ * it hands over `2 * clipammo[type]` — twice what a single clip gives — for a
+ * weapon placed directly on the map, or exactly half that for one a dead
+ * monster dropped (`applyPickup`'s `dropped` param). The chainsaw needs none.
  */
-const WEAPON_PICKUPS: Record<number, { weapon: WeaponId; ammoType: AmmoType | null; ammoAmount: number }> = {
-  [ThingType.chainsaw]: { weapon: 'chainsaw', ammoType: null, ammoAmount: 0 },
-  [ThingType.shotgun]: { weapon: 'shotgun', ammoType: 'shells', ammoAmount: 8 },
-  [ThingType.superShotgun]: { weapon: 'supershotgun', ammoType: 'shells', ammoAmount: 8 },
-  [ThingType.chaingun]: { weapon: 'chaingun', ammoType: 'bullets', ammoAmount: 20 },
-  [ThingType.rocketLauncher]: { weapon: 'rocketLauncher', ammoType: 'rockets', ammoAmount: 2 },
-  [ThingType.plasmaRifle]: { weapon: 'plasmaRifle', ammoType: 'cells', ammoAmount: 40 },
-  [ThingType.bfg9000]: { weapon: 'bfg', ammoType: 'cells', ammoAmount: 40 },
+const WEAPON_PICKUPS: Record<number, { weapon: WeaponId; ammoType: AmmoType | null; clips: number }> = {
+  [ThingType.chainsaw]: { weapon: 'chainsaw', ammoType: null, clips: 0 },
+  [ThingType.shotgun]: { weapon: 'shotgun', ammoType: 'shells', clips: 2 },
+  [ThingType.superShotgun]: { weapon: 'supershotgun', ammoType: 'shells', clips: 2 },
+  [ThingType.chaingun]: { weapon: 'chaingun', ammoType: 'bullets', clips: 2 },
+  [ThingType.rocketLauncher]: { weapon: 'rocketLauncher', ammoType: 'rockets', clips: 2 },
+  [ThingType.plasmaRifle]: { weapon: 'plasmaRifle', ammoType: 'cells', clips: 2 },
+  [ThingType.bfg9000]: { weapon: 'bfg', ammoType: 'cells', clips: 2 },
 };
+
+/**
+ * The `Misc` limits a DEHACKED patch can move, and vanilla's `deh_misc[]` name for each. Grouped
+ * into one record so `setInventoryLimits` has a single shape to write and the applier has a single
+ * shape to build — docs/dehacked.md § Weapon, Ammo and Misc.
+ */
+export interface InventoryLimits {
+  maxHealth: number;
+  maxHealthBonus: number;
+  maxArmor: number;
+  greenArmorClass: number;
+  blueArmorClass: number;
+  initialHealth: number;
+  initialBullets: number;
+  /** Vanilla's `soul_health` — what a soulsphere gives, capped at `maxHealthBonus`. */
+  soulsphereHealth: number;
+  /** Vanilla's `mega_health` — the health a megasphere sets, alongside blue armor. */
+  megasphereHealth: number;
+}
+
+/**
+ * Vanilla's `maxammo[i]` for one class. `ammoMax` is the only reader, so the backpack's doubling
+ * follows on its own.
+ */
+export function setMaxAmmo(type: AmmoType, max: number): void {
+  AMMO_MAX[type] = max;
+}
+
+/**
+ * Vanilla's `clipammo[i]`. Nothing else needs re-deriving: `AMMO_PICKUPS` and `WEAPON_PICKUPS`
+ * both count clips rather than amounts, exactly as `P_GiveAmmo` does, so they follow from here.
+ */
+export function setClipAmmo(type: AmmoType, per: number): void {
+  CLIP_AMMO[type] = per;
+}
+
+/** Writes the `Misc` limits a patch supplied, leaving the rest alone. */
+export function setInventoryLimits(limits: Partial<InventoryLimits>): void {
+  Object.assign(LIMITS, limits);
+  // The one mirror left: every other patchable amount is read off `LIMITS` where it is used.
+  HEALTH_PICKUPS[ThingType.soulsphere].amount = LIMITS.soulsphereHealth;
+}
+
+/** Everything the two `set*` functions above can move, as vanilla leaves it. */
+const LIMITS: InventoryLimits = {
+  /** Vanilla's `MAXHEALTH` (`d_player.h`) — the cap ordinary health pickups stop at. */
+  maxHealth: 100,
+  /** Bonus items (health bonus, soulsphere, megasphere) push health past the normal cap, to this. */
+  maxHealthBonus: 200,
+  /** Vanilla's blue-armor cap, `P_GiveArmor`'s `armortype*100` for `armortype` 2. */
+  maxArmor: 200,
+  greenArmorClass: 1,
+  blueArmorClass: 2,
+  initialHealth: 100,
+  initialBullets: 50,
+  soulsphereHealth: 100,
+  megasphereHealth: 200,
+};
+
+/** The pristine values, for `resetDehacked` — see docs/dehacked.md § Applying: reset, then patch. */
+const PRISTINE_LIMITS: InventoryLimits = { ...LIMITS };
+const PRISTINE_AMMO_MAX: Record<AmmoType, number> = { ...AMMO_MAX };
+const PRISTINE_CLIP_AMMO: Record<AmmoType, number> = { ...CLIP_AMMO };
+
+/** Puts every patchable value in this module back to vanilla's, before a new patch is applied. */
+export function resetInventoryLimits(): void {
+  Object.assign(AMMO_MAX, PRISTINE_AMMO_MAX);
+  Object.assign(CLIP_AMMO, PRISTINE_CLIP_AMMO);
+  setInventoryLimits(PRISTINE_LIMITS);
+}
 
 /**
  * Applies a picked-up thing's effect, vanilla's `P_TouchSpecialThing` rules. Returns false for an
@@ -259,31 +336,33 @@ const WEAPON_PICKUPS: Record<number, { weapon: WeaponId; ammoType: AmmoType | nu
 export function applyPickup(inv: Inventory, type: number, dropped = false, skill: Skill = DEFAULT_SKILL): boolean {
   // DOOM II only: full health *and* blue armor at once, both past what any single pickup gives.
   if (type === ThingType.megasphere) {
-    inv.health = MAX_HEALTH_BONUS;
-    inv.armor = MAX_ARMOR;
+    inv.health = LIMITS.megasphereHealth;
+    inv.armor = LIMITS.maxArmor;
     inv.armorType = 2;
     return true;
   }
-  // The one armor pickup that adds a point past `ARMOR_PICKUPS`' own amounts, up to `MAX_ARMOR`.
+  // The one armor pickup that adds a point past a shirt's own amount, up to `maxArmor`.
   if (type === ThingType.armorBonus) {
-    inv.armor = Math.min(inv.armor + 1, MAX_ARMOR);
+    inv.armor = Math.min(inv.armor + 1, LIMITS.maxArmor);
     if (inv.armorType === 0) inv.armorType = 1;
     return true;
   }
 
   const health = HEALTH_PICKUPS[type];
   if (health) {
-    const cap = health.bonus ? MAX_HEALTH_BONUS : MAX_HEALTH;
+    const cap = health.bonus ? LIMITS.maxHealthBonus : LIMITS.maxHealth;
     if (inv.health >= cap) return false;
     inv.health = Math.min(inv.health + health.amount, cap);
     return true;
   }
 
-  const armor = ARMOR_PICKUPS[type];
-  if (armor) {
-    if (inv.armor >= armor.amount) return false;
-    inv.armor = armor.amount;
-    inv.armorType = armor.armorType;
+  const armorClass = ARMOR_PICKUP_CLASS[type];
+  if (armorClass) {
+    const armorType = LIMITS[armorClass] as 1 | 2;
+    const amount = armorType * 100;
+    if (inv.armor >= amount) return false;
+    inv.armor = amount;
+    inv.armorType = armorType;
     return true;
   }
 
@@ -303,7 +382,8 @@ export function applyPickup(inv: Inventory, type: number, dropped = false, skill
   if (ammo) {
     const cap = ammoMax(inv, ammo.type);
     if (inv.ammo[ammo.type] >= cap) return false;
-    const amount = ammoAtSkill(dropped ? Math.floor(ammo.amount / 2) : ammo.amount, skill);
+    const full = ammo.clips * CLIP_AMMO[ammo.type];
+    const amount = ammoAtSkill(dropped ? Math.floor(full / 2) : full, skill);
     inv.ammo[ammo.type] = Math.min(inv.ammo[ammo.type] + amount, cap);
     return true;
   }
@@ -320,7 +400,8 @@ export function applyPickup(inv: Inventory, type: number, dropped = false, skill
     let gaveAmmo = false;
     if (weapon.ammoType) {
       const cap = ammoMax(inv, weapon.ammoType);
-      const amount = ammoAtSkill(dropped ? Math.floor(weapon.ammoAmount / 2) : weapon.ammoAmount, skill);
+      const full = weapon.clips * CLIP_AMMO[weapon.ammoType];
+      const amount = ammoAtSkill(dropped ? Math.floor(full / 2) : full, skill);
       if (inv.ammo[weapon.ammoType] < cap) {
         inv.ammo[weapon.ammoType] = Math.min(inv.ammo[weapon.ammoType] + amount, cap);
         gaveAmmo = true;
@@ -369,7 +450,7 @@ export function pickupSound(type: number): SfxId {
  */
 function givePower(inv: Inventory, power: PowerId): boolean {
   if (power === 'berserk') {
-    inv.health = Math.max(inv.health, MAX_HEALTH);
+    inv.health = Math.max(inv.health, LIMITS.maxHealth);
     inv.powers.berserk = POWER_SECONDS.berserk;
     inv.currentWeapon = 'fist';
     return true;

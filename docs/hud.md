@@ -157,8 +157,8 @@ message's 3 since there is nothing else on screen to read yet.
 ## Intermission
 
 `src/ui/hud/intermission.ts` (`#intermission`) is the end-of-level popup: the same three counts the HUD
-strip carries, as vanilla's percentages this time, then the frozen level time, then the best-time
-lines (§ Best times) and the continue hint. The three percentages are **right-aligned** against
+strip carries, as vanilla's percentages this time, then the frozen level time, the par time, then
+the best-time lines (§ Best times) and the continue hint. The three percentages are **right-aligned** against
 each other, which the HUD strip's own numbers are not: the strip's are one glance among many, while
 these three sit stacked as a block where a ragged right edge is the first thing you read. A value
 wider than the `100%` the column is sized for — kills can pass 100% — widens the column rather than
@@ -167,6 +167,13 @@ the yellow→green switch at 100% — and `formatClock`/`percentOf` are shared w
 (`ui/hud/hud.ts`) so the popup and the bar can never disagree about the same numbers. `percentOf`
 truncates, matching `wi_stuff.c`'s C integer division, and reads 100% for a total of 0, where
 vanilla would divide by zero.
+
+The **par row** (`.line-par`) sits directly under the time it is compared against, and is hidden
+whenever nothing knows a par for the level — Ultimate Doom's episode 4, an unrecognised IWAD, or a
+PWAD map with no `[PARS]` entry (docs/wad.md § Par times). It draws green at or under par and yellow
+over it, which is this engine's call, not vanilla's: `WI_drawStats` prints par in one font however
+the run went. It is the same call `LEVEL_STATS_GREEN` makes for the stat lines — the popup already
+speaks in green for "you got it".
 
 Lines are centered in the panel, but the three stat lines sit in a `.stats` wrapper so they are
 centered as **one block**: centering each on its own would stagger the labels and undo the very

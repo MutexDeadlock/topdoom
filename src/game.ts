@@ -66,7 +66,9 @@ import { Crosshair } from './ui/hud/crosshair.ts';
 import { Intermission, INTERMISSION_INPUT_DELAY } from './ui/hud/intermission.ts';
 import { EndCard, type EndScope } from './ui/hud/endcard.ts';
 import { LevelCard } from './ui/hud/levelcard.ts';
-import { LevelNames } from './wad/campaign/names.ts';
+import { LevelNames, titleLookupFor } from './wad/campaign/names.ts';
+import { parSecondsFor } from './wad/campaign/pars.ts';
+import { readDehacked, describeDehacked, resetDehacked, applyDehacked, type LoadedDehacked } from './game/dehacked.ts';
 import { LevelProgression } from './wad/campaign/progression.ts';
 import { CenterMessage, lockedLineMessage, SECRET_MESSAGE } from './ui/hud/message.ts';
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
@@ -297,6 +299,12 @@ export class Game {
   private intermission: Intermission;
   /** The campaign-over card the popup hands over to — see ui/hud/endcard.ts and `popup`. */
   private endCard: EndCard;
+  /**
+   * The set's DEHACKED/BEX patch, or null for a set with none. Read once per `Game` like the banks
+   * beside it: which patch applies depends on the file set, not on the current map.
+   * docs/dehacked.md.
+   */
+  private dehacked: LoadedDehacked | null;
   /** Names levels for the card: MAPINFO, then the vanilla title table — see wad/campaign/names.ts. */
   private levelNames: LevelNames;
   /** The WAD set's `D_*` lumps, and the MAPINFO overrides of which one a level plays. */
@@ -390,6 +398,20 @@ export class Game {
     this.scene.background = new THREE.Color(0x05050a);
     this.scene.fog = new THREE.Fog(0x05050a, VIEW_DISTANCE * FOG_START_FRACTION, VIEW_DISTANCE);
 
+    // Ahead of every bank below and of `createThingLayer`: a patch's sound and thing edits have
+    // to be in place before anything reads a table — `SoundBank` pre-decodes on construction, so
+    // a `[SOUNDS]` redirect applied after it could never reach the cache.
+    // docs/dehacked.md § Applying: reset, then patch.
+    this.dehacked = readDehacked(wad, titleLookupFor());
+    // Reset first, then patch, so a session reads the same tables whatever the previous one
+    // loaded. `readDehacked` ahead of both is deliberate: parsing reads nothing mutable.
+    resetDehacked();
+    if (this.dehacked) {
+      applyDehacked(this.dehacked);
+      const { applied, skipped } = describeDehacked(this.dehacked);
+      if (applied) console.info(applied);
+      if (skipped) console.warn(skipped);
+    }
     // The WAD set's own sound lumps, for as long as this Game owns the level.
     // The engine itself (and its AudioContext) outlives us — see AudioEngine.
     audio.setBank(new SoundBank(wad));
@@ -422,7 +444,7 @@ export class Game {
     this.endCard = new EndCard(gfx);
     // Session-scoped like the banks above: which titles apply depends on the loaded file set
     // (its MAPINFO lumps and which IWAD it is), not on the current map.
-    this.levelNames = new LevelNames(wad, mapInfo);
+    this.levelNames = new LevelNames(wad, mapInfo, this.dehacked?.strings);
     this.crosshair = new Crosshair(view.renderer.domElement);
     this.mapNames = wad.mapNames();
     if (this.mapNames.length === 0) throw new Error('no maps in the selected WADs');
@@ -567,6 +589,9 @@ export class Game {
       // A level is running, so the map has a provider; `''` would only mean the
       // save asks for its whole set back, which is the safe way to be wrong.
       mapWad: mapProvider(this.wad, this.currentMap)?.id ?? '',
+      // Only when a patch was actually applied: an empty list would read the same as absent, and
+      // absent is what an unpatched save means. docs/dehacked.md § Savegames and patched tables.
+      ...(this.dehacked ? { patchWads: this.dehacked.sources.map((f) => wadId(f)) } : {}),
       levelTime: this.levelTime,
       // The checkpoint passes `false`: it is never listed, so nothing would ever
       // draw its thumbnail, and taking one costs a full extra render.
@@ -1395,7 +1420,7 @@ export class Game {
       this.pendingExit = null;
       // The next map isn't loaded here any more: the popup goes up on the level as it stands, and
       // the continue key at the top of `tic` is what loads it.
-      this.intermission.show(this.levelStats(), this.recordCompletion());
+      this.intermission.show(this.levelStats(), this.recordCompletion(), this.parFor(this.currentMap));
       // Vanilla's own `S_ChangeMusic(mus_inter)` at the intermission, keeping
       // the level's track when the set has no intermission lump.
       const between = this.levelMusic.intermissionTrackFor(this.currentMap);
@@ -1616,6 +1641,14 @@ export class Game {
     // Vanilla's sector type 11 calls `G_ExitLevel`, not `G_SecretExitLevel` — a damage floor that
     // ends the level never leads to the secret one.
     if (sectorEffect.exit) this.pendingExit = 'normal';
+  }
+
+  /**
+   * This level's par time in seconds, or null when nothing knows one — the intermission omits the
+   * row then. docs/wad.md § Par times.
+   */
+  private parFor(mapName: string): number | null {
+    return parSecondsFor(mapName, { mission: this.levelNames.levelMission, dehPars: this.dehacked?.pars }) ?? null;
   }
 
   /**

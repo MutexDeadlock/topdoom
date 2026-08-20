@@ -44,7 +44,9 @@ const VILE_HEAL_DURATION = 30 * DOOM_TIC;
  * `VILE_FIRE_*` values: that file is otherwise free of `MONSTER_STATS`, and
  * keeping it that way is what lets this file import it.
  */
-const VILE_WINDUP_TRACK_SECONDS = MONSTER_STATS[ThingType.archVile].ranged?.startDelaySeconds ?? 0;
+function vileWindupTrackSeconds(): number {
+  return MONSTER_STATS[ThingType.archVile].ranged?.startDelaySeconds ?? 0;
+}
 
 /** `ThingLayer`'s `findRaisableCorpse`, as `stepMonsterAI` receives it — a lookahead point and the vile's own radius in, the one corpse to raise out. */
 export type Resurrector = (x: number, y: number, vileRadius: number) => RaiseCandidate | null;
@@ -133,7 +135,7 @@ export function spawnWindupFire(
   audio.play('flamst', front);
   const effect = effects.spawn('FIRE', VILE_FIRE_FRAMES, IMPACT_FRAME_SECONDS, front);
   if (!effect) return;
-  effect.lifetime = VILE_WINDUP_TRACK_SECONDS;
+  effect.lifetime = vileWindupTrackSeconds();
   effect.followTargetId = atk.targetId;
   effect.vileSourceId = atk.sourceId;
   effects.addImpact(effect);

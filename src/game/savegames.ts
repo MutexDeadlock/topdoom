@@ -75,7 +75,7 @@ export function wadLabel(wad: SaveWad): string {
 }
 
 /** The identity half of a save's meta: every field the WAD gate reads, and all it reads. */
-export type SaveWadSet = Pick<SaveMeta, 'map' | 'wads' | 'mapWad'>;
+export type SaveWadSet = Pick<SaveMeta, 'map' | 'wads' | 'mapWad' | 'patchWads'>;
 
 /**
  * Whether this save falls back to demanding its **whole** set: its `mapWad` is
@@ -93,11 +93,16 @@ export function requiresWholeSet(wads: SaveWad[], mapWad: string): boolean {
  * the game WAD (`[0]`), and the file `mapWad` names. Everything else supplied
  * textures, sprites or sounds at most — never an index the snapshot keys
  * through — so its absence changes how the level looks, not what it means.
+ *
+ * A file carrying a `DEHACKED` lump is the exception, and `patchWads` names those: a patch rewrites
+ * the stat tables a restore re-derives every monster from, so dropping it would silently change
+ * what the save means rather than how it looks. Defaulted to empty for a save written before the
+ * field existed — correct for those, which were made by a build that applied no patch.
  * docs/savegames.md § WAD-set identity.
  */
-export function requiredWads(wads: SaveWad[], mapWad: string): boolean[] {
+export function requiredWads(wads: SaveWad[], mapWad: string, patchWads: readonly string[] = []): boolean[] {
   const wholeSet = requiresWholeSet(wads, mapWad);
-  return wads.map((wad, i) => i === 0 || wad.id === mapWad || wholeSet);
+  return wads.map((wad, i) => i === 0 || wad.id === mapWad || wholeSet || patchWads.includes(wad.id));
 }
 
 /**
@@ -126,6 +131,13 @@ export function wadSetRefusal(save: SaveWadSet, actual: SaveWad[], mapProvider: 
   if (!mapProvider) return `the loaded WADs have no map ${save.map}`;
   if (mapProvider.id !== save.mapWad) {
     return `${mapProvider.name} provides ${save.map}, but not the version this save was made on`;
+  }
+  // A DEHACKED-carrying file is required back even though it supplied no map lumps: without it
+  // every patched stat silently reverts under a save written against it.
+  for (const id of save.patchWads ?? []) {
+    if (actual.some((file) => file.id === id)) continue;
+    const missing = save.wads.find((file) => file.id === id);
+    return `${missing ? missing.name : 'a DEHACKED patch'} carries a DEHACKED patch this save was made with`;
   }
   return null;
 }
@@ -201,6 +213,13 @@ export interface SaveMeta {
    * (`requiresWholeSet`). docs/savegames.md § WAD-set identity.
    */
   mapWad: string;
+  /**
+   * Content ids of the files in `wads` that carry a `DEHACKED` lump, if any. Optional: **absent
+   * means no patch was applied**, which is what every save written before this field existed
+   * meant, so an older save keeps exactly today's looser rule. docs/savegames.md § WAD-set
+   * identity, docs/dehacked.md § Savegames and patched tables.
+   */
+  patchWads?: string[];
   levelTime: number;
   /** JPEG data URL thumbnail, ~320px wide. */
   thumb: string;
@@ -253,6 +272,9 @@ function asMeta(raw: unknown, id: string): SaveMeta {
     skill: asSkill(r.skill),
     wads: Array.isArray(r.wads) ? r.wads.map(asWad) : [],
     mapWad: asText(r.mapWad),
+    // Absent for every save written before the field existed, which is the right reading: those
+    // were made by a build that applied no patch. docs/dehacked.md § Savegames and patched tables.
+    ...(Array.isArray(r.patchWads) ? { patchWads: r.patchWads.filter((v) => typeof v === 'string') } : {}),
     levelTime: typeof r.levelTime === 'number' ? r.levelTime : 0,
     thumb: asText(r.thumb),
   };

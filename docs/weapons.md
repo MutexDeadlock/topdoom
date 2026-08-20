@@ -128,6 +128,18 @@ that long after the trigger; here every weapon fires on the frame you click and 
 into the interval instead. Reproducing them needs a pending-shot timer in `WeaponSystem` and is the
 one place this engine's weapons still differ in timing.
 
+## What a DEHACKED patch can change here
+
+Almost nothing, and that is vanilla's doing rather than a gap. `d_deh.c`'s `deh_weapon[]` is an
+ammo type and five state pointers — `weaponinfo[]` holds no damage and no fire rate at all, because
+in vanilla a weapon's rate *is* its frames' durations. So a `Weapon N` record reaches
+`WeaponDef.ammoType` and nothing else, and a patch that retunes a weapon does it through `Frame`
+records, which are out of scope (docs/dehacked.md § What is not supported).
+
+A weapon's **missile** is a different matter: `MT_ROCKET`, `MT_PLASMA` and `MT_BFG` are ordinary
+`Thing` records, so their speed, radius and damage are patchable — and each is shared with the
+monster that fires the same projectile, exactly as vanilla shares the one `mobjinfo`.
+
 ## Spread
 
 Every random fuzz in the game is one distribution — vanilla's `P_Random() - P_Random()`, two

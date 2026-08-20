@@ -11,6 +11,13 @@ import { GraphicsBank } from '../src/wad/graphics.ts';
 import { readAnimated } from '../src/wad/animated.ts';
 import { readSwitches } from '../src/wad/switches.ts';
 import { loadMap, NO_SIDE } from '../src/wad/map.ts';
+import {
+  describeDehacked,
+  readDehacked,
+  type DehShortfall,
+  type DehWarning,
+} from '../src/game/dehacked.ts';
+import { titleLookupFor } from '../src/wad/campaign/names.ts';
 import { classifyLineSpecial, type SpecialClass } from '../src/game/specials/tables.ts';
 import { Forces } from '../src/game/specials/forces.ts';
 import { Transfers } from '../src/game/specials/transfers.ts';
@@ -250,4 +257,37 @@ console.log(`  free directions at r=64: ${free}/${steps}`);
     `sector specials: ${sectorSpecials} non-zero` +
       (sectorUnknown.size > 0 ? `, UNKNOWN: ${unknownList}` : ', all understood'),
   );
+}
+
+// --- DEHACKED coverage: what a patch in this set asks for, and how far each ask gets ---
+{
+  const patch = readDehacked(wad, titleLookupFor());
+  if (!patch) {
+    console.log('\nDEHACKED: no lump in this set');
+  } else {
+    const LABELS: Record<DehShortfall, string> = {
+      noTarget: 'no target here (nothing this engine has)',
+      unsupported: 'UNSUPPORTED (deliberately out of scope)',
+      unknown: 'UNKNOWN',
+    };
+    const { files, applied } = describeDehacked(patch);
+    console.log(`\n${applied || `DEHACKED (${files}): nothing applied`}`);
+
+    const byClass = new Map<DehShortfall, DehWarning[]>();
+    for (const w of patch.warnings) {
+      const rows = byClass.get(w.support) ?? [];
+      if (rows.length === 0) byClass.set(w.support, rows);
+      rows.push(w);
+    }
+    for (const cls of ['unknown', 'unsupported', 'noTarget'] as const) {
+      const rows = byClass.get(cls);
+      if (!rows) continue;
+      const total = rows.reduce((a, w) => a + w.count, 0);
+      console.log(`  ${LABELS[cls]}: ${total} across ${rows.length} distinct`);
+      for (const w of rows) {
+        const where = w.field ? `${w.record}/${w.field}` : w.record;
+        console.log(`    ${where} x${w.count} — ${w.detail}`);
+      }
+    }
+  }
 }

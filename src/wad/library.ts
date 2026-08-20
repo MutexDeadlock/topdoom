@@ -6,7 +6,8 @@
 import { Wad, WadFile, type WadType } from './wad.ts';
 import { wadId } from './checksum.ts';
 import { MapInfo } from './campaign/mapinfo.ts';
-import { levelTitleFor, missionOf } from './campaign/names.ts';
+import { dehTitlesFor, levelTitleFor, missionOf, titleLookupFor } from './campaign/names.ts';
+import { readDehacked } from '../game/dehacked.ts';
 
 const MANIFEST_URL = '/wads/index.json';
 
@@ -30,6 +31,8 @@ export interface WadSource {
   maps: string[];
   /** Total lump count — shown for map-less add-ons so they don't look empty. */
   lumpCount: number;
+  /** Whether the file carries a `DEHACKED` lump — docs/dehacked.md § The coverage report. */
+  dehacked?: boolean;
   /** Level titles this file's MAPINFO defines, keyed by map lump name — see docs/wad.md § Level names. */
   levelNames: Record<string, string>;
   size: number;
@@ -46,6 +49,8 @@ interface ManifestEntry {
   type: WadType;
   maps: string[];
   lumpCount: number;
+  /** Whether the file carries a `DEHACKED` lump — docs/dehacked.md § The coverage report. */
+  dehacked?: boolean;
   /**
    * `hashBytes` content id — see the plugin's own note for why it is computed at build time.
    * Optional because a cached `index.json` can predate the field, which is what the `?? ''`
@@ -81,6 +86,7 @@ function serverSource(entry: ManifestEntry): WadSource {
     type: entry.type,
     maps: entry.maps,
     lumpCount: entry.lumpCount,
+    dehacked: entry.dehacked,
     levelNames: entry.levelNames ?? {},
     size: entry.size,
     origin: 'server',
@@ -97,6 +103,9 @@ function serverSource(entry: ManifestEntry): WadSource {
 /** Parses an uploaded file far enough to categorise it, then keeps it in memory. */
 export function uploadedSource(name: string, buffer: ArrayBuffer): WadSource {
   const file = new WadFile(buffer, name);
+  // The manifest plugin does this server-side for the WADs on disk; a file picked here has to
+  // read its own MAPINFO and DEHACKED itself, and the bytes are already in memory.
+  const { levelNames, dehacked } = uploadedLevelInfo(file);
   return {
     key: `upload:${name}:${buffer.byteLength}`,
     // The one place an id costs real work (a pass over up to ~14 MB), paid here
@@ -107,13 +116,31 @@ export function uploadedSource(name: string, buffer: ArrayBuffer): WadSource {
     type: file.type,
     maps: file.mapNames(),
     lumpCount: file.entries.length,
-    // The manifest plugin does this server-side for the WADs on disk; a file picked here has to
-    // read its own MAPINFO, and the bytes are already in memory.
-    levelNames: Object.fromEntries(new MapInfo(new Wad(file)).titles()),
+    dehacked,
+    levelNames,
     size: buffer.byteLength,
     origin: 'upload',
     bytes: () => Promise.resolve(buffer),
   };
+}
+
+/**
+ * An uploaded file's level titles — its MAPINFO's, and where that names nothing, its DEHACKED
+ * patch's — plus whether it carried a patch at all. The client-side twin of what
+ * `plugins/wad-manifest.ts` does for the files on disk: the two have to agree, or the same file
+ * would list differently uploaded than served.
+ *
+ * The one `readDehacked` answers both, so the directory isn't scanned for the lump a second time.
+ */
+function uploadedLevelInfo(file: WadFile): { levelNames: Record<string, string>; dehacked: boolean } {
+  const wad = new Wad(file);
+  const levelNames = Object.fromEntries(new MapInfo(wad).titles());
+  const patch = readDehacked(wad, titleLookupFor());
+  if (patch) {
+    const titles = dehTitlesFor(missionOf(file.name), patch.strings);
+    for (const [map, title] of titles) levelNames[map] ??= title;
+  }
+  return { levelNames, dehacked: patch !== null };
 }
 
 /** WADs the server offers under public/wads/. Empty if the manifest is missing. */
@@ -149,20 +176,21 @@ export function mergedMaps(iwad: WadSource, pwads: WadSource[]): MergedMap[] {
   for (const map of iwad.maps) provider.set(map, iwad.label);
 
   const order = [...iwad.maps];
-  const mapInfoTitles = new Map(Object.entries(iwad.levelNames));
+  // Each file's own titles — its MAPINFO's, or its DEHACKED's where MAPINFO named nothing.
+  const fileTitles = new Map(Object.entries(iwad.levelNames));
   for (const pwad of pwads) {
     for (const map of pwad.maps) {
       if (!provider.has(map)) order.push(map);
       provider.set(map, pwad.label);
     }
-    for (const [map, title] of Object.entries(pwad.levelNames)) mapInfoTitles.set(map, title);
+    for (const [map, title] of Object.entries(pwad.levelNames)) fileTitles.set(map, title);
   }
 
   const mission = missionOf(iwad.label);
   return order.map((name) => {
     const from = provider.get(name)!;
     const title = levelTitleFor(name, {
-      mapInfoTitle: mapInfoTitles.get(name),
+      mapInfoTitle: fileTitles.get(name),
       mission,
       providerName: from,
       providerIsPwad: from !== iwad.label,

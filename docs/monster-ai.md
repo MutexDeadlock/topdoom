@@ -98,7 +98,11 @@ barely half the player's own run speed.
 
 Nightmare's fast monsters are a far smaller change than the name suggests, and
 `FAST_MONSTER_STATS` (`monsters/tables.ts`) is derived from `MONSTER_STATS` rather than typed out so
-a stat corrected in one can't fail to reach the other. `G_InitNew` (`g_game.c`) makes exactly two
+a stat corrected in one can't fail to reach the other. It is a `let`, re-derived by
+`rebuildDerivedMonsterStats()` rather than frozen at import, because a DEHACKED patch writes into
+`MONSTER_STATS` after this module has loaded — without that a patched imp would stay
+fast-mode-vanilla (docs/dehacked.md § Applying: reset, then patch). `TALLEST_BODY_HEIGHT` is the
+same. `monsterStatsFor` remains the single accessor either way. `G_InitNew` (`g_game.c`) makes exactly two
 edits to the global tables when the skill is nightmare (or `-fast` is passed, which this engine has
 no switch for):
 

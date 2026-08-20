@@ -467,13 +467,13 @@ export class Menu {
    * precisely rather than reporting as missing (docs/savegames.md § WAD-set
    * identity). `wads[0]` is the game WAD, so a file's role is just its position.
    *
-   * A missing file is also classified, by `requiredWads`: only the game WAD and
-   * the one `mapWad` names stop a load, since nothing else can have shaped what
-   * the snapshot indexes into.
+   * A missing file is also classified, by `requiredWads`: the game WAD, the one
+   * `mapWad` names, and any that carried a DEHACKED patch stop a load — nothing
+   * else can have shaped what the snapshot indexes into or means.
    */
   resolveSaveWads(save: SaveWadSet): { iwad?: WadSource; pwads: WadSource[]; missing: MissingWad[] } {
-    const { wads, mapWad } = save;
-    const required = requiredWads(wads, mapWad);
+    const { wads, mapWad, patchWads } = save;
+    const required = requiredWads(wads, mapWad, patchWads);
     const missing: MissingWad[] = [];
     const found = wads.map((wad, i) => {
       const source = this.sources.find((s) => s.id !== '' && s.id === wad.id);

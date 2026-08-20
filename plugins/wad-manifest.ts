@@ -2,6 +2,8 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
 import { MAPINFO_LUMPS, parseMapInfoNames, preferredMapInfoLump } from '../src/wad/campaign/mapinfo.ts';
+import { dehTitlesFor, missionOf, titleLookupFor } from '../src/wad/campaign/names.ts';
+import { parseDehacked } from '../src/game/dehacked/parse.ts';
 import { hashBytes } from '../src/wad/checksum.ts';
 
 export const MANIFEST_PATH = 'wads/index.json';
@@ -16,6 +18,9 @@ export interface WadManifestEntry {
   type: 'IWAD' | 'PWAD';
   /** Map markers the file defines, so the menu can list levels without downloading it. */
   maps: string[];
+  /** Whether the file carries a `DEHACKED` lump. Presence only — what a patch actually changes
+      needs the bytes, which the menu hasn't downloaded. docs/dehacked.md § The coverage report. */
+  dehacked?: boolean;
   /** Total lump count, shown for map-less add-ons so they don't look empty. */
   lumpCount: number;
   /**
@@ -26,8 +31,9 @@ export interface WadManifestEntry {
    */
   id: string;
   /**
-   * Level titles this file's own MAPINFO defines, so the menu can name levels without downloading
-   * it — the same reason `maps` is here. Absent when the file has no MAPINFO, which is most of them.
+   * Each map's title, so the menu can name levels without downloading the file — the same reason
+   * `maps` is here. What this file's own MAPINFO defines, and where it defines nothing, what its
+   * `DEHACKED` patch names. Absent when the file has neither, which is most of them.
    */
   levelNames?: Record<string, string>;
 }
@@ -48,11 +54,14 @@ function describeWad(path: string, folder: WadFolder): WadManifestEntry | null {
   if (dirOffset < 0 || numLumps < 0 || dirOffset + numLumps * 16 > buf.length) return null;
 
   const maps: string[] = [];
+  let dehLump: { offset: number; size: number } | undefined;
   const mapInfoLumps = new Map<string, { offset: number; size: number }>();
   for (let i = 0; i < numLumps; i++) {
     const at = dirOffset + i * 16;
     const name = buf.toString('ascii', at + 8, at + 16).replace(/\0.*$/, '').toUpperCase();
     if (/^(E\dM\d|MAP\d\d)$/.test(name)) maps.push(name);
+    // Last one wins within a file, matching the merged directory.
+    else if (name === 'DEHACKED') dehLump = { offset: buf.readInt32LE(at), size: buf.readInt32LE(at + 4) };
     else if (MAPINFO_LUMPS.includes(name)) {
       mapInfoLumps.set(name, { offset: buf.readInt32LE(at), size: buf.readInt32LE(at + 4) });
     }
@@ -69,8 +78,21 @@ function describeWad(path: string, folder: WadFolder): WadManifestEntry | null {
     }
   }
 
+  // A DEHACKED patch fills the gaps MAPINFO left, never overwrites them — the same order
+  // `levelTitleFor` applies in-game, so the menu and the level card name a level alike.
+  // Projected against this file's own name, which for an IWAD is exactly the mission
+  // (`plutonia.wad` picks its `PHUSTR_*` set) and for a PWAD is the plain `HUSTR_*` one.
+  const file = path.split('/').pop()!;
+  if (dehLump && dehLump.offset >= 0 && dehLump.offset + dehLump.size <= buf.length) {
+    const text = buf.toString('latin1', dehLump.offset, dehLump.offset + dehLump.size);
+    const patch = parseDehacked(text, titleLookupFor());
+    for (const [map, title] of dehTitlesFor(missionOf(file), patch.strings)) {
+      levelNames[map] ??= title;
+    }
+  }
+
   return {
-    file: path.split('/').pop()!,
+    file,
     folder,
     size: buf.length,
     type: ident,
@@ -79,6 +101,7 @@ function describeWad(path: string, folder: WadFolder): WadManifestEntry | null {
     // Over the whole file, exactly as `wadId` does at runtime — the two must
     // agree or `verifyWadSet` would refuse every load.
     id: hashBytes(buf),
+    ...(dehLump ? { dehacked: true } : {}),
     ...(Object.keys(levelNames).length > 0 ? { levelNames } : {}),
   };
 }

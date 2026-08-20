@@ -34,9 +34,10 @@ node scripts/inspect-wad.ts public/wads/iwad/DOOM2.WAD MAP05 public/wads/pwad/SC
 
 Runs under Node's native TS support, no browser. It reports lump/map counts, lump provenance, the
 node format, missing textures, degenerate subsector polygons, whether the player start is walkable,
-and the specials coverage report (every linedef/sector special classified known/no-op/unknown —
-the Boom-compat acceptance gate) — the fastest check on a WAD-parsing, texture-merging or BSP
-change, and the way to reproduce a bug against a specific real-world WAD.
+and the two coverage reports — every linedef/sector special classified known/no-op/unknown (the
+Boom-compat acceptance gate), and every DEHACKED record classified applied/no-target/unsupported.
+The fastest check on a WAD-parsing, texture-merging or BSP change, and the way to reproduce a bug
+against a specific real-world WAD.
 
 For collision/movement bugs prefer synthetic geometry, where unrelated nearby geometry can't muddy
 the result: `tests/fixtures/gridmap.ts` builds a real `DoomMap` from ASCII art. A throwaway script
@@ -65,12 +66,14 @@ is still right for a one-off investigation — those go in the scratchpad, never
 src/wad/       WAD files, merged lump directory, content ids, map lumps, graphics + sprite + sound
                + music decoding, the menu's WAD library
 src/wad/campaign/    the MAPINFO lump family parsed once (mapinfo), level titles + the vanilla
-               title tables (names), where each exit leads (progression)
+               title tables (names), vanilla's par times (pars), where each exit leads (progression)
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards + their instanced batching, shot tracers, camera, viewport
 src/game/      spatial queries + collision, player controller, input, thing world state, fog of war,
                inventory/pickups, weapons and firing, shots in flight + splash, damage/death,
                transient effects, best times, savegames
+src/game/dehacked/   the parsed-patch record shapes (defs), the DEH text parser (parse), the
+               mobjinfo/weapon/ammo/sfx index bridges + the coverage classifiers (tables)
 src/game/monsters/   record shapes + pure helpers (defs), the vanilla stat tables (tables),
                chase/attack decisions (ai), attack resolution (attacks), the arch-vile (vile),
                MAP30's cube spitter (iconofsin)
@@ -116,6 +119,7 @@ several record rules that look like accidents and aren't.
 | Doc | Covers |
 |---|---|
 | [docs/wad.md](docs/wad.md) | WAD parsing, lump merging, PWAD override rules, level names, the `public/wads/` manifest |
+| [docs/dehacked.md](docs/dehacked.md) | DEHACKED/BEX patches: the record grammar, the index bridges, units, `Bits`, what is not supported and why |
 | [docs/menu.md](docs/menu.md) | The menu as launcher and pause screen, difficulty, persisted settings, URL parameters, `main.ts`'s session lifecycle, `DEVMODE` and the profiler |
 | [docs/frameloop.md](docs/frameloop.md) | `game.ts`'s frame: the delta, the FPS cap, pausing |
 | [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, wall occlusion fading, camera orbit, view distance, texture animation |

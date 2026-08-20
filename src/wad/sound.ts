@@ -3,6 +3,7 @@
  * replacement PWAD ships. See docs/audio.md § Sound lumps.
  */
 import type { Lump, Wad } from './wad.ts';
+import { soundLumpName } from '../audio/sfx.ts';
 
 /**
  * A sound lump's payload, in whichever of the two shapes WADs actually carry:
@@ -54,15 +55,10 @@ export class SoundBank {
     this.wad = wad;
   }
 
-  /** Lump name for a vanilla sfx name, matching `i_sound.c`'s own `sprintf(name, "ds%s", sfxname)`. */
-  private static lumpName(name: string): string {
-    return `DS${name.toUpperCase()}`;
-  }
-
   get(name: string): SoundLump | null {
     const cached = this.cache.get(name);
     if (cached !== undefined) return cached;
-    const lump = this.wad.find(SoundBank.lumpName(name));
+    const lump = this.wad.find(soundLumpName(name));
     const decoded = lump ? this.decode(lump) : null;
     this.cache.set(name, decoded);
     return decoded;
@@ -70,7 +66,7 @@ export class SoundBank {
 
   /** Whether the WAD set carries this sfx at all, without decoding it. */
   has(name: string): boolean {
-    return this.wad.find(SoundBank.lumpName(name)) !== undefined;
+    return this.wad.find(soundLumpName(name)) !== undefined;
   }
 
   /**
@@ -83,7 +79,7 @@ export class SoundBank {
   encodedNames<T extends string>(sfxNames: readonly T[]): T[] {
     const out: T[] = [];
     for (const name of sfxNames) {
-      const lump = this.wad.find(SoundBank.lumpName(name));
+      const lump = this.wad.find(soundLumpName(name));
       if (lump && lump.size >= 2 && this.wad.reader(lump).u16() !== DMX_FORMAT) out.push(name);
     }
     return out;

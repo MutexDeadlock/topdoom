@@ -208,10 +208,23 @@ function episodeNamePatch(mapName: string): string | undefined {
   return doom1 ? `M_EPI${doom1[1]}` : undefined;
 }
 
+/**
+ * Strips a `level 1:`, `MAP01:` or `E1M1:` identifier and capitalizes what is left — the two edits
+ * `LEVEL_NAMES` was generated with (see its own doc), applied to a title arriving from somewhere
+ * else so the two read alike. A value naming none of the three prefixes is kept verbatim:
+ * EPIC.WAD's `1 - a fool's paradise` carries no level identifier at all.
+ */
+export function stripTitlePrefix(text: string): string {
+  const bare = text.replace(/^\s*(?:level\s+\d+|MAP\d{1,2}|E\dM\d)\s*:\s*/i, '').trim();
+  return bare ? bare[0].toUpperCase() + bare.slice(1) : bare;
+}
+
 /** Everything the two resolvers below need about one map, gathered from the loaded WAD set. */
 export interface LevelNameSources {
   /** The map's `levelname` from a MAPINFO/UMAPINFO lump, if any file in the set defines one. */
   mapInfoTitle?: string;
+  /** The map's title from a DEHACKED/BEX patch in the set — docs/dehacked.md § Strings. */
+  dehTitle?: string;
   /** The loaded IWAD's mission, or null if its file name wasn't recognised. */
   mission: LevelMission | null;
   /** File name of the WAD that actually provides this map's lumps. */
@@ -222,13 +235,75 @@ export interface LevelNameSources {
 
 /**
  * The level's own title, or undefined if nothing knows one: what the WAD set's MAPINFO says, else
- * the vanilla title — but the vanilla one only for a map the *IWAD* provides, since a PWAD's
- * `MAP01` is a different level from the IWAD's and would otherwise inherit its name.
+ * what a DEHACKED patch says, else the vanilla title — but the vanilla one only for a map the
+ * *IWAD* provides, since a PWAD's `MAP01` is a different level from the IWAD's and would otherwise
+ * inherit its name.
+ *
+ * MAPINFO beats DEHACKED, as UMAPINFO's own spec says it does. The "IWAD-provided only" guard is
+ * on the vanilla table alone: a DEH title, like a MAPINFO title, applies to any map, because
+ * renaming the base game's levels is exactly what such a patch is for.
  */
 export function levelTitleFor(mapName: string, sources: LevelNameSources): string | undefined {
   if (sources.mapInfoTitle) return sources.mapInfoTitle;
+  if (sources.dehTitle) return sources.dehTitle;
   if (!sources.providerIsPwad && sources.mission) return LEVEL_NAMES[sources.mission][mapName];
   return undefined;
+}
+
+/**
+ * The mnemonic-keyed half of a DEHACKED patch's strings, projected onto map lump names: `HUSTR_1`
+ * is `MAP01` but only under DOOM II, `PHUSTR_*` only under Plutonia, `THUSTR_*` only under TNT,
+ * `HUSTR_E1M1` only under DOOM. Titles arrive carrying id's own `level 1: ` / `E1M1: ` prefix, so
+ * each is put through `stripTitlePrefix` to read like `LEVEL_NAMES`' own bare values.
+ *
+ * Keys that are already lump names pass straight through: that is how a vanilla `Text`
+ * substitution arrives, having been resolved to its map by `titleLookupFor` at parse time.
+ *
+ * A null mission would otherwise drop every title, which is the case a PWAD lands in whenever the
+ * IWAD's file name isn't one `missionOf` knows — so `HUSTR_*` is accepted there too rather than
+ * throwing away the only titles the set has.
+ */
+export function dehTitlesFor(
+  mission: LevelMission | null,
+  strings: ReadonlyMap<string, string>,
+): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const [key, value] of strings) {
+    const map = dehTitleKey(key, mission);
+    if (map) out.set(map, stripTitlePrefix(value));
+  }
+  return out;
+}
+
+/** Which map lump a `[STRINGS]` mnemonic names under this mission, or undefined for none. */
+function dehTitleKey(key: string, mission: LevelMission | null): string | undefined {
+  if (/^(MAP\d\d|E\dM\d)$/.test(key)) return key;
+  const commercial = /^(P|T)?HUSTR_(\d{1,2})$/.exec(key);
+  if (commercial) {
+    const want = commercial[1] === 'P' ? 'plutonia' : commercial[1] === 'T' ? 'tnt' : 'doom2';
+    // An unrecognised IWAD keeps the plain `HUSTR_*` set, which is the only one it could mean.
+    if (mission !== want && !(mission === null && want === 'doom2')) return undefined;
+    return `MAP${commercial[2].padStart(2, '0')}`;
+  }
+  const episodic = /^HUSTR_(E\dM\d)$/.exec(key);
+  if (episodic && (mission === 'doom' || mission === null)) return episodic[1];
+  return undefined;
+}
+
+/**
+ * The reverse lookup a vanilla `Text` substitution needs: a normalized level title back to the map
+ * lump that carries it. Built over every mission rather than just the loaded one — a `Text` record
+ * names no mission, and the four tables' titles don't collide.
+ */
+export function titleLookupFor(): (title: string) => string | undefined {
+  const byTitle = new Map<string, string>();
+  for (const table of Object.values(LEVEL_NAMES)) {
+    for (const [map, title] of Object.entries(table)) {
+      const key = stripTitlePrefix(title).toLowerCase();
+      if (!byTitle.has(key)) byTitle.set(key, map);
+    }
+  }
+  return (title) => byTitle.get(stripTitlePrefix(title).toLowerCase());
 }
 
 /**
@@ -249,13 +324,26 @@ export function levelNameFor(mapName: string, sources: LevelNameSources): string
 export class LevelNames {
   private wad: Wad;
   private titles: Map<string, string>;
+  private dehTitles: Map<string, string>;
   private mission: LevelMission | null;
 
-  constructor(wad: Wad, mapInfo: MapInfo) {
+  constructor(wad: Wad, mapInfo: MapInfo, dehStrings?: ReadonlyMap<string, string> | null) {
     this.wad = wad;
     this.titles = mapInfo.titles();
     const iwad = wad.files.find((f) => f.type === 'IWAD');
     this.mission = iwad ? missionOf(iwad.name) : null;
+    // Projected here rather than by the caller: which mnemonics apply depends on the mission,
+    // which is identified two lines up and nowhere else.
+    this.dehTitles = dehTitlesFor(this.mission, dehStrings ?? new Map());
+  }
+
+  /**
+   * Which title table this set's IWAD selected, or null for an unrecognised one. Exposed because
+   * par times key off the same identification (docs/wad.md § Par times) and identifying the IWAD
+   * twice is how the two would drift.
+   */
+  get levelMission(): LevelMission | null {
+    return this.mission;
   }
 
   nameFor(mapName: string): string {
@@ -263,6 +351,7 @@ export class LevelNames {
     const provider = this.wad.providerOf(upper);
     return levelNameFor(upper, {
       mapInfoTitle: this.titles.get(upper),
+      dehTitle: this.dehTitles.get(upper),
       mission: this.mission,
       providerName: provider?.name,
       providerIsPwad: provider?.type === 'PWAD',

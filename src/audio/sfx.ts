@@ -40,6 +40,29 @@ export const SFX = {
 
 export type SfxId = keyof typeof SFX;
 
+/**
+ * Lump names a DEHACKED/BEX `[SOUNDS]` section has redirected, keyed by sfx name. Empty unless a
+ * patch said otherwise, and `soundLumpName` is the only reader — so with no patch loaded the
+ * template literal below is exactly what vanilla's `i_sound.c` does.
+ * docs/dehacked.md § Sounds and music.
+ */
+const SOUND_LUMP_OVERRIDES = new Map<string, string>();
+
+/** The lump a sfx resolves to: `i_sound.c`'s own `sprintf(name, "ds%s", sfxname)`, unless patched. */
+export function soundLumpName(name: string): string {
+  return SOUND_LUMP_OVERRIDES.get(name) ?? `DS${name.toUpperCase()}`;
+}
+
+/** Redirects one sfx to a different lump — a BEX `[SOUNDS]` entry. */
+export function setSoundLump(name: string, lump: string): void {
+  SOUND_LUMP_OVERRIDES.set(name, lump.toUpperCase());
+}
+
+/** Drops every redirect, before a new patch is applied. docs/dehacked.md § Applying: reset, then patch. */
+export function resetSoundLumps(): void {
+  SOUND_LUMP_OVERRIDES.clear();
+}
+
 /** Every sfx name, for the `SoundBank` pre-decode pass (`encodedNames`). */
 export const SFX_NAMES = Object.keys(SFX) as SfxId[];
 

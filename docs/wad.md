@@ -114,6 +114,17 @@ rather than held as a module singleton, so both stay pure functions of the map; 
 the same lookup for the same "must not disagree" reason it takes `movableSectors`
 (docs/specials.md § A switch only flips when it acts).
 
+## DEHACKED
+
+A `DEHACKED` lump is a text patch over the engine's own data tables — level titles, par times,
+monster stats — in the same family as § ANIMATED and SWITCHES, where a WAD's own data replaces the
+built-in table. It differs in one way worth knowing here: `DEHACKED` lumps **merge cumulatively**
+across the set rather than the last one winning, because DEH patches stack in every engine that
+reads them. Later files still win per key.
+
+`game/dehacked.ts` owns the reading and docs/dehacked.md the format. Only the in-WAD lump is read;
+standalone `.deh`/`.bex` files are not loadable.
+
 ## Colormap lumps
 
 Beside `COLORMAP` itself, a Boom WAD can ship **named colormap lumps** — 34 rows of 256 palette
@@ -194,7 +205,7 @@ the way `WI_loadData` (`wi_stuff.c`) does — `CWILV%2.2d` over a 0-based map in
 it *belongs* to the map: one from a different file than the map counts only if the map came from
 the IWAD (a graphics add-on replacing the base game's name patches), so a PWAD that replaces
 `MAP01` without replacing `CWILV00` doesn't announce itself with the IWAD's name for a different
-level — the same trap rule 2 below exists for.
+level — the same trap rule 3 below exists for.
 
 Text resolution order, highest authority first:
 
@@ -207,7 +218,11 @@ Text resolution order, highest authority first:
    mistaken for the next level. Later files win, matching the merged directory; within one file
    `ZMAPINFO` suppresses that file's `MAPINFO`, as in ZDoom. A MAPINFO title applies even to a map
    the IWAD provides — renaming the base game's levels is what the lump is for.
-2. **The vanilla title table**, but only for a map the *IWAD* provides. `LEVEL_NAMES` is all 132
+2. **A DEHACKED/BEX patch in the set** (docs/dehacked.md § Strings), whether from a BEX `[STRINGS]`
+   mnemonic or a vanilla `Text` substitution. Like a MAPINFO title and unlike the table below, it
+   applies to any map the set provides, because renaming the base game's levels is exactly what
+   such a patch is for. MAPINFO beats it, matching UMAPINFO's own spec.
+3. **The vanilla title table**, but only for a map the *IWAD* provides. `LEVEL_NAMES` is all 132
    `HUSTR_*`/`PHUSTR_*`/`THUSTR_*` strings from `linuxdoom-1.10/d_englsh.h`, generated from that
    header rather than transcribed by hand, TNT MAP05's "hanger" included — with two deliberate
    edits, both because a title here is never the only thing on screen: the leading identifier is
@@ -218,7 +233,16 @@ Text resolution order, highest authority first:
    a substring: `freedoom2.wad` is not `doom2.wad` and must not inherit titles for maps it names
    nothing like.
 
-With no title from either, there is nothing to append in the menu, and the card falls back to
+The name graphic needs no rule against a DEH title: the provenance check above already declines a
+patch from a different file than the map, so EPIC.WAD's `MAP01` — which it provides itself, without
+a `CWILV00` — falls through to the text where its DEH title is.
+
+The menu names levels off the manifest alone, and gets the same answer. A file's `levelNames` holds
+what its MAPINFO says and, for the maps MAPINFO leaves unnamed, what its `DEHACKED` patch says —
+merged in that order when the manifest is built, so `mergedMaps` needs no rule of its own.
+docs/dehacked.md § Strings covers the one case where the two can differ.
+
+With no title from any of the three, there is nothing to append in the menu, and the card falls back to
 `<file> <lump>` for a PWAD-provided map (`SCYTHE.WAD MAP05` — which file it came from is the only
 true thing left to say about it) or the bare lump name for anything else: an unrecognised IWAD, or a
 map outside its mission's table such as `E5M1`.
@@ -231,6 +255,29 @@ the three consumers of one lump family don't each re-tokenize it. The menu can't
 anything yet — so it resolves off the manifest instead, which is why `WadManifestEntry` carries each
 file's own MAPINFO titles (§ The `public/wads/` manifest) and `mergedMaps` (`library.ts`) merges
 them the same way, later files winning.
+
+## Par times
+
+`campaign/pars.ts` answers "how fast was this level meant to be finished", for the intermission's
+par row (docs/hud.md § Intermission). It mirrors § Level names: a mission-keyed vanilla table plus a
+`ParSources` resolver, keying off the same IWAD identification — `LevelNames.levelMission` exposes
+it rather than each identifying the IWAD separately, which is how the two would drift.
+
+The tables are `linuxdoom-1.10/g_game.c`'s two, flattened onto lump names. `pars[4][10]` covers
+E1M1-E3M9 and `cpars[32]` covers MAP01-MAP32; `G_DoCompleted` picks between them on
+`gamemode == commercial`, which is why Plutonia and TNT use `cpars` too — Final Doom shipped on an
+unchanged `doom2.exe`.
+
+**Episode 4 has no par time, deliberately.** `pars` has four rows and `gameepisode` is 4 on Ultimate
+Doom's E4, so vanilla evaluates `pars[4][gamemap]` — one row past its own array. That is an
+out-of-bounds read rather than a value worth reproducing, so `E4M*` resolves to undefined and the
+intermission omits the row.
+
+Resolution order is a DEHACKED/BEX `[PARS]` section first (docs/dehacked.md § Par times), then
+the vanilla table.
+Unlike a title, the vanilla table is **not** gated on the map coming from the IWAD: a par time is a
+target rather than a name, and `G_DoCompleted` has no provenance check — vanilla applies `cpars` to
+whatever `MAP01` is loaded.
 
 ## Level progression
 
@@ -325,7 +372,7 @@ already building every mesh in the level rather than on the frame a level ends.
 ## The `public/wads/` manifest
 
 The Vite plugin scans `public/wads/{iwad,pwad}/`, parsing each file's header and directory plus its
-MAPINFO lump if it has one, and hashing its bytes for the content id (§ Content id) — the file is
+MAPINFO and `DEHACKED` lumps if it has them, and hashing its bytes for the content id (§ Content id) — the file is
 already in memory, so the id costs one pass and nothing extra to read. That is served as
 `/wads/index.json` (dev middleware and build-time `emitFile`), so the menu can list
 types/sizes/map counts, name levels, and know each file's *identity* without downloading anything —
@@ -336,8 +383,12 @@ called for the listing): without it every page reload would re-read and re-hash 
 `public/wads/` — tens of MB, on the path that gates `Menu.init`. Editing a WAD still re-describes
 it. Bytes are only fetched when a level actually starts, and
 `library.ts: serverSource` memoizes them, so restarting the same WAD set costs no download. A WAD
-picked from disk has no manifest entry, so `uploadedSource` parses its MAPINFO itself — the bytes
-are already in memory by then.
+picked from disk has no manifest entry, so `uploadedSource` parses its MAPINFO and `DEHACKED`
+itself — the bytes are already in memory by then, and the two paths have to produce the same
+`WadSource` fields or an uploaded file would list differently from the same file on disk.
+
+`levelNames` holds finished titles from both sources, MAPINFO first — a patch fills gaps rather
+than overriding, matching `levelTitleFor`'s own order. See § Level names.
 
 **The folder a file sits in decides how it's served, regardless of its own IWAD/PWAD signature** — a
 mod placed in `wads/iwad/` becomes a selectable game WAD (useful for a PWAD that carries its own

@@ -112,6 +112,7 @@ import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import { blastDistanceToBox, boxReach, segmentEntersBox, traceHitsBox } from '../util/geom.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import type { TeleportDest } from './specials.ts';
+import { thingStatsPatched } from './dehacked.ts';
 
 /**
  * Vanilla's own per-tic XY friction, `FRICTION = 0xE800/0x10000` — applied as
@@ -1065,6 +1066,10 @@ export function buildThingSprites(
    * nothing beyond its `ThingState`, which together with the sparse block is
    * what keeps a 10k-monster map's save inside the localStorage quota
    * (docs/savegames.md § Storage).
+   *
+   * `spawnHealthFor` reads a table a DEHACKED patch can move, which stays safe because a save
+   * made with one requires that file back (`patchWads`) — so the baseline on restore is the same
+   * one this comparison used. docs/dehacked.md § Savegames and patched tables.
    */
   function isPristine(p: PosedThing): boolean {
     return (
@@ -1102,7 +1107,10 @@ export function buildThingSprites(
           const block: Partial<MonsterFields> = {
             homingBias: p.homingBias,
           };
-          if (p.health !== spawnHealthFor(p.type, p.dropped)) block.health = p.health;
+          // Written unconditionally once a DEHACKED patch has moved `MONSTER_HEALTH`: the
+          // elision below is against a table value, and a patched baseline would restore
+          // differently. docs/dehacked.md § Savegames and patched tables.
+          if (thingStatsPatched() || p.health !== spawnHealthFor(p.type, p.dropped)) block.health = p.health;
           if (p.angle !== (p.facingDeg * Math.PI) / 180) block.angle = p.angle;
           if (p.spawnX !== p.x) block.spawnX = p.spawnX;
           if (p.spawnY !== p.y) block.spawnY = p.spawnY;

@@ -154,6 +154,21 @@ is `use`-only. Without it, a manual door or switch mounted on an ordinary-lookin
 "push wall" secret) could be opened from *either* side, letting a player skip the switch a mapper hid
 elsewhere; E1M2's sector 21 secret is exactly this shape.
 
+## Ammo counts, and what a patch can move
+
+Vanilla's `P_GiveAmmo` multiplies a pickup's `num` by `clipammo[type]`, so an ammo item's real
+worth is a **clip count**, not an amount. `AMMO_PICKUPS` and `WEAPON_PICKUPS` (`inventory.ts`) hold
+that count — a clip is one, a box is five, a weapon hands over two, a monster drop half — and every
+grant multiplies it by `CLIP_AMMO` at the point of use. Keeping vanilla's indirection rather than
+folding it flat is what lets a DEHACKED `Ammo N / Per ammo` line reach the pickups as well as the
+backpack, with nothing re-derived.
+
+The module's other patchable values sit in one `LIMITS` record with narrow setters over it
+(`setMaxAmmo`, `setClipAmmo`, `setInventoryLimits`, `resetInventoryLimits`): the health and armour
+caps, the two armour classes, the sphere amounts, and the starting kit `createInventory` hands out.
+The setters exist so the DEHACKED applier never reaches into this module's private tables —
+docs/dehacked.md § Weapon, Ammo and Misc.
+
 ## Powerups and the backpack
 
 `Inventory.powers` holds seconds remaining per `PowerId`, ticked by `tickPowers`, which `game.ts`

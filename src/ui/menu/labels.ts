@@ -20,6 +20,9 @@ export function describeSource(src: WadSource): string {
     // only sign there's actually something in the file.
     parts.push(`no maps (${src.lumpCount} lump${src.lumpCount === 1 ? '' : 's'})`);
   }
+  // Presence, not coverage: what a patch actually lands needs its bytes, and the menu lists a
+  // server file from the build-time manifest alone. docs/dehacked.md § The coverage report.
+  if (src.dehacked) parts.push('DEHACKED');
   if (src.origin === 'upload') parts.push('from disk');
   return parts.join(' · ');
 }

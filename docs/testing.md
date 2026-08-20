@@ -33,7 +33,7 @@ tests/
   util/  wad/  game/  ui/  render/  audio/   one file per src/ module under test
   regression/            one file per fixed bug, named after the bug
   fixtures/              builders and test data, never tests
-  docs/                  the tree-wide guards: doc pointers, WAD fixtures
+  docs/                  the tree-wide guards: doc pointers, WAD fixtures, layer splits
 ```
 
 **Every test file wraps its tests in one or more `describe` blocks named
@@ -232,6 +232,20 @@ element). A dropped `@include` removes a whole panel from the page while the bui
 the only symptom is a `null` in some module's field initializers — the hardest place to read it.
 Id lookups are matched as literals (`getElementById('x')` and the `el<T>('x')` helper), which is
 every lookup in the tree; `querySelector` selectors are not checked.
+
+## The DEHACKED layer split
+
+`tests/docs/dehackedlayers.test.ts` walks the runtime import graph and asserts that nothing which
+only *reads* a patch — `wad/library.ts`, `plugins/wad-manifest.ts` — can reach
+`game/dehacked/apply.ts`, which pulls every game table and `structuredClone`s all of them at import
+(docs/dehacked.md § The two entry points). It is a graph property rather than a behavior, because
+ES re-exports are eager: a single `export { applyDehacked } from './dehacked/apply.ts'` in
+`game/dehacked.ts` reinstates the whole cost with nothing else changing.
+
+`import type` / `export type` edges are skipped — they are erased, and are how `dehacked/tables.ts`
+names `WeaponId` without depending on `inventory.ts` at runtime. The suite carries a **positive
+control** (`game.ts` must reach the applier, across a graph of 50+ modules), because a walker that
+silently resolved nothing would satisfy every negative assertion in the file.
 
 ## Doc references
 

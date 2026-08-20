@@ -73,7 +73,8 @@ src/game/      spatial queries + collision, player controller, input, thing worl
                inventory/pickups, weapons and firing, shots in flight + splash, damage/death,
                transient effects, best times, savegames
 src/game/dehacked/   the parsed-patch record shapes (defs), the DEH text parser (parse), the
-               mobjinfo/weapon/ammo/sfx index bridges + the coverage classifiers (tables)
+               mobjinfo/weapon/ammo/sfx index bridges + the coverage classifiers (tables), the
+               applier (apply) — a second entry point, so reading a patch pulls in no game table
 src/game/monsters/   record shapes + pure helpers (defs), the vanilla stat tables (tables),
                chase/attack decisions (ai), attack resolution (attacks), the arch-vile (vile),
                MAP30's cube spitter (iconofsin)
@@ -222,7 +223,7 @@ not in a rename pass.
 - After finishing a task that changes behavior, architecture, controls, or anything else these docs
   describe, update the affected doc — don't wait to be asked separately.
 - **Detail goes in `docs/`, not here.** CLAUDE.md is a router plus the project-wide rules above, and
-  is loaded into context on every single turn; keep it under ~200 lines. If what you want to add is
+  is loaded into context on every single turn; keep it under 20 kb. If what you want to add is
   specific to one subsystem, it belongs in that subsystem's doc.
 - **Record the rule, not the story.** What prevents a regression is the invariant plus a clause on
   what breaks without it — and a concrete repro case (a map and sector number) where one exists. The

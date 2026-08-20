@@ -1,14 +1,20 @@
 /**
- * DEHACKED/BEX patches: finding the lump in a loaded WAD set, and reporting what a patch asked for
- * against what this engine can actually do. The parser and the index bridges live in
- * `game/dehacked/`; this is the layer's one public entry point. See docs/dehacked.md.
+ * DEHACKED/BEX patches: finding the lump in a loaded WAD set, parsing it, and reporting what it
+ * asked for against what this engine can actually do. The parser and the index bridges live in
+ * `game/dehacked/`.
+ *
+ * **Reading a patch is this file; writing one into the tables is `dehacked/apply.ts`.** The layer
+ * has those two entry points rather than one, and the split is by audience: the menu's WAD library
+ * and the build-time manifest plugin only ever want a patch's *text* (level titles, par times), and
+ * re-exporting the applier here would make them evaluate every game table to get it.
+ * docs/dehacked.md § The two entry points.
  */
 import type { Wad } from '../wad/wad.ts';
 import type { WadFile } from '../wad/wad.ts';
 import type { DehPatch, DehShortfall } from './dehacked/defs.ts';
 import { parseDehacked, WarningLog } from './dehacked/parse.ts';
 
-export { applyDehacked, resetDehacked, thingStatsPatched } from './dehacked/apply.ts';
+export { parseDehacked } from './dehacked/parse.ts';
 
 export type { DehPatch, DehShortfall, DehSupport, DehThingEdit, DehWarning } from './dehacked/defs.ts';
 

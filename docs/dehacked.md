@@ -35,6 +35,41 @@ Only the in-WAD lump is read. Standalone `.deh`/`.bex` files are not loadable: t
 widening the `public/wads/` manifest, `WadSource`, `loadWadFiles` and the menu's upload filter,
 none of which a WAD-embedded lump needs.
 
+## The two entry points
+
+This layer has **two** public entry points rather than the one docs/conventions.md's rule would
+give it, and the split is by audience:
+
+| Entry | Exports | Who imports it |
+|---|---|---|
+| `game/dehacked.ts` | `readDehacked`, `parseDehacked`, `describeDehacked`, the record types | `wad/library.ts`, `plugins/wad-manifest.ts`, `scripts/inspect-wad.ts`, `game.ts` |
+| `game/dehacked/apply.ts` | `applyDehacked`, `resetDehacked`, `thingStatsPatched` | `game.ts`, `things.ts` |
+
+The reason is that **reading a patch and applying one have very different dependency graphs.**
+Parsing needs the index bridges (`dehacked/tables.ts`) and nothing else; applying needs
+`monsters/tables`, `things/tables`, `spritefx/tables`, `weapons` and `inventory`, and takes a
+`structuredClone` snapshot of all of them at import (§ Applying: reset, then patch).
+
+Two of the three readers only ever want a patch's *text* — the menu's WAD library wants level
+titles for the picker, and the build-time manifest plugin wants the same titles plus par times.
+Neither has a `Game`. While `game/dehacked.ts` re-exported the applier, importing it for a level
+title pulled the whole table graph in behind it and ran that snapshot before any `Game` existed —
+ES re-exports are eager, so there was no way to ask for half of it. The plugin worked around this
+by reaching into `game/dehacked/parse.ts` directly, which is exactly the kind of past-the-front-door
+import the one-entry-point rule is meant to prevent.
+
+Splitting by audience is what lets both rules hold: nobody reaches into a submodule, and nobody
+pays for the applier to read a level name. `tests/docs/dehackedlayers.test.ts` pins it — the
+value-import graph reachable from `wad/library.ts` must not contain `apply.ts`.
+
+The DEH domain stays under `game/` rather than moving beside `campaign/mapinfo.ts`, even though
+`wad/library.ts` importing `game/` is the wrong direction on paper. `dehacked/tables.ts` is a
+bridge onto **this engine's own keys** — `SfxId`, `WeaponId`, `AmmoType`, `InventoryLimits` fields,
+`MISC_SINKS`' weapon field — so filing it under `wad/` would misplace it, and `parse.ts` cannot be
+moved without it. Doing so would also trade the `wad/` → `game/` edge for a `wad/` → `audio/` one,
+against an `audio/` → `wad/sound.ts` edge that already exists. One light edge in the wrong direction
+beat inverting a package.
+
 ## The record grammar
 
 `parseDehacked(text, titleLookup)` is pure — a string in, a `DehPatch` out, no `Wad` — so tests and

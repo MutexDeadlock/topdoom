@@ -1,7 +1,7 @@
 import { describe, test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyDehacked, resetDehacked, thingStatsPatched } from '../../src/game/dehacked.ts';
-import { parseDehacked } from '../../src/game/dehacked/parse.ts';
+import { applyDehacked, resetDehacked, thingStatsPatched } from '../../src/game/dehacked/apply.ts';
+import { parseDehacked } from '../../src/game/dehacked.ts';
 import {
   FAST_MONSTER_STATS,
   MONSTER_STATS,

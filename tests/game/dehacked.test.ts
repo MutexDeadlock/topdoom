@@ -1,7 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseDehacked } from '../../src/game/dehacked/parse.ts';
-import { readDehacked } from '../../src/game/dehacked.ts';
+import { parseDehacked, readDehacked } from '../../src/game/dehacked.ts';
 import { titleLookupFor } from '../../src/wad/campaign/names.ts';
 import { Wad } from '../../src/wad/wad.ts';
 import { wadFile } from '../fixtures/wadfile.ts';

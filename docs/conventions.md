@@ -27,6 +27,14 @@ re-export a type out of the directory to keep that true — `things.ts` does exa
 `ThingLayer`, `MonsterRef` and `BarrelExplosion`, so `game.ts` and `combat.ts` never have to know
 which file inside `things/` a type happens to live in.
 
+The one exception is `game/dehacked.ts` + `game/dehacked/`, which has **two** entry points, split
+by audience: reading a patch is the parent, applying one is `dehacked/apply.ts`. Two of the three
+readers have no `Game` and want only a patch's text, and because ES re-exports are eager, a parent
+that re-exported the applier would make them evaluate — and `structuredClone` — every game table to
+read a level title. This is a deliberate exception with a guard test, not a precedent for splitting
+an entry point whenever it feels convenient: the bar is a dependency graph that differs this
+sharply between two sets of callers. docs/dehacked.md § The two entry points.
+
 A directory with no parent file (`game/monsters/`, `src/render/`, `src/util/`) is just a grouping;
 its files are imported directly. **The missing parent is the point, not an omission** — a grouping
 holds decision modules and data that something else drives, so there is no single object to be the

@@ -112,7 +112,7 @@ import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import { blastDistanceToBox, boxReach, segmentEntersBox, traceHitsBox } from '../util/geom.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import type { TeleportDest } from './specials.ts';
-import { thingStatsPatched } from './dehacked.ts';
+import { thingStatsPatched } from './dehacked/apply.ts';
 
 /**
  * Vanilla's own per-tic XY friction, `FRICTION = 0xE800/0x10000` — applied as

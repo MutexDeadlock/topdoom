@@ -1,0 +1,31 @@
+/*
+ * Press-and-hold confirm: the bar sweeps the button while it's held and the action fires when it
+ * lands — hold.ts § confirmOnHold, which also sets `--hold-time` so the sweep and the timer share
+ * one duration. Scoped to the class rather than to one list, since both the save rows and the WAD
+ * Library's Forget button wear it.
+ */
+#menu button.hold {
+  position: relative;
+  overflow: hidden;
+}
+
+#menu button.hold .fill {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  /* Letting go snaps back fast; only the sweep itself runs at --hold-time. */
+  transition: transform 120ms ease-out;
+}
+
+#menu button.holding .fill {
+  transform: scaleX(1);
+  transition-duration: var(--hold-time, 1s);
+  transition-timing-function: linear;
+}
+
+/* Positioned, so DOM order paints the label over the bar rather than under it. */
+#menu button.hold .label {
+  position: relative;
+}

@@ -1,9 +1,21 @@
 /**
  * The start menu — launcher and pause screen in one: WAD/level/difficulty selection, the settings
- * and save/load tabs, and the changelog popup. See docs/menu.md.
+ * and save/load tabs, and the changelog and WAD Library popups. See docs/menu.md.
  */
-import { fetchLibrary, mapStyle, mergedMaps, uploadedSource, type WadSource } from '../../wad/library.ts';
-import { describeMap, describeSource } from './labels.ts';
+import {
+  ensureLibraryAccess,
+  ensureWadId,
+  fetchLibrary,
+  librarySources,
+  fitsGameWad,
+  mergedMaps,
+  rememberLibraryId,
+  restoreLibrary,
+  uploadedSource,
+  type WadSource,
+} from '../../wad/library.ts';
+import { describeMap, describeSource, sourceColumnSpans } from './labels.ts';
+import { LibraryUi } from './library.ts';
 import { DEFAULT_SKILL, SKILL_NAMES, type Skill } from '../../game/skill.ts';
 import { getAutorun, setAutorun } from '../../game/player.ts';
 import {
@@ -44,17 +56,21 @@ type SettingsTab = 'general' | 'controls';
 const SKILL_STORAGE_KEY = 'topdoom.skill';
 const SELECTION_STORAGE_KEY = 'topdoom.selection';
 
-/** What `saveSelection` writes: `WadSource.key`s plus the level, all server-side. */
+/** What `saveSelection` writes: `WadSource.key`s plus the level, for every source but an upload. */
 interface StoredSelection {
   iwad: string;
   pwads: string[];
+  /** Keys of picked add-ons that are unticked. Optional: absent means every pick is on. */
+  disabled?: string[];
   map: string;
 }
 
 /**
  * The start screen: pick a game WAD, stack any add-ons on top, choose a level.
- * WADs come either from public/wads/ or straight off the user's disk. It doubles
- * as the pause screen once a level is running — see `open` and docs/menu.md.
+ * WADs come from public/wads/, from the player's own library folder, or straight
+ * off their disk — all three list and behave identically (`LibraryUi`,
+ * docs/menu.md § WAD Library). It doubles as the pause screen once a level is
+ * running — see `open` and docs/menu.md.
  */
 export class Menu {
   private root = el<HTMLDivElement>('menu');
@@ -103,6 +119,7 @@ export class Menu {
     controls: el<HTMLDivElement>('settings-tab-controls'),
   };
   private savegames: SavegamesUi;
+  private library: LibraryUi;
 
   private sources: WadSource[] = [];
   /**
@@ -115,8 +132,13 @@ export class Menu {
   private selectedIwad: WadSource | null = null;
   /** Ordered: add-ons are merged in the order the user picked them. */
   private selectedPwads: WadSource[] = [];
-  /** Where an upload should land once the file dialog returns. */
-  private uploadTarget: 'IWAD' | 'PWAD' = 'IWAD';
+  /**
+   * Keys of picked add-ons the player has unticked. **Disabled, not removed** — the row stays in
+   * the list with its place in the order, so a mod can be switched off for one run and back on
+   * without being hunted down in the library again. Tracked as the *off* set so a newly picked
+   * add-on is on by default, which is what picking it meant.
+   */
+  private disabledPwads = new Set<string>();
 
   private onStart: (selection: Selection) => void | Promise<void>;
   private onResume: () => void;
@@ -137,8 +159,16 @@ export class Menu {
       (meta) => this.describeSave(meta),
     );
 
-    el<HTMLButtonElement>('iwad-upload').addEventListener('click', () => this.pickFile('IWAD'));
-    el<HTMLButtonElement>('pwad-upload').addEventListener('click', () => this.pickFile('PWAD'));
+    this.library = new LibraryUi({
+      sources: () => this.sources,
+      iwad: () => this.selectedIwad,
+      pwads: () => this.selectedPwads,
+      chooseIwad: (source) => this.adoptIwad(source),
+      togglePwad: (source) => this.togglePwad(source),
+      setLibrarySources: (sources) => this.setLibrarySources(sources),
+      pickFiles: () => this.pickFiles(),
+    });
+    el<HTMLButtonElement>('library-button').addEventListener('click', () => this.library.open());
     this.iwadSelect.addEventListener('change', () => this.selectIwad());
     this.fileInput.addEventListener('change', () => void this.onFilesChosen());
     this.levelSelect.addEventListener('change', () => {
@@ -178,7 +208,10 @@ export class Menu {
    */
   async init(defaults: MenuDefaults): Promise<void> {
     this.setStatus('Scanning public/wads/ …');
-    this.sources = await fetchLibrary();
+    // The player's own folder is restored from its memo alone — `restoreLibrary` prompts for
+    // nothing, because this runs on the boot path (docs/wad.md § The player's own library).
+    const [served] = await Promise.all([fetchLibrary(), restoreLibrary()]);
+    this.sources = [...librarySources(), ...served];
     this.mapCache.clear();
 
     const stored = this.loadSelection();
@@ -193,6 +226,8 @@ export class Menu {
     this.selectedPwads = wantedPwads
       .map((key) => this.findSource(key))
       .filter((s): s is WadSource => s !== undefined && s !== this.selectedIwad);
+    // A key naming an add-on that is no longer picked is harmless — it simply matches nothing.
+    this.disabledPwads = new Set(stored?.disabled ?? []);
     // Restored add-ons can disagree with a game WAD that came from ?wad=.
     this.pruneIncompatiblePwads();
 
@@ -200,7 +235,7 @@ export class Menu {
     const wantedMap = defaults.map ?? stored?.map ?? null;
     if (wantedMap) this.selectLevel(wantedMap);
 
-    this.setStatus(this.sources.length === 0 ? 'No WADs found on the server — load one from disk.' : '');
+    this.setStatus(this.sources.length === 0 ? 'No WADs found on the server — open the WAD Library to add your own.' : '');
   }
 
   /**
@@ -223,8 +258,9 @@ export class Menu {
   }
 
   close(): void {
-    // Otherwise it would be waiting, still open, the next time the menu comes up.
+    // Otherwise they would be waiting, still open, the next time the menu comes up.
     this.closeChangelog();
+    this.library.close();
     // Nothing in the menu may keep focus once it's gone: a control that still
     // had it would go on taking keys the game wants (`isTyping`, game/input.ts)
     // — a level dropdown clicked on the way out would eat the arrow keys.
@@ -434,10 +470,19 @@ export class Menu {
    * own Esc handler, so one Esc dismisses the popup instead of the whole menu — an explicit
    * hand-off rather than two window listeners racing over the same key.
    */
-  closeChangelog(): boolean {
+  private closeChangelog(): boolean {
     if (this.changelogRoot.classList.contains('hidden')) return false;
     this.changelogRoot.classList.add('hidden');
     return true;
+  }
+
+  /**
+   * Dismisses whichever overlay is up, topmost first, and reports whether there was one — the
+   * hand-off `main.ts` gives Esc before it acts on the menu itself. The order lives here rather
+   * than in the caller, so a third overlay is one edit and never changes what Esc does elsewhere.
+   */
+  closeTopOverlay(): boolean {
+    return this.closeChangelog() || this.library.close();
   }
 
   /** True once a level can actually be started. */
@@ -518,8 +563,21 @@ export class Menu {
     return { level: map ? describeMap(map, iwad.label) : meta.map, missing };
   }
 
+  /**
+   * The menu's status line — or the WAD Library's, while that overlay is up. It covers `#menu`
+   * completely, so everything raised behind it (a file the overlay's own `Add single WADs…` just
+   * loaded, a WAD that wouldn't parse) would otherwise be reported to a line nobody can see, and
+   * would then surface on the New Game tab once the overlay closed, out of the context that
+   * explains it. docs/menu.md § WAD Library.
+   */
   setStatus(text: string, isError = false): void {
+    if (this.library.isOpen) {
+      this.library.showStatus(text, isError);
+      return;
+    }
     this.statusEl.textContent = text;
+    // Clamped to two lines (menu.css), so the whole of a long one lives in the tooltip.
+    this.statusEl.title = text;
     this.statusEl.classList.toggle('error', isError);
   }
 
@@ -527,6 +585,8 @@ export class Menu {
     this.renderIwads();
     this.renderPwads();
     this.renderLevels();
+    // The overlay shows the same picks with order badges, so it redraws with the lists under it.
+    this.library.refresh();
   }
 
   private renderIwads(): void {
@@ -536,7 +596,7 @@ export class Menu {
     if (iwads.length === 0) {
       const option = document.createElement('option');
       option.value = '';
-      option.textContent = 'No game WADs found — load one from disk.';
+      option.textContent = 'No game WADs found — open the WAD Library to add your own.';
       this.iwadSelect.append(option);
       this.iwadSelect.disabled = true;
       return;
@@ -555,86 +615,177 @@ export class Menu {
   /** Fired when the game-WAD select changes: adopts the pick and re-resolves the add-ons and level list under it. */
   private selectIwad(): void {
     const source = this.sources.find((s) => s.key === this.iwadSelect.value);
-    if (!source) return;
-    this.selectedIwad = source;
-    this.selectedPwads = this.selectedPwads.filter((p) => p !== source);
-    this.pruneIncompatiblePwads();
+    if (source) void this.adoptIwad(source);
+  }
+
+  /**
+   * Adopts a source as the game WAD, wherever the pick came from — the select or the WAD Library
+   * overlay. One body, so the two can't drift on what picking a game WAD does to the add-ons.
+   */
+  private async adoptIwad(source: WadSource): Promise<void> {
+    await this.identify(source);
+    this.takeAsIwad(source);
     this.render();
     this.saveSelection();
   }
 
+  /** Adds or removes an add-on, keeping the tick order that decides the merge order. */
+  private async togglePwad(source: WadSource): Promise<void> {
+    const index = this.selectedPwads.indexOf(source);
+    if (index >= 0) {
+      this.selectedPwads.splice(index, 1);
+      // Nothing should remember an off-flag for a row that is gone; re-picking it starts on.
+      this.disabledPwads.delete(source.key);
+    } else {
+      await this.identify(source);
+      this.takeAsPwad(source);
+    }
+    this.render();
+    this.saveSelection();
+  }
+
+  /**
+   * What picking actually does to the selection, with no redraw of its own — so `addFiles`, which
+   * adopts a whole drop before drawing once, applies the identical rules rather than restating
+   * them. The redraw and the save stay with the callers above, which pick one file at a time.
+   */
+  private takeAsIwad(source: WadSource): void {
+    this.selectedIwad = source;
+    this.selectedPwads = this.selectedPwads.filter((p) => p.key !== source.key);
+    this.pruneIncompatiblePwads();
+  }
+
+  private takeAsPwad(source: WadSource): void {
+    if (this.selectedPwads.some((p) => p.key === source.key)) return;
+    // As above: an off-flag left over from an earlier pick of the same file must not survive into
+    // this one, or the add-on lands already unticked.
+    this.disabledPwads.delete(source.key);
+    this.selectedPwads.push(source);
+  }
+
+  /**
+   * Gives a source its content id before it can end up in a savegame. Only a library file ever
+   * needs this — its scan read a few hundred KB rather than the whole file — and the answer is
+   * remembered on disk, so it is hashed once ever (docs/wad.md § The player's own library).
+   */
+  private async identify(source: WadSource): Promise<void> {
+    if (source.id) return;
+    try {
+      await ensureWadId(source);
+      await rememberLibraryId(source);
+    } catch (err) {
+      // A file that can't be read still selects: the failure to *load* it is the level start's to
+      // report, with the WAD set in hand, rather than this one's on a tick.
+      this.setStatus(`${source.label}: ${(err as Error).message}`, true);
+    }
+  }
+
+  /** Replaces every library-provided source with what the folder now holds, keeping the picks that survive. */
+  private setLibrarySources(sources: WadSource[]): void {
+    const byKey = new Map(sources.map((s) => [s.key, s]));
+    const carry = (source: WadSource): WadSource | null =>
+      source.origin === 'library' ? (byKey.get(source.key) ?? null) : source;
+
+    this.sources = [...sources, ...this.sources.filter((s) => s.origin !== 'library')];
+    // A rescan builds fresh source objects, and the selection holds them by identity — so a file
+    // still in the folder keeps its place rather than silently unticking itself.
+    if (this.selectedIwad) this.selectedIwad = carry(this.selectedIwad);
+    this.selectedPwads = this.selectedPwads
+      .map(carry)
+      .filter((s): s is WadSource => s !== null);
+    this.pruneIncompatiblePwads();
+    this.mapCache.clear();
+    this.render();
+    this.savegames.refresh();
+    this.saveSelection();
+  }
+
+  /**
+   * The add-ons **the player has picked**, in merge order — not every add-on on offer. Browsing is
+   * the WAD Library's job now (docs/menu.md § WAD Library), so this list is the picks themselves:
+   * short, always exactly what a start will merge, and no longer a second picker that has to agree
+   * with the first about what is compatible.
+   */
   private renderPwads(): void {
-    // Emptying the scroller clamps its scrollTop to 0, so picking an add-on far down a
+    // Emptying the scroller clamps its scrollTop to 0, so removing an add-on far down a
     // long list would jump the list back to the top. Restore the offset after refilling.
     const scrollTop = this.pwadList.scrollTop;
     this.pwadList.replaceChildren();
-    const iwadStyle = this.selectedIwad ? mapStyle(this.selectedIwad) : null;
-    for (const source of this.sources) {
-      // A PWAD uploaded via the "game WAD" picker still lands in selectedIwad
-      // (see addFiles) and shouldn't also show up here as an add-on.
-      if (source.type !== 'PWAD' || source === this.selectedIwad) continue;
-      // Map-less add-ons (textures, sounds, ...) fit either game; one with
-      // maps of its own only makes sense alongside a matching game WAD.
-      const style = mapStyle(source);
-      const incompatible = iwadStyle !== null && style !== null && style !== iwadStyle;
-      const index = this.selectedPwads.indexOf(source);
-      const row = this.makeRow(
-        source,
-        index >= 0,
-        () => {
-          if (index >= 0) this.selectedPwads.splice(index, 1);
-          else this.selectedPwads.push(source);
-          this.render();
-          this.saveSelection();
-        },
-        incompatible,
+    const active = this.activePwads();
+    for (const source of this.selectedPwads) {
+      const enabled = !this.disabledPwads.has(source.key);
+      const row = document.createElement('label');
+      row.className = 'row' + (enabled ? ' selected' : '');
+
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = enabled;
+      input.title = 'Merge this add-on into the game';
+      input.addEventListener('change', () => this.setPwadEnabled(source, input.checked));
+
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = source.label;
+
+      // The merge position among the add-ons actually being merged, so the numbers stay 1..n with
+      // no gaps when one is switched off.
+      const order = document.createElement('span');
+      order.className = 'meta order';
+      order.textContent = enabled ? `#${active.indexOf(source) + 1}` : 'off';
+
+      row.append(
+        input,
+        name,
+        // The same three columns the WAD Library lists, so a file reads identically in both places —
+        // just narrower, since this panel has a fraction of the overlay's width.
+        ...sourceColumnSpans(source),
+        order,
+        this.removeButton(source),
       );
-      if (index >= 0) {
-        const order = document.createElement('span');
-        order.className = 'meta';
-        order.textContent = `#${index + 1}`;
-        row.append(order);
-      }
       this.pwadList.append(row);
     }
     this.pwadList.scrollTop = scrollTop;
   }
 
-  /** Drops any selected add-on whose own maps no longer match the selected game WAD. */
-  private pruneIncompatiblePwads(): void {
-    const iwadStyle = this.selectedIwad ? mapStyle(this.selectedIwad) : null;
-    if (!iwadStyle) return;
-    this.selectedPwads = this.selectedPwads.filter((p) => {
-      const style = mapStyle(p);
-      return style === null || style === iwadStyle;
-    });
+  /**
+   * The add-ons a start would actually merge: picked *and* still ticked, in pick order. Everything
+   * that resolves a WAD set — the level list, the start, the stored selection's ordering — reads
+   * this rather than `selectedPwads`, so an unticked row cannot leak into a loaded game.
+   */
+  private activePwads(): WadSource[] {
+    return this.selectedPwads.filter((p) => !this.disabledPwads.has(p.key));
   }
 
-  private makeRow(
-    source: WadSource,
-    selected: boolean,
-    onPick: () => void,
-    disabled = false,
-  ): HTMLLabelElement {
-    const row = document.createElement('label');
-    row.className = 'row' + (selected ? ' selected' : '') + (disabled ? ' disabled' : '');
+  /** Drops any selected add-on whose own maps no longer match the selected game WAD. */
+  private pruneIncompatiblePwads(): void {
+    this.selectedPwads = this.selectedPwads.filter((p) => fitsGameWad(this.selectedIwad, p));
+  }
 
-    const input = document.createElement('input');
-    input.type = 'checkbox';
-    input.checked = selected;
-    input.disabled = disabled;
-    input.addEventListener('change', onPick);
+  /** Ticks or unticks one add-on. It keeps its place in the list either way — see `disabledPwads`. */
+  private setPwadEnabled(source: WadSource, enabled: boolean): void {
+    if (enabled) this.disabledPwads.delete(source.key);
+    else this.disabledPwads.add(source.key);
+    this.render();
+    this.saveSelection();
+  }
 
-    const name = document.createElement('span');
-    name.className = 'name';
-    name.textContent = source.label;
-
-    const meta = document.createElement('span');
-    meta.className = 'meta';
-    meta.textContent = describeSource(source);
-
-    row.append(input, name, meta);
-    return row;
+  /**
+   * Drops an add-on from the picks. The file itself stays on offer in the WAD Library, which is
+   * where it was chosen from — this only undoes the pick.
+   */
+  private removeButton(source: WadSource): HTMLButtonElement {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'forget';
+    button.textContent = '×';
+    button.title = `Remove ${source.label}`;
+    button.addEventListener('click', (e) => {
+      // The row is a `<label>`, so a click inside it would otherwise be forwarded to a control.
+      e.preventDefault();
+      e.stopPropagation();
+      void this.togglePwad(source);
+    });
+    return button;
   }
 
   private renderLevels(): void {
@@ -647,7 +798,7 @@ export class Menu {
       return;
     }
 
-    const maps = this.mapsFor(this.selectedIwad, this.selectedPwads);
+    const maps = this.mapsFor(this.selectedIwad, this.activePwads());
     this.levelSelect.disabled = maps.length === 0;
 
     // DOOM 1 names maps E<episode>M<mission>, so group them by episode.
@@ -719,17 +870,19 @@ export class Menu {
    * renders while restoring, and would write back a level select that hasn't
    * caught up with the stored map yet.
    *
-   * Only server-side files are stored: an upload's bytes are gone after a
-   * reload, so persisting its key would restore a selection that can never load
-   * — better to leave the last restorable one in place. That also means a
-   * missing manifest (every source gone, `selectedIwad` null) can't wipe a good
-   * stored value.
+   * Uploads are the one thing never stored: their bytes are gone after a reload,
+   * so persisting a key would restore a selection that can never load — better
+   * to leave the last restorable one in place. A server file and a file in the
+   * player's own folder both keep their key across visits, so both are stored.
+   * That also means a missing manifest (every source gone, `selectedIwad` null)
+   * can't wipe a good stored value.
    */
   private saveSelection(): void {
-    if (!this.selectedIwad || this.selectedIwad.origin !== 'server') return;
+    if (!this.selectedIwad || this.selectedIwad.origin === 'upload') return;
     const stored: StoredSelection = {
       iwad: this.selectedIwad.key,
-      pwads: this.selectedPwads.filter((p) => p.origin === 'server').map((p) => p.key),
+      pwads: this.selectedPwads.filter((p) => p.origin !== 'upload').map((p) => p.key),
+      disabled: [...this.disabledPwads],
       map: this.levelSelect.value,
     };
     globalThis.localStorage?.setItem(SELECTION_STORAGE_KEY, JSON.stringify(stored));
@@ -749,6 +902,7 @@ export class Menu {
       return {
         iwad: parsed.iwad,
         pwads: Array.isArray(parsed.pwads) ? parsed.pwads.filter((p) => typeof p === 'string') : [],
+        disabled: Array.isArray(parsed.disabled) ? parsed.disabled.filter((p) => typeof p === 'string') : [],
         map: typeof parsed.map === 'string' ? parsed.map : '',
       };
     } catch {
@@ -771,55 +925,63 @@ export class Menu {
     this.resumeButton.disabled = false;
   }
 
-  private pickFile(target: 'IWAD' | 'PWAD'): void {
-    this.uploadTarget = target;
-    this.fileInput.multiple = target === 'PWAD';
+  /** The WAD Library's "single WADs" button: loose files, wherever they sit, rather than a folder. */
+  private pickFiles(): void {
     this.fileInput.value = '';
     this.fileInput.click();
   }
 
   private async onFilesChosen(): Promise<void> {
     const files = [...(this.fileInput.files ?? [])];
-    if (files.length > 0) await this.addFiles(files, this.uploadTarget);
+    // Reported rather than dropped, for the reason every folder-pick path is (docs/menu.md §
+    // WAD Library): a picker that answers nothing at all is indistinguishable from a broken button.
+    if (files.length === 0) {
+      this.setStatus('No files chosen.');
+      return;
+    }
+    await this.addFiles(files);
   }
 
   /**
-   * Adds files from disk. `prefer` decides where an ambiguous pick lands; a file
-   * that declares itself an IWAD is never silently treated as an add-on.
+   * Adds files from disk — the multi-file picker and the menu's drop target. A file that declares
+   * itself an IWAD is adopted as the game WAD; everything else joins the add-ons. Drawn once at the
+   * end rather than per file, which is why this routes through `takeAsIwad`/`takeAsPwad` instead of
+   * the single-pick handlers.
    */
-  async addFiles(files: File[], prefer: 'IWAD' | 'PWAD' | 'auto' = 'auto'): Promise<void> {
+  private async addFiles(files: File[]): Promise<void> {
     const added: string[] = [];
+    // Kept rather than reported as they happen: the "Added …" line below would overwrite each one,
+    // so a multi-file pick where some files failed used to end up claiming only success.
+    const failed: string[] = [];
     for (const file of files) {
       try {
-        const source = uploadedSource(file.name, await file.arrayBuffer());
+        const source = await uploadedSource(file.name, await file.arrayBuffer());
         const existing = this.sources.findIndex((s) => s.key === source.key);
         if (existing >= 0) this.sources.splice(existing, 1, source);
         else this.sources.unshift(source);
 
-        const asIwad = prefer === 'IWAD' || (prefer === 'auto' && source.type === 'IWAD');
-        if (asIwad) {
-          this.selectedIwad = source;
-          this.selectedPwads = this.selectedPwads.filter((p) => p.key !== source.key);
-          this.pruneIncompatiblePwads();
-        } else if (!this.selectedPwads.some((p) => p.key === source.key)) {
-          this.selectedPwads.push(source);
-        }
+        if (source.type === 'IWAD') this.takeAsIwad(source);
+        else this.takeAsPwad(source);
         added.push(`${file.name} (${source.type})`);
       } catch (err) {
-        this.setStatus(`${file.name}: ${(err as Error).message}`, true);
+        failed.push(`${file.name}: ${(err as Error).message}`);
       }
     }
 
-    if (added.length > 0) {
-      this.render();
-      // The file just added may be the one a save was waiting for, so the save
-      // rows are re-resolved here too: bringing a WAD back must clear its
-      // "Missing …" warning right away, not on the menu's next open.
-      this.mapCache.clear();
-      this.savegames.refresh();
-      this.saveSelection();
-      this.setStatus(`Added ${added.join(', ')}`);
+    if (added.length === 0) {
+      this.setStatus(failed.join('; ') || 'Nothing to add.', true);
+      return;
     }
+
+    this.render();
+    // The file just added may be the one a save was waiting for, so the save
+    // rows are re-resolved here too: bringing a WAD back must clear its
+    // "Missing …" warning right away, not on the menu's next open.
+    this.mapCache.clear();
+    this.savegames.refresh();
+    this.saveSelection();
+    const skipped = failed.length > 0 ? ` — skipped ${failed.join('; ')}` : '';
+    this.setStatus(`Added ${added.join(', ')}${skipped}`, failed.length > 0);
   }
 
   private installDropTarget(): void {
@@ -856,17 +1018,31 @@ export class Menu {
 
   private startWithSkill(skill: Skill): Promise<void> {
     if (!this.selectedIwad || !this.isReady) return Promise.resolve();
+    // Reached synchronously, before the first `await`, while the click's transient activation is
+    // still live: a browser refuses a file-permission prompt raised any later, and the set may
+    // include a library file whose folder needs re-granting. The same trick `main.ts` uses for
+    // `audio.resume()` — docs/menu.md § Session lifecycle.
+    const access = this.needsLibraryAccess() ? ensureLibraryAccess() : Promise.resolve(true);
     this.startButton.disabled = true;
     // The level being replaced is disposed part-way through this, so there is
     // nothing to return to until it either resolves or fails.
     this.resumeButton.disabled = true;
-    return Promise.resolve(
-      this.onStart({
-        iwad: this.selectedIwad,
-        pwads: [...this.selectedPwads],
-        map: this.levelSelect.value,
-        skill,
-      }),
-    ).finally(() => this.refreshButtons());
+    const iwad = this.selectedIwad;
+    const pwads = this.activePwads();
+    const map = this.levelSelect.value;
+    return access
+      .then((granted) => {
+        if (!granted) {
+          throw new Error('Permission to read your WAD folder was refused — reopen the WAD Library.');
+        }
+        return this.onStart({ iwad, pwads, map, skill });
+      })
+      .catch((err: Error) => this.setStatus(err.message, true))
+      .finally(() => this.refreshButtons());
+  }
+
+  /** Whether anything in the current selection lives in the player's own folder. */
+  private needsLibraryAccess(): boolean {
+    return this.selectedIwad?.origin === 'library' || this.activePwads().some((p) => p.origin === 'library');
   }
 }

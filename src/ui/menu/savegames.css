@@ -188,37 +188,6 @@
   opacity: 0.4;
 }
 
-/*
- * Press-and-hold confirm (delete, overwrite): the bar sweeps the button while
- * it's held and the action fires when it lands — savegames.ts § confirmOnHold,
- * which also sets `--hold-time` so the sweep and the timer share one duration.
- */
-#menu .saves .save-actions button.hold {
-  position: relative;
-  overflow: hidden;
-}
-
-#menu .saves .save-actions .fill {
-  position: absolute;
-  inset: 0;
-  background: var(--accent);
-  transform: scaleX(0);
-  transform-origin: left;
-  /* Letting go snaps back fast; only the sweep itself runs at --hold-time. */
-  transition: transform 120ms ease-out;
-}
-
-#menu .saves .save-actions button.holding .fill {
-  transform: scaleX(1);
-  transition-duration: var(--hold-time, 1s);
-  transition-timing-function: linear;
-}
-
-/* Positioned, so DOM order paints the label over the bar rather than under it. */
-#menu .saves .save-actions .label {
-  position: relative;
-}
-
 /* Overwrite is accent-coloured at rest and `--accent-hover` while hovered — which
    is when it's held — so its bar lightens the button instead of colouring it. */
 #menu .saves .save-actions button.primary .fill {

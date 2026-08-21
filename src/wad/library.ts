@@ -1,13 +1,33 @@
 /**
- * The menu's WAD library: `WadSource` (a server-manifest file or a disk upload), which maps a
- * game-WAD + add-on selection yields, and loading the picked set into `WadFile`s.
- * See docs/wad.md and docs/menu.md.
+ * The menu's WAD library: `WadSource` (a server-manifest file, a disk upload, or a file in the
+ * player's own library folder), which maps a game-WAD + add-on selection yields, and loading the
+ * picked set into `WadFile`s. See docs/wad.md and docs/menu.md.
  */
-import { Wad, WadFile, type WadType } from './wad.ts';
-import { wadId } from './checksum.ts';
-import { MapInfo } from './campaign/mapinfo.ts';
-import { levelTitleFor, mergeLevelTitles, missionOf, titleLookupFor } from './campaign/names.ts';
-import { readDehacked } from '../game/dehacked.ts';
+import { WadFile, type WadType } from './wad.ts';
+import { idOf } from './checksum.ts';
+import { bytesOf, describeWad } from './describe.ts';
+import { levelTitleFor, missionOf } from './campaign/names.ts';
+
+// This file is the layer's one entry point (docs/conventions.md § File names); `library/` holds
+// the player's own folder, which only the menu drives. The edge runs one way — `library/disk.ts`
+// takes `WadSource` as a type alone, so re-exporting it here makes no cycle.
+export {
+  acceptableWads,
+  adoptFolderFiles,
+  ensureLibraryAccess,
+  forgetLibrary,
+  libraryName,
+  libraryPicked,
+  librarySkips,
+  librarySources,
+  pickerBlock,
+  pickLibraryFolder,
+  rememberLibraryId,
+  rescanLibrary,
+  restoreLibrary,
+  type LibrarySkip,
+  type PickerBlock,
+} from './library/disk.ts';
 
 const MANIFEST_URL = '/wads/index.json';
 
@@ -23,6 +43,10 @@ export interface WadSource {
    * manifest carries it for a server file, an upload is hashed as it is added.
    * *This* is the file's identity — what a savegame's WAD set is matched
    * against (docs/savegames.md § WAD-set identity).
+   *
+   * Empty until `ensureWadId` fills it in for a library file, which is the one source that has
+   * *not* read its bytes yet — an empty id matches no savegame rather than matching wrongly.
+   * docs/wad.md § The player's own library.
    */
   id: string;
   label: string;
@@ -36,29 +60,76 @@ export interface WadSource {
   /** Level titles this file's MAPINFO defines, keyed by map lump name — see docs/wad.md § Level names. */
   levelNames: Record<string, string>;
   size: number;
-  origin: 'server' | 'upload';
+  origin: WadOrigin;
+  /**
+   * Which folder the file sits in, and so which group the WAD Library overlay files it under:
+   * `iwad`/`pwad` for a server file (the folder decides how it is served — docs/wad.md § The
+   * `public/wads/` manifest), a path relative to the library root for a library file, absent for
+   * an upload, which sits in no folder at all.
+   */
+  folder?: string;
   bytes(): Promise<ArrayBuffer>;
 }
 
-type WadFolder = 'iwad' | 'pwad';
+/**
+ * Where a source's bytes come from, which is also how long they last: `server` and `library` files
+ * outlive the session and can be named in a stored selection, an `upload` cannot
+ * (docs/menu.md § Remembered selection).
+ */
+export type WadOrigin = 'server' | 'upload' | 'library';
 
-interface ManifestEntry {
+/**
+ * One `index.json` row — the manifest's wire format, declared **here and only here**. The build-time
+ * producer (`plugins/wad-manifest.ts`) imports this same interface rather than restating it: the two
+ * had drifted on `folder` alone, and a shape the consumer casts raw JSON to is one the producer must
+ * be checked against. See docs/wad.md § The `public/wads/` manifest.
+ */
+export interface ManifestEntry {
   file: string;
-  folder: WadFolder;
+  /**
+   * Where the file sits under `public/wads/`, relative to it and `/`-separated — also the URL path
+   * it is served under. A root on its own (`pwad`), or a subfolder below one (`pwad/megawads`):
+   * both roots are scanned recursively, so a collection can be filed the way it would be on disk
+   * and the menu shows it as a tree. `servedFolder` is what splits the root back off.
+   */
+  folder: string;
   size: number;
   type: WadType;
+  /** Map markers the file defines, so the menu can list levels without downloading it. */
   maps: string[];
+  /** Total lump count, shown for map-less add-ons so they don't look empty. */
   lumpCount: number;
-  /** Whether the file carries a `DEHACKED` lump — docs/dehacked.md § The coverage report. */
+  /** Whether the file carries a `DEHACKED` lump. Presence only — what a patch actually changes
+      needs the bytes, which the menu hasn't downloaded. docs/dehacked.md § The coverage report. */
   dehacked?: boolean;
   /**
-   * `hashBytes` content id — see the plugin's own note for why it is computed at build time.
-   * Optional because a cached `index.json` can predate the field, which is what the `?? ''`
-   * below degrades to: a source with no id matches no savegame rather than matching wrongly.
+   * `hashBytes` content id, so the menu knows a file's identity without downloading it — what a
+   * savegame's WAD set is matched against (docs/savegames.md § WAD-set identity). Computed at build
+   * time because those bytes are already in memory; the alternative is fetching every WAD in the
+   * library just to draw the save list.
+   *
+   * Optional because a cached `index.json` can predate the field, which is what the `?? ''` below
+   * degrades to: a source with no id matches no savegame rather than matching wrongly.
    */
   id?: string;
-  /** Only present for the few WADs that carry a MAPINFO lump — see plugins/wad-manifest.ts. */
+  /**
+   * Each map's title, so the menu can name levels without downloading the file — the same reason
+   * `maps` is here. What the file's own MAPINFO defines, and where it defines nothing, what its
+   * `DEHACKED` patch names. Absent when it has neither, which is most of them.
+   */
   levelNames?: Record<string, string>;
+}
+
+/**
+ * Splits a served file's `folder` into the root it was served from and the path below it — the one
+ * place that knows the first segment *is* the root (docs/wad.md § The `public/wads/` manifest), so
+ * the menu can group by both halves without decoding the path itself. The fallback covers a source
+ * carrying no folder at all: its own signature is the root it would have been served from.
+ */
+export function servedFolder(source: WadSource): { root: string; under: string } {
+  const path = source.folder ?? (source.type === 'IWAD' ? 'iwad' : 'pwad');
+  const cut = path.indexOf('/');
+  return cut < 0 ? { root: path, under: '' } : { root: path.slice(0, cut), under: path.slice(cut + 1) };
 }
 
 /** Which DOOM's map-naming convention a WAD's maps follow, if any. */
@@ -76,6 +147,22 @@ export function mapStyle(source: WadSource): MapStyle {
   return null;
 }
 
+/**
+ * Whether an add-on can be merged with a game WAD: a map-less add-on (a texture or sound pack) has
+ * no style of its own and fits either game, one carrying maps only makes sense beside a game WAD
+ * naming its maps the same way, and a game WAD with no maps constrains nothing.
+ *
+ * **The one statement of that rule.** The menu prunes its picks with it and the WAD Library greys
+ * its rows out with it; two copies is how the overlay comes to offer a row the prune then silently
+ * drops.
+ */
+export function fitsGameWad(iwad: WadSource | null, pwad: WadSource): boolean {
+  const style = iwad && mapStyle(iwad);
+  if (!style) return true;
+  const own = mapStyle(pwad);
+  return own === null || own === style;
+}
+
 /** Wraps a server-side file; the fetched bytes are kept so restarts are instant. */
 function serverSource(entry: ManifestEntry): WadSource {
   let cached: Promise<ArrayBuffer> | null = null;
@@ -90,8 +177,12 @@ function serverSource(entry: ManifestEntry): WadSource {
     levelNames: entry.levelNames ?? {},
     size: entry.size,
     origin: 'server',
+    folder: entry.folder,
     bytes() {
-      cached ??= fetch(`/wads/${entry.folder}/${encodeURIComponent(entry.file)}`).then(async (res) => {
+      // `folder` is a path now, not one segment — each segment is encoded on its own so the
+      // separators survive (docs/wad.md § The `public/wads/` manifest).
+      const dir = entry.folder.split('/').map(encodeURIComponent).join('/');
+      cached ??= fetch(`/wads/${dir}/${encodeURIComponent(entry.file)}`).then(async (res) => {
         if (!res.ok) throw new Error(`${entry.file}: HTTP ${res.status}`);
         return res.arrayBuffer();
       });
@@ -101,23 +192,17 @@ function serverSource(entry: ManifestEntry): WadSource {
 }
 
 /** Parses an uploaded file far enough to categorise it, then keeps it in memory. */
-export function uploadedSource(name: string, buffer: ArrayBuffer): WadSource {
-  const file = new WadFile(buffer, name);
-  // The manifest plugin does this server-side for the WADs on disk; a file picked here has to
-  // read its own MAPINFO and DEHACKED itself, and the bytes are already in memory.
-  const { levelNames, dehacked } = uploadedLevelInfo(file);
+export async function uploadedSource(name: string, buffer: ArrayBuffer): Promise<WadSource> {
+  const described = await describeWad(name, bytesOf(buffer));
   return {
+    ...described,
     key: `upload:${name}:${buffer.byteLength}`,
     // The one place an id costs real work (a pass over up to ~14 MB), paid here
-    // rather than lazily: the save list matches by id and renders synchronously.
-    // `wadId` memoizes per file, so loading this source later re-uses it.
-    id: wadId(file),
+    // rather than lazily: the save list matches by id and renders synchronously,
+    // and unlike a library file these bytes are already in memory. Memoized against
+    // the buffer, so starting a level with this file does not walk it a second time.
+    id: idOf(buffer),
     label: name,
-    type: file.type,
-    maps: file.mapNames(),
-    lumpCount: file.entries.length,
-    dehacked,
-    levelNames,
     size: buffer.byteLength,
     origin: 'upload',
     bytes: () => Promise.resolve(buffer),
@@ -125,20 +210,16 @@ export function uploadedSource(name: string, buffer: ArrayBuffer): WadSource {
 }
 
 /**
- * An uploaded file's level titles — its MAPINFO's, and where that names nothing, its DEHACKED
- * patch's — plus whether it carried a patch at all. The client-side twin of what
- * `plugins/wad-manifest.ts` does for the files on disk: the two have to agree, or the same file
- * would list differently uploaded than served.
- *
- * The one `readDehacked` answers both, so the directory isn't scanned for the lump a second time.
+ * A source's content id, hashing its bytes if that hasn't happened yet, and writing the answer
+ * back onto the source so it is paid once. Only a library file ever needs this — its scan reads a
+ * few hundred KB per file rather than the whole thing (docs/wad.md § The player's own library),
+ * so the menu calls this the moment such a file is picked, which is strictly before it can appear
+ * in a savegame.
  */
-function uploadedLevelInfo(file: WadFile): { levelNames: Record<string, string>; dehacked: boolean } {
-  const wad = new Wad(file);
-  const patch = readDehacked(wad, titleLookupFor());
-  return {
-    levelNames: mergeLevelTitles(file.name, new MapInfo(wad).titles(), patch?.strings),
-    dehacked: patch !== null,
-  };
+export async function ensureWadId(source: WadSource): Promise<string> {
+  if (source.id) return source.id;
+  source.id = idOf(await source.bytes());
+  return source.id;
 }
 
 /** WADs the server offers under public/wads/. Empty if the manifest is missing. */

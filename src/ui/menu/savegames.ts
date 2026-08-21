@@ -19,15 +19,9 @@ import {
 } from '../../game/savegames.ts';
 import { SKILL_NAMES } from '../../game/skill.ts';
 import { formatClock } from '../hud/hud.ts';
+import { confirmOnHold } from './hold.ts';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-
-/**
- * How long Delete and Overwrite have to be held (`confirmOnHold`). Tuned by
- * feel: long enough that a stray click can't destroy a save, short enough that
- * nobody wonders whether the button is broken.
- */
-const HOLD_MS = 750;
 
 /**
  * What the menu's owner (main.ts) does with a save request/pick — the UI itself
@@ -285,7 +279,9 @@ export class SavegamesUi {
       // disabled button never shows its tooltip.
       overwrite.title = 'Hold to replace this save with the current moment';
       overwrite.disabled = !this.canSave;
-      this.confirmOnHold(overwrite, 'Hold Overwrite to replace that save.', () => void this.overwrite(meta.id));
+      confirmOnHold(overwrite, 'Hold Overwrite to replace that save.', (t) => this.setStatus(t), () =>
+        void this.overwrite(meta.id),
+      );
       actions.append(overwrite);
     }
     actions.append(this.makeDownloadButton(meta), this.makeDeleteButton(meta));
@@ -366,7 +362,7 @@ export class SavegamesUi {
     button.textContent = '🗑︎';
     button.title = 'Hold to delete this save';
     button.setAttribute('aria-label', 'Hold to delete this save');
-    this.confirmOnHold(button, 'Hold the trash button to delete that save.', () => {
+    confirmOnHold(button, 'Hold the trash button to delete that save.', (t) => this.setStatus(t), () => {
       void this.attempt(async () => {
         await deleteSave(meta.id);
         // Only this row goes; re-listing would redecode every remaining row's
@@ -376,65 +372,6 @@ export class SavegamesUi {
       });
     });
     return button;
-  }
-
-  /**
-   * Press-and-hold confirm, shared by Delete and Overwrite: the button fills
-   * over `HOLD_MS` and the action fires when the fill lands; letting go early
-   * cancels it and says so in the status line. An inline confirm, so the
-   * changelog stays the menu's only popup (docs/menu.md § Changelog).
-   *
-   * The label moves into a `.label` span so the `.fill` bar can sit behind it,
-   * and the fill's own duration is handed to CSS as `--hold-time` — one number,
-   * so the bar can't finish at a different moment than the timer.
-   */
-  private confirmOnHold(button: HTMLButtonElement, hint: string, action: () => void): void {
-    const label = document.createElement('span');
-    label.className = 'label';
-    label.textContent = button.textContent;
-    const fill = document.createElement('span');
-    fill.className = 'fill';
-    // Fill first: both are positioned, so DOM order is what paints the label on top.
-    button.replaceChildren(fill, label);
-    button.classList.add('hold');
-    button.style.setProperty('--hold-time', `${HOLD_MS}ms`);
-
-    let timer = 0;
-    const cancel = () => {
-      if (!timer) return;
-      window.clearTimeout(timer);
-      timer = 0;
-      button.classList.remove('holding');
-      this.setStatus(hint);
-    };
-    const start = () => {
-      // Not every browser suppresses pointer events on a disabled control, and
-      // a press that got through would print the hold hint for a dead button.
-      if (timer || button.disabled) return;
-      button.classList.add('holding');
-      timer = window.setTimeout(() => {
-        timer = 0;
-        button.classList.remove('holding');
-        this.setStatus('');
-        action();
-      }, HOLD_MS);
-    };
-
-    button.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;
-      // Keeps the press from starting a text selection or a drag of the row.
-      e.preventDefault();
-      start();
-    });
-    for (const type of ['pointerup', 'pointerleave', 'pointercancel']) {
-      button.addEventListener(type, cancel);
-    }
-    // A button also activates on Space/Enter, so holding the key holds the
-    // button — `repeat` keeps auto-repeat from restarting anything.
-    button.addEventListener('keydown', (e) => {
-      if (!e.repeat && (e.key === ' ' || e.key === 'Enter')) start();
-    });
-    button.addEventListener('keyup', cancel);
   }
 
   private async overwrite(id: string): Promise<void> {

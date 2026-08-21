@@ -6,6 +6,7 @@
  * transactions, nothing about what a save means.
  * docs/savegames.md § Storage.
  */
+import { asPromise, idbOpener, txDone } from '../util/idb.ts';
 
 /**
  * How a state's stored bytes are encoded. `1` = gzip-compressed JSON. Versioned
@@ -43,38 +44,10 @@ const DB_VERSION = 1;
 const META_STORE = 'saves-meta';
 const STATE_STORE = 'saves-state';
 
-let dbPromise: Promise<IDBDatabase> | null = null;
-
-/** The one database handle, opened lazily; a failed open is un-cached so reopening the menu retries. */
-function openDb(): Promise<IDBDatabase> {
-  dbPromise ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE, { keyPath: 'id' });
-      if (!db.objectStoreNames.contains(STATE_STORE)) db.createObjectStore(STATE_STORE, { keyPath: 'id' });
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => {
-      dbPromise = null;
-      reject(request.error ?? new Error('browser storage is unavailable'));
-    };
-  });
-  return dbPromise;
-}
-
-const asPromise = <T>(request: IDBRequest<T>): Promise<T> =>
-  new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('browser storage read failed'));
-  });
-
-/** Resolves on commit; an abort (a quota refusal, mostly) rejects with the transaction's own `DOMException`, name intact. */
-const txDone = (tx: IDBTransaction): Promise<void> =>
-  new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onabort = () => reject(tx.error ?? new Error('browser storage write failed'));
-  });
+const openDb = idbOpener(DB_NAME, DB_VERSION, (db) => {
+  if (!db.objectStoreNames.contains(META_STORE)) db.createObjectStore(META_STORE, { keyPath: 'id' });
+  if (!db.objectStoreNames.contains(STATE_STORE)) db.createObjectStore(STATE_STORE, { keyPath: 'id' });
+});
 
 /**
  * The real backend: one database, two object stores keyed by save id —

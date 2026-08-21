@@ -17,7 +17,8 @@ cp /path/to/SomeMod.wad public/wads/pwad/    # any add-ons you want on the menu
 npm run dev                                  # http://localhost:5173
 ```
 
-WADs are not part of the repo.
+WADs are not part of the repo. Copying them in is optional — the **WAD Library** on the start menu
+can point at a folder of your own instead, without anything being moved or uploaded.
 
 ## Start menu
 
@@ -35,8 +36,13 @@ automatically:
   take on *I'm Too Young to Die*, doubles ammo pickups on that skill and on *Nightmare!*, and on
   *Nightmare!* runs the demons at double speed and brings every monster you kill back again.
 
-Your game WAD, add-ons, level and difficulty are remembered for the next visit. Files outside `public/wads/` go through
-*Load from disk* or by dropping them on the window.
+**WAD Library** opens a browser over everything on offer: the folders above, plus one on your own
+disk that you nominate once. It lists each file's size, map count and whether it carries a DEHACKED
+patch, and ticking a row picks it straight into the lists above. Chrome and Edge remember the folder
+between visits; Firefox and Safari have no way to, so it has to be picked again after a reload.
+Dropping a WAD on the window still works for one-off files.
+
+Your game WAD, add-ons, level and difficulty are remembered for the next visit.
 
 `Esc` pauses and brings up the menu over the level; **Return to game** or `Esc` again resumes
 where you left off. `?wad=DOOM2.WAD&pwad=SCYTHE.WAD&map=MAP05` preselects and skips the menu.

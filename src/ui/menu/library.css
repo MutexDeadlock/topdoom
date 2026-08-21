@@ -1,0 +1,393 @@
+/*
+ * The WAD Library overlay — docs/menu.md § WAD Library. A sibling of #changelog in every structural
+ * way: a child of #menu, so it can only exist while the menu is up, at a z-index local to #menu's
+ * own stacking context rather than a rung of base.css's global ladder.
+ */
+#wadlibrary {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(6, 6, 8, 0.8);
+}
+
+#wadlibrary.hidden {
+  display: none;
+}
+
+/*
+ * Both axes are **fixed, not content-driven**: 60% of the viewport wide and 85% of the height left
+ * inside `#wadlibrary`'s own padding (`width`/`height`, never `max-*` — those leave the panel sized
+ * by its content and only cap it). So the overlay is the same size whether the library holds three
+ * WADs or three hundred, and everything that can grow scrolls inside it instead. Far wider than the
+ * changelog's 720px, because two panes plus three detail columns per row need the room.
+ */
+#wadlibrary .panel {
+  display: flex;
+  flex-direction: column;
+  width: 60%;
+  height: 85%;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-bg);
+  padding: 20px 24px 18px;
+}
+
+#wadlibrary header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+}
+
+#wadlibrary h2 {
+  margin: 0;
+  flex: none;
+}
+
+/* Takes the slack between the title and Close, so the panes below line up under a full-width row. */
+#wadlibrary-filter {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  background: var(--inset-bg);
+  color: inherit;
+  font: inherit;
+}
+
+/*
+ * The two panes share the height left between header and footer and scroll independently
+ * (`min-height: 0`, or a long file list grows the panel past the viewport cap instead).
+ */
+#wadlibrary .panes {
+  display: flex;
+  gap: 14px;
+  flex: 1;
+  min-height: 0;
+}
+
+/*
+ * The sidebar is three boxes, not one scroller. What the server ships is a fixed few rows and the
+ * buttons must stay put, so only the middle box — the player's own folders, the one thing that can
+ * grow without bound — takes `overflow-y` and the leftover height (`min-height: 0`, or a long
+ * library would push the other two out of the panel instead of scrolling).
+ */
+/*
+ * A share of the panel rather than a fixed basis, so the two panes keep their proportion at any
+ * window size. `min-width: 0` so a long folder name can't push that basis out — a flex item's
+ * automatic minimum size otherwise overrides it, and `.name` should ellipse instead.
+ */
+#wadlibrary .sidebar {
+  flex: 0 0 30%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+#wadlibrary .group {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--border);
+  background: var(--inset-bg);
+}
+
+#wadlibrary .group.grows {
+  flex: 1;
+}
+
+/* The heading names the panel and counts what is in it — the `topdoom` and `Your library` rows
+   that used to sit above these lists. Outside `.rows`, or it would scroll away from them. */
+#wadlibrary .group h3 {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 12px 7px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  font-weight: normal;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+#wadlibrary .group h3 .meta {
+  letter-spacing: 0;
+  color: #6f6a65;
+}
+
+/* The scroller: only the library's grows, but both need the padding the box no longer carries. */
+#wadlibrary .group .rows {
+  min-height: 0;
+  padding: 6px 0;
+}
+
+#wadlibrary .group.grows .rows {
+  flex: 1;
+  overflow-y: auto;
+}
+
+#wadlibrary .files {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  background: var(--inset-bg);
+}
+
+/* A tree row is a button so it is reachable by keyboard; the indent is set per row from its depth. */
+#wadlibrary .folder {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 6px 12px;
+  text-align: left;
+  color: var(--fg-button);
+}
+
+#wadlibrary .folder:hover:not(:disabled) {
+  background: #17171c;
+  border-color: transparent;
+}
+
+#wadlibrary .folder.active {
+  background: #241417;
+  color: #fff;
+}
+
+/*
+ * Holds at least one WAD that is in the set — the folder itself or anything under it, so a folded
+ * parent still says something inside it is picked. On `.name` rather than the row, so it survives
+ * `.active`'s own colour and reads on both backgrounds.
+ */
+#wadlibrary .folder.picked .name {
+  color: var(--accent-text-hover);
+}
+
+/*
+ * Its own hit target inside the row, so the folder icon folds and the label selects. A leaf keeps
+ * the same glyph and width — it is still a folder, it just has nothing to open — so every label
+ * sits at the same offset from its siblings'.
+ */
+#wadlibrary .folder .icon {
+  flex: none;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#wadlibrary .folder .icon.leaf {
+  cursor: default;
+  opacity: 0.55;
+}
+
+#wadlibrary .folder .name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#wadlibrary .folder .meta {
+  color: #6f6a65;
+  font-size: 12px;
+}
+
+/*
+ * Controls, not content: no inset panel behind them, unlike the two boxes above. They act *on* the
+ * library rather than being part of it, and a third framed box made the sidebar read as three lists.
+ */
+#wadlibrary-controls {
+  flex: none;
+}
+
+/*
+ * Everything that acts on the folder itself shares one row: Change, Rescan, Forget. Both selectors
+ * name `.ghost` deliberately: `#menu button.ghost` (menu.css) forces `width: 100%` for a button
+ * stacked under a section, and only an equal-or-higher specificity undoes it — a bare
+ * `#wadlibrary-controls button` loses to it and the three would stack.
+ */
+#wadlibrary-controls .folder-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+/* Tighter than the menu's roomy button padding, because three of these share a sidebar that is
+   30% of the overlay — and every label in the row is one short word. */
+#wadlibrary-controls .folder-buttons button.ghost {
+  flex: 1;
+  min-width: 0;
+  margin-top: 0;
+  width: auto;
+  padding: 8px 6px;
+  text-align: center;
+}
+
+/* The standalone button below the row keeps its own gap. */
+#wadlibrary-controls > button.ghost {
+  width: 100%;
+  margin-top: 6px;
+  text-align: center;
+}
+
+#wadlibrary-controls .hint {
+  margin: 10px 0 0;
+  display: block;
+}
+
+/*
+ * File rows reuse `#menu .row` wholesale — `#wadlibrary` nests inside `#menu` (menu.html), so those
+ * rules already apply and a WAD reads identically here and in the add-on list. Only the deltas are
+ * below: this pane has room for real columns, and its disabled rows must stay readable.
+ *
+ * Dimmed by colour, not by `opacity` — a child cannot undo a parent's opacity, and the one thing on
+ * a disabled row that must stay readable is exactly the badge saying *why* it is disabled. The
+ * checkbox keeps an opacity of its own, since it has no text colour to dim.
+ */
+#wadlibrary .row.disabled {
+  cursor: default;
+  /* Explicit, not merely absent: `#menu .row.disabled` (menu.css) sets 0.4 at the same specificity,
+     and dropping the declaration here would leave that one applying unopposed. */
+  opacity: 1;
+}
+
+#wadlibrary .row.disabled .name {
+  color: var(--fg-faint);
+}
+
+#wadlibrary .row.disabled .meta {
+  color: var(--fg-ghost);
+}
+
+#wadlibrary .row.disabled input {
+  opacity: 0.4;
+}
+
+/*
+ * Three detail columns rather than one joined string, each fixed-width and right-aligned so sizes
+ * line up under sizes and map counts under map counts — the same shape `#pwad-list .row .meta`
+ * (menu.css) gives the New Game tab, at the wider widths this pane has room for. The colour and
+ * font-size come from `#menu .row .meta`. The `ch` widths resolve against that font-size.
+ */
+#wadlibrary .row .meta {
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+#wadlibrary .row .meta.size {
+  width: 9ch;
+}
+
+#wadlibrary .row .meta.content {
+  width: 11ch;
+}
+
+/* 10ch, not 9: `DEHACKED` is all caps and just overruns a 9ch box. */
+#wadlibrary .row .meta.deh {
+  width: 10ch;
+}
+
+/* First of the fixed-width columns, and fixed-width even when empty — see `LibraryUi.baseRow`. */
+#wadlibrary .badge {
+  /* 16ch, not the 12 `DOOM II maps` counts: `ch` measures the font's own advance and takes no
+     account of the `letter-spacing` below, which adds a pixel per character on top — 13ch clipped
+     the longest reason to `DOOM II MAP…`. */
+  flex: 0 0 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--accent-text-hover);
+}
+
+#wadlibrary .badge.quiet {
+  color: var(--fg-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/*
+ * Why a row can't be picked. The accent at full strength, because it is the only thing on a row the
+ * player needs before they try to click it — and it sits on a row dimmed for being unpickable, so
+ * anything quieter reads as part of the dimming. It has to out-specify `.badge` above (both are
+ * (0,2,0) here, so source order decides) and `.row.disabled .meta` cannot reach it at all.
+ */
+#wadlibrary .badge.reason {
+  color: var(--accent-text-hover);
+}
+
+#wadlibrary .empty {
+  margin: 0;
+  padding: 14px 12px;
+  color: var(--fg-faint);
+}
+
+#wadlibrary footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+  margin-top: 14px;
+}
+
+/*
+ * The summary names the current pick, the status line reports what just happened. The status takes
+ * the slack so the two buttons sit at the right — and it lives *here* rather than only in
+ * `#menu-status`, which this overlay covers completely (docs/menu.md § WAD Library).
+ */
+#wadlibrary-summary {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-button);
+}
+
+/*
+ * Two lines, not one. What lands here is often a sentence explaining a failure and what to do about
+ * it (docs/menu.md § WAD Library), and one clipped line was truncating exactly the half that said
+ * what to do. Still clamped, because the footer sits inside a fixed-height panel and an unbounded
+ * message would eat the file list. `line-clamp` needs the `-webkit-box` display and the two
+ * properties beside it; every browser that can run a WebGL2 game honours the prefixed pair.
+ */
+#wadlibrary-status {
+  flex: 1;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.35;
+  color: var(--fg-dim);
+}
+
+#wadlibrary-status.error {
+  color: var(--accent-text-hover);
+}
+
+/* Undoes `#menu button.ghost`'s full width, which is for a button stacked under a section. */
+#wadlibrary footer button.ghost {
+  margin-top: 0;
+  width: auto;
+}

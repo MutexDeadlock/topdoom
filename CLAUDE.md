@@ -102,7 +102,8 @@ src/ui/hud/          everything over the running level: HUD, level card, intermi
 src/ui/menu/         start menu + changelog popup, the WAD/level row strings (labels)
 src/ui/devmode/      DEVMODE hud + hotkeys (debughud), profiling overlay (profilerhud)
 src/util/      small helpers shared across layers: 2D geometry, damped-lerp smoothing, per-frame
-               profiling, vanilla's random table — the engine's only entropy source
+               profiling, IndexedDB request plumbing (idb, shared by the save store and the WAD
+               library), vanilla's random table — the engine's only entropy source
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
                    BRIGHTNESS_LIFT, PICKUP_SCALE + PICKUP_SCALE_TYPES, VIEW_DISTANCE +
                    FOG_START_FRACTION)

@@ -189,7 +189,7 @@
 }
 
 #menu .list:empty::after {
-  content: 'Nothing in public/wads/ — load a file from disk below.';
+  content: 'No add-ons picked — open the WAD Library to choose some.';
   display: block;
   padding: 14px 12px;
   color: var(--fg-faint);
@@ -231,13 +231,66 @@
   margin: 0;
 }
 
+/* `min-width: 0` and an ellipsis, or a long file name refuses to shrink and pushes the
+   fixed-width detail columns off the right of the row. */
 #menu .row .name {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #menu .row .meta {
   color: #6f6a65;
   font-size: 12px;
+}
+
+/*
+ * The add-on rows carry the same three detail columns the WAD Library lists (docs/menu.md §
+ * WAD Library), fixed-width and right-aligned so they line up down the list. Narrower than the
+ * overlay's, because this panel is 620px against its 60%-of-viewport. Scoped to `#pwad-list` so
+ * the save rows, which share `.row` but lay themselves out entirely differently, are left alone.
+ */
+#pwad-list .row .meta {
+  flex: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+}
+
+#pwad-list .row .meta.size {
+  width: 8ch;
+}
+
+#pwad-list .row .meta.content {
+  width: 9ch;
+}
+
+/* 10ch, not 9: `DEHACKED` is all caps and just overruns a 9ch box. */
+#pwad-list .row .meta.deh {
+  width: 10ch;
+}
+
+/* Wide enough for `off`, which is the longest thing it says. */
+#pwad-list .row .meta.order {
+  width: 4ch;
+}
+
+/* Drops an add-on from the picks — every row here is one (docs/menu.md § WAD Library). Sized to
+   the glyph so it doesn't push the detail columns around. */
+#menu .row .forget {
+  border: none;
+  background: none;
+  padding: 0 4px;
+  line-height: 1;
+  color: var(--fg-faint);
+}
+
+#menu .row .forget:hover {
+  color: var(--accent-text-hover);
+  border-color: transparent;
 }
 
 #menu .row.selected .meta {
@@ -422,7 +475,15 @@
   display: none;
 }
 
+/* Clamped to two lines for the reason the WAD Library's own line is (library.css): a failure here
+   is a sentence, and one line cut off the half that said what to do about it. */
 #menu-status {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  line-height: 1.35;
   color: var(--fg-dim);
 }
 

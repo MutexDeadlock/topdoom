@@ -46,14 +46,24 @@ function hex32(n: number): string {
   return (n >>> 0).toString(16).padStart(8, '0');
 }
 
-/** The file's content id, computed once and memoized. */
-export function wadId(file: WadFile): string {
-  let id = ids.get(file.buffer);
+/**
+ * A buffer's content id, computed once and memoized against the buffer itself. Everything that
+ * needs an id goes through here rather than calling `hashBytes` directly — the menu hashes an
+ * upload's bytes long before `loadWadFiles` wraps that same `ArrayBuffer` in a `WadFile`, and a
+ * direct call would leave the memo empty for the wrapper to miss on the level-start path.
+ */
+export function idOf(buffer: ArrayBuffer): string {
+  let id = ids.get(buffer);
   if (id === undefined) {
-    id = hashBytes(new Uint8Array(file.buffer));
-    ids.set(file.buffer, id);
+    id = hashBytes(new Uint8Array(buffer));
+    ids.set(buffer, id);
   }
   return id;
+}
+
+/** The file's content id, computed once and memoized. */
+export function wadId(file: WadFile): string {
+  return idOf(file.buffer);
 }
 
 /**

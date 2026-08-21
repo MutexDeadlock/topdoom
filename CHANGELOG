@@ -1,6 +1,8 @@
 v0.15.0 (2026-08-2?)
 
 Features and improvements
+  - WAD Library: browse your own WAD folder from the menu, remembered between
+    visits, replacing the two "from disk" buttons
   - DEHACKED/BEX patches are read and applied
     - supported:
       - level titles

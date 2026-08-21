@@ -20,13 +20,12 @@
         <section>
           <h2>Game WAD</h2>
           <select id="iwad-select"></select>
-          <button class="ghost" id="iwad-upload">Load IWAD from disk…</button>
         </section>
 
         <section>
-          <h2>Add-ons <span class="hint">optional, applied in order</span></h2>
+          <h2>Add-ons <span class="hint">applied in order</span></h2>
           <div class="list" id="pwad-list"></div>
-          <button class="ghost" id="pwad-upload">Add PWAD from disk…</button>
+          <button class="ghost" id="library-button">WAD Library… <span class="hint">browse your own folder</span></button>
         </section>
 
         <div class="columns even">
@@ -214,7 +213,41 @@
     </div>
   </div>
 
-  <input type="file" id="file-input" accept=".wad,.WAD" hidden />
+  <!-- Beside the changelog, and inside #menu for the same reason. -->
+  <div id="wadlibrary" class="hidden">
+    <div class="panel">
+      <header>
+        <h2>WAD Library</h2>
+        <input type="search" id="wadlibrary-filter" placeholder="Filter by name…" autocomplete="off" />
+      </header>
+      <div class="panes">
+        <!-- Two boxes plus the controls: only the player's own folders can grow without bound, so
+             only that one scrolls. Each heading sits outside its own scroller, or it would scroll
+             away from the rows it names. -->
+        <div class="sidebar">
+          <div class="group">
+            <h3 id="wadlibrary-served-header"></h3>
+            <div class="rows" id="wadlibrary-served"></div>
+          </div>
+          <div class="group grows">
+            <h3 id="wadlibrary-library-header"></h3>
+            <div class="rows" id="wadlibrary-tree"></div>
+          </div>
+          <div id="wadlibrary-controls"></div>
+        </div>
+        <div class="files" id="wadlibrary-files"></div>
+      </div>
+      <footer>
+        <span id="wadlibrary-summary"></span>
+        <span id="wadlibrary-status"></span>
+        <button id="wadlibrary-close">Close</button>
+        <button class="primary" id="wadlibrary-done">Apply</button>
+      </footer>
+    </div>
+  </div>
+
+  <input type="file" id="file-input" accept=".wad,.WAD" multiple hidden />
+  <input type="file" id="folder-input" webkitdirectory hidden />
   <input type="file" id="save-file-input" accept=".json,application/json" hidden />
   <div id="menu-credit">by @fauler420</div>
 </div>

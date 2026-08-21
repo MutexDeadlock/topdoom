@@ -61,7 +61,8 @@ export class WadFile {
   }
 }
 
-const MAP_MARKER = /^(E\dM\d|MAP\d\d)$/;
+/** What a map lump marker looks like. Exported so `describe.ts` finds maps by the same rule. */
+export const MAP_MARKER = /^(E\dM\d|MAP\d\d)$/;
 
 /**
  * The merged lump directory the rest of the engine reads from. Files are

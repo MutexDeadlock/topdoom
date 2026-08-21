@@ -284,6 +284,11 @@ control returns to the event loop with no request pending, so compression finish
 And a failed database *open* is un-cached, so a transient refusal (private mode, storage pressure)
 is retried the next time the menu lists.
 
+The request plumbing under both rules — `asPromise`, `txDone` and the lazily-opened, un-cached-on-
+failure handle from `idbOpener` — lives in `util/idb.ts`, shared with the WAD library's own database
+(docs/wad.md § The player's own library). The two databases stay **separate**, so an upgrade that
+fails for one can't take the other down; only the plumbing is shared.
+
 Reads are validated per meta in the `besttimes.ts` style: a malformed record renders as unloadable
 rather than taking the list down. **The save list has no count limit**: storage is bounded by the
 origin's quota alone, and nothing evicts a save the player did not delete. `overwriteSave` refills a

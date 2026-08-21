@@ -255,7 +255,7 @@ and the IWAD identification depend on the loaded file set, not on which map is c
 reads the set's lumps **once** and projects them — titles for `LevelNames`, exits for
 `LevelProgression`, `D_*` lumps for `LevelMusic` (docs/music.md § Which track a level plays) — so
 the three consumers of one lump family don't each re-tokenize it. The menu can't build one — it hasn't downloaded
-anything yet — so it resolves off the manifest instead, which is why `WadManifestEntry` carries each
+anything yet — so it resolves off the manifest instead, which is why `ManifestEntry` carries each
 file's own MAPINFO titles (§ The `public/wads/` manifest) and `mergedMaps` (`library.ts`) merges
 them the same way, later files winning.
 
@@ -347,7 +347,10 @@ cannot do.
 `WeakMap` keyed on the underlying `ArrayBuffer` rather than on the `WadFile` — the same bytes get
 wrapped more than once (an upload hashes its own `WadFile`, `loadWadFiles` builds another over the
 same buffer, a restart re-wraps the memoized fetch), and a wrapper-keyed memo misses every time,
-re-walking ~14 MB on the level-start path. It is what per-level best times are keyed on (docs/hud.md § Best times), and it is
+re-walking ~14 MB on the level-start path. **Everything that needs an id goes through `idOf` (or
+`wadId`, which is `idOf` over the file's buffer), never `hashBytes` directly** — the menu hashes an
+upload's bytes long before the level start wraps that same buffer, and a direct call leaves the memo
+empty for the wrapper to miss on exactly the path the memo exists for. It is what per-level best times are keyed on (docs/hud.md § Best times), and it is
 what a saved game stores as its WAD set — `wadSetId(wad)` returns every loaded file's
 `{ name, id }` in load order, a list rather than one combined hash so a mismatch can name *which*
 file is wrong. `mapProvider(wad, map)` is the same pair for the one file supplying a map — a save's
@@ -371,6 +374,129 @@ Two rules hold this up:
 
 `Game`'s constructor primes the id for every loaded file, so the cost lands in a load that is
 already building every mesh in the level rather than on the frame a level ends.
+
+**When each kind of source pays for it** follows from that 13ms/14 MB, and the three answers
+differ on purpose:
+
+- A **server file** is hashed at build time by the manifest plugin, whose bytes are in memory
+  anyway — the alternative is downloading every WAD in `public/wads/` to draw the save list.
+- An **upload** is hashed as it is added, in `uploadedSource`: the bytes are already in memory, and
+  the save list matches by id and renders synchronously.
+- A **library file** is hashed only when it is picked (`library.ts: ensureWadId`, then
+  `rememberLibraryId` writing it back to the scan memo), because its folder may hold hundreds of
+  files that will never be loaded — § The player's own library. Until then its `WadSource.id` is
+  `''`, which is the same "matches no savegame rather than matching wrongly" degrade a manifest
+  predating the field gets. Picking is strictly before a file can appear in a save, so the deferral
+  is invisible: no save is ever written against an unidentified WAD.
+
+## The player's own library
+
+A folder on the player's disk, listed in the menu beside the server's own WADs and remembered
+between visits — `wad/library/`, driven by `ui/menu/library.ts` (docs/menu.md § WAD Library).
+`library.ts` stays the layer's one entry point and re-exports the directory's surface; the edge
+runs one way, since `library/disk.ts` takes `WadSource` as a type alone.
+
+**Storage is IndexedDB, and there is no choice about it.** A `FileSystemDirectoryHandle` is
+structured-cloneable but not JSON-serializable — `JSON.stringify(handle)` yields `{}` — so
+`localStorage` cannot hold one, which is why this is the one persisted thing in the menu that isn't
+a `topdoom.*` key (docs/menu.md § Persisted settings). It gets its **own** database,
+`topdoom-wadlibrary`, rather than a `DB_VERSION` bump on the one holding savegames
+(`game/savestore.ts`): a failed upgrade here must not be able to take saves down with it. The
+request plumbing *is* shared — `asPromise`, `txDone` and `idbOpener` come from `util/idb.ts`; the
+databases are what stay apart. Every call in `library/store.ts` is best-effort — a browser with IndexedDB disabled degrades to "no
+remembered folder" rather than throwing on the boot path.
+
+Two stores. `root` holds the handle. `descriptors` is the **scan memo**, keyed by path relative to
+the root and validated on read against size and mtime — the same shape `plugins/wad-manifest.ts`
+memoizes with server-side, and for the same reason: re-opening the overlay must not re-read the
+folder. A file whose size or mtime moved is re-described; everything else is free.
+
+**Chromium only remembers.** `showDirectoryPicker()` is the File System Access API, which Firefox
+and Safari don't implement. Those go through `<input type="file" webkitdirectory>`, whose flat
+`FileList` carries the folder structure in each file's `webkitRelativePath`, so the tree and the
+rows are identical — but there is no handle, so nothing is written to the memo and the folder must
+be picked again after a reload. `pickerBlock()` is the split, and the overlay says which side the
+player is on rather than leaving them to discover it.
+
+**The method existing on `window` is not enough to know it can be called.** The pickers run in a
+top-level document or a *same-origin* frame only; a cross-origin frame gets a `SecurityError`. So
+`pickerBlock` also asks `inCrossOriginFrame()`, which compares the framing page's origin and
+treats the read *throwing* as the answer, since that read is itself blocked cross-origin. The case
+that hits real users is **VS Code's Simple Browser**, which loads the dev server into an `<iframe>`
+inside a `vscode-webview://` page: everything else about the library works there, and without this
+check the overlay would offer the picker, the call would throw, and the button would read as dead.
+`LibraryUi.choose` falls back to the plain input on a throw as well, so an embedding neither check
+anticipates still gets a working — if unremembered — folder rather than an error.
+
+`pickerBlock()` is what the overlay actually reads: `''`, `'unsupported'` or `'framed'`, kept apart
+because they ask different things of the player. A browser without the API is nothing they can do
+anything about; a framed window is fixed by opening the game in a tab of its own, and saying so is
+the only way they'd know. `''` doubles as "this browser remembers the folder": the persistence and
+the picker are the same API, so they stay one predicate rather than two names for it.
+
+Three rules that are easy to get wrong:
+
+- **A missing permission method is not a refusal.** `queryPermission`/`requestPermission` are
+  non-standard and absent in some implementations — Electron's partial File System Access is the one
+  that bites, and VS Code is Electron. Absent means there is nothing to ask, not that the answer is
+  no: the handle came out of a picker the player just used, so `ensureLibraryAccess` treats it as
+  usable and lets a real read fail with a real reason. Reading it the other way refused a working
+  handle and made the pick appear to do nothing.
+- **A scan that reads nothing says why it read nothing.** `describeAll` drops a file that won't open
+  or won't parse rather than failing the whole scan — one junk `.wad` must not cost the folder — but
+  keeps the reason in `state.skipped`, which `librarySkips()` exposes and the overlay quotes. An
+  empty folder and a folder whose every WAD was unreadable are the same picture in the tree and call
+  for opposite responses; discarding the reasons made them indistinguishable.
+- **A restore never prompts.** `restoreLibrary` runs on the boot path, inside `Menu.init`, where a
+  permission dialog would be an ambush; it reads the handle and the memo and stops. The rows list
+  from the memo alone. `ensureLibraryAccess` is what actually asks, and **must be reached from a
+  user gesture** — a browser refuses a file-permission request outside one. That is why
+  `Menu.startWithSkill` calls it synchronously before its first `await`, the same
+  transient-activation trick `main.ts` uses for `audio.resume()` (docs/menu.md § Session lifecycle).
+- **Nothing is restored where there is no handle.** On the fallback path the memo would list files
+  the page has no way to read, which is worse than an empty library.
+- **A rescan builds fresh `WadSource` objects**, and the selection holds sources by identity — so
+  `Menu.setLibrarySources` re-resolves the picks by key rather than letting a file still sitting in
+  the folder silently untick itself.
+
+The walk is depth-capped at 8 and count-capped at 2000, so a player who points this at their home
+directory gets a truncated list rather than a hung menu. `.wad` files only, case-insensitively —
+the same filter `scanFolder` applies to `public/wads/`. On the `webkitdirectory` path all three caps
+are `acceptableWads`, exported so the overlay can say how many files it is about to read **by the
+rule the scan itself applies**: a count taken by a second, looser copy promises files the scan then
+drops.
+
+Files are described `SCAN_WIDTH` (12) at a time rather than one after another. Each costs a
+`getFile()` plus up to four short slice reads, all of them round trips the thread waits on rather
+than works through, and at the 2000-file cap that wait is the one the player watches. Results are
+written by index, not pushed, so a pool finishing out of order doesn't scramble the sorted list.
+
+## Describing a file without loading it
+
+Three places need to know what a WAD *is* — its type, its maps, its lump count, whether it carries
+a DEHACKED patch, and the level titles it names — without building a `Wad` and without the engine's
+tables: the build-time manifest, a file the player drops on the menu, and a scan of their own
+library folder. `wad/describe.ts: describeWad` is the one implementation, and it is one deliberately.
+
+The header must be read before the directory, but the MAPINFO and `DEHACKED` bodies the directory
+points at depend on nothing but it — so they are read in one `Promise.all`. Over a library scan that
+is the difference between one round trip per lump and one per file.
+The manifest and the upload path used to state the same rules separately, each carrying a comment
+saying the two must not drift, and they had already drifted: `lumpCount` was the header's `numLumps`
+served and `entries.length` uploaded.
+
+It reads through a **`ByteRanges`** — `{ size, read(offset, length) }` — rather than taking a buffer,
+because a library scan describes hundreds of files it will never load. Over a `File`
+(`bytesOfFile`) that resolves to `slice().arrayBuffer()`, so describing a 14 MB IWAD reads the
+12-byte header, the directory, and at most two lumps: a few hundred KB, not the file. `bytesOf`
+wraps bytes already in memory, which is what the manifest plugin and an upload hand it.
+
+What it does **not** do is hash. The content id is a pass over every byte (§ Content id), and the
+three callers want it at three different moments — see there.
+
+Failures are `throw`n, with `WadFile`'s own messages, because an upload has someone waiting on an
+answer: `Menu.addFiles` turns the message into the status line. The manifest plugin and the library
+scan catch it and leave the file out of the listing instead.
 
 ## The `public/wads/` manifest
 
@@ -396,6 +522,22 @@ than overriding, matching `levelTitleFor`'s own order. See § Level names.
 **The folder a file sits in decides how it's served, regardless of its own IWAD/PWAD signature** — a
 mod placed in `wads/iwad/` becomes a selectable game WAD (useful for a PWAD that carries its own
 maps); the plugin warns on mismatch but still serves it.
+
+**Both roots are scanned recursively**, depth-capped at 8, and `ManifestEntry.folder` is the path
+relative to `public/wads/` rather than one segment — `pwad`, or `pwad/megawads`. It is still exactly
+the URL the file is served from, so a subfolder costs no extra bookkeeping; `serverSource` encodes
+each segment separately so the separators survive. What it buys is that a collection can be filed on
+disk the way it is thought about, and the menu shows it as a tree (docs/menu.md § WAD Library) — the
+same shape the player's own library folder already had. Only the **first** segment decides
+iwad-vs-pwad, so everything under `pwad/` is an add-on however deeply it is nested. `servedFolder`
+is the one place that split is made — the menu groups by the two halves it hands back rather than
+decoding the path itself.
+
+**`ManifestEntry` is declared once**, in `src/wad/library.ts` — the module that casts the fetched
+JSON to it — and `plugins/wad-manifest.ts` imports that same interface rather than restating it. The
+two used to be separate declarations and had already drifted on `folder` (the producer emitting
+paths while the consumer's type still said `'iwad' | 'pwad'`), which nothing could catch: a shape a
+consumer casts raw JSON to is one the producer has to be checked against.
 
 **A WAD's own maps say which game it belongs to** (`library.ts: mapStyle`): `ExMy` → DOOM 1,
 `MAPxx` → DOOM II, and the two never mix within one game. A WAD with no maps of its own (textures,

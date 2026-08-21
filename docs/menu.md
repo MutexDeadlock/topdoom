@@ -1,6 +1,7 @@
 # Menu, settings, session lifecycle and dev mode
 
-`src/ui/menu/menu.ts`, `src/ui/menu/labels.ts`, `src/ui/menu/menu.html`, `src/ui/menu/menu.css` + `src/ui/menu/changelog.css`,
+`src/ui/menu/menu.ts`, `src/ui/menu/labels.ts`, `src/ui/menu/library.ts`, `src/ui/menu/menu.html`,
+`src/ui/menu/menu.css` + `src/ui/menu/changelog.css` + `src/ui/menu/library.css`,
 `src/main.ts`, `src/constants.ts: DEVMODE`, `src/ui/devmode/`, `src/util/profiler.ts`
 
 The menu is plain DOM: every element is static markup in `src/ui/menu/menu.html` (pulled into the
@@ -65,12 +66,258 @@ file. Two things about it are load-bearing:
   resolve in dev and 404 in a build. A failed load is reported in the panel and leaves the popup
   unmarked as loaded, so reopening retries.
 - **`Esc` is handed off explicitly**, not raced. `main.ts`'s `Esc` listener calls
-  `menu.closeChangelog()` first, which reports whether it had anything to close — so one `Esc`
-  dismisses the popup and leaves the menu (and a paused level) alone. A second window listener in
-  `Menu` would have made that depend on registration order.
+  `menu.closeTopOverlay()` first, which dismisses whichever overlay is up and reports whether there
+  was one — so one `Esc` dismisses the popup and leaves the menu (and a paused level) alone. A
+  second window listener in `Menu` would have made that depend on registration order.
 
 `#changelog` is a child of `#menu` so it disappears with it; `close()` also closes it, or it would
 still be up the next time the menu opens.
+
+## WAD Library
+
+The `WAD Library…` button under the add-on list opens `#wadlibrary`, a two-pane file manager over
+**everything the menu can offer**: the WADs the server ships, a folder on the player's own disk, and
+anything dropped on the menu. It replaced two buttons — `Load IWAD from disk…` and
+`Add PWAD from disk…` — which between them could only ever add one file at a time and forgot it on
+reload.
+
+Structurally it is `#changelog`'s twin, and deliberately so (§ Changelog): a child of `#menu` so
+closing the menu can never leave it up, at `z-index: 5` **local to `#menu`'s own stacking context**
+rather than a rung of `base.css`'s global ladder, dismissed by its close button, by a backdrop click
+guarded with `e.target === root`, or by `Esc`. `Close` sits beside `Done` in the footer rather than
+in the header: both end the same visit, so they belong to the same corner. `Esc` is **handed off
+explicitly** from `main.ts`, which asks
+`menu.closeTopOverlay()` before closing the menu, so one `Esc` closes one thing and the answer
+doesn't depend on listener registration order. The overlay order lives in `Menu`, not the caller.
+
+What is its own:
+
+- **A folder row lists its own WADs and counts everything beneath it** — `FolderNode.sources` and
+  `FolderNode.total`, deliberately two fields answering two questions. `sources` is what the file
+  pane shows, so a folder behaves like a folder; `total` is the row's count *and* what decides
+  whether the row is drawn, which is what keeps a pure container folder (one holding nothing but
+  subfolders) on screen instead of orphaning the rows nested under it. `topdoom` and the library
+  root are exactly that. That is also why `selectedFolder` cannot *start* on a container row — it
+  would open on an empty pane. `buildFolderTree` is pure and separate from `LibraryUi` so all of
+  this is testable without a DOM.
+- **A folder holding a picked WAD is highlighted**, and so is every folder above it, so a folded
+  parent still says something inside it is in the set. The mark walks up `parent` from each row
+  whose own `sources` contain a pick — never by id prefix, for the `library:mega` /
+  `library:megawads` reason below — and lands on `.name` rather than the row, so it survives
+  `.active`'s own colour.
+- **The sidebar is three boxes, not one scroller**, and the panel's height is *definite*
+  (`height: min(620px, 100%)`) rather than content-driven — so the overlay is the same size whether
+  a library holds three WADs or three hundred. What the server ships is a fixed few rows and the
+  folder buttons must stay put, so only the middle box (`#wadlibrary-tree`, the player's own
+  folders — the one thing that can grow without bound) takes `overflow-y` and the leftover height.
+  `Dropped on the menu` rides with the server's rows: like them it is a place the player never
+  chose, and never one to scroll past their own folders to reach. **Only the two lists are framed** —
+  `#wadlibrary-controls` gets no inset panel, because those buttons act *on* the library rather than
+  being part of it and a third framed box made the sidebar read as three lists.
+- **`Change folder…` and `Forget folder` share a row**, being two halves of one decision about the
+  same folder; `Add single WADs…` sits full-width under them. Both CSS rules name `.ghost`
+  explicitly: `#menu button.ghost` forces `width: 100%` for a button stacked under a section, and
+  only an equal-or-higher specificity undoes it — a bare `#wadlibrary-controls button` loses that
+  cascade and the pair stacks.
+- **Only the *warning* about persistence is written out.** Firefox and Safari get "this browser
+  can't remember a folder — you'll need to pick it again after a reload"; Chromium gets no note at
+  all, because remembering the folder is what the player already expects, and saying so is one more
+  line to read on every visit.
+- **Folders collapse**, and the affordance is the folder glyph itself: `📂︎` open, `📁︎` closed, each
+  with the text-presentation selector `U+FE0E` — the same request `savegames.ts` makes of its
+  wastebasket, so it renders in the menu's own colour rather than as a colour emoji. One glyph
+  carries both jobs a tree needs ("this is a folder", "it is open") where a separate disclosure
+  triangle would have cost a second column in a sidebar this narrow. A leaf keeps the same glyph,
+  dimmed and not clickable: it is still a folder, it just has nothing to open.
+- The glyph is a `<span>` inside the row button, not a nested button —
+  that would be invalid markup and would cost the row its single focusable control. Its click is
+  stopped from bubbling, so the glyph only ever folds and the label only ever selects. Collapsing a
+  folder the selection sits *under* moves the selection up to it, which costs nothing since a folder
+  already lists everything beneath it. **Both the fold test and the walk up use `parent`, never an id
+  prefix**: `library:mega` is a string prefix of `library:megawads` without being its parent. Every
+  such walk goes through `ancestors`, over a `TreeIndex` built **once per render** and threaded down.
+  Each walk used to build its own `byId` — one per row, inside a per-row `filter` — which made a
+  single render quadratic in the row count, on every keystroke in the filter box. `rootedSubtree`
+  is one pass for the same reason: it files each source under its own path and counts it against
+  every folder above it, rather than scanning `sources` once per folder.
+- **The three top-level rows start open, everything below them folded.** `LibraryUi` tracks
+  *expanded* ids rather than collapsed ones precisely so the default is a property of that one set:
+  a collapsed-id set could not express it, since a folder the player has never touched is absent
+  from it and would read as open. The set is seeded with `SERVER_ROOT`/`LIBRARY_ROOT`/`UPLOADS` —
+  folding those too would open the overlay on two or three bare headings with nothing to act on.
+  `selectedFolder` starts on a **top-level** row for the same reason: any deeper default would be a
+  row nobody can see. Which one: the served **add-ons**. A game WAD is already picked by the time
+  anyone opens this — the New Game tab's select carries it — so add-ons are what the overlay is
+  being opened to browse.
+- **Folders sort A-Z within each level** — case-insensitively, with digit runs read as numbers so
+  `Map2` precedes `Map10` — emitted depth-first so a parent still leads its children. Deliberately
+  *not* one flat sort of the full paths: that would have to get both the alphabetical order and the
+  parent-first grouping out of a single comparison, and whether `a/b` lands under `a` or after `aa`
+  then depends on how the collation ranks `/` against letters.
+- **Every ancestor folder gets a row, even one holding no WAD directly.** A file's `folder` names
+  only the folder it sits in, so a WAD at `doom/mega/scythe/` names no intermediate at all — without
+  synthesizing `doom` and `doom/mega`, the deepest row is indented under a parent that isn't there
+  and has nothing to fold into. A plain sort still puts every parent first: a path is a prefix of its
+  own descendants, and `/` sorts below the characters that could extend a sibling's name.
+- **Both of the panel's axes are fixed**: `width: 60%` of the viewport and `height: 85%` of what is
+  left inside `#wadlibrary`'s own padding, so the overlay is one size whatever the library holds.
+  `width`/`height`, never `max-*` — those leave the panel sized by its content and only cap it. The sidebar takes a *share* of that (`flex: 0 0 30%`)
+  rather than a pixel basis, so the two panes keep their proportion at any window size, plus
+  `min-width: 0` — without it a long folder name's automatic minimum size overrides the basis
+  outright, and `.name` should ellipse instead.
+- **The tree is the left pane, the files the right**, split into two panels whose **headings name
+  the panel and count what is in it** — `topdoom built-in` and `Your Library`. Those headings
+  replaced the container rows that used to sit above each list: a row that owns no files of its own
+  is a poor click target, and the panel it is in already said what it was. Each heading lives
+  *outside* its own scroller, or it would scroll away from the rows it names.
+- **Both panels are folder trees of the same shape**, built by one `rootedSubtree`. `Game WADs` and
+  `Add-ons` are rooted at `iwad/` and `pwad/` and show whatever subfolders those hold, now that the
+  manifest scans them recursively (docs/wad.md § The `public/wads/` manifest); the player's library
+  is rooted at the folder they nominated. Only a served file's **first** path segment decides which
+  of the two it belongs to. Anything dropped on the menu gets a `Dropped on the menu` group, so
+  nothing the menu knows about is invisible here.
+- **A folder row's number is the WADs in *that* folder**, not everything beneath it. `total` still
+  counts the subtree, but only to decide whether the row is drawn at all — see the next point.
+- **A folder with no WAD beneath it is not a row at all** — an empty `Game WADs` is nothing the
+  player can act on, and a tree of folders that all open onto nothing is worse than a short one.
+  **The library root is the one exception, and only once a folder is set**: an empty root then
+  reports something — that folder held no WADs — while with no folder behind it, it is a row that
+  says "nothing here" next to a heading that says the same and a `Choose folder…` button that is the
+  actual invitation. `buildFolderTree` takes `libraryPicked` for exactly this one decision.
+- **Ticking applies immediately** — there is no commit step, and neither `Close` nor `Apply` does
+  anything a tick has not already done; they are the same call, offered twice because a player who
+  has just picked something looks for the affirmative one. So the add-ons list underneath is already correct when the overlay
+  goes away, removing a pick there still works, and `Menu.render` calls `LibraryUi.refresh` so the
+  two lists can never disagree about what is picked or in what order.
+- **A game WAD is a radio, an add-on a checkbox.** An IWAD-typed row is a choice of one and says so
+  with the control rather than with a rule the player has to discover; a PWAD-typed row stacks. Both
+  go through `Menu.adoptIwad`/`Menu.togglePwad`, the same bodies the select and `#pwad-list` use, so
+  picking a game WAD does the same thing to the add-ons wherever it is done.
+- **Incompatible add-ons render disabled rather than hidden**, the same `mapStyle` rule and the same
+  reasoning as `renderPwads` (§ Picking a WAD set), with the mismatched game named in the row's
+  badge.
+- **Picking a library file gives it its content id** (`Menu.identify` → `ensureWadId` +
+  `rememberLibraryId`), which the scan deliberately skipped — docs/wad.md § Content id. It is
+  remembered on disk, so a file is hashed once ever rather than once per session.
+- **The detail column says what a file *is*, never where it sits.** `describeSource` used to append
+  a library file's subfolder; the row is already under that folder in the tree, so repeating it only
+  crowded the column. An upload's `from disk` stays, since it belongs to no folder at all.
+- **A file row is five columns** — name, size, contents, DEHACKED, badge — with the name taking the
+  slack and the rest fixed-width and right-aligned, so sizes line up under sizes and map counts
+  under map counts rather than each trailing whatever length its file name happened to be.
+  `labels.ts: sourceColumns` returns the three detail values separately and `sourceColumnSpans`
+  renders them, and **both lists use both** — the add-on rows on the New Game tab carry the same
+  columns, just narrower, since that panel is 620px against the overlay's 60% of the viewport. The
+  markup is shared too, not just the strings: the `meta size`/`meta content`/`meta deh` class names
+  the two stylesheets target have one definition, and `#wadlibrary` nests inside `#menu` so its rows
+  inherit `#menu .row` outright — `library.css` carries only the deltas. So the two cannot disagree about what a file
+  *is*, only about how much space there is to say it. (`describeSource` joins the same values and is
+  now only the game-WAD select's one-line label.) The badge **leads** the fixed-width block, ahead of
+  the size: what it carries is the reason a row can't be picked, which has to be read before the
+  file's stats rather than after them. It is rendered **even when it says nothing**, or every column
+  behind it would land somewhere different on each row, which is the whole thing they exist for.
+- **The reason a row can't be picked is the one thing on it that stays at full strength.** A
+  disabled row is dimmed by *colour*, never by `opacity` — a child cannot undo a parent's opacity,
+  and this is the child that must not be dimmed — and the badge carries the accent while the name
+  and the detail columns drop back. `#wadlibrary .row.disabled` therefore sets `opacity: 1`
+  explicitly: `#menu .row.disabled` matches at the same specificity, so merely leaving the
+  declaration out would let that one apply unopposed.
+- **No merge-order number on a library row.** The order is a property of the set being assembled,
+  which the New Game tab's add-on list owns and shows; numbering a browser row by it would rank
+  files against something the browser has no say over.
+- **The filter box in the header matches folder names as well as file names** (`filterTree`, pure and
+  tested without a DOM). A row survives if its own name matches, if a folder above it matched, or if
+  it holds a matching WAD at or below it — so searching for a file still shows the folders it lives
+  in. A folder matched **by name** lists *entire* rather than having its contents filtered a second
+  time, and hands that down to everything nested inside it: asking for a folder by name is asking
+  for what's in it. Three things follow that are easy to miss:
+  - **A filter overrides the fold state**, since a row it kept but a collapsed parent hides is a
+    match the player is told about and cannot see. It reads `expanded` rather than writing it, so
+    clearing the filter restores the folds intact — and the folder icons read open while it is up,
+    or they would claim to be hiding children that are visibly right there.
+  - **Typing re-aims the file pane.** The selected row is often still on screen as a *route* to a
+    match rather than as a match itself — the parent of the folder that hit — and leaving it
+    selected answers a search with an empty pane. Clearing the filter leaves the selection alone,
+    since by then it is wherever the player last looked.
+  - **A filter matching nothing empties the tree**, so the selected row can name something no longer
+    on screen; the pane is looked up among the rows the filter kept and says so when there are none.
+    A blank pane under a blank tree is the overlay looking broken rather than looking empty.
+  - **The game WADs are exempt from all of it** and stay listed in full whatever is typed. Finding
+    an add-on and seeing that it wants the other game is a normal outcome of a search, and having to
+    clear the filter to go and switch game WAD — then type the search again — turns one decision
+    into three. `FilterMatch.hits` exists to keep that exemption from swallowing the search: it is
+    the rows the filter actually *found*, and it is what the file pane is aimed at, so a search
+    still lands on its match rather than on the row that was never filtered.
+- **`Choose folder…` carries the primary weight until it has been used.** With no folder set it is
+  the only control in that panel that does anything and the panel above it is empty; once there is a
+  folder to change it drops back to a ghost like its neighbours.
+- **Everything that acts on the folder itself is one row** under the tree — Change, Rescan, Forget —
+  because all three are decisions about the same object; only `Add single WADs…`, which is about
+  loose files sitting in no folder at all, stands apart below it. `Rescan` re-walks the folder,
+  picking up files added since, and the memo makes unchanged files cost nothing.
+- **Forget is a press-and-hold** (`hold.ts: confirmOnHold`, § Save and Load tabs), and has no click
+  handler at all — the hold is the only way in. It is the one destructive button in that row and it
+  sits between two harmless ones, so a stray click has to cost nothing.
+- **Every path through a folder pick reports something**, because silence is the one answer the
+  player can't act on — a pick that reported nothing was reported as a broken button, twice. That
+  covers a folder yielding no files or none with a `.wad` in it, a picker that threw (the message is
+  quoted, and the plain input is offered instead), a dismissed dialog, a fallback taken because
+  `pickerBlock()` said this window or this browser has no picker, and a scan whose every file was
+  unreadable (`scanResult`, which quotes the first skipped file's own reason rather than only
+  counting — docs/wad.md § The player's own library).
+- **"A dialog closed with nothing in it" is two different events, and neither is necessarily a
+  cancel.** A directory `<input>` needs a second, browser-drawn confirmation after the folder is
+  chosen, and a window that suppresses it turns a *successful* pick into the input's `cancel` event
+  — which is how a player who did choose a folder gets told nobody chose one. `showDirectoryPicker`
+  has the same ambiguity: `AbortError` covers both a dismissal and the browser refusing the chosen
+  folder outright (Chromium blocks system and home directories). Neither can be told apart from in
+  here, so each line names both readings and offers the route that needs no confirmation —
+  **"Add single WADs…"**, which is why `#file-input` is `multiple`.
+- **The dialog never opening has no event of its own**, and that is exactly what an embedding which
+  blocks file choosers looks like from in here. `chooseWithoutPicker` starts a `PICKER_TIMEOUT`
+  watchdog (30s — it is racing a human browsing their disk) that says what it actually knows: no
+  answer yet, and if no dialog opened, this window is blocking it. A `change` or `cancel` arriving
+  later clears it and overwrites the line.
+- **A multi-file add reports its failures with its successes**, not before them: `addFiles` used to
+  `setStatus` each bad file as it hit it, and the "Added …" line at the end overwrote every one of
+  them, so a pick where half the files were unreadable claimed unqualified success.
+- **The status line runs to two lines and no further**, in the overlay and on the menu alike. What
+  lands there is often a sentence naming a failure *and* what to do about it, and one clipped line
+  cut off the half that said what to do; unbounded, it would grow the footer inside a fixed-height
+  panel and eat the file list. The messages are written to that budget — measured, not guessed: the
+  line is ~465px at 13px monospace, so roughly 115 characters — and both writers mirror the full
+  text into `title`, since a message long enough to be clipped is one that was explaining something.
+- **While the overlay is up, its footer is the only status line there is** (`#wadlibrary-status`,
+  written by `LibraryUi.showStatus`), and `Menu.setStatus` **routes into it** rather than writing
+  `#menu-status`. The overlay covers `#menu` completely, so this runs both ways: a message raised
+  behind it goes to a line nobody can see — that includes the menu's own, since the overlay's
+  `Add single WADs…` runs through `Menu.addFiles` — and a message that outlives the overlay turns up
+  on the New Game tab out of the context that explains it, which is how the press-and-hold coaching
+  ended up telling that tab to hold a button it doesn't have. One surface, whichever is on top.
+
+**The Add-ons list holds the picks, not the offer.** `renderPwads` lists `selectedPwads` alone, in
+merge order — browsing is the overlay's job now, so the list on the tab is short and is no longer a
+second picker that has to agree with the first about what is compatible (nothing incompatible can be
+in it: `pruneIncompatiblePwads` already ran). Each row is checkbox · name · size · contents ·
+DEHACKED · `#N` · `×` — the same detail columns the overlay lists, narrower — and the two controls
+mean **different things**:
+
+- **The checkbox disables, it does not remove.** An unticked add-on keeps its row and its place in
+  the order, so a mod can be switched off for one run and back on without being hunted down in the
+  library again. The state is `Menu.disabledPwads`, a set of *off* keys — off rather than on, so a
+  newly picked add-on is enabled by default, which is what picking it meant. It is persisted beside
+  the picks (`StoredSelection.disabled`, optional: absent means every pick is on).
+- **`×` drops the pick entirely**, and clears any off-flag with it so re-picking starts on. The file
+  itself stays on offer in the overlay where it was chosen. The row is a `<label>`, so that handler
+  `preventDefault()`s and `stopPropagation()`s or the click is forwarded to a control.
+
+`Menu.activePwads()` — picked *and* ticked — is what everything resolving a WAD set reads: the level
+list, the start, and the library-permission check. `selectedPwads` alone is only ever the *display*
+list, which is what keeps an unticked row from leaking into a loaded game. The `#N` badge numbers
+against the active list too, so the order reads 1..n with no gaps; a disabled row shows `off`.
+
+Drag-and-drop onto the menu is unchanged and still the fastest way in for one file;
+`Add single WADs…` in the overlay is the same thing through `#file-input` for anyone who can't drag.
 
 ## Save and Load tabs
 
@@ -133,7 +380,9 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
 - An **unsupported version** renders dimmed via its own `unsupported` class rather than `.disabled`
   (a child can't undo a parent's opacity, and its download/delete buttons must stay live); only
   Load is refused.
-- **Delete and Overwrite confirm by being held** (`confirmOnHold`, `HOLD_MS`): a bar sweeps the
+- **Delete and Overwrite confirm by being held** (`hold.ts: confirmOnHold`, `HOLD_MS` — shared with
+  the WAD Library's Forget, and styled by the class alone in `hold.css` so any `#menu` button can
+  wear it): a bar sweeps the
   button and the action fires when it lands, letting go early cancels and says so in the status line.
   An inline confirm, so the changelog stays the menu's only popup — and one gesture rather than the
   two-click arm it replaced, which read as a broken button. The sweep is a CSS transition whose
@@ -180,23 +429,31 @@ The lists are fed by `/wads/index.json` (docs/wad.md § The `public/wads/` manif
 loaded from disk. Semantics worth knowing before touching `menu.ts`:
 
 - **Game WAD** (`renderIwads`) only offers sources with `type === 'IWAD'`. A PWAD mapset can still be
-  *played* as the game WAD (uploaded through the IWAD picker, or `?wad=`), but it doesn't appear in
-  this list to pick from directly.
+  *played* as the game WAD (dropped on the menu, or `?wad=`), but it doesn't appear in this list to
+  pick from directly.
 - **Add-ons** (`renderPwads`) excludes anything of `type === 'IWAD'` and whichever source is
-  currently the game WAD (even a PWAD-typed one uploaded through the IWAD picker) — otherwise it
+  currently the game WAD (even a PWAD-typed one adopted as the game WAD) — otherwise it
   would show up twice. Order matters and is the order they were ticked: it's the merge order, so the
   rows carry a `#N` badge. Ticking a row re-renders the whole list, which empties the scroller and
   would clamp it back to the top, so `renderPwads` saves and restores `scrollTop` — with enough
   add-ons installed the list scrolls, and picking one out of the bottom of it must not scroll away.
-- Files dropped on the window or picked from disk are parsed in the browser and behave identically to
-  server-side ones. **The picker decides, not the signature**: a file uploaded via "game WAD" becomes
-  the game WAD regardless of its declared type, one uploaded via "add-on" is added as an add-on.
-- **Add-ons are filtered by game.** An add-on whose own map style conflicts with the selected game
-  WAD's (`library.ts: mapStyle`, see docs/wad.md § The `public/wads/` manifest for what style means)
-  is rendered **disabled** rather than hidden — a mapset that's simply for the other game is still
+- **Three kinds of source sit in these lists side by side and behave identically** — the server's
+  own files, the player's library folder (§ WAD Library, docs/wad.md § The player's own library) and
+  files dropped on the window, all parsed in the browser by the same `describeWad`
+  (docs/wad.md § Describing a file without loading it). `WadSource.origin` is the only thing that
+  separates them, and only three things read it: `describeSource`'s trailing note, `saveSelection`'s
+  refusal to persist an upload, and whether a row gets a `×`.
+- A dropped file that declares itself an IWAD becomes the game WAD; anything else is added as an
+  add-on. **The declared type decides here** — there is no longer a per-target picker to disagree
+  with it. `addFiles` applies the pick through `takeAsIwad`/`takeAsPwad`, the same render-free
+  bodies the single-pick handlers use, and draws once for the whole drop.
+- **Add-ons are filtered by game.** An add-on that doesn't fit the selected game WAD
+  (`library.ts: fitsGameWad`, over `mapStyle` — see docs/wad.md § The `public/wads/` manifest for
+  what style means) is rendered **disabled** rather than hidden — a mapset that's simply for the other game is still
   worth seeing, just not pickable. Switching game WAD calls `pruneIncompatiblePwads` to drop any
   already-ticked add-on that no longer matches, so the merged map list (`mergedMaps`) never silently
-  mixes an E1M1 with a MAP01 mapset.
+  mixes an E1M1 with a MAP01 mapset. Both the greying and the prune go through `fitsGameWad` — one
+  statement of the rule, or the overlay offers a row the prune then drops.
 - The **Level** list groups DOOM 1's `ExMy` maps by episode, and each row reads
   `<lump>  —  <title>  —  <provider>`, dropping either of the last two when it doesn't apply: the
   title only when the WAD set knows one (docs/wad.md § Level names — resolved off the manifest
@@ -335,6 +592,10 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.bestTimes` | `game/besttimes.ts` | docs/hud.md § Best times |
 | `topdoom.save.<id>` | `game/savegames.ts` | docs/savegames.md § Storage |
 
+The player's WAD folder is the one persisted thing here that is **not** a `topdoom.*` key: a
+directory handle can't go through `JSON.stringify`, so it lives in its own IndexedDB database —
+docs/wad.md § The player's own library.
+
 `topdoom.save.<id>` (one key per save) is the one departure from per-value structural validation:
 it carries an explicit `version` field, refused on mismatch rather than half-read. A settings
 scalar degrades safely to its default; a save's schema genuinely evolves, and half-reading an old
@@ -353,10 +614,14 @@ add-on toggle, `addFiles`, the level select's `change`) and **deliberately not f
 `init` also runs while restoring: hooking it there wrote the level select back before `selectLevel`
 had applied the stored map, so the stored level decayed to the set's first map after one reload.
 
-It **only ever writes server-side sources.** An upload's bytes are gone after a reload, so storing
-its key would restore a selection that can never load; leaving the last restorable one in place is
-better. As a side-effect, a failed manifest (no sources at all, `selectedIwad` null) can't wipe a
-good stored value either.
+It **never writes an upload.** Those bytes are gone after a reload, so storing the key would restore
+a selection that can never load; leaving the last restorable one in place is better. As a
+side-effect, a failed manifest (no sources at all, `selectedIwad` null) can't wipe a good stored
+value either. A **library** file is stored like a server one — its key is `lib:<relative/path.wad>`,
+which is stable across visits precisely because the folder is remembered
+(docs/wad.md § The player's own library), so a picked mapset survives a reload. Where the browser
+can't remember the folder, `init` restores nothing from it and the stored keys simply don't resolve,
+which is the same silent drop a WAD that has left `public/wads/` gets.
 
 ## URL parameters
 

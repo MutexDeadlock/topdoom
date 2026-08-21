@@ -1,123 +1,102 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Plugin } from 'vite';
-import { MAPINFO_LUMPS, parseMapInfoNames, preferredMapInfoLump } from '../src/wad/campaign/mapinfo.ts';
-import { mergeLevelTitles, titleLookupFor } from '../src/wad/campaign/names.ts';
-import { parseDehacked } from '../src/game/dehacked.ts';
+import { bytesOf, describeWad } from '../src/wad/describe.ts';
 import { hashBytes } from '../src/wad/checksum.ts';
+import type { ManifestEntry } from '../src/wad/library.ts';
 
 export const MANIFEST_PATH = 'wads/index.json';
 
-/** Which subfolder a WAD was found in — also the URL segment it is served under. */
-export type WadFolder = 'iwad' | 'pwad';
-
-export interface WadManifestEntry {
-  file: string;
-  folder: WadFolder;
-  size: number;
-  type: 'IWAD' | 'PWAD';
-  /** Map markers the file defines, so the menu can list levels without downloading it. */
-  maps: string[];
-  /** Whether the file carries a `DEHACKED` lump. Presence only — what a patch actually changes
-      needs the bytes, which the menu hasn't downloaded. docs/dehacked.md § The coverage report. */
-  dehacked?: boolean;
-  /** Total lump count, shown for map-less add-ons so they don't look empty. */
-  lumpCount: number;
-  /**
-   * `hashBytes` content id, so the menu knows a file's identity without downloading it — what a
-   * savegame's WAD set is matched against (docs/savegames.md § WAD-set identity). Computed here
-   * because these bytes are already in memory; the alternative is fetching every WAD in the
-   * library to draw the save list.
-   */
-  id: string;
-  /**
-   * Each map's title, so the menu can name levels without downloading the file — the same reason
-   * `maps` is here. What this file's own MAPINFO defines, and where it defines nothing, what its
-   * `DEHACKED` patch names. Absent when the file has neither, which is most of them.
-   */
-  levelNames?: Record<string, string>;
-}
+/** The two folders that are scanned, and what a file found under each is offered as. */
+export type WadRoot = 'iwad' | 'pwad';
 
 /**
- * Reads the header and directory of a WAD — a few kilobytes even for a 14 MB IWAD — plus its
- * MAPINFO lump if it has one, to find out what it is and which levels it holds.
+ * Where a WAD sits under `public/wads/`, relative to it and `/`-separated — also the URL path it is
+ * served under. A root on its own (`pwad`), or a subfolder below one (`pwad/megawads`): both roots
+ * are scanned recursively, so a collection can be filed the same way it would be on disk and the
+ * menu shows it as a tree (docs/menu.md § WAD Library).
  */
-function describeWad(path: string, folder: WadFolder): WadManifestEntry | null {
+export type WadFolder = string;
+
+/**
+ * What this plugin writes into `index.json`. The shape itself is the menu's — `ManifestEntry` in
+ * `src/wad/library.ts`, the module that casts the fetched JSON to it — so producer and consumer
+ * cannot drift. `id` is always written here even though the consumer tolerates its absence, which
+ * is only there for an `index.json` cached from before the field existed.
+ */
+export type WadManifestEntry = ManifestEntry & { id: string };
+
+/**
+ * One file's manifest entry. The description itself is `wad/describe.ts`'s, shared with the two
+ * in-browser callers so the same file cannot list differently served, uploaded, or found in the
+ * player's own library; the id is added here because these bytes are already in memory.
+ */
+export async function manifestEntry(path: string, folder: WadFolder): Promise<WadManifestEntry | null> {
   const buf = readFileSync(path);
-  if (buf.length < 12) return null;
-
-  const ident = buf.toString('ascii', 0, 4);
-  if (ident !== 'IWAD' && ident !== 'PWAD') return null;
-
-  const numLumps = buf.readInt32LE(4);
-  const dirOffset = buf.readInt32LE(8);
-  if (dirOffset < 0 || numLumps < 0 || dirOffset + numLumps * 16 > buf.length) return null;
-
-  const maps: string[] = [];
-  let dehLump: { offset: number; size: number } | undefined;
-  const mapInfoLumps = new Map<string, { offset: number; size: number }>();
-  for (let i = 0; i < numLumps; i++) {
-    const at = dirOffset + i * 16;
-    const name = buf.toString('ascii', at + 8, at + 16).replace(/\0.*$/, '').toUpperCase();
-    if (/^(E\dM\d|MAP\d\d)$/.test(name)) maps.push(name);
-    // Last one wins within a file, matching the merged directory.
-    else if (name === 'DEHACKED') dehLump = { offset: buf.readInt32LE(at), size: buf.readInt32LE(at + 4) };
-    else if (MAPINFO_LUMPS.includes(name)) {
-      mapInfoLumps.set(name, { offset: buf.readInt32LE(at), size: buf.readInt32LE(at + 4) });
-    }
-  }
-
-  // Exactly one lump per file, chosen by `preferredMapInfoLump` — the menu's titles and the
-  // in-game ones come from the same rule, or a WAD shipping two flavours gets two different names.
-  const wanted = preferredMapInfoLump([...mapInfoLumps.keys()]);
-  const at = wanted ? mapInfoLumps.get(wanted) : undefined;
-  const mapInfoTitles =
-    at && at.offset >= 0 && at.offset + at.size <= buf.length
-      ? parseMapInfoNames(buf.toString('latin1', at.offset, at.offset + at.size))
-      : [];
-
   const file = path.split('/').pop()!;
-  const patch =
-    dehLump && dehLump.offset >= 0 && dehLump.offset + dehLump.size <= buf.length
-      ? parseDehacked(buf.toString('latin1', dehLump.offset, dehLump.offset + dehLump.size), titleLookupFor())
-      : undefined;
-  // `mergeLevelTitles` owns the MAPINFO-then-DEHACKED order, shared with `library.ts`'s
-  // `uploadedLevelInfo` so the same file cannot list differently uploaded than served.
-  const levelNames = mergeLevelTitles(file, mapInfoTitles, patch?.strings);
+
+  let described;
+  try {
+    described = await describeWad(file, bytesOf(buf));
+  } catch {
+    // Not a WAD, or a malformed one: it simply doesn't show up in the menu.
+    return null;
+  }
 
   return {
     file,
     folder,
     size: buf.length,
-    type: ident,
-    maps,
-    lumpCount: numLumps,
+    type: described.type,
+    maps: described.maps,
+    lumpCount: described.lumpCount,
     // Over the whole file, exactly as `wadId` does at runtime — the two must
     // agree or `verifyWadSet` would refuse every load.
     id: hashBytes(buf),
-    ...(dehLump ? { dehacked: true } : {}),
-    ...(Object.keys(levelNames).length > 0 ? { levelNames } : {}),
+    ...(described.dehacked ? { dehacked: true } : {}),
+    ...(Object.keys(described.levelNames).length > 0 ? { levelNames: described.levelNames } : {}),
   };
 }
 
 /**
- * `describeWad` memoized on the file's mtime and size, which `scanFolder`'s
+ * `manifestEntry` memoized on the file's mtime and size, which `scanFolder`'s
  * `statSync` already has. The dev middleware re-scans on *every* request for
- * the manifest, and `describeWad` reads and hashes each file whole — ~57 MB of
+ * the manifest, and each entry reads and hashes its file whole — ~57 MB of
  * WADs here, added to every page reload on the path that gates `Menu.init`.
  * Editing a WAD still re-describes it; reloading the page no longer does.
+ *
+ * The *promise* is memoized, not the entry: two overlapping requests for the manifest would
+ * otherwise both miss and describe every file twice.
  */
-const described = new Map<string, { mtimeMs: number; size: number; entry: WadManifestEntry | null }>();
+const described = new Map<string, { mtimeMs: number; size: number; entry: Promise<WadManifestEntry | null> }>();
 
-function describeCached(path: string, folder: WadFolder, mtimeMs: number, size: number): WadManifestEntry | null {
+function describeCached(
+  path: string,
+  folder: WadFolder,
+  mtimeMs: number,
+  size: number,
+): Promise<WadManifestEntry | null> {
   const hit = described.get(path);
   if (hit && hit.mtimeMs === mtimeMs && hit.size === size) return hit.entry;
-  const entry = describeWad(path, folder);
+  const entry = manifestEntry(path, folder);
   described.set(path, { mtimeMs, size, entry });
   return entry;
 }
 
-function scanFolder(dir: string, folder: WadFolder): WadManifestEntry[] {
+/**
+ * Depth cap on the recursion, so a stray symlink or a deeply nested pack can't turn a page load into
+ * an unbounded walk. Nobody files a WAD collection eight folders deep.
+ */
+const MAX_DEPTH = 8;
+
+/**
+ * One folder and everything under it. `folder` is the path relative to `public/wads/`, which is both
+ * how the menu groups the file and the URL it is served from — so a subfolder needs no extra
+ * bookkeeping, it just carries a longer path.
+ */
+async function scanFolder(dir: string, folder: WadFolder, root: WadRoot, depth = 0): Promise<WadManifestEntry[]> {
+  if (depth >= MAX_DEPTH) return [];
+
   let names: string[];
   try {
     names = readdirSync(dir);
@@ -127,19 +106,22 @@ function scanFolder(dir: string, folder: WadFolder): WadManifestEntry[] {
 
   const out: WadManifestEntry[] = [];
   for (const name of names.sort()) {
-    if (!/\.wad$/i.test(name)) continue;
     const path = join(dir, name);
     try {
       const stat = statSync(path);
-      if (!stat.isFile()) continue;
-      const entry = describeCached(path, folder, stat.mtimeMs, stat.size);
+      if (stat.isDirectory()) {
+        out.push(...(await scanFolder(path, `${folder}/${name}`, root, depth + 1)));
+        continue;
+      }
+      if (!stat.isFile() || !/\.wad$/i.test(name)) continue;
+      const entry = await describeCached(path, folder, stat.mtimeMs, stat.size);
       if (!entry) continue;
-      // The folder is what decides how the file is used; a signature mismatch
+      // The root is what decides how the file is used; a signature mismatch
       // (e.g. a PWAD dropped into wads/iwad/) still gets listed, just flagged.
-      if ((folder === 'iwad') !== (entry.type === 'IWAD')) {
+      if ((root === 'iwad') !== (entry.type === 'IWAD')) {
         console.warn(
-          `[topdoom] ${path}: ${entry.type} signature but placed in wads/${folder}/ — ` +
-            `serving it as ${folder} anyway`,
+          `[topdoom] ${path}: ${entry.type} signature but placed in wads/${root}/ — ` +
+            `serving it as ${root} anyway`,
         );
       }
       out.push(entry);
@@ -150,8 +132,11 @@ function scanFolder(dir: string, folder: WadFolder): WadManifestEntry[] {
   return out;
 }
 
-function scan(root: string): WadManifestEntry[] {
-  return [...scanFolder(join(root, 'iwad'), 'iwad'), ...scanFolder(join(root, 'pwad'), 'pwad')];
+async function scan(root: string): Promise<WadManifestEntry[]> {
+  return [
+    ...(await scanFolder(join(root, 'iwad'), 'iwad', 'iwad')),
+    ...(await scanFolder(join(root, 'pwad'), 'pwad', 'pwad')),
+  ];
 }
 
 /**
@@ -167,14 +152,16 @@ export function wadManifest(root = 'public/wads'): Plugin {
       // Registered here, so it runs before Vite's static handler would 404.
       server.middlewares.use((req, res, next) => {
         if (req.url?.split('?')[0] !== '/' + MANIFEST_PATH) return next();
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Cache-Control', 'no-store');
-        res.end(JSON.stringify(scan(root)));
+        void scan(root).then((entries) => {
+          res.setHeader('Content-Type', 'application/json');
+          res.setHeader('Cache-Control', 'no-store');
+          res.end(JSON.stringify(entries));
+        }, next);
       });
     },
 
-    generateBundle() {
-      this.emitFile({ type: 'asset', fileName: MANIFEST_PATH, source: JSON.stringify(scan(root)) });
+    async generateBundle() {
+      this.emitFile({ type: 'asset', fileName: MANIFEST_PATH, source: JSON.stringify(await scan(root)) });
     },
   };
 }

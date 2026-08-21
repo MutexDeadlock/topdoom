@@ -319,15 +319,22 @@ function dehTitleKey(key: string, mission: LevelMission | null): string | undefi
  * names no mission, and the four tables' titles don't collide.
  */
 export function titleLookupFor(): (title: string) => string | undefined {
-  const byTitle = new Map<string, string>();
-  for (const table of Object.values(LEVEL_NAMES)) {
-    for (const [map, title] of Object.entries(table)) {
-      const key = stripTitlePrefix(title).toLowerCase();
-      if (!byTitle.has(key)) byTitle.set(key, map);
+  // Built once: `LEVEL_NAMES` is a fixed table, so the index over it never changes. A library scan
+  // asks for this per DEH-carrying file (`wad/describe.ts`), which is what made the rebuild show.
+  lookup ??= (() => {
+    const byTitle = new Map<string, string>();
+    for (const table of Object.values(LEVEL_NAMES)) {
+      for (const [map, title] of Object.entries(table)) {
+        const key = stripTitlePrefix(title).toLowerCase();
+        if (!byTitle.has(key)) byTitle.set(key, map);
+      }
     }
-  }
-  return (title) => byTitle.get(stripTitlePrefix(title).toLowerCase());
+    return (title: string) => byTitle.get(stripTitlePrefix(title).toLowerCase());
+  })();
+  return lookup;
 }
+
+let lookup: ((title: string) => string | undefined) | null = null;
 
 /**
  * What the level card announces on entering a map: its title where one is known, otherwise — for a

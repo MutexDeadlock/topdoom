@@ -7,8 +7,8 @@ import {
   ensureWadId,
   fetchLibrary,
   librarySources,
-  fitsGameWad,
   mergedMaps,
+  pwadsFor,
   rememberLibraryId,
   restoreLibrary,
   uploadedSource,
@@ -163,8 +163,7 @@ export class Menu {
       sources: () => this.sources,
       iwad: () => this.selectedIwad,
       pwads: () => this.selectedPwads,
-      chooseIwad: (source) => this.adoptIwad(source),
-      togglePwad: (source) => this.togglePwad(source),
+      applyPicks: (iwad, pwads) => this.applyPicks(iwad, pwads),
       setLibrarySources: (sources) => this.setLibrarySources(sources),
       pickFiles: () => this.pickFiles(),
     });
@@ -585,7 +584,8 @@ export class Menu {
     this.renderIwads();
     this.renderPwads();
     this.renderLevels();
-    // The overlay shows the same picks with order badges, so it redraws with the lists under it.
+    // The overlay draws against the same `sources`, so it redraws with the lists under it — its own
+    // draft is untouched by this (docs/menu.md § WAD Library).
     this.library.refresh();
   }
 
@@ -619,8 +619,9 @@ export class Menu {
   }
 
   /**
-   * Adopts a source as the game WAD, wherever the pick came from — the select or the WAD Library
-   * overlay. One body, so the two can't drift on what picking a game WAD does to the add-ons.
+   * Adopts a source as the game WAD: the New Game tab's select, which picks one file at a time.
+   * The WAD Library commits a whole set instead (`applyPicks`); both prune through `pwadsFor`, so
+   * the two can't drift on what picking a game WAD does to the add-ons.
    */
   private async adoptIwad(source: WadSource): Promise<void> {
     await this.identify(source);
@@ -629,17 +630,39 @@ export class Menu {
     this.saveSelection();
   }
 
-  /** Adds or removes an add-on, keeping the tick order that decides the merge order. */
-  private async togglePwad(source: WadSource): Promise<void> {
+  /**
+   * Drops one add-on from the set — the `×` on its own row, the only way a pick leaves the New Game
+   * tab. Adding is the WAD Library's job (`applyPicks`), so this half needs no `identify`.
+   */
+  private removePwad(source: WadSource): void {
     const index = this.selectedPwads.indexOf(source);
-    if (index >= 0) {
-      this.selectedPwads.splice(index, 1);
-      // Nothing should remember an off-flag for a row that is gone; re-picking it starts on.
-      this.disabledPwads.delete(source.key);
-    } else {
-      await this.identify(source);
-      this.takeAsPwad(source);
-    }
+    if (index < 0) return;
+    this.selectedPwads.splice(index, 1);
+    // Nothing should remember an off-flag for a row that is gone; re-picking it starts on.
+    this.disabledPwads.delete(source.key);
+    this.render();
+    this.saveSelection();
+  }
+
+  /**
+   * Adopts the WAD Library's whole pick in one go — the overlay stages its ticks and commits them
+   * here, on Apply (docs/menu.md § WAD Library). A set rather than a row at a time, because the
+   * game WAD decides which add-ons may stay: applied one by one, an order the player never chose
+   * would decide what `pruneIncompatiblePwads` throws away.
+   */
+  private async applyPicks(iwad: WadSource | null, pwads: readonly WadSource[]): Promise<void> {
+    // Together, since each may read and hash a whole file off disk and no two touch each other.
+    await Promise.all((iwad ? [iwad, ...pwads] : pwads).map((source) => this.identify(source)));
+
+    // An off-flag outlives only an add-on that was in the set before and still is — anything picked
+    // again after being dropped starts on, the rule `takeAsPwad` keeps for a single tick.
+    const before = new Set(this.selectedPwads.map((p) => p.key));
+    const after = new Set(pwads.map((p) => p.key));
+    this.disabledPwads = new Set([...this.disabledPwads].filter((k) => before.has(k) && after.has(k)));
+
+    this.selectedIwad = iwad;
+    this.selectedPwads = [...pwads];
+    this.pruneIncompatiblePwads();
     this.render();
     this.saveSelection();
   }
@@ -651,7 +674,6 @@ export class Menu {
    */
   private takeAsIwad(source: WadSource): void {
     this.selectedIwad = source;
-    this.selectedPwads = this.selectedPwads.filter((p) => p.key !== source.key);
     this.pruneIncompatiblePwads();
   }
 
@@ -756,9 +778,13 @@ export class Menu {
     return this.selectedPwads.filter((p) => !this.disabledPwads.has(p.key));
   }
 
-  /** Drops any selected add-on whose own maps no longer match the selected game WAD. */
+  /**
+   * Drops any selected add-on the game WAD no longer allows — the ones whose maps don't match it,
+   * and the file that *is* the game WAD. `pwadsFor` is the one statement of that (docs/menu.md §
+   * WAD Library), shared with the overlay's preview of the same prune.
+   */
   private pruneIncompatiblePwads(): void {
-    this.selectedPwads = this.selectedPwads.filter((p) => fitsGameWad(this.selectedIwad, p));
+    this.selectedPwads = pwadsFor(this.selectedIwad, this.selectedPwads);
   }
 
   /** Ticks or unticks one add-on. It keeps its place in the list either way — see `disabledPwads`. */
@@ -783,7 +809,7 @@ export class Menu {
       // The row is a `<label>`, so a click inside it would otherwise be forwarded to a control.
       e.preventDefault();
       e.stopPropagation();
-      void this.togglePwad(source);
+      this.removePwad(source);
     });
     return button;
   }
@@ -947,12 +973,18 @@ export class Menu {
    * itself an IWAD is adopted as the game WAD; everything else joins the add-ons. Drawn once at the
    * end rather than per file, which is why this routes through `takeAsIwad`/`takeAsPwad` instead of
    * the single-pick handlers.
+   *
+   * **Where the picks land depends on what is on top.** With the WAD Library up they are ticked
+   * into its draft instead, which applies on Apply — the same routing `setStatus` does, and for the
+   * same reason: the overlay covers `#menu`, so a selection made behind it is one the player never
+   * saw happen and `Close` would not undo (docs/menu.md § WAD Library).
    */
   private async addFiles(files: File[]): Promise<void> {
-    const added: string[] = [];
+    const added: WadSource[] = [];
     // Kept rather than reported as they happen: the "Added …" line below would overwrite each one,
     // so a multi-file pick where some files failed used to end up claiming only success.
     const failed: string[] = [];
+    const staged = this.library.isOpen;
     for (const file of files) {
       try {
         const source = await uploadedSource(file.name, await file.arrayBuffer());
@@ -960,9 +992,11 @@ export class Menu {
         if (existing >= 0) this.sources.splice(existing, 1, source);
         else this.sources.unshift(source);
 
-        if (source.type === 'IWAD') this.takeAsIwad(source);
-        else this.takeAsPwad(source);
-        added.push(`${file.name} (${source.type})`);
+        if (!staged) {
+          if (source.type === 'IWAD') this.takeAsIwad(source);
+          else this.takeAsPwad(source);
+        }
+        added.push(source);
       } catch (err) {
         failed.push(`${file.name}: ${(err as Error).message}`);
       }
@@ -972,6 +1006,7 @@ export class Menu {
       this.setStatus(failed.join('; ') || 'Nothing to add.', true);
       return;
     }
+    if (staged) this.library.stage(added);
 
     this.render();
     // The file just added may be the one a save was waiting for, so the save
@@ -981,7 +1016,7 @@ export class Menu {
     this.savegames.refresh();
     this.saveSelection();
     const skipped = failed.length > 0 ? ` — skipped ${failed.join('; ')}` : '';
-    this.setStatus(`Added ${added.join(', ')}${skipped}`, failed.length > 0);
+    this.setStatus(`Added ${added.map((s) => `${s.label} (${s.type})`).join(', ')}${skipped}`, failed.length > 0);
   }
 
   private installDropTarget(): void {

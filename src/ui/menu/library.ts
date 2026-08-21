@@ -1,22 +1,24 @@
 /**
  * The WAD Library overlay: a folder tree over everything the menu can offer — the WADs the server
  * ships, a folder the player nominates from their own disk, and anything dropped on the menu — with
- * the picking done in place. Owned by `Menu`, which it reaches only through `LibraryHooks`.
- * See docs/menu.md § WAD Library.
+ * the picking done in place. The picks are **staged**: ticking a row edits a draft, `Apply` hands
+ * the whole set to the menu and `Close` discards it. Owned by `Menu`, which it reaches only through
+ * `LibraryHooks`. See docs/menu.md § WAD Library.
  */
 import {
   acceptableWads,
   adoptFolderFiles,
   ensureLibraryAccess,
+  fitsGameWad,
   forgetLibrary,
   libraryName,
   libraryPicked,
   librarySkips,
-  fitsGameWad,
   librarySources,
   mapStyle,
   pickerBlock,
   pickLibraryFolder,
+  pwadsFor,
   rescanLibrary,
   servedFolder,
   type LibrarySkip,
@@ -35,13 +37,20 @@ export interface LibraryHooks {
   iwad(): WadSource | null;
   /** The add-ons, in merge order. */
   pwads(): readonly WadSource[];
-  /** Adopts a source as the game WAD. */
-  chooseIwad(source: WadSource): void | Promise<void>;
-  /** Adds or removes an add-on, returning once the menu has caught up. */
-  togglePwad(source: WadSource): void | Promise<void>;
+  /**
+   * Hands the menu the whole pick at once — the overlay stages its ticks and commits them here,
+   * on Apply and nowhere else. One call rather than one per row, because a set is what the menu
+   * resolves against: the game WAD decides which add-ons may stay, so half a set applied is a
+   * prune the player never asked for.
+   */
+  applyPicks(iwad: WadSource | null, pwads: readonly WadSource[]): void | Promise<void>;
   /** Hands the menu the library's current contents, replacing whatever it held before. */
   setLibrarySources(sources: WadSource[]): void;
-  /** Opens the plain multi-file picker, for loose WADs that sit in no library folder. */
+  /**
+   * Opens the plain multi-file picker, for loose WADs that sit in no library folder. What it reads
+   * comes back through `stage`, not from here: the menu routes files added while the overlay is up
+   * into the draft rather than adopting them behind it.
+   */
   pickFiles(): void;
 }
 
@@ -312,6 +321,15 @@ export class LibraryUi {
   private selectedFolder = SERVER_PWADS;
   private filter = '';
   /**
+   * The pick being assembled, **not the menu's**. Every tick in here edits this pair and nothing
+   * else; `Apply` hands it to the menu and `Close` throws it away, so browsing a library — trying a
+   * game WAD on to see which add-ons it allows, ticking half a set and thinking better of it —
+   * costs the player nothing. Snapshotted from the menu on every `open`, so the overlay always
+   * starts from what is actually selected.
+   */
+  private draftIwad: WadSource | null = null;
+  private draftPwads: WadSource[] = [];
+  /**
    * Folder rows whose children are shown. Tracked as *expanded* rather than collapsed so the
    * default is a property of this set alone: a collapsed-id set could not express "folded by
    * default", since a folder the player has never touched is absent from it and would read as open.
@@ -329,7 +347,7 @@ export class LibraryUi {
     this.hooks = hooks;
 
     el<HTMLButtonElement>('wadlibrary-close').addEventListener('click', () => this.close());
-    el<HTMLButtonElement>('wadlibrary-done').addEventListener('click', () => this.close());
+    el<HTMLButtonElement>('wadlibrary-done').addEventListener('click', () => void this.apply());
     this.root.addEventListener('click', (e) => {
       if (e.target === this.root) this.close();
     });
@@ -350,14 +368,29 @@ export class LibraryUi {
     this.root.classList.remove('hidden');
     this.filterInput.value = '';
     this.filter = '';
+    this.draftIwad = this.hooks.iwad();
+    this.draftPwads = [...this.hooks.pwads()];
     this.render();
     this.filterInput.focus();
   }
 
   /**
-   * Closes the overlay, reporting whether it *was* open — `main.ts`'s Esc handler asks this first,
-   * so one Esc dismisses the overlay and leaves the menu (and a paused level) alone. The same
-   * explicit hand-off `closeChangelog` gets, rather than two listeners racing over one key.
+   * Commits the draft and closes. The one path out that changes anything the menu holds — `close`
+   * is a discard, whether it came from the button, the backdrop or Esc.
+   *
+   * Closed *first*: applying redraws the menu, which redraws this overlay, and a set whose files
+   * still need hashing leaves the panel up and frozen for the length of a disk read.
+   */
+  private async apply(): Promise<void> {
+    this.close();
+    await this.hooks.applyPicks(this.draftIwad, this.draftPwads);
+  }
+
+  /**
+   * Closes the overlay **without applying anything**, reporting whether it *was* open — `main.ts`'s
+   * Esc handler asks this first, so one Esc dismisses the overlay and leaves the menu (and a paused
+   * level) alone. The same explicit hand-off `closeChangelog` gets, rather than two listeners
+   * racing over one key.
    */
   close(): boolean {
     if (this.root.classList.contains('hidden')) return false;
@@ -369,9 +402,27 @@ export class LibraryUi {
     return !this.root.classList.contains('hidden');
   }
 
-  /** Redraws if it's up. `Menu.render` calls this, so ticking a row anywhere keeps both lists honest. */
+  /**
+   * Redraws if it's up. `Menu.render` calls this, so a source list that moved under the overlay —
+   * an upload, a scan — is on screen at once, and it is the one place the draft is re-bound to
+   * those sources. What the draft *means* is never touched here: only `open` fills it from the
+   * menu, and only `Apply` sends it back.
+   */
   refresh(): void {
-    if (this.isOpen) this.render();
+    if (!this.isOpen) return;
+    this.carryDraft();
+    this.render();
+  }
+
+  /**
+   * Ticks freshly added sources into the draft. `Menu.addFiles` routes here while the overlay is up
+   * — whether they came from `Add single WADs…` or were dropped on the panel — so a file added from
+   * in here is a pick like any other, and still only a pick until Apply.
+   */
+  stage(sources: readonly WadSource[]): void {
+    if (!this.isOpen) return;
+    for (const source of sources) this.draftTake(source);
+    this.render();
   }
 
   /**
@@ -421,9 +472,8 @@ export class LibraryUi {
    * folded parent still shows that something inside it is in the set.
    */
   private foldersHoldingPicks(nodes: readonly FolderNode[], tree: TreeIndex): Set<string> {
-    const chosen = new Set<WadSource>(this.hooks.pwads());
-    const iwad = this.hooks.iwad();
-    if (iwad) chosen.add(iwad);
+    const chosen = new Set<WadSource>(this.draftPwads);
+    if (this.draftIwad) chosen.add(this.draftIwad);
 
     const marked = new Set<string>();
     for (const node of nodes) {
@@ -624,8 +674,8 @@ export class LibraryUi {
       return;
     }
 
-    const iwad = this.hooks.iwad();
-    const pwads = this.hooks.pwads();
+    const iwad = this.draftIwad;
+    const pwads = this.draftPwads;
 
     for (const source of shown) {
       // A game WAD is a choice of one, an add-on is a stack — so the control says which it is.
@@ -653,7 +703,7 @@ export class LibraryUi {
     input.type = 'radio';
     input.name = 'wadlibrary-iwad';
     input.checked = chosen;
-    input.addEventListener('change', () => void this.pick(() => this.hooks.chooseIwad(source)));
+    input.addEventListener('change', () => this.draftIwadPick(source));
     row.prepend(input);
     return row;
   }
@@ -682,7 +732,7 @@ export class LibraryUi {
     input.type = 'checkbox';
     input.checked = index >= 0;
     input.disabled = incompatible || isGameWad;
-    input.addEventListener('change', () => void this.pick(() => this.hooks.togglePwad(source)));
+    input.addEventListener('change', () => this.draftPwadToggle(source));
     row.prepend(input);
     return row;
   }
@@ -710,17 +760,70 @@ export class LibraryUi {
     return row;
   }
 
-  /** Runs a pick, then redraws — the menu's own lists have moved too, and this one shows order badges. */
-  private async pick(change: () => void | Promise<void>): Promise<void> {
-    await change();
+  /** The game-WAD radio: the pick, plus the redraw that shows what it did to the add-ons. */
+  private draftIwadPick(source: WadSource): void {
+    this.draftTake(source);
     this.render();
   }
 
+  /** Adds or removes an add-on in the draft, keeping the tick order that decides the merge order. */
+  private draftPwadToggle(source: WadSource): void {
+    const index = this.draftPwads.findIndex((p) => p.key === source.key);
+    if (index >= 0) this.draftPwads.splice(index, 1);
+    else this.draftTake(source);
+    this.render();
+  }
+
+  /**
+   * Takes one source into the draft the way its type asks to be taken — a game WAD replaces the
+   * pick and drops the add-ons it can't be merged with, anything else joins them. The prune is
+   * `pwadsFor`, the rule the menu itself applies on Apply, run here so the rows say now what the
+   * set will be rather than reporting the loss once the overlay is gone.
+   *
+   * No redraw of its own, so a batch draws once. Membership is by **key**, not identity: a file
+   * added twice, or re-read by a scan, is a fresh `WadSource` for the same WAD (see `carryDraft`).
+   */
+  private draftTake(source: WadSource): void {
+    if (source.type === 'IWAD') {
+      this.draftIwad = source;
+      this.draftPwads = pwadsFor(source, this.draftPwads);
+    } else if (!this.draftPwads.some((p) => p.key === source.key)) {
+      this.draftPwads.push(source);
+    }
+  }
+
+  /**
+   * Re-resolves the draft against the sources the menu now holds, by key: a rescan (and a re-upload
+   * of a file already known) builds fresh `WadSource` objects for the same files, and the draft
+   * holds them by identity, so without this a scan would silently untick everything it just
+   * re-read. A file the folder no longer has drops out — there is nothing left to apply. Called
+   * from `refresh` alone, which is every path by which the sources can move under the overlay.
+   */
+  private carryDraft(): void {
+    const byKey = new Map(this.hooks.sources().map((s) => [s.key, s]));
+    this.draftIwad = this.draftIwad ? (byKey.get(this.draftIwad.key) ?? null) : null;
+    this.draftPwads = this.draftPwads
+      .map((p) => byKey.get(p.key))
+      .filter((p): p is WadSource => p !== undefined);
+  }
+
   private renderSummary(): void {
-    const iwad = this.hooks.iwad();
+    const iwad = this.draftIwad;
+    const addons = this.draftPwads.length === 1 ? '1 add-on' : `${this.draftPwads.length} add-ons`;
+    const set = iwad ? `${iwad.label} · ${addons}` : 'No game WAD picked yet';
+    // Nothing here is live until Apply, and a footer that read like the menu's own selection would
+    // make Close look harmless when it is a discard. Only said when there is something to lose.
+    this.summaryEl.textContent = this.draftIsDirty() ? `${set} — not applied yet` : set;
+  }
+
+  /** Whether the draft has drifted from what the menu holds — what Close would throw away. */
+  private draftIsDirty(): boolean {
     const pwads = this.hooks.pwads();
-    const addons = pwads.length === 1 ? '1 add-on' : `${pwads.length} add-ons`;
-    this.summaryEl.textContent = iwad ? `${iwad.label} · ${addons}` : 'No game WAD picked yet';
+    return (
+      this.draftIwad !== this.hooks.iwad() ||
+      this.draftPwads.length !== pwads.length ||
+      this.draftPwads.some((p, i) => p !== pwads[i])
+    );
   }
 
   /** Opens the folder picker, or the `webkitdirectory` input where there is none. */
@@ -853,6 +956,7 @@ export class LibraryUi {
         if (total > 0 && done % 16 === 0) this.showStatus(`Reading WADs … ${done}/${total}`);
       });
       const found = librarySources();
+      // Hands the menu the new list, whose render re-binds the draft to it (`refresh`).
       this.hooks.setLibrarySources(found);
       this.showStatus(...scanResult(found.length, librarySkips()));
       this.selectedFolder = LIBRARY_ROOT;

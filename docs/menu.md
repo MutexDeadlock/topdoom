@@ -84,14 +84,54 @@ reload.
 Structurally it is `#changelog`'s twin, and deliberately so (§ Changelog): a child of `#menu` so
 closing the menu can never leave it up, at `z-index: 5` **local to `#menu`'s own stacking context**
 rather than a rung of `base.css`'s global ladder, dismissed by its close button, by a backdrop click
-guarded with `e.target === root`, or by `Esc`. `Close` sits beside `Done` in the footer rather than
-in the header: both end the same visit, so they belong to the same corner. `Esc` is **handed off
-explicitly** from `main.ts`, which asks
+guarded with `e.target === root`, or by `Esc`. `Close` sits beside `Apply` in the footer rather than
+in the header: both end the same visit, so they belong to the same corner — but they are **not** the
+same call (see *Ticking stages, Apply commits* below). `Esc` is **handed off explicitly** from `main.ts`, which asks
 `menu.closeTopOverlay()` before closing the menu, so one `Esc` closes one thing and the answer
 doesn't depend on listener registration order. The overlay order lives in `Menu`, not the caller.
 
 What is its own:
 
+- **Ticking stages, `Apply` commits, `Close` discards.** Every control in the file pane edits
+  `LibraryUi`'s own `draftIwad`/`draftPwads` and nothing else; `Apply` hands the pair to
+  `Menu.applyPicks` and closes, and every other way out — the `Close` button, the backdrop, `Esc`,
+  the menu closing under it — throws the draft away. Browsing is what this overlay is *for*, so
+  trying a game WAD on to see which add-ons it then allows, or ticking half a set and thinking
+  better of it, has to cost nothing. `open` re-snapshots the draft from the menu, which is the whole
+  of the rule that the overlay starts from what is actually selected — `close` deliberately leaves
+  the abandoned draft lying, rather than stating that invariant a second time from the other end.
+  `Apply` closes *before* it commits: applying redraws the menu, which redraws this overlay, and a
+  set whose files still need hashing would otherwise leave the panel up and frozen for a disk read.
+- **The whole set is applied in one call**, not a row at a time. The game WAD decides which add-ons
+  may stay, so applying the draft row by row would let an order the player never chose decide what
+  the prune throws away. `applyPicks` identifies every file in the set — together, since each may
+  read and hash a whole file and no two touch each other — keeps the `disabledPwads` off-flags of
+  the add-ons that were in the set before *and* still are (anything picked again after being dropped
+  starts on, the rule `takeAsPwad` keeps for a single tick), then replaces the selection outright.
+- **What a game WAD costs the add-ons is one function**, `library.ts: pwadsFor` — `fitsGameWad`
+  (§ Picking a WAD set) plus dropping the file that *is* the game WAD. `Menu.pruneIncompatiblePwads`
+  applies it to the selection and `LibraryUi.draftTake` previews it against the draft as the radio
+  is ticked, so the rows say up front what the set will be rather than reporting the loss once the
+  overlay is gone. Two copies is how the overlay comes to show a set that Apply then quietly
+  produces differently.
+- **The footer says when the draft has drifted** — `#wadlibrary-summary` appends `— not applied yet`
+  whenever the draft differs from the menu's picks. Without it a staged overlay is a trap: the
+  summary would read exactly like the menu's own selection and `Close` would look harmless.
+- **A file added while the overlay is up is staged too.** `Menu.addFiles` always adds to `sources`,
+  but *where the pick lands* depends on what is on top: with the overlay down it adopts as before,
+  with it up it hands the new sources to `LibraryUi.stage`, which ticks them into the draft. That is
+  the same routing `setStatus` does and for the same reason — the overlay covers `#menu`, so a
+  selection made behind it is one the player never saw happen and `Close` would not undo. It covers
+  the drop target as well as `Add single WADs…`, since `#wadlibrary` nests inside the `#menu` element
+  the drop listener sits on; a file dropped *on* the open overlay is a pick in it, not a silent one
+  behind it.
+- **Sources moving under the overlay re-bind the draft by key** — `carryDraft`, called from
+  `LibraryUi.refresh` and nowhere else, which is every path by which they can move. A rescan (or a
+  re-upload of a file already known) builds fresh `WadSource` objects for the same files and the
+  draft holds them by identity, so without it a `Rescan` would silently untick everything it had
+  just re-read; a file the folder no longer has drops out of the draft, since there is nothing left
+  to apply. Rescan and Forget themselves are *not* staged — they act on the library on disk rather
+  than on a pick, and carry their own confirmation where it matters.
 - **A folder row lists its own WADs and counts everything beneath it** — `FolderNode.sources` and
   `FolderNode.total`, deliberately two fields answering two questions. `sources` is what the file
   pane shows, so a folder behaves like a folder; `total` is the row's count *and* what decides
@@ -184,21 +224,16 @@ What is its own:
   reports something — that folder held no WADs — while with no folder behind it, it is a row that
   says "nothing here" next to a heading that says the same and a `Choose folder…` button that is the
   actual invitation. `buildFolderTree` takes `libraryPicked` for exactly this one decision.
-- **Ticking applies immediately** — there is no commit step, and neither `Close` nor `Apply` does
-  anything a tick has not already done; they are the same call, offered twice because a player who
-  has just picked something looks for the affirmative one. So the add-ons list underneath is already correct when the overlay
-  goes away, removing a pick there still works, and `Menu.render` calls `LibraryUi.refresh` so the
-  two lists can never disagree about what is picked or in what order.
 - **A game WAD is a radio, an add-on a checkbox.** An IWAD-typed row is a choice of one and says so
-  with the control rather than with a rule the player has to discover; a PWAD-typed row stacks. Both
-  go through `Menu.adoptIwad`/`Menu.togglePwad`, the same bodies the select and `#pwad-list` use, so
-  picking a game WAD does the same thing to the add-ons wherever it is done.
+  with the control rather than with a rule the player has to discover; a PWAD-typed row stacks.
 - **Incompatible add-ons render disabled rather than hidden**, the same `mapStyle` rule and the same
   reasoning as `renderPwads` (§ Picking a WAD set), with the mismatched game named in the row's
   badge.
-- **Picking a library file gives it its content id** (`Menu.identify` → `ensureWadId` +
+- **Applying a library file gives it its content id** (`Menu.identify` → `ensureWadId` +
   `rememberLibraryId`), which the scan deliberately skipped — docs/wad.md § Content id. It is
-  remembered on disk, so a file is hashed once ever rather than once per session.
+  remembered on disk, so a file is hashed once ever rather than once per session. Deferred to
+  `applyPicks` rather than paid on the tick, so trying a WAD on and thinking better of it hashes
+  nothing.
 - **The detail column says what a file *is*, never where it sits.** `describeSource` used to append
   a library file's subfolder; the row is already under that folder in the tree, so repeating it only
   crowded the column. An upload's `from disk` stays, since it belongs to no folder at all.
@@ -452,8 +487,9 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
   what style means) is rendered **disabled** rather than hidden — a mapset that's simply for the other game is still
   worth seeing, just not pickable. Switching game WAD calls `pruneIncompatiblePwads` to drop any
   already-ticked add-on that no longer matches, so the merged map list (`mergedMaps`) never silently
-  mixes an E1M1 with a MAP01 mapset. Both the greying and the prune go through `fitsGameWad` — one
-  statement of the rule, or the overlay offers a row the prune then drops.
+  mixes an E1M1 with a MAP01 mapset. The greying reads `fitsGameWad` and every prune — the menu's
+  and the overlay's draft alike — goes through `pwadsFor` over the same predicate: one statement of
+  the rule, or the overlay offers a row the prune then drops.
 - The **Level** list groups DOOM 1's `ExMy` maps by episode, and each row reads
   `<lump>  —  <title>  —  <provider>`, dropping either of the last two when it doesn't apply: the
   title only when the WAD set knows one (docs/wad.md § Level names — resolved off the manifest

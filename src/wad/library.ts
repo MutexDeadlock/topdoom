@@ -163,6 +163,18 @@ export function fitsGameWad(iwad: WadSource | null, pwad: WadSource): boolean {
   return own === null || own === style;
 }
 
+/**
+ * The add-ons a game WAD leaves standing: the ones it can be merged with (`fitsGameWad`), minus the
+ * file that *is* the game WAD, which cannot also be an add-on to itself.
+ *
+ * **What a set costs to pick, in one statement.** The menu applies it to its own selection and the
+ * WAD Library previews it against the draft the player is assembling; two copies is how the overlay
+ * comes to show a set that Apply then quietly produces differently.
+ */
+export function pwadsFor(iwad: WadSource | null, pwads: readonly WadSource[]): WadSource[] {
+  return pwads.filter((p) => p.key !== iwad?.key && fitsGameWad(iwad, p));
+}
+
 /** Wraps a server-side file; the fetched bytes are kept so restarts are instant. */
 function serverSource(entry: ManifestEntry): WadSource {
   let cached: Promise<ArrayBuffer> | null = null;

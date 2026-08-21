@@ -5,27 +5,25 @@ Features and improvements
     visits, replacing the two "from disk" buttons
   - DEHACKED/BEX patches are read and applied
     - supported:
-      - level titles
-      - par times
-      - monster stats
+      - level titles, par times, monster stats
       - ammo counts and caps, the starting kit, the health and armour limits,
         and the BFG's cells per shot
-      - weapon records whole: the ammo class and all five frame pointers, with
-        each gun's fire rate walked back out of its own state chain
+      - weapon records whole: ammo class, five frame pointers, fire rate
       - which lump a sound or a music track resolves to
       - the death overlay's killer line
       - the locked-door and locked-switch lines
       - frame records and a Thing's frame pointers, by re-deriving the sprite
         lists and attack/pain timings from the patched frame table
       - [SPRITES] and Text sprite renames
-    - missing:
+    - not yet supported:
       - action pointers (Pointer, [CODEPTR])
     - a save made with a patch loaded now requires that file back, since without
       it every patched stat would silently revert
   - fullbright frames: torches, keys, powerups, projectiles, explosions and
     firing frames now draw at full light, as vanilla's frame table says
-  - the menu marks a WAD that carries a DEHACKED lump
-  - the intermission shows the level's par time, green if you beat it
+  - some work on the intermission screen
+    - now shows the level's par time, green if you beat it
+    - now shows a face for how the level went, based on your stats
   - the death overlay is drawn in the WAD's own font, like the other cards
 
 Fixed bugs

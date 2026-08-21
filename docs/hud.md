@@ -157,8 +157,9 @@ message's 3 since there is nothing else on screen to read yet.
 ## Intermission
 
 `src/ui/hud/intermission.ts` (`#intermission`) is the end-of-level popup: the same three counts the HUD
-strip carries, as vanilla's percentages this time, then the frozen level time, the par time, then
-the best-time lines (§ Best times) and the continue hint. The three percentages are **right-aligned** against
+strip carries, as vanilla's percentages this time, then a face for how that went, then the time
+block — the frozen level time, the best-time lines (§ Best times), and the par time closing it —
+and the continue hint. The three percentages are **right-aligned** against
 each other, which the HUD strip's own numbers are not: the strip's are one glance among many, while
 these three sit stacked as a block where a ragged right edge is the first thing you read. A value
 wider than the `100%` the column is sized for — kills can pass 100% — widens the column rather than
@@ -168,16 +169,30 @@ the yellow→green switch at 100% — and `formatClock`/`percentOf` are shared w
 truncates, matching `wi_stuff.c`'s C integer division, and reads 100% for a total of 0, where
 vanilla would divide by zero.
 
-The **par row** (`.line-par`) sits directly under the time it is compared against, and is hidden
+Every line of the **time block** — `Your time`, `Best time`/`Previous`, `Par` — is drawn by
+`drawTimeLine` through one shared label column and one shared clock column, so the labels start
+together and the clocks end together however wide the label is. `formatClock` is fixed-width, so
+the column is measured once in the constructor.
+
+The **par row** (`.line-par`) is last, under the times it is compared against, and is hidden
 whenever nothing knows a par for the level — Ultimate Doom's episode 4, an unrecognised IWAD, or a
 PWAD map with no `[PARS]` entry (docs/wad.md § Par times). It draws green at or under par and yellow
 over it, which is this engine's call, not vanilla's: `WI_drawStats` prints par in one font however
 the run went. It is the same call `LEVEL_STATS_GREEN` makes for the stat lines — the popup already
 speaks in green for "you got it".
 
+The **face** (`.face`) between the two blocks is one of the status-bar face lumps, picked from
+`FACE_TIERS` by the three percentages summed: 300 (a clean sweep, and kills alone can pass it)
+draws `STFGOD0`, 250 draws `STFEVL1`, 50 draws `STFST12`, and anything under that draws `STFOUCH1`.
+Vanilla's intermission has no face — `st_stuff.c` drives these lumps from damage taken and where
+the player is firing, neither of which this screen knows — so both the idea and the thresholds are
+this engine's own and tuned by feel. A WAD set without the lump hides the canvas rather than
+leaving a gap, like every other WAD graphic here.
+
 Lines are centered in the panel, but the three stat lines sit in a `.stats` wrapper so they are
 centered as **one block**: centering each on its own would stagger the labels and undo the very
-column `drawStatLine` lines the numbers up in.
+column `drawStatLine` lines the numbers up in. The time lines need no such wrapper — sharing both
+columns already makes them the same width.
 
 The control flow is the part worth knowing:
 
@@ -251,7 +266,7 @@ Control flow, continuing § Intermission's:
 ## Best times
 
 `src/game/besttimes.ts` persists one best completion time per level under `topdoom.bestTimes`
-(docs/menu.md § Persisted settings), and the popup shows it: a `Best mm:ss` line on an ordinary run,
+(docs/menu.md § Persisted settings), and the popup shows it: a `Best time mm:ss` line on an ordinary run,
 or a green `NEW BEST TIME!` with the beaten time as `Previous mm:ss` when the record falls. The
 clock stays yellow either way — the record line is what announces one, and recoloring the number
 too said the same thing twice. A first-ever completion is a record and so has no `Previous` line to

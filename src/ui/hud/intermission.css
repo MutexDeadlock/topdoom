@@ -59,9 +59,14 @@
   display: none;
 }
 
-/* The blank line the "your time:" block is separated by, without an element of its own. */
-#intermission .line-timelabel {
-  margin-top: 14px;
+/*
+ * The face between the stat block and the times, and the gap that separates the three groups —
+ * without an element of its own. Height is a whole multiple of the 24x29 face patch so
+ * `image-rendering: pixelated` stays on exact pixels; the shared canvas rule's 18px is for text.
+ */
+#intermission .face {
+  height: 58px;
+  margin: 12px 0;
 }
 
 #intermission .line-hint {

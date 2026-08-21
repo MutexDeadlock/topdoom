@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import type { Sector } from '../../wad/map.ts';
 import { BOSS_DEATH_TYPES } from './tables.ts';
+import { pristineFrameTables } from '../dehacked/frames.ts';
 import { ThingType } from './doomednums.ts';
 import type { MonsterAttackEvent, MonsterBody } from '../monsters/defs.ts';
 import type { ThingsSnapshot } from '../snapshot.ts';
@@ -18,6 +19,18 @@ import type { PinnedMemo, SectorTouchCache, ThingBlocker } from '../world.ts';
 import type { SpriteAnimator } from '../../render/sprites.ts';
 import type { Pos2, Pos3 } from '../../types.ts';
 import type { TeleportDest } from '../specials.ts';
+
+/** One attack's pose: vanilla's own state frames, with the tics each is held for. */
+export interface AttackPose {
+  /**
+   * Frame letters in chain order, **repeats kept** — unlike the walk and death tables, where a
+   * repeated frame is a no-op against a flat rate. Here each frame carries its own length, so
+   * vanilla's `E,F,E` (wind up, fire, recover) is three frames and not two.
+   */
+  frames: string[];
+  /** Each frame's `info.c` tic count, parallel to `frames`. Zero-tic states are dropped: they never draw. */
+  tics: number[];
+}
 import { DOOM_TIC, PICKUP_SCALE, PICKUP_SCALE_TYPES } from '../../constants.ts';
 
 /**
@@ -57,10 +70,10 @@ export interface PosedThing extends Pos3, MonsterBody {
    */
   bodyHeight: number;
   /**
-   * This type's attack/pain WAD frame letters, resolved once at spawn for the same reason
-   * `blockRadius` is. `undefined` for anything without a table entry.
+   * This type's attack poses per kind (`MONSTER_ATTACK_POSE`) and pain frame letters, resolved once
+   * at spawn for the same reason `blockRadius` is. `undefined` for anything without a table entry.
    */
-  attackFrames: string[] | undefined;
+  attackPose: { melee?: AttackPose; ranged?: AttackPose } | undefined;
   painFrames: string[] | undefined;
   /**
    * Whether this thing is drawn (and so targetable/shootable) right now:
@@ -130,7 +143,7 @@ export interface PosedThing extends Pos3, MonsterBody {
   deathFrameCount: number;
   /**
    * This type's resurrection frames (`MONSTER_RAISE_FRAMES`), resolved once
-   * at spawn for the same reason `attackFrames`/`painFrames` are — and
+   * at spawn for the same reason `attackPose`/`painFrames` are — and
    * doubles as the arch-vile's own eligibility test: `undefined` means this
    * type has no vanilla `raisestate` and `findRaisableCorpse` skips it
    * outright, matching vanilla's `raisestate == S_NULL` check.
@@ -584,36 +597,51 @@ export const BARREL_RADIUS = 10;
 export const BARREL_HEIGHT = 42;
 /** Vanilla `MT_BARREL`'s own `mass` — confirmed against `linuxdoom-1.10/info.c`, feeds `thrustSpeed`. */
 export const BARREL_MASS = 100;
-/** `S_BAR1`/`S_BAR2` — a two-frame idle sway, each vanilla frame held 6 tics. */
-export const BARREL_IDLE_FRAMES = ['A', 'B'];
-export const BARREL_IDLE_FRAME_SECONDS = 6 * DOOM_TIC;
 /**
- * A barrel's death art is a genuinely different sprite lump from its own idle
- * art (`BEXP`, not `BAR1`) — unlike every monster, whose death states reuse
- * the same sprite name as their walk/attack states. `SpriteAnimator.die`'s
- * optional third argument exists specifically for this.
+ * `MT_BARREL`'s frame chains, **walked out of vanilla's own state table** rather than transcribed
+ * (docs/dehacked.md § Frames) — one mutable record because a DEHACKED patch re-derives them from
+ * the barrel's patched states, and `dehacked/apply.ts` snapshots and restores it like any other
+ * table.
+ *
+ * - `idleFrames`: `S_BAR1`/`S_BAR2`, a two-frame sway each held 6 tics.
+ * - `deathSprite`: a barrel's death art is a genuinely different sprite lump from its own idle
+ *   art (`BEXP`, not `BAR1`) — unlike every stock monster, whose death states reuse the same
+ *   sprite name. `SpriteAnimator.die`'s optional third argument exists for this.
+ * - `deathFrames`: `S_BEXP1`-`S_BEXP5`.
+ * - `deathFrameSeconds`: a flat per-frame rate standing in for vanilla's own uneven per-state tics
+ *   (5, 5, 5, 10, 10) — the same "one uniform rate" simplification `MONSTER_DEATH_FRAME_SECONDS`
+ *   makes elsewhere, matching the real rate of the first three frames. Not derived from a patch.
+ * - `explodeDelaySeconds`: vanilla's `A_Explode` sits on `S_BEXP4`, so the blast comes
+ *   `S_BEXP1`-`3`'s 5 + 5 + 5 tics after the barrel actually died, not instantly on death. It used
+ *   to be two frames, from a comment that put the action on `S_BEXP3`; `info.c` and the walker in
+ *   `dehacked/frames.ts` both say the fourth.
  */
-export const BARREL_DEATH_SPRITE = 'BEXP';
-/** `S_BEXP1`-`S_BEXP5` frame letters. */
-export const BARREL_DEATH_FRAMES = ['A', 'B', 'C', 'D', 'E'];
-/**
- * A flat per-frame rate standing in for vanilla's own uneven per-state tic
- * counts (5, 5, 5, 10, 10) — the same "one uniform rate" simplification
- * `MONSTER_DEATH_FRAME_SECONDS` already makes elsewhere. Matches the real
- * rate of the first three frames, which is the one that actually matters:
- * `BARREL_EXPLODE_DELAY_SECONDS` below is timed off it.
- */
-export const BARREL_DEATH_FRAME_SECONDS = 5 * DOOM_TIC;
-/**
- * Vanilla's own `A_Explode` fires on entering `S_BEXP3` — the death
- * animation's third frame, i.e. two frames after the barrel actually died,
- * not instantly on death. Confirmed against `linuxdoom-1.10/info.c`'s
- * `S_BEXP1`/`S_BEXP2` durations (5 tics each) rather than assumed.
- */
-export const BARREL_EXPLODE_DELAY_SECONDS = 2 * BARREL_DEATH_FRAME_SECONDS;
+export const BARREL_CHAIN = {
+  ...barrelFromStates(),
+  // The one field the walker does not derive: a flat rate, per the bullet above.
+  deathFrameSeconds: 5 * DOOM_TIC,
+};
+
+/** `MT_BARREL`'s derived chains, off vanilla's own state table. */
+function barrelFromStates(): {
+  idleFrames: string[];
+  idleFrameSeconds: number;
+  deathSprite: string;
+  deathFrames: string[];
+  explodeDelaySeconds: number;
+} {
+  const barrel = pristineFrameTables().barrel!;
+  return {
+    idleFrames: barrel.idleFrames,
+    idleFrameSeconds: barrel.idleFrameSeconds,
+    deathSprite: barrel.deathSprite!,
+    deathFrames: barrel.deathFrames,
+    explodeDelaySeconds: barrel.explodeDelaySeconds!,
+  };
+}
 
 /**
- * A barrel's `A_Explode` becoming due (`BARREL_EXPLODE_DELAY_SECONDS` after
+ * A barrel's `A_Explode` becoming due (`BARREL_CHAIN.explodeDelaySeconds` after
  * it died, not on death itself), for `game.ts` to turn into
  * `applyRadiusDamage`. `source`, when set, is who dealt the killing blow —
  * see `PosedThing.explodeSource`'s doc for why this is what makes a chain of

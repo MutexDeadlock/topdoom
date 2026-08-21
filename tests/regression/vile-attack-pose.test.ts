@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
 import { buildThingSprites, type ThingLayer } from '../../src/game/things.ts';
-import { MONSTER_ATTACK_FRAMES, MONSTER_WALK_FRAMES_OVERRIDE } from '../../src/game/things/tables.ts';
+import { attackPoseLetters, MONSTER_WALK_FRAMES_OVERRIDE } from '../../src/game/things/tables.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { clearRandom } from '../../src/util/random.ts';
@@ -25,7 +25,7 @@ import { MATERIALS, recordingBank } from '../fixtures/spritestubs.ts';
  * docs/sprites.md § Pain, and attack/pain poses.
  */
 
-const VILE_ATTACK = MONSTER_ATTACK_FRAMES[ThingType.archVile];
+const VILE_ATTACK = attackPoseLetters(ThingType.archVile);
 const VILE_WALK = MONSTER_WALK_FRAMES_OVERRIDE[ThingType.archVile];
 const RANGED = MONSTER_STATS[ThingType.archVile].ranged!;
 

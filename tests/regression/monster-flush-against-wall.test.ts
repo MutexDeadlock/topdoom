@@ -104,8 +104,11 @@ describe('Regressions · a monster spawned flush against a wall', () => {
    * spectre) whose radius leaves them no room.
    */
   test('one step is the bound, and past it the monster legitimately stays put', () => {
+    // Exactly `mobjinfo.speed`: the stat block's `speed`/`chaseInterval` are walked out of the
+    // run loop (docs/dehacked.md § Frames), so the two divide back out to vanilla's own 8 units
+    // per `A_Chase` rather than the 7.98 the old 3-decimal `chaseInterval` literal gave.
     const step = stats.speed * stats.chaseInterval;
-    assert.ok(step > 7 && step < 8, `a zombieman moves ${step} units per chase call`);
+    assert.ok(Math.abs(step - 8) < 1e-9, `a zombieman moves ${step} units per chase call`);
 
     // The inside half of the bracket is the overlap-7 case in the test above.
     const tooDeep = scene(9);

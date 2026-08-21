@@ -57,7 +57,8 @@ player arrives, which is what vanilla does.
 That is exactly why it is **not** a `ProjectileLayer` projectile: that layer exists to resolve
 wall-blocked flight and damage, and a cube does neither. It is a local record in `monsters/iconofsin.ts` with its
 own `SpriteAnimator`, drawn through `SpriteFxLayer.batchSprite` the same way `ProjectileLayer.update`
-draws a missile, at full light (vanilla's fullbright frame bit). `boscub` replays once per four-frame
+draws a missile, at full light — its `BOSF` frames carry vanilla's fullbright bit, which
+`FULLBRIGHT_FRAMES` applies (docs/sprites.md § Fullbright frames). `boscub` replays once per four-frame
 cycle, since `A_SpawnSound` sits on the looping `S_SPAWN1` alone.
 
 One divergence: vanilla decides arrival by a launch-time tic countdown computed from the **y** delta

@@ -8,6 +8,7 @@
  */
 import type { SfxId } from '../../audio/sfx.ts';
 import { DOOM_TIC } from '../../constants.ts';
+import { pristineFrameTables } from '../dehacked/frames.ts';
 
 /**
  * Teleport-fog puff (vanilla's `MT_TFOG`): a one-shot animation, not a real
@@ -25,22 +26,12 @@ export const TRACER_COLOR = 0xfff2a8;
 export const MONSTER_TRACER_COLOR = 0xff4433;
 
 /**
- * Frame letters an in-flight projectile sprite cycles through. Confirmed
- * against `DOOM2.WAD`'s actual lump names and frame/rotation counts. `MISL`
- * (rocket) is absent deliberately: only its frame A is flight art, B-D are the
- * explosion (see `IMPACT_EFFECTS`). Anything unlisted holds a single frame.
+ * Frame letters an in-flight projectile sprite cycles through — each missile's `mobjinfo` spawn
+ * loop, walked out of vanilla's state table (docs/dehacked.md § Frames). `MISL` (rocket) ends up
+ * absent because only its frame A is flight art: B-D are the explosion, and a one-frame loop needs
+ * no entry. Anything unlisted holds a single frame.
  */
-export const PROJECTILE_FRAMES: Record<string, string[]> = {
-  PLSS: ['A', 'B'],
-  BFS1: ['A', 'B'],
-  BAL1: ['A', 'B'], // imp fireball
-  BAL2: ['A', 'B'], // cacodemon fireball
-  BAL7: ['A', 'B'], // baron/hell knight fireball
-  MANF: ['A', 'B'], // mancubus fireball
-  APLS: ['A', 'B'], // arachnotron plasma ball
-  FATB: ['A', 'B'], // revenant missile
-};
-
+export const PROJECTILE_FRAMES: Record<string, string[]> = {};
 /**
  * Each missile's own `mobjinfo.radius`, keyed by flight sprite the same way
  * `IMPACT_EFFECTS` is. Half of `PIT_CheckThing`'s `blockdist = thing->radius +
@@ -69,28 +60,23 @@ export const PROJECTILE_RADIUS_DEFAULT = 6;
 export const IMPACT_FRAME_SECONDS = 4 * DOOM_TIC;
 
 /**
- * A projectile's impact explosion, keyed by its flight sprite — from
- * `linuxdoom-1.10`'s `info.c` state tables. `MANF` exploding into the
- * *rocket's* `MISL` frames is a genuine vanilla oddity, not a simplification
- * here (docs/monster-attacks.md § Hitscan vs. projectile). Purely cosmetic: this
- * plays where a shot reached `shotPath`'s distance; what it actually damaged
- * is resolved separately.
+ * A projectile's impact explosion, keyed by its flight sprite — each missile's `mobjinfo` death
+ * chain, walked out of vanilla's state table (docs/dehacked.md § Frames). `MANF` exploding into the
+ * *rocket's* `MISL` frames is a genuine vanilla oddity, not a simplification here
+ * (docs/monster-attacks.md § Hitscan vs. projectile). Purely cosmetic: this plays where a shot
+ * reached `shotPath`'s distance; what it actually damaged is resolved separately.
  */
-export const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {
-  MISL: { sprite: 'MISL', frames: ['B', 'C', 'D'] },
-  PLSS: { sprite: 'PLSE', frames: ['A', 'B', 'C', 'D', 'E'] },
-  // BFE1 is the ball's own impact (above); BFE2 is a *separate* sprite for
-  // `resolveBfgSpray` — vanilla's MT_EXTRABFG, spawned on every monster a
-  // spray ray actually hits, not on the ball's own landing spot.
-  BFS1: { sprite: 'BFE1', frames: ['A', 'B', 'C', 'D', 'E', 'F'] },
-  BAL1: { sprite: 'BAL1', frames: ['C', 'D', 'E'] },
-  BAL2: { sprite: 'BAL2', frames: ['C', 'D', 'E'] },
-  BAL7: { sprite: 'BAL7', frames: ['C', 'D', 'E'] },
-  MANF: { sprite: 'MISL', frames: ['B', 'C', 'D'] },
-  APLS: { sprite: 'APBX', frames: ['A', 'B', 'C', 'D', 'E'] },
-  FATB: { sprite: 'FBXP', frames: ['A', 'B', 'C'] },
-};
+export const IMPACT_EFFECTS: Record<string, { sprite: string; frames: string[] }> = {};
 
+/**
+ * Fills the two tables above from the walker's reading of vanilla's own missile chains. Runs at
+ * import, before `dehacked/apply.ts` snapshots them for `resetDehacked`; a patch that retimes a
+ * missile re-derives the same way (docs/dehacked.md § Frames).
+ */
+for (const [sprite, missile] of Object.entries(pristineFrameTables().missiles)) {
+  if (missile.flight) PROJECTILE_FRAMES[sprite] = missile.flight;
+  if (missile.impact) IMPACT_EFFECTS[sprite] = missile.impact;
+}
 /**
  * Each projectile's launch and impact sound, keyed by flight sprite the same
  * way `IMPACT_EFFECTS` is, and from the same source: the missile type's own
@@ -144,8 +130,9 @@ export function bloodFrames(damage: number): string[] {
  * The bullet puff a shot leaves on a wall, or on a body that doesn't bleed —
  * vanilla's `MT_PUFF` (`P_SpawnPuff`). `PUFFA0`-`D0` confirmed against
  * `DOOM.WAD`/`DOOM2.WAD`; `S_PUFF1`-`4` hold 4 tics each. `S_PUFF1`'s frame
- * carries `FF_FULLBRIGHT` (`info.c`'s `32768`), which this engine has no
- * per-frame equivalent for — every effect here takes its sector's light.
+ * carries `FF_FULLBRIGHT` (`info.c`'s `32768`), so `PUFFA` is in
+ * `FULLBRIGHT_FRAMES` and `spritefx.ts` draws that first frame at full light
+ * whatever the sector — docs/sprites.md § Fullbright frames.
  */
 export const PUFF_FRAMES = ['A', 'B', 'C', 'D'];
 export const PUFF_FRAME_SECONDS = 4 * DOOM_TIC;

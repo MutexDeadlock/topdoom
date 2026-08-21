@@ -84,15 +84,59 @@ and chase cadence are plain constants that do.
 
 Vanilla moves a monster exactly `mobjinfo.speed` units per `A_Chase` call and calls `A_Chase` once
 per state of its walk loop, so `MonsterStats.speed` in units/sec is
-`speed × (A_Chase states in the loop) × 35 / (tics in the loop)`. The per-loop state count matters:
-the arachnotron and spider mastermind spend 2-3 of their 12 walk states on footstep-sound actions
-that don't move them, the cyberdemon 2 of 8. `chaseInterval` (seconds per `A_Chase` call) comes out
-of the same arithmetic and is what the rest of the AI clock is quantized to.
+`speed × (A_Chase states in the loop) × 35 / (tics in the loop)`. `chaseInterval` (seconds per
+`A_Chase` call) comes out of the same arithmetic and is what the rest of the AI clock is quantized
+to.
+
+**The footstep states count as chase calls**, which is what makes the three heavy walkers as fast
+here as in vanilla. `A_BabyMetal` (2 of the arachnotron's 12 run states), `A_Metal` (3 of the
+spider's 12, 1 of the cyberdemon's 8) and `A_Hoof` (1 of the cyberdemon's 8) each play their sound
+and then call `A_Chase` — `p_enemy.c:1759-1775`. An earlier hand transcription read them as *not*
+stepping the monster, which cost the spider 105 units/sec instead of 140, the cyberdemon 140 instead
+of 186.7 and the arachnotron 117 instead of 140; all three now walk on a 3-tic chase clock (0.086s),
+every run state being a chase call. Their walk *sounds* keep their own longer intervals
+(`MonsterSounds.walk`) — a footstep is heard every 12 or 18 tics, not every 3.
 
 An earlier pass eyeballed these at roughly 2-3× vanilla, which flattened the gap between a
 shambling zombieman (70 units/sec) and a charging demon (175) and let nearly everything keep pace
 with a running player. In vanilla the fastest monster in the game — the arch-vile at 262 — is still
 barely half the player's own run speed.
+
+## The windup
+
+**A monster fires partway into its attack, not the instant it decides to.** Vanilla's attack chains
+open with one or more `A_FaceTarget` states before the one carrying the damaging action —
+`A_PosAttack` is 10 tics into the zombieman's, `A_TroopAttack` 16 into the imp's, `A_VileAttack` 66
+into the arch-vile's — and `AttackStats.startDelaySeconds` is that offset, read off `info.c` for
+every type whose attack goes through the burst timer. `beginRangedAttack` seeds `burstTimer` with
+it, so `attackPause` (and the pose) begins immediately while the shot lands later.
+
+For a long time only the arch-vile had one, every other monster firing at offset 0 as an accepted
+simplification — its windup, the reasoning went, has no mechanical consequence. It has two. The
+player gets vanilla's tell: a monster visibly raises its weapon before the bullet, which is what
+makes a shotgun guy at range something you can react to. And the **muzzle flash**, once fullbright
+frames landed (docs/sprites.md § Fullbright frames), lit up a third of a second *after* the bullet —
+vanilla marks the firing frame `FF_FULLBRIGHT`, and this engine was drawing that frame at the wrong
+moment. `MONSTER_ATTACK_POSE` carrying vanilla's per-state tics is the other half of the fix: the
+pose keeps the chain's own proportions, so the frame showing when the burst timer expires is the
+frame that fires.
+
+Three cases deliberately keep no windup, each because nothing would read it:
+
+- **The chaingunner and the two spiders.** Their `A_*Refire` loop is what `duration` covers, and the
+  damaging action is the loop's first state — the `A_FaceTarget` lead-in happens once, outside the
+  attack this engine models, and is not reproduced.
+- **The lost soul** (`A_SkullAttack`) and **the pain elemental** (`A_PainAttack`), whose attacks
+  return straight out of `beginRangedAttack` and never reach the burst timer. Vanilla puts the
+  elemental's spawn on its chain's *last* state, so its lost soul appears at the start of the pose
+  rather than the end.
+- **Melee.** `A_Chase` swings the instant the target is in reach and the whole swing is the wait, so
+  there is no delay path at all; vanilla's own 16-tic wind-up before `A_TroopAttack`/`A_SargAttack`
+  is not reproduced, and a claw connects at the start of its pose rather than under the claw frame.
+
+`tests/game/dehacked-frames.test.ts` derives all of this from `info.c`'s chains and holds the table
+to it, which is how the numbers above were obtained rather than estimated — it reproduces the
+arch-vile's long-standing 66 exactly.
 
 ## Fast monsters
 
@@ -539,8 +583,14 @@ to raise its pistol.
 
 Multi-shot attacks fall out of the same field. `AttackStats.shots`/`shotInterval` reproduce the
 attacks where vanilla fires several times from inside one `missilestate` rather than making a fresh
-`A_Chase` decision per shot: the cyberdemon's three rockets (12 tics apart), the mancubus's three
-volleys, the chaingunner's and spider mastermind's paired bullets. `AttackStats.refire` is the
+`A_Chase` decision per shot: the cyberdemon's three rockets (24 tics apart), the mancubus's three
+volleys (20), the chaingunner's and spider mastermind's paired bullets (4).
+
+**The interval is the gap between two firing actions, not between two states.** The cyberdemon read
+12 tics for years — the length of the single state `A_CyberAttack` sits on — where `S_CYBER_ATK2`,
+`ATK4` and `ATK6` are separated by a 12-tic `A_FaceTarget` each, making the real spacing 24. Its
+volley therefore arrived twice as fast as vanilla's. Both fields are now derived from the chain by
+`dehacked/frames.ts` and held to it by `tests/game/dehacked-frames.test.ts`, which is what found it. `AttackStats.refire` is the
 extreme case — `A_CPosRefire`/`A_SpidRefire` (chaingunner, spider mastermind, arachnotron) jump the
 attack state straight back into itself and only break out when the target stops being visible, never
 re-rolling `P_CheckMissileRange`. Those three plant themselves and hose continuously for as long as

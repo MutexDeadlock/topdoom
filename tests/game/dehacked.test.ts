@@ -22,11 +22,26 @@ describe('DEHACKED · the record grammar', () => {
   });
 
   test('a Text record naming no level title is reported rather than guessed at', () => {
-    const patch = parseDehacked('Text 4 4\nPOSSXXXX\n', lookup);
+    const patch = parseDehacked('Text 4 4\nQQQQXXXX\n', lookup);
     assert.equal(patch.strings.size, 0);
     const warning = patch.warnings.find((w) => w.record === 'Text');
     assert.equal(warning?.support, 'unsupported');
-    assert.match(warning!.detail, /POSS/);
+    assert.match(warning!.detail, /QQQQ/);
+  });
+
+  test('a four-to-four Text whose old string is a sprite name is a sprite rename', () => {
+    // `d_deh.c`'s `deh_procText` checks `fromlen==4 && tolen==4` against `sprnames[]` before
+    // anything else — how a patch renamed sprites before BEX gave it `[SPRITES]`.
+    const patch = parseDehacked('Text 4 4\nPOSSZOMB\n', lookup);
+    assert.deepEqual([...patch.spriteRenames], [['poss', 'ZOMB']]);
+    assert.deepEqual(patch.warnings, []);
+  });
+
+  test('[SPRITES] renames a pristine sprite name to a four-character one, and reports the rest', () => {
+    const patch = parseDehacked('[SPRITES]\nPOSS = zomb\nWOBL = ABCD\nTROO = TOOLONG\n');
+    assert.deepEqual([...patch.spriteRenames], [['poss', 'ZOMB']]);
+    assert.equal(patch.applied.sprites, 1);
+    assert.deepEqual(patch.warnings.map((w) => [w.record, w.support, w.count]), [['[SPRITES]', 'unknown', 2]]);
   });
 
   test('Bits parses both the numeric and the mnemonic form', () => {
@@ -101,13 +116,56 @@ describe('DEHACKED · the record grammar', () => {
   });
 
   test('a record the engine cannot honour swallows its own field lines', () => {
-    // Seven `Frame` records would otherwise contribute a row per distinct field name on top of
+    // A `Pointer` record's `Codep Frame` line would otherwise contribute a second row on top of
     // the one row that actually says something.
-    const patch = parseDehacked('Frame 185\nSprite subnumber = 32773\nDuration = 4\n');
+    const patch = parseDehacked('Pointer 12 (Frame 185)\nCodep Frame = 1\n');
     assert.deepEqual(
       patch.warnings.map((w) => [w.record, w.field, w.count]),
-      [['Frame', undefined, 1]],
+      [['Pointer', undefined, 1]],
     );
+    assert.match(patch.warnings[0].detail, /action pointers/);
+  });
+
+  test('a Frame record carries its four fields in vanilla units', () => {
+    const patch = parseDehacked('Frame 185\nSprite number = 29\nSprite subnumber = 32773\nDuration = 4\nNext frame = 186\n');
+    assert.deepEqual(patch.frameEdits, [{ index: 185, spriteNum: 29, subNumber: 32773, duration: 4, nextFrame: 186 }]);
+    assert.equal(patch.applied.frame, 1);
+    assert.deepEqual(patch.warnings, []);
+    // A field with no sink, and one with an out-of-range value, are reported and not carried.
+    const odd = parseDehacked('Frame 185\nUnknown 1 = 7\nNext frame = 5000\n');
+    assert.deepEqual(odd.frameEdits, []);
+    assert.deepEqual(odd.warnings.map((w) => [w.field, w.support]), [['Next frame', 'unknown'], ['Unknown 1', 'noTarget']]);
+  });
+
+  test('a Frame on a weapon state is classed by what it is, not read', () => {
+    // 13 is `S_PISTOL1`, the pistol's fire chain, whose tics *are* its rate here; 47 is the super
+    // shotgun's flash and 2 is `S_PUNCH`, the fist's bob — nothing here draws either; 999 is past
+    // the table.
+    const patch = parseDehacked(
+      'Frame 13\nDuration = 8\nFrame 47\nDuration = 4\nFrame 2\nDuration = 9\nFrame 999\nDuration = 1\n',
+    );
+    assert.deepEqual(patch.frameEdits, [{ index: 13, duration: 8 }]);
+    assert.deepEqual(
+      patch.warnings.map((w) => [w.record, w.support]),
+      [['Frame', 'unknown'], ['Frame', 'noTarget']],
+    );
+    // Both no-target rows fold into one, so the detail names whichever came first.
+    assert.match(patch.warnings.find((w) => w.support === 'noTarget')!.detail, /S_DSGUNFLASH1/);
+  });
+
+  test('a [CODEPTR] body line is a field line, not a Frame record', () => {
+    // `Frame 185 = A_PosAttack` carries an `=`: reading it as a header would open an empty,
+    // applied-looking frame edit on every line of the section.
+    const patch = parseDehacked('[CODEPTR]\nFrame 185 = A_PosAttack\nFrame 186 = A_Chase\n');
+    assert.deepEqual(patch.frameEdits, []);
+    assert.equal(patch.applied.frame, undefined);
+    assert.deepEqual(patch.warnings.map((w) => [w.record, w.support, w.count]), [['[CODEPTR]', 'unsupported', 1]]);
+  });
+
+  test("a Thing's frame pointers are read as state indices, S_NULL included", () => {
+    const patch = parseDehacked('Thing 12\nDeath frame = 462\nRespawn frame = 0\nInjury frame = 9999\n');
+    assert.deepEqual(patch.thingEdits, [{ index: 12, states: { death: 462, raise: 0 } }]);
+    assert.deepEqual(patch.warnings.map((w) => [w.field, w.support]), [['Injury frame', 'unknown']]);
   });
 
   test('a Thing index outside mobjinfo is reported rather than silently dropped', () => {
@@ -167,10 +225,12 @@ describe('DEHACKED · the committed patches', () => {
         bits: 0x100 | 0x200,
         // `Pain sound = 62` / `Death sound = 62`, resolved through `sfxenum_t`.
         sounds: { pain: 'bgdth1', death: 'bgdth1' },
+        // Every non-death pointer aimed back at its own held frame (951, `S_HANGBNOBRAIN`), and
+        // both deaths at the imp's gib chain (462, `S_TROO_XDIE1`).
+        states: { see: 951, pain: 951, melee: 951, missile: 951, death: 462, xdeath: 462, raise: 951 },
       },
     ]);
-    // Its seven frame fields are out of scope, and reported as such rather than dropped.
-    assert.equal(patch.warnings.filter((w) => w.support === 'unsupported').length, 7);
+    assert.equal(patch.warnings.filter((w) => w.support === 'unsupported').length, 0);
   });
 
   test("EPIC.WAD's `Radius` line is unknown here, exactly as it is in vanilla", () => {
@@ -182,15 +242,19 @@ describe('DEHACKED · the committed patches', () => {
     assert.equal(row?.support, 'unknown');
   });
 
-  test("freedoom2's [PARS] and level titles both land, and its Frame records do not", () => {
+  test("freedoom2's [PARS], level titles and fullbright frames land; its flash durations do not", () => {
     const patch = parseDehacked(dehFixture('freedoom2'), lookup);
     assert.equal(patch.pars.get('MAP01'), 30);
     assert.equal(patch.pars.get('MAP17'), 120); // freedoom's own time, not vanilla's 420
     assert.equal(patch.strings.get('HUSTR_1'), 'MAP01: Hydroelectric Plant');
     assert.equal(patch.strings.get('HUSTR_E1M1'), 'E1M1: Outer Prison');
+    // Five firing frames turned fullbright (the zombieman's, the chaingunner's, three of the
+    // cyberdemon's), and two super-shotgun flash states shortened — which nothing here draws.
+    assert.equal(patch.applied.frame, 5);
+    assert.deepEqual(patch.frameEdits.map((e) => [e.index, e.subNumber]), [[185, 32773], [419, 32773], [685, 32773], [687, 32773], [689, 32773]]);
     const frames = patch.warnings.find((w) => w.record === 'Frame');
-    assert.equal(frames?.support, 'unsupported');
-    assert.equal(frames?.count, 7);
+    assert.equal(frames?.support, 'noTarget');
+    assert.equal(frames?.count, 2);
   });
 
   test('a string this engine deliberately has no home for is skipped in silence', () => {

@@ -92,7 +92,7 @@ Two shapes, by what the module is:
 then constants and tables **grouped by topic**, not sorted by kind. A derived value goes directly
 after what it derives from — `FAST_MONSTER_STATS` after `MONSTER_STATS`, `TALLEST_BODY_HEIGHT`
 after that. A pure helper goes directly after the table it reads — `attackPoseFrameSeconds` after
-`MONSTER_ATTACK_FRAMES`. A shape that belongs to one topic stays with that topic rather than being
+`MONSTER_ATTACK_POSE`. A shape that belongs to one topic stays with that topic rather than being
 hoisted to the top: `BarrelExplosion` sits at the end of `things/defs.ts` with the `BARREL_*`
 constants, and that is correct.
 

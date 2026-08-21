@@ -100,6 +100,19 @@ chain's first state with that state's own tics, so the `A_ReFire` state's tics a
 when you *release*. Summing a weapon's whole state list therefore overstates its held-trigger rate;
 the shipped numbers were up to 1.7× off in both directions before this was worked out.
 
+**The rates are walked out of `states[]`, not written out.** `WEAPON_SEED` carries every field a
+state chain can't say and the fill loop at the bottom of `weapons.ts` writes `cooldown` from
+`dehacked/frames.ts`'s reading of vanilla's own frame table, exactly as `monsters/tables.ts` fills
+its stat blocks (docs/dehacked.md § Frames). The rule it walks is the one this section describes:
+the states from `weaponinfo[].atkstate` to the `A_ReFire` that closes the chain, that state
+excluded, divided by how many firing actions one pass carries. `WeaponDef` has no field a patch
+could write a rate into, so this *is* how a DEHACKED patch retunes a gun — § What a DEHACKED patch
+can change here.
+
+Two tests anchor it: `tests/fixtures/frametables.ts` holds all nine rates as they were read off
+`info.c` by hand, and `tests/game/dehacked-frames.test.ts` requires both the walker and the finished
+`WEAPONS` table to reproduce them.
+
 | weapon | states counted | tics | seconds |
 |---|---|---|---|
 | fist | `S_PUNCH1`-`4` | 17 | 0.486 |
@@ -130,11 +143,17 @@ one place this engine's weapons still differ in timing.
 
 ## What a DEHACKED patch can change here
 
-Almost nothing, and that is vanilla's doing rather than a gap. `d_deh.c`'s `deh_weapon[]` is an
-ammo type and five state pointers — `weaponinfo[]` holds no damage and no fire rate at all, because
-in vanilla a weapon's rate *is* its frames' durations. So a `Weapon N` record reaches
-`WeaponDef.ammoType` and nothing else, and a patch that retunes a weapon does it through `Frame`
-records, which are out of scope (docs/dehacked.md § What is not supported).
+The rate, the ammo class, and nothing else — which is everything vanilla stores. `d_deh.c`'s
+`deh_weapon[]` is an ammo type and five state pointers; `weaponinfo[]` holds no damage and no fire
+rate at all, because in vanilla a weapon's rate *is* its frames' durations. So a patch retunes a gun
+the way vanilla does, by editing the `Frame` records of its fire chain or by repointing
+`Shooting frame` at another one, and the applier re-walks the rate off the patched table. Both the
+`A_ReFire` exclusion and the twice-a-pass rule hold under a patch: making `S_PLASMA2` a hundred tics
+long still leaves the plasma rifle at 3, and stretching `S_CHAIN1` moves the chaingun to the new gap
+between its two `A_FireCGun` calls rather than to the whole pass.
+
+A weapon's **flash, bob, raise and lower** states are the ones with nothing here to land on — there
+is no first-person weapon drawn — and report as `noTarget` rather than applying silently.
 
 A weapon's **missile** is a different matter: `MT_ROCKET`, `MT_PLASMA` and `MT_BFG` are ordinary
 `Thing` records, so their speed, radius and damage are patchable — and each is shared with the

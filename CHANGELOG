@@ -1,24 +1,39 @@
-v0.15.0 (2026-08-20)
-
-DEHACKED/BEX patches are read, and levels now show a par time.
+v0.15.0 (2026-08-2?)
 
 Features and improvements
   - DEHACKED/BEX patches are read and applied
-    - level titles
-    - par times
-    - monster stats
-    - ammo counts and caps, a weapon's ammo class, the starting kit, the
-      health and armour limits, and the BFG's cells per shot
-    - which lump a sound or a music track resolves to
-    - the death overlay's killer line
-    - the locked-door and locked-switch lines
-    - MISSING: frame edits (Frame, Pointer, [CODEPTR]) and sprite renames:
-      this engine animates from sprite lists, not a frame table
+    - supported:
+      - level titles
+      - par times
+      - monster stats
+      - ammo counts and caps, the starting kit, the health and armour limits,
+        and the BFG's cells per shot
+      - weapon records whole: the ammo class and all five frame pointers, with
+        each gun's fire rate walked back out of its own state chain
+      - which lump a sound or a music track resolves to
+      - the death overlay's killer line
+      - the locked-door and locked-switch lines
+      - frame records and a Thing's frame pointers, by re-deriving the sprite
+        lists and attack/pain timings from the patched frame table
+      - [SPRITES] and Text sprite renames
+    - missing:
+      - action pointers (Pointer, [CODEPTR])
     - a save made with a patch loaded now requires that file back, since without
       it every patched stat would silently revert
+  - fullbright frames: torches, keys, powerups, projectiles, explosions and
+    firing frames now draw at full light, as vanilla's frame table says
   - the menu marks a WAD that carries a DEHACKED lump
   - the intermission shows the level's par time, green if you beat it
   - the death overlay is drawn in the WAD's own font, like the other cards
+
+Fixed bugs
+  - the spider mastermind, cyberdemon and arachnotron walk at vanilla's speed
+  - monsters wind up before firing, as vanilla does: a shot lands partway into
+    the attack instead of the instant the monster decides to
+  - a resurrected monster now plays its whole raise sequence
+  - the cyberdemon's three rockets come 24 tics apart, not 12 — its volley had
+    been arriving twice as fast as vanilla's
+  - a barrel's blast comes 15 tics after death, not 10
 
 
 ===============================================================================

@@ -9,8 +9,9 @@
  * The distinction that matters is `noTarget` against `unsupported`: the first means the patch asked
  * for something this engine simply doesn't have (a finale screen, a pickup message), the second
  * means it asked for something deliberately left out of scope even though a target exists or could
- * (frames, sprite renames, re-keying a thing's doomednum). Both keep playing; only the second is
- * ever worth revisiting. `unknown` is neither — the parser didn't recognise the text at all.
+ * (action pointers, re-keying a thing's doomednum). Both keep playing; only
+ * the second is ever worth revisiting. `unknown` is neither — the parser didn't recognise the text
+ * at all.
  */
 export type DehSupport = 'applied' | 'noTarget' | 'unsupported' | 'unknown';
 
@@ -40,9 +41,9 @@ export type DehRecordKind =
   | 'header';
 
 /**
- * One thing a patch asked for that didn't fully land, already deduped. `count` is why: freedoom2's
- * DEHACKED carries seven `Frame` records and five `Sprite` records, and a report that printed one
- * line each would bury the two facts worth knowing under twelve rows.
+ * One thing a patch asked for that didn't fully land, already deduped. `count` is why: EPIC.WAD's
+ * one hanging body repoints seven frame fields, and a report that printed one line each would bury
+ * the fact worth knowing under seven rows.
  */
 export interface DehWarning {
   /** The record as the patch spelled it, minus its index: `Thing`, `[CODEPTR]`. */
@@ -82,6 +83,31 @@ export interface DehThingEdit {
    * patch asked for silence (`sfx_None`, index 0) and the field is deleted rather than set.
    */
   sounds?: Partial<Record<'see' | 'attack' | 'pain' | 'death' | 'active', string | null>>;
+  /**
+   * The eight state pointers (`Initial frame` … `Respawn frame`), as `states[]` indices. A key
+   * present with 0 is `S_NULL` — "this type has no such state" — and is as meaningful as any other
+   * value, which is why this is a partial record and not a set of optional numbers defaulting to 0.
+   * docs/dehacked.md § Frames.
+   */
+  states?: Partial<Record<StatePointer, number>>;
+}
+
+/** The eight `mobjinfo` state pointers a `Thing` record can repoint, by the name `MOBJ_STATES` uses. */
+export type StatePointer = 'spawn' | 'see' | 'pain' | 'melee' | 'missile' | 'death' | 'xdeath' | 'raise';
+
+/**
+ * One `Frame N` record's fields, in vanilla's own units: `Sprite number` is a `sprnames[]` index,
+ * `Sprite subnumber` the raw `state_t.frame` (letter plus `FF_FULLBRIGHT`), `Duration` tics (-1
+ * holds forever), `Next frame` a `states[]` index. Left raw because the applier patches them into a
+ * copy of `STATES` and walks that, rather than converting each field on its own.
+ */
+export interface DehFrameEdit {
+  /** 0-based `states[]` index, as the patch wrote it. */
+  index: number;
+  spriteNum?: number;
+  subNumber?: number;
+  duration?: number;
+  nextFrame?: number;
 }
 
 /** One `Ammo N` record's two fields, `d_deh.c`'s `deh_ammo[]`. */
@@ -95,21 +121,39 @@ export interface DehAmmoEdit {
 }
 
 /**
- * One `Weapon N` record. Only the ammo type survives: vanilla's `weaponinfo[]` holds that and five
- * state pointers, and nothing else — no damage, no rate. docs/dehacked.md § Weapon, Ammo and Misc.
+ * One `Weapon N` record: vanilla's whole `weaponinfo[]` row, which is an ammo type and five state
+ * pointers — no damage and no rate, because in vanilla a weapon's rate *is* its fire chain's
+ * durations. docs/dehacked.md § Weapon, Ammo and Misc.
  */
 export interface DehWeaponEdit {
   /** 0-based `weapontype_t`. */
   index: number;
-  /** 0-based `ammotype_t`, or 5 (`am_noammo`) for a weapon that draws none. */
+  /** 0-based `ammotype_t`, or 5 (`am_noammo`) for a weapon that draws none; -1 where the record set none. */
   ammoType: number;
+  /**
+   * The five state pointers, as `states[]` indices, by the name `WEAPON_STATES` uses rather than
+   * the name the patch writes — `d_deh.c` labels `upstate` "Deselect frame" and `downstate`
+   * "Select frame", the two the wrong way round. A key present with 0 is `S_NULL`, as meaningful as
+   * any other value. Only `atk` reaches a sink here, the fire rate walked off its chain
+   * (docs/weapons.md § Fire rates); the other four are carried so the record reads whole.
+   */
+  states?: Partial<Record<WeaponStatePointer, number>>;
 }
+
+/** The five `weaponinfo` state pointers a `Weapon` record can repoint, by the name `WEAPON_STATES` uses. */
+export type WeaponStatePointer = 'up' | 'down' | 'ready' | 'atk' | 'flash';
 
 /** Everything a parsed patch carries, plus the report of what it asked for that didn't land. */
 export interface DehPatch {
   thingEdits: readonly DehThingEdit[];
   ammoEdits: readonly DehAmmoEdit[];
   weaponEdits: readonly DehWeaponEdit[];
+  frameEdits: readonly DehFrameEdit[];
+  /**
+   * BEX `[SPRITES]` and vanilla `Text 4 4` alike: a pristine `sprnames[]` name, lowercased, to the
+   * four-character name its lumps should resolve through instead. docs/dehacked.md § Sprite renames.
+   */
+  spriteRenames: ReadonlyMap<string, string>;
   /** `Misc`'s values, keyed by the lowercased `deh_misc[]` name — `MISC_SINKS` says where each goes. */
   misc: Readonly<Record<string, number>>;
   /** BEX `[SOUNDS]`: sfx name to the lump it should resolve to. */

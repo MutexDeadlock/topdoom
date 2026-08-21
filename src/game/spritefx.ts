@@ -14,6 +14,7 @@ import type { ShotPath, World } from './world.ts';
 import { transfersOf } from './specials/transfers.ts';
 import { triangularDraw } from '../util/random.ts';
 import { type OneShotEffect } from './spritefx/defs.ts';
+import { FULLBRIGHT_FRAMES } from './things/tables.ts';
 import { BLOOD_FRAME_SECONDS, bloodFrames, HIT_Z_JITTER, PUFF_FRAME_SECONDS, PUFF_FRAMES, PUFF_MELEE_FRAMES, PUFF_WALL_OFFSET, TFOG_FRAME_SECONDS, TFOG_FRAMES, TFOG_SPAWN_OFFSET } from './spritefx/tables.ts';
 import type { TeleportFogState } from './snapshot.ts';
 import type { Placement, Pos3 } from '../types.ts';
@@ -269,12 +270,13 @@ export class SpriteFxLayer {
     this.batch.end();
   }
 
-  /** Queues one already-advanced sprite into the batch at a DOOM-space point. */
+  /** Queues one already-advanced sprite into the batch at a DOOM-space point. A fullbright frame (every explosion, a fireball in flight) ignores `light`. */
   batchSprite(anim: SpriteAnimator, at: Pos3, facingDeg: number, light: number): void {
     const cached = anim.resolve(facingDeg, this.viewerAngleDeg);
     if (!cached) return;
     doomToWorld(at.x, at.y, at.z, this.batchPos);
-    this.batch.add(cached, this.batchPos.x, this.batchPos.y, this.batchPos.z, 1, litColor(light));
+    const lit = FULLBRIGHT_FRAMES.has(anim.frameKey) ? 255 : light;
+    this.batch.add(cached, this.batchPos.x, this.batchPos.y, this.batchPos.z, 1, litColor(lit));
   }
 
   updateTeleportFogs(dt: number): void {

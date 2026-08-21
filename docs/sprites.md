@@ -260,6 +260,50 @@ letter, so it holds correctly instead of drawing the sprite's first (unrelated) 
 absent from the table either has vanilla `tics: -1` (genuinely static — ammo, weapons, STIM/MEDI, the
 plain column) or spawns at the literal `'A'` frame already, and needs neither case.
 
+Every one of these tables — `THING_SPRITES`, `THING_ANIM_FRAMES`, the seven `MONSTER_*_FRAMES`, the
+barrel's `BARREL_CHAIN`, the missiles' flight and impact art — is **not written out at all**. Each
+is filled at import by `dehacked/frames.ts`, which walks vanilla's `states[]` (transcribed in
+`dehacked/states.ts`), and the same walker re-derives them from a patched copy when a DEHACKED
+`Frame` record edits one. So every curation rule this doc describes — the distinct-letter rule, the
+walk/attack split, which chains end where — is now a rule *of the walker*, and
+`tests/game/dehacked-frames.test.ts` holds its reading equal to the frozen hand transcription in
+`tests/fixtures/frametables.ts`. That pair is how two transcription slips were found, and the seven
+places the two readings deliberately differ are listed in docs/dehacked.md § Frames.
+
+## Fullbright frames
+
+Vanilla draws a frame whose `state_t.frame` carries `FF_FULLBRIGHT` at full light whatever the
+sector says — the torches and candles, keys, armor and powerups, the whole lost soul, every
+projectile in flight and every explosion, the teleport fogs, the first puff frame, the spawn cube,
+the player's and most monsters' firing frames. For a long time this engine reproduced none of it
+(the Icon of Sin's cube was hardcoded to 255); now `things/tables.ts`'s `FULLBRIGHT_FRAMES` holds
+every `SPRITE + LETTER` vanilla brightens, read off `dehacked/states.ts`, and three draw sites lift
+a matching sprite to light 255: `ThingLayer.draw` for map things, `SpriteFxLayer.batchSprite` for
+effects, projectiles and cubes, and the player's `SpriteActor`, which is handed the set at
+construction so `render/` stays free of the game tables.
+
+**The key is the logical `(sprite, letter)`, not the state and not the lump.** The animator knows
+no state index — it holds letters — so the bit is reduced to the letter. Where vanilla draws one
+letter bright in some states and dim in others, the states **vote and a tie is bright**; ten stock
+letters split that way and the vote lands each where it looks right. The one that would not have
+survived "bright if any state says so" is the spider mastermind's and arachnotron's `A_FaceTarget`
+frame, letter `A` — their *walk* letter, bright in one state against three or four dim ones, and
+they would have glowed the whole way across a room. The chaingunner's two firing frames (bright and
+dim alternating through its refire loop) and the pain elemental's death frames (its never-played
+raise frames, dimmed) tie and stay bright. `tests/game/dehacked-frames.test.ts` pins the list.
+Logical rather than lump, because a `[SPRITES]` rename changes which lump `SpriteBank` hands back
+and the set is keyed by the name the animator was given.
+
+**`SpriteAnimator.frameKey`** is how the draw sites know what was drawn: the `SPRITE + LETTER`
+the last `resolve` resolved, rebuilt only in the branch that re-fetches the material when the lump
+changes, so the steady state pays nothing and the per-sprite cost at draw is one `Set.has` on a
+five-character string — ~0.06 ms for the ten thousand NUTS.WAD can have on screen. A death drawn in
+another sprite (the barrel's `BEXP`, a patched death chain) names that sprite.
+
+A DEHACKED patch can add or clear the bit — `rebuildFullbrightFrames` refills the set from the
+patched frame table, and freedoom2's does exactly that on the zombieman's firing frame, which
+vanilla leaves dim (docs/dehacked.md § Frames).
+
 ## The animation index must always be valid
 
 `SpriteAnimator` keeps **one** `animIndex` shared by three sequences — the base cycle,
@@ -305,7 +349,7 @@ overlap is what `tables.test.ts` now pins: no type's walk letters may appear in 
 or death table. Every override letter was also confirmed to exist as real rotation frames in
 `DOOM2.WAD`, the same check the death tables get below.
 
-**Attack and pain each get a real, dedicated pose** (`things/tables.ts`'s `MONSTER_ATTACK_FRAMES`/
+**Attack and pain each get a real, dedicated pose** (`things/tables.ts`'s `MONSTER_ATTACK_POSE`/
 `MONSTER_PAIN_FRAMES`). The blocker an earlier walk-cycle stand-in was working around was real:
 unlike death frames, which are derivable straight from the WAD because death art is structurally the
 rotation-0-only tail of a sprite's frame set, attack and pain frames are ordinary rotation 1-8 frames
@@ -322,19 +366,43 @@ own pain state — a genuine `info.c` quirk, exactly what a pure "eyeball the lu
 misses), and the chaingunner's death/xdeath split fell two letters too early, dropping `CPOSM0`/
 `CPOSN0` and duplicating them into the gib tail.
 
-**An attack pose lasts exactly as long as the attack it poses for.** The pain pose keeps the flat
-`MONSTER_ACTION_FRAME_SECONDS`, but `MONSTER_ATTACK_FRAMES` is spread over the attack's own remaining
-length (`attackPoseFrameSeconds`, fed `MonsterBody.attackPause` — which `stepMonsterAI` decrements
-*before* the call that starts an attack sets it, so it is the full `AttackStats.duration` at the
-trigger and the remainder for a later shot of a volley). Entering the pose goes through one function,
-`enterAttackPose`, for the reason `enterDeathPose` does: the live trigger and the savegame restore
-below must not derive the same pose two ways. The two are the same vanilla states:
-`duration` is the `missilestate`/`meleestate` chain's summed tics and those states are the frames
-this table lists, so a flat rate makes the pose and the wait disagree by a margin that grows with the
-chain. The arch-vile is where it became unmissable — 94 tics of `VILE` `G`-`P`, posed for 30 and
-standing in its idle frame for the other 64, through the back half of the windup and the blast itself
-(docs/monster-archvile.md § The attack). The mancubus had the same shape at 9 tics of 80. Covered by
-`tests/regression/vile-attack-pose.test.ts`.
+**An attack pose lasts exactly as long as the attack it poses for, and keeps vanilla's own
+proportions inside it.** The pain pose keeps the flat `MONSTER_ACTION_FRAME_SECONDS`, but an attack
+pose is `MONSTER_ATTACK_POSE`'s frames scaled to fill `MonsterBody.attackPause`
+(`attackPoseFrameSeconds`) — each frame holding its share of the chain's tics, not an equal slice.
+Entering the pose goes through one function, `enterAttackPose`, for the reason `enterDeathPose` does:
+the live trigger and the savegame restore below must not derive the same pose two ways.
+
+The pose and the wait are the same vanilla states — `duration` is the `missilestate`/`meleestate`
+chain's summed tics and those states are the frames the table lists — so getting either the length
+or the proportions wrong makes them disagree. Both halves were wrong once, and each showed up
+differently:
+
+- **A flat overall rate** left the arch-vile posed for 30 tics of its 94-tic cast and standing in
+  its idle frame for the other 64, through the back half of the windup and the blast itself
+  (docs/monster-archvile.md § The attack). The mancubus had the same shape at 9 tics of 80. Covered
+  by `tests/regression/vile-attack-pose.test.ts`.
+- **An even split within the pose** put the *firing* frame in the wrong place. A monster fires
+  partway into its chain (docs/monster-ai.md § The windup), vanilla marks that frame
+  `FF_FULLBRIGHT`, and an equal slice does not land on it: the zombieman's chain is 10/8/8 tics, so
+  two equal letters put its flash 13 tics in where `A_PosAttack` is at 10. With the shot itself
+  firing at offset 0 at the time, the muzzle flash lit up four tenths of a second after the bullet.
+  Repro: freedoom2's MAP01, whose DEHACKED brightens `S_POSS_ATK2`; the stock shotgun guy and
+  chaingunner do it without any patch. Covered by `tests/regression/muzzle-flash-timing.test.ts`.
+
+**The pose starts when the attack does, never when its shot lands.** With a real windup the firing
+frame is mid-pose, so a pose triggered by the returned attack event would show the *wind-up* frame
+under the bullet. `ThingLayer.update` starts it on whichever tic `attackPause` became non-zero and
+guards on `SpriteAnimator.posing`, which is also what keeps a volley's later shots — the mancubus's
+three, the chaingunner's refire loop — inside the pose they are already in rather than snapping it
+back to frame one. Each of those shots then lands on its own firing frame, because the proportions
+are vanilla's.
+
+**The table is split by attack kind**, since a type's `meleestate` and `missilestate` are genuinely
+different animations. Only the revenant has two distinct chains (`SKEL` `G`-`I` punches, `J`-`K`
+throws); the imp, demon, baron and hell knight point both pointers at one chain and share a single
+pose. Before the split, one merged letter list covered both kinds because the sprite layer had no
+"which attack" signal — `enterAttackPose` now takes the kind from `MonsterAttack.kind`.
 
 Both tables play through `SpriteAnimator.playOnce`, not `die`: a third animation mode alongside the
 permanent one-shot-then-hold `die` and the looping alive cycle, playing its frames forward once and

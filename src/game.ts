@@ -27,6 +27,7 @@ import {
   type ThingLayer,
 } from './game/things.ts';
 import {
+  FULLBRIGHT_FRAMES,
   PLAYER_ACTION_FRAME_SECONDS,
   PLAYER_ATTACK_FRAMES,
   PLAYER_DEATH_FRAME_SECONDS,
@@ -463,7 +464,15 @@ export class Game {
 
     // PLAY's own walk cycle: DOOM has no separate idle art, it just holds
     // frame A (this list's first entry) until the player is actually moving.
-    this.playerActor = new SpriteActor(this.spriteBank, this.spriteMaterials, 'PLAY', ['A', 'B', 'C', 'D']);
+    // `FULLBRIGHT_FRAMES` lights the muzzle frame (`PLAY F`) the way vanilla does.
+    this.playerActor = new SpriteActor(
+      this.spriteBank,
+      this.spriteMaterials,
+      'PLAY',
+      ['A', 'B', 'C', 'D'],
+      undefined,
+      FULLBRIGHT_FRAMES,
+    );
     this.scene.add(this.playerActor.mesh);
     // The vile-flame resolver is `monsterAttacks`', not the batch's — where the
     // flame belongs depends on live monster/player state. Both callbacks are

@@ -11,16 +11,32 @@ import {
 import {
   CEILING_HUNG_HEIGHT,
   COUNTKILL_TYPES,
+  FULLBRIGHT_FRAMES,
   FUZZ_TYPES,
+  MONSTER_ATTACK_POSE,
+  MONSTER_CORPSE_VANISHES,
+  MONSTER_DEATH_FRAMES,
+  MONSTER_DEATH_SPRITE_OVERRIDE,
   MONSTER_HEALTH,
+  MONSTER_PAIN_FRAMES,
+  MONSTER_RAISE_FRAMES,
   MONSTER_TYPES,
+  MONSTER_WALK_FRAMES_OVERRIDE,
   OBITUARIES,
   SOLID_DECORATION_RADIUS_OVERRIDE,
   SOLID_DECORATION_TYPES,
+  THING_ANIM_FRAMES,
+  THING_SPRITES,
   obituary,
 } from '../../src/game/things/tables.ts';
-import { PROJECTILE_RADIUS } from '../../src/game/spritefx/tables.ts';
+import { BARREL_CHAIN } from '../../src/game/things/defs.ts';
+import { IMPACT_EFFECTS, PROJECTILE_FRAMES, PROJECTILE_RADIUS, PROJECTILE_SOUNDS } from '../../src/game/spritefx/tables.ts';
+import { STATES } from '../../src/game/dehacked/states.ts';
+import { SpriteBank } from '../../src/wad/sprites.ts';
+import { Wad } from '../../src/wad/wad.ts';
+import { wadFile } from '../fixtures/wadfile.ts';
 import { WEAPONS } from '../../src/game/weapons.ts';
+import { WEAPON_ORDER } from '../../src/game/dehacked/tables.ts';
 import { applyPickup, ammoMax, createInventory } from '../../src/game/inventory.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { soundLumpName } from '../../src/audio/sfx.ts';
@@ -30,6 +46,8 @@ import { LOCKED_LINES, lockedLine } from '../../src/game/specials/tables.ts';
 import { dehFixture } from '../fixtures/dehacked.ts';
 
 const apply = (text: string) => applyDehacked(parseDehacked(text));
+const stateNamed = (name: string) => STATES.findIndex((row) => row[5] === name);
+const tics = (seconds: number) => Math.round(seconds * 35);
 
 /**
  * Writing a patch into the tables, and getting them back afterwards. Every test resets first, so
@@ -282,6 +300,148 @@ describe('DEHACKED · applying', () => {
     assert.equal(classifyDehackedString('PD_GREENK'), 'noTarget');
   });
 
+  test("a Thing's death pointer re-derives its death letters, borrowing the other sprite", () => {
+    // EPIC.WAD's shape — a death aimed at the imp's gib chain — on a zombieman (Thing 2), where it
+    // can actually be seen. docs/dehacked.md § Frames.
+    apply('Thing 2\nDeath frame = 462\n');
+    assert.deepEqual(MONSTER_DEATH_FRAMES[ThingType.zombieman], ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U']);
+    assert.deepEqual(MONSTER_DEATH_SPRITE_OVERRIDE[ThingType.zombieman], { death: 'TROO' });
+    // Nothing else on the type moved.
+    assert.deepEqual(MONSTER_ATTACK_POSE[ThingType.zombieman].ranged, { frames: ['E', 'F', 'E'], tics: [10, 8, 8] });
+    resetDehacked();
+    assert.deepEqual(MONSTER_DEATH_FRAMES[ThingType.zombieman], ['H', 'I', 'J', 'K', 'L']);
+    assert.equal(ThingType.zombieman in MONSTER_DEATH_SPRITE_OVERRIDE, false);
+  });
+
+  test('a death pointed at S_NULL leaves the type with no death art, so it hides on death', () => {
+    apply('Thing 2\nDeath frame = 0\n');
+    assert.equal(ThingType.zombieman in MONSTER_DEATH_FRAMES, false);
+  });
+
+  test("a Frame's Duration retimes the stagger its state belongs to", () => {
+    apply(`Frame ${stateNamed('S_POSS_PAIN')}\nDuration = 20\n`);
+    assert.equal(tics(MONSTER_STATS[ThingType.zombieman].painDuration), 23); // 20 + S_POSS_PAIN2's 3
+    assert.equal(tics(FAST_MONSTER_STATS[ThingType.zombieman].painDuration), 23);
+  });
+
+  test('a Next frame that cuts a death chain short makes the corpse vanish', () => {
+    apply(`Frame ${stateNamed('S_TROO_DIE2')}\nNext frame = 0\n`);
+    assert.deepEqual(MONSTER_DEATH_FRAMES[ThingType.imp], ['I', 'J']);
+    assert.equal(MONSTER_CORPSE_VANISHES.has(ThingType.imp), true);
+    resetDehacked();
+    assert.equal(MONSTER_CORPSE_VANISHES.has(ThingType.imp), false);
+  });
+
+  test("retiming the walk loop moves the chase clock, composing with a Speed line", () => {
+    // Every S_POSS_RUN state halved (4 → 2 tics) doubles the chase rate; `Speed = 16` doubles the
+    // per-call stride. Either order: 70 × 2 × 2.
+    const run1 = stateNamed('S_POSS_RUN1');
+    const frames = Array.from({ length: 8 }, (_, i) => `Frame ${run1 + i}\nDuration = 2`).join('\n');
+    apply(`Thing 2\nSpeed = 16\n${frames}\n`);
+    assert.equal(Math.round(MONSTER_STATS[ThingType.zombieman].speed), 280);
+    assert.equal(tics(MONSTER_STATS[ThingType.zombieman].chaseInterval), 2);
+  });
+
+  test("a Frame's Duration on a gun state retunes that weapon's fire rate", () => {
+    // S_SGUN2 is the shotgun's 7-tic firing state; the chain's other seven states hold 30 tics
+    // between them, so a 27-tic state makes the pass 57.
+    apply(`Frame ${stateNamed('S_SGUN2')}\nDuration = 27\n`);
+    assert.equal(tics(WEAPONS.shotgun.cooldown), 57);
+    resetDehacked();
+    assert.equal(tics(WEAPONS.shotgun.cooldown), 37);
+  });
+
+  test("the A_ReFire state's own tics stay out of the rate, however long a patch makes them", () => {
+    // S_PLASMA2 already holds 20 tics that a held trigger never spends. Vanilla's rule is the whole
+    // reason the plasma rifle is the fastest weapon in the game rather than a middling one.
+    apply(`Frame ${stateNamed('S_PLASMA2')}\nDuration = 200\n`);
+    assert.equal(tics(WEAPONS.plasmaRifle.cooldown), 3);
+  });
+
+  test('a chain that fires twice a pass keeps its rate at the gap between shots', () => {
+    // Both S_CHAIN1 and S_CHAIN2 call A_FireCGun, so doubling one state's tics moves the pass from
+    // 8 tics to 12 and the rate from 4 to 6 — not to 12.
+    apply(`Frame ${stateNamed('S_CHAIN1')}\nDuration = 8\n`);
+    assert.equal(tics(WEAPONS.chaingun.cooldown), 6);
+  });
+
+  test("a Weapon's Shooting frame repoints the chain the rate is walked from", () => {
+    // The pistol made to fire off the shotgun's chain: 37 tics, not its own 14. `Ammo type` is
+    // absent, which must leave the class it draws from alone.
+    apply(`Weapon 1\nShooting frame = ${stateNamed('S_SGUN1')}\n`);
+    assert.equal(tics(WEAPONS.pistol.cooldown), 37);
+    assert.equal(WEAPONS.pistol.ammoType, 'bullets');
+    resetDehacked();
+    assert.equal(tics(WEAPONS.pistol.cooldown), 14);
+  });
+
+  test('a patch that touches one weapon leaves the other eight exactly as they were', () => {
+    const before = WEAPON_ORDER.map((id) => WEAPONS[id].cooldown);
+    apply(`Frame ${stateNamed('S_SGUN2')}\nDuration = 27\n`);
+    const after = WEAPON_ORDER.map((id) => WEAPONS[id].cooldown);
+    for (const [i, id] of WEAPON_ORDER.entries()) {
+      if (id === 'shotgun') continue;
+      assert.equal(after[i], before[i], `${id} should not have moved`);
+    }
+  });
+
+  test("a missile's flight sprite moves it to a new key in every sprite-keyed table", () => {
+    // The imp's fireball redrawn as TFOG (sprite 26): the stat block, the flight and impact art,
+    // and the two tables the walker does not derive all follow the new name.
+    const tball = stateNamed('S_TBALL1');
+    apply(`Frame ${tball}\nSprite number = 26\nFrame ${tball + 1}\nSprite number = 26\n`);
+    assert.equal(MONSTER_STATS[ThingType.imp].ranged!.projectile!.sprite, 'TFOG');
+    assert.deepEqual(PROJECTILE_FRAMES.TFOG, ['A', 'B']);
+    assert.deepEqual(IMPACT_EFFECTS.TFOG, { sprite: 'BAL1', frames: ['C', 'D', 'E'] });
+    assert.equal(PROJECTILE_RADIUS.TFOG, 6);
+    assert.deepEqual(PROJECTILE_SOUNDS.TFOG, PROJECTILE_SOUNDS.BAL1);
+    resetDehacked();
+    assert.equal(MONSTER_STATS[ThingType.imp].ranged!.projectile!.sprite, 'BAL1');
+    assert.equal('TFOG' in PROJECTILE_FRAMES, false);
+    assert.equal('TFOG' in PROJECTILE_RADIUS, false);
+  });
+
+  test('a Sprite subnumber edit adds or clears a fullbright frame', () => {
+    // freedoom2's own edit: the zombieman's firing frame, not bright in vanilla.
+    assert.equal(FULLBRIGHT_FRAMES.has('POSSF'), false);
+    apply(`Frame 185\nSprite subnumber = 32773\nFrame ${stateNamed('S_CANDLESTIK')}\nSprite subnumber = 0\n`);
+    assert.equal(FULLBRIGHT_FRAMES.has('POSSF'), true);
+    assert.equal(FULLBRIGHT_FRAMES.has('CANDA'), false);
+    resetDehacked();
+    assert.equal(FULLBRIGHT_FRAMES.has('POSSF'), false);
+    assert.equal(FULLBRIGHT_FRAMES.has('CANDA'), true);
+  });
+
+  test("the barrel's blast delay follows A_Explode's place in its patched chain", () => {
+    assert.equal(tics(BARREL_CHAIN.explodeDelaySeconds), 15);
+    apply(`Frame ${stateNamed('S_BEXP')}\nDuration = 1\n`);
+    assert.equal(tics(BARREL_CHAIN.explodeDelaySeconds), 11);
+    resetDehacked();
+    assert.equal(tics(BARREL_CHAIN.explodeDelaySeconds), 15);
+  });
+
+  test('a decoration repointed onto another spawn chain takes its sprite and loop', () => {
+    // Thing 100 is the plain candle (34); its spawn aimed at the evil eye's loop.
+    apply(`Thing 100\nInitial frame = ${stateNamed('S_EVILEYE')}\n`);
+    assert.equal(THING_SPRITES[34], 'CEYE');
+    assert.deepEqual(THING_ANIM_FRAMES[34], { frames: ['A', 'B', 'C', 'B'], frameSeconds: THING_ANIM_FRAMES[ThingType.evilEye].frameSeconds });
+    resetDehacked();
+    assert.equal(THING_SPRITES[34], 'CAND');
+    assert.equal(34 in THING_ANIM_FRAMES, false);
+  });
+
+  test('[SPRITES] renames which lumps a sprite name resolves to, at bank-build time', () => {
+    const lumps = ['S_START', 'ZOMBA1', 'ZOMBB2B8', 'POSSA1', 'S_END'];
+    apply('[SPRITES]\nPOSS = ZOMB\n');
+    const bank = new SpriteBank(new Wad([wadFile('PWAD', 'x.wad', lumps)]));
+    // Things asking for POSS get the ZOMB lumps; ZOMB's own name still works too.
+    assert.equal(bank.lookup('POSS', 'A', 1)?.lump, 'ZOMBA1');
+    assert.deepEqual(bank.lookup('POSS', 'B', 8), { lump: 'ZOMBB2B8', flip: true });
+    assert.equal(bank.lookup('ZOMB', 'A', 1)?.lump, 'ZOMBA1');
+    resetDehacked();
+    assert.equal(new SpriteBank(new Wad([wadFile('PWAD', 'x.wad', lumps)])).lookup('POSS', 'A', 1)?.lump, 'POSSA1');
+  });
+
   test('thingStatsPatched follows the patch, and clears on reset', () => {
     assert.equal(thingStatsPatched(), false);
     apply('Thing 12\nHit points = 5\n');
@@ -313,6 +473,20 @@ describe('DEHACKED · reset restores every table it can write', () => {
       inventory: createInventory(),
       obituaries: { ...OBITUARIES },
       lockedLines: { ...LOCKED_LINES },
+      sprites: { ...THING_SPRITES },
+      anims: structuredClone(THING_ANIM_FRAMES),
+      walk: structuredClone(MONSTER_WALK_FRAMES_OVERRIDE),
+      death: structuredClone(MONSTER_DEATH_FRAMES),
+      deathSprite: structuredClone(MONSTER_DEATH_SPRITE_OVERRIDE),
+      pain: structuredClone(MONSTER_PAIN_FRAMES),
+      attack: structuredClone(MONSTER_ATTACK_POSE),
+      raise: structuredClone(MONSTER_RAISE_FRAMES),
+      vanishes: [...MONSTER_CORPSE_VANISHES].sort(),
+      flight: structuredClone(PROJECTILE_FRAMES),
+      impacts: structuredClone(IMPACT_EFFECTS),
+      sounds: structuredClone(PROJECTILE_SOUNDS),
+      barrel: structuredClone(BARREL_CHAIN),
+      fullbright: [...FULLBRIGHT_FRAMES].sort(),
     };
 
     // Every section the applier writes, at once, on types chosen to hit each sink.
@@ -329,6 +503,15 @@ describe('DEHACKED · reset restores every table it can write', () => {
         '[STRINGS]\nOB_CRUSH = %o was squished.\nPD_BLUEK = Locked, obviously',
         '[SOUNDS]\npistol = DSNEWGUN',
         '[MUSIC]\nrunnin = D_OTHER',
+        // The frame walker's sinks: a repointed death, a retimed pain, a shortened death chain that
+        // vanishes, a renamed missile, a brightened frame, the barrel, a candle on another loop.
+        'Thing 2\nDeath frame = 462\nFirst moving frame = 951',
+        `Frame ${stateNamed('S_POSS_PAIN')}\nDuration = 20\nSprite subnumber = 32773`,
+        `Frame ${stateNamed('S_TROO_DIE2')}\nNext frame = 0`,
+        `Frame ${stateNamed('S_TBALL1')}\nSprite number = 26`,
+        `Frame ${stateNamed('S_BEXP')}\nDuration = 1`,
+        `Thing 100\nInitial frame = ${stateNamed('S_EVILEYE')}`,
+        '[SPRITES]\nPOSS = ZOMB',
       ].join('\n'),
     );
     assert.notDeepEqual(MONSTER_STATS[ThingType.imp], before.stats[ThingType.imp], 'the patch did something');
@@ -350,6 +533,24 @@ describe('DEHACKED · reset restores every table it can write', () => {
     assert.equal(vanillaMusicFor('MAP01'), 'D_RUNNIN');
     assert.deepEqual(OBITUARIES, before.obituaries);
     assert.deepEqual(LOCKED_LINES, before.lockedLines);
+    assert.deepEqual(THING_SPRITES, before.sprites);
+    assert.deepEqual(THING_ANIM_FRAMES, before.anims);
+    assert.deepEqual(MONSTER_WALK_FRAMES_OVERRIDE, before.walk);
+    assert.deepEqual(MONSTER_DEATH_FRAMES, before.death);
+    assert.deepEqual(MONSTER_DEATH_SPRITE_OVERRIDE, before.deathSprite);
+    assert.deepEqual(MONSTER_PAIN_FRAMES, before.pain);
+    assert.deepEqual(MONSTER_ATTACK_POSE, before.attack);
+    assert.deepEqual(MONSTER_RAISE_FRAMES, before.raise);
+    assert.deepEqual([...MONSTER_CORPSE_VANISHES].sort(), before.vanishes);
+    assert.deepEqual(PROJECTILE_FRAMES, before.flight);
+    assert.deepEqual(IMPACT_EFFECTS, before.impacts);
+    assert.deepEqual(PROJECTILE_SOUNDS, before.sounds);
+    assert.deepEqual(BARREL_CHAIN, before.barrel);
+    assert.deepEqual([...FULLBRIGHT_FRAMES].sort(), before.fullbright);
+    // The rename sink has no table of its own — a rebuilt bank drawing POSS from its own lumps is
+    // what "no [SPRITES] rename survived" looks like from outside.
+    const bank = new SpriteBank(new Wad([wadFile('PWAD', 'x.wad', ['S_START', 'ZOMBA1', 'POSSA1', 'S_END'])]));
+    assert.equal(bank.lookup('POSS', 'A', 1)?.lump, 'POSSA1');
   });
 
   test('the pristine snapshot is deep, so a reset hands back no patched sub-object', () => {
@@ -357,11 +558,14 @@ describe('DEHACKED · reset restores every table it can write', () => {
     const originalSpeed = MONSTER_STATS[ThingType.imp].ranged!.projectile!.speed;
     // Two rounds: a shallow snapshot would survive the first reset and fail the second, because
     // the "pristine" nested object would itself have been mutated by the first patch.
+    const originalDeath = [...MONSTER_DEATH_FRAMES[ThingType.zombieman]];
     for (let round = 0; round < 2; round++) {
-      apply('Thing 32\nSpeed = 1310720\n');
+      apply('Thing 32\nSpeed = 1310720\nThing 2\nDeath frame = 462\n');
       assert.equal(MONSTER_STATS[ThingType.imp].ranged!.projectile!.speed, 700);
+      assert.equal(MONSTER_DEATH_FRAMES[ThingType.zombieman][0], 'N');
       resetDehacked();
       assert.equal(MONSTER_STATS[ThingType.imp].ranged!.projectile!.speed, originalSpeed);
+      assert.deepEqual(MONSTER_DEATH_FRAMES[ThingType.zombieman], originalDeath);
     }
   });
 });

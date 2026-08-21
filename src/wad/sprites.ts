@@ -1,6 +1,7 @@
 /**
  * `SpriteBank`: indexes the WAD's sprite lumps (S_START..S_END) by sprite name, frame letter and
- * rotation, so a thing's facing resolves to a lump. See docs/sprites.md.
+ * rotation, so a thing's facing resolves to a lump — through a DEHACKED `[SPRITES]` rename where a
+ * patch made one. See docs/sprites.md.
  */
 import type { Lump, Wad } from './wad.ts';
 
@@ -15,6 +16,24 @@ const SPRITE_START = /^(S|SS)_START$/;
 const SPRITE_END = /^(S|SS)_END$/;
 
 /**
+ * Sprite names a DEHACKED `[SPRITES]` section (or a vanilla `Text 4 4`) has renamed: the pristine
+ * `sprnames[]` name to the four characters its lumps now start with, both uppercased. Empty unless
+ * a patch said otherwise. Read once, when a `SpriteBank` is built — `game.ts` builds it after
+ * `applyDehacked` — so a lookup pays nothing for it. docs/dehacked.md § Sprite renames.
+ */
+const SPRITE_RENAMES = new Map<string, string>();
+
+/** Redirects one sprite name to another lump prefix — a BEX `[SPRITES]` entry, `d_deh.c`'s `deh_procBexSprites`. */
+export function setSpriteLump(name: string, to: string): void {
+  SPRITE_RENAMES.set(name.toUpperCase(), to.toUpperCase());
+}
+
+/** Forgets every `[SPRITES]` rename, back to every sprite drawing its own lumps. */
+export function resetSpriteLumps(): void {
+  SPRITE_RENAMES.clear();
+}
+
+/**
  * Indexes sprite lumps (S_START..S_END) by sprite name and frame letter, so a
  * thing's facing can be turned into the matching lump. DOOM sprite names are
  * SSSSFRfr: a 4-letter sprite, a frame letter, a rotation digit (0 = the only
@@ -22,18 +41,33 @@ const SPRITE_END = /^(S|SS)_END$/;
  * directions DOOM renders directional things from), and optionally a second
  * frame+rotation pair meaning "this same lump, mirrored, is also that other
  * rotation" — the usual way DOOM halves the art needed for symmetric actors.
+ *
+ * A renamed sprite (`SPRITE_RENAMES`) is indexed under the name things ask for
+ * as well as its own: `POSS = ZOMB` files every `ZOMB*` lump under `POSS` too,
+ * so `lookup('POSS', …)` finds it with no per-call indirection.
  */
 export class SpriteBank {
   private frames = new Map<string, Map<string, SpriteFrame>>();
 
   constructor(wad: Wad) {
-    for (const lump of wad.markedRange(SPRITE_START, SPRITE_END)) this.index(lump);
+    const aliases = new Map<string, string[]>();
+    for (const [from, to] of SPRITE_RENAMES) {
+      const under = aliases.get(to) ?? [];
+      under.push(from);
+      aliases.set(to, under);
+    }
+    for (const lump of wad.markedRange(SPRITE_START, SPRITE_END)) {
+      const sprite = lump.name.slice(0, 4);
+      this.index(lump, sprite);
+      // `aliases` is empty for all but a `[SPRITES]` patch, and this runs per sprite lump.
+      const under = aliases.get(sprite);
+      if (under) for (const alias of under) this.index(lump, alias);
+    }
   }
 
-  private index(lump: Lump): void {
+  private index(lump: Lump, sprite: string): void {
     const name = lump.name;
     if (name.length < 6) return;
-    const sprite = name.slice(0, 4);
     this.addFrame(sprite, name[4], name[5], name, false);
     if (name.length >= 8) this.addFrame(sprite, name[6], name[7], name, true);
   }

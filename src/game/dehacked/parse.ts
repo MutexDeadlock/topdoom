@@ -9,6 +9,7 @@ import { DOOM_TIC } from '../../constants.ts';
 import { stripTitlePrefix } from '../../wad/campaign/names.ts';
 import type {
   DehAmmoEdit,
+  DehFrameEdit,
   DehPatch,
   DehRecordKind,
   DehShortfall,
@@ -17,12 +18,17 @@ import type {
   DehWarning,
   DehWeaponEdit,
 } from './defs.ts';
+import { isFlashState, SPRITE_NAMES, STATES } from './states.ts';
 import {
+  FRAME_FIELD_SINKS,
   MOBJ_INFO,
   SFX_ORDER,
   THING_SOUND_FIELDS,
+  THING_STATE_FIELDS,
+  WEAPON_STATE_FIELDS,
   classifyDehackedField,
   classifyDehackedFlag,
+  classifyDehackedFrame,
   classifyDehackedRecord,
   classifyDehackedString,
   unhonoredFlags,
@@ -54,14 +60,19 @@ const MAX_TITLE_BYTES = 64;
  */
 const HEADER_KEYS = new Set(['doom version', 'patch format']);
 
+/** Pristine sprite names, lowercased, for the `[SPRITES]` and `Text 4 4` rename lookups. */
+const SPRITE_MNEMONICS = new Set(SPRITE_NAMES.map((name) => name.toLowerCase()));
+
 /** Reads a fixed-point-or-map-units field down to plain map units. */
 function mapUnits(raw: number): number {
   return Math.abs(raw) >= FIXED_POINT_THRESHOLD ? raw / FRACUNIT : raw;
 }
 
 /**
- * Collects warnings deduped by `(record, field)`, which is what keeps a report readable. Also the
- * merge point across a set's several lumps (`readDehacked`), so one dedupe key serves both.
+ * Collects warnings deduped by `(record, field, support)`, which is what keeps a report readable.
+ * Also the merge point across a set's several lumps (`readDehacked`), so one dedupe key serves
+ * both. `support` is in the key because one record word can land differently by index — a
+ * `Frame` on a muzzle flash has no target, one past the table is unknown — and a row has one class.
  */
 export class WarningLog {
   private rows = new Map<string, DehWarning>();
@@ -76,7 +87,7 @@ export class WarningLog {
   }
 
   private absorb(row: DehWarning): void {
-    const key = `${row.record} ${row.field ?? ''}`;
+    const key = `${row.record} ${row.field ?? ''} ${row.support}`;
     const seen = this.rows.get(key);
     if (seen) {
       seen.count += row.count;
@@ -189,11 +200,13 @@ export function parseDehacked(
   const warnings = new WarningLog();
   const applied: Record<string, number> = {};
   const thingEdits: DehThingEdit[] = [];
+  const frameEdits: DehFrameEdit[] = [];
   const strings = new Map<string, string>();
   const pars = new Map<string, number>();
   const ammoEdits: DehAmmoEdit[] = [];
   const weaponEdits: DehWeaponEdit[] = [];
   const misc: Record<string, number> = {};
+  const spriteRenames = new Map<string, string>();
   const soundLumps = new Map<string, string>();
   const musicLumps = new Map<string, string>();
 
@@ -202,20 +215,25 @@ export function parseDehacked(
   let label = '';
   let row: MobjRow | undefined;
   let edit: DehThingEdit | null = null;
-  /** Whether the open `Thing` record has had a field land on it — see `closeThing`. */
+  /** Whether the open `Thing` record has had a field land on it — see `closeRecord`. */
   let editTouched = false;
+  let frame: DehFrameEdit | null = null;
+  let frameTouched = false;
   let ammo: DehAmmoEdit | null = null;
   let weapon: DehWeaponEdit | null = null;
   /** Whether the open record was already reported, so its field lines add nothing. */
   let skipping = false;
 
-  /** Files the open `Thing` edit, if it turned out to carry anything beyond its identity. */
-  const closeThing = (): void => {
+  /** Files the open record's edit, if it turned out to carry anything beyond its identity. */
+  const closeRecord = (): void => {
     if (edit && editTouched) thingEdits.push(edit);
+    if (frame && frameTouched) frameEdits.push(frame);
     if (ammo && (ammo.maxAmmo !== undefined || ammo.perAmmo !== undefined)) ammoEdits.push(ammo);
-    if (weapon && weapon.ammoType !== -1) weaponEdits.push(weapon);
+    if (weapon && (weapon.ammoType !== -1 || weapon.states)) weaponEdits.push(weapon);
     edit = null;
     editTouched = false;
+    frame = null;
+    frameTouched = false;
     ammo = null;
     weapon = null;
   };
@@ -232,22 +250,27 @@ export function parseDehacked(
     // A bracketed BEX section runs until the next bracket or a record kind we know. Without that,
     // `[PARS]`' own `par 1 30` lines read as `Word N` record headers and eat the whole section.
     const inSection = kind === 'pars' || kind === 'strings';
+    // A `Word N` candidate carrying an `=` is a field line, whatever the word: `[CODEPTR]`'s body
+    // is `Frame 185 = A_PosAttack`, and reading that as a `Frame` record header would open an
+    // empty, applied-looking frame edit on every line of the section.
     const isRecordHeader =
       header !== null &&
       (trimmed.startsWith('[') ||
-        (header[2] !== undefined && (!inSection || classified.support !== 'unknown')));
+        (header[2] !== undefined &&
+          !trimmed.includes('=') &&
+          (!inSection || classified.support !== 'unknown')));
 
     if (isRecordHeader) {
       const index = header[2] === undefined ? 0 : Number(header[2]);
-      closeThing();
+      closeRecord();
       kind = classified.kind;
       label = word;
       row = undefined;
 
       if (classified.support !== 'applied') {
         warnings.add(word, classified.support, recordDetailFor(word, trimmed, classified.support));
-        // Its own field lines say nothing the record header hasn't: seven `Frame` records would
-        // otherwise contribute a second row per distinct field name on top of the one that matters.
+        // Its own field lines say nothing the record header hasn't: a `Pointer` record's `Codep
+        // Frame` line would otherwise contribute a second row on top of the one that matters.
         skipping = true;
         continue;
       }
@@ -263,8 +286,16 @@ export function parseDehacked(
           continue;
         }
         edit = { index };
+      } else if (kind === 'frame') {
+        const support = classifyDehackedFrame(index);
+        if (support !== 'applied') {
+          warnings.add(word, support, frameDetailFor(index, support));
+          skipping = true;
+          continue;
+        }
+        frame = { index };
       } else if (kind === 'text') {
-        readText(trimmed, cursor, titleLookup, strings, warnings);
+        readText(trimmed, cursor, titleLookup, strings, spriteRenames, warnings);
       }
       continue;
     }
@@ -283,15 +314,20 @@ export function parseDehacked(
       readString(pair.key, pair.value, cursor, strings, warnings);
       continue;
     }
-    // A BEX `[SOUNDS]`/`[MUSIC]` entry is `mnemonic = lump`, keyed by name rather than by index.
-    // Only the bracketed form reaches here — `RECORD_KINDS` classifies the numeric `Sound N` /
-    // `Music N` records `noTarget`, so `skipping` above has already dropped their field lines.
+    // A BEX `[SOUNDS]`/`[MUSIC]`/`[SPRITES]` entry is `mnemonic = name`, keyed by name rather than
+    // by index. Only the bracketed form reaches here — `RECORD_KINDS` classifies the numeric
+    // `Sound N` / `Music N` / `Sprite N` records `noTarget`, so `skipping` above has already
+    // dropped their field lines.
     if (kind === 'sound') {
       soundLumps.set(pair.key.trim().toLowerCase(), pair.value.trim());
       continue;
     }
     if (kind === 'music') {
       musicLumps.set(pair.key.trim().toLowerCase(), pair.value.trim());
+      continue;
+    }
+    if (kind === 'sprite') {
+      readSpriteRename(pair.key, pair.value, spriteRenames, warnings);
       continue;
     }
 
@@ -304,11 +340,13 @@ export function parseDehacked(
     const value = Number(pair.value);
     if (kind === 'thing' && edit && row) {
       editTouched = readThingField(edit, row, pair.key, pair.value, label, warnings) || editTouched;
+    } else if (kind === 'frame' && frame) {
+      frameTouched = readFrameField(frame, pair.key, pair.value, label, warnings) || frameTouched;
     } else if (kind === 'ammo' && ammo && Number.isFinite(value)) {
       if (key === 'max ammo') ammo.maxAmmo = value;
       else ammo.perAmmo = value;
     } else if (kind === 'weapon' && weapon && Number.isFinite(value)) {
-      weapon.ammoType = value;
+      readWeaponField(weapon, key, pair.key, value, label, warnings);
     } else if (kind === 'misc' && Number.isFinite(value)) {
       // Keyed by the DEH name as written, not by the sink: `MISC_SINKS` is the applier's business,
       // and half-resolving it here is what let `BFG Cells/Shot` report as applied while landing
@@ -317,11 +355,13 @@ export function parseDehacked(
     }
   }
 
-  closeThing();
+  closeRecord();
   if (thingEdits.length) applied.thing = thingEdits.length;
+  if (frameEdits.length) applied.frame = frameEdits.length;
   if (ammoEdits.length) applied.ammo = ammoEdits.length;
   if (weaponEdits.length) applied.weapon = weaponEdits.length;
   if (Object.keys(misc).length) applied.misc = Object.keys(misc).length;
+  if (spriteRenames.size) applied.sprites = spriteRenames.size;
   if (soundLumps.size) applied.sound = soundLumps.size;
   if (musicLumps.size) applied.music = musicLumps.size;
   if (pars.size) applied.pars = pars.size;
@@ -331,6 +371,8 @@ export function parseDehacked(
     thingEdits,
     ammoEdits,
     weaponEdits,
+    frameEdits,
+    spriteRenames,
     misc,
     soundLumps,
     musicLumps,
@@ -343,13 +385,25 @@ export function parseDehacked(
 
 /**
  * One sentence naming why a whole record class is skipped, so `RECORD_KINDS`' classification is
- * what decides — including `noTarget`, which is the numeric `Sound`/`Music`/`Cheat` records: those
- * only move a pointer into the exe's own string table, which this engine has no equivalent of.
+ * what decides — including `noTarget`, which is the numeric `Sound`/`Music`/`Sprite`/`Cheat`
+ * records: those only move a pointer into the exe's own string table, which this engine has no
+ * equivalent of.
  */
 function recordDetailFor(word: string, line: string, support: DehShortfall): string {
   if (support === 'unknown') return `unrecognised record \`${line}\``;
   if (support === 'noTarget') return `\`${word}\` records index a table this engine does not have`;
-  return `\`${word}\` records edit the frame table, which this engine does not have`;
+  if (word.toLowerCase() === 'pointer' || word.toLowerCase() === '[codeptr]') {
+    return `\`${word}\` reassigns action pointers; frame data applies here, actions do not`;
+  }
+  return `\`${word}\` is out of scope here`;
+}
+
+/** Why a `Frame N` header is skipped, naming the state so a reader can see which chain it was. */
+function frameDetailFor(index: number, support: DehSupport): string {
+  const name = STATES[index]?.[5];
+  if (support === 'unknown') return `\`Frame ${index}\` names no state (there are ${STATES.length})`;
+  if (isFlashState(index)) return `${name} is a muzzle flash; this engine draws no first-person weapon`;
+  return `${name} animates a weapon being held or swapped; this engine draws no first-person weapon`;
 }
 
 /** One sentence naming what was skipped, rather than restating the class. */
@@ -359,18 +413,23 @@ function detailFor(kind: DehRecordKind, field: string, support: DehSupport, row?
     return `\`${field}\` on ${row.type}, which no table here keys`;
   }
   if (support === 'noTarget') return `\`${field}\` has nothing to change in this engine`;
-  return `\`${field}\` edits the frame table, which this engine does not have`;
+  return `\`${field}\` is out of scope here`;
 }
 
 /**
  * A vanilla `Text <oldlen> <newlen>` record: two raw runs follow the header line, and the cursor
  * is jumped over exactly as many characters as it declares — see `TextCursor`.
+ *
+ * A four-to-four substitution whose old string is a sprite name is a sprite rename — checked
+ * first, as `d_deh.c`'s `deh_procText` does (`fromlen==4 && tolen==4`, against `sprnames[]`),
+ * because that was how a patch renamed sprites before BEX gave it `[SPRITES]`.
  */
 function readText(
   headerLine: string,
   cursor: TextCursor,
   titleLookup: (title: string) => string | undefined,
   strings: Map<string, string>,
+  spriteRenames: Map<string, string>,
   warnings: WarningLog,
 ): void {
   const lengths = /^Text\s+(\d+)\s+(\d+)/i.exec(headerLine);
@@ -380,6 +439,10 @@ function readText(
   }
   const oldText = cursor.take(Number(lengths[1]));
   const newText = cursor.take(Number(lengths[2]));
+  if (oldText.length === 4 && newText.length === 4 && SPRITE_MNEMONICS.has(oldText.toLowerCase())) {
+    spriteRenames.set(oldText.toLowerCase(), newText.toUpperCase());
+    return;
+  }
   const pair = titleSubstitution(oldText, newText);
   const mapName = pair ? titleLookup(pair.from) : undefined;
   if (pair && mapName) {
@@ -394,8 +457,33 @@ function readText(
 }
 
 /**
+ * One `[SPRITES]` entry, `OLDN = NEWN`: both sides exactly four characters, the key matched against
+ * the **pristine** `sprnames[]` — prboom-plus's and Eternity's `deh_procBexSprites` both snapshot
+ * the original names before any patch runs, so a rename never chains through an earlier one.
+ * docs/dehacked.md § Sprite renames.
+ */
+function readSpriteRename(
+  key: string,
+  value: string,
+  spriteRenames: Map<string, string>,
+  warnings: WarningLog,
+): void {
+  const from = key.trim().toLowerCase();
+  const to = value.trim().toUpperCase();
+  if (!SPRITE_MNEMONICS.has(from)) {
+    warnings.add('[SPRITES]', 'unknown', `\`${key.trim()}\` is not a sprite name`);
+    return;
+  }
+  if (to.length !== 4) {
+    warnings.add('[SPRITES]', 'unknown', `\`${key.trim()} = ${value.trim()}\` is not a four-character name`);
+    return;
+  }
+  spriteRenames.set(from, to);
+}
+
+/**
  * One `Thing` field, unit-converted into this engine's terms. Returns whether anything landed on
- * the edit, which is what tells `closeThing` an otherwise-empty record is worth filing.
+ * the edit, which is what tells `closeRecord` an otherwise-empty record is worth filing.
  * docs/dehacked.md § Units.
  */
 function readThingField(
@@ -453,6 +541,15 @@ function readThingField(
       return true;
     }
     default: {
+      const pointer = THING_STATE_FIELDS[key];
+      if (pointer) {
+        if (!Number.isInteger(raw) || raw < 0 || raw >= STATES.length) {
+          warnings.add(label, 'unknown', `\`${field} = ${value}\` names no state (there are ${STATES.length})`, field);
+          return false;
+        }
+        edit.states = { ...edit.states, [pointer]: raw };
+        return true;
+      }
       const slot = THING_SOUND_FIELDS[key];
       if (!slot) return false;
       // Index 0 is `sfx_None`; `MonsterSounds`' fields are already optional, so it means silence.
@@ -465,6 +562,62 @@ function readThingField(
       return true;
     }
   }
+}
+
+/**
+ * One `Frame` field, kept in vanilla's units (see `DehFrameEdit`). Only the ranges are checked
+ * here: a `Next frame` past the table or a `Sprite number` past `sprnames[]` would index nothing,
+ * and is reported rather than carried.
+ */
+function readFrameField(
+  frame: DehFrameEdit,
+  field: string,
+  value: string,
+  label: string,
+  warnings: WarningLog,
+): boolean {
+  const raw = Number(value);
+  const sink = FRAME_FIELD_SINKS[field.trim().toLowerCase()];
+  if (!sink) return false;
+  if (!Number.isInteger(raw)) {
+    warnings.add(label, 'unknown', `\`${field} = ${value}\` is not a whole number`, field);
+    return false;
+  }
+  if (sink === 'nextFrame' && (raw < 0 || raw >= STATES.length)) {
+    warnings.add(label, 'unknown', `\`${field} = ${value}\` names no state (there are ${STATES.length})`, field);
+    return false;
+  }
+  if (sink === 'spriteNum' && (raw < 0 || raw >= SPRITE_NAMES.length)) {
+    warnings.add(label, 'unknown', `\`${field} = ${value}\` names no sprite (there are ${SPRITE_NAMES.length})`, field);
+    return false;
+  }
+  frame[sink] = raw;
+  return true;
+}
+
+/**
+ * One `Weapon` field: the ammo type, or one of the five state pointers under the name
+ * `WEAPON_STATE_FIELDS` maps it to. A pointer past `states[]` is reported rather than carried, the
+ * same range check a `Thing`'s frame pointers get; 0 is `S_NULL` and is kept as written.
+ */
+function readWeaponField(
+  weapon: DehWeaponEdit,
+  key: string,
+  field: string,
+  value: number,
+  label: string,
+  warnings: WarningLog,
+): void {
+  const pointer = WEAPON_STATE_FIELDS[key];
+  if (!pointer) {
+    weapon.ammoType = value;
+    return;
+  }
+  if (!Number.isInteger(value) || value < 0 || value >= STATES.length) {
+    warnings.add(label, 'unknown', `\`${field} = ${value}\` names no state (there are ${STATES.length})`, field);
+    return;
+  }
+  weapon.states = { ...weapon.states, [pointer]: value };
 }
 
 /**

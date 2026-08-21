@@ -295,14 +295,17 @@ stop on it.
 **Only `ThingLayer.damage`'s death/pain behavior is special-cased**, gated on `ThingType.barrel` (2035):
 no painstate (`MT_BARREL` has `painchance = 0`), no alerting, no infighting retarget (it has no AI),
 and a kill switches its sprite to `BEXP` instead of picking from the death/xdeath tables — a barrel's
-idle art (`BAR1`) and its explosion art are genuinely different lumps, unlike every monster, whose
-death states reuse the same sprite name. `SpriteAnimator.die` gained an optional third `spriteName`
-argument for exactly this; every other caller still omits it.
+idle art (`BAR1`) and its explosion art are genuinely different lumps, unlike every stock monster,
+whose death states reuse the same sprite name. `SpriteAnimator.die`'s optional third `spriteName`
+argument exists for this; the only other caller is a DEHACKED patch that aims a monster's death at
+another sprite's chain (`MONSTER_DEATH_SPRITE_OVERRIDE`, docs/dehacked.md § Frames).
 
-**`A_Explode` fires partway through the death animation, not instantly on death** — `S_BEXP1`/
-`S_BEXP2` each hold 5 tics before `S_BEXP3` calls it, so `BARREL_EXPLODE_DELAY_SECONDS` is
-`2 * BARREL_DEATH_FRAME_SECONDS` (a flat per-frame rate standing in for vanilla's uneven 5/5/5/10/10,
-the same simplification `MONSTER_DEATH_FRAME_SECONDS` makes). `ThingLayer.update` ticks this off the
+**`A_Explode` fires partway through the death animation, not instantly on death** — `S_BEXP1`
+through `S_BEXP3` each hold 5 tics before `S_BEXP4` calls it, so `BARREL_CHAIN.explodeDelaySeconds`
+is 15 tics, three frames at `BARREL_CHAIN.deathFrameSeconds` (a flat per-frame rate standing in for
+vanilla's uneven 5/5/5/10/10, the same simplification `MONSTER_DEATH_FRAME_SECONDS` makes). It was
+two frames until the DEHACKED frame walker re-read the chain and found the action on the fourth
+state, not the third (docs/dehacked.md § Frames). `ThingLayer.update` ticks this off the
 same `deadTime` clock it already ticks for every dead thing and reports it back as a
 `BarrelExplosion` (`{x, y, z, source}`) once due — the same "the layer reports, someone else
 realizes" split as `MonsterAttackEvent`, bundled alongside it in `ThingUpdateResult` rather than

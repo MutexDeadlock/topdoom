@@ -12,13 +12,8 @@ import { GRAVITY, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import { pRandom } from '../util/random.ts';
 import { DOOM_TIC } from '../constants.ts';
 import {
-  BARREL_DEATH_FRAME_SECONDS,
-  BARREL_DEATH_FRAMES,
-  BARREL_DEATH_SPRITE,
-  BARREL_EXPLODE_DELAY_SECONDS,
+  BARREL_CHAIN,
   BARREL_HEALTH,
-  BARREL_IDLE_FRAME_SECONDS,
-  BARREL_IDLE_FRAMES,
   BARREL_MASS,
   BARREL_HEIGHT,
   BARREL_RADIUS,
@@ -53,12 +48,14 @@ import {
   CEILING_HUNG_HEIGHT,
   COUNTITEM_TYPES,
   COUNTKILL_TYPES,
+  FULLBRIGHT_FRAMES,
   FUZZ_TYPES,
   MONSTER_ACTION_FRAME_SECONDS,
-  MONSTER_ATTACK_FRAMES,
+  MONSTER_ATTACK_POSE,
   MONSTER_CORPSE_VANISHES,
   MONSTER_DEATH_FRAME_SECONDS,
   MONSTER_DEATH_FRAMES,
+  MONSTER_DEATH_SPRITE_OVERRIDE,
   MONSTER_DROPS,
   MONSTER_HEALTH,
   MONSTER_IDLE_FRAMES,
@@ -205,8 +202,8 @@ function spawnHealthFor(type: number, dropped: boolean): number {
  */
 function enterDeathPose(p: PosedThing, deadTime = 0): boolean {
   if (p.type === ThingType.barrel) {
-    p.deathFrameCount = BARREL_DEATH_FRAMES.length;
-    p.anim.die(BARREL_DEATH_FRAMES, BARREL_DEATH_FRAME_SECONDS, BARREL_DEATH_SPRITE);
+    p.deathFrameCount = BARREL_CHAIN.deathFrames.length;
+    p.anim.die(BARREL_CHAIN.deathFrames, BARREL_CHAIN.deathFrameSeconds, BARREL_CHAIN.deathSprite);
     if (deadTime > 0) p.anim.advance(deadTime, false);
     return false;
   }
@@ -215,7 +212,10 @@ function enterDeathPose(p: PosedThing, deadTime = 0): boolean {
   const frames = gibbed || MONSTER_DEATH_FRAMES[p.type];
   p.deathFrameCount = frames ? frames.length : 0;
   if (frames) {
-    p.anim.die(frames, MONSTER_DEATH_FRAME_SECONDS);
+    // A patched death chain may borrow another type's sprite (docs/dehacked.md § Frames); the
+    // stock roster has no entry here and dies in its own.
+    const sprite = MONSTER_DEATH_SPRITE_OVERRIDE[p.type];
+    p.anim.die(frames, MONSTER_DEATH_FRAME_SECONDS, gibbed ? sprite?.xdeath : sprite?.death);
     if (deadTime > 0) p.anim.advance(deadTime, false);
   } else {
     p.hidden = true;
@@ -225,22 +225,29 @@ function enterDeathPose(p: PosedThing, deadTime = 0): boolean {
 }
 
 /**
- * Puts a monster into its attack pose, spread over `spanSeconds` — the length
- * of the attack it poses for — and optionally fast-forwarded onto the frame
- * `elapsed` seconds in, which is how a savegame taken mid-attack resumes.
- * `enterDeathPose`'s shape and, more importantly, its single-owner property:
- * the live trigger and the restore path must not derive the same pose two ways.
+ * Puts a monster into the pose for `kind`, spanning `spanSeconds` — the length of the attack it
+ * poses for — and optionally fast-forwarded onto the frame `elapsed` seconds in, which is how a
+ * savegame taken mid-attack resumes. `enterDeathPose`'s shape and, more importantly, its
+ * single-owner property: the live trigger and the restore path must not derive the same pose two
+ * ways.
  *
- * The one place they still approximate each other is a volley: a live re-trigger
- * on the second shot of a mancubus's three spans only what's *left* of the
- * chain, where a restore has just its total to go on. Both stay inside the same
- * attack and are cosmetic either way. docs/sprites.md § Pain, and attack/pain poses.
+ * Entered when the attack *starts*, never when its shot lands: with a real windup
+ * (`AttackStats.startDelaySeconds`) the firing frame is mid-pose, so a pose started at the shot
+ * would show the wind-up frame under the bullet. The caller's `anim.posing` guard is what keeps a
+ * volley's later shots inside the pose they are already in — where vanilla's own proportions
+ * (`attackPoseFrameSeconds`) put each of them on its firing frame.
+ * docs/sprites.md § Pain, and attack/pain poses.
  */
-function enterAttackPose(p: PosedThing, spanSeconds: number, elapsed = 0): void {
-  if (!p.attackFrames) return;
-  p.anim.playOnce(p.attackFrames, attackPoseFrameSeconds(p.attackFrames, spanSeconds));
+function enterAttackPose(p: PosedThing, kind: 'melee' | 'ranged', spanSeconds: number, elapsed = 0): void {
+  // A type with only the other kind of pose lends it: the cacodemon bites from its missile chain.
+  const pose = p.attackPose?.[kind] ?? p.attackPose?.[kind === 'melee' ? 'ranged' : 'melee'];
+  if (!pose) return;
+  p.anim.playOnce(pose.frames, attackPoseFrameSeconds(pose, spanSeconds));
   if (elapsed > 0) p.anim.advance(elapsed, false);
 }
+
+/** `litColor(255)`, hoisted: the tint every `FULLBRIGHT_FRAMES` sprite draws at, whatever its sector. */
+const LIT_FULL = litColor(255);
 
 /** One static upright plane per map THING whose type is a known, visible sprite. */
 export function buildThingSprites(
@@ -337,11 +344,11 @@ export function buildThingSprites(
     const animFrames = MONSTER_TYPES.has(type)
       ? (MONSTER_IDLE_FRAMES[type] ?? MONSTER_WALK_FRAMES_OVERRIDE[type] ?? MONSTER_WALK_FRAMES)
       : isBarrel
-        ? BARREL_IDLE_FRAMES
+        ? BARREL_CHAIN.idleFrames
         : itemAnim
           ? itemAnim.frames
           : ['A'];
-    const frameSeconds = isBarrel ? BARREL_IDLE_FRAME_SECONDS : itemAnim ? itemAnim.frameSeconds : undefined;
+    const frameSeconds = isBarrel ? BARREL_CHAIN.idleFrameSeconds : itemAnim ? itemAnim.frameSeconds : undefined;
     const anim = new SpriteAnimator(bank, materials, spriteName, animFrames, frameSeconds);
     // Skips a thing whose art the WAD doesn't actually carry, same as before —
     // resolving once here is what the old build-time `setPose` call was for.
@@ -362,7 +369,7 @@ export function buildThingSprites(
       bodyHeight: isBarrel
         ? BARREL_HEIGHT
         : (monsterStats[type]?.height ?? INERT_SHOOTABLE[type]?.height ?? BODY_HEIGHT_FALLBACK),
-      attackFrames: MONSTER_ATTACK_FRAMES[type],
+      attackPose: MONSTER_ATTACK_POSE[type],
       painFrames: MONSTER_PAIN_FRAMES[type],
       raiseFrames: MONSTER_RAISE_FRAMES[type],
       // Every AI/damage field the save can elide, straight from the table the
@@ -480,7 +487,7 @@ export function buildThingSprites(
     // No span to spread the frames over means no way to say where in the pose
     // this save sat, so it keeps the idle frame rather than guessing a rate.
     if (duration <= 0) return;
-    enterAttackPose(p, duration, duration - p.attackPause);
+    enterAttackPose(p, 'ranged', duration, duration - p.attackPause);
   }
 
   if (restore) {
@@ -715,8 +722,8 @@ export function buildThingSprites(
     // branch without needing its own guard.
     if (COUNTKILL_TYPES.has(p.type)) stats.kills++;
     if (isBarrel) {
-      // BEXP, not BAR1 — see BARREL_DEATH_SPRITE's doc. The splash itself
-      // fires later, once BARREL_EXPLODE_DELAY_SECONDS elapses (see
+      // BEXP, not BAR1 — see `BARREL_CHAIN.deathSprite`'s doc. The splash itself
+      // fires later, once `BARREL_CHAIN.explodeDelaySeconds` elapses (see
       // update()) — `source` is captured now so it can still be attributed
       // correctly then, and propagated to any barrel that blast itself
       // kills (see PosedThing.explodeSource's doc).
@@ -726,7 +733,7 @@ export function buildThingSprites(
       // MT_BARREL's own deathsound. Vanilla's A_Scream sits on S_BEXP2, one
       // 5-tic frame into the explosion rather than on death itself; played
       // here on death, since a fifth of a second of silent fireball reads as
-      // a bug and the blast (BARREL_EXPLODE_DELAY_SECONDS) is later still.
+      // a bug and the blast (`BARREL_CHAIN.explodeDelaySeconds`) is later still.
       sfx.play('barexp', p, monsterOrigin(p.id));
       return;
     }
@@ -1184,8 +1191,8 @@ export function buildThingSprites(
           if (p.type === ThingType.barrel) {
             // Vanilla's own A_Explode, firing partway through the death
             // animation rather than instantly on death — see
-            // BARREL_EXPLODE_DELAY_SECONDS's doc.
-            if (!p.barrelExploded && p.deadTime >= BARREL_EXPLODE_DELAY_SECONDS) {
+            // `BARREL_CHAIN.explodeDelaySeconds`'s doc.
+            if (!p.barrelExploded && p.deadTime >= BARREL_CHAIN.explodeDelaySeconds) {
               p.barrelExploded = true;
               barrelExplosions.push({ x: p.x, y: p.y, z: p.z, source: p.explodeSource ?? undefined });
             }
@@ -1194,7 +1201,7 @@ export function buildThingSprites(
             // matching MONSTER_CORPSE_VANISHES's own reasoning for the lost
             // soul/pain elemental below (a barrel just isn't a MONSTER_TYPES
             // member, so it can't share that table).
-            if (p.deadTime >= p.deathFrameCount * BARREL_DEATH_FRAME_SECONDS) {
+            if (p.deadTime >= p.deathFrameCount * BARREL_CHAIN.deathFrameSeconds) {
               p.hidden = true;
               p.visible = false;
               continue;
@@ -1342,9 +1349,8 @@ export function buildThingSprites(
                 // out, not damage for `game.ts` to realize, so this never goes
                 // through `attacks`. The elemental's own attack pose still
                 // plays, unlike 'resurrect' — A_PainAttack has real dedicated
-                // art (MONSTER_ATTACK_FRAMES[71]), unlike the vile's raise.
+                // art (MONSTER_ATTACK_POSE[71]), unlike the vile's raise.
                 spawnLostSoul(p, result.angleRad);
-                enterAttackPose(p, p.attackPause);
               } else if (result) {
                 attacks.push({
                   ...result,
@@ -1356,20 +1362,14 @@ export function buildThingSprites(
                   sourceRadius: p.blockRadius,
                   targetId: p.targetId,
                 });
-                // The arch-vile's own attack pose starts here, at the windup's
-                // *beginning* ('vileWindup', vanilla's real cast timing —
-                // MONSTER_ATTACK_FRAMES plays through the whole missilestate
-                // chase, not just the instant the flame lands) rather than at
-                // the blast actually landing (kind 'ranged' with .blast set) —
-                // re-triggering playOnce there would snap the pose back to its
-                // first frame right as the explosion hits, instead of letting
-                // it finish naturally.
-                // `attackPause` is what's left of the state chain this pose
-                // covers: `stepMonsterAI` decrements it before the call that
-                // started the attack set it, so it's the full duration here and
-                // the remainder for a later shot of a volley.
-                const alreadyPosedAtWindup = result.kind === 'ranged' && result.blast;
-                if (!alreadyPosedAtWindup) enterAttackPose(p, p.attackPause);
+              }
+              // The pose belongs to the attack, not to the shot: it starts on whichever tic
+              // `attackPause` was set — which for a windup is tics before anything is returned —
+              // and `posing` keeps a volley's later shots, and the arch-vile's blast 66 tics into
+              // its cast, from snapping it back to frame one. `attackPause` is the span it covers,
+              // full here because `stepMonsterAI` decrements it before the call that set it.
+              if (p.attackPause > 0 && !p.anim.posing) {
+                enterAttackPose(p, result?.kind === 'melee' ? 'melee' : 'ranged', p.attackPause);
               }
             }
           } else {
@@ -1438,7 +1438,10 @@ export function buildThingSprites(
         // singling out (docs/items.md § Making monster drops readable).
         // Read live off the sector rather than caching a `light` field on the
         // thing — see docs/render.md § Sector lighting on why every sprite must.
-        const light = litColor(p.sector ? transfers.spriteLight(world.sectorIndexOfSubsector(p.subsector)) : 128);
+        // A fullbright frame (a torch, a firing pose) ignores the sector outright.
+        const light = FULLBRIGHT_FRAMES.has(p.anim.frameKey)
+          ? LIT_FULL
+          : litColor(p.sector ? transfers.spriteLight(world.sectorIndexOfSubsector(p.subsector)) : 128);
         if (!p.dropped) {
           doomToWorld(x, y, z, worldPos);
           // A fuzzed thing (the spectre, alive or a corpse — `FUZZ_TYPES`)

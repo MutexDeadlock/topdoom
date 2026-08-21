@@ -1,0 +1,264 @@
+/**
+ * The independent witness for `dehacked/states.ts`.
+ *
+ * These are the pose, letter and duration tables as they were **hand-transcribed from
+ * `linuxdoom-1.10`'s `info.c`**, before `src/` derived them by walking the 967-row state table.
+ * They are kept here, frozen, precisely because they are a *second, independent* reading of the
+ * same vanilla source: `tests/game/dehacked-frames.test.ts` walks `states.ts` and must reproduce
+ * every value below. Two readings agreeing is what validates the transcription — and is what
+ * caught the two real bugs on record (every raise chain one letter short, and the barrel's blast
+ * landing on `S_BEXP4` rather than `S_BEXP3`).
+ *
+ * So: **never regenerate this file from the walker.** That would make the check circular and throw
+ * away the only thing it is for. A value here changes only when `info.c` is re-read by hand and the
+ * old reading is shown to be wrong — say so in the commit. Three such corrections stand: the
+ * spider mastermind's, cyberdemon's and arachnotron's `chaseSeconds`/`speed`, where the original
+ * transcription read `A_Metal`/`A_Hoof`/`A_BabyMetal` as not stepping the monster and
+ * `p_enemy.c:1759-1775` has each of them call `A_Chase` after its sound.
+ *
+ * Durations are whole tics (vanilla's own unit) rather than seconds, so nothing here depends on
+ * `DOOM_TIC`'s binary rounding. `chaseSeconds` stays in seconds at three decimals — the unit `MonsterStats.chaseInterval` itself
+ * holds, so the comparison does not amplify its rounding.
+ * See docs/dehacked.md § Frames.
+ */
+
+/** One monster type's shipped reading. `null` means "no such chain", not "zero". */
+export interface GoldenMonster {
+  sprite: string;
+  /** The walk cycle, or `[]` for a type that holds an idle frame instead. */
+  walk: string[];
+  idle: string[] | null;
+  death: string[] | null;
+  xdeath: string[] | null;
+  vanishes: boolean;
+  pain: string[] | null;
+  raise: string[] | null;
+  meleePose: { frames: string[]; tics: number[] } | null;
+  rangedPose: { frames: string[]; tics: number[] } | null;
+  painTics: number | null;
+  meleeTics: number | null;
+  rangedTics: number | null;
+  windupTics: number | null;
+  shots: number | null;
+  shotIntervalTics: number | null;
+  chaseSeconds: number | null;
+  speed: number | null;
+}
+
+export const GOLDEN_MONSTERS: Record<string, GoldenMonster> = {
+  MT_POSSESSED: { sprite: "POSS", walk: ["A","B","C","D"], idle: null, death: ["H","I","J","K","L"], xdeath: ["M","N","O","P","Q","R","S","T","U"], vanishes: false, pain: ["G"], raise: ["K","J","I","H"], meleePose: null, rangedPose: {"frames":["E","F","E"],"tics":[10,8,8]}, painTics: 6, meleeTics: null, rangedTics: 26, windupTics: 10, shots: null, shotIntervalTics: null, chaseSeconds: 0.114, speed: 70 },
+  MT_SHOTGUY: { sprite: "SPOS", walk: ["A","B","C","D"], idle: null, death: ["H","I","J","K","L"], xdeath: ["M","N","O","P","Q","R","S","T","U"], vanishes: false, pain: ["G"], raise: ["L","K","J","I","H"], meleePose: null, rangedPose: {"frames":["E","F","E"],"tics":[10,10,10]}, painTics: 6, meleeTics: null, rangedTics: 30, windupTics: 10, shots: null, shotIntervalTics: null, chaseSeconds: 0.086, speed: 93.3 },
+  MT_VILE: { sprite: "VILE", walk: ["A","B","C","D","E","F"], idle: null, death: ["Q","R","S","T","U","V","W","X","Y","Z"], xdeath: null, vanishes: false, pain: ["Q"], raise: null, meleePose: null, rangedPose: {"frames":["G","H","I","J","K","L","M","N","O","P"],"tics":[10,8,8,8,8,8,8,8,8,20]}, painTics: 10, meleeTics: null, rangedTics: 94, windupTics: 66, shots: null, shotIntervalTics: null, chaseSeconds: 0.057, speed: 262.5 },
+  MT_UNDEAD: { sprite: "SKEL", walk: ["A","B","C","D","E","F"], idle: null, death: ["L","M","N","O","P","Q"], xdeath: null, vanishes: false, pain: ["L"], raise: ["Q","P","O","N","M","L"], meleePose: {"frames":["G","H","I"],"tics":[6,6,6]}, rangedPose: {"frames":["J","K","K"],"tics":[10,10,10]}, painTics: 10, meleeTics: 18, rangedTics: 30, windupTics: 10, shots: null, shotIntervalTics: null, chaseSeconds: 0.057, speed: 175 },
+  MT_FATSO: { sprite: "FATT", walk: ["A","B","C","D","E","F"], idle: null, death: ["K","L","M","N","O","P","Q","R","S","T"], xdeath: null, vanishes: false, pain: ["J"], raise: ["R","Q","P","O","N","M","L","K"], meleePose: null, rangedPose: {"frames":["G","H","I","G","H","I","G","H","I","G"],"tics":[20,10,5,5,10,5,5,10,5,5]}, painTics: 6, meleeTics: null, rangedTics: 80, windupTics: 20, shots: 3, shotIntervalTics: 20, chaseSeconds: 0.114, speed: 70 },
+  MT_CHAINGUY: { sprite: "CPOS", walk: ["A","B","C","D"], idle: null, death: ["H","I","J","K","L","M","N"], xdeath: ["O","P","Q","R","S","T"], vanishes: false, pain: ["G"], raise: ["N","M","L","K","J","I","H"], meleePose: null, rangedPose: {"frames":["F","E","F"],"tics":[4,4,1]}, painTics: 6, meleeTics: null, rangedTics: 9, windupTics: null, shots: 2, shotIntervalTics: 4, chaseSeconds: 0.086, speed: 93.3 },
+  MT_TROOP: { sprite: "TROO", walk: ["A","B","C","D"], idle: null, death: ["I","J","K","L","M"], xdeath: ["N","O","P","Q","R","S","T","U"], vanishes: false, pain: ["H"], raise: ["M","L","K","J","I"], meleePose: {"frames":["E","F","G"],"tics":[8,8,6]}, rangedPose: {"frames":["E","F","G"],"tics":[8,8,6]}, painTics: 4, meleeTics: 22, rangedTics: 22, windupTics: 16, shots: null, shotIntervalTics: null, chaseSeconds: 0.086, speed: 93.3 },
+  MT_SERGEANT: { sprite: "SARG", walk: ["A","B","C","D"], idle: null, death: ["I","J","K","L","M","N"], xdeath: null, vanishes: false, pain: ["H"], raise: ["N","M","L","K","J","I"], meleePose: {"frames":["E","F","G"],"tics":[8,8,8]}, rangedPose: null, painTics: 4, meleeTics: 24, rangedTics: null, windupTics: null, shots: null, shotIntervalTics: null, chaseSeconds: 0.057, speed: 175 },
+  MT_SHADOWS: { sprite: "SARG", walk: ["A","B","C","D"], idle: null, death: ["I","J","K","L","M","N"], xdeath: null, vanishes: false, pain: ["H"], raise: ["N","M","L","K","J","I"], meleePose: {"frames":["E","F","G"],"tics":[8,8,8]}, rangedPose: null, painTics: 4, meleeTics: 24, rangedTics: null, windupTics: null, shots: null, shotIntervalTics: null, chaseSeconds: 0.057, speed: 175 },
+  MT_HEAD: { sprite: "HEAD", walk: ["A"], idle: null, death: ["G","H","I","J","K","L"], xdeath: null, vanishes: false, pain: ["E","F"], raise: ["L","K","J","I","H","G"], meleePose: null, rangedPose: {"frames":["B","C","D"],"tics":[5,5,5]}, painTics: 12, meleeTics: 15, rangedTics: 15, windupTics: 10, shots: null, shotIntervalTics: null, chaseSeconds: 0.086, speed: 93.3 },
+  MT_BRUISER: { sprite: "BOSS", walk: ["A","B","C","D"], idle: null, death: ["I","J","K","L","M","N","O"], xdeath: null, vanishes: false, pain: ["H"], raise: ["O","N","M","L","K","J","I"], meleePose: {"frames":["E","F","G"],"tics":[8,8,8]}, rangedPose: {"frames":["E","F","G"],"tics":[8,8,8]}, painTics: 4, meleeTics: 24, rangedTics: 24, windupTics: 16, shots: null, shotIntervalTics: null, chaseSeconds: 0.086, speed: 93.3 },
+  MT_KNIGHT: { sprite: "BOS2", walk: ["A","B","C","D"], idle: null, death: ["I","J","K","L","M","N","O"], xdeath: null, vanishes: false, pain: ["H"], raise: ["O","N","M","L","K","J","I"], meleePose: {"frames":["E","F","G"],"tics":[8,8,8]}, rangedPose: {"frames":["E","F","G"],"tics":[8,8,8]}, painTics: 4, meleeTics: 24, rangedTics: 24, windupTics: 16, shots: null, shotIntervalTics: null, chaseSeconds: 0.086, speed: 93.3 },
+  MT_SKULL: { sprite: "SKUL", walk: ["A","B"], idle: null, death: ["F","G","H","I","J","K"], xdeath: null, vanishes: true, pain: ["E"], raise: null, meleePose: null, rangedPose: {"frames":["C","D","C","D"],"tics":[10,4,4,4]}, painTics: 6, meleeTics: null, rangedTics: 22, windupTics: null, shots: null, shotIntervalTics: null, chaseSeconds: 0.171, speed: 46.7 },
+  MT_SPIDER: { sprite: "SPID", walk: ["A","B","C","D","E","F"], idle: null, death: ["J","K","L","M","N","O","P","Q","R","S"], xdeath: null, vanishes: false, pain: ["I"], raise: null, meleePose: null, rangedPose: {"frames":["G","H","H"],"tics":[4,4,1]}, painTics: 6, meleeTics: null, rangedTics: 9, windupTics: null, shots: 2, shotIntervalTics: 4, chaseSeconds: 0.086, speed: 140 },
+  MT_BABY: { sprite: "BSPI", walk: ["A","B","C","D","E","F"], idle: null, death: ["J","K","L","M","N","O","P"], xdeath: null, vanishes: false, pain: ["I"], raise: ["P","O","N","M","L","K","J"], meleePose: null, rangedPose: {"frames":["G","H","H"],"tics":[4,4,1]}, painTics: 6, meleeTics: null, rangedTics: 9, windupTics: null, shots: null, shotIntervalTics: null, chaseSeconds: 0.086, speed: 140 },
+  MT_CYBORG: { sprite: "CYBR", walk: ["A","B","C","D"], idle: null, death: ["H","I","J","K","L","M","N","O","P"], xdeath: null, vanishes: false, pain: ["G"], raise: null, meleePose: null, rangedPose: {"frames":["E","F","E","F","E","F"],"tics":[6,12,12,12,12,12]}, painTics: 10, meleeTics: null, rangedTics: 66, windupTics: 6, shots: 3, shotIntervalTics: 24, chaseSeconds: 0.086, speed: 186.7 },
+  MT_PAIN: { sprite: "PAIN", walk: ["A","B","C"], idle: null, death: ["H","I","J","K","L","M"], xdeath: null, vanishes: true, pain: ["G"], raise: ["M","L","K","J","I","H"], meleePose: null, rangedPose: {"frames":["D","E","F"],"tics":[5,5,5]}, painTics: 12, meleeTics: null, rangedTics: 15, windupTics: null, shots: null, shotIntervalTics: null, chaseSeconds: 0.086, speed: 93.3 },
+  MT_WOLFSS: { sprite: "SSWV", walk: ["A","B","C","D"], idle: null, death: ["I","J","K","L","M"], xdeath: ["N","O","P","Q","R","S","T","U","V"], vanishes: false, pain: ["H"], raise: ["M","L","K","J","I"], meleePose: null, rangedPose: {"frames":["E","F","G","F","G","F"],"tics":[10,10,4,6,4,1]}, painTics: 6, meleeTics: null, rangedTics: 35, windupTics: 20, shots: 2, shotIntervalTics: 10, chaseSeconds: 0.086, speed: 93.3 },
+  MT_KEEN: { sprite: "KEEN", walk: [], idle: ["A"], death: ["A","B","C","D","E","F","G","H","I","J","K","L"], xdeath: null, vanishes: false, pain: ["M"], raise: null, meleePose: null, rangedPose: null, painTics: null, meleeTics: null, rangedTics: null, windupTics: null, shotIntervalTics: null, chaseSeconds: null, speed: null, shots: null },
+  MT_BOSSBRAIN: { sprite: "BBRN", walk: [], idle: ["A"], death: ["A"], xdeath: null, vanishes: false, pain: ["B"], raise: null, meleePose: null, rangedPose: null, painTics: null, meleeTics: null, rangedTics: null, windupTics: null, shotIntervalTics: null, chaseSeconds: null, speed: null, shots: null },
+};
+
+export const GOLDEN_SPRITES: Record<number, string> = {
+  5: "BKEY",
+  6: "YKEY",
+  7: "SPID",
+  8: "BPAK",
+  9: "SPOS",
+  10: "PLAY",
+  12: "PLAY",
+  13: "RKEY",
+  15: "PLAY",
+  16: "CYBR",
+  17: "CELP",
+  18: "POSS",
+  19: "SPOS",
+  20: "TROO",
+  21: "SARG",
+  22: "HEAD",
+  23: "SKUL",
+  24: "POL5",
+  25: "POL1",
+  26: "POL6",
+  27: "POL4",
+  28: "POL2",
+  29: "POL3",
+  30: "COL1",
+  31: "COL2",
+  32: "COL3",
+  33: "COL4",
+  34: "CAND",
+  35: "CBRA",
+  36: "COL5",
+  37: "COL6",
+  38: "RSKU",
+  39: "YSKU",
+  40: "BSKU",
+  41: "CEYE",
+  42: "FSKU",
+  43: "TRE1",
+  44: "TBLU",
+  45: "TGRN",
+  46: "TRED",
+  47: "SMIT",
+  48: "ELEC",
+  49: "GOR1",
+  50: "GOR2",
+  51: "GOR3",
+  52: "GOR4",
+  53: "GOR5",
+  54: "TRE2",
+  55: "SMBT",
+  56: "SMGT",
+  57: "SMRT",
+  58: "SARG",
+  59: "GOR2",
+  60: "GOR4",
+  61: "GOR3",
+  62: "GOR5",
+  63: "GOR1",
+  64: "VILE",
+  65: "CPOS",
+  66: "SKEL",
+  67: "FATT",
+  68: "BSPI",
+  69: "BOS2",
+  70: "FCAN",
+  71: "PAIN",
+  72: "KEEN",
+  73: "HDB1",
+  74: "HDB2",
+  75: "HDB3",
+  76: "HDB4",
+  77: "HDB5",
+  78: "HDB6",
+  79: "POB1",
+  80: "POB2",
+  81: "BRS1",
+  82: "SGN2",
+  83: "MEGA",
+  84: "SSWV",
+  85: "TLMP",
+  86: "TLP2",
+  88: "BBRN",
+  2001: "SHOT",
+  2002: "MGUN",
+  2003: "LAUN",
+  2004: "PLAS",
+  2005: "CSAW",
+  2006: "BFUG",
+  2007: "CLIP",
+  2008: "SHEL",
+  2010: "ROCK",
+  2011: "STIM",
+  2012: "MEDI",
+  2013: "SOUL",
+  2014: "BON1",
+  2015: "BON2",
+  2018: "ARM1",
+  2019: "ARM2",
+  2022: "PINV",
+  2023: "PSTR",
+  2024: "PINS",
+  2025: "SUIT",
+  2026: "PMAP",
+  2028: "COLU",
+  2035: "BAR1",
+  2045: "PVIS",
+  2046: "BROK",
+  2047: "CELL",
+  2048: "AMMO",
+  2049: "SBOX",
+  3001: "TROO",
+  3002: "SARG",
+  3003: "BOSS",
+  3004: "POSS",
+  3005: "HEAD",
+  3006: "SKUL",
+};
+
+export const GOLDEN_ANIMS: Record<number, { frames: string[]; tics: number }> = {
+  5: { frames: ["A","B"], tics: 10 },
+  6: { frames: ["A","B"], tics: 10 },
+  10: { frames: ["W"], tics: 6 },
+  12: { frames: ["W"], tics: 6 },
+  13: { frames: ["A","B"], tics: 10 },
+  15: { frames: ["N"], tics: 6 },
+  18: { frames: ["L"], tics: 6 },
+  19: { frames: ["L"], tics: 6 },
+  20: { frames: ["M"], tics: 6 },
+  21: { frames: ["N"], tics: 6 },
+  22: { frames: ["L"], tics: 6 },
+  23: { frames: ["K"], tics: 6 },
+  26: { frames: ["A","B"], tics: 7 },
+  29: { frames: ["A","B"], tics: 6 },
+  36: { frames: ["A","B"], tics: 14 },
+  38: { frames: ["A","B"], tics: 10 },
+  39: { frames: ["A","B"], tics: 10 },
+  40: { frames: ["A","B"], tics: 10 },
+  41: { frames: ["A","B","C","B"], tics: 6 },
+  42: { frames: ["A","B","C"], tics: 6 },
+  44: { frames: ["A","B","C","D"], tics: 4 },
+  45: { frames: ["A","B","C","D"], tics: 4 },
+  46: { frames: ["A","B","C","D"], tics: 4 },
+  49: { frames: ["A","B","C","B"], tics: 10 },
+  55: { frames: ["A","B","C","D"], tics: 4 },
+  56: { frames: ["A","B","C","D"], tics: 4 },
+  57: { frames: ["A","B","C","D"], tics: 4 },
+  63: { frames: ["A","B","C","B"], tics: 10 },
+  70: { frames: ["A","B","C"], tics: 4 },
+  83: { frames: ["A","B","C","D"], tics: 6 },
+  85: { frames: ["A","B","C","D"], tics: 4 },
+  86: { frames: ["A","B","C","D"], tics: 4 },
+  2013: { frames: ["A","B","C","D","C","B"], tics: 6 },
+  2014: { frames: ["A","B","C","D","C","B"], tics: 6 },
+  2015: { frames: ["A","B","C","D","C","B"], tics: 6 },
+  2018: { frames: ["A","B"], tics: 6 },
+  2019: { frames: ["A","B"], tics: 6 },
+  2022: { frames: ["A","B","C","D"], tics: 6 },
+  2024: { frames: ["A","B","C","D"], tics: 6 },
+  2026: { frames: ["A","B","C","D","C","B"], tics: 6 },
+  2045: { frames: ["A","B"], tics: 6 },
+};
+
+export const GOLDEN_MISSILES: Record<string, { flight: string[] | null; impact: unknown }> = {
+  APLS: { flight: ["A","B"], impact: {"sprite":"APBX","frames":["A","B","C","D","E"]} },
+  BAL1: { flight: ["A","B"], impact: {"sprite":"BAL1","frames":["C","D","E"]} },
+  BAL2: { flight: ["A","B"], impact: {"sprite":"BAL2","frames":["C","D","E"]} },
+  BAL7: { flight: ["A","B"], impact: {"sprite":"BAL7","frames":["C","D","E"]} },
+  BFS1: { flight: ["A","B"], impact: {"sprite":"BFE1","frames":["A","B","C","D","E","F"]} },
+  FATB: { flight: ["A","B"], impact: {"sprite":"FBXP","frames":["A","B","C"]} },
+  MANF: { flight: ["A","B"], impact: {"sprite":"MISL","frames":["B","C","D"]} },
+  MISL: { flight: null, impact: {"sprite":"MISL","frames":["B","C","D"]} },
+  PLSS: { flight: ["A","B"], impact: {"sprite":"PLSE","frames":["A","B","C","D","E"]} },
+};
+
+export const GOLDEN_BARREL = { idleFrames: ["A","B"], idleTics: 6, deathSprite: "BEXP", deathFrames: ["A","B","C","D","E"], explodeTics: 15 };
+
+/**
+ * Each weapon's fire rate as read by hand off `info.c`'s psprite chains, in `weapontype_t` order —
+ * the states summed named beside each. `shots` is how many firing actions one pass carries: the
+ * chainsaw and chaingun call theirs twice, so their rate is one state's tics rather than the
+ * chain's. The `A_ReFire` state closing each chain is excluded throughout, because a held trigger
+ * re-enters `atkstate` on reaching it and never spends its tics. docs/weapons.md § Fire rates.
+ */
+export const GOLDEN_WEAPONS: { tics: number; shots: number; states: string }[] = [
+  { tics: 17, shots: 1, states: 'S_PUNCH1-4 (4+4+5+4)' },
+  { tics: 14, shots: 1, states: 'S_PISTOL1-3 (4+6+4)' },
+  { tics: 37, shots: 1, states: 'S_SGUN1-8 (3+7+5+5+4+5+5+3)' },
+  { tics: 4, shots: 2, states: 'S_CHAIN1-2 (4+4), both A_FireCGun' },
+  { tics: 20, shots: 1, states: 'S_MISSILE1-2 (8+12)' },
+  { tics: 3, shots: 1, states: 'S_PLASMA1 (3); S_PLASMA2 holds 20 but carries A_ReFire' },
+  { tics: 40, shots: 1, states: 'S_BFG1-3 (20+10+10)' },
+  { tics: 4, shots: 2, states: 'S_SAW1-2 (4+4), both A_Saw' },
+  { tics: 57, shots: 1, states: 'S_DSGUN1-9 (3+7+7+7+7+7+7+6+6)' },
+];

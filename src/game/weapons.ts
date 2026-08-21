@@ -10,6 +10,8 @@ import { PLAYER_ORIGIN, type SfxId } from '../audio/sfx.ts';
 import type { Pos3 } from '../types.ts';
 import { DOOM_TIC } from '../constants.ts';
 import { rollDamage, triangularDraw, triangularSpread } from '../util/random.ts';
+import { pristineFrameTables } from './dehacked/frames.ts';
+import { WEAPON_ORDER } from './dehacked/tables.ts';
 
 /**
  * How often the chainsaw's idle rattle restarts while it's the ready weapon:
@@ -184,19 +186,25 @@ export const WEAPON_SLOTS: WeaponId[][] = [
 export const WEAPON_CYCLE: WeaponId[] = WEAPON_SLOTS.flatMap((slot) => [...slot].reverse());
 
 /**
- * **Every number in this table is vanilla's** — fire rates from `info.c`'s
- * weapon state chains (`WeaponDef.cooldown`), spread from the `<<18`/`<<19`
+ * A weapon as written out here: every field its own state chain can't carry.
+ * `cooldown` is absent on purpose and cannot be written — the fill loop below
+ * walks it out of `info.c`'s own fire chain, which is what turns these seeds
+ * into complete `WeaponDef`s.
+ */
+type WeaponSeed = Omit<WeaponDef, 'cooldown'>;
+
+/**
+ * **Every number in this table is vanilla's** — spread from the `<<18`/`<<19`
  * shifts in `p_pspr.c`, damage from `P_GunShot`/`PIT_CheckThing`, ammo cost
- * from `P_FireWeapon`, projectile speed from `mobjinfo`. Nothing here is tuned
+ * from `P_FireWeapon`, projectile speed from `mobjinfo`; the fire rates are
+ * walked out of the weapon state chains further down. Nothing here is tuned
  * by feel; a top-down camera changes how a weapon is *aimed*, not how fast it
  * shoots or how hard it hits. See docs/weapons.md § Fire rates.
  */
-export const WEAPONS: Record<WeaponId, WeaponDef> = {
+const WEAPON_SEED: Record<WeaponId, WeaponSeed> = {
   fist: {
     ammoType: null,
     ammoPerShot: 0,
-    // S_PUNCH1-4 (4+4+5+4); S_PUNCH5 carries A_ReFire.
-    cooldown: 17 * DOOM_TIC,
     kind: 'melee',
     pellets: 0,
     // A_Punch throws the *swing* off by the same <<18 draw a bullet gets. It
@@ -221,9 +229,6 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   chainsaw: {
     ammoType: null,
     ammoPerShot: 0,
-    // S_SAW1 and S_SAW2 *both* call A_Saw, 4 tics each, and S_SAW3's A_ReFire
-    // costs nothing — so one bite per 4 tics, not per pass through the chain.
-    cooldown: 4 * DOOM_TIC,
     kind: 'melee',
     pellets: 0,
     // A_Saw's own <<18 swing spread, identical to A_Punch's.
@@ -252,8 +257,6 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   pistol: {
     ammoType: 'bullets',
     ammoPerShot: 1,
-    // S_PISTOL1-3 (4+6+4); S_PISTOL4 carries A_ReFire.
-    cooldown: 14 * DOOM_TIC,
     kind: 'hitscan',
     pellets: 1,
     // P_GunShot's `(P_Random()-P_Random())<<18` — 255<<18 of a 2^32 turn.
@@ -275,8 +278,6 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   shotgun: {
     ammoType: 'shells',
     ammoPerShot: 1,
-    // S_SGUN1-8 (3+7+5+5+4+5+5+3); S_SGUN9 carries A_ReFire.
-    cooldown: 37 * DOOM_TIC,
     kind: 'hitscan',
     pellets: 7,
     // A_FireShotgun calls P_GunShot(mo, false) seven times: the same <<18 as
@@ -299,8 +300,6 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   supershotgun: {
     ammoType: 'shells',
     ammoPerShot: 2,
-    // S_DSGUN1-9 (3+7+7+7+7+7+7+6+6); S_DSGUN10 carries A_ReFire.
-    cooldown: 57 * DOOM_TIC,
     kind: 'hitscan',
     pellets: 20,
     // A_FireShotgun2 doesn't go through P_GunShot at all: its own loop uses
@@ -327,9 +326,6 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   chaingun: {
     ammoType: 'bullets',
     ammoPerShot: 1,
-    // S_CHAIN1 and S_CHAIN2 both call A_FireCGun, 4 tics each, and S_CHAIN3's
-    // A_ReFire holds 0 — one bullet per 4 tics, the chainsaw's own structure.
-    cooldown: 4 * DOOM_TIC,
     kind: 'hitscan',
     pellets: 1,
     spreadDeg: 5.6,
@@ -356,9 +352,6 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   rocketLauncher: {
     ammoType: 'rockets',
     ammoPerShot: 1,
-    // S_MISSILE2 (12, A_FireMissile) + S_MISSILE1 (8, the flash); S_MISSILE3
-    // carries A_ReFire. The 8-tic lead-in is vanilla's own launch delay.
-    cooldown: 20 * DOOM_TIC,
     kind: 'projectile',
     pellets: 0,
     spreadDeg: 0,
@@ -383,10 +376,6 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   plasmaRifle: {
     ammoType: 'cells',
     ammoPerShot: 1,
-    // S_PLASMA1 alone (3, A_FirePlasma) — S_PLASMA2's 20 tics carry A_ReFire
-    // and are only ever spent on *releasing* the trigger, which is what makes
-    // the plasma rifle the fastest weapon in the game rather than a slow one.
-    cooldown: 3 * DOOM_TIC,
     kind: 'projectile',
     pellets: 0,
     spreadDeg: 0,
@@ -411,11 +400,6 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
   bfg: {
     ammoType: 'cells',
     ammoPerShot: 40,
-    // S_BFG3 (10, A_FireBFG) + S_BFG1 (20) + S_BFG2 (10); S_BFG4 carries
-    // A_ReFire. Those first two states are also vanilla's charge-up *before*
-    // the ball leaves, which this engine doesn't reproduce — see
-    // docs/weapons.md § Fire rates.
-    cooldown: 40 * DOOM_TIC,
     kind: 'projectile',
     pellets: 0,
     spreadDeg: 0,
@@ -442,6 +426,23 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     spray: { rays: 40, arcDeg: 90, range: 16 * 64, diceRolls: 15, diceSides: 8 },
   },
 };
+
+/**
+ * The seeds above, completed by the fill loop below. The cast is what the loop discharges: every
+ * weapon has its `cooldown` before anything reads this table.
+ */
+export const WEAPONS = WEAPON_SEED as Record<WeaponId, WeaponDef>;
+
+/**
+ * Writes every weapon's fire rate from the walker's reading of vanilla's own `states[]`
+ * (docs/weapons.md § Fire rates) — the summed tics of its `atkstate` chain, the `A_ReFire` state
+ * excluded, over the number of shots one pass fires. The rest of each row is `p_pspr.c` data no
+ * chain carries and stays written out above.
+ *
+ * Runs at import, before `dehacked/apply.ts` snapshots the table for `resetDehacked`.
+ */
+const vanillaRates = pristineFrameTables().weapons;
+for (const [index, id] of WEAPON_ORDER.entries()) WEAPONS[id].cooldown = vanillaRates[index].cooldown;
 
 export interface HitscanShot {
   kind: 'hitscan';

@@ -232,13 +232,18 @@ export class SpriteMaterialCache {
 class FrameSequence {
   frames: string[] | null = null;
   index = 0;
-  private frameDuration = 0;
+  /**
+   * One duration for every frame, or a per-frame list. An attack pose takes the list: its frames
+   * are vanilla's own attack states and their tic counts are uneven, which is what puts the firing
+   * frame at the moment the shot goes off (docs/sprites.md § Pain, and attack/pain poses).
+   */
+  private durations: number | readonly number[] = 0;
   private holdLast = false;
   private timer = 0;
 
-  start(frames: string[], frameDuration: number, holdLast: boolean): void {
+  start(frames: string[], durations: number | readonly number[], holdLast: boolean): void {
     this.frames = frames;
-    this.frameDuration = frameDuration;
+    this.durations = durations;
     this.holdLast = holdLast;
     this.index = 0;
     this.timer = 0;
@@ -250,12 +255,22 @@ class FrameSequence {
     this.timer = 0;
   }
 
+  /** This frame's own duration; a list shorter than the sequence holds on its last entry. */
+  private durationAt(index: number): number {
+    if (typeof this.durations === 'number') return this.durations;
+    return this.durations[Math.min(index, this.durations.length - 1)] ?? 0;
+  }
+
   advance(dt: number): void {
     if (!this.frames) return;
     this.timer += dt;
-    while (this.timer >= this.frameDuration) {
+    for (;;) {
+      const duration = this.durationAt(this.index);
+      // A zero-length frame would spin here forever. Vanilla's own zero-tic states are dropped
+      // when a pose is built, so this only catches a patch that wrote one.
+      if (duration <= 0 || this.timer < duration) break;
       if (this.holdLast && this.index >= this.frames.length - 1) break;
-      this.timer -= this.frameDuration;
+      this.timer -= duration;
       this.index++;
       if (!this.holdLast && this.index >= this.frames.length) {
         this.frames = null;
@@ -276,6 +291,15 @@ export class SpriteAnimator {
   private cached: CachedSprite | null = null;
   private animIndex = 0;
   private animTimer = 0;
+
+  /**
+   * The logical `SPRITE + LETTER` the last `resolve` drew (`TROOA`, `BEXPC`), for the caller to
+   * test against `FULLBRIGHT_FRAMES` when picking the light. Rebuilt only when the resolved lump
+   * changes, in the same branch that re-fetches the material, so the steady state pays nothing.
+   * Logical, not the lump: a `[SPRITES]` rename changes which lump `SpriteBank` hands back, and
+   * the fullbright table is keyed by the name this animator was given.
+   */
+  frameKey = '';
 
   private bank: SpriteBank;
   private materials: SpriteMaterialCache;
@@ -386,6 +410,7 @@ export class SpriteAnimator {
     if (key !== this.lastKey) {
       this.cached = this.materials.get(found.lump, found.flip);
       this.lastKey = key;
+      this.frameKey = spriteName + frames[this.animIndex];
     }
     return this.cached;
   }
@@ -411,14 +436,22 @@ export class SpriteAnimator {
     this.animTimer = 0;
   }
 
+  /** Whether a one-shot attack/pain sequence is still running — what keeps a volley's later shots from restarting the pose they are already inside. */
+  get posing(): boolean {
+    return this.override.frames !== null;
+  }
+
   /**
    * Plays `frames` forward once (see the `override` field doc), then
    * automatically hands back to the alive cycle. No-op while dead — a corpse
    * has no attack/pain animation to interrupt its held last death frame with.
+   *
+   * `durations` is one rate for every frame, or a per-frame list (an attack pose, whose frames
+   * carry vanilla's own uneven state tics).
    */
-  playOnce(frames: string[], frameDuration: number): void {
+  playOnce(frames: string[], durations: number | readonly number[]): void {
     if (this.death.frames) return;
-    this.override.start(frames, frameDuration, false);
+    this.override.start(frames, durations, false);
     // Same reason as `die`: keep `animIndex` valid for the sequence `resolve`
     // is about to read, without waiting for an `advance` to clamp it.
     this.animIndex = 0;
@@ -464,6 +497,8 @@ export class SpriteActor {
    */
   private opacity = 1;
   private translucent = new Map<THREE.MeshBasicMaterial, THREE.MeshBasicMaterial>();
+  /** The `(sprite, letter)` keys drawn at full light — `things/tables.ts`'s `FULLBRIGHT_FRAMES`, handed in so this layer stays free of the game tables. */
+  private brightFrames: ReadonlySet<string>;
 
   constructor(
     bank: SpriteBank,
@@ -471,8 +506,10 @@ export class SpriteActor {
     spriteName: string,
     animFrames: string[] = ['A'],
     frameDuration = 4 * DOOM_TIC,
+    brightFrames: ReadonlySet<string>,
   ) {
     this.anim = new SpriteAnimator(bank, materials, spriteName, animFrames, frameDuration);
+    this.brightFrames = brightFrames;
   }
 
   /** Repositions the actor and advances its animation; returns false if no matching lump was found. */
@@ -501,7 +538,7 @@ export class SpriteActor {
     // SpriteMaterialCache's doc); turn it by however far the live viewer
     // angle has moved from that default so it keeps facing the camera.
     this.mesh.rotation.y = THREE.MathUtils.degToRad(viewerAngleDeg - VIEWER_ANGLE_DEG);
-    material.color.setScalar(litColor(light));
+    material.color.setScalar(litColor(this.brightFrames.has(this.anim.frameKey) ? 255 : light));
     // Only ever written on a clone — the cached material is shared, and its
     // own opacity must stay at the default 1 for everything else drawing it.
     if (this.opacity < 1) material.opacity = this.opacity;
@@ -536,8 +573,8 @@ export class SpriteActor {
     this.anim.die(frames, frameDuration);
   }
 
-  playOnce(frames: string[], frameDuration: number): void {
-    this.anim.playOnce(frames, frameDuration);
+  playOnce(frames: string[], durations: number | readonly number[]): void {
+    this.anim.playOnce(frames, durations);
   }
 
   revive(): void {

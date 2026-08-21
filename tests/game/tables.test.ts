@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   BOSS_DEATH_TYPES,
   COUNTKILL_TYPES,
-  MONSTER_ATTACK_FRAMES,
+  attackPoseLetters,
   MONSTER_DEATH_FRAMES,
   MONSTER_HEALTH,
   MONSTER_IDLE_FRAMES,
@@ -129,7 +129,7 @@ describe('Vanilla tables · monsters', () => {
     for (const type of MONSTER_TYPES) {
       const walk = MONSTER_WALK_FRAMES_OVERRIDE[type] ?? MONSTER_IDLE_FRAMES[type] ?? MONSTER_WALK_FRAMES;
       const posed = new Set([
-        ...(MONSTER_ATTACK_FRAMES[type] ?? []),
+        ...attackPoseLetters(type),
         ...(MONSTER_PAIN_FRAMES[type] ?? []),
         ...(MONSTER_DEATH_FRAMES[type] ?? []),
       ]);

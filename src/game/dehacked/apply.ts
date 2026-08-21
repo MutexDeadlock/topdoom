@@ -6,6 +6,7 @@
  */
 import {
   INERT_SHOOTABLE,
+  forEachProjectileAttack,
   MONSTER_STATS,
   rebuildDerivedMonsterStats,
 } from '../monsters/tables.ts';
@@ -14,13 +15,27 @@ import {
   COUNTITEM_TYPES,
   COUNTKILL_TYPES,
   FUZZ_TYPES,
+  MONSTER_ATTACK_POSE,
+  MONSTER_CORPSE_VANISHES,
+  MONSTER_DEATH_FRAMES,
+  MONSTER_DEATH_SPRITE_OVERRIDE,
   MONSTER_HEALTH,
+  MONSTER_IDLE_FRAMES,
+  MONSTER_WALK_FRAMES,
+  MONSTER_PAIN_FRAMES,
+  MONSTER_RAISE_FRAMES,
   MONSTER_TYPES,
+  MONSTER_WALK_FRAMES_OVERRIDE,
+  MONSTER_XDEATH_FRAMES,
   OBITUARIES,
+  rebuildFullbrightFrames,
   SOLID_DECORATION_RADIUS_OVERRIDE,
   SOLID_DECORATION_TYPES,
+  THING_ANIM_FRAMES,
+  THING_SPRITES,
 } from '../things/tables.ts';
-import { PROJECTILE_RADIUS } from '../spritefx/tables.ts';
+import { BARREL_CHAIN, type AttackPose } from '../things/defs.ts';
+import { IMPACT_EFFECTS, PROJECTILE_FRAMES, PROJECTILE_RADIUS, PROJECTILE_SOUNDS } from '../spritefx/tables.ts';
 import { LOCKED_LINES } from '../specials/tables.ts';
 import {
   resetInventoryLimits,
@@ -32,8 +47,16 @@ import {
 } from '../inventory.ts';
 import { resetSoundLumps, setSoundLump, type SfxId } from '../../audio/sfx.ts';
 import { resetMusicLumps, setMusicLump } from '../../audio/music/tables.ts';
+import { resetSpriteLumps, setSpriteLump } from '../../wad/sprites.ts';
 import { WEAPONS } from '../weapons.ts';
-import type { DehAmmoEdit, DehPatch, DehThingEdit } from './defs.ts';
+import type { DehAmmoEdit, DehFrameEdit, DehPatch, DehThingEdit, DehWeaponEdit } from './defs.ts';
+import {
+  deriveFrameTables,
+  type MissileFrames,
+  type MonsterFrames,
+  patchStates,
+  pristineFrameTables,
+} from './frames.ts';
 import {
   AMMO_ORDER,
   MF_FLAGS,
@@ -99,10 +122,26 @@ const PATCHED_TABLES: readonly (() => void)[] = [
   patchable(WEAPONS),
   patchable(OBITUARIES),
   patchable(LOCKED_LINES),
+  // What a `Frame` record or a repointed `Thing` re-derives — docs/dehacked.md § Frames.
+  patchable(THING_SPRITES),
+  patchable(THING_ANIM_FRAMES),
+  patchable(MONSTER_WALK_FRAMES_OVERRIDE),
+  patchable(MONSTER_IDLE_FRAMES),
+  patchable(MONSTER_DEATH_FRAMES),
+  patchable(MONSTER_XDEATH_FRAMES),
+  patchable(MONSTER_DEATH_SPRITE_OVERRIDE),
+  patchable(MONSTER_ATTACK_POSE),
+  patchable(MONSTER_PAIN_FRAMES),
+  patchable(MONSTER_RAISE_FRAMES),
+  patchable(PROJECTILE_FRAMES),
+  patchable(IMPACT_EFFECTS),
+  patchable(PROJECTILE_SOUNDS),
+  patchable(BARREL_CHAIN),
 ];
 
-/** The flag `Set`s as arrays, since `structuredClone` is not used on them. */
-const PRISTINE_SETS = FLAG_SETS.map(([set]) => [...set]);
+/** Every patchable `Set` — the flag sets plus the one the frame walker writes — as arrays, since `structuredClone` is not used on them. */
+const PATCHED_SETS: readonly Set<number>[] = [...FLAG_SETS.map(([set]) => set), MONSTER_CORPSE_VANISHES];
+const PRISTINE_SETS = PATCHED_SETS.map((set) => [...set]);
 
 /**
  * Whether the session applied any `Thing` record — that is, whether `MONSTER_HEALTH` and the stat
@@ -136,7 +175,7 @@ function restore<T>(table: Record<number | string, T>, from: Record<number | str
 export function resetDehacked(): void {
   for (const restoreTable of PATCHED_TABLES) restoreTable();
 
-  FLAG_SETS.forEach(([set], i) => {
+  PATCHED_SETS.forEach((set, i) => {
     set.clear();
     for (const value of PRISTINE_SETS[i]) set.add(value);
   });
@@ -144,16 +183,19 @@ export function resetDehacked(): void {
   resetInventoryLimits();
   resetSoundLumps();
   resetMusicLumps();
+  resetSpriteLumps();
+  rebuildFullbrightFrames();
   rebuildDerivedMonsterStats();
   patchedThings = false;
 }
 
 /**
- * Writes a patch's `Thing`, `Weapon`, `Ammo` and `Misc` edits into the tables.
+ * Writes a patch's `Thing`, `Frame`, `Weapon`, `Ammo` and `Misc` edits into the tables.
  *
  * Must run **before** `createThingLayer`, which resolves the stat table once per level and
- * snapshots each thing's radius and height at spawn, and before the `SoundBank`, which pre-decodes
- * on construction. `game.ts`'s constructor is where both orderings hold.
+ * snapshots each thing's radius and height at spawn, before the `SoundBank`, which pre-decodes on
+ * construction, and before the `SpriteBank`, which indexes `[SPRITES]` renames as it is built.
+ * `game.ts`'s constructor is where all three orderings hold.
  */
 export function applyDehacked(patch: DehPatch): void {
   patchedThings ||= patch.thingEdits.length > 0;
@@ -165,6 +207,10 @@ export function applyDehacked(patch: DehPatch): void {
   applyLockedLines(patch.strings);
   for (const [name, lump] of patch.soundLumps) setSoundLump(name, lump);
   for (const [mnemonic, lump] of patch.musicLumps) setMusicLump(mnemonic, lump);
+  for (const [name, to] of patch.spriteRenames) setSpriteLump(name, to);
+  // After the `Thing` loop, whose `Speed` scaling it composes with, and before the rebuild below,
+  // which derives from the durations it writes.
+  applyFrames(patch.frameEdits, patch.thingEdits, patch.weaponEdits);
   // Last, because `MONSTER_STATS` is what it derives from and every edit above may have moved it.
   rebuildDerivedMonsterStats();
 }
@@ -242,15 +288,12 @@ function applySounds(
 function applyMissile(sink: (typeof MISSILE_SINKS)[string], edit: DehThingEdit): void {
   if (edit.radius !== undefined) PROJECTILE_RADIUS[sink.sprite] = edit.radius;
 
-  for (const stats of Object.values(MONSTER_STATS)) {
-    for (const attack of [stats.melee, stats.ranged]) {
-      if (attack?.projectile?.sprite !== sink.sprite) continue;
-      if (edit.speed !== undefined) attack.projectile.speed = edit.speed;
-      // `PIT_CheckThing`: `damage = ((P_Random()%8)+1) * info->damage`, which is this engine's
-      // `diceSides` of 8 times `diceMult` — so `Missile damage` is the multiplier.
-      if (edit.damage !== undefined) attack.diceMult = edit.damage;
-    }
-  }
+  forEachProjectileAttack(sink.sprite, (attack) => {
+    if (edit.speed !== undefined) attack.projectile.speed = edit.speed;
+    // `PIT_CheckThing`: `damage = ((P_Random()%8)+1) * info->damage`, which is this engine's
+    // `diceSides` of 8 times `diceMult` — so `Missile damage` is the multiplier.
+    if (edit.damage !== undefined) attack.diceMult = edit.damage;
+  });
 
   for (const id of sink.weapons ?? []) {
     const weapon = WEAPONS[id];
@@ -358,11 +401,155 @@ function applyAmmo(edit: DehAmmoEdit): void {
   if (edit.perAmmo !== undefined) setClipAmmo(type, edit.perAmmo);
 }
 
-/** `Weapon N`'s one field this engine has anywhere to put — see docs/dehacked.md § Weapon, Ammo and Misc. */
+/**
+ * `Weapon N`'s ammo type. Its five state pointers are applied by `applyFrames` instead, which walks
+ * the repointed fire chain — docs/dehacked.md § Weapon, Ammo and Misc.
+ *
+ * An index of -1 is "the record wrote no `Ammo type` line" and leaves the weapon's own class alone;
+ * without that guard a record that only repoints frames would disarm the weapon.
+ */
 function applyWeapon(index: number, ammoIndex: number): void {
   const id = WEAPON_ORDER[index];
-  const type = AMMO_ORDER[ammoIndex];
-  if (!id) return;
+  if (!id || ammoIndex < 0) return;
   // vanilla's `am_noammo` is 5, past the four real classes — the fist and chainsaw use it.
-  WEAPONS[id].ammoType = type ?? null;
+  WEAPONS[id].ammoType = AMMO_ORDER[ammoIndex] ?? null;
+}
+
+/** Structural equality over the small plain values the tables hold. */
+function same(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** Writes `value` under `key`, or deletes the key for null — one entry of a diff. */
+function put<T>(table: Record<number | string, T>, key: number | string, value: T | null | undefined): void {
+  if (value === null || value === undefined) delete table[key];
+  else table[key] = structuredClone(value);
+}
+
+/**
+ * Writes a patch's frame edits into the engine's tables: derive from the patched frame table,
+ * derive from vanilla's, and write only what differs. The diff is what keeps a hand-curated entry
+ * the walker reads differently (docs/dehacked.md § Frames lists them) and every unpatched type
+ * exactly as they were.
+ *
+ * A patch with no frame edits at all returns before cloning the 967-row table: `resetDehacked`
+ * runs immediately before this and has already refilled every sink from vanilla.
+ */
+export function applyFrames(
+  frameEdits: readonly DehFrameEdit[],
+  thingEdits: readonly DehThingEdit[],
+  weaponEdits: readonly DehWeaponEdit[] = [],
+): void {
+  const repointed = thingEdits.some((edit) => edit.states) || weaponEdits.some((edit) => edit.states);
+  if (frameEdits.length === 0 && !repointed) return;
+
+  const patched = patchStates(frameEdits, thingEdits, weaponEdits);
+  // Only a `Frame` record can move a fullbright bit — a `Thing` state repoint moves pointers
+  // between rows, never the rows' own sprite/frame words.
+  if (frameEdits.length > 0) rebuildFullbrightFrames(patched.states);
+
+  const before = pristineFrameTables();
+  const after = deriveFrameTables(patched);
+
+  for (const key of Object.keys(after.monsters)) {
+    const dn = Number(key);
+    const a = before.monsters[dn];
+    const b = after.monsters[dn];
+    if (!a || same(a, b)) continue;
+    writeMonster(dn, a, b);
+  }
+  for (const [index, id] of WEAPON_ORDER.entries()) {
+    const rate = after.weapons[index];
+    if (rate && !same(before.weapons[index], rate)) WEAPONS[id].cooldown = rate.cooldown;
+  }
+  for (const key of Object.keys(after.sprites)) {
+    const dn = Number(key);
+    if (!same(before.sprites[dn], after.sprites[dn])) THING_SPRITES[dn] = after.sprites[dn];
+  }
+  for (const key of Object.keys(after.anims)) {
+    const dn = Number(key);
+    if (!same(before.anims[dn], after.anims[dn])) put(THING_ANIM_FRAMES, dn, after.anims[dn]);
+  }
+  for (const sprite of Object.keys(after.missiles)) {
+    if (!same(before.missiles[sprite], after.missiles[sprite])) writeMissile(sprite, before.missiles[sprite], after.missiles[sprite]);
+  }
+  if (after.barrel && !same(before.barrel, after.barrel)) {
+    BARREL_CHAIN.idleFrames = after.barrel.idleFrames;
+    BARREL_CHAIN.idleFrameSeconds = after.barrel.idleFrameSeconds;
+    if (after.barrel.deathSprite !== undefined) BARREL_CHAIN.deathSprite = after.barrel.deathSprite;
+    BARREL_CHAIN.deathFrames = after.barrel.deathFrames;
+    if (after.barrel.explodeDelaySeconds !== null) BARREL_CHAIN.explodeDelaySeconds = after.barrel.explodeDelaySeconds;
+  }
+}
+
+/** One monster type's changed entries, field by field, onto the pose tables and its stat block. */
+function writeMonster(dn: number, a: MonsterFrames, b: MonsterFrames): void {
+  if (b.sprite !== undefined && a.sprite !== b.sprite) THING_SPRITES[dn] = b.sprite;
+  if (!same(a.walk, b.walk)) put(MONSTER_WALK_FRAMES_OVERRIDE, dn, same(b.walk, MONSTER_WALK_FRAMES) || b.walk.length === 0 ? null : b.walk);
+  if (!same(a.idle, b.idle)) put(MONSTER_IDLE_FRAMES, dn, b.idle);
+  if (!same(a.death, b.death)) put(MONSTER_DEATH_FRAMES, dn, b.death);
+  if (!same(a.xdeath, b.xdeath)) put(MONSTER_XDEATH_FRAMES, dn, b.xdeath);
+  if (!same(a.deathSprite, b.deathSprite)) put(MONSTER_DEATH_SPRITE_OVERRIDE, dn, b.deathSprite);
+  if (a.vanishes !== b.vanishes) {
+    if (b.vanishes) MONSTER_CORPSE_VANISHES.add(dn);
+    else MONSTER_CORPSE_VANISHES.delete(dn);
+  }
+  if (!same(a.pain, b.pain)) put(MONSTER_PAIN_FRAMES, dn, b.pain);
+  if (!same(a.meleePose, b.meleePose) || !same(a.rangedPose, b.rangedPose)) {
+    const pose: { melee?: AttackPose; ranged?: AttackPose } = {};
+    if (b.meleePose) pose.melee = b.meleePose;
+    if (b.rangedPose) pose.ranged = b.rangedPose;
+    put(MONSTER_ATTACK_POSE, dn, Object.keys(pose).length ? pose : null);
+  }
+  if (!same(a.raise, b.raise)) put(MONSTER_RAISE_FRAMES, dn, b.raise);
+
+  const stats = MONSTER_STATS[dn];
+  if (!stats) return;
+  if (a.painDuration !== b.painDuration) stats.painDuration = b.painDuration;
+  if (stats.melee && b.meleeDuration !== null && a.meleeDuration !== b.meleeDuration) stats.melee.duration = b.meleeDuration;
+  if (stats.ranged && b.rangedDuration !== null && a.rangedDuration !== b.rangedDuration) stats.ranged.duration = b.rangedDuration;
+  // Only where the type already models a windup: the lost soul's charge and the pain elemental's
+  // spawn never read it (see their `MONSTER_STATS` entries), so writing one would be a trap.
+  if (stats.ranged?.startDelaySeconds !== undefined && a.rangedDelay !== b.rangedDelay) {
+    stats.ranged.startDelaySeconds = b.rangedDelay ?? 0;
+  }
+  // A volley's shape follows its chain too: how many `A_*Attack` calls it carries and how far
+  // apart they sit. Only where the type already models one — a single-shot attack leaves both
+  // unset and reads as vanilla's default of one shot.
+  if (stats.ranged?.shots !== undefined && a.rangedShots !== b.rangedShots) stats.ranged.shots = b.rangedShots;
+  if (stats.ranged?.shotInterval !== undefined && b.rangedInterval !== null && a.rangedInterval !== b.rangedInterval) {
+    stats.ranged.shotInterval = b.rangedInterval;
+  }
+  // The walk loop changed: the chase clock follows it outright, and `speed` — already scaled by any
+  // `Speed` line `applyThing` read — is rescaled by the loop factor's change, so the two compose in
+  // either order. docs/dehacked.md § Units.
+  if (b.chase && a.chase && !same(a.chase, b.chase)) {
+    stats.chaseInterval = b.chase.interval;
+    stats.speed *= b.chase.factor / a.chase.factor;
+  }
+}
+
+/**
+ * One missile's changed art. A patched flight sprite moves the missile to a new key in every
+ * sprite-keyed table — `applyMissile`'s fan-out, plus the two tables the walker doesn't derive
+ * (`PROJECTILE_RADIUS`, `PROJECTILE_SOUNDS`), which carry over under the new name.
+ */
+function writeMissile(sprite: string, a: MissileFrames | undefined, b: MissileFrames): void {
+  let key = sprite;
+  if (b.flightSprite !== undefined && b.flightSprite !== sprite) {
+    key = b.flightSprite;
+    PROJECTILE_RADIUS[key] ??= PROJECTILE_RADIUS[sprite];
+    PROJECTILE_SOUNDS[key] ??= PROJECTILE_SOUNDS[sprite];
+    forEachProjectileAttack(sprite, (attack) => {
+      attack.projectile.sprite = key;
+    });
+    for (const weapon of Object.values(WEAPONS)) {
+      if (weapon.projectileSprite === sprite) weapon.projectileSprite = key;
+    }
+    put(PROJECTILE_FRAMES, key, b.flight);
+    put(IMPACT_EFFECTS, key, b.impact);
+    return;
+  }
+  if (!same(a?.flight, b.flight)) put(PROJECTILE_FRAMES, key, b.flight);
+  if (!same(a?.impact, b.impact)) put(IMPACT_EFFECTS, key, b.impact);
 }

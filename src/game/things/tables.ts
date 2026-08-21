@@ -6,6 +6,9 @@
  */
 import { DOOM_TIC } from '../../constants.ts';
 import { ThingType } from './doomednums.ts';
+import { pristineFrameTables } from '../dehacked/frames.ts';
+import type { AttackPose } from './defs.ts';
+import { FF_FULLBRIGHT, frameLetter, SPRITE_NAMES, STATES, type StateRow } from '../dehacked/states.ts';
 // Type-only: `combat.ts` imports the barrel constants below at runtime, and a
 // value import back would close that loop.
 import type { DamageCause } from '../combat.ts';
@@ -16,141 +19,11 @@ import type { DamageCause } from '../combat.ts';
  * decorations from both DOOM and DOOM II. Player starts, deathmatch spots,
  * teleport landings and boss shooter cubes are intentionally absent — DOOM
  * itself renders none of those, they are spawn markers only.
+ *
+ * Filled at the bottom of this file by walking vanilla's own state chains —
+ * docs/dehacked.md § Frames.
  */
-export const THING_SPRITES: Record<number, string> = {
-  // Monsters
-  [ThingType.zombieman]: 'POSS',
-  [ThingType.shotgunGuy]: 'SPOS',
-  [ThingType.imp]: 'TROO',
-  [ThingType.demon]: 'SARG',
-  [ThingType.spectre]: 'SARG',
-  [ThingType.lostSoul]: 'SKUL',
-  [ThingType.cacodemon]: 'HEAD',
-  [ThingType.baronOfHell]: 'BOSS',
-  [ThingType.hellKnight]: 'BOS2',
-  [ThingType.spiderMastermind]: 'SPID',
-  [ThingType.cyberdemon]: 'CYBR',
-  [ThingType.painElemental]: 'PAIN',
-  [ThingType.heavyWeaponDude]: 'CPOS',
-  [ThingType.revenant]: 'SKEL',
-  [ThingType.mancubus]: 'FATT',
-  [ThingType.arachnotron]: 'BSPI',
-  [ThingType.archVile]: 'VILE',
-  [ThingType.wolfensteinSS]: 'SSWV',
-  [ThingType.commanderKeen]: 'KEEN',
-  [ThingType.bossBrain]: 'BBRN',
-
-  // Weapons
-  [ThingType.shotgun]: 'SHOT',
-  [ThingType.superShotgun]: 'SGN2',
-  [ThingType.chaingun]: 'MGUN',
-  [ThingType.rocketLauncher]: 'LAUN',
-  [ThingType.plasmaRifle]: 'PLAS',
-  [ThingType.chainsaw]: 'CSAW',
-  [ThingType.bfg9000]: 'BFUG',
-
-  // Ammo
-  [ThingType.clip]: 'CLIP',
-  [ThingType.boxOfBullets]: 'AMMO',
-  [ThingType.rocket]: 'ROCK',
-  [ThingType.boxOfRockets]: 'BROK',
-  [ThingType.cellCharge]: 'CELL',
-  [ThingType.cellChargePack]: 'CELP',
-  [ThingType.shells]: 'SHEL',
-  [ThingType.boxOfShells]: 'SBOX',
-  [ThingType.backpack]: 'BPAK',
-
-  // Health & armor
-  [ThingType.stimpack]: 'STIM',
-  [ThingType.medikit]: 'MEDI',
-  [ThingType.soulsphere]: 'SOUL',
-  [ThingType.healthBonus]: 'BON1',
-  [ThingType.armorBonus]: 'BON2',
-  [ThingType.greenArmor]: 'ARM1',
-  [ThingType.blueArmor]: 'ARM2',
-  [ThingType.megasphere]: 'MEGA',
-
-  // Keys
-  [ThingType.blueKeycard]: 'BKEY',
-  [ThingType.blueSkullKey]: 'BSKU',
-  [ThingType.redKeycard]: 'RKEY',
-  [ThingType.redSkullKey]: 'RSKU',
-  [ThingType.yellowKeycard]: 'YKEY',
-  [ThingType.yellowSkullKey]: 'YSKU',
-
-  // Powerups
-  [ThingType.invulnerability]: 'PINV',
-  [ThingType.berserk]: 'PSTR',
-  [ThingType.invisibility]: 'PINS',
-  [ThingType.radiationSuit]: 'SUIT',
-  [ThingType.computerMap]: 'PMAP',
-  [ThingType.lightAmpVisor]: 'PVIS',
-
-  // Obstacles & decorations
-  [ThingType.barrel]: 'BAR1',
-  [ThingType.floorLamp]: 'COLU',
-  [ThingType.candle]: 'CAND',
-  [ThingType.candelabra]: 'CBRA',
-  [ThingType.tallGreenPillar]: 'COL1',
-  [ThingType.shortGreenPillar]: 'COL2',
-  [ThingType.tallRedPillar]: 'COL3',
-  [ThingType.shortRedPillar]: 'COL4',
-  [ThingType.shortGreenPillarHeart]: 'COL5',
-  [ThingType.shortRedPillarSkull]: 'COL6',
-  [ThingType.evilEye]: 'CEYE',
-  [ThingType.floatingSkullRock]: 'FSKU',
-  [ThingType.tallBlueTorch]: 'TBLU',
-  [ThingType.tallGreenTorch]: 'TGRN',
-  [ThingType.tallRedTorch]: 'TRED',
-  [ThingType.shortBlueTorch]: 'SMBT',
-  [ThingType.shortGreenTorch]: 'SMGT',
-  [ThingType.shortRedTorch]: 'SMRT',
-  [ThingType.stalagmite]: 'SMIT',
-  [ThingType.techPillar]: 'ELEC',
-  [ThingType.burningBarrel]: 'FCAN',
-  [ThingType.tallTechnoLamp]: 'TLMP',
-  [ThingType.shortTechnoLamp]: 'TLP2',
-  [ThingType.burntTree]: 'TRE1',
-  [ThingType.largeBrownTree]: 'TRE2',
-  [ThingType.impaledHuman]: 'POL1',
-  [ThingType.twitchingImpaledHuman]: 'POL6',
-  [ThingType.skullOnPole]: 'POL4',
-  [ThingType.fiveSkullShishKebab]: 'POL2',
-  [ThingType.pileOfSkullsAndCandles]: 'POL3',
-
-  // Gore & corpses — floor-standing, non-solid unless noted
-  [ThingType.bloodyMess]: 'PLAY',
-  [ThingType.bloodyMessAlt]: 'PLAY',
-  [ThingType.deadPlayer]: 'PLAY',
-  [ThingType.deadZombieman]: 'POSS',
-  [ThingType.deadShotgunGuy]: 'SPOS',
-  [ThingType.deadImp]: 'TROO',
-  [ThingType.deadDemon]: 'SARG',
-  [ThingType.deadCacodemon]: 'HEAD',
-  [ThingType.deadLostSoul]: 'SKUL', // Invisible in vanilla — no MF_SOLID/MF_NOBLOCKMAP either
-  [ThingType.poolOfBloodAndFlesh]: 'POL5',
-  [ThingType.colonGibs]: 'POB1',
-  [ThingType.smallPoolOfBlood]: 'POB2',
-  [ThingType.brainStem]: 'BRS1',
-
-  // Gore — hangs from the ceiling (MF_SPAWNCEILING); solid variants block, "Hanging …" ones don't
-  [ThingType.hangingVictimTwitching]: 'GOR1',
-  [ThingType.hangingVictimArmsOut]: 'GOR2',
-  [ThingType.hangingVictimOneLegged]: 'GOR3',
-  [ThingType.hangingPairOfLegs]: 'GOR4',
-  [ThingType.hangingLeg]: 'GOR5',
-  [ThingType.hangingVictimArmsOutNoBlock]: 'GOR2',
-  [ThingType.hangingPairOfLegsNoBlock]: 'GOR4',
-  [ThingType.hangingVictimOneLeggedNoBlock]: 'GOR3',
-  [ThingType.hangingLegNoBlock]: 'GOR5',
-  [ThingType.hangingVictimTwitchingNoBlock]: 'GOR1',
-  [ThingType.hangingVictimGutsRemoved]: 'HDB1',
-  [ThingType.hangingVictimGutsAndBrainRemoved]: 'HDB2',
-  [ThingType.hangingTorsoLookingDown]: 'HDB3',
-  [ThingType.hangingTorsoOpenSkull]: 'HDB4',
-  [ThingType.hangingTorsoLookingUp]: 'HDB5',
-  [ThingType.hangingTorsoBrainRemoved]: 'HDB6',
-};
+export const THING_SPRITES: Record<number, string> = {};
 
 /**
  * Doomednums carrying vanilla's `MF_SHADOW`, which `r_things.c: R_ProjectSprite` draws with the
@@ -307,11 +180,11 @@ export const CEILING_HUNG_HEIGHT: Record<number, number> = {
  * Load-bearing even though neither type's animator currently advances: `animating` is only ever
  * turned on by the AI branch in `update()`, which these two never enter, so today they hold frame 0
  * by accident rather than by rule. docs/monster-ai.md § Commander Keen.
+ *
+ * Filled at the bottom of this file by walking vanilla's own state chains —
+ * docs/dehacked.md § Frames.
  */
-export const MONSTER_IDLE_FRAMES: Record<number, string[]> = {
-  [ThingType.commanderKeen]: ['A'], // KEEN, S_KEENSTND
-  [ThingType.bossBrain]: ['A'], // BBRN, S_BRAIN
-};
+export const MONSTER_IDLE_FRAMES: Record<number, string[]> = {};
 
 /**
  * DOOM's usual walk cycle: 4 frames (A-D), the same one `PLAY` uses, held by
@@ -327,20 +200,14 @@ export const MONSTER_WALK_FRAMES = ['A', 'B', 'C', 'D'];
  *
  * The cacodemon is the one that gets *noticed*: `S_HEAD_RUN1` is a single state
  * looping to itself on frame A, and `HEAD`'s B/C are its `missilestate` mouth —
- * the same letters `MONSTER_ATTACK_FRAMES` uses — so the shared 4-frame default
+ * the same letters `MONSTER_ATTACK_POSE` uses — so the shared 4-frame default
  * had it biting the air continuously as it drifted. docs/sprites.md § Pain,
  * and attack/pain poses.
+ *
+ * Filled at the bottom of this file by walking vanilla's own state chains —
+ * docs/dehacked.md § Frames.
  */
-export const MONSTER_WALK_FRAMES_OVERRIDE: Record<number, string[]> = {
-  [ThingType.cacodemon]: ['A'], // HEAD — S_HEAD_RUN1 alone
-  [ThingType.lostSoul]: ['A', 'B'], // SKUL
-  [ThingType.painElemental]: ['A', 'B', 'C'], // PAIN
-  [ThingType.archVile]: ['A', 'B', 'C', 'D', 'E', 'F'], // VILE
-  [ThingType.revenant]: ['A', 'B', 'C', 'D', 'E', 'F'], // SKEL
-  [ThingType.mancubus]: ['A', 'B', 'C', 'D', 'E', 'F'], // FATT
-  [ThingType.arachnotron]: ['A', 'B', 'C', 'D', 'E', 'F'], // BSPI — S_BSPI_SIGHT's own frame A leads into the same cycle
-  [ThingType.spiderMastermind]: ['A', 'B', 'C', 'D', 'E', 'F'], // SPID
-};
+export const MONSTER_WALK_FRAMES_OVERRIDE: Record<number, string[]> = {};
 
 /**
  * `A_SpawnFly`'s monster lottery — the type an Icon of Sin spawn cube turns into on arrival, as
@@ -453,41 +320,24 @@ export const MONSTER_HEALTH: Record<number, number> = {
  * That derivation doesn't reach the two AI-less types at the bottom, whose
  * whole sprite is rotation-0 — theirs come straight off `info.c`'s own chains.
  * docs/sprites.md § Pain, and attack/pain poses.
+ *
+ * Filled at the bottom of this file by walking vanilla's own state chains —
+ * docs/dehacked.md § Frames.
  */
-export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
-  [ThingType.zombieman]: ['H', 'I', 'J', 'K', 'L'], // POSS
-  [ThingType.shotgunGuy]: ['H', 'I', 'J', 'K', 'L'], // SPOS
-  [ThingType.imp]: ['I', 'J', 'K', 'L', 'M'], // TROO
-  [ThingType.demon]: ['I', 'J', 'K', 'L', 'M', 'N'], // SARG
-  [ThingType.spectre]: ['I', 'J', 'K', 'L', 'M', 'N'], // SARG (spectre)
-  // Starts at F, not G: S_SKULL_DIE1 follows 2 walk + 2 attack + 1 pain (A-E).
-  [ThingType.lostSoul]: ['F', 'G', 'H', 'I', 'J', 'K'], // SKUL
-  [ThingType.cacodemon]: ['G', 'H', 'I', 'J', 'K', 'L'], // HEAD
-  [ThingType.baronOfHell]: ['I', 'J', 'K', 'L', 'M', 'N', 'O'], // BOSS
-  [ThingType.hellKnight]: ['I', 'J', 'K', 'L', 'M', 'N', 'O'], // BOS2
-  [ThingType.spiderMastermind]: ['J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S'], // SPID
-  [ThingType.cyberdemon]: ['H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'], // CYBR
-  [ThingType.painElemental]: ['H', 'I', 'J', 'K', 'L', 'M'], // PAIN
-  // Seven death states (H-N) before XDEATH starts at O, not five.
-  [ThingType.heavyWeaponDude]: ['H', 'I', 'J', 'K', 'L', 'M', 'N'], // CPOS
-  // Starts at L: S_SKEL_DIE1 reuses S_SKEL_PAIN's own letter — a real info.c
-  // quirk, so the rotation-0 tail starts one letter earlier than it looks.
-  [ThingType.revenant]: ['L', 'M', 'N', 'O', 'P', 'Q'], // SKEL
-  [ThingType.mancubus]: ['K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T'], // FATT
-  [ThingType.arachnotron]: ['J', 'K', 'L', 'M', 'N', 'O', 'P'], // BSPI
-  // Starts at Q: same shared pain/DIE1 letter quirk as SKEL above.
-  [ThingType.archVile]: ['Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'], // VILE
-  [ThingType.wolfensteinSS]: ['I', 'J', 'K', 'L', 'M'], // SSWV
-  // S_COMMKEEN..S_COMMKEEN12 — twelve frames starting at A, the same letter
-  // S_KEENSTND holds (see MONSTER_IDLE_FRAMES). The corpse keeps hanging: Keen
-  // is MF_SPAWNCEILING, so `update()` goes on measuring its z off the ceiling.
-  [ThingType.commanderKeen]: ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'], // KEEN
-  // S_BRAIN_DIE1-4 all hold BBRN frame 0 — the brain has no death art at all,
-  // it just sits there for 120 tics while A_BrainScream detonates around it.
-  // Listed anyway so `damage()` holds the sprite instead of hiding it, and so
-  // `deathFrameCount` is 1 rather than 0. game/monsters/iconofsin.ts owns the rest.
-  [ThingType.bossBrain]: ['A'], // BBRN
-};
+export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {};
+
+/**
+ * A monster whose death art is a different sprite lump than its own — vanilla's `deathstate`/
+ * `xdeathstate` chain naming another `sprnames[]` entry. Empty for the stock roster: every
+ * `info.c` monster dies in its own sprite, and only the exploding barrel (`BARREL_CHAIN`) doesn't.
+ * A DEHACKED patch fills it in — EPIC.WAD aims a hanging body's death at the imp's `TROO` gib
+ * chain — and `enterDeathPose` hands the entry to `SpriteAnimator.die`'s sprite argument, the same
+ * seam the barrel uses. docs/dehacked.md § Frames.
+ *
+ * Filled at the bottom of this file by walking vanilla's own state chains —
+ * docs/dehacked.md § Frames.
+ */
+export const MONSTER_DEATH_SPRITE_OVERRIDE: Record<number, { death?: string; xdeath?: string }> = {};
 
 /**
  * Gib (XDeath) frame letters — the back of the same rotation-0 tail
@@ -496,15 +346,11 @@ export const MONSTER_DEATH_FRAMES: Record<number, string[]> = {
  * `xdeathstate` in `mobjinfo` and always plays its plain death.
  * `ThingLayer.damage` picks between the two by `P_KillMobj`'s overkill rule —
  * docs/death.md § Monster death.
+ *
+ * Filled at the bottom of this file by walking vanilla's own state chains —
+ * docs/dehacked.md § Frames.
  */
-export const MONSTER_XDEATH_FRAMES: Record<number, string[]> = {
-  [ThingType.zombieman]: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // POSS
-  [ThingType.shotgunGuy]: ['M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // SPOS
-  [ThingType.imp]: ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U'], // TROO
-  // Starts at O, right after the DEATH table's own N — the two must not overlap.
-  [ThingType.heavyWeaponDude]: ['O', 'P', 'Q', 'R', 'S', 'T'], // CPOS
-  [ThingType.wolfensteinSS]: ['N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V'], // SSWV
-};
+export const MONSTER_XDEATH_FRAMES: Record<number, string[]> = {};
 
 /**
  * Flat per-frame duration for a death animation, regular or gib. Vanilla's
@@ -523,80 +369,57 @@ export const MONSTER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
  * `raisestate` — a genuine vanilla dead-data quirk, reproduced here without a
  * second special case because `rebuildBlockerGrid` never buckets a `hidden`
  * corpse. See docs/death.md § Monster death.
+ *
+ * Filled at the bottom of this file by walking vanilla's own state chains —
+ * docs/dehacked.md § Frames.
  */
-export const MONSTER_CORPSE_VANISHES: Set<number> = new Set([ThingType.lostSoul, ThingType.painElemental]);
+export const MONSTER_CORPSE_VANISHES: Set<number> = new Set();
 
 /**
- * Attack sprite frame letters per doomednum. Unlike the death tables these
- * aren't structurally derivable from the WAD, so they're lifted from `info.c`'s
- * `missilestate` chains and cross-checked letter-by-letter against the real
- * sprite lumps — the discipline that surfaced the four death-table bugs above.
- * docs/sprites.md § Pain, and attack/pain poses.
+ * Attack poses per doomednum, **split by attack kind** and taken from `info.c`'s `meleestate` and
+ * `missilestate` chains — the states, their letters and their own tic counts, cross-checked against
+ * the real sprite lumps.
  *
- * Only letters distinct from the walk cycle and from each other are kept:
- * vanilla repeats frames mid-sequence purely to hold a pose, a no-op against
- * `playOnce`'s flat per-frame duration, and `SPID`/`BSPI`'s `A_FaceTarget`
- * frame reuses their idle letter. `SKEL`'s five letters cover *both* its
- * attack kinds as one sequence — the sprite layer has no "which attack" signal
- * to key off, only the AI knows, and by then the pose is just "attacking".
+ * Two rules make this table what it is, and both are load-bearing:
+ *
+ * - **Per-state tics, not a flat rate.** `AttackStats.startDelaySeconds` puts the shot partway into
+ *   the chain (docs/monster-ai.md § The windup), and the frame that fires has to be the one showing
+ *   when it goes off. An even spread misses it — the zombieman's `F` is 10 tics in, not halfway —
+ *   and vanilla marks that frame `FF_FULLBRIGHT`, so the muzzle flash lit up after the bullet had
+ *   already landed. docs/sprites.md § Pain, and attack/pain poses.
+ * - **Split by kind**, because a type's two chains are genuinely different animations. Only the
+ *   revenant has both (`SKEL` `G`-`I` punches, `J`-`K` throws); the imp, demon, baron and hell
+ *   knight point `meleestate` and `missilestate` at the same chain, so both kinds share one pose.
+ *
+ * The span is what that type's `AttackStats.duration` covers: the whole chain, or — for the
+ * chaingunner and the two spiders, whose `A_*Refire` loops — the loop alone, which is also what
+ * drops their `A_FaceTarget` lead-in on the walk-cycle letter.
+ *
+ * Filled at the bottom of this file by walking vanilla's own state chains —
+ * docs/dehacked.md § Frames.
  */
-export const MONSTER_ATTACK_FRAMES: Record<number, string[]> = {
-  [ThingType.zombieman]: ['E', 'F'], // POSS
-  [ThingType.shotgunGuy]: ['E', 'F'], // SPOS
-  [ThingType.imp]: ['E', 'F', 'G'], // TROO
-  [ThingType.demon]: ['E', 'F', 'G'], // SARG
-  [ThingType.spectre]: ['E', 'F', 'G'], // SARG (spectre)
-  [ThingType.lostSoul]: ['C', 'D'], // SKUL
-  [ThingType.cacodemon]: ['B', 'C', 'D'], // HEAD
-  [ThingType.baronOfHell]: ['E', 'F', 'G'], // BOSS
-  [ThingType.hellKnight]: ['E', 'F', 'G'], // BOS2
-  [ThingType.spiderMastermind]: ['G', 'H'], // SPID
-  [ThingType.cyberdemon]: ['E', 'F'], // CYBR
-  [ThingType.painElemental]: ['D', 'E', 'F'], // PAIN
-  [ThingType.heavyWeaponDude]: ['E', 'F'], // CPOS
-  [ThingType.revenant]: ['G', 'H', 'I', 'J', 'K'], // SKEL
-  [ThingType.mancubus]: ['G', 'H', 'I'], // FATT
-  [ThingType.arachnotron]: ['G', 'H'], // BSPI
-  [ThingType.archVile]: ['G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P'], // VILE
-  [ThingType.wolfensteinSS]: ['E', 'F', 'G'], // SSWV
-};
+export const MONSTER_ATTACK_POSE: Record<number, { melee?: AttackPose; ranged?: AttackPose }> = {};
+
+/** Every frame letter a type can strike a pose on, both kinds together — for the cross-checks in `tests/game/tables.test.ts`. */
+export function attackPoseLetters(type: number): string[] {
+  const pose = MONSTER_ATTACK_POSE[type];
+  return [...new Set([...(pose?.melee?.frames ?? []), ...(pose?.ranged?.frames ?? [])])];
+}
 
 /**
  * Pain (flinch) sprite frame letters, derived the same way and with the same
- * WAD cross-check as `MONSTER_ATTACK_FRAMES` above. Every monster in stock
+ * WAD cross-check as `MONSTER_ATTACK_POSE` above. Every monster in stock
  * DOOM has exactly one pain frame except the cacodemon (`HEAD`), whose
  * `S_HEAD_PAIN3` genuinely is a second, distinct recoil frame — confirmed
  * against the WAD, not an accident of the derivation. `ThingLayer.damage`
  * only plays this when a hit actually rolls past the monster's own
  * `painChance` (`game/monsters/tables.ts`) — a hit that fails the roll flinches by
  * vanilla rule, not just by art.
+ *
+ * Filled at the bottom of this file by walking vanilla's own state chains —
+ * docs/dehacked.md § Frames.
  */
-export const MONSTER_PAIN_FRAMES: Record<number, string[]> = {
-  [ThingType.zombieman]: ['G'], // POSS
-  [ThingType.shotgunGuy]: ['G'], // SPOS
-  [ThingType.imp]: ['H'], // TROO
-  [ThingType.demon]: ['H'], // SARG
-  [ThingType.spectre]: ['H'], // SARG (spectre)
-  [ThingType.lostSoul]: ['E'], // SKUL
-  [ThingType.cacodemon]: ['E', 'F'], // HEAD
-  [ThingType.baronOfHell]: ['H'], // BOSS
-  [ThingType.hellKnight]: ['H'], // BOS2
-  [ThingType.spiderMastermind]: ['I'], // SPID
-  [ThingType.cyberdemon]: ['G'], // CYBR
-  [ThingType.painElemental]: ['G'], // PAIN
-  [ThingType.heavyWeaponDude]: ['G'], // CPOS
-  [ThingType.revenant]: ['L'], // SKEL
-  [ThingType.mancubus]: ['J'], // FATT
-  [ThingType.arachnotron]: ['I'], // BSPI
-  [ThingType.archVile]: ['Q'], // VILE
-  [ThingType.wolfensteinSS]: ['H'], // SSWV
-  // The two AI-less types. Both have a real painstate and effectively always
-  // enter it (painchance 256 and 255 of 256), but neither has `MONSTER_STATS`
-  // to roll against — `ThingLayer.damage`'s `INERT_SHOOTABLE` branch flinches
-  // them unconditionally instead. docs/monster-ai.md § Commander Keen.
-  [ThingType.commanderKeen]: ['M'], // KEEN, S_KEENPAIN
-  [ThingType.bossBrain]: ['B'], // BBRN, S_BRAIN_PAIN
-};
+export const MONSTER_PAIN_FRAMES: Record<number, string[]> = {};
 
 /**
  * Flat per-frame duration for `MONSTER_PAIN_FRAMES` — the same "one uniform
@@ -609,57 +432,46 @@ export const MONSTER_PAIN_FRAMES: Record<number, string[]> = {
 export const MONSTER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;
 
 /**
- * Per-frame duration for `MONSTER_ATTACK_FRAMES`, which — unlike the pain pose
- * — is **not** flat: the letters are spread evenly over `attackSeconds`, the
- * length of the attack they pose for.
+ * How long each frame of an attack pose is held: the pose's own `tics`, scaled to fill
+ * `attackSeconds` — the length of the attack it poses for.
  *
- * The pose and the wait are the same vanilla states: `AttackStats.duration` is
- * the `missilestate`/`meleestate` chain's summed tics, and those states are
- * exactly the frames this table lists. A flat rate makes the two disagree, and
- * the mismatch grows with the chain — the arch-vile's cast is 94 tics of `VILE`
- * `G`-`P`, so 3 tics a frame left it posed for 30 of them and standing in its
- * idle frame for the other 64, through the entire back half of the windup and
- * the blast itself. docs/sprites.md § Pain, and attack/pain poses.
+ * The pose and the wait are the same vanilla states, so the scale factor is 1 whenever the attack
+ * runs its full length; it is not when a volley's later shot re-enters a pose spanning only what is
+ * left. Keeping vanilla's *proportions* is what puts the firing frame under the shot
+ * (`AttackStats.startDelaySeconds`) — the arch-vile's blast lands on its `O` frame, the zombieman's
+ * bullet on its `F`. docs/sprites.md § Pain, and attack/pain poses.
  *
- * The degenerate guard is not defensive tidiness: a zero rate would freeze the
- * pose on its first frame *forever*, since `FrameSequence.advance` clears a
- * one-shot sequence only by advancing past its end.
+ * The degenerate guard is not defensive tidiness: a zero rate would freeze the pose on its first
+ * frame *forever*, since `FrameSequence.advance` clears a one-shot sequence only by advancing past
+ * its end.
  */
-export function attackPoseFrameSeconds(frames: readonly string[], attackSeconds: number): number {
-  if (frames.length === 0 || attackSeconds <= 0) return MONSTER_ACTION_FRAME_SECONDS;
-  return attackSeconds / frames.length;
+export function attackPoseFrameSeconds(pose: AttackPose, attackSeconds: number): number[] {
+  const total = pose.tics.reduce((sum, t) => sum + t, 0);
+  if (total <= 0 || attackSeconds <= 0) return pose.frames.map(() => MONSTER_ACTION_FRAME_SECONDS);
+  return pose.tics.map((t) => (attackSeconds * t) / total);
 }
 
 /**
  * Resurrection frame letters — `mobjinfo.raisestate`, the arch-vile's
- * `A_VileChase` target. Only 13 types have one at all; no entry means "not
+ * `A_VileChase` target. Only 14 types have one at all; no entry means "not
  * raisable", the same convention `MONSTER_XDEATH_FRAMES` uses.
  *
  * **Not simply the reverse of `MONSTER_DEATH_FRAMES`** — that was tried and is
  * wrong, since vanilla's raise sequences are hand-authored per type with no
  * shared derivation rule. Every letter is read off `info.c`'s `S_*_RAISE*`
- * table directly. docs/monster-archvile.md.
+ * table directly, and `tests/game/dehacked-frames.test.ts` re-derives each list
+ * from `dehacked/states.ts` — which is how the final letter of every chain, the
+ * first death frame each `S_*_RAISE` sequence ends on, was found missing.
+ * docs/monster-archvile.md.
  *
  * Played via `playOnce` after `revive()` undoes `die()`, reusing
  * `MONSTER_DEATH_FRAME_SECONDS` — vanilla's raise states hold 5-8 tics,
  * squarely inside death's own range, so a dedicated constant would tune nothing.
+ *
+ * Filled at the bottom of this file by walking vanilla's own state chains —
+ * docs/dehacked.md § Frames.
  */
-export const MONSTER_RAISE_FRAMES: Record<number, string[]> = {
-  [ThingType.zombieman]: ['K', 'J', 'I'], // POSS
-  [ThingType.shotgunGuy]: ['L', 'K', 'J', 'I'], // SPOS
-  [ThingType.imp]: ['M', 'L', 'K', 'J'], // TROO
-  [ThingType.demon]: ['N', 'M', 'L', 'K', 'J'], // SARG
-  [ThingType.spectre]: ['N', 'M', 'L', 'K', 'J'], // SARG (spectre)
-  [ThingType.cacodemon]: ['L', 'K', 'J', 'I', 'H'], // HEAD
-  [ThingType.baronOfHell]: ['O', 'N', 'M', 'L', 'K', 'J'], // BOSS
-  [ThingType.hellKnight]: ['O', 'N', 'M', 'L', 'K', 'J'], // BOS2
-  [ThingType.heavyWeaponDude]: ['N', 'M', 'L', 'K', 'J', 'I'], // CPOS
-  [ThingType.revenant]: ['Q', 'P', 'O', 'N', 'M'], // SKEL
-  [ThingType.mancubus]: ['R', 'Q', 'P', 'O', 'N', 'M', 'L'], // FATT
-  [ThingType.arachnotron]: ['P', 'O', 'N', 'M', 'L', 'K'], // BSPI
-  [ThingType.painElemental]: ['M', 'L', 'K', 'J', 'I'], // PAIN
-  [ThingType.wolfensteinSS]: ['M', 'L', 'K', 'J'], // SSWV
-};
+export const MONSTER_RAISE_FRAMES: Record<number, string[]> = {};
 
 /**
  * The player's own frame letters, the `PLAY`-lump counterparts of the
@@ -718,61 +530,100 @@ export const MONSTER_DROPS: Record<number, number> = {
  * at its sprite's literal `'A'` frame — both already match `buildThingSprites`'s default.
  * `frameSeconds` is one flat rate per entry standing in for vanilla's per-state tic counts, the
  * same accepted simplification `MONSTER_DEATH_FRAME_SECONDS` makes.
+ *
+ * Filled at the bottom of this file by walking vanilla's own state chains —
+ * docs/dehacked.md § Frames.
  */
-export const THING_ANIM_FRAMES: Record<number, { frames: string[]; frameSeconds: number }> = {
-  // Health & armor
-  [ThingType.soulsphere]: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC },
-  [ThingType.healthBonus]: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC },
-  [ThingType.armorBonus]: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC },
-  [ThingType.greenArmor]: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC },
-  [ThingType.blueArmor]: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC },
-  [ThingType.megasphere]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 * DOOM_TIC },
+export const THING_ANIM_FRAMES: Record<number, { frames: string[]; frameSeconds: number }> = {};
 
-  // Keys — all six blink identically (S_*KEY <-> S_*KEY2)
-  [ThingType.blueKeycard]: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC },
-  [ThingType.blueSkullKey]: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC },
-  [ThingType.redKeycard]: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC },
-  [ThingType.redSkullKey]: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC },
-  [ThingType.yellowKeycard]: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC },
-  [ThingType.yellowSkullKey]: { frames: ['A', 'B'], frameSeconds: 10 * DOOM_TIC },
+/**
+ * Fills every table above from the walker's reading of vanilla's own `states[]`
+ * (docs/dehacked.md § Frames). These are not transcribed any more: one `mobjinfo` row's eight
+ * state pointers decide its sprite, its walk/idle/death/pain/raise letters and both attack poses,
+ * so walking the chains is what *defines* them here and `tests/fixtures/frametables.ts` is the
+ * independent reading that pins the result.
+ *
+ * Runs at import, before `dehacked/apply.ts` snapshots these tables for `resetDehacked`. A patch
+ * re-derives the same way and writes only what differs.
+ */
+for (const [key, m] of Object.entries(pristineFrameTables().monsters)) {
+  const dn = Number(key);
+  if (m.sprite !== undefined) THING_SPRITES[dn] = m.sprite;
+  // A walk cycle that is not the shared `A,B,C,D` earns an override row; a type that holds an idle
+  // frame instead has no cycle at all.
+  if (m.walk.length && !sameLetters(m.walk, MONSTER_WALK_FRAMES)) MONSTER_WALK_FRAMES_OVERRIDE[dn] = m.walk;
+  if (m.idle) MONSTER_IDLE_FRAMES[dn] = m.idle;
+  if (m.death) MONSTER_DEATH_FRAMES[dn] = m.death;
+  if (m.xdeath) MONSTER_XDEATH_FRAMES[dn] = m.xdeath;
+  if (m.deathSprite) MONSTER_DEATH_SPRITE_OVERRIDE[dn] = m.deathSprite;
+  if (m.vanishes) MONSTER_CORPSE_VANISHES.add(dn);
+  if (m.pain) MONSTER_PAIN_FRAMES[dn] = m.pain;
+  if (m.raise) MONSTER_RAISE_FRAMES[dn] = m.raise;
+  if (m.meleePose || m.rangedPose) {
+    const pose: { melee?: AttackPose; ranged?: AttackPose } = {};
+    if (m.meleePose) pose.melee = m.meleePose;
+    if (m.rangedPose) pose.ranged = m.rangedPose;
+    MONSTER_ATTACK_POSE[dn] = pose;
+  }
+}
+for (const [key, sprite] of Object.entries(pristineFrameTables().sprites)) {
+  THING_SPRITES[Number(key)] = sprite;
+}
+for (const [key, anim] of Object.entries(pristineFrameTables().anims)) {
+  if (anim) THING_ANIM_FRAMES[Number(key)] = anim;
+}
 
-  // Powerups
-  [ThingType.invulnerability]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 * DOOM_TIC },
-  [ThingType.invisibility]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 6 * DOOM_TIC },
-  [ThingType.computerMap]: { frames: ['A', 'B', 'C', 'D', 'C', 'B'], frameSeconds: 6 * DOOM_TIC },
-  [ThingType.lightAmpVisor]: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC },
-
-  // Obstacles & decorations
-  [ThingType.evilEye]: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 6 * DOOM_TIC },
-  [ThingType.floatingSkullRock]: { frames: ['A', 'B', 'C'], frameSeconds: 6 * DOOM_TIC },
-  [ThingType.shortGreenPillarHeart]: { frames: ['A', 'B'], frameSeconds: 14 * DOOM_TIC },
-  [ThingType.tallBlueTorch]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
-  [ThingType.tallGreenTorch]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
-  [ThingType.tallRedTorch]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
-  [ThingType.shortBlueTorch]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
-  [ThingType.shortGreenTorch]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
-  [ThingType.shortRedTorch]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
-  [ThingType.burningBarrel]: { frames: ['A', 'B', 'C'], frameSeconds: 4 * DOOM_TIC },
-  [ThingType.tallTechnoLamp]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
-  [ThingType.shortTechnoLamp]: { frames: ['A', 'B', 'C', 'D'], frameSeconds: 4 * DOOM_TIC },
-  [ThingType.twitchingImpaledHuman]: { frames: ['A', 'B'], frameSeconds: 7 * DOOM_TIC }, // Real split is 6/8 tics
-  [ThingType.pileOfSkullsAndCandles]: { frames: ['A', 'B'], frameSeconds: 6 * DOOM_TIC },
-
-  // Gore & corpses — fixed art at a non-'A' death-cycle frame, held forever (see doc above)
-  [ThingType.bloodyMess]: { frames: ['W'], frameSeconds: 6 * DOOM_TIC }, // PLAY bloody mess (S_PLAY_XDIE9)
-  [ThingType.bloodyMessAlt]: { frames: ['W'], frameSeconds: 6 * DOOM_TIC }, // PLAY bloody mess (S_PLAY_XDIE9)
-  [ThingType.deadPlayer]: { frames: ['N'], frameSeconds: 6 * DOOM_TIC }, // PLAY dead player (S_PLAY_DIE7)
-  [ThingType.deadZombieman]: { frames: ['L'], frameSeconds: 6 * DOOM_TIC }, // POSS dead former human (S_POSS_DIE5)
-  [ThingType.deadShotgunGuy]: { frames: ['L'], frameSeconds: 6 * DOOM_TIC }, // SPOS dead former sergeant (S_SPOS_DIE5)
-  [ThingType.deadImp]: { frames: ['M'], frameSeconds: 6 * DOOM_TIC }, // TROO dead imp (S_TROO_DIE5)
-  [ThingType.deadDemon]: { frames: ['N'], frameSeconds: 6 * DOOM_TIC }, // SARG dead demon (S_SARG_DIE6)
-  [ThingType.deadCacodemon]: { frames: ['L'], frameSeconds: 6 * DOOM_TIC }, // HEAD dead cacodemon (S_HEAD_DIE6)
-  [ThingType.deadLostSoul]: { frames: ['K'], frameSeconds: 6 * DOOM_TIC }, // SKUL dead lost soul (S_SKULL_DIE6)
-
-  // Gore — ceiling-hung, 'A,B,C,B' twitch loop (both the solid and non-solid GOR1 placements)
-  [ThingType.hangingVictimTwitching]: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 * DOOM_TIC }, // GOR1 — real cycle is 10/15/8/6 tics
-  [ThingType.hangingVictimTwitchingNoBlock]: { frames: ['A', 'B', 'C', 'B'], frameSeconds: 10 * DOOM_TIC }, // GOR1 — same cycle, non-blocking placement
+/**
+ * The one pose the walker reads differently from the hand-curated reading, kept at the shipped
+ * value on purpose. `A_CPosRefire` makes the SS's chain a loop, and the walker's rule measures the
+ * loop alone (§ Frames) — which correctly drops the chaingunner's and the two spiders' lead-in
+ * `A_FaceTarget` state, but here also drops the `E` the SS visibly winds up on. Vanilla holds that
+ * frame, so this engine does too; `tests/fixtures/frametables.ts` carries the same reading and
+ * `tests/game/dehacked-frames.test.ts` lists it as a known divergence.
+ *
+ * A DEHACKED patch that edits the SS's frames overrides this like any other entry — the diff in
+ * `dehacked/apply.ts` writes off the walker, which is what a patch is asking for.
+ */
+MONSTER_ATTACK_POSE[ThingType.wolfensteinSS] = {
+  ranged: { frames: ['E', 'F', 'G', 'F', 'G', 'F'], tics: [10, 10, 4, 6, 4, 1] },
 };
+
+/** Frame-letter list equality — the walker's lists are short and flat. */
+function sameLetters(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((letter, i) => letter === b[i]);
+}
+
+/**
+ * Every `(sprite, letter)` vanilla draws at full light, as `SPRITE + LETTER` keys (`TREDA`, `SKULB`):
+ * `FF_FULLBRIGHT` in `info.c`'s `states[]`, which the torches, candles, keys, armor and powerups,
+ * the lost soul, every projectile and explosion, the teleport fogs and the monsters' firing frames
+ * all carry. Read at draw time by `things.ts`, `spritefx.ts` and the player's `SpriteActor` to
+ * lift the sprite to light 255 whatever its sector says.
+ *
+ * Keyed per `(sprite, letter)` rather than per state, because the animator knows no state — so
+ * where vanilla draws one letter bright in some states and dim in others, the states vote and a
+ * tie is bright. Ten stock letters split that way and the vote lands every one where it looks
+ * right: the spider mastermind's and arachnotron's `A_FaceTarget` frame is their walk letter `A`
+ * (one bright state against three or four dim ones — dim, or they would glow walking), while the
+ * chaingunner's firing frames and the pain elemental's death frames tie and stay bright.
+ * `tests/game/dehacked-frames.test.ts` pins the list. Rebuilt from a DEHACKED patch's `states[]`
+ * by `rebuildFullbrightFrames`, so a patch can add or clear the bit — freedoom2's does, on the
+ * zombieman's firing frame. docs/sprites.md § Fullbright frames.
+ */
+export const FULLBRIGHT_FRAMES: Set<string> = new Set();
+
+/** Refills `FULLBRIGHT_FRAMES` from a frame table — vanilla's own `STATES`, or a patched copy of it. */
+export function rebuildFullbrightFrames(states: readonly StateRow[] = STATES): void {
+  const votes = new Map<string, number>();
+  for (const [sprite, frame] of states) {
+    const key = SPRITE_NAMES[sprite] + frameLetter(frame);
+    votes.set(key, (votes.get(key) ?? 0) + (frame & FF_FULLBRIGHT ? 1 : -1));
+  }
+  FULLBRIGHT_FRAMES.clear();
+  for (const [key, vote] of votes) if (vote >= 0) FULLBRIGHT_FRAMES.add(key);
+}
+
+rebuildFullbrightFrames();
 
 /**
  * The exploding barrel's own `A_Explode` — vanilla's literal

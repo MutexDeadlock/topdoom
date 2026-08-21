@@ -11,11 +11,13 @@ bridges and the classifiers.
 
 ## Scope
 
-Read and applied: `Thing` records (stats, `Bits`, sounds), `Weapon`, `Ammo`, `Misc`, vanilla `Text`
-substitutions, and BEX `[STRINGS]`, `[PARS]`, `[SOUNDS]` and `[MUSIC]`.
+Read and applied: `Thing` records (stats, `Bits`, sounds, the eight frame pointers), `Frame`
+records (sprite, subnumber, duration, next frame — § Frames), `Weapon` records (ammo type and all
+five state pointers, § Weapon, Ammo and Misc), `Ammo`, `Misc`, vanilla `Text` substitutions, and BEX
+`[STRINGS]`, `[PARS]`, `[SOUNDS]`, `[MUSIC]` and `[SPRITES]`.
 
-Deliberately out: `Frame`, `Pointer`, `[CODEPTR]`, `Sprite`/`[SPRITES]`, and `ID #`. See § What is
-not supported for why each, and what it would cost.
+Deliberately out: `Pointer`, `[CODEPTR]` and `ID #`. See § What is not supported for why each, and
+what it would cost.
 
 A patch that asks for something out of scope **still loads and still plays.** It is reported, never
 refused — the WADs this matters for are ones that work today, and a refusal would be a regression
@@ -45,7 +47,11 @@ give it, and the split is by audience:
 | `game/dehacked.ts` | `readDehacked`, `parseDehacked`, `describeDehacked`, the record types | `wad/library.ts`, `plugins/wad-manifest.ts`, `scripts/inspect-wad.ts`, `game.ts` |
 | `game/dehacked/apply.ts` | `applyDehacked`, `resetDehacked`, `thingStatsPatched` | `game.ts`, `things.ts` |
 
-The reason is that **reading a patch and applying one have very different dependency graphs.**
+`dehacked/frames.ts` sits outside that split: it is the pure walker the *game tables themselves*
+import at load (§ Frames), so it deliberately depends on neither entry point and on no game table.
+
+The reason for the split is that **reading a patch and applying one have very different dependency
+graphs.**
 Parsing needs the index bridges (`dehacked/tables.ts`) and nothing else; applying needs
 `monsters/tables`, `things/tables`, `spritefx/tables`, `weapons` and `inventory`, and takes a
 `structuredClone` snapshot of all of them at import (§ Applying: reset, then patch).
@@ -118,6 +124,11 @@ constants in `monsters/iconofsin.ts` rather than being sprite-keyed, so it has n
 
 The rest (puffs, blood, `MT_TFOG`, gibs) have no sink at all and classify `noTarget`.
 
+The eight frame-pointer fields (`Initial frame` … `Respawn frame`) land on `DehThingEdit.states` as
+`states[]` indices and are resolved by the frame walker — § Frames. A value of 0 is `S_NULL`,
+"this type has no such state", and is carried as written rather than dropped: a patch that points a
+monster's `Respawn frame` at 0 is taking its resurrection away.
+
 ### Units
 
 DEH stores what the exe stored; this engine stores seconds and units per second. The conversions,
@@ -132,9 +143,11 @@ each from the vanilla site that fixes it:
 | `Speed`, walker | left as written | `info.c`'s plain map units per `A_Chase` |
 
 A walker's speed stays in vanilla's terms on purpose. `MonsterStats.speed` is units per second
-derived through the walk loop's tic count, and that tic count is stored nowhere — so a patched
-walker speed is applied by **scaling** the derived value by `deh / vanilla`, which preserves the
-loop factor, rather than by recomputing it from scratch.
+derived through the walk loop's tic count — so a patched walker speed is applied by **scaling** the
+derived value by `deh / vanilla`, which preserves the loop factor, rather than by recomputing it
+from scratch. When the loop itself is retimed by a `Frame` record, the frame walker rescales the
+same field by the loop factor's own change (§ Frames), so the two compose in either order and
+neither disturbs the three types whose shipped loop factor the walker reads differently.
 
 `FIXED_POINT_THRESHOLD` (`dehacked/parse.ts`) is **a heuristic, not a vanilla rule**, and is
 marked as such at the declaration. DeHackEd writes fixed point because that is what the exe held,
@@ -191,12 +204,175 @@ share one** — `MF_TRANSLUCENT` was once transcribed onto `MF_FRIEND`'s bit, wh
 reported both names for either flag. Bits 28-31 are MBF's `p_mobj.h`: `MF_TOUCHY`, `MF_BOUNCES`,
 `MF_FRIEND`, `MF_TRANSLUCENT`. A test pins the bits distinct.
 
+## Frames
+
+Vanilla animates everything through one `states[]` array — 967 rows of sprite, frame letter (with
+`FF_FULLBRIGHT` in bit 15), tics, action pointer and next state — and each `mobjinfo` row is eight
+entry points into it. This engine has no such array at runtime: a monster is per-type letter lists
+in `things/tables.ts` with flat durations, and its attack and pain *lengths* are summed tics in
+`monsters/tables.ts`.
+
+**Those tables are not written out — they are walked out of `states[]` at import.** The letter
+lists, both attack poses, the flat decoration rates, the missiles' flight and impact art, the
+barrel's chains, and `MONSTER_STATS`' `speed`/`chaseInterval`/`painDuration` and per-attack
+`duration`/`shots`/`shotInterval`/`startDelaySeconds` are all filled by the walker as
+`things/tables.ts`, `monsters/tables.ts`, `spritefx/tables.ts` and `things/defs.ts` evaluate. A row
+in `MONSTER_SEED` therefore carries only what no state chain can say — health, radius, mass, the
+damage rolls, the sounds. A `Frame` record is then applied by re-deriving the same tables from a
+patched copy of the frame table, not by stepping states: same walker, different input.
+
+`dehacked/states.ts` is the data: `STATES`, `SPRITE_NAMES` and `MOBJ_STATES` (the eight pointers
+per `mobjinfo` row, index-aligned with `MOBJ_INFO`), generated mechanically from `info.c`/`info.h`
+and never edited by hand. It is read-side and import-free, because the parser classifies a `Frame`
+by the state it names (below). Each row keeps its `A_*` action **name** — not to run it, but
+because two derivations need to know where an action sits: the walk loop's chase count and the
+barrel's `A_Explode`.
+
+`dehacked/frames.ts` is the walker, and it is **pure** — it reads `states.ts` and `MOBJ_INFO` and
+imports no game table, which is what lets the game tables build themselves from it without a cycle.
+`patchStates` writes the `Frame` edits and the `Thing` pointers into copies; `deriveFrameTables`
+walks every chain; `pristineFrameTables` memoizes the unpatched reading. The diff-and-write half
+lives in `dehacked/apply.ts`, which is the only side that touches the tables.
+
+Because the walker classifies a row before it can consult any table it fills, it decides row kind
+from read-side data alone: a monster is a row with both a pain and a death chain (exactly the twenty
+types `MONSTER_STATS` and `INERT_SHOOTABLE` cover), read off **pristine** `MOBJ_STATES` so a patch
+that clears a `painstate` cannot silently turn a monster into a decoration, and the three
+`mobjinfo` rows this engine draws no sprite for (`NOT_DRAWN`: teleport destination, spawn spot,
+spawn shooter) are skipped by number.
+
+**The chain rules**, each matched against the hand transcription (the anchor tests below):
+
+- A chain follows `next` until it loops, steps to `S_NULL`, reaches a `tics: -1` state, or — for a
+  pain, attack or raise chain — re-enters the walk loop (or, for a type with no `seestate`, its held
+  stand frame). Vanilla's pain and attack chains end by stepping back into `S_*_RUN1`, which is
+  what makes this the boundary.
+- **Letters are kept distinct, in first-appearance order.** Vanilla holds a pose by repeating its
+  frame across states; against a flat per-frame rate that repeat is a no-op, and it is how the
+  pose tables were written. A decoration's idle loop is the exception and is taken as written —
+  the evil eye's `A,B,C,B` is a real wobble.
+- **Attack** is the melee chain's letters, then the missile chain's, distinct, minus the walk
+  cycle's — `SKEL`'s two attacks become one sequence, and `SPID`/`BSPI`'s `A_FaceTarget` frame
+  reuses their idle letter.
+- **Durations** are summed tics over 35. A chain that loops back through an `A_*Refire` counts
+  only the loop (one pass of a chaingunner's attack); any other loop is the whole chain held — the
+  lost soul cycles `S_SKULL_ATK3`/`ATK4` for as long as its charge flies.
+- **The walk loop** gives `chaseInterval` (loop tics over chase calls over 35) and the factor
+  `mobjinfo.speed` is multiplied by; a chase call is `A_Chase`, `A_VileChase`, or one of
+  `p_enemy.c`'s three footstep wrappers (`A_Hoof`, `A_Metal`, `A_BabyMetal`), each of which plays
+  its sound and then calls `A_Chase`.
+- **Death** that steps to `S_NULL` rather than holding puts the type in `MONSTER_CORPSE_VANISHES`;
+  a death chain whose first state draws another sprite writes `MONSTER_DEATH_SPRITE_OVERRIDE`, the
+  seam the barrel's `BEXP` already uses — EPIC.WAD aims a hanging body at the imp's gib chain. A
+  death pointed at `S_NULL` outright deletes the type's death entry, and `enterDeathPose` then hides
+  the corpse, which is what vanilla's immediate `P_RemoveMobj` looks like.
+- **A decoration's** idle loop is one flat rate, the loop's mean tics with ties rounding down —
+  the rule the hand transcription turns out to have used (`POL6`'s 6/8 → 7, `ARM1`'s 6/7 → 6,
+  `GOR1`'s 10/15/8/6 → 10). A single held frame that isn't `A` is a one-letter entry.
+- **A missile's** spawn loop is its flight art, its death chain its impact, both under the pristine
+  flight sprite's key. A patched flight sprite moves the missile to the new key in every
+  sprite-keyed table — `AttackStats.projectile.sprite`, `WeaponDef.projectileSprite`,
+  `PROJECTILE_RADIUS` and `PROJECTILE_SOUNDS` carried over — because that is `applyMissile`'s
+  fan-out and a missile here *is* its sprite name.
+- **The barrel's** chains are `BARREL_CHAIN`, one mutable record: idle loop, death letters and
+  sprite, and the blast delay, which is the tics before the first `A_Explode` state. Re-reading that
+  chain is what found vanilla's action on `S_BEXP4`, fifteen tics in, where a hand-written comment
+  had put it on the third state.
+
+**The four overrides.** Where the walker's rule and the hand transcription genuinely disagree, the
+shipped reading wins and says so at its declaration — `FRAME_OVERRIDES` in `monsters/tables.ts` plus
+the one pose override in `things/tables.ts`. That list is the complete inventory, and a new row on
+it is a decision, never a shrug:
+
+- the **Wolfenstein SS's** attack length, pose and windup. Its two `A_FaceTarget` states sit ahead
+  of the `A_CPosRefire` loop and the walker measures the loop alone — correct for the chaingunner
+  and the two spiders, but here it drops the `E` the SS visibly winds up on. All three follow the
+  same span, so they move together.
+- the **lost soul's and pain elemental's** windup: a charge and a spawn both return straight out of
+  `beginRangedAttack`, so the burst timer `startDelaySeconds` is read through never runs.
+- the **cacodemon's melee**: its `meleestate` is `S_NULL` — `A_HeadAttack` bites from inside the
+  missile chain — so there is no chain to measure the bite from.
+
+**Derive twice, write the difference.** For a *patch*, `applyFrames` derives from vanilla's table
+and from the patched one and writes only the entries that differ. On an unpatched set nothing is
+written at all, and a patch that touches one type leaves the other nineteen byte-identical. A patch
+that edits an overridden type overrides it: the diff writes off the walker, which is what the patch
+is asking for.
+
+**The anchor is two tests, and `tests/fixtures/frametables.ts` is what they anchor to.** That
+fixture holds the pose, letter and duration tables *as they were hand-transcribed from `info.c`*,
+frozen — a second, independent reading of the same source. It is never regenerated from the walker;
+that would make the check circular and throw away the only thing it is for.
+
+1. **The walker reproduces it.** Deriving from pristine `STATES` must equal the fixture — every pose
+   list, `painDuration`, both attack durations, `chaseInterval` and `speed` for all twenty monster
+   types, `THING_SPRITES`, every `THING_ANIM_FRAMES` entry, the nine missiles and the barrel — bar
+   the overrides above, which it lists and requires to still differ.
+2. **The tables the engine uses are the shipped reading**, overrides included. Without this second
+   test a divergence the walker is *expected* to have would reach the game silently: deriving
+   `MONSTER_ATTACK_POSE` dropped the SS's wind-up frame exactly that way, and test 1 passed
+   throughout.
+
+Writing the first is what found two transcription errors, both fixed toward `info.c`: every raise
+sequence was one letter short (each `S_*_RAISE` chain ends on the type's first death frame), and the
+barrel's blast delay above.
+
+**What a patched chain can't reach**, all residuals rather than bugs: `AttackStats.refire` — which
+is a `nextstate` pointing back at itself, not a position — stays as the stat table has it (the
+windup, shot count and shot spacing around it are all derived — docs/monster-ai.md § The windup);
+the flat per-frame rates (`MONSTER_DEATH_FRAME_SECONDS`, `IMPACT_FRAME_SECONDS`,
+`BARREL_CHAIN.deathFrameSeconds`) stay flat; puff, blood and teleport-fog art is not derived; the
+player's own `PLAYER_*` letters are constants; a pain, attack or raise chain is drawn in the type's
+own sprite even if its states name another (`playOnce` takes no sprite — only death does). A
+weapon's bob, raise and lower chains have no sink either — nothing here draws a gun.
+
+**A `Frame` is classified by the state it names.** A world state applies, and so does a **fire-chain**
+state: the 40-odd states from each weapon's `atkstate` to the `A_ReFire` that closes it are exactly
+this engine's fire rates (docs/weapons.md § Fire rates), so a patch retuning a gun by editing its
+durations lands. Every other psprite state — the ones `p_pspr.c` steps between `S_LIGHTDONE` and
+`S_BFGFLASH2` — is `noTarget`: a muzzle flash (`isFlashState`, by `statenum_t` name because the
+super shotgun's flash draws the gun's own `SHT2` lump) has nothing here to flash, and a bob, raise
+or lower state nothing to draw. `fireChainStates` (`dehacked/states.ts`) is what splits the two, and
+it lives beside the data because the classifier and the walker must not disagree about where a fire
+chain ends. freedoom2's seven `Frame` records are five fullbright bits on firing frames and two
+super-shotgun flash durations, which report.
+
+**`[CODEPTR]` bodies are field lines.** `Frame 185 = A_PosAttack` carries an `=`, and a `Word N`
+candidate with one is never a record header — reading it as one opened an empty `Frame` record per
+line of the section (harmlessly, while `Frame` was skipped outright).
+
+## Sprite renames
+
+BEX `[SPRITES]` — and before it, a vanilla `Text 4 4` whose old string is a sprite name, which
+`d_deh.c`'s `deh_procText` checks for first — renames the four characters a sprite's lumps start
+with: `POSS = ZOMB` draws the zombieman from `ZOMB*`. Both prboom-plus's and Eternity's
+`deh_procBexSprites` match the key against the **pristine** `sprnames[]`, snapshotted before any
+patch runs, so a rename never chains through an earlier one, and later entries win per key.
+
+The sink is `wad/sprites.ts`, applied when a `SpriteBank` is built: a renamed sprite's lumps are
+indexed under the name things ask for as well as their own, so `lookup` pays nothing per call.
+`game.ts` builds the bank after `applyDehacked`, which is the ordering this rests on. Derivation,
+the pose tables and `FULLBRIGHT_FRAMES` all keep the logical name — only lump resolution moves.
+
+A numeric `Sprite N` record is `noTarget`, like `Sound N`: it moves a pointer into the exe's own
+string table.
+
 ## Weapon, Ammo and Misc
 
-A `Weapon` record reaches **only its ammo type.** That is not a gap here: `d_deh.c`'s `deh_weapon[]`
-is an ammo type and five state pointers, and vanilla's `weaponinfo[]` holds nothing else — no
-damage, no fire rate. A patch that retunes a weapon does it by editing the frames' durations, which
-is out of scope.
+A `Weapon` record reaches **everything vanilla stores**, which is an ammo type and five state
+pointers: `d_deh.c`'s `deh_weapon[]` has no damage and no fire rate, because in vanilla a weapon's
+rate *is* the durations of the chain `Shooting frame` points at. So a patch retunes a gun either by
+editing that chain's `Frame` records or by repointing it, and both land the same way — the rate is
+re-walked (docs/weapons.md § Fire rates). The other four pointers are carried so the record reads
+whole; only `Shooting frame` changes anything, there being no first-person weapon here to raise,
+lower or bob.
+
+Two spellings to know, both `d_deh.c`'s: `Deselect frame` is `upstate` and `Select frame` is
+`downstate` — the two the wrong way round. `WEAPON_STATE_FIELDS` keeps the patch's spellings and
+`WEAPON_STATES` the struct's, so neither side has to remember the swap.
+
+An `Ammo type` line is the only one that can *clear* something, so its absence is load-bearing: a
+record that only repoints frames leaves the weapon's ammo class alone rather than disarming it.
 
 `Ammo` reaches both of vanilla's tables, `maxammo[]` and `clipammo[]`. The second matters more than
 it looks: `P_GiveAmmo` multiplies a pickup's `num` by `clipammo[type]`, so `Per ammo` drives what
@@ -384,15 +560,11 @@ display rule is docs/hud.md § Intermission.
 
 ## What is not supported
 
-**Frames — `Frame`, `Pointer`, `[CODEPTR]`.** This is the one that fixes the scope. Vanilla animates
-through a `states[]` array where each entry names a sprite, a duration, an action pointer and the
-next state; a DEH patch builds a custom monster by reassigning those. This engine has no such
-array — a monster's animation is per-type letter lists in `things/tables.ts` with one flat duration
-each (docs/sprites.md) — so there is nothing to reassign. Supporting it means building a state
-machine first, which is a different project from reading a patch.
-
-**`Sprite` records and `[SPRITES]`.** Renaming sprites by index needs the same `sprnames[]`
-ordering the state table indexes into.
+**Action pointers — `Pointer`, `[CODEPTR]`.** A `Frame`'s data applies (§ Frames); reassigning
+which `A_*` function a state runs does not. This engine has no per-state actions to reassign — an
+attack is `AttackStats` resolved by `monsters/attacks.ts`, a footstep is `MonsterSounds.walk` — so a
+patch that moves `A_PosAttack` onto another state has nothing to move it onto. The action names in
+`STATES` are read for two derivations and never run.
 
 **`ID #`.** Permanently out, not merely deferred. Re-keying a thing's doomednum would have to
 rewrite ten type-keyed tables and seven `Set`s that are not all keyed by the same thing —
@@ -419,6 +591,11 @@ merely awkward to reach — `OB_*` and `PD_*` — are done: see § Obituaries an
 which both had to hold whole lines rather than interpolated fragments before a patch had anything
 to replace.
 
+**Every shipped patch's report, for the record.** freedoom2's lands everything but two
+super-shotgun flash durations (`noTarget`). EPIC.WAD's lands everything but its misspelled
+`Radius` — and its one repointed death, on a hanging body whose `Bits` line drops `MF_SHOOTABLE`,
+is applied and unreachable.
+
 ## Applying: reset, then patch
 
 Patched tables are **mutated in place** (`dehacked/apply.ts`), with a pristine snapshot taken at
@@ -444,16 +621,23 @@ would otherwise go stale, each closed a different way:
 | `FAST_MONSTER_STATS`, `TALLEST_BODY_HEIGHT` | `let`, rebuilt by `rebuildDerivedMonsterStats()`. `monsterStatsFor` is still the single accessor. |
 | `things/grid.ts`'s `BLOCKER_MARGIN` | computed per grid instead — one reduce over forty entries, once per level. |
 | `vile.ts`'s `VILE_WINDUP_TRACK_SECONDS` | read at its one use site, which runs once per windup. |
+| `FULLBRIGHT_FRAMES` | a `Set` refilled by `rebuildFullbrightFrames` from the patched or pristine frame table. |
 | `WEAPON_CYCLE`, `SFX_NAMES` | nothing: DEH has no slot concept and never adds a sound. |
+
+The frame walker's sinks — `THING_SPRITES`, `THING_ANIM_FRAMES`, the seven pose tables,
+`MONSTER_DEATH_SPRITE_OVERRIDE`, `PROJECTILE_FRAMES`, `IMPACT_EFFECTS`, `PROJECTILE_SOUNDS`,
+`BARREL_CHAIN` — are registered like the stat tables, and `MONSTER_CORPSE_VANISHES` joins the flag
+`Set`s. `applyFrames` runs after the `Thing` loop (whose `Speed` scaling it composes with) and
+before `rebuildDerivedMonsterStats` (which derives from the durations it writes).
 
 `inventory.ts`'s tables are module-private, so the applier does not reach into them; that module
 exposes `setMaxAmmo`, `setClipAmmo`, `setInventoryLimits` and `resetInventoryLimits` instead, each
-owning its own derivations. `audio/sfx.ts` and `audio/music/tables.ts` do the same for their lump
-redirects.
+owning its own derivations. `audio/sfx.ts`, `audio/music/tables.ts` and `wad/sprites.ts` do the
+same for their lump redirects.
 
 The patch has to land **before `createThingLayer`**, which resolves the stat table once per level
-and snapshots each thing's radius and height at spawn, and before the `SoundBank`, which pre-decodes
-on construction. It also has to land before the session's `createInventory()`, which reads `Misc`'s
+and snapshots each thing's radius and height at spawn, before the `SoundBank`, which pre-decodes
+on construction, and before the `SpriteBank`, which indexes `[SPRITES]` renames as it is built. It also has to land before the session's `createInventory()`, which reads `Misc`'s
 `Initial Health` and `Initial Bullets` off `LIMITS` — which is why `Game.inventory` is assigned in
 the constructor **body** and not as a field initializer: those run first, and did, so the starting
 kit came from whatever the previous session left behind.
@@ -491,15 +675,17 @@ has with the specials table, so a report can't drift out of step with what actua
 - **`applied`** — written into a real engine table.
 - **`noTarget`** — understood, but this engine simply doesn't have the thing (a finale screen, a
   pickup message).
-- **`unsupported`** — deliberately out of scope even though a target exists or could (frames,
-  sprite renames, `ID #`).
+- **`unsupported`** — deliberately out of scope even though a target exists or could (action
+  pointers, `ID #`).
 - **`unknown`** — not recognised at all.
 
 The distinction between the middle two is the one worth keeping: only `unsupported` is ever worth
 revisiting.
 
-Warnings are **deduped by `(record, field)` and counted**, so a patch with seven `Frame` records is
-one row saying seven and not seven rows.
+Warnings are **deduped by `(record, field, support)` and counted**, so a patch whose seven `Thing`
+frame fields all miss is one row saying seven and not seven rows. `support` is in the key because
+one record word can land differently by index — a `Frame` on a muzzle flash has no target, one past
+the table is unknown — and a row says one thing.
 
 **A `[STRINGS]` shortfall is reported only when it is `unknown`.** A recognised mnemonic this engine
 has no home for — `GOT*`, `CC_*`, `AMSTR_*`, the deathmatch obituaries — is passed over in silence.

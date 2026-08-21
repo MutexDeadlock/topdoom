@@ -8,9 +8,11 @@
  */
 import { WEAPON_RANGE } from '../world.ts';
 import { ThingType } from '../things/doomednums.ts';
-import { MELEE_RANGE, type MonsterStats } from './defs.ts';
+import { MELEE_RANGE, type AttackStats, type MonsterStats } from './defs.ts';
 import type { SfxId } from '../../audio/sfx.ts';
 import { DOOM_TIC } from '../../constants.ts';
+import { pristineFrameTables } from '../dehacked/frames.ts';
+import { MOBJ_INFO } from '../dehacked/tables.ts';
 
 /** Vanilla's own `FATSPREAD` (`ANG90/8`) — the mancubus's fireball-pair fan angle, see `AttackStats.projectile.pairOffsetsRad`. */
 const FATSPREAD = Math.PI / 2 / 8;
@@ -57,63 +59,74 @@ export const INERT_SHOOTABLE: Record<
  * two in `INERT_SHOOTABLE` above.
  *
  * **Both timing and damage are lifted from vanilla, not tuned by feel.**
- * `speed`, `chaseInterval`, `painChance`, `painDuration` and every
- * `duration`/`shots`/`shotInterval` come from `info.c`'s `mobjinfo`/state
- * tables; `diceSides`/`diceMult` are each attack's own literal roll from
- * `p_enemy.c`, or `PIT_CheckThing`'s universal missile formula. Splash is
+ * `speed`, `chaseInterval`, `painDuration` and every
+ * `duration`/`shots`/`shotInterval` are not written out below at all: they are
+ * **walked out of `info.c`'s own state chains** and assigned further down this
+ * file (§ the fill loop, docs/dehacked.md § Frames), so a row here carries only
+ * what no chain can say. `painChance`, `radius`, `height`, `mass` and the
+ * sounds are `mobjinfo` fields; `diceSides`/`diceMult` are each attack's own
+ * literal roll from `p_enemy.c`, or `PIT_CheckThing`'s universal missile
+ * formula. Splash is
  * correctly non-uniform — only the cyberdemon's `MT_ROCKET` explodes in
  * vanilla. See docs/monster-ai.md § Timings and damage come from vanilla, not
  * from feel, and docs/monster-attacks.md § Hitscan vs. projectile for which
  * types get which attack.
  */
-export const MONSTER_STATS: Record<number, MonsterStats> = {
+/**
+ * One attack as written out here. `duration` — and the volley's `shots`/`shotInterval` and the
+ * windup's `startDelaySeconds` — are walked out of the chain's own states by the fill below, so a
+ * row carries them only where `FRAME_OVERRIDES` says the shipped reading wins.
+ */
+type AttackSeed = Omit<AttackStats, 'duration'> & Partial<Pick<AttackStats, 'duration'>>;
+
+/**
+ * A stat row as written out here: every field no state chain can carry. `speed`, `chaseInterval`,
+ * `painDuration` and each attack's timings cannot be written here at all — the fill loop below
+ * writes them from vanilla's own chains, which is what turns these seeds into complete
+ * `MonsterStats`.
+ */
+type MonsterSeed = Omit<MonsterStats, 'speed' | 'chaseInterval' | 'painDuration' | 'melee' | 'ranged'> & {
+  melee: AttackSeed | null;
+  ranged: AttackSeed | null;
+};
+
+const MONSTER_SEED: Record<number, MonsterSeed> = {
   [ThingType.zombieman]: {
-    speed: 70,
-    chaseInterval: 0.114,
     radius: 20,
     height: 56,
     mass: 100,
     melee: null,
     // A_PosAttack: (rand%5+1)*3.
-    ranged: { diceSides: 5, diceMult: 3, duration: 0.743 },
+    ranged: { diceSides: 5, diceMult: 3},
     painChance: 0.781,
-    painDuration: 0.171,
     sounds: { see: 'posit1', active: 'posact', pain: 'popain', death: 'podth1', attack: 'pistol' },
   },
   [ThingType.shotgunGuy]: {
-    speed: 93.3,
-    chaseInterval: 0.086,
     radius: 20,
     height: 56,
     mass: 100,
     melee: null,
     // A_SPosAttack: 3 separate P_LineAttacks per call, each (rand%5+1)*3 —
     // see AttackStats.pellets's doc.
-    ranged: { diceSides: 5, diceMult: 3, pellets: 3, duration: 0.857 },
+    ranged: { diceSides: 5, diceMult: 3, pellets: 3},
     painChance: 0.664,
-    painDuration: 0.171,
     sounds: { see: 'posit2', active: 'posact', pain: 'popain', death: 'podth2', attack: 'shotgn' },
   },
   [ThingType.heavyWeaponDude]: {
-    speed: 93.3,
-    chaseInterval: 0.086,
     radius: 20,
     height: 56,
     mass: 100,
     melee: null,
     // A_CPosAttack: (rand%5+1)*3, once per shots:2 entry — A_CPosRefire
     // hoses without pause while it can see you.
-    ranged: { diceSides: 5, diceMult: 3, duration: 0.257, shots: 2, shotInterval: 0.114, refire: true },
+    ranged: { diceSides: 5, diceMult: 3, refire: true },
     painChance: 0.664,
-    painDuration: 0.171,
     // `attack` really is the shotgun's: `A_CPosAttack` plays `sfx_shotgn`, not
     // the pistol shot its single-bullet roll would suggest — a vanilla oddity
     // (p_enemy.c), and the chaingunner's own `mobjinfo.attacksound` is 0.
     sounds: { see: 'posit2', active: 'posact', pain: 'popain', death: 'podth2', attack: 'shotgn' },
   },
   [ThingType.wolfensteinSS]: {
-    speed: 93.3,
-    chaseInterval: 0.086,
     radius: 20,
     height: 56,
     mass: 100,
@@ -122,57 +135,57 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     // ATK5, confirmed against info.c) with an A_CPosRefire loop of its own —
     // shotInterval is the two states between those calls (S_SSWV_ATK4's own
     // 6 tics + ATK3's own 4) over 35.
-    ranged: { diceSides: 5, diceMult: 3, duration: 1.0, shots: 2, shotInterval: 10 * DOOM_TIC, refire: true },
+    ranged: {
+      diceSides: 5,
+      diceMult: 3,
+      duration: 1.0,
+      startDelaySeconds: 20 * DOOM_TIC,
+      shots: 2,
+      shotInterval: 10 * DOOM_TIC,
+      refire: true,
+    },
     painChance: 0.664,
-    painDuration: 0.171,
     sounds: { see: 'sssit', active: 'posact', pain: 'popain', death: 'ssdth', attack: 'shotgn' },
   },
   [ThingType.imp]: {
-    speed: 93.3,
-    chaseInterval: 0.086,
     radius: 20,
     height: 56,
     mass: 100,
     // A_TroopAttack melee: (rand%8+1)*3.
-    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 3, duration: 0.629 },
+    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 3},
     // A direct missile hit is vanilla's universal (rand%8+1)*mobjinfo.damage
     // (PIT_CheckThing/p_map.c) — TROOPSHOT's own damage field is 3.
-    ranged: { diceSides: 8, diceMult: 3, duration: 0.629, projectile: { sprite: 'BAL1', speed: 350 } },
+    ranged: {
+      diceSides: 8,
+      diceMult: 3,
+      projectile: { sprite: 'BAL1', speed: 350 },
+    },
     painChance: 0.781,
-    painDuration: 0.114,
     sounds: { see: 'bgsit1', active: 'bgact', pain: 'popain', death: 'bgdth1', melee: 'claw' },
   },
   [ThingType.demon]: {
-    speed: 175,
-    chaseInterval: 0.057,
     radius: 30,
     height: 56,
     mass: 400,
     // A_SargAttack: (rand%10+1)*4.
-    melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 4, duration: 0.686 },
+    melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 4},
     ranged: null,
     painChance: 0.703,
-    painDuration: 0.114,
     // `A_SargAttack` itself is silent — the bite's sound is the `attacksound`
     // `A_Chase` plays on entering meleestate. See `MonsterSounds.melee`.
     sounds: { see: 'sgtsit', active: 'dmact', pain: 'dmpain', death: 'sgtdth', melee: 'sgtatk' },
   },
   [ThingType.spectre]: {
-    speed: 175,
-    chaseInterval: 0.057,
     radius: 30,
     height: 56,
     mass: 400,
-    melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 4, duration: 0.686 },
+    melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 4},
     ranged: null,
     painChance: 0.703,
-    painDuration: 0.114,
     sounds: { see: 'sgtsit', active: 'dmact', pain: 'dmpain', death: 'sgtdth', melee: 'sgtatk' },
   }, // Same stats as the demon; only `MF_SHADOW` differs, and that is purely
   // how it draws — docs/sprites.md § The spectre's fuzz.
   [ThingType.lostSoul]: {
-    speed: 46.7,
-    chaseInterval: 0.171,
     radius: 16,
     height: 56,
     mass: 50,
@@ -183,12 +196,13 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       // (rand%8+1)*mobjinfo.damage, and MT_SKULL's own damage field is 3.
       diceSides: 8,
       diceMult: 3,
-      duration: 0.629,
       rangeFalloffScale: 0.5,
+      // No `startDelaySeconds`: `A_SkullAttack` launches the charge from `beginRangedAttack`
+      // directly, never through the burst timer that reads it. Vanilla's own 10-tic wind-up is
+      // the pose's first frame and nothing else. docs/monster-ai.md § The windup.
       charge: { speed: 700, maxDist: WEAPON_RANGE },
     },
     painChance: 1,
-    painDuration: 0.171,
     // No sight sound at all (`mobjinfo.seesound` is 0), and its death sound is
     // the *fireball* explosion `firxpl` rather than a scream. `attack` is
     // `A_SkullAttack`'s own `sklatk`, played as the charge launches.
@@ -196,52 +210,53 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     flies: true,
   }, // Drifts slowly, then hurls itself (A_SkullAttack, SKULLSPEED = 20 units/tic)
   [ThingType.cacodemon]: {
-    speed: 93.3,
-    chaseInterval: 0.086,
     radius: 31,
     height: 56,
     mass: 400,
     // A_HeadAttack melee: (rand%6+1)*10.
     melee: { range: MELEE_RANGE, diceSides: 6, diceMult: 10, duration: 0.429 },
     // Universal missile-hit formula; HEADSHOT's own damage field is 5.
-    ranged: { diceSides: 8, diceMult: 5, duration: 0.429, projectile: { sprite: 'BAL2', speed: 350 } },
+    ranged: {
+      diceSides: 8,
+      diceMult: 5,
+      projectile: { sprite: 'BAL2', speed: 350 },
+    },
     painChance: 0.5,
-    painDuration: 0.343,
     // `A_HeadAttack`'s bite has no sound of its own and the cacodemon's
     // `attacksound` is 0, so its melee really is silent in vanilla too.
     sounds: { see: 'cacsit', active: 'dmact', pain: 'dmpain', death: 'cacdth' },
     flies: true,
   }, // One attack state that bites up close and spits a fireball otherwise (A_HeadAttack)
   [ThingType.baronOfHell]: {
-    speed: 93.3,
-    chaseInterval: 0.086,
     radius: 24,
     height: 64,
     mass: 1000,
     // A_BruisAttack melee: (rand%8+1)*10.
-    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10, duration: 0.686 },
+    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10},
     // Universal missile-hit formula; BRUISERSHOT's own damage field is 8.
-    ranged: { diceSides: 8, diceMult: 8, duration: 0.686, projectile: { sprite: 'BAL7', speed: 525 } },
+    ranged: {
+      diceSides: 8,
+      diceMult: 8,
+      projectile: { sprite: 'BAL7', speed: 525 },
+    },
     painChance: 0.195,
-    painDuration: 0.114,
     sounds: { see: 'brssit', active: 'dmact', pain: 'dmpain', death: 'brsdth', melee: 'claw' },
   },
   [ThingType.hellKnight]: {
-    speed: 93.3,
-    chaseInterval: 0.086,
     radius: 24,
     height: 64,
     mass: 1000,
     // Baron and hell knight share A_BruisAttack/MT_BRUISERSHOT exactly.
-    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10, duration: 0.686 },
-    ranged: { diceSides: 8, diceMult: 8, duration: 0.686, projectile: { sprite: 'BAL7', speed: 525 } },
+    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10},
+    ranged: {
+      diceSides: 8,
+      diceMult: 8,
+      projectile: { sprite: 'BAL7', speed: 525 },
+    },
     painChance: 0.195,
-    painDuration: 0.114,
     sounds: { see: 'kntsit', active: 'dmact', pain: 'dmpain', death: 'kntdth', melee: 'claw' },
   }, // Vanilla's hell knight throws the same BAL7 fireball as the baron
   [ThingType.painElemental]: {
-    speed: 93.3,
-    chaseInterval: 0.086,
     radius: 31,
     height: 56,
     mass: 400,
@@ -252,26 +267,24 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     // same required shape as every other AttackStats. The real bite comes
     // from whatever the spawned lost soul itself lands (AttackStats.charge on
     // `ThingType.lostSoul`, above).
-    ranged: { diceSides: 0, diceMult: 0, duration: 0.429, spawn: { type: ThingType.lostSoul } },
+    // No `startDelaySeconds` for the same reason as the lost soul's: a `spawn` attack returns
+    // straight out of `beginRangedAttack`. Vanilla's `A_PainAttack` sits on the chain's last state.
+    ranged: { diceSides: 0, diceMult: 0, spawn: { type: ThingType.lostSoul } },
     painChance: 0.5,
-    painDuration: 0.343,
     // `A_PainAttack` is silent; the lost soul it spawns brings its own `sklatk`.
     sounds: { see: 'pesit', active: 'dmact', pain: 'pepain', death: 'pedth' },
     flies: true,
   }, // A_PainAttack/A_PainShootSkull, spawns a lost soul and launches it at the elemental's own target
   [ThingType.revenant]: {
-    speed: 175,
-    chaseInterval: 0.057,
     radius: 20,
     height: 56,
     mass: 500,
     // A_SkelFist: (rand%10+1)*6.
-    melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 6, duration: 0.514 },
+    melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 6},
     ranged: {
       // Universal missile-hit formula; TRACER's own damage field is 10.
       diceSides: 8,
       diceMult: 10,
-      duration: 0.857,
       // A_Tracer — the one monster projectile with real homing; see
       // AttackStats.projectile.homing's doc.
       projectile: { sprite: 'FATB', speed: 350, homing: true },
@@ -279,7 +292,6 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       minOffsetDist: 196,
     },
     painChance: 0.391,
-    painDuration: 0.286,
     // The one type with two melee sounds in vanilla — `A_SkelWhoosh`'s `skeswg`
     // during the windup, then `A_SkelFist`'s `skepch` on connecting. This
     // engine's melee is one moment, so it takes the punch. Its pain sound is
@@ -287,8 +299,6 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     sounds: { see: 'skesit', active: 'skeact', pain: 'popain', death: 'skedth', melee: 'skepch' },
   },
   [ThingType.mancubus]: {
-    speed: 70,
-    chaseInterval: 0.114,
     radius: 48,
     height: 64,
     mass: 1000,
@@ -297,9 +307,6 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       // Universal missile-hit formula; FATSHOT's own damage field is 8.
       diceSides: 8,
       diceMult: 8,
-      duration: 2.286,
-      shots: 3,
-      shotInterval: 0.571,
       projectile: {
         sprite: 'MANF',
         speed: 700,
@@ -315,23 +322,19 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       },
     },
     painChance: 0.313,
-    painDuration: 0.171,
     // `windup` is `A_FatRaise`'s own `manatk`, on the first frame of the
     // missilestate chain — the tell that a triple volley is coming. The
     // fireballs themselves are `firsht`, from the missile, not from here.
     sounds: { see: 'mansit', active: 'posact', pain: 'mnpain', death: 'mandth', windup: 'manatk' },
   }, // A_FatAttack1/2/3, three volleys out of one 80-tic attack state, each firing a pair of fireballs
   [ThingType.arachnotron]: {
-    speed: 116.7,
-    chaseInterval: 0.103,
     radius: 64,
     height: 64,
     mass: 600,
     melee: null,
     // Universal missile-hit formula; ARACHPLAZ's own damage field is 5.
-    ranged: { diceSides: 8, diceMult: 5, duration: 0.257, refire: true, projectile: { sprite: 'APLS', speed: 875 } },
+    ranged: { diceSides: 8, diceMult: 5, refire: true, projectile: { sprite: 'APLS', speed: 875 } },
     painChance: 0.5,
-    painDuration: 0.171,
     // `A_BabyMetal` sits on 2 of its 12 3-tic run states — every 18 tics.
     sounds: {
       see: 'bspsit',
@@ -342,8 +345,6 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     },
   }, // A_SpidRefire, same never-let-up loop as the chaingunner
   [ThingType.spiderMastermind]: {
-    speed: 105,
-    chaseInterval: 0.114,
     radius: 128,
     height: 100,
     mass: 1000,
@@ -355,14 +356,10 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       diceSides: 5,
       diceMult: 3,
       pellets: 3,
-      duration: 0.257,
-      shots: 2,
-      shotInterval: 0.114,
       refire: true,
       rangeFalloffScale: 0.5,
     },
     painChance: 0.156,
-    painDuration: 0.171,
     // `A_Metal` sits on 3 of its 12 3-tic run states — every 12 tics.
     sounds: {
       see: 'spisit',
@@ -374,8 +371,6 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     },
   }, // Real hitscan chaingun in vanilla too
   [ThingType.cyberdemon]: {
-    speed: 140,
-    chaseInterval: 0.114,
     radius: 40,
     height: 110,
     mass: 1000,
@@ -385,9 +380,10 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       // already matched this engine's damage-dice values before this pass.
       diceSides: 8,
       diceMult: 20,
-      duration: 1.886,
-      shots: 3,
-      shotInterval: 0.343,
+      // 24 tics, not 12: `A_CyberAttack` sits on `S_CYBER_ATK2`/`ATK4`/`ATK6`, each 12 tics, with
+      // a 12-tic `A_FaceTarget` state between every pair — so consecutive rockets are two states
+      // apart. It read 12 (one state's worth) until the frame walker measured the gap between the
+      // firing calls themselves, which made the volley arrive twice as fast as vanilla's.
       // A_CyberAttack spawns a real MT_ROCKET — the same type the player's
       // own launcher fires, and the one monster projectile whose death
       // state actually calls A_Explode; see AttackStats.projectile.splash's
@@ -397,7 +393,6 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       rangeFalloffCap: 160,
     },
     painChance: 0.078,
-    painDuration: 0.286,
     // `A_Hoof` on run state 1 and `A_Metal` on run state 7 of an 8-state,
     // 3-tic loop — 24 tics for the pair, evened out to one every 12 (see
     // `MonsterSounds.walk`). Its sight and death roars are unattenuated in
@@ -413,8 +408,6 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
   // VILE arch-vile: vanilla's own P_CheckMissileRange refuses to fire beyond 14*64=896 map units
   // for this type specifically (MT_VILE), tighter than the generic 200-unit falloff cap below.
   [ThingType.archVile]: {
-    speed: 262.5,
-    chaseInterval: 0.057,
     radius: 20,
     height: 56,
     mass: 500,
@@ -425,14 +418,11 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
       // rollDamage always return exactly diceMult regardless of the roll.
       diceSides: 1,
       diceMult: 20,
-      duration: 2.686,
       // A_VileAttack doesn't fire until 66 tics into the missilestate chain
       // (ATK1..ATK9's summed tics) — see AttackStats.startDelaySeconds's doc.
-      startDelaySeconds: 66 * DOOM_TIC,
       blast: { knockUpSpeed: VILE_KNOCKUP_SPEED, splashRadius: 70, splashDamage: 70 },
     },
     painChance: 0.039,
-    painDuration: 0.286,
     // `windup` is `A_VileStart`'s `vilatk`, at the same moment the warning
     // flame appears (`monsters/vile.ts` adds the flame's own `flamst`); the
     // blast itself is `A_VileAttack`'s `barexp`, played from there.
@@ -440,6 +430,87 @@ export const MONSTER_STATS: Record<number, MonsterStats> = {
     resurrects: true,
   },
 };
+
+/**
+ * The seeds above, completed by the fill loop below. The cast is what the loop discharges: every
+ * row gains its `speed`, `chaseInterval`, `painDuration` and attack timings before anything reads
+ * this table, and `tests/game/dehacked-frames.test.ts` checks the finished values against the
+ * hand transcription in `tests/fixtures/frametables.ts`.
+ */
+export const MONSTER_STATS = MONSTER_SEED as Record<number, MonsterStats>;
+
+/**
+ * The frame-derived fields the walker reads differently from the hand transcription, kept at their
+ * shipped values on purpose. This is the whole list — a new row is a decision, never a shrug — and
+ * `tests/game/dehacked-frames.test.ts` fails if one of them stops differing.
+ *
+ * There is deliberately no `chase` row: the walk loop is the walker's alone, footstep states
+ * included — docs/monster-ai.md § Timings and damage come from vanilla, not from feel.
+ *
+ * - **`ranged` on the SS.** Its two `A_FaceTarget` states sit ahead of the `A_CPosRefire` loop, and
+ *   the walker measures the loop alone. `MONSTER_ATTACK_POSE`'s matching override is in
+ *   `things/tables.ts`; duration, pose and windup all follow the same span, so they move together.
+ * - **`windup` on the lost soul and pain elemental.** A charge and a spawn both return straight out
+ *   of `beginRangedAttack`, so the burst timer `startDelaySeconds` is read through never runs.
+ *   Writing one would be a trap, not a no-op.
+ * - **`melee` on the cacodemon.** Its `meleestate` is `S_NULL` — `A_HeadAttack` bites from inside
+ *   the missile chain — so there is no chain for the walker to measure the bite from.
+ */
+const FRAME_OVERRIDES: Record<number, { melee?: true; ranged?: true; windup?: true }> = {
+  [ThingType.wolfensteinSS]: { ranged: true, windup: true },
+  [ThingType.lostSoul]: { windup: true },
+  [ThingType.painElemental]: { windup: true },
+  [ThingType.cacodemon]: { melee: true },
+};
+
+/**
+ * Writes the frame-derived fields of every stat block from the walker's reading of vanilla's own
+ * `states[]` (docs/dehacked.md § Frames): both attack durations, the pain length, the volley's
+ * shape and the walk loop's chase clock and speed. The rest of each row — health, radius, mass,
+ * sounds, the damage rolls — is `mobjinfo`/`p_enemy.c` data that no state chain carries, and stays
+ * written out above.
+ *
+ * Runs before `deriveFastStats` and `TALLEST_BODY_HEIGHT` below, which read the finished table, and
+ * before `dehacked/apply.ts` snapshots it for `resetDehacked`.
+ */
+for (const [key, m] of Object.entries(pristineFrameTables().monsters)) {
+  const dn = Number(key);
+  const stats = MONSTER_STATS[dn];
+  if (!stats) continue;
+  const keep = FRAME_OVERRIDES[dn] ?? {};
+  stats.painDuration = m.painDuration;
+  if (stats.melee && m.meleeDuration !== null && !keep.melee) stats.melee.duration = m.meleeDuration;
+  if (stats.ranged && !keep.ranged) {
+    if (m.rangedDuration !== null) stats.ranged.duration = m.rangedDuration;
+    // A single-shot chain leaves both unset and reads as vanilla's default of one shot.
+    if (m.rangedShots > 1) stats.ranged.shots = m.rangedShots;
+    if (m.rangedInterval !== null) stats.ranged.shotInterval = m.rangedInterval;
+  }
+  if (stats.ranged && m.rangedDelay !== null && !keep.windup) stats.ranged.startDelaySeconds = m.rangedDelay;
+  if (m.chase) {
+    stats.chaseInterval = m.chase.interval;
+    // `mobjinfo.speed` is map units per `A_Chase`; the loop factor turns it into units per second.
+    stats.speed = Math.round(MOBJ_INFO.find((row) => row.doomednum === dn)!.speed * m.chase.factor * 10) / 10;
+  }
+}
+
+/** An `AttackStats` whose `projectile` is known present — what `forEachProjectileAttack` hands back. */
+type ProjectileAttack = AttackStats & { projectile: NonNullable<AttackStats['projectile']> };
+
+/**
+ * Every `AttackStats` in the table that fires the named flight sprite. In vanilla one `mobjinfo`
+ * *is* the imp's fireball wherever it comes from, so a patch that edits `MT_TROOPSHOT` has to move
+ * every stat block naming `BAL1` together — `dehacked/apply.ts` rewrites their stats through this
+ * and `dehacked/frames.ts` rekeys them when the sprite itself is patched.
+ * docs/dehacked.md § Thing records.
+ */
+export function forEachProjectileAttack(sprite: string, visit: (attack: ProjectileAttack) => void): void {
+  for (const stats of Object.values(MONSTER_STATS)) {
+    for (const attack of [stats.melee, stats.ranged]) {
+      if (attack?.projectile?.sprite === sprite) visit(attack as ProjectileAttack);
+    }
+  }
+}
 
 /**
  * The three missiles vanilla's fast mode speeds up, keyed by the sprite that identifies them here:

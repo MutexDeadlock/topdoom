@@ -55,8 +55,10 @@ const CUBE_FRAME_SECONDS = 3 * DOOM_TIC;
  */
 const CUBE_SOUND_INTERVAL = CUBE_FRAMES.length * CUBE_FRAME_SECONDS;
 /**
- * Sector light a cube and its landing fire draw at. Both carry vanilla's fullbright frame bit
- * (`32768 | frame` in `states[]`), so neither shades with the room it happens to be crossing.
+ * Light a cube in flight is handed to the batch. Its `BOSF` frames carry vanilla's fullbright bit,
+ * so `FULLBRIGHT_FRAMES` lifts them to 255 regardless (docs/sprites.md § Fullbright frames); this
+ * is only what a patch that cleared that bit would see, and a cube tracks no sector of its own to
+ * shade by — it crosses rooms `MF_NOCLIP`, so none is "its" room.
  */
 const FULLBRIGHT = 255;
 

@@ -9,6 +9,7 @@ import {
   SFX_ORDER,
   WEAPON_ORDER,
   classifyDehackedField,
+  classifyDehackedFrame,
   classifyDehackedRecord,
   classifyDehackedString,
 } from '../../src/game/dehacked/tables.ts';
@@ -128,11 +129,37 @@ describe('DEHACKED · classification', () => {
     assert.equal(classifyDehackedRecord('Thing').support, 'applied');
     assert.equal(classifyDehackedRecord('[PARS]').support, 'applied');
     assert.equal(classifyDehackedRecord('[STRINGS]').support, 'applied');
-    assert.equal(classifyDehackedRecord('Frame').support, 'unsupported');
+    assert.equal(classifyDehackedRecord('Frame').support, 'applied');
+    assert.equal(classifyDehackedRecord('[SPRITES]').support, 'applied');
+    // Action pointers stay out; frame data is what applies.
+    assert.equal(classifyDehackedRecord('Pointer').support, 'unsupported');
     assert.equal(classifyDehackedRecord('[CODEPTR]').support, 'unsupported');
+    // The numeric records move a pointer into the exe's string table.
     assert.equal(classifyDehackedRecord('Sound').support, 'noTarget');
+    assert.equal(classifyDehackedRecord('Sprite').support, 'noTarget');
     // The negative case: something the format has no such record for at all.
     assert.equal(classifyDehackedRecord('Wobble').support, 'unknown');
+  });
+
+  test('a Frame record classifies by the state it names', () => {
+    assert.equal(classifyDehackedFrame(185), 'applied'); // S_POSS_ATK2, a world state
+    assert.equal(classifyDehackedFrame(0), 'applied'); // S_NULL is a state like any other
+    // A fire-chain state is the weapon's rate and applies; every other psprite state — a flash, or
+    // the bob/raise/lower a first-person view would draw — has nothing here to land on.
+    assert.equal(classifyDehackedFrame(13), 'applied'); // S_PISTOL1, the fire chain's first state
+    assert.equal(classifyDehackedFrame(16), 'applied'); // S_PISTOL4, its closing A_ReFire
+    assert.equal(classifyDehackedFrame(47), 'noTarget'); // S_DSGUNFLASH1
+    assert.equal(classifyDehackedFrame(1), 'noTarget'); // S_LIGHTDONE
+    assert.equal(classifyDehackedFrame(2), 'noTarget'); // S_PUNCH, the fist's bob
+    assert.equal(classifyDehackedFrame(12), 'noTarget'); // S_PISTOLUP, the raise chain
+    assert.equal(classifyDehackedFrame(967), 'unknown');
+    assert.equal(classifyDehackedFrame(-1), 'unknown');
+    // The fields inside one.
+    assert.equal(classifyDehackedField('frame', 'Sprite subnumber'), 'applied');
+    assert.equal(classifyDehackedField('frame', 'Duration'), 'applied');
+    assert.equal(classifyDehackedField('frame', 'Next frame'), 'applied');
+    assert.equal(classifyDehackedField('frame', 'Unknown 1'), 'noTarget');
+    assert.equal(classifyDehackedField('frame', 'Wobble'), 'unknown');
   });
 
   test('a Thing field classifies against its target, not by name alone', () => {
@@ -144,14 +171,21 @@ describe('DEHACKED · classification', () => {
     assert.equal(classifyDehackedField('thing', 'Speed', fireball), 'applied');
     // No doomednum and no sprite sink: nothing here keys it.
     assert.equal(classifyDehackedField('thing', 'Speed', puff), 'noTarget');
-    assert.equal(classifyDehackedField('thing', 'Death frame', imp), 'unsupported');
+    // The frame pointers apply on anything with a table row — and a puff has none to repoint.
+    assert.equal(classifyDehackedField('thing', 'Death frame', imp), 'applied');
+    assert.equal(classifyDehackedField('thing', 'Death frame', puff), 'noTarget');
+    assert.equal(classifyDehackedField('thing', 'Reaction time', imp), 'unsupported');
     assert.equal(classifyDehackedField('thing', 'Wobbliness', imp), 'unknown');
   });
 
-  test('a Weapon record reaches only its ammo type, because vanilla stores nothing else', () => {
-    // `d_deh.c`'s `deh_weapon[]` is an ammo type and five state pointers — no damage, no rate.
+  test('a Weapon record reaches every field vanilla stores, which is six', () => {
+    // `d_deh.c`'s `deh_weapon[]` is an ammo type and five state pointers — no damage, no rate,
+    // because a weapon's rate *is* the durations of the chain `Shooting frame` points at.
     assert.equal(classifyDehackedField('weapon', 'Ammo type'), 'applied');
-    assert.equal(classifyDehackedField('weapon', 'Shooting frame'), 'unsupported');
+    assert.equal(classifyDehackedField('weapon', 'Shooting frame'), 'applied');
+    assert.equal(classifyDehackedField('weapon', 'Deselect frame'), 'applied');
+    assert.equal(classifyDehackedField('weapon', 'Firing frame'), 'applied');
+    assert.equal(classifyDehackedField('weapon', 'Damage'), 'unknown');
   });
 
   test('string mnemonics classify by prefix, longest first', () => {

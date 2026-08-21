@@ -242,6 +242,14 @@ only *reads* a patch — `wad/library.ts`, `plugins/wad-manifest.ts` — can rea
 ES re-exports are eager: a single `export { applyDehacked } from './dehacked/apply.ts'` in
 `game/dehacked.ts` reinstates the whole cost with nothing else changing.
 
+`dehacked/states.ts` — the 967-row frame table — is read-side and import-free, so it may sit in that
+graph; so is `dehacked/frames.ts`, the pure walker the game tables fill themselves from at import.
+`tests/game/dehacked-frames.test.ts` carries the two anchor tests: the walker's reading of the
+unpatched table must equal the frozen hand transcription in `tests/fixtures/frametables.ts`, bar the
+four documented overrides, and the tables the engine actually animates and fires from must equal
+that transcription outright — the pose and duration tables, and all nine weapon rates
+(docs/dehacked.md § Frames, docs/weapons.md § Fire rates).
+
 `import type` / `export type` edges are skipped — they are erased, and are how `dehacked/tables.ts`
 names `WeaponId` without depending on `inventory.ts` at runtime. The suite carries a **positive
 control** (`game.ts` must reach the applier, across a graph of 50+ modules), because a walker that

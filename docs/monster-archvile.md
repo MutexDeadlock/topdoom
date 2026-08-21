@@ -32,7 +32,7 @@ threshold aging and the melee/missile/walk decision entirely.
 (every boss, the lost soul, the arch-vile itself, Commander Keen and the boss brain don't). These
 had to be pulled from `info.c` directly — reusing `MONSTER_DEATH_FRAMES` reversed was tried first
 and is wrong, since vanilla's raise sequences are hand-authored per type and share no derivation
-rule (the zombieman's 3 raise states reverse its death sequence's *middle* frames, the shotgun guy's
+rule (the zombieman's 4 raise states reverse its death sequence's first four frames, the shotgun guy's
 4 reverse its *entire* sequence including the settled final frame, despite both sprites sharing the
 identical death letter range).
 
@@ -107,7 +107,7 @@ play across the entire missilestate chain).
 The pose has to *last* the whole chain too, and originally didn't: at the flat 3-tics-a-frame rate
 every pose used, `VILE` `G`-`P` was over 30 tics into a 94-tic cast, so the vile stood in its idle
 frame for the back half of the windup — the half where the flame is the warning — and through the
-blast. `MONSTER_ATTACK_FRAMES` is now spread over the attack's own duration for every type
+blast. `MONSTER_ATTACK_POSE` is now spread over the attack's own duration for every type
 (docs/sprites.md § Pain, and attack/pain poses), and a save taken mid-cast replays it fast-forwarded
 (docs/savegames.md § What is saved and what is deliberately not) rather than loading a vile that
 looks idle while it casts.

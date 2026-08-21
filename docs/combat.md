@@ -503,11 +503,12 @@ to dodge that test. `WEAPONS.chainsaw.meleeRange` carries the `+1` and `spawnPla
 engine it only ever shows on a barrel: a melee swing never traces geometry at all (§ WeaponSystem),
 so unlike vanilla it can't puff against a wall.
 
-`S_PUFF1`'s `FF_FULLBRIGHT` is not reproduced — an `OneShotEffect` takes one sector light for its
-whole life, the same simplification every explosion here already makes. `A_Tracer`'s own
-`P_SpawnPuff` (vanilla spawns a puff *and* an `MT_SMOKE` behind the revenant's missile every 4th
-tic) is also left out: it would double the trail's live sprite count, which docs/monster-ai.md §
-The revenant's homing missile records as the reason the batch exists at all.
+`S_PUFF1`'s `FF_FULLBRIGHT` is reproduced the way every fullbright frame is — `PUFFA` is in
+`FULLBRIGHT_FRAMES`, and `SpriteFxLayer.batchSprite` lights it at 255 for that one frame before the
+puff dims to its sector (docs/sprites.md § Fullbright frames). `A_Tracer`'s own `P_SpawnPuff`
+(vanilla spawns a puff *and* an `MT_SMOKE` behind the revenant's missile every 4th tic) is left
+out: it would double the trail's live sprite count, which docs/monster-ai.md § The revenant's
+homing missile records as the reason the batch exists at all.
 
 ## Splash and the BFG
 

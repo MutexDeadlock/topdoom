@@ -8,7 +8,10 @@ import { SFX_NAMES, type SfxId } from '../../audio/sfx.ts';
 import type { DamageCause } from '../combat.ts';
 import type { AmmoType, InventoryLimits, WeaponId } from '../inventory.ts';
 import { ThingType } from '../things/doomednums.ts';
-import type { DehRecordKind, DehShortfall, DehSupport } from './defs.ts';
+import type {
+  DehFrameEdit, DehRecordKind, DehShortfall, DehSupport, StatePointer, WeaponStatePointer,
+} from './defs.ts';
+import { fireChainStates, isFlashState, isPspriteState, STATES, WEAPON_STATES } from './states.ts';
 
 /** One row of `linuxdoom-1.10/info.c`'s `mobjinfo[]`, in `info.h`'s `mobjtype_t` order. */
 export interface MobjRow {
@@ -345,13 +348,28 @@ function appliedRows(mapping: Record<string, unknown>): Record<string, DehSuppor
 }
 
 /**
+ * Which `mobjinfo` state pointer each `Thing` frame line repoints — `d_deh.c`'s own spellings onto
+ * `MOBJ_STATES`' field names. The applier walks the repointed chain to re-derive the type's letter
+ * lists; docs/dehacked.md § Frames.
+ */
+export const THING_STATE_FIELDS: Record<string, StatePointer> = {
+  'initial frame': 'spawn',
+  'first moving frame': 'see',
+  'injury frame': 'pain',
+  'close attack frame': 'melee',
+  'far attack frame': 'missile',
+  'death frame': 'death',
+  'exploding frame': 'xdeath',
+  'respawn frame': 'raise',
+};
+
+/**
  * `d_deh.c`'s `deh_mobjinfo[]` field names, spelled exactly as a patch writes them, mapped to how
  * far each gets here. Matched case-insensitively, as `deh_strcasecmp` does.
  *
- * The frame fields are the whole reason DEH support stops where it does: this engine has no
- * `states[]` array — a monster's animation is per-type letter lists in `things/tables.ts`, not a
- * state machine — so a patch that rebuilds a monster out of reassigned frames has nothing to
- * reassign. docs/dehacked.md § What is not supported.
+ * `Reaction time` has no per-type home: `monsters/ai.ts` seeds one shared `REACTION_CHASES`, and
+ * vanilla's own value is 8 for every monster. `Dropped item`, `Blood color` and `Bits2` are MBF21's,
+ * not read yet. `ID #` is permanently out — docs/dehacked.md § What is not supported.
  */
 const THING_FIELDS: Record<string, DehSupport> = {
   'hit points': 'applied',
@@ -364,35 +382,58 @@ const THING_FIELDS: Record<string, DehSupport> = {
   bits: 'applied',
 
   ...appliedRows(THING_SOUND_FIELDS),
+  ...appliedRows(THING_STATE_FIELDS),
 
   'id #': 'unsupported',
-  'initial frame': 'unsupported',
-  'first moving frame': 'unsupported',
   'reaction time': 'unsupported',
-  'injury frame': 'unsupported',
-  'close attack frame': 'unsupported',
-  'far attack frame': 'unsupported',
-  'death frame': 'unsupported',
-  'exploding frame': 'unsupported',
-  'respawn frame': 'unsupported',
   bits2: 'unsupported',
   'dropped item': 'unsupported',
   'blood color': 'unsupported',
 };
 
 /**
- * `d_deh.c`'s `deh_weapon[]`. Vanilla's `weaponinfo[]` holds an ammo type and five state pointers
- * and nothing else — no damage, no fire rate — so `Ammo type` is the only line of a `Weapon`
- * record this engine has anywhere to put. A patch that retunes a weapon does it by editing the
- * frames' durations, which is out of scope. docs/dehacked.md § Weapon, Ammo and Misc.
+ * `d_deh.c`'s `deh_state[]`: which `DehFrameEdit` field each `Frame` line lands in. `Unknown 1`/
+ * `Unknown 2` are `state_t.misc1`/`misc2`, which vanilla's own actions never read, so they classify
+ * `noTarget` below rather than being carried.
+ */
+export const FRAME_FIELD_SINKS: Record<string, Exclude<keyof DehFrameEdit, 'index'>> = {
+  'sprite number': 'spriteNum',
+  'sprite subnumber': 'subNumber',
+  duration: 'duration',
+  'next frame': 'nextFrame',
+};
+
+const FRAME_FIELDS: Record<string, DehSupport> = {
+  ...appliedRows(FRAME_FIELD_SINKS),
+
+  'unknown 1': 'noTarget',
+  'unknown 2': 'noTarget',
+};
+
+/**
+ * Which `weaponinfo` state pointer each `Weapon` frame line repoints — `d_deh.c`'s own spellings
+ * onto `WEAPON_STATES`' field names. Note the first two: `deh_weapon[]` labels `upstate` "Deselect
+ * frame" and `downstate` "Select frame", the two the wrong way round, and the labels are what a
+ * patch writes. Only a repointed `Shooting frame` changes anything here — it is the chain the fire
+ * rate is walked from (docs/weapons.md § Fire rates); the other four are read so the record is
+ * carried whole.
+ */
+export const WEAPON_STATE_FIELDS: Record<string, WeaponStatePointer> = {
+  'deselect frame': 'up',
+  'select frame': 'down',
+  'bobbing frame': 'ready',
+  'shooting frame': 'atk',
+  'firing frame': 'flash',
+};
+
+/**
+ * `d_deh.c`'s `deh_weapon[]` — an ammo type and five state pointers, and nothing else: vanilla's
+ * `weaponinfo[]` carries no damage and no fire rate, because a weapon's rate *is* its fire chain's
+ * durations. All six land. docs/dehacked.md § Weapon, Ammo and Misc.
  */
 const WEAPON_FIELDS: Record<string, DehSupport> = {
   'ammo type': 'applied',
-  'deselect frame': 'unsupported',
-  'select frame': 'unsupported',
-  'bobbing frame': 'unsupported',
-  'shooting frame': 'unsupported',
-  'firing frame': 'unsupported',
+  ...appliedRows(WEAPON_STATE_FIELDS),
 };
 
 /** `d_deh.c`'s `deh_ammo[]`: vanilla's `maxammo[]` and `clipammo[]`. Both have a real sink. */
@@ -568,15 +609,17 @@ const RECORD_KINDS: Record<string, { kind: DehRecordKind; support: DehSupport }>
   sound: { kind: 'sound', support: 'noTarget' },
   music: { kind: 'music', support: 'noTarget' },
   text: { kind: 'text', support: 'applied' },
-  frame: { kind: 'frame', support: 'unsupported' },
+  frame: { kind: 'frame', support: 'applied' },
   pointer: { kind: 'pointer', support: 'unsupported' },
-  sprite: { kind: 'sprite', support: 'unsupported' },
+  // The numeric record moves a pointer into the exe's own string table, like `Sound N`; only the
+  // BEX section names a sprite this engine can redirect.
+  sprite: { kind: 'sprite', support: 'noTarget' },
   cheat: { kind: 'cheat', support: 'noTarget' },
   '[strings]': { kind: 'strings', support: 'applied' },
   '[pars]': { kind: 'pars', support: 'applied' },
   '[codeptr]': { kind: 'codeptr', support: 'unsupported' },
   '[helper]': { kind: 'helper', support: 'unsupported' },
-  '[sprites]': { kind: 'sprite', support: 'unsupported' },
+  '[sprites]': { kind: 'sprite', support: 'applied' },
   '[sounds]': { kind: 'sound', support: 'applied' },
   '[music]': { kind: 'music', support: 'applied' },
 };
@@ -613,10 +656,38 @@ export function classifyDehackedField(kind: DehRecordKind, field: string, row?: 
       return AMMO_FIELDS[key] ?? 'unknown';
     case 'misc':
       return MISC_FIELDS[key] ?? 'unknown';
+    case 'frame':
+      return FRAME_FIELDS[key] ?? 'unknown';
     default:
       return 'unknown';
   }
 }
+
+/**
+ * How far one `Frame N` record gets, by which state it names. A world state applies, and so does a
+ * **fire-chain** state: its tics *are* this engine's fire rate, walked back out of the chain
+ * (docs/weapons.md § Fire rates). Every other first-person state is `noTarget` — a muzzle flash
+ * because there is no weapon here to flash, and a bob, raise or lower state because this engine
+ * draws no weapon sprite to animate. docs/dehacked.md § Frames.
+ */
+export function classifyDehackedFrame(index: number): DehSupport {
+  if (!Number.isInteger(index) || index < 0 || index >= STATES.length) return 'unknown';
+  if (isFlashState(index)) return 'noTarget';
+  if (isPspriteState(index)) return FIRE_CHAIN_STATES.has(index) ? 'applied' : 'noTarget';
+  return 'applied';
+}
+
+/**
+ * Every state vanilla's nine fire chains occupy. A `Frame` on one of these retunes a fire rate; a
+ * psprite state outside them is a weapon's bob, raise or lower, which this engine has nothing to
+ * draw and no clock to hold.
+ *
+ * Read off **pristine** `WEAPON_STATES`: a patch's own `Shooting frame` repoint is applied after
+ * the parse, and vanilla's chains are what a patch writes its `Frame` records against anyway.
+ */
+const FIRE_CHAIN_STATES: ReadonlySet<number> = new Set(
+  WEAPON_STATES.flatMap((w) => fireChainStates(STATES, w.atk)),
+);
 
 /** How far one `Bits` mnemonic gets, and whether it is worth reporting at all. */
 export function classifyDehackedFlag(mnemonic: string): FlagRow | undefined {

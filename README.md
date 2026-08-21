@@ -190,8 +190,9 @@ translucent midtextures and custom colormaps. What is deliberately **not** in: M
 nothing draws sky in a top-down view. See [docs/specials.md](docs/specials.md) for the per-number
 detail.
 
-**`DEHACKED`/BEX patches are read** from a WAD that ships one: level titles, par times, and monster,
-weapon and ammo stats. What a patch does with vanilla's *frame* table — `Frame`, `Pointer`,
-`[CODEPTR]`, sprite renames — is out, because this engine animates from per-type sprite lists rather
-than a state machine. A patch asking for those still loads and plays; what was skipped is reported
-rather than dropped silently. See [docs/dehacked.md](docs/dehacked.md).
+**`DEHACKED`/BEX patches are read** from a WAD that ships one: level titles, par times, monster,
+weapon and ammo stats, `Frame` records and repointed monster and weapon frames — applied by
+re-deriving the engine's sprite lists and its fire rates from vanilla's frame table — and
+`[SPRITES]` renames. Action pointers (`Pointer`, `[CODEPTR]`) are out. A patch asking for those
+still loads and plays; what was skipped is reported rather than dropped silently. See
+[docs/dehacked.md](docs/dehacked.md).

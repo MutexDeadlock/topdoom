@@ -27,12 +27,11 @@ Features and improvements
   - the death overlay is drawn in the WAD's own font, like the other cards
 
 Fixed bugs
-  - the spider mastermind, cyberdemon and arachnotron walk at vanilla's speed
+  - spider mastermind, cyberdemon and arachnotron now walk at vanilla's speed
   - monsters wind up before firing, as vanilla does: a shot lands partway into
     the attack instead of the instant the monster decides to
   - a resurrected monster now plays its whole raise sequence
-  - the cyberdemon's three rockets come 24 tics apart, not 12 — its volley had
-    been arriving twice as fast as vanilla's
+  - the cyberdemon's three rockets come 24 tics apart, not 12
   - a barrel's blast comes 15 tics after death, not 10
 
 

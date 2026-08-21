@@ -1,14 +1,19 @@
 /**
  * The map lumps decoded into a `DoomMap`: vertices, linedefs/sidedefs, sectors, the BSP
  * (nodes/segs/subsectors, any format `wad/nodes.ts` knows) and THINGS. Everything but the
- * BSP is stored exactly as the WAD encodes it. See docs/wad.md.
+ * BSP and, on a Hexen-format map, the two lumps `hexen.ts` re-decodes is stored exactly as
+ * the WAD encodes it. See docs/wad.md.
  */
 import type { Wad } from './wad.ts';
+import * as hexen from './hexen.ts';
 import { readBsp, type NodeFormat } from './nodes.ts';
 
 export { SUBSECTOR_BIT, type NodeFormat } from './nodes.ts';
 
 export const NO_SIDE = 0xffff;
+
+/** Which encoding a map's LINEDEFS and THINGS lumps use. docs/wad.md § Map formats. */
+export type MapFormat = 'doom' | 'hexen';
 
 /**
  * DOOM's sky flat. A sector using it as its ceiling texture renders no ceiling
@@ -42,14 +47,26 @@ export interface SideDef {
   sector: number;
 }
 
+/**
+ * A Hexen line's action special and its five arguments, kept raw. Nothing dispatches
+ * one. docs/wad.md § What a Hexen map does not get.
+ */
+export interface LineAction {
+  special: number;
+  args: readonly number[];
+}
+
 export interface LineDef {
   v1: number;
   v2: number;
   flags: number;
+  /** The Doom/Boom special. Always 0 on a Hexen-format map — see `action`. */
   special: number;
   tag: number;
   right: number; // sidedef index, or NO_SIDE
   left: number;
+  /** Hexen-format maps only; `undefined` on a Doom-format one. */
+  action?: LineAction;
 }
 
 export interface Seg {
@@ -113,6 +130,8 @@ export const LF = {
 
 export interface DoomMap {
   name: string;
+  /** Which on-disk encoding LINEDEFS and THINGS shipped in (`readMapFormat`). */
+  format: MapFormat;
   /** Which on-disk BSP encoding the map shipped (`readBsp` normalizes them all). */
   nodeFormat: NodeFormat;
   vertexes: Vertex[];
@@ -139,6 +158,7 @@ const MAP_LUMPS = [
   'SECTORS',
   'REJECT',
   'BLOCKMAP',
+  'BEHAVIOR', // Hexen only, and always last — its presence is what names the format
 ];
 
 /** Finds the lumps belonging to a map marker; they follow it directly in the directory. */
@@ -146,7 +166,7 @@ function mapLumps(wad: Wad, name: string): Map<string, number> {
   const marker = wad.find(name);
   if (!marker) throw new Error(`map ${name} not found in WAD`);
   const out = new Map<string, number>();
-  for (let i = marker.index + 1; i < marker.index + 12; i++) {
+  for (let i = marker.index + 1; i <= marker.index + MAP_LUMPS.length; i++) {
     const l = wad.lumpAt(i);
     if (!l) break;
     if (!MAP_LUMPS.includes(l.name)) break;
@@ -172,8 +192,18 @@ function readReject(wad: Wad, lumps: Map<string, number>, sectorCount: number): 
   return bytes.some((b) => b !== 0) ? bytes : undefined;
 }
 
+/**
+ * Which encoding a map's LINEDEFS and THINGS shipped in. A BEHAVIOR lump — compiled ACS,
+ * which only a Hexen map carries — is the signal, the same one gzdoom's `LoadLevel` uses;
+ * record-size arithmetic is not a substitute. docs/wad.md § Map formats.
+ */
+function readMapFormat(lumps: Map<string, number>): MapFormat {
+  return lumps.has('BEHAVIOR') ? 'hexen' : 'doom';
+}
+
 export function loadMap(wad: Wad, name: string): DoomMap {
   const lumps = mapLumps(wad, name);
+  const format = readMapFormat(lumps);
   const read = <T>(lumpName: string, recordSize: number, fn: (r: ReturnType<Wad['reader']>) => T): T[] => {
     const idx = lumps.get(lumpName);
     if (idx === undefined) return [];
@@ -209,16 +239,6 @@ export function loadMap(wad: Wad, name: string): DoomMap {
     sector: r.u16(),
   }));
 
-  const linedefs = read('LINEDEFS', 14, (r) => ({
-    v1: r.u16(),
-    v2: r.u16(),
-    flags: r.u16(),
-    special: r.u16(),
-    tag: r.u16(),
-    right: r.u16(),
-    left: r.u16(),
-  }));
-
   const rawLump = (lumpName: string): Uint8Array | undefined => {
     const idx = lumps.get(lumpName);
     return idx === undefined ? undefined : wad.data(wad.lumpAt(idx)!);
@@ -227,13 +247,29 @@ export function loadMap(wad: Wad, name: string): DoomMap {
   // before the bounds pass below.
   const bsp = readBsp(vertexes, rawLump('SEGS'), rawLump('SSECTORS'), rawLump('NODES'));
 
-  const things = read('THINGS', 10, (r) => ({
-    x: r.i16(),
-    y: r.i16(),
-    angle: r.i16(),
-    type: r.u16(),
-    flags: r.u16(),
-  }));
+  const linedefs =
+    format === 'hexen'
+      ? hexen.readLinedefs(rawLump('LINEDEFS'))
+      : read('LINEDEFS', 14, (r) => ({
+          v1: r.u16(),
+          v2: r.u16(),
+          flags: r.u16(),
+          special: r.u16(),
+          tag: r.u16(),
+          right: r.u16(),
+          left: r.u16(),
+        }));
+
+  const things =
+    format === 'hexen'
+      ? hexen.readThings(rawLump('THINGS'))
+      : read('THINGS', 10, (r) => ({
+          x: r.i16(),
+          y: r.i16(),
+          angle: r.i16(),
+          type: r.u16(),
+          flags: r.u16(),
+        }));
 
   let minX = Infinity;
   let minY = Infinity;
@@ -248,6 +284,7 @@ export function loadMap(wad: Wad, name: string): DoomMap {
 
   return {
     name,
+    format,
     nodeFormat: bsp.format,
     vertexes,
     sectors,

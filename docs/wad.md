@@ -26,6 +26,64 @@ the first NUL silently corrupts names (e.g. turns `"-"` into `"-GRAY7"`) and bre
 for real PWADs. This was found by testing against community PWADs, not synthetic data, so don't assume
 synthetic WADs will catch a regression here.
 
+## Map formats
+
+Beside the BSP encoding, a map has a **lump format**: Doom or Hexen, `DoomMap.format`. Detection is
+the presence of a **BEHAVIOR** lump in the map's own lump group, which is how gzdoom's `LoadLevel`
+tells them apart and the only reliable signal — several Hexen maps' LINEDEFS lump size divides
+evenly by 14 as well as 16, so record-size arithmetic alone mis-detects them (`Mock2.wad` MAP26 and
+MAP34 both do). Read wrong, a Hexen map is not subtly off: linedefs come out pointing at vertexes
+and sidedefs that don't exist, and the map draws as garbage while sectors, sidedefs, vertexes and
+nodes all look perfectly sane. That asymmetry is the tell.
+
+Only **LINEDEFS** and **THINGS** differ. SECTORS, SIDEDEFS, VERTEXES, SEGS, SSECTORS, NODES, REJECT
+and BLOCKMAP are byte-identical in both, so a Hexen map still gets the full node-format treatment
+above. `wad/hexen.ts` owns those two lumps and normalizes them to the same records and flag bits a
+Doom map yields — the same seam `nodes.ts` is for the BSP, so `loadMap` branches once per lump and
+nothing downstream sees a format difference. The two record layouts are gzdoom `doomdata.h`'s
+`maplinedef2_t` and `mapthinghexen_t`:
+
+- **Linedef, 16 bytes**: `v1` `v2` `flags` (u16 each), `special` (u8), `args[5]` (u8), `sidenum[2]`
+  (u16) — where Doom's 14-byte record has `special` and `tag` as u16s and no args.
+- **Thing, 20 bytes**: `tid` `x` `y` `z` `angle` `type` (i16 each), `flags` (u16), `special` (u8),
+  `args[5]` (u8) — where Doom's 10-byte record has no `tid`, `z`, `special` or `args`.
+
+### Flags are translated, not copied
+
+Both flag words overlap Doom's only in their low bits, and the parts that don't overlap collide with
+bits that mean something else here — so `loadMap` rewrites them rather than storing them raw. Get
+this wrong and the failure is silent.
+
+**Linedef flags**: `ML_BLOCKING` through `ML_MAPPED` (0x0001-0x0100) are shared verbatim. From
+0x0200 up they are not: `ML_REPEAT_SPECIAL` (0x0200) sits exactly where Boom put `ML_PASSUSE`, and
+`ML_SPAC_MASK` (0x1c00) is the activation field. Those are dropped. `ML_BLOCK_PLAYERS` (0x4000) and
+`ML_BLOCKEVERYTHING` (0x8000) both become plain `LF.BLOCKING` — a **deliberate deviation**, since
+there is no `LF` bit for "blocks the player but not monsters"; a line drawn as solid stays solid,
+at the cost of also stopping monsters ZDoom would let through.
+
+**Thing flags**: the skill bits and `MTF_AMBUSH` (0x0001-0x0008) are shared. Doom's `MTF_NOTSINGLE`
+bit is Hexen's `MTF_DORMANT` at the same 0x0010, and Hexen names the modes a thing *is* in
+(`MTF_SINGLE` 0x0100) instead of the ones it is kept out of — so the single-player gate **inverts**:
+a Hexen thing without `MTF_SINGLE` is exactly a Doom thing with `MTF_NOTSINGLE`, which is the same
+correspondence gzdoom's `LoadThings` writes in the other direction (a Doom thing gets every mode bit,
+then loses `MTF_SINGLE` for `BTF_NOTSINGLE`). `MTF_DORMANT` and the `MTF_CLASS_MASK` player-class
+bits are dropped: there are neither dormant things nor player classes here, and a dormant monster
+spawning awake beats it not spawning at all.
+
+### What a Hexen map does not get
+
+**Action specials do not run.** A Hexen line's special is a ZDoom number in a namespace of its own —
+62 is `Plat_DownWaitUpStay` there and "SR lower floor" in Doom's table — so passing it through would
+fire an unrelated effect rather than none. `LineDef.special` and `.tag` are therefore forced to 0 and
+the raw number and args are parked in `LineDef.action`, which nothing dispatches; `inspect-wad`'s
+coverage report reads it so a map can still say what it asks for. The same goes for a **thing's**
+special and args, and for BEHAVIOR itself: that lump is compiled ACS bytecode, and there is no ACS
+VM here, so a map whose progression runs through `ACS_Execute` cannot be finished. A Hexen map draws,
+collides and fights correctly; its doors, lifts and switches do not move.
+
+A Hexen thing's **`z`** (its height above the floor) is also ignored — things spawn on the floor, or
+under the ceiling for the `MF_SPAWNCEILING` types, exactly as in a Doom map.
+
 ## Node formats
 
 `wad/nodes.ts` reads the three BSP lumps (SEGS/SSECTORS/NODES) in the four encodings Boom-era maps

@@ -237,6 +237,7 @@ export function gridMap(art: readonly string[], options: GridMapOptions = {}): G
   return {
     map: {
       name: options.name ?? 'TEST01',
+      format: 'doom',
       nodeFormat: 'vanilla',
       vertexes,
       sectors,

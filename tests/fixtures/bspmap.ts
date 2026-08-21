@@ -54,6 +54,7 @@ export interface BspMapParts {
 export function bspMap(parts: BspMapParts): DoomMap {
   return {
     name: 'TEST',
+    format: 'doom',
     nodeFormat: 'vanilla',
     vertexes: parts.vertexes,
     sectors: (parts.floors ?? [0]).map((floorHeight) => ({

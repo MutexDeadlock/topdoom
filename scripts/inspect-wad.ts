@@ -56,7 +56,8 @@ console.log(
   `\n${mapName} (from ${wad.providerOf(mapName)?.name}): ${map.vertexes.length} verts, ` +
     `${map.linedefs.length} lines, ${map.sidedefs.length} sides,\n` +
     `  ${map.sectors.length} sectors, ${map.segs.length} segs, ${map.subsectors.length} subsectors,\n` +
-    `  ${map.nodes.length} nodes (${map.nodeFormat}), ${map.things.length} things`,
+    `  ${map.nodes.length} nodes (${map.nodeFormat}), ${map.things.length} things,\n` +
+    `  ${map.format} map format`,
 );
 console.log(`  bounds x[${map.bounds.minX}..${map.bounds.maxX}] y[${map.bounds.minY}..${map.bounds.maxY}]`);
 
@@ -216,7 +217,11 @@ console.log(`  free directions at r=64: ${free}/${steps}`);
 {
   // The classification itself is `tables.ts`'s (`classifyLineSpecial`), so this
   // report can't drift out of step with what the engine actually resolves.
-  const LABELS: Record<SpecialClass, string> = {
+  // A Hexen action special is a different number namespace, not a `SpecialClass` — the
+  // synthetic row stays local to this report rather than widening the engine's classifier.
+  type ReportClass = SpecialClass | 'hexen';
+  const LABELS: Record<ReportClass, string> = {
+    hexen: 'HEXEN ACTION (unsupported, nothing dispatches these)',
     none: 'none',
     vanilla: 'vanilla',
     boom: 'boom',
@@ -225,16 +230,20 @@ console.log(`  free directions at r=64: ${free}/${steps}`);
     noop: 'no-op here (nothing this renderer draws)',
     unknown: 'UNKNOWN',
   };
-  const lineClasses = new Map<SpecialClass, Map<number, number>>();
+  const lineClasses = new Map<ReportClass, Map<number, number>>();
   for (const line of map.linedefs) {
-    const cls = classifyLineSpecial(line.special);
+    // A Hexen map's action specials live in `LineDef.action` and never reach
+    // `classifyLineSpecial`, so they would otherwise pass as "no specials".
+    const action = line.action;
+    const cls: ReportClass = action && action.special !== 0 ? 'hexen' : classifyLineSpecial(line.special);
     if (cls === 'none') continue;
+    const special = cls === 'hexen' ? action!.special : line.special;
     const bucket = lineClasses.get(cls) ?? new Map<number, number>();
-    bucket.set(line.special, (bucket.get(line.special) ?? 0) + 1);
+    bucket.set(special, (bucket.get(special) ?? 0) + 1);
     lineClasses.set(cls, bucket);
   }
   console.log('\nlinedef specials:');
-  for (const cls of ['vanilla', 'boom', 'generalized', 'param', 'noop', 'unknown'] as const) {
+  for (const cls of ['vanilla', 'boom', 'generalized', 'param', 'noop', 'hexen', 'unknown'] as const) {
     const bucket = lineClasses.get(cls);
     if (!bucket) continue;
     const total = [...bucket.values()].reduce((a, b) => a + b, 0);

@@ -4,7 +4,7 @@
  * one in-memory convention: 32-bit node children flagged with `SUBSECTOR_BIT`.
  * Record layouts follow PrBoom+'s `doomdata.h`/`p_setup.c`. See docs/wad.md § Node formats.
  */
-import { Reader } from './reader.ts';
+import { Reader, records } from './reader.ts';
 import { inflateZlib } from '../util/inflate.ts';
 import type { Node, Seg, SubSector, Vertex } from './map.ts';
 
@@ -50,18 +50,6 @@ function detectNodeFormat(ssectorsData: Uint8Array | undefined, nodesData: Uint8
   if (startsWith(nodesData, 'XNOD')) return 'xnod';
   if (startsWith(nodesData, 'ZNOD')) return 'znod';
   return 'vanilla';
-}
-
-function records<T>(data: Uint8Array | undefined, offset: number, size: number, fn: (r: Reader) => T): T[] {
-  if (!data || data.length - offset < size) return [];
-  const r = new Reader(data.buffer, data.byteOffset + offset, data.byteLength - offset);
-  const n = Math.floor((data.length - offset) / size);
-  const out: T[] = new Array(n);
-  for (let i = 0; i < n; i++) {
-    r.seek(i * size);
-    out[i] = fn(r);
-  }
-  return out;
 }
 
 /**

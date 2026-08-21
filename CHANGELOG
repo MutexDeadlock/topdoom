@@ -1,3 +1,17 @@
+v0.1?.? (2026-08-2?)
+
+Features and improvements
+  - HEXEN-format maps load: HEXEN itself is not planned, but some
+    community maps use that format. 
+    These maps will not play right, but at least they dont render 
+    as garbage geometry now.
+
+Fixed bugs
+
+
+
+===============================================================================
+
 v0.15.0 (2026-08-21)
 
 Features and improvements

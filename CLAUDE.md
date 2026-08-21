@@ -33,7 +33,7 @@ node scripts/inspect-wad.ts public/wads/iwad/DOOM2.WAD MAP05 public/wads/pwad/SC
 ```
 
 Runs under Node's native TS support, no browser. It reports lump/map counts, lump provenance, the
-node format, missing textures, degenerate subsector polygons, whether the player start is walkable,
+map and node formats, missing textures, degenerate subsector polygons, whether the player start is walkable,
 and the two coverage reports — every linedef/sector special classified known/no-op/unknown (the
 Boom-compat acceptance gate), and every DEHACKED record classified applied/no-target/unsupported.
 The fastest check on a WAD-parsing, texture-merging or BSP change, and the way to reproduce a bug
@@ -63,7 +63,8 @@ is still right for a one-off investigation — those go in the scratchpad, never
 ## Architecture
 
 ```
-src/wad/       WAD files, merged lump directory, content ids, map lumps, graphics + sprite + sound
+src/wad/       WAD files, merged lump directory, content ids, map lumps (with the BSP and Hexen
+               formats each normalized behind their own seam), graphics + sprite + sound
                + music decoding, the menu's WAD library
 src/wad/campaign/    the MAPINFO lump family parsed once (mapinfo), level titles + the vanilla
                title tables (names), vanilla's par times (pars), where each exit leads (progression)

@@ -300,11 +300,11 @@ beside them in `tests/fixtures/` (or, for the newest, inside the one test that u
 | `pinky_above_test.wad` | same, far floor **+88** (ledge) | `pinky.ts` | vertical melee reach |
 | `caco_pit_test.wad` | one room split at `y=32`, far floor **-48**, cacodemon in it (`E1M1`) | in-test | floating monsters over a ledge |
 
-Plus five holding **real lumps**, for the assertions whose whole point is that a shipped WAD's own
+Plus six holding **real lumps**, for the assertions whose whole point is that a shipped WAD's own
 bytes decode the way the engine claims. `boomedit.wad` is TeamTNT's BOOMEDIT.WAD copied verbatim —
-the Boom feature exerciser, and the only fixture that is a whole WAD; the other four were lifted out
-of `DOOM1.WAD` and `freedoom2.wad` lump by lump, so each is the lumps its test names and nothing
-else:
+the Boom feature exerciser, and the only fixture that is a whole WAD; the other five were lifted out
+of `DOOM1.WAD`, `freedoom2.wad` and `Mock2.wad` lump by lump, so each is the lumps its test names and
+nothing else:
 
 | WAD | Holds | Covers |
 |---|---|---|
@@ -313,6 +313,13 @@ else:
 | `doom1_e1m1.wad` | E1M1's eleven map lumps | solid-structure lids through the whole mesh builder |
 | `freedoom_map01.wad` | freedoom2 MAP01's eleven map lumps | the diagonal blocking line, below |
 | `freedoom_d_runnin.wad` | freedoom2's `GENMIDI` + `D_RUNNIN` | a real MIDI-format score, dense enough to land chunk boundaries mid-envelope |
+| `mock2_map02_hexen.wad` | Mock2.wad MAP02's twelve lumps | the Hexen map format end to end (docs/wad.md § Map formats) |
+
+`mock2_map02_hexen.wad` is the map the Hexen-format bug was reported on, and the one fixture whose
+BEHAVIOR lump is load-bearing — it is what `loadMap` detects the format from, so a copy without it
+would silently test nothing. Read as Doom format the map yields 30 linedefs pointing at vertexes and
+sidedefs that do not exist; `hexen.test.ts` asserts every index is in range, which is the shape
+of the failure rather than a restatement of the parse.
 
 Lifting map lumps out verbatim keeps the **IWAD's own numbering**, which is what lets a test name a
 sector or a line: `blocking-line-slide.test.ts` needs a diagonal two-sided `ML_BLOCKING` wall, which

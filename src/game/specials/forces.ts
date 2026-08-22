@@ -51,6 +51,19 @@ const ORIG_FRICTION_FACTOR = 2048;
 const MORE_FRICTION_MOMENTUM = 15000 / 0x10000;
 
 /**
+ * `p_local.h`'s `MAXMOVE` (30 units/tic), the clamp `P_XYMovement` puts on
+ * momentum however slippery the floor underneath is, expressed as a multiple of
+ * vanilla's own terminal speed running on a normal floor — thrust
+ * `forwardmove[1] × ORIG_FRICTION_FACTOR` over `1 − ORIG_FRICTION`, 16.67
+ * units/tic, so 1.8×. It is the ceiling on how far a friction sector can raise
+ * the terminal speed, and the reason `frictionUnder` bounds the friction it
+ * derives its two scales from: a 223 line long enough for MBF's own clamp to
+ * pin `friction` at exactly 1 would otherwise read as an infinite terminal.
+ * docs/movement.md § Friction.
+ */
+const MAX_TARGET_SCALE = 30 / ((50 * ORIG_FRICTION_FACTOR) / 0x10000 / (1 - ORIG_FRICTION));
+
+/**
  * What one scroller moves. `side` rewrites a linedef's front sidedef offsets
  * (Boom's `sc_side`, whose affectee is always `*l->sidenum`, so the line index
  * plus "front" names it exactly); `floorTex`/`ceilTex` are a sector's flat
@@ -250,16 +263,24 @@ export class Forces {
       else if (momentum > MORE_FRICTION_MOMENTUM * 2) moveFactor *= 4;
       else if (momentum > MORE_FRICTION_MOMENTUM) moveFactor *= 2;
     }
-    this.frictionScratch.friction = friction;
+    // The friction everything below is derived from, bounded so the terminal
+    // speed it implies stays inside `P_XYMovement`'s own `MAXMOVE` — the one
+    // thing that keeps a `friction` MBF's clamp pinned at exactly 1 finite
+    // (mbfedit!.wad MAP01 sectors 121/154). docs/movement.md § Friction.
+    const bounded = Math.min(
+      friction,
+      1 - ((moveFactor / ORIG_FRICTION_FACTOR) * (1 - ORIG_FRICTION)) / MAX_TARGET_SCALE,
+    );
+    this.frictionScratch.friction = bounded;
     // Vanilla's terminal speed is `thrust/(1 − friction)` with the thrust
     // proportional to `movefactor`; this engine's is the target velocity
     // outright, so the ratio of the two terminals *is* the scale to apply.
     this.frictionScratch.targetScale =
-      (moveFactor / ORIG_FRICTION_FACTOR) * ((1 - ORIG_FRICTION) / (1 - friction));
+      (moveFactor / ORIG_FRICTION_FACTOR) * ((1 - ORIG_FRICTION) / (1 - bounded));
     // And the ramp: a per-tic decay of `f` is a continuous rate of `−ln(f)·35`,
     // so matching vanilla's time constant here is that rate over the normal
     // floor's. docs/movement.md § Friction.
-    this.frictionScratch.accelScale = Math.log(friction) / Math.log(ORIG_FRICTION);
+    this.frictionScratch.accelScale = Math.log(bounded) / Math.log(ORIG_FRICTION);
     return this.frictionScratch;
   }
 

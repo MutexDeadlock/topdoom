@@ -446,8 +446,22 @@ changes are mapped onto the two knobs that mean the same things:
   `−ln(f)·35`, so this is that rate over the normal floor's, and it makes the *ramp* as long as
   vanilla's is on that surface. Ice is the whole point of this one: `~0.28×` the approach rate, which
   is what "slippery" actually feels like.
-- **`friction`** itself is used unchanged as the external momentum channel's per-tic decay, so a
-  knockback or a conveyor slides much further across ice.
+- **`friction`** itself is the external momentum channel's per-tic decay, so a knockback or a
+  conveyor slides much further across ice.
+
+All three come off a friction **bounded by vanilla's own `MAXMOVE`** (`p_local.h`, 30 units/tic —
+what `P_XYMovement` clamps momentum to however slippery the floor is), expressed as the 1.8× of a
+normal floor's run terminal that `targetScale` may not exceed. Without it a 223 line long enough for
+MBF's clamp to pin `friction` at exactly 1 gives `targetScale = ∞` and `accelScale = 0`, whose
+product is `NaN` — and since `velX` is integrated in place, that NaN is permanent: the player freezes
+for the rest of the level, not just on the ice. Perfect ice is *fast*, not immovable. The bound binds
+only inside that clamped region (a control line over about 199 units); every ordinary ice and mud
+line reaches `Player.update` with its own curve value untouched. Repro: `mbfedit!.wad` MAP01 sectors
+121 and 154.
+
+Sector 123 of that same map is the other extreme and is **not** a bug: an 8-unit control line is deep
+mud, `movefactor` falls out negative and MBF's clamp lifts it to 32, which leaves a terminal speed of
+about 4 units/sec. MBF crawls there too.
 
 Worked out for the two ends of the dial: an icy sector (friction 0.973, movefactor 631) gives a 5%
 higher top speed reached 3.5× more slowly; a muddy one (friction 0.875, movefactor 95, boosted) gives

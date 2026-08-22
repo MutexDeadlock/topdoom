@@ -62,6 +62,32 @@ describe('Boom friction', () => {
     assert.ok(tiny.targetScale > 0, `targetScale was ${tiny.targetScale}`);
   });
 
+  test('friction clamped to 1 is fast ice, not an infinite target at a zero rate', () => {
+    // The regression: `friction` pinned at exactly 1 made `targetScale` infinite
+    // and `accelScale` zero, whose product is the NaN that froze the player for
+    // the rest of the level (mbfedit!.wad MAP01 sectors 121/154).
+    const perfect = under(rig(1000), 1);
+    assert.ok(Number.isFinite(perfect.targetScale), `targetScale was ${perfect.targetScale}`);
+    assert.ok(perfect.accelScale > 0, `accelScale was ${perfect.accelScale}`);
+    // `P_XYMovement`'s MAXMOVE over the normal-floor run terminal.
+    assert.ok(Math.abs(perfect.targetScale - 1.8) < 1e-9, `targetScale was ${perfect.targetScale}`);
+    // And slipperier than an ordinary ice line, which the bound must not touch.
+    const ice = under(rig(160), 1);
+    assert.ok(perfect.accelScale < ice.accelScale, `${perfect.accelScale} vs ${ice.accelScale}`);
+    assert.ok(perfect.friction > ice.friction, `${perfect.friction} vs ${ice.friction}`);
+    assert.ok(Number.isFinite(1 * perfect.targetScale * perfect.accelScale));
+  });
+
+  test('the MAXMOVE bound leaves an ordinary ice line alone', () => {
+    // The two curves' own values still reach `frictionUnder` untouched either
+    // side of the crossover — the bound only ever binds where MBF's own clamp did.
+    for (const length of [0, 32, 96, 128, 160, 192]) {
+      const raw = ((0x1eb8 * length) / 0x80 + 0xd000) / 0x10000;
+      const got = under(rig(length), 1).friction;
+      assert.ok(Math.abs(got - raw) < 1e-12, `length ${length}: ${got} vs ${raw}`);
+    }
+  });
+
   test('a sector without the friction bit is a normal floor', () => {
     const rigged = rig(160);
     rigged.grid.map.sectors[rigged.middle].special = 0;

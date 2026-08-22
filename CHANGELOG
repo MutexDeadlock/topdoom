@@ -6,6 +6,8 @@ Features and improvements
 Fixed bugs
   - items tucked just out of walking reach (an alcove, a window ledge)
     can be picked up again, the way vanilla's square reach allows
+  - a BOOM friction sector slippery enough to clamp at zero friction froze
+    the player for the rest of the level
   - fixed problems with maps built by an buggy nodebuilder (hello ksutra.wad)
     - black holes and wrong flats in the floor on maps whose nodebuilder
       filed a seg into the wrong side of its line

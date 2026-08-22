@@ -1050,7 +1050,9 @@ standing at or below.
 unconditionally, where PrBoom gates them on `mbf_features` and so skips them at the Boom complevel
 this engine targets. Unclamped, a 223 line longer than about 200 units produces a friction of 1 or
 more — momentum in that sector would never decay, or would grow without bound. That is an engine
-hazard rather than a behavior any map can be built on.
+hazard rather than a behavior any map can be built on. `friction` pinned at exactly 1 is still a
+degenerate input to the movement mapping, which bounds it again by `P_XYMovement`'s `MAXMOVE` —
+docs/movement.md § Friction.
 
 How the two numbers reach the player's actual movement — and why an engine whose input model isn't
 vanilla's needs a mapping at all — is docs/movement.md § Friction.

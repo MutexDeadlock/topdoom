@@ -163,7 +163,8 @@ Explored subsectors are skipped forever after, so the per-frame cost falls as a 
 **The sight-sampling sweep is budgeted, not run to completion**, under two caps that a `tick` stops
 at whichever it reaches first. `MAX_SIGHT_TESTS_PER_TIC` (350, tuned by feel) caps how many
 not-yet-explored subsectors get their sample rays tested; `scanCursor` remembers where the
-round-robin left off, and a subsector that fails every sample is simply retried on a later pass.
+round-robin left off — over the nearest-first `order`, § Sweep order — and a subsector that fails
+every sample is simply retried on a later pass.
 Without a cap, cost is `unexplored subsectors × samples per subsector × the cost of a ray`, and on a
 level where all three are large at once — freedoom2 MAP03 (315 sectors, 2855 linedefs, 1531
 subsectors) — the one-time reveal sweep measured 8.6 ms in a single call, over half a 60fps budget
@@ -192,6 +193,57 @@ constructor's one-time spawn seed can ask for an unbounded pass on both by name 
 passing `Infinity` for one and having the other infer it: the seed has to reveal everything visible
 from spawn in that single call, and the `alpha.set(explored)` right after skips the fade so the
 surroundings don't rise out of black on frame one.
+
+## Sweep order
+
+**The budgeted sweep visits candidates nearest the player first** (`order`, `buildOrder`), and on a
+large level that ordering matters more than either budget. Under the plain BSP-index round-robin
+this started as, `scanCursor` walks the subsector array in an order with no relation to where the
+player is, so a tic's whole budget goes on whatever indices the cursor happens to be sitting on.
+
+That is fine while the level is small enough for one pass to fit in a tic or two, and it collapses
+when it isn't. Comatose MAP01 (55,029 subsectors, 65,535 linedefs, a 35,982-unit span) is the
+reported case: 30,728 of its subsectors sit within `VIEW_DISTANCE` of a typical vantage, only 9,778
+of them are actually sight-clear, and the rays to the rest run the median 12,748 units to the far
+side of the map at ~344 work each. One full pass is 202,914 rays and 49.9M work — **333 tics, 9.5
+seconds** at `MAX_SIGHT_WORK_PER_TIC`. `MAX_SIGHT_TESTS_PER_TIC` never binds there at all: the work
+cap trips after 40–56 subsectors, so the cursor needs ~1,200 tics to come round. Measured from six
+vantages, everything sight-clear within the ~5,100 units the camera actually frames took **3.0–16.3
+s (mean 8.4)** to light up. Ordering the same candidates nearest-first, with the same budgets, the
+same radius and the same rays, brings that to **0.06–0.66 s (mean 0.31)** — the budget buys reveals
+instead of misses, because near subsectors have both short rays and a ~99% hit rate. Stock maps do
+not move (DOOM2 MAP01 and MAP15 are inside two tics either way).
+
+**The cursor is still needed, and pure nearest-first starves.** Restarting from the near end every
+tic and dropping `scanCursor` sounds simpler and reveals only 1,421 of the 9,778: the near band
+soaks the budget and the sweep never reaches anything behind it. So `scanCursor` advances through
+`order` as before and wraps at `orderCount`; what changed is only the sequence it walks.
+
+**`order` is rebuilt when the player drifts `ORDER_ANCHOR_SLACK` from the point it was built for**,
+and the rebuild restarts the cursor at the near end — the player being somewhere new is exactly
+when what is around them should be tested first. It is a **counting sort into `ORDER_RING`-wide
+rings**, not a comparison sort: at this cadence `Array.sort` over 55,029 entries costs 11.6 ms, more
+than the sweep it is ordering, while two linear passes cost a fraction of that. Entries are keyed on
+`distance - radius`, the subsector's nearest possible approach, which is the same quantity `sweep`'s
+own reject tests — so the cutoff that decides what enters `order` and the test that runs per
+candidate agree rather than drifting apart. The cutoff carries `ORDER_ANCHOR_SLACK` on top of
+`VIEW_DISTANCE` so a subsector that comes into range during the drift is already in the array; the
+per-candidate reject inside `sweep` stays, since it is the one that answers for the live position.
+
+**A front-to-back BSP descent from the player's subsector is the other obvious candidate**, and it
+is not free here: `nodes.ts` discards both child bounding boxes at parse time in every node format
+(`skip both bounding boxes`, three sites), so a radius-culled descent needs them parsed and kept
+first; split-plane order is coarser than distance rings anyway; and a cursor that resumes mid-
+traversal across tics needs either an explicit node stack or a materialized array — which is the
+array `buildOrder` already builds.
+
+Two things this deliberately does **not** fix. A pass still costs what it costs — everything visible
+from a vantage on Comatose still takes ~9.5 s to finish revealing — and the far tail of that is
+geometry the camera's frame does not reach anyway (§ Reveal radius). And a door opening while the
+player stands perfectly still, with the cursor already deep in a pass, still waits for the wrap: no
+worse than before, but not better either. Both are bounded by the same underlying quantity, which is
+that `VIEW_DISTANCE` admits 56% of this map as candidates — the sweep is spending its budget well
+now, not spending less of it.
 
 ## Closed sectors
 

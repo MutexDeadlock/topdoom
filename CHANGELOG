@@ -6,11 +6,12 @@ Features and improvements
   - tuned the auto-camera a bit
 
 Fixed bugs
+  - fog of war reveals what is around the player first, not in BSP order
   - items tucked just out of walking reach (an alcove, a window ledge)
-    can be picked up again, the way vanilla's square reach allows
+    can now be picked up
   - a BOOM friction sector slippery enough to clamp at zero friction froze
     the player for the rest of the level
-  - fixed problems with maps built by an buggy nodebuilder (hello ksutra.wad)
+  - fixed problems with nodes built by an buggy builder (hello ksutra.wad)
     - black holes and wrong flats in the floor on maps whose nodebuilder
       filed a seg into the wrong side of its line
     - no more walking through the air over a floor drawn far below:

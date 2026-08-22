@@ -18,9 +18,9 @@ const SNAP_EPS = 0.004;
 
 /**
  * Cap on how many not-yet-explored subsectors get their sample rays tested in one `tick` call
- * (tuned by feel; `scanCursor` round-robins the rest onto later tics), alongside the work cap
- * below. Counted per tic, not per frame — `explored` is a gameplay input, so the sweep rate must
- * not depend on framerate. See docs/fogofwar.md § Sight testing.
+ * (tuned by feel; `scanCursor` carries the rest of the nearest-first `order` onto later tics),
+ * alongside the work cap below. Counted per tic, not per frame — `explored` is a gameplay input,
+ * so the sweep rate must not depend on framerate. See docs/fogofwar.md § Sight testing.
  */
 const MAX_SIGHT_TESTS_PER_TIC = 350;
 
@@ -30,6 +30,23 @@ const MAX_SIGHT_TESTS_PER_TIC = 350;
  * A subsector count bounds the wrong quantity; see docs/fogofwar.md § Sight testing.
  */
 const MAX_SIGHT_WORK_PER_TIC = 150000;
+
+/**
+ * Width of one distance ring in the counting sort that orders the sweep nearest-first
+ * (`buildOrder`). Only coarse ordering matters — within a ring the sweep keeps BSP order — so this
+ * trades ring count against how exactly "nearest" is honoured. Tuned by feel: about a twentieth of
+ * the radius the camera actually frames, so the ordering is exact well inside what the player is
+ * looking at. See docs/fogofwar.md § Sweep order.
+ */
+const ORDER_RING = 256;
+
+/**
+ * How far the player may drift from the point `order` was built for before it is rebuilt, and the
+ * slack added to the radius cutoff so a subsector that comes into range during that drift is
+ * already in the array. Tuned by feel: small enough that the ordering stays honest, large enough
+ * that a rebuild costs nothing at running speed. docs/fogofwar.md § Sweep order.
+ */
+const ORDER_ANCHOR_SLACK = 256;
 
 /**
  * How far a wall's probe point is pushed off its own face, so it lands inside
@@ -93,8 +110,23 @@ export class FogOfWar {
   /** What is left of this tic's `MAX_SIGHT_WORK_PER_TIC`; `sightClear` charges what each ray cost. */
   private workLeft = 0;
 
-  /** Round-robin resume point into `sights` for `tick`'s budgeted scan — see `MAX_SIGHT_TESTS_PER_TIC`. */
+  /** Round-robin resume point into `order` for `tick`'s budgeted scan — see `MAX_SIGHT_TESTS_PER_TIC`. */
   private scanCursor = 0;
+
+  /**
+   * The subsectors the sweep may test, **nearest the player first** — the order `scanCursor` walks,
+   * rebuilt by `buildOrder` once the player drifts `ORDER_ANCHOR_SLACK` off the point it was built
+   * for. On a large level which subsector is scanned when decides what a tic's budget buys at all;
+   * docs/fogofwar.md § Sweep order.
+   */
+  private order: Int32Array;
+  /** How much of `order` is live: entries past this are out of reveal range from the anchor. */
+  private orderCount = 0;
+  /** Scratch bucket counts for `buildOrder`'s counting sort, one per `ORDER_RING`-wide ring. */
+  private orderRings: Int32Array;
+  /** The point `order` was built for; `ensureOrder` rebuilds once the player drifts off it. */
+  private orderX = 0;
+  private orderY = 0;
 
   constructor(
     world: World,
@@ -169,6 +201,12 @@ export class FogOfWar {
 
     this.pending = this.sights.reduce((n, s) => n + (s ? 1 : 0), 0);
 
+    this.order = new Int32Array(polys.length);
+    // One ring per `ORDER_RING` up to the farthest key `ringOf` admits, inclusive. Sized off
+    // `VIEW_DISTANCE` rather than the map, so it is a handful of entries however large the level is.
+    this.orderRings = new Int32Array(Math.floor((VIEW_DISTANCE + ORDER_ANCHOR_SLACK) / ORDER_RING) + 1);
+    this.buildOrder(startX, startY);
+
     // Which subsector each wall quad faces into, so a wall reveals with the
     // space it encloses. mapmesh builds every quad with its face to the right
     // of a->b, so nudging the midpoint along that normal lands just inside.
@@ -230,17 +268,22 @@ export class FogOfWar {
     }
     if (this.pending <= 0) return;
 
+    this.ensureOrder(playerX, playerY);
+
     this.scanId++;
     this.workLeft = workBudget;
-    const n = this.sights.length;
+    const order = this.order;
+    const n = this.orderCount;
     let budget = subsectorBudget;
-    let ss = this.scanCursor;
-    for (let steps = 0; steps < n && budget > 0 && this.workLeft > 0; steps++, ss = ss + 1 < n ? ss + 1 : 0) {
+    let k = this.scanCursor;
+    for (let steps = 0; steps < n && budget > 0 && this.workLeft > 0; steps++, k = k + 1 < n ? k + 1 : 0) {
+      const ss = order[k];
       const s = this.explored[ss] ? undefined : this.sights[ss];
       if (!s) continue;
       // Reveal reaches exactly as far as the player can see, so the bound is
       // `VIEW_DISTANCE` itself. docs/fogofwar.md § Reveal radius. Squared, so
-      // the subsectors this rejects never pay for a root.
+      // the subsectors this rejects never pay for a root. Kept though `order` is already cut to
+      // range: that cutoff is anchored, this one answers for the live position.
       const dx = s.cx - playerX;
       const dy = s.cy - playerY;
       const reach = VIEW_DISTANCE + s.radius;
@@ -259,7 +302,73 @@ export class FogOfWar {
       }
     }
     this.rayTargetSector = -1;
-    this.scanCursor = ss;
+    this.scanCursor = k;
+  }
+
+  /** Rebuilds `order` if the player has drifted `ORDER_ANCHOR_SLACK` from the point it was built for. */
+  private ensureOrder(playerX: number, playerY: number): void {
+    const dx = playerX - this.orderX;
+    const dy = playerY - this.orderY;
+    if (dx * dx + dy * dy <= ORDER_ANCHOR_SLACK * ORDER_ANCHOR_SLACK) return;
+    this.buildOrder(playerX, playerY);
+  }
+
+  /**
+   * Fills `order` with every subsector that can be in reveal range of a player near (px, py),
+   * nearest first, and restarts the sweep at the near end. A counting sort into `ORDER_RING`-wide
+   * rings rather than a comparison sort, keyed on `distance - radius`; both choices are load-bearing
+   * at this cadence — docs/fogofwar.md § Sweep order.
+   */
+  private buildOrder(px: number, py: number): void {
+    const rings = this.orderRings;
+    const ringCount = rings.length;
+    rings.fill(0);
+
+    const n = this.sights.length;
+    for (let ss = 0; ss < n; ss++) {
+      const s = this.sights[ss];
+      if (!s) continue;
+      const ring = this.ringOf(s, px, py);
+      if (ring < 0) continue;
+      rings[ring]++;
+    }
+
+    // Prefix sum in place: each ring's count becomes where its first entry goes.
+    let at = 0;
+    for (let r = 0; r < ringCount; r++) {
+      const count = rings[r];
+      rings[r] = at;
+      at += count;
+    }
+    this.orderCount = at;
+
+    const order = this.order;
+    for (let ss = 0; ss < n; ss++) {
+      const s = this.sights[ss];
+      if (!s) continue;
+      const ring = this.ringOf(s, px, py);
+      if (ring < 0) continue;
+      order[rings[ring]++] = ss;
+    }
+
+    this.orderX = px;
+    this.orderY = py;
+    this.scanCursor = 0;
+  }
+
+  /**
+   * Which `ORDER_RING`-wide ring `s` falls in for a player at (px, py), or -1 for out of range.
+   * One function rather than inline at both `buildOrder` passes: a counting sort is only correct
+   * while the pass that counts and the pass that places agree on every entry.
+   */
+  private ringOf(s: SubSectorSight, px: number, py: number): number {
+    const dx = s.cx - px;
+    const dy = s.cy - py;
+    const key = Math.sqrt(dx * dx + dy * dy) - s.radius;
+    if (key > VIEW_DISTANCE + ORDER_ANCHOR_SLACK) return -1;
+    // The cutoff above is the same expression `orderRings` is sized from, so the ring it admits is
+    // always in range; a player standing inside a subsector gives a negative key, hence the floor.
+    return key > 0 ? (key / ORDER_RING) | 0 : 0;
   }
 
   /**

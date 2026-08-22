@@ -7,10 +7,13 @@
  */
 import { DOOM_TIC } from '../../constants.ts';
 import { stripTitlePrefix } from '../../wad/campaign/names.ts';
+import { classifyDehackedPointer, lookupAction, NO_ACTION } from './actions.ts';
+import { chainKindsOf } from './frames.ts';
 import type {
   DehAmmoEdit,
   DehFrameEdit,
   DehPatch,
+  DehPointerEdit,
   DehRecordKind,
   DehShortfall,
   DehSupport,
@@ -20,6 +23,7 @@ import type {
 } from './defs.ts';
 import { isFlashState, SPRITE_NAMES, STATES } from './states.ts';
 import {
+  FRAME_ARG_FIELDS,
   FRAME_FIELD_SINKS,
   MOBJ_INFO,
   SFX_ORDER,
@@ -201,6 +205,7 @@ export function parseDehacked(
   const applied: Record<string, number> = {};
   const thingEdits: DehThingEdit[] = [];
   const frameEdits: DehFrameEdit[] = [];
+  const pointerEdits: DehPointerEdit[] = [];
   const strings = new Map<string, string>();
   const pars = new Map<string, number>();
   const ammoEdits: DehAmmoEdit[] = [];
@@ -221,6 +226,8 @@ export function parseDehacked(
   let frameTouched = false;
   let ammo: DehAmmoEdit | null = null;
   let weapon: DehWeaponEdit | null = null;
+  /** The state an open `Pointer N (Frame mm)` record repoints — `mm`, not `N`. */
+  let pointerState: number | null = null;
   /** Whether the open record was already reported, so its field lines add nothing. */
   let skipping = false;
 
@@ -278,6 +285,7 @@ export function parseDehacked(
 
       ammo = kind === 'ammo' ? { index } : null;
       weapon = kind === 'weapon' ? { index, ammoType: -1 } : null;
+      pointerState = kind === 'pointer' ? pointerTarget(trimmed, warnings) : null;
 
       if (kind === 'thing') {
         row = MOBJ_INFO[index - 1];
@@ -330,6 +338,17 @@ export function parseDehacked(
       readSpriteRename(pair.key, pair.value, spriteRenames, warnings);
       continue;
     }
+    // The two action-pointer forms. Both land in `pointerEdits`; only the record spelling differs —
+    // `Pointer` names its target on the header line and copies an action off another state, while
+    // `[CODEPTR]` names both on the one line. docs/dehacked.md § Action pointers.
+    if (kind === 'pointer') {
+      readPointerField(pointerState, pair.key, pair.value, pointerEdits, warnings);
+      continue;
+    }
+    if (kind === 'codeptr') {
+      readCodePointer(pair.key, pair.value, pointerEdits, warnings);
+      continue;
+    }
 
     const support = classifyDehackedField(kind, pair.key, row);
     if (support !== 'applied') {
@@ -358,6 +377,7 @@ export function parseDehacked(
   closeRecord();
   if (thingEdits.length) applied.thing = thingEdits.length;
   if (frameEdits.length) applied.frame = frameEdits.length;
+  if (pointerEdits.length) applied.pointer = pointerEdits.length;
   if (ammoEdits.length) applied.ammo = ammoEdits.length;
   if (weaponEdits.length) applied.weapon = weaponEdits.length;
   if (Object.keys(misc).length) applied.misc = Object.keys(misc).length;
@@ -372,6 +392,7 @@ export function parseDehacked(
     ammoEdits,
     weaponEdits,
     frameEdits,
+    pointerEdits,
     spriteRenames,
     misc,
     soundLumps,
@@ -392,16 +413,13 @@ export function parseDehacked(
 function recordDetailFor(word: string, line: string, support: DehShortfall): string {
   if (support === 'unknown') return `unrecognised record \`${line}\``;
   if (support === 'noTarget') return `\`${word}\` records index a table this engine does not have`;
-  if (word.toLowerCase() === 'pointer' || word.toLowerCase() === '[codeptr]') {
-    return `\`${word}\` reassigns action pointers; frame data applies here, actions do not`;
-  }
   return `\`${word}\` is out of scope here`;
 }
 
 /** Why a `Frame N` header is skipped, naming the state so a reader can see which chain it was. */
 function frameDetailFor(index: number, support: DehSupport): string {
   const name = STATES[index]?.[5];
-  if (support === 'unknown') return `\`Frame ${index}\` names no state (there are ${STATES.length})`;
+  if (support === 'unknown') return noState(`Frame ${index}`);
   if (isFlashState(index)) return `${name} is a muzzle flash; this engine draws no first-person weapon`;
   return `${name} animates a weapon being held or swapped; this engine draws no first-person weapon`;
 }
@@ -543,8 +561,8 @@ function readThingField(
     default: {
       const pointer = THING_STATE_FIELDS[key];
       if (pointer) {
-        if (!Number.isInteger(raw) || raw < 0 || raw >= STATES.length) {
-          warnings.add(label, 'unknown', `\`${field} = ${value}\` names no state (there are ${STATES.length})`, field);
+        if (!isStateIndex(raw)) {
+          warnings.add(label, 'unknown', noState(`${field} = ${value}`), field);
           return false;
         }
         edit.states = { ...edit.states, [pointer]: raw };
@@ -577,14 +595,25 @@ function readFrameField(
   warnings: WarningLog,
 ): boolean {
   const raw = Number(value);
-  const sink = FRAME_FIELD_SINKS[field.trim().toLowerCase()];
-  if (!sink) return false;
+  const key = field.trim().toLowerCase();
+  const sink = FRAME_FIELD_SINKS[key];
+  const arg = FRAME_ARG_FIELDS[key];
+  if (!sink && arg === undefined) return false;
   if (!Number.isInteger(raw)) {
     warnings.add(label, 'unknown', `\`${field} = ${value}\` is not a whole number`, field);
     return false;
   }
-  if (sink === 'nextFrame' && (raw < 0 || raw >= STATES.length)) {
-    warnings.add(label, 'unknown', `\`${field} = ${value}\` names no state (there are ${STATES.length})`, field);
+  if (arg !== undefined) {
+    // Dense, so a slot a patch never wrote reads 0 — which is what `info.c` gives `misc1`/`misc2`
+    // on every state anyway, and what an MBF pointer reading an unwritten slot sees in vanilla.
+    const args = [...(frame.args ?? [])];
+    while (args.length < arg) args.push(0);
+    args[arg] = raw;
+    frame.args = args;
+    return true;
+  }
+  if (sink === 'nextFrame' && !isStateIndex(raw)) {
+    warnings.add(label, 'unknown', noState(`${field} = ${value}`), field);
     return false;
   }
   if (sink === 'spriteNum' && (raw < 0 || raw >= SPRITE_NAMES.length)) {
@@ -593,6 +622,110 @@ function readFrameField(
   }
   frame[sink] = raw;
   return true;
+}
+
+/** Whether a number names a row of `states[]` — the one bound every state-valued field is held to. */
+function isStateIndex(raw: number): boolean {
+  return Number.isInteger(raw) && raw >= 0 && raw < STATES.length;
+}
+
+/** How a field that should have named a state and didn't is reported, wherever it was read. */
+function noState(subject: string): string {
+  return `\`${subject}\` names no state (there are ${STATES.length})`;
+}
+
+/**
+ * The state a `Pointer N (Frame mm)` header repoints: `mm`, the parenthesised index. `N` is
+ * DeHackEd's own cross-reference number and names nothing here — `d_deh.c`'s `deh_procPointer`
+ * reads the target off the parentheses too. Null where the header carries none or names no state,
+ * which leaves the record's own `Codep Frame` line with nothing to write.
+ */
+function pointerTarget(headerLine: string, warnings: WarningLog): number | null {
+  // The word inside the parentheses is *not* checked: `deh_procPointer` scans `(%s %i)` and reads
+  // the string into a buffer it never looks at, so `Pointer 426 (x 777)` is as valid as
+  // `(Frame 777)` — and mbfedit!.wad writes exactly that.
+  const paren = /\(\s*\S+\s+(-?\d+)\s*\)/.exec(headerLine);
+  if (!paren) {
+    warnings.add('Pointer', 'unknown', `\`${headerLine}\` names no target frame`);
+    return null;
+  }
+  const state = Number(paren[1]);
+  if (!isStateIndex(state)) {
+    warnings.add('Pointer', 'unknown', noState(headerLine));
+    return null;
+  }
+  return state;
+}
+
+/**
+ * A `Pointer` record's one field, `Codep Frame = yy`: the target state's action becomes whatever
+ * action state `yy` carries.
+ *
+ * **Read off pristine `STATES`, never off an already-patched column** — `d_deh.c` copies from
+ * `deh_codeptr[]`, a snapshot taken before any patch runs, so two repoints in sequence cannot
+ * chain through each other. docs/dehacked.md § Action pointers.
+ */
+function readPointerField(
+  state: number | null,
+  field: string,
+  value: string,
+  edits: DehPointerEdit[],
+  warnings: WarningLog,
+): void {
+  if (state === null) return;
+  if (field.trim().toLowerCase() !== 'codep frame') {
+    warnings.add('Pointer', 'unknown', `\`${field}\` is not a field of a \`Pointer\` record`, field);
+    return;
+  }
+  const source = Number(value);
+  if (!isStateIndex(source)) {
+    warnings.add('Pointer', 'unknown', noState(`${field} = ${value}`), field);
+    return;
+  }
+  filePointer('Pointer', state, STATES[source][3], edits, warnings);
+}
+
+/**
+ * One `[CODEPTR]` line, `FRAME nnn = Mnemonic`. `deh_procBexCodePointers` prefixes `A_` before
+ * looking the mnemonic up, so a patch may write either spelling.
+ */
+function readCodePointer(key: string, value: string, edits: DehPointerEdit[], warnings: WarningLog): void {
+  const named = /^frame\s+(-?\d+)$/i.exec(key.trim());
+  if (!named) {
+    warnings.add('[CODEPTR]', 'unknown', `\`${key.trim()}\` is not a \`FRAME n\` line`);
+    return;
+  }
+  const state = Number(named[1]);
+  if (!isStateIndex(state)) {
+    warnings.add('[CODEPTR]', 'unknown', noState(key.trim()));
+    return;
+  }
+  const action = lookupAction(value);
+  if (action === undefined) {
+    warnings.add('[CODEPTR]', 'unknown', `\`${value.trim()}\` is not an action pointer`, value.trim());
+    return;
+  }
+  filePointer('[CODEPTR]', state, action, edits, warnings);
+}
+
+/**
+ * Files one repoint under either spelling, and reports it under the *action* rather than the
+ * record — which pointer a patch wanted is the part a reader can act on, the same reason a `Bits`
+ * line reports per flag (docs/dehacked.md § Bits). A patch restating the action a state already has
+ * raises nothing: whole `[CODEPTR]` blocks are written that way.
+ */
+function filePointer(
+  label: string,
+  state: number,
+  action: string,
+  edits: DehPointerEdit[],
+  warnings: WarningLog,
+): void {
+  const verdict = classifyDehackedPointer(STATES[state][3], action, chainKindsOf(state));
+  if (verdict === null) return;
+  edits.push({ state, action });
+  if (verdict.support === 'applied') return;
+  warnings.add(label, verdict.support, verdict.detail, action === NO_ACTION ? 'A_NULL' : action);
 }
 
 /**
@@ -613,8 +746,8 @@ function readWeaponField(
     weapon.ammoType = value;
     return;
   }
-  if (!Number.isInteger(value) || value < 0 || value >= STATES.length) {
-    warnings.add(label, 'unknown', `\`${field} = ${value}\` names no state (there are ${STATES.length})`, field);
+  if (!isStateIndex(value)) {
+    warnings.add(label, 'unknown', noState(`${field} = ${value}`), field);
     return;
   }
   weapon.states = { ...weapon.states, [pointer]: value };

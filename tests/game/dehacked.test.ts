@@ -116,14 +116,31 @@ describe('DEHACKED · the record grammar', () => {
   });
 
   test('a record the engine cannot honour swallows its own field lines', () => {
-    // A `Pointer` record's `Codep Frame` line would otherwise contribute a second row on top of
+    // A numeric `Sound` record's own field lines would otherwise contribute a row each on top of
     // the one row that actually says something.
-    const patch = parseDehacked('Pointer 12 (Frame 185)\nCodep Frame = 1\n');
+    const patch = parseDehacked('Sound 12\nZero/One = 1\nValue = 2\n');
     assert.deepEqual(
       patch.warnings.map((w) => [w.record, w.field, w.count]),
-      [['Pointer', undefined, 1]],
+      [['Sound', undefined, 1]],
     );
-    assert.match(patch.warnings[0].detail, /action pointers/);
+  });
+
+  test('a Pointer record repoints the frame in its parentheses, off the pristine action column', () => {
+    // `Pointer N` names DeHackEd's own cross-reference number and nothing here; the target is the
+    // parenthesised frame, and `Codep Frame = 1` copies whatever action state 1 carries onto it.
+    const patch = parseDehacked('Pointer 12 (Frame 185)\nCodep Frame = 1\n');
+    assert.deepEqual(patch.pointerEdits, [{ state: 185, action: 'A_Light0' }]);
+    assert.equal(patch.applied.pointer, 1);
+    // S_POSS_ATK2 loses `A_PosAttack`, which the walker reads — so the edit lands, silently.
+    assert.deepEqual(patch.warnings, []);
+  });
+
+  test("a Pointer header's parenthesised word is not checked, only its number", () => {
+    // `deh_procPointer` scans `(%s %i)` and never looks at the string — mbfedit!.wad writes
+    // `Pointer 426 (x 777)`, and prboom reads it as frame 777 like any other.
+    const patch = parseDehacked('Pointer 426 (x 185)\nCodep frame = 1\n');
+    assert.deepEqual(patch.pointerEdits, [{ state: 185, action: 'A_Light0' }]);
+    assert.deepEqual(patch.warnings, []);
   });
 
   test('a Frame record carries its four fields in vanilla units', () => {
@@ -132,9 +149,15 @@ describe('DEHACKED · the record grammar', () => {
     assert.equal(patch.applied.frame, 1);
     assert.deepEqual(patch.warnings, []);
     // A field with no sink, and one with an out-of-range value, are reported and not carried.
-    const odd = parseDehacked('Frame 185\nUnknown 1 = 7\nNext frame = 5000\n');
+    const odd = parseDehacked('Frame 185\nWobble = 7\nNext frame = 5000\n');
     assert.deepEqual(odd.frameEdits, []);
-    assert.deepEqual(odd.warnings.map((w) => [w.field, w.support]), [['Next frame', 'unknown'], ['Unknown 1', 'noTarget']]);
+    assert.deepEqual(odd.warnings.map((w) => [w.field, w.support]), [['Wobble', 'unknown'], ['Next frame', 'unknown']]);
+  });
+
+  test("a Frame's two Unknown fields are MBF's misc slots, sparse and positional", () => {
+    const patch = parseDehacked('Frame 185\nUnknown 2 = 4\n');
+    assert.deepEqual(patch.frameEdits, [{ index: 185, args: [0, 4] }]);
+    assert.deepEqual(patch.warnings, []);
   });
 
   test('a Frame on a weapon state is classed by what it is, not read', () => {
@@ -159,7 +182,29 @@ describe('DEHACKED · the record grammar', () => {
     const patch = parseDehacked('[CODEPTR]\nFrame 185 = A_PosAttack\nFrame 186 = A_Chase\n');
     assert.deepEqual(patch.frameEdits, []);
     assert.equal(patch.applied.frame, undefined);
-    assert.deepEqual(patch.warnings.map((w) => [w.record, w.support, w.count]), [['[CODEPTR]', 'unsupported', 1]]);
+    // The first line restates the action S_POSS_ATK2 already has and files nothing; only the
+    // second is a repoint. Whole `[CODEPTR]` blocks are written the first way.
+    assert.deepEqual(patch.pointerEdits, [{ state: 186, action: 'A_Chase' }]);
+    assert.deepEqual(patch.warnings, []);
+  });
+
+  test('a [CODEPTR] mnemonic reads with or without its A_ prefix, and A_NULL clears the action', () => {
+    const patch = parseDehacked('[CODEPTR]\nFrame 186 = Chase\nFrame 185 = A_NULL\nFrame 187 = A_Wobble\n');
+    assert.deepEqual(patch.pointerEdits, [
+      { state: 186, action: 'A_Chase' },
+      { state: 185, action: '' },
+    ]);
+    assert.deepEqual(patch.warnings.map((w) => [w.record, w.support]), [['[CODEPTR]', 'unknown']]);
+  });
+
+  test('a repoint the walker reads nothing from reports under the action it names', () => {
+    // S_POSS_ATK3 carries no action at all, and neither side of this move is one the derivations
+    // read: the death sound is a per-type property here, not something a state carries.
+    const patch = parseDehacked('[CODEPTR]\nFrame 186 = A_Scream\nFrame 187 = A_RandomJump\n');
+    assert.deepEqual(
+      patch.warnings.map((w) => [w.field, w.support]),
+      [['A_RandomJump', 'unsupported'], ['A_Scream', 'noTarget']],
+    );
   });
 
   test("a Thing's frame pointers are read as state indices, S_NULL included", () => {

@@ -108,6 +108,27 @@ export interface DehFrameEdit {
   subNumber?: number;
   duration?: number;
   nextFrame?: number;
+  /**
+   * `state_t`'s general-purpose data fields, in order: index 0 is `Unknown 1` (`misc1`), index 1 is
+   * `Unknown 2` (`misc2`). Dense — a slot the patch never wrote reads 0, which is what `info.c`
+   * gives both fields on every state. An array rather than two named fields because MBF21's
+   * `Args1`..`Args8` are the same slots widened, and would extend this rather than replace it.
+   * Only MBF's own pointers read them (`A_Spawn`'s type and z, `A_PlaySound`'s sound) —
+   * docs/dehacked.md § Action pointers.
+   */
+  args?: readonly number[];
+}
+
+/**
+ * One repointed state: which `states[]` row, and the `A_*` name its action becomes — `''` for
+ * `A_NULL`, an action cleared, which is as meaningful as any other value. Both record forms land
+ * here, `Pointer N (Frame mm)` having already resolved its `Codep Frame` through the **pristine**
+ * action column. docs/dehacked.md § Action pointers.
+ */
+export interface DehPointerEdit {
+  /** 0-based `states[]` index — the state whose action changes, not the one it was copied from. */
+  state: number;
+  action: string;
 }
 
 /** One `Ammo N` record's two fields, `d_deh.c`'s `deh_ammo[]`. */
@@ -149,6 +170,7 @@ export interface DehPatch {
   ammoEdits: readonly DehAmmoEdit[];
   weaponEdits: readonly DehWeaponEdit[];
   frameEdits: readonly DehFrameEdit[];
+  pointerEdits: readonly DehPointerEdit[];
   /**
    * BEX `[SPRITES]` and vanilla `Text 4 4` alike: a pristine `sprnames[]` name, lowercased, to the
    * four-character name its lumps should resolve through instead. docs/dehacked.md § Sprite renames.

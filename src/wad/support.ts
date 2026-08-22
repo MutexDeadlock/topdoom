@@ -48,7 +48,7 @@ export const SUPPORT_ISSUES: Record<SupportCode, { level: Exclude<SupportLevel, 
   hexen: { level: 'partial', text: 'Hexen format: its doors, lifts, switches and ACS scripts do not run' },
   dehacked: {
     level: 'partial',
-    text: 'a DEHACKED patch asking for action pointers or flags this engine does not apply',
+    text: 'a DEHACKED patch asking for thing flags or a branching action this engine does not apply',
   },
 };
 
@@ -93,10 +93,10 @@ const REQUIRED_LUMPS = ['THINGS', 'LINEDEFS', 'SIDEDEFS', 'VERTEXES', 'SECTORS']
 
 /**
  * The verdict for one file. `dehShortfall` is its `DEHACKED` patch having asked for something this
- * engine deliberately does not apply (`DehSupport`'s `unsupported`) — action pointers and the MBF
- * flags, which change how a thing behaves rather than how it reads. `noTarget` and `unknown` are
- * **not** counted: the first is a finale screen or a pickup message, the second a line the parser
- * didn't recognise, and neither changes how the level plays.
+ * engine deliberately does not apply (`DehSupport`'s `unsupported`) — the MBF thing flags, a
+ * re-keyed `ID #`, `A_RandomJump`: things that change how a thing behaves rather than how it reads.
+ * `noTarget` and `unknown` are **not** counted: the first is a finale screen or a pickup message,
+ * the second a line the parser didn't recognise, and neither changes how the level plays.
  *
  * Pure, so it is testable without a WAD — the reading is `describe.ts`'s.
  */

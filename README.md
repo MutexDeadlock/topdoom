@@ -200,6 +200,9 @@ detail.
 **`DEHACKED`/BEX patches are read** from a WAD that ships one: level titles, par times, monster,
 weapon and ammo stats, `Frame` records and repointed monster and weapon frames — applied by
 re-deriving the engine's sprite lists and its fire rates from vanilla's frame table — and
-`[SPRITES]` renames. Action pointers (`Pointer`, `[CODEPTR]`) are out. A patch asking for those
-still loads and plays; what was skipped is reported rather than dropped silently. See
+`[SPRITES]` renames. **Action pointers (`Pointer`, `[CODEPTR]`) apply too**, including MBF's own:
+a repointed chain fires the attack that pointer belongs to, at the timing its chain implies, and
+`A_Scratch`, `A_PlaySound` and `A_Spawn` land as well. What a pointer can't reach here is named per
+action rather than skipped as a class. A patch asking for something out of scope still loads and
+plays; what was skipped is reported rather than dropped silently. See
 [docs/dehacked.md](docs/dehacked.md).

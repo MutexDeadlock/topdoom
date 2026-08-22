@@ -50,6 +50,7 @@ export function readDehacked(
   const ammoEdits = [];
   const weaponEdits = [];
   const frameEdits = [];
+  const pointerEdits = [];
   const misc: Record<string, number> = {};
   const spriteRenames = new Map<string, string>();
   const soundLumps = new Map<string, string>();
@@ -66,6 +67,7 @@ export function readDehacked(
     ammoEdits.push(...patch.ammoEdits);
     weaponEdits.push(...patch.weaponEdits);
     frameEdits.push(...patch.frameEdits);
+    pointerEdits.push(...patch.pointerEdits);
     Object.assign(misc, patch.misc);
     for (const [key, value] of patch.spriteRenames) spriteRenames.set(key, value);
     for (const [key, value] of patch.soundLumps) soundLumps.set(key, value);
@@ -82,6 +84,7 @@ export function readDehacked(
     ammoEdits,
     weaponEdits,
     frameEdits,
+    pointerEdits,
     spriteRenames,
     misc,
     soundLumps,

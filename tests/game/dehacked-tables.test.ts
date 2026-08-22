@@ -131,9 +131,9 @@ describe('DEHACKED · classification', () => {
     assert.equal(classifyDehackedRecord('[STRINGS]').support, 'applied');
     assert.equal(classifyDehackedRecord('Frame').support, 'applied');
     assert.equal(classifyDehackedRecord('[SPRITES]').support, 'applied');
-    // Action pointers stay out; frame data is what applies.
-    assert.equal(classifyDehackedRecord('Pointer').support, 'unsupported');
-    assert.equal(classifyDehackedRecord('[CODEPTR]').support, 'unsupported');
+    // Both action-pointer spellings are read; how far one gets is per action, not per record.
+    assert.equal(classifyDehackedRecord('Pointer').support, 'applied');
+    assert.equal(classifyDehackedRecord('[CODEPTR]').support, 'applied');
     // The numeric records move a pointer into the exe's string table.
     assert.equal(classifyDehackedRecord('Sound').support, 'noTarget');
     assert.equal(classifyDehackedRecord('Sprite').support, 'noTarget');
@@ -158,7 +158,8 @@ describe('DEHACKED · classification', () => {
     assert.equal(classifyDehackedField('frame', 'Sprite subnumber'), 'applied');
     assert.equal(classifyDehackedField('frame', 'Duration'), 'applied');
     assert.equal(classifyDehackedField('frame', 'Next frame'), 'applied');
-    assert.equal(classifyDehackedField('frame', 'Unknown 1'), 'noTarget');
+    assert.equal(classifyDehackedField('frame', 'Unknown 1'), 'applied'); // MBF's `misc1`
+    assert.equal(classifyDehackedField('frame', 'Unknown 2'), 'applied');
     assert.equal(classifyDehackedField('frame', 'Wobble'), 'unknown');
   });
 

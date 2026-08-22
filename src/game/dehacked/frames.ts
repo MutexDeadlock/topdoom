@@ -8,7 +8,8 @@
 import { DOOM_TIC } from '../../constants.ts';
 import type { AttackPose } from '../things/defs.ts';
 import { ThingType } from '../things/doomednums.ts';
-import type { DehFrameEdit, DehThingEdit, DehWeaponEdit } from './defs.ts';
+import { actionRole, type ChainKind } from './actions.ts';
+import type { DehFrameEdit, DehPointerEdit, DehThingEdit, DehWeaponEdit } from './defs.ts';
 import {
   fireChainStates, frameLetter, MOBJ_STATES, SPRITE_NAMES, STATES, WEAPON_STATES,
   type MobjStates, type StateRow, type WeaponStates,
@@ -31,39 +32,27 @@ export interface PatchedStates {
   states: readonly StateRow[];
   mobjStates: readonly MobjStates[];
   weaponStates: readonly WeaponStates[];
+  /**
+   * `misc1`/`misc2` per state, and only for the states a patch wrote them on. A side map rather
+   * than two more columns on `StateRow` because **`linuxdoom-1.10` has no such fields at all** —
+   * DeHackEd invented them and MBF gave them meanings, so vanilla's reading is "absent", not
+   * "zero in 967 rows". docs/dehacked.md § Action pointers.
+   */
+  args: ReadonlyMap<number, readonly number[]>;
 }
 
 /**
- * `p_enemy.c`'s actions that step the monster — `A_Chase` itself and the three footstep wrappers
- * (`A_Hoof`, `A_Metal`, `A_BabyMetal`) that play a sound and then call it, plus `A_VileChase`,
- * which is `A_Chase` with a corpse search in front. The walk loop's chase count is how many of its
- * states carry one of these.
+ * Which actions the walk loop, an attack chain and a fire chain each count, by the role
+ * `dehacked/actions.ts` gives them: `'chase'` is `A_Chase` and the footstep wrappers that call it,
+ * `'firing'` the actions that deal the damage or launch the missile (as opposed to the
+ * `A_FaceTarget`/`A_VileStart`/`A_FatRaise` wind-up states around them), `'weaponFire'` the nine
+ * that spend the ammo. The roles live in one table because a repointed action has to classify and
+ * derive off the same reading — docs/dehacked.md § Action pointers, docs/weapons.md § Fire rates,
+ * docs/monster-ai.md § The windup.
  */
-const CHASE_ACTIONS = new Set(['A_Chase', 'A_VileChase', 'A_Hoof', 'A_Metal', 'A_BabyMetal']);
-
-/**
- * `p_enemy.c`'s actions that actually deal the damage or launch the missile — as opposed to the
- * `A_FaceTarget`/`A_VileStart`/`A_FatRaise` wind-up states around them. Where the first of these
- * sits in a chain is the attack's `startDelaySeconds`, and it is what puts the firing frame under
- * the shot (docs/monster-ai.md § The windup).
- */
-const FIRING_ACTIONS = new Set([
-  'A_PosAttack', 'A_SPosAttack', 'A_CPosAttack', 'A_TroopAttack', 'A_SargAttack', 'A_HeadAttack',
-  'A_BruisAttack', 'A_SkullAttack', 'A_PainAttack', 'A_SkelFist', 'A_SkelMissile', 'A_FatAttack1',
-  'A_FatAttack2', 'A_FatAttack3', 'A_BspiAttack', 'A_CyberAttack', 'A_VileAttack',
-]);
-
-/**
- * `p_pspr.c`'s actions that fire the weapon — the nine that spend the ammo and put the shot, bullet
- * or swing out. `A_GunFlash`, `A_BFGsound`, `A_CheckReload` and the super shotgun's reload actions
- * sit in the same chains and are not among them: they cost their states' tics without firing
- * anything. How many of these a fire chain carries is how many shots one pass through it makes —
- * docs/weapons.md § Fire rates.
- */
-const WEAPON_FIRE_ACTIONS = new Set([
-  'A_Punch', 'A_Saw', 'A_FirePistol', 'A_FireShotgun', 'A_FireShotgun2', 'A_FireCGun',
-  'A_FireMissile', 'A_FirePlasma', 'A_FireBFG',
-]);
+const isChase = (action: string): boolean => actionRole(action) === 'chase';
+const isFiring = (action: string): boolean => actionRole(action) === 'firing';
+const isWeaponFire = (action: string): boolean => actionRole(action) === 'weaponFire';
 
 /** One walk of `states[]` from an entry point — see `walkChain`. */
 interface Chain {
@@ -161,6 +150,37 @@ export interface MonsterFrames {
   /** How many damaging actions the ranged chain carries, and the seconds between consecutive ones. */
   rangedShots: number;
   rangedInterval: number | null;
+  /**
+   * The first damaging action each attack chain carries — what the attack *is*, as opposed to the
+   * timings around it. Null for a chain that fires nothing. A patch that repoints one of these is
+   * asking for a different attack, not a retimed one; `ATTACK_ACTION_SOURCES` is where the applier
+   * looks the new one's roll and projectile up. docs/dehacked.md § Action pointers.
+   */
+  meleeAction: string | null;
+  rangedAction: string | null;
+  /**
+   * `misc1`/`misc2` of the state that firing action sits on, where the patch gave it any — MBF's
+   * `A_Scratch` reads its damage and its sound from them. Null everywhere in vanilla, which has no
+   * such fields at all.
+   */
+  meleeArgs: readonly number[] | null;
+  rangedArgs: readonly number[] | null;
+  /**
+   * `A_PlaySound`'s `misc1` where the chain carries one — an `S_sfx[]` index that becomes this
+   * chain's own sound — or, for `meleeSound`, `A_Scratch`'s own `misc2` where the chain has no
+   * `A_PlaySound`. A chain's sound is a per-type property here (`MonsterSounds`), so *which* chain
+   * it sits in is all that is read; where in the chain is not. The two attack chains are kept
+   * apart because their sinks are: a swing plays `MonsterSounds.melee`, a shot `.attack`.
+   */
+  meleeSound: number | null;
+  rangedSound: number | null;
+  painSound: number | null;
+  deathSound: number | null;
+  /**
+   * `A_Spawn`'s `misc1` on a death chain: the **1-based `mobjinfo` index** of what this type leaves
+   * behind, which is what `MONSTER_DROPS` models. docs/dehacked.md § Action pointers.
+   */
+  drop: number | null;
   raise: string[] | null;
   chase: ChaseTiming | null;
 }
@@ -188,7 +208,7 @@ function deriveWeapon(states: readonly StateRow[], w: WeaponStates): WeaponFrame
   // `fireChainStates` carries the closing `A_ReFire` state, whose tics are only ever spent on
   // release — the whole point of the rule — so it comes back out here.
   const span = fireChainStates(states, w.atk).filter((i) => states[i][3] !== 'A_ReFire');
-  const shots = Math.max(1, span.filter((i) => WEAPON_FIRE_ACTIONS.has(states[i][3])).length);
+  const shots = Math.max(1, span.filter((i) => isWeaponFire(states[i][3])).length);
   // A chain of nothing but zero-tic states would fire every frame; vanilla cannot reach that state
   // (`P_SetPsprite` would spin), so one tic is this engine's floor rather than a vanilla rule.
   const tics = Math.max(1, ticsOf(states, span) / shots);
@@ -220,13 +240,22 @@ export interface FrameTables {
   } | null;
 }
 
-/** `STATES` and `MOBJ_STATES` with a patch's edits written in. Neither original is touched. */
+/**
+ * `STATES` and `MOBJ_STATES` with a patch's edits written in. Neither original is touched.
+ *
+ * **A repointed action is written into the same copy the walk then reads**, which is the whole of
+ * how an action pointer reaches this engine: the derivations already key off the action column, so
+ * moving `A_CPosAttack` onto a chain changes that chain's shot count and windup for free.
+ * docs/dehacked.md § Action pointers.
+ */
 export function patchStates(
   frameEdits: readonly DehFrameEdit[],
   thingEdits: readonly DehThingEdit[],
   weaponEdits: readonly DehWeaponEdit[] = [],
+  pointerEdits: readonly DehPointerEdit[] = [],
 ): PatchedStates {
   const states: MutableStateRow[] = STATES.map((row) => [...row]);
+  const args = new Map<number, readonly number[]>();
   for (const edit of frameEdits) {
     const row = states[edit.index];
     if (!row) continue;
@@ -234,6 +263,11 @@ export function patchStates(
     if (edit.subNumber !== undefined) row[1] = edit.subNumber;
     if (edit.duration !== undefined) row[2] = edit.duration;
     if (edit.nextFrame !== undefined) row[4] = edit.nextFrame;
+    if (edit.args) args.set(edit.index, edit.args);
+  }
+  for (const edit of pointerEdits) {
+    const row = states[edit.state];
+    if (row) row[3] = edit.action;
   }
   const mobjStates = MOBJ_STATES.map((row) => ({ ...row }));
   for (const edit of thingEdits) {
@@ -245,7 +279,7 @@ export function patchStates(
     const row = weaponStates[edit.index];
     if (row && edit.states) Object.assign(row, edit.states);
   }
-  return { states, mobjStates, weaponStates };
+  return { states, mobjStates, weaponStates, args };
 }
 
 /**
@@ -267,7 +301,7 @@ function durationOf(states: readonly StateRow[], chain: Chain): number {
  */
 function spanOf(states: readonly StateRow[], chain: Chain): number[] {
   const loop = cycleOf(chain);
-  const refires = chain.cycleAt >= 0 && loop.some((i) => states[i][3].endsWith('Refire'));
+  const refires = chain.cycleAt >= 0 && loop.some((i) => actionRole(states[i][3]) === 'refire');
   return refires ? loop : chain.indices;
 }
 
@@ -286,12 +320,65 @@ function poseOf(states: readonly StateRow[], chain: Chain): AttackPose | null {
   return { frames: lettersOf(states, span), tics: span.map((i) => states[i][2]) };
 }
 
+/** The `misc1`/`misc2` a patch wrote on the first state of `chain` carrying `action`, or null. */
+function argsOf(
+  states: readonly StateRow[],
+  args: ReadonlyMap<number, readonly number[]>,
+  chain: Chain,
+  match: (action: string) => boolean,
+): readonly number[] | null {
+  const at = chain.indices.find((i) => match(states[i][3]));
+  return at === undefined ? null : args.get(at) ?? [];
+}
+
+/**
+ * `A_PlaySound`'s `misc1` on a chain, or null where it carries none — see `MonsterFrames.meleeSound`.
+ * Index 0 is `sfx_None`, which reads as "no sound written" rather than as silence, so the type keeps
+ * whatever its own table gave it.
+ */
+function chainSound(
+  states: readonly StateRow[],
+  args: ReadonlyMap<number, readonly number[]>,
+  chain: Chain,
+): number | null {
+  return argsOf(states, args, chain, (action) => actionRole(action) === 'sound')?.[0] || null;
+}
+
+/** What a chain fires, and the state args that go with it. */
+interface FiringState {
+  action: string | null;
+  args: readonly number[] | null;
+}
+
+/**
+ * The first damaging action of a chain's span and whatever `misc1`/`misc2` a patch wrote on *that*
+ * state — one scan, because the two must name the same state: `A_Scratch`'s damage and sound are the
+ * args of the very state that fires it. Both null for a chain that fires nothing.
+ */
+function firingOf(
+  states: readonly StateRow[],
+  args: ReadonlyMap<number, readonly number[]>,
+  chain: Chain,
+): FiringState {
+  const at = spanOf(states, chain).find((i) => isFiring(states[i][3]));
+  return at === undefined ? { action: null, args: null } : { action: states[at][3], args: args.get(at) ?? [] };
+}
+
+/**
+ * MBF's `A_Scratch` carries the swing's sound in its own `misc2`, so a chain that fires one has a
+ * melee sound even without an `A_PlaySound` beside it. Read here rather than at the write site so
+ * `MonsterFrames.meleeSound` means one thing — docs/dehacked.md § Action pointers.
+ */
+function scratchSound(firing: FiringState): number | null {
+  return firing.action === 'A_Scratch' ? firing.args?.[1] || null : null;
+}
+
 /** Where every damaging action sits in a chain's span, in tics from its start. */
 function firingOffsets(states: readonly StateRow[], chain: Chain): number[] {
   const offsets: number[] = [];
   let tics = 0;
   for (const i of spanOf(states, chain)) {
-    if (FIRING_ACTIONS.has(states[i][3])) offsets.push(tics);
+    if (isFiring(states[i][3])) offsets.push(tics);
     tics += Math.max(0, states[i][2]);
   }
   return offsets;
@@ -317,20 +404,71 @@ function firingIntervalOf(offsets: readonly number[]): number | null {
   return offsets.length > 1 ? (offsets[1] - offsets[0]) / 35 : null;
 }
 
-/** One monster type's tables off its eight state pointers. */
-function deriveMonster(states: readonly StateRow[], ms: MobjStates): MonsterFrames {
+/**
+ * Which of vanilla's chains a state belongs to, memoized over the **pristine** table — what an
+ * action's chain-scoped classification is decided against (`classifyDehackedPointer`), since a
+ * patch writes its repoints against vanilla's chains and not against its own earlier edits.
+ *
+ * A state can belong to several: the imp's `S_TROO_ATK3` is both its melee and its missile chain,
+ * which is exactly why membership is a list.
+ */
+export function chainKindsOf(state: number): readonly ChainKind[] {
+  chainIndex ??= buildChainIndex();
+  return chainIndex.get(state) ?? [];
+}
+
+let chainIndex: Map<number, ChainKind[]> | null = null;
+
+function buildChainIndex(): Map<number, ChainKind[]> {
+  const index = new Map<number, ChainKind[]>();
+  for (const ms of MOBJ_STATES) {
+    for (const [kind, chain] of Object.entries(chainsOf(STATES, ms)) as [ChainKind, Chain][]) {
+      for (const i of chain.indices) {
+        const kinds = index.get(i) ?? [];
+        if (!kinds.includes(kind)) kinds.push(kind);
+        index.set(i, kinds);
+      }
+    }
+  }
+  return index;
+}
+
+/**
+ * One `mobjinfo` row's eight chains, walked once. The boundary is the load-bearing part and lives
+ * only here: a pain, attack or raise chain ends where it steps back into the walk loop — or, for a
+ * type with no `seestate` (Keen, the brain), back on its held stand frame — so those states are the
+ * walk loop's and not the chain's. `deriveMonster` derives a type's tables from these and
+ * `chainKindsOf` indexes which state belongs to which, and the two must agree on where a chain
+ * stops or a repoint reports one thing and applies another.
+ */
+function chainsOf(states: readonly StateRow[], ms: MobjStates): Record<ChainKind, Chain> {
   const spawn = walkChain(states, ms.spawn);
   const see = walkChain(states, ms.see);
-  // Where a pain, attack or raise chain ends: back in the walk loop, or — for a type with no
-  // `seestate` (Keen, the brain) — back on its held stand frame.
   const walkSet = new Set([...see.indices, ...spawn.indices]);
+  return {
+    spawn,
+    see,
+    death: walkChain(states, ms.death),
+    xdeath: walkChain(states, ms.xdeath),
+    pain: walkChain(states, ms.pain, walkSet),
+    melee: walkChain(states, ms.melee, walkSet),
+    missile: walkChain(states, ms.missile, walkSet),
+    raise: walkChain(states, ms.raise, walkSet),
+  };
+}
+
+/** One monster type's tables off its eight state pointers. */
+function deriveMonster(
+  states: readonly StateRow[],
+  ms: MobjStates,
+  args: ReadonlyMap<number, readonly number[]>,
+): MonsterFrames {
+  const { spawn, see, death, xdeath, pain, melee, missile, raise } = chainsOf(states, ms);
   const sprite = spriteOf(states, spawn.indices);
 
   const walk = distinctLetters(states, see.indices);
   const idle = spawn.holds && spawn.indices.length === 1 ? lettersOf(states, spawn.indices) : null;
 
-  const death = walkChain(states, ms.death);
-  const xdeath = walkChain(states, ms.xdeath);
   const deathLetters = distinctLetters(states, death.indices);
   const xdeathLetters = distinctLetters(states, xdeath.indices);
   const deathSprite: { death?: string; xdeath?: string } = {};
@@ -339,15 +477,13 @@ function deriveMonster(states: readonly StateRow[], ms: MobjStates): MonsterFram
   if (deathSpriteName !== undefined && deathSpriteName !== sprite) deathSprite.death = deathSpriteName;
   if (xdeathSpriteName !== undefined && xdeathSpriteName !== sprite) deathSprite.xdeath = xdeathSpriteName;
 
-  const pain = walkChain(states, ms.pain, walkSet);
-  const melee = walkChain(states, ms.melee, walkSet);
-  const missile = walkChain(states, ms.missile, walkSet);
-  const raise = walkChain(states, ms.raise, walkSet);
   const missileShots = firingOffsets(states, missile);
+  const meleeFiring = firingOf(states, args, melee);
+  const rangedFiring = firingOf(states, args, missile);
 
   const loop = cycleOf(see);
   const loopTics = ticsOf(states, loop);
-  const chaseCount = loop.filter((i) => CHASE_ACTIONS.has(states[i][3])).length;
+  const chaseCount = loop.filter((i) => isChase(states[i][3])).length;
   const chase = loopTics > 0 && chaseCount > 0 ? { interval: loopTics / chaseCount / 35, factor: (chaseCount * 35) / loopTics } : null;
 
   const orNull = (letters: string[]): string[] | null => (letters.length ? letters : null);
@@ -369,6 +505,15 @@ function deriveMonster(states: readonly StateRow[], ms: MobjStates): MonsterFram
     rangedDelay: firingDelayOf(missileShots),
     rangedShots: missileShots.length,
     rangedInterval: firingIntervalOf(missileShots),
+    meleeAction: meleeFiring.action,
+    rangedAction: rangedFiring.action,
+    meleeArgs: meleeFiring.args,
+    rangedArgs: rangedFiring.args,
+    meleeSound: chainSound(states, args, melee) ?? scratchSound(meleeFiring),
+    rangedSound: chainSound(states, args, missile),
+    painSound: chainSound(states, args, pain),
+    deathSound: chainSound(states, args, death) ?? chainSound(states, args, xdeath),
+    drop: argsOf(states, args, death, (action) => actionRole(action) === 'drop')?.[0] ?? null,
     raise: orNull(distinctLetters(states, raise.indices)),
     chase,
   };
@@ -427,7 +572,7 @@ function isMonsterRow(i: number): boolean {
 }
 
 /** Every table the walker can derive, off one frame table and one set of state pointers. */
-export function deriveFrameTables({ states, mobjStates, weaponStates }: PatchedStates): FrameTables {
+export function deriveFrameTables({ states, mobjStates, weaponStates, args }: PatchedStates): FrameTables {
   const tables: FrameTables = { monsters: {}, weapons: {}, sprites: {}, anims: {}, missiles: {}, barrel: null };
   for (let i = 0; i < weaponStates.length; i++) tables.weapons[i] = deriveWeapon(states, weaponStates[i]);
   for (let i = 0; i < MOBJ_INFO.length; i++) {
@@ -438,7 +583,7 @@ export function deriveFrameTables({ states, mobjStates, weaponStates }: PatchedS
     const dn = row.doomednum;
     if (dn === -1 || NOT_DRAWN.has(dn)) continue;
     if (isMonsterRow(i)) {
-      tables.monsters[dn] = deriveMonster(states, ms);
+      tables.monsters[dn] = deriveMonster(states, ms, args);
       continue;
     }
     const spawn = walkChain(states, ms.spawn);
@@ -467,5 +612,10 @@ let pristine: FrameTables | null = null;
 
 /** The walker's reading of vanilla's own tables, derived once — what a patched reading is diffed against. */
 export function pristineFrameTables(): FrameTables {
-  return (pristine ??= deriveFrameTables({ states: STATES, mobjStates: MOBJ_STATES, weaponStates: WEAPON_STATES }));
+  return (pristine ??= deriveFrameTables({
+    states: STATES,
+    mobjStates: MOBJ_STATES,
+    weaponStates: WEAPON_STATES,
+    args: new Map(),
+  }));
 }

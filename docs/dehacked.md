@@ -12,12 +12,13 @@ bridges and the classifiers.
 ## Scope
 
 Read and applied: `Thing` records (stats, `Bits`, sounds, the eight frame pointers), `Frame`
-records (sprite, subnumber, duration, next frame — § Frames), `Weapon` records (ammo type and all
-five state pointers, § Weapon, Ammo and Misc), `Ammo`, `Misc`, vanilla `Text` substitutions, and BEX
+records (sprite, subnumber, duration, next frame, MBF's two `Unknown` fields — § Frames), `Pointer`
+and `[CODEPTR]` repoints (§ Action pointers), `Weapon` records (ammo type and all five state
+pointers, § Weapon, Ammo and Misc), `Ammo`, `Misc`, vanilla `Text` substitutions, and BEX
 `[STRINGS]`, `[PARS]`, `[SOUNDS]`, `[MUSIC]` and `[SPRITES]`.
 
-Deliberately out: `Pointer`, `[CODEPTR]` and `ID #`. See § What is not supported for why each, and
-what it would cost.
+Deliberately out: `ID #`, and `A_RandomJump` of the action pointers. See § What is not supported
+for why each, and what it would cost.
 
 A patch that asks for something out of scope **still loads and still plays.** It is reported, never
 refused — the WADs this matters for are ones that work today, and a refusal would be a regression
@@ -225,8 +226,9 @@ patched copy of the frame table, not by stepping states: same walker, different 
 per `mobjinfo` row, index-aligned with `MOBJ_INFO`), generated mechanically from `info.c`/`info.h`
 and never edited by hand. It is read-side and import-free, because the parser classifies a `Frame`
 by the state it names (below). Each row keeps its `A_*` action **name** — not to run it, but
-because two derivations need to know where an action sits: the walk loop's chase count and the
-barrel's `A_Explode`.
+because the derivations read it: the walk loop's chase count, an attack chain's shots and what it
+fires, the barrel's `A_Explode`. That column is also what an action-pointer record edits
+(§ Action pointers).
 
 `dehacked/frames.ts` is the walker, and it is **pure** — it reads `states.ts` and `MOBJ_INFO` and
 imports no game table, which is what lets the game tables build themselves from it without a cycle.
@@ -340,6 +342,98 @@ super-shotgun flash durations, which report.
 **`[CODEPTR]` bodies are field lines.** `Frame 185 = A_PosAttack` carries an `=`, and a `Word N`
 candidate with one is never a record header — reading it as one opened an empty `Frame` record per
 line of the section (harmlessly, while `Frame` was skipped outright).
+
+## Action pointers
+
+`Pointer` and `[CODEPTR]` move which `A_*` function a state runs, and MBF's whole addition to the
+DEH format is ten new ones to move (`d_deh.c`'s `deh_bexptrs[]`: `A_Detonate`, `A_Mushroom`,
+`A_Die`, `A_Spawn`, `A_Turn`, `A_Face`, `A_Scratch`, `A_PlaySound`, `A_RandomJump`,
+`A_LineEffect`). `A_FireOldBFG`, `A_BetaSkullAttack` and `A_Stop` exist in MBF's code but are not
+in that array, so no patch can name them.
+
+Nothing steps `states[]` at runtime here, so **an action reaches this engine exactly one way: the
+walker reads the action column, and a repoint is an edit to the copy it walks** (§ Frames).
+`patchStates` writes the repoints into that copy before `deriveFrameTables` walks it; everything
+downstream is the derivation that was already there. Moving `A_CPosAttack` onto a chain changes
+that chain's shot count, windup and interval without a line of new runtime code.
+
+Both record spellings land in `DehPointerEdit`, and they differ in where the action comes from:
+
+- `Pointer N (Frame mm)` with `Codep Frame = yy` gives state `mm` the action state `yy` carries.
+  `N` is DeHackEd's own cross-reference number and names nothing here — the target is the
+  parenthesised frame. The action is read off **pristine** `STATES`, which is `d_deh.c`'s
+  `deh_codeptr[]` snapshot: two repoints in sequence must not chain through each other.
+- `[CODEPTR]`'s `FRAME nnn = Mnemonic` names the action itself. `deh_procBexCodePointers` prefixes
+  `A_` before the lookup, so `Chase` and `A_Chase` are one line; `A_NULL` clears the action, which
+  is a meaningful edit rather than a no-op.
+
+`dehacked/actions.ts` is the table both sides read: every `deh_bexptrs[]` name under the **role**
+the walker gives it. A role *is* a sink, and these six are what the derivations key off — named in
+one place now, instead of three name sets inside the walker:
+
+| Role | What reads it |
+|---|---|
+| `chase` | the walk loop's `chaseInterval` and speed factor |
+| `firing` | an attack chain's shot count, windup, shot interval — and what the attack *is* (below) |
+| `weaponFire` | how many shots one pass of a fire chain makes (docs/weapons.md § Fire rates) |
+| `refire` | which part of a looping attack chain `spanOf` measures |
+| `sound` | `A_PlaySound`: the sound of whichever chain it sits in |
+| `drop` | `A_Spawn` on a death chain: what the type leaves behind (`MONSTER_DROPS`) |
+
+**A repointed attack is a different attack, not a retimed one.** The chain says which action it now
+fires (`MonsterFrames.rangedAction`); `ATTACK_ACTION_SOURCES` (`dehacked/tables.ts`) says which
+monster owns that action in vanilla, and the applier copies *that type's* `AttackStats` — roll,
+projectile, splash — onto the repointed one before the chain's own timings are written over it. A
+bridge and not a second table of rolls, for `MISSILE_SINKS`' reason: those figures are already
+written once in `MONSTER_SEED` with their `p_enemy.c` citations, and a copy here would be the drift
+the one-home rule exists to prevent. Three rules fall out of that:
+
+- The copy is taken **after** `applyThing`, so a patch that retunes the cyberdemon's rocket and then
+  borrows `A_CyberAttack` gets the retuned figure — in vanilla the two share one `mobjinfo`.
+- Where the owning type has no attack in *this* slot, its other one is taken: vanilla's actions
+  don't care which chain they sit in, so `A_PosAttack` in a melee chain still fires bullets, gated
+  by the melee range the chain is entered at.
+- An action that is not an attack at all leaves the type's attack alone rather than clearing it;
+  only a chain whose firing action is **gone** (`A_NULL`) loses its attack.
+
+**A repoint is classified as an edit, not as an action** (`classifyDehackedPointer`). Four rules,
+and the first is what keeps a report readable:
+
+1. A patch restating the action a state already has raises **nothing** and files no edit. Whole
+   `[CODEPTR]` blocks are written that way.
+2. A repoint with a role on **either** side is `applied` — the derived tables move. That covers
+   clearing an `A_Chase` as much as adding one.
+3. A role that only reaches a sink from certain chains is checked against the chains the target
+   state actually belongs to (`chainKindsOf`, walked over **pristine** `MOBJ_STATES`). `A_Spawn` on
+   a melee chain reports `noTarget` naming the chains it would have needed; a state can belong to
+   several at once, which is why membership is a list — the imp's `S_TROO_ATK3` is both its melee
+   and its missile chain.
+4. Anything else reports under the **target action's** name, so the row says which pointer a patch
+   wanted.
+
+`Unknown 1` and `Unknown 2` — `state_t`'s `misc1`/`misc2` — are carried on `DehFrameEdit.args`,
+dense and positional, index 0 first, and reach the walker as `PatchedStates.args`. That is a side
+map rather than two more columns on `StateRow` because **`linuxdoom-1.10` has no such fields at
+all**: DeHackEd invented them and MBF gave them meanings, so vanilla's reading is "absent", not
+"zero on 967 rows". MBF21's `Args1`..`Args8` are the same slots widened and would extend the array
+rather than replace it.
+
+### What MBF's ten reach
+
+| Pointer | Here |
+|---|---|
+| `A_Scratch` | **applied** — a melee attack of its own: `misc1` flat damage (written as a one-sided die), `misc2` the swing's sound |
+| `A_PlaySound` | **applied** — `misc1` becomes the melee, missile, pain or death chain's own sound |
+| `A_Spawn` | **applied on a death chain** — `misc1` is a 1-based `mobjinfo` index, and what it names becomes this type's `MONSTER_DROPS` entry. Elsewhere it would need a state clock |
+| `A_Detonate`, `A_Mushroom` | no sink: the barrel is the only type this engine explodes, off its own chain |
+| `A_Die` | fires at a point in a chain, and nothing steps states here to reach that point |
+| `A_Turn`, `A_Face` | an actor's angle is AI-driven here, not something a state sets |
+| `A_LineEffect` | **unsupported** — triggering a tagged linedef effect from a state is reachable (the specials layer has the seam) and deliberately not built |
+| `A_RandomJump` | **unsupported** — § What is not supported |
+
+The deliberate reading in that table is `A_Spawn`'s. MBF spawns the thing where the actor stands,
+at the moment the chain reaches that state; a drop lands on death and only one is modelled. That is
+the same effect at the resolution this engine has, and the alternative was no support at all.
 
 ## Sprite renames
 
@@ -560,11 +654,12 @@ display rule is docs/hud.md § Intermission.
 
 ## What is not supported
 
-**Action pointers — `Pointer`, `[CODEPTR]`.** A `Frame`'s data applies (§ Frames); reassigning
-which `A_*` function a state runs does not. This engine has no per-state actions to reassign — an
-attack is `AttackStats` resolved by `monsters/attacks.ts`, a footstep is `MonsterSounds.walk` — so a
-patch that moves `A_PosAttack` onto another state has nothing to move it onto. The action names in
-`STATES` are read for two derivations and never run.
+**Two action pointers.** `A_RandomJump` branches a chain on a random draw, and the walker reads a
+chain as one linear run with nothing stepping states at runtime to jump; the walk follows the
+fall-through `next` and the patch is reported. `A_LineEffect` would trigger a tagged linedef effect
+from a state — the specials layer has the seam for it, which is what makes this out of scope rather
+than absent. Every other pointer either lands or names the per-type property that holds its
+behavior instead — § Action pointers.
 
 **`ID #`.** Permanently out, not merely deferred. Re-keying a thing's doomednum would have to
 rewrite ten type-keyed tables and seven `Set`s that are not all keyed by the same thing —

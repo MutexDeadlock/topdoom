@@ -328,6 +328,41 @@ export function unhonoredFlags(mask: number): { name: string; support: DehShortf
   return rows;
 }
 
+/**
+ * Which monster owns each of `p_enemy.c`'s attack actions — the bridge a repointed attack chain
+ * reads its *identity* through. The walker says which action a chain now fires; this says whose
+ * roll, projectile and splash that action is, and the applier copies that type's own `AttackStats`
+ * onto the repointed chain (docs/dehacked.md § Action pointers).
+ *
+ * A bridge rather than a second table of rolls: every one of those figures is already written once
+ * in `MONSTER_SEED` with its `p_enemy.c` citation, and a copy here would be exactly the drift the
+ * one-home rule exists to prevent. It is the reasoning `MISSILE_SINKS` rests on — in vanilla the
+ * imp's fireball *is* one shared `mobjinfo`, so the owning type's own numbers are the faithful
+ * answer rather than an approximation.
+ *
+ * `A_BrainSpit` has no row on purpose: the Icon of Sin's cube is not an `AttackStats` at all, and
+ * carries its own constants in `monsters/iconofsin.ts`.
+ */
+export const ATTACK_ACTION_SOURCES: Record<string, number> = {
+  A_PosAttack: ThingType.zombieman,
+  A_SPosAttack: ThingType.shotgunGuy,
+  A_CPosAttack: ThingType.heavyWeaponDude,
+  A_TroopAttack: ThingType.imp,
+  A_SargAttack: ThingType.demon,
+  A_HeadAttack: ThingType.cacodemon,
+  A_BruisAttack: ThingType.baronOfHell,
+  A_SkullAttack: ThingType.lostSoul,
+  A_PainAttack: ThingType.painElemental,
+  A_SkelFist: ThingType.revenant,
+  A_SkelMissile: ThingType.revenant,
+  A_FatAttack1: ThingType.mancubus,
+  A_FatAttack2: ThingType.mancubus,
+  A_FatAttack3: ThingType.mancubus,
+  A_BspiAttack: ThingType.arachnotron,
+  A_CyberAttack: ThingType.cyberdemon,
+  A_VileAttack: ThingType.archVile,
+};
+
 /** Which `MonsterSounds` field each `Thing` sound line names — `mobjinfo.seesound` and friends. */
 export const THING_SOUND_FIELDS: Record<string, 'see' | 'attack' | 'pain' | 'death' | 'active'> = {
   'alert sound': 'see',
@@ -396,18 +431,27 @@ const THING_FIELDS: Record<string, DehSupport> = {
  * `Unknown 2` are `state_t.misc1`/`misc2`, which vanilla's own actions never read, so they classify
  * `noTarget` below rather than being carried.
  */
-export const FRAME_FIELD_SINKS: Record<string, Exclude<keyof DehFrameEdit, 'index'>> = {
+export const FRAME_FIELD_SINKS: Record<string, Exclude<keyof DehFrameEdit, 'index' | 'args'>> = {
   'sprite number': 'spriteNum',
   'sprite subnumber': 'subNumber',
   duration: 'duration',
   'next frame': 'nextFrame',
 };
 
+/**
+ * `state_t`'s two general-purpose fields onto their slot in `DehFrameEdit.args`. Vanilla leaves
+ * both zero everywhere and reads neither; MBF's own pointers are what give them a meaning
+ * (`A_Spawn`'s type and z, `A_PlaySound`'s sound, `A_Scratch`'s damage) — docs/dehacked.md
+ * § Action pointers.
+ */
+export const FRAME_ARG_FIELDS: Record<string, number> = {
+  'unknown 1': 0,
+  'unknown 2': 1,
+};
+
 const FRAME_FIELDS: Record<string, DehSupport> = {
   ...appliedRows(FRAME_FIELD_SINKS),
-
-  'unknown 1': 'noTarget',
-  'unknown 2': 'noTarget',
+  ...appliedRows(FRAME_ARG_FIELDS),
 };
 
 /**
@@ -610,14 +654,14 @@ const RECORD_KINDS: Record<string, { kind: DehRecordKind; support: DehSupport }>
   music: { kind: 'music', support: 'noTarget' },
   text: { kind: 'text', support: 'applied' },
   frame: { kind: 'frame', support: 'applied' },
-  pointer: { kind: 'pointer', support: 'unsupported' },
+  pointer: { kind: 'pointer', support: 'applied' },
   // The numeric record moves a pointer into the exe's own string table, like `Sound N`; only the
   // BEX section names a sprite this engine can redirect.
   sprite: { kind: 'sprite', support: 'noTarget' },
   cheat: { kind: 'cheat', support: 'noTarget' },
   '[strings]': { kind: 'strings', support: 'applied' },
   '[pars]': { kind: 'pars', support: 'applied' },
-  '[codeptr]': { kind: 'codeptr', support: 'unsupported' },
+  '[codeptr]': { kind: 'codeptr', support: 'applied' },
   '[helper]': { kind: 'helper', support: 'unsupported' },
   '[sprites]': { kind: 'sprite', support: 'applied' },
   '[sounds]': { kind: 'sound', support: 'applied' },

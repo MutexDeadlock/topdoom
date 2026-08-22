@@ -17,6 +17,7 @@ import {
   MONSTER_CORPSE_VANISHES,
   MONSTER_DEATH_FRAMES,
   MONSTER_DEATH_SPRITE_OVERRIDE,
+  MONSTER_DROPS,
   MONSTER_HEALTH,
   MONSTER_PAIN_FRAMES,
   MONSTER_RAISE_FRAMES,
@@ -36,7 +37,7 @@ import { SpriteBank } from '../../src/wad/sprites.ts';
 import { Wad } from '../../src/wad/wad.ts';
 import { wadFile } from '../fixtures/wadfile.ts';
 import { WEAPONS } from '../../src/game/weapons.ts';
-import { WEAPON_ORDER } from '../../src/game/dehacked/tables.ts';
+import { SFX_ORDER, WEAPON_ORDER } from '../../src/game/dehacked/tables.ts';
 import { applyPickup, ammoMax, createInventory } from '../../src/game/inventory.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { soundLumpName } from '../../src/audio/sfx.ts';
@@ -418,6 +419,79 @@ describe('DEHACKED · applying', () => {
     assert.equal(tics(BARREL_CHAIN.explodeDelaySeconds), 11);
     resetDehacked();
     assert.equal(tics(BARREL_CHAIN.explodeDelaySeconds), 15);
+  });
+
+  test("a repointed attack chain fires the action's own attack, not a retimed old one", () => {
+    // S_POSS_ATK2 is where the zombieman's `A_PosAttack` sits: hand it the cyberdemon's rocket.
+    assert.equal(MONSTER_STATS[ThingType.zombieman].ranged!.projectile, undefined);
+    apply(`[CODEPTR]\nFrame ${stateNamed('S_POSS_ATK2')} = A_CyberAttack\n`);
+    const ranged = MONSTER_STATS[ThingType.zombieman].ranged!;
+    // The cyberdemon's roll and missile, whole — splash included, since that is the attack.
+    assert.equal(ranged.projectile!.sprite, 'MISL');
+    assert.deepEqual(ranged.projectile!.splash, MONSTER_STATS[ThingType.cyberdemon].ranged!.projectile!.splash);
+    assert.equal(ranged.diceMult, MONSTER_STATS[ThingType.cyberdemon].ranged!.diceMult);
+    // Timed by the chain it now sits in, which is still the zombieman's own.
+    assert.equal(tics(ranged.duration), 26);
+    resetDehacked();
+    assert.equal(MONSTER_STATS[ThingType.zombieman].ranged!.projectile, undefined);
+  });
+
+  test('an attack chain whose firing action is cleared fires nothing at all', () => {
+    apply(`[CODEPTR]\nFrame ${stateNamed('S_POSS_ATK2')} = A_NULL\n`);
+    assert.equal(MONSTER_STATS[ThingType.zombieman].ranged, null);
+    resetDehacked();
+    assert.notEqual(MONSTER_STATS[ThingType.zombieman].ranged, null);
+  });
+
+  test('a repoint to an action that is not an attack leaves the attack alone', () => {
+    // `A_FaceTarget` is a wind-up, not a shot: the chain keeps firing what it fired, one state later.
+    const before = structuredClone(MONSTER_STATS[ThingType.zombieman].ranged);
+    apply(`[CODEPTR]\nFrame ${stateNamed('S_POSS_ATK3')} = A_FaceTarget\n`);
+    assert.deepEqual(MONSTER_STATS[ThingType.zombieman].ranged, before);
+  });
+
+  test('a repointed attack takes the owning type as the patch left it, not as vanilla wrote it', () => {
+    // `Thing 34` is MT_ROCKET, the missile `A_CyberAttack` launches. Retuning it and then
+    // borrowing the action gets the retuned figure: in vanilla the two share one `mobjinfo`, so
+    // the patched reading is the faithful one.
+    apply(`Thing 34\nMissile damage = 40\n\n[CODEPTR]\nFrame ${stateNamed('S_POSS_ATK2')} = A_CyberAttack\n`);
+    assert.equal(MONSTER_STATS[ThingType.zombieman].ranged!.diceMult, 40);
+  });
+
+  test("MBF's A_Scratch is an attack of its own: misc1 flat damage, misc2 the swing's sound", () => {
+    // S_SARG_ATK2 is where the demon bites. MBF reads the damage off the state, not off a roll,
+    // so a one-sided die is how a flat figure is written into `AttackStats`.
+    apply(
+      `Frame ${stateNamed('S_SARG_ATK2')}\nUnknown 1 = 50\nUnknown 2 = 30\n` +
+        `\n[CODEPTR]\nFrame ${stateNamed('S_SARG_ATK2')} = A_Scratch\n`,
+    );
+    const melee = MONSTER_STATS[ThingType.demon].melee!;
+    assert.equal(melee.diceSides, 1);
+    assert.equal(melee.diceMult, 50);
+    assert.equal(MONSTER_STATS[ThingType.demon].sounds.melee, SFX_ORDER[30]);
+    resetDehacked();
+    assert.equal(MONSTER_STATS[ThingType.demon].melee!.diceSides, 10);
+  });
+
+  test("MBF's A_PlaySound becomes the sound of whichever chain it sits in", () => {
+    apply(
+      `Frame ${stateNamed('S_SARG_DIE2')}\nUnknown 1 = 22\n` +
+        `\n[CODEPTR]\nFrame ${stateNamed('S_SARG_DIE2')} = A_PlaySound\n`,
+    );
+    assert.equal(MONSTER_STATS[ThingType.demon].sounds.death, SFX_ORDER[22]);
+    resetDehacked();
+    assert.equal(MONSTER_STATS[ThingType.demon].sounds.death, 'sgtdth');
+  });
+
+  test("MBF's A_Spawn on a death chain is what this engine models as a drop", () => {
+    // `misc1` is a 1-based `mobjinfo` index: 65 is MT_MISC17, the box of bullets.
+    apply(
+      `Frame ${stateNamed('S_SARG_DIE3')}\nUnknown 1 = 65\n` +
+        `\n[CODEPTR]\nFrame ${stateNamed('S_SARG_DIE3')} = A_Spawn\n`,
+    );
+    assert.equal(MONSTER_DROPS[ThingType.demon], ThingType.boxOfBullets);
+    resetDehacked();
+    assert.equal(ThingType.demon in MONSTER_DROPS, false);
   });
 
   test('a decoration repointed onto another spawn chain takes its sprite and loop', () => {

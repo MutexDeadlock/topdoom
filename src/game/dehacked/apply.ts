@@ -19,6 +19,7 @@ import {
   MONSTER_CORPSE_VANISHES,
   MONSTER_DEATH_FRAMES,
   MONSTER_DEATH_SPRITE_OVERRIDE,
+  MONSTER_DROPS,
   MONSTER_HEALTH,
   MONSTER_IDLE_FRAMES,
   MONSTER_WALK_FRAMES,
@@ -35,6 +36,7 @@ import {
   THING_SPRITES,
 } from '../things/tables.ts';
 import { BARREL_CHAIN, type AttackPose } from '../things/defs.ts';
+import { MELEE_RANGE, type AttackStats, type MonsterSounds } from '../monsters/defs.ts';
 import { IMPACT_EFFECTS, PROJECTILE_FRAMES, PROJECTILE_RADIUS, PROJECTILE_SOUNDS } from '../spritefx/tables.ts';
 import { LOCKED_LINES } from '../specials/tables.ts';
 import {
@@ -49,7 +51,7 @@ import { resetSoundLumps, setSoundLump, type SfxId } from '../../audio/sfx.ts';
 import { resetMusicLumps, setMusicLump } from '../../audio/music/tables.ts';
 import { resetSpriteLumps, setSpriteLump } from '../../wad/sprites.ts';
 import { WEAPONS } from '../weapons.ts';
-import type { DehAmmoEdit, DehFrameEdit, DehPatch, DehThingEdit, DehWeaponEdit } from './defs.ts';
+import type { DehAmmoEdit, DehFrameEdit, DehPatch, DehPointerEdit, DehThingEdit, DehWeaponEdit } from './defs.ts';
 import {
   deriveFrameTables,
   type MissileFrames,
@@ -59,7 +61,9 @@ import {
 } from './frames.ts';
 import {
   AMMO_ORDER,
+  ATTACK_ACTION_SOURCES,
   MF_FLAGS,
+  SFX_ORDER,
   MISC_SINKS,
   MISSILE_SINKS,
   MOBJ_INFO,
@@ -116,6 +120,7 @@ const PATCHED_TABLES: readonly (() => void)[] = [
   patchable(MONSTER_STATS),
   patchable(INERT_SHOOTABLE),
   patchable(MONSTER_HEALTH),
+  patchable(MONSTER_DROPS),
   patchable(CEILING_HUNG_HEIGHT),
   patchable(SOLID_DECORATION_RADIUS_OVERRIDE),
   patchable(PROJECTILE_RADIUS),
@@ -210,7 +215,7 @@ export function applyDehacked(patch: DehPatch): void {
   for (const [name, to] of patch.spriteRenames) setSpriteLump(name, to);
   // After the `Thing` loop, whose `Speed` scaling it composes with, and before the rebuild below,
   // which derives from the durations it writes.
-  applyFrames(patch.frameEdits, patch.thingEdits, patch.weaponEdits);
+  applyFrames(patch.frameEdits, patch.thingEdits, patch.weaponEdits, patch.pointerEdits);
   // Last, because `MONSTER_STATS` is what it derives from and every edit above may have moved it.
   rebuildDerivedMonsterStats();
 }
@@ -439,11 +444,12 @@ export function applyFrames(
   frameEdits: readonly DehFrameEdit[],
   thingEdits: readonly DehThingEdit[],
   weaponEdits: readonly DehWeaponEdit[] = [],
+  pointerEdits: readonly DehPointerEdit[] = [],
 ): void {
   const repointed = thingEdits.some((edit) => edit.states) || weaponEdits.some((edit) => edit.states);
-  if (frameEdits.length === 0 && !repointed) return;
+  if (frameEdits.length === 0 && !repointed && pointerEdits.length === 0) return;
 
-  const patched = patchStates(frameEdits, thingEdits, weaponEdits);
+  const patched = patchStates(frameEdits, thingEdits, weaponEdits, pointerEdits);
   // Only a `Frame` record can move a fullbright bit — a `Thing` state repoint moves pointers
   // between rows, never the rows' own sprite/frame words.
   if (frameEdits.length > 0) rebuildFullbrightFrames(patched.states);
@@ -506,19 +512,54 @@ function writeMonster(dn: number, a: MonsterFrames, b: MonsterFrames): void {
   const stats = MONSTER_STATS[dn];
   if (!stats) return;
   if (a.painDuration !== b.painDuration) stats.painDuration = b.painDuration;
-  if (stats.melee && b.meleeDuration !== null && a.meleeDuration !== b.meleeDuration) stats.melee.duration = b.meleeDuration;
-  if (stats.ranged && b.rangedDuration !== null && a.rangedDuration !== b.rangedDuration) stats.ranged.duration = b.rangedDuration;
+  // A chain that fires a *different* action is a different attack, not a retimed one: the roll,
+  // the projectile and the splash come from whichever type owns that action in vanilla, and the
+  // timings below then land on the new shape. Written before them for exactly that reason.
+  const meleeRepointed = a.meleeAction !== b.meleeAction;
+  const rangedRepointed = a.rangedAction !== b.rangedAction;
+  // Which fields the chain writes. A repointed slot holds a fresh clone of the *donor* type's
+  // stats, so every figure the chain implies goes onto it outright; an unrepointed one stays a
+  // diff, written only where the walk actually moved.
+  const meleeMoved = <T,>(before: T, after: T): boolean => meleeRepointed || before !== after;
+  const rangedMoved = <T,>(before: T, after: T): boolean => rangedRepointed || before !== after;
+  if (meleeRepointed || !same(a.meleeArgs, b.meleeArgs)) {
+    stats.melee = attackFor(b.meleeAction, 'melee', stats.melee, b.meleeArgs);
+  }
+  if (rangedRepointed || !same(a.rangedArgs, b.rangedArgs)) {
+    stats.ranged = attackFor(b.rangedAction, 'ranged', stats.ranged, b.rangedArgs);
+  }
+  if (stats.melee && b.meleeDuration !== null && meleeMoved(a.meleeDuration, b.meleeDuration)) {
+    stats.melee.duration = b.meleeDuration;
+  }
+  if (stats.ranged && b.rangedDuration !== null && rangedMoved(a.rangedDuration, b.rangedDuration)) {
+    stats.ranged.duration = b.rangedDuration;
+  }
   // Only where the type already models a windup: the lost soul's charge and the pain elemental's
   // spawn never read it (see their `MONSTER_STATS` entries), so writing one would be a trap.
-  if (stats.ranged?.startDelaySeconds !== undefined && a.rangedDelay !== b.rangedDelay) {
+  if (stats.ranged?.startDelaySeconds !== undefined && rangedMoved(a.rangedDelay, b.rangedDelay)) {
     stats.ranged.startDelaySeconds = b.rangedDelay ?? 0;
   }
   // A volley's shape follows its chain too: how many `A_*Attack` calls it carries and how far
   // apart they sit. Only where the type already models one — a single-shot attack leaves both
   // unset and reads as vanilla's default of one shot.
-  if (stats.ranged?.shots !== undefined && a.rangedShots !== b.rangedShots) stats.ranged.shots = b.rangedShots;
-  if (stats.ranged?.shotInterval !== undefined && b.rangedInterval !== null && a.rangedInterval !== b.rangedInterval) {
+  if (stats.ranged?.shots !== undefined && rangedMoved(a.rangedShots, b.rangedShots)) {
+    stats.ranged.shots = b.rangedShots;
+  }
+  if (stats.ranged?.shotInterval !== undefined && b.rangedInterval !== null && rangedMoved(a.rangedInterval, b.rangedInterval)) {
     stats.ranged.shotInterval = b.rangedInterval;
+  }
+  // MBF's `A_PlaySound`, and `A_Scratch`'s own `misc2` alongside it: both are read off the chain by
+  // the walker, since a sound is a per-type property here rather than something a state carries.
+  // docs/dehacked.md § Action pointers.
+  if (b.meleeSound !== null && b.meleeSound !== a.meleeSound) putSound(stats.sounds, 'melee', b.meleeSound);
+  if (b.rangedSound !== null && b.rangedSound !== a.rangedSound) putSound(stats.sounds, 'attack', b.rangedSound);
+  if (b.painSound !== null && b.painSound !== a.painSound) putSound(stats.sounds, 'pain', b.painSound);
+  if (b.deathSound !== null && b.deathSound !== a.deathSound) putSound(stats.sounds, 'death', b.deathSound);
+  // `A_Spawn` on a death chain is what this engine already models as a drop. Its `misc1` is a
+  // 1-based `mobjinfo` index; a type no map can place has no doomednum to drop.
+  if (b.drop !== null && b.drop !== a.drop) {
+    const dropped = MOBJ_INFO[b.drop - 1]?.doomednum ?? -1;
+    if (dropped !== -1) put(MONSTER_DROPS, dn, dropped);
   }
   // The walk loop changed: the chase clock follows it outright, and `speed` — already scaled by any
   // `Speed` line `applyThing` read — is rescaled by the loop factor's change, so the two compose in
@@ -527,6 +568,51 @@ function writeMonster(dn: number, a: MonsterFrames, b: MonsterFrames): void {
     stats.chaseInterval = b.chase.interval;
     stats.speed *= b.chase.factor / a.chase.factor;
   }
+}
+
+/** One `S_sfx[]` index onto a `MonsterSounds` field; index 0 is `sfx_None`, which means silence. */
+function putSound(sounds: MonsterSounds, slot: 'melee' | 'attack' | 'pain' | 'death', index: number): void {
+  const name = SFX_ORDER[index];
+  if (name === undefined) return;
+  if (index === 0) delete sounds[slot];
+  else sounds[slot] = name as SfxId;
+}
+
+/**
+ * The `AttackStats` a repointed chain now carries: a copy of the attack the action's own type
+ * fires in vanilla (`ATTACK_ACTION_SOURCES`), or null where the chain fires nothing at all.
+ *
+ * Two fallbacks, both deliberate. An action this bridge doesn't name — MBF's own, or one whose
+ * behavior is not an attack — leaves the type's existing attack alone rather than clearing it, so
+ * a repoint that says nothing about the attack changes nothing about it. And where the owning type
+ * has no attack in *this* slot the other one is taken: vanilla's actions don't care which chain
+ * they sit in, so `A_PosAttack` in a melee chain still fires bullets, gated by the melee range the
+ * chain is entered at.
+ *
+ * The copy is taken **after** `applyThing`, so a patch that retunes the imp and then repoints
+ * something at `A_TroopAttack` gets the retuned figures — vanilla shares the one `mobjinfo` the
+ * same way. docs/dehacked.md § Action pointers.
+ */
+function attackFor(
+  action: string | null,
+  slot: 'melee' | 'ranged',
+  current: AttackStats | null,
+  args: readonly number[] | null,
+): AttackStats | null {
+  if (action === null) return null;
+  // MBF's own attack is the one that isn't a type's: `A_Scratch` deals its `misc1` flat, so it is
+  // built from the state rather than borrowed. A one-sided die is how a flat roll is written here
+  // — `(rand % 1 + 1) * misc1` — which needs no new shape in `AttackStats`.
+  if (action === 'A_Scratch') {
+    const damage = args?.[0] ?? 0;
+    // `duration` is a placeholder: the caller writes the chain's own, measured, right after.
+    return damage > 0 ? { range: MELEE_RANGE, diceSides: 1, diceMult: damage, duration: 0 } : current;
+  }
+  const source = ATTACK_ACTION_SOURCES[action];
+  if (source === undefined) return current;
+  const stats = MONSTER_STATS[source];
+  const shape = stats?.[slot] ?? stats?.[slot === 'melee' ? 'ranged' : 'melee'];
+  return shape ? structuredClone(shape) : current;
 }
 
 /**

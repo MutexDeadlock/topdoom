@@ -79,7 +79,8 @@ src/game/      spatial queries + collision, player controller, input, thing worl
                transient effects, best times, savegames
 src/game/dehacked/   the parsed-patch record shapes (defs), the DEH text parser (parse), the
                mobjinfo/weapon/ammo/sfx index bridges + the coverage classifiers (tables), vanilla's
-               states[]/sprnames[] as data (states), the pure chain walker the game tables fill
+               states[]/sprnames[] as data (states), the A_* action pointers and what a repoint of
+               each reaches (actions), the pure chain walker the game tables fill
                themselves from and a patch re-derives through (frames), the applier (apply) — a second entry
                point, so reading a patch pulls in no game table
 src/game/monsters/   record shapes + pure helpers (defs), the vanilla stat tables (tables),

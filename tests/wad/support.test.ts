@@ -280,12 +280,19 @@ describe('WAD parsing · reaching the verdict from a directory', () => {
    * Only `unsupported` counts: a patch this engine has no *target* for (a finale screen) changes
    * nothing about how a level plays, and counting those turned ordinary DEH add-ons amber.
    */
-  test('a DEHACKED reassigning action pointers is a shortfall; a bare text patch is not', async () => {
+  test('a DEHACKED asking for a branching pointer is a shortfall; a repoint that lands is not', async () => {
     const patched = await support('deh.wad', [
       ...okMap('MAP01'),
-      { name: 'DEHACKED', text: 'Patch File for DeHackEd v3.0\n\nPointer 0 (Frame 1)\nCodep Frame = 2\n' },
+      { name: 'DEHACKED', text: 'Patch File for DeHackEd v3.0\n\n[CODEPTR]\nFrame 186 = A_RandomJump\n' },
     ]);
     assert.deepEqual(codes(patched), ['dehacked']);
+
+    // A repoint the frame walker reads lands, so it says nothing about the file's support.
+    const repointed = await support('deh3.wad', [
+      ...okMap('MAP01'),
+      { name: 'DEHACKED', text: 'Patch File for DeHackEd v3.0\n\n[CODEPTR]\nFrame 186 = A_Chase\n' },
+    ]);
+    assert.deepEqual(codes(repointed), []);
 
     const strings = await support('deh2.wad', [
       ...okMap('MAP01'),

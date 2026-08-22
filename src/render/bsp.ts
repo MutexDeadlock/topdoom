@@ -1,12 +1,13 @@
 /**
  * Reconstructs each subsector's convex floor polygon from the BSP: the node planes above it,
- * clipped against its own segs — sparing that clip where a wall stops inside the leaf, and
- * redirecting a leaf hidden behind self-referencing lines to the sector that encloses it.
- * Both ask `sectorprobe.ts` where a point is, since the BSP is what is being rebuilt here.
- * See docs/render.md § BSP polygon reconstruction, § Walls that stop inside their cell and
- * § Self-referencing sectors.
+ * clipped against its own segs — sparing that clip where a wall stops inside the leaf or a
+ * seg was filed into the wrong side of its own line, and redirecting a leaf hidden behind
+ * self-referencing lines to the sector that encloses it. All of these ask `sectorprobe.ts`
+ * where a point is, since the BSP is what is being rebuilt here.
+ * See docs/render.md § BSP polygon reconstruction, § Walls that stop inside their cell,
+ * § Segs on the wrong side of their leaf and § Self-referencing sectors.
  */
-import { segSide, SUBSECTOR_BIT, type DoomMap, type Vertex } from '../wad/map.ts';
+import { segSide, SUBSECTOR_BIT, type DoomMap, type Seg, type Vertex } from '../wad/map.ts';
 import { clipConvexPolygon as clip, polygonCentroid } from '../util/geom.ts';
 import { SectorProbe, selfReferencing } from './sectorprobe.ts';
 
@@ -104,6 +105,10 @@ const WALL_END_PROBE = 4;
 interface Wall {
   a: Vertex;
   b: Vertex;
+  /** The SEGS record itself, so the repairs below can ask what sector its side names. */
+  seg: Seg;
+  /** Filed into the child on the wrong side of its own line — `wallFacesAwayFromCell`. */
+  wrongSide: boolean;
 }
 
 /**
@@ -176,6 +181,61 @@ function wallBoundsCell(probe: () => SectorProbe, cell: number[], walls: Wall[],
   return true;
 }
 
+/**
+ * Whether the leaf's node-plane cell lies entirely on the side of this wall that
+ * its clip would discard — a seg the node builder filed into the child on the
+ * *wrong side* of its own line. A seg that really bounds its cell has the cell on
+ * its keep side; clipping by a wrong-side one would wipe the cell down to the
+ * tolerance band and leave the rest a hole. The caller double-checks against the
+ * ground before sparing anything. docs/render.md § Segs on the wrong side of their leaf.
+ */
+function wallFacesAwayFromCell(cell: number[], a: Vertex, b: Vertex): boolean {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq === 0) return false;
+  // Both tolerances are scaled by the length instead of the cross products divided
+  // by it, so the scan costs one square root rather than a division per corner.
+  // This runs for every seg of every leaf and rejects all but a handful, so the
+  // corner that proves the cell straddles the line exits on the spot.
+  const length = Math.sqrt(lengthSq);
+  const keepSide = -PARTITION_MATCH * length;
+  let max = -Infinity;
+  for (let i = 0; i < cell.length; i += 2) {
+    const d = dx * (cell[i + 1] - a.y) - dy * (cell[i] - a.x);
+    if (d < keepSide) return false;
+    if (d > max) max = d;
+  }
+  return max > SEG_CLIP_TOLERANCE * length;
+}
+
+/**
+ * How far the cell's corners are pulled toward its centroid before probing the
+ * ground under them. Tuned by feel: inside enough that a corner exactly on a
+ * partition or wall line cannot probe the far side of it, outside enough that
+ * the samples still see most of the cell.
+ */
+const CELL_SAMPLE_SHRINK = 0.75;
+
+/**
+ * The sector enclosing the cell's interior, or -1 when any of the samples —
+ * the centroid, then each corner pulled toward it — lands in the void. The
+ * wrong-side sparing's reality check: a cell whose interior is not all floor
+ * keeps its clips, however broken its segs, so it can never stand a slab of
+ * floor out in the void. docs/render.md § Segs on the wrong side of their leaf.
+ */
+function enclosingSectorOfCell(probe: SectorProbe, cell: number[]): number {
+  const centre = polygonCentroid(cell);
+  const enclosing = probe.sectorIndexAt(centre.x, centre.y, true);
+  if (enclosing < 0) return -1;
+  for (let i = 0; i < cell.length; i += 2) {
+    const x = centre.x + (cell[i] - centre.x) * CELL_SAMPLE_SHRINK;
+    const y = centre.y + (cell[i + 1] - centre.y) * CELL_SAMPLE_SHRINK;
+    if (probe.sectorIndexAt(x, y, true) < 0) return -1;
+  }
+  return enclosing;
+}
+
 /** How far off a seg's line another seg may sit and still count as lying on it. Tuned by feel. */
 const COLLINEAR_EPS = 1;
 
@@ -202,6 +262,23 @@ function lineCoverage(walls: Wall[], index: number): { min: number; max: number 
     cover.max = Math.max(cover.max, tA, tB);
   }
   return cover;
+}
+
+/**
+ * The cell clipped against every seg of the leaf that really bounds it, in seg order.
+ * `spare` skips the segs `wallFacesAwayFromCell` flagged; run with it false, the result
+ * is bit-identical to never having detected one — which is what the reality check on the
+ * sparing falls back to. docs/render.md § Segs on the wrong side of their leaf.
+ */
+function clipBy(probe: () => SectorProbe, poly: number[], walls: Wall[], sector: number, spare: boolean): number[] {
+  let cell = poly;
+  for (const [i, wall] of walls.entries()) {
+    if (spare && wall.wrongSide) continue;
+    if (!wallBoundsCell(probe, cell, walls, i, sector)) continue;
+    cell = clip(cell, wall.a.x, wall.a.y, wall.b.x - wall.a.x, wall.b.y - wall.a.y, segClipTolerance(cell, wall.a, wall.b));
+    if (cell.length < 6) break;
+  }
+  return cell;
 }
 
 export interface SubSectorPoly {
@@ -233,9 +310,8 @@ export function buildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
 
   const result: SubSectorPoly[] = new Array(map.subsectors.length);
 
-  // Built on the first leaf that actually needs it: a map with neither a wall
-  // stub inside a leaf nor a self-referencing sector never probes at all, and
-  // the stock IWADs are all of that kind.
+  // Built on the first leaf that actually needs it, so a map whose nodes are
+  // clean enough that none of the repairs below ever fires pays nothing for them.
   let sectorProbe: SectorProbe | null = null;
   const probe = () => (sectorProbe ??= new SectorProbe(map));
 
@@ -244,6 +320,7 @@ export function buildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
     if (!ss) return;
 
     const walls: Wall[] = [];
+    let anyWrongSide = false;
     let allSelfRef = true;
     for (let i = 0; i < ss.count; i++) {
       const seg = map.segs[ss.first + i];
@@ -251,20 +328,48 @@ export function buildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
       const a = map.vertexes[seg.v1];
       const b = map.vertexes[seg.v2];
       if (!a || !b) continue;
-      walls.push({ a, b });
+      // Judged here against the untouched node cell: once one wrong-side clip has
+      // run, the cell the next would be judged against is already gone.
+      const wrongSide = wallFacesAwayFromCell(poly, a, b);
+      anyWrongSide ||= wrongSide;
+      walls.push({ a, b, seg, wrongSide });
       if (!selfReferencing(map, seg.linedef)) allSelfRef = false;
     }
 
-    let sector = sectorOfSubSector(map, ssIndex);
-    let clipped = poly;
-    for (const [i, wall] of walls.entries()) {
-      if (!wallBoundsCell(probe, clipped, walls, i, sector)) continue;
-      clipped = clip(clipped, wall.a.x, wall.a.y, wall.b.x - wall.a.x, wall.b.y - wall.a.y, segClipTolerance(clipped, wall.a, wall.b));
-      if (clipped.length < 6) break;
+    // The sector the BSP resolves the leaf to, which is what the clips probe against
+    // whichever sector the leaf ends up *drawn* as below.
+    const bspSector = sectorOfSubSector(map, ssIndex);
+    let sector = bspSector;
+
+    // Segs the node builder filed into the child on the wrong side of their own
+    // line are spared their clip entirely — with the drawn sector re-resolved,
+    // since such a seg's front speaks for the neighbour — where the cell they
+    // would wipe turns out to be all floor.
+    // docs/render.md § Segs on the wrong side of their leaf.
+    let clipped = clipBy(probe, poly, walls, bspSector, anyWrongSide);
+    if (anyWrongSide) {
+      const enclosing = clipped.length >= 6 ? enclosingSectorOfCell(probe(), clipped) : -1;
+      if (enclosing >= 0) {
+        sector = enclosing;
+        for (const wall of walls) {
+          if (wall.wrongSide) continue;
+          const named = sectorOfSeg(map, wall.seg);
+          if (named >= 0) {
+            sector = named;
+            break;
+          }
+        }
+      } else {
+        // The sparing failed its reality check: every clip stands, in seg order,
+        // exactly as it would have without the detection.
+        clipped = clipBy(probe, poly, walls, bspSector, false);
+      }
     }
 
-    // A leaf bounded only by self-referencing lines draws as the sector
-    // *enclosing* it, the way vanilla shows it — docs/render.md § Self-referencing sectors.
+    // A leaf bounded only by self-referencing lines draws as the sector *enclosing*
+    // it, the way vanilla shows it — and outranks the redirect above, whose "first
+    // correctly filed seg" would name one of the very sectors being hidden.
+    // docs/render.md § Self-referencing sectors.
     if (allSelfRef && walls.length > 0 && clipped.length >= 6) {
       const centre = polygonCentroid(clipped);
       const enclosing = probe().sectorIndexAt(centre.x, centre.y, true);
@@ -316,6 +421,14 @@ export function buildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
   return result;
 }
 
+/** Sector the seg's own side names, or -1 where its linedef or sidedef is missing. */
+function sectorOfSeg(map: DoomMap, seg: Seg): number {
+  const line = map.linedefs[seg.linedef];
+  if (!line) return -1;
+  const side = map.sidedefs[segSide(line, seg.direction)];
+  return side ? side.sector : -1;
+}
+
 /** Sector of a subsector, resolved via its first seg -> linedef -> sidedef. */
 export function sectorOfSubSector(map: DoomMap, ssIndex: number): number {
   const ss = map.subsectors[ssIndex];
@@ -323,10 +436,8 @@ export function sectorOfSubSector(map: DoomMap, ssIndex: number): number {
   for (let i = 0; i < ss.count; i++) {
     const seg = map.segs[ss.first + i];
     if (!seg) continue;
-    const line = map.linedefs[seg.linedef];
-    if (!line) continue;
-    const side = map.sidedefs[segSide(line, seg.direction)];
-    if (side) return side.sector;
+    const sector = sectorOfSeg(map, seg);
+    if (sector >= 0) return sector;
   }
   return 0;
 }

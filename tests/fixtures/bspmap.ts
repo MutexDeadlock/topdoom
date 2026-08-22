@@ -20,9 +20,9 @@ export function twoSided(v1: number, v2: number, right: number, left: number): L
   return { v1, v2, flags: 0, special: 0, tag: 0, right, left };
 }
 
-/** The seg for `linedef`, running along it from `v1` to `v2` on its front side. */
-export function seg(v1: number, v2: number, linedef: number): Seg {
-  return { v1, v2, angle: 0, linedef, direction: 0, offset: 0 };
+/** The seg for `linedef`, running along it from `v1` to `v2`; `direction` 1 is its back side. */
+export function seg(v1: number, v2: number, linedef: number, direction = 0): Seg {
+  return { v1, v2, angle: 0, linedef, direction, offset: 0 };
 }
 
 /** Child reference to subsector `i`, the way NODES encodes one. */

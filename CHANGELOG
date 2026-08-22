@@ -1,3 +1,14 @@
+v0.15.2 (2026-08-2?)
+
+Features and improvements
+
+Fixed bugs
+  - black holes and wrong flats in the floor on maps whose nodebuilder
+    filed a seg into the wrong side of its line
+
+
+===============================================================================
+
 v0.15.1 (2026-08-22)
 
 Features and improvements

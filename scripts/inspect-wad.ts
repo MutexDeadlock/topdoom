@@ -25,7 +25,7 @@ import { Forces } from '../src/game/specials/forces.ts';
 import { Transfers } from '../src/game/specials/transfers.ts';
 import { VoodooDolls } from '../src/game/voodoo.ts';
 import { decodeSectorType, sectorTypeUnderstood } from '../src/game/specials/sectortypes.ts';
-import { buildSubSectorPolys } from '../src/render/bsp.ts';
+import { buildSubSectorPolys, sectorOfSubSector } from '../src/render/bsp.ts';
 import { findSolidCaps } from '../src/render/solids.ts';
 import { World, positionBlocked } from '../src/game/world.ts';
 import { SoundBank } from '../src/wad/sound.ts';
@@ -133,10 +133,15 @@ console.log(
 // --- subsector polygons ---
 const polys = buildSubSectorPolys(map);
 let empty = 0;
+let redirected = 0;
 let minVerts = Infinity;
 let maxVerts = 0;
 let flatArea = 0;
-for (const p of polys) {
+for (const [ssIndex, p] of polys.entries()) {
+  // Drawn as another sector than the BSP resolves: a self-referencing construct
+  // or a spared wrong-side seg (docs/render.md § Segs on the wrong side of their
+  // leaf) — both worth seeing when a floor draws unexpectedly.
+  if (p.sector !== sectorOfSubSector(map, ssIndex)) redirected++;
   const n = p.points.length / 2;
   if (n < 3) {
     empty++;
@@ -155,7 +160,7 @@ for (const p of polys) {
   }
 }
 console.log(
-  `subsector polys: ${polys.length} total, ${empty} degenerate, ${minVerts}..${maxVerts} verts,\n` +
+  `subsector polys: ${polys.length} total, ${empty} degenerate, ${redirected} drawn as another sector, ${minVerts}..${maxVerts} verts,\n` +
     `  total floor area ${Math.round(flatArea).toLocaleString('en-US')} map units²,\n` +
     `  ${findSolidCaps(map, polys).length} solid structures lidded`,
 );

@@ -112,6 +112,37 @@ this changes nothing at all except on the two maps that have such stubs — BOOM
 spread over five leaves, none of it further past a wall than the overhangs already there. It costs
 about 9 ms of level load on EPIC MAP03, the largest committed map, and under 2 ms elsewhere.
 
+### Segs on the wrong side of their leaf
+
+Some node builders file a seg into the child on the *wrong side* of its own line: the leaf's cell
+lies entirely on the side the seg's clip discards, so the clip wipes the cell down to the tolerance
+band and leaves the rest of it a hole no other leaf can fill — node cells are disjoint. Vanilla
+never notices, for the same reason as the wall stubs above: flats are drawn as spans between wall
+columns, so the neighbour's flat paints straight across the broken leaf. The case this was found on
+is `ksutra.wad` MAP04's subsector 902, a trapezoid of sector 23 around `(-240, -610)` whose only
+seg is a north-facing seg of linedef 75 while the cell sits south of that line — a black hole in
+the floor, right where a savegame put the player.
+
+`wallFacesAwayFromCell` detects it — no corner of the cell meaningfully past the seg's line on the
+keep side (`PARTITION_MATCH`), real cell area beyond the discard threshold (`SEG_CLIP_TOLERANCE`) —
+and such a seg's clip is skipped. The sparing has a reality check: every trustworthy clip runs
+first, then the remaining cell's interior is sampled (`enclosingSectorOfCell` — centroid plus each
+corner pulled toward it) with the same `SectorProbe` the other repairs use, and **any sample in the
+void keeps every clip**, in the original order, bit-identical to not detecting at all. Without that
+check the sparing stood a ~305k-unit² slab of floor out into the void beside ksutra MAP29's leaf
+7000, whose cell is mostly beyond the map's outer wall.
+
+A wrong-side seg's front names the *neighbour's* sector, so a spared leaf cannot take its drawn
+sector from it either: the first correctly-filed seg speaks instead, and a leaf with none draws as
+the sector the probe found around it. Only the drawn sector moves — `sectorOfSubSector` still
+answers through the misfiled seg, which is what vanilla's `R_PointInSubsector` reports there too,
+so gameplay (the player's floor height on that trapezoid included) stays vanilla-faithful.
+
+Measured over both IWADs, `freedoom2.wad` and the committed PWADs: the stock IWADs, SCYTHE and NUTS
+change nothing at all (one zero-area BOOMEDIT MAP01 leaf changes only its invisible drawn sector);
+ksutra — built with an era nodebuilder that misfiles often — heals ~50 leaves across 20 maps, every
+healed cell's interior probing uniformly to its new drawn sector.
+
 ### Self-referencing sectors
 
 A Boom-era map hides things in plain sight by giving a line the *same* sector on both sides: the

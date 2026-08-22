@@ -24,6 +24,7 @@ export {
   pickerBlock,
   pickLibraryFolder,
   rememberLibraryId,
+  rescanIfPermitted,
   rescanLibrary,
   restoreLibrary,
   type LibrarySkip,

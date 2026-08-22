@@ -130,23 +130,33 @@ export async function restoreLibrary(): Promise<void> {
   state.descriptors = [...(await readDescriptors()).values()];
 }
 
+/** `state.handle` under the permission methods `lib.dom` doesn't declare. */
+function permissionedHandle(): (FileSystemDirectoryHandle & HandlePermissions) | null {
+  return state.handle;
+}
+
+/**
+ * Whether the folder can already be read, asking for nothing — the half of the permission rule the
+ * boot path can use, since it may not prompt. Absent `queryPermission` counts as usable, not as a
+ * refusal (docs/wad.md § The player's own library).
+ */
+async function readPermissionStands(handle: FileSystemDirectoryHandle & HandlePermissions): Promise<boolean> {
+  if (!handle.queryPermission) return true;
+  return (await handle.queryPermission({ mode: 'read' })) === 'granted';
+}
+
 /**
  * Whether the folder can be read, prompting when the browser wants it. **Must be reached from a
  * user gesture** — Chromium refuses a permission request outside one, which is why
  * `Menu.startWithSkill` calls this before its first `await` (docs/menu.md § Session lifecycle).
  */
 export async function ensureLibraryAccess(): Promise<boolean> {
-  const handle = state.handle as (FileSystemDirectoryHandle & HandlePermissions) | null;
+  const handle = permissionedHandle();
   if (!handle) return state.files.size > 0;
-
-  // `queryPermission`/`requestPermission` are non-standard and **not always there** — Electron's
-  // partial File System Access implementation is the case that bites, and VS Code is Electron.
-  // Absent means there is nothing to ask, not that the answer is no: the handle came out of a
-  // picker the player just used. Reporting a refusal here killed the pick outright; assume usable
-  // and let a real read fail with a real reason.
-  if (!handle.queryPermission || !handle.requestPermission) return true;
-
-  if ((await handle.queryPermission({ mode: 'read' })) === 'granted') return true;
+  if (await readPermissionStands(handle)) return true;
+  // A missing `requestPermission` is no refusal either, by the same rule — there is simply nothing
+  // to ask with, and the handle came out of a picker the player just used.
+  if (!handle.requestPermission) return true;
   return (await handle.requestPermission({ mode: 'read' })) === 'granted';
 }
 
@@ -225,12 +235,37 @@ export type Progress = (done: number, total: number) => void;
  */
 export async function rescanLibrary(onProgress?: Progress): Promise<void> {
   if (!state.handle) return;
+  const started = performance.now();
   const found: Entry[] = [];
   await walk(state.handle, '', 0, found);
 
   const memo = new Map(state.descriptors.map((d) => [d.path, d]));
+  const before = state.descriptors;
   state.descriptors = await describeAll(found, memo, onProgress);
-  await writeDescriptors(state.descriptors);
+  // A memo hit is reused by reference (`describeAll`), so identity alone says whether the scan
+  // found anything new — and a folder nothing changed in costs no write at all.
+  if (state.descriptors.length !== before.length || state.descriptors.some((d, i) => d !== before[i])) {
+    await writeDescriptors(state.descriptors);
+  }
+  // Same shape as `game.ts`'s level-load line: what was scanned, then how long. The re-read count
+  // is what makes the duration readable — a folder of memo hits and one of fresh files cost
+  // different things for the same number of WADs.
+  const reread = state.descriptors.filter((d) => memo.get(d.path) !== d).length;
+  console.info(
+    `library rescan: ${state.descriptors.length} WADs, ${reread} re-read, ` +
+      `${state.skipped.length} skipped in ${Math.round(performance.now() - started)} ms`,
+  );
+}
+
+/**
+ * The boot path's rescan: the folder is walked again so a file added since the last visit is listed
+ * without the player opening the overlay, but only where the read permission already stands — boot
+ * prompts for nothing. See docs/wad.md § The player's own library.
+ */
+export async function rescanIfPermitted(): Promise<void> {
+  const handle = permissionedHandle();
+  if (!handle || !(await readPermissionStands(handle))) return;
+  await rescanLibrary();
 }
 
 /** Forgets the folder entirely, memo included. */

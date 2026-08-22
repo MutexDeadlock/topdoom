@@ -10,6 +10,7 @@ import {
   mergedMaps,
   pwadsFor,
   rememberLibraryId,
+  rescanIfPermitted,
   restoreLibrary,
   uploadedSource,
   type WadSource,
@@ -207,9 +208,10 @@ export class Menu {
    */
   async init(defaults: MenuDefaults): Promise<void> {
     this.setStatus('Scanning public/wads/ …');
-    // The player's own folder is restored from its memo alone — `restoreLibrary` prompts for
-    // nothing, because this runs on the boot path (docs/wad.md § The player's own library).
-    const [served] = await Promise.all([fetchLibrary(), restoreLibrary()]);
+    // The player's own folder is restored from its memo, then rescanned where the permission
+    // already stands — both prompt for nothing, because this is the boot path
+    // (docs/wad.md § The player's own library).
+    const [served] = await Promise.all([fetchLibrary(), restoreLibrary().then(rescanIfPermitted)]);
     this.sources = [...librarySources(), ...served];
     this.mapCache.clear();
 

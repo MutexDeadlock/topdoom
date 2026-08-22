@@ -511,6 +511,16 @@ Three rules that are easy to get wrong:
   user gesture** — a browser refuses a file-permission request outside one. That is why
   `Menu.startWithSkill` calls it synchronously before its first `await`, the same
   transient-activation trick `main.ts` uses for `audio.resume()` (docs/menu.md § Session lifecycle).
+- **Boot rescans, but only where the permission already stands.** `Menu.init` chains
+  `rescanIfPermitted` onto the restore, so a WAD dropped into the folder between visits is listed
+  without the player opening the overlay first — the memo made the stale-until-rescanned list the
+  common case. `readPermissionStands` is the *query-only* half of the rule above, shared with
+  `ensureLibraryAccess` rather than restated: it never requests, because that would be the ambush
+  the previous rule forbids and outside a user gesture it is refused anyway. The boot cost is the
+  walk plus one `getFile()` per file — `describeAll` opens each before it can compare size and
+  mtime — and only a file whose stamp moved is described again; a scan that changed nothing writes
+  no memo. `rescanLibrary` logs its file count, how many it re-read and how long it
+  took, so a slow folder is visible rather than guessed at.
 - **Nothing is restored where there is no handle.** On the fallback path the memo would list files
   the page has no way to read, which is worse than an empty library.
 - **A rescan builds fresh `WadSource` objects**, and the selection holds sources by identity — so

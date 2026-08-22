@@ -11,6 +11,8 @@ Features and improvements
       apply) or not at all (UDMF, GL nodes, no nodes).
       A tooltip tells the reasons and the maps that raise them.
     - a file with no map this engine can load can't be picked any more
+    - your own WAD folder is rescanned at startup, so files added
+      since the last visit show up without opening the overlay
 
 Fixed bugs
 

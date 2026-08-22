@@ -48,10 +48,9 @@ import { DOOM_TIC } from '../../constants.ts';
  * skull is `MF_SKULLFLY` and damages whatever its moving bounding box overlaps
  * in `PIT_CheckThing`, i.e. a true `radius + target radius` (32 against the
  * player) resolved by the movement code. This engine has no swept collision for
- * the charge, so a box that tight is tunnelled straight through at charge speed;
- * the value is the pre-formula `MELEE_RANGE` this test used to share, kept
- * unchanged so tightening the melee threshold didn't silently retune the lost
- * soul too. See docs/monster-ai.md § The lost soul.
+ * the charge, so a box that tight is tunnelled straight through at charge speed.
+ * Deliberately its own number rather than the melee threshold, so retuning melee
+ * doesn't silently retune the lost soul. See docs/monster-ai.md § The lost soul.
  */
 const SKULL_CONTACT_RANGE = 72;
 

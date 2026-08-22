@@ -1,5 +1,5 @@
 /**
- * Things as upright sprite billboards: decoded sprite lumps cached as textures (`SpriteCache`),
+ * Things as upright sprite billboards: decoded sprite lumps cached as textures (`SpriteMaterialCache`),
  * rotation-frame picking, and the per-thing animation/pose state (`SpriteAnimator`,
  * `SpriteActor`). See docs/sprites.md.
  */

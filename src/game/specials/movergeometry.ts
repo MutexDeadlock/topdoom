@@ -140,11 +140,10 @@ export class MoverGeometry {
    * `sectorOccluders`/`sectorFlats` point at every sector's own occluder/flat
    * objects, pulled out of `built.occluders`/`built.flatSurfaces` once at
    * construction time so `recolorSector` never has to re-scan the whole map.
-   * Originally scoped to just the load-time blink-pattern sectors, but the
-   * `lightChange` line specials (`triggerLightChange`) can recolor *any*
-   * tag-matched sector on demand, not just ones with an ongoing pattern, so
-   * this indexes every sector unconditionally now — a one-time, load-only
-   * cost. Static batches only: geometry living in a mover mesh is reached by
+   * **Every sector, not just the ones with a load-time blink pattern**: the
+   * `lightChange` line specials (`triggerLightChange`) can recolor any
+   * tag-matched sector on demand — a one-time, load-only cost.
+   * Static batches only: geometry living in a mover mesh is reached by
    * `moverLightTargets` instead — see docs/specials.md § Relighting mover
    * geometry.
    */

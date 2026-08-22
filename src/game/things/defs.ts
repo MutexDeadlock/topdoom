@@ -151,7 +151,7 @@ export interface PosedThing extends Pos3, MonsterBody {
   raiseFrames: string[] | undefined;
   /**
    * Set once a dead barrel's own `A_Explode` has actually fired
-   * (`BARREL_EXPLODE_DELAY_SECONDS` after death, not on death itself — see
+   * (`BARREL_CHAIN.explodeDelaySeconds` after death, not on death itself — see
    * that constant's doc), so `update()`'s per-frame `deadTime` check doesn't
    * re-fire it every subsequent frame. Meaningless for anything else.
    */
@@ -433,7 +433,7 @@ export interface ThingLayer {
    * `PIT_ChangeSector` treats a barrel exactly like a monster for crushing
    * (any `MF_SHOOTABLE` mobj with health left takes the same periodic
    * damage), so a barrel under a crusher dies and, after its usual
-   * `BARREL_EXPLODE_DELAY_SECONDS`, explodes the same as if it'd been shot.
+   * `BARREL_CHAIN.explodeDelaySeconds`, explodes the same as if it'd been shot.
    * Crush damage's own caller (`game.ts`'s `applyCrushDamage`) is the only
    * user — the headroom-blocked check other movers use deliberately stays on
    * `monstersInSector` alone, unrelated to this task.

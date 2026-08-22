@@ -353,7 +353,7 @@ before was the arch-vile's own *vertical* launch, a completely different mechani
 
 Vanilla calls `P_DamageMobj` with a null inflictor for damage floors and crushers, which skips the
 whole thrust block — reproduced here simply by never passing a `fromX`/`fromY` at those two call
-sites (`applyCrushDamage`/`updateDamageFloor`), rather than a special-cased exemption.
+sites (`applyCrushDamage`/`SectorEffects.update`), rather than a special-cased exemption.
 
 **`monsters/defs.ts: thrustSpeed(damage, mass)`** is the shared formula (`(damage/8) * (100/mass) * 35` —
 the `×35` the same "vanilla's per-tic figure survives conversion intact" reasoning `MonsterStats.speed`

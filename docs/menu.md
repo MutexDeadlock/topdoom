@@ -450,8 +450,8 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
 - **Download** writes the save as `<map>-<date>.topdoom.json` through a temporary anchor: one
   tab-indented JSON file whose meta fields are readable and whose `state` is the stored gzip bytes,
   base64'd (`exportSave` — docs/savegames.md § Storage has the format's rules);
-  **import** accepts such a file back via its own `#save-file-input` (the WAD `#file-input` is
-  multiplexed by `uploadTarget` and stays out of this), or by dropping a `.json` onto the menu —
+  **import** accepts such a file back via its own `#save-file-input` (the WAD `#file-input` stays
+  out of this), or by dropping a `.json` onto the menu —
   `installDropTarget` routes `.json` to the importer and everything else to `addFiles` as before.
 - Every failure — quota, cap, version, missing WAD — lands in the shared `#menu-status` line;
   `SavegamesUi` never touches the running game. The three hooks (`onSave`, `onOverwrite`, `onLoad`)

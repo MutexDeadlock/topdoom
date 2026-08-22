@@ -51,7 +51,7 @@ This has a second consequence for the pain elemental: its mobjinfo *does* carry 
 true; // not lying still yet` requires a settled corpse — which a pain elemental's never reaches
 before `P_RemoveMobj` deletes it. So despite the mobjinfo entry, a dead pain elemental can never
 actually be resurrected in real vanilla either. This engine reproduces the same unreachability
-structurally rather than adding a third special case: `rebuildBlockerGrid` never buckets a `hidden`
+structurally rather than adding a third special case: `ThingGrid.rebuild` never buckets a `hidden`
 corpse into `corpseGrid`, and a pain elemental's corpse is always hidden by the exact moment
 `findRaisableCorpse`'s "finished settling" gate would start accepting it — both keyed off the same
 `deadTime` threshold.
@@ -82,7 +82,7 @@ and three arrivals reach it:
 | Arrival | Stomps? |
 |---|---|
 | The player off a teleport pad (`game.ts`'s `onTeleport`) | Always |
-| A monster off a teleport pad (`game.ts`'s `monsterCrossedLines`) | Only on map 30 |
+| A monster off a teleport pad (`game.ts`'s `thingCrossedLines`) | Only on map 30 |
 | The Icon of Sin's spawn cube (`ThingLayer.spawnMonster`, `A_SpawnFly`'s tail) | Always — it only flies on MAP30 anyway |
 
 **A monster that isn't allowed to stomp doesn't teleport at all.** `PIT_StompThing`'s
@@ -284,7 +284,7 @@ machinery a monster does (solid collision, hitscan/projectile/splash/melee hit-t
 lock-on), which vanilla gets for free because none of those systems know what "monster" means — they
 only check `MF_SHOOTABLE`/`MF_SOLID`. This engine's equivalent generic layer is `ThingLayer`'s
 `blockerGrid`, so a barrel joins that grid alongside every `MONSTER_TYPES` thing
-(`rebuildBlockerGrid`, `solidBodies`, `pickMonster`) rather than needing a parallel set of spatial
+(`ThingGrid.rebuild`, `solidBodies`, `pickMonster`) rather than needing a parallel set of spatial
 queries — `raycastMonster`/`monstersNear` become barrel-aware for free, which is what lets a rocket,
 a stray pellet, a monster's own fireball or another barrel's blast all hit one. The purely-solid
 decorations (`SOLID_DECORATION_TYPES`, docs/movement.md § Solid decorations) join the same grid for

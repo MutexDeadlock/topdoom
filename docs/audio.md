@@ -207,7 +207,7 @@ the sector's linedefs (`P_GroupLines`), not a polygon centroid — computed lazi
   `buttonlist->soundorg`, which `P_StartButton` only fills in *after* the sound plays, so the
   real thing clicks from whatever stale button slot 0 last held; the linedef midpoint is used
   instead, since reproducing that bug would put the click anywhere on the map.
-- **A locked door** grunts `oof` at full volume, alongside the `lockedKeyMessage` line
+- **A locked door** grunts `oof` at full volume, alongside the `lockedLineMessage` line
   (docs/items.md § Locked doors and use triggers) — vanilla's own pairing of sound and message.
 - **Teleports** play `telept` at both ends, from `SpriteFxLayer.spawnTeleportFog` — which
   `spawnTeleportPair` calls twice, so every teleport is heard at both ends whether it was a

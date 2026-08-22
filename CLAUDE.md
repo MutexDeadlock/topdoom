@@ -10,9 +10,9 @@ slightly off vertical. Level geometry, textures and flats are parsed straight ou
 
 **No vanilla C is transliterated — but little of the behavior is invented.** Movement, collision
 and the camera are this engine's own, because the view needs them to be; nearly everything else is
-reproduced from `linuxdoom-1.10` and Boom/MBF *by behavior* — the specials tables off the dispatch
-switches, `mobjinfo` stats, weapon rates, `P_RadiusAttack`, the random table, `T_Scroll`, `GENMIDI`.
-Read it as "written fresh, matched to the source", which is what the fidelity rule below costs.
+written fresh and matched to `linuxdoom-1.10` and Boom/MBF *by behavior* — the specials tables off
+the dispatch switches, `mobjinfo` stats, weapon rates, `P_RadiusAttack`, the random table,
+`T_Scroll`, `GENMIDI`. That match is what the fidelity rule below costs.
 
 ## Commands
 
@@ -34,11 +34,10 @@ node scripts/inspect-wad.ts public/wads/iwad/DOOM2.WAD MAP05 public/wads/pwad/SC
 
 Runs under Node's native TS support, no browser. It reports lump/map counts, lump provenance, each
 file's support verdict, the map and node formats, missing textures, degenerate subsector polygons,
-whether the player start is walkable,
-and the two coverage reports — every linedef/sector special classified known/no-op/unknown (the
-Boom-compat acceptance gate), and every DEHACKED record classified applied/no-target/unsupported.
-The fastest check on a WAD-parsing, texture-merging or BSP change, and the way to reproduce a bug
-against a specific real-world WAD.
+whether the player start is walkable, and the two coverage reports — every linedef/sector special
+classified known/no-op/unknown (the Boom-compat acceptance gate), every DEHACKED record
+applied/no-target/unsupported. The fastest check on a WAD-parsing, texture-merging or BSP change,
+and the way to reproduce a bug against a specific real-world WAD.
 
 For collision/movement bugs prefer synthetic geometry, where unrelated nearby geometry can't muddy
 the result: `tests/fixtures/gridmap.ts` builds a real `DoomMap` from ASCII art. A throwaway script
@@ -71,6 +70,8 @@ src/wad/map/         the two lump formats `map.ts` normalizes behind a seam: the
                encodings (nodes), Hexen's LINEDEFS/THINGS (hexen)
 src/wad/campaign/    the MAPINFO lump family parsed once (mapinfo), level titles + the vanilla
                title tables (names), vanilla's par times (pars), where each exit leads (progression)
+src/wad/library/     the player's own WAD folder: picking and walking it (disk), its handle and
+               scan memo remembered between visits (store)
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards + their instanced batching, shot tracers, camera, viewport
 src/game/      spatial queries + collision, player controller, input, thing world state, fog of war,
@@ -88,10 +89,12 @@ src/game/things/     the named doomednums every type-keyed table keys through (d
                thing layer's record shapes (defs) + its WAD-derived tables (tables), monster/corpse
                spatial index (grid)
 src/game/specials/   the special record shapes + their speeds/waits (defs) and the vanilla
-               linedef/sector numbers keyed onto them (tables), load-time map analysis (mapscan),
-               mover meshes + relighting (movergeometry), mover obstruction + crush damage
-               (moverblocking), damage floors + secrets (sectoreffects), the always-on parameter
-               lines — scrollers, conveyors, friction, pushers (forces)
+               linedef/sector numbers keyed onto them (tables), Boom's bitfield linedefs
+               (generalized) + sector types (sectortypes), what a line changes about how a
+               sector is drawn (transfers), load-time map analysis (mapscan), mover meshes +
+               relighting (movergeometry), mover obstruction + crush damage (moverblocking),
+               damage floors + secrets (sectoreffects), the always-on parameter lines —
+               scrollers, conveyors, friction, pushers (forces)
 src/game/spritefx/   the one-shot effect + projectile record shapes and their flight helpers
                (defs), the effects' sprite/sound/timing tables (tables)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
@@ -107,7 +110,8 @@ src/ui/menu/         start menu + changelog popup, the WAD/level row strings (la
 src/ui/devmode/      DEVMODE hud + hotkeys (debughud), profiling overlay (profilerhud)
 src/util/      small helpers shared across layers: 2D geometry, damped-lerp smoothing, per-frame
                profiling, IndexedDB request plumbing (idb, shared by the save store and the WAD
-               library), vanilla's random table — the engine's only entropy source
+               library), raw DEFLATE (inflate, for compressed nodes), vanilla's random table —
+               the engine's only entropy source
 src/constants.ts   cross-cutting values and the feel dials (VERSION, DEVMODE, DOOM_TIC,
                    BRIGHTNESS_LIFT, PICKUP_SCALE + PICKUP_SCALE_TYPES, VIEW_DISTANCE +
                    FOG_START_FRACTION)
@@ -215,16 +219,15 @@ But `util/geom.ts`'s primitives and `World`'s point queries (`linesNear`, `subse
 coordinates on the fly, so a point parameter there would force a fresh object per call in exactly
 the code that runs thousands of times a frame.
 
-**Hot paths are measured, not reasoned about.** `hasLineOfSight`, `positionBlocked`, the monster grids
-and the sprite batches all carry non-obvious shapes because the obvious version measured too slow —
-and at least one obvious-looking optimization (an allocation-free `linesNear`) measured *slower*.
-Don't "simplify" these without measuring; the relevant docs say which is which.
+**Hot paths are measured, not reasoned about.** `hasLineOfSight`, `positionBlocked`, the monster
+grids and the sprite batches all carry non-obvious shapes because the obvious version measured too
+slow, and obvious-looking optimizations of them have measured no faster. Don't "simplify" these
+without measuring; the relevant docs say which is which.
 
 **A new file's name and layout follow docs/conventions.md**: a directory is named for the domain
 and its files for their role, never repeating the domain (`things/tables.ts`, not `thingtables.ts`);
 where a `<domain>.ts` sits beside a `<domain>/`, the parent is that layer's one public entry point.
-Deviations are listed at the bottom of that doc and get fixed when the file is next touched anyway,
-not in a rename pass.
+Deviations are listed at the bottom of that doc and get fixed when the file is next touched anyway.
 
 ## Documentation maintenance
 
@@ -237,8 +240,8 @@ not in a rename pass.
   what breaks without it — and a concrete repro case (a map and sector number) where one exists. The
   full narrative of how a bug was found, and benchmark digits behind a decision already made, belong
   in the commit message.
-- **README.md** should only contain a project overview, setup steps, and instructions for starting
-  and playing the game. Don't let it accumulate implementation detail — link to `docs/` instead.
+- **README.md** holds a project overview, setup steps, and how to start and play the game. Don't
+  let it accumulate implementation detail — link to `docs/` instead.
 - **`docs/` is flat, and a group of related docs shares a name prefix** (`monster-ai`,
   `monster-attacks`, …) rather than living in a subdirectory: half these docs are cited from two or
   more subsystems, and a flat prefix keeps every pointer one path segment — the shape

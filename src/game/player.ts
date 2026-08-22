@@ -429,9 +429,8 @@ export class Player implements Pos3 {
       // as vanilla's P_SlideMove writes its clipped vector back to momx/momy:
       // the component that ran along a wall carries over to the next frame and
       // the one that pushed into it is gone. Reading it back off the achieved
-      // displacement is what keeps a slid-along-a-wall run at full speed — the
-      // old "zero whichever axis didn't move" rule couldn't express a diagonal
-      // wall's slide at all, since neither axis is that wall's tangent.
+      // displacement is what keeps a slid-along-a-wall run at full speed —
+      // docs/movement.md § slideMove.
       if (dt > 0) {
         this.velX = (moved.x - this.x) / dt;
         this.velY = (moved.y - this.y) / dt;

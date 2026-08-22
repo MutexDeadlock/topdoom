@@ -28,8 +28,8 @@ cycle:
 - `combat.ts` imports `things.ts` **`import type` only** — its `BARREL_SPLASH_RADIUS`/`_DAMAGE`
   live in `things/tables.ts` (a leaf) precisely so that stays true. This is what lets `vile.ts`
   call `applyRadiusDamage` as a real value.
-- `spritefx/tables.ts` imports **nothing** from the `monsters/` folder. `VILE_WINDUP_TRACK_SECONDS`,
-  which is derived from `MONSTER_STATS`, lives in `monsters/vile.ts` for that reason rather than
+- `spritefx/tables.ts` imports **nothing** from the `monsters/` folder. `vileWindupTrackSeconds()`,
+  which reads `MONSTER_STATS`, lives in `monsters/vile.ts` for that reason rather than
   beside the other `VILE_FIRE_*` values.
 - **`defs.ts` imports nothing from its three siblings.** That is what makes it the folder's leaf,
   and it is why `VILE_KNOCKUP_SPEED` sits in `defs.ts` rather than with the rest of the vile's

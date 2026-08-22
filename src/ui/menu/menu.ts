@@ -984,7 +984,7 @@ export class Menu {
   private async addFiles(files: File[]): Promise<void> {
     const added: WadSource[] = [];
     // Kept rather than reported as they happen: the "Added …" line below would overwrite each one,
-    // so a multi-file pick where some files failed used to end up claiming only success.
+    // leaving a part-failed multi-file pick claiming nothing but success.
     const failed: string[] = [];
     const staged = this.library.isOpen;
     for (const file of files) {

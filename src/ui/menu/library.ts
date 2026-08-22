@@ -75,10 +75,10 @@ export interface FolderNode {
 }
 
 /**
- * The lookups every walk over the tree needs, built once per render and threaded down. Each of
- * these used to be rebuilt inside the walk that wanted it — a `byId` per row in `hiddenByCollapse`,
- * a `nodes.some` per row in `folderRow` — which made one render quadratic in the row count, on
- * every keystroke in the filter box.
+ * The lookups every walk over the tree needs, built once per render and threaded down. Rebuilding
+ * either inside the walk that wants it — a `byId` per row in `hiddenByCollapse`, a `nodes.some` per
+ * row in `folderRow` — makes one render quadratic in the row count, on every keystroke in the
+ * filter box.
  */
 interface TreeIndex {
   byId: Map<string, FolderNode>;
@@ -537,8 +537,7 @@ export class LibraryUi {
     this.treeEl.replaceChildren(...shown.filter(isLibrary).map(row));
     this.treeEl.scrollTop = scrollTop;
 
-    // Each heading counts everything in its panel, which is what the removed `topdoom` and
-    // `Your library` rows used to say.
+    // Each heading counts everything in its panel, so no row inside it has to carry a total.
     const total = (from: (n: FolderNode) => boolean) =>
       nodes.filter((n) => from(n) && n.parent === undefined).reduce((sum, n) => sum + n.total, 0);
     header(this.servedHeader, 'topdoom built-in', total((n) => !isLibrary(n)));
@@ -918,9 +917,9 @@ export class LibraryUi {
   }
 
   /**
-   * The `webkitdirectory` input came back. **Every path here reports something**: a folder that
-   * yields no files at all, or none with a `.wad` in it, used to `return` in silence — which from
-   * the outside is a picker that did nothing, the hardest kind of failure to tell apart from a bug.
+   * The `webkitdirectory` input came back. **Every path here reports something**, a folder that
+   * yields no files at all (or none with a `.wad` in it) included: a silent `return` looks from the
+   * outside like a picker that did nothing, the hardest kind of failure to tell apart from a bug.
    */
   private async onFolderChosen(): Promise<void> {
     window.clearTimeout(this.pickTimer);

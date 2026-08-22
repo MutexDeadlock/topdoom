@@ -595,14 +595,6 @@ export interface LockedLine {
   kind: 'door' | 'switch';
 }
 
-/**
- * The only line specials a non-player thing may activate by walking over
- * them — vanilla's own short allow-list in `P_CrossSpecialLine`'s
- * `if (!thing->player)` branch. Everything else in the game (exit lines,
- * stair builders, most doors and floors) simply does nothing under a
- * monster's feet, which is why a level's monsters can't wander around
- * rearranging its geometry.
- */
 /** How far around a monster to look for walk-trigger lines — the largest monster radius (the spider mastermind's 128) plus slack. */
 const MONSTER_CROSS_RADIUS = 136;
 

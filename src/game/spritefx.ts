@@ -349,7 +349,7 @@ export class SpriteFxLayer {
     this.drawList(this.teleportFogs, alpha);
     // After the fogs and (at the call site) after the projectiles, so an
     // explosion or smoke puff spawned by an arrival this tic is drawn on it
-    // rather than a frame late — the ordering `updateImpacts` used to carry.
+    // rather than a frame late.
     this.drawList(this.impacts, alpha);
   }
 

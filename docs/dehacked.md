@@ -620,7 +620,7 @@ would otherwise go stale, each closed a different way:
 |---|---|
 | `FAST_MONSTER_STATS`, `TALLEST_BODY_HEIGHT` | `let`, rebuilt by `rebuildDerivedMonsterStats()`. `monsterStatsFor` is still the single accessor. |
 | `things/grid.ts`'s `BLOCKER_MARGIN` | computed per grid instead — one reduce over forty entries, once per level. |
-| `vile.ts`'s `VILE_WINDUP_TRACK_SECONDS` | read at its one use site, which runs once per windup. |
+| `vile.ts`'s `vileWindupTrackSeconds()` | reads `MONSTER_STATS` at its one call site, which runs once per windup. |
 | `FULLBRIGHT_FRAMES` | a `Set` refilled by `rebuildFullbrightFrames` from the patched or pristine frame table. |
 | `WEAPON_CYCLE`, `SFX_NAMES` | nothing: DEH has no slot concept and never adds a sound. |
 
@@ -635,7 +635,7 @@ exposes `setMaxAmmo`, `setClipAmmo`, `setInventoryLimits` and `resetInventoryLim
 owning its own derivations. `audio/sfx.ts`, `audio/music/tables.ts` and `wad/sprites.ts` do the
 same for their lump redirects.
 
-The patch has to land **before `createThingLayer`**, which resolves the stat table once per level
+The patch has to land **before `buildThingSprites`**, which resolves the stat table once per level
 and snapshots each thing's radius and height at spawn, before the `SoundBank`, which pre-decodes
 on construction, and before the `SpriteBank`, which indexes `[SPRITES]` renames as it is built. It also has to land before the session's `createInventory()`, which reads `Misc`'s
 `Initial Health` and `Initial Bullets` off `LIMITS` — which is why `Game.inventory` is assigned in

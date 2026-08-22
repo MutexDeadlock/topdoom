@@ -376,10 +376,9 @@ and then asserts **exact** values rather than bounds — `rollDamage(5, 3)` on t
 clear is `((8 % 5) + 1) * 3`, because `rndtable[1]` is 8. A test that needs the cursor somewhere
 else seeks it with bare `pRandom()` calls.
 
-There is no mocking and no fixture: `tests/fixtures/rng.ts` and its `scriptedRandom`/`seededRandom`
-existed only to patch `Math.random`, and went away with the last call to it. Threading a `random`
-parameter through `rollDamage` had already been rejected for changing `src/` in the fire path purely
-for the tests, and the table removes the motive entirely.
+There is no mocking and no fixture: nothing patches `Math.random`, and threading a `random`
+parameter through `rollDamage` stays rejected — it would change `src/` in the fire path purely for
+the tests, and the table removes the motive entirely.
 
 `tests/util/random.test.ts` also asserts that **no file in `src/` mentions `Math.random`**. The repo
 runs no linter, so that test is the only thing keeping a second, undocumented entropy source out.

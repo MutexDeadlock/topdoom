@@ -367,7 +367,7 @@ export const MONSTER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
  *
  * This also makes a dead pain elemental unresurrectable despite its real
  * `raisestate` — a genuine vanilla dead-data quirk, reproduced here without a
- * second special case because `rebuildBlockerGrid` never buckets a `hidden`
+ * second special case because `ThingGrid.rebuild` never buckets a `hidden`
  * corpse. See docs/death.md § Monster death.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —

@@ -55,24 +55,6 @@ export const INERT_SHOOTABLE: Record<
 };
 
 /**
- * Per-doomednum combat stats, covering every `MONSTER_TYPES` entry except the
- * two in `INERT_SHOOTABLE` above.
- *
- * **Both timing and damage are lifted from vanilla, not tuned by feel.**
- * `speed`, `chaseInterval`, `painDuration` and every
- * `duration`/`shots`/`shotInterval` are not written out below at all: they are
- * **walked out of `info.c`'s own state chains** and assigned further down this
- * file (§ the fill loop, docs/dehacked.md § Frames), so a row here carries only
- * what no chain can say. `painChance`, `radius`, `height`, `mass` and the
- * sounds are `mobjinfo` fields; `diceSides`/`diceMult` are each attack's own
- * literal roll from `p_enemy.c`, or `PIT_CheckThing`'s universal missile
- * formula. Splash is
- * correctly non-uniform — only the cyberdemon's `MT_ROCKET` explodes in
- * vanilla. See docs/monster-ai.md § Timings and damage come from vanilla, not
- * from feel, and docs/monster-attacks.md § Hitscan vs. projectile for which
- * types get which attack.
- */
-/**
  * One attack as written out here. `duration` — and the volley's `shots`/`shotInterval` and the
  * windup's `startDelaySeconds` — are walked out of the chain's own states by the fill below, so a
  * row carries them only where `FRAME_OVERRIDES` says the shipped reading wins.
@@ -90,6 +72,18 @@ type MonsterSeed = Omit<MonsterStats, 'speed' | 'chaseInterval' | 'painDuration'
   ranged: AttackSeed | null;
 };
 
+/**
+ * Per-doomednum combat stats, covering every `MONSTER_TYPES` entry except the two in
+ * `INERT_SHOOTABLE` above, and completed by the fill loop below (§ the fill loop,
+ * docs/dehacked.md § Frames).
+ *
+ * **Both timing and damage are lifted from vanilla, not tuned by feel.** `painChance`, `radius`,
+ * `height`, `mass` and the sounds are `mobjinfo` fields; `diceSides`/`diceMult` are each attack's
+ * own literal roll from `p_enemy.c`, or `PIT_CheckThing`'s universal missile formula. Splash is
+ * correctly non-uniform — only the cyberdemon's `MT_ROCKET` explodes in vanilla. See
+ * docs/monster-ai.md § Timings and damage come from vanilla, not from feel, and
+ * docs/monster-attacks.md § Hitscan vs. projectile for which types get which attack.
+ */
 const MONSTER_SEED: Record<number, MonsterSeed> = {
   [ThingType.zombieman]: {
     radius: 20,
@@ -376,8 +370,7 @@ const MONSTER_SEED: Record<number, MonsterSeed> = {
     mass: 1000,
     melee: null,
     ranged: {
-      // Universal missile-hit formula; ROCKET's own damage field is 20 —
-      // already matched this engine's damage-dice values before this pass.
+      // Universal missile-hit formula; ROCKET's own damage field is 20.
       diceSides: 8,
       diceMult: 20,
       // 24 tics, not 12: `A_CyberAttack` sits on `S_CYBER_ATK2`/`ATK4`/`ATK6`, each 12 tics, with

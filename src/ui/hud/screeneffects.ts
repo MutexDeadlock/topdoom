@@ -24,8 +24,9 @@ const LIGHT_VISOR_EXPOSURE = 2.5;
 
 /**
  * The red damage flash, echoing `ST_doPaletteStuff`'s `damagecount`: raw damage
- * into a counter clamped to 100, ticked down 1/tic. `MAX_DAMAGE` is that clamp
- * and `FADE_SECONDS` is 100 tics over 35. `MAX_ALPHA` has no vanilla analogue
+ * into a counter clamped to 100, ticked down 1/tic. `PAIN_FLASH_MAX_DAMAGE` is
+ * that clamp and `PAIN_FLASH_FADE_SECONDS` is 100 tics over 35.
+ * `PAIN_FLASH_MAX_ALPHA` has no vanilla analogue
  * (there it's a palette swap, not an overlay) and is **tuned by feel**.
  */
 const PAIN_FLASH_MAX_DAMAGE = 100;

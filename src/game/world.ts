@@ -846,7 +846,7 @@ export class World {
  * A ray whose origin sits essentially *on* a wall (a rocket exploding against
  * one) would otherwise register a self-intersection with it at t≈0 and report
  * every direction blocked. Crossings closer than this to the ray's start are
- * skipped — the near-end counterpart to `WALL_OVERLAP`/`BLOCKER_OVERLAP`.
+ * skipped — the near-end counterpart to `WALL_OVERLAP`.
  */
 const SELF_HIT_MARGIN = 1;
 
@@ -1331,29 +1331,6 @@ export interface PositionCheck {
 const positionScratch: PositionCheck = { blocked: false, floorZ: 0, ceilingZ: 0, dropoffZ: 0, centreFloorZ: 0 };
 
 /**
- * One `P_CheckPosition` over the lines a body's box at (x, y) spans, filling
- * `out` with the verdict and all three accumulated heights at once — vanilla
- * accumulates them in a single `PIT_CheckLine` walk, and so does this.
- *
- * `stopOnBlock` returns on the first refusing line, as `P_CheckPosition` does;
- * the heights are then only partly accumulated, which is safe for a caller that
- * wants nothing but the verdict. A caller needing the heights *and* the verdict
- * (`monsters/ai.ts: testStep`, and the dropoff test below) passes `false` and
- * gets both from the same walk.
- *
- * `forMonster` — see `World.isSolidWall`. Note `dropoffZ` deliberately ignores
- * it: a `BLOCK_MONSTERS` line fences a monster's *movement* but its far side is
- * still real floor, so it must not read as a dropoff. That asymmetry predates
- * this unification and is preserved exactly.
- *
- * `moverHeight` is the mover's own body height and reaches nothing but
- * `blockedByThings` — the opening gates below measure against `PLAYER_HEIGHT`
- * whoever is asking (`openingRefuses`), and a monster's real height is applied
- * separately by `monsters/ai.ts: testStep`. Pass the real height where the
- * caller has one and `ANY_HEIGHT` where there is no body at all
- * (`groundFloor`); it is unread either way once `z` is `ANY_HEIGHT`.
- */
-/**
  * `P_TryMove`'s three height gates against a `P_LineOpening`, in vanilla's
  * order: too short to stand in at all, too big a step up, or the top too low
  * for this body's own `z`. `zFinite` false (`ANY_HEIGHT`) drops the two
@@ -1370,6 +1347,28 @@ function openingRefuses(openTop: number, openBottom: number, z: number, zFinite:
   return openBottom - z > MAX_STEP_UP || openTop - z < PLAYER_HEIGHT;
 }
 
+/**
+ * One `P_CheckPosition` over the lines a body's box at (x, y) spans, filling
+ * `out` with the verdict and all three accumulated heights at once — vanilla
+ * accumulates them in a single `PIT_CheckLine` walk, and so does this.
+ *
+ * `stopOnBlock` returns on the first refusing line, as `P_CheckPosition` does;
+ * the heights are then only partly accumulated, which is safe for a caller that
+ * wants nothing but the verdict. A caller needing the heights *and* the verdict
+ * (`monsters/ai.ts: testStep`, and the dropoff test below) passes `false` and
+ * gets both from the same walk.
+ *
+ * `forMonster` — see `World.isSolidWall`. `dropoffZ` deliberately ignores it: a
+ * `BLOCK_MONSTERS` line fences a monster's *movement* but its far side is still
+ * real floor, so it must not read as a dropoff.
+ *
+ * `moverHeight` is the mover's own body height and reaches nothing but
+ * `blockedByThings` — the opening gates below measure against `PLAYER_HEIGHT`
+ * whoever is asking (`openingRefuses`), and a monster's real height is applied
+ * separately by `monsters/ai.ts: testStep`. Pass the real height where the
+ * caller has one and `ANY_HEIGHT` where there is no body at all
+ * (`groundFloor`); it is unread either way once `z` is `ANY_HEIGHT`.
+ */
 export function checkPosition(
   world: World,
   x: number,
@@ -1759,8 +1758,8 @@ export interface ShotPath extends Pos3 {
  * § Range and docs/monster-attacks.md § Hitscan vs. projectile.
  *
  * **A `lock` switches blocking** from `blocksShot`'s single fixed ray to a
- * **slope wedge**, vanilla's `P_AimLineAttack` — the auto-aim leniency, and
- * neither of the two things it has been in the past — and re-aims the shot at
+ * **slope wedge**, vanilla's `P_AimLineAttack` — the auto-aim leniency — and
+ * re-aims the shot at
  * the wedge it cleared (`PTR_AimTraverse`'s `aimslope`), so the slope fired is
  * one the geometry admits. A monster's own fired shot passes none: it needs
  * `target` to aim, but has no "you clicked it" promise to honor. See

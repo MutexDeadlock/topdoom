@@ -192,7 +192,7 @@ export function resetDehacked(): void {
 /**
  * Writes a patch's `Thing`, `Frame`, `Weapon`, `Ammo` and `Misc` edits into the tables.
  *
- * Must run **before** `createThingLayer`, which resolves the stat table once per level and
+ * Must run **before** `buildThingSprites`, which resolves the stat table once per level and
  * snapshots each thing's radius and height at spawn, before the `SoundBank`, which pre-decodes on
  * construction, and before the `SpriteBank`, which indexes `[SPRITES]` renames as it is built.
  * `game.ts`'s constructor is where all three orderings hold.

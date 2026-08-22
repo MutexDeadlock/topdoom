@@ -7,7 +7,7 @@ import { ThingType } from '../../src/game/things/doomednums.ts';
 
 /**
  * The two pure predicates every monster's melee gate bottoms out in
- * (`monsters/defs.ts`, called from `ai.ts`'s `wantsMelee`): how far a swing
+ * (`monsters/defs.ts`, called from `ai.ts`'s `runChaseCall`): how far a swing
  * reaches, and whether the two bodies overlap vertically at all. Driving them
  * through a real map is `tests/regression/pinky-vertical-melee.test.ts`'s job.
  * See docs/monster-ai.md § Melee reach.

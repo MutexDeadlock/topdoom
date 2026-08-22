@@ -100,21 +100,20 @@ the windup *starts* (`A_VileTarget`) and tracks 24 units in front of the target 
 duration. Not cosmetic: without a visible warning, "duck behind cover mid-windup" isn't a mechanic a
 player can use. `beginRangedAttack` reports a fourth, purely-cosmetic `MonsterAttack` kind —
 `'vileWindup'` — the instant a `blast` attack starts, separate from the `'ranged'` event
-`resolveVileBlast` handles; `things.ts` also moves the vile's `attackFrames` pose to trigger on
-`'vileWindup'` rather than at the blast landing, matching vanilla's timing (`S_VILE_ATK1`-`ATK10`
-play across the entire missilestate chain).
+`resolveVileBlast` handles.
 
-The pose has to *last* the whole chain too, and originally didn't: at the flat 3-tics-a-frame rate
-every pose used, `VILE` `G`-`P` was over 30 tics into a 94-tic cast, so the vile stood in its idle
-frame for the back half of the windup — the half where the flame is the warning — and through the
-blast. `MONSTER_ATTACK_POSE` is now spread over the attack's own duration for every type
-(docs/sprites.md § Pain, and attack/pain poses), and a save taken mid-cast replays it fast-forwarded
-(docs/savegames.md § What is saved and what is deliberately not) rather than loading a vile that
-looks idle while it casts.
+The pose has to run the whole chain, matching vanilla's timing (`S_VILE_ATK1`-`ATK10` play across
+the entire missilestate chain). `things.ts` enters `MONSTER_ATTACK_POSE` on the tic `attackPause`
+is set — for a blast, the tic the *windup* starts, 66 tics before the shot — and spreads it over
+the attack's own duration for every type (docs/sprites.md § Pain, and attack/pain poses). At a flat
+frame rate `VILE` `G`-`P` would be over 30 tics into a 94-tic cast, leaving the vile in its idle
+frame through the half of the windup where the flame is the warning. A save taken mid-cast replays
+the pose fast-forwarded (docs/savegames.md § What is saved and what is deliberately not) rather
+than loading a vile that looks idle while it casts.
 
 `spawnWindupFire` (`monsters/vile.ts`, called from `attacks.ts`) reuses `SpriteFxLayer`'s ordinary
 one-shot `spawn`/`addImpact` machinery with
-two differences: its `lifetime` is overridden to `VILE_WINDUP_TRACK_SECONDS` (read from
+two differences: its `lifetime` is overridden to `vileWindupTrackSeconds()` (read from
 `MONSTER_STATS` rather than duplicated) instead of one pass through its frames, and `OneShotEffect`
 gained `followTargetId`/`vileSourceId` — `SpriteFxLayer` re-derives `x`/`y`/`z` every frame from
 `fireFrontOf(target)` (vanilla's `dest->x + 24*cos(dest->angle)` etc., keyed off the *target's*

@@ -405,7 +405,7 @@ export class Game {
     this.scene.background = new THREE.Color(0x05050a);
     this.scene.fog = new THREE.Fog(0x05050a, VIEW_DISTANCE * FOG_START_FRACTION, VIEW_DISTANCE);
 
-    // Ahead of every bank below and of `createThingLayer`: a patch's sound and thing edits have
+    // Ahead of every bank below and of `buildThingSprites`: a patch's sound and thing edits have
     // to be in place before anything reads a table — `SoundBank` pre-decodes on construction, so
     // a `[SOUNDS]` redirect applied after it could never reach the cache.
     // docs/dehacked.md § Applying: reset, then patch.

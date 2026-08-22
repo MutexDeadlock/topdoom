@@ -298,9 +298,9 @@ a `CWILV00` — falls through to the text where its DEH title is.
 The menu names levels off the manifest alone, and gets the same answer. A file's `levelNames` holds
 what its MAPINFO says and, for the maps MAPINFO leaves unnamed, what its `DEHACKED` patch says —
 merged in that order when the manifest is built, so `mergedMaps` needs no rule of its own. That
-merge is `campaign/names.ts`' `mergeLevelTitles`, shared by the build-time plugin and `library.ts`'s
-`uploadedLevelInfo` for the same reason `preferredMapInfoLump` is shared: while the two stated the
-order separately, the same file could list one way uploaded and another way served.
+merge is `campaign/names.ts`' `mergeLevelTitles`, reached through the one `describe.ts: describeWad`
+the build-time plugin and `library.ts` both call — for the same reason `preferredMapInfoLump` is
+read there: stated in two places, the same file could list one way uploaded and another way served.
 docs/dehacked.md § Strings covers the one case where the two can differ.
 
 With no title from any of the three, there is nothing to append in the menu, and the card falls back to

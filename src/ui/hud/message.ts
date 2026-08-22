@@ -68,8 +68,8 @@ const COLOR_WORD = new RegExp(`\\b(?:${Object.keys(COLOR_WORDS).join('|')})\\b`,
  *
  * The one departure from those strings is presentational and applies to whatever text comes back:
  * a color word is drawn in that color instead of the message's. Splitting the finished line rather
- * than composing it from colored fragments is what lets a patched line keep the effect — the patch
- * writes "You need a blue card", not the three pieces this used to assemble.
+ * than composing it from colored fragments is what lets a patched line keep the effect — a patch
+ * writes one string ("You need a blue card"), not the pieces to assemble it from.
  */
 export function lockedLineMessage(lock: LockRule, kind: 'door' | 'switch'): MessageRun[] {
   const line = lockedLine(lock, kind);

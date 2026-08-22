@@ -241,12 +241,11 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   // than through this table, since they're never tied to a linedef trigger.
   16: { trigger: 'walk', repeatable: false, effect: door(DOOR_SPEED, 'closeThenOpen') },
   76: { trigger: 'walk', repeatable: true, effect: door(DOOR_SPEED, 'closeThenOpen') },
-  // Fast doors group by trigger type first (WR/W1/S1/SR), each a
-  // openClose/openOnly/closeOnly triad — confirmed against three independent
-  // references after the vanilla assumption "108/109 are a W1/S1 openClose
-  // pair" turned out wrong (real bug: DOOM2 MAP02 tag 5 uses 114, which is
-  // SR openClose — a repeatable *switch*, not the one-shot walk-closeOnly
-  // this table previously had it as, so tag 5's door could never be opened).
+  // Fast doors group by trigger type first (WR/W1/S1/SR), each an
+  // openClose/openOnly/closeOnly triad, and not as the plausible-looking
+  // "108/109 are a W1/S1 openClose pair" would have it. Repro for the
+  // difference: DOOM2 MAP02's tag 5 door is a 114, SR openClose — read as a
+  // one-shot walk-closeOnly it can never be opened.
   105: { trigger: 'walk', repeatable: true, effect: door(DOOR_SPEED_FAST) },
   106: { trigger: 'walk', repeatable: true, effect: door(DOOR_SPEED_FAST, 'openOnly') },
   107: { trigger: 'walk', repeatable: true, effect: door(DOOR_SPEED_FAST, 'closeOnly') },

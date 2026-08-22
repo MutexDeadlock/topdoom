@@ -266,10 +266,11 @@ The check sits *before* vanilla sets `floatok`, so a floating monster is refused
 rather than adjusting its height — unlike the sibling `tmceilingz - thing->z < thing->height` rule
 just below it, which is the flying-only "must lower itself to fit".
 
-It uses `MONSTER_HIT_HEIGHT`, the engine's single shared body height (64, against vanilla's real
-56-110), so a 56-63 unit crawlspace refuses monsters vanilla would let through. Nothing in the
-shipped IWADs was found to depend on that, and a crusher closes far below either figure. **The
-player is deliberately not subject to this**: vanilla applies it to every mobj, so a player under a
+It measures against the monster's own `stats.height`, vanilla's real 56-110. Only the *per-opening*
+half of the rule (`world.ts: openingRefuses`, which `checkPosition` runs per crossed linedef) still
+measures every body against the shared `PLAYER_HEIGHT` of 56 — a deviation that can only matter for
+a crossing between 56 and the taller species' own height, and a crusher closes far below either
+figure. **The player is deliberately not subject to the fit rule at all**: vanilla applies it to every mobj, so a player under a
 crusher is pinned too, but being unable to move with no on-screen explanation reads as a frozen game
 from a top-down camera that may not even be showing the ceiling. The momentum paths — a lost soul's
 charge and knockback — don't carry it either, both being brief and self-cancelling.

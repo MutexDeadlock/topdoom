@@ -36,8 +36,7 @@ export interface Pos3 extends Pos2 {
  * landing. `angle` is **radians**, matching `Player.angle`/`MonsterBody.angle`
  * rather than the WAD's own degrees: every producer here (`World.playerStart`,
  * `SpecialsController.findTeleportDestination`) already converts on the way
- * out. Two consumers used to convert a second time on the way back in, which
- * this type existing is what caught.
+ * out, so a consumer converts again at its peril.
  */
 export interface Placement extends Pos2 {
   angle: number;

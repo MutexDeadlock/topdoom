@@ -160,10 +160,11 @@ node scripts/inspect-wad.ts public/wads/iwad/DOOM.WAD E1M1
 node scripts/inspect-wad.ts public/wads/iwad/DOOM2.WAD MAP05 public/wads/pwad/SCYTHE.WAD
 ```
 
-Reports lump and map counts, which file a map came from, any textures it references but the
-WAD set lacks, how many subsector polygons came out degenerate, whether the player start is
-walkable, and a specials coverage report — every linedef and sector special the map uses,
-classified by whether this engine understands it.
+Reports lump and map counts, which file a map came from, whether this engine can run each file,
+any textures a map references but the WAD set lacks, how many subsector polygons came out
+degenerate, whether the player start is walkable, and two coverage reports — every linedef and
+sector special the map uses, and every record of a `DEHACKED` patch it ships, each classified by
+whether this engine understands it.
 
 ## Running the tests
 

@@ -99,7 +99,7 @@ export function lightToColor(light: number, contrast = 0): number {
  * The fake-contrast offset for a wall running from (ax,ay) to (bx,by) — the
  * one true copy, so `addWall` and `SpecialsController.recolorSector` (which
  * needs to redo this per-quad when a sector's light changes at runtime) can't
- * drift apart the way they once did.
+ * drift apart.
  */
 export function wallContrast(ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax;

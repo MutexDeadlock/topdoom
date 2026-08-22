@@ -6,6 +6,7 @@
  * `map/` holds the two format seams and nothing else reaches into them. See docs/wad.md.
  */
 import type { Wad } from './wad.ts';
+import { records, type Reader } from './reader.ts';
 import * as hexen from './map/hexen.ts';
 import { readBsp, type NodeFormat } from './map/nodes.ts';
 
@@ -210,19 +211,12 @@ function readMapFormat(lumps: Map<string, number>): MapFormat {
 export function loadMap(wad: Wad, name: string): DoomMap {
   const lumps = mapLumps(wad, name);
   const format = readMapFormat(lumps);
-  const read = <T>(lumpName: string, recordSize: number, fn: (r: ReturnType<Wad['reader']>) => T): T[] => {
+  const rawLump = (lumpName: string): Uint8Array | undefined => {
     const idx = lumps.get(lumpName);
-    if (idx === undefined) return [];
-    const lump = wad.lumpAt(idx)!;
-    const r = wad.reader(lump);
-    const n = Math.floor(lump.size / recordSize);
-    const out: T[] = new Array(n);
-    for (let i = 0; i < n; i++) {
-      r.seek(i * recordSize);
-      out[i] = fn(r);
-    }
-    return out;
+    return idx === undefined ? undefined : wad.data(wad.lumpAt(idx)!);
   };
+  const read = <T>(lumpName: string, recordSize: number, fn: (r: Reader) => T): T[] =>
+    records(rawLump(lumpName), 0, recordSize, fn);
 
   const vertexes = read('VERTEXES', 4, (r) => ({ x: r.i16(), y: r.i16() }));
 
@@ -245,10 +239,6 @@ export function loadMap(wad: Wad, name: string): DoomMap {
     sector: r.u16(),
   }));
 
-  const rawLump = (lumpName: string): Uint8Array | undefined => {
-    const idx = lumps.get(lumpName);
-    return idx === undefined ? undefined : wad.data(wad.lumpAt(idx)!);
-  };
   // May append vertexes (XNOD/ZNOD carry their own split vertexes), so runs
   // before the bounds pass below.
   const bsp = readBsp(vertexes, rawLump('SEGS'), rawLump('SSECTORS'), rawLump('NODES'));

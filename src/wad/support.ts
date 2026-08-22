@@ -102,20 +102,21 @@ const REQUIRED_LUMPS = ['THINGS', 'LINEDEFS', 'SIDEDEFS', 'VERTEXES', 'SECTORS']
  */
 export function wadSupport(maps: readonly MapLumpSummary[], dehShortfall: boolean): WadSupport {
   const byCode = new Map<SupportCode, string[]>();
-  const add = (code: SupportCode, map?: string): void => {
-    let at = byCode.get(code);
-    if (!at) byCode.set(code, (at = []));
-    if (map !== undefined) at.push(map);
+  /** The maps raising `code`, created on first mention — empty for a file-level reason. */
+  const at = (code: SupportCode): string[] => {
+    let maps = byCode.get(code);
+    if (!maps) byCode.set(code, (maps = []));
+    return maps;
   };
 
   for (const map of maps) {
     const broken = brokenIssue(map);
-    if (broken) add(broken, map.name);
+    if (broken) at(broken).push(map.name);
     // `map.ts: readMapFormat` owns the BEHAVIOR-means-Hexen rule and its citation. Only raised on a
     // map that loads: a map that doesn't has already said the worse thing about itself.
-    else if (map.lumps.has('BEHAVIOR')) add('hexen', map.name);
+    else if (map.lumps.has('BEHAVIOR')) at('hexen').push(map.name);
   }
-  if (dehShortfall) add('dehacked');
+  if (dehShortfall) at('dehacked');
 
   return SUPPORT_ORDER.filter((code) => byCode.has(code)).map((code) => ({
     code,
@@ -151,12 +152,13 @@ function brokenIssue(map: MapLumpSummary): SupportCode | null {
  */
 export function nothingLoads(support: WadSupport, mapCount: number): boolean {
   if (mapCount === 0) return false;
-  const refused = new Set(
-    support
-      .filter((issue) => SUPPORT_ISSUES[issue.code].level === 'broken')
-      .flatMap((issue) => issue.maps),
-  );
-  return refused.size >= mapCount;
+  // A count, not a set: `brokenIssue` returns the first matching code per map, so a map name
+  // appears under exactly one broken issue and there is nothing to deduplicate.
+  let refused = 0;
+  for (const issue of support) {
+    if (SUPPORT_ISSUES[issue.code].level === 'broken') refused += issue.maps.length;
+  }
+  return refused >= mapCount;
 }
 
 /** How many map names a tooltip line spells out before it starts counting instead. */

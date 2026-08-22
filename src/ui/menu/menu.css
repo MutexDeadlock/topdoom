@@ -290,9 +290,11 @@
 }
 
 /*
- * A green/amber/red status scale, and the amber and green stay **literals** for the reason the
- * profiler's bars and the save row's `.caution` do (docs/styles.md § Tokens): a warning colour must
- * not move when the menu accent is retuned. Red is the exception and *is* the accent, because
+ * A green/amber/red status scale. None of the three is a rung of the accent family, for the reason
+ * the profiler's bars are not (docs/styles.md § Tokens): a status colour must not move when the
+ * menu accent is retuned. Amber is `--caution`, shared with the save row's missing add-on; green
+ * stays a literal, having only this one site to be read from. Red is the exception and *is* the
+ * accent, because
  * `#menu .warning` already made it the menu's one red for "this won't work" — a fourth red would
  * only be a near-miss of it. Each has to out-specify `#menu .row .meta` above and
  * `#wadlibrary .row.disabled .meta` (library.css), which is why all three carry two classes.

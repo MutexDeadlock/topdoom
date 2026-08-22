@@ -86,9 +86,8 @@ export async function describeWad(name: string, src: ByteRanges): Promise<WadDes
   }
 
   // The map summaries are filled in during the walk, bar their SSECTORS signatures — those need a
-  // read, so `nodeLumps` parks where each one lives and the wave below fills them in place.
-  const groups: MapLumpSummary[] = [];
-  const nodeLumps: (Entry | null)[] = [];
+  // read, so each group carries where its own signature lives and the wave below fills them in.
+  const groups: MapGroup[] = [];
   const dehLumps: Entry[] = [];
   const mapInfoLumps = new Map<string, Entry>();
   const dir = reader(await src.read(dirOffset, lumpCount * DIRECTORY_ENTRY_BYTES));
@@ -102,7 +101,6 @@ export async function describeWad(name: string, src: ByteRanges): Promise<WadDes
     if (MAP_MARKER.test(lump)) {
       group = new Map();
       groups.push({ name: lump, lumps: group, ssectorsSignature: '' });
-      nodeLumps.push(null);
       continue;
     }
     if (group !== null && MAP_GROUP_LUMPS.has(lump)) {
@@ -112,7 +110,7 @@ export async function describeWad(name: string, src: ByteRanges): Promise<WadDes
         // Only worth a read where there are bytes to read: an empty SSECTORS (XNOD/ZNOD) carries
         // no signature, and a UDMF map has none at all.
         if (lump === 'SSECTORS' && size >= SIGNATURE_BYTES) {
-          nodeLumps[nodeLumps.length - 1] = { offset, size: SIGNATURE_BYTES };
+          groups[groups.length - 1].ssectors = { offset, size: SIGNATURE_BYTES };
         }
       }
       continue;
@@ -133,7 +131,7 @@ export async function describeWad(name: string, src: ByteRanges): Promise<WadDes
   const [mapInfoText, dehBodies, signatures] = await Promise.all([
     wanted ? text(src, mapInfoLumps.get(wanted)!) : Promise.resolve(null),
     Promise.all(dehLumps.map((lump) => text(src, lump))),
-    Promise.all(nodeLumps.map((lump) => (lump ? text(src, lump) : null))),
+    Promise.all(groups.map((g) => (g.ssectors ? text(src, g.ssectors) : null))),
   ]);
   signatures.forEach((sig, i) => (groups[i].ssectorsSignature = sig ?? ''));
   const mapInfoTitles = mapInfoText === null ? [] : parseMapInfoNames(mapInfoText);
@@ -168,6 +166,11 @@ export async function describeWad(name: string, src: ByteRanges): Promise<WadDes
 
 /** How many bytes a node-format signature takes (`map/nodes.ts: detectNodeFormat`). */
 const SIGNATURE_BYTES = 4;
+
+/** A summary while it is still being built: `ssectors` is where the signature read will come from. */
+interface MapGroup extends MapLumpSummary {
+  ssectors?: Entry;
+}
 
 interface Entry {
   offset: number;

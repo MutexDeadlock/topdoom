@@ -722,6 +722,9 @@ export class LibraryUi {
     // picked — so a row this pane offers is one the menu will still be holding afterwards.
     const incompatible = !fitsGameWad(iwad, source);
     const dead = unplayable(source);
+    // One rule behind both the greying-out and the input: a row that looks pickable and isn't
+    // would be the failure mode of letting these two drift.
+    const refused = incompatible || isGameWad || dead;
 
     // No merge-order number here: the order is a property of the *set* being assembled, which the
     // New Game tab's add-on list owns and shows. Repeating it against a browser row would number
@@ -736,12 +739,12 @@ export class LibraryUi {
         : incompatible
           ? badge(mapStyle(source) === 'doom1' ? 'DOOM 1 maps' : 'DOOM II maps', 'reason')
           : badge('');
-    const row = this.baseRow(source, index >= 0, mark, incompatible || isGameWad || dead);
+    const row = this.baseRow(source, index >= 0, mark, refused);
 
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = index >= 0;
-    input.disabled = incompatible || isGameWad || dead;
+    input.disabled = refused;
     input.addEventListener('change', () => this.draftPwadToggle(source));
     row.prepend(input);
     return row;
@@ -1027,11 +1030,6 @@ function header(el: HTMLHeadingElement, label: string, count: number): void {
 }
 
 /**
- * A file row's badge. `'reason'` is why the row can't be picked and is the one thing here worth
- * interrupting for, so it is the only kind that carries the accent; `'quiet'` is an aside, and the
- * empty default is the spacer that keeps the columns behind it lined up.
- */
-/**
  * A file this engine cannot run at all — no map in it will load, so there is nothing to pick it
  * for. The verdict and the rule are `wad/support.ts`'s (docs/wad.md § Will it run?); the overlay's
  * part is refusing the row. A file only *partly* broken stays pickable: see `nothingLoads`.
@@ -1043,6 +1041,11 @@ function unplayable(source: WadSource): boolean {
 /** The badge on a row refused for `unplayable`. The support column's tooltip carries the detail. */
 const REFUSED = "won't load";
 
+/**
+ * A file row's badge. `'reason'` is why the row can't be picked and is the one thing here worth
+ * interrupting for, so it is the only kind that carries the accent; `'quiet'` is an aside, and the
+ * empty default is the spacer that keeps the columns behind it lined up.
+ */
 function badge(text: string, kind: '' | 'quiet' | 'reason' = ''): HTMLSpanElement {
   const span = document.createElement('span');
   span.className = kind ? `badge ${kind}` : 'badge';

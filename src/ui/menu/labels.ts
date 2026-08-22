@@ -77,9 +77,11 @@ function metaSpan(kind: string, text: string): HTMLSpanElement {
  */
 export function sourceColumnSpans(src: WadSource): HTMLSpanElement[] {
   const { size, content, dehacked } = sourceColumns(src);
-  const level = src.support && supportLevel(src.support);
-  const support = metaSpan(`support${level ? ` ${level}` : ''}`, level ? SUPPORT_GLYPHS[level] : '');
-  if (src.support && level) {
+  const support = metaSpan('support', '');
+  if (src.support) {
+    const level = supportLevel(src.support);
+    support.className = `meta support ${level}`;
+    support.textContent = SUPPORT_GLYPHS[level];
     // The reasons and the maps that raise them, which is the whole point of the column: the glyph
     // says how bad, the tooltip says what and where.
     support.title = describeSupport(src.support, src.maps.length);

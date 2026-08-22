@@ -115,7 +115,8 @@ src/types.ts       structural position types shared across layers (Pos2/Pos3/Pla
 src/styles.css     the stylesheet index.html links; @imports the .css beside each ui module
 index.html         the page skeleton; @includes the .html beside each ui module
 plugins/       Vite plugins: the public/wads/{iwad,pwad} manifest, index.html's @include expansion
-scripts/       headless WAD inspection (node scripts/inspect-wad.ts)
+scripts/       headless WAD inspection (node scripts/inspect-wad.ts) and savegame-file
+               inspection (node scripts/inspect-save.ts)
 ```
 
 ## Subsystem documentation

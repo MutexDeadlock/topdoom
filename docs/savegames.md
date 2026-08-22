@@ -344,6 +344,10 @@ worth capturing.
 
 ## Download and import
 
+`node scripts/inspect-save.ts <file>` reads a downloaded save headlessly — meta, WAD roles, the
+player's position out of the decoded state, and `--state`/`--thumb` dumps — through the same codec
+the game stores with, so a reported save can be examined without a browser.
+
 A downloaded save is **one JSON file**, tab-indented: every meta field in the clear — a person can
 open it and read what it is — plus the state's stored gzip bytes, base64'd, as `state`, with the
 record's encoding as `stateEncoding`. Base64 costs a third over the raw bytes and is still several

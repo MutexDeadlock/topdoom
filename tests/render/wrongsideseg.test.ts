@@ -2,6 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { type DoomMap } from '../../src/wad/map.ts';
 import { buildSubSectorPolys, sectorOfSubSector } from '../../src/render/bsp.ts';
+import { World } from '../../src/game/world.ts';
 import { bspMap, leaf, plane, seg, twoSided, wall } from '../fixtures/bspmap.ts';
 import { polygonArea } from '../fixtures/geometry.ts';
 
@@ -102,6 +103,17 @@ describe('Rendering · segs on the wrong side of their leaf', () => {
     assert.ok(polygonArea(polys[1].points) > SOUTH_CELL_AREA * 0.99, 'and its cell survives whole instead of a tolerance strip');
   });
 
+  test('gameplay follows the repair, so the floor underfoot is the one drawn', () => {
+    const map = splitRoom(true);
+    const polys = buildSubSectorPolys(map);
+    assert.equal(polys[1].physicalSector, polys[1].sector, 'a misfiled leaf is in the wrong sector for every purpose');
+    // Sector 1's floor is 32 and sector 0's is 0; the BSP's own answer would
+    // stand the player 32 units above the flat the same cell draws.
+    const world = new World(map);
+    assert.equal(world.sectorIndexAt(0, -128), 0);
+    assert.equal(world.floorAt(0, -128), 0);
+  });
+
   test('a correctly filed back-side seg changes nothing', () => {
     const map = splitRoom(false);
     const polys = buildSubSectorPolys(map);
@@ -113,6 +125,7 @@ describe('Rendering · segs on the wrong side of their leaf', () => {
     const map = roomBesideVoid();
     const polys = buildSubSectorPolys(map);
     assert.equal(polys[1].sector, 0, 'the drawn sector stays the seg\'s own');
+    assert.equal(polys[1].physicalSector, sectorOfSubSector(map, 1), 'and gameplay keeps the BSP answer with it');
     for (let i = 0; i < polys[1].points.length; i += 2) {
       assert.ok(polys[1].points[i] <= 256 + 32, 'no floor stands out into the void past the clip tolerances');
     }

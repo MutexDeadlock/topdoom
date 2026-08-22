@@ -4,7 +4,7 @@
  * (`shotPath`). Every layer reads the level through this. See docs/world.md and docs/movement.md.
  */
 import { LF, NO_SIDE, SKY_FLAT, SUBSECTOR_BIT, type DoomMap, type Sector, type Thing } from '../wad/map.ts';
-import { sectorOfSubSector } from '../render/bsp.ts';
+import { buildSubSectorPolys } from '../render/bsp.ts';
 import { segmentCrossT, segmentIntersect } from '../util/geom.ts';
 import { PLAYER_HEIGHT, SIGHT_EYE_HEIGHT } from './player.ts';
 import { spawnAngleDeg } from './skill.ts';
@@ -163,7 +163,9 @@ export class World {
    * Subsector index -> its sector index (vanilla's `subsector->sector`), built
    * once at load so every sector lookup — `sectorIndexAt`, `sectorAt` and the
    * heights over them, the REJECT probe — costs one typed-array read rather
-   * than the seg -> linedef -> sidedef walk `sectorOfSubSector` does.
+   * than the seg -> linedef -> sidedef walk `sectorOfSubSector` does. Taken
+   * from `SubSectorPoly.physicalSector`, so a leaf a node builder misfiled
+   * under its neighbour answers the sector it really lies in.
    * See docs/world.md § Point-to-sector lookups.
    */
   private subsectorSector: Int32Array;
@@ -203,7 +205,8 @@ export class World {
     this.lineSlope = new Int8Array(map.linedefs.length);
     this.lineOverlapEnds = new Float64Array(map.linedefs.length * 4);
     this.subsectorSector = new Int32Array(map.subsectors.length);
-    for (let i = 0; i < map.subsectors.length; i++) this.subsectorSector[i] = sectorOfSubSector(map, i);
+    const polys = buildSubSectorPolys(map);
+    for (let i = 0; i < map.subsectors.length; i++) this.subsectorSector[i] = polys[i].physicalSector;
     this.buildLineData();
     this.buildGrid();
     this.buildSectorNeighbors();

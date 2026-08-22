@@ -134,14 +134,27 @@ check the sparing stood a ~305k-unit² slab of floor out into the void beside ks
 
 A wrong-side seg's front names the *neighbour's* sector, so a spared leaf cannot take its drawn
 sector from it either: the first correctly-filed seg speaks instead, and a leaf with none draws as
-the sector the probe found around it. Only the drawn sector moves — `sectorOfSubSector` still
-answers through the misfiled seg, which is what vanilla's `R_PointInSubsector` reports there too,
-so gameplay (the player's floor height on that trapezoid included) stays vanilla-faithful.
+the sector the probe found around it.
+
+**Gameplay follows this repair**, through `SubSectorPoly.physicalSector` — which `World` builds its
+`subsector -> sector` table from, rather than `sectorOfSubSector`. A leaf filed under the wrong
+sector is in the wrong sector for *every* purpose, not just for drawing: on ksutra MAP04's leaf 953
+the BSP answers sector 12 (floor 16) across a 130k-unit² stretch of sector 38's water (floor -64),
+so the player walked 80 units above the surface they could see. This is a **deliberate deviation** —
+vanilla's `R_PointInSubsector` reports the misfiled sector there too, and GZDoom floats the same way
+— taken because a top-down camera shows the disagreement between the floor drawn and the floor stood
+on, which a first-person view mostly hides.
+
+A leaf whose segs **all** lie on self-referencing lines is exempt: such a seg names one sector on
+both sides, so it cannot have been filed under the wrong one, and the construct below needs gameplay
+to keep the hidden sector. `physicalSector` never follows the self-referencing redirect either.
 
 Measured over both IWADs, `freedoom2.wad` and the committed PWADs: the stock IWADs, SCYTHE and NUTS
 change nothing at all (one zero-area BOOMEDIT MAP01 leaf changes only its invisible drawn sector);
 ksutra — built with an era nodebuilder that misfiles often — heals ~50 leaves across 20 maps, every
-healed cell's interior probing uniformly to its new drawn sector.
+healed cell's interior probing uniformly to its new drawn sector, and moves 30 of them across 12
+maps for gameplay as well, each confirmed against an independent linedef-only probe of the cell's
+centroid. Everywhere else 11.2M grid samples answer exactly as the BSP alone did.
 
 ### Self-referencing sectors
 
@@ -157,13 +170,14 @@ window sill, drew sector 33's floor as a bright 32-deep pit in the sill (the "in
 So a leaf whose segs **all** lie on self-referencing lines takes its drawn sector from whatever
 *encloses* it instead: the leaf's centroid is probed with the same `SectorProbe.sectorIndexAt` the
 wall-stub sparing uses, skipping self-referencing lines so the probe cannot land back on the
-construct itself. Only the drawn sector moves — `sectorOfSubSector` still answers with the BSP
-sector, and `game/world.ts` keeps using it, which is the trick's whole point: a monster standing in
-the closet is *under* the drawn floor, exactly as invisible as vanilla makes it. A leaf with even
+construct itself. Only the drawn sector moves — `physicalSector` keeps the BSP sector, such a leaf
+being exempt from the wrong-side repair above, which is the trick's whole point: a monster standing
+in the closet is *under* the drawn floor, exactly as invisible as vanilla makes it. A leaf with even
 one ordinary seg is left alone; its real border is authoritative. Across the committed WADs only
 BOOMEDIT MAP01 and EPIC MAP03-05 have such leaves at all; the stock IWADs are untouched.
 
-`SubSectorPoly.sector` is the *drawn* sector, so everything reading it follows the remap — including
+`SubSectorPoly.sector` is the *drawn* sector and `physicalSector` the one gameplay stands in; these
+two part company exactly here. Everything reading `sector` follows the remap — including
 `mapmesh.ts`'s mover meshes, which key their flats off it. A self-referencing sector that is itself a
 mover (an invisible lift is the stock example) therefore contributes no flats of its own to raise:
 its leaves are baked into the enclosing sector's static flats, which is what vanilla shows too,

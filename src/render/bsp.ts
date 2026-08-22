@@ -281,26 +281,63 @@ function clipBy(probe: () => SectorProbe, poly: number[], walls: Wall[], sector:
   return cell;
 }
 
-export interface SubSectorPoly {
+/**
+ * A convex floor patch and the sector whose flat it wears — all a flat needs to
+ * be drawn, and so what the mesh builder and `findSolidCaps` take. `SubSectorPoly`
+ * is this plus what gameplay needs on top.
+ */
+export interface SectorPoly {
   /**
-   * Sector this subsector is *drawn* as — everything reading this field (flats,
+   * Sector this patch is *drawn* as — everything reading this field (flats,
    * mover meshes in `render/mapmesh.ts`) follows it. Usually the one its segs
    * resolve to, but a leaf bounded only by self-referencing lines takes the
-   * sector enclosing it instead; gameplay wants the BSP sector and asks
-   * `sectorOfSubSector` for it. docs/render.md § Self-referencing sectors.
+   * sector enclosing it instead. docs/render.md § Self-referencing sectors.
    */
   sector: number;
   /** Convex polygon in DOOM coordinates, counter-clockwise. */
   points: Float64Array; // [x0,y0, x1,y1, …]
 }
 
+export interface SubSectorPoly extends SectorPoly {
+  /**
+   * Sector **gameplay** resolves this leaf to — floor/ceiling heights, sector
+   * specials, sound propagation. Vanilla's `subsector->sector`, except on a leaf
+   * the node builder filed under its neighbour through a wrong-side seg, where
+   * it follows that repair instead: a **deliberate deviation** from
+   * `R_PointInSubsector`, which reports the misfiled sector there — taken
+   * because a top-down camera shows the disagreement between the floor drawn
+   * and the floor stood on. It never follows the self-referencing redirect,
+   * whose whole point is that gameplay keeps the hidden sector.
+   * docs/render.md § Segs on the wrong side of their leaf.
+   */
+  physicalSector: number;
+}
+
+/**
+ * One rebuild per map, handed to all three of its consumers — `World`'s
+ * subsector -> sector table, the mesh build and the fog grid all want the same
+ * polygons. Weak on the map, so a torn-down level takes its polygons with it.
+ * Sharing is safe because a leaf's footprint is fixed geometry: a mover changes
+ * sector heights and lights, never `vertexes`/`segs`/`nodes`.
+ */
+const built = new WeakMap<DoomMap, SubSectorPoly[]>();
+
 /**
  * SEGS only stores edges that lie on real linedefs; the edges introduced by BSP
  * splits are missing. So each subsector is rebuilt by taking a large starting quad
  * and clipping it against every partition line on the path from the root to the
- * leaf, and finally against each of the subsector's segs.
+ * leaf, and finally against each of the subsector's segs. Treat the result as
+ * read-only: it is shared between callers.
  */
 export function buildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
+  const cached = built.get(map);
+  if (cached) return cached;
+  const polys = rebuildSubSectorPolys(map);
+  built.set(map, polys);
+  return polys;
+}
+
+function rebuildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
   const { bounds } = map;
   const pad = 512;
   const x0 = bounds.minX - pad;
@@ -366,6 +403,14 @@ export function buildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
       }
     }
 
+    // Read off before the redirect below, which is a drawing rule alone: the
+    // wrong-side repair above is the only one that moves where the leaf really
+    // *is*. A leaf whose segs all lie on self-referencing lines is exempt from
+    // even that — such a seg names one sector on both sides, so it cannot have
+    // been filed under the wrong one, and the trick needs gameplay to keep the
+    // hidden sector. docs/render.md § Segs on the wrong side of their leaf.
+    const physicalSector = allSelfRef ? bspSector : sector;
+
     // A leaf bounded only by self-referencing lines draws as the sector *enclosing*
     // it, the way vanilla shows it — and outranks the redirect above, whose "first
     // correctly filed seg" would name one of the very sectors being hidden.
@@ -378,23 +423,21 @@ export function buildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
 
     result[ssIndex] = {
       sector,
+      physicalSector,
       points: Float64Array.from(clipped.length >= 6 ? clipped : []),
     };
   };
 
   // Iterative rather than recursive: some maps have very deep BSP trees.
   const stack: { child: number; poly: number[] }[] = [];
-  const rootIndex = map.nodes.length - 1;
-
   if (map.nodes.length === 0) {
     // Maps without nodes: each subsector only gets the hull formed by its segs.
     for (let i = 0; i < map.subsectors.length; i++) {
       finishLeaf(i, [x0, y0, x1, y0, x1, y1, x0, y1]);
     }
-    return result;
+  } else {
+    stack.push({ child: map.nodes.length - 1, poly: [x0, y0, x1, y0, x1, y1, x0, y1] });
   }
-
-  stack.push({ child: rootIndex, poly: [x0, y0, x1, y0, x1, y1, x0, y1] });
 
   while (stack.length > 0) {
     const { child, poly } = stack.pop()!;
@@ -414,9 +457,13 @@ export function buildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
     if (left.length >= 6) stack.push({ child: node.leftChild, poly: left });
   }
 
-  // Mark subsectors the traversal never reached (broken nodes) as empty.
+  // Every index ends up filled, so callers can index the result bare: leaves the
+  // traversal never reached (broken nodes) are marked empty here.
   for (let i = 0; i < result.length; i++) {
-    if (!result[i]) result[i] = { sector: sectorOfSubSector(map, i), points: new Float64Array(0) };
+    if (!result[i]) {
+      const sector = sectorOfSubSector(map, i);
+      result[i] = { sector, physicalSector: sector, points: new Float64Array(0) };
+    }
   }
   return result;
 }

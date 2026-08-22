@@ -134,6 +134,7 @@ console.log(
 const polys = buildSubSectorPolys(map);
 let empty = 0;
 let redirected = 0;
+let refiled = 0;
 let minVerts = Infinity;
 let maxVerts = 0;
 let flatArea = 0;
@@ -141,7 +142,11 @@ for (const [ssIndex, p] of polys.entries()) {
   // Drawn as another sector than the BSP resolves: a self-referencing construct
   // or a spared wrong-side seg (docs/render.md § Segs on the wrong side of their
   // leaf) — both worth seeing when a floor draws unexpectedly.
-  if (p.sector !== sectorOfSubSector(map, ssIndex)) redirected++;
+  const bspSector = sectorOfSubSector(map, ssIndex);
+  if (p.sector !== bspSector) redirected++;
+  // Moved for gameplay too, not just for drawing: a leaf the node builder filed
+  // under its neighbour's sector, where the player's floor was the wrong one.
+  if (p.physicalSector !== bspSector) refiled++;
   const n = p.points.length / 2;
   if (n < 3) {
     empty++;
@@ -160,7 +165,8 @@ for (const [ssIndex, p] of polys.entries()) {
   }
 }
 console.log(
-  `subsector polys: ${polys.length} total, ${empty} degenerate, ${redirected} drawn as another sector, ${minVerts}..${maxVerts} verts,\n` +
+  `subsector polys: ${polys.length} total, ${empty} degenerate, ${redirected} drawn as another sector` +
+    `${refiled > 0 ? ` (${refiled} refiled for gameplay too)` : ''}, ${minVerts}..${maxVerts} verts,\n` +
     `  total floor area ${Math.round(flatArea).toLocaleString('en-US')} map units²,\n` +
     `  ${findSolidCaps(map, polys).length} solid structures lidded`,
 );

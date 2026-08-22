@@ -121,10 +121,20 @@ crossing being ignored — accepted as the same order of approximation.
 
 `subsectorAt` descends the BSP; everything that wants a *sector* for a point goes through it and
 then resolves subsector -> sector. That second half is a table: `World.subsectorSector`, an
-`Int32Array` filled once in the constructor from `sectorOfSubSector` (`render/bsp.ts`, the seg ->
-linedef -> sidedef walk), so the resolution is one typed-array read. `sectorIndexOfSubsector` is the
-accessor; `sectorIndexAt`/`sectorAt` and the `floorAt`/`ceilingAt` over them, `sectorOfSubsector`,
-and the REJECT probe below all route through it.
+`Int32Array` filled once in the constructor, so the resolution is one typed-array read.
+`sectorIndexOfSubsector` is the accessor; `sectorIndexAt`/`sectorAt` and the `floorAt`/`ceilingAt`
+over them, `sectorOfSubsector`, and the REJECT probe below all route through it.
+
+**The table comes from `buildSubSectorPolys`, not from `sectorOfSubSector` alone.** Vanilla's
+`subsector->sector` is the seg -> linedef -> sidedef walk `sectorOfSubSector` does, and that is what
+the table holds for all but a handful of leaves: the exception is a leaf a node builder filed under
+its *neighbour's* sector, which only the polygon rebuild can recognise, since only it knows where the
+leaf's cell actually lies. `SubSectorPoly.physicalSector` carries that repair (docs/render.md §
+Segs on the wrong side of their leaf) and the table takes it, so the sector under the player's feet
+is the one whose flat is drawn there. This is the only reason `world.ts` reaches into `render/`, and
+it costs nothing per frame — the lookup is the same single `Int32Array` read either way. At load the
+rebuild is shared with the mesh and the fog grid (`buildSubSectorPolys` memoizes on the map), so
+adding this reader took a level's poly building from two builds to one.
 
 **The table is built for every map, not only ones with a REJECT table.** It arrived for the REJECT
 probe, but the per-frame sector lookups — damage floors, the sector under the player, sprite

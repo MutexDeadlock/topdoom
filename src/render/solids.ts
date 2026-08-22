@@ -5,7 +5,7 @@
  */
 import { NO_SIDE, type DoomMap } from '../wad/map.ts';
 import { polygonCentroid } from '../util/geom.ts';
-import type { SubSectorPoly } from './bsp.ts';
+import type { SectorPoly } from './bsp.ts';
 
 /** How far outside an edge the side probe steps, in map units — far enough to clear the line, short enough to stay in the sector it borders. */
 const PROBE_DISTANCE = 1;
@@ -48,7 +48,7 @@ export interface SolidCap {
  * thickness, so roofing it over would bury every room it contains. A solid
  * block encloses no subsector; a building encloses its rooms'.
  */
-export function findSolidCaps(map: DoomMap, polys: SubSectorPoly[]): SolidCap[] {
+export function findSolidCaps(map: DoomMap, polys: readonly SectorPoly[]): SolidCap[] {
   const linesAt = new Map<number, number[]>();
   const outgoing = new Map<number, number[]>();
   const solid: number[] = [];
@@ -163,7 +163,7 @@ function traceVoidFace(map: DoomMap, outgoing: Map<number, number[]>, start: num
   }
 }
 
-function capFor(map: DoomMap, polys: SubSectorPoly[], ring: { lines: number[]; vertexes: number[] }): SolidCap | null {
+function capFor(map: DoomMap, polys: readonly SectorPoly[], ring: { lines: number[]; vertexes: number[] }): SolidCap | null {
   const points = new Float64Array(ring.vertexes.length * 2);
   for (const [i, v] of ring.vertexes.entries()) {
     const vertex = map.vertexes[v];
@@ -218,7 +218,7 @@ function capFor(map: DoomMap, polys: SubSectorPoly[], ring: { lines: number[]; v
  *
  * A subsector is convex, so the mean of its points is inside it.
  */
-function enclosesFloor(polys: SubSectorPoly[], points: Float64Array): boolean {
+function enclosesFloor(polys: readonly SectorPoly[], points: Float64Array): boolean {
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;

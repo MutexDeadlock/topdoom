@@ -5,7 +5,7 @@
  */
 import * as THREE from 'three';
 import { LF, NO_SIDE, SKY_FLAT, type DoomMap, type LineDef, type SideDef, type Sector } from '../wad/map.ts';
-import { buildSubSectorPolys, type SubSectorPoly } from './bsp.ts';
+import { buildSubSectorPolys, type SectorPoly, type SubSectorPoly } from './bsp.ts';
 import { findSolidCaps, pointInPolygon, type SolidCap } from './solids.ts';
 import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
 import type { Pos2 } from '../types.ts';
@@ -846,7 +846,7 @@ function processFlat(
 }
 
 function addFlatFan(
-  poly: SubSectorPoly,
+  poly: SectorPoly,
   ss: number,
   batches: BatchSet,
   size: SizeFn,

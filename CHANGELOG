@@ -3,10 +3,14 @@ v0.15.2 (2026-08-2?)
 Features and improvements
 
 Fixed bugs
-  - black holes and wrong flats in the floor on maps whose nodebuilder
-    filed a seg into the wrong side of its line
   - items tucked just out of walking reach (an alcove, a window ledge)
     can be picked up again, the way vanilla's square reach allows
+  - fixed problems with maps built by an buggy nodebuilder (hello ksutra.wad)
+    - black holes and wrong flats in the floor on maps whose nodebuilder
+      filed a seg into the wrong side of its line
+    - no more walking through the air over a floor drawn far below:
+      where a nodebuilder filed a leaf under the wrong sector, physics
+      now stands on the same floor the renderer paints
 
 
 ===============================================================================

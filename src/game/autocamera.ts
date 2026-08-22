@@ -46,8 +46,8 @@ export function setCameraMode(mode: CameraMode): void {
 // 480u/60° constructor defaults in render/camera.ts are manual mode's framing
 // and deliberately don't lie at any one shared openness.
 const AUTO_NARROW_DISTANCE = 350;
-const AUTO_WIDE_DISTANCE = 720;
 const AUTO_NARROW_TILT = 50;
+const AUTO_WIDE_DISTANCE = 720;
 const AUTO_WIDE_TILT = 70;
 
 /** The probe fan: ray count and per-ray reach in map units — tuned by feel. */
@@ -59,10 +59,10 @@ const OPENNESS_RANGE = 1280;
  * The two aggregates need their own windows because they are different
  * statistics. docs/render.md § Auto camera.
  */
-const SPREAD_NEAR = 64;
-const SPREAD_FAR = 400;
-const AHEAD_NEAR = 128;
-const AHEAD_FAR = 640;
+const SPREAD_NEAR = 60;
+const SPREAD_FAR = 600;
+const AHEAD_NEAR = 90;
+const AHEAD_FAR = 1200;
 
 /** How fast the smoothed openness follows a measurement, 1/seconds — tuned by feel (the ~1 s "breathing" dial). */
 const OPENNESS_SMOOTH_RATE = 1.5;

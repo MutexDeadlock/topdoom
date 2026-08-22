@@ -8,7 +8,7 @@
  * How long a destructive button has to be held. Tuned by feel: long enough that a stray click can't
  * destroy anything, short enough that nobody wonders whether the button is broken.
  */
-const HOLD_MS = 750;
+const HOLD_MS = 500;
 
 /**
  * Turns `button` into a press-and-hold confirm. The action fires when the fill lands; letting go

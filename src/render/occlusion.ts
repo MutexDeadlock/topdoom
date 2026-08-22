@@ -18,7 +18,7 @@ import type { Pos3 } from '../types.ts';
  * rendered as a dithered discard (see MaterialBank.get), not real alpha
  * blending, so this reads as "fraction of pixels kept," not translucency.
  */
-const FADE_ALPHA = 0.2;
+const FADE_ALPHA = 0.25;
 /** Exponential smoothing rate (1/seconds) so fades don't pop in/out per frame. */
 const FADE_SPEED = 10;
 /** Snap-to-target threshold for `dampen` — see its doc for why this matters. */

@@ -1,4 +1,4 @@
-v0.1?.? (2026-08-2?)
+v0.15.1 (2026-08-22)
 
 Features and improvements
   - HEXEN-format maps load: HEXEN itself is not planned, but some
@@ -13,9 +13,7 @@ Features and improvements
     - a file with no map this engine can load can't be picked any more
     - your own WAD folder is rescanned at startup, so files added
       since the last visit show up without opening the overlay
-
-Fixed bugs
-
+  - Menues: "Press-and-hold to confirm" buttons act a bit faster now
 
 
 ===============================================================================

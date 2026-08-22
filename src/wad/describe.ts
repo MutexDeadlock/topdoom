@@ -1,14 +1,15 @@
 /**
  * What a WAD *is*, read from as few of its bytes as possible: type, maps, lump count, whether it
- * carries a DEHACKED patch, and the level titles it names. The one implementation behind all three
- * callers that need this without loading the file into the engine — the build-time manifest, an
- * uploaded file, and a scan of the player's own library folder.
+ * carries a DEHACKED patch, the level titles it names, and whether this engine can run any of it.
+ * The one implementation behind all three callers that need this without loading the file into the
+ * engine — the build-time manifest, an uploaded file, and a scan of the player's own library folder.
  * See docs/wad.md § Describing a file without loading it.
  */
 import { Reader } from './reader.ts';
 import { MAP_MARKER, type WadType } from './wad.ts';
 import { MAPINFO_LUMPS, parseMapInfoNames, preferredMapInfoLump } from './campaign/mapinfo.ts';
 import { mergeLevelTitles, titleLookupFor } from './campaign/names.ts';
+import { MAP_GROUP_LUMPS, wadSupport, type MapLumpSummary, type WadSupport } from './support.ts';
 import { parseDehacked } from '../game/dehacked.ts';
 
 /**
@@ -34,6 +35,8 @@ export interface WadDescription {
   dehacked: boolean;
   /** Each map's title: its MAPINFO's, and where that names nothing, its DEHACKED patch's. */
   levelNames: Record<string, string>;
+  /** Whether this engine can run what the file ships — docs/wad.md § Will it run? */
+  support: WadSupport;
 }
 
 const HEADER_BYTES = 12;
@@ -82,16 +85,40 @@ export async function describeWad(name: string, src: ByteRanges): Promise<WadDes
     throw new Error(`${name}: WAD directory is out of bounds`);
   }
 
-  const maps: string[] = [];
+  // The map summaries are filled in during the walk, bar their SSECTORS signatures — those need a
+  // read, so `nodeLumps` parks where each one lives and the wave below fills them in place.
+  const groups: MapLumpSummary[] = [];
+  const nodeLumps: (Entry | null)[] = [];
   const dehLumps: Entry[] = [];
   const mapInfoLumps = new Map<string, Entry>();
   const dir = reader(await src.read(dirOffset, lumpCount * DIRECTORY_ENTRY_BYTES));
+  // The group a map marker opened, until a lump that isn't part of one closes it again — the same
+  // "the lumps follow the marker" rule `map.ts: mapLumps` reads a level by.
+  let group: Map<string, number> | null = null;
   for (let i = 0; i < lumpCount; i++) {
     const offset = dir.i32();
     const size = dir.i32();
     const lump = dir.name8();
-    if (MAP_MARKER.test(lump)) maps.push(lump);
-    else if (lump === 'DEHACKED') dehLumps.push({ offset, size });
+    if (MAP_MARKER.test(lump)) {
+      group = new Map();
+      groups.push({ name: lump, lumps: group, ssectorsSignature: '' });
+      nodeLumps.push(null);
+      continue;
+    }
+    if (group !== null && MAP_GROUP_LUMPS.has(lump)) {
+      // First one wins, as in `mapLumps`: a repeated name inside one group is a leftover.
+      if (!group.has(lump)) {
+        group.set(lump, size);
+        // Only worth a read where there are bytes to read: an empty SSECTORS (XNOD/ZNOD) carries
+        // no signature, and a UDMF map has none at all.
+        if (lump === 'SSECTORS' && size >= SIGNATURE_BYTES) {
+          nodeLumps[nodeLumps.length - 1] = { offset, size: SIGNATURE_BYTES };
+        }
+      }
+      continue;
+    }
+    group = null;
+    if (lump === 'DEHACKED') dehLumps.push({ offset, size });
     // Last one wins within a file, matching the merged directory.
     else if (MAPINFO_LUMPS.includes(lump)) mapInfoLumps.set(lump, { offset, size });
   }
@@ -101,34 +128,46 @@ export async function describeWad(name: string, src: ByteRanges): Promise<WadDes
   const wanted = preferredMapInfoLump([...mapInfoLumps.keys()]);
   // The directory says where all of these are, and none of them depends on another — so they go out
   // together. Over a library scan that is the difference between one round trip per lump and one
-  // per file, on the one wait the player watches (`disk.ts: describeAll`).
-  const [mapInfoText, dehBodies] = await Promise.all([
+  // per file, on the one wait the player watches (`disk.ts: describeAll`). The node signatures ride
+  // along for the same reason: four bytes per map, not one round trip per map.
+  const [mapInfoText, dehBodies, signatures] = await Promise.all([
     wanted ? text(src, mapInfoLumps.get(wanted)!) : Promise.resolve(null),
     Promise.all(dehLumps.map((lump) => text(src, lump))),
+    Promise.all(nodeLumps.map((lump) => (lump ? text(src, lump) : null))),
   ]);
+  signatures.forEach((sig, i) => (groups[i].ssectorsSignature = sig ?? ''));
   const mapInfoTitles = mapInfoText === null ? [] : parseMapInfoNames(mapInfoText);
 
   // Every `DEHACKED` lump in the file, merged in directory order — DEH patches are cumulative,
   // which is the rule `readDehacked` applies across the whole set (docs/wad.md § DEHACKED).
   const strings = new Map<string, string>();
+  let dehShortfall = false;
   if (dehBodies.length > 0) {
     const titles = titleLookupFor();
     for (const body of dehBodies) {
       if (body === null) continue;
-      for (const [key, title] of parseDehacked(body, titles).strings) strings.set(key, title);
+      const patch = parseDehacked(body, titles);
+      for (const [key, title] of patch.strings) strings.set(key, title);
+      // Only what the engine declines to do, never what it has no target for — docs/wad.md §
+      // Will it run?
+      dehShortfall ||= patch.warnings.some((w) => w.support === 'unsupported');
     }
   }
 
   return {
     type: ident,
-    maps,
+    maps: groups.map((group) => group.name),
     lumpCount,
     dehacked: dehLumps.length > 0,
     // `mergeLevelTitles` owns the MAPINFO-then-DEHACKED order, so the same file cannot list
     // differently uploaded, served, or found in the player's library.
     levelNames: mergeLevelTitles(name, mapInfoTitles, strings),
+    support: wadSupport(groups, dehShortfall),
   };
 }
+
+/** How many bytes a node-format signature takes (`map/nodes.ts: detectNodeFormat`). */
+const SIGNATURE_BYTES = 4;
 
 interface Entry {
   offset: number;

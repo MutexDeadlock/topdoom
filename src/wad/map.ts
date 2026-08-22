@@ -1,14 +1,15 @@
 /**
  * The map lumps decoded into a `DoomMap`: vertices, linedefs/sidedefs, sectors, the BSP
- * (nodes/segs/subsectors, any format `wad/nodes.ts` knows) and THINGS. Everything but the
- * BSP and, on a Hexen-format map, the two lumps `hexen.ts` re-decodes is stored exactly as
- * the WAD encodes it. See docs/wad.md.
+ * (nodes/segs/subsectors, any format `map/nodes.ts` knows) and THINGS. Everything but the
+ * BSP and, on a Hexen-format map, the two lumps `map/hexen.ts` re-decodes is stored exactly as
+ * the WAD encodes it. This file is the layer's one entry point (docs/conventions.md § File names):
+ * `map/` holds the two format seams and nothing else reaches into them. See docs/wad.md.
  */
 import type { Wad } from './wad.ts';
-import * as hexen from './hexen.ts';
-import { readBsp, type NodeFormat } from './nodes.ts';
+import * as hexen from './map/hexen.ts';
+import { readBsp, type NodeFormat } from './map/nodes.ts';
 
-export { SUBSECTOR_BIT, type NodeFormat } from './nodes.ts';
+export { GL_SIGNATURES, SUBSECTOR_BIT, type NodeFormat } from './map/nodes.ts';
 
 export const NO_SIDE = 0xffff;
 
@@ -147,7 +148,12 @@ export interface DoomMap {
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
 }
 
-const MAP_LUMPS = [
+/**
+ * The lumps that belong to a map, in the order they follow its marker. Exported because
+ * `wad/support.ts` walks the same group over a directory it hasn't loaded, and two lists of what a
+ * map is made of would drift (docs/wad.md § Will it run?).
+ */
+export const MAP_LUMPS = [
   'THINGS',
   'LINEDEFS',
   'SIDEDEFS',

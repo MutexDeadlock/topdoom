@@ -5,6 +5,12 @@ Features and improvements
     community maps use that format. 
     These maps will not play right, but at least they dont render 
     as garbage geometry now.
+  - WAD Library:
+    - add a support column says whether a file runs fully,
+      only partly (HEXEN format, or a DEHACKED this engine won't fully
+      apply) or not at all (UDMF, GL nodes, no nodes).
+      A tooltip tells the reasons and the maps that raise them.
+    - a file with no map this engine can load can't be picked any more
 
 Fixed bugs
 

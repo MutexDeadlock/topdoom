@@ -24,6 +24,7 @@ import {
   type LibrarySkip,
   type WadSource,
 } from '../../wad/library.ts';
+import { nothingLoads } from '../../wad/support.ts';
 import { confirmOnHold } from './hold.ts';
 import { sourceColumnSpans } from './labels.ts';
 
@@ -698,11 +699,14 @@ export class LibraryUi {
   }
 
   private iwadRow(source: WadSource, chosen: boolean): HTMLLabelElement {
-    const row = this.baseRow(source, chosen, badge('game WAD', chosen ? '' : 'quiet'));
+    const dead = unplayable(source);
+    const mark = dead ? badge(REFUSED, 'reason') : badge('game WAD', chosen ? '' : 'quiet');
+    const row = this.baseRow(source, chosen, mark, dead);
     const input = document.createElement('input');
     input.type = 'radio';
     input.name = 'wadlibrary-iwad';
     input.checked = chosen;
+    input.disabled = dead;
     input.addEventListener('change', () => this.draftIwadPick(source));
     row.prepend(input);
     return row;
@@ -717,21 +721,27 @@ export class LibraryUi {
     // The rule itself is `wad/library.ts`'s, shared with the prune that runs when a game WAD is
     // picked — so a row this pane offers is one the menu will still be holding afterwards.
     const incompatible = !fitsGameWad(iwad, source);
+    const dead = unplayable(source);
 
     // No merge-order number here: the order is a property of the *set* being assembled, which the
     // New Game tab's add-on list owns and shows. Repeating it against a browser row would number
     // files by something the browser has no say over.
-    const mark = isGameWad
-      ? badge('game WAD')
-      : incompatible
-        ? badge(mapStyle(source) === 'doom1' ? 'DOOM 1 maps' : 'DOOM II maps', 'reason')
-        : badge('');
-    const row = this.baseRow(source, index >= 0, mark, incompatible || isGameWad);
+    //
+    // `dead` outranks `incompatible`: which game WAD is picked is a decision the player can revisit
+    // from this very pane, and a file that will not load is not.
+    const mark = dead
+      ? badge(REFUSED, 'reason')
+      : isGameWad
+        ? badge('game WAD')
+        : incompatible
+          ? badge(mapStyle(source) === 'doom1' ? 'DOOM 1 maps' : 'DOOM II maps', 'reason')
+          : badge('');
+    const row = this.baseRow(source, index >= 0, mark, incompatible || isGameWad || dead);
 
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = index >= 0;
-    input.disabled = incompatible || isGameWad;
+    input.disabled = incompatible || isGameWad || dead;
     input.addEventListener('change', () => this.draftPwadToggle(source));
     row.prepend(input);
     return row;
@@ -784,6 +794,9 @@ export class LibraryUi {
    * added twice, or re-read by a scan, is a fresh `WadSource` for the same WAD (see `carryDraft`).
    */
   private draftTake(source: WadSource): void {
+    // The one place a file can reach the draft without going through a row: `stage`, for a file
+    // dropped on the open overlay. A row for it would be greyed out, so it must not arrive ticked.
+    if (unplayable(source)) return;
     if (source.type === 'IWAD') {
       this.draftIwad = source;
       this.draftPwads = pwadsFor(source, this.draftPwads);
@@ -1018,6 +1031,18 @@ function header(el: HTMLHeadingElement, label: string, count: number): void {
  * interrupting for, so it is the only kind that carries the accent; `'quiet'` is an aside, and the
  * empty default is the spacer that keeps the columns behind it lined up.
  */
+/**
+ * A file this engine cannot run at all — no map in it will load, so there is nothing to pick it
+ * for. The verdict and the rule are `wad/support.ts`'s (docs/wad.md § Will it run?); the overlay's
+ * part is refusing the row. A file only *partly* broken stays pickable: see `nothingLoads`.
+ */
+function unplayable(source: WadSource): boolean {
+  return source.support !== undefined && nothingLoads(source.support, source.maps.length);
+}
+
+/** The badge on a row refused for `unplayable`. The support column's tooltip carries the detail. */
+const REFUSED = "won't load";
+
 function badge(text: string, kind: '' | 'quiet' | 'reason' = ''): HTMLSpanElement {
   const span = document.createElement('span');
   span.className = kind ? `badge ${kind}` : 'badge';

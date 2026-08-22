@@ -237,20 +237,40 @@ What is its own:
 - **The detail column says what a file *is*, never where it sits.** `describeSource` used to append
   a library file's subfolder; the row is already under that folder in the tree, so repeating it only
   crowded the column. An upload's `from disk` stays, since it belongs to no folder at all.
-- **A file row is five columns** — name, size, contents, DEHACKED, badge — with the name taking the
-  slack and the rest fixed-width and right-aligned, so sizes line up under sizes and map counts
-  under map counts rather than each trailing whatever length its file name happened to be.
+- **A file row is six columns** — name, badge, size, contents, DEHACKED, support — with the name
+  taking the slack and the rest fixed-width and right-aligned, so sizes line up under sizes and map
+  counts under map counts rather than each trailing whatever length its file name happened to be.
   `labels.ts: sourceColumns` returns the three detail values separately and `sourceColumnSpans`
-  renders them, and **both lists use both** — the add-on rows on the New Game tab carry the same
+  renders them plus the support glyph, and **both lists use both** — the add-on rows on the New Game tab carry the same
   columns, just narrower, since that panel is 620px against the overlay's 60% of the viewport. The
-  markup is shared too, not just the strings: the `meta size`/`meta content`/`meta deh` class names
-  the two stylesheets target have one definition, and `#wadlibrary` nests inside `#menu` so its rows
-  inherit `#menu .row` outright — `library.css` carries only the deltas. So the two cannot disagree about what a file
-  *is*, only about how much space there is to say it. (`describeSource` joins the same values and is
-  now only the game-WAD select's one-line label.) The badge **leads** the fixed-width block, ahead of
+  markup is shared too, not just the strings: the `meta size`/`meta content`/`meta deh`/`meta
+  support` class names the two stylesheets target have one definition, and `#wadlibrary` nests
+  inside `#menu` so its rows inherit `#menu .row` outright — `library.css` carries only the deltas.
+  So the two cannot disagree about what a file *is*, only about how much space there is to say it.
+  (`describeSource` joins the same values and is now only the game-WAD select's one-line label; the
+  support verdict is deliberately not in it, being a glyph rather than text.) The badge **leads** the fixed-width block, ahead of
   the size: what it carries is the reason a row can't be picked, which has to be read before the
   file's stats rather than after them. It is rendered **even when it says nothing**, or every column
   behind it would land somewhere different on each row, which is the whole thing they exist for.
+- **The last column says whether the file will run at all** — a green tick, an amber warning or a
+  red cross, with the reasons and the maps that raise them in its tooltip. The verdict itself is
+  `wad/support.ts`'s and is decided when the file is *described* (docs/wad.md § Will it run?), not
+  here: it rides in on `WadSource.support` for a server file, an upload and a library file alike, so
+  the same WAD cannot read differently in the three places it can come from. The menu's job is the
+  glyph and the colour — and drawing **nothing** where there is no verdict, since absent is unknown
+  rather than fine. The glyphs take `U+FE0E` for the reason the folder tree's do; the colours are
+  docs/styles.md § Tokens.
+- **A file with nothing left to load is greyed out**, game WAD and add-on alike, and carries
+  `won't load` in the badge column. The rule is `support.ts: nothingLoads`, deliberately **narrower
+  than the red glyph**: a megawad with one UDMF map among thirty-one that work still shows the red
+  cross, and is still perfectly pickable — refusing the whole file over one map would lock the
+  player out of the rest of it. Only a file whose *every* map is refused is unpickable, and a
+  map-less add-on never is, having nothing that could fail to load.
+  This lives in `LibraryUi`, **not** in `pwadsFor`: what a set costs is a rule about the game WAD
+  and its add-ons, while "this file will not load" is a property of the file alone — folding it
+  into the prune would silently drop files out of a stored selection and out of the set a savegame
+  resolves against, rather than merely declining to offer them. `draftTake` carries the same guard,
+  since a file *dropped* on the open overlay reaches the draft without passing a row.
 - **The reason a row can't be picked is the one thing on it that stays at full strength.** A
   disabled row is dimmed by *colour*, never by `opacity` — a child cannot undo a parent's opacity,
   and this is the child that must not be dimmed — and the badge carries the accent while the name
@@ -334,7 +354,7 @@ What is its own:
 merge order — browsing is the overlay's job now, so the list on the tab is short and is no longer a
 second picker that has to agree with the first about what is compatible (nothing incompatible can be
 in it: `pruneIncompatiblePwads` already ran). Each row is checkbox · name · size · contents ·
-DEHACKED · `#N` · `×` — the same detail columns the overlay lists, narrower — and the two controls
+DEHACKED · support · `#N` · `×` — the same detail columns the overlay lists, narrower — and the two controls
 mean **different things**:
 
 - **The checkbox disables, it does not remove.** An unticked add-on keeps its row and its place in

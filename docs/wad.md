@@ -38,8 +38,8 @@ nodes all look perfectly sane. That asymmetry is the tell.
 
 Only **LINEDEFS** and **THINGS** differ. SECTORS, SIDEDEFS, VERTEXES, SEGS, SSECTORS, NODES, REJECT
 and BLOCKMAP are byte-identical in both, so a Hexen map still gets the full node-format treatment
-above. `wad/hexen.ts` owns those two lumps and normalizes them to the same records and flag bits a
-Doom map yields — the same seam `nodes.ts` is for the BSP, so `loadMap` branches once per lump and
+above. `wad/map/hexen.ts` owns those two lumps and normalizes them to the same records and flag bits a
+Doom map yields — the same seam `map/nodes.ts` is for the BSP, so `loadMap` branches once per lump and
 nothing downstream sees a format difference. The two record layouts are gzdoom `doomdata.h`'s
 `maplinedef2_t` and `mapthinghexen_t`:
 
@@ -86,7 +86,7 @@ under the ceiling for the `MF_SPAWNCEILING` types, exactly as in a Doom map.
 
 ## Node formats
 
-`wad/nodes.ts` reads the three BSP lumps (SEGS/SSECTORS/NODES) in the four encodings Boom-era maps
+`wad/map/nodes.ts` reads the three BSP lumps (SEGS/SSECTORS/NODES) in the four encodings Boom-era maps
 actually ship, detected per PrBoom+ `p_setup.c` — DeePBSP V4 and the ZDoom formats sign the NODES
 lump (`xNd4\0\0\0\0`, `XNOD`, `ZNOD`), GL nodes sign SSECTORS and are refused with a load error
 naming the format (this engine clips subsector polygons from plain nodes — docs/render.md § BSP
@@ -555,6 +555,59 @@ three callers want it at three different moments — see there.
 Failures are `throw`n, with `WadFile`'s own messages, because an upload has someone waiting on an
 answer: `Menu.addFiles` turns the message into the status line. The manifest plugin and the library
 scan catch it and leave the file out of the listing instead.
+
+## Will it run?
+
+`wad/support.ts` answers one question about a file the menu has not loaded: **can this engine run
+what it ships?** The answer is a `WadSupport` — every reason it can't, worst first, each naming the
+maps that raise it — and it is what the WAD Library's support column shows (docs/menu.md § WAD
+Library). `describeWad` computes it, so every listing path gets the same verdict.
+
+The `ok`/`partial`/`broken` level is **derived** (`supportLevel`), never stored. Both persisted
+copies hold the reasons alone, so reclassifying a code in `SUPPORT_ISSUES` takes effect on rows
+written before the change, and no stored record can assert a level its own reasons contradict.
+
+The whole check runs **off the lump directory**, plus one four-byte read per map. That is the
+constraint the rule set is chosen under, not an implementation detail: a library scan describes
+hundreds of files it will never load (§ Describing a file without loading it), so anything needing
+LINEDEFS or SECTORS is out — including the linedef/sector special coverage `inspect-wad` reports,
+which is the sharper answer and stays the inspector's job. This column says whether a map **loads**
+and whether its **format** is one this engine plays fully; the inspector says which of its specials
+land.
+
+Which lumps belong to a map is `map.ts: MAP_LUMPS` — the same list `loadMap` reads a level by, not a
+second copy — widened by `MAP_GROUP_LUMPS` with the lumps a UDMF map carries instead, so the walk
+steps over them and reaches `TEXTMAP` rather than reporting a map with no lumps.
+
+**`broken` — the map will not load.** One per map, first match winning, so a UDMF map is reported as
+UDMF rather than as the missing LINEDEFS that follow from it:
+
+| Code | Signal | Why |
+|---|---|---|
+| `udmf` | a `TEXTMAP` lump in the group | Text-format maps are not read here at all. `mapLumps` stops at the first lump that isn't one of `MAP_LUMPS`, so such a map loads as an empty world rather than failing loudly. |
+| `incomplete` | THINGS, LINEDEFS, SIDEDEFS, VERTEXES or SECTORS missing or zero-length | There is no level without them, and no player start without THINGS. |
+| `glNodes` | SSECTORS opens with one of `map/nodes.ts: GL_SIGNATURES` | `detectNodeFormat` throws on exactly these (§ Node formats); the signature list is imported, not restated. |
+| `noBsp` | **both** NODES and SSECTORS empty | A map left for the port to build nodes for. Either lump alone is enough — XNOD/ZNOD put the whole BSP in NODES and leave SSECTORS empty, and a map convex enough to be a single subsector has no NODES record to write. |
+
+**`partial` — it loads and plays, but not as its author built it.**
+
+| Code | Signal | Why |
+|---|---|---|
+| `hexen` | a `BEHAVIOR` lump in the group | The map draws, collides and fights correctly, but its action specials and ACS do not run (§ What a Hexen map does not get), so anything gated behind a switch or a script cannot be reached. Only raised for a map that isn't already `broken`. |
+| `dehacked` | the patch raises a `DehSupport` **`unsupported`** warning | Action pointers and the MBF flags: things that change how an actor behaves. `noTarget` and `unknown` are deliberately **not** counted — the first is a finale screen or a pickup message, the second a line the parser didn't recognise, and neither changes how a level plays. Counting them turned EPIC.WAD amber over one misspelt `Radius` line. |
+
+A file's level is its worst issue, and a file with no maps at all (a texture or sound pack) is `ok`
+unless its patch says otherwise.
+
+**An empty verdict and no verdict are different things.** `[]` is a file that was checked and found
+fine; *absent* is unknown, and a row carrying it draws **no glyph** rather than a green one.
+`ManifestEntry.support` and `LibraryDescriptor.support` are therefore optional only to tolerate an
+`index.json` or a scan memo written before the field existed; both producers write the verdict on
+**every** file, empty ones included. Omitting the empty case to keep the manifest short is exactly
+the bug that costs every supported file its tick, and it hides in plain sight: the files that *do*
+get a glyph are the ones that are broken, so the column looks like it works. The library memo goes
+further and re-describes a file whose row has no verdict, since re-reading a directory is cheap and
+a permanent blank is not.
 
 ## The `public/wads/` manifest
 

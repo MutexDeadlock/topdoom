@@ -32,8 +32,9 @@ node scripts/inspect-wad.ts public/wads/iwad/DOOM.WAD E1M1
 node scripts/inspect-wad.ts public/wads/iwad/DOOM2.WAD MAP05 public/wads/pwad/SCYTHE.WAD
 ```
 
-Runs under Node's native TS support, no browser. It reports lump/map counts, lump provenance, the
-map and node formats, missing textures, degenerate subsector polygons, whether the player start is walkable,
+Runs under Node's native TS support, no browser. It reports lump/map counts, lump provenance, each
+file's support verdict, the map and node formats, missing textures, degenerate subsector polygons,
+whether the player start is walkable,
 and the two coverage reports — every linedef/sector special classified known/no-op/unknown (the
 Boom-compat acceptance gate), and every DEHACKED record classified applied/no-target/unsupported.
 The fastest check on a WAD-parsing, texture-merging or BSP change, and the way to reproduce a bug
@@ -63,9 +64,11 @@ is still right for a one-off investigation — those go in the scratchpad, never
 ## Architecture
 
 ```
-src/wad/       WAD files, merged lump directory, content ids, map lumps (with the BSP and Hexen
-               formats each normalized behind their own seam), graphics + sprite + sound
-               + music decoding, the menu's WAD library
+src/wad/       WAD files, merged lump directory, content ids, map lumps (map), graphics + sprite
+               + sound + music decoding, whether this engine can run a file at all (support),
+               the menu's WAD library
+src/wad/map/         the two lump formats `map.ts` normalizes behind a seam: the BSP
+               encodings (nodes), Hexen's LINEDEFS/THINGS (hexen)
 src/wad/campaign/    the MAPINFO lump family parsed once (mapinfo), level titles + the vanilla
                title tables (names), vanilla's par times (pars), where each exit leads (progression)
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,

@@ -276,10 +276,13 @@
 }
 
 /*
- * Three detail columns rather than one joined string, each fixed-width and right-aligned so sizes
+ * Four detail columns rather than one joined string, each fixed-width and right-aligned so sizes
  * line up under sizes and map counts under map counts — the same shape `#pwad-list .row .meta`
  * (menu.css) gives the New Game tab, at the wider widths this pane has room for. The colour and
  * font-size come from `#menu .row .meta`. The `ch` widths resolve against that font-size.
+ *
+ * Only three are sized here: the fourth is the support glyph, and its width and its status colours
+ * are `#menu .row .meta.support`'s (menu.css) — one glyph is one glyph at either panel width.
  */
 #wadlibrary .row .meta {
   flex: none;

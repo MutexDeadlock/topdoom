@@ -4,6 +4,7 @@ import type { Plugin } from 'vite';
 import { bytesOf, describeWad } from '../src/wad/describe.ts';
 import { hashBytes } from '../src/wad/checksum.ts';
 import type { ManifestEntry } from '../src/wad/library.ts';
+import type { WadSupport } from '../src/wad/support.ts';
 
 export const MANIFEST_PATH = 'wads/index.json';
 
@@ -21,10 +22,10 @@ export type WadFolder = string;
 /**
  * What this plugin writes into `index.json`. The shape itself is the menu's — `ManifestEntry` in
  * `src/wad/library.ts`, the module that casts the fetched JSON to it — so producer and consumer
- * cannot drift. `id` is always written here even though the consumer tolerates its absence, which
- * is only there for an `index.json` cached from before the field existed.
+ * cannot drift. `id` and `support` are always written here even though the consumer tolerates their
+ * absence, which is only there for an `index.json` cached from before either field existed.
  */
-export type WadManifestEntry = ManifestEntry & { id: string };
+export type WadManifestEntry = ManifestEntry & { id: string; support: WadSupport };
 
 /**
  * One file's manifest entry. The description itself is `wad/describe.ts`'s, shared with the two
@@ -54,6 +55,8 @@ export async function manifestEntry(path: string, folder: WadFolder): Promise<Wa
     // agree or `verifyWadSet` would refuse every load.
     id: hashBytes(buf),
     ...(described.dehacked ? { dehacked: true } : {}),
+    // On every row, empty ones included: absent is *unknown*, not "fine" — docs/wad.md § Will it run?
+    support: described.support,
     ...(Object.keys(described.levelNames).length > 0 ? { levelNames: described.levelNames } : {}),
   };
 }

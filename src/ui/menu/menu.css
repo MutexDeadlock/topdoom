@@ -278,6 +278,37 @@
   width: 4ch;
 }
 
+/*
+ * Whether this engine can run the file (docs/wad.md § Will it run?), as one glyph — shared by both
+ * WAD lists, since `#wadlibrary` nests inside `#menu`. The width is here rather than per-list
+ * because a glyph is a glyph at either panel width; only the text columns needed narrowing.
+ */
+#menu .row .meta.support {
+  width: 3ch;
+  text-align: right;
+  flex: none;
+}
+
+/*
+ * A green/amber/red status scale, and the amber and green stay **literals** for the reason the
+ * profiler's bars and the save row's `.caution` do (docs/styles.md § Tokens): a warning colour must
+ * not move when the menu accent is retuned. Red is the exception and *is* the accent, because
+ * `#menu .warning` already made it the menu's one red for "this won't work" — a fourth red would
+ * only be a near-miss of it. Each has to out-specify `#menu .row .meta` above and
+ * `#wadlibrary .row.disabled .meta` (library.css), which is why all three carry two classes.
+ */
+#menu .row .meta.support.ok {
+  color: #6aa96a;
+}
+
+#menu .row .meta.support.partial {
+  color: var(--caution);
+}
+
+#menu .row .meta.support.broken {
+  color: var(--accent-text-hover);
+}
+
 /* Drops an add-on from the picks — every row here is one (docs/menu.md § WAD Library). Sized to
    the glyph so it doesn't push the detail columns around. */
 #menu .row .forget {

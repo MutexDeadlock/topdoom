@@ -260,6 +260,7 @@ export function librarySources(): WadSource[] {
       maps: descriptor.maps,
       lumpCount: descriptor.lumpCount,
       dehacked: descriptor.dehacked,
+      support: descriptor.support,
       levelNames: descriptor.levelNames,
       size: descriptor.size,
       origin: 'library' as const,
@@ -349,7 +350,9 @@ async function describeAll(
       try {
         const file = await entry.open();
         const hit = memo.get(entry.path);
-        if (hit && hit.size === file.size && hit.lastModified === file.lastModified) {
+        // `hit.support` too: a row predating the support column is re-read rather than listed with
+        // no verdict (docs/wad.md § Will it run?).
+        if (hit && hit.size === file.size && hit.lastModified === file.lastModified && hit.support) {
           out[index] = hit;
         } else {
           const described = await describeWad(entry.path.split('/').pop()!, bytesOfFile(file));

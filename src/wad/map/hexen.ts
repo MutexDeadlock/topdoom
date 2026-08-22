@@ -4,8 +4,8 @@
  * yields, so nothing downstream sees a format difference. Record layouts and flag bits
  * follow gzdoom's `doomdata.h`. See docs/wad.md § Map formats.
  */
-import { records } from './reader.ts';
-import type { LineDef, Thing } from './map.ts';
+import { records } from '../reader.ts';
+import type { LineDef, Thing } from '../map.ts';
 
 /** `maplinedef2_t`: two bytes more than Doom's, `special` and `args` where the tag was. */
 const LINEDEF_SIZE = 16;

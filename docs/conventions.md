@@ -22,10 +22,16 @@ never a flat `thingtables.ts` — the directory already said which domain it is.
 
 **Where a `<domain>.ts` sits beside a `<domain>/`, the parent file is the layer's one public entry
 point** for the rest of the engine and the directory holds its internals. `game/things.ts` +
-`game/things/` and `game/specials.ts` + `game/specials/` are both this shape. The parent may
-re-export a type out of the directory to keep that true — `things.ts` does exactly that for
-`ThingLayer`, `MonsterRef` and `BarrelExplosion`, so `game.ts` and `combat.ts` never have to know
-which file inside `things/` a type happens to live in.
+`game/things/`, `game/specials.ts` + `game/specials/` and `wad/map.ts` + `wad/map/` are all this
+shape. The parent may re-export out of the directory to keep that true — `things.ts` does exactly
+that for `ThingLayer`, `MonsterRef` and `BarrelExplosion`, so `game.ts` and `combat.ts` never have
+to know which file inside `things/` a type happens to live in, and `map.ts` does it for
+`SUBSECTOR_BIT`, `NodeFormat` and `GL_SIGNATURES` so `wad/support.ts` reads the node formats it
+refuses without reaching into `map/nodes.ts`.
+
+`wad/map/` holds the two lump *formats* a map can ship in rather than roles — `nodes.ts` for the
+four BSP encodings, `hexen.ts` for Hexen's own LINEDEFS/THINGS. `campaign/` is the same shape:
+where a directory groups sub-topics rather than stages of one pipeline, the sub-topic is the name.
 
 The one exception is `game/dehacked.ts` + `game/dehacked/`, which has **two** entry points, split
 by audience: reading a patch is the parent, applying one is `dehacked/apply.ts`. Two of the three

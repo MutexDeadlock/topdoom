@@ -4,9 +4,9 @@
  * one in-memory convention: 32-bit node children flagged with `SUBSECTOR_BIT`.
  * Record layouts follow PrBoom+'s `doomdata.h`/`p_setup.c`. See docs/wad.md § Node formats.
  */
-import { Reader, records } from './reader.ts';
-import { inflateZlib } from '../util/inflate.ts';
-import type { Node, Seg, SubSector, Vertex } from './map.ts';
+import { Reader, records } from '../reader.ts';
+import { inflateZlib } from '../../util/inflate.ts';
+import type { Node, Seg, SubSector, Vertex } from '../map.ts';
 
 /**
  * Bit in a node child that marks a subsector reference instead of a node.
@@ -24,8 +24,9 @@ export interface BspData {
   nodes: Node[];
 }
 
-/** ZDoom GL-node signatures (found in SSECTORS). This engine clips subsector polys from plain nodes and has no use for GL segs. */
-const GL_SIGNATURES = ['XGLN', 'ZGLN', 'XGL2', 'ZGL2', 'XGL3', 'ZGL3'];
+/** ZDoom GL-node signatures (found in SSECTORS). This engine clips subsector polys from plain nodes and has no use for GL segs.
+    Exported so the WAD Library can refuse the same formats without loading the map (docs/wad.md § Will it run?). */
+export const GL_SIGNATURES = ['XGLN', 'ZGLN', 'XGL2', 'ZGL2', 'XGL3', 'ZGL3'];
 
 function startsWith(data: Uint8Array | undefined, sig: string): boolean {
   if (!data || data.length < sig.length) return false;

@@ -11,6 +11,8 @@ import { GraphicsBank } from '../src/wad/graphics.ts';
 import { readAnimated } from '../src/wad/animated.ts';
 import { readSwitches } from '../src/wad/switches.ts';
 import { loadMap, NO_SIDE } from '../src/wad/map.ts';
+import { bytesOf, describeWad } from '../src/wad/describe.ts';
+import { describeSupport, supportLevel } from '../src/wad/support.ts';
 import {
   describeDehacked,
   readDehacked,
@@ -43,6 +45,13 @@ const wad = new Wad(files);
 
 for (const file of files) {
   console.log(`${file.name}: ${file.type}, ${file.entries.length} lumps, ${file.mapNames().length} maps`);
+  // The same verdict the WAD Library's support column shows (docs/wad.md § Will it run?), so a
+  // file's row in the menu can be reproduced here rather than guessed at.
+  const { support } = await describeWad(file.name, bytesOf(file.buffer));
+  if (supportLevel(support) !== 'ok') {
+    const text = describeSupport(support, file.mapNames().length);
+    console.log(text.split('\n').map((line) => `  ${line}`).join('\n'));
+  }
 }
 
 const allMaps = wad.mapNames();

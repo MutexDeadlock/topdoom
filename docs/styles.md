@@ -86,14 +86,18 @@ Everything else stays a literal. Values used two or three times inside a single 
 `#6f6a65`, `#1b1b21`, the `rgba()` scrims), are deliberately not folded in: collapsing them into the
 nearest token would be a visual change wearing a cleanup's clothes.
 
-Three documented exceptions, each commented at the site:
+**Status colours are their own family**, and never rungs of the accent: a warning must not move when
+the menu accent is retuned. `--caution` (the text-weight amber) is a token because two stylesheets
+read it — the save row's missing-add-on note and the WAD Library's support column. Its neighbours in
+that scale are not, and each says why at the site: the support column's green has one site, and the
+profiler's green/gold/red bar fills are at fill weight rather than text weight (its red happens to
+be the accent's hex and stays literal anyway, precisely so the two can't be retuned together). Where
+a status colour *is* the accent it says so — the support column's red reads `--accent-text-hover`,
+because `#menu .warning` already made that the menu's one red for "this won't work" and a second
+would only be a near-miss.
 
-- **The profiler's bar colours** (`profilerhud.css`) are a green/gold/red *status* scale. The red
-  happens to be the accent's hex and stays literal anyway, so retuning the menu accent can't
-  recolour a warning.
-- **The save row's `.caution` amber** (`savegames.css`) is the same argument at text weight: it
-  pairs with the red `.warning` as a status scale, not as a rung of the accent family, so retuning
-  the accent must not follow it. One site, so no token either way.
+One further documented exception:
+
 - **`#changelog { z-index: 5 }`** is inside `#menu`'s stacking context, not on the global ladder.
 
 ### The stacking ladder

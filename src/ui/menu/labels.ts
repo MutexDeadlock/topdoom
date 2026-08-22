@@ -4,6 +4,7 @@
  * See docs/menu.md.
  */
 import type { MergedMap, WadSource } from '../../wad/library.ts';
+import { describeSupport, supportLevel, type SupportLevel } from '../../wad/support.ts';
 
 function formatSize(bytes: number): string {
   return bytes >= 1024 * 1024
@@ -17,6 +18,9 @@ function formatSize(bytes: number): string {
  * is what renders them. `describeSource` joins the same values into one line for the IWAD select,
  * which has room for nothing else, so the two can't disagree about what a file is — only about how
  * much room there is to say it.
+ *
+ * The support verdict is deliberately **not** one of these: it is a coloured glyph, not text, and
+ * the `<select>` holds only text. A game WAD's verdict is on its WAD Library row instead.
  */
 export interface SourceColumns {
   size: string;
@@ -43,23 +47,46 @@ export function sourceColumns(src: WadSource): SourceColumns {
 }
 
 /**
- * The same three columns as finished spans, for the two lists that give each its own space — the
+ * Whether this engine can run the file, as one glyph each — `U+FE0E` on all three, the same
+ * text-presentation request the folder tree and the save list's wastebasket make, so they render in
+ * the row's own colour rather than as colour emoji. `menu.css` gives each level its colour.
+ */
+const SUPPORT_GLYPHS: Record<SupportLevel, string> = {
+  ok: '\u2714\uFE0E',
+  partial: '\u26A0\uFE0E',
+  broken: '\u2716\uFE0E',
+};
+
+/** One fixed-width detail column. The class name is what both stylesheets target. */
+function metaSpan(kind: string, text: string): HTMLSpanElement {
+  const span = document.createElement('span');
+  span.className = `meta ${kind}`;
+  span.textContent = text;
+  return span;
+}
+
+/**
+ * The same four columns as finished spans, for the two lists that give each its own space — the
  * WAD Library's file pane and the New Game tab's narrower add-on list. Built here rather than at
- * either call site so the `meta size`/`meta content`/`meta deh` class names the two stylesheets
- * target have one definition, and a fourth column costs one edit.
+ * either call site so the `meta size`/`meta content`/`meta deh`/`meta support` class names the two
+ * stylesheets target have one definition, and a fifth column costs one edit.
+ *
+ * The support glyph is **last**, at the far right, and is the one column that can be blank: a
+ * source carrying no verdict says nothing rather than claiming the file is fine
+ * (docs/wad.md § Will it run?).
  */
 export function sourceColumnSpans(src: WadSource): HTMLSpanElement[] {
   const { size, content, dehacked } = sourceColumns(src);
-  return [
-    ['size', size],
-    ['content', content],
-    ['deh', dehacked],
-  ].map(([kind, text]) => {
-    const span = document.createElement('span');
-    span.className = `meta ${kind}`;
-    span.textContent = text;
-    return span;
-  });
+  const level = src.support && supportLevel(src.support);
+  const support = metaSpan(`support${level ? ` ${level}` : ''}`, level ? SUPPORT_GLYPHS[level] : '');
+  if (src.support && level) {
+    // The reasons and the maps that raise them, which is the whole point of the column: the glyph
+    // says how bad, the tooltip says what and where.
+    support.title = describeSupport(src.support, src.maps.length);
+    support.setAttribute('role', 'img');
+    support.setAttribute('aria-label', support.title);
+  }
+  return [metaSpan('size', size), metaSpan('content', content), metaSpan('deh', dehacked), support];
 }
 
 /** A WAD row's detail line, joined, for the one place too narrow to give each column its own space:

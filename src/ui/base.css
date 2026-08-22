@@ -33,6 +33,11 @@
   --accent: #c0392b;
   --accent-hover: #d84937;
   --accent-text-hover: #e06c5a;
+
+  /* Caution, at text weight. Deliberately *not* a rung of the accent family: a warning colour must
+     not move when the accent is retuned (docs/styles.md § Tokens). Read by the save row's missing
+     add-on and the WAD Library's support column. */
+  --caution: #cfa23c;
 }
 
 html,

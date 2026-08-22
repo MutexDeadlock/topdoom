@@ -75,7 +75,7 @@ describe('WAD parsing · describing a file without loading it', () => {
    * path each used to carry: one describer, so a file cannot list differently served than picked.
    */
   test('the served manifest reports exactly what describeWad found', async () => {
-    for (const name of ['boomedit.wad', 'doom1_e1m1.wad', 'freedoom_map01.wad']) {
+    for (const name of ['boomedit.wad', 'doom1_e1m1.wad', 'freedoom_map01.wad', 'mock2_map02_hexen.wad']) {
       const entry = await manifestEntry(fixture(name), 'pwad');
       assert.ok(entry, `${name} should describe`);
       const described = await describeWad(name, bytesOf(bytes(name)));
@@ -85,6 +85,8 @@ describe('WAD parsing · describing a file without loading it', () => {
       assert.equal(entry.lumpCount, described.lumpCount, name);
       assert.equal(entry.dehacked ?? false, described.dehacked, name);
       assert.deepEqual(entry.levelNames ?? {}, described.levelNames, name);
+      // On every row, `ok` included: an absent verdict draws no glyph, not a green one.
+      assert.deepEqual(entry.support, described.support, name);
     }
   });
 });

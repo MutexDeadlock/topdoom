@@ -6,7 +6,7 @@ import { fixtureWad, wadFile } from '../fixtures/wadfile.ts';
 import { isAmbush, isMultiplayerOnly, spawnsAtSkill } from '../../src/game/skill.ts';
 
 /**
- * `wad/hexen.ts` and the format detection that reaches it: the two re-encoded record
+ * `wad/map/hexen.ts` and the format detection that reaches it: the two re-encoded record
  * layouts, and the flag translation — the half that fails silently when it is wrong.
  * See docs/wad.md § Map formats.
  */

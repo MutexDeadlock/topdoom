@@ -6,6 +6,7 @@
 import { WadFile, type WadType } from './wad.ts';
 import { idOf } from './checksum.ts';
 import { bytesOf, describeWad } from './describe.ts';
+import type { WadSupport } from './support.ts';
 import { levelTitleFor, missionOf } from './campaign/names.ts';
 
 // This file is the layer's one entry point (docs/conventions.md § File names); `library/` holds
@@ -57,6 +58,8 @@ export interface WadSource {
   lumpCount: number;
   /** Whether the file carries a `DEHACKED` lump — docs/dehacked.md § The coverage report. */
   dehacked?: boolean;
+  /** Every reason this engine can't fully run the file; absent is *unknown* — docs/wad.md § Will it run? */
+  support?: WadSupport;
   /** Level titles this file's MAPINFO defines, keyed by map lump name — see docs/wad.md § Level names. */
   levelNames: Record<string, string>;
   size: number;
@@ -102,6 +105,9 @@ export interface ManifestEntry {
   /** Whether the file carries a `DEHACKED` lump. Presence only — what a patch actually changes
       needs the bytes, which the menu hasn't downloaded. docs/dehacked.md § The coverage report. */
   dehacked?: boolean;
+  /** The support verdict, written on every row. Optional for the same reason `id` is, and only that
+      reason: an `index.json` cached from before the field reads as unknown — docs/wad.md § Will it run? */
+  support?: WadSupport;
   /**
    * `hashBytes` content id, so the menu knows a file's identity without downloading it — what a
    * savegame's WAD set is matched against (docs/savegames.md § WAD-set identity). Computed at build
@@ -186,6 +192,7 @@ function serverSource(entry: ManifestEntry): WadSource {
     maps: entry.maps,
     lumpCount: entry.lumpCount,
     dehacked: entry.dehacked,
+    support: entry.support,
     levelNames: entry.levelNames ?? {},
     size: entry.size,
     origin: 'server',

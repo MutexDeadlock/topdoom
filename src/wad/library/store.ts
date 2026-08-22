@@ -6,6 +6,7 @@
  * See docs/wad.md § The player's own library.
  */
 import { asPromise, idbOpener, txDone } from '../../util/idb.ts';
+import { asWadSupport, type WadSupport } from '../support.ts';
 import type { WadType } from '../wad.ts';
 
 /**
@@ -34,6 +35,9 @@ export interface LibraryDescriptor {
   lumpCount: number;
   dehacked: boolean;
   levelNames: Record<string, string>;
+  /** The support verdict. Optional only for a memo row written before the field existed, which
+      `describeAll` re-reads rather than listing unknown — docs/wad.md § Will it run? */
+  support?: WadSupport;
   /** `hashBytes` content id, present once something has needed the file's identity — `library.ts: ensureWadId`. */
   id?: string;
 }
@@ -137,6 +141,7 @@ function asDescriptor(value: unknown): LibraryDescriptor | null {
   const v = value as Record<string, unknown>;
   if (typeof v.path !== 'string' || v.path === '') return null;
   if (v.type !== 'IWAD' && v.type !== 'PWAD') return null;
+  const support = asWadSupport(v.support);
   return {
     path: v.path,
     size: typeof v.size === 'number' ? v.size : 0,
@@ -146,6 +151,7 @@ function asDescriptor(value: unknown): LibraryDescriptor | null {
     lumpCount: typeof v.lumpCount === 'number' ? v.lumpCount : 0,
     dehacked: v.dehacked === true,
     levelNames: isTitleMap(v.levelNames) ? v.levelNames : {},
+    ...(support ? { support } : {}),
     ...(typeof v.id === 'string' && v.id ? { id: v.id } : {}),
   };
 }

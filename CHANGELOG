@@ -2,6 +2,7 @@ v0.15.2 (2026-08-2?)
 
 Features and improvements
   - DEHACKED action pointers apply (Pointer and [CODEPTR], MBF's ten included)
+  - spectres are slightly better visible
 
 Fixed bugs
   - items tucked just out of walking reach (an alcove, a window ledge)

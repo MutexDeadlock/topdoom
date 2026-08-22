@@ -16,8 +16,8 @@ const INITIAL_CAPACITY = 64;
  * against vanilla's own, not derived from it (docs/sprites.md § The spectre's
  * fuzz), so these two are the whole of it and are meant to be retuned by eye.
  */
-const FUZZ_DISCARD = 0.62;
-const FUZZ_DARKEN = 0.22;
+const FUZZ_DISCARD = 0.52;
+const FUZZ_DARKEN = 0.42;
 
 /**
  * How often the fuzz pattern is redrawn. Vanilla advances `fuzzpos` through

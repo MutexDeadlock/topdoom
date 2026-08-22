@@ -1467,13 +1467,15 @@ export function buildThingSprites(
       dropBatch.dispose();
       fuzzBatch.dispose();
     },
-    tryPickup(pos: Pos3, radius: number, consume: (type: number, dropped: boolean) => boolean): void {
-      const rSq = radius * radius;
+    tryPickup(pos: Pos3, blockdist: number, consume: (type: number, dropped: boolean) => boolean): void {
       for (const p of posed) {
         if (p.picked) continue;
-        const dx = p.x - pos.x;
-        const dy = p.y - pos.y;
-        if (dx * dx + dy * dy > rSq) continue;
+        // `PIT_CheckThing`'s own overlap test is an axis-aligned box, not a
+        // circle: it misses only when `abs(dx) >= blockdist || abs(dy) >= blockdist`.
+        // The corners are what let a player reach an item across a wall they
+        // can't cross (ksutra.wad MAP04, the shells in sector 233).
+        // docs/items.md § Collecting things.
+        if (Math.abs(p.x - pos.x) >= blockdist || Math.abs(p.y - pos.y) >= blockdist) continue;
         // Matches vanilla's PIT_CheckThing overhead/underneath gate: a thing
         // sitting on a not-yet-lowered pillar is in 2D range but out of
         // physical reach, and must stay uncollected until the pillar drops

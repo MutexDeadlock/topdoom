@@ -5,6 +5,8 @@ Features and improvements
 Fixed bugs
   - black holes and wrong flats in the floor on maps whose nodebuilder
     filed a seg into the wrong side of its line
+  - items tucked just out of walking reach (an alcove, a window ledge)
+    can be picked up again, the way vanilla's square reach allows
 
 
 ===============================================================================

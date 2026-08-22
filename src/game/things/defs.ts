@@ -356,13 +356,15 @@ export interface ThingLayer {
    */
   draw(alpha: number, viewAngleDeg: number): void;
   /**
-   * Consumes every not-yet-picked thing within `radius` and vertical reach of
-   * `z` that `consume` accepts, hiding it permanently. This layer owns only
-   * which world instance disappears; `consume` (inventory.ts's `applyPickup`)
-   * owns what picking it up means. Its second argument is the instance's
-   * `dropped` flag. docs/items.md § Collecting things.
+   * Consumes every not-yet-picked thing whose `blockdist` box overlaps `pos`
+   * and that is within vertical reach of `pos.z`, and that `consume` accepts,
+   * hiding it permanently. `blockdist` is `PIT_CheckThing`'s combined radius,
+   * applied as vanilla's axis-aligned box rather than a circle. This layer owns
+   * only which world instance disappears; `consume` (inventory.ts's
+   * `applyPickup`) owns what picking it up means. Its second argument is the
+   * instance's `dropped` flag. docs/items.md § Collecting things.
    */
-  tryPickup(pos: Pos3, radius: number, consume: (type: number, dropped: boolean) => boolean): void;
+  tryPickup(pos: Pos3, blockdist: number, consume: (type: number, dropped: boolean) => boolean): void;
   /**
    * The visible monster whose billboard this ray crosses nearest the camera,
    * or null — auto-aim's lock-on (docs/combat.md § Auto-aim). Nothing fog of

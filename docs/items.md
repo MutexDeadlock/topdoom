@@ -63,11 +63,19 @@ checkpoint written when the level was entered, which under this setting *is* a p
 ## Collecting things
 
 Removing a picked-up item from the world is `ThingLayer`'s job, not `Inventory`'s: each posed thing
-already carries its doomednum and position, so `tryPickup(x, y, z, radius, consume)` tests distance
-and calls back into `applyPickup`, hiding the mesh and marking it `picked` only if `consume` reports
+already carries its doomednum and position, so `tryPickup(pos, blockdist, consume)` tests reach and
+calls back into `applyPickup`, hiding the mesh and marking it `picked` only if `consume` reports
 the pickup actually happened. `picked` short-circuits `ThingLayer.update` before it touches
 fog-of-war visibility — without that, a subsector coming into view after its item was picked would
 make `fogAlphaOf` flip the permanently-hidden mesh back to visible.
+
+**Reach is a box, not a circle.** `PIT_CheckThing` misses a thing only when
+`abs(dx) >= blockdist || abs(dy) >= blockdist`, so the reachable region is an axis-aligned square of
+half-width `PICKUP_RANGE` (= `PLAYER_RADIUS + ITEM_PICKUP_RADIUS` = 36) centred on the player — its
+corners reach 50.9 units out, not 36. Testing a *circle* here is strictly stingier, and it loses
+real pickups: ksutra.wad MAP04's shells in sector 233 sit in a 24-unit-high alcove the player can
+never enter, and the closest spot outside it is 44.6 units away in a straight line but only
+(31, 32) away per axis — collectable in vanilla and GZDoom, not collectable under a radius test.
 
 **`tryPickup`'s `z` check** exists because 2D distance alone lets a player standing at the *base* of a
 not-yet-lowered pillar collect an item still on top of it — DOOM2 MAP04's blue key does exactly this.

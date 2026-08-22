@@ -160,7 +160,11 @@ export function tickPowers(inv: Inventory, dt: number): void {
 /** Item pickup radius (map units) vanilla uses for most pickups (health/armor/ammo/keys). */
 export const ITEM_PICKUP_RADIUS = 20;
 
-/** Combined radius (map units) within which an item is close enough for the player to pick up. */
+/**
+ * `PIT_CheckThing`'s `blockdist` for the player against an item (map units):
+ * the two radii summed, tested as an axis-aligned box, not a circle
+ * (docs/items.md § Collecting things).
+ */
 export const PICKUP_RANGE = PLAYER_RADIUS + ITEM_PICKUP_RADIUS;
 
 const AMMO_MAX: Record<AmmoType, number> = { bullets: 200, shells: 50, rockets: 50, cells: 300 };

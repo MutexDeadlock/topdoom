@@ -385,9 +385,9 @@ export class FogOfWar {
    * This is a BSP descent, and the caller is expected to **memo the answer**
    * (`MoverGeometry`'s per-mover `fogSubsectors`) rather than ask per frame:
    * it depends only on the quad's endpoints, which a mover moving vertically
-   * never changes. A Boom map with hundreds of movable sectors has thousands
-   * of these quads, where the original per-frame probe was written for the
-   * handful a vanilla map has. docs/fogofwar.md § Mover wall quads.
+   * never changes. A Boom map with hundreds of movable sectors has thousands of
+   * these quads, and a probe per quad per frame dominates the fading pass.
+   * docs/fogofwar.md § Mover wall quads.
    */
   wallSubsectorAt(ax: number, ay: number, bx: number, by: number): number {
     const dx = bx - ax;

@@ -350,8 +350,8 @@ export function buildThingSprites(
           : ['A'];
     const frameSeconds = isBarrel ? BARREL_CHAIN.idleFrameSeconds : itemAnim ? itemAnim.frameSeconds : undefined;
     const anim = new SpriteAnimator(bank, materials, spriteName, animFrames, frameSeconds);
-    // Skips a thing whose art the WAD doesn't actually carry, same as before —
-    // resolving once here is what the old build-time `setPose` call was for.
+    // Resolved once, here: a thing whose art this WAD set doesn't carry is
+    // skipped rather than spawned pointing at a missing lump.
     if (!anim.resolve(facingDeg, VIEWER_ANGLE_DEG)) return null;
     const { x, y, z } = at;
     const thing: PosedThing = {

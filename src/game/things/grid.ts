@@ -232,8 +232,7 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
    * BLOCKER_GRID_CELL` units laterally, so it cannot miss a monster the exact
    * ray would hit. `clearance` is how far off the ray a body can still be
    * struck — the caller's widest possible hit radius, which is per-species and
-   * so up to a spider mastermind's 163 units rather than the flat ~24 this
-   * assumed while one shared hitbox covered every type. Stamped rather than
+   * so up to a spider mastermind's 163 units. Stamped rather than
    * `Set`-deduped, since consecutive neighbourhoods overlap heavily.
    * docs/monster-ai.md § Spatial indexing.
    */

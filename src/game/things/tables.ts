@@ -456,13 +456,11 @@ export function attackPoseFrameSeconds(pose: AttackPose, attackSeconds: number):
  * `A_VileChase` target. Only 14 types have one at all; no entry means "not
  * raisable", the same convention `MONSTER_XDEATH_FRAMES` uses.
  *
- * **Not simply the reverse of `MONSTER_DEATH_FRAMES`** — that was tried and is
- * wrong, since vanilla's raise sequences are hand-authored per type with no
- * shared derivation rule. Every letter is read off `info.c`'s `S_*_RAISE*`
- * table directly, and `tests/game/dehacked-frames.test.ts` re-derives each list
- * from `dehacked/states.ts` — which is how the final letter of every chain, the
- * first death frame each `S_*_RAISE` sequence ends on, was found missing.
- * docs/monster-archvile.md.
+ * **Not the reverse of `MONSTER_DEATH_FRAMES`**: vanilla's raise sequences are
+ * hand-authored per type with no shared derivation rule, down to each chain's
+ * final letter being the first death frame it ends on. Every letter is read off
+ * `info.c`'s `S_*_RAISE*` table directly, and `tests/game/dehacked-frames.test.ts`
+ * re-derives each list from `dehacked/states.ts`. docs/monster-archvile.md.
  *
  * Played via `playOnce` after `revive()` undoes `die()`, reusing
  * `MONSTER_DEATH_FRAME_SECONDS` — vanilla's raise states hold 5-8 tics,

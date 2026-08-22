@@ -495,8 +495,8 @@ export class World {
 
   /**
    * The sector a subsector belongs to, off the precomputed table. A subsector
-   * index this map doesn't have answers sector 0, matching what the seg walk
-   * this replaced returned for one. See docs/world.md § Point-to-sector lookups.
+   * index this map doesn't have answers sector 0.
+   * See docs/world.md § Point-to-sector lookups.
    */
   sectorIndexOfSubsector(subsector: number): number {
     return subsector >= 0 && subsector < this.subsectorSector.length ? this.subsectorSector[subsector] : 0;
@@ -1759,11 +1759,10 @@ export interface ShotPath extends Pos3 {
  *
  * **A `lock` switches blocking** from `blocksShot`'s single fixed ray to a
  * **slope wedge**, vanilla's `P_AimLineAttack` — the auto-aim leniency — and
- * re-aims the shot at
- * the wedge it cleared (`PTR_AimTraverse`'s `aimslope`), so the slope fired is
- * one the geometry admits. A monster's own fired shot passes none: it needs
- * `target` to aim, but has no "you clicked it" promise to honor. See
- * docs/combat.md § shotPath.
+ * re-aims the shot at the wedge it cleared (`PTR_AimTraverse`'s `aimslope`), so
+ * the slope fired is one the geometry admits. A monster's own fired shot passes
+ * none: it needs `target` to aim, but has no "you clicked it" promise to honor.
+ * See docs/combat.md § shotPath.
  */
 export function shotPath(
   world: World,

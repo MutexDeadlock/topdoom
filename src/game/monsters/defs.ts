@@ -485,10 +485,8 @@ export const MONSTER_LOCK_HEIGHT = 64;
  * and reached by nothing in the stock roster, every member of which has a real
  * height in `MONSTER_STATS`/`INERT_SHOOTABLE`/`BARREL_HEIGHT`.
  *
- * This replaced a single shared 64 used for *every* body. That figure was
- * taller than the 56 most of the roster actually is and far shorter than a
- * cyberdemon's 110, which mattered the moment heights started gating movement
- * as well as shots: a crusher caught bodies it shouldn't and missed ones it
- * should. docs/combat.md § How a shot deals damage.
+ * Deliberately a last resort rather than a shared figure: heights gate movement
+ * as well as shots, so one number for every body has a crusher catching bodies
+ * it shouldn't and missing ones it should. docs/combat.md § How a shot deals damage.
  */
 export const BODY_HEIGHT_FALLBACK = 56;

@@ -390,9 +390,8 @@ export interface ThingLayer {
    * `from` to `to` this frame: `reach` (the missile's own radius) is added to
    * each candidate's *own* radius and the pair tested against the swept
    * segment, so both a fat mancubus and a thin imp are hit at their real
-   * widths. **Swept, not sampled at the endpoint** — `game.ts` clamps `dt` at
-   * 0.05s, so the fastest missiles (25 units/tic = 875/sec) step 43 units in
-   * one frame and a point test at each end simply misses a body between them.
+   * widths. **Swept, not sampled at the endpoint**, so a point test at each end
+   * can't miss a body the step passed straight through.
    * 2D only; the caller applies the height band and line of sight.
    */
   monstersAlongStep(from: Pos3, to: Pos3, reach: number): MonsterRef[];
@@ -611,10 +610,9 @@ export const BARREL_MASS = 100;
  * - `deathFrameSeconds`: a flat per-frame rate standing in for vanilla's own uneven per-state tics
  *   (5, 5, 5, 10, 10) — the same "one uniform rate" simplification `MONSTER_DEATH_FRAME_SECONDS`
  *   makes elsewhere, matching the real rate of the first three frames. Not derived from a patch.
- * - `explodeDelaySeconds`: vanilla's `A_Explode` sits on `S_BEXP4`, so the blast comes
- *   `S_BEXP1`-`3`'s 5 + 5 + 5 tics after the barrel actually died, not instantly on death. It used
- *   to be two frames, from a comment that put the action on `S_BEXP3`; `info.c` and the walker in
- *   `dehacked/frames.ts` both say the fourth.
+ * - `explodeDelaySeconds`: vanilla's `A_Explode` sits on `S_BEXP4` — `info.c` and the walker in
+ *   `dehacked/frames.ts` agree on the fourth state — so the blast comes `S_BEXP1`-`3`'s
+ *   5 + 5 + 5 tics after the barrel actually died, not instantly on death.
  */
 export const BARREL_CHAIN = {
   ...barrelFromStates(),

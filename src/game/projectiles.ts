@@ -318,7 +318,7 @@ export class ProjectileLayer {
    *
    * Must run inside the caller's `SpriteFxLayer.beginFrame`/`endFrame` pair: it
    * both draws through the batch and pushes this frame's new explosions and
-   * smoke puffs on for `updateImpacts` to draw.
+   * smoke puffs on for `SpriteFxLayer.draw` to draw.
    */
   update(dt: number): void {
     if (this.projectiles.length === 0) return;

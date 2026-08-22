@@ -374,9 +374,8 @@ const MONSTER_SEED: Record<number, MonsterSeed> = {
       diceSides: 8,
       diceMult: 20,
       // 24 tics, not 12: `A_CyberAttack` sits on `S_CYBER_ATK2`/`ATK4`/`ATK6`, each 12 tics, with
-      // a 12-tic `A_FaceTarget` state between every pair — so consecutive rockets are two states
-      // apart. It read 12 (one state's worth) until the frame walker measured the gap between the
-      // firing calls themselves, which made the volley arrive twice as fast as vanilla's.
+      // a 12-tic `A_FaceTarget` state between every pair — so the interval is the gap between the
+      // firing calls, two states apart, and not one state's own length.
       // A_CyberAttack spawns a real MT_ROCKET — the same type the player's
       // own launcher fires, and the one monster projectile whose death
       // state actually calls A_Explode; see AttackStats.projectile.splash's

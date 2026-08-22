@@ -270,13 +270,12 @@ export class OplSynth {
    *
    * 1. **Reclaim**: the channel this MIDI channel released most recently — the
    *    same note re-struck, or a chord change replacing its predecessor —
-   *    cutting exactly the tail the new note supersedes. This is what DMX's
-   *    voice pressure produced on its own: with 18 voices and a track holding
-   *    that many, the free list was near empty and the next note re-keyed the
-   *    just-released channel. 36 channels removed the pressure, and without
-   *    this rule every repeated note briefly doubles against its own tail.
-   *    On the percussion channel the note must match too: a re-struck hi-hat
-   *    chokes its own ring, but a kick must not cut a crash.
+   *    cutting exactly the tail the new note supersedes. Explicit here because
+   *    36 channels leave the free list far from empty, where DMX's own 18-voice
+   *    pressure produced the same effect for free; without it every repeated
+   *    note briefly doubles against its own tail (docs/music.md § From notes to
+   *    registers). On the percussion channel the note must match too: a
+   *    re-struck hi-hat chokes its own ring, but a kick must not cut a crash.
    * 2. The **least audible** other free channel: a fully silent one outright,
    *    else the one whose leftover tail has decayed furthest
    *    (`OplChip.channelAttenuation`) — so a still-ringing cymbal is the last

@@ -125,8 +125,8 @@ const TIC_SECONDS = DOOM_TIC;
  * Most tics one frame may run before the rest of the banked time is dropped.
  * Bounds both the catch-up burst after a stall and the worst-case cost of a
  * single frame; without it a backgrounded tab returns owing minutes of
- * simulation and spends them all in one frame. Five is ~143ms of debt, a little
- * over what the old `dt` clamp allowed to pass in one step.
+ * simulation and spends them all in one frame. Five is ~143ms of debt.
+ * docs/frameloop.md § The accumulator.
  */
 const MAX_TICS_PER_FRAME = 5;
 
@@ -1333,8 +1333,7 @@ export class Game {
     this.lastTime = now;
     this.accumulator += rawDt;
     // A stall (backgrounded tab, a slow map load) must not be paid back as a
-    // burst of catch-up tics — drop the debt instead, the same "never take a
-    // giant step" the old 0.05s dt clamp bought.
+    // burst of catch-up tics — drop the debt instead: never take a giant step.
     if (this.accumulator > MAX_TICS_PER_FRAME * TIC_SECONDS) this.accumulator = MAX_TICS_PER_FRAME * TIC_SECONDS;
     this.profiler.beginFrame();
 

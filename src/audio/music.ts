@@ -24,8 +24,8 @@ const DEFAULT_VOLUME = 0.6;
  * catches them, *after* the volume rather than before: at any normal setting
  * the signal never reaches the bend, so those transients arrive intact, and
  * only someone running the music at full volume trades a little shaping for
- * not clipping. Doing it inside the chip cost every drum hit up to 5 dB no
- * matter how quietly the music was playing. See docs/music.md § Volume.
+ * not clipping. Shaping inside the chip instead costs every drum hit whatever
+ * the volume is set to. See docs/music.md § Volume.
  */
 const SOFT_CLIP_KNEE = 0.7;
 const SOFT_CLIP_STEPS = 4096;

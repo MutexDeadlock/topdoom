@@ -294,14 +294,10 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   41: { trigger: 'use', repeatable: false, effect: ceiling('ownFloor') },
   43: { trigger: 'use', repeatable: true, effect: ceiling('ownFloor') },
 
-  // Generic floor movers — trigger/repeatability and target each confirmed
-  // against the Doom wiki's linedef type table individually (a broad,
-  // all-at-once fetch across this whole family contradicted an earlier,
-  // already-verified single-number fetch on where 19 belongs, so every
-  // number below was re-checked one at a time rather than trusted from that
-  // summary — matching this file's existing rule of not trusting a plausible
-  // Doom-wiki summary without a targeted check). 23 turned out to be a switch
-  // (S1), not a walkover, in an earlier pass here.
+  // Generic floor movers — trigger/repeatability and target confirmed against
+  // the Doom wiki's linedef type table one number at a time. A summary fetch
+  // across the whole family contradicts the per-number entries (on 19 and on
+  // 23's S1 trigger), so it is not a source this file accepts.
   19: { trigger: 'walk', repeatable: false, effect: floor('highestNeighborFloor') },
   45: { trigger: 'use', repeatable: true, effect: floor('highestNeighborFloor') },
   102: { trigger: 'use', repeatable: false, effect: floor('highestNeighborFloor') },
@@ -445,9 +441,8 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   // `crush` flag on the floor movers it spawns — `Z_Malloc` zero-inits the
   // struct and nothing overwrites it — so real vanilla turbo-16 stairs don't
   // actually crush, unlike the unrelated 55/56/65/94 floor family and the
-  // ceiling crushers, which do set it. Caught by checking the source directly
-  // rather than trusting the wiki's naming, the same discipline that already
-  // caught 174/58/40 elsewhere in this file.
+  // ceiling crushers, which do set it — the source, not the wiki's naming, is
+  // what settles this family.
   7: { trigger: 'use', repeatable: false, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
   8: { trigger: 'walk', repeatable: false, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
   100: {
@@ -632,8 +627,9 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   171: { trigger: 'use', repeatable: false, effect: { kind: 'lightChange', mode: 'setLevel', level: 255 } },
   172: { trigger: 'use', repeatable: false, effect: { kind: 'lightChange', mode: 'startStrobe' } },
   173: { trigger: 'use', repeatable: false, effect: { kind: 'lightChange', mode: 'darkestNeighbor' } },
-  // The S1 teleport the old scope note flagged as the Boom-only number a
-  // first audit pass mistook for vanilla.
+  // 174 is Boom's S1 teleport, not a vanilla number — the wiki lists it as
+  // vanilla and the source does not. It sits in this file because Boom's
+  // extended numbers key onto the same shapes; docs/specials.md § Scope.
   174: { trigger: 'use', repeatable: false, effect: { kind: 'teleport', monsterOnly: false } },
   175: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED, 'closeThenOpen') },
   189: { trigger: 'use', repeatable: false, effect: { kind: 'changeOnly', model: 'trigger' } },

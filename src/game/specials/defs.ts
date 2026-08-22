@@ -116,11 +116,9 @@ export const NO_FRICTION: Readonly<FrictionEffect> = { friction: ORIG_FRICTION, 
 /**
  * Vanilla switch textures always come in SW1xxxx/SW2xxxx pairs sharing a
  * suffix (e.g. SW1BRCOM/SW2BRCOM) — no exceptions in the stock IWADs, so this
- * is derived from the naming convention rather than a hardcoded pair list
- * (which is exactly the kind of hand-transcribed table that turned out wrong
- * for the linedef-type numbers in `tables.ts`; texture existence is re-checked
- * at render time via the material bank anyway, so a false-positive name match
- * here is harmless).
+ * is derived from the naming convention rather than a hand-transcribed pair
+ * list. Texture existence is re-checked at render time via the material bank,
+ * so a false-positive name match here is harmless.
  */
 export function switchPairTexture(name: string): string | null {
   if (name.startsWith('SW1')) return 'SW2' + name.slice(3);

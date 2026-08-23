@@ -357,10 +357,25 @@ wolfenstein and grosse titles carry bytes above 0x7f, and a UTF-8 read would cor
 every byte count after. The trimmed one carries a header comment recording where it came from,
 which `fixturewads.test.ts`'s comment exemption allows for exactly this.
 
-## Private constants are pinned behaviourally
+## Feel dials are read, never pinned
 
-The sight-sampling step and the fog's reveal distance are not readable from outside their modules,
-so a test can only bracket them from both sides.
+A test that goes red because a **tuned-by-feel** number was retuned is a bug in the test: it has
+turned a dial into a constant, and the next person to try the dial gets a red suite instead of a
+different-looking game. Two techniques, depending on whether the dial can be read from outside.
+
+Where it can be, the test **imports it** and derives everything from it — fixture sizes as well as
+expectations. `occlusion-fade.test.ts` reads `FADE_RADIUS`, `FADE_CORE`, `FADE_ALPHA` and
+`MONSTER_FADE_RANGE` (exported from `render/occlusion.ts` for exactly this) plus `WALL_CHUNK_LEN`,
+sizes each grid fixture as a multiple of them, and states thresholds as points along the ramp
+(`ramp(0.5)`) rather than as numbers. Claims that would otherwise need a magic number are put as
+*comparisons* instead — the end of the wall beside the target fades and the far end does not, rather
+than "0.35". Where a dial genuinely changes behaviour, the test asserts the relationship rather than
+one side of it: below `WALL_CHUNK_LEN / 2` a `FADE_CORE` no longer guarantees a diced vertex inside
+the core, so the test expects the exact floor at or above that and a point on the ramp below it. The
+suite passes at every setting from `FADE_RADIUS` 128 to 2048 and `FADE_ALPHA` 0 to 0.99.
+
+Where it can't, the test brackets it from both sides. The sight-sampling step and the fog's reveal
+distance are not readable from outside their modules.
 `fog-reveal-radius.test.ts` brackets the reveal against `constants.ts: VIEW_DISTANCE` — the last grid
 cell inside the view must be revealed, the first cell a full cell past it must be dark — because the
 reveal *is* that dial, read straight out of `constants.ts` (docs/fogofwar.md § Reveal radius).

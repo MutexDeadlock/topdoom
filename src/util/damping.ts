@@ -10,7 +10,15 @@
  * See docs/render.md § Wall occlusion fading and docs/fogofwar.md § How reveal reaches the geometry.
  */
 export function dampen(prev: number, target: number, rate: number, dt: number, snapEps: number): number {
-  const lerpT = 1 - Math.exp(-rate * dt);
+  return dampenWith(prev, target, 1 - Math.exp(-rate * dt), snapEps);
+}
+
+/**
+ * `dampen` with the exponential lerp factor `1 - exp(-rate * dt)` precomputed —
+ * for loops damping thousands of values with the same rate and dt per frame
+ * (the occlusion faders), where the per-call `Math.exp` is loop-invariant.
+ */
+export function dampenWith(prev: number, target: number, lerpT: number, snapEps: number): number {
   const next = prev + (target - prev) * lerpT;
   return Math.abs(target - next) < snapEps ? target : next;
 }

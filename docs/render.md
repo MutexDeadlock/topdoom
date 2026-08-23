@@ -190,6 +190,9 @@ sector height; two-sided lines get upper/lower steps plus an optional masked mid
 pegging rules (`UPPER_UNPEGGED`/`LOWER_UNPEGGED`) for vertical alignment. Walls are drawn
 single-sided (facing DOOM's defined front), which is what culls walls between the camera and the
 player and produces the open dollhouse look — no extra logic needed. `F_SKY1` flats are skipped.
+Each of those surfaces is then cut lengthwise into quads of at most `WALL_CHUNK_LEN`, so the
+occlusion fade can dissolve part of a wall rather than all of it (§ The fade is a hole, not a wall)
+— a chunk is what a `WallOccluder` record and every per-quad rule below mean by "quad".
 
 A two-sided line's **masked middle texture** is one copy of the texture, not a fill of the opening.
 Its row 0 sits at the pegged anchor — the higher **real** floor plus the texture height when
@@ -249,8 +252,10 @@ matters, since a bigger map has both more geometry to scan and more movers scann
 
 **A moving sector rewrites its buffers instead of reallocating them.** `refreshMoverMesh` writes the
 new positions/UVs/colours into the existing attributes and updates the `WallOccluder`/`FlatSurface`
-records field-by-field — the faders hold both the arrays and per-quad smoothing state indexed into
-them, so replacing either would restart a moving wall's fade. It returns false, changing nothing,
+records field-by-field — the faders hold both the arrays and smoothing state indexed into
+them, so replacing either would restart a moving wall's fade. (A height change never alters how many
+chunks a wall is cut into, since that follows its 2D footprint, so a mover keeps its records across
+a refresh however long its walls are.) It returns false, changing nothing,
 whenever the sector's batches no longer line up with the buffers they were built from (a quad
 appearing or vanishing — an upper step shrinking to nothing as a door finishes opening); only then
 does `rebuild` throw the mesh away and build a fresh one. Which means the fresh-build path stays the
@@ -305,7 +310,7 @@ Lids are built once, into the static batches only: a structure never moves, and 
 
 Each lid is emitted as one `FlatSurface` **per triangle** (`THREE.ShapeUtils.triangulateShape`),
 because these rings are frequently concave and `FlatFader` tests a surface's footprint with the
-convex-only `pointNearConvexPolygon`. Triangles keep that contract, so a structure between the
+convex-only `pointInConvexPolygon` (§ Flats). Triangles keep that contract, so a structure between the
 camera and the player dithers away exactly as a raised floor does — without that, capping them would
 trade a hole for something worse: a pillar you cannot see your own player behind.
 
@@ -457,6 +462,76 @@ in front of the player). `WallFader` tests every wall quad's 2D footprint agains
 frame and fades the ones that cross it, rather than the coarser fix of drawing the player on top of
 everything, which would also show it through walls that genuinely separate it from the camera.
 
+### The fade is a hole, not a wall
+
+Fading a wall as one unit dissolved a whole room's wall to show a player standing at one end of it.
+So **`addWall` cuts every wall into chunks of at most `WALL_CHUNK_LEN` (128 units) in *both*
+directions** — along the wall and up it — and every chunk carries its own alpha at each of its four
+corners. `update` then runs in two passes:
+
+1. **Where is the view actually blocked.** Per line side, `segmentCrossT` against each target's
+   camera→target sightline; a crossing counts only where some non-passable quad's `[botH, topH]`
+   spans the crossing height. Each such crossing is filed as a point `(x, y, h)` plus the target's
+   own `fadeFloor`, once per line side per target however many tiers it passes through.
+2. **Dissolve a ball around each crossing.** Every chunk corner within `FADE_RADIUS` of a crossing
+   point is pulled toward that crossing's floor: full strength inside `FADE_CORE`, eased out by
+   `FADE_RADIUS`. Each corner measures from its **own height**, so the hole rounds off vertically
+   as well as along the wall. Where several crossings reach one corner, the lowest alpha wins.
+
+**Both cuts are load-bearing, and the vertical one is easy to forget.** With alpha written only at a
+quad's left and right edges the hole is a disc in plan view, which on screen is a full-height band
+of wall with hard vertical sides — indistinguishable from the whole-wall fade it replaced, and the
+first thing a player notices. Banding the wall is what gives that gradient somewhere to turn over.
+
+**The split between the passes is the point.** An earlier version ramped along the crossed line
+instead — distance from the crossing measured *within that linedef* — and DOOM walls are built from
+many short linedefs, so the hole was clipped to one panel: measured over 72 camera poses at the
+`fading1-E1M3` savegame's position, 79% of faded line sides faded end to end and 78% of them butted
+straight against a line left fully solid, giving a hard-edged rectangular hole. Half those lines
+were shorter than a single chunk, so no amount of chunking could have helped. With the ball the
+same measurement gives 4%, and what is left is mostly a genuine step up to a wall in a different
+height band rather than a seam.
+
+Continuity is by construction rather than by bookkeeping: adjacent chunks share their common corner
+position, and so do adjacent *linedefs* at a shared vertex, so every wall meeting at a point
+computes its alpha from the same distance and the gradient crosses both kinds of joint smoothly.
+
+**`FADE_RADIUS` and `FADE_CORE` are the two dials for the size of the hole** — its outer edge and
+its full-strength middle — and both faders read both, so a hole spanning a floor and the wall behind
+it is one shape rather than two. They are feel dials in the strict sense: `tests/render/occlusion-fade.test.ts`
+**imports them and sizes its fixtures from them** rather than mirroring their values, so either can
+be retuned without a test going red. A test that reddens on a retune is pinning the dial, and is a
+bug in the test.
+
+One relationship is worth knowing when turning them, though nothing enforces it. Alpha only exists
+at chunk corners, so a crossing lands `WALL_CHUNK_LEN / 2` from the nearest one at worst: with
+`FADE_CORE` at least that, the chunk over the player always reaches full strength, and below it the
+worst-placed crossing settles a little short — softer, not broken. The flats half has the same shape
+(§ Flats), and the test asserts whichever of the two applies at the current setting rather than
+picking one.
+
+The real invariant is elsewhere: the crossing point is *not* `segmentCrossT`'s return value — that
+parameter runs along the sightline, not along the wall; `update` interpolates the point from it.
+That one is pinned down in `tests/render/occlusion-fade.test.ts`.
+
+Pass two would be quadratic scanned naively, so `WallFader` buckets quads by midpoint into a
+uniform grid (cell = `FADE_RADIUS` + the longest half-chunk, which is what lets a query stop at
+3×3) and each crossing only visits the quads around it. Below `GRID_MIN_OCCLUDERS` it scans instead:
+mover faders hold a handful of quads, and `MoverGeometry.rebuild` is the one place a record can be
+repointed at different geometry, which would leave an index stale.
+
+**Mover geometry is never banded vertically** (`addWall`'s `bandVertically`). A mover's walls change
+height every tic, so a height-derived band count would change with them, and `refreshMoverMesh` may
+only rewrite buffers whose quad count held still (§ Mover meshes) — banding them would force a full
+rebuild per tic and restart every fade mid-motion. Doors and lifts are short enough that one band is
+what they would get anyway.
+
+Measured on EPIC.WAD MAP02 (the heaviest map to hand: 6,582 line sides), both cuts together take
+wall quads from 6,795 to 11,602 and the whole fade pass from 1.10 to 1.16 ms/frame at 25 targets;
+level mesh build goes 21 → 57 ms, once per load.
+
+### Which sightlines a wall fades for
+
 `WallFader.update`/`FlatFader.update` take a *list* of sightline targets (`FadeTarget[]`), not just
 the player — `collectFadeTargets` (same file, called from `game.ts` with `ThingLayer.awakeMonsters`)
 returns the player plus every currently-**awake** monster
@@ -473,11 +548,21 @@ fade a no-op for exactly the case it exists for (a wall genuinely hiding a nearb
 `SpecialsController.updateFading` (doors, lifts) takes the same target list, reusing the identical
 machinery for its own meshes.
 
-`WallFader.update` also takes an `openingOf` callback (`World.openingOf`, threaded through so this
-class needs no `World` reference) and skips fading any quad whose own `[botH, topH]` sits *inside*
+**Each target carries its own strength** (`FadeTarget.fadeFloor`, how far down it alone pulls what
+hides it). The player is always `FADE_ALPHA`; a monster's eases linearly from that at the player's
+own position back to 1 — no fade at all — at `MONSTER_FADE_RANGE`. Two dozen awake monsters
+fanning sightlines out from one camera used to gut a room between them, each at full strength; and
+a flat cap fading at full strength right up to its edge popped a wall the moment a monster crossed
+it. Where several targets cover one edge, the lowest alpha wins.
+
+`WallFader.update` also takes an `openingInto` callback (`World.openingInto`, threaded through so
+this class needs no `World` reference — the allocation-free form, since chunking made a per-quad
+record allocation per frame expensive) and skips fading any quad whose own `[botH, topH]` sits
+*inside*
 its line's vertical opening — a masked middle texture (grate, fence, barred window) is built inside
 that opening (§ Mesh building), so a quad living inside it is the passable gap itself: a shot and a look
-already pass straight through it, so fading it has nothing left to reveal. This has to be a
+already pass straight through it, so fading it has nothing left to reveal. The lookup is per line,
+but the test it feeds has to be a
 **per-quad** check, not a per-*line* one — an earlier version gated on `World.blocksSight(line)` for
 the whole line, which wrongly also suppressed fading for that line's upper/lower step quads (they sit
 *outside* the opening — the riser exposed where the neighbouring floor/ceiling falls short — and are
@@ -486,21 +571,58 @@ fence's masked-middle quad used to fade to near-invisible the moment the imp ins
 the closet wall vanishing rather than "you can see the imp through the bars." `FlatFader` has no
 equivalent gate — floors have no comparable "visually-solid-but-actually-passable" case.
 
-`FlatFader` is the same test for a horizontal plane: a raised floor sitting between the camera and a
+### Flats
+
+`FlatFader` is the same idea for a horizontal plane: a raised floor sitting between the camera and a
 target standing below it. Only floors above the target's own height are candidates, which excludes
 the floor being stood on by construction — no "which subsector am I in" tracking needed. The
-sightline crosses a given floor height at exactly one (x, y) point, but the BSP routinely splits one
-physical platform into several subsector polygons, and a plain point-in-polygon test faded only
-whichever fragment contained the crossing, leaving its siblings solid beside it (DOOM2 MAP05's
-rocket-ammo balcony: one platform, 3 subsectors). `pointNearConvexPolygon` inflates the test by
-`PLAYER_RADIUS` so fragments within the player's own width of the sightline fade together.
+sightline crosses a given floor height at exactly one (x, y) point, and alpha falls off radially from
+it on the **same `FADE_CORE`/`FADE_RADIUS` ramp the walls use**, so a hole that spans a floor and the
+wall behind it is one shape rather than two.
+
+**It runs the same two passes `WallFader` does, and pass one is what keeps a floor beside the
+sightline standing.** A floor's height is a *plane*, and the plane is infinite while the floor is
+not: `collectPierces` keeps a crossing only where the point lands inside some fan's own footprint
+(`pointInConvexPolygon` against `FlatSurface.points`), then pass two dissolves the ball around it.
+Without that gate a step up *next to* the target fades, because the sightline meets its height a
+couple of units short of the target — over open floor, on the far side of the step's edge — and the
+step's own fans are then well inside `FADE_RADIUS` of that point. It is not a rare geometry: every
+DOOM stair and ledge is that case, and a floor just above the target's centre is always crossed
+within a few units of the target. Repro: DOOM2 MAP02 sector 1, stood at (1008, 1592) with the camera
+due north — the whole grey platform dithered while the sightline never touched it.
+
+A pierce is filed under the **height** it landed at, and pass two only dissolves fans standing at
+that same height. That is what lets the hole spread across a platform split into many subsector fans
+(the pierce point can only ever land in one of them) while never reaching a different level of
+geometry that merely happens to be near it — and it is why the containment test is exact rather than
+inflated by a radius, as an earlier per-fan version had to be.
+
+A subsector fan's only vertices are its corners, which is nowhere to put a gradient — so
+`addFlatFan` dices each fan triangle on a barycentric grid until no edge outruns `WALL_CHUNK_LEN`,
+and `FlatSurface.vertexXY` records where every vertex it drew ended up. `FlatFader` then fades **per
+drawn vertex**, measuring from that vertex's own position. Without the dicing a pierced platform
+faded whole — a hard-edged slab, the flats half of the same artifact the wall chunks fix.
+
+That bound is also what puts the floor directly over the player fully into the hole: in a triangle
+whose every edge is at most `WALL_CHUNK_LEN`, an interior point is never further than half that from
+some vertex — so a `FADE_CORE` of at least `WALL_CHUNK_LEN / 2` always has a drawn vertex inside it,
+and a smaller one leaves that point on the ramp instead. An earlier version instead fell back on
+fading the whole containing fan whenever the crossing landed inside it; dicing removes the need, and
+with it the seam that override left along the fan's edges.
+
+Two costs come with the finer fans, both paid for. A fan is walked per target, so each carries a
+centre and radius and a crossing outside that reach skips it whole. And walking every vertex of
+every fan, on a map with hundreds of thousands of them, is the entire frame cost — so **both passes
+skip a fan that has nothing to do**: `update` tracks whether any of a fan's vertices is currently
+below 1, and one that is reached by no pierce *and* is not currently faded needs no damping (damping
+a settled vertex toward 1 returns 1); `commit` in turn flags the fans `update` actually moved, and
+a settled fan under unchanged fog is written without touching a vertex.
 
 **A flat with a base alpha below 1 is exempt from the fade entirely.** The only one is a 242 water
 surface (§ Deep water), which is translucent precisely so a submerged player stays visible through
 it — there is nothing left for a fade to reveal, and fading punches a *hole*: only the fans the
 sightline actually crosses dissolve, so the sheet loses a patch around the player while the rest of
-it stays. The `PLAYER_RADIUS` inflation above widens that patch but cannot close it, since a pool is
-many subsectors wide. Repro: wade into any BOOMEDIT MAP01 pool and watch the water break up
+it stays. Repro: wade into any BOOMEDIT MAP01 pool and watch the water break up
 overhead.
 
 **`awakeMonsters` only returns monsters fog of war is actually drawing** (`p.actor.mesh.visible`,
@@ -526,7 +648,10 @@ grate discards outright instead of dithering.
 Fade amount is exponentially smoothed (`FADE_SPEED`) so walls don't pop, but a pure exponential lerp
 never actually reaches its target — `update` snaps once the remaining gap drops below a threshold,
 otherwise a wall settles a hair short of fully opaque forever and shows a permanent faint speckle
-(the dither test is a strict `<`).
+(the dither test is a strict `<`). Smoothing state is per chunk edge and per footprint point, held
+in the fader's own arrays rather than on the records — which is what lets `refreshMoverMesh` rewrite
+those records field by field mid-motion without restarting a fade (§ Mover meshes). The lerp factor
+is hoisted per frame (`dampenWith`), since rate and `dt` are the same for every one of them.
 
 **Three inputs share that one channel, and `commit` writes their product.** Occlusion fading and
 fog of war are the two that change per frame; the third is a surface's *base* alpha, fixed at build
@@ -536,10 +661,15 @@ skips a surface whose alpha has not moved. Note that a midtexture quad is exempt
 fading by `update`'s passable-gap test, so for a 260 grate the base is usually the only factor
 below 1.
 
+That skip compares against what `commit` itself last wrote (`lastCombined`, NaN-initialised so the
+first frame always lands), not against a vertex read back off the buffer: with a gradient across a
+quad or fan, no single vertex stands for the whole of it any more.
+
 ### Skipping invisible mover meshes
 
 Because that product is what decides whether a surface shows at all, `commit` also records the
-highest alpha it resolved per mesh key (`maxAlphaByKey` on both faders). A mover mesh whose every
+highest alpha it resolved per mesh key (`maxAlphaByKey` on both faders) — the max over a quad's two
+edges and a fan's points, since either can vary across the surface. A mover mesh whose every
 quad came out at 0 — fog of war has not revealed the sector, or view distance has faded it out —
 draws nothing, and `MoverGeometry.updateFading` sets `visible = false` on it rather than paying a
 draw call for no pixels. One mesh can hold both wall quads and flat fans, so both faders' verdicts

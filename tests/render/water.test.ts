@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildMapMesh, litColor, type FlatSurface } from '../../src/render/mapmesh.ts';
-import { FlatFader } from '../../src/render/occlusion.ts';
+import { FADE_ALPHA, FlatFader } from '../../src/render/occlusion.ts';
 import { transfersOf } from '../../src/game/specials/transfers.ts';
 import { WATER_SURFACE_ALPHA } from '../../src/constants.ts';
 import { LF, NO_SIDE } from '../../src/wad/map.ts';
@@ -118,6 +118,18 @@ const colorOf = (built: ReturnType<typeof pool>['built'], f: FlatSurface) => {
   return attr.getX(f.vertexStart);
 };
 
+/**
+ * The lowest alpha anywhere on a fan. A fan is diced finer than its outline now
+ * (docs/render.md § The fade is a hole, not a wall), so vertex 0 is a corner and
+ * says nothing about the hole in the middle.
+ */
+const lowestAlphaOf = (built: ReturnType<typeof pool>['built'], f: FlatSurface) => {
+  const attr = built.flatMeshes.get(f.key)!.geometry.getAttribute('color');
+  let lowest = 1;
+  for (let v = 0; v < f.vertexCount; v++) lowest = Math.min(lowest, attr.getW(f.vertexStart + v));
+  return lowest;
+};
+
 describe('render · deep water planes', () => {
   test('a water sector draws a pool bottom and a translucent surface over it', () => {
     const { control, built, fans } = pool();
@@ -168,13 +180,12 @@ describe('render · deep water planes', () => {
     const { built, fans } = pool();
     const surface = fans.find((f) => f.height === 0)!;
     const fader = new FlatFader(built.flatSurfaces, built.flatMeshes);
-    const alphaOf = () => built.flatMeshes.get(surface.key)!.geometry.getAttribute('color').getW(surface.vertexStart);
 
     fader.commit(() => 1);
-    assert.equal(alphaOf(), WATER_SURFACE_ALPHA, 'unoccluded and fully revealed: the base alone');
+    assert.equal(lowestAlphaOf(built, surface), WATER_SURFACE_ALPHA, 'unoccluded and fully revealed: the base alone');
 
     fader.commit(() => 0.5);
-    assert.equal(alphaOf(), WATER_SURFACE_ALPHA * 0.5, 'half-revealed by fog: the product');
+    assert.equal(lowestAlphaOf(built, surface), WATER_SURFACE_ALPHA * 0.5, 'half-revealed by fog: the product');
   });
 
   /**
@@ -302,20 +313,21 @@ describe('render · deep water planes', () => {
     }
     const cx = sx / (surface.points.length / 2);
     const cy = sy / (surface.points.length / 2);
-    const submerged = { x: cx, y: cy, z: -32 };
-    const alphaOf = () => built.flatMeshes.get(surface.key)!.geometry.getAttribute('color').getW(surface.vertexStart);
+    const submerged = { x: cx, y: cy, z: -32, fadeFloor: FADE_ALPHA };
 
     const fader = new FlatFader(built.flatSurfaces, built.flatMeshes);
     fader.update(1, cx, cy, 500, [submerged]);
     fader.commit(() => 1);
-    assert.equal(alphaOf(), WATER_SURFACE_ALPHA, 'still the base alpha, not dithered away');
+    assert.equal(lowestAlphaOf(built, surface), WATER_SURFACE_ALPHA, 'still the base alpha, not dithered away');
 
     // The same fan on the same sightline without its base alpha: an ordinary
     // floor there does fade, so it is the exemption sparing the surface.
     const opaque = new FlatFader([{ ...surface, baseAlpha: undefined }], built.flatMeshes);
     opaque.update(1, cx, cy, 500, [submerged]);
     opaque.commit(() => 1);
-    assert.ok(alphaOf() < 0.5, 'the sightline really does cross this fan');
+    // Any fade at all is the control this needs — how deep it goes is a feel
+    // dial (`FADE_ALPHA`), and pinning a number here would pin that.
+    assert.ok(lowestAlphaOf(built, surface) < 1, 'the sightline really does cross this fan');
   });
 
   test('a control sector below the real ceiling still reaches the walls across from it', () => {
@@ -325,8 +337,15 @@ describe('render · deep water planes', () => {
     // short and the midtexture's own y-offset drops it clear of the opening,
     // leaving a 32-unit hole between the two halves of the waterfall.
     const { quads } = fakeCeiling();
-    assert.equal(quads.length, 1, 'the upper alone — the opening is too short to hold the midtexture');
-    assert.deepEqual([quads[0].botH, quads[0].topH], [32, 256]);
+    // One unbroken run of wall rather than one quad: 224 units is tall enough
+    // that `addWall` bands it for the fade (docs/render.md § The fade is a hole,
+    // not a wall), so what says "the upper alone" is that the pieces meet with
+    // no gap — a midtexture would hang as a separate span inside the opening.
+    const spans = quads.map((q) => [q.botH, q.topH]).sort((a, b) => a[0] - b[0]);
+    for (let i = 1; i < spans.length; i++) {
+      assert.equal(spans[i][0], spans[i - 1][1], 'the bands meet, so this is one tier');
+    }
+    assert.deepEqual([spans[0][0], spans[spans.length - 1][1]], [32, 256]);
   });
 
   test('a sector with a 242 of its own keeps the real ceiling it looks out with', () => {

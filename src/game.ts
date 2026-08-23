@@ -38,7 +38,7 @@ import {
 import { thrustSpeed } from './game/monsters/defs.ts';
 import { MonsterAttacks } from './game/monsters/attacks.ts';
 import { collectFadeTargets, FlatFader, SurfaceScroller, WallFader } from './render/occlusion.ts';
-import { makeTouchCache, sectorLines, World, type SectorTouchCache } from './game/world.ts';
+import { makeTouchCache, sectorLines, World, type Opening, type SectorTouchCache } from './game/world.ts';
 import { AIM_HEIGHT_OFFSET, EYE_HEIGHT, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { applyBarrelExplosion, type CombatContext, type DamageCause } from './game/combat.ts';
 import { SpriteFxLayer } from './game/spritefx.ts';
@@ -1814,8 +1814,8 @@ export class Game {
       const camPos = camera.camera.position;
       const camArgs = [dt, camPos.x, -camPos.z, camPos.y] as const;
       const fadeTargets = collectFadeTargets(this.player, this.things?.awakeMonsters() ?? []);
-      const openingOf = (line: number) => this.world.openingOf(line);
-      this.wallFader.update(...camArgs, fadeTargets, openingOf);
+      const openingInto = (line: number, out: Opening) => this.world.openingInto(line, out);
+      this.wallFader.update(...camArgs, fadeTargets, openingInto);
       this.flatFader.update(...camArgs, fadeTargets);
       // Walls resolve their own subsector inside FogOfWar (see wallAlpha); flats
       // and things already know theirs, so they go through alphaOf directly.

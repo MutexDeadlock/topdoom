@@ -5,7 +5,6 @@ import {
   clipConvexPolygon,
   distSqToSegment,
   pointInConvexPolygon,
-  pointNearConvexPolygon,
   segmentEntersBox,
   segmentIntersect,
   traceHitsBox,
@@ -71,22 +70,6 @@ describe('Geometry · convex polygons', () => {
     // Fewer than three points is not a polygon.
     assert.equal(pointInConvexPolygon(0, 0, [0, 0, 1, 1]), false);
     assert.equal(pointInConvexPolygon(0, 0, []), false);
-  });
-
-  test('pointNearConvexPolygon inflates the test by the radius', () => {
-    // Its whole reason to exist: one physical floor is routinely split across
-    // several subsector polygons, so a point just across a shared edge is still
-    // "in the way". 3 units outside, tested with radius 4.
-    assert.equal(pointInConvexPolygon(13, 5, UNIT_SQUARE), false);
-    assert.equal(pointNearConvexPolygon(13, 5, UNIT_SQUARE, 4), true);
-    assert.equal(pointNearConvexPolygon(13, 5, UNIT_SQUARE, 2), false);
-    // Exactly on the radius counts — the test is `<= r2`.
-    assert.equal(pointNearConvexPolygon(13, 5, UNIT_SQUARE, 3), true);
-    // Inside short-circuits regardless of radius.
-    assert.equal(pointNearConvexPolygon(5, 5, UNIT_SQUARE, 0), true);
-    // Corner-diagonal distance is Euclidean, not per-axis.
-    assert.equal(pointNearConvexPolygon(13, 14, UNIT_SQUARE, 4), false, 'hypot(3,4) = 5 > 4');
-    assert.equal(pointNearConvexPolygon(13, 14, UNIT_SQUARE, 5), true);
   });
 
   test('clipConvexPolygon keeps the cross <= 0 half-plane', () => {

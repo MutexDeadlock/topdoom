@@ -66,7 +66,7 @@ describe('Regressions · fog sweep order', () => {
    * tic reveals is exactly what the budget bought, and *which* cells those are is the ordering.
    * Pinned behaviourally, by bracketing the farthest cell revealed between the ideal nearest-first
    * answer and what BSP order would have reached: `ORDER_RING` is not readable from outside
-   * `fogofwar.ts`. See docs/testing.md § Private constants.
+   * `fogofwar.ts`. See docs/testing.md § Feel dials are read, never pinned.
    */
   test('one tic reveals the cells nearest the player, not a spread across the room', () => {
     const fog = darkRoom();

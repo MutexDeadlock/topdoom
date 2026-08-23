@@ -159,6 +159,18 @@ const TRANSLUCENT_ALPHA = 0.66;
  */
 const WATER_MIN_DEPTH = 8;
 
+/**
+ * How finely a surface is cut up so the occlusion fade has somewhere to put a
+ * gradient: the longest quad `addWall` emits before cutting a linedef into
+ * several, and the longest edge `addFlatFan` leaves when dicing a fan.
+ * **Tuned by feel** — against vertex count, which grows with `1 / this`.
+ *
+ * It carries an unenforced relationship to `render/occlusion.ts`'s `FADE_CORE`,
+ * which decides whether the chunk over the player reaches full strength:
+ * docs/render.md § The fade is a hole, not a wall.
+ */
+export const WALL_CHUNK_LEN = 128;
+
 /** `processFlat`'s two loop bodies, hoisted out of a function a mover rebuild runs per subsector per tic. */
 const FLOOR_ONLY = [false];
 const FLOOR_AND_CEILING = [false, true];
@@ -270,6 +282,15 @@ export interface WallOccluder {
   by: number;
   botH: number;
   topH: number;
+  /**
+   * The full line-side segment this quad was cut from (`ax..by` when the wall
+   * was short enough to stay whole) — `WallFader` crosses the sightline against
+   * this once per line side, not once per chunk.
+   */
+  segAx: number;
+  segAy: number;
+  segBx: number;
+  segBy: number;
   /** Sector whose light level this quad was coloured from — for specials-driven relight. */
   sector: number;
   /** Linedef this quad was built from — for `SurfaceScroller` (render/occlusion.ts) to find a scrolling line's front side. */
@@ -303,8 +324,16 @@ export interface FlatSurface {
    * under, so recoloring the *source* repaints everything drawing from it.
    */
   lightSector: number;
-  /** DOOM (x, y) footprint of this subsector, flattened — see FlatFader. */
+  /** DOOM (x, y) footprint of this subsector, flattened — the outline, used to place things against the fan. */
   points: Float64Array;
+  /**
+   * DOOM (x, y) of every vertex this fan drew, in the order it drew them —
+   * what `FlatFader` measures each vertex's own fade from. Separate from
+   * `points` because the fan is diced finer than its outline (see `addFlatFan`),
+   * and single-precision because there is one entry per drawn vertex and the
+   * only thing read off it is a distance compared against `FADE_RADIUS`.
+   */
+  vertexXY: Float32Array;
   /** World height (floor or ceiling) this surface sits at. */
   height: number;
   isCeiling: boolean;
@@ -556,7 +585,20 @@ function buildMoverBatches(
   const includeSide = (s: number) => s === sectorIndex || !movableSectors?.has(s);
 
   for (const lineIndex of index.linesOf(sectorIndex)) {
-    processLine(map, map.linedefs[lineIndex], lineIndex, batches, texSize, wallHeightCap, wallQuads, transfers, includeSide);
+    processLine(
+      map,
+      map.linedefs[lineIndex],
+      lineIndex,
+      batches,
+      texSize,
+      wallHeightCap,
+      wallQuads,
+      transfers,
+      // A mover's walls change height every tic, and `refreshMoverMesh` may only
+      // rewrite buffers whose quad count held still — see WALL_CHUNK_LEN.
+      false,
+      includeSide,
+    );
   }
 
   const drawn = batches.all().filter((b) => b.positions.length > 0 && bank.get(b.kind, b.texture));
@@ -882,15 +924,45 @@ function addFlatFan(
   const alpha = spec.baseAlpha ?? 1;
   const batch = batches.get(kind, texName);
   const vertexStart = batch.positions.length / 3;
+  const xy: number[] = [];
 
-  // Fan triangulation around vertex 0. Floors keep the polygon's winding
-  // (normal up), ceilings are reversed so their normal points down.
+  const emit = (x: number, y: number) => {
+    pushVertex(batch, x, height, -y, x / uw, -y / uh, color, alpha);
+    xy.push(x, y);
+  };
+
+  // Fan triangulation around vertex 0, each triangle then diced on a
+  // barycentric grid so no edge outruns WALL_CHUNK_LEN: a fan's only vertices
+  // are its corners, and the occlusion fade needs somewhere in between to put
+  // a gradient. Floors keep the polygon's winding (normal up), ceilings are
+  // reversed so their normal points down.
+  const ox = poly.points[0];
+  const oy = poly.points[1];
   for (let i = 1; i < n - 1; i++) {
-    const idx = isCeiling ? [0, i + 1, i] : [0, i, i + 1];
-    for (const k of idx) {
-      const x = poly.points[k * 2];
-      const y = poly.points[k * 2 + 1];
-      pushVertex(batch, x, height, -y, x / uw, -y / uh, color, alpha);
+    const i1 = isCeiling ? i + 1 : i;
+    const i2 = isCeiling ? i : i + 1;
+    const ux = poly.points[i1 * 2] - ox;
+    const uy = poly.points[i1 * 2 + 1] - oy;
+    const vx = poly.points[i2 * 2] - ox;
+    const vy = poly.points[i2 * 2 + 1] - oy;
+    const longest = Math.max(Math.hypot(ux, uy), Math.hypot(vx, vy), Math.hypot(vx - ux, vy - uy));
+    const div = Math.max(1, Math.ceil(longest / WALL_CHUNK_LEN));
+    // Barycentric (a, b) straight into `emit`: this runs per sub-triangle on
+    // the per-tic mover rebuild path, so it hands over scalars rather than a
+    // point object per diced vertex.
+    const emitAt = (a: number, b: number) => emit(ox + (ux * a + vx * b) / div, oy + (uy * a + vy * b) / div);
+
+    for (let a = 0; a < div; a++) {
+      for (let b = 0; a + b < div; b++) {
+        emitAt(a, b);
+        emitAt(a + 1, b);
+        emitAt(a, b + 1);
+        if (a + b + 1 < div) {
+          emitAt(a + 1, b);
+          emitAt(a + 1, b + 1);
+          emitAt(a, b + 1);
+        }
+      }
     }
   }
 
@@ -904,6 +976,7 @@ function addFlatFan(
       sector: poly.sector,
       lightSector: spec.lightSector,
       points: poly.points,
+      vertexXY: Float32Array.from(xy),
       height,
       isCeiling,
       baseAlpha: spec.baseAlpha,
@@ -933,8 +1006,18 @@ interface WallSpec {
   baseAlpha?: number;
 }
 
-/** True when the quad was drawn — what vanilla's `toptexture`/`bottomtexture` being non-zero decides (see `addTwoSidedSide`'s midtexture clip). */
-function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: WallOccluder[]): boolean {
+/**
+ * True when the quad was drawn — what vanilla's `toptexture`/`bottomtexture` being non-zero decides
+ * (see `addTwoSidedSide`'s midtexture clip). `bandVertically` off keeps the wall one quad tall
+ * however high it is: see `WALL_CHUNK_LEN` for why mover geometry must.
+ */
+function addWall(
+  batches: BatchSet,
+  size: SizeFn,
+  spec: WallSpec,
+  occluders: WallOccluder[],
+  bandVertically: boolean,
+): boolean {
   if (spec.topH <= spec.botH) return false;
   if (spec.texture === NO_TEXTURE || spec.texture === '') return false;
   const dim = size('wall', spec.texture);
@@ -957,32 +1040,62 @@ function addWall(batches: BatchSet, size: SizeFn, spec: WallSpec, occluders: Wal
   const batch = batches.get('wall', spec.texture);
   const { ax, ay, bx, by, topH, botH } = spec;
 
-  // A = top-left, B = top-right, C = bottom-right, D = bottom-left, with the
-  // face pointing to the right of a->b (DOOM's front side).
-  const A = [ax, topH, -ay, u0, vTop] as const;
-  const B = [bx, topH, -by, u1, vTop] as const;
-  const C = [bx, botH, -by, u1, vBot] as const;
-  const D = [ax, botH, -ay, u0, vBot] as const;
+  // Cut into chunks both ways so the occlusion fade can dissolve a ball around
+  // the sightline instead of a full-height slab of wall — see WALL_CHUNK_LEN.
+  const chunks = Math.max(1, Math.ceil(len / WALL_CHUNK_LEN));
+  const bands = bandVertically ? Math.max(1, Math.ceil((spec.topH - spec.botH) / WALL_CHUNK_LEN)) : 1;
+  for (let c = 0; c < chunks; c++) {
+    const t0 = c / chunks;
+    const t1 = (c + 1) / chunks;
+    const cax = ax + dx * t0;
+    const cay = ay + dy * t0;
+    const cbx = ax + dx * t1;
+    const cby = ay + dy * t1;
+    // U runs linearly with wall length, so a chunk's edge U is the same lerp —
+    // exact, and shared edges land on identical values. V does the same with
+    // height, so a band's edges line up with its neighbours' just as exactly.
+    const cu0 = u0 + (u1 - u0) * t0;
+    const cu1 = u0 + (u1 - u0) * t1;
 
-  const vertexStart = batch.positions.length / 3;
-  for (const v of [A, D, C, A, C, B]) {
-    pushVertex(batch, v[0], v[1], v[2], v[3], v[4], color, spec.baseAlpha ?? 1);
+    for (let r = 0; r < bands; r++) {
+      // Bands run bottom-up, so `r`'s top is `r + 1`'s bottom.
+      const bandTop = topH + ((botH - topH) * r) / bands;
+      const bandBot = topH + ((botH - topH) * (r + 1)) / bands;
+      const bandVTop = vTop + ((vBot - vTop) * r) / bands;
+      const bandVBot = vTop + ((vBot - vTop) * (r + 1)) / bands;
+
+      // A = top-left, B = top-right, C = bottom-right, D = bottom-left, with the
+      // face pointing to the right of a->b (DOOM's front side).
+      const A = [cax, bandTop, -cay, cu0, bandVTop] as const;
+      const B = [cbx, bandTop, -cby, cu1, bandVTop] as const;
+      const C = [cbx, bandBot, -cby, cu1, bandVBot] as const;
+      const D = [cax, bandBot, -cay, cu0, bandVBot] as const;
+
+      const vertexStart = batch.positions.length / 3;
+      for (const v of [A, D, C, A, C, B]) {
+        pushVertex(batch, v[0], v[1], v[2], v[3], v[4], color, spec.baseAlpha ?? 1);
+      }
+      occluders.push({
+        key: batch.key,
+        vertexStart,
+        vertexCount: 6,
+        ax: cax,
+        ay: cay,
+        bx: cbx,
+        by: cby,
+        botH: bandBot,
+        topH: bandTop,
+        segAx: ax,
+        segAy: ay,
+        segBx: bx,
+        segBy: by,
+        sector: spec.sector,
+        line: spec.line,
+        frontSide: spec.frontSide,
+        baseAlpha: spec.baseAlpha,
+      });
+    }
   }
-  occluders.push({
-    key: batch.key,
-    vertexStart,
-    vertexCount: 6,
-    ax,
-    ay,
-    bx,
-    by,
-    botH,
-    topH,
-    sector: spec.sector,
-    line: spec.line,
-    frontSide: spec.frontSide,
-    baseAlpha: spec.baseAlpha,
-  });
   return true;
 }
 
@@ -1000,7 +1113,7 @@ function buildWalls(
     // moving sector's heights, so it can't stay in a batch nobody rebuilds
     // (see MapMeshOptions.movableSectors).
     if (movableSectors && touchesAny(map, line, movableSectors)) continue;
-    processLine(map, line, lineIndex, batches, size, wallHeightCap, occluders, transfers);
+    processLine(map, line, lineIndex, batches, size, wallHeightCap, occluders, transfers, true);
   }
 }
 
@@ -1013,6 +1126,8 @@ function processLine(
   wallHeightCap: number,
   occluders: WallOccluder[],
   transfers: SectorTransfers,
+  /** Passed through to `addWall`: off for mover geometry, whose quad count must not move with its heights. */
+  bandVertically: boolean,
   /**
    * Per-side filter: a side is only built if this returns true for its owning
    * sector (undefined = build every side, the static-batch case, which now
@@ -1063,6 +1178,7 @@ function processLine(
         frontSide: true,
       },
       occluders,
+      bandVertically,
     );
     return;
   }
@@ -1074,10 +1190,10 @@ function processLine(
   // from the two sector indexes rather than taking them apart, so the only thing
   // that differs between the two calls is which side is doing the looking.
   if (!includeSide || includeSide(front.sector)) {
-    addTwoSidedSide(batches, size, line.flags, v1, v2, front, front.sector, frontSec, back.sector, backSec, cap, occluders, lineIndex, true, transfers);
+    addTwoSidedSide(batches, size, line.flags, v1, v2, front, front.sector, frontSec, back.sector, backSec, cap, occluders, lineIndex, true, transfers, bandVertically);
   }
   if (!includeSide || includeSide(back.sector)) {
-    addTwoSidedSide(batches, size, line.flags, v2, v1, back, back.sector, backSec, front.sector, frontSec, cap, occluders, lineIndex, false, transfers);
+    addTwoSidedSide(batches, size, line.flags, v2, v1, back, back.sector, backSec, front.sector, frontSec, cap, occluders, lineIndex, false, transfers, bandVertically);
   }
 }
 
@@ -1112,6 +1228,7 @@ function addTwoSidedSide(
   lineIndex: number,
   frontSide: boolean,
   transfers: SectorTransfers,
+  bandVertically: boolean,
 ): void {
   // The heights this side is *sized* against. Boom's 242 moves the floors on
   // both sides of the line and the ceiling only on the neighbour's: vanilla
@@ -1152,6 +1269,7 @@ function addTwoSidedSide(
         pegRef: upperUnpegged ? sec.ceilHeight : otherCeil + (dim?.h ?? 128),
       },
       occluders,
+      bandVertically,
     );
   }
 
@@ -1173,6 +1291,7 @@ function addTwoSidedSide(
         pegRef: lowerUnpegged ? sec.ceilHeight : otherFloor,
       },
       occluders,
+      bandVertically,
     );
   }
 
@@ -1222,6 +1341,7 @@ function addTwoSidedSide(
           baseAlpha: transfers.translucentLine(lineIndex) ? TRANSLUCENT_ALPHA : undefined,
         },
         occluders,
+        bandVertically,
       );
     }
   }

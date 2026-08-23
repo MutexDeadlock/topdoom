@@ -81,6 +81,46 @@ describe('render · mover meshes', () => {
     assert.equal(floor.height, 37);
   });
 
+  test('a mover wall long enough to be chunked keeps every chunk across a refresh', () => {
+    // Chunk count follows the wall's footprint, which a height change never
+    // touches — so a lift mid-travel keeps the records (and with them the
+    // per-chunk fade the faders index into them). See docs/render.md
+    // § Wall occlusion fading.
+    const grid = gridMap(['.L.'], { cell: 512, heights: { L: { floor: 32, ceil: 128 } } });
+    const map = grid.map;
+    const sector = grid.index(1, 0);
+    for (const side of map.sidedefs) {
+      side.upper = 'UPPER';
+      side.lower = 'LOWER';
+      side.middle = 'MIDDLE';
+    }
+    const polys = buildSubSectorPolys(map);
+    const options = { movableSectors: new Set([sector]) };
+    const index = buildMoverIndex(map, polys);
+    const mesh = buildMoverMesh(map, polys, sector, BANK, options, index);
+
+    assert.ok(
+      mesh.wallQuads.some((q) => q.ax !== q.segAx || q.ay !== q.segAy),
+      'a 512-unit mover wall builds more than one chunk',
+    );
+    const before = mesh.wallQuads.map((q) => ({ ...q }));
+    const records = [...mesh.wallQuads];
+
+    map.sectors[sector].floorHeight = 37;
+    assert.equal(refreshMoverMesh(mesh, map, polys, sector, BANK, options, index), true);
+
+    assert.deepEqual([...mesh.wallQuads], records, 'the same record objects, so no fade restarts');
+    for (const [i, q] of mesh.wallQuads.entries()) {
+      assert.equal(q.ax, before[i].ax, 'chunk footprints are unchanged');
+      assert.equal(q.bx, before[i].bx);
+      assert.equal(q.segAx, before[i].segAx, 'and they still name the same parent segment');
+    }
+    assert.ok(
+      mesh.wallQuads.some((q) => q.botH === 37 || q.topH === 37),
+      'while the heights did move',
+    );
+  });
+
   test('a refusal leaves the mesh untouched when the sector loses a quad', () => {
     const { map, sector, build, refresh } = level();
     const mesh = build();

@@ -106,7 +106,7 @@ vantage over a drop, moved (8 → 21).
 The reveal distance is not readable from outside, so `tests/regression/fog-reveal-radius.test.ts`
 brackets it from both sides — against `VIEW_DISTANCE` rather than literals, since the reveal tracking
 the dial *is* the rule: a cell inside the view must be revealed, a cell past it must be dark. It
-holds wherever the dial is set; see docs/testing.md § Private constants.
+holds wherever the dial is set; see docs/testing.md § Feel dials are read, never pinned.
 
 ## Sight testing
 
@@ -302,10 +302,13 @@ of them know it natively:
 - `FlatSurface` (the `WallOccluder` counterpart for floor/ceiling triangle fans) carries its subsector
   straight from the BSP polygon it was built from.
 - Things resolve theirs with `subsectorAt`.
-- **Wall quads can't**: they're built per linedef, so `FogOfWar` derives each one itself by nudging the
+- **Wall quads can't**: they're built from a linedef's own geometry, so `FogOfWar` derives each one
+  itself by nudging the
   quad's midpoint `WALL_PROBE_OFFSET` along its front normal (`mapmesh` builds every quad facing right
   of `a->b`) and asking the BSP what's there — which is why `WallFader.commit` takes a callback keyed
   by *occluder index* rather than by sector, and why `mapmesh.ts` carries no fog-specific field at all.
+  A long wall is several occluders, one per chunk (docs/render.md § The fade is a hole, not a wall),
+  so each probes its own chunk's midpoint — the keying is unchanged, just finer-grained.
 
 ### Mover wall quads
 

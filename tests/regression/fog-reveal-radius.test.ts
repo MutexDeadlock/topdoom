@@ -62,7 +62,7 @@ describe('Regressions · fog reveal radius', () => {
    * The reveal distance is not readable from outside `fogofwar.ts`, so it is
    * pinned behaviourally from both sides — and against `VIEW_DISTANCE` rather
    * than a literal, because the reveal tracking that dial *is* the rule.
-   * See docs/testing.md § Private constants.
+   * See docs/testing.md § Feel dials are read, never pinned.
    */
   test('the reveal radius is the view distance, from both sides', () => {
     const insideCol = colAt(VIEW_DISTANCE);

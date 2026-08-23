@@ -16,7 +16,7 @@
  */
 import * as THREE from 'three';
 import { NO_SIDE, type DoomMap } from '../../wad/map.ts';
-import { sectorLines, type World } from '../world.ts';
+import { sectorLines, type Opening, type World } from '../world.ts';
 import type { FogOfWar } from '../fogofwar.ts';
 import {
   buildMoverMesh,
@@ -171,8 +171,11 @@ export class MoverGeometry {
    * moved.
    */
   updateFading(dt: number, camX: number, camY: number, camZ: number, targets: FadeTarget[]): void {
+    // Hoisted out of the loop: a level can hold a couple of thousand mover
+    // meshes, and this closure captures nothing that varies between them.
+    const openingInto = (line: number, out: Opening) => this.world.openingInto(line, out);
     for (const g of this.moverMeshes.values()) {
-      g.walls.update(dt, camX, camY, camZ, targets, (line) => this.world.openingOf(line));
+      g.walls.update(dt, camX, camY, camZ, targets, openingInto);
       g.flats.update(dt, camX, camY, camZ, targets);
       // Mover quads aren't in the static occluder list FogOfWar indexed at
       // load, so their subsector is probed from the quad itself.

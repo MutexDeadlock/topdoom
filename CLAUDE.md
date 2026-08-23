@@ -94,8 +94,9 @@ src/game/specials/   the special record shapes + their speeds/waits (defs) and t
                (generalized) + sector types (sectortypes), what a line changes about how a
                sector is drawn (transfers), load-time map analysis (mapscan), mover meshes +
                relighting (movergeometry), mover obstruction + crush damage (moverblocking),
-               damage floors + secrets (sectoreffects), the always-on parameter lines —
-               scrollers, conveyors, friction, pushers (forces)
+               damage floors + secrets (sectoreffects), where the cursor's aim ray meets a
+               shoot-triggered line (shootaim), the always-on parameter lines — scrollers,
+               conveyors, friction, pushers (forces)
 src/game/spritefx/   the one-shot effect + projectile record shapes and their flight helpers
                (defs), the effects' sprite/sound/timing tables (tables)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through,
@@ -207,7 +208,8 @@ Nothing else: a constant identity-coupled to one module lives in that module
 
 **Position types (`src/types.ts`).** `Pos2` (`{x, y}`), `Pos3` (`+z`) and `Placement`
 (`{x, y, angle}`) are **structural**, and always **DOOM map space** (x east, y north, z up = feet
-height), never three.js space — `mapmesh.ts: doomToWorld` is the one place the two meet. Nothing
+height), never three.js space — `mapmesh.ts`'s `doomToWorld`/`worldToDoom` is the one place the
+two meet. Nothing
 here is a direction or velocity: those stay separate `velX`/`velY`/`velZ` fields, and headings are
 plain `angle` numbers. `Placement.angle` is **radians**, matching `Player.angle`/`MonsterBody.angle`
 rather than the WAD's own degrees.

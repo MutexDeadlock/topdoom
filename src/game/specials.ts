@@ -17,6 +17,7 @@ import {
   type SwitchEntry,
 } from './specials/mapscan.ts';
 import { MoverGeometry } from './specials/movergeometry.ts';
+import { pickShootAim, type ShootAim } from './specials/shootaim.ts';
 import { lookupSpecial } from './specials/tables.ts';
 import { decodeSectorType } from './specials/sectortypes.ts';
 import {
@@ -81,7 +82,7 @@ import type { SubSectorPoly } from '../render/bsp.ts';
 import type { Placement, Pos2 } from '../types.ts';
 import type { MaterialBank } from '../render/textures.ts';
 import type { FadeTarget } from '../render/occlusion.ts';
-import { segmentIntersect } from '../util/geom.ts';
+import { segmentCrossT, segmentIntersect } from '../util/geom.ts';
 import { sectorOrigin, SILENT, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
 import { DOOM_TIC } from '../constants.ts';
 
@@ -656,6 +657,14 @@ export class SpecialsController {
    */
   private retriggerFlips = new Set<number>();
 
+  /**
+   * Every line whose authored special a shot triggers — auto-aim's candidate set
+   * (`pickShootTarget`). Scanned once here rather than per tic: on a big map that
+   * is thousands of `lookupSpecial` calls for what is almost always a handful of
+   * lines, and which lines carry a shoot special never changes.
+   */
+  private shootLines: number[] = [];
+
   private switchTextures = new Map<number, SwitchEntry[]>();
   private switchFlashes = new Map<number, number>();
 
@@ -729,7 +738,9 @@ export class SpecialsController {
     this.prevY = playerY;
 
     for (const [i, line] of map.linedefs.entries()) {
-      if (!lookupSpecial(line.special)) continue;
+      const def = lookupSpecial(line.special);
+      if (!def) continue;
+      if (def.trigger === 'shoot') this.shootLines.push(i);
       const entries = findSwitchEntries(map, line, switchPairs);
       if (entries.length > 0) this.switchTextures.set(i, entries);
     }
@@ -2137,6 +2148,22 @@ export class SpecialsController {
    * silent teleports read it (`TeleportSource`), so every other caller can
    * leave it at the default.
    */
+  /**
+   * Whether this line's special can still do anything at all: a spent one-shot and a
+   * line that acts by tag but carries none are both dead letters. `trigger` leads with
+   * this, and `pickShootTarget` asks it before offering a line to auto-aim, so aim never
+   * locks onto a switch that would swallow the shot — the two must agree.
+   *
+   * Deliberately **not** including `trigger`'s key check: that one has side effects (the
+   * "you need the X key" message and `oof`) and stays where they belong.
+   * See `SpecialDef.requiresTag`.
+   */
+  private stillFires(lineIndex: number, def: SpecialDef): boolean {
+    if (!def.repeatable && this.usedOnce.has(lineIndex)) return false;
+    if (def.requiresTag && this.map.linedefs[lineIndex].tag === 0) return false;
+    return true;
+  }
+
   private trigger(
     lineIndex: number,
     ownedKeys: ReadonlySet<KeySlot>,
@@ -2146,10 +2173,7 @@ export class SpecialsController {
   ): TeleportDest | null {
     const line = this.map.linedefs[lineIndex];
     const def = lookupSpecial(this.lineSpecial(lineIndex));
-    if (!def) return null;
-    if (!def.repeatable && this.usedOnce.has(lineIndex)) return null;
-    // A line that acts by tag and has none does nothing — see `SpecialDef.requiresTag`.
-    if (def.requiresTag && line.tag === 0) return null;
+    if (!def || !this.stillFires(lineIndex, def)) return null;
     // A missing key leaves the door untouched and this attempt un-flagged, so
     // the player can walk off, find the key, and try the same line again —
     // matching vanilla, which just prints "you need the X key" and does
@@ -2398,12 +2422,12 @@ export class SpecialsController {
   }
 
   /**
-   * Fires a `shoot` special (24, 46, 47) when a hitscan pellet or projectile
-   * is stopped by exactly this line — vanilla's `P_ShootSpecialLine`. Unlike
-   * the walk/use triggers, which scan nearby lines themselves (`linesNear`),
-   * the caller already knows which line stopped the shot: `shotPath`
-   * (`game/world.ts`) returns it directly, so this is a plain lookup rather
-   * than another geometric search. `byMonster` reproduces vanilla's own
+   * Fires a `shoot` special (24, 46, 47) on exactly this line — vanilla's
+   * `P_ShootSpecialLine`. The single-line form: a projectile fires only the line
+   * it hits (`game/projectiles.ts`), while a hitscan shot goes through
+   * `triggerShotPath` below, which fires each line it crossed through here.
+   * Either way the caller already knows the line rather than searching for it
+   * (`linesNear`), so this is a plain lookup. `byMonster` reproduces vanilla's own
    * per-number gate (`SpecialDef.monsterCanTrigger` — true only for 46): a
    * monster's shot that happens to stop against a 24 or 47 line does nothing,
    * same as vanilla.
@@ -2414,6 +2438,68 @@ export class SpecialsController {
     if (!def || def.trigger !== 'shoot') return;
     if (byMonster && !def.monsterCanTrigger) return;
     this.trigger(lineIndex, ownedKeys, byMonster ? 'monster' : 'player');
+  }
+
+  /**
+   * Fires every shoot special a **hitscan** shot from `from` to `to` crossed, in
+   * the order it crossed them, plus `blocker` — the line that stopped it, if a
+   * line did — last. Vanilla's `PTR_ShootTraverse` runs
+   * `if (li->special) P_ShootSpecialLine (...)` on each line the traverse reaches
+   * *before* testing whether that line blocks, and `P_TraverseIntercepts` walks
+   * intercepts nearest-first, so a bullet fires the specials of lines it merely
+   * flew through — at whatever height, since the call comes before the opening
+   * test. `blocker` is passed separately rather than found here: it is already
+   * resolved (`ShotPath.lineIndex`), and the trace ends exactly on it, which is
+   * the one crossing floating point can't be trusted to report.
+   *
+   * Crossings are tested against the linedefs' **raw vertexes**, deliberately, not
+   * `World.lineOverlapEnds`: `shotPath` uses the extended ends so a ray can't leak
+   * between two walls meeting at a shared vertex, but firing a special is not
+   * blocking — `P_TraverseIntercepts` walks the true linedef, and the extension
+   * would fire switches a bullet passed the end of. `handleUseTrigger` reads raw
+   * vertexes for the same reason.
+   *
+   * Everything each line still has to satisfy is `triggerShot`'s, unchanged.
+   * See docs/combat.md § Shoot-triggered specials.
+   */
+  triggerShotPath(from: Pos2, to: Pos2, blocker: number | null, ownedKeys: ReadonlySet<KeySlot>, byMonster = false): void {
+    const hits: { t: number; line: number }[] = [];
+    for (const i of this.shootLines) {
+      if (i === blocker) continue;
+      const line = this.map.linedefs[i];
+      const a = this.map.vertexes[line.v1];
+      const b = this.map.vertexes[line.v2];
+      if (!a || !b) continue;
+      const t = segmentCrossT(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
+      if (t >= 0) hits.push({ t, line: i });
+    }
+    // `P_TraverseIntercepts` fires them nearest-first. Collected into a local and
+    // sorted, as `handleUseTrigger` does: the list is empty or a single entry on
+    // every real map, and each `triggerShot` below dispatches arbitrary specials,
+    // which a shared scratch buffer would let re-enter and clobber mid-loop.
+    hits.sort((p, q) => p.t - q.t);
+    for (const h of hits) this.triggerShot(h.line, ownedKeys, byMonster);
+    this.triggerShot(blocker, ownedKeys, byMonster);
+  }
+
+  /**
+   * Which shoot-triggered line the pointer is over and where on it a shot should be
+   * aimed, or null — auto-aim's lock onto switches, the counterpart to
+   * `ThingLayer.pickMonster`. See docs/combat.md § Auto-aim.
+   *
+   * A line that can no longer fire is no candidate: a spent one-shot, and a
+   * tagless line that acts by tag, both fail the same guards `trigger` leads with,
+   * and locking aim onto one would spend the shot on nothing.
+   */
+  pickShootTarget(ray: THREE.Ray, fireZ: number): ShootAim | null {
+    const live: number[] = [];
+    for (const i of this.shootLines) {
+      const def = lookupSpecial(this.lineSpecial(i));
+      if (!def || def.trigger !== 'shoot') continue;
+      if (!this.stillFires(i, def)) continue;
+      live.push(i);
+    }
+    return live.length === 0 ? null : pickShootAim(this.world, ray, live, fireZ);
   }
 
   private handleUseTrigger(

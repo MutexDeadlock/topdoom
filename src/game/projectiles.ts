@@ -100,8 +100,14 @@ export class ProjectileLayer {
    * (`ProjectileLayer.update`), exactly as a monster's missile does; the lock
    * gives it a slope and nothing else. See docs/combat.md § How a shot deals
    * damage.
+   *
+   * `lineAim` is the other thing aim can lock onto: a point on a shoot-triggered
+   * wall (`SpecialsController.pickShootTarget`). It supplies the slope the same
+   * way a body does, but no `ShotLock` — there is no silhouette to open a wedge
+   * around, and the strict ray is what keeps the shot from clearing geometry it
+   * should have run into.
    */
-  spawnPlayerShot(shot: Shot, startZ: number, target: MonsterRef | null): void {
+  spawnPlayerShot(shot: Shot, startZ: number, target: MonsterRef | null, lineAim: Pos3 | null): void {
     const { world, things } = this.ctx;
     const origin: Pos3 = { x: this.ctx.player.x, y: this.ctx.player.y, z: startZ };
 
@@ -136,7 +142,7 @@ export class ProjectileLayer {
     // The body's centre and half-height, which is where vanilla's `aimslope`
     // points on a clear target — see docs/combat.md § Auto-aim.
     const half = target === null ? 0 : target.height / 2;
-    const aimAt = target === null ? null : { x: target.x, y: target.y, z: target.z + half };
+    const aimAt = target === null ? lineAim : { x: target.x, y: target.y, z: target.z + half };
     const lock = target === null ? null : { halfHeight: half, slopeOffset };
     const path = shotPath(world, origin, shot.angleRad, aimAt, range, lock);
 
@@ -182,10 +188,12 @@ export class ProjectileLayer {
         }
       }
 
-      // A shoot-triggered special only fires if the bolt reached the wall
-      // rather than being absorbed by a monster first. A hitscan pellet
-      // resolves this frame so it fires here; a projectile's is deferred to
-      // arrival (see `Projectile.lineIndex`).
+      // Every shoot line the pellet crossed, and the wall it stopped at when it
+      // got that far — a body absorbing the bolt shortens the trace, it does not
+      // spare the lines in front of that body. A hitscan pellet resolves this
+      // frame so it fires here; a projectile's is deferred to arrival (see
+      // `Projectile.lineIndex`).
+      this.ctx.triggerShotPath(origin, { x: endX, y: endY }, hitMonsterId === null ? path.lineIndex : null);
       if (hitMonsterId !== null) {
         // Where the tracer stops is where the bolt met the body, so the same
         // point is the splash's — `PTR_ShootTraverse` spawns blood on the
@@ -195,7 +203,6 @@ export class ProjectileLayer {
         else this.effects.spawnPuff(hitAt);
         things?.damage(hitMonsterId, shot.damage, undefined, undefined, origin.x, origin.y);
       } else {
-        this.ctx.triggerShot(path.lineIndex);
         this.effects.spawnWallPuff(path, shot.angleRad);
       }
       this.effects.addTracer(origin, { x: endX, y: endY, z: path.z }, TRACER_COLOR, PLAYER_RADIUS);

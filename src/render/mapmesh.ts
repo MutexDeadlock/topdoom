@@ -1,14 +1,14 @@
 /**
  * Builds the level's three.js meshes from the subsector polygons and linedefs — floors and walls
- * batched by texture, lit per sector — and owns `doomToWorld`, the one DOOM-space → three.js-space
- * conversion. See docs/render.md § Mesh building and § Sector lighting.
+ * batched by texture, lit per sector — and owns `doomToWorld`/`worldToDoom`, the one place DOOM space
+ * and three.js space meet. See docs/render.md § Mesh building and § Sector lighting.
  */
 import * as THREE from 'three';
 import { LF, NO_SIDE, SKY_FLAT, type DoomMap, type LineDef, type SideDef, type Sector } from '../wad/map.ts';
 import { buildSubSectorPolys, type SectorPoly, type SubSectorPoly } from './bsp.ts';
 import { findSolidCaps, pointInPolygon, type SolidCap } from './solids.ts';
 import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
-import type { Pos2 } from '../types.ts';
+import type { Pos2, Pos3 } from '../types.ts';
 import { BRIGHTNESS_LIFT, WATER_SURFACE_ALPHA } from '../constants.ts';
 
 /** DOOM's sentinel for "no texture assigned" in a sidedef texture slot — also used by `game/specials.ts`'s `raiseToTexture` to skip unset bottom textures. */
@@ -20,6 +20,19 @@ export const NO_TEXTURE = '-';
  */
 export function doomToWorld(x: number, y: number, z: number, out = new THREE.Vector3()): THREE.Vector3 {
   return out.set(x, z, -y);
+}
+
+/**
+ * `doomToWorld` the other way: a three.js point (x, y, z) is the DOOM point
+ * (x, -z, y). A pure axis permutation with no translation, so it maps a
+ * *direction* as faithfully as a position — the reason `render/tracer.ts` reuses
+ * `doomToWorld` the same way. Takes an optional `out` for a caller on a hot path.
+ */
+export function worldToDoom(x: number, y: number, z: number, out: Pos3 = { x: 0, y: 0, z: 0 }): Pos3 {
+  out.x = x;
+  out.y = -z;
+  out.z = y;
+  return out;
 }
 
 interface Batch {

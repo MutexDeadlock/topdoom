@@ -1,12 +1,15 @@
-v0.15.2 (2026-08-2?)
+v0.15.2 (2026-08-23)
 
 Features and improvements
   - DEHACKED action pointers apply (Pointer and [CODEPTR], MBF's ten included)
+  - auto-aim locks onto switches a shot triggers, not just onto monsters
   - spectres are slightly better visible
   - tuned the auto-camera a bit
 
 Fixed bugs
   - fog of war reveals what is around the player first, not in BSP order
+  - a bullet fires the shoot-triggered lines it flies through, not just the
+    one it stops on
   - items tucked just out of walking reach (an alcove, a window ledge)
     can now be picked up
   - a BOOM friction sector slippery enough to clamp at zero friction froze

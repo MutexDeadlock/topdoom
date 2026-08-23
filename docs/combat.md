@@ -143,17 +143,41 @@ the layer's five collaborators. `tests/regression/player-shot-range.test.ts` gua
 
 ## Shoot-triggered specials
 
-**`shotPath`'s returned `lineIndex` — whichever line stopped the shot, or null if it reached its
-target or ran out its range — drives `game/specials/tables.ts`'s three impact specials, 24/46/47**
-(`SpecialsController.triggerShot`, vanilla's `P_ShootSpecialLine`). A hitscan pellet's trigger fires
-immediately in `spawnPlayerShot`/`MonsterAttacks.resolveHitscan` (resolved and gone within the same frame, matching
-`PTR_ShootTraverse`), but a projectile's is deferred to the frame it actually *arrives* at that wall
-in `ProjectileLayer.update` — vanilla calls `P_ShootSpecialLine` for a missile from `PIT_CheckLine`, which
-only runs once the missile reaches the line. `Projectile.lineIndex` carries the line found at launch
-forward (safe to resolve early, same as `maxDist` itself: static geometry doesn't move mid-flight).
-Either way, the special only fires if nothing closer — a monster's body, or the player — absorbed the
-shot first: `reachedPlayer` and `struck` both take priority over the wall, as does a missile stopped
-by the floor, which never got there either.
+**A hitscan shot fires `game/specials/tables.ts`'s impact specials — 24/46/47 — for every one of
+them it crossed, not only for the line that stopped it** (`SpecialsController.triggerShotPath`,
+vanilla's `P_ShootSpecialLine`). `PTR_ShootTraverse` runs
+`if (li->special) P_ShootSpecialLine (shootthing, li)` on each line the traverse reaches *before*
+testing whether that line blocks, and `P_TraverseIntercepts` walks intercepts nearest-first, so a
+bullet fires the specials of lines it merely flew through — at whatever height, since the call comes
+ahead of the opening test — in the order it passed them. Firing only the stopping line was this
+engine's own reading for a long time, and it works on every stock map (every 24/46/47 in DOOM and
+DOOM2 sits behind a face that stops the shot anyway, § Auto-aim); a PWAD hanging one on an open
+two-sided line is where the two part company.
+
+**`triggerShotPath` walks its own shoot-line list, not the blockmap.** The lines that carry a shoot
+special are scanned once at load (`SpecialsController.shootLines` — almost always none, and the loop
+costs nothing on those maps), so a resolved shot tests that handful of segments against its own trace
+instead of re-walking the geometry a second time. The line that *stopped* the shot is passed in
+separately rather than found here: `ShotPath.lineIndex` already has it, and the trace ends exactly on
+it, which is the one crossing floating point can't be trusted to report. Everything each line still
+has to satisfy — the shoot trigger, an unspent one-shot, `monsterCanTrigger` — is `triggerShot`'s,
+unchanged. A body absorbing the shot only shortens the trace: the lines in front of that body still
+fire, and the wall behind it never does.
+
+**A melee swing fires nothing**, though `A_Punch`/`A_Saw` reach `P_LineAttack` and the same traverse
+in vanilla: `spawnPlayerShot`'s melee branch skips `shotPath` entirely (it has no geometry to trace,
+only a body to find), so a fist against a switch does nothing here. A known gap, not a decision.
+
+**A projectile's trigger is a deliberate deviation, and is deferred to arrival.**
+`P_ShootSpecialLine` is called from `PTR_ShootTraverse` and nowhere else — in `linuxdoom-1.10` and in
+PrBoom alike — so in vanilla a **missile fires no impact special at all**: `PIT_CheckLine` never calls
+it, and a rocket detonating on a 46 line does nothing. This engine fires it anyway, when the missile
+reaches the wall (`ProjectileLayer.update`, off `Projectile.lineIndex`, which carries the line found
+at launch forward — safe to resolve early, same as `maxDist`: static geometry doesn't move mid-flight).
+Kept on purpose: the pointer makes a switch something the player *aims at* (§ Auto-aim), and the one
+weapon whose shot they can watch fly refusing to work on it reads as a bug rather than as fidelity.
+The same "nothing closer absorbed it" rule applies — `reachedPlayer` and `struck` take priority, as
+does a missile stopped by the floor, which never got there either.
 
 24 and 47 reuse the plain `FloorEffect` machinery already built for their walkover/switch siblings
 (5/64/91/101 and 20/68/22/95), just tag-triggered by a shot. **Only 46 can be triggered by a
@@ -225,6 +249,39 @@ lock has to follow the same rule to stay continuous.
 
 **The camera never sees the lock**, which is why `updateLivingPlayer` returns the cursor's plane
 point rather than the aim: docs/render.md § Aim lead.
+
+**A shoot-triggered line is the second thing aim locks onto**
+(`SpecialsController.pickShootTarget`, `game/specials/shootaim.ts`), under the same hover rule: the
+pointer over a switch a shot fires aims at that switch. Without it a shoot switch is a strip of wall
+a few pixels tall seen almost edge-on from overhead — DOOM2 MAP16's two are 12 and 40 map units long
+— and the shot went wherever the cursor's *aim-plane* point happened to fall, which is not where the
+wall the eye picked out is drawn. A monster under the same pointer wins: its body would absorb the
+shot long before the wall. The candidate set is every line whose special `lookupSpecial` reports as
+`trigger: 'shoot'`, scanned once at load and filtered per tic down to the ones that could still fire
+— a spent one-shot and a tagless generalized line are both dropped, since aim spent on a line that
+does nothing is aim taken away from the shot.
+
+**The pick tests the ray against a line's shootable *bands*, not its whole face.** A band is a
+vertical stretch that stops a shot — the wall below the opening and the wall above it, or the whole
+face when there is no opening (one-sided, or a two-sided line whose sectors leave no gap, which is
+what every two-sided shoot switch in the IWADs turns out to be). A band is the part of the line that
+is actually *there* to point at — the opening between them is see-through, and grabbing the aim there
+would quietly redirect a shot the player lined up on whatever lies beyond the window. So a pointer
+over a real opening picks nothing at all and the shot goes through it as aimed, which still fires the
+line's special if the trace crosses it (§ Shoot-triggered specials).
+
+**The aim height is the band closest to the fire height, clamped inside it** — the flattest shot the
+line still stops, so the shot ends on the wall the player pointed at rather than climbing past it.
+Which band the pointer was over doesn't decide it: both fire the same special, and a steeper shot only
+offers more geometry in between to run into. On every shoot switch in DOOM and
+DOOM2 this comes out dead flat, so the lock is doing nothing but fixing the *angle*. The clamp keeps
+`BAND_INSET` clear of the band's edges, and the aim point the same distance in from the line's ends,
+because the shot is re-traced from the player along its own angle: aiming at an edge risks landing a
+unit the wrong side of it and passing straight through.
+
+**No `ShotLock` comes with it** — a wall has no silhouette to open a wedge around, and the strict
+single ray is the point: a shoot switch behind a step the shot genuinely can't clear must stay
+unreachable, or the lock would carry the shot over geometry that should have stopped it.
 
 ## Effects and their batching
 

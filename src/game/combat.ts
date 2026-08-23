@@ -13,7 +13,7 @@ import { PLAYER_RADIUS, type Player } from './player.ts';
 import type { BarrelExplosion, ThingLayer } from './things.ts';
 import { BARREL_SPLASH_DAMAGE, BARREL_SPLASH_RADIUS } from './things/tables.ts';
 import { ThingType } from './things/doomednums.ts';
-import type { Pos3 } from '../types.ts';
+import type { Pos2, Pos3 } from '../types.ts';
 import { blastDistanceToBox } from '../util/geom.ts';
 
 /**
@@ -53,6 +53,14 @@ export interface CombatContext {
    * exception for a monster's stray shot — docs/combat.md § Shoot-triggered specials.
    */
   triggerShot(lineIndex: number | null, byMonster?: boolean): void;
+  /**
+   * The same, for a hitscan shot that has just resolved: fires every shoot line
+   * the trace `from`→`to` crossed, and `blocker` — whichever line stopped it, or
+   * null when a body did — last. `PTR_ShootTraverse` fires a line's special on
+   * the way past, not only on the line it stops at; docs/combat.md
+   * § Shoot-triggered specials.
+   */
+  triggerShotPath(from: Pos2, to: Pos2, blocker: number | null, byMonster?: boolean): void;
 }
 
 /**

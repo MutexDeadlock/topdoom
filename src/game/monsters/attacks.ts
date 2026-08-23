@@ -189,6 +189,9 @@ export class MonsterAttacks {
     let endX = atk.x + dirX * path.dist;
     let endY = atk.y + dirY * path.dist;
     let endZ = path.z;
+    // Set in the wall branch rather than recomputed from its condition, so the
+    // two can't drift — and so the tie-break that branch encodes stays in one place.
+    let stopped: number | null = null;
     if (blocker && (!playerInPath || blocker.dist <= playerAlong)) {
       things?.damage(blocker.id, damage, { id: atk.sourceId, type: atk.sourceType }, undefined, atk.x, atk.y);
       endX = blocker.x;
@@ -209,12 +212,14 @@ export class MonsterAttacks {
       this.effects.spawnBlood({ x: endX, y: endY, z: endZ }, damage);
     } else {
       // Nothing living stopped it — whatever's left is a wall, the only thing
-      // `shotPath` itself could have blocked it on. `triggerShot`'s `byMonster`
-      // gate reproduces vanilla's own hardcoded exception: this can only
-      // actually do anything for a 46 line, never 24/47.
-      this.ctx.triggerShot(path.lineIndex, true);
+      // `shotPath` itself could have blocked it on.
       this.effects.spawnWallPuff(path, angleRad);
+      stopped = path.lineIndex;
     }
+    // Every shoot line the bolt crossed, and the wall it ended on if it reached
+    // one. `byMonster` reproduces vanilla's own hardcoded exception: this can
+    // only actually do anything for a 46 line, never 24/47.
+    this.ctx.triggerShotPath(atk, { x: endX, y: endY }, stopped, true);
     this.effects.addTracer(atk, { x: endX, y: endY, z: endZ }, MONSTER_TRACER_COLOR, atk.sourceRadius);
   }
 }

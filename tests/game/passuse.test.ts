@@ -115,6 +115,31 @@ describe('specials · shoot triggers', () => {
     assert.ok(map.sectors[2].ceilHeight > 0);
   });
 
+  /**
+   * `PTR_ShootTraverse` fires a line's special on the way past, before it tests
+   * whether the line blocks — so a bullet triggers what it flies *through*, and
+   * only what it reached. docs/combat.md § Shoot-triggered specials.
+   */
+  test('a shot flying past a shoot line fires it, one beyond where it stopped does not', () => {
+    const flownThrough = shotRig(46);
+    // The line sits at x=128; the trace runs from the first cell well past it.
+    flownThrough.rig.specials.triggerShotPath({ x: 64, y: 64 }, { x: 300, y: 64 }, null, new Set());
+    for (let i = 0; i < 5; i++) flownThrough.rig.tick();
+    assert.ok(flownThrough.map.sectors[2].ceilHeight > 0, 'crossed on the way past');
+
+    const stoppedShort = shotRig(46);
+    stoppedShort.rig.specials.triggerShotPath({ x: 64, y: 64 }, { x: 100, y: 64 }, null, new Set());
+    for (let i = 0; i < 5; i++) stoppedShort.rig.tick();
+    assert.equal(stoppedShort.map.sectors[2].ceilHeight, 0, 'never reached');
+  });
+
+  test('the line that stopped the shot fires, though the trace ends exactly on it', () => {
+    const { map, rig, line } = shotRig(46);
+    rig.specials.triggerShotPath({ x: 64, y: 64 }, { x: 128, y: 64 }, line, new Set());
+    for (let i = 0; i < 5; i++) rig.tick();
+    assert.ok(map.sectors[2].ceilHeight > 0);
+  });
+
   test("a monster's shot works on 46 but not on other shoot specials", () => {
     const monster = shotRig(46);
     monster.rig.specials.triggerShot(monster.line, new Set(), true);

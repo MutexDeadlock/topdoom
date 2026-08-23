@@ -10,9 +10,9 @@
  * per-frame code — the caller passes the object it already has.
  *
  * Coordinates here are always **DOOM map space** (x east, y north, z up =
- * feet height), never three.js space — `render/mapmesh.ts: doomToWorld` is
- * the one place the two meet, and `THREE.Vector3` is used on the other side
- * of it. Nothing in this file is a direction or a velocity: those are stored
+ * feet height), never three.js space — `render/mapmesh.ts`'s
+ * `doomToWorld`/`worldToDoom` pair is the one place the two meet, and
+ * `THREE.Vector3` is used on the other side of it. Nothing in this file is a direction or a velocity: those are stored
  * as separate `velX`/`velY`/`velZ` fields by everything that has them, and
  * headings are plain `angle` numbers.
  *

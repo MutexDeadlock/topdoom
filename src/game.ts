@@ -54,6 +54,7 @@ import {
   type TeleportDest,
 } from './game/specials.ts';
 import { computeMovableSectors } from './game/specials/mapscan.ts';
+import type { ShootAim } from './game/specials/shootaim.ts';
 import { Forces } from './game/specials/forces.ts';
 import { transfersOf, type Transfers } from './game/specials/transfers.ts';
 import { colormapTint, type ColorTint } from './wad/colormaps.ts';
@@ -507,6 +508,8 @@ export class Game {
       },
       damagePlayer: (amount, fromX, fromY, cause) => this.damagePlayer(amount, fromX, fromY, cause),
       triggerShot: (lineIndex, byMonster) => this.specials?.triggerShot(lineIndex, this.inventory.keys, byMonster),
+      triggerShotPath: (from, to, blocker, byMonster) =>
+        this.specials?.triggerShotPath(from, to, blocker, this.inventory.keys, byMonster),
     };
     this.projectiles = new ProjectileLayer(this.combat, this.effects, this.spriteBank, this.spriteMaterials, audio);
     this.monsterAttacks = new MonsterAttacks(this.combat, this.effects, this.projectiles, audio, () =>
@@ -1524,17 +1527,20 @@ export class Game {
     // matching vanilla: powers age in `P_PlayerThink`, which hands off to
     // `P_DeathThink` and returns before reaching them once health hits 0.
     tickPowers(this.inventory, dt);
-    // The cursor hovering over a monster locks aim onto its actual position
-    // and height — **on hover, not on click** (docs/combat.md § Auto-aim). The
-    // camera leads on `cursor` and never sees the lock, which is
-    // docs/render.md § Aim lead's rule and the reason the two are returned
+    // The cursor hovering over a monster — or over a switch a shot triggers —
+    // locks aim onto it, **on hover, not on click** (docs/combat.md § Auto-aim).
+    // The camera leads on `cursor` and never sees either lock, which is
+    // docs/render.md § Aim lead's rule and the reason they are returned
     // separately at all.
-    const { monster, cursor } = this.profiler.time('Player', () => {
+    const { monster, shootLine, cursor } = this.profiler.time('Player', () => {
       // The tic-exact viewer angle, not the interpolated `viewAngleDeg` the
       // billboards are drawn at, for the same framerate-independence reason
       // the camera was posed at alpha 1 above.
       const ray = camera.rayFor(input.pointer.x, input.pointer.y);
       const m = this.things?.pickMonster(ray, camera.viewerAngleDeg) ?? null;
+      // A monster in front of the switch wins: the pointer is over its body,
+      // and a shot would be absorbed by it long before reaching the wall.
+      const line = m ? null : (this.specials?.pickShootTarget(ray, this.player.z + AIM_HEIGHT_OFFSET) ?? null);
       // The aim plane hangs off the camera's own follow height, not the
       // player's live `z`: identical once the follow smoother has caught up,
       // but during a fall — into a Boom water pool, off any ledge — a plane
@@ -1542,7 +1548,7 @@ export class Game {
       // turns the player with it. docs/render.md § Aim lead.
       const aimPlaneZ = camera.followHeight - EYE_HEIGHT + AIM_HEIGHT_OFFSET;
       const onPlane = camera.pointerToPlane(input.pointer.x, input.pointer.y, aimPlaneZ);
-      const at = m ?? onPlane;
+      const at = m ?? line ?? onPlane;
       // Whatever the world is pushing the player with this tic — a conveyor
       // underfoot — onto the same momentum channel a hit's knockback uses.
       // Applied before the move, as `T_Scroll` runs before `P_PlayerThink`.
@@ -1574,10 +1580,10 @@ export class Game {
         this.things?.solidBodies(this.player),
         ground,
       );
-      return { monster: m, cursor: onPlane };
+      return { monster: m, shootLine: line, cursor: onPlane };
     });
 
-    this.profiler.time('Weapons', () => this.fireWeapons(input, monster));
+    this.profiler.time('Weapons', () => this.fireWeapons(input, monster, shootLine));
     this.profiler.time('Player', () => this.collectPickupsAndSectorEffects(dt));
 
     // Hard landings, and the weapon bookkeeping that has to run after every
@@ -1590,10 +1596,11 @@ export class Game {
 
   /**
    * Weapon switching and this tic's trigger pull, turning each shot `WeaponSystem.fire` returns
-   * into a projectile or tracer. `monster` is whatever aim locked onto, which is what lets a shot
-   * angle toward its height — see docs/combat.md § Auto-aim.
+   * into a projectile or tracer. `monster` and `shootLine` are whatever aim locked onto — a body
+   * or a shoot-triggered wall — which is what lets a shot angle toward its height; see
+   * docs/combat.md § Auto-aim.
    */
-  private fireWeapons(input: Input, monster: MonsterRef | null): void {
+  private fireWeapons(input: Input, monster: MonsterRef | null, shootLine: ShootAim | null): void {
     // A shot always *starts* at the player's own fire height — never the
     // target's, or a tracer/projectile would visibly begin mid-air instead
     // of at the player. The locked-on monster travels with it as the body to
@@ -1622,7 +1629,7 @@ export class Game {
       if (fire) this.audio.play(fire, this.player, PLAYER_ORIGIN);
     }
     for (const shot of shots) {
-      this.projectiles.spawnPlayerShot(shot, fireStartZ, monster);
+      this.projectiles.spawnPlayerShot(shot, fireStartZ, monster, shootLine);
     }
   }
 

@@ -208,12 +208,14 @@ export class FogOfWar {
     this.buildOrder(startX, startY);
 
     // Which subsector each wall quad faces into, so a wall reveals with the
-    // space it encloses. mapmesh builds every quad with its face to the right
-    // of a->b, so nudging the midpoint along that normal lands just inside.
+    // space it encloses. `mapmesh` resolves the same quantity for the dynamic
+    // lights (`WallOccluder.subsector`) and it is one BSP descent per quad, so
+    // take its answer where there is one; -1 means that build was given no
+    // probe (tests, tools) and this does it itself.
     this.wallSubsector = new Int32Array(occluders.length);
     for (let i = 0; i < occluders.length; i++) {
       const o = occluders[i];
-      this.wallSubsector[i] = this.wallSubsectorAt(o.ax, o.ay, o.bx, o.by);
+      this.wallSubsector[i] = o.subsector >= 0 ? o.subsector : this.wallSubsectorAt(o.ax, o.ay, o.bx, o.by);
     }
 
     // Seed the spawn's surroundings fully revealed instead of fading up from
@@ -491,12 +493,11 @@ export class FogOfWar {
    * is built and rebuilt on its own and so was never indexed in the
    * constructor loop above.
    *
-   * This is a BSP descent, and the caller is expected to **memo the answer**
-   * (`MoverGeometry`'s per-mover `fogSubsectors`) rather than ask per frame:
-   * it depends only on the quad's endpoints, which a mover moving vertically
-   * never changes. A Boom map with hundreds of movable sectors has thousands of
-   * these quads, and a probe per quad per frame dominates the fading pass.
-   * docs/fogofwar.md § Mover wall quads.
+   * This is a BSP descent, so it is the fallback rather than the path: a mesh
+   * built with a probe already carries the answer on `WallOccluder.subsector`,
+   * and it depends only on the quad's endpoints, which vertical movement never
+   * changes. Asking per quad per frame would dominate the fading pass on a Boom
+   * map with hundreds of movable sectors. docs/fogofwar.md § Mover wall quads.
    */
   wallSubsectorAt(ax: number, ay: number, bx: number, by: number): number {
     const dx = bx - ax;

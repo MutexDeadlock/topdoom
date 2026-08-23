@@ -556,8 +556,8 @@ description, the autorun checkbox is the `Shift` row's. A player looking up what
 player changing it are the same person on the same trip to the menu — which is why those two did not
 move to General with the rest.
 
-**General is the camera mode, the frame rate limit, the collision toggle and the two volume
-sliders**, stacked full width in that order — Sound last of the always-on sections
+**General is the camera mode, the frame rate limit, the lighting and collision toggles and the two
+volume sliders**, stacked full width in that order — Sound last of the always-on sections
 (`#settings-dev` still follows it in a dev build), since it is the one a player reaches for
 mid-game and the bottom of the panel is nearest the footer. **Camera** is `#cameramode-select`,
 whose `<option>` values are the `CameraMode` strings themselves (`auto`, the default, vs
@@ -641,6 +641,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.cameraMode` | `game/autocamera.ts` (`getCameraMode`/`setCameraMode`) | docs/render.md § Auto camera |
 | `topdoom.fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
 | `topdoom.profiler` | `ui/devmode/profilerhud.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
+| `topdoom.dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |
 | `topdoom.infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
 | `topdoom.pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |
 | `topdoom.skill` | `ui/menu/menu.ts` | § Difficulty above |

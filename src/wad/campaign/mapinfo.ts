@@ -4,6 +4,7 @@
  * and the three consumers in this directory project it. See docs/wad.md § Level names.
  */
 import type { Wad, WadFile } from '../wad.ts';
+import { stripComments } from '../textlump.ts';
 
 /**
  * The lump names carrying level definitions, **most preferred first**: a file that ships several
@@ -25,37 +26,6 @@ export function preferredMapInfoLump(present: readonly string[]): string | null 
 const DECODER = new TextDecoder('latin1');
 
 type Token = { text: string; quoted: boolean };
-
-/**
- * Drops line (`//`) and block comments, leaving quoted strings alone — a title containing a slash
- * must survive, and TNT's "shipping/respawning" really does.
- */
-function stripComments(text: string): string {
-  let out = '';
-  let i = 0;
-  while (i < text.length) {
-    const ch = text[i];
-    if (ch === '"') {
-      const end = text.indexOf('"', i + 1);
-      if (end < 0) return out + text.slice(i);
-      out += text.slice(i, end + 1);
-      i = end + 1;
-    } else if (ch === '/' && text[i + 1] === '/') {
-      const end = text.indexOf('\n', i);
-      if (end < 0) return out;
-      i = end;
-    } else if (ch === '/' && text[i + 1] === '*') {
-      const end = text.indexOf('*/', i + 2);
-      i = end < 0 ? text.length : end + 2;
-      // Keep the lines joined rather than glued: a block comment can span a line break.
-      out += ' ';
-    } else {
-      out += ch;
-      i++;
-    }
-  }
-  return out;
-}
 
 /** Quoted strings, braces and `=` as tokens of their own; everything else splits on whitespace. */
 function tokenize(text: string): Token[] {

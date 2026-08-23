@@ -45,15 +45,6 @@ interface MoverEntry {
   mesh: MoverMesh;
   walls: WallFader;
   flats: FlatFader;
-  /**
-   * Memoized fog probe per wall quad, parallel to `mesh.wallQuads`:
-   * `FogOfWar.wallSubsectorAt` is a BSP descent whose answer is fixed by the
-   * quad's endpoints, which vertical movement never touches. Cleared by
-   * `rebuild` whenever it refreshes or replaces the mesh — the only events
-   * that can repoint a quad slot at different geometry.
-   * docs/fogofwar.md § Mover wall quads.
-   */
-  fogSubsectors: (number | undefined)[];
 }
 
 const NO_SUBSECTORS: readonly number[] = [];
@@ -178,14 +169,11 @@ export class MoverGeometry {
       g.walls.update(dt, camX, camY, camZ, targets, openingInto);
       g.flats.update(dt, camX, camY, camZ, targets);
       // Mover quads aren't in the static occluder list FogOfWar indexed at
-      // load, so their subsector is probed from the quad itself.
+      // load; `mapmesh` resolved each one's leaf when the mesh was built, and a
+      // refresh preserves it, so -1 means only that the build was given no probe.
       g.walls.commit((i) => {
-        // Memoized — see `MoverEntry.fogSubsectors`.
-        let s = g.fogSubsectors[i];
-        if (s === undefined) {
-          const q = g.mesh.wallQuads[i];
-          s = g.fogSubsectors[i] = this.fog.wallSubsectorAt(q.ax, q.ay, q.bx, q.by);
-        }
+        const q = g.mesh.wallQuads[i];
+        const s = q.subsector >= 0 ? q.subsector : this.fog.wallSubsectorAt(q.ax, q.ay, q.bx, q.by);
         return this.fog.alphaOf(s);
       });
       g.flats.commit((subsector) => this.fog.alphaOf(subsector));
@@ -212,7 +200,6 @@ export class MoverGeometry {
       // reads to skip drawing an invisible mover mesh.
       walls: new WallFader(mesh.wallQuads, mesh.meshes, true),
       flats: new FlatFader(mesh.flatFans, mesh.meshes, true),
-      fogSubsectors: [],
     });
     // A mover mesh holds its own sector's flats plus wall quads from *both*
     // sides of every bordering line, so the sectors it must be relit for are
@@ -239,9 +226,6 @@ export class MoverGeometry {
     const old = this.moverMeshes.get(sectorIndex);
     if (old) {
       if (refreshMoverMesh(old.mesh, this.map, this.polys, sectorIndex, this.bank, this.meshOptions, this.moverIndex)) {
-        // A refresh may repoint a quad slot at different geometry — drop the
-        // fog memos and let the next fading pass re-probe.
-        old.fogSubsectors.length = 0;
         return;
       }
       this.scene.remove(old.mesh.group);

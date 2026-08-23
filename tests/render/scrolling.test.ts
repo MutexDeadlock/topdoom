@@ -68,6 +68,7 @@ describe('Scrolling textures · special 48', () => {
       sector: 0,
       line,
       frontSide,
+      subsector: -1,
     };
   }
 

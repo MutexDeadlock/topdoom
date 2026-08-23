@@ -42,6 +42,8 @@ interface Batch {
   positions: number[];
   uvs: number[];
   colors: number[];
+  /** Per vertex, the BSP leaf the surface faces into — the `aLightCell` attribute (docs/lights.md § Light stops at walls). */
+  cells: number[];
 }
 
 class BatchSet {
@@ -51,10 +53,15 @@ class BatchSet {
     const key = kind + ':' + texture;
     let b = this.batches.get(key);
     if (!b) {
-      b = { key, kind, texture, positions: [], uvs: [], colors: [] };
+      b = { key, kind, texture, positions: [], uvs: [], colors: [], cells: [] };
       this.batches.set(key, b);
     }
     return b;
+  }
+
+  /** The batch `key` names, or undefined — `WallOccluder.key` is the same `kind + ':' + texture`. */
+  byKey(key: string): Batch | undefined {
+    return this.batches.get(key);
   }
 
   all(): Batch[] {
@@ -175,10 +182,54 @@ export const WALL_CHUNK_LEN = 128;
 const FLOOR_ONLY = [false];
 const FLOOR_AND_CEILING = [false, true];
 
-function pushVertex(b: Batch, x: number, y: number, z: number, u: number, v: number, c: number, alpha = 1): void {
+function pushVertex(
+  b: Batch,
+  x: number,
+  y: number,
+  z: number,
+  u: number,
+  v: number,
+  c: number,
+  alpha = 1,
+  /** -1 leaves the leaf unresolved: wall quads get theirs from `fillWallCells` once the occluders exist. */
+  cell = -1,
+): void {
   b.positions.push(x, y, z);
   b.uvs.push(u, v);
   b.colors.push(c, c, c, alpha);
+  b.cells.push(cell);
+}
+
+/**
+ * How far past a wall's face its leaf is probed. A face sits exactly on the boundary between the
+ * room it looks into and whatever is behind it, so the sample has to step off it — the same 1.5
+ * units fog of war pushes its own wall probe, which reads the same quantity (docs/fogofwar.md
+ * § How reveal reaches the geometry).
+ */
+const WALL_PROBE_OFFSET = 1.5;
+
+/**
+ * Resolves each wall quad's leaf and stamps it onto that quad's vertices, so the dynamic-light
+ * shader can ask whether a light reached the room this wall faces. Runs once the quads exist
+ * rather than inside `addWall`, which would mean threading a BSP probe through five signatures for
+ * a value the occluder records anyway. Without `subsectorAt` (tests, tools) the quads stay at -1,
+ * which the shader reads as ungated. docs/lights.md § Light stops at walls.
+ */
+function fillWallCells(batches: BatchSet, occluders: WallOccluder[], subsectorAt?: (x: number, y: number) => number): void {
+  if (!subsectorAt) return;
+  for (const o of occluders) {
+    const dx = o.bx - o.ax;
+    const dy = o.by - o.ay;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) continue;
+    // `addWall` builds every quad facing right of a->b, which is DOOM's front side.
+    const mx = (o.ax + o.bx) / 2 + (dy / len) * WALL_PROBE_OFFSET;
+    const my = (o.ay + o.by) / 2 + (-dx / len) * WALL_PROBE_OFFSET;
+    o.subsector = subsectorAt(mx, my);
+    const cells = batches.byKey(o.key)?.cells;
+    if (!cells) continue;
+    for (let v = 0; v < o.vertexCount; v++) cells[o.vertexStart + v] = o.subsector;
+  }
 }
 
 /**
@@ -248,6 +299,13 @@ export interface MapMeshOptions {
    * locally — see `borderingLines`.
    */
   linesOf?: (sectorIndex: number) => readonly number[];
+  /**
+   * `World.subsectorAt` — which BSP leaf a point falls in, injected the same way `linesOf` is so
+   * the renderer keeps no import edge into `game/`. Supplied, every surface carries the leaf it
+   * faces into as a vertex attribute, which is what lets a dynamic light stop at a wall
+   * (docs/lights.md § Light stops at walls); omitted (tests, tools), nothing is gated.
+   */
+  subsectorAt?: (x: number, y: number) => number;
 }
 
 export interface BuiltMap {
@@ -297,6 +355,12 @@ export interface WallOccluder {
   line: number;
   /** True if this quad came from the linedef's front (right) sidedef — vanilla's `sidenum[0]`, the only side a scrolling special ever animates. */
   frontSide: boolean;
+  /**
+   * The BSP leaf this quad's face looks into, or -1 when the build was given no probe. Both the
+   * dynamic lights and fog of war key off it, so it is resolved once here rather than twice —
+   * see `fillWallCells`.
+   */
+  subsector: number;
   /**
    * Permanent translucency, multiplied into the vertex alpha the faders write
    * (render/occlusion.ts). Only a Boom 260 midtexture has one.
@@ -393,7 +457,7 @@ function ownTransfers(map: DoomMap): SectorTransfers {
 }
 
 export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshOptions = {}): BuiltMap {
-  const { renderCeilings = false, wallHeightCap = 0, movableSectors, linesOf } = options;
+  const { renderCeilings = false, wallHeightCap = 0, movableSectors, linesOf, subsectorAt } = options;
   const transfers = options.transfers ?? ownTransfers(map);
   const batches = new BatchSet();
   const missing = new Set<string>();
@@ -412,6 +476,7 @@ export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshO
   buildFlats(map, polys, batches, texSize, renderCeilings, flatSurfaces, transfers, linesOf, movableSectors);
   buildWalls(map, batches, texSize, wallHeightCap, occluders, transfers, movableSectors);
   buildSolidCaps(map, polys, batches, texSize, flatSurfaces, transfers);
+  fillWallCells(batches, occluders, subsectorAt);
 
   const group = new THREE.Group();
   group.name = 'map:' + map.name;
@@ -428,6 +493,7 @@ export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshO
     geom.setAttribute('position', new THREE.Float32BufferAttribute(b.positions, 3));
     geom.setAttribute('uv', new THREE.Float32BufferAttribute(b.uvs, 2));
     geom.setAttribute('color', new THREE.Float32BufferAttribute(b.colors, 4));
+    geom.setAttribute('aLightCell', new THREE.Float32BufferAttribute(b.cells, 1));
     geom.computeBoundingSphere();
 
     const mesh = new THREE.Mesh(geom, material);
@@ -475,16 +541,18 @@ export function buildMoverMesh(
   options: MapMeshOptions,
   index: MoverIndex,
 ): MoverMesh {
-  const { batches, wallQuads, flatFans } = buildMoverBatches(map, polys, sectorIndex, bank, options, index);
+  const { batches, drawn, wallQuads, flatFans } = buildMoverBatches(map, polys, sectorIndex, bank, options, index);
+  fillWallCells(batches, wallQuads, options.subsectorAt);
 
   const group = new THREE.Group();
   const meshes = new Map<string, THREE.Mesh>();
-  for (const b of batches) {
+  for (const b of drawn) {
     const material = bank.get(b.kind, b.texture)!;
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.Float32BufferAttribute(b.positions, 3));
     geom.setAttribute('uv', new THREE.Float32BufferAttribute(b.uvs, 2));
     geom.setAttribute('color', new THREE.Float32BufferAttribute(b.colors, 4));
+    geom.setAttribute('aLightCell', new THREE.Float32BufferAttribute(b.cells, 1));
     geom.computeBoundingSphere();
 
     const mesh = new THREE.Mesh(geom, material);
@@ -516,9 +584,9 @@ export function refreshMoverMesh(
   options: MapMeshOptions,
   index: MoverIndex,
 ): boolean {
-  const { batches, wallQuads, flatFans } = buildMoverBatches(map, polys, sectorIndex, bank, options, index);
+  const { drawn, wallQuads, flatFans } = buildMoverBatches(map, polys, sectorIndex, bank, options, index);
   if (
-    batches.length !== mesh.meshes.size ||
+    drawn.length !== mesh.meshes.size ||
     wallQuads.length !== mesh.wallQuads.length ||
     flatFans.length !== mesh.flatFans.length
   ) {
@@ -526,19 +594,28 @@ export function refreshMoverMesh(
   }
   // Validated before anything is written, so a refusal can't leave the mesh
   // half-rewritten.
-  for (const b of batches) {
+  for (const b of drawn) {
     const attr = mesh.meshes.get(b.key)?.geometry.getAttribute('position');
     if (!attr || attr.array.length !== b.positions.length) return false;
   }
 
-  for (const b of batches) {
+  for (const b of drawn) {
     const geom = mesh.meshes.get(b.key)!.geometry;
     writeAttribute(geom, 'position', b.positions);
     writeAttribute(geom, 'uv', b.uvs);
     writeAttribute(geom, 'color', b.colors);
+    // `aLightCell` is deliberately not rewritten: a mover changes heights, never a quad's
+    // footprint, so the leaf each vertex faces into is the one it was built with.
     geom.computeBoundingSphere();
   }
-  for (let i = 0; i < wallQuads.length; i++) Object.assign(mesh.wallQuads[i], wallQuads[i]);
+  for (let i = 0; i < wallQuads.length; i++) {
+    // `subsector` survives the copy for the same reason `aLightCell` is not rewritten: it is fixed
+    // by the quad's footprint, and re-probing it would be a BSP descent per quad per tic.
+    const q = mesh.wallQuads[i];
+    const subsector = q.subsector;
+    Object.assign(q, wallQuads[i]);
+    q.subsector = subsector;
+  }
   for (let i = 0; i < flatFans.length; i++) Object.assign(mesh.flatFans[i], flatFans[i]);
   return true;
 }
@@ -551,9 +628,10 @@ function writeAttribute(geom: THREE.BufferGeometry, name: string, values: number
 
 /**
  * `buildMoverMesh`'s geometry pass, shared with `refreshMoverMesh` — everything
- * up to the three.js objects. Only batches that will actually be drawn come
- * back, so both callers agree on what "the sector's batches" are without
- * re-deriving it.
+ * up to the three.js objects. `drawn` is the batches that will actually be
+ * drawn, so both callers agree on what "the sector's batches" are without
+ * re-deriving it; the whole `BatchSet` comes back too, since `buildMoverMesh`
+ * still has to resolve wall leaves against it before the buffers are built.
  */
 function buildMoverBatches(
   map: DoomMap,
@@ -562,7 +640,7 @@ function buildMoverBatches(
   bank: MaterialBank,
   options: MapMeshOptions,
   index: MoverIndex,
-): { batches: Batch[]; wallQuads: WallOccluder[]; flatFans: FlatSurface[] } {
+): { batches: BatchSet; drawn: Batch[]; wallQuads: WallOccluder[]; flatFans: FlatSurface[] } {
   const { renderCeilings = false, wallHeightCap = 0, movableSectors } = options;
   const transfers = options.transfers ?? ownTransfers(map);
   const batches = new BatchSet();
@@ -602,7 +680,7 @@ function buildMoverBatches(
   }
 
   const drawn = batches.all().filter((b) => b.positions.length > 0 && bank.get(b.kind, b.texture));
-  return { batches: drawn, wallQuads, flatFans };
+  return { batches, drawn, wallQuads, flatFans };
 }
 
 /** True if either side of `line` belongs to a sector in `sectors`. */
@@ -927,7 +1005,7 @@ function addFlatFan(
   const xy: number[] = [];
 
   const emit = (x: number, y: number) => {
-    pushVertex(batch, x, height, -y, x / uw, -y / uh, color, alpha);
+    pushVertex(batch, x, height, -y, x / uw, -y / uh, color, alpha, ss);
     xy.push(x, y);
   };
 
@@ -1092,6 +1170,7 @@ function addWall(
         sector: spec.sector,
         line: spec.line,
         frontSide: spec.frontSide,
+        subsector: -1,
         baseAlpha: spec.baseAlpha,
       });
     }

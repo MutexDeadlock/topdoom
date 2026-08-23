@@ -106,6 +106,7 @@ import {
 } from '../render/sprites.ts';
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
+import type { DynamicLights } from '../render/lights.ts';
 import { blastDistanceToBox, boxReach, segmentEntersBox, traceHitsBox } from '../util/geom.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import type { TeleportDest } from './specials.ts';
@@ -277,6 +278,12 @@ export function buildThingSprites(
    * A callback because the fog layer belongs to `game.ts`, exactly as `onBossDeath` above is.
    */
   onRespawn?: (from: Pos3, to: Pos3) => void,
+  /**
+   * The frame's dynamic lights, if any (docs/lights.md). Every drawn thing offers its frame key
+   * here — a torch and a firing monster are emitters — and samples the light reaching it back as
+   * a tint. A session with lights off passes none and nothing below runs.
+   */
+  lights?: DynamicLights,
 ): ThingLayer {
   /**
    * The stat table this level runs on: nightmare swaps in the fast-monster one, which vanilla
@@ -1442,13 +1449,17 @@ export function buildThingSprites(
         const light = FULLBRIGHT_FRAMES.has(p.anim.frameKey)
           ? LIT_FULL
           : litColor(p.sector ? transfers.spriteLight(world.sectorIndexOfSubsector(p.subsector)) : 128);
+        // A drawn sprite is both a possible emitter (the torch, the muzzle flash) and a
+        // receiver. `p.visible` above already gated on fog of war, so an unrevealed room lights
+        // nothing — docs/lights.md § What emits.
+        const tint = lights?.offerAndTint(p.anim.frameKey, x, y, z, p.id, p.subsector);
         if (!p.dropped) {
           doomToWorld(x, y, z, worldPos);
           // A fuzzed thing (the spectre, alive or a corpse — `FUZZ_TYPES`)
           // differs only in which batch draws it; everything above is the same
           // pose an ordinary thing gets.
           const into = FUZZ_TYPES.has(p.type) ? fuzzBatch : batch;
-          into.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light);
+          into.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light, tint);
           continue;
         }
         // Phase-shifted per instance (`p.id`), so two drops side by side
@@ -1456,7 +1467,7 @@ export function buildThingSprites(
         // same — it's batch-wide, see `SpriteBatch.setOpacity`.
         const bob = Math.sin((clock / DROP_BOB_SECONDS + p.id * 0.7) * Math.PI * 2) * DROP_BOB;
         doomToWorld(x, y, z + DROP_HOVER + bob, worldPos);
-        dropBatch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light);
+        dropBatch.add(cached, worldPos.x, worldPos.y, worldPos.z, p.scale, light, tint);
       }
       batch.end();
       dropBatch.end();

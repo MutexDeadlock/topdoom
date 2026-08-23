@@ -396,6 +396,34 @@ export class World {
     return Math.max(0, Math.min(this.gridRows - 1, Math.floor((y - this.gridMinY) / GRID_CELL)));
   }
 
+  /**
+   * `linesNear` without its array: every linedef whose cell overlaps the box around (x, y), each
+   * visited at most once. The visitor may return `true` to stop the walk early, the way a `break`
+   * would.
+   *
+   * This is the form a **per-frame** caller wants — `LightVisibility.castShadows` runs it once per
+   * committed light per frame, where `linesNear`'s `Set` plus spread would be a pair of
+   * allocations per light. Dedup rides the same `lineStamp` cursor `forEachLineAlongSegment` uses.
+   */
+  forEachLineNear(x: number, y: number, radius: number, visit: (lineIndex: number) => boolean | void): void {
+    const stamp = ++this.queryId;
+    const c0 = this.cellX(x - radius);
+    const c1 = this.cellX(x + radius);
+    const r0 = this.cellY(y - radius);
+    const r1 = this.cellY(y + radius);
+    for (let cy = r0; cy <= r1; cy++) {
+      for (let cx = c0; cx <= c1; cx++) {
+        const bucket = this.grid.get(cy * this.gridCols + cx);
+        if (!bucket) continue;
+        for (const i of bucket) {
+          if (this.lineStamp[i] === stamp) continue;
+          this.lineStamp[i] = stamp;
+          if (visit(i) === true) return;
+        }
+      }
+    }
+  }
+
   /** Linedef indices whose cell overlaps the box around (x, y) with the given radius. */
   linesNear(x: number, y: number, radius: number): number[] {
     const seen = new Set<number>();

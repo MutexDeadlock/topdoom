@@ -63,7 +63,7 @@ export function segmentIntersect(
 }
 
 /** Where along the segment a→b its closest point to (px, py) lies, clamped to [0, 1]. */
-function closestTOnSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+export function closestTOnSegment(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
   const dx = bx - ax;
   const dy = by - ay;
   const lenSq = dx * dx + dy * dy;
@@ -204,9 +204,9 @@ export function segmentEntersBox(
 /**
  * Mean of a flat [x0,y0, x1,y1, …] polygon's vertexes — inside it for a convex
  * one, which every subsector polygon is. The one primitive here that returns a
- * point rather than scalars: its three callers (render/bsp.ts, render/solids.ts,
- * game/fogofwar.ts) all want both coordinates and all run once per subsector at
- * level build, never per frame, so the object costs nothing where it is used.
+ * point rather than scalars: every caller wants both coordinates, and each asks
+ * once per subsector — at level build, or on a mover rebuild, or on a leaf's
+ * first use — never per frame, so the object costs nothing where it is used.
  */
 export function polygonCentroid(poly: ArrayLike<number>): Pos2 {
   const n = poly.length / 2;

@@ -27,6 +27,7 @@ import {
 import { getCameraMode, setCameraMode, type CameraMode } from '../../game/autocamera.ts';
 import { getFpsCap, setFpsCap, type FpsCap } from '../../game.ts';
 import { getInfiniteTallActors, setInfiniteTallActors } from '../../game/world.ts';
+import { getDynamicLights, setDynamicLights } from '../../render/lights.ts';
 import { getPistolStart, setPistolStart } from '../../game/inventory.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
 import { requiredWads, wadLabel, type MissingWad, type SaveMeta, type SaveWadSet } from '../../game/savegames.ts';
@@ -93,6 +94,7 @@ export class Menu {
   private cameraModeSelect = el<HTMLSelectElement>('cameramode-select');
   private fpsCapSelect = el<HTMLSelectElement>('fpscap-select');
   private infiniteTallCheckbox = el<HTMLInputElement>('infinitetall-checkbox');
+  private dynLightsCheckbox = el<HTMLInputElement>('dynlights-checkbox');
   private pistolStartCheckbox = el<HTMLInputElement>('pistolstart-checkbox');
   private profilerCheckbox = el<HTMLInputElement>('profiler-checkbox');
   private changelogRoot = el<HTMLDivElement>('changelog');
@@ -191,6 +193,7 @@ export class Menu {
     this.installCameraMode();
     this.installFpsCap();
     this.installInfiniteTall();
+    this.installDynamicLights();
     this.installPistolStart();
     this.installProfiler();
     this.installChangelog();
@@ -401,6 +404,17 @@ export class Menu {
     this.infiniteTallCheckbox.checked = getInfiniteTallActors();
     this.infiniteTallCheckbox.addEventListener('change', () => {
       setInfiniteTallActors(this.infiniteTallCheckbox.checked);
+    });
+  }
+
+  /**
+   * Whether GLDEFS dynamic lights are drawn — on by default, and applied to the level already
+   * running, since the renderer reads the flag per frame. docs/lights.md § The toggle.
+   */
+  private installDynamicLights(): void {
+    this.dynLightsCheckbox.checked = getDynamicLights();
+    this.dynLightsCheckbox.addEventListener('change', () => {
+      setDynamicLights(this.dynLightsCheckbox.checked);
     });
   }
 

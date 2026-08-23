@@ -8,6 +8,7 @@ import type { GraphicsBank } from '../wad/graphics.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import { doomToWorld, litColor } from './mapmesh.ts';
 import { DOOM_TIC } from '../constants.ts';
+import { tinted, type Tint } from './lights.ts';
 
 /**
  * Default viewer angle (DOOM-space, 0 = east, 90 = north, counter-clockwise):
@@ -512,6 +513,15 @@ export class SpriteActor {
     this.brightFrames = brightFrames;
   }
 
+  /**
+   * The `SPRITE+LETTER` this actor last resolved — what `DynamicLights` keys a light off
+   * (docs/lights.md § The frame key). Empty until the first `setPose`, and one frame behind
+   * during a pose the caller has set but not yet drawn.
+   */
+  get frameKey(): string {
+    return this.anim.frameKey;
+  }
+
   /** Repositions the actor and advances its animation; returns false if no matching lump was found. */
   setPose(
     x: number,
@@ -522,6 +532,7 @@ export class SpriteActor {
     dt = 0,
     animating = false,
     viewerAngleDeg = VIEWER_ANGLE_DEG,
+    tint?: Tint,
   ): boolean {
     this.anim.advance(dt, animating);
     const cached = this.anim.resolve(facingDeg, viewerAngleDeg);
@@ -538,7 +549,11 @@ export class SpriteActor {
     // SpriteMaterialCache's doc); turn it by however far the live viewer
     // angle has moved from that default so it keeps facing the camera.
     this.mesh.rotation.y = THREE.MathUtils.degToRad(viewerAngleDeg - VIEWER_ANGLE_DEG);
-    material.color.setScalar(litColor(this.brightFrames.has(this.anim.frameKey) ? 255 : light));
+    const lit = litColor(this.brightFrames.has(this.anim.frameKey) ? 255 : light);
+    // A dynamic light reaching the player adds on top of the sector's own, the same sum the
+    // instanced sprites take (docs/lights.md § Two lighting paths).
+    if (tint) material.color.setRGB(tinted(lit, tint.r), tinted(lit, tint.g), tinted(lit, tint.b));
+    else material.color.setScalar(lit);
     // Only ever written on a clone — the cached material is shared, and its
     // own opacity must stay at the default 1 for everything else drawing it.
     if (this.opacity < 1) material.opacity = this.opacity;

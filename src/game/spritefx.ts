@@ -8,6 +8,7 @@ import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../r
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import { Tracer } from '../render/tracer.ts';
+import type { DynamicLights, Tint } from '../render/lights.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import type { ShotPath, World } from './world.ts';
@@ -60,6 +61,18 @@ export class SpriteFxLayer {
   /** Fixed by `beginFrame` so the per-sprite calls in between don't each have to be handed it. */
   private viewerAngleDeg = VIEWER_ANGLE_DEG;
 
+  /** The frame's dynamic lights, or null when the session runs without them (docs/lights.md). */
+  private lights: DynamicLights | null = null;
+  /**
+   * A stable emitter id per drawn effect, for the light's flicker phase and its `dontlightself`.
+   * Keyed on the `SpriteAnimator` rather than stored on the effect: an animator is owned by
+   * exactly one effect/projectile/cube for its whole life, so this needs no field on any of those
+   * record shapes — and so nothing here reaches a savegame. Ids are negative to stay clear of
+   * `PosedThing.id`, which is a plain array index.
+   */
+  private emitterIds = new WeakMap<SpriteAnimator, number>();
+  private nextEmitterId = 1;
+
   constructor(
     scene: THREE.Scene,
     spriteBank: SpriteBank,
@@ -67,6 +80,7 @@ export class SpriteFxLayer {
     audio: AudioEngine,
     resolveVileFlame: VileFlameResolver,
     fogVisible: FogVisibility,
+    lights?: DynamicLights,
   ) {
     this.scene = scene;
     this.spriteBank = spriteBank;
@@ -74,6 +88,7 @@ export class SpriteFxLayer {
     this.audio = audio;
     this.resolveVileFlame = resolveVileFlame;
     this.fogVisible = fogVisible;
+    this.lights = lights ?? null;
     scene.add(this.batch.group);
   }
 
@@ -270,13 +285,29 @@ export class SpriteFxLayer {
     this.batch.end();
   }
 
-  /** Queues one already-advanced sprite into the batch at a DOOM-space point. A fullbright frame (every explosion, a fireball in flight) ignores `light`. */
-  batchSprite(anim: SpriteAnimator, at: Pos3, facingDeg: number, light: number): void {
+  /**
+   * Queues one already-advanced sprite into the batch at a DOOM-space point. A fullbright frame
+   * (every explosion, a fireball in flight) ignores `light`. `subsector` is the sprite's own leaf
+   * where the caller has one, so a dynamic light behind a wall can be told from one in the room;
+   * -1 leaves `DynamicLights` to resolve it, which it only does once some light is live.
+   */
+  batchSprite(anim: SpriteAnimator, at: Pos3, facingDeg: number, light: number, subsector = -1): void {
     const cached = anim.resolve(facingDeg, this.viewerAngleDeg);
     if (!cached) return;
     doomToWorld(at.x, at.y, at.z, this.batchPos);
     const lit = FULLBRIGHT_FRAMES.has(anim.frameKey) ? 255 : light;
-    this.batch.add(cached, this.batchPos.x, this.batchPos.y, this.batchPos.z, 1, litColor(lit));
+    // This is the single funnel for projectiles in flight, every one-shot effect and the Icon of
+    // Sin's cubes — so one hook here covers every moving light the game has (docs/lights.md).
+    let tint: Tint | undefined;
+    if (this.lights) {
+      let id = this.emitterIds.get(anim);
+      if (id === undefined) {
+        id = -this.nextEmitterId++;
+        this.emitterIds.set(anim, id);
+      }
+      tint = this.lights.offerAndTint(anim.frameKey, at.x, at.y, at.z, id, subsector);
+    }
+    this.batch.add(cached, this.batchPos.x, this.batchPos.y, this.batchPos.z, 1, litColor(lit), tint);
   }
 
   updateTeleportFogs(dt: number): void {
@@ -361,7 +392,7 @@ export class SpriteFxLayer {
       this.drawAt.x = e.drawPrevX + (e.x - e.drawPrevX) * alpha;
       this.drawAt.y = e.drawPrevY + (e.y - e.drawPrevY) * alpha;
       this.drawAt.z = e.drawPrevZ + (e.z - e.drawPrevZ) * alpha;
-      this.batchSprite(e.anim, this.drawAt, 0, e.light);
+      this.batchSprite(e.anim, this.drawAt, 0, e.light, e.subsector);
     }
   }
 }

@@ -107,6 +107,12 @@ spreading it per call, the way `linesNear` does. **An equivalent allocation-free
 megamorphic and costs the early-out — so `checkPosition`, the one collision caller left, deliberately
 still uses the plain array-returning `linesNear`. Don't "fix" that without measuring.
 
+`forEachLineNear` is that callback form, kept for the one caller the measurement above does not
+cover: `LightVisibility.castShadows` (docs/lights.md § Shadows), which runs once per committed light
+per frame, has no early-out to lose, and is the method's only call site — so it stays monomorphic
+where the collision path would not. The collision callers keep `linesNear`; the two coexist on
+purpose.
+
 **`SELF_HIT_MARGIN`**: a rocket that explodes against a wall sits its own impact point exactly on
 that wall, and a raw segment-intersection test then reports the blast blocked by the very wall it
 started on (the ray's own origin is a valid crossing at `t≈0`) — so `hasLineOfSight` said "blocked"

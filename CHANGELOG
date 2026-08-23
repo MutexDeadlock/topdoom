@@ -1,4 +1,4 @@
-v0.15.3 (2026-08-2?)
+v0.16.0 (2026-08-2?)
 
 Features and improvements
   - walls and floors fade as a soft ball around whatever they hide, instead
@@ -6,6 +6,10 @@ Features and improvements
     - a monster far from the player fades less than one right beside them
     - a raised floor only fades where the sightline actually lands on it, so a
       step or ledge beside the player no longer dissolves
+  - dynamic lights: torches, lamps, pickups, projectiles in flight, 
+    explosions and muzzle flashes now light the level around them
+    - a WAD's own GLDEFS/DOOMDEFS lump layers over the stock definitions
+    - Settings > General > Lighting turns them off
 
 
 ===============================================================================

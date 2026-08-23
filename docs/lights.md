@@ -1,0 +1,378 @@
+# Dynamic lights
+
+`src/wad/gldefs.ts`, `src/render/lights.ts`, and the patch `src/render/textures.ts` puts in every
+map material.
+
+GZDoom's GLDEFS lights, bound to sprite frames: a rocket in flight, a torch, a soulsphere, the
+muzzle flash on a firing zombieman. **This follows GZDoom, not vanilla** — vanilla DOOM has no
+dynamic lights at all, and every rule below is cited to `gldefs.cpp` or `a_dynlight.cpp` rather
+than to `linuxdoom-1.10`. Sector light, which is vanilla's and is what lights everything by
+default, is docs/render.md § Sector lighting.
+
+## The frame key
+
+The whole feature hangs off one thing already in the engine: `SpriteAnimator.frameKey`
+(`render/sprites.ts`) is the literal `SPRITE + LETTER` a drawn object is showing this frame —
+`MISLA`, `TREDB`, `POSSF`. A GLDEFS `object` block binds lights by exactly that:
+
+```
+object Rocket { frame MISLA { light ROCKET } }
+```
+
+So the class name in an `object` block is **dropped** on load, and the binding is flattened onto
+the frame key. Two consequences worth knowing:
+
+- A **4-character** frame name covers every frame of that sprite (`TRED` = the tall red torch in
+  all its animation frames); a **5-character** one names a single frame. GZDoom matches the stored
+  name exactly against the actor's current frame, which is what makes the shorter one general.
+  Exact beats sprite-wide: the stock file's blur sphere relies on it, `PINS` for the sprite with
+  `PINSA`..`PINSD` overriding single frames.
+- **DEHACKED needs no integration here**, unlike `FULLBRIGHT_FRAMES` (`things/tables.ts`), which is
+  derived from `states[]` and so has to be rebuilt when a patch edits them. This table is not
+  derived from the state table at all: a patch that re-points states merely changes which frame is
+  drawn, and the light follows whatever is drawn — which is GZDoom's own model. A BEX `[SPRITES]`
+  rename is transparent too, because `frameKey` carries the *logical* sprite name while the rename
+  only changes which lump `SpriteBank` returns for it.
+
+## The grammar
+
+`parseGldefs` reads the four frame-bindable light types and the `object` blocks, and **skips
+everything else**: `sectorlight` (which scales with a sector's light level rather than binding to a
+frame), `glow`, `brightmap`, `skybox`, `hardwareshader`, and any key inside a light block it does
+not know. A PWAD's GLDEFS is written for a renderer with far more features than this one, and must
+never keep a level from loading — so an unknown block is skipped by brace depth, an unknown key
+drops the numbers that follow it, and a malformed block warns rather than throwing.
+
+| Type | Radius over time |
+|---|---|
+| `pointlight` | Fixed at `size`. |
+| `pulselight` | Sine-cycles between `size` and `secondarySize` over `interval` seconds — GZDoom's `CYCLE_Sin` cycler. |
+| `flickerlight` | Per tic, probability `chance` of `size`, else `secondarySize`. A hard switch, not a blend. |
+| `flickerlight2` | A random blend of the two sizes, rerolled every `interval` seconds. |
+
+Three parse details are load-bearing:
+
+- **`offset x up y` — the middle argument is the vertical one.** Reading it as `x y z` puts every
+  torch flame on the floor and shifts it sideways instead. It is measured up from the thing's
+  **feet**, which is what every position in this engine is (`PosedThing.z`, a projectile's `drawZ`,
+  an effect's `z`).
+- **Block comments must be stripped.** The stock `public/gldefs.txt` block-comments out its
+  `object Spectre` binding; parsing it anyway would light every spectre in the game.
+- **`size` is clamped to 1..1024**, GZDoom's own range.
+
+## How far a light carries
+
+A GLDEFS `size` is not the radius: `RADIUS_SCALE` in `render/lights.ts` multiplies it into the
+distance the light actually reaches. It is a **feel dial** — the one knob for how far the lights
+carry, and the first thing to turn if they read too tight or too washed out. GZDoom's own factor
+here is 2 (`ADynamicLight::GetRadius`), which this engine found too broad under a camera that sees
+a whole room at once.
+
+Being a dial, it is **exported so the tests size their fixtures from it** rather than mirroring the
+number, the same discipline `FADE_RADIUS`/`FADE_CORE` follow (docs/render.md § Wall occlusion
+fading). A test that reddens when this is retuned is pinning the dial, and is a bug in the test.
+
+## Flicker without the vanilla random table
+
+GZDoom keeps per-actor cycler state and draws from its own RNG. Here the animation is instead a
+pure function of `(emitterId, step)` through `hash01`, for two reasons:
+
+- **The vanilla random table is gameplay entropy, on two global cursors** (docs/random.md § Why the
+  cursors are global). Drawing from it to flicker a torch would make what a monster does next
+  depend on how many torches were on screen — a rendering setting changing the simulation.
+- Being stateless, a light needs nothing carried across a save/load, and nothing that goes stale in
+  a frame where its sprite wasn't drawn. **No part of this feature reaches a savegame.**
+
+The per-emitter term is also what keeps two torches in a room from pulsing in lockstep, which is
+what GZDoom gets for free from each light starting its cycler when it attaches.
+
+## What emits
+
+Every drawn sprite offers its frame key, at the three places a sprite is drawn:
+
+| Site | Covers |
+|---|---|
+| `game/things.ts`'s draw loop | Every map thing: torches, lamps, pickups, keys, barrels, and every monster — including the firing frames (`POSSF`, `CPOSE`/`CPOSF`, the arch-vile's `VILEH`..`VILEP`). |
+| `game/spritefx.ts: batchSprite` | The single funnel for projectiles in flight, every one-shot effect (puffs, teleport fog, impact explosions, the vile's flame) and the Icon of Sin's cubes. |
+| `game.ts: posePlayer` | The player, whose `PLAY F` firing frame is the muzzle flash. |
+
+**Fog of war is inherited for free.** Both batched sites already skip a sprite the player has never
+had sight of (`PosedThing.visible`, `SpriteFxLayer.drawList`'s `fogVisible` gate), so an unrevealed
+room lights nothing — the gather sits inside those gates rather than beside them.
+
+Emitter ids come from three disjoint ranges, because the id is what `dontlightself` and the flicker
+phase key off: `PosedThing.id` is a plain array index (0 and up), `SpriteFxLayer` hands out negative
+ids from a `WeakMap` on the animator, and the player has `PLAYER_EMITTER_ID` below both. The effect
+ids live on a `WeakMap` rather than a field precisely so no record shape — and so no snapshot —
+changes.
+
+## Light stops at walls
+
+A GLDEFS light is a point and a radius, and nothing in that says a wall is in the way. Left at
+that, a torch lights the room on the other side of its wall, which is what the first version did.
+
+**The fix is GZDoom's own model, not a shadow test.** GZDoom does not test each surface against the
+light; it flood-fills the BSP out of the light's own subsector, crossing into a neighbour only
+through something that can be seen through, and attaches the light to the leaves the fill reached
+(`ADynamicLight::CollectWithinRadius`, `a_dynlight.cpp`). `render/lightvis.ts` is that fill:
+
+- **The fill starts in the emitter's own leaf** and spreads breadth-first.
+- **A boundary is crossed only where `World.blocksSight` lets it be** — the same predicate fog of
+  war reveals through, and the same reason it is not `isSolidWall`: a closed door is a two-sided
+  line vanilla never flags `BLOCKING`, and a window is a two-sided line that is (docs/fogofwar.md).
+  It is asked **live**, so a door opening lets light through on the tic it opens.
+- **Subsectors, not sectors**, for the reason fog of war is: a DOOM sector is a grouping, not a
+  place, and one routinely covers scattered chunks of a map — at sector granularity a light would
+  reach every one of them within its radius, wall or no wall. Subsectors are the BSP's convex
+  leaves, and convexity is what makes the fill exact within one: everything in a leaf is visible
+  from everywhere in it.
+
+- **The radius bounds the path, not the straight line.** Measured as the crow flies, a light
+  spreads round a corner and reappears bright a few units away through the wall it just went round:
+  in E1M1's start room a light reaches four leaves and some 600 units of geometry to land 150 units
+  from where it began. The fill carries the distance its path has run — each hop measured to the
+  nearest point of the edge it crosses, a greedy stand-in for the funnel a true geodesic would walk
+  — and stops when that exceeds the radius. *Attenuation* stays straight-line, matching the shader.
+  Measured over DOOM E1M1/E1M3/E1M7 and DOOM2 MAP01/MAP15/MAP29, this roughly halves the leaf pairs
+  the fill joins with no sightline between them (7.4% → 3.0% on MAP15, 4.8% → 0.8% on MAP01).
+
+**The fill alone is not enough, and the case that proves it is the one this was reported on.**
+E1M1's two tall lamps stand in the room east of the start, 8 to 16 units *behind* the wall stubs
+that flank its doorway. The fill is right to reach the start room — the doorway is 144 units wide
+and wide open — but the falloff is a straight-line distance from the lamp, so the floor immediately
+behind those stubs came out as brightly lit as the floor in the doorway. What the room needs is a
+shaft of light through the opening, which no per-room answer can give.
+
+So a light is occluded twice: by the leaf fill, per room, and then per pixel by its own shadow map.
+
+### The adjacency graph
+
+Which leaves border which is **built lazily, per leaf, and kept for the level's life**: each edge
+costs a BSP descent and a short linedef walk, and lights only ever touch the small part of a map
+they stand in — a whole-map pass at load would pay for the rest of it for nothing.
+
+An edge's neighbour is found by probing `1.5` units along its outward normal — the polygon is
+convex, so "away from the centroid" fixes that direction whatever the winding — the same offset and
+the same descent `mapmesh` uses to resolve a wall quad's leaf. Which linedefs stand between the two
+is then a **crossing test from the leaf's own centre out to that probe point**, cached: the
+geometry is fixed even though each linedef's blocking answer is not.
+
+**Crossing from the centre, rather than asking which linedef the edge lies on, is the load-bearing
+part.** A leaf's outline comes out of the BSP clip, which deliberately spares the clip against a
+wall that stops inside the leaf (docs/render.md § Segs on the wrong side of their leaf) — so an
+edge can sit well off the wall it was cut against, or run past that wall's end, and matching an
+edge to "its" linedef by distance and collinearity misidentifies a wall often enough to leak light
+through it. A crossing from the centre answers what the fill actually asks — is anything in the way
+— and catches a wall standing *inside* the leaf as well.
+
+An edge past a one-sided wall probes into the void and reads back some unrelated leaf; the wall is
+between the two, blocks sight, and the fill never crosses it — so out-of-map points need no special
+case (docs/world.md § Point-to-sector lookups).
+
+`MAX_REACH` caps one light's fill at 512 leaves. A radius normally stops it far sooner; the cap is
+what bounds the pathological case — a large radius in open geometry — so a single frame cannot walk
+the whole BSP.
+
+### Shadows (`castShadows`)
+
+Each committed light gets a **1D shadow map**: `SHADOW_STEPS` angular bins around it, each holding
+how far the light gets in that direction before a sight blocker stops it, `radius` where nothing
+does. A fragment takes the bin its own direction falls in and is lit only if it is nearer than that.
+GZDoom keeps exactly this per light (`hw_shadowmap.cpp`), and it is the natural fit for a camera
+that only ever sees the map from above: the world the shadow is cast in is two-dimensional.
+
+- **Blockers are `World.blocksSight` lines within the radius**, the same predicate the fill crosses
+  on — so a window casts no shadow, a shut door does, and it stops the tic it opens.
+- **Angles are measured in three.js space** (x east, z south), so the shader takes `atan` of the
+  world-position varying with no axis flip. Bin 0 is due west and bin `SHADOW_STEPS/2` due east;
+  `castShadows`, the shader and `DynamicLights.unshadowed` all index with `angle / 2π + 0.5`, and
+  a version that wrote bins on one convention and read them on the other was half a turn out —
+  which on symmetric geometry still looks plausible, so `tests/render/lightvis.test.ts` pins the
+  direction of a known wall rather than only its distance.
+- **`SHADOW_BIAS` is why a lit wall does not shadow itself.** The wall casting the shadow sits at
+  exactly the blocker distance, so a fragment is lit out to `blocker + BIAS`. That bias must stay
+  under the thinnest wall a map draws, or the *far* side of that wall lights up too.
+- The lookup is behind the falloff test in the shader, so only fragments a light actually reaches
+  pay for the `atan` and the fetch.
+
+What this deliberately does **not** model is occlusion by anything but map geometry, or in the
+vertical: a monster standing in front of a torch throws no shadow, and neither does a chest-high
+step, because `blocksSight` is height-blind by design (docs/fogofwar.md). Both are GZDoom's
+behaviour too.
+
+### How the answer reaches a fragment
+
+Per frame, `commit` stamps each committed light's reached leaves into a **bitmask indexed by
+subsector**: one `RGBA32UI` texel per leaf, one bit per light, uploaded as an integer texture the
+fragment shader reads with `texelFetch`. Every map surface carries the leaf it faces into as the
+`aLightCell` vertex attribute, so a fragment fetches its own leaf's mask once and skips any light
+whose bit is clear.
+
+Four things about that are load-bearing:
+
+- **Walls take the leaf their *face* looks into, not the one they are in.** `mapmesh`'s
+  `fillWallCells` probes each quad's midpoint along its front normal — every quad is built facing
+  right of `a->b` — which is the same quantity fog of war needs, so `WallOccluder.subsector` now
+  carries it and `FogOfWar` reads it instead of repeating the descent.
+- **The attribute is written once and never rewritten.** A mover changes sector heights, never a
+  quad's footprint, so `refreshMoverMesh` leaves `aLightCell` alone.
+- **Clearing walks the lit leaves, not the level.** `commit` remembers which leaves it wrote and
+  zeroes only those next frame, and skips the upload entirely on a frame that touched none — which
+  is every frame with the lights off, or with none on screen.
+- **`uLightVisWidth` of 0 means no level is bound** and nothing is gated. That is what a bank built
+  without a level (tests, tools) gets, and it is why an unbound controller lights everything rather
+  than nothing.
+
+**Sprites are gated the same way**, on the CPU in `tintAt`: against the leaf mask, using the
+sprite's own leaf — `PosedThing.subsector` and `OneShotEffect.subsector` already carry one, and the
+few callers that don't resolve it there, but only once some light is actually live — and then
+against the same shadow map, so a sprite behind a pillar goes dark with the floor it stands on.
+
+The shadow map rides in a second texture, one `R32F` row per light, uploaded whole on any frame that
+has lights.
+
+## Two lighting paths
+
+**Map geometry is lit per pixel.** `MaterialBank` patches every material it builds
+(`render/textures.ts`) with a fragment loop over a uniform array of at most `MAX_DYN_LIGHTS`, plus
+a world-position varying it adds to the vertex shader — three.js's `MeshBasicMaterial` has none.
+Three things about that patch:
+
+- It **extends the existing `#include <color_fragment>` replacement** rather than adding a second
+  `onBeforeCompile`; the dither-discard fade lives in the same one (docs/render.md § Wall occlusion
+  fading).
+- **The light term has to land inside that replacement, not merely somewhere after it.** A few
+  lines below `color_fragment`, three folds `diffuseColor.rgb` into `outgoingLight`, and
+  `opaque_fragment` writes `gl_FragColor` from *that* — so a term added any later compiles, runs,
+  and is discarded. The symptom is specific and misleading: sprites light each other correctly
+  (they are tinted on the CPU, below) while the level around them stays completely dark, which
+  reads as "the shader never ran" rather than "the shader ran too late". An injection at
+  `#include <fog_fragment>` is the version this was found on.
+  `tests/render/lights-shader.test.ts` pins the ordering against three's own resolved source.
+- Fog needs nothing: it is mixed into `gl_FragColor` later regardless, so a lit surface fogs like
+  any other.
+- It adds to the *multiplier*, not the texel: `diffuseColor.rgb + sampledDiffuseColor.rgb *
+  dynLight`, clamped at 1. That reproduces the fullbright ceiling instead of overbrightening the
+  texture past it. Vertex colours here are linear-light (docs/render.md § Sector lighting), and
+  GLDEFS colours are treated as linear multipliers to match.
+- `customProgramCacheKey` is **required**: three.js keys its program cache on material parameters,
+  so without it a patched material can be served the program compiled for an unpatched one — the
+  same hazard `SpriteBatch`'s fuzz materials guard against.
+
+**Sprites are lit on the CPU**, by sampling the same falloff into an additive tint that rides the
+per-instance colour already in `SpriteBatch` (its `instanceColor` was grayscale; it now takes an
+RGB tint on top). This is not a shortcut: it keeps sprites out of the per-pixel path entirely, and
+it is what gives `dontlightself` somewhere to happen — a light can skip the very sprite emitting it.
+
+**Sprite tints are one frame behind.** A sprite is offered *and* tinted in the same pass, so when it
+asks what light reaches it, this frame's set isn't closed yet and it samples the previous frame's.
+At these speeds that is invisible, and the alternative is walking every drawn sprite twice.
+Geometry has no such latency — `commit` runs after every draw pass and before the render.
+
+Both halves are one call, `DynamicLights.offerAndTint`, and all three draw funnels — things,
+`SpriteFxLayer`, the player — go through it. The order is load-bearing in the direction above, and
+a sprite that offered without sampling would light the room but not itself; one entry point is what
+keeps the three funnels from drifting. It returns a single reused `Tint` scratch, valid until the
+next call, which every caller reads before drawing the next sprite. The two channels are then
+summed and clamped by `tinted`, shared by the instanced batch and `SpriteActor` so the composition
+rule has one home.
+
+## Falloff and what is not reproduced
+
+`att = clamp((radius - dist) / radius, 0, 1)`, GZDoom's own linear shader falloff
+(`shaders/glsl/main.fp`), used identically by the shader and by `tintAt` so the two halves of a
+scene agree.
+
+Deliberate deviations, all documented at their declarations:
+
+- **`attenuate` is ignored.** In GZDoom it switches the light to an N·L diffuse term; this
+  pipeline has no normals (walls and flats are `MeshBasicMaterial` with baked vertex colour), so
+  there is nothing to dot against. Every light in the stock file sets it, and all of them render
+  as the plain linear falloff.
+- **`subtractive` is parsed and never rendered.** The only user in the stock file is the spectre's
+  light, whose binding is commented out anyway.
+
+## What reaches the shader
+
+A sprite is offered wherever **fog of war** has revealed it, and fog of war reveals to
+`VIEW_DISTANCE` — 16000 units, most of a level. The camera holds a few hundred: its distance dial
+runs 200 to 2400. So the set of *offered* emitters is nearly the whole map's worth and the set that
+can light a drawn pixel is a small part of it. E1M1 alone carries 89 light-carrying things — 38 of
+them the health and armour bonuses, which pulse — where a handful are ever in frame.
+
+**So an offer is frustum-culled before it becomes a light.** The falloff bounds a light to its own
+sphere (`radius` around the emitter, no light past it), so a sphere that misses the camera's view
+volume cannot reach a drawn pixel, and `offer` drops it in six dot products and no allocation.
+`TopDownCamera.viewFrustum` is that volume, derived at the end of `applyToCamera` because three
+only refreshes the camera's matrices inside `render`, which is after the lights have closed.
+
+Without it E1M1 sits near the cap every frame — 54 lights on a fully explored map — paying 54 fills,
+54 shadow maps and a 54-iteration fragment loop over a screen's worth of pixels for a room lit by
+three torches. The cost is entirely per-pixel: the CPU side of a frame is well under a tenth of a
+millisecond either way (§ Profiling). Measured on a fully revealed E1M1 at a 5120x2880 drawing
+buffer, the cull takes the frame's GPU time from 99 ms to 18 ms on an integrated GPU, and the
+committed set from 54 lights to 11.
+
+Two consequences to know:
+
+- **An off-screen sprite may be tinted from an incomplete set.** `tintAt` samples the committed
+  lights, and a light too far off screen is no longer among them. Only sprites that are themselves
+  off screen can differ, which is why this is affordable.
+- **The cull is the view volume, not the fog.** A light 12000 units away inside the view cone
+  survives, and the scene fog is what makes it read as nothing.
+
+- **`MAX_DYN_LIGHTS` caps what survives that cull**, and past it lights are ranked by how far their
+  *edge* falls short of the camera's follow point — so a big light further away can outrank a small
+  one nearby, it being the one that actually covers more of the view. It is a **feel dial**, set
+  generously on purpose: a slaughter map with a hundred projectiles in the air should read as
+  fireworks, and a tight cap instead makes lights pop in and out as the ranking shuffles under a
+  moving camera. What bounds it is not per-pixel cost — the fragment loop runs to the live count
+  — but shader uniform slots, two rows per light against the 224 fragment uniform vectors WebGL 2
+  guarantees. Its declaration in `render/lights.ts` carries that arithmetic.
+
+The fragment loop is bounded by `uLightCount` rather than by `MAX_DYN_LIGHTS` with a `break`, and
+the whole block sits behind `uLightCount > 0`. Both are about what the *driver* compiles: a
+statically bounded loop is one it may unroll, and 64 copies of a body carrying an `atan` and a
+`texelFetch` is a shader whose register pressure every fragment pays, lit or not. It is not a
+micro-optimisation — on the same measurement, the bound alone is most of a 99 ms frame against a
+55 ms one. The outer guard is what makes a frame with no lights — the toggle off, an unlit map —
+skip the visibility fetch, which is otherwise a dependent texture read on every drawn pixel.
+
+## The toggle
+
+`topdoom.dynamicLights` in localStorage, **on by default**, in the menu's Settings → General tab
+under Lighting. Module-level rather than per-`Game`, for the reason `getInfiniteTallActors` is: it
+must apply to the level already running, and the flag is read once per frame, so it takes effect
+immediately with no reload. Turned off, `commit` uploads a count of zero and `tintAt` writes zeros
+— the materials stay patched, so there is only ever one compiled program variant.
+
+## Where the definitions come from
+
+`public/gldefs.txt` (GZDoom's stock Doom lights) is fetched once per session by `main.ts` and
+parsed as the base. Every `GLDEFS` and `DOOMDEFS` lump in the loaded WAD set then layers over it in
+lump order, a later definition of the same light name or frame binding replacing the earlier —
+GZDoom reads all such lumps rather than the first (`gldefs.cpp: LoadGLDefs`), unlike the MAPINFO
+family, where a file's several lumps are alternatives (docs/wad.md § Level names). A fetch that
+fails leaves the base empty and the game unlit rather than unplayable.
+
+## Profiling
+
+`commit` reports under the `Lights` row of the DEVMODE profiler (docs/menu.md § The profiler). Note
+that this is CPU only — the per-pixel cost of the fragment loop lands on the GPU, where it shows up
+in the frame total rather than in any row.
+
+**The per-pixel half is measured in a browser, not reasoned about.** `EXT_disjoint_timer_query_webgl2`
+is available in chromium and gives real GPU milliseconds: begin a `TIME_ELAPSED_EXT` query in a
+`requestAnimationFrame` callback and end it in the next one, and the query spans exactly one frame's
+GL commands. Three things decide whether such a run means anything — the **drawing buffer**
+(`setPixelRatio` up to 2 on a 2560x1600 panel is 5120x2880, and the cost here is per fragment), the
+**GPU** (chromium picks the discrete one by default; `--use-angle=gl` with `DRI_PRIME=0` puts it on
+the integrated one, where a regression shows up an order of magnitude clearer), and whether the
+level is **explored**, since a sprite only offers itself where fog of war has been. `?map=`/`?pos=`
+(docs/menu.md § URL parameters) place the player, and filling `FogOfWar`'s `explored`/`alpha` from
+the console reaches the steady state without walking the level.
+
+The row covers the reach fill and the shadow casting as well as the upload. Measured over DOOM2 MAP15 and DOOM E1M1, a fill
+costs about **2 µs** once the leaf's adjacency is warm and reaches 12–15 leaves at a 200-unit radius,
+so a full complement of lights is well under a tenth of a millisecond. The first fill through a
+given leaf is ~15× that, building the adjacency it then keeps.

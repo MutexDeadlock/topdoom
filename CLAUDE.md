@@ -64,8 +64,9 @@ is still right for a one-off investigation — those go in the scratchpad, never
 
 ```
 src/wad/       WAD files, merged lump directory, content ids, map lumps (map), graphics + sprite
-               + sound + music decoding, whether this engine can run a file at all (support),
-               the menu's WAD library
+               + sound + music decoding, GZDoom's dynamic-light definitions (gldefs), what the
+               text lumps share before each grammar takes over (textlump), whether this
+               engine can run a file at all (support), the menu's WAD library
 src/wad/map/         the two lump formats `map.ts` normalizes behind a seam: the BSP
                encodings (nodes), Hexen's LINEDEFS/THINGS (hexen)
 src/wad/campaign/    the MAPINFO lump family parsed once (mapinfo), level titles + the vanilla
@@ -73,7 +74,9 @@ src/wad/campaign/    the MAPINFO lump family parsed once (mapinfo), level titles
 src/wad/library/     the player's own WAD folder: picking and walking it (disk), its handle and
                scan memo remembered between visits (store)
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
-               sprite billboards + their instanced batching, shot tracers, camera, viewport
+               sprite billboards + their instanced batching, GLDEFS dynamic lights (lights) and
+               which subsectors one reaches (lightvis),
+               shot tracers, camera, viewport
 src/game/      spatial queries + collision, player controller, input, thing world state, fog of war,
                inventory/pickups, weapons and firing, shots in flight + splash, damage/death,
                transient effects, best times, savegames
@@ -138,6 +141,7 @@ several record rules that look like accidents and aren't.
 | [docs/menu.md](docs/menu.md) | The menu as launcher and pause screen, difficulty, persisted settings, URL parameters, `main.ts`'s session lifecycle, `DEVMODE` and the profiler |
 | [docs/frameloop.md](docs/frameloop.md) | `game.ts`'s frame: the delta, the FPS cap, pausing |
 | [docs/render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, wall occlusion fading, camera orbit, view distance, texture animation |
+| [docs/lights.md](docs/lights.md) | GLDEFS dynamic lights: the grammar, what emits, the two lighting paths, the deviations from GZDoom |
 | [docs/sprites.md](docs/sprites.md) | The named doomednums (`ThingType`) every type-keyed table keys through; things as sprites: billboards, instanced batching, which things spawn, monster poses |
 | [docs/movement.md](docs/movement.md) | Collision, `groundFloor`, `slideMove`, straferunning, gravity/falling, knockback |
 | [docs/world.md](docs/world.md) | `world.ts`'s shared queries: `hasLineOfSight`, the neighbor-height lookups |

@@ -99,6 +99,13 @@ export class TopDownCamera {
   private eHoldTime = 0;
   /** Scratch for `applyToCamera`'s interpolated follow point, so drawing allocates nothing. */
   private viewPoint = new THREE.Vector3();
+  /**
+   * The view volume at the pose `applyToCamera` last set, rewritten in place every frame — what
+   * `DynamicLights` culls its offers against, so an emitter the camera cannot see costs nothing.
+   * See docs/lights.md § What reaches the shader.
+   */
+  readonly viewFrustum = new THREE.Frustum();
+  private projScreen = new THREE.Matrix4();
   /** The interpolated yaw `applyToCamera` last drew at — see `viewAngleDeg`. */
   private viewYawDeg: number;
 
@@ -266,6 +273,19 @@ export class TopDownCamera {
   }
 
   /**
+   * The followed point in DOOM map space — `followHeight`'s two horizontal companions, and the
+   * same interpolated pose. What `DynamicLights` culls against, being the middle of what is on
+   * screen (docs/lights.md § What reaches the shader). three's `(x, y, z)` is DOOM's `(x, -z, y)`.
+   */
+  get followX(): number {
+    return this.initialised ? this.viewPoint.x : this.smoothed.x;
+  }
+
+  get followY(): number {
+    return -(this.initialised ? this.viewPoint.z : this.smoothed.z);
+  }
+
+  /**
    * `viewerAngleDeg` at the interpolated pose the camera is actually drawn at,
    * for billboard orientation. Using the tic-exact angle instead would leave
    * every sprite a fraction of a yaw snap out of line with the walls behind it.
@@ -346,6 +366,13 @@ export class TopDownCamera {
 
     this.camera.position.set(this.viewPoint.x + offsetX, this.viewPoint.y + offsetY, this.viewPoint.z + offsetZ);
     this.camera.lookAt(this.viewPoint);
+    // three refreshes these inside `render`, which is after the dynamic lights have closed their
+    // frame — so the volume they cull against is derived here, at the pose just set, rather than
+    // one frame late. docs/lights.md § What reaches the shader.
+    this.camera.updateMatrixWorld();
+    this.camera.matrixWorldInverse.copy(this.camera.matrixWorld).invert();
+    this.projScreen.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
+    this.viewFrustum.setFromProjectionMatrix(this.projScreen);
   }
 
   /** Where the pointer ray meets the horizontal plane at height `planeY`. */

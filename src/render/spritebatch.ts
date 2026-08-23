@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import type { CachedSprite } from './sprites.ts';
 import { VIEWER_ANGLE_DEG } from './sprites.ts';
 import { DOOM_TIC } from '../constants.ts';
+import { tinted, type Tint } from './lights.ts';
 
 /** Instances a freshly-created batch starts with, doubling from there as needed. */
 const INITIAL_CAPACITY = 64;
@@ -128,8 +129,10 @@ export class SpriteBatch {
   /**
    * Queues one sprite. `pos` is already **three.js** space (the caller
    * converts via `doomToWorld`) and `light` is a 0..1 tint (`lightToColor`).
+   * `tint` adds a dynamic light's contribution on top of that
+   * (docs/lights.md § Two lighting paths); omitted is the unlit sprite.
    */
-  add(cached: CachedSprite, x: number, y: number, z: number, scale: number, light: number): void {
+  add(cached: CachedSprite, x: number, y: number, z: number, scale: number, light: number, tint?: Tint): void {
     const batch = this.batchFor(cached);
     const i = batch.count;
     if (i === batch.mesh.instanceMatrix.count) this.grow(cached, batch);
@@ -149,9 +152,15 @@ export class SpriteBatch {
 
     const c = batch.mesh.instanceColor!.array as Float32Array;
     const co = i * 3;
-    c[co] = light;
-    c[co + 1] = light;
-    c[co + 2] = light;
+    if (tint) {
+      c[co] = tinted(light, tint.r);
+      c[co + 1] = tinted(light, tint.g);
+      c[co + 2] = tinted(light, tint.b);
+    } else {
+      c[co] = light;
+      c[co + 1] = light;
+      c[co + 2] = light;
+    }
 
     batch.count = i + 1;
   }

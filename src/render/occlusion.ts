@@ -42,6 +42,9 @@ export const FADE_CORE = FADE_RADIUS / 2;
  * building an index. Mover faders hold a handful of quads each and are the one
  * place a record can be repointed at different geometry (`MoverGeometry.rebuild`),
  * which would leave an index stale; scanning is both faster and immune there.
+ *
+ * **Tuned by feel**: the threshold only has to sit above the largest mover mesh and below the
+ * smallest static one, and those are orders of magnitude apart.
  */
 const GRID_MIN_OCCLUDERS = 256;
 

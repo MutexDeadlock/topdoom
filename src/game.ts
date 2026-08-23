@@ -11,8 +11,11 @@ import { GraphicsBank } from './wad/graphics.ts';
 import { SpriteBank } from './wad/sprites.ts';
 import { loadMap, type DoomMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
+import { DynamicLights } from './render/lights.ts';
+import { gldefsFromWad, parseGldefs } from './wad/gldefs.ts';
 import { AnimatedTextures } from './render/textureanim.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
+import { LightVisibility } from './render/lightvis.ts';
 import { SpriteActor, SpriteMaterialCache } from './render/sprites.ts';
 import type { Viewport } from './render/viewport.ts';
 import type { TopDownCamera } from './render/camera.ts';
@@ -158,10 +161,22 @@ export function setFpsCap(cap: FpsCap): void {
   globalThis.localStorage?.setItem(FPS_CAP_STORAGE_KEY, String(cap));
 }
 
+/**
+ * The player's own emitter id for dynamic lights. `PosedThing.id` is a plain array index (0 and
+ * up) and `SpriteFxLayer`'s effect ids are negative, so a value below every effect's keeps all
+ * three sets apart — which is what `dontlightself` and the flicker phase key off. docs/lights.md.
+ */
+const PLAYER_EMITTER_ID = -1_000_000;
+
 /** One loaded WAD set, playing one level at a time. */
 export class Game {
   private scene = new THREE.Scene();
   private materials: MaterialBank;
+  /**
+   * The frame's dynamic lights. Session-scoped, like the banks around it: the GLDEFS table comes
+   * from the loaded WAD set, not from which map is up. docs/lights.md.
+   */
+  private lights: DynamicLights;
   private spriteBank: SpriteBank;
   private spriteMaterials: SpriteMaterialCache;
   private mapNames: string[];
@@ -386,6 +401,12 @@ export class Game {
      * `checkpoint` — this class knows nothing about the menu.
      */
     onCampaignEnd: (() => void) | null = null,
+    /**
+     * The stock GLDEFS text (`public/gldefs.txt`), fetched by the session layer alongside the WAD
+     * files. A loaded set's own GLDEFS lumps layer over it; an empty string means no lights at all.
+     * docs/lights.md.
+     */
+    gldefsText = '',
   ) {
     this.view = view;
     this.audio = audio;
@@ -436,7 +457,10 @@ export class Game {
     audio.music.setBank(musicBank);
 
     const gfx = new GraphicsBank(wad);
-    this.materials = new MaterialBank(gfx, view.renderer);
+    // Built before the materials: every one of them is patched against these uniform objects as it
+    // is compiled, and the set holds for the whole session (docs/lights.md § Two lighting paths).
+    this.lights = new DynamicLights(gldefsFromWad(wad, parseGldefs(gldefsText)));
+    this.materials = new MaterialBank(gfx, view.renderer, this.lights.uniforms);
     // Boom's two table lumps, both session-scoped like the banks around them:
     // each replaces a built-in table outright when present, and neither
     // depends on which map is loaded. docs/wad.md § ANIMATED and SWITCHES.
@@ -487,6 +511,7 @@ export class Game {
       audio,
       (vileId, targetId) => this.monsterAttacks.vileFlameFor(vileId, targetId),
       (subsector) => this.fogOfWar.isVisible(subsector),
+      this.lights,
     );
     // `world`/`things`/`player`/`inventory` are all replaced on a map load (and
     // `inventory` again on restart), so the context reads them back off this
@@ -769,8 +794,19 @@ export class Game {
       const saved = [...restore.specials.movers, ...(restore.specials.ceilingMovers ?? [])];
       for (const [sectorIndex] of saved) movableSectors.add(sectorIndex);
     }
-    this.built = buildMapMesh(map, this.materials, { movableSectors, transfers, linesOf: (s) => sectorLines(map, s) });
+    // Shared with the mover meshes below, so a door's walls carry the same leaf attribute the
+    // static ones do — without it a mover would be the one surface a light shone through.
+    const subsectorAt = (x: number, y: number) => this.world.subsectorAt(x, y);
+    this.built = buildMapMesh(map, this.materials, {
+      movableSectors,
+      transfers,
+      linesOf: (s) => sectorLines(map, s),
+      subsectorAt,
+    });
     this.scene.add(this.built.group);
+    // The leaf graph the lights flood through, over the polygons the mesh just built — so a torch
+    // stops at its wall. docs/lights.md § Light stops at walls.
+    this.lights.bindLevel(new LightVisibility(map, this.built.polys, this.world));
     this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
     this.flatFader = new FlatFader(this.built.flatSurfaces, this.built.flatMeshes);
     this.forces = new Forces(map, this.world);
@@ -827,7 +863,7 @@ export class Game {
       this.fogOfWar,
       this.built.polys,
       this.built,
-      { transfers },
+      { transfers, subsectorAt },
       (secret) => {
         this.pendingExit = secret ? 'secret' : 'normal';
       },
@@ -919,6 +955,7 @@ export class Game {
         this.effects.spawnTeleportFog(from);
         this.effects.spawnTeleportFog(to);
       },
+      this.lights,
     );
     this.scene.add(this.things.group);
 
@@ -1502,10 +1539,14 @@ export class Game {
     camera.applyToCamera(alpha);
     this.updateOverlays(rawDt);
     this.fogOfWar.updateFade(rawDt);
+    // Opened before anything draws: each draw pass below offers its sprites as emitters as it
+    // goes, and `commit` closes the set once they all have (docs/lights.md § What reaches the shader).
+    this.lights.beginFrame(rawDt, camera.followX, camera.followY, camera.viewFrustum);
     this.profiler.time('Sprites', () => this.things?.draw(alpha, camera.viewAngleDeg));
     this.drawEffects(alpha, camera.viewAngleDeg);
     this.updateFading(rawDt, camera);
     this.posePlayer(alpha, rawDt, camera.viewAngleDeg);
+    this.profiler.time('Lights', () => this.lights.commit());
 
     this.profiler.time('Render', () => this.view.renderer.render(this.scene, camera.camera));
     // The music synth runs off its own timer, in the gaps between frames, so it
@@ -1862,7 +1903,12 @@ export class Game {
     // entirely once `die()` has been called (see SpriteActor's doc).
     const walking = !this.playerDead && Math.hypot(this.player.velX, this.player.velY) > 1;
     const light = sector ? transfersOf(this.world.map).spriteLight(this.world.sectorIndexAt(x, y)) : 128;
-    this.playerActor.setPose(x, y, z, facingDeg, light, rawDt, walking, viewAngleDeg);
+    // The player is an emitter too — `PLAY F`, the firing frame, is the muzzle flash GLDEFS binds
+    // `ZOMBIEATK` to, the same light the zombieman's own `POSS F` gets. `PLAYER_EMITTER_ID` keeps
+    // it clear of `PosedThing.id` (a plain array index) and of the effects' negative ids.
+    const subsector = this.world.subsectorAt(x, y);
+    const tint = this.lights.offerAndTint(this.playerActor.frameKey, x, y, z, PLAYER_EMITTER_ID, subsector);
+    this.playerActor.setPose(x, y, z, facingDeg, light, rawDt, walking, viewAngleDeg, tint);
   }
 
   /** DEVMODE's status text. Only ever called while the panel is shown — see `DebugHud.update`. */

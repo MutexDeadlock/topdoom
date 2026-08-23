@@ -194,6 +194,14 @@ Each of those surfaces is then cut lengthwise into quads of at most `WALL_CHUNK_
 occlusion fade can dissolve part of a wall rather than all of it (§ The fade is a hole, not a wall)
 — a chunk is what a `WallOccluder` record and every per-quad rule below mean by "quad".
 
+Every vertex carries three attributes beyond position and UV: the sector's baked light as a vertex
+colour (§ Sector lighting), the fade alpha both faders and fog of war write (§ Wall occlusion
+fading), and **`aLightCell`, the BSP leaf that surface faces into** — a flat's own, a wall's the one
+its face looks at, probed once by `fillWallCells` and recorded on the occluder so fog of war can
+take the same answer. It is what lets a dynamic light stop at a wall (docs/lights.md § Light stops
+at walls), and it is written once: a mover changes heights, never a quad's footprint, so
+`refreshMoverMesh` leaves it alone.
+
 A two-sided line's **masked middle texture** is one copy of the texture, not a fill of the opening.
 Its row 0 sits at the pegged anchor — the higher **real** floor plus the texture height when
 `LOWER_UNPEGGED` is set, the lower real ceiling otherwise (§ Deep water: the anchor is the one
@@ -379,6 +387,12 @@ through a stencil) and this engine leaves the hole black. It is rare — over ev
 lid fires on 6–43 leaves per WAD set (13 of DOOM2's 13,253, none of DOOM1's 3,423).
 
 ## Sector lighting (`mapmesh.ts: lightToColor`)
+
+This is vanilla's own lighting, and it is what lights everything by default. GZDoom's GLDEFS
+dynamic lights sit *on top* of it — a second, additive term patched into these same materials'
+shaders and into the sprite tints below. They are docs/lights.md; nothing in this section changes
+for them.
+
 
 Walls, flats and sprites are all tinted by a sector's light level through this one function, so
 it decides how the whole game reads. Two things about it are easy to get wrong, and both were shipped

@@ -19,6 +19,7 @@ import {
   type SaveGame,
 } from './game/savegames.ts';
 import { Game } from './game.ts';
+import { stockGldefs } from './wad/gldefs.ts';
 import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';
 import type { Pos2 } from './types.ts';
@@ -121,7 +122,10 @@ async function boot(): Promise<void> {
     audio.resume();
     menu.setStatus('Loading …');
     try {
-      const files = await loadWadFiles(selection.iwad, selection.pwads);
+      const [files, gldefsText] = await Promise.all([
+        loadWadFiles(selection.iwad, selection.pwads),
+        stockGldefs(),
+      ]);
       const wad = new Wad(files);
       if (save) verifySaveWads(wad, save);
 
@@ -144,6 +148,7 @@ async function boot(): Promise<void> {
         save?.state ?? null,
         checkpoint,
         endSession,
+        gldefsText,
       );
 
       menu.setStatus('');

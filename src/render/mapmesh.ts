@@ -230,7 +230,7 @@ export function wallProbePoint(ax: number, ay: number, bx: number, by: number, o
  * shader can ask whether a light reached the room this wall faces. Runs once the quads exist
  * rather than inside `addWall`, which would mean threading a BSP probe through five signatures for
  * a value the occluder records anyway. Without `subsectorAt` (tests, tools) the quads stay at -1,
- * which the shader reads as ungated. docs/lights.md § Light stops at walls.
+ * which the shader reads as an empty light list — unlit. docs/lights.md § Light stops at walls.
  */
 function fillWallCells(batches: BatchSet, occluders: WallOccluder[], subsectorAt?: (x: number, y: number) => number): void {
   if (!subsectorAt) return;

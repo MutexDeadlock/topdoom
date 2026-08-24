@@ -57,6 +57,22 @@ const SUPPORT_GLYPHS: Record<SupportLevel, string> = {
   broken: '\u2716\uFE0E',
 };
 
+/**
+ * A file row's badge, in the two lists that render one: the WAD Library's file pane and the New
+ * Game tab's narrower add-on list. `'reason'` is why the row can't be picked and is the one thing
+ * worth interrupting for, so it is the only kind that carries the accent; `'quiet'` is an aside,
+ * and the empty default is the spacer that keeps the columns behind it lined up.
+ *
+ * Here rather than at either call site for `sourceColumnSpans`' reason: the `badge`/`badge reason`
+ * class names both `menu.css` and `library.css` target have one definition.
+ */
+export function badge(text: string, kind: '' | 'quiet' | 'reason' = ''): HTMLSpanElement {
+  const span = document.createElement('span');
+  span.className = kind ? `badge ${kind}` : 'badge';
+  span.textContent = text;
+  return span;
+}
+
 /** One fixed-width detail column. The class name is what both stylesheets target. */
 function metaSpan(kind: string, text: string): HTMLSpanElement {
   const span = document.createElement('span');

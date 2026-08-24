@@ -26,7 +26,7 @@ import {
 } from '../../wad/library.ts';
 import { nothingLoads } from '../../wad/support.ts';
 import { confirmOnHold } from './hold.ts';
-import { sourceColumnSpans } from './labels.ts';
+import { badge, sourceColumnSpans } from './labels.ts';
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -1046,18 +1046,6 @@ function unplayable(source: WadSource): boolean {
 
 /** The badge on a row refused for `unplayable`. The support column's tooltip carries the detail. */
 const REFUSED = "won't load";
-
-/**
- * A file row's badge. `'reason'` is why the row can't be picked and is the one thing here worth
- * interrupting for, so it is the only kind that carries the accent; `'quiet'` is an aside, and the
- * empty default is the spacer that keeps the columns behind it lined up.
- */
-function badge(text: string, kind: '' | 'quiet' | 'reason' = ''): HTMLSpanElement {
-  const span = document.createElement('span');
-  span.className = kind ? `badge ${kind}` : 'badge';
-  span.textContent = text;
-  return span;
-}
 
 function empty(text: string): HTMLParagraphElement {
   const p = document.createElement('p');

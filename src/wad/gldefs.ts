@@ -301,8 +301,7 @@ export function parseGldefs(text: string, into: Gldefs = emptyGldefs()): Gldefs 
         // GZDoom stores the frame name as written and matches it exactly against the actor's
         // current frame; a 4-character name therefore covers every frame of that sprite, and a
         // 5-character one exactly the frame it names (`gldefs.cpp`'s frame-name handling).
-        if (frame.length >= 5) into.frames.set(frame.slice(0, 5), light);
-        else if (frame.length === 4) into.frames.set(frame, light);
+        if (frame.length >= 4) into.frames.set(frame.slice(0, 5), light);
       }
       i++; // past the object block's '}'
       continue;

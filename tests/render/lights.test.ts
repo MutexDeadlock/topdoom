@@ -328,13 +328,15 @@ describe('DynamicLights · a light bound to a level', () => {
     };
   }
 
-  test('the mask is sized to the level and names the emitter\'s own leaf, not the one across the wall', () => {
+  test('the list is sized to the level and names the emitter\'s own leaf, not the one across the wall', () => {
     const { lights, here, there, at } = walled();
     assert.ok(lights.uniforms.uLightVisWidth.value > 0, 'a bound level must switch the gate on');
     frame(lights, 0, [['BBBB', at.x, at.y, 0, 1]]);
-    const mask = lights.uniforms.uLightVis.value.image.data as Uint32Array;
-    assert.equal(mask[here * 4] & 1, 1, 'the light did not reach its own leaf');
-    assert.equal(mask[there * 4] & 1, 0, 'the light reached through a wall');
+    // The texel is a compacted list of committed-light indices, 0xFF past the last — the sole
+    // committed light is index 0, so a lit leaf leads with 0x00 and an unlit one stays all-empty.
+    const slots = lights.uniforms.uLightVis.value.image.data as Uint32Array;
+    assert.equal(slots[here * 4] & 0xff, 0, 'the light did not reach its own leaf');
+    assert.equal(slots[there * 4] & 0xff, 0xff, 'the light reached through a wall');
   });
 
   test('a sprite behind the wall is untinted while one beside the light is not', () => {
@@ -350,10 +352,10 @@ describe('DynamicLights · a light bound to a level', () => {
     assert.deepEqual([behind.r, behind.g, behind.b], [0, 0, 0]);
   });
 
-  test('the mask has room for every light the cap allows', () => {
-    // One RGBA32UI texel per leaf is 128 bits, and the shader indexes it as `lightVis[i >> 5]`.
-    // Past that a light's bit lands outside the texel and the gate reads someone else's answer.
-    assert.ok(MAX_DYN_LIGHTS <= 128, `MAX_DYN_LIGHTS ${MAX_DYN_LIGHTS} overflows the visibility texel`);
+  test('every committed light\'s index fits a slot byte', () => {
+    // A slot is one byte with 0xFF as the empty marker, so a light index reaching 0xFF would be
+    // read back as the end of every list it is in.
+    assert.ok(MAX_DYN_LIGHTS < 0xff, `MAX_DYN_LIGHTS ${MAX_DYN_LIGHTS} collides with the empty-slot marker`);
   });
 
   test('with no level bound nothing is gated, so a bank built without one lights everything', () => {

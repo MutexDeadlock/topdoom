@@ -5,8 +5,8 @@
  */
 import * as THREE from 'three';
 import type { Bitmap, GraphicsBank } from '../wad/graphics.ts';
-import { MAX_DYN_LIGHTS, SHADOW_BIAS, type DynamicLights } from './lights.ts';
-import { SHADOW_STEPS } from './lightvis.ts';
+import { EMPTY_SLOT, EMPTY_WORD, MAX_DYN_LIGHTS, MAX_LIGHTS_PER_LEAF, SHADOW_BIAS, type DynamicLights } from './lights.ts';
+import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS } from './lightvis.ts';
 
 export type SurfaceKind = 'wall' | 'flat';
 
@@ -21,38 +21,45 @@ type LightUniforms = DynamicLights['uniforms'];
  * `gl_FragColor`, so a lit surface still fogs. docs/lights.md § Two lighting paths.
  *
  * A light only counts where it can be seen from, tested twice. `vLightCell` is the surface's own
- * BSP leaf and `uLightVis` the per-leaf bitmask of the lights that flooded into it, which drops a
- * light a whole room away; `uLightShadow` then carries, per light and per direction, how far that
+ * BSP leaf and `uLightVis` the per-leaf list of the lights that flooded into it, which is all the
+ * fragment loop walks; `uLightShadow` then carries, per light and per direction, how far that
  * light gets before a wall stops it, which drops the rest per pixel. `uLightVisWidth` 0 means no
- * level is bound and nothing is gated. docs/lights.md § Light stops at walls.
+ * level is bound and geometry draws no dynamic light. docs/lights.md § Light stops at walls.
  */
 const DYN_LIGHT_FRAGMENT = /* glsl */ `
-            // Gated on the light count alone, which is the same for every fragment: a branch that
-            // varies per fragment costs a GPU more than it saves unless it rejects nearly all of
-            // them, and a bounding sphere around the committed set measured 56% slower on a map
-            // where it rejects nothing. docs/lights.md § What reaches the shader.
-            if (uLightCount > 0) {
+            // Gated on the light count and the level being bound, both the same for every
+            // fragment: a branch that varies per fragment costs a GPU more than it saves unless it
+            // rejects nearly all of them, and a bounding sphere around the committed set measured
+            // 56% slower on a map where it rejects nothing. docs/lights.md § What reaches the
+            // shader. uLightVisWidth 0 (no level bound — tests, tools) draws no dynamic light on
+            // geometry: there is no leaf list to walk.
+            if (uLightCount > 0 && uLightVisWidth > 0) {
               vec3 dynLight = vec3(0.0);
-              // The mask comes in flat from the vertex stage — see the vertex patch below.
+              // The leaf's light list comes in flat from the vertex stage — see the vertex patch
+              // below. The loop walks only the lights that reached this leaf, not the committed
+              // set: on a light-saturated map the committed set is 64 while a leaf holds a
+              // handful, and the walk over the other 60 was most of the frame
+              // (docs/lights.md § How the answer reaches a fragment).
               uvec4 lightVis = vLightVis;
-              // Bounded by the live count, not by MAX_DYN_LIGHTS with a break inside: a
-              // statically bounded loop is one a driver is free to unroll, and 64 copies of a body
+              // Bounded by the live count, not by the leaf capacity with only the break inside: a
+              // statically bounded loop is one a driver is free to unroll, and 16 copies of a body
               // carrying an atan and a texelFetch is a shader whose register pressure is paid by
               // every fragment, lit or not.
-              for (int i = 0; i < uLightCount; i++) {
-                if ((lightVis[i >> 5] & (1u << uint(i & 31))) == 0u) continue;
+              int slotLim = min(uLightCount, ${MAX_LIGHTS_PER_LEAF});
+              for (int k = 0; k < slotLim; k++) {
+                uint slot = (lightVis[k >> 2] >> uint((k & 3) << 3)) & ${EMPTY_SLOT}u;
+                if (slot == ${EMPTY_SLOT}u) break;
+                int i = int(slot);
                 float radius = uLightPos[i].w;
                 float dist = distance(uLightPos[i].xyz, vDynWorldPos);
                 float att = clamp((radius - dist) / radius, 0.0, 1.0);
                 // Ordered so the shadow lookup — an atan and a fetch — is only paid for by the
                 // fragments a light actually reaches.
                 if (att <= 0.0) continue;
-                if (uLightVisWidth > 0) {
-                  vec2 rel = vDynWorldPos.xz - uLightPos[i].xz;
-                  int bin = int(floor((atan(rel.y, rel.x) * 0.15915494 + 0.5) * ${SHADOW_STEPS}.0));
-                  float blocker = texelFetch(uLightShadow, ivec2(clamp(bin, 0, ${SHADOW_STEPS - 1}), i), 0).r;
-                  if (length(rel) > blocker + ${SHADOW_BIAS}.0) continue;
-                }
+                vec2 rel = vDynWorldPos.xz - uLightPos[i].xz;
+                int bin = int(floor(atan(rel.y, rel.x) * ${BIN_PER_RADIAN} + ${BIN_HALF}.0));
+                float blocker = texelFetch(uLightShadow, ivec2(clamp(bin, 0, ${SHADOW_STEPS - 1}), i), 0).r;
+                if (length(rel) > blocker + ${SHADOW_BIAS}.0) continue;
                 dynLight += uLightColor[i] * att;
               }
               diffuseColor.rgb = min(diffuseColor.rgb + sampledDiffuseColor.rgb * dynLight, vec3(1.0));
@@ -189,11 +196,12 @@ export class MaterialBank {
           '#include <begin_vertex>',
           `#include <begin_vertex>
             vDynWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
-            // The leaf's light mask, read here rather than in the fragment stage. Every vertex of
+            // The leaf's light list, read here rather than in the fragment stage. Every vertex of
             // a quad or a flat's fan carries the same leaf, so the value is constant across the
             // primitive and \`flat\` carries it exactly — while the fetch itself drops from once per
-            // drawn pixel to once per vertex. docs/lights.md § How the answer reaches a fragment.
-            vLightVis = uvec4(0xFFFFFFFFu);
+            // drawn pixel to once per vertex. All-ones is the empty list, so an unprobed quad
+            // (aLightCell -1) stays unlit. docs/lights.md § How the answer reaches a fragment.
+            vLightVis = uvec4(${EMPTY_WORD}u);
             // floor, not a bare cast: GLSL truncates toward zero, which would read the -1 an
             // unprobed quad carries as leaf 0.
             int lightCell = int(floor(aLightCell + 0.5));
@@ -209,7 +217,6 @@ export class MaterialBank {
             uniform int uLightCount;
             uniform vec4 uLightPos[${MAX_DYN_LIGHTS}];
             uniform vec3 uLightColor[${MAX_DYN_LIGHTS}];
-            uniform highp usampler2D uLightVis;
             uniform int uLightVisWidth;
             uniform sampler2D uLightShadow;`,
         );

@@ -17,7 +17,7 @@ import {
   uploadedSource,
   type WadSource,
 } from '../../wad/library.ts';
-import { describeMap, describeSource, sourceColumnSpans } from './labels.ts';
+import { badge, describeMap, describeSource, sourceColumnSpans } from './labels.ts';
 import { LibraryUi } from './library.ts';
 import { DEFAULT_SKILL, SKILL_NAMES, type Skill } from '../../game/skill.ts';
 import { getAutorun, setAutorun } from '../../game/player.ts';
@@ -69,18 +69,6 @@ interface StoredSelection {
   /** Keys of picked add-ons that are unticked. Optional: absent means every pick is on. */
   disabled?: string[];
   map: string;
-}
-
-/**
- * The reason an add-on row can't be ticked, as the badge that leads its fixed-width columns — the
- * WAD Library's own (`library.ts`), at the width this narrower panel has for it. Rendered on every
- * row of a list that has one to give, empty text included, so the columns behind it line up.
- */
-function badge(text: string): HTMLSpanElement {
-  const span = document.createElement('span');
-  span.className = 'badge reason';
-  span.textContent = text;
-  return span;
 }
 
 /**
@@ -824,7 +812,7 @@ export class Menu {
       row.append(
         input,
         name,
-        ...(anyReason ? [badge(reason)] : []),
+        ...(anyReason ? [badge(reason, 'reason')] : []),
         // The same three columns the WAD Library lists, so a file reads identically in both places —
         // just narrower, since this panel has a fraction of the overlay's width.
         ...sourceColumnSpans(source),

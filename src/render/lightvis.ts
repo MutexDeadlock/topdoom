@@ -60,6 +60,15 @@ interface Edges {
 const NO_EDGES: Edges = { ints: new Int32Array(0), geom: new Float64Array(0) };
 
 /**
+ * The shadow map's angular indexing: bin 0 is due west and bin `SHADOW_STEPS / 2` due east.
+ * Exported because all three readers — `castShadows` here, `DynamicLights.unshadowed` and the
+ * fragment shader `render/textures.ts` splices these into — must index with the one convention,
+ * or the map is read half a turn out.
+ */
+export const BIN_PER_RADIAN = SHADOW_STEPS / (2 * Math.PI);
+export const BIN_HALF = SHADOW_STEPS / 2;
+
+/**
  * The level's subsector adjacency, and the flood fill `DynamicLights.commit` runs over it once per
  * committed light per frame.
  *
@@ -68,14 +77,6 @@ const NO_EDGES: Edges = { ints: new Int32Array(0), geom: new Float64Array(0) };
  * stand in an edge is fixed geometry and cached with it; whether they *block* is asked live, so a
  * door opening lets light through on the tic it opens.
  */
-/**
- * The shadow map's angular indexing, hoisted out of `castShadows`: bin 0 is due west and bin
- * `SHADOW_STEPS / 2` due east, which is the `angle / 2pi + 0.5` the shader and
- * `DynamicLights.unshadowed` index with — one convention, or the map is read half a turn out.
- */
-const BIN_PER_RADIAN = SHADOW_STEPS / (2 * Math.PI);
-const BIN_HALF = SHADOW_STEPS / 2;
-
 export class LightVisibility {
   readonly subsectorCount: number;
 

@@ -530,9 +530,10 @@ That one is pinned down in `tests/render/occlusion-fade.test.ts`.
 
 Pass two would be quadratic scanned naively, so `WallFader` buckets quads by midpoint into a
 uniform grid (cell = `FADE_RADIUS` + the longest half-chunk, which is what lets a query stop at
-3×3) and each crossing only visits the quads around it. Below `GRID_MIN_OCCLUDERS` it scans instead:
-mover faders hold a handful of quads, and `MoverGeometry.rebuild` is the one place a record can be
-repointed at different geometry, which would leave an index stale.
+3×3) and each crossing only visits the quads around it. Below `GRID_MIN_OCCLUDERS` it scans instead,
+the cell walk costing more than a short list's scan. A mover fader is not excluded and a big one
+does build a grid: the buckets are keyed on quad midpoints, and `refreshMoverMesh` changes heights,
+never a quad's footprint — a rebuild that *does* reshape the mesh builds a fresh fader with it.
 
 **Mover geometry is never banded vertically** (`addWall`'s `bandVertically`). A mover's walls change
 height every tic, so a height-derived band count would change with them, and `refreshMoverMesh` may

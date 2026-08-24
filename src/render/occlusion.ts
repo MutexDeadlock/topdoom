@@ -38,13 +38,13 @@ export const FADE_RADIUS = 96;
 export const FADE_CORE = FADE_RADIUS / 2;
 
 /**
- * Total occluder count below which `WallFader` scans them all instead of
- * building an index. Mover faders hold a handful of quads each and are the one
- * place a record can be repointed at different geometry (`MoverGeometry.rebuild`),
- * which would leave an index stale; scanning is both faster and immune there.
+ * Total occluder count below which `WallFader` scans them all instead of building an index: over a
+ * short list the 3x3 cell walk costs more than the scan it replaces. **Tuned by feel.**
  *
- * **Tuned by feel**: the threshold only has to sit above the largest mover mesh and below the
- * smallest static one, and those are orders of magnitude apart.
+ * A mover fader is *not* excluded, and on a big sector it does cross this — the grid is indexed on
+ * quad midpoints, and `refreshMoverMesh` changes a mover's heights, never a quad's footprint
+ * (`copyRefreshedQuad`), so the buckets stay true across a refresh. A rebuild that does reshape the
+ * mesh builds a fresh fader with it (`MoverGeometry.createMoverMesh`).
  */
 const GRID_MIN_OCCLUDERS = 256;
 

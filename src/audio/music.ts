@@ -170,8 +170,7 @@ export class MusicPlayer {
     this._volume = Math.max(0, Math.min(1, value));
     globalThis.localStorage?.setItem(VOLUME_STORAGE_KEY, String(this._volume));
     if (this.bus) this.bus.gain.value = this._volume;
-    if (this.audible === 0) this.stopPlayback();
-    else if (previous === 0) this.start();
+    this.regate(previous);
   }
 
   /**
@@ -182,6 +181,15 @@ export class MusicPlayer {
   setMasterVolume(value: number): void {
     const previous = this.audible;
     this._master = Math.max(0, Math.min(1, value));
+    this.regate(previous);
+  }
+
+  /**
+   * The gate both sliders close and open, given what was audible before one of them moved. Written
+   * once because the rule is one rule: silence stops the chip outright whichever slider reached it,
+   * and coming back up from silence restarts the track from the beginning.
+   */
+  private regate(previous: number): void {
     if (this.audible === 0) this.stopPlayback();
     else if (previous === 0) this.start();
   }

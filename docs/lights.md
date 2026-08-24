@@ -209,14 +209,30 @@ behaviour too.
 
 ### How the answer reaches a fragment
 
-Per frame, `commit` stamps each committed light's reached leaves into a **bitmask indexed by
-subsector**: one `RGBA32UI` texel per leaf, one bit per light, uploaded as an integer texture read
-with `texelFetch`. Every map surface carries the leaf it faces into as the `aLightCell` vertex
-attribute, and the shader skips any light whose bit is clear.
+Per frame, `commit` appends each committed light's index to the reached leaves' **compacted light
+lists, indexed by subsector**: one `RGBA32UI` texel per leaf holding up to `MAX_LIGHTS_PER_LEAF`
+(16) byte-sized slots, `0xFF` past the last, uploaded as an integer texture read with `texelFetch`.
+Every map surface carries the leaf it faces into as the `aLightCell` vertex attribute, and the
+fragment loop walks **only that leaf's list**, stopping at the first empty slot.
+
+**A list, not a bitmask, because the list is what bounds the fragment loop.** The first version
+stored one bit per light and looped over the whole committed set testing bits, which priced every
+fragment by how many lights were *committed* rather than how many reach it — and a light-saturated
+map holds the committed set at the cap while no leaf is reached by more than a handful. On Sunder
+2512 MAP05's opening arena (64 committed, no leaf reached by more than 8, the median 1), the
+64-iteration walk took a 1080p frame from 58 fps to 23 on an integrated GPU; the same scene walks
+the lists at 48. Notably the cost was *not* the loop body executing — gating the shadow lookup
+behind a runtime-false uniform compare measured the same 28 ms as running it, so it is the
+compiled body's register pressure that every iteration pays, executed or not — which is why no
+cheaper per-light test inside a committed-set loop can fix it: the iterations themselves have to go.
+
+A leaf past its 16 slots drops the excess lights there. By that depth the additive sum has clamped
+to white, so the dropped light is invisible in that leaf; and on the frames that overflow
+`MAX_DYN_LIGHTS`, commit order is nearest-first, so a full leaf drops its least relevant lights.
 
 **That fetch happens in the vertex shader, not the fragment shader**, and is handed on as a
 `flat varying uvec4`. Every vertex of a wall quad or a flat's fan carries the same leaf, so the
-mask is constant across the primitive and `flat` carries it exactly — while the fetch itself drops
+list is constant across the primitive and `flat` carries it exactly — while the fetch itself drops
 from once per drawn pixel to once per vertex. It is the single largest cost this feature had: a
 dependent integer texture read on every fragment of every map surface, paid whether or not a light
 was anywhere near it. On EPIC.WAD MAP02 at a 14.7 MP drawing buffer, with **one** light committed,
@@ -241,14 +257,17 @@ Four more things are load-bearing:
 - **Clearing walks the lit leaves, not the level.** `commit` remembers which leaves it wrote and
   zeroes only those next frame, and skips the upload entirely on a frame that touched none — which
   is every frame with the lights off, or with none on screen.
-- **`uLightVisWidth` of 0 means no level is bound** and nothing is gated. That is what a bank built
-  without a level (tests, tools) gets, and it is why an unbound controller lights everything rather
-  than nothing.
+- **`uLightVisWidth` of 0 means no level is bound.** A bank built without a level (tests, tools)
+  keeps `tintAt` ungated — an unbound controller tints sprites by every committed light — while
+  geometry draws no dynamic light at all: there is no leaf list to walk, and in practice geometry
+  only ever renders in a bound level (`bindLevel` runs on map load, before the first frame). An
+  unprobed quad (`aLightCell` -1) reads the same way: the vertex stage's all-ones default is the
+  empty list, so it stays unlit rather than lit by everything.
 
-**Sprites are gated the same way**, on the CPU in `tintAt`: against the leaf mask, using the
-sprite's own leaf — `PosedThing.subsector` and `OneShotEffect.subsector` already carry one, and the
-few callers that don't resolve it there, but only once some light is actually live — and then
-against the same shadow map, so a sprite behind a pillar goes dark with the floor it stands on.
+**Sprites are gated the same way**, on the CPU in `tintAt`: it walks the leaf's slot list, using
+the sprite's own leaf — `PosedThing.subsector` and `OneShotEffect.subsector` already carry one, and
+the few callers that don't resolve it there, but only once some light is actually live — and then
+tests the same shadow map, so a sprite behind a pillar goes dark with the floor it stands on.
 
 The shadow map rides in a second texture, one `R32F` row per light, uploaded whole on any frame that
 has lights.
@@ -352,14 +371,16 @@ Two consequences to know:
   — but shader uniform slots, two rows per light against the 224 fragment uniform vectors WebGL 2
   guarantees. Its declaration in `render/lights.ts` carries that arithmetic.
 
-The fragment loop is bounded by `uLightCount` rather than by `MAX_DYN_LIGHTS` with a `break`, and
-the whole block sits behind `uLightCount > 0`. Both are about what the *driver* compiles: a
-statically bounded loop is one it may unroll, and 64 copies of a body carrying an `atan` and a
-`texelFetch` is a shader whose register pressure every fragment pays, lit or not. It is not a
-micro-optimisation — on the same measurement, the bound alone is most of a 99 ms frame against a
-55 ms one. The outer guard is what makes a frame with no lights — the toggle off, an unlit map —
-cost nothing at all, and it is uniform across the draw, which is why it is affordable where a
-per-fragment gate is not (§ How the answer reaches a fragment).
+The fragment loop walks the leaf's slot list (§ How the answer reaches a fragment), bounded by
+`min(uLightCount, MAX_LIGHTS_PER_LEAF)` rather than by the leaf capacity with only the empty-slot
+`break` inside, and the whole block sits behind `uLightCount > 0 && uLightVisWidth > 0`. Both are
+about what the *driver* compiles: a statically bounded loop is one it may unroll, and 16 copies of
+a body carrying an `atan` and a `texelFetch` is a shader whose register pressure every fragment
+pays, lit or not. It is not a micro-optimisation — on the older committed-set loop, the equivalent
+bound alone was most of a 99 ms frame against a 55 ms one. The outer guard is what makes a frame
+with no lights — the toggle off, an unlit map — cost nothing at all, and it is uniform across the
+draw, which is why it is affordable where a per-fragment gate is not (§ How the answer reaches a
+fragment).
 
 ## The toggle
 

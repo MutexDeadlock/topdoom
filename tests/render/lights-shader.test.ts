@@ -2,8 +2,8 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { MaterialBank } from '../../src/render/textures.ts';
-import { DynamicLights, MAX_DYN_LIGHTS } from '../../src/render/lights.ts';
-import { SHADOW_STEPS } from '../../src/render/lightvis.ts';
+import { DynamicLights, EMPTY_SLOT, MAX_DYN_LIGHTS } from '../../src/render/lights.ts';
+import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS } from '../../src/render/lightvis.ts';
 import { parseGldefs } from '../../src/wad/gldefs.ts';
 import type { GraphicsBank } from '../../src/wad/graphics.ts';
 
@@ -69,7 +69,7 @@ describe('Dynamic lights · the geometry shader patch', () => {
     assert.ok(fragment.includes('dynLight += uLightColor[i] * att;'), 'no accumulation loop');
   });
 
-  test('the visibility gate is wired: attribute, vertex-side fetch, flat varying and the bit test', () => {
+  test('the visibility gate is wired: attribute, vertex-side fetch, flat varying and the slot walk', () => {
     // Without this the shader lights every surface in radius, wall or no wall — the reported bug
     // (docs/lights.md § Light stops at walls).
     //
@@ -82,20 +82,30 @@ describe('Dynamic lights · the geometry shader patch', () => {
     assert.ok(vertex.includes('uniform highp usampler2D uLightVis;'), 'the mask must be an integer sampler');
     assert.ok(vertex.includes('texelFetch(uLightVis'), 'the mask must be read in the vertex stage');
     assert.ok(vertex.includes('vLightVis = texelFetch(uLightVis'), 'the fetched mask is never passed on');
-    assert.ok(fragment.includes('flat varying uvec4 vLightVis;'), 'the mask must not be interpolated');
-    assert.ok(!fragment.includes('texelFetch(uLightVis'), 'the mask must not be re-read per fragment');
-    const test = fragment.indexOf('lightVis[i >> 5]');
+    assert.ok(fragment.includes('flat varying uvec4 vLightVis;'), 'the list must not be interpolated');
+    assert.ok(!fragment.includes('texelFetch(uLightVis'), 'the list must not be re-read per fragment');
+    // The loop walks the leaf's compacted slot list — a byte per light, `EMPTY_SLOT` ending it —
+    // rather than testing every committed light's bit (docs/lights.md § How the answer reaches a
+    // fragment). Read off the constant `lights.ts` writes the texel with, so a changed encoding
+    // fails here instead of compiling into a shader that reads garbage.
+    const read = fragment.indexOf('lightVis[k >> 2]');
+    const stop = fragment.indexOf(`if (slot == ${EMPTY_SLOT}u) break;`);
     const accumulate = fragment.indexOf('dynLight += uLightColor');
-    assert.ok(test >= 0, 'no bit test');
-    assert.ok(test < accumulate, 'the bit test must gate the accumulation, not follow it');
+    assert.ok(read >= 0, 'no slot read');
+    assert.ok(stop >= 0, 'an empty slot must end the walk');
+    assert.ok(read < accumulate, 'the slot walk must gate the accumulation, not follow it');
   });
 
   test('the shadow lookup is wired, indexed the way the controller writes it, and gated behind the falloff', () => {
     const { fragment } = patched(new DynamicLights(parseGldefs('')));
     assert.ok(fragment.includes('uniform sampler2D uLightShadow;'), 'no shadow map');
     // `angle / 2pi + 0.5`, the one convention `castShadows` and `unshadowed` also index with —
-    // reading it half a turn out still looks plausible on symmetric geometry.
-    assert.ok(fragment.includes('0.15915494 + 0.5'), 'the shadow map is indexed on another convention');
+    // reading it half a turn out still looks plausible on symmetric geometry. Pinned to
+    // `lightvis.ts`'s own constants, which all three readers share.
+    assert.ok(
+      fragment.includes(`* ${BIN_PER_RADIAN} + ${BIN_HALF}.0`),
+      'the shadow map is indexed on another convention',
+    );
     assert.ok(fragment.includes(`ivec2(clamp(bin, 0, ${SHADOW_STEPS - 1}), i)`), 'a light must read its own row');
     const falloff = fragment.indexOf('if (att <= 0.0) continue;');
     const lookup = fragment.indexOf('texelFetch(uLightShadow');

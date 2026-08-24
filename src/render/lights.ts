@@ -6,16 +6,17 @@
 import * as THREE from 'three';
 import { DOOM_TIC } from '../constants.ts';
 import { lightForFrame, type Gldefs, type LightDef } from '../wad/gldefs.ts';
-import { SHADOW_STEPS, type LightVisibility } from './lightvis.ts';
+import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS, type LightVisibility } from './lightvis.ts';
 import { doomToWorld } from './mapmesh.ts';
 
 /**
  * How many lights can reach the geometry shader at once, the rest culled by how near their reach
  * comes to the camera. Tuned by feel, and generously: a slaughter map with a hundred projectiles
  * in the air is meant to read as fireworks, which a tight cap turns into lights popping in and out
- * as the ranking shuffles. Raising it is close to free while few lights are actually on screen —
- * the fragment loop runs to the live count, so the cap costs shader *slots*, not per-pixel work.
- * What keeps the live count near the lights actually in view is `offer`'s frustum cull, not this.
+ * as the ranking shuffles. Raising it is close to free: a fragment only ever walks the lights in
+ * its own leaf's list (at most `MAX_LIGHTS_PER_LEAF`), so the cap costs shader *slots*, not
+ * per-pixel work. What keeps the live count near the lights actually in view is `offer`'s frustum
+ * cull, not this.
  *
  * Those slots are the ceiling to watch if this grows again: the arrays below occupy two uniform
  * rows per light (a `vec4` and a `vec3`, and GLSL ES gives every array element its own row), so
@@ -33,19 +34,39 @@ export const MAX_DYN_LIGHTS = 64;
 export const RADIUS_SCALE = 1.25;
 
 /**
- * Texels per row of the visibility texture — the map from subsector index to the bitmask of lights
- * that reach it, which is how a fragment learns whether a wall stands between it and a light
- * (docs/lights.md § Light stops at walls). One `RGBA32UI` texel per subsector holds 128 bits, so
- * the mask covers `MAX_DYN_LIGHTS` with room to spare; a level with fewer subsectors than this gets
- * a single short row rather than a padded one.
+ * Texels per row of the visibility texture — the map from subsector index to the compacted list of
+ * lights that reach it, which is how a fragment learns whether a wall stands between it and a light
+ * (docs/lights.md § Light stops at walls). One `RGBA32UI` texel per subsector; a level with fewer
+ * subsectors than this gets a single short row rather than a padded one.
  *
  * Any width serves; 1024 keeps both axes inside the 2048-texel minimum every WebGL2 implementation
  * guarantees, for every level this engine loads.
  */
 const VIS_TEXTURE_WIDTH = 1024;
 
-/** `RGBA32UI` texels are four 32-bit words, and `MAX_DYN_LIGHTS` must fit in them. */
+/** `RGBA32UI` texels are four 32-bit words. */
 const VIS_WORDS = 4;
+
+/**
+ * How many lights one subsector's texel can name: 16 byte-sized slots in its four words, each a
+ * committed light's index, `EMPTY_SLOT` past the last. A **list, not a bitmask**, because the list
+ * is what bounds the fragment loop: with a bitmask the shader walked all `uLightCount` lights per
+ * fragment to find the few whose bit was set, and on a light-saturated map (Sunder 2512 MAP05,
+ * 64 committed) that walk alone more than halved the frame rate while no leaf was reached by more
+ * than 8 lights. Past the cap a leaf drops the excess — by then the sum has clamped to white, so
+ * the dropped light is invisible there (docs/lights.md § How the answer reaches a fragment).
+ * `MAX_DYN_LIGHTS` must stay below `EMPTY_SLOT`, or a light's index is read as the terminator.
+ */
+export const MAX_LIGHTS_PER_LEAF = VIS_WORDS * 4;
+
+/**
+ * The byte value marking an unused slot, and the word of four of them a cleared texel carries: a
+ * texel of all-empty words is an unlit leaf. Exported because `render/textures.ts` splices both
+ * into the shader that decodes these texels — one statement of the encoding, or the writer here
+ * and the reader there drift apart with nothing to catch it.
+ */
+export const EMPTY_SLOT = 0xff;
+export const EMPTY_WORD = 0xffffffff;
 
 /**
  * How far past its nearest blocker a fragment may still be lit. The wall casting a shadow is itself
@@ -181,11 +202,6 @@ interface Emitter {
 }
 
 /**
- * Gathers the frame's lights and hands them to the two consumers: `uniforms` for map geometry
- * (`render/textures.ts` patches every material's shader against them) and `tintAt` for sprites,
- * which are lit on the CPU instead (docs/lights.md § Two lighting paths).
- */
-/**
  * The emitter-id space every `offer`/`tintAt` caller shares. `dontlightself` and a light's flicker
  * phase both key off the id, so the three sources must not collide: a thing offers `PosedThing.id`
  * (a plain array index, 0 and up), a one-shot effect counts down from -1 (`effectEmitterId`), and
@@ -203,6 +219,11 @@ export function effectEmitterId(n: number): number {
   return -1 - (n % (-PLAYER_EMITTER_ID - 1));
 }
 
+/**
+ * Gathers the frame's lights and hands them to the two consumers: `uniforms` for map geometry
+ * (`render/textures.ts` patches every material's shader against them) and `tintAt` for sprites,
+ * which are lit on the CPU instead (docs/lights.md § Two lighting paths).
+ */
 export class DynamicLights {
   /**
    * The live uniform objects, handed to every patched material once and mutated in place
@@ -213,9 +234,9 @@ export class DynamicLights {
     uLightCount: { value: 0 },
     uLightPos: { value: new Float32Array(MAX_DYN_LIGHTS * 4) },
     uLightColor: { value: new Float32Array(MAX_DYN_LIGHTS * 3) },
-    /** Subsector -> bitmask of the lights that reach it. See `bindLevel`. */
-    uLightVis: { value: makeVisTexture(new Uint32Array(VIS_WORDS), 1, 1) },
-    /** Row width of that texture, and the flag for whether it means anything: 0 = no level bound, so nothing is gated. */
+    /** Subsector -> compacted list of the lights that reach it. See `bindLevel`. */
+    uLightVis: { value: makeVisTexture(new Uint32Array(VIS_WORDS).fill(EMPTY_WORD), 1, 1) },
+    /** Row width of that texture, and the flag for whether it means anything: 0 = no level bound — geometry draws no dynamic light, sprite tints stay ungated. */
     uLightVisWidth: { value: 0 },
     /** Per light, per direction, how far it gets before a wall stops it. See `LightVisibility.castShadows`. */
     uLightShadow: { value: makeShadowTexture(new Float32Array(SHADOW_STEPS * MAX_DYN_LIGHTS)) },
@@ -223,8 +244,10 @@ export class DynamicLights {
 
   private readonly defs: Gldefs;
   private vis: LightVisibility | null = null;
-  private visMask = new Uint32Array(VIS_WORDS);
-  /** Which subsectors carry a bit this frame, so clearing costs the lit ones rather than the level. */
+  private visSlots = new Uint32Array(VIS_WORDS).fill(EMPTY_WORD);
+  /** Per subsector, how many of its slots are filled — where the next light appends. */
+  private visCount = new Uint8Array(0);
+  /** Which subsectors carry a light this frame, so clearing costs the lit ones rather than the level. */
   private touched: number[] = [];
   /** `reach`'s output, reused across lights rather than reallocated per light per frame. */
   private reached: number[] = [];
@@ -243,15 +266,16 @@ export class DynamicLights {
    * Last frame's committed set, which `tintAt` samples. Its own storage rather than references
    * into `offered`: that array is a pool the next frame's `offer` calls overwrite in place, and
    * `tintAt` reads this set *during* that frame's draw.
+   *
+   * Only what the uniform arrays don't already hold: radius and colour live in `uLightPos.w` and
+   * `uLightColor`, written by the same `commit` and read by `sampleLight` from there, so the two
+   * halves of one light cannot disagree. Position stays here because the uniforms carry it in
+   * three.js space and a sprite tint is measured in DOOM space.
    */
   private committed = {
     x: new Float32Array(MAX_DYN_LIGHTS),
     y: new Float32Array(MAX_DYN_LIGHTS),
     z: new Float32Array(MAX_DYN_LIGHTS),
-    radius: new Float32Array(MAX_DYN_LIGHTS),
-    r: new Float32Array(MAX_DYN_LIGHTS),
-    g: new Float32Array(MAX_DYN_LIGHTS),
-    b: new Float32Array(MAX_DYN_LIGHTS),
     id: new Int32Array(MAX_DYN_LIGHTS),
     dontLightSelf: new Uint8Array(MAX_DYN_LIGHTS),
   };
@@ -274,22 +298,25 @@ export class DynamicLights {
   /**
    * Points the controller at a level's subsector graph, sizing the visibility texture to it.
    * Called once per map load, before the first frame is drawn; `null` (tests, tools) leaves every
-   * light ungated, which is what `uLightVisWidth` 0 means to the shader.
+   * sprite tint ungated, while geometry — which only ever draws in a bound level — draws no
+   * dynamic light, which is what `uLightVisWidth` 0 means to the shader.
    */
   bindLevel(vis: LightVisibility | null): void {
     this.vis = vis;
     this.touched.length = 0;
     this.uniforms.uLightVis.value.dispose();
     if (!vis || vis.subsectorCount === 0) {
-      this.visMask = new Uint32Array(VIS_WORDS);
-      this.uniforms.uLightVis.value = makeVisTexture(this.visMask, 1, 1);
+      this.visSlots = new Uint32Array(VIS_WORDS).fill(EMPTY_WORD);
+      this.visCount = new Uint8Array(0);
+      this.uniforms.uLightVis.value = makeVisTexture(this.visSlots, 1, 1);
       this.uniforms.uLightVisWidth.value = 0;
       return;
     }
     const width = Math.min(VIS_TEXTURE_WIDTH, vis.subsectorCount);
     const height = Math.ceil(vis.subsectorCount / width);
-    this.visMask = new Uint32Array(width * height * VIS_WORDS);
-    this.uniforms.uLightVis.value = makeVisTexture(this.visMask, width, height);
+    this.visSlots = new Uint32Array(width * height * VIS_WORDS).fill(EMPTY_WORD);
+    this.visCount = new Uint8Array(vis.subsectorCount);
+    this.uniforms.uLightVis.value = makeVisTexture(this.visSlots, width, height);
     this.uniforms.uLightVisWidth.value = width;
   }
 
@@ -374,14 +401,16 @@ export class DynamicLights {
     const col = this.uniforms.uLightColor.value;
     const c = this.committed;
     const vis = this.vis;
-    const mask = this.visMask;
+    const slots = this.visSlots;
+    const counts = this.visCount;
     const hadTouched = this.touched.length > 0;
     for (const s of this.touched) {
       const o = s * VIS_WORDS;
-      mask[o] = 0;
-      mask[o + 1] = 0;
-      mask[o + 2] = 0;
-      mask[o + 3] = 0;
+      slots[o] = EMPTY_WORD;
+      slots[o + 1] = EMPTY_WORD;
+      slots[o + 2] = EMPTY_WORD;
+      slots[o + 3] = EMPTY_WORD;
+      counts[s] = 0;
     }
     this.touched.length = 0;
 
@@ -398,40 +427,33 @@ export class DynamicLights {
       c.x[i] = e.x;
       c.y[i] = e.y;
       c.z[i] = e.z;
-      c.radius[i] = e.radius;
-      c.r[i] = e.def.r;
-      c.g[i] = e.def.g;
-      c.b[i] = e.def.b;
       c.id[i] = e.id;
       c.dontLightSelf[i] = e.def.dontLightSelf ? 1 : 0;
       if (!vis) continue;
-      // Which leaves this light actually reaches, stamped into the shared mask under this light's
-      // own bit. A subsector enters `touched` the first time any bit lands on it, so next frame's
-      // clear walks the lit leaves rather than the level.
-      const word = i >> 5;
-      const bit = 1 << (i & 31);
+      // Which leaves this light actually reaches, appended to each one's slot list. A subsector
+      // enters `touched` the first time a light lands on it, so next frame's clear walks the lit
+      // leaves rather than the level. A full leaf drops the light — see `MAX_LIGHTS_PER_LEAF`;
+      // on the frames that overflowed the cap above, commit order is nearest-first, so what a full
+      // leaf drops is the least relevant of its lights.
       this.reached.length = 0;
       vis.reach(e.subsector >= 0 ? e.subsector : vis.subsectorAt(e.x, e.y), e.x, e.y, e.radius, this.reached);
       for (const s of this.reached) {
-        const o = s * VIS_WORDS;
-        if ((mask[o] | mask[o + 1] | mask[o + 2] | mask[o + 3]) === 0) this.touched.push(s);
-        mask[o + word] |= bit;
+        const cnt = counts[s];
+        if (cnt === 0) this.touched.push(s);
+        if (cnt >= MAX_LIGHTS_PER_LEAF) continue;
+        const at = s * VIS_WORDS + (cnt >> 2);
+        const shift = (cnt & 3) << 3;
+        slots[at] = (slots[at] & ~(EMPTY_SLOT << shift)) | (i << shift);
+        counts[s] = cnt + 1;
       }
       vis.castShadows(e.x, e.y, e.radius, this.shadows, i * SHADOW_STEPS);
     }
     if (vis && n > 0) this.uniforms.uLightShadow.value.needsUpdate = true;
     this.committedCount = n;
     this.uniforms.uLightCount.value = n;
-    // Uploading a frame of all-zeros over the last one is worth doing once; doing it every frame a
-    // level sits unlit is not.
+    // Uploading a frame of all-empty lists over the last one is worth doing once; doing it every
+    // frame a level sits unlit is not.
     if (this.touched.length > 0 || hadTouched) this.uniforms.uLightVis.value.needsUpdate = true;
-  }
-
-  /** Whether light `index` of the committed set reaches `subsector` — the CPU half of the shader's mask test. */
-  private reaches(index: number, subsector: number): boolean {
-    if (!this.vis) return true;
-    if (subsector < 0 || subsector >= this.vis.subsectorCount) return false;
-    return (this.visMask[subsector * VIS_WORDS + (index >> 5)] & (1 << (index & 31))) !== 0;
   }
 
   /**
@@ -443,7 +465,7 @@ export class DynamicLights {
     if (!this.vis) return true;
     const dx = x - this.committed.x[index];
     const dz = -y + this.committed.y[index];
-    const bin = Math.floor((Math.atan2(dz, dx) / (2 * Math.PI) + 0.5) * SHADOW_STEPS);
+    const bin = Math.floor(Math.atan2(dz, dx) * BIN_PER_RADIAN + BIN_HALF);
     const at = index * SHADOW_STEPS + Math.max(0, Math.min(SHADOW_STEPS - 1, bin));
     const reach = this.shadows[at] + SHADOW_BIAS;
     return dx * dx + dz * dz <= reach * reach;
@@ -473,35 +495,51 @@ export class DynamicLights {
    *
    * `emitterId` is the sprite's own, so a `dontlightself` light (the barrel's, the armour bonus's)
    * can skip it — GZDoom's own flag, and what keeps a barrel from glowing green in its own light.
-   * `subsector` is the sprite's leaf, tested against the same reach mask the geometry shader reads
-   * so a sprite behind a wall goes unlit exactly as the wall does.
+   * `subsector` is the sprite's leaf, whose light list — the same one the geometry shader walks —
+   * is all that is sampled, so a sprite behind a wall goes unlit exactly as the wall does.
    */
   tintAt(x: number, y: number, z: number, emitterId: number, out: Tint, subsector = -1): void {
     out.r = 0;
     out.g = 0;
     out.b = 0;
     if (!this.active || this.committedCount === 0) return;
+    if (!this.vis) {
+      // No level bound (tests, tools): nothing gates, every committed light is sampled.
+      for (let i = 0; i < this.committedCount; i++) this.sampleLight(i, x, y, z, emitterId, out);
+      return;
+    }
     // Resolved here rather than asked of every drawn sprite: the descent is only worth paying for
     // once some light is actually live, and most callers already hold the answer.
-    const ss = subsector >= 0 || !this.vis ? subsector : this.vis.subsectorAt(x, y);
-    const c = this.committed;
-    for (let i = 0; i < this.committedCount; i++) {
-      if (c.dontLightSelf[i] === 1 && c.id[i] === emitterId) continue;
-      if (!this.reaches(i, ss)) continue;
-      const dx = c.x[i] - x;
-      const dy = c.y[i] - y;
-      const dz = c.z[i] - z;
-      const radius = c.radius[i];
-      // Ordered as the shader's is: the falloff first, so only a sprite a light actually reaches
-      // pays for the shadow map's atan — and the reject itself is squared, so it costs no sqrt.
-      const distSq = dx * dx + dy * dy + dz * dz;
-      if (distSq >= radius * radius) continue;
-      if (!this.unshadowed(i, x, y)) continue;
-      // GZDoom's own linear falloff (`shaders/glsl/main.fp`), matching the shader half.
-      const att = (radius - Math.sqrt(distSq)) / radius;
-      out.r += c.r[i] * att;
-      out.g += c.g[i] * att;
-      out.b += c.b[i] * att;
+    const ss = subsector >= 0 ? subsector : this.vis.subsectorAt(x, y);
+    if (ss < 0 || ss >= this.vis.subsectorCount) return;
+    // The leaf's own list — the CPU half of the fragment loop, walking the same slots the shader
+    // does rather than testing every committed light against this leaf.
+    const o = ss * VIS_WORDS;
+    const cnt = this.visCount[ss];
+    for (let k = 0; k < cnt; k++) {
+      const i = (this.visSlots[o + (k >> 2)] >>> ((k & 3) << 3)) & EMPTY_SLOT;
+      this.sampleLight(i, x, y, z, emitterId, out);
     }
+  }
+
+  /** One committed light's contribution to a sprite tint — the body `tintAt`'s two paths share. */
+  private sampleLight(i: number, x: number, y: number, z: number, emitterId: number, out: Tint): void {
+    const c = this.committed;
+    if (c.dontLightSelf[i] === 1 && c.id[i] === emitterId) return;
+    const dx = c.x[i] - x;
+    const dy = c.y[i] - y;
+    const dz = c.z[i] - z;
+    const radius = this.uniforms.uLightPos.value[i * 4 + 3];
+    // Ordered as the shader's is: the falloff first, so only a sprite a light actually reaches
+    // pays for the shadow map's atan — and the reject itself is squared, so it costs no sqrt.
+    const distSq = dx * dx + dy * dy + dz * dz;
+    if (distSq >= radius * radius) return;
+    if (!this.unshadowed(i, x, y)) return;
+    // GZDoom's own linear falloff (`shaders/glsl/main.fp`), matching the shader half.
+    const att = (radius - Math.sqrt(distSq)) / radius;
+    const col = this.uniforms.uLightColor.value;
+    out.r += col[i * 3] * att;
+    out.g += col[i * 3 + 1] * att;
+    out.b += col[i * 3 + 2] * att;
   }
 }

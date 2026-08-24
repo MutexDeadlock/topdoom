@@ -11,7 +11,7 @@ import {
   type Tint,
 } from '../../src/render/lights.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
-import { LightVisibility } from '../../src/render/lightvis.ts';
+import { LightVisibility, SHADOW_STEPS } from '../../src/render/lightvis.ts';
 import { World } from '../../src/game/world.ts';
 import { buildSubSectorPolys } from '../../src/render/bsp.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
@@ -366,6 +366,107 @@ describe('DynamicLights · a light bound to a level', () => {
     const t = tint();
     lights.tintAt(10, 10, 0, 99, t);
     assert.ok(t.r > 0);
+  });
+});
+
+/**
+ * A light's flood and its shadow cast are pure functions of where it stands, how far it reaches and
+ * which lines block sight — so on the frames where none of those moved, they are not recomputed.
+ * What the memo must never do is answer a question that has changed.
+ * docs/lights.md § What a light remembers between frames.
+ */
+describe('DynamicLights · what a light remembers between frames', () => {
+  /** A corridor of three cells, its middle one able to close. */
+  function corridor() {
+    const grid = gridMap(['.M.'], { cell: 128, heights: { M: { floor: 0, ceil: 128 } } });
+    const world = new World(grid.map);
+    const lights = new DynamicLights(DEFS);
+    lights.bindLevel(new LightVisibility(grid.map, buildSubSectorPolys(grid.map), world));
+    const at = grid.centre(0, 0);
+    const across = grid.centre(2, 0);
+    return { grid, world, lights, at, there: world.subsectorAt(across.x, across.y), middle: grid.index(1, 0) };
+  }
+
+  /** Whether light 0's list names `subsector` — the same slot walk the shader does. */
+  function reaches(lights: DynamicLights, subsector: number): boolean {
+    const slots = lights.uniforms.uLightVis.value.image.data as Uint32Array;
+    return (slots[subsector * 4] & 0xff) === 0;
+  }
+
+  /** Light 0's shadow row. */
+  function shadowRow(lights: DynamicLights): number[] {
+    return [...(lights.uniforms.uLightShadow.value.image.data as Float32Array).subarray(0, SHADOW_STEPS)];
+  }
+
+  test('a light that has not moved in a level that has not moved answers the same twice', () => {
+    const { lights, at, there } = corridor();
+    frame(lights, 0, [['GGGG', at.x, at.y, 0, 1]]);
+    const first = shadowRow(lights);
+    const reachedFirst = reaches(lights, there);
+    frame(lights, 0.016, [['GGGG', at.x, at.y, 0, 1]]);
+    assert.deepEqual(shadowRow(lights), first, 'the remembered cast came back different');
+    assert.equal(reaches(lights, there), reachedFirst);
+  });
+
+  test('a door closing between frames is seen, though the light never moved', () => {
+    // The whole hazard the memo carries: a version someone forgot to raise looks exactly like
+    // light shining through a shut door. `sightVersion` is derived from the heights themselves.
+    const { grid, lights, at, there, middle } = corridor();
+    frame(lights, 0, [['GGGG', at.x, at.y, 0, 1]]);
+    assert.equal(reaches(lights, there), true, 'the corridor was not open to begin with');
+    const open = shadowRow(lights);
+
+    grid.map.sectors[middle].floorHeight = grid.map.sectors[middle].ceilHeight;
+    frame(lights, 0.016, [['GGGG', at.x, at.y, 0, 1]]);
+    assert.equal(reaches(lights, there), false, 'the light carried on through a closed door');
+    assert.notDeepEqual(shadowRow(lights), open, 'the shadow cast did not notice the door');
+  });
+
+  test('a light that moves re-answers for its new position', () => {
+    const { lights, at, there } = corridor();
+    frame(lights, 0, [['GGGG', at.x, at.y, 0, 1]]);
+    const first = shadowRow(lights);
+    frame(lights, 0.016, [['GGGG', at.x + 64, at.y, 0, 1]]);
+    assert.notDeepEqual(shadowRow(lights), first);
+    assert.equal(reaches(lights, there), true);
+  });
+
+  test('the cast radius covers every radius the animation can reach, for every animated kind', () => {
+    // What makes casting at `widestSize` exact rather than an approximation: a shadow recorded
+    // *shorter* than the live radius would darken a fragment the falloff still lights. Nothing
+    // else checks that the two size functions agree, and they switch over the kinds separately.
+    // In a room this size nothing blocks, so every bin reads back the radius it was cast at.
+    const grid = gridMap(['.'], { cell: 4096 });
+    const world = new World(grid.map);
+    const at = grid.centre(0, 0);
+    for (const sprite of ['BBBB', 'CCCC', 'DDDD', 'AAAA']) {
+      const lights = new DynamicLights(DEFS);
+      lights.bindLevel(new LightVisibility(grid.map, buildSubSectorPolys(grid.map), world));
+      for (let i = 0; i < 40; i++) {
+        frame(lights, DOOM_TIC, [[sprite, at.x, at.y, 0, 1]]);
+        const cast = Math.max(...shadowRow(lights));
+        assert.ok(
+          cast >= radiusOf(lights) - 1e-3,
+          `${sprite} lit to ${radiusOf(lights)} but cast its shadows only to ${cast}`,
+        );
+      }
+    }
+  });
+
+  test('a flickering light\'s cast is taken at its widest size, so the flicker does not re-cast it', () => {
+    // The cast is bounded by the radius, so casting at the live one would rebuild the row on every
+    // tic the flicker switched. Casting at the widest is exact: a blocker recorded past the live
+    // radius is further than any fragment the falloff lets through.
+    const { lights, at } = corridor();
+    const rows: string[] = [];
+    const radii = new Set<number>();
+    for (let i = 0; i < 12; i++) {
+      frame(lights, DOOM_TIC, [['CCCC', at.x, at.y, 0, 1]]);
+      rows.push(shadowRow(lights).join(','));
+      radii.add(radiusOf(lights));
+    }
+    assert.ok(radii.size > 1, 'the fixture light never actually flickered');
+    assert.equal(new Set(rows).size, 1, 'the cast followed the flicker instead of the widest size');
   });
 });
 

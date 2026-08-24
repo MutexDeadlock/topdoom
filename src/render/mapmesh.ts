@@ -46,11 +46,19 @@ interface Batch {
   cells: number[];
 }
 
+/** A batch's identity, and the key `MoverMesh.meshes` files its three.js mesh under. */
+function batchKey(kind: SurfaceKind, texture: string): string {
+  return kind + ':' + texture;
+}
+
+/** What every wall batch's key starts with, from `batchKey` itself rather than spelled again. */
+const WALL_KEY_PREFIX = batchKey('wall', '');
+
 class BatchSet {
   private batches = new Map<string, Batch>();
 
   get(kind: SurfaceKind, texture: string): Batch {
-    const key = kind + ':' + texture;
+    const key = batchKey(kind, texture);
     let b = this.batches.get(key);
     if (!b) {
       b = { key, kind, texture, positions: [], uvs: [], colors: [], cells: [] };
@@ -169,14 +177,25 @@ const WATER_MIN_DEPTH = 8;
 /**
  * How finely a surface is cut up so the occlusion fade has somewhere to put a
  * gradient: the longest quad `addWall` emits before cutting a linedef into
- * several, and the longest edge `addFlatFan` leaves when dicing a fan.
- * **Tuned by feel** — against vertex count, which grows with `1 / this`.
+ * several. **Tuned by feel** — against vertex count, which grows with `1 / this`.
  *
  * It carries an unenforced relationship to `render/occlusion.ts`'s `FADE_CORE`,
  * which decides whether the chunk over the player reaches full strength:
  * docs/render.md § The fade is a hole, not a wall.
  */
 export const WALL_CHUNK_LEN = 128;
+
+/**
+ * The world-aligned grid `addFlatFan` dices a flat on, derived from `WALL_CHUNK_LEN` rather than
+ * tuned: a square cell split by its diagonal leaves that diagonal as the longest edge, so a cell
+ * this wide is the largest one whose longest edge still obeys the chunk length.
+ *
+ * What the fade actually needs is not an edge bound but a *vertex* near every point, and this is
+ * the tighter of the two readings — no point of a cell is further than `WALL_CHUNK_LEN / 2` = 64
+ * units from one of its corners, against the 74 the old per-triangle dicing left at worst.
+ * docs/render.md § Flats are diced on a world grid.
+ */
+export const FLAT_GRID_LEN = WALL_CHUNK_LEN / Math.SQRT2;
 
 /** `processFlat`'s two loop bodies, hoisted out of a function a mover rebuild runs per subsector per tic. */
 const FLOOR_ONLY = [false];
@@ -389,6 +408,8 @@ export interface WallOccluder {
  */
 export interface FlatSurface {
   key: string;
+  /** The texture this fan draws, which `key` encodes — kept apart so a refresh can match without building one. */
+  texName: string;
   vertexStart: number;
   vertexCount: number;
   subsector: number;
@@ -597,14 +618,21 @@ export function refreshMoverMesh(
   options: MapMeshOptions,
   index: MoverIndex,
 ): boolean {
-  const { drawn, wallQuads, flatFans } = buildMoverBatches(map, polys, sectorIndex, bank, options, index);
-  if (
-    drawn.length !== mesh.meshes.size ||
-    wallQuads.length !== mesh.wallQuads.length ||
-    flatFans.length !== mesh.flatFans.length
-  ) {
-    return false;
-  }
+  const { renderCeilings = false, wallHeightCap = 0, movableSectors } = options;
+  const transfers = options.transfers ?? ownTransfers(map);
+  const texSize = (kind: SurfaceKind, name: string) => bank.size(kind, name);
+
+  // The flats: re-decided, never re-diced. A leaf whose *set* of fans changed refuses here, before
+  // anything is written; what the rest are to move to comes back in `plan`.
+  const plan = planFlatRefresh(mesh, map, polys, sectorIndex, renderCeilings, transfers, texSize, index);
+  if (plan === null) return false;
+
+  // The walls: rebuilt outright, since a moving height changes which tiers exist at all.
+  const batches = new BatchSet();
+  const wallQuads: WallOccluder[] = [];
+  buildMoverWalls(map, sectorIndex, batches, texSize, wallHeightCap, movableSectors, transfers, index, wallQuads);
+  const drawn = drawnBatches(batches, bank);
+  if (drawn.length !== countWallMeshes(mesh) || wallQuads.length !== mesh.wallQuads.length) return false;
   // Validated before anything is written, so a refusal can't leave the mesh
   // half-rewritten.
   for (const b of drawn) {
@@ -622,8 +650,119 @@ export function refreshMoverMesh(
     geom.computeBoundingSphere();
   }
   for (let i = 0; i < wallQuads.length; i++) copyRefreshedQuad(mesh.wallQuads[i], wallQuads[i]);
-  for (let i = 0; i < flatFans.length; i++) Object.assign(mesh.flatFans[i], flatFans[i]);
+  applyFlatRefresh(mesh, plan);
   return true;
+}
+
+/** The batches that end up on screen: the ones that emitted anything and whose art the bank has. */
+function drawnBatches(batches: BatchSet, bank: MaterialBank): Batch[] {
+  return batches.all().filter((b) => b.positions.length > 0 && bank.get(b.kind, b.texture));
+}
+
+/** How many of a mover's meshes draw walls — `Batch.key` leads with its `SurfaceKind` (`batchKey`). */
+function countWallMeshes(mesh: MoverMesh): number {
+  let n = 0;
+  for (const key of mesh.meshes.keys()) if (key.startsWith(WALL_KEY_PREFIX)) n++;
+  return n;
+}
+
+/** What one fan of a refreshed mover is to be moved to — `planFlatRefresh` decides it, `applyFlatRefresh` writes it. */
+interface FlatPlan {
+  height: number;
+  light: number;
+  lightSector: number;
+}
+
+/** `planFlatRefresh`'s output, reused: a mover refresh happens per moving sector per tic. */
+const flatPlan: FlatPlan[] = [];
+
+/**
+ * Whether a mover's flats can be moved in place, and — where they can — what to move them to,
+ * one entry per `mesh.flatFans`; null is a refusal, and the caller builds a fresh mesh.
+ *
+ * A tic can lift a fan's plane and relight it, but never change its footprint. What it *can*
+ * change is which fans a leaf draws at all, so the specs are re-decided (cheap: no geometry) and
+ * matched against the fans the mesh holds. docs/render.md § Mover meshes.
+ */
+function planFlatRefresh(
+  mesh: MoverMesh,
+  map: DoomMap,
+  polys: SubSectorPoly[],
+  sectorIndex: number,
+  renderCeilings: boolean,
+  transfers: SectorTransfers,
+  texSize: SizeFn,
+  index: MoverIndex,
+): FlatPlan[] | null {
+  const fans = mesh.flatFans;
+  const holeFill = closedHoleFill(map, sectorIndex, index.linesOf(sectorIndex), transfers);
+  let at = 0;
+  for (const ss of index.subsectorsOf(sectorIndex)) {
+    const count = flatSpecsOf(map, polys[ss], renderCeilings, transfers, holeFill, flatSpecs);
+    // A leaf too degenerate to have produced a vertex produced no fan either, and never will:
+    // where the mesh holds nothing for it there is nothing to move. `buildMoverBatches` appended
+    // the rest in this same order.
+    if (fans[at]?.subsector !== ss) continue;
+    for (let i = 0; i < count; i++) {
+      const spec = flatSpecs[i];
+      if (!flatArt('flat', spec.texName, texSize)) continue;
+      const fan = fans[at];
+      if (
+        fan === undefined ||
+        fan.subsector !== ss ||
+        fan.texName !== spec.texName ||
+        fan.isCeiling !== spec.isCeiling ||
+        fan.baseAlpha !== spec.baseAlpha
+      ) {
+        return null;
+      }
+      const plan = (flatPlan[at] ??= { height: 0, light: 0, lightSector: 0 });
+      plan.height = spec.height;
+      plan.light = spec.light;
+      plan.lightSector = spec.lightSector;
+      at++;
+    }
+    // A fan of this leaf the specs did not account for: the set changed, which is a refusal.
+    if (fans[at]?.subsector === ss) return null;
+  }
+  return at === fans.length ? flatPlan : null;
+}
+
+/** `applyFlatRefresh`'s set of keys to re-upload — module scratch, one mover refresh at a time. */
+const touchedFlatKeys = new Set<string>();
+
+/** Lifts every fan of a refreshed mover to the plane and colour `planFlatRefresh` settled on. */
+function applyFlatRefresh(mesh: MoverMesh, plan: FlatPlan[]): void {
+  const touched = touchedFlatKeys;
+  touched.clear();
+  for (let i = 0; i < mesh.flatFans.length; i++) {
+    const fan = mesh.flatFans[i];
+    const { height, light, lightSector } = plan[i];
+    const color = litColor(light);
+    fan.lightSector = lightSector;
+    const geom = mesh.meshes.get(fan.key)?.geometry;
+    if (!geom) continue;
+    const pos = geom.getAttribute('position').array as Float32Array;
+    const col = geom.getAttribute('color').array as Float32Array;
+    // Nothing moved and nothing relit: the common case for a mover's ceiling while its floor runs.
+    if (fan.height === height && col[fan.vertexStart * 4] === color) continue;
+    fan.height = height;
+    const end = fan.vertexStart + fan.vertexCount;
+    for (let v = fan.vertexStart; v < end; v++) {
+      // Only the plane: x and z are the footprint, and the footprint is what never moves.
+      pos[v * 3 + 1] = height;
+      col[v * 4] = color;
+      col[v * 4 + 1] = color;
+      col[v * 4 + 2] = color;
+    }
+    touched.add(fan.key);
+  }
+  for (const key of touched) {
+    const geom = mesh.meshes.get(key)!.geometry;
+    geom.getAttribute('position').needsUpdate = true;
+    geom.getAttribute('color').needsUpdate = true;
+    geom.computeBoundingSphere();
+  }
 }
 
 /**
@@ -647,11 +786,11 @@ function writeAttribute(geom: THREE.BufferGeometry, name: string, values: number
 }
 
 /**
- * `buildMoverMesh`'s geometry pass, shared with `refreshMoverMesh` — everything
- * up to the three.js objects. `drawn` is the batches that will actually be
- * drawn, so both callers agree on what "the sector's batches" are without
- * re-deriving it; the whole `BatchSet` comes back too, since `buildMoverMesh`
- * still has to resolve wall leaves against it before the buffers are built.
+ * `buildMoverMesh`'s geometry pass — everything up to the three.js objects. `refreshMoverMesh` no
+ * longer comes through here (it rebuilds only the walls, `buildMoverWalls`), but both reach the
+ * same verdict about which batches draw through `drawnBatches`. The whole `BatchSet` comes back
+ * too, since `buildMoverMesh` still has to resolve wall leaves against it before the buffers are
+ * built.
  */
 function buildMoverBatches(
   map: DoomMap,
@@ -674,7 +813,28 @@ function buildMoverBatches(
   for (const ss of index.subsectorsOf(sectorIndex)) {
     processFlat(map, polys[ss], ss, batches, texSize, renderCeilings, flatFans, transfers, holeFill);
   }
+  buildMoverWalls(map, sectorIndex, batches, texSize, wallHeightCap, movableSectors, transfers, index, wallQuads);
 
+  return { batches, drawn: drawnBatches(batches, bank), wallQuads, flatFans };
+}
+
+/**
+ * The wall half of a mover's geometry, alone — the half `refreshMoverMesh` must rebuild every
+ * tic, because a moving height changes not just where a quad's corners sit but *which* tiers
+ * exist (an upper step shrinks to nothing as a door opens). Its flats are the other half, and
+ * they hold still: see `refreshMoverMesh`.
+ */
+function buildMoverWalls(
+  map: DoomMap,
+  sectorIndex: number,
+  batches: BatchSet,
+  texSize: SizeFn,
+  wallHeightCap: number,
+  movableSectors: Set<number> | undefined,
+  transfers: SectorTransfers,
+  index: MoverIndex,
+  wallQuads: WallOccluder[],
+): void {
   // Own sides always; a neighbour's side only when that neighbour is static —
   // it has no mover of its own to build it, and its upper/lower step is sized
   // from *this* sector's moving heights. A neighbour that is itself movable
@@ -698,9 +858,6 @@ function buildMoverBatches(
       includeSide,
     );
   }
-
-  const drawn = batches.all().filter((b) => b.positions.length > 0 && bank.get(b.kind, b.texture));
-  return { batches, drawn, wallQuads, flatFans };
 }
 
 /** True if either side of `line` belongs to a sector in `sectors`. */
@@ -900,22 +1057,29 @@ interface FlatSpec {
   baseAlpha?: number;
 }
 
-function processFlat(
+/**
+ * Which fans one leaf draws and with what — every decision `processFlat` makes before a vertex
+ * exists, written into `out` (grown as needed) and counted back.
+ *
+ * Split out from the emission because `refreshMoverMesh` needs exactly these and none of the
+ * geometry: a mover changes a flat's plane and its light, never its footprint, so re-deciding is
+ * what tells a height it can write in place from a structural change that needs a fresh mesh.
+ * docs/render.md § Mover meshes.
+ */
+function flatSpecsOf(
   map: DoomMap,
   poly: SubSectorPoly,
-  ss: number,
-  batches: BatchSet,
-  size: SizeFn,
   renderCeilings: boolean,
-  flatSurfaces: FlatSurface[],
   transfers: SectorTransfers,
   /** The sector this leaf's own sector closes itself over (`closedHoleFill`), or -1. */
   holeFill: number,
-): void {
+  out: FlatSpec[],
+): number {
+  let count = 0;
   const n = poly.points.length / 2;
-  if (n < 3) return;
+  if (n < 3) return 0;
   const sector = map.sectors[poly.sector];
-  if (!sector) return;
+  if (!sector) return 0;
 
   // Boom's 242: `R_FakeFlat` picks one of two views by where the eye is, and
   // this draws both at once — the pool bottom below a translucent surface — so
@@ -952,28 +1116,28 @@ function processFlat(
   const floorHeight = deep ? sector.floorHeight : (surfaceHeight ?? transfers.drawnFloor(poly.sector));
 
   for (const isCeiling of renderCeilings ? FLOOR_AND_CEILING : FLOOR_ONLY) {
-    addFlatFan(poly, ss, batches, size, flatSurfaces, {
-      texName: isCeiling ? sector.ceilTex : (bottomTex ?? sector.floorTex),
-      height: isCeiling ? sector.ceilHeight : floorHeight,
-      light: isCeiling ? transfers.ceilingLight(poly.sector) : transfers.floorLight(floorLightFrom),
-      lightSector: isCeiling
-        ? transfers.ceilingLightSector(poly.sector)
-        : transfers.floorLightSector(floorLightFrom),
-      isCeiling,
-    });
+    const spec = specAt(out, count++);
+    spec.texName = isCeiling ? sector.ceilTex : (bottomTex ?? sector.floorTex);
+    spec.height = isCeiling ? sector.ceilHeight : floorHeight;
+    spec.light = isCeiling ? transfers.ceilingLight(poly.sector) : transfers.floorLight(floorLightFrom);
+    spec.lightSector = isCeiling
+      ? transfers.ceilingLightSector(poly.sector)
+      : transfers.floorLightSector(floorLightFrom);
+    spec.isCeiling = isCeiling;
+    spec.baseAlpha = undefined;
   }
 
   // The lid over a hole in the map (`closedHoleFill`), drawn on top of the real
   // floor as GZDoom draws its own. An ordinary `FlatSurface`, so `FlatFader`
   // dissolves it for a body underneath.
   if (holeFill >= 0) {
-    addFlatFan(poly, ss, batches, size, flatSurfaces, {
-      texName: map.sectors[holeFill].floorTex,
-      height: map.sectors[holeFill].floorHeight,
-      light: transfers.floorLight(holeFill),
-      lightSector: transfers.floorLightSector(holeFill),
-      isCeiling: false,
-    });
+    const spec = specAt(out, count++);
+    spec.texName = map.sectors[holeFill].floorTex;
+    spec.height = map.sectors[holeFill].floorHeight;
+    spec.light = transfers.floorLight(holeFill);
+    spec.lightSector = transfers.floorLightSector(holeFill);
+    spec.isCeiling = false;
+    spec.baseAlpha = undefined;
   }
 
   // Which pool's surface covers this fan: this sector's own, or — for a sector
@@ -987,15 +1151,188 @@ function processFlat(
   const pool = deep ? poly.sector : submerged ? island : -1;
   const surfaceAt = deep ? surfaceHeight : islandSurface;
   if (pool >= 0 && surfaceAt !== null && surfaceAt - sector.floorHeight >= WATER_MIN_DEPTH) {
-    addFlatFan(poly, ss, batches, size, flatSurfaces, {
-      texName: map.sectors[pool].floorTex,
-      height: surfaceAt,
-      light: transfers.floorLight(pool),
-      lightSector: transfers.floorLightSector(pool),
-      isCeiling: false,
-      baseAlpha: WATER_SURFACE_ALPHA,
-    });
+    const spec = specAt(out, count++);
+    spec.texName = map.sectors[pool].floorTex;
+    spec.height = surfaceAt;
+    spec.light = transfers.floorLight(pool);
+    spec.lightSector = transfers.floorLightSector(pool);
+    spec.isCeiling = false;
+    spec.baseAlpha = WATER_SURFACE_ALPHA;
   }
+  return count;
+}
+
+/** `processFlat`'s spec buffer, reused across every leaf — see `flatSpecsOf`. */
+const flatSpecs: FlatSpec[] = [];
+
+/** The `at`th spec of `out`, reusing the record already there rather than allocating one per leaf. */
+function specAt(out: FlatSpec[], at: number): FlatSpec {
+  let spec = out[at];
+  if (spec === undefined) {
+    spec = { texName: '', height: 0, light: 0, lightSector: 0, isCeiling: false, baseAlpha: undefined };
+    out.push(spec);
+  }
+  return spec;
+}
+
+function processFlat(
+  map: DoomMap,
+  poly: SubSectorPoly,
+  ss: number,
+  batches: BatchSet,
+  size: SizeFn,
+  renderCeilings: boolean,
+  flatSurfaces: FlatSurface[],
+  transfers: SectorTransfers,
+  holeFill: number,
+): void {
+  const count = flatSpecsOf(map, poly, renderCeilings, transfers, holeFill, flatSpecs);
+  for (let i = 0; i < count; i++) addFlatFan(poly, ss, batches, size, flatSurfaces, flatSpecs[i]);
+}
+
+/**
+ * Below this a diced cell is degeneracy, not geometry: a convex ring clipped by a grid line it
+ * only grazes comes back as three near-collinear points. Dropping one leaves a gap thinner than
+ * a thousandth of a map unit, against a triangle that covers nothing and still costs three
+ * vertices in every buffer.
+ */
+const FLAT_CELL_MIN_AREA = 0.05;
+
+/** Twice a ring's area — the shoelace sum, unsigned: only the degeneracy test above reads it. */
+function ringArea2(ring: ArrayLike<number>): number {
+  const n = ring.length / 2;
+  let sum = 0;
+  let px = ring[(n - 1) * 2];
+  let py = ring[(n - 1) * 2 + 1];
+  for (let i = 0; i < n; i++) {
+    const qx = ring[i * 2];
+    const qy = ring[i * 2 + 1];
+    sum += px * qy - qx * py;
+    px = qx;
+    py = qy;
+  }
+  return Math.abs(sum);
+}
+
+/**
+ * Sutherland-Hodgman clip of a convex ring to one side of an axis-aligned line: `axis` 0 cuts on
+ * x, 1 on y, and `keepLow` picks the side at or below `at`. Convex in, convex out — which is what
+ * `SubSectorPoly.points` guarantees (`render/bsp.ts`) and what lets `diceOnGrid` fan the result.
+ */
+function clipHalf(src: ArrayLike<number>, axis: 0 | 1, at: number, keepLow: boolean, out: number[]): void {
+  out.length = 0;
+  const n = src.length / 2;
+  if (n === 0) return;
+  let px = src[(n - 1) * 2];
+  let py = src[(n - 1) * 2 + 1];
+  let pv = axis === 0 ? px : py;
+  let pIn = keepLow ? pv <= at : pv >= at;
+  for (let i = 0; i < n; i++) {
+    const qx = src[i * 2];
+    const qy = src[i * 2 + 1];
+    const qv = axis === 0 ? qx : qy;
+    const qIn = keepLow ? qv <= at : qv >= at;
+    // One crossing per edge that changes sides, and `qv - pv` cannot be zero when it does.
+    if (qIn !== pIn) {
+      const t = (at - pv) / (qv - pv);
+      out.push(px + (qx - px) * t, py + (qy - py) * t);
+    }
+    if (qIn) out.push(qx, qy);
+    px = qx;
+    py = qy;
+    pv = qv;
+    pIn = qIn;
+  }
+}
+
+/** `diceOnGrid`'s clip buffers, reused across every flat on the map — see there. */
+const stripLow: number[] = [];
+const stripHigh: number[] = [];
+const cellLow: number[] = [];
+const cellHigh: number[] = [];
+/** The ceiling ring, wound the other way. Reused for the same reason the clip buffers are. */
+const reversed: number[] = [];
+
+/** The ring wound backwards, so fanning it gives the same coverage with the opposite normal. */
+function reversedRing(points: ArrayLike<number>): number[] {
+  const n = points.length / 2;
+  reversed.length = 0;
+  for (let i = n - 1; i >= 0; i--) reversed.push(points[i * 2], points[i * 2 + 1]);
+  return reversed;
+}
+
+/**
+ * Cuts a convex ring along the world-aligned `FLAT_GRID_LEN` grid and hands each cell to `fan`.
+ * A world grid rather than a per-triangle barycentric one, so the vertex count follows a leaf's
+ * area instead of its perimeter and neighbouring leaves cut their shared edge at the same points.
+ * docs/render.md § Flats are diced on a world grid.
+ *
+ * The buffers are module-level scratch: this runs per flat per level build, and once more per
+ * moving subsector whenever a mover's footprint is rebuilt. Nothing here reenters.
+ */
+function diceOnGrid(ring: ArrayLike<number>, fan: (cell: ArrayLike<number>) => void): void {
+  const n = ring.length / 2;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const x = ring[i * 2];
+    const y = ring[i * 2 + 1];
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+  const g = FLAT_GRID_LEN;
+  const c1 = Math.floor(maxX / g);
+  const r1 = Math.floor(maxY / g);
+  for (let c = Math.floor(minX / g); c <= c1; c++) {
+    // The column: the ring cut down to the slab between two grid lines. A cut the ring already
+    // lies wholly on one side of is skipped, which is what makes the single-cell case free.
+    let strip: ArrayLike<number> = ring;
+    if (c * g > minX) {
+      clipHalf(strip, 0, c * g, false, stripLow);
+      strip = stripLow;
+    }
+    if ((c + 1) * g < maxX) {
+      clipHalf(strip, 0, (c + 1) * g, true, stripHigh);
+      strip = stripHigh;
+    }
+    if (strip.length < 6) continue;
+    // The column's own y-range, so a tall polygon's narrow column visits only the rows it reaches.
+    let sMinY = Infinity;
+    let sMaxY = -Infinity;
+    for (let i = 0; i < strip.length / 2; i++) {
+      const y = strip[i * 2 + 1];
+      if (y < sMinY) sMinY = y;
+      if (y > sMaxY) sMaxY = y;
+    }
+    const rTop = Math.min(r1, Math.floor(sMaxY / g));
+    for (let r = Math.floor(sMinY / g); r <= rTop; r++) {
+      let cell: ArrayLike<number> = strip;
+      if (r * g > sMinY) {
+        clipHalf(cell, 1, r * g, false, cellLow);
+        cell = cellLow;
+      }
+      if ((r + 1) * g < sMaxY) {
+        clipHalf(cell, 1, (r + 1) * g, true, cellHigh);
+        cell = cellHigh;
+      }
+      // The scratch is handed straight on: `fan` copies what it reads before the next cell.
+      if (cell.length >= 6 && ringArea2(cell) > FLAT_CELL_MIN_AREA * 2) fan(cell);
+    }
+  }
+}
+
+/**
+ * The art a flat fan would draw with, or null where there is none to draw — sky and the unset slot
+ * are holes in the level by design, a name the WAD has no lump for is a hole by accident. Shared
+ * with `planFlatRefresh`, which has to reach the same verdict about a fan it is *not* emitting.
+ */
+function flatArt(kind: SurfaceKind, texName: string, size: SizeFn): Size | null {
+  if (texName === SKY_FLAT || texName === NO_TEXTURE || texName === '') return null;
+  return size(kind, texName);
 }
 
 function addFlatFan(
@@ -1009,72 +1346,45 @@ function addFlatFan(
   kind: SurfaceKind = 'flat',
 ): void {
   const { texName, height, isCeiling } = spec;
-  if (texName === SKY_FLAT || texName === NO_TEXTURE || texName === '') return;
-  const dim = size(kind, texName);
+  const dim = flatArt(kind, texName, size);
   if (!dim) return;
   // Flats are 64x64 by definition and aligned to the world grid; a wall
   // texture borrowed for a lid tiles at its own size instead.
   const uw = kind === 'flat' ? 64 : dim.w;
   const uh = kind === 'flat' ? 64 : dim.h;
 
-  const n = poly.points.length / 2;
+  if (poly.points.length < 6) return;
   const color = litColor(spec.light);
   const alpha = spec.baseAlpha ?? 1;
   const batch = batches.get(kind, texName);
   const vertexStart = batch.positions.length / 3;
   const xy: number[] = [];
 
-  // Fan triangulation around vertex 0, each triangle then diced on a
-  // barycentric grid so no edge outruns WALL_CHUNK_LEN: a fan's only vertices
-  // are its corners, and the occlusion fade needs somewhere in between to put
-  // a gradient. Floors keep the polygon's winding (normal up), ceilings are
-  // reversed so their normal points down.
-  const ox = poly.points[0];
-  const oy = poly.points[1];
-  // The source triangle being diced, reached by `emitAt` through these rather than captured per
-  // iteration: one closure for the whole fan instead of one per triangle, on a path
-  // `refreshMoverMesh` re-runs per moving subsector per tic.
-  let ux = 0;
-  let uy = 0;
-  let vx = 0;
-  let vy = 0;
-  let div = 1;
-  // Barycentric (a, b) straight to a vertex: scalars rather than a point object per diced vertex.
-  const emitAt = (a: number, b: number): void => {
-    const x = ox + (ux * a + vx * b) / div;
-    const y = oy + (uy * a + vy * b) / div;
+  // Floors keep the polygon's winding (normal up); ceilings are handed the reversed ring, which is
+  // the same coverage wound the other way, so their normal points down.
+  const ring = isCeiling ? reversedRing(poly.points) : poly.points;
+
+  const emit = (cell: ArrayLike<number>, i: number): void => {
+    const x = cell[i * 2];
+    const y = cell[i * 2 + 1];
     pushVertex(batch, x, height, -y, x / uw, -y / uh, color, alpha, ss);
     xy.push(x, y);
   };
-
-  for (let i = 1; i < n - 1; i++) {
-    const i1 = isCeiling ? i + 1 : i;
-    const i2 = isCeiling ? i : i + 1;
-    ux = poly.points[i1 * 2] - ox;
-    uy = poly.points[i1 * 2 + 1] - oy;
-    vx = poly.points[i2 * 2] - ox;
-    vy = poly.points[i2 * 2 + 1] - oy;
-    const longest = Math.max(Math.hypot(ux, uy), Math.hypot(vx, vy), Math.hypot(vx - ux, vy - uy));
-    div = Math.max(1, Math.ceil(longest / WALL_CHUNK_LEN));
-
-    for (let a = 0; a < div; a++) {
-      for (let b = 0; a + b < div; b++) {
-        emitAt(a, b);
-        emitAt(a + 1, b);
-        emitAt(a, b + 1);
-        if (a + b + 1 < div) {
-          emitAt(a + 1, b);
-          emitAt(a + 1, b + 1);
-          emitAt(a, b + 1);
-        }
-      }
+  // Each grid cell is convex and small, so fanning it costs no slivers — see `diceOnGrid`.
+  const fanCell = (cell: ArrayLike<number>): void => {
+    for (let i = 1; i + 1 < cell.length / 2; i++) {
+      emit(cell, 0);
+      emit(cell, i);
+      emit(cell, i + 1);
     }
-  }
+  };
+  diceOnGrid(ring, fanCell);
 
   const vertexCount = batch.positions.length / 3 - vertexStart;
   if (vertexCount > 0) {
     flatSurfaces.push({
       key: batch.key,
+      texName,
       vertexStart,
       vertexCount,
       subsector: ss,

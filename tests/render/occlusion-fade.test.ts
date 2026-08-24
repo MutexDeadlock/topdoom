@@ -153,6 +153,53 @@ describe('render · a wall is cut into chunks the fade can window', () => {
   });
 });
 
+/**
+ * Both faders reject on a box around the camera and its targets before doing any crossing work —
+ * exactly, not approximately, since every sightline lives inside that box. A target whose
+ * `fadeFloor` is 1 fades nothing but still stretches the box, which is what lets a test switch the
+ * reject off without changing what should be drawn. docs/render.md § The fade is a hole, not a wall.
+ */
+describe('render · the sightline box rejects only what it must', () => {
+  /** Both faders run over the same targets, then the alpha of every vertex they wrote. */
+  function alphasFor(b: ReturnType<typeof walledRow>, camX: number, camY: number, camZ: number, ts: FadeTarget[]) {
+    const walls = new WallFader(b.occluders, b.wallMeshes);
+    const flats = new FlatFader(b.flatSurfaces, b.flatMeshes);
+    walls.update(SETTLE, camX, camY, camZ, ts, openingsOf(b.world));
+    flats.update(SETTLE, camX, camY, camZ, ts);
+    walls.commit(() => 1);
+    flats.commit(() => 1);
+    const out: number[] = [];
+    for (const meshes of [b.wallMeshes, b.flatMeshes]) {
+      for (const key of [...meshes.keys()].sort()) {
+        const c = meshes.get(key)!.geometry.getAttribute('color') as THREE.BufferAttribute;
+        for (let i = 0; i < c.count; i++) out.push(c.getW(i));
+      }
+    }
+    return out;
+  }
+
+  test('a far-off target that fades nothing changes no alpha, however much box it adds', () => {
+    // If the reject were dropping work it shouldn't, widening the box would bring that work back
+    // and the two runs would differ.
+    const b = walledRow();
+    const camX = CELL * 1.5;
+    const camY = 2 * CELL + 512;
+    const target: FadeTarget = { x: camX, y: 2 * CELL - 512, z: 0, fadeFloor: FADE_ALPHA };
+    const narrow = alphasFor(b, camX, camY, 128, [target]);
+    // `fadeFloor` 1 is "pull nothing down", so these two only move the box.
+    const wide = alphasFor(b, camX, camY, 128, [
+      target,
+      { x: -1e5, y: -1e5, z: -1e5, fadeFloor: 1 },
+      { x: 1e5, y: 1e5, z: -1e5, fadeFloor: 1 },
+    ]);
+    assert.deepEqual(wide, narrow);
+    assert.ok(
+      narrow.some((a) => a < 1),
+      'the fixture faded nothing at all, so the comparison proves nothing',
+    );
+  });
+});
+
 describe('render · the fade is a hole, not a wall', () => {
   /**
    * Camera due north of the wall looking south at a target due south of it, so

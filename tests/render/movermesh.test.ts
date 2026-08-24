@@ -81,6 +81,40 @@ describe('render · mover meshes', () => {
     assert.equal(floor.height, 37);
   });
 
+  test('a refresh moves a flat\'s plane without re-dicing its footprint', () => {
+    // The flats are the half a refresh does *not* rebuild: a mover changes a plane and a light,
+    // never a footprint, so the position attribute's Y lane and the colour are all that may move.
+    // docs/render.md § Mover meshes.
+    const { map, sector, build, refresh } = level();
+    const mesh = build();
+    const floor = mesh.flatFans.find((f) => !f.isCeiling)!;
+    const attr = mesh.meshes.get(floor.key)!.geometry.getAttribute('position');
+    const before = [...(attr.array as Float32Array)];
+
+    map.sectors[sector].floorHeight = 37;
+    assert.equal(refresh(mesh), true);
+
+    const after = attr.array as Float32Array;
+    let moved = 0;
+    for (let v = floor.vertexStart; v < floor.vertexStart + floor.vertexCount; v++) {
+      assert.equal(after[v * 3], before[v * 3], 'a flat vertex moved in x');
+      assert.equal(after[v * 3 + 2], before[v * 3 + 2], 'a flat vertex moved in z');
+      assert.equal(after[v * 3 + 1], 37, 'the plane did not follow the sector');
+      if (after[v * 3 + 1] !== before[v * 3 + 1]) moved++;
+    }
+    assert.equal(moved, floor.vertexCount, 'the fan was left at its old height');
+    assert.equal(floor.height, 37);
+  });
+
+  test('a flat that changes texture is refused, so the caller builds a fresh mesh', () => {
+    // The structural case the flats *can* hit: a fan\'s art is part of which batch it lives in,
+    // and the in-place write has nowhere to put a fan that belongs somewhere else.
+    const { map, sector, build, refresh } = level();
+    const mesh = build();
+    map.sectors[sector].floorTex = 'OTHERFLT';
+    assert.equal(refresh(mesh), false);
+  });
+
   test('a mover wall long enough to be chunked keeps every chunk across a refresh', () => {
     // Chunk count follows the wall's footprint, which a height change never
     // touches — so a lift mid-travel keeps the records (and with them the

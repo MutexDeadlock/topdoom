@@ -382,6 +382,43 @@ with no lights — the toggle off, an unlit map — cost nothing at all, and it 
 draw, which is why it is affordable where a per-fragment gate is not (§ How the answer reaches a
 fragment).
 
+## What a light remembers between frames
+
+Both halves of "which surfaces can see this light" — the leaf flood (`reach`) and the shadow cast
+(`castShadows`) — are pure functions of the light's position, its reach, and which lines block
+sight. None of those moves on most frames: the stock definitions are lamps, columns, torches,
+candles, barrels and pickups, and they stand still in a level where nothing is opening. At a full
+64 committed lights the pair measured 0.31 ms/frame on E1M1, 0.59 on DOOM2 MAP15 and 0.47 on EPIC
+MAP05 — the cast being roughly two thirds of it — spent re-deriving the previous frame's answer.
+
+`DynamicLights` keeps a `LightMemo` per emitter id and reuses it while nothing it depends on has
+changed. Three things about the key:
+
+- **The blocker half is derived, not announced.** `LightVisibility.sightVersion` hashes every
+  sector's floor and ceiling, which is all `World.blocksSight` reads. A version counter raised by
+  whoever moves a sector would be a contract the next mover can forget, and forgetting it looks
+  like light shining through a closed door; a hash cannot be forgotten. It costs one pass over the
+  sector table per frame.
+- **The cast is taken at the light's widest radius** (`widestSize`), so a flickering or pulsing
+  light does not re-cast every frame as its radius cycles. That is exact, not an approximation: a
+  blocker recorded past the live radius is further away than any fragment that survives the
+  falloff, so the extra reach can never change a verdict — the shader and `unshadowed` both test
+  the shadow distance only after `att > 0`.
+- **The flood is keyed on the live radius**, and so a flickering light does re-flood. It is the
+  cheaper half, and widening it is *not* free the way widening the cast is: the leaf list is
+  capacity-bounded (§ How the answer reaches a fragment), so a light claiming slots in leaves it
+  does not actually reach could crowd out one that does.
+
+The memo governs the **upload** as well as the cast. A row is copied into the shadow texture only
+when the cast was retaken or the light landed in a different committed slot (`LightMemo.slot`), and
+`uLightShadow.needsUpdate` follows that rather than "there is at least one light" — otherwise a
+frame of pure memo hits still re-uploads the whole texture unchanged.
+
+Memos are capped at four frames' worth of lights and pruned to what the last `commit` used, since a
+one-shot effect gets a fresh emitter id every time one spawns (§ What emits). `bindLevel` clears
+them: they are keyed on emitter ids and leaf indices, both of which the next level reuses — and
+clearing them re-dirties every row, since a cleared memo has no slot.
+
 ## The toggle
 
 `topdoom.dynamicLights` in localStorage, **on by default**, in the menu's Settings → Visuals tab

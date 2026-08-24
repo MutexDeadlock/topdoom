@@ -230,6 +230,27 @@ export class LightVisibility {
   }
 
   /**
+   * A token that changes whenever any answer `blocksSight` could give has changed: a hash over
+   * every sector's floor and ceiling, which is all `World.blocksSight` reads. What
+   * `DynamicLights` keys its per-emitter memo of `reach`/`castShadows` on, so a light that has
+   * not moved in a level where nothing has moved is flooded once, not once per frame.
+   *
+   * **Derived, not bumped.** A version counter raised by whoever moves a sector is a contract the
+   * next mover can forget, and forgetting it looks like light shining through a closed door;
+   * nobody can forget this. One pass over `map.sectors`, once per frame.
+   */
+  sightVersion(): number {
+    let h = 0;
+    for (const sector of this.map.sectors) {
+      // Scaled before truncating so a mover's sub-unit step still moves the hash; the heights are
+      // fractional only while something is in motion, which is the case that misses anyway.
+      h = (Math.imul(h, 31) + Math.trunc(sector.floorHeight * 64)) | 0;
+      h = (Math.imul(h, 31) + Math.trunc(sector.ceilHeight * 64)) | 0;
+    }
+    return h;
+  }
+
+  /**
    * Writes one light's shadow map into `out[offset .. offset + SHADOW_STEPS)`: per angular bin, how
    * far the light gets before a sight blocker stops it, or `radius` where nothing does. This is the
    * per-pixel half of the occlusion the leaf fill does per room — GZDoom keeps a 1D shadow map per

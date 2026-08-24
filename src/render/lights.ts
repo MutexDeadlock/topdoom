@@ -155,6 +155,19 @@ function hash01(id: number, step: number): number {
 }
 
 /**
+ * The widest radius a def can ever show, before `RADIUS_SCALE` — the two sizes every animated kind
+ * cycles between, and the one size a point light holds.
+ *
+ * Shadows are cast at *this* rather than at the instant's radius, which is what lets one cast
+ * serve a flickering light for as long as it stands still: a blocker recorded past the live radius
+ * is further than any fragment that survives the falloff, so the extra reach can never change a
+ * verdict. docs/lights.md § What a light remembers between frames.
+ */
+function widestSize(def: LightDef): number {
+  return def.kind === 'point' ? def.size : Math.max(def.size, def.secondarySize);
+}
+
+/**
  * The radius a light shows at this instant, before `RADIUS_SCALE`. Each branch is GZDoom's
  * `ADynamicLight::Tick` (`a_dynlight.cpp`), with its per-actor cycler state replaced by a pure
  * function of the emitter id and the clock — see `hash01`.
@@ -220,10 +233,41 @@ export function effectEmitterId(n: number): number {
 }
 
 /**
+ * What one emitter's flood and shadow cast answered, and every input they were answered from — the
+ * key that says a later frame may reuse them. Both are pure functions of those inputs, and none of
+ * them moves on most frames. docs/lights.md § What a light remembers between frames.
+ */
+interface LightMemo {
+  x: number;
+  y: number;
+  /** The leaf the flood started from, which resolves from the position but is passed in. */
+  from: number;
+  /** `LightVisibility.sightVersion` when this was answered. */
+  sight: number;
+  /** The radius `reached` was flooded at — the *live* one, so a flickering light re-floods. */
+  reachRadius: number;
+  reached: number[];
+  /** Cast at `widestSize`, so a flickering light does **not** re-cast. See there. */
+  shadows: Float32Array;
+  /** Which committed slot `shadows` was last copied into, or -1 where it has not been. */
+  slot: number;
+  /** The `frame` this was last used on, for `pruneMemos`. */
+  frame: number;
+}
+
+/**
+ * How many emitters keep a memo. A one-shot effect (`effectEmitterId`) gets a fresh id every time
+ * one spawns, so without a cap the map would grow for the life of the level; four frames' worth of
+ * lights is room enough that nothing on screen is ever evicted.
+ */
+const MEMO_CAP = MAX_DYN_LIGHTS * 4;
+
+/**
  * Gathers the frame's lights and hands them to the two consumers: `uniforms` for map geometry
  * (`render/textures.ts` patches every material's shader against them) and `tintAt` for sprites,
  * which are lit on the CPU instead (docs/lights.md § Two lighting paths).
  */
+
 export class DynamicLights {
   /**
    * The live uniform objects, handed to every patched material once and mutated in place
@@ -244,15 +288,19 @@ export class DynamicLights {
 
   private readonly defs: Gldefs;
   private vis: LightVisibility | null = null;
+  /** Per emitter id, what `reach`/`castShadows` last answered for it — see `LightMemo`. */
+  private memos = new Map<number, LightMemo>();
+  /** Counts `commit`s, so `pruneMemos` can tell a memo used this frame from one left behind. */
+  private frame = 0;
   private visSlots = new Uint32Array(VIS_WORDS).fill(EMPTY_WORD);
   /** Per subsector, how many of its slots are filled — where the next light appends. */
   private visCount = new Uint8Array(0);
   /** Which subsectors carry a light this frame, so clearing costs the lit ones rather than the level. */
   private touched: number[] = [];
-  /** `reach`'s output, reused across lights rather than reallocated per light per frame. */
-  private reached: number[] = [];
   /** The shadow texture's own array, one `SHADOW_STEPS` row per committed light. */
   private shadows: Float32Array;
+  /** Whether any row of `shadows` was rewritten this frame, so a frame of memo hits uploads nothing. */
+  private shadowsDirty = false;
   private clock = 0;
   private camX = 0;
   private camY = 0;
@@ -304,6 +352,8 @@ export class DynamicLights {
   bindLevel(vis: LightVisibility | null): void {
     this.vis = vis;
     this.touched.length = 0;
+    // Keyed on emitter ids and leaf indices, both of which the next level reuses for other things.
+    this.memos.clear();
     this.uniforms.uLightVis.value.dispose();
     if (!vis || vis.subsectorCount === 0) {
       this.visSlots = new Uint32Array(VIS_WORDS).fill(EMPTY_WORD);
@@ -401,6 +451,10 @@ export class DynamicLights {
     const col = this.uniforms.uLightColor.value;
     const c = this.committed;
     const vis = this.vis;
+    this.frame++;
+    // Asked once for the whole frame: every memo below is keyed on it, and it costs one pass over
+    // the sector table — which a frame with no lights at all should not pay.
+    const sight = vis && n > 0 ? vis.sightVersion() : 0;
     const slots = this.visSlots;
     const counts = this.visCount;
     const hadTouched = this.touched.length > 0;
@@ -430,14 +484,13 @@ export class DynamicLights {
       c.id[i] = e.id;
       c.dontLightSelf[i] = e.def.dontLightSelf ? 1 : 0;
       if (!vis) continue;
+      const reached = this.recall(vis, e, sight, i);
       // Which leaves this light actually reaches, appended to each one's slot list. A subsector
       // enters `touched` the first time a light lands on it, so next frame's clear walks the lit
       // leaves rather than the level. A full leaf drops the light — see `MAX_LIGHTS_PER_LEAF`;
       // on the frames that overflowed the cap above, commit order is nearest-first, so what a full
       // leaf drops is the least relevant of its lights.
-      this.reached.length = 0;
-      vis.reach(e.subsector >= 0 ? e.subsector : vis.subsectorAt(e.x, e.y), e.x, e.y, e.radius, this.reached);
-      for (const s of this.reached) {
+      for (const s of reached) {
         const cnt = counts[s];
         if (cnt === 0) this.touched.push(s);
         if (cnt >= MAX_LIGHTS_PER_LEAF) continue;
@@ -446,14 +499,76 @@ export class DynamicLights {
         slots[at] = (slots[at] & ~(EMPTY_SLOT << shift)) | (i << shift);
         counts[s] = cnt + 1;
       }
-      vis.castShadows(e.x, e.y, e.radius, this.shadows, i * SHADOW_STEPS);
     }
-    if (vis && n > 0) this.uniforms.uLightShadow.value.needsUpdate = true;
+    this.pruneMemos();
+    if (this.shadowsDirty) {
+      this.uniforms.uLightShadow.value.needsUpdate = true;
+      this.shadowsDirty = false;
+    }
     this.committedCount = n;
     this.uniforms.uLightCount.value = n;
     // Uploading a frame of all-empty lists over the last one is worth doing once; doing it every
     // frame a level sits unlit is not.
     if (this.touched.length > 0 || hadTouched) this.uniforms.uLightVis.value.needsUpdate = true;
+  }
+
+  /**
+   * One light's reached-leaf list, and its shadow row written into `this.shadows` — from the memo
+   * where nothing it depends on has moved, freshly computed and remembered where something has.
+   *
+   * The two halves are checked separately: the flood is keyed on the *live* radius, so a
+   * flickering light re-floods every frame, while the cast is taken at `widestSize` and survives
+   * the flicker. docs/lights.md § What a light remembers between frames.
+   */
+  private recall(vis: LightVisibility, e: Emitter, sight: number, index: number): number[] {
+    const from = e.subsector >= 0 ? e.subsector : vis.subsectorAt(e.x, e.y);
+    let memo = this.memos.get(e.id);
+    if (memo === undefined) {
+      // Keyed on NaN, which compares unequal to any position: a fresh memo takes the stale branch
+      // below, so the key is written in one place rather than in a literal and an update both.
+      memo = {
+        x: NaN,
+        y: NaN,
+        from: -1,
+        sight: 0,
+        reachRadius: -1,
+        reached: [],
+        shadows: new Float32Array(SHADOW_STEPS),
+        slot: -1,
+        frame: this.frame,
+      };
+      this.memos.set(e.id, memo);
+    }
+    if (memo.x !== e.x || memo.y !== e.y || memo.from !== from || memo.sight !== sight) {
+      memo.x = e.x;
+      memo.y = e.y;
+      memo.from = from;
+      memo.sight = sight;
+      // Both halves are stale together: everything above is an input to each.
+      memo.reachRadius = -1;
+      memo.slot = -1;
+      vis.castShadows(e.x, e.y, widestSize(e.def) * RADIUS_SCALE, memo.shadows, 0);
+    }
+    if (memo.reachRadius !== e.radius) {
+      memo.reachRadius = e.radius;
+      memo.reached.length = 0;
+      vis.reach(from, e.x, e.y, e.radius, memo.reached);
+    }
+    memo.frame = this.frame;
+    // The row is already in the texture where neither the cast nor the slot moved — and a memo
+    // that answered from cache is exactly the frame that would otherwise re-upload it unchanged.
+    if (memo.slot !== index) {
+      memo.slot = index;
+      this.shadows.set(memo.shadows, index * SHADOW_STEPS);
+      this.shadowsDirty = true;
+    }
+    return memo.reached;
+  }
+
+  /** Drops every memo no light used this frame, once the map has outgrown `MEMO_CAP`. */
+  private pruneMemos(): void {
+    if (this.memos.size <= MEMO_CAP) return;
+    for (const [id, memo] of this.memos) if (memo.frame !== this.frame) this.memos.delete(id);
   }
 
   /**

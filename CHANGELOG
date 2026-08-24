@@ -12,17 +12,25 @@ Features and improvements
     - Settings > Visuals > Lighting turns them off
   - main menu:
     - switching game WAD keeps the add-ons it can't merge: they stay in the list
-      switched off, with the reason on the row, and come back on the moment a
-      game WAD that fits them is picked again
+      switched off, with the reason on the row
     - Settings is split four ways: Visuals (camera, frame rate, dynamic lights),
       Audio, Controls, and General for what is left
     - implemented a master volume slider
   - F2 / F3 / F4 open the menu on the Save / Load / Settings tab
+  - big maps cost a lot less per frame:
+    - flats are cut on a world grid instead of per fan triangle: half the
+      vertices and triangles on a big map, and a better fade with it
+    - a moving sector rewrites its floors in place instead of re-dicing them
+    - the wall/floor fade skips whatever no sightline can reach
+    - a light that has not moved in a level that has not moved keeps its
+      shadow map instead of recasting it every frame
   - multisampling is off on high-DPI displays, where it cost a third of every
     frame to smooth edges already drawn at four pixels apiece
   - the DEVMODE profiler shows GPU time beside CPU time
-  - basic SEO: the page carries its own metadata now: 
-    title, description, favicon, link-preview card, robots.txt and sitemap
+  - basic SEO: the page carries its own metadata now
+
+Fixed bugs
+
 
 
 ===============================================================================

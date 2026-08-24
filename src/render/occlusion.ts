@@ -161,6 +161,33 @@ export function collectFadeTargets(player: Pos3, awakeMonsters: readonly Pos3[])
  * driving the same vertex-alpha channel — so `commit` writes the combined value once both are
  * known. See docs/render.md § Wall occlusion fading.
  */
+/** `sightBox`'s output, reused: the two faders run back to back and neither holds the box past its own update. */
+const sightBoxOut = new Float64Array(4);
+
+/**
+ * The box every sightline of one frame lives inside — the camera, stretched over every target — as
+ * `[minX, maxX, minY, maxY]`. A line side or a fan whose own bounds miss it cannot be crossed by
+ * any sightline, which is what both faders reject on before any crossing work. Exact, not a
+ * heuristic. docs/render.md § The fade is a hole, not a wall.
+ */
+function sightBox(camX: number, camY: number, targets: FadeTarget[]): Float64Array {
+  let minX = camX;
+  let maxX = camX;
+  let minY = camY;
+  let maxY = camY;
+  for (const t of targets) {
+    if (t.x < minX) minX = t.x;
+    if (t.x > maxX) maxX = t.x;
+    if (t.y < minY) minY = t.y;
+    if (t.y > maxY) maxY = t.y;
+  }
+  sightBoxOut[0] = minX;
+  sightBoxOut[1] = maxX;
+  sightBoxOut[2] = minY;
+  sightBoxOut[3] = maxY;
+  return sightBoxOut;
+}
+
 export class WallFader {
   private occluders: WallOccluder[];
   private meshes: Map<string, THREE.Mesh>;
@@ -175,8 +202,19 @@ export class WallFader {
   private lastCombined: Float32Array;
   /** This frame's un-damped target alpha per quad corner, folded down by every crossing that reaches it. */
   private wanted: Float32Array;
-  /** Per quad, whether it is the passable gap of its own line — recomputed each `update`, read again when a nearby crossing tries to fade it. */
+  /**
+   * Per quad, whether it is the passable gap of its own line — an opening a body can walk through,
+   * which must not fade however solid the texture over it looks.
+   *
+   * **Asked lazily**, of the quads a sightline crosses in pass one and the quads a crossing reaches
+   * in pass two, and at most once per quad per frame (`passableStamp`). Deciding it for every quad
+   * up front was most of what pass one cost on a map with tens of thousands of them, and on a
+   * frame where the camera holds a few hundred units of the level almost none of them are asked.
+   */
   private passable: Uint8Array;
+  /** The `update` each `passable` entry was last decided on. */
+  private passableStamp: Int32Array;
+  private frameStamp = 0;
   /** Reused by `update`'s per-line opening lookup — see `openingInto`. */
   private opening: Opening = { top: 0, bottom: 0 };
   /** Per-target scratch, grown on demand: position, fade floor, and the current line side's crossings. */
@@ -225,6 +263,7 @@ export class WallFader {
     this.lastCombined = new Float32Array(occluders.length * 4).fill(NaN);
     this.wanted = new Float32Array(occluders.length * 4);
     this.passable = new Uint8Array(occluders.length);
+    this.passableStamp = new Int32Array(occluders.length).fill(-1);
     this.candidates = new Int32Array(occluders.length);
     this.trackVisibility = trackVisibility;
     if (occluders.length > GRID_MIN_OCCLUDERS) this.buildGrid();
@@ -327,7 +366,13 @@ export class WallFader {
   ): void {
     const lerpT = 1 - Math.exp(-FADE_SPEED * dt);
     const n = targets.length;
+    this.frameStamp++;
     this.ensureTargetScratch(n);
+    const box = sightBox(camX, camY, targets);
+    const boxMinX = box[0];
+    const boxMaxX = box[1];
+    const boxMinY = box[2];
+    const boxMaxY = box[3];
     for (let k = 0; k < n; k++) {
       const t = targets[k];
       this.tx[k] = t.x;
@@ -353,21 +398,34 @@ export class WallFader {
         groupLine = o.line;
         groupFront = o.frontSide;
         this.groupStamp++;
-        hasOpening = openingInto(o.line, this.opening);
         hits = 0;
-        for (let k = 0; k < n; k++) {
-          const cross = segmentCrossT(camX, camY, this.tx[k], this.ty[k], o.segAx, o.segAy, o.segBx, o.segBy);
-          if (cross < 0) continue;
-          this.hitX[hits] = camX + (this.tx[k] - camX) * cross;
-          this.hitY[hits] = camY + (this.ty[k] - camY) * cross;
-          this.hitH[hits] = camZ + (this.tz[k] - camZ) * cross;
-          this.hitFloor[hits] = this.tFloor[k];
-          hits++;
+        hasOpening = false;
+        // Four compares standing in for `n` crossing tests — see `sightBox`. On a big map this
+        // rejects nearly every line side, the camera holding a few hundred units of a level with
+        // tens of thousands of them.
+        const boxed =
+          (o.segAx < o.segBx ? o.segAx : o.segBx) <= boxMaxX &&
+          (o.segAx > o.segBx ? o.segAx : o.segBx) >= boxMinX &&
+          (o.segAy < o.segBy ? o.segAy : o.segBy) <= boxMaxY &&
+          (o.segAy > o.segBy ? o.segAy : o.segBy) >= boxMinY;
+        if (boxed) {
+          hasOpening = openingInto(o.line, this.opening);
+          for (let k = 0; k < n; k++) {
+            const cross = segmentCrossT(camX, camY, this.tx[k], this.ty[k], o.segAx, o.segAy, o.segBx, o.segBy);
+            if (cross < 0) continue;
+            this.hitX[hits] = camX + (this.tx[k] - camX) * cross;
+            this.hitY[hits] = camY + (this.ty[k] - camY) * cross;
+            this.hitH[hits] = camZ + (this.tz[k] - camZ) * cross;
+            this.hitFloor[hits] = this.tFloor[k];
+            hits++;
+          }
         }
       }
 
-      const isPassableGap = hasOpening && o.botH >= this.opening.bottom && o.topH <= this.opening.top;
+      if (hits === 0) continue;
+      const isPassableGap = hasOpening && this.spansOpening(o);
       this.passable[i] = isPassableGap ? 1 : 0;
+      this.passableStamp[i] = this.frameStamp;
       if (isPassableGap) continue;
       for (let h = 0; h < hits; h++) {
         const height = this.hitH[h];
@@ -391,7 +449,7 @@ export class WallFader {
       const count = this.candidatesNear(cx, cy);
       for (let m = 0; m < count; m++) {
         const j = this.candidates[m];
-        if (this.passable[j] === 1) continue;
+        if (this.isPassable(j, openingInto)) continue;
         const q = this.occluders[j];
         // Cheapest reject first: the whole band is out of vertical reach.
         const vGap = ch < q.botH ? q.botH - ch : ch > q.topH ? ch - q.topH : 0;
@@ -421,6 +479,29 @@ export class WallFader {
       if (this.occlusionAlpha[e] === this.wanted[e]) continue;
       this.occlusionAlpha[e] = dampenWith(this.occlusionAlpha[e], this.wanted[e], lerpT, SNAP_EPS);
     }
+  }
+
+  /**
+   * Whether a quad covers its line's whole walkable opening, against the `opening` last looked up.
+   * The rule `passable` records, written once: pass one reads it against a per-line-side lookup it
+   * already holds, `isPassable` against one it takes itself.
+   */
+  private spansOpening(o: WallOccluder): boolean {
+    return o.botH >= this.opening.bottom && o.topH <= this.opening.top;
+  }
+
+  /**
+   * Whether quad `j` is its line's passable gap, decided once per quad per `update` — see
+   * `passable`. Pass one answers it for the quads it crosses; every other quad first gets asked
+   * here, by the crossing that would otherwise fade it.
+   */
+  private isPassable(j: number, openingInto: (line: number, out: Opening) => boolean): boolean {
+    if (this.passableStamp[j] === this.frameStamp) return this.passable[j] === 1;
+    const o = this.occluders[j];
+    const gap = openingInto(o.line, this.opening) && this.spansOpening(o);
+    this.passable[j] = gap ? 1 : 0;
+    this.passableStamp[j] = this.frameStamp;
+    return gap;
   }
 
   /** Pulls one corner toward `floor` by how far it sits from the crossing, keeping whichever crossing fades it hardest. */
@@ -523,6 +604,8 @@ export class FlatFader {
   private faded = new Uint8Array(0);
   /** The base x fog scale `commit` last applied per fan, so a fog change still reaches a settled one. */
   private lastScale = new Float64Array(0);
+  /** Fans a sightline could reach at all this frame, refilled per `collectPierces` — see there. */
+  private candidates = new Int32Array(0);
   /** `WallFader.maxAlphaByKey`'s twin, same opt-in — the two are read together, since one mesh can hold both kinds. */
   readonly maxAlphaByKey = new Map<string, number>();
   private trackVisibility: boolean;
@@ -559,6 +642,7 @@ export class FlatFader {
     this.boundX = new Float64Array(this.surfaces.length);
     this.boundY = new Float64Array(this.surfaces.length);
     this.boundR = new Float64Array(this.surfaces.length);
+    this.candidates = new Int32Array(this.surfaces.length);
     for (let i = 0; i < this.surfaces.length; i++) {
       const { vertexXY } = this.surfaces[i];
       const count = vertexXY.length / 2;
@@ -597,14 +681,35 @@ export class FlatFader {
    */
   private collectPierces(camX: number, camY: number, camZ: number, targets: FadeTarget[]): void {
     this.pierces.reset();
+    // `WallFader`'s reject (see `sightBox`), applied to a fan's bounding circle instead of a
+    // segment — and taken once for the frame rather than once per target, which is the whole
+    // point: what it replaces is a walk over every fan on the map per target. The per-frame
+    // filters fold in here too, so the per-target loop below carries only what varies with it.
+    const box = sightBox(camX, camY, targets);
+    let candidateCount = 0;
+    for (let i = 0; i < this.surfaces.length; i++) {
+      const s = this.surfaces[i];
+      if (s.isCeiling || s.height >= camZ || (s.baseAlpha ?? 1) < 1) continue;
+      const r = this.boundR[i];
+      if (
+        this.boundX[i] + r < box[0] ||
+        this.boundX[i] - r > box[1] ||
+        this.boundY[i] + r < box[2] ||
+        this.boundY[i] - r > box[3]
+      ) {
+        continue;
+      }
+      this.candidates[candidateCount++] = i;
+    }
+
     for (const pt of targets) {
       // Where this target's own pierces start: two targets standing on the same
       // spot file the same point twice, and each keeps its own fade floor.
       const mine = this.pierces.count;
-      for (let i = 0; i < this.surfaces.length; i++) {
+      for (let m = 0; m < candidateCount; m++) {
+        const i = this.candidates[m];
         const s = this.surfaces[i];
-        if (s.isCeiling || s.height <= pt.z || s.height >= camZ) continue;
-        if ((s.baseAlpha ?? 1) < 1) continue;
+        if (s.height <= pt.z) continue;
         const t = (s.height - camZ) / (pt.z - camZ);
         if (t <= 0 || t >= 1) continue;
         const x = camX + (pt.x - camX) * t;

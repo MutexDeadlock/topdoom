@@ -202,6 +202,34 @@ take the same answer. It is what lets a dynamic light stop at a wall (docs/light
 at walls), and it is written once: a mover changes heights, never a quad's footprint, so
 `refreshMoverMesh` leaves it alone.
 
+### Flats are diced on a world grid
+
+A flat is cut up for the same reason a wall is — a fan whose only vertices are its corners has
+nowhere to put a fade gradient — but **not** the same way. `addFlatFan` clips each convex leaf
+polygon against a world-aligned grid of `FLAT_GRID_LEN` and fans each cell (`diceOnGrid`,
+`clipHalf`).
+
+What it replaced was a fan of the whole polygon, each of those triangles then diced on a
+barycentric grid sized by its **longest** edge. Fanning a convex polygon from one corner makes
+slivers, and a sliver diced by its long edge spends the same subdivision across its short one, so
+the vertex count followed the polygon's *perimeter* rather than its area: EPIC.WAD MAP05's flats
+came to 1.04 M vertices where their area asks for a fifth of that, 41.7 MB of static buffers, and
+396 k triangles resubmitted every frame — the batches are map-wide, so per-mesh frustum culling
+removes almost none of it. On the grid the same map draws 528 k flat vertices and 224 k triangles,
+and the mesh build drops from 142 to 91 ms.
+
+`FLAT_GRID_LEN` is `WALL_CHUNK_LEN / √2` rather than `WALL_CHUNK_LEN` itself, and that is not a
+tuning: a square cell split by its diagonal leaves that diagonal as its longest edge, so this is
+the widest cell whose edges still obey the chunk length. What the fade actually needs is a vertex
+near every point, and on that reading the grid is the *tighter* of the two — no point of a cell is
+more than `WALL_CHUNK_LEN / 2` = 64 units from one of its corners, against the 74 the old dicing
+left at worst. Because the grid is world-aligned rather than per-polygon, neighbouring leaves also
+cut their shared edge at the same points instead of at each polygon's own subdivisions.
+
+A cell the polygon only grazes comes back as three near-collinear points; below
+`FLAT_CELL_MIN_AREA` it is dropped rather than emitted as a triangle that covers nothing and still
+costs three vertices in every buffer.
+
 A two-sided line's **masked middle texture** is one copy of the texture, not a fill of the opening.
 Its row 0 sits at the pegged anchor — the higher **real** floor plus the texture height when
 `LOWER_UNPEGGED` is set, the lower real ceiling otherwise (§ Deep water: the anchor is the one
@@ -268,6 +296,24 @@ whenever the sector's batches no longer line up with the buffers they were built
 appearing or vanishing — an upper step shrinking to nothing as a door finishes opening); only then
 does `rebuild` throw the mesh away and build a fresh one. Which means the fresh-build path stays the
 definition of correct geometry: the refresh is only ever allowed to reproduce it exactly.
+
+**Only the walls are rebuilt; the flats are moved.** A moving height changes which wall tiers exist
+at all, so `buildMoverWalls` re-emits them from scratch every tic. A flat's footprint cannot change
+— that is the same invariant `aLightCell` and `copyRefreshedQuad` rest on — so re-dicing one is
+pure waste, and it was nearly all of the cost: on EPIC.WAD MAP05's biggest sector (598 leaves,
+87 k flat vertices) a refresh spent 9.46 ms of a 28.6 ms tic, almost all of it pushing flat
+vertices into fresh arrays. `planFlatRefresh` instead re-runs only the *decisions* `processFlat`
+makes — `flatSpecsOf`, which is `processFlat` with the emission taken out — and matches them
+against the fans the mesh holds; `applyFlatRefresh` then writes the new plane into the position
+attribute's Y lane and the new colour, leaving x, z, UV and `aLightCell` untouched. Same sector,
+0.52 ms.
+
+What a tic *can* change is which fans a leaf draws at all — a rising floor takes a 242 pool below
+`WATER_MIN_DEPTH` and its surface fan stops existing — and any such change is a refusal, exactly as
+a changed quad count is. (Measured over 900 refreshes across E1M1, MAP15 and EPIC MAP05: the split
+refuses on the same 255 as the old rebuild-everything check, never more.) A leaf too degenerate to
+have produced a vertex produced no fan either and never will, so it is skipped wherever the mesh
+holds nothing for it.
 
 Repro for both: literalism.wad MAP18, whose voodoo-doll scripts (docs/specials.md § Voodoo dolls)
 keep ~95 sectors moving per tic over 10.6k subsectors and 14.5k linedefs. Before the two, that map
@@ -527,6 +573,27 @@ picking one.
 The real invariant is elsewhere: the crossing point is *not* `segmentCrossT`'s return value — that
 parameter runs along the sightline, not along the wall; `update` interpolates the point from it.
 That one is pinned down in `tests/render/occlusion-fade.test.ts`.
+
+**Neither fader looks at geometry no sightline can reach.** Every sightline this frame runs from
+the camera to one of the targets, so all of them lie inside the bounding box of the camera plus the
+targets — and a line side (or a fan's bounding circle) outside that box cannot be crossed by any of
+them. That is exact, not a heuristic, and on a map with tens of thousands of quads the camera holds
+a few hundred units of it, so the box rejects nearly everything.
+
+`WallFader` takes it per line side, ahead of the `openingInto` lookup and the `n` crossing tests
+that would follow. `FlatFader` takes it *once for the frame* rather than per target, which matters
+more: what it replaced was a walk over every fan on the map per target, with no index of any kind
+(`WallFader` got its grid in the same work and `FlatFader` did not). The per-frame filters — a
+ceiling, a fan above the camera, a fan already translucent — fold into the same pass, leaving the
+per-target loop carrying only what varies with the target.
+
+Measured on EPIC.WAD MAP05 (24,052 occluders, 8,324 fans) at 49 targets: `WallFader.update` 1.12 →
+0.32 ms, `FlatFader.update` 0.97 → 0.10 ms.
+
+Whether a quad is its line's **passable gap** rides on the same idea. It used to be decided for
+every quad every frame, up front; it is now asked lazily — of the quads a sightline crosses in pass
+one and the quads a crossing reaches in pass two — and at most once per quad per frame. On a frame
+where the camera holds a few hundred units of a big level almost no quad is asked at all.
 
 Pass two would be quadratic scanned naively, so `WallFader` buckets quads by midpoint into a
 uniform grid (cell = `FADE_RADIUS` + the longest half-chunk, which is what lets a query stop at

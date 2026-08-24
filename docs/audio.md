@@ -247,16 +247,27 @@ logged — the message then shows silently, the same way a missing lump degrades
 
 ## Volume and the context
 
-The menu's Settings tab has a volume slider, and the value is persisted in `localStorage` under
-`topdoom.sfxVolume` (docs/menu.md § Persisted settings covers the shared pattern). Default is
+The menu's Settings → Audio tab has three sliders — master, effects, music — and each value is
+persisted in `localStorage`, the sfx one under `topdoom.sfxVolume` (docs/menu.md § Persisted
+settings covers the shared pattern). Default is
 **0.8, tuned by feel** rather than taken from vanilla's own starting `snd_SfxVolume` of 8 of 15 —
 there is no sound card's analogue stage behind this mixer, so vanilla's number arrives quieter
 here than it did on the hardware. The music default is lower again (docs/music.md § Volume): it
 sits under the game rather than beside it.
 
+**The master slider is the `master` gain node itself** (`topdoom.masterVolume`, default **1** —
+unity, not a tuned number: what the mix sounds like is the two channel defaults' business, and this
+slider exists to pull all of it down at once). It is the only one that moves both buses, so 0 on it
+has to do what 0 on either channel does, on both at once: `play` short-circuits on
+`_volume * _masterVolume` rather than on the sfx slider alone, `setMasterVolume` calls `stopAll()`,
+and it hands the value to `MusicPlayer.setMasterVolume` so the chip stops being rendered rather than
+merely being turned down to nothing (docs/music.md § Volume). The music player holds that value as a
+gate only — the gain is this node's, downstream of its bus — and never persists it, so there is one
+owner of the stored master.
+
 **There is no mute, deliberately** — an `M` key and a `_muted` flag existed and were removed as a
 second way to say what the slider already says at 0. **Volume 0 therefore has to do everything mute
-did:** `play` short-circuits on `_volume === 0` rather than starting inaudible sources, and
+did:** `play` short-circuits rather than starting inaudible sources, and
 `setVolume` calls `stopAll()` on reaching 0. Without that last part a sound already playing keeps
 running silently, and sliding back up part-way through would drop the player into the middle of it.
 
@@ -281,7 +292,8 @@ belong here:
 
 - The graph is `voice → sfxBus → master → destination`, and the music player's bus is a **sibling
   of `sfxBus`** under `master`, so the two volumes are independent. That is why the sfx volume is
-  applied to `sfxBus` and not to `master`, where it would quietly ride the music as well.
+  applied to `sfxBus` and not to `master`, where it would quietly ride the music as well — and why
+  the master slider, which is meant to ride both, is `master`'s own gain.
 - **`suspend` no longer suspends the context.** It cuts the sfx voices and leaves the clock
   running, so music plays on behind the menu the way vanilla's does; suspending would freeze it
   mid-bar. Nothing raises a sound while paused — the frame loop is stopped — so there is nothing

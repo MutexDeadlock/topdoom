@@ -67,19 +67,12 @@
         <div class="tabs subtabs">
           <button class="tab" id="settings-tab-button-general" data-tab="general">General</button>
           <button class="tab" id="settings-tab-button-visuals" data-tab="visuals">Visuals</button>
+          <button class="tab" id="settings-tab-button-audio" data-tab="audio">Audio</button>
           <button class="tab" id="settings-tab-button-controls" data-tab="controls">Controls</button>
         </div>
 
         <div class="tab-panels">
           <div class="tab-panel" id="settings-tab-general">
-            <section>
-              <h2>Collision</h2>
-              <label class="checkbox-row">
-                <input type="checkbox" id="infinitetall-checkbox" />
-                <span>Infinite tall actors (vanilla)</span>
-              </label>
-            </section>
-
             <section>
               <h2>Level start</h2>
               <label class="checkbox-row">
@@ -89,17 +82,11 @@
             </section>
 
             <section>
-              <h2>Sound</h2>
-              <div class="slider">
-                <span class="label">Effects</span>
-                <input type="range" id="volume-slider" min="0" max="100" step="1" />
-                <span class="value" id="volume-value"></span>
-              </div>
-              <div class="slider">
-                <span class="label">Music</span>
-                <input type="range" id="music-volume-slider" min="0" max="100" step="1" />
-                <span class="value" id="music-volume-value"></span>
-              </div>
+              <h2>Collision</h2>
+              <label class="checkbox-row">
+                <input type="checkbox" id="infinitetall-checkbox" />
+                <span>Infinite tall actors (vanilla)</span>
+              </label>
             </section>
 
             <section id="settings-dev" class="hidden">
@@ -136,6 +123,27 @@
                 <input type="checkbox" id="dynlights-checkbox" />
                 <span>Dynamic lights</span>
               </label>
+            </section>
+          </div>
+
+          <div class="tab-panel" id="settings-tab-audio">
+            <section>
+              <h2>Volume</h2>
+              <div class="slider">
+                <span class="label">General</span>
+                <input type="range" id="master-volume-slider" min="0" max="100" step="1" />
+                <span class="value" id="master-volume-value"></span>
+              </div>
+              <div class="slider">
+                <span class="label">Effects</span>
+                <input type="range" id="volume-slider" min="0" max="100" step="1" />
+                <span class="value" id="volume-value"></span>
+              </div>
+              <div class="slider">
+                <span class="label">Music</span>
+                <input type="range" id="music-volume-slider" min="0" max="100" step="1" />
+                <span class="value" id="music-volume-value"></span>
+              </div>
             </section>
           </div>
 

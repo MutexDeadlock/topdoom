@@ -55,7 +55,7 @@ const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as
 
 type Tab = 'newgame' | 'save' | 'load' | 'settings';
 /** The Settings tab's own sub-tabs: what the game looks like, what the keys do, everything else. */
-type SettingsTab = 'general' | 'visuals' | 'controls';
+type SettingsTab = 'general' | 'visuals' | 'audio' | 'controls';
 
 const SKILL_STORAGE_KEY = 'topdoom.skill';
 const SELECTION_STORAGE_KEY = 'topdoom.selection';
@@ -98,6 +98,8 @@ export class Menu {
   private resumeButton = el<HTMLButtonElement>('resume-button');
   private statusEl = el<HTMLSpanElement>('menu-status');
   private fileInput = el<HTMLInputElement>('file-input');
+  private masterSlider = el<HTMLInputElement>('master-volume-slider');
+  private masterValue = el<HTMLSpanElement>('master-volume-value');
   private volumeSlider = el<HTMLInputElement>('volume-slider');
   private volumeValue = el<HTMLSpanElement>('volume-value');
   private musicSlider = el<HTMLInputElement>('music-volume-slider');
@@ -130,11 +132,13 @@ export class Menu {
   private settingsTabButtons = {
     general: el<HTMLButtonElement>('settings-tab-button-general'),
     visuals: el<HTMLButtonElement>('settings-tab-button-visuals'),
+    audio: el<HTMLButtonElement>('settings-tab-button-audio'),
     controls: el<HTMLButtonElement>('settings-tab-button-controls'),
   };
   private settingsTabPanels = {
     general: el<HTMLDivElement>('settings-tab-general'),
     visuals: el<HTMLDivElement>('settings-tab-visuals'),
+    audio: el<HTMLDivElement>('settings-tab-audio'),
     controls: el<HTMLDivElement>('settings-tab-controls'),
   };
   private savegames: SavegamesUi;
@@ -313,13 +317,14 @@ export class Menu {
   }
 
   /**
-   * The two volume sliders. Dragging one is itself a user gesture, so the engine
+   * The three volume sliders. Dragging one is itself a user gesture, so the engine
    * can start its context and preview the change right here rather than waiting
    * for the level to start — which is the only way to set volume by ear.
    *
    * The music slider needs no preview of its own: it rides the track that is
    * already playing behind the menu, and there is nothing to audition on the
-   * first visit, where no WAD set is loaded yet.
+   * first visit, where no WAD set is loaded yet. The master slider takes the sfx
+   * one's, being the only other thing it can be auditioned on with no track up.
    */
   private installVolume(): void {
     const bind = (
@@ -342,14 +347,10 @@ export class Menu {
         preview?.();
       });
     };
-    bind(
-      this.volumeSlider,
-      this.volumeValue,
-      this.audio.volume,
-      (v) => this.audio.setVolume(v),
-      // The pickup blip: short, unmissable, and the sound a player hears most.
-      () => this.audio.play('itemup'),
-    );
+    // The pickup blip: short, unmissable, and the sound a player hears most.
+    const blip = () => this.audio.play('itemup');
+    bind(this.masterSlider, this.masterValue, this.audio.masterVolume, (v) => this.audio.setMasterVolume(v), blip);
+    bind(this.volumeSlider, this.volumeValue, this.audio.volume, (v) => this.audio.setVolume(v), blip);
     bind(this.musicSlider, this.musicValue, this.audio.music.volume, (v) => this.audio.music.setVolume(v));
   }
 

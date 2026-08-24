@@ -43,7 +43,15 @@ const STEREO_SWING = 96 / 128;
  */
 const DEFAULT_VOLUME = 0.8;
 
+/**
+ * Default master volume: **unity**, not a tuned number. What the mix should sound like is the
+ * business of the two channel defaults above and in `music.ts`; this slider exists to pull all of
+ * it down at once, so it starts by doing nothing at all.
+ */
+const DEFAULT_MASTER_VOLUME = 1;
+
 const VOLUME_STORAGE_KEY = 'topdoom.sfxVolume';
+const MASTER_VOLUME_STORAGE_KEY = 'topdoom.masterVolume';
 
 /**
  * Sounds this engine ships itself, as `public/` URLs → the priority they take
@@ -117,13 +125,26 @@ export class AudioEngine implements SoundEmitter {
   private forwardSin = 1;
 
   private _volume: number;
+  private _masterVolume: number;
 
   constructor() {
     this._volume = storedVolume(VOLUME_STORAGE_KEY, DEFAULT_VOLUME);
+    this._masterVolume = storedVolume(MASTER_VOLUME_STORAGE_KEY, DEFAULT_MASTER_VOLUME);
+    // The music runs its own start/stop off the master too, and owns no copy of the stored value.
+    this.music.setMasterVolume(this._masterVolume);
   }
 
   get volume(): number {
     return this._volume;
+  }
+
+  get masterVolume(): number {
+    return this._masterVolume;
+  }
+
+  /** What an sfx actually comes out at: the two sliders multiplied, and the thing 0 is tested on. */
+  private get sfxAudible(): number {
+    return this._volume * this._masterVolume;
   }
 
   /**
@@ -141,11 +162,27 @@ export class AudioEngine implements SoundEmitter {
   }
 
   /**
-   * On the sfx bus, not on `master`: music hangs off `master` too, and putting
-   * this there would have the sfx slider quietly ride the music as well.
+   * 0-1; persisted, and the one slider that rides *everything* — it is `master`'s own gain, with
+   * the sfx and music buses hanging off it. 0 is the mute here too, and has to reach both buses to
+   * be one: the voices in flight are cut, and the music player is told so it stops rendering a chip
+   * nobody can hear rather than merely being turned down to nothing.
+   */
+  setMasterVolume(value: number): void {
+    this._masterVolume = Math.max(0, Math.min(1, value));
+    globalThis.localStorage?.setItem(MASTER_VOLUME_STORAGE_KEY, String(this._masterVolume));
+    if (this._masterVolume === 0) this.stopAll();
+    this.music.setMasterVolume(this._masterVolume);
+    this.applyVolume();
+  }
+
+  /**
+   * The sfx slider goes on the sfx bus, not on `master`: music hangs off `master` too, and putting
+   * it there would have the sfx slider quietly ride the music as well. The master slider is the
+   * one that *is* `master`.
    */
   private applyVolume(): void {
     if (this.sfxBus) this.sfxBus.gain.value = this._volume;
+    if (this.master) this.master.gain.value = this._masterVolume;
   }
 
   /**
@@ -199,7 +236,7 @@ export class AudioEngine implements SoundEmitter {
   }
 
   play(id: SfxId, at?: Pos2 | null, origin?: number): void {
-    if (this._volume === 0) return;
+    if (this.sfxAudible === 0) return;
     const ctx = this.ctx;
     // Not started yet, or paused: dropping the sound is right either way —
     // a suspended context would otherwise queue it up and fire the whole
@@ -233,7 +270,7 @@ export class AudioEngine implements SoundEmitter {
    * is still loading or failed to decode, the same way a missing lump is.
    */
   playAsset(id: AssetSfxId): void {
-    if (this._volume === 0) return;
+    if (this.sfxAudible === 0) return;
     const buffer = this.assetBuffers.get(id);
     if (!buffer) return;
     this.start(buffer, ASSETS[id].priority, 1, 1, 0, undefined);

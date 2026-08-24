@@ -124,6 +124,12 @@ export class MusicPlayer {
   private renderMs = 0;
 
   private _volume: number;
+  /**
+   * The master slider's value, pushed in by `AudioEngine` — which owns it and persists it. Held
+   * here only as this player's own start/stop gate: the gain itself is the master node's, downstream
+   * of this bus, so nothing here has to apply it.
+   */
+  private _master = 1;
 
   constructor() {
     this._volume = storedVolume(VOLUME_STORAGE_KEY, DEFAULT_VOLUME);
@@ -149,17 +155,34 @@ export class MusicPlayer {
     return this._volume;
   }
 
+  /** What the track actually comes out at: this slider and the master multiplied. */
+  private get audible(): number {
+    return this._volume * this._master;
+  }
+
   /**
    * 0-1; persisted, so it survives a reload. As with sfx there is no separate
    * mute: 0 stops the track outright rather than rendering a chip nobody can
    * hear, and coming back up starts it again from the beginning.
    */
   setVolume(value: number): void {
-    const previous = this._volume;
+    const previous = this.audible;
     this._volume = Math.max(0, Math.min(1, value));
     globalThis.localStorage?.setItem(VOLUME_STORAGE_KEY, String(this._volume));
     if (this.bus) this.bus.gain.value = this._volume;
-    if (this._volume === 0) this.stopPlayback();
+    if (this.audible === 0) this.stopPlayback();
+    else if (previous === 0) this.start();
+  }
+
+  /**
+   * The master slider, as this player's gate and nothing else — `AudioEngine.setMasterVolume` owns
+   * the value and the gain node. Silent is silent whichever slider got there, so a master of 0 stops
+   * the track for the same reason this one's own 0 does: no chip rendered that nobody can hear.
+   */
+  setMasterVolume(value: number): void {
+    const previous = this.audible;
+    this._master = Math.max(0, Math.min(1, value));
+    if (this.audible === 0) this.stopPlayback();
     else if (previous === 0) this.start();
   }
 
@@ -202,7 +225,7 @@ export class MusicPlayer {
   private start(): void {
     const ctx = this.ctx;
     const lump = this.track && this.bank ? this.bank.get(this.track) : null;
-    if (!ctx || !this.bus || !lump || this._volume === 0) return;
+    if (!ctx || !this.bus || !lump || this.audible === 0) return;
 
     if (lump.kind === 'encoded') {
       const token = ++this.decodeToken;

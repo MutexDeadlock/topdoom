@@ -556,12 +556,12 @@ touched the control.
 
 ## Settings tab
 
-The tab is split in three by its own row of **sub-tabs** (`.tabs.subtabs` inside `#tab-settings`,
-`Menu.setSettingsTab`): **Visuals** holds everything that changes how the running
-level looks, **Controls** holds the key list and everything bound to it, **General** holds what is
-left — the settings that are neither. The sub-panels are the same `.tab-panels`/`.tab-panel`
-grid-cell stack the top-level tabs use, nested one level — so Visuals being much shorter than
-Controls costs the menu no resize when the player switches, exactly as above. The sub-tab row is
+The tab is split in four by its own row of **sub-tabs** (`.tabs.subtabs` inside `#tab-settings`,
+`Menu.setSettingsTab`): **Visuals** holds everything that changes how the running level looks,
+**Audio** everything you hear, **Controls** the key list and everything bound to it, and **General**
+what is left — the settings that are none of the three. The sub-panels are the same
+`.tab-panels`/`.tab-panel` grid-cell stack the top-level tabs use, nested one level — so Audio being
+much shorter than Controls costs the menu no resize when the player switches, exactly as above. The sub-tab row is
 styled a step quieter (smaller type, no rule under it) so it doesn't read as a second tab bar of
 equal rank, and like the tabs above it the pick survives an `open`.
 
@@ -576,13 +576,9 @@ description, the autorun checkbox is the `Shift` row's. A player looking up what
 player changing it are the same person on the same trip to the menu — which is why those two did not
 move to General with the rest.
 
-**General is what is left once the other two have taken theirs**: the collision and level-start
-toggles and the two volume sliders, stacked full width in that order — Sound last of the always-on
-sections (`#settings-dev` still follows it in a dev build), since it is the one a player reaches for
-mid-game and the bottom of the panel is nearest the footer. Sound holds `#volume-slider` (effects)
-above `#music-volume-slider`, each with a `.label` wide enough that the two line up; the sfx one
-previews itself with `itemup` as it is dragged, the music one needs no preview because it rides the
-track already playing behind the menu (docs/music.md § Volume).
+**General is what is left once the other three have taken theirs**: Level start over Collision,
+stacked full width, with `#settings-dev` following them in a dev build. Level start leads because
+it is the one of the two a player picks *before* a run rather than sets once and forgets.
 
 **Visuals is Camera, Frame rate, Lighting** — everything that changes what the running level *looks*
 like, in that order: the camera first, being the one a player actually goes looking for.
@@ -601,16 +597,25 @@ docs/frameloop.md § The FPS cap for how a cap is actually held. Lighting is the
 `#dynlights-checkbox`, on by default and likewise read per frame, so it too takes effect without a
 reload (docs/lights.md § The toggle).
 
-**Collision** is one checkbox, `Infinite tall actors (vanilla)` — off by default, and one of the two
-settings left on General that change how the game plays rather than how it presents itself
-(docs/movement.md § Collision); Level start's `Pistol start every level` is the other
-(docs/items.md § Pistol start). It applies to the level already running, like volume and the cap:
+**Audio is one Volume section of three sliders** — `General` (`#master-volume-slider`, the master),
+`Effects` (`#volume-slider`) and `Music` (`#music-volume-slider`) — each with a `.label` wide enough
+that the three line up. Master **first**: it is the one that moves the other two, so reading down
+the section is reading the signal path. It rides the `master` gain node the two channel buses hang
+off, and 0 on it stops both of them the way each channel's own 0 stops itself
+(docs/audio.md § Volume and the context). The master and sfx sliders preview themselves with
+`itemup` as they are dragged; the music slider needs no preview, riding the track already playing
+behind the menu (docs/music.md § Volume).
+
+**Collision** is one checkbox, `Infinite tall actors (vanilla)` — off by default (docs/movement.md
+§ Collision); `Level start`'s `Pistol start every level` is the other (docs/items.md § Pistol
+start). What is left on General is exactly the two settings that change how the game *plays*, which
+is why neither belongs on the three tabs beside it. It applies to the level already running, like volume and the cap:
 `blockedByThings` reads the flag per call.
 
 General ends with **`#settings-dev`, a DEVMODE-only section holding the profiler overlay's
 checkbox** (§ Profiling overlay), revealed by the same set-once toggle `#controls-dev` gets. Its
 `.hidden` is `display: none` for the same reason: a hidden section must leave the flow rather than
-hold a gap under Sound.
+hold a gap under Collision.
 
 **The `Shift` row's description is the word autorun currently makes true** — `walk` when it's on,
 `run` when it's off — so `installAutorun` writes `#shift-action` from the same `show` helper that
@@ -662,6 +667,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 
 | Key | Owner | Documented in |
 |---|---|---|
+| `topdoom.masterVolume` | `audio/audio.ts` | docs/audio.md § Volume and the context |
 | `topdoom.sfxVolume` | `audio/audio.ts` | docs/audio.md § Volume and the context |
 | `topdoom.musicVolume` | `audio/music.ts` | docs/music.md § Volume |
 | `topdoom.autorun` | `game/player.ts` (`getAutorun`/`setAutorun`) | docs/movement.md § Movement speed and straferunning |
@@ -692,7 +698,8 @@ one restores a subtly wrong level (docs/savegames.md § The format and its versi
 it is **URL > stored > first IWAD on offer**, and every key is resolved against the current library,
 so a WAD that has since left `public/wads/` is silently dropped (an unknown map falls back to the
 set's first, via `selectLevel`'s no-op). Restoring can pair a stored add-on with a `?wad=`-forced
-game WAD, hence the `pruneIncompatiblePwads` call there.
+game WAD it doesn't suit; that pick is **kept**, refused rather than dropped, so the stored set
+survives a deep link (§ Picking a WAD set).
 
 `saveSelection` is called from the sites where the *player* changes something (`selectIwad`, the
 add-on toggle, `addFiles`, the level select's `change`) and **deliberately not from `render`**, which

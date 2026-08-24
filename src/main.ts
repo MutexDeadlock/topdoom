@@ -5,7 +5,7 @@
 import { Wad } from './wad/wad.ts';
 import { mapProvider, wadSetId } from './wad/checksum.ts';
 import { loadWadFiles, type WadSource } from './wad/library.ts';
-import { Menu, type Selection } from './ui/menu/menu.ts';
+import { Menu, type MenuTab, type Selection } from './ui/menu/menu.ts';
 import {
   blockingWad,
   missingWadText,
@@ -235,6 +235,23 @@ async function boot(): Promise<void> {
       return;
     }
     resumeGame();
+  });
+
+  // F2/F3/F4 open the menu straight on one tab, pausing the level on the way in like Esc
+  // does (docs/menu.md § Hotkeys).
+  const TAB_KEYS: Record<string, MenuTab> = { F2: 'save', F3: 'load', F4: 'settings' };
+  window.addEventListener('keydown', (e) => {
+    const tab = TAB_KEYS[e.code];
+    if (tab === undefined) return;
+    // An overlay owns the screen while it's up and Esc is what dismisses it — the same
+    // precedence the handler above gives it. Nothing is swapped behind it.
+    if (menu.hasOverlay) return;
+    const wasOpen = menu.isOpen;
+    // Refused when the tab isn't available (Save, with no level loaded): the browser's own
+    // binding for the key is left alone rather than swallowed for nothing.
+    if (!menu.showTab(tab, game !== null)) return;
+    e.preventDefault();
+    if (!wasOpen) game?.pause();
   });
 
   const params = new URLSearchParams(location.search);

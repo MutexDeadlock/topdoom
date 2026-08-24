@@ -53,9 +53,11 @@ export interface MenuDefaults {
 
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-type Tab = 'newgame' | 'save' | 'load' | 'settings';
-/** The Settings tab's own sub-tabs: what the game looks like, what the keys do, everything else. */
-type SettingsTab = 'general' | 'visuals' | 'audio' | 'controls';
+/** The menu's top-level tabs; exported for the F2/F3/F4 hotkeys in `main.ts`. */
+export type MenuTab = 'newgame' | 'save' | 'load' | 'settings';
+
+/** The Settings tab's own sub-tabs, in the order they are shown. */
+type SettingsTab = 'general' | 'controls' | 'visuals' | 'audio';
 
 const SKILL_STORAGE_KEY = 'topdoom.skill';
 const SELECTION_STORAGE_KEY = 'topdoom.selection';
@@ -128,18 +130,18 @@ export class Menu {
     load: el<HTMLDivElement>('tab-load'),
     settings: el<HTMLDivElement>('tab-settings'),
   };
-  private activeTab: Tab = 'newgame';
+  private activeTab: MenuTab = 'newgame';
   private settingsTabButtons = {
     general: el<HTMLButtonElement>('settings-tab-button-general'),
+    controls: el<HTMLButtonElement>('settings-tab-button-controls'),
     visuals: el<HTMLButtonElement>('settings-tab-button-visuals'),
     audio: el<HTMLButtonElement>('settings-tab-button-audio'),
-    controls: el<HTMLButtonElement>('settings-tab-button-controls'),
   };
   private settingsTabPanels = {
     general: el<HTMLDivElement>('settings-tab-general'),
+    controls: el<HTMLDivElement>('settings-tab-controls'),
     visuals: el<HTMLDivElement>('settings-tab-visuals'),
     audio: el<HTMLDivElement>('settings-tab-audio'),
-    controls: el<HTMLDivElement>('settings-tab-controls'),
   };
   private savegames: SavegamesUi;
   private library: LibraryUi;
@@ -199,7 +201,7 @@ export class Menu {
     });
     this.startButton.addEventListener('click', () => void this.startWithSkill(this.currentSkill()));
     this.resumeButton.addEventListener('click', () => this.onResume());
-    for (const tab of Object.keys(this.tabButtons) as Tab[]) {
+    for (const tab of Object.keys(this.tabButtons) as MenuTab[]) {
       this.tabButtons[tab].addEventListener('click', () => this.setTab(tab));
     }
     for (const tab of Object.keys(this.settingsTabButtons) as SettingsTab[]) {
@@ -295,9 +297,22 @@ export class Menu {
     return !this.root.classList.contains('hidden');
   }
 
-  private setTab(tab: Tab): void {
+  /**
+   * Brings one tab to the front, opening the menu first if it is closed — what the
+   * F2/F3/F4 hotkeys do (docs/menu.md § Hotkeys). `inGame` is `open`'s and gates Save
+   * the same way: with no level loaded there is nothing to save, so the key does
+   * nothing rather than opening the menu on a hidden tab. Reports whether the tab is up.
+   */
+  showTab(tab: MenuTab, inGame: boolean): boolean {
+    if (tab === 'save' && !inGame) return false;
+    if (!this.isOpen) this.open(inGame);
+    this.setTab(tab);
+    return true;
+  }
+
+  private setTab(tab: MenuTab): void {
     this.activeTab = tab;
-    for (const key of Object.keys(this.tabButtons) as Tab[]) {
+    for (const key of Object.keys(this.tabButtons) as MenuTab[]) {
       this.tabButtons[key].classList.toggle('active', key === tab);
       this.tabPanels[key].classList.toggle('hidden', key !== tab);
     }
@@ -500,8 +515,12 @@ export class Menu {
    * own Esc handler, so one Esc dismisses the popup instead of the whole menu — an explicit
    * hand-off rather than two window listeners racing over the same key.
    */
+  private get changelogOpen(): boolean {
+    return !this.changelogRoot.classList.contains('hidden');
+  }
+
   private closeChangelog(): boolean {
-    if (this.changelogRoot.classList.contains('hidden')) return false;
+    if (!this.changelogOpen) return false;
     this.changelogRoot.classList.add('hidden');
     return true;
   }
@@ -513,6 +532,11 @@ export class Menu {
    */
   closeTopOverlay(): boolean {
     return this.closeChangelog() || this.library.close();
+  }
+
+  /** Whether any of them is up — the same set as `closeTopOverlay`, kept next to it. */
+  get hasOverlay(): boolean {
+    return this.changelogOpen || this.library.isOpen;
   }
 
   /** True once a level can actually be started. */

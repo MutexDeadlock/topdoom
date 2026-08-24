@@ -1,6 +1,7 @@
 v0.16.0 (2026-08-2?)
 
 Features and improvements
+  - F2 / F3 / F4 open the menu on the Save / Load / Settings tab
   - walls and floors fade as a soft ball around whatever they hide, instead
     of whole panels and platforms dissolving with solid ones next to them
     - a monster far from the player fades less than one right beside them

@@ -43,9 +43,6 @@ lists, the level list and the difficulty options are built in JS.
   since that cell is sized by the tallest of them. Scrolling the whole panel inside `#menu` is not
   the fix either — an uncapped panel makes `.saves-section` grow without bound rather than scroll.
 
-`Esc` toggles between the menu and the game. With the menu open and no level loaded it does nothing
-— there is nothing to return to.
-
 `#menu` sits at `--z-menu` on the stacking ladder, above every in-game overlay and below the
 fatal-error screen — the whole ladder is one block in `base.css` (docs/styles.md § The stacking
 ladder).
@@ -53,6 +50,18 @@ ladder).
 `VERSION` (`constants.ts`) is shown prefixed with `v`, right-aligned on the title's own row
 (`#menu header` is a `space-between` flex row), with the changelog link stacked under it in the same
 `.build` column; a static credit sits bottom-left, outside the panel.
+
+### Hotkeys
+
+`Esc` toggles between the menu and the game. With the menu open and no level loaded it does nothing
+— there is nothing to return to.
+
+`F2`, `F3` and `F4` open the menu directly on **Save**, **Load** and **Settings** (`Menu.showTab`,
+wired in `main.ts` beside the `Esc` handler); with the menu already open they only switch tabs.
+Two rules keep them from acting behind the player's back: an overlay up (changelog, WAD Library)
+takes precedence exactly as it does for `Esc`, and `F2` with no level loaded does nothing rather
+than opening the menu on the Save tab `open` hides. `preventDefault` is called only when the key
+actually did something, so a refused press still reaches the browser's own binding.
 
 ## Changelog
 
@@ -557,9 +566,10 @@ touched the control.
 ## Settings tab
 
 The tab is split in four by its own row of **sub-tabs** (`.tabs.subtabs` inside `#tab-settings`,
-`Menu.setSettingsTab`): **Visuals** holds everything that changes how the running level looks,
-**Audio** everything you hear, **Controls** the key list and everything bound to it, and **General**
-what is left — the settings that are none of the three. The sub-panels are the same
+`Menu.setSettingsTab`), in the order **General** — what is left over, the settings that are none of
+the other three — **Controls**, the key list and everything bound to it, **Visuals**, everything
+that changes how the running level looks, and **Audio**, everything you hear. Controls sits second
+because it is the one a player opens to read rather than to change. The sub-panels are the same
 `.tab-panels`/`.tab-panel` grid-cell stack the top-level tabs use, nested one level — so Audio being
 much shorter than Controls costs the menu no resize when the player switches, exactly as above. The sub-tab row is
 styled a step quieter (smaller type, no rule under it) so it doesn't read as a second tab bar of

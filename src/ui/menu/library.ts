@@ -743,7 +743,10 @@ export class LibraryUi {
     const input = document.createElement('input');
     input.type = 'checkbox';
     input.checked = index >= 0;
-    input.disabled = refused;
+    // A refused row that is *already* in the draft keeps a live checkbox: unticking is the only way
+    // to drop a pick from this pane, and a game WAD that no longer suits one is exactly when the
+    // player might want to. What it must not do is accept a new pick the set can't use.
+    input.disabled = refused && index < 0;
     input.addEventListener('change', () => this.draftPwadToggle(source));
     row.prepend(input);
     return row;
@@ -788,9 +791,10 @@ export class LibraryUi {
 
   /**
    * Takes one source into the draft the way its type asks to be taken — a game WAD replaces the
-   * pick and drops the add-ons it can't be merged with, anything else joins them. The prune is
-   * `pwadsFor`, the rule the menu itself applies on Apply, run here so the rows say now what the
-   * set will be rather than reporting the loss once the overlay is gone.
+   * pick, anything else joins the add-ons. A game WAD the add-ons already picked don't suit
+   * **drops none of them**: their rows go quiet with the reason in the badge and they come back the
+   * moment one that suits them is picked again (docs/menu.md § Picking a WAD set). What the set
+   * would actually merge is `pwadsFor`, which the footer counts and the menu applies.
    *
    * No redraw of its own, so a batch draws once. Membership is by **key**, not identity: a file
    * added twice, or re-read by a scan, is a fresh `WadSource` for the same WAD (see `carryDraft`).
@@ -801,7 +805,6 @@ export class LibraryUi {
     if (unplayable(source)) return;
     if (source.type === 'IWAD') {
       this.draftIwad = source;
-      this.draftPwads = pwadsFor(source, this.draftPwads);
     } else if (!this.draftPwads.some((p) => p.key === source.key)) {
       this.draftPwads.push(source);
     }
@@ -824,7 +827,11 @@ export class LibraryUi {
 
   private renderSummary(): void {
     const iwad = this.draftIwad;
-    const addons = this.draftPwads.length === 1 ? '1 add-on' : `${this.draftPwads.length} add-ons`;
+    const held = this.draftPwads.length;
+    // Picks the game WAD can't take stay in the draft, so the count says both numbers rather than
+    // quietly promising a merge that won't happen (docs/menu.md § Picking a WAD set).
+    const unused = held - pwadsFor(iwad, this.draftPwads).length;
+    const addons = `${held === 1 ? '1 add-on' : `${held} add-ons`}${unused > 0 ? ` (${unused} not merged)` : ''}`;
     const set = iwad ? `${iwad.label} · ${addons}` : 'No game WAD picked yet';
     // Nothing here is live until Apply, and a footer that read like the menu's own selection would
     // make Close look harmless when it is a discard. Only said when there is something to lose.

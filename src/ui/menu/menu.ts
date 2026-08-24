@@ -6,7 +6,9 @@ import {
   ensureLibraryAccess,
   ensureWadId,
   fetchLibrary,
+  fitsGameWad,
   librarySources,
+  mapStyle,
   mergedMaps,
   pwadsFor,
   rememberLibraryId,
@@ -52,8 +54,8 @@ export interface MenuDefaults {
 const el = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
 type Tab = 'newgame' | 'save' | 'load' | 'settings';
-/** The Settings tab's own sub-tabs: everything key-related, and everything else. */
-type SettingsTab = 'general' | 'controls';
+/** The Settings tab's own sub-tabs: what the game looks like, what the keys do, everything else. */
+type SettingsTab = 'general' | 'visuals' | 'controls';
 
 const SKILL_STORAGE_KEY = 'topdoom.skill';
 const SELECTION_STORAGE_KEY = 'topdoom.selection';
@@ -65,6 +67,18 @@ interface StoredSelection {
   /** Keys of picked add-ons that are unticked. Optional: absent means every pick is on. */
   disabled?: string[];
   map: string;
+}
+
+/**
+ * The reason an add-on row can't be ticked, as the badge that leads its fixed-width columns — the
+ * WAD Library's own (`library.ts`), at the width this narrower panel has for it. Rendered on every
+ * row of a list that has one to give, empty text included, so the columns behind it line up.
+ */
+function badge(text: string): HTMLSpanElement {
+  const span = document.createElement('span');
+  span.className = 'badge reason';
+  span.textContent = text;
+  return span;
 }
 
 /**
@@ -115,10 +129,12 @@ export class Menu {
   private activeTab: Tab = 'newgame';
   private settingsTabButtons = {
     general: el<HTMLButtonElement>('settings-tab-button-general'),
+    visuals: el<HTMLButtonElement>('settings-tab-button-visuals'),
     controls: el<HTMLButtonElement>('settings-tab-button-controls'),
   };
   private settingsTabPanels = {
     general: el<HTMLDivElement>('settings-tab-general'),
+    visuals: el<HTMLDivElement>('settings-tab-visuals'),
     controls: el<HTMLDivElement>('settings-tab-controls'),
   };
   private savegames: SavegamesUi;
@@ -232,8 +248,6 @@ export class Menu {
       .filter((s): s is WadSource => s !== undefined && s !== this.selectedIwad);
     // A key naming an add-on that is no longer picked is harmless — it simply matches nothing.
     this.disabledPwads = new Set(stored?.disabled ?? []);
-    // Restored add-ons can disagree with a game WAD that came from ?wad=.
-    this.pruneIncompatiblePwads();
 
     this.render();
     const wantedMap = defaults.map ?? stored?.map ?? null;
@@ -662,9 +676,8 @@ export class Menu {
 
   /**
    * Adopts the WAD Library's whole pick in one go — the overlay stages its ticks and commits them
-   * here, on Apply (docs/menu.md § WAD Library). A set rather than a row at a time, because the
-   * game WAD decides which add-ons may stay: applied one by one, an order the player never chose
-   * would decide what `pruneIncompatiblePwads` throws away.
+   * here, on Apply (docs/menu.md § WAD Library). A set rather than a row at a time, so a game WAD
+   * and the add-ons picked beside it land together rather than in an order the player never chose.
    */
   private async applyPicks(iwad: WadSource | null, pwads: readonly WadSource[]): Promise<void> {
     // Together, since each may read and hash a whole file off disk and no two touch each other.
@@ -678,7 +691,6 @@ export class Menu {
 
     this.selectedIwad = iwad;
     this.selectedPwads = [...pwads];
-    this.pruneIncompatiblePwads();
     this.render();
     this.saveSelection();
   }
@@ -689,8 +701,9 @@ export class Menu {
    * them. The redraw and the save stay with the callers above, which pick one file at a time.
    */
   private takeAsIwad(source: WadSource): void {
+    // Nothing is dropped from the add-ons here: one a new game WAD can't take goes quiet in the
+    // list instead, and comes back the moment one that can is picked (docs/menu.md § Picking a WAD set).
     this.selectedIwad = source;
-    this.pruneIncompatiblePwads();
   }
 
   private takeAsPwad(source: WadSource): void {
@@ -731,7 +744,6 @@ export class Menu {
     this.selectedPwads = this.selectedPwads
       .map(carry)
       .filter((s): s is WadSource => s !== null);
-    this.pruneIncompatiblePwads();
     this.mapCache.clear();
     this.render();
     this.savegames.refresh();
@@ -750,15 +762,28 @@ export class Menu {
     const scrollTop = this.pwadList.scrollTop;
     this.pwadList.replaceChildren();
     const active = this.activePwads();
-    for (const source of this.selectedPwads) {
-      const enabled = !this.disabledPwads.has(source.key);
+    // The badge column is only rendered when something in the list has a reason to give — it costs
+    // the name column its width, and a game WAD that suits every pick is the ordinary case. When it
+    // is rendered it is rendered on *every* row, empty ones included, or the fixed-width columns
+    // behind it would begin somewhere different on each row.
+    const reasons = this.selectedPwads.map((source) => this.mismatchReason(source));
+    const anyReason = reasons.some((reason) => reason !== '');
+    for (const [index, source] of this.selectedPwads.entries()) {
+      const reason = reasons[index];
+      const enabled = reason === '' && !this.disabledPwads.has(source.key);
       const row = document.createElement('label');
-      row.className = 'row' + (enabled ? ' selected' : '');
+      row.className = 'row' + (enabled ? ' selected' : '') + (reason === '' ? '' : ' disabled');
 
       const input = document.createElement('input');
       input.type = 'checkbox';
       input.checked = enabled;
-      input.title = 'Merge this add-on into the game';
+      // A pick the game WAD can't take keeps its row and its off-flag untouched, so it comes back
+      // ticked the moment a game WAD that suits it is picked again (docs/menu.md § Picking a WAD set).
+      input.disabled = reason !== '';
+      input.title =
+        reason === ''
+          ? 'Merge this add-on into the game'
+          : `Not merged: ${source.label} doesn't fit ${this.selectedIwad?.label ?? 'the game WAD'}`;
       input.addEventListener('change', () => this.setPwadEnabled(source, input.checked));
 
       const name = document.createElement('span');
@@ -774,6 +799,7 @@ export class Menu {
       row.append(
         input,
         name,
+        ...(anyReason ? [badge(reason)] : []),
         // The same three columns the WAD Library lists, so a file reads identically in both places —
         // just narrower, since this panel has a fraction of the overlay's width.
         ...sourceColumnSpans(source),
@@ -786,21 +812,29 @@ export class Menu {
   }
 
   /**
-   * The add-ons a start would actually merge: picked *and* still ticked, in pick order. Everything
-   * that resolves a WAD set — the level list, the start, the stored selection's ordering — reads
-   * this rather than `selectedPwads`, so an unticked row cannot leak into a loaded game.
+   * Why the selected game WAD can't merge one of the picks, as the badge its row carries — '' when
+   * it can. The rule is `library.ts: fitsGameWad`'s, the same one `pwadsFor` and the WAD Library's
+   * greying read; only the wording is shorter than the overlay's, this panel being a fraction of
+   * its width. See docs/menu.md § Picking a WAD set.
    */
-  private activePwads(): WadSource[] {
-    return this.selectedPwads.filter((p) => !this.disabledPwads.has(p.key));
+  private mismatchReason(source: WadSource): string {
+    if (this.selectedIwad && source.key === this.selectedIwad.key) return 'game WAD';
+    if (fitsGameWad(this.selectedIwad, source)) return '';
+    return mapStyle(source) === 'doom1' ? 'DOOM 1' : 'DOOM II';
   }
 
   /**
-   * Drops any selected add-on the game WAD no longer allows — the ones whose maps don't match it,
-   * and the file that *is* the game WAD. `pwadsFor` is the one statement of that (docs/menu.md §
-   * WAD Library), shared with the overlay's preview of the same prune.
+   * The add-ons a start would actually merge: picked, still ticked, *and* mergeable with the game
+   * WAD in front of them (`pwadsFor`). Everything that resolves a WAD set — the level list, the
+   * start, the stored selection's ordering — reads this rather than `selectedPwads`, so neither an
+   * unticked row nor one the game WAD can't take can leak into a loaded game. That guard is what
+   * lets a mismatched pick keep its row instead of being pruned out of the list.
    */
-  private pruneIncompatiblePwads(): void {
-    this.selectedPwads = pwadsFor(this.selectedIwad, this.selectedPwads);
+  private activePwads(): WadSource[] {
+    return pwadsFor(
+      this.selectedIwad,
+      this.selectedPwads.filter((p) => !this.disabledPwads.has(p.key)),
+    );
   }
 
   /** Ticks or unticks one add-on. It keeps its place in the list either way — see `disabledPwads`. */

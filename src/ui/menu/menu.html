@@ -66,37 +66,12 @@
       <div class="tab-panel" id="tab-settings">
         <div class="tabs subtabs">
           <button class="tab" id="settings-tab-button-general" data-tab="general">General</button>
+          <button class="tab" id="settings-tab-button-visuals" data-tab="visuals">Visuals</button>
           <button class="tab" id="settings-tab-button-controls" data-tab="controls">Controls</button>
         </div>
 
         <div class="tab-panels">
           <div class="tab-panel" id="settings-tab-general">
-            <section>
-              <h2>Camera</h2>
-              <select id="cameramode-select">
-                <option value="auto">Automatic zoom + tilt</option>
-                <option value="manual">Manual</option>
-              </select>
-            </section>
-
-            <section>
-              <h2>Frame rate</h2>
-              <select id="fpscap-select">
-                <option value="0">Unlimited</option>
-                <option value="30">30 fps</option>
-                <option value="60">60 fps</option>
-                <option value="120">120 fps</option>
-              </select>
-            </section>
-
-            <section>
-              <h2>Lighting</h2>
-              <label class="checkbox-row">
-                <input type="checkbox" id="dynlights-checkbox" />
-                <span>Dynamic lights</span>
-              </label>
-            </section>
-
             <section>
               <h2>Collision</h2>
               <label class="checkbox-row">
@@ -132,6 +107,34 @@
               <label class="checkbox-row">
                 <input type="checkbox" id="profiler-checkbox" />
                 <span>Profiler overlay</span>
+              </label>
+            </section>
+          </div>
+
+          <div class="tab-panel" id="settings-tab-visuals">
+            <section>
+              <h2>Camera</h2>
+              <select id="cameramode-select">
+                <option value="auto">Automatic zoom + tilt</option>
+                <option value="manual">Manual</option>
+              </select>
+            </section>
+
+            <section>
+              <h2>Frame rate</h2>
+              <select id="fpscap-select">
+                <option value="0">Unlimited</option>
+                <option value="30">30 fps</option>
+                <option value="60">60 fps</option>
+                <option value="120">120 fps</option>
+              </select>
+            </section>
+
+            <section>
+              <h2>Lighting</h2>
+              <label class="checkbox-row">
+                <input type="checkbox" id="dynlights-checkbox" />
+                <span>Dynamic lights</span>
               </label>
             </section>
           </div>

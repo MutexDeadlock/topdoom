@@ -102,21 +102,23 @@ What is its own:
   the abandoned draft lying, rather than stating that invariant a second time from the other end.
   `Apply` closes *before* it commits: applying redraws the menu, which redraws this overlay, and a
   set whose files still need hashing would otherwise leave the panel up and frozen for a disk read.
-- **The whole set is applied in one call**, not a row at a time. The game WAD decides which add-ons
-  may stay, so applying the draft row by row would let an order the player never chose decide what
-  the prune throws away. `applyPicks` identifies every file in the set — together, since each may
+- **The whole set is applied in one call**, not a row at a time — a game WAD and the add-ons picked
+  beside it are one decision, and applying the draft row by row would put them in an order the
+  player never chose. `applyPicks` identifies every file in the set — together, since each may
   read and hash a whole file and no two touch each other — keeps the `disabledPwads` off-flags of
   the add-ons that were in the set before *and* still are (anything picked again after being dropped
   starts on, the rule `takeAsPwad` keeps for a single tick), then replaces the selection outright.
 - **What a game WAD costs the add-ons is one function**, `library.ts: pwadsFor` — `fitsGameWad`
-  (§ Picking a WAD set) plus dropping the file that *is* the game WAD. `Menu.pruneIncompatiblePwads`
-  applies it to the selection and `LibraryUi.draftTake` previews it against the draft as the radio
-  is ticked, so the rows say up front what the set will be rather than reporting the loss once the
-  overlay is gone. Two copies is how the overlay comes to show a set that Apply then quietly
-  produces differently.
+  (§ Picking a WAD set) plus dropping the file that *is* the game WAD. **Nothing prunes with it**:
+  `Menu.activePwads` filters through it to decide what a start actually merges, and the two lists
+  grey out the rows it drops, so a pick a game WAD can't take is refused rather than removed
+  (§ Picking a WAD set). One function behind the merge and the greying, or the overlay shows a set
+  that Apply then quietly produces differently.
 - **The footer says when the draft has drifted** — `#wadlibrary-summary` appends `— not applied yet`
   whenever the draft differs from the menu's picks. Without it a staged overlay is a trap: the
-  summary would read exactly like the menu's own selection and `Close` would look harmless.
+  summary would read exactly like the menu's own selection and `Close` would look harmless. It also
+  counts the picks the draft's game WAD **can't** take (`3 add-ons (1 not merged)`), since a draft
+  keeps those rather than dropping them and a bare count would promise a merge that won't happen.
 - **A file added while the overlay is up is staged too.** `Menu.addFiles` always adds to `sources`,
   but *where the pick lands* depends on what is on top: with the overlay down it adopts as before,
   with it up it hands the new sources to `LibraryUi.stage`, which ticks them into the draft. That is
@@ -228,7 +230,10 @@ What is its own:
   with the control rather than with a rule the player has to discover; a PWAD-typed row stacks.
 - **Incompatible add-ons render disabled rather than hidden**, the same `mapStyle` rule and the same
   reasoning as `renderPwads` (§ Picking a WAD set), with the mismatched game named in the row's
-  badge.
+  badge. **One already in the draft keeps a live checkbox** (`refused && index < 0`): unticking is
+  the only way to drop a pick from this pane, and a game WAD that no longer suits one is exactly
+  when the player might want to — what the row must not do is accept a *new* pick the set can't
+  use.
 - **Applying a library file gives it its content id** (`Menu.identify` → `ensureWadId` +
   `rememberLibraryId`), which the scan deliberately skipped — docs/wad.md § Content id. It is
   remembered on disk, so a file is hashed once ever rather than once per session. Deferred to
@@ -352,8 +357,8 @@ What is its own:
 
 **The Add-ons list holds the picks, not the offer.** `renderPwads` lists `selectedPwads` alone, in
 merge order — browsing is the overlay's job now, so the list on the tab is short and is no longer a
-second picker that has to agree with the first about what is compatible (nothing incompatible can be
-in it: `pruneIncompatiblePwads` already ran). Each row is checkbox · name · size · contents ·
+second picker that has to agree with the first about what is compatible. Each row is checkbox ·
+name · [reason] · size · contents ·
 DEHACKED · support · `#N` · `×` — the same detail columns the overlay lists, narrower — and the two controls
 mean **different things**:
 
@@ -366,10 +371,23 @@ mean **different things**:
   itself stays on offer in the overlay where it was chosen. The row is a `<label>`, so that handler
   `preventDefault()`s and `stopPropagation()`s or the click is forwarded to a control.
 
-`Menu.activePwads()` — picked *and* ticked — is what everything resolving a WAD set reads: the level
-list, the start, and the library-permission check. `selectedPwads` alone is only ever the *display*
-list, which is what keeps an unticked row from leaking into a loaded game. The `#N` badge numbers
-against the active list too, so the order reads 1..n with no gaps; a disabled row shows `off`.
+**A pick the game WAD can't take is refused, not dropped** (`Menu.mismatchReason`): the row stays,
+dimmed, with an untickable box, `off` in the order column and the reason in a badge — and its
+off-flag is left alone, so picking a game WAD that suits it again brings it back exactly as it was.
+Switching from DOOM II to DOOM 1 and back must not cost a set the player assembled once; the old
+behavior pruned those picks out of the list and out of storage. The badge column is rendered **only
+when some row in the list has a reason to give**, and then on every row, empty ones included: it
+costs the name column its width, and the fixed-width columns behind it have to begin in the same
+place on every row. Its wording is shorter than the overlay's (`DOOM II` against `DOOM II maps`)
+because this panel is a fraction of that one's width; the *rule* behind both is the one
+`fitsGameWad`.
+
+`Menu.activePwads()` — picked, ticked, *and* mergeable (`pwadsFor`) — is what everything resolving a
+WAD set reads: the level list, the start, and the library-permission check. `selectedPwads` alone is
+only ever the *display* list, which is what keeps an unticked or refused row from leaking into a
+loaded game — and that guard is exactly what lets a refused pick keep its place. The `#N` badge
+numbers against the active list too, so the order reads 1..n with no gaps; any row that isn't being
+merged shows `off`.
 
 Drag-and-drop onto the menu is unchanged and still the fastest way in for one file;
 `Add single WADs…` in the overlay is the same thing through `#file-input` for anyone who can't drag.
@@ -486,9 +504,9 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
 - **Game WAD** (`renderIwads`) only offers sources with `type === 'IWAD'`. A PWAD mapset can still be
   *played* as the game WAD (dropped on the menu, or `?wad=`), but it doesn't appear in this list to
   pick from directly.
-- **Add-ons** (`renderPwads`) excludes anything of `type === 'IWAD'` and whichever source is
-  currently the game WAD (even a PWAD-typed one adopted as the game WAD) — otherwise it
-  would show up twice. Order matters and is the order they were ticked: it's the merge order, so the
+- **Add-ons** (`renderPwads`) lists the picks; anything of `type === 'IWAD'` never reaches them, and
+  a source that is *also* the current game WAD is shown refused (badge `game WAD`) rather than
+  merged twice. Order matters and is the order they were ticked: it's the merge order, so the
   rows carry a `#N` badge. Ticking a row re-renders the whole list, which empties the scroller and
   would clamp it back to the top, so `renderPwads` saves and restores `scrollTop` — with enough
   add-ons installed the list scrolls, and picking one out of the bottom of it must not scroll away.
@@ -502,14 +520,15 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
   add-on. **The declared type decides here** — there is no longer a per-target picker to disagree
   with it. `addFiles` applies the pick through `takeAsIwad`/`takeAsPwad`, the same render-free
   bodies the single-pick handlers use, and draws once for the whole drop.
-- **Add-ons are filtered by game.** An add-on that doesn't fit the selected game WAD
-  (`library.ts: fitsGameWad`, over `mapStyle` — see docs/wad.md § The `public/wads/` manifest for
-  what style means) is rendered **disabled** rather than hidden — a mapset that's simply for the other game is still
-  worth seeing, just not pickable. Switching game WAD calls `pruneIncompatiblePwads` to drop any
-  already-ticked add-on that no longer matches, so the merged map list (`mergedMaps`) never silently
-  mixes an E1M1 with a MAP01 mapset. The greying reads `fitsGameWad` and every prune — the menu's
-  and the overlay's draft alike — goes through `pwadsFor` over the same predicate: one statement of
-  the rule, or the overlay offers a row the prune then drops.
+- **Add-ons are filtered by game, and never dropped for it.** An add-on that doesn't fit the
+  selected game WAD (`library.ts: fitsGameWad`, over `mapStyle` — see docs/wad.md § The
+  `public/wads/` manifest for what style means) is rendered **disabled** rather than hidden — a
+  mapset that's simply for the other game is still worth seeing, just not pickable. Switching game
+  WAD **keeps** every pick that no longer matches, greyed out and unticked, so switching back
+  restores the set intact; what keeps the merged map list (`mergedMaps`) from silently mixing an
+  E1M1 with a MAP01 mapset is `activePwads`, which filters through `pwadsFor` before anything
+  resolves a set. The greying and that filter read the same predicate — one statement of the rule,
+  or a row the menu offers is one the start then drops.
 - The **Level** list groups DOOM 1's `ExMy` maps by episode, and each row reads
   `<lump>  —  <title>  —  <provider>`, dropping either of the last two when it doesn't apply: the
   title only when the WAD set knows one (docs/wad.md § Level names — resolved off the manifest
@@ -537,10 +556,11 @@ touched the control.
 
 ## Settings tab
 
-The tab is split in two by its own row of **sub-tabs** (`.tabs.subtabs` inside `#tab-settings`,
-`Menu.setSettingsTab`): **General** holds the settings that aren't a key's behavior, **Controls**
-holds the key list and everything bound to it. The sub-panels are the same `.tab-panels`/`.tab-panel`
-grid-cell stack the top-level tabs use, nested one level — so General being much shorter than
+The tab is split in three by its own row of **sub-tabs** (`.tabs.subtabs` inside `#tab-settings`,
+`Menu.setSettingsTab`): **Visuals** holds everything that changes how the running
+level looks, **Controls** holds the key list and everything bound to it, **General** holds what is
+left — the settings that are neither. The sub-panels are the same `.tab-panels`/`.tab-panel`
+grid-cell stack the top-level tabs use, nested one level — so Visuals being much shorter than
 Controls costs the menu no resize when the player switches, exactly as above. The sub-tab row is
 styled a step quieter (smaller type, no rule under it) so it doesn't read as a second tab bar of
 equal rank, and like the tabs above it the pick survives an `open`.
@@ -556,27 +576,35 @@ description, the autorun checkbox is the `Shift` row's. A player looking up what
 player changing it are the same person on the same trip to the menu — which is why those two did not
 move to General with the rest.
 
-**General is the camera mode, the frame rate limit, the lighting and collision toggles and the two
-volume sliders**, stacked full width in that order — Sound last of the always-on sections
-(`#settings-dev` still follows it in a dev build), since it is the one a player reaches for
-mid-game and the bottom of the panel is nearest the footer. **Camera** is `#cameramode-select`,
-whose `<option>` values are the `CameraMode` strings themselves (`auto`, the default, vs
-`manual`); it is owned by `game/autocamera.ts` (`getCameraMode`/`setCameraMode`) and read per tic,
-so a change applies to the level already running (docs/render.md § Auto camera). It sits in
-General rather than the Controls key list because the mode is not a key's behavior — the `+ - [ ]`
-rows there note they act in manual mode only. Sound holds `#volume-slider` (effects) above `#music-volume-slider`, each with
-a `.label` wide enough that the two line up; the sfx one previews itself with `itemup` as it is
-dragged, the music one needs no preview because it rides the track already playing behind the menu
-(docs/music.md § Volume). The
-limit is `#fpscap-select`, and its `<option>` values *are* the capped rates (`0` = unlimited, the
-default), so the control needs no mapping table. It is owned by `game.ts` (`getFpsCap`/`setFpsCap`),
-whose frame loop is the only thing it changes, and is read live per frame — changing it mid-level
-applies to the level already running, like volume and autorun. See docs/frameloop.md § The FPS cap
-for how a cap is actually held.
+**General is what is left once the other two have taken theirs**: the collision and level-start
+toggles and the two volume sliders, stacked full width in that order — Sound last of the always-on
+sections (`#settings-dev` still follows it in a dev build), since it is the one a player reaches for
+mid-game and the bottom of the panel is nearest the footer. Sound holds `#volume-slider` (effects)
+above `#music-volume-slider`, each with a `.label` wide enough that the two line up; the sfx one
+previews itself with `itemup` as it is dragged, the music one needs no preview because it rides the
+track already playing behind the menu (docs/music.md § Volume).
 
-**Collision** is one checkbox, `Infinite tall actors (vanilla)` — off by default, and the one
-setting here that changes how the game plays rather than how it presents itself
-(docs/movement.md § Collision). It applies to the level already running, like volume and the cap:
+**Visuals is Camera, Frame rate, Lighting** — everything that changes what the running level *looks*
+like, in that order: the camera first, being the one a player actually goes looking for.
+
+**Camera** is `#cameramode-select`, whose `<option>` values are the `CameraMode` strings themselves
+(`auto`, the default, vs `manual`); it is owned by `game/autocamera.ts`
+(`getCameraMode`/`setCameraMode`) and read per tic, so a change applies to the level already running
+(docs/render.md § Auto camera). It sits here rather than in the Controls key list because the mode
+is not a key's behavior — the `+ - [ ]` rows there note they act in manual mode only.
+
+The frame limit is `#fpscap-select`, and its `<option>` values *are* the capped rates
+(`0` = unlimited, the default), so the control needs no mapping table. It is owned by `game.ts`
+(`getFpsCap`/`setFpsCap`), whose frame loop is the only thing it changes, and is read live per frame
+— changing it mid-level applies to the level already running, like volume and autorun. See
+docs/frameloop.md § The FPS cap for how a cap is actually held. Lighting is the one
+`#dynlights-checkbox`, on by default and likewise read per frame, so it too takes effect without a
+reload (docs/lights.md § The toggle).
+
+**Collision** is one checkbox, `Infinite tall actors (vanilla)` — off by default, and one of the two
+settings left on General that change how the game plays rather than how it presents itself
+(docs/movement.md § Collision); Level start's `Pistol start every level` is the other
+(docs/items.md § Pistol start). It applies to the level already running, like volume and the cap:
 `blockedByThings` reads the flag per call.
 
 General ends with **`#settings-dev`, a DEVMODE-only section holding the profiler overlay's

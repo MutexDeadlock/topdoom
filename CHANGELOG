@@ -9,13 +9,17 @@ Features and improvements
   - dynamic lights: torches, lamps, pickups, projectiles in flight, 
     explosions and muzzle flashes now light the level around them
     - a WAD's own GLDEFS/DOOMDEFS lump layers over the stock definitions
-    - Settings > General > Lighting turns them off
+    - Settings > Visuals > Lighting turns them off
   - multisampling is off on high-DPI displays, where it cost a third of every
     frame to smooth edges already drawn at four pixels apiece
   - big maps render substantially faster: the lights' per-pixel visibility
     lookup is resolved once per vertex instead
   - the DEVMODE profiler shows GPU time beside CPU time, so a GPU-bound frame
     is visible instead of reading as a four-figure "fps eq."
+  - switching game WAD keeps the add-ons it can't merge: they stay in the list
+    switched off, with the reason on the row, and come back on the moment a
+    game WAD that fits them is picked again
+  - Settings has a Visuals tab: camera mode, frame rate limit, dynamic lights
 
 
 ===============================================================================

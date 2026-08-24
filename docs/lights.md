@@ -363,7 +363,7 @@ per-fragment gate is not (§ How the answer reaches a fragment).
 
 ## The toggle
 
-`topdoom.dynamicLights` in localStorage, **on by default**, in the menu's Settings → General tab
+`topdoom.dynamicLights` in localStorage, **on by default**, in the menu's Settings → Visuals tab
 under Lighting. Module-level rather than per-`Game`, for the reason `getInfiniteTallActors` is: it
 must apply to the level already running, and the flag is read once per frame, so it takes effect
 immediately with no reload. Turned off, `commit` uploads a count of zero and `tintAt` writes zeros

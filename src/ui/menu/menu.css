@@ -217,13 +217,35 @@
   color: #fff;
 }
 
+#menu .row.selected .meta {
+  color: #a08e88;
+}
+
+/*
+ * A row that can't be picked — an add-on the game WAD won't take, in either WAD list. Dimmed by
+ * *colour*, never by `opacity`: a child cannot undo a parent's opacity, and the one thing on such a
+ * row that must stay readable is exactly the badge saying why it is disabled. The checkbox keeps an
+ * opacity of its own, having no text colour to dim. After `.selected .meta` above, which it matches
+ * at equal specificity: a pick can be both, and it is the dimming that has to win.
+ */
 #menu .row.disabled {
   cursor: default;
-  opacity: 0.4;
 }
 
 #menu .row.disabled:hover {
   background: none;
+}
+
+#menu .row.disabled .name {
+  color: var(--fg-faint);
+}
+
+#menu .row.disabled .meta {
+  color: var(--fg-ghost);
+}
+
+#menu .row.disabled input {
+  opacity: 0.4;
 }
 
 #menu .row input {
@@ -244,6 +266,30 @@
 #menu .row .meta {
   color: #6f6a65;
   font-size: 12px;
+}
+
+/*
+ * Why a row can't be picked, leading the fixed-width columns in both WAD lists — the accent at full
+ * strength, because it is the only thing on a row the player needs to read *before* trying to click
+ * it, and it sits on a row already dimmed for being unpickable. Fixed-width and present even when
+ * it says nothing, or the columns behind it would begin somewhere different on every row. Only the
+ * width is per-list: `#wadlibrary .badge` (library.css) has room for the longer wording.
+ */
+#menu .badge {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 11px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--accent-text-hover);
+}
+
+/* 10ch, for `game WAD` — the longest reason this list gives, and `ch` measures the font's own
+   advance without the `letter-spacing` above, which adds a pixel per character on top. */
+#pwad-list .badge {
+  flex: 0 0 10ch;
 }
 
 /*
@@ -296,8 +342,8 @@
  * stays a literal, having only this one site to be read from. Red is the exception and *is* the
  * accent, because
  * `#menu .warning` already made it the menu's one red for "this won't work" — a fourth red would
- * only be a near-miss of it. Each has to out-specify `#menu .row .meta` above and
- * `#wadlibrary .row.disabled .meta` (library.css), which is why all three carry two classes.
+ * only be a near-miss of it. Each has to out-specify `#menu .row .meta` and `#menu .row.disabled
+ * .meta` above, which is why all three carry two classes.
  */
 #menu .row .meta.support.ok {
   color: #6aa96a;
@@ -324,10 +370,6 @@
 #menu .row .forget:hover {
   color: var(--accent-text-hover);
   border-color: transparent;
-}
-
-#menu .row.selected .meta {
-  color: #a08e88;
 }
 
 #menu .checkbox-row {

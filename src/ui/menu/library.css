@@ -250,32 +250,10 @@
 /*
  * File rows reuse `#menu .row` wholesale — `#wadlibrary` nests inside `#menu` (menu.html), so those
  * rules already apply and a WAD reads identically here and in the add-on list. Only the deltas are
- * below: this pane has room for real columns, and its disabled rows must stay readable.
+ * below, and they are all widths: this pane has room for real columns. How a row that can't be
+ * picked is dimmed is `#menu .row.disabled`'s (menu.css), shared with the add-on list, badge and
+ * all.
  *
- * Dimmed by colour, not by `opacity` — a child cannot undo a parent's opacity, and the one thing on
- * a disabled row that must stay readable is exactly the badge saying *why* it is disabled. The
- * checkbox keeps an opacity of its own, since it has no text colour to dim.
- */
-#wadlibrary .row.disabled {
-  cursor: default;
-  /* Explicit, not merely absent: `#menu .row.disabled` (menu.css) sets 0.4 at the same specificity,
-     and dropping the declaration here would leave that one applying unopposed. */
-  opacity: 1;
-}
-
-#wadlibrary .row.disabled .name {
-  color: var(--fg-faint);
-}
-
-#wadlibrary .row.disabled .meta {
-  color: var(--fg-ghost);
-}
-
-#wadlibrary .row.disabled input {
-  opacity: 0.4;
-}
-
-/*
  * Four detail columns rather than one joined string, each fixed-width and right-aligned so sizes
  * line up under sizes and map counts under map counts — the same shape `#pwad-list .row .meta`
  * (menu.css) gives the New Game tab, at the wider widths this pane has room for. The colour and
@@ -305,20 +283,16 @@
   width: 10ch;
 }
 
-/* First of the fixed-width columns, and fixed-width even when empty — see `LibraryUi.baseRow`. */
+/*
+ * First of the fixed-width columns, and fixed-width even when empty — see `LibraryUi.baseRow`.
+ * Everything but the width is `#menu .badge`'s (menu.css), shared with the add-on list.
+ *
+ * 16ch, not the 12 `DOOM II maps` counts: `ch` measures the font's own advance and takes no account
+ * of the `letter-spacing`, which adds a pixel per character on top — 13ch clipped the longest
+ * reason to `DOOM II MAP…`.
+ */
 #wadlibrary .badge {
-  /* 16ch, not the 12 `DOOM II maps` counts: `ch` measures the font's own advance and takes no
-     account of the `letter-spacing` below, which adds a pixel per character on top — 13ch clipped
-     the longest reason to `DOOM II MAP…`. */
   flex: 0 0 16ch;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  text-align: right;
-  font-size: 11px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--accent-text-hover);
 }
 
 #wadlibrary .badge.quiet {
@@ -330,8 +304,9 @@
 /*
  * Why a row can't be picked. The accent at full strength, because it is the only thing on a row the
  * player needs before they try to click it — and it sits on a row dimmed for being unpickable, so
- * anything quieter reads as part of the dimming. It has to out-specify `.badge` above (both are
- * (0,2,0) here, so source order decides) and `.row.disabled .meta` cannot reach it at all.
+ * anything quieter reads as part of the dimming. It restates `#menu .badge`'s colour (menu.css) to
+ * out-specify `.quiet` above — the two match at equal specificity, so source order decides — and
+ * `.row.disabled .meta` cannot reach it at all.
  */
 #wadlibrary .badge.reason {
   color: var(--accent-text-hover);

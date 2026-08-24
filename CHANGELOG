@@ -11,12 +11,12 @@ Features and improvements
     - a WAD's own GLDEFS/DOOMDEFS lump layers over the stock definitions
     - Settings > Visuals > Lighting turns them off
   - main menu:
+    - F2 / F3 / F4 open the menu on the Save / Load / Settings tab
     - switching game WAD keeps the add-ons it can't merge: they stay in the list
       switched off, with the reason on the row
     - Settings is split four ways: Visuals (camera, frame rate, dynamic lights),
       Audio, Controls, and General for what is left
     - implemented a master volume slider
-  - F2 / F3 / F4 open the menu on the Save / Load / Settings tab
   - big maps cost a lot less per frame:
     - flats are cut on a world grid instead of per fan triangle: half the
       vertices and triangles on a big map, and a better fade with it

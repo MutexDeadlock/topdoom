@@ -206,3 +206,28 @@ a repointed chain fires the attack that pointer belongs to, at the timing its ch
 action rather than skipped as a class. A patch asking for something out of scope still loads and
 plays; what was skipped is reported rather than dropped silently. See
 [docs/dehacked.md](docs/dehacked.md).
+
+## License
+
+The engine is **GPL-2.0** — see [LICENSE](LICENSE). That is less a choice than a consequence: no
+vanilla C is ported, but the data tables are transcribed from
+[id Software's Doom source](https://github.com/id-Software/DOOM) — `states[]`/`sprnames[]` and the
+`mobjinfo` state pointers ([src/game/dehacked/states.ts](src/game/dehacked/states.ts)), the monster
+stats, the linedef and sector specials, `rndtable`, `S_music[]` — and a transcription is still a
+derivative work. id relicensed that source under the GPL in 1999. Its per-file headers were never
+rewritten and still name the older DOOM Source Code License; the repository's own `LICENSE.TXT` is
+the GPL, and is what governs.
+
+`three` (MIT) is the only dependency bundled into a build.
+
+### What it does not cover
+
+The GPL applies to this engine's own source. **Game content is not ours to license, and none of it
+is covered:**
+
+- **Your IWADs.** `DOOM.WAD` and `DOOM2.WAD` are id Software's commercial data. They are not in
+  this repo and never will be — you supply them, as [Running it](#running-it) describes.
+- **[Freedoom](https://freedoom.github.io/)**, which is what ships as playable content, is under
+  its own BSD 3-clause terms: redistributable, but the copyright notice travels with it.
+  `public/og.jpg`, the link-preview card, is a Freedoom screenshot and carries the same.
+- **The shareware `DOOM1.WAD`**, where it is bundled, stays under id Software's shareware terms.

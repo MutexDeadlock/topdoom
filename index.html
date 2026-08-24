@@ -3,7 +3,61 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TopDoom</title>
+
+    <!--
+      Everything down to the stylesheet link is metadata for crawlers and link unfurls, not for
+      the running page. The canonical origin is repeated literally in every absolute URL here and
+      in public/robots.txt + public/sitemap.xml — see docs/styles.md § Page metadata.
+    -->
+    <title>TopDOOM - DOOM from above</title>
+    <meta
+      name="description"
+      content="A top-down DOOM that runs in the browser."
+    />
+    <link rel="canonical" href="https://topdoom.vercel.app/" />
+    <meta name="theme-color" content="#08080a" />
+
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="TopDOOM" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:url" content="https://topdoom.vercel.app/" />
+    <meta property="og:title" content="TopDOOM — DOOM from above" />
+    <meta
+      property="og:description"
+      content="A top-down DOOM that runs in the browser."
+    />
+    <meta property="og:image" content="https://topdoom.vercel.app/og.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="A Freedoom level seen from above: the player crossing a dark techbase hall, enemies waiting on the lit floor beyond."
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "VideoGame",
+        "name": "TopDOOM",
+        "url": "https://topdoom.vercel.app/",
+        "description": "A top-down DOOM that runs in the browser.",
+        "image": "https://topdoom.vercel.app/og.jpg",
+        "sameAs": "https://github.com/MutexDeadlock/topdoom",
+        "applicationCategory": "GameApplication",
+        "gamePlatform": "Web browser",
+        "operatingSystem": "Any",
+        "playMode": "SinglePlayer",
+        "genre": ["Action", "Shooter"],
+        "browserRequirements": "Requires WebGL2",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+      }
+    </script>
+
     <link rel="stylesheet" href="/src/styles.css" />
   </head>
   <body>

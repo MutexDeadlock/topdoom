@@ -74,6 +74,39 @@ Node's native TS stripping, which would choke on it.
 Every rule is id-scoped, so ordering between the parts is not load-bearing — but keep the import
 list in stacking order anyway, since that's the order a reader will look for.
 
+## Page metadata
+
+`index.html`'s `<head>`, above the stylesheet link, is entirely for crawlers and link unfurls —
+nothing in `src/` reads any of it. It pairs with five files in `public/`, which Vite copies to the
+site root unchanged:
+
+| File | |
+|---|---|
+| `favicon.ico` | the tab icon, 16/32/48 in one file |
+| `apple-touch-icon.png` | 180×180, the logo at full detail — the source the `.ico` is cut from |
+| `og.jpg` | 1200×630, the `og:image` card |
+| `robots.txt` | `Disallow: /wads/`, and the `Sitemap:` line |
+| `sitemap.xml` | the one URL there is |
+
+**The canonical origin is written out literally, in every one of them.** `canonical`, `og:url`,
+`og:image`, the JSON-LD `url`/`image`, `robots.txt`'s `Sitemap:` and `sitemap.xml`'s `<loc>` each
+spell out `https://topdoom.vercel.app` — absolute URLs are what a crawler needs, and a Vite
+`%VITE_%` substitution would leave the literal placeholder in the page whenever the variable is
+unset. Moving the site means grepping the origin and changing every hit.
+
+`robots.txt` excludes `/wads/` because a build ships whatever is in `public/wads/` — tens of
+megabytes of game data with nothing to index, and not ours to serve to a crawler.
+
+**The `.ico` carries different artwork per size, which is what the format is for.** 48 px is the
+logo whole; 16 and 32 are a tighter crop of it, because the wordmark goes illegible at those sizes
+when the surrounding glow is scaled down with it. Recut all three from `apple-touch-icon.png` when
+the logo changes — a straight `-resize 16x16` of the full art is a coloured smudge.
+
+`og.jpg` is a **Freedoom** screenshot, not a DOOM one: the card is served to anyone who links the
+page, and Freedoom's assets are the ones that may be redistributed. Any 1200×630 capture does;
+what has to stay in step is the file name and the format, which `og:image` and `og:image:type`
+both name.
+
 ## Tokens
 
 `:root` in `base.css`. A value earns a token by being an **exact repeat across two or more

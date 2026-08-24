@@ -21,6 +21,8 @@ Features and improvements
     frame to smooth edges already drawn at four pixels apiece
   - the DEVMODE profiler shows GPU time beside CPU time, so a GPU-bound frame
     is visible instead of reading as a four-figure "fps eq."
+  - the page carries its own metadata now: title, description, favicon,
+    link-preview card, robots.txt and sitemap (docs/styles.md)
 
 
 ===============================================================================

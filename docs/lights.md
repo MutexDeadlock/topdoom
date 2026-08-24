@@ -106,6 +106,13 @@ ids from a `WeakMap` on the animator, and the player has `PLAYER_EMITTER_ID` bel
 ids live on a `WeakMap` rather than a field precisely so no record shape — and so no snapshot —
 changes.
 
+**The range constants live in `render/lights.ts`**, the only module that reads an id, rather than
+in each of the three call sites that mints one — an id whose meaning is split across three files is
+an invariant nothing enforces. `effectEmitterId` wraps at `PLAYER_EMITTER_ID` rather than counting
+down forever, so no session is long enough to walk an effect onto the player's id; the collision
+would be silent (a barrel that stops lighting itself, two emitters sharing a flicker phase), which
+is why it is closed by construction rather than by the range being large.
+
 ## Light stops at walls
 
 A GLDEFS light is a point and a radius, and nothing in that says a wall is in the way. Left at
@@ -203,12 +210,27 @@ behaviour too.
 ### How the answer reaches a fragment
 
 Per frame, `commit` stamps each committed light's reached leaves into a **bitmask indexed by
-subsector**: one `RGBA32UI` texel per leaf, one bit per light, uploaded as an integer texture the
-fragment shader reads with `texelFetch`. Every map surface carries the leaf it faces into as the
-`aLightCell` vertex attribute, so a fragment fetches its own leaf's mask once and skips any light
-whose bit is clear.
+subsector**: one `RGBA32UI` texel per leaf, one bit per light, uploaded as an integer texture read
+with `texelFetch`. Every map surface carries the leaf it faces into as the `aLightCell` vertex
+attribute, and the shader skips any light whose bit is clear.
 
-Four things about that are load-bearing:
+**That fetch happens in the vertex shader, not the fragment shader**, and is handed on as a
+`flat varying uvec4`. Every vertex of a wall quad or a flat's fan carries the same leaf, so the
+mask is constant across the primitive and `flat` carries it exactly — while the fetch itself drops
+from once per drawn pixel to once per vertex. It is the single largest cost this feature had: a
+dependent integer texture read on every fragment of every map surface, paid whether or not a light
+was anywhere near it. On EPIC.WAD MAP02 at a 14.7 MP drawing buffer, with **one** light committed,
+that fetch alone was 3.4 ms of the 5.1 ms the lighting cost; moving it to the vertex stage cut the
+whole feature's per-frame cost by 2.8x on that map and on E1M1 alike.
+
+The obvious alternative — keeping the fetch per fragment but skipping it with a cheap bounding test
+— was measured and is **worse**. A branch whose condition varies per fragment costs a GPU more than
+it saves unless it rejects nearly all of them: a sphere around the committed set won 28% on MAP02,
+where one light leaves most of the screen outside it, and lost 56% on E1M1, where lights are spread
+across the view and it rejects nothing. The outer `uLightCount > 0` guard is deliberately the only
+branch here, because that one is uniform across every fragment in the draw.
+
+Four more things are load-bearing:
 
 - **Walls take the leaf their *face* looks into, not the one they are in.** `mapmesh`'s
   `fillWallCells` probes each quad's midpoint along its front normal — every quad is built facing
@@ -336,7 +358,8 @@ statically bounded loop is one it may unroll, and 64 copies of a body carrying a
 `texelFetch` is a shader whose register pressure every fragment pays, lit or not. It is not a
 micro-optimisation — on the same measurement, the bound alone is most of a 99 ms frame against a
 55 ms one. The outer guard is what makes a frame with no lights — the toggle off, an unlit map —
-skip the visibility fetch, which is otherwise a dependent texture read on every drawn pixel.
+cost nothing at all, and it is uniform across the draw, which is why it is affordable where a
+per-fragment gate is not (§ How the answer reaches a fragment).
 
 ## The toggle
 

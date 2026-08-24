@@ -8,7 +8,8 @@ import { dampen } from '../util/damping.ts';
 import { decodeRuns, encodeRuns } from './snapshot.ts';
 import { computeMovableSectors } from './specials/mapscan.ts';
 import { VIEW_DISTANCE } from '../constants.ts';
-import type { WallOccluder } from '../render/mapmesh.ts';
+import type { Pos2 } from '../types.ts';
+import { wallProbePoint, type WallOccluder } from '../render/mapmesh.ts';
 import type { World } from './world.ts';
 
 /** Exponential smoothing rate (1/seconds) for the reveal, gentler than wall occlusion. */
@@ -48,11 +49,6 @@ const ORDER_RING = 256;
  */
 const ORDER_ANCHOR_SLACK = 256;
 
-/**
- * How far a wall's probe point is pushed off its own face, so it lands inside
- * the subsector that wall bounds rather than exactly on the boundary.
- */
-const WALL_PROBE_OFFSET = 1.5;
 /** How far a boundary sample is pulled toward the centroid, to keep it off the walls. */
 const BOUNDARY_INSET = 0.25;
 
@@ -93,6 +89,9 @@ export class FogOfWar {
   private blockFlag: Uint8Array;
   /** Bumped once per `tick`, so a line's `blocksSight` is read at most once per tic. */
   private scanId = 0;
+
+  /** Scratch for `wallSubsectorAt`, which runs per mover quad per tic — see `wallProbePoint`. */
+  private wallProbe: Pos2 = { x: 0, y: 0 };
 
   /**
    * The sector whose own lines this ray is allowed through, or -1 — set only
@@ -500,11 +499,7 @@ export class FogOfWar {
    * map with hundreds of movable sectors. docs/fogofwar.md § Mover wall quads.
    */
   wallSubsectorAt(ax: number, ay: number, bx: number, by: number): number {
-    const dx = bx - ax;
-    const dy = by - ay;
-    const len = Math.hypot(dx, dy) || 1;
-    const mx = (ax + bx) / 2 + (dy / len) * WALL_PROBE_OFFSET;
-    const my = (ay + by) / 2 + (-dx / len) * WALL_PROBE_OFFSET;
-    return this.world.subsectorAt(mx, my);
+    wallProbePoint(ax, ay, bx, by, this.wallProbe);
+    return this.world.subsectorAt(this.wallProbe.x, this.wallProbe.y);
   }
 }

@@ -185,6 +185,24 @@ interface Emitter {
  * (`render/textures.ts` patches every material's shader against them) and `tintAt` for sprites,
  * which are lit on the CPU instead (docs/lights.md § Two lighting paths).
  */
+/**
+ * The emitter-id space every `offer`/`tintAt` caller shares. `dontlightself` and a light's flicker
+ * phase both key off the id, so the three sources must not collide: a thing offers `PosedThing.id`
+ * (a plain array index, 0 and up), a one-shot effect counts down from -1 (`effectEmitterId`), and
+ * the player sits at `PLAYER_EMITTER_ID` below every effect's. Declared here because
+ * `DynamicLights` is the only module that reads any of them. docs/lights.md § What emits.
+ */
+export const PLAYER_EMITTER_ID = -1_000_000;
+
+/**
+ * The `n`th one-shot effect's emitter id. Wraps short of `PLAYER_EMITTER_ID` rather than counting
+ * down forever, so a long session cannot walk an effect onto the player's id and stop a light
+ * reaching whichever of the two `dontlightself` then skips.
+ */
+export function effectEmitterId(n: number): number {
+  return -1 - (n % (-PLAYER_EMITTER_ID - 1));
+}
+
 export class DynamicLights {
   /**
    * The live uniform objects, handed to every patched material once and mutated in place
@@ -432,17 +450,6 @@ export class DynamicLights {
   }
 
   /**
-   * The light reaching a point, as an additive tint for a sprite. Samples the **previous** frame's
-   * committed set: sprites are lit and offered in the same pass, so this frame's set isn't closed
-   * yet when a sprite needs its tint. One frame of latency on a moving light's tint is invisible
-   * at these speeds, and gathering in a second pass would mean walking every drawn sprite twice.
-   *
-   * `emitterId` is the sprite's own, so a `dontlightself` light (the barrel's, the armour bonus's)
-   * can skip it — GZDoom's own flag, and what keeps a barrel from glowing green in its own light.
-   * `subsector` is the sprite's leaf, tested against the same reach mask the geometry shader reads
-   * so a sprite behind a wall goes unlit exactly as the wall does.
-   */
-  /**
    * The whole of what a drawn sprite does with the lights: offers itself as an emitter, then
    * samples what reaches it. Every draw funnel goes through here rather than pairing the two
    * calls itself — the order is load-bearing (`tintAt` reads last frame's committed set, `offer`
@@ -458,6 +465,17 @@ export class DynamicLights {
     return this.sampled;
   }
 
+  /**
+   * The light reaching a point, as an additive tint for a sprite. Samples the **previous** frame's
+   * committed set: sprites are lit and offered in the same pass, so this frame's set isn't closed
+   * yet when a sprite needs its tint. One frame of latency on a moving light's tint is invisible
+   * at these speeds, and gathering in a second pass would mean walking every drawn sprite twice.
+   *
+   * `emitterId` is the sprite's own, so a `dontlightself` light (the barrel's, the armour bonus's)
+   * can skip it — GZDoom's own flag, and what keeps a barrel from glowing green in its own light.
+   * `subsector` is the sprite's leaf, tested against the same reach mask the geometry shader reads
+   * so a sprite behind a wall goes unlit exactly as the wall does.
+   */
   tintAt(x: number, y: number, z: number, emitterId: number, out: Tint, subsector = -1): void {
     out.r = 0;
     out.g = 0;

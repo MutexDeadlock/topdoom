@@ -4,16 +4,29 @@
  */
 import * as THREE from 'three';
 import { TopDownCamera } from './camera.ts';
+import { GpuTimer } from './gputimer.ts';
 import { Input } from '../game/input.ts';
 
 export class Viewport {
   readonly renderer: THREE.WebGLRenderer;
   readonly camera: TopDownCamera;
   readonly input: Input;
+  /** GPU time for the DEVMODE profiler, measured around the render call — see docs/menu.md § Profiling overlay. */
+  readonly gpuTimer: GpuTimer;
 
   constructor(container: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    // Capped at 2 because the cost of this frame is per fragment almost end to end
+    // (docs/render.md § What a frame costs), and a ratio of 3 would triple it for pixels no panel
+    // this runs on can show apart.
+    const pixelRatio = Math.min(window.devicePixelRatio, 2);
+    // MSAA only where the pixel ratio is not already supersampling. At a ratio of 2 there are four
+    // device pixels per CSS pixel before MSAA adds a sample, and the only thing it can still smooth
+    // is a geometry silhouette: the textures are point-sampled (`NearestFilter`, `render/textures.ts`)
+    // and the occlusion fade discards whole fragments, so neither gets anything from a coverage mask.
+    // It is not a small saving — 38% of the frame's GPU time, measured on an integrated GPU at every
+    // ratio. docs/render.md § What a frame costs.
+    this.renderer = new THREE.WebGLRenderer({ antialias: pixelRatio < 2, powerPreference: 'high-performance' });
+    this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     // Set once, here, rather than switched on and off with the light visor:
@@ -25,6 +38,8 @@ export class Viewport {
     this.renderer.toneMapping = THREE.LinearToneMapping;
     container.appendChild(this.renderer.domElement);
 
+    // three has been WebGL2-only since r163, so the context is one whatever the declared union says.
+    this.gpuTimer = new GpuTimer(this.renderer.getContext() as WebGL2RenderingContext);
     this.camera = new TopDownCamera(window.innerWidth / window.innerHeight);
     this.input = new Input(this.renderer.domElement);
 

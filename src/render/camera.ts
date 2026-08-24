@@ -369,8 +369,9 @@ export class TopDownCamera {
     // three refreshes these inside `render`, which is after the dynamic lights have closed their
     // frame — so the volume they cull against is derived here, at the pose just set, rather than
     // one frame late. docs/lights.md § What reaches the shader.
+    // `updateMatrixWorld` refreshes `matrixWorldInverse` with it (three's `Camera` overrides it to
+    // do exactly that), so the inverse needs no second pass of its own.
     this.camera.updateMatrixWorld();
-    this.camera.matrixWorldInverse.copy(this.camera.matrixWorld).invert();
     this.projScreen.multiplyMatrices(this.camera.projectionMatrix, this.camera.matrixWorldInverse);
     this.viewFrustum.setFromProjectionMatrix(this.projScreen);
   }

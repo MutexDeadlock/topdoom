@@ -9,8 +9,12 @@ export interface ProfileSample {
   ms: number;
 }
 
-/** EMA weight applied to each new frame's measurement — see FrameProfiler's doc for why raw per-frame numbers aren't shown directly. */
-const SMOOTHING = 0.12;
+/**
+ * EMA weight applied to each new frame's measurement — see FrameProfiler's doc for why raw
+ * per-frame numbers aren't shown directly. Exported because `render/gputimer.ts` smooths the
+ * GPU row on the same weight, and two rates in one overlay would read as one number lagging.
+ */
+export const PROFILE_SMOOTHING = 0.12;
 
 /**
  * Fraction of the pending off-frame pool charged into each frame — see
@@ -129,11 +133,11 @@ export class FrameProfiler {
       const prev = this.smoothedByLabel.get(label)!;
       const now = this.currentByLabel.get(label) ?? 0;
       measured += now;
-      this.smoothedByLabel.set(label, prev + (now - prev) * SMOOTHING);
+      this.smoothedByLabel.set(label, prev + (now - prev) * PROFILE_SMOOTHING);
     }
     const other = Math.max(0, total - measured);
-    this.smoothedOther += (other - this.smoothedOther) * SMOOTHING;
-    this.smoothedTotal += (total - this.smoothedTotal) * SMOOTHING;
+    this.smoothedOther += (other - this.smoothedOther) * PROFILE_SMOOTHING;
+    this.smoothedTotal += (total - this.smoothedTotal) * PROFILE_SMOOTHING;
   }
 
   samples(): ProfileSample[] {

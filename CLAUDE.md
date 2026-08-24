@@ -76,7 +76,7 @@ src/wad/library/     the player's own WAD folder: picking and walking it (disk),
 src/render/    BSP polygon reconstruction, mesh building, materials, occlusion fading,
                sprite billboards + their instanced batching, GLDEFS dynamic lights (lights) and
                which subsectors one reaches (lightvis),
-               shot tracers, camera, viewport
+               shot tracers, camera, viewport, the GPU's own frame time (gputimer)
 src/game/      spatial queries + collision, player controller, input, thing world state, fog of war,
                inventory/pickups, weapons and firing, shots in flight + splash, damage/death,
                transient effects, best times, savegames

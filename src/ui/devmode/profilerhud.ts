@@ -14,16 +14,23 @@ const HOT_FRACTION = 1;
 
 const PROFILER_STORAGE_KEY = 'topdoom.profiler';
 
+/** `getProfilerVisible`'s memo of the stored setting; null until first read. */
+let visible: boolean | null = null;
+
 /**
  * Whether the overlay is wanted, DEVMODE permitting. Defaults **on**, so a dev
  * build behaves as it did before the checkbox existed; only an explicit `'0'`
  * hides it. See docs/menu.md § Profiling overlay.
  */
 export function getProfilerVisible(): boolean {
-  return globalThis.localStorage?.getItem(PROFILER_STORAGE_KEY) !== '0';
+  // Memoized because `Game.draw` asks every frame to decide whether to run the GPU timer, and the
+  // setting only ever moves through `setProfilerVisible` below.
+  visible ??= globalThis.localStorage?.getItem(PROFILER_STORAGE_KEY) !== '0';
+  return visible;
 }
 
 export function setProfilerVisible(on: boolean): void {
+  visible = on;
   globalThis.localStorage?.setItem(PROFILER_STORAGE_KEY, on ? '1' : '0');
   applyProfilerVisible();
 }
@@ -36,6 +43,14 @@ export function setProfilerVisible(on: boolean): void {
  */
 export function applyProfilerVisible(): void {
   document.getElementById('profiler-hud')?.classList.toggle('visible', DEVMODE && getProfilerVisible());
+}
+
+/**
+ * One of the two total rows: the milliseconds and the frame rate they alone would allow. Shared so
+ * the pair stays formatted alike — they are meant to be read against each other.
+ */
+function msRow(label: string, ms: number): string {
+  return `${label} ${ms.toFixed(1)} ms  (${Math.round(1000 / Math.max(ms, 0.001))} fps eq.)`;
 }
 
 /**
@@ -56,6 +71,7 @@ export function applyProfilerVisible(): void {
 export class ProfilerHud {
   private root = document.getElementById('profiler-hud')!;
   private totalEl: HTMLElement;
+  private gpuEl: HTMLElement;
   private rows = new Map<string, { row: HTMLElement; fill: HTMLElement; value: HTMLElement }>();
 
   constructor() {
@@ -67,14 +83,25 @@ export class ProfilerHud {
     this.root.replaceChildren();
     this.totalEl = document.createElement('div');
     this.totalEl.className = 'profiler-total';
-    this.root.appendChild(this.totalEl);
+    this.gpuEl = document.createElement('div');
+    this.gpuEl.className = 'profiler-total';
+    this.root.append(this.totalEl, this.gpuEl);
   }
 
-  update(samples: ProfileSample[], totalMs: number): void {
+  update(samples: ProfileSample[], totalMs: number, gpuMs: number | null): void {
     // Toggled off in the menu: nothing on screen to update, and the panel's own
     // class is the single source of that (`applyProfilerVisible`).
     if (!this.root.classList.contains('visible')) return;
-    this.totalEl.textContent = `frame ${totalMs.toFixed(1)} ms  (${Math.round(1000 / Math.max(totalMs, 0.001))} fps eq.)`;
+    // Named `cpu`, not `frame`: every row here is main-thread wall clock inside the rAF callback,
+    // which cannot see the GPU — a scene whose fragment work takes 20 ms still reports a few
+    // milliseconds and a four-figure "fps eq." while the game runs at 50. The HUD's own FPS
+    // counter is the real rate; this is the ceiling the CPU alone would allow.
+    // docs/menu.md § Profiling overlay.
+    this.totalEl.textContent = msRow('cpu', totalMs);
+    // The two totals are concurrent, not cumulative: the larger one is what sets the frame rate,
+    // and a frame that is GPU-bound shows a small `cpu` beside a large `gpu`. `n/a` is the honest
+    // reading where the browser withholds `EXT_disjoint_timer_query_webgl2`, which is common.
+    this.gpuEl.textContent = gpuMs === null ? 'gpu n/a' : msRow('gpu', gpuMs);
 
     const sorted = [...samples].sort((a, b) => b.ms - a.ms);
     for (const s of sorted) {

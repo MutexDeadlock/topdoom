@@ -964,6 +964,37 @@ enforced by `TopDownCamera` itself, on both the jump route (`snapFraming`) and t
 manual keys just add their step and saturate. The auto camera's own endpoints sit inside it, so
 in practice only the manual keys ever reach it.
 
+## What a frame costs (`viewport.ts`)
+
+**This renderer is fragment-bound end to end.** E1M1 draws 32 calls and 5450 triangles, and GPU time
+scales exactly linearly with the drawing buffer — 0.9 MP to 14.7 MP is 0.90 ms to 10.92 ms on an
+integrated GPU, the same scene either way. Nothing here is helped by touching geometry, batching or
+draw calls; every lever is *pixels* or *what each pixel does*. A top-down camera is why: the floor
+covers the whole screen, so flats are the bulk of it (4.4 ms of a 5.0 ms scene) and the walls, thin
+on screen however tall they are in the map, are the rest.
+
+Two settings in `Viewport`'s constructor decide the pixel count, and both are load-bearing:
+
+- **`setPixelRatio` is capped at 2.** Cost is per fragment, so a ratio of 3 is triple the frame for
+  pixels no panel this runs on can show apart.
+- **`antialias` is off once the pixel ratio reaches 2**, and that is a measured decision, not a
+  stylistic one. MSAA resolves the whole multisampled buffer every frame *whatever is on screen*:
+  with the entire scene hidden, a 14.7 MP frame cost 5.64 ms with MSAA and 0.03 ms without. That is
+  38% of a full frame, and at a ratio of 2 it buys nothing — four device pixels per CSS pixel is
+  already the supersampling 4x MSAA would approximate, the textures are point-sampled
+  (`NearestFilter`, § Wall occlusion fading has the other half of that shader), and the occlusion
+  fade discards whole fragments rather than shading partial coverage, so neither can use a coverage
+  mask. Below ratio 2 there is no such supersampling and MSAA is kept.
+
+The clear and the canvas present are not a cost worth thinking about — 0.03 ms of a 14.7 MP frame.
+
+**Measure this in a browser, not by reasoning.** In-game, the DEVMODE profiler's `gpu` line is the
+first place to look (docs/menu.md § Profiling overlay): when it dwarfs the `cpu` line beside it, no
+row above it is worth touching. For a real experiment — an A/B of two shader variants, a resolution
+sweep — docs/lights.md § Profiling has the recipe
+(`EXT_disjoint_timer_query_webgl2`, which GPU chromium is pointed at, sizing the drawing buffer like
+the player's). Halving a number that turns out to be 4% of the frame is how time gets wasted here.
+
 ## View distance (`constants.ts: VIEW_DISTANCE`, `game.ts`)
 
 How far the player can see is the scene's **distance fog**, not a clipping plane: `game.ts` sets

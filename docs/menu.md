@@ -784,6 +784,38 @@ A third DEVMODE-gated panel, top-right, breaks a frame's cost down by category �
 whatever wasn't explicitly measured (input handling, HUD text, the player sprite's own pose) — so a slow
 frame can be traced to *which* system is responsible rather than just how many fps it costs.
 
+**Every row is CPU; the GPU gets one number of its own.** The rows and their total time main-thread
+wall clock between `beginFrame()` and `endFrame()`, both inside the same `requestAnimationFrame`
+callback — which cannot see the GPU, whose work finishes long after that callback returns. That is
+why the total says `cpu`, and why the overlay carries a second line:
+
+```
+cpu 4.5 ms  (220 fps eq.)
+gpu 20.1 ms  (49 fps eq.)
+```
+
+**The two are concurrent, not cumulative — the larger one is what sets the frame rate.** A frame
+like the one above is GPU-bound, and no amount of work on any row above it will help; docs/render.md
+§ What a frame costs is where to take the GPU side apart. Without this line the CPU total reads as a
+frame rate and a GPU-bound scene looks like a four-figure "fps eq." next to a HUD counter saying 50,
+which is exactly the report this was added for.
+
+`GpuTimer` (`render/gputimer.ts`) is where that number comes from: one `TIME_ELAPSED_EXT` query
+around `renderer.render`, through `EXT_disjoint_timer_query_webgl2`. Four things about it:
+
+- **It reads back late.** A query's result lands a frame or two after the frame it measured, so the
+  timer keeps a small pool of them in flight and claims each when the driver has it. The pool is
+  capped, which is what stops a driver that never answers from queueing one query per frame for the
+  rest of the session.
+- **A *disjoint* drops the whole batch.** The GPU having been reset invalidates every query in
+  flight, not one of them, and reading the flag is what clears it — so it is read once per harvest
+  and every result in that pass is discarded when it is set.
+- **`gpu n/a` is an ordinary outcome, not a failure.** Browsers have disabled the extension on and
+  off for side-channel reasons and some drivers lack it outright, so the overlay says so rather
+  than showing a zero that would read as "the GPU is free".
+- **It only runs while the overlay is up.** A timer query is cheap but not free, and nothing reads
+  the answer otherwise — `game.ts` skips `begin`/`end` entirely when the panel is hidden.
+
 `FrameProfiler` (`util/profiler.ts`) is a plain per-frame timer, not tied to rendering or game state:
 `beginFrame()`, any number of `time(label, fn)`/`add(label, ms)` calls (the same label can be used more
 than once per frame — `game.ts`'s "Player" bucket covers both the movement block and the later

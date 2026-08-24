@@ -8,7 +8,7 @@ import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../r
 import { SpriteBatch } from '../render/spritebatch.ts';
 import { doomToWorld, litColor } from '../render/mapmesh.ts';
 import { Tracer } from '../render/tracer.ts';
-import type { DynamicLights, Tint } from '../render/lights.ts';
+import { effectEmitterId, type DynamicLights, type Tint } from '../render/lights.ts';
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import type { ShotPath, World } from './world.ts';
@@ -302,7 +302,7 @@ export class SpriteFxLayer {
     if (this.lights) {
       let id = this.emitterIds.get(anim);
       if (id === undefined) {
-        id = -this.nextEmitterId++;
+        id = effectEmitterId(this.nextEmitterId++);
         this.emitterIds.set(anim, id);
       }
       tint = this.lights.offerAndTint(anim.frameKey, at.x, at.y, at.z, id, subsector);

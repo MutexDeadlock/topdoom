@@ -27,17 +27,14 @@ type LightUniforms = DynamicLights['uniforms'];
  * level is bound and nothing is gated. docs/lights.md § Light stops at walls.
  */
 const DYN_LIGHT_FRAGMENT = /* glsl */ `
-            // Nothing else in here is worth a fragment's time on a frame with no lights — the
-            // mask fetch included, which is a dependent texture read on every drawn pixel.
+            // Gated on the light count alone, which is the same for every fragment: a branch that
+            // varies per fragment costs a GPU more than it saves unless it rejects nearly all of
+            // them, and a bounding sphere around the committed set measured 56% slower on a map
+            // where it rejects nothing. docs/lights.md § What reaches the shader.
             if (uLightCount > 0) {
               vec3 dynLight = vec3(0.0);
-              uvec4 lightVis = uvec4(0xFFFFFFFFu);
-              // floor, not a bare cast: GLSL truncates toward zero, which would read the -1 an
-              // unprobed quad carries as leaf 0.
-              int lightCell = int(floor(vLightCell + 0.5));
-              if (uLightVisWidth > 0 && lightCell >= 0) {
-                lightVis = texelFetch(uLightVis, ivec2(lightCell % uLightVisWidth, lightCell / uLightVisWidth), 0);
-              }
+              // The mask comes in flat from the vertex stage — see the vertex patch below.
+              uvec4 lightVis = vLightVis;
               // Bounded by the live count, not by MAX_DYN_LIGHTS with a break inside: a
               // statically bounded loop is one a driver is free to unroll, and 64 copies of a body
               // carrying an atan and a texelFetch is a shader whose register pressure is paid by
@@ -184,19 +181,31 @@ export class MaterialBank {
           `#include <common>
             varying vec3 vDynWorldPos;
             attribute float aLightCell;
-            flat varying float vLightCell;`,
+            flat varying uvec4 vLightVis;
+            uniform highp usampler2D uLightVis;
+            uniform int uLightVisWidth;`,
         );
         shader.vertexShader = shader.vertexShader.replace(
           '#include <begin_vertex>',
           `#include <begin_vertex>
             vDynWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
-            vLightCell = aLightCell;`,
+            // The leaf's light mask, read here rather than in the fragment stage. Every vertex of
+            // a quad or a flat's fan carries the same leaf, so the value is constant across the
+            // primitive and \`flat\` carries it exactly — while the fetch itself drops from once per
+            // drawn pixel to once per vertex. docs/lights.md § How the answer reaches a fragment.
+            vLightVis = uvec4(0xFFFFFFFFu);
+            // floor, not a bare cast: GLSL truncates toward zero, which would read the -1 an
+            // unprobed quad carries as leaf 0.
+            int lightCell = int(floor(aLightCell + 0.5));
+            if (uLightVisWidth > 0 && lightCell >= 0) {
+              vLightVis = texelFetch(uLightVis, ivec2(lightCell % uLightVisWidth, lightCell / uLightVisWidth), 0);
+            }`,
         );
         shader.fragmentShader = shader.fragmentShader.replace(
           '#include <common>',
           `#include <common>
             varying vec3 vDynWorldPos;
-            flat varying float vLightCell;
+            flat varying uvec4 vLightVis;
             uniform int uLightCount;
             uniform vec4 uLightPos[${MAX_DYN_LIGHTS}];
             uniform vec3 uLightColor[${MAX_DYN_LIGHTS}];

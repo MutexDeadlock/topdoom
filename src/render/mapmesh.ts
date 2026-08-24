@@ -202,11 +202,28 @@ function pushVertex(
 
 /**
  * How far past a wall's face its leaf is probed. A face sits exactly on the boundary between the
- * room it looks into and whatever is behind it, so the sample has to step off it — the same 1.5
- * units fog of war pushes its own wall probe, which reads the same quantity (docs/fogofwar.md
- * § How reveal reaches the geometry).
+ * room it looks into and whatever is behind it, so the sample has to step off it. **Tuned by
+ * feel**: far enough to clear whatever rounding the boundary left, far short of anything the BSP
+ * would put on the other side.
  */
 const WALL_PROBE_OFFSET = 1.5;
+
+/**
+ * The point a wall quad's leaf is probed at: the face's midpoint, stepped `WALL_PROBE_OFFSET` off
+ * the front side. `addWall` builds every quad facing right of a->b, which is DOOM's front side.
+ *
+ * Shared with fog of war, which probes the same quantity for a mover's quads (docs/fogofwar.md
+ * § Mover wall quads) — one definition, so the probe geometry and its offset cannot drift into
+ * disagreeing about which room a quad faces. Writes into `out` rather than returning a point: the
+ * fog path runs it per mover quad per tic.
+ */
+export function wallProbePoint(ax: number, ay: number, bx: number, by: number, out: Pos2): void {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const len = Math.hypot(dx, dy) || 1;
+  out.x = (ax + bx) / 2 + (dy / len) * WALL_PROBE_OFFSET;
+  out.y = (ay + by) / 2 + (-dx / len) * WALL_PROBE_OFFSET;
+}
 
 /**
  * Resolves each wall quad's leaf and stamps it onto that quad's vertices, so the dynamic-light
@@ -217,15 +234,11 @@ const WALL_PROBE_OFFSET = 1.5;
  */
 function fillWallCells(batches: BatchSet, occluders: WallOccluder[], subsectorAt?: (x: number, y: number) => number): void {
   if (!subsectorAt) return;
+  const probe: Pos2 = { x: 0, y: 0 };
   for (const o of occluders) {
-    const dx = o.bx - o.ax;
-    const dy = o.by - o.ay;
-    const len = Math.hypot(dx, dy);
-    if (len < 1e-6) continue;
-    // `addWall` builds every quad facing right of a->b, which is DOOM's front side.
-    const mx = (o.ax + o.bx) / 2 + (dy / len) * WALL_PROBE_OFFSET;
-    const my = (o.ay + o.by) / 2 + (-dx / len) * WALL_PROBE_OFFSET;
-    o.subsector = subsectorAt(mx, my);
+    if (Math.hypot(o.bx - o.ax, o.by - o.ay) < 1e-6) continue;
+    wallProbePoint(o.ax, o.ay, o.bx, o.by, probe);
+    o.subsector = subsectorAt(probe.x, probe.y);
     const cells = batches.byKey(o.key)?.cells;
     if (!cells) continue;
     for (let v = 0; v < o.vertexCount; v++) cells[o.vertexStart + v] = o.subsector;
@@ -608,16 +621,23 @@ export function refreshMoverMesh(
     // footprint, so the leaf each vertex faces into is the one it was built with.
     geom.computeBoundingSphere();
   }
-  for (let i = 0; i < wallQuads.length; i++) {
-    // `subsector` survives the copy for the same reason `aLightCell` is not rewritten: it is fixed
-    // by the quad's footprint, and re-probing it would be a BSP descent per quad per tic.
-    const q = mesh.wallQuads[i];
-    const subsector = q.subsector;
-    Object.assign(q, wallQuads[i]);
-    q.subsector = subsector;
-  }
+  for (let i = 0; i < wallQuads.length; i++) copyRefreshedQuad(mesh.wallQuads[i], wallQuads[i]);
   for (let i = 0; i < flatFans.length; i++) Object.assign(mesh.flatFans[i], flatFans[i]);
   return true;
+}
+
+/**
+ * Copies a rebuilt quad's state over the live one, preserving what a rebuild cannot know: a mover
+ * changes heights, never a quad's footprint, so `subsector` stays the leaf the build-time probe
+ * resolved (`fillWallCells`) rather than the -1 `buildMoverBatches` emits without one. Re-probing
+ * would be a BSP descent per quad per tic. Same rule as `aLightCell` above, and it lives here
+ * rather than in the refresh loop so the next footprint-fixed field on `WallOccluder` is handled
+ * where the exception is already stated.
+ */
+function copyRefreshedQuad(dst: WallOccluder, src: WallOccluder): void {
+  const subsector = dst.subsector;
+  Object.assign(dst, src);
+  dst.subsector = subsector;
 }
 
 function writeAttribute(geom: THREE.BufferGeometry, name: string, values: number[]): void {
@@ -1004,11 +1024,6 @@ function addFlatFan(
   const vertexStart = batch.positions.length / 3;
   const xy: number[] = [];
 
-  const emit = (x: number, y: number) => {
-    pushVertex(batch, x, height, -y, x / uw, -y / uh, color, alpha, ss);
-    xy.push(x, y);
-  };
-
   // Fan triangulation around vertex 0, each triangle then diced on a
   // barycentric grid so no edge outruns WALL_CHUNK_LEN: a fan's only vertices
   // are its corners, and the occlusion fade needs somewhere in between to put
@@ -1016,19 +1031,31 @@ function addFlatFan(
   // reversed so their normal points down.
   const ox = poly.points[0];
   const oy = poly.points[1];
+  // The source triangle being diced, reached by `emitAt` through these rather than captured per
+  // iteration: one closure for the whole fan instead of one per triangle, on a path
+  // `refreshMoverMesh` re-runs per moving subsector per tic.
+  let ux = 0;
+  let uy = 0;
+  let vx = 0;
+  let vy = 0;
+  let div = 1;
+  // Barycentric (a, b) straight to a vertex: scalars rather than a point object per diced vertex.
+  const emitAt = (a: number, b: number): void => {
+    const x = ox + (ux * a + vx * b) / div;
+    const y = oy + (uy * a + vy * b) / div;
+    pushVertex(batch, x, height, -y, x / uw, -y / uh, color, alpha, ss);
+    xy.push(x, y);
+  };
+
   for (let i = 1; i < n - 1; i++) {
     const i1 = isCeiling ? i + 1 : i;
     const i2 = isCeiling ? i : i + 1;
-    const ux = poly.points[i1 * 2] - ox;
-    const uy = poly.points[i1 * 2 + 1] - oy;
-    const vx = poly.points[i2 * 2] - ox;
-    const vy = poly.points[i2 * 2 + 1] - oy;
+    ux = poly.points[i1 * 2] - ox;
+    uy = poly.points[i1 * 2 + 1] - oy;
+    vx = poly.points[i2 * 2] - ox;
+    vy = poly.points[i2 * 2 + 1] - oy;
     const longest = Math.max(Math.hypot(ux, uy), Math.hypot(vx, vy), Math.hypot(vx - ux, vy - uy));
-    const div = Math.max(1, Math.ceil(longest / WALL_CHUNK_LEN));
-    // Barycentric (a, b) straight into `emit`: this runs per sub-triangle on
-    // the per-tic mover rebuild path, so it hands over scalars rather than a
-    // point object per diced vertex.
-    const emitAt = (a: number, b: number) => emit(ox + (ux * a + vx * b) / div, oy + (uy * a + vy * b) / div);
+    div = Math.max(1, Math.ceil(longest / WALL_CHUNK_LEN));
 
     for (let a = 0; a < div; a++) {
       for (let b = 0; a + b < div; b++) {
@@ -1122,6 +1149,7 @@ function addWall(
   // the sightline instead of a full-height slab of wall — see WALL_CHUNK_LEN.
   const chunks = Math.max(1, Math.ceil(len / WALL_CHUNK_LEN));
   const bands = bandVertically ? Math.max(1, Math.ceil((spec.topH - spec.botH) / WALL_CHUNK_LEN)) : 1;
+  const alpha = spec.baseAlpha ?? 1;
   for (let c = 0; c < chunks; c++) {
     const t0 = c / chunks;
     const t1 = (c + 1) / chunks;
@@ -1142,17 +1170,17 @@ function addWall(
       const bandVTop = vTop + ((vBot - vTop) * r) / bands;
       const bandVBot = vTop + ((vBot - vTop) * (r + 1)) / bands;
 
-      // A = top-left, B = top-right, C = bottom-right, D = bottom-left, with the
-      // face pointing to the right of a->b (DOOM's front side).
-      const A = [cax, bandTop, -cay, cu0, bandVTop] as const;
-      const B = [cbx, bandTop, -cby, cu1, bandVTop] as const;
-      const C = [cbx, bandBot, -cby, cu1, bandVBot] as const;
-      const D = [cax, bandBot, -cay, cu0, bandVBot] as const;
-
+      // A = top-left, B = top-right, C = bottom-right, D = bottom-left, with the face pointing to
+      // the right of a->b (DOOM's front side), as the two triangles A-D-C and A-C-B. Written out
+      // rather than built as tuples and iterated: the dicing above turns one wall into up to
+      // `chunks * bands` of these, and `refreshMoverMesh` re-runs the lot per moving sector per tic.
       const vertexStart = batch.positions.length / 3;
-      for (const v of [A, D, C, A, C, B]) {
-        pushVertex(batch, v[0], v[1], v[2], v[3], v[4], color, spec.baseAlpha ?? 1);
-      }
+      pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, color, alpha); // A
+      pushVertex(batch, cax, bandBot, -cay, cu0, bandVBot, color, alpha); // D
+      pushVertex(batch, cbx, bandBot, -cby, cu1, bandVBot, color, alpha); // C
+      pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, color, alpha); // A
+      pushVertex(batch, cbx, bandBot, -cby, cu1, bandVBot, color, alpha); // C
+      pushVertex(batch, cbx, bandTop, -cby, cu1, bandVTop, color, alpha); // B
       occluders.push({
         key: batch.key,
         vertexStart,

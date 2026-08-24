@@ -69,16 +69,21 @@ describe('Dynamic lights · the geometry shader patch', () => {
     assert.ok(fragment.includes('dynLight += uLightColor[i] * att;'), 'no accumulation loop');
   });
 
-  test('the visibility gate is wired: attribute, flat varying, integer sampler and the bit test', () => {
+  test('the visibility gate is wired: attribute, vertex-side fetch, flat varying and the bit test', () => {
     // Without this the shader lights every surface in radius, wall or no wall — the reported bug
-    // (docs/lights.md § Light stops at walls). `flat` matters: an interpolated leaf index is a
-    // different index.
+    // (docs/lights.md § Light stops at walls).
+    //
+    // Two things are pinned about *where* the mask is read. It is fetched in the **vertex** stage,
+    // because every vertex of a quad or a flat's fan carries the same leaf and a per-fragment
+    // dependent texture read cost 3.4 ms of a 14.7 MP frame on an integrated GPU. And it is
+    // carried `flat`: an interpolated mask is not a mask.
     const { vertex, fragment } = patched(new DynamicLights(parseGldefs('')));
     assert.ok(vertex.includes('attribute float aLightCell;'), 'the leaf index never enters the vertex stage');
-    assert.ok(vertex.includes('vLightCell = aLightCell;'), 'the leaf index is never passed on');
-    assert.ok(fragment.includes('flat varying float vLightCell;'), 'the leaf index must not be interpolated');
-    assert.ok(fragment.includes('uniform highp usampler2D uLightVis;'), 'the mask must be an integer sampler');
-    assert.ok(fragment.includes('texelFetch(uLightVis'), 'the mask is never read');
+    assert.ok(vertex.includes('uniform highp usampler2D uLightVis;'), 'the mask must be an integer sampler');
+    assert.ok(vertex.includes('texelFetch(uLightVis'), 'the mask must be read in the vertex stage');
+    assert.ok(vertex.includes('vLightVis = texelFetch(uLightVis'), 'the fetched mask is never passed on');
+    assert.ok(fragment.includes('flat varying uvec4 vLightVis;'), 'the mask must not be interpolated');
+    assert.ok(!fragment.includes('texelFetch(uLightVis'), 'the mask must not be re-read per fragment');
     const test = fragment.indexOf('lightVis[i >> 5]');
     const accumulate = fragment.indexOf('dynLight += uLightColor');
     assert.ok(test >= 0, 'no bit test');

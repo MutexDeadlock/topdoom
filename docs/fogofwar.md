@@ -317,7 +317,9 @@ Mover geometry (doors, lifts — docs/render.md § Mover meshes) is built and re
 misses that pass. It does not need its own probe either: `mapmesh.ts`'s `fillWallCells` already
 resolves every wall quad's leaf for the dynamic lights and records it on `WallOccluder.subsector`,
 so `MoverGeometry.updateFading` reads that. `FogOfWar.wallSubsectorAt` stays as the fallback for a
-mesh built without a probe (tests, tools), where the quad is left at -1.
+mesh built without a probe (tests, tools), where the quad is left at -1 — and it probes through
+`mapmesh.ts`'s own `wallProbePoint`, so the fallback and the build-time pass cannot drift into
+disagreeing about which room a quad faces.
 
 The answer is fixed by the quad's endpoints, which are the linedef's own, so a door moving
 vertically never invalidates it — which is why `refreshMoverMesh` preserves `subsector` across the

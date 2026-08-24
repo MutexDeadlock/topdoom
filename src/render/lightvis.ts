@@ -68,6 +68,14 @@ const NO_EDGES: Edges = { ints: new Int32Array(0), geom: new Float64Array(0) };
  * stand in an edge is fixed geometry and cached with it; whether they *block* is asked live, so a
  * door opening lets light through on the tic it opens.
  */
+/**
+ * The shadow map's angular indexing, hoisted out of `castShadows`: bin 0 is due west and bin
+ * `SHADOW_STEPS / 2` due east, which is the `angle / 2pi + 0.5` the shader and
+ * `DynamicLights.unshadowed` index with — one convention, or the map is read half a turn out.
+ */
+const BIN_PER_RADIAN = SHADOW_STEPS / (2 * Math.PI);
+const BIN_HALF = SHADOW_STEPS / 2;
+
 export class LightVisibility {
   readonly subsectorCount: number;
 
@@ -81,6 +89,16 @@ export class LightVisibility {
   /** Per subsector, how far the light's path ran to reach it and where it entered — see `reach`. */
   private cost: Float64Array;
   private entry: Float64Array;
+  /**
+   * The light `castShadows` is currently tracing, parked here rather than captured: it runs once
+   * per committed light per frame, and a fresh visitor closure per light is the allocation
+   * `reach`'s out-array signature exists to avoid.
+   */
+  private castX = 0;
+  private castZ = 0;
+  private castRadius = 0;
+  private castOut: Float32Array = new Float32Array(0);
+  private castOffset = 0;
 
   constructor(map: DoomMap, polys: SubSectorPoly[], world: LightWorld) {
     this.map = map;
@@ -221,56 +239,63 @@ export class LightVisibility {
    */
   castShadows(x: number, y: number, radius: number, out: Float32Array, offset: number): void {
     out.fill(radius, offset, offset + SHADOW_STEPS);
-    const lx = x;
-    const lz = -y;
-    // Bin 0 is due west and bin STEPS/2 due east, which is the `angle / 2pi + 0.5` the shader and
-    // `DynamicLights.unshadowed` index with — one convention, or the map is read half a turn out.
-    const perRadian = SHADOW_STEPS / (2 * Math.PI);
-    const half = SHADOW_STEPS / 2;
-    this.world.forEachLineNear(x, y, radius, (line) => {
-      if (!this.world.blocksSight(line)) return;
-      const ld = this.map.linedefs[line];
-      const v1 = this.map.vertexes[ld.v1];
-      const v2 = this.map.vertexes[ld.v2];
-      if (!v1 || !v2) return;
-      const px = v1.x - lx;
-      const pz = -v1.y - lz;
-      const qx = v2.x - lx;
-      const qz = -v2.y - lz;
-      if (distSqToSegment(0, 0, px, pz, qx, qz) > radius * radius) return;
-      // The bins the segment covers: the *shorter* arc between its ends, which is the one it
-      // actually subtends — a segment can only span half the circle by passing through the light,
-      // and one that does is skipped rather than wrapped the wrong way round.
-      const a0 = Math.atan2(pz, px);
-      const a1 = Math.atan2(qz, qx);
-      let span = a1 - a0;
-      if (span > Math.PI) span -= 2 * Math.PI;
-      else if (span < -Math.PI) span += 2 * Math.PI;
-      if (Math.abs(span) < 1e-6 || Math.abs(Math.abs(span) - Math.PI) < 1e-6) return;
-      const steps = Math.ceil(Math.abs(span) * perRadian) + 1;
-      const sx = qx - px;
-      const sz = qz - pz;
-      // The crossing's numerator is fixed by the segment, so it is hoisted out of the per-bin loop
-      // below — only the ray direction varies with `k`.
-      const cross = px * sz - pz * sx;
-      const start = a0 * perRadian + half;
-      const step = (span * perRadian) / steps;
-      for (let k = 0; k <= steps; k++) {
-        const slot = Math.round(start + step * k);
-        const theta = (slot - half) / perRadian;
-        const rx = Math.cos(theta);
-        const rz = Math.sin(theta);
-        const denom = rx * sz - rz * sx;
-        if (denom > -1e-9 && denom < 1e-9) continue;
-        const t = cross / denom;
-        if (t <= 0 || t >= radius) continue;
-        const u = (px * rz - pz * rx) / denom;
-        if (u < 0 || u > 1) continue;
-        const at = offset + (((slot % SHADOW_STEPS) + SHADOW_STEPS) % SHADOW_STEPS);
-        if (t < out[at]) out[at] = t;
-      }
-    });
+    this.castX = x;
+    this.castZ = -y;
+    this.castRadius = radius;
+    this.castOut = out;
+    this.castOffset = offset;
+    this.world.forEachLineNear(x, y, radius, this.castVisit);
   }
+
+  /**
+   * One sight blocker's bite out of the light `castShadows` set up. A pre-bound field rather than
+   * a closure passed per call — see the `cast*` scratch above.
+   */
+  private castVisit = (line: number): void => {
+    if (!this.world.blocksSight(line)) return;
+    const ld = this.map.linedefs[line];
+    const v1 = this.map.vertexes[ld.v1];
+    const v2 = this.map.vertexes[ld.v2];
+    if (!v1 || !v2) return;
+    const radius = this.castRadius;
+    const out = this.castOut;
+    const px = v1.x - this.castX;
+    const pz = -v1.y - this.castZ;
+    const qx = v2.x - this.castX;
+    const qz = -v2.y - this.castZ;
+    if (distSqToSegment(0, 0, px, pz, qx, qz) > radius * radius) return;
+    // The bins the segment covers: the *shorter* arc between its ends, which is the one it
+    // actually subtends — a segment can only span half the circle by passing through the light,
+    // and one that does is skipped rather than wrapped the wrong way round.
+    const a0 = Math.atan2(pz, px);
+    const a1 = Math.atan2(qz, qx);
+    let span = a1 - a0;
+    if (span > Math.PI) span -= 2 * Math.PI;
+    else if (span < -Math.PI) span += 2 * Math.PI;
+    if (Math.abs(span) < 1e-6 || Math.abs(Math.abs(span) - Math.PI) < 1e-6) return;
+    const steps = Math.ceil(Math.abs(span) * BIN_PER_RADIAN) + 1;
+    const sx = qx - px;
+    const sz = qz - pz;
+    // `segmentCrossT` written out: the crossing's numerator is fixed by the segment, so it is
+    // hoisted out of the per-bin loop below — only the ray direction varies with `k`.
+    const cross = px * sz - pz * sx;
+    const start = a0 * BIN_PER_RADIAN + BIN_HALF;
+    const step = (span * BIN_PER_RADIAN) / steps;
+    for (let k = 0; k <= steps; k++) {
+      const slot = Math.round(start + step * k);
+      const theta = (slot - BIN_HALF) / BIN_PER_RADIAN;
+      const rx = Math.cos(theta);
+      const rz = Math.sin(theta);
+      const denom = rx * sz - rz * sx;
+      if (denom > -1e-9 && denom < 1e-9) continue;
+      const t = cross / denom;
+      if (t <= 0 || t >= radius) continue;
+      const u = (px * rz - pz * rx) / denom;
+      if (u < 0 || u > 1) continue;
+      const at = this.castOffset + (((slot % SHADOW_STEPS) + SHADOW_STEPS) % SHADOW_STEPS);
+      if (t < out[at]) out[at] = t;
+    }
+  };
 
   /** Appends every linedef crossing the segment from the leaf's centre out to the neighbour. */
   private linesAcross(x1: number, y1: number, x2: number, y2: number, out: number[]): void {

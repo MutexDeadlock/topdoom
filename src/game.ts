@@ -11,7 +11,7 @@ import { GraphicsBank } from './wad/graphics.ts';
 import { SpriteBank } from './wad/sprites.ts';
 import { loadMap, type DoomMap } from './wad/map.ts';
 import { MaterialBank } from './render/textures.ts';
-import { DynamicLights } from './render/lights.ts';
+import { DynamicLights, PLAYER_EMITTER_ID } from './render/lights.ts';
 import { gldefsFromWad, parseGldefs } from './wad/gldefs.ts';
 import { AnimatedTextures } from './render/textureanim.ts';
 import { buildMapMesh, type BuiltMap } from './render/mapmesh.ts';
@@ -78,6 +78,7 @@ import { applyDehacked, resetDehacked } from './game/dehacked/apply.ts';
 import { LevelProgression } from './wad/campaign/progression.ts';
 import { CenterMessage, lockedLineMessage, SECRET_MESSAGE } from './ui/hud/message.ts';
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
+import { getProfilerVisible } from './ui/devmode/profilerhud.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
 import { DeathOverlay } from './ui/hud/deathoverlay.ts';
 import { FrameProfiler } from './util/profiler.ts';
@@ -114,7 +115,7 @@ import { MusicBank } from './wad/music.ts';
 import { MapInfo } from './wad/campaign/mapinfo.ts';
 import { LevelMusic } from './audio/music.ts';
 import type { Pos2 } from './types.ts';
-import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
+import { DEVMODE, DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
 
 /**
  * The simulation's fixed step. Every gameplay system advances by exactly this
@@ -160,13 +161,6 @@ export function setFpsCap(cap: FpsCap): void {
   fpsCap = cap;
   globalThis.localStorage?.setItem(FPS_CAP_STORAGE_KEY, String(cap));
 }
-
-/**
- * The player's own emitter id for dynamic lights. `PosedThing.id` is a plain array index (0 and
- * up) and `SpriteFxLayer`'s effect ids are negative, so a value below every effect's keeps all
- * three sets apart — which is what `dontlightself` and the flicker phase key off. docs/lights.md.
- */
-const PLAYER_EMITTER_ID = -1_000_000;
 
 /** One loaded WAD set, playing one level at a time. */
 export class Game {
@@ -1548,14 +1542,21 @@ export class Game {
     this.posePlayer(alpha, rawDt, camera.viewAngleDeg);
     this.profiler.time('Lights', () => this.lights.commit());
 
-    this.profiler.time('Render', () => this.view.renderer.render(this.scene, camera.camera));
+    // Measured only while the overlay is up: a timer query is cheap but not free, and nothing
+    // reads the answer otherwise. docs/menu.md § Profiling overlay.
+    const gpu = DEVMODE && getProfilerVisible() ? this.view.gpuTimer : null;
+    this.profiler.time('Render', () => {
+      gpu?.begin();
+      this.view.renderer.render(this.scene, camera.camera);
+      gpu?.end();
+    });
     // The music synth runs off its own timer, in the gaps between frames, so it
     // reports what it spent instead of being timed here (docs/music.md
     // § Getting it to the speakers).
     this.profiler.offFrame('Music', this.audio.music.takeRenderMs());
     this.profiler.endFrame();
 
-    this.debugHud.update(rawDt, this.profiler, (fps) => this.debugLines(fps));
+    this.debugHud.update(rawDt, this.profiler, gpu?.ms ?? null, (fps) => this.debugLines(fps));
   }
 
   /**
@@ -1906,8 +1907,10 @@ export class Game {
     // The player is an emitter too — `PLAY F`, the firing frame, is the muzzle flash GLDEFS binds
     // `ZOMBIEATK` to, the same light the zombieman's own `POSS F` gets. `PLAYER_EMITTER_ID` keeps
     // it clear of `PosedThing.id` (a plain array index) and of the effects' negative ids.
-    const subsector = this.world.subsectorAt(x, y);
-    const tint = this.lights.offerAndTint(this.playerActor.frameKey, x, y, z, PLAYER_EMITTER_ID, subsector);
+    // The leaf is left to `DynamicLights` to resolve: both `offer` and `tintAt` fall back to the
+    // same descent, and only once a light is actually live — so a WAD with no GLDEFS, or lights
+    // switched off, pays nothing for it here.
+    const tint = this.lights.offerAndTint(this.playerActor.frameKey, x, y, z, PLAYER_EMITTER_ID);
     this.playerActor.setPose(x, y, z, facingDeg, light, rawDt, walking, viewAngleDeg, tint);
   }
 

@@ -59,7 +59,7 @@ export class DebugHud {
    * which walks the BSP for the player's sector, among other things — only
    * runs when the panel is actually shown.
    */
-  update(rawDt: number, profiler: FrameProfiler, details: (fps: number) => string[]): void {
+  update(rawDt: number, profiler: FrameProfiler, gpuMs: number | null, details: (fps: number) => string[]): void {
     this.accum += rawDt;
     this.frames++;
     if (this.accum >= 0.5) {
@@ -72,6 +72,6 @@ export class DebugHud {
       return;
     }
     this.el.textContent = details(this.fps).join('\n');
-    this.profilerHud.update(profiler.samples(), profiler.totalMs);
+    this.profilerHud.update(profiler.samples(), profiler.totalMs, gpuMs);
   }
 }

@@ -67,11 +67,18 @@ export interface Gldefs {
    * one can never shadow the other and `lightForFrame` reads the exact binding first.
    */
   frames: Map<string, string>;
+  /**
+   * `lightForFrame`'s memo, frame key → the light it resolves to or null. Filled on first ask and
+   * cleared whenever `parseGldefs` writes into this set. It exists because the two-step lookup
+   * below allocates: the exact 5-character binding misses for nearly every drawn frame, and the
+   * sprite-wide fallback's `slice` would then run once per drawn sprite per frame.
+   */
+  resolved: Map<string, LightDef | null>;
 }
 
 /** An empty set, for a session with no GLDEFS at all. */
 export function emptyGldefs(): Gldefs {
-  return { lights: new Map(), frames: new Map() };
+  return { lights: new Map(), frames: new Map(), resolved: new Map() };
 }
 
 /**
@@ -306,6 +313,7 @@ export function parseGldefs(text: string, into: Gldefs = emptyGldefs()): Gldefs 
     skipBlock();
   }
 
+  into.resolved.clear();
   return into;
 }
 
@@ -315,9 +323,13 @@ export function parseGldefs(text: string, into: Gldefs = emptyGldefs()): Gldefs 
  * sprite while `PINSA`..`PINSD` override single frames.
  */
 export function lightForFrame(defs: Gldefs, frameKey: string): LightDef | null {
+  const memo = defs.resolved.get(frameKey);
+  if (memo !== undefined) return memo;
   if (frameKey.length < 4) return null;
   const name = defs.frames.get(frameKey) ?? defs.frames.get(frameKey.slice(0, 4));
-  return name ? (defs.lights.get(name) ?? null) : null;
+  const def = name ? (defs.lights.get(name) ?? null) : null;
+  defs.resolved.set(frameKey, def);
+  return def;
 }
 
 /**
@@ -330,6 +342,7 @@ export function gldefsFromWad(wad: Wad, base: Gldefs): Gldefs {
   const merged: Gldefs = {
     lights: new Map(base.lights),
     frames: new Map(base.frames),
+    resolved: new Map(),
   };
   const lumps = GLDEFS_LUMPS.flatMap((name) => wad.findAll(name)).sort((a, b) => a.index - b.index);
   for (const lump of lumps) {

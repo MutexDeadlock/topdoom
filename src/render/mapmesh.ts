@@ -10,6 +10,7 @@ import { findSolidCaps, pointInPolygon, type SolidCap } from './solids.ts';
 import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 import { BRIGHTNESS_LIFT, WATER_SURFACE_ALPHA } from '../constants.ts';
+import { clipConvexPolygon, signedPolygonArea2 } from '../util/geom.ts';
 
 /** DOOM's sentinel for "no texture assigned" in a sidedef texture slot — also used by `game/specials.ts`'s `raiseToTexture` to skip unset bottom textures. */
 export const NO_TEXTURE = '-';
@@ -52,8 +53,6 @@ function batchKey(kind: SurfaceKind, texture: string): string {
 }
 
 /** What every wall batch's key starts with, from `batchKey` itself rather than spelled again. */
-const WALL_KEY_PREFIX = batchKey('wall', '');
-
 class BatchSet {
   private batches = new Map<string, Batch>();
 
@@ -434,6 +433,12 @@ export interface FlatSurface {
   vertexXY: Float32Array;
   /** World height (floor or ceiling) this surface sits at. */
   height: number;
+  /**
+   * The light level this fan's colour was last written from. Kept beside `height` because a
+   * refresh's no-op test needs both, and the colour attribute cannot answer for it: `litColor`
+   * returns a double that does not survive the float32 round trip the buffer stores it through.
+   */
+  light: number;
   isCeiling: boolean;
   /**
    * Permanent translucency, multiplied into the vertex alpha the faders write
@@ -461,6 +466,13 @@ export interface MoverIndex {
 export interface MoverMesh {
   group: THREE.Group;
   meshes: Map<string, THREE.Mesh>;
+  /**
+   * How many of `meshes` draw walls, counted from the batch kinds at build time. A refresh
+   * compares its rebuilt wall batches against this to decide whether the buffers still fit;
+   * recorded rather than recovered from the keys, which would make `batchKey`'s encoding
+   * load-bearing in both directions. See `refreshMoverMesh`.
+   */
+  wallMeshCount: number;
   wallQuads: WallOccluder[];
   flatFans: FlatSurface[];
 }
@@ -595,7 +607,7 @@ export function buildMoverMesh(
     meshes.set(b.key, mesh);
   }
 
-  return { group, meshes, wallQuads, flatFans };
+  return { group, meshes, wallMeshCount: drawn.reduce((n, b) => n + (b.kind === 'wall' ? 1 : 0), 0), wallQuads, flatFans };
 }
 
 /**
@@ -632,7 +644,7 @@ export function refreshMoverMesh(
   const wallQuads: WallOccluder[] = [];
   buildMoverWalls(map, sectorIndex, batches, texSize, wallHeightCap, movableSectors, transfers, index, wallQuads);
   const drawn = drawnBatches(batches, bank);
-  if (drawn.length !== countWallMeshes(mesh) || wallQuads.length !== mesh.wallQuads.length) return false;
+  if (drawn.length !== mesh.wallMeshCount || wallQuads.length !== mesh.wallQuads.length) return false;
   // Validated before anything is written, so a refusal can't leave the mesh
   // half-rewritten.
   for (const b of drawn) {
@@ -657,13 +669,6 @@ export function refreshMoverMesh(
 /** The batches that end up on screen: the ones that emitted anything and whose art the bank has. */
 function drawnBatches(batches: BatchSet, bank: MaterialBank): Batch[] {
   return batches.all().filter((b) => b.positions.length > 0 && bank.get(b.kind, b.texture));
-}
-
-/** How many of a mover's meshes draw walls — `Batch.key` leads with its `SurfaceKind` (`batchKey`). */
-function countWallMeshes(mesh: MoverMesh): number {
-  let n = 0;
-  for (const key of mesh.meshes.keys()) if (key.startsWith(WALL_KEY_PREFIX)) n++;
-  return n;
 }
 
 /** What one fan of a refreshed mover is to be moved to — `planFlatRefresh` decides it, `applyFlatRefresh` writes it. */
@@ -738,15 +743,18 @@ function applyFlatRefresh(mesh: MoverMesh, plan: FlatPlan[]): void {
   for (let i = 0; i < mesh.flatFans.length; i++) {
     const fan = mesh.flatFans[i];
     const { height, light, lightSector } = plan[i];
-    const color = litColor(light);
     fan.lightSector = lightSector;
+    // Nothing moved and nothing relit: the common case for a mover's ceiling while its floor runs.
+    // Tested against the fan's own record before the mesh is looked up at all, so the common case
+    // costs two number compares rather than a map lookup and two attribute fetches.
+    if (fan.height === height && fan.light === light) continue;
     const geom = mesh.meshes.get(fan.key)?.geometry;
     if (!geom) continue;
     const pos = geom.getAttribute('position').array as Float32Array;
     const col = geom.getAttribute('color').array as Float32Array;
-    // Nothing moved and nothing relit: the common case for a mover's ceiling while its floor runs.
-    if (fan.height === height && col[fan.vertexStart * 4] === color) continue;
+    const color = litColor(light);
     fan.height = height;
+    fan.light = light;
     const end = fan.vertexStart + fan.vertexCount;
     for (let v = fan.vertexStart; v < end; v++) {
       // Only the plane: x and z are the footprint, and the footprint is what never moves.
@@ -1195,55 +1203,11 @@ function processFlat(
  * only grazes comes back as three near-collinear points. Dropping one leaves a gap thinner than
  * a thousandth of a map unit, against a triangle that covers nothing and still costs three
  * vertices in every buffer.
+ *
+ * **Tuned by feel** — a robustness floor, not a measured figure: anything well under a square map
+ * unit and well over the clip's own float noise does the same job.
  */
 const FLAT_CELL_MIN_AREA = 0.05;
-
-/** Twice a ring's area — the shoelace sum, unsigned: only the degeneracy test above reads it. */
-function ringArea2(ring: ArrayLike<number>): number {
-  const n = ring.length / 2;
-  let sum = 0;
-  let px = ring[(n - 1) * 2];
-  let py = ring[(n - 1) * 2 + 1];
-  for (let i = 0; i < n; i++) {
-    const qx = ring[i * 2];
-    const qy = ring[i * 2 + 1];
-    sum += px * qy - qx * py;
-    px = qx;
-    py = qy;
-  }
-  return Math.abs(sum);
-}
-
-/**
- * Sutherland-Hodgman clip of a convex ring to one side of an axis-aligned line: `axis` 0 cuts on
- * x, 1 on y, and `keepLow` picks the side at or below `at`. Convex in, convex out — which is what
- * `SubSectorPoly.points` guarantees (`render/bsp.ts`) and what lets `diceOnGrid` fan the result.
- */
-function clipHalf(src: ArrayLike<number>, axis: 0 | 1, at: number, keepLow: boolean, out: number[]): void {
-  out.length = 0;
-  const n = src.length / 2;
-  if (n === 0) return;
-  let px = src[(n - 1) * 2];
-  let py = src[(n - 1) * 2 + 1];
-  let pv = axis === 0 ? px : py;
-  let pIn = keepLow ? pv <= at : pv >= at;
-  for (let i = 0; i < n; i++) {
-    const qx = src[i * 2];
-    const qy = src[i * 2 + 1];
-    const qv = axis === 0 ? qx : qy;
-    const qIn = keepLow ? qv <= at : qv >= at;
-    // One crossing per edge that changes sides, and `qv - pv` cannot be zero when it does.
-    if (qIn !== pIn) {
-      const t = (at - pv) / (qv - pv);
-      out.push(px + (qx - px) * t, py + (qy - py) * t);
-    }
-    if (qIn) out.push(qx, qy);
-    px = qx;
-    py = qy;
-    pv = qv;
-    pIn = qIn;
-  }
-}
 
 /** `diceOnGrid`'s clip buffers, reused across every flat on the map — see there. */
 const stripLow: number[] = [];
@@ -1269,6 +1233,21 @@ function reversedRing(points: ArrayLike<number>): number[] {
  *
  * The buffers are module-level scratch: this runs per flat per level build, and once more per
  * moving subsector whenever a mover's footprint is rebuilt. Nothing here reenters.
+ *
+ * The cuts go through `util/geom.ts`'s `clipConvexPolygon`, the tree's one convex clip, which keeps
+ * the `cross <= 0` half-plane of a line given as a point plus a direction. The four axis-aligned
+ * halves this needs are that line's degenerate cases — with `at` the grid line:
+ *
+ * | keep      | point     | direction |
+ * |-----------|-----------|-----------|
+ * | `x >= at` | `(at, 0)` | `(0, 1)`  |
+ * | `x <= at` | `(at, 0)` | `(0, -1)` |
+ * | `y >= at` | `(0, at)` | `(-1, 0)` |
+ * | `y <= at` | `(0, at)` | `(1, 0)`  |
+ *
+ * Convex in, convex out — which `SubSectorPoly.points` guarantees (`render/bsp.ts`) and which is
+ * what lets each cell be fanned. A point exactly on a grid line lands in **both** neighbouring
+ * cells, so their shared edge is cut at the same vertices from either side and no seam opens.
  */
 function diceOnGrid(ring: ArrayLike<number>, fan: (cell: ArrayLike<number>) => void): void {
   const n = ring.length / 2;
@@ -1292,11 +1271,11 @@ function diceOnGrid(ring: ArrayLike<number>, fan: (cell: ArrayLike<number>) => v
     // lies wholly on one side of is skipped, which is what makes the single-cell case free.
     let strip: ArrayLike<number> = ring;
     if (c * g > minX) {
-      clipHalf(strip, 0, c * g, false, stripLow);
+      clipConvexPolygon(strip, c * g, 0, 0, 1, 0, stripLow);
       strip = stripLow;
     }
     if ((c + 1) * g < maxX) {
-      clipHalf(strip, 0, (c + 1) * g, true, stripHigh);
+      clipConvexPolygon(strip, (c + 1) * g, 0, 0, -1, 0, stripHigh);
       strip = stripHigh;
     }
     if (strip.length < 6) continue;
@@ -1312,15 +1291,15 @@ function diceOnGrid(ring: ArrayLike<number>, fan: (cell: ArrayLike<number>) => v
     for (let r = Math.floor(sMinY / g); r <= rTop; r++) {
       let cell: ArrayLike<number> = strip;
       if (r * g > sMinY) {
-        clipHalf(cell, 1, r * g, false, cellLow);
+        clipConvexPolygon(cell, 0, r * g, -1, 0, 0, cellLow);
         cell = cellLow;
       }
       if ((r + 1) * g < sMaxY) {
-        clipHalf(cell, 1, (r + 1) * g, true, cellHigh);
+        clipConvexPolygon(cell, 0, (r + 1) * g, 1, 0, 0, cellHigh);
         cell = cellHigh;
       }
       // The scratch is handed straight on: `fan` copies what it reads before the next cell.
-      if (cell.length >= 6 && ringArea2(cell) > FLAT_CELL_MIN_AREA * 2) fan(cell);
+      if (cell.length >= 6 && Math.abs(signedPolygonArea2(cell)) > FLAT_CELL_MIN_AREA * 2) fan(cell);
     }
   }
 }
@@ -1393,6 +1372,7 @@ function addFlatFan(
       points: poly.points,
       vertexXY: Float32Array.from(xy),
       height,
+      light: spec.light,
       isCeiling,
       baseAlpha: spec.baseAlpha,
     });

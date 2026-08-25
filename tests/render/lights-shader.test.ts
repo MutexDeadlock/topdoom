@@ -66,7 +66,7 @@ describe('Dynamic lights · the geometry shader patch', () => {
     assert.ok(vertex.includes('vDynWorldPos = (modelMatrix'), 'the varying is never written');
     assert.ok(fragment.includes('varying vec3 vDynWorldPos;'), 'the varying never reaches the fragment stage');
     assert.ok(fragment.includes(`uniform vec4 uLightPos[${MAX_DYN_LIGHTS}]`), 'no light uniforms');
-    assert.ok(fragment.includes('dynLight += uLightColor[i] * att;'), 'no accumulation loop');
+    assert.ok(fragment.includes('dynLight += uLightColor[i] * att * lit;'), 'no accumulation loop');
   });
 
   test('the visibility gate is wired: attribute, vertex-side fetch, flat varying and the slot walk', () => {
@@ -106,7 +106,13 @@ describe('Dynamic lights · the geometry shader patch', () => {
       fragment.includes(`* ${BIN_PER_RADIAN} + ${BIN_HALF}.0`),
       'the shadow map is indexed on another convention',
     );
-    assert.ok(fragment.includes(`ivec2(clamp(bin, 0, ${SHADOW_STEPS - 1}), i)`), 'a light must read its own row');
+    assert.ok(fragment.includes('texelFetch(uLightShadow, ivec2(b, i), 0)'), 'a light must read its own row');
+    // The bins the softening kernel walks are wrapped into the row, not clamped to its ends: an
+    // interval straddling bin 0 (due west) otherwise reads one end of the row twice.
+    assert.ok(
+      fragment.includes(`b + ${SHADOW_STEPS} : (b >= ${SHADOW_STEPS} ? b - ${SHADOW_STEPS}`),
+      'the kernel must wrap around the row, not clamp to it',
+    );
     const falloff = fragment.indexOf('if (att <= 0.0) continue;');
     const lookup = fragment.indexOf('texelFetch(uLightShadow');
     assert.ok(falloff >= 0 && falloff < lookup, 'only fragments a light reaches should pay for the atan');

@@ -77,6 +77,25 @@ export const EMPTY_WORD = 0xffffffff;
  */
 export const SHADOW_BIAS = 4;
 
+/**
+ * How wide a shadow's edge is, as a half-width in angular bins: a fragment is lit by the fraction
+ * of the arc `[bin - this, bin + this]` that clears the blocker, rather than by the one bin it
+ * falls in. A binary test draws every shadow with a razor edge, which no light this soft has.
+ *
+ * **Tuned by feel**, against the arithmetic: a bin is 1.4 degrees (`SHADOW_STEPS`), so three of
+ * them is a penumbra of ~7 map units at the rim of a 105-unit light and half that mid-way in —
+ * and because the kernel is angular, it widens with distance from the light the way a real one
+ * does. It is what sets `SHADOW_TAPS`, so raising it costs fetches per lit fragment.
+ */
+export const SHADOW_SOFT_BINS = 1.5;
+
+/**
+ * Bins one shadow lookup touches, and so the fragment loop's tap count: an interval
+ * `2 * SHADOW_SOFT_BINS` wide starts anywhere inside a bin, so it can straddle one more than it
+ * spans. Derived rather than tuned — the taps outside the interval weigh zero.
+ */
+export const SHADOW_TAPS = Math.ceil(2 * SHADOW_SOFT_BINS) + 1;
+
 /** One row per light, one texel per angular bin — the distance its shadow starts at. */
 function makeShadowTexture(data: Float32Array): THREE.DataTexture {
   const tex = new THREE.DataTexture(data, SHADOW_STEPS, MAX_DYN_LIGHTS, THREE.RedFormat, THREE.FloatType);
@@ -249,8 +268,6 @@ interface LightMemo {
   reached: number[];
   /** Cast at `widestSize`, so a flickering light does **not** re-cast. See there. */
   shadows: Float32Array;
-  /** Which committed slot `shadows` was last copied into, or -1 where it has not been. */
-  slot: number;
   /** The `frame` this was last used on, for `pruneMemos`. */
   frame: number;
 }
@@ -267,7 +284,6 @@ const MEMO_CAP = MAX_DYN_LIGHTS * 4;
  * (`render/textures.ts` patches every material's shader against them) and `tintAt` for sprites,
  * which are lit on the CPU instead (docs/lights.md § Two lighting paths).
  */
-
 export class DynamicLights {
   /**
    * The live uniform objects, handed to every patched material once and mutated in place
@@ -286,6 +302,14 @@ export class DynamicLights {
     uLightShadow: { value: makeShadowTexture(new Float32Array(SHADOW_STEPS * MAX_DYN_LIGHTS)) },
   };
 
+  /**
+   * `uLightPos`/`uLightColor`'s arrays under a direct name. Both are allocated once and never
+   * replaced — only `uLightVis` is rebound (`bindLevel`) — and the per-sprite tint loop reads
+   * them per light in the leaf, where a two-deep property chain is pure overhead.
+   */
+  private readonly lightPos = this.uniforms.uLightPos.value;
+  private readonly lightColor = this.uniforms.uLightColor.value;
+
   private readonly defs: Gldefs;
   private vis: LightVisibility | null = null;
   /** Per emitter id, what `reach`/`castShadows` last answered for it — see `LightMemo`. */
@@ -299,6 +323,14 @@ export class DynamicLights {
   private touched: number[] = [];
   /** The shadow texture's own array, one `SHADOW_STEPS` row per committed light. */
   private shadows: Float32Array;
+  /**
+   * Which emitter id each shadow-texture row currently holds, or -1 for a row never written. The
+   * authority for "is this row already what this light needs": a row belongs to the texture, not
+   * to a memo, and rows are handed out fresh each frame by commit order — so a light that sits out
+   * a frame and comes back to the row number it last used would otherwise keep whatever light
+   * took the row meanwhile.
+   */
+  private rowOwner = new Int32Array(MAX_DYN_LIGHTS).fill(-1);
   /** Whether any row of `shadows` was rewritten this frame, so a frame of memo hits uploads nothing. */
   private shadowsDirty = false;
   private clock = 0;
@@ -354,6 +386,7 @@ export class DynamicLights {
     this.touched.length = 0;
     // Keyed on emitter ids and leaf indices, both of which the next level reuses for other things.
     this.memos.clear();
+    this.rowOwner.fill(-1);
     this.uniforms.uLightVis.value.dispose();
     if (!vis || vis.subsectorCount === 0) {
       this.visSlots = new Uint32Array(VIS_WORDS).fill(EMPTY_WORD);
@@ -534,11 +567,11 @@ export class DynamicLights {
         reachRadius: -1,
         reached: [],
         shadows: new Float32Array(SHADOW_STEPS),
-        slot: -1,
         frame: this.frame,
       };
       this.memos.set(e.id, memo);
     }
+    let recast = false;
     if (memo.x !== e.x || memo.y !== e.y || memo.from !== from || memo.sight !== sight) {
       memo.x = e.x;
       memo.y = e.y;
@@ -546,7 +579,7 @@ export class DynamicLights {
       memo.sight = sight;
       // Both halves are stale together: everything above is an input to each.
       memo.reachRadius = -1;
-      memo.slot = -1;
+      recast = true;
       vis.castShadows(e.x, e.y, widestSize(e.def) * RADIUS_SCALE, memo.shadows, 0);
     }
     if (memo.reachRadius !== e.radius) {
@@ -555,10 +588,11 @@ export class DynamicLights {
       vis.reach(from, e.x, e.y, e.radius, memo.reached);
     }
     memo.frame = this.frame;
-    // The row is already in the texture where neither the cast nor the slot moved — and a memo
-    // that answered from cache is exactly the frame that would otherwise re-upload it unchanged.
-    if (memo.slot !== index) {
-      memo.slot = index;
+    // The row is already in the texture where this light still owns it and the cast did not move —
+    // and a memo that answered from cache is exactly the frame that would otherwise re-upload it
+    // unchanged.
+    if (recast || this.rowOwner[index] !== e.id) {
+      this.rowOwner[index] = e.id;
       this.shadows.set(memo.shadows, index * SHADOW_STEPS);
       this.shadowsDirty = true;
     }
@@ -572,18 +606,30 @@ export class DynamicLights {
   }
 
   /**
-   * Whether light `index` reaches a point past its shadows — the CPU half of the shader's shadow
-   * lookup, so a sprite standing behind a pillar goes dark with the floor it stands on. `x`/`y` are
-   * DOOM space; the map is indexed in three.js space, hence the flipped `y`.
+   * How much of light `index` reaches a point past its shadows, 0 to 1 — the CPU half of the
+   * shader's shadow lookup, so a sprite standing behind a pillar goes dark with the floor it stands
+   * on, and softens across the shadow's edge with it (`SHADOW_SOFT_BINS`). `x`/`y` are DOOM space;
+   * the map is indexed in three.js space, hence the flipped `y`.
    */
-  private unshadowed(index: number, x: number, y: number): boolean {
-    if (!this.vis) return true;
+  private unshadowed(index: number, x: number, y: number): number {
+    if (!this.vis) return 1;
     const dx = x - this.committed.x[index];
     const dz = -y + this.committed.y[index];
-    const bin = Math.floor(Math.atan2(dz, dx) * BIN_PER_RADIAN + BIN_HALF);
-    const at = index * SHADOW_STEPS + Math.max(0, Math.min(SHADOW_STEPS - 1, bin));
-    const reach = this.shadows[at] + SHADOW_BIAS;
-    return dx * dx + dz * dz <= reach * reach;
+    // `Math.sqrt` of the dot rather than `Math.hypot`: this runs per sprite per light in the
+    // leaf, and hypot's overflow guard buys nothing at map coordinates.
+    const dist = Math.sqrt(dx * dx + dz * dz);
+    const lo = Math.atan2(dz, dx) * BIN_PER_RADIAN + BIN_HALF - SHADOW_SOFT_BINS;
+    const span = 2 * SHADOW_SOFT_BINS;
+    const base = Math.floor(lo);
+    let lit = 0;
+    for (let t = 0; t < SHADOW_TAPS; t++) {
+      const b = base + t;
+      const w = Math.min(b + 1, lo + span) - Math.max(b, lo);
+      if (w <= 0) continue;
+      const at = index * SHADOW_STEPS + (b < 0 ? b + SHADOW_STEPS : b >= SHADOW_STEPS ? b - SHADOW_STEPS : b);
+      if (dist <= this.shadows[at] + SHADOW_BIAS) lit += w;
+    }
+    return lit / span;
   }
 
   /**
@@ -644,15 +690,16 @@ export class DynamicLights {
     const dx = c.x[i] - x;
     const dy = c.y[i] - y;
     const dz = c.z[i] - z;
-    const radius = this.uniforms.uLightPos.value[i * 4 + 3];
+    const radius = this.lightPos[i * 4 + 3];
     // Ordered as the shader's is: the falloff first, so only a sprite a light actually reaches
     // pays for the shadow map's atan — and the reject itself is squared, so it costs no sqrt.
     const distSq = dx * dx + dy * dy + dz * dz;
     if (distSq >= radius * radius) return;
-    if (!this.unshadowed(i, x, y)) return;
+    const lit = this.unshadowed(i, x, y);
+    if (lit <= 0) return;
     // GZDoom's own linear falloff (`shaders/glsl/main.fp`), matching the shader half.
-    const att = (radius - Math.sqrt(distSq)) / radius;
-    const col = this.uniforms.uLightColor.value;
+    const att = ((radius - Math.sqrt(distSq)) / radius) * lit;
+    const col = this.lightColor;
     out.r += col[i * 3] * att;
     out.g += col[i * 3 + 1] * att;
     out.b += col[i * 3 + 2] * att;

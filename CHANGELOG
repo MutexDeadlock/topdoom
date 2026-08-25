@@ -30,7 +30,8 @@ Features and improvements
   - basic SEO: the page carries its own metadata now
 
 Fixed bugs
-
+  - a dynamic light culled for a frame could come back wearing another light's
+    shadows
 
 
 ===============================================================================

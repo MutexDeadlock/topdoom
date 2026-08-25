@@ -352,6 +352,39 @@ describe('DynamicLights · a light bound to a level', () => {
     assert.deepEqual([behind.r, behind.g, behind.b], [0, 0, 0]);
   });
 
+  test('a shadow\'s edge ramps rather than cuts, and the ramp holds inside one leaf', () => {
+    // The penumbra `SHADOW_SOFT_BINS` buys: a binary lookup steps straight from dark to full at
+    // the blocker's corner, which is the one hard edge a light this soft would have. Sampled well
+    // inside a single leaf, so it is the shadow map ramping and not the leaf list switching.
+    // docs/lights.md § Soft edges.
+    const grid = gridMap(['#####', '#...#', '#.#.#', '#...#', '#####'], { cell: 128 });
+    const world = new World(grid.map);
+    const lights = new DynamicLights(DEFS);
+    lights.bindLevel(new LightVisibility(grid.map, buildSubSectorPolys(grid.map), world));
+    const at = grid.centre(1, 1);
+    frame(lights, 0, [['GGGG', at.x, at.y, 0, 1]], at.x, at.y);
+
+    // A line across the pillar's shadow edge, far enough from the pillar for the penumbra to be
+    // several units wide — the kernel is angular, so it opens with distance from the light.
+    const t = tint();
+    const leaves = new Set<number>();
+    const ramp: number[] = [];
+    for (let x = 390; x <= 446; x += 4) {
+      const leaf = world.subsectorAt(x, 368);
+      leaves.add(leaf);
+      lights.tintAt(x, 368, 0, 99, t, leaf);
+      ramp.push(t.r);
+    }
+    assert.equal(leaves.size, 1, 'the sweep left the leaf, so the leaf list could explain the ramp');
+    assert.equal(ramp[0], 0, 'the sweep must start inside the shadow');
+    assert.ok(ramp[ramp.length - 1] > 0, 'the sweep must end outside it');
+    for (let i = 1; i < ramp.length; i++) {
+      assert.ok(ramp[i] >= ramp[i - 1], `the ramp fell back at sample ${i}: ${ramp.join(', ')}`);
+    }
+    const partial = ramp.filter((v) => v > 0 && v < ramp[ramp.length - 1]).length;
+    assert.ok(partial >= 5, `a soft edge needs partly lit samples, got ${partial}: ${ramp.join(', ')}`);
+  });
+
   test('every committed light\'s index fits a slot byte', () => {
     // A slot is one byte with 0xFF as the empty marker, so a light index reaching 0xFF would be
     // read back as the end of every list it is in.
@@ -420,6 +453,25 @@ describe('DynamicLights · what a light remembers between frames', () => {
     frame(lights, 0.016, [['GGGG', at.x, at.y, 0, 1]]);
     assert.equal(reaches(lights, there), false, 'the light carried on through a closed door');
     assert.notDeepEqual(shadowRow(lights), open, 'the shadow cast did not notice the door');
+  });
+
+  test('a light returning to a row another light used meanwhile gets its own cast back', () => {
+    // Rows are handed out by commit order, so the row a light had is not the row it keeps: one
+    // that sits a frame out and comes back to the same number must still re-upload. Remembering
+    // the row on the light rather than the owner on the row leaves it wearing the other's shadows.
+    const { grid, world, lights } = corridor();
+    const mine = grid.centre(0, 0);
+    const other = grid.centre(2, 0);
+    frame(lights, 0, [['GGGG', mine.x, mine.y, 0, 1]]);
+    const own = shadowRow(lights);
+
+    // The same row 0, taken by a different emitter standing somewhere else.
+    frame(lights, 0.016, [['GGGG', other.x, other.y, 0, 2]]);
+    assert.notDeepEqual(shadowRow(lights), own, 'the two positions must cast differently to test anything');
+
+    frame(lights, 0.032, [['GGGG', mine.x, mine.y, 0, 1]]);
+    assert.deepEqual(shadowRow(lights), own, 'the returning light kept the other light\'s shadow row');
+    assert.ok(world.subsectorAt(mine.x, mine.y) >= 0);
   });
 
   test('a light that moves re-answers for its new position', () => {

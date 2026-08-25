@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { World } from '../../src/game/world.ts';
 import { buildSubSectorPolys } from '../../src/render/bsp.ts';
 import { LightVisibility, SHADOW_STEPS } from '../../src/render/lightvis.ts';
+import { bspMap, leaf, plane, seg, twoSided, wall } from '../fixtures/bspmap.ts';
 import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import { gridMap, type GridMap } from '../fixtures/gridmap.ts';
 import { BANK } from '../fixtures/specialsrig.ts';
@@ -19,6 +20,57 @@ function reachFrom(vis: LightVisibility, world: World, grid: GridMap, col: numbe
 function leafAt(world: World, grid: GridMap, col: number, row: number): number {
   const at = grid.centre(col, row);
   return world.subsectorAt(at.x, at.y);
+}
+
+/**
+ * A room whose north boundary is one polygon edge across two leaves: a doorway west of x -32 into
+ * the room above, a solid wall east of it. `gridMap` cannot state this — it gives every cell its
+ * own leaf, so each edge borders exactly one — and it is DOOM2 MAP01's start room, whose north
+ * edge runs the full width of the room with the way out in its western half.
+ */
+function roomWithHalfWalledEdge() {
+  return bspMap({
+    vertexes: [
+      { x: -128, y: -128 },
+      { x: 128, y: -128 },
+      { x: 128, y: 0 },
+      { x: -32, y: 0 },
+      { x: -128, y: 0 },
+      { x: -128, y: 128 },
+      { x: -32, y: 128 },
+    ],
+    sidedefs: [0, 0],
+    linedefs: [
+      wall(1, 0),
+      wall(0, 4),
+      twoSided(4, 3, 0, 1),
+      wall(3, 2),
+      wall(2, 1),
+      wall(4, 5),
+      wall(5, 6),
+      wall(6, 3),
+    ],
+    segs: [
+      seg(1, 0, 0),
+      seg(0, 4, 1),
+      seg(4, 3, 2),
+      seg(3, 2, 3),
+      seg(2, 1, 4),
+      seg(3, 4, 2, 1),
+      seg(4, 5, 5),
+      seg(5, 6, 6),
+      seg(6, 3, 7),
+    ],
+    // 0 the south room, 1 the room through the doorway, 2 the solid ground beside it.
+    subsectors: [
+      [0, 5],
+      [5, 4],
+      [0, 0],
+    ],
+    // Read root-first: y <= 0 is the south room, and north of it x >= -32 is solid.
+    nodes: [plane(-32, 0, 0, 1, leaf(2), leaf(1)), plane(0, 0, 1, 0, leaf(0), 0)],
+    half: 512,
+  });
 }
 
 /**
@@ -87,6 +139,22 @@ describe('Dynamic lights · what a light can reach', () => {
     const out: number[] = [];
     vis.reach(-1, 0, 0, 1000, out);
     assert.deepEqual(out, []);
+  });
+
+  test('an edge bordering two leaves is crossed where it opens and not where it walls', () => {
+    // One polygon edge, a doorway in half of it and a wall in the other: probing its midpoint
+    // answers for whichever of the two that point lands in and loses the other, which left MAP01's
+    // start room lighting nothing north of it. docs/lights.md § The adjacency graph.
+    const map = roomWithHalfWalledEdge();
+    const world = new World(map);
+    const vis = new LightVisibility(map, buildSubSectorPolys(map), world);
+    const out: number[] = [];
+    vis.reach(world.subsectorAt(0, -64), 0, -64, 400, out);
+    const reached = new Set(out);
+
+    assert.ok(reached.has(0), 'the light must at least light its own leaf');
+    assert.ok(reached.has(1), 'the fill never crossed the open half of the edge');
+    assert.ok(!reached.has(2), 'the fill crossed the walled half of the edge');
   });
 });
 

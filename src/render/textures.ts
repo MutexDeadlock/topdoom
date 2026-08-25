@@ -5,7 +5,16 @@
  */
 import * as THREE from 'three';
 import type { Bitmap, GraphicsBank } from '../wad/graphics.ts';
-import { EMPTY_SLOT, EMPTY_WORD, MAX_DYN_LIGHTS, MAX_LIGHTS_PER_LEAF, SHADOW_BIAS, type DynamicLights } from './lights.ts';
+import {
+  EMPTY_SLOT,
+  EMPTY_WORD,
+  MAX_DYN_LIGHTS,
+  MAX_LIGHTS_PER_LEAF,
+  SHADOW_BIAS,
+  SHADOW_SOFT_BINS,
+  SHADOW_TAPS,
+  type DynamicLights,
+} from './lights.ts';
 import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS } from './lightvis.ts';
 
 export type SurfaceKind = 'wall' | 'flat';
@@ -26,6 +35,18 @@ type LightUniforms = DynamicLights['uniforms'];
  * light gets before a wall stops it, which drops the rest per pixel. `uLightVisWidth` 0 means no
  * level is bound and geometry draws no dynamic light. docs/lights.md § Light stops at walls.
  */
+/**
+ * One JS number as a GLSL float literal. Every float spliced into the shader below goes through
+ * here: a whole number would otherwise reach GLSL as an int and turn the surrounding arithmetic
+ * into integer arithmetic, which is a silent wrong answer rather than a compile error.
+ */
+function glslFloat(n: number): string {
+  return Number.isInteger(n) ? `${n}.0` : String(n);
+}
+
+const SOFT_BINS = glslFloat(SHADOW_SOFT_BINS);
+const SOFT_SPAN = glslFloat(2 * SHADOW_SOFT_BINS);
+
 const DYN_LIGHT_FRAGMENT = /* glsl */ `
             // Gated on the light count and the level being bound, both the same for every
             // fragment: a branch that varies per fragment costs a GPU more than it saves unless it
@@ -57,10 +78,26 @@ const DYN_LIGHT_FRAGMENT = /* glsl */ `
                 // fragments a light actually reaches.
                 if (att <= 0.0) continue;
                 vec2 rel = vDynWorldPos.xz - uLightPos[i].xz;
-                int bin = int(floor(atan(rel.y, rel.x) * ${BIN_PER_RADIAN} + ${BIN_HALF}.0));
-                float blocker = texelFetch(uLightShadow, ivec2(clamp(bin, 0, ${SHADOW_STEPS - 1}), i), 0).r;
-                if (length(rel) > blocker + ${SHADOW_BIAS}.0) continue;
-                dynLight += uLightColor[i] * att;
+                float flatDist = length(rel);
+                // The lit fraction of the arc [bin - soft, bin + soft], not the one bin the
+                // fragment falls in: each bin weighs what it covers of that interval, which slides
+                // continuously with the angle and so ramps a shadow's edge instead of cutting it.
+                // The kernel being angular is what widens the penumbra with distance from the
+                // light. docs/lights.md § Soft edges.
+                float lo = atan(rel.y, rel.x) * ${glslFloat(BIN_PER_RADIAN)} + ${glslFloat(BIN_HALF)} - ${SOFT_BINS};
+                int base = int(floor(lo));
+                float lit = 0.0;
+                for (int t = 0; t < ${SHADOW_TAPS}; t++) {
+                  int b = base + t;
+                  float w = min(float(b + 1), lo + ${SOFT_SPAN}) - max(float(b), lo);
+                  // Wrapped, not clamped: the interval straddles bin 0 due west like any other.
+                  b = b < 0 ? b + ${SHADOW_STEPS} : (b >= ${SHADOW_STEPS} ? b - ${SHADOW_STEPS} : b);
+                  float blocker = texelFetch(uLightShadow, ivec2(b, i), 0).r;
+                  lit += max(w, 0.0) * step(flatDist, blocker + ${glslFloat(SHADOW_BIAS)});
+                }
+                lit /= ${SOFT_SPAN};
+                if (lit <= 0.0) continue;
+                dynLight += uLightColor[i] * att * lit;
               }
               diffuseColor.rgb = min(diffuseColor.rgb + sampledDiffuseColor.rgb * dynLight, vec3(1.0));
             }`;

@@ -525,6 +525,67 @@ export class World {
   }
 
   /**
+   * The segment form of `subsectorAt`: appends to `out` a `t0, t1, subsector` triple per BSP leaf
+   * the segment (x1, y1) -> (x2, y2) passes through, in order, `t` being the fraction along it.
+   * Adjacent runs naming the same leaf are merged.
+   *
+   * Here rather than in its one caller so the BSP stays behind this class's seam — the walk
+   * repeats `subsectorAt`'s side test rather than sharing it, since that one is a per-sprite
+   * per-frame path and a helper call measured no faster; a sign fix has to land in both. What
+   * needs this is `LightVisibility`: one subsector polygon edge can border several leaves at
+   * once, and a single midpoint probe answers for only the one it happens to land in
+   * (docs/lights.md § The adjacency graph). See docs/world.md § Point-to-sector lookups.
+   */
+  subsectorsAlongSegment(x1: number, y1: number, x2: number, y2: number, out: number[]): void {
+    if (this.map.nodes.length === 0) {
+      out.push(0, 1, 0);
+      return;
+    }
+    this.walkSegmentLeaves(this.map.nodes.length - 1, x1, y1, x2, y2, 0, 1, out);
+  }
+
+  /**
+   * One subtree's share of `subsectorsAlongSegment`. The near half of a split recurses; the far
+   * half continues in the loop, so the recursion depth is the tree's and not the segment's.
+   */
+  private walkSegmentLeaves(
+    child: number,
+    x1: number,
+    y1: number,
+    x2: number,
+    y2: number,
+    t0: number,
+    t1: number,
+    out: number[],
+  ): void {
+    while ((child & SUBSECTOR_BIT) === 0) {
+      const node = this.map.nodes[child];
+      if (!node) return;
+      const c1 = node.dx * (y1 - node.y) - node.dy * (x1 - node.x);
+      const c2 = node.dx * (y2 - node.y) - node.dy * (x2 - node.x);
+      const front1 = c1 < 0;
+      if (front1 === (c2 < 0)) {
+        child = front1 ? node.rightChild : node.leftChild;
+        continue;
+      }
+      // The ends straddle the partition; c1 and c2 have strict opposite signs, so the split
+      // fraction is well defined.
+      const t = c1 / (c1 - c2);
+      const mx = x1 + (x2 - x1) * t;
+      const my = y1 + (y2 - y1) * t;
+      const tm = t0 + (t1 - t0) * t;
+      this.walkSegmentLeaves(front1 ? node.rightChild : node.leftChild, x1, y1, mx, my, t0, tm, out);
+      child = front1 ? node.leftChild : node.rightChild;
+      x1 = mx;
+      y1 = my;
+      t0 = tm;
+    }
+    const leaf = child & ~SUBSECTOR_BIT;
+    if (out.length >= 3 && out[out.length - 1] === leaf) out[out.length - 2] = t1;
+    else out.push(t0, t1, leaf);
+  }
+
+  /**
    * The sector a subsector belongs to, off the precomputed table. A subsector
    * index this map doesn't have answers sector 0.
    * See docs/world.md § Point-to-sector lookups.

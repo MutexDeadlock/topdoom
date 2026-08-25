@@ -6,6 +6,7 @@ import { Transfers } from '../../src/game/specials/transfers.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { BANK } from '../fixtures/specialsrig.ts';
 import { polygonArea } from '../fixtures/geometry.ts';
+import { signedPolygonArea2 } from '../../src/util/geom.ts';
 
 /**
  * A flat is cut up on a world-aligned grid rather than fanned and diced per triangle, so the
@@ -13,17 +14,6 @@ import { polygonArea } from '../fixtures/geometry.ts';
  * coverage: the cells have to tile the leaf exactly, or a floor grows a hole.
  * See docs/render.md § Flats are diced on a world grid.
  */
-
-/** Twice a ring's *signed* area — `polygonArea`'s shoelace with the sign kept, for the winding check. */
-function signedArea2(points: ArrayLike<number>): number {
-  const n = points.length / 2;
-  let sum = 0;
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    sum += points[i * 2] * points[j * 2 + 1] - points[j * 2] * points[i * 2 + 1];
-  }
-  return sum;
-}
 
 /** A room `cell` units square, and the one diced floor fan it draws. */
 function room(cell: number) {
@@ -143,8 +133,8 @@ describe('render · flats are diced on a world grid', () => {
     const floor = built.flatSurfaces.find((f) => !f.isCeiling)!;
     const ceiling = built.flatSurfaces.find((f) => f.isCeiling && f.subsector === floor.subsector)!;
     assert.equal(floor.vertexCount, ceiling.vertexCount, 'the two halves of one leaf diced differently');
-    const up = signedArea2(triangles(floor.vertexXY)[0]);
-    const down = signedArea2(triangles(ceiling.vertexXY)[0]);
+    const up = signedPolygonArea2(triangles(floor.vertexXY)[0]);
+    const down = signedPolygonArea2(triangles(ceiling.vertexXY)[0]);
     assert.ok(up * down < 0, 'floor and ceiling wound the same way');
   });
 });

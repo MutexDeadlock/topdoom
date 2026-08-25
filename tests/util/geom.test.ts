@@ -7,6 +7,7 @@ import {
   pointInConvexPolygon,
   segmentEntersBox,
   segmentIntersect,
+  signedPolygonArea2,
   traceHitsBox,
 } from '../../src/util/geom.ts';
 import { polygonArea } from '../fixtures/geometry.ts';
@@ -117,7 +118,66 @@ describe('Geometry · convex polygons', () => {
     const outside = clipConvexPolygon([...UNIT_SQUARE], 100, 0, 0, 1);
     assert.deepEqual(outside, [], 'nothing survives');
 
-    assert.deepEqual(clipConvexPolygon([], 0, 0, 0, 1), [], 'n === 0 returns the input');
+    assert.deepEqual(clipConvexPolygon([], 0, 0, 0, 1), [], 'no points clips to no points');
+  });
+
+  test('clipConvexPolygon fills a caller-owned buffer, clearing whatever it held', () => {
+    // What lets `mapmesh.ts`'s `diceOnGrid` cut every flat on the map against a grid without an
+    // array per cut. The buffer is cleared on entry, so a shorter result cannot leave a tail
+    // of the previous one behind.
+    const out: number[] = [1, 2, 3, 4, 5, 6, 7, 8];
+    const got = clipConvexPolygon([...UNIT_SQUARE], -100, 0, 0, 1, 0, out);
+    assert.equal(got, out, 'the buffer itself comes back');
+    assert.equal(polygonArea(out), 100);
+
+    clipConvexPolygon([...UNIT_SQUARE], 100, 0, 0, 1, 0, out);
+    assert.deepEqual(out, [], 'a fully-clipped result must empty the buffer');
+  });
+
+  test('clipConvexPolygon reads a Float64Array as readily as an array', () => {
+    // `SubSectorPoly.points` is a `Float64Array`, and `diceOnGrid` clips it directly.
+    const typed = Float64Array.from(UNIT_SQUARE);
+    assert.deepEqual(clipConvexPolygon(typed, -100, 0, 0, 1), [...UNIT_SQUARE]);
+  });
+
+  test('the four axis-aligned half-planes a grid cut needs', () => {
+    // The degenerate cases of the same clip, tabulated at `mapmesh.ts`'s `diceOnGrid`. A square
+    // from (0,0) to (10,10) halved four ways: each keeps 50 of the 100.
+    const sq = [0, 0, 10, 0, 10, 10, 0, 10];
+    const keepXHigh = clipConvexPolygon(sq, 5, 0, 0, 1);
+    const keepXLow = clipConvexPolygon(sq, 5, 0, 0, -1);
+    const keepYHigh = clipConvexPolygon(sq, 0, 5, -1, 0);
+    const keepYLow = clipConvexPolygon(sq, 0, 5, 1, 0);
+    for (const half of [keepXHigh, keepXLow, keepYHigh, keepYLow]) assert.equal(polygonArea(half), 50);
+    for (let i = 0; i < keepXHigh.length; i += 2) assert.ok(keepXHigh[i] >= 5, 'x >= 5 kept a point west of the cut');
+    for (let i = 0; i < keepXLow.length; i += 2) assert.ok(keepXLow[i] <= 5, 'x <= 5 kept a point east of the cut');
+    for (let i = 1; i < keepYHigh.length; i += 2) assert.ok(keepYHigh[i] >= 5, 'y >= 5 kept a point south of the cut');
+    for (let i = 1; i < keepYLow.length; i += 2) assert.ok(keepYLow[i] <= 5, 'y <= 5 kept a point north of the cut');
+
+    // The two halves of one cut must share their edge exactly, or a diced floor grows a seam.
+    assert.equal(polygonArea(keepXHigh) + polygonArea(keepXLow), 100);
+  });
+});
+
+describe('geometry · signed area', () => {
+  test('the sign is the winding and the magnitude is twice the area', () => {
+    const ccw = [0, 0, 10, 0, 10, 10, 0, 10];
+    const cw = [0, 0, 0, 10, 10, 10, 10, 0];
+    assert.equal(signedPolygonArea2(ccw), 200, 'counter-clockwise is positive, un-halved');
+    assert.equal(signedPolygonArea2(cw), -200, 'clockwise is negative');
+    assert.equal(Math.abs(signedPolygonArea2(cw)) / 2, 100, 'halved, it is the area');
+  });
+
+  test('anything without three points has no area', () => {
+    assert.equal(signedPolygonArea2([]), 0);
+    assert.equal(signedPolygonArea2([0, 0]), 0);
+    assert.equal(signedPolygonArea2([0, 0, 10, 10]), 0);
+  });
+
+  test('a degenerate ring measures zero however many points it has', () => {
+    // What `diceOnGrid`'s cell filter rejects on: a cut that only grazes a polygon comes back as
+    // three or four collinear points.
+    assert.equal(signedPolygonArea2([0, 0, 5, 5, 10, 10, 5, 5]), 0);
   });
 });
 

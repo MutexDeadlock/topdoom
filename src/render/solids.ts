@@ -4,7 +4,7 @@
  * a camera looking down does. See docs/render.md § Solid structures.
  */
 import { NO_SIDE, type DoomMap } from '../wad/map.ts';
-import { polygonCentroid } from '../util/geom.ts';
+import { polygonCentroid, signedPolygonArea2 } from '../util/geom.ts';
 import type { SectorPoly } from './bsp.ts';
 
 /** How far outside an edge the side probe steps, in map units — far enough to clear the line, short enough to stay in the sector it borders. */
@@ -171,7 +171,9 @@ function capFor(map: DoomMap, polys: readonly SectorPoly[], ring: { lines: numbe
     points[i * 2] = vertex.x;
     points[i * 2 + 1] = vertex.y;
   }
-  const area = signedArea(points);
+  // Halved back to a true area, which is what `MIN_AREA` is in; the sign is what the winding
+  // normalisation below reads.
+  const area = signedPolygonArea2(points) / 2;
   if (Math.abs(area) < MIN_AREA) return null;
   // Which way round a ring comes out depends on the arbitrary direction the
   // trace happened to start in, so normalise it: a lid is triangulated and
@@ -279,16 +281,6 @@ function reversePoints(points: Float64Array): void {
     points[j * 2] = x;
     points[j * 2 + 1] = y;
   }
-}
-
-function signedArea(points: Float64Array): number {
-  let area = 0;
-  const n = points.length / 2;
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    area += points[i * 2] * points[j * 2 + 1] - points[j * 2] * points[i * 2 + 1];
-  }
-  return area / 2;
 }
 
 /** Ray-crossing test — the ring can be concave, so the convex helpers in util/geom.ts don't fit. */

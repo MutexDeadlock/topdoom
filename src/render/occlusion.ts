@@ -155,22 +155,16 @@ export function collectFadeTargets(player: Pos3, awakeMonsters: readonly Pos3[])
   ];
 }
 
-/**
- * Fades the wall quads currently sitting on a camera→target sightline. `update` only computes
- * that factor; a wall's on-screen alpha is its *product* with fog of war's reveal — two systems
- * driving the same vertex-alpha channel — so `commit` writes the combined value once both are
- * known. See docs/render.md § Wall occlusion fading.
- */
 /** `sightBox`'s output, reused: the two faders run back to back and neither holds the box past its own update. */
-const sightBoxOut = new Float64Array(4);
+const sightBoxOut = { minX: 0, maxX: 0, minY: 0, maxY: 0 };
 
 /**
- * The box every sightline of one frame lives inside — the camera, stretched over every target — as
- * `[minX, maxX, minY, maxY]`. A line side or a fan whose own bounds miss it cannot be crossed by
- * any sightline, which is what both faders reject on before any crossing work. Exact, not a
- * heuristic. docs/render.md § The fade is a hole, not a wall.
+ * The box every sightline of one frame lives inside — the camera, stretched over every target. A
+ * line side or a fan whose own bounds miss it cannot be crossed by any sightline, which is what
+ * both faders reject on before any crossing work. Exact, not a heuristic.
+ * docs/render.md § The fade is a hole, not a wall.
  */
-function sightBox(camX: number, camY: number, targets: FadeTarget[]): Float64Array {
+function sightBox(camX: number, camY: number, targets: FadeTarget[]): typeof sightBoxOut {
   let minX = camX;
   let maxX = camX;
   let minY = camY;
@@ -181,13 +175,19 @@ function sightBox(camX: number, camY: number, targets: FadeTarget[]): Float64Arr
     if (t.y < minY) minY = t.y;
     if (t.y > maxY) maxY = t.y;
   }
-  sightBoxOut[0] = minX;
-  sightBoxOut[1] = maxX;
-  sightBoxOut[2] = minY;
-  sightBoxOut[3] = maxY;
+  sightBoxOut.minX = minX;
+  sightBoxOut.maxX = maxX;
+  sightBoxOut.minY = minY;
+  sightBoxOut.maxY = maxY;
   return sightBoxOut;
 }
 
+/**
+ * Fades the wall quads currently sitting on a camera→target sightline. `update` only computes
+ * that factor; a wall's on-screen alpha is its *product* with fog of war's reveal — two systems
+ * driving the same vertex-alpha channel — so `commit` writes the combined value once both are
+ * known. See docs/render.md § Wall occlusion fading.
+ */
 export class WallFader {
   private occluders: WallOccluder[];
   private meshes: Map<string, THREE.Mesh>;
@@ -368,11 +368,7 @@ export class WallFader {
     const n = targets.length;
     this.frameStamp++;
     this.ensureTargetScratch(n);
-    const box = sightBox(camX, camY, targets);
-    const boxMinX = box[0];
-    const boxMaxX = box[1];
-    const boxMinY = box[2];
-    const boxMaxY = box[3];
+    const { minX: boxMinX, maxX: boxMaxX, minY: boxMinY, maxY: boxMaxY } = sightBox(camX, camY, targets);
     for (let k = 0; k < n; k++) {
       const t = targets[k];
       this.tx[k] = t.x;
@@ -692,10 +688,10 @@ export class FlatFader {
       if (s.isCeiling || s.height >= camZ || (s.baseAlpha ?? 1) < 1) continue;
       const r = this.boundR[i];
       if (
-        this.boundX[i] + r < box[0] ||
-        this.boundX[i] - r > box[1] ||
-        this.boundY[i] + r < box[2] ||
-        this.boundY[i] - r > box[3]
+        this.boundX[i] + r < box.minX ||
+        this.boundX[i] - r > box.maxX ||
+        this.boundY[i] + r < box.minY ||
+        this.boundY[i] - r > box.maxY
       ) {
         continue;
       }

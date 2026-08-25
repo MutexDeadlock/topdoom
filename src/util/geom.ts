@@ -248,6 +248,32 @@ export function pointInConvexPolygon(px: number, py: number, poly: ArrayLike<num
 const CLIP_EPS = 1e-6;
 
 /**
+ * Twice the shoelace sum of a flat `[x0,y0, x1,y1, …]` ring — that is, the **signed** area: positive
+ * counter-clockwise, negative clockwise, and its magnitude the area. Fewer than three points has
+ * none.
+ *
+ * The one shoelace in the tree: `render/solids.ts` asks it which way a ring winds, `render/mapmesh.ts`
+ * asks how much a diced cell covers, and the tests assert on both. Returning the signed value
+ * un-halved keeps every caller's own convention one operation away (`Math.abs`, `/ 2`) rather than
+ * making four bodies of the same arithmetic that differ only in which they applied.
+ */
+export function signedPolygonArea2(poly: ArrayLike<number>): number {
+  const n = Math.floor(poly.length / 2);
+  if (n < 3) return 0;
+  let sum = 0;
+  let ax = poly[(n - 1) * 2];
+  let ay = poly[(n - 1) * 2 + 1];
+  for (let i = 0; i < n; i++) {
+    const bx = poly[i * 2];
+    const by = poly[i * 2 + 1];
+    sum += ax * by - bx * ay;
+    ax = bx;
+    ay = by;
+  }
+  return sum;
+}
+
+/**
  * Clips a convex polygon against the half-plane cross(p) <= 0 (Sutherland-Hodgman).
  * The line is given as a point (px, py) plus a direction (dx, dy). `poly` is a
  * flat [x0,y0, x1,y1, …] array; the result may have more or fewer points.
@@ -256,35 +282,39 @@ const CLIP_EPS = 1e-6;
  * discarded side, so the result keeps anything within that distance of it. The
  * result is still a proper half-plane clip of the input, hence still convex and
  * still a subset of it.
+ *
+ * `out` lets a caller that clips in a loop reuse one buffer instead of taking a fresh array per
+ * cut (`mapmesh.ts`'s `diceOnGrid`, which cuts every flat on the map against a grid). It is
+ * cleared on entry, so it must **not** alias `poly`.
  */
 export function clipConvexPolygon(
-  poly: number[],
+  poly: ArrayLike<number>,
   px: number,
   py: number,
   dx: number,
   dy: number,
   tolerance = 0,
+  out: number[] = [],
 ): number[] {
+  out.length = 0;
   const n = poly.length / 2;
-  if (n === 0) return poly;
-  const out: number[] = [];
+  if (n === 0) return out;
 
-  // `side` is a cross product, so it scales with the direction's length: the
-  // tolerance has to be scaled the same way to mean a distance in map units.
+  // The side test is a cross product, so it scales with the direction's length:
+  // the tolerance has to be scaled the same way to mean a distance in map units.
   // `CLIP_EPS` only decides which side a point counts as being on; the cut runs
   // through the tolerance-offset line itself, so tolerance 0 clips exactly.
-  const cut = tolerance * Math.hypot(dx, dy);
+  const cut = tolerance === 0 ? 0 : tolerance * Math.hypot(dx, dy);
   const limit = cut + CLIP_EPS;
-  const side = (x: number, y: number) => dx * (y - py) - dy * (x - px);
 
   let ax = poly[(n - 1) * 2];
   let ay = poly[(n - 1) * 2 + 1];
-  let da = side(ax, ay);
+  let da = dx * (ay - py) - dy * (ax - px);
 
   for (let i = 0; i < n; i++) {
     const bx = poly[i * 2];
     const by = poly[i * 2 + 1];
-    const db = side(bx, by);
+    const db = dx * (by - py) - dy * (bx - px);
 
     const aIn = da <= limit;
     const bIn = db <= limit;

@@ -36,6 +36,7 @@ const MAX_REACH = 512;
  */
 export interface LightWorld {
   subsectorAt(x: number, y: number): number;
+  subsectorsAlongSegment(x1: number, y1: number, x2: number, y2: number, out: number[]): void;
   blocksSight(lineIndex: number): boolean;
   forEachLineNear(x: number, y: number, radius: number, visit: (lineIndex: number) => boolean | void): void;
   forEachLineAlongSegment(
@@ -49,8 +50,9 @@ export interface LightWorld {
 
 /**
  * One leaf's boundary, split across two arrays because half of it is indices and half geometry.
- * `ints` is `[neighbour, blockerCount, ...linedefs]` per edge; `geom` is `[ax, ay, bx, by]` per
- * edge, in the same order.
+ * `ints` is `[neighbour, blockerCount, ...linedefs]` per record; `geom` is `[ax, ay, bx, by]` per
+ * record, in the same order. A record is one *neighbour* across a polygon edge, so an edge that
+ * borders several leaves contributes several — see `edgesOf`.
  */
 interface Edges {
   ints: Int32Array;
@@ -178,12 +180,17 @@ export class LightVisibility {
   }
 
   /**
-   * A leaf's edges, computed on first use and kept: per edge, the leaf across it (probed
-   * `EDGE_PROBE_OFFSET` along the outward normal) and every linedef standing between the two.
+   * A leaf's edges, computed on first use and kept: per edge, the leaf across it and every linedef
+   * standing between the two.
    *
-   * Which linedefs those are is a **crossing test from the leaf's own centre, not a collinearity
-   * one** — the load-bearing choice here, and the reason an out-of-map probe needs no special case.
-   * docs/lights.md § The adjacency graph.
+   * One polygon edge is **split into a record per leaf across it**, walking the BSP along the edge
+   * pushed `EDGE_PROBE_OFFSET` out — a single midpoint probe answers for whichever neighbour the
+   * midpoint lands in and loses every other, which is how a light stops dead at a doorway in the
+   * open half of a wall it shares its edge with.
+   *
+   * Which linedefs stand in a record is a **crossing test from the leaf's own centre, not a
+   * collinearity one** — the load-bearing choice here, and the reason an out-of-map probe needs no
+   * special case. docs/lights.md § The adjacency graph.
    */
   private edgesOf(subsector: number): Edges {
     const hit = this.edges[subsector];
@@ -198,6 +205,7 @@ export class LightVisibility {
 
     const ints: number[] = [];
     const geom: number[] = [];
+    const runs: number[] = [];
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       const ax = pts[i * 2];
@@ -208,21 +216,47 @@ export class LightVisibility {
       const dy = by - ay;
       const len = Math.hypot(dx, dy);
       if (len < 1e-6) continue;
-      const mx = (ax + bx) / 2;
-      const my = (ay + by) / 2;
       let nx = dy / len;
       let ny = -dx / len;
-      if (nx * (mx - cx) + ny * (my - cy) < 0) {
+      if (nx * ((ax + bx) / 2 - cx) + ny * ((ay + by) / 2 - cy) < 0) {
         nx = -nx;
         ny = -ny;
       }
-      const nb = this.world.subsectorAt(mx + nx * EDGE_PROBE_OFFSET, my + ny * EDGE_PROBE_OFFSET);
-      if (nb === subsector || nb < 0 || nb >= this.subsectorCount) continue;
-      const at = ints.length;
-      ints.push(nb, 0);
-      this.linesAcross(cx, cy, mx + nx * EDGE_PROBE_OFFSET, my + ny * EDGE_PROBE_OFFSET, ints);
-      ints[at + 1] = ints.length - at - 2;
-      geom.push(ax, ay, bx, by);
+      // Both ends pulled in, so a corner probes this edge's own neighbours rather than a leaf that
+      // only touches the polygon at that point. `len / 4` caps the pull-in on a short edge at a
+      // quarter of it, leaving half the edge to probe along however short it is — **tuned by
+      // feel**, against nothing but that requirement.
+      const inset = Math.min(EDGE_PROBE_OFFSET, len / 4) / len;
+      // Two segments in step: `s`->`e` runs along the polygon edge itself, which is what a record
+      // stores as its geometry, and `p`->`q` is that same span pushed out into the neighbour,
+      // which is what the BSP is walked along. A run's fractions index either one.
+      const sx = ax + dx * inset;
+      const sy = ay + dy * inset;
+      const ex = bx - dx * inset;
+      const ey = by - dy * inset;
+      const px = sx + nx * EDGE_PROBE_OFFSET;
+      const py = sy + ny * EDGE_PROBE_OFFSET;
+      const qx = ex + nx * EDGE_PROBE_OFFSET;
+      const qy = ey + ny * EDGE_PROBE_OFFSET;
+      runs.length = 0;
+      this.world.subsectorsAlongSegment(px, py, qx, qy, runs);
+      for (let r = 0; r < runs.length; r += 3) {
+        const nb = runs[r + 2];
+        if (nb === subsector || nb < 0 || nb >= this.subsectorCount) continue;
+        const t0 = runs[r];
+        const t1 = runs[r + 1];
+        const x0 = sx + (ex - sx) * t0;
+        const y0 = sy + (ey - sy) * t0;
+        const x1 = sx + (ex - sx) * t1;
+        const y1 = sy + (ey - sy) * t1;
+        const at = ints.length;
+        ints.push(nb, 0);
+        // Aimed at the middle of the run's own share of the probe segment, so a record that covers
+        // a slice of the edge tests the lines standing across *that* slice.
+        this.linesAcross(cx, cy, px + (qx - px) * ((t0 + t1) / 2), py + (qy - py) * ((t0 + t1) / 2), ints);
+        ints[at + 1] = ints.length - at - 2;
+        geom.push(x0, y0, x1, y1);
+      }
     }
     const edges: Edges = { ints: Int32Array.from(ints), geom: Float64Array.from(geom) };
     this.edges[subsector] = edges;
@@ -243,7 +277,9 @@ export class LightVisibility {
     let h = 0;
     for (const sector of this.map.sectors) {
       // Scaled before truncating so a mover's sub-unit step still moves the hash; the heights are
-      // fractional only while something is in motion, which is the case that misses anyway.
+      // fractional only while something is in motion, which is the case that misses anyway. The
+      // 64 is **tuned by feel**: fine enough that no mover step this engine produces hashes equal
+      // to the one before it, coarse enough that float noise in a resting height cannot.
       h = (Math.imul(h, 31) + Math.trunc(sector.floorHeight * 64)) | 0;
       h = (Math.imul(h, 31) + Math.trunc(sector.ceilHeight * 64)) | 0;
     }

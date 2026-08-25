@@ -206,8 +206,14 @@ at walls), and it is written once: a mover changes heights, never a quad's footp
 
 A flat is cut up for the same reason a wall is — a fan whose only vertices are its corners has
 nowhere to put a fade gradient — but **not** the same way. `addFlatFan` clips each convex leaf
-polygon against a world-aligned grid of `FLAT_GRID_LEN` and fans each cell (`diceOnGrid`,
-`clipHalf`).
+polygon against a world-aligned grid of `FLAT_GRID_LEN` and fans each cell (`diceOnGrid`).
+
+The cuts go through `util/geom.ts`'s `clipConvexPolygon`, the tree's one convex clip — the same one
+`bsp.ts` builds every subsector polygon with. The four axis-aligned half-planes a grid needs are
+that clip's degenerate cases, tabulated at `diceOnGrid`; it takes an `out` buffer so the dicing
+loop reuses four arrays rather than allocating per cut. A vertex sitting exactly on a grid line
+lands in both neighbouring cells, which is what makes their shared edge cut at the same points from
+either side.
 
 What it replaced was a fan of the whole polygon, each of those triangles then diced on a
 barycentric grid sized by its **longest** edge. Fanning a convex polygon from one corner makes
@@ -307,6 +313,13 @@ makes — `flatSpecsOf`, which is `processFlat` with the emission taken out — 
 against the fans the mesh holds; `applyFlatRefresh` then writes the new plane into the position
 attribute's Y lane and the new colour, leaving x, z, UV and `aLightCell` untouched. Same sector,
 0.52 ms.
+
+A fan whose plane and light both held still is skipped outright, and **both halves of that test read
+the fan's own record** (`FlatSurface.height`, `FlatSurface.light`) — the common case for a mover's
+ceiling while its floor runs. The light must be carried on the record rather than recovered from the
+colour attribute: `litColor` returns a double and the buffer stores float32, so comparing the two
+round-trips wrong for 224 of the 256 light levels and the skip never fires. Testing before the mesh
+is looked up also keeps the skipped case off the map lookup and the two attribute fetches.
 
 What a tic *can* change is which fans a leaf draws at all — a rising floor takes a 242 pool below
 `WATER_MIN_DEPTH` and its surface fan stops existing — and any such change is a refusal, exactly as

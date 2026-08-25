@@ -149,6 +149,12 @@ subsector's segs until one names a sidedef, so a subsector whose early segs are 
 several linedef and sidedef derefs per query. The table is `4 * numsubsectors` bytes, well under a
 map's other load-time derivations.
 
+**`subsectorsAlongSegment` is the segment form of that descent**, appending a `t0, t1, subsector`
+triple per leaf a segment passes through and merging adjacent runs naming the same one. It lives
+here, beside `subsectorAt`, so the node side test is written once — its one caller is
+`LightVisibility`, where a subsector polygon edge can border several leaves at once and a point
+probe answers for only one of them (docs/lights.md § The adjacency graph).
+
 **A subsector index the map doesn't have answers sector 0**, matching what the seg walk returned for
 one — `subsectorAt` can produce an out-of-range index on a map with broken nodes, and sector 0 is a
 real sector, so the guard keeps that path from reading past the array. `sightRejected` does *not*

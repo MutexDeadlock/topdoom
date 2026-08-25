@@ -158,11 +158,25 @@ Which leaves border which is **built lazily, per leaf, and kept for the level's 
 costs a BSP descent and a short linedef walk, and lights only ever touch the small part of a map
 they stand in — a whole-map pass at load would pay for the rest of it for nothing.
 
-An edge's neighbour is found by probing `1.5` units along its outward normal — the polygon is
-convex, so "away from the centroid" fixes that direction whatever the winding — the same offset and
-the same descent `mapmesh` uses to resolve a wall quad's leaf. Which linedefs stand between the two
-is then a **crossing test from the leaf's own centre out to that probe point**, cached: the
-geometry is fixed even though each linedef's blocking answer is not.
+An edge's neighbours are found along the edge pushed `1.5` units out along its outward normal — the
+polygon is convex, so "away from the centroid" fixes that direction whatever the winding — the same
+offset `mapmesh` uses to resolve a wall quad's leaf. Which linedefs stand between the two is then a
+**crossing test from the leaf's own centre out to that probe point**, cached: the geometry is fixed
+even though each linedef's blocking answer is not.
+
+**One edge becomes a record per leaf across it, not one record.** A leaf's outline is the BSP clip's,
+and its edges are the *partitions* that cut the leaf out — nothing makes one edge stop where the
+geometry behind it changes, so a single edge routinely spans a doorway and the wall beside it. The
+neighbour is therefore not a point probe but `World.subsectorsAlongSegment` (docs/world.md §
+Point-to-sector lookups) walking the offset edge through the BSP, each run of it becoming its own
+record with its own sub-edge geometry and its own crossing test. A midpoint probe instead answers
+for whichever neighbour that one point lands in and **loses every other**, which is what left a
+light standing in DOOM2 MAP01's start room lighting nothing north of it: the room's north edge runs
+its full width, the way out is in the western half, and the midpoint sits behind the wall in the
+eastern half. Duplicate records for one neighbour cost nothing — the fill marks a leaf seen only
+when it actually crosses into it, so a record blocked by a wall leaves a later open one free to
+cross. Both ends of that walked segment are pulled in by the same 1.5 units, so a corner probes the
+edge's own neighbours rather than a leaf that only touches the polygon at that one point.
 
 **Crossing from the centre, rather than asking which linedef the edge lies on, is the load-bearing
 part.** A leaf's outline comes out of the BSP clip, which deliberately spares the clip against a
@@ -206,6 +220,31 @@ What this deliberately does **not** model is occlusion by anything but map geome
 vertical: a monster standing in front of a torch throws no shadow, and neither does a chest-high
 step, because `blocksSight` is height-blind by design (docs/fogofwar.md). Both are GZDoom's
 behaviour too.
+
+### Soft edges
+
+A shadow read as one bin against one distance has a razor edge — a straight cut across the floor at
+the blocker's corner, on a light with no such hardness anywhere else in it. Both readers instead
+take the **lit fraction of the arc `[bin - SHADOW_SOFT_BINS, bin + SHADOW_SOFT_BINS]`**: each bin
+the interval touches weighs however much of it that bin covers, and contributes that weight where
+the fragment clears its blocker.
+
+- **The weights are what make it smooth, not the tap count.** A plain average of N taps steps by
+  `1/N` as each tap crosses the boundary, which bands. A coverage weight slides continuously as the
+  interval moves inside a bin, so the ramp is continuous across the whole penumbra with four taps.
+- **The kernel is angular, so the penumbra widens with distance from the light** — which is the way
+  a real one behaves, and free here: a bin is a fixed angle, and its arc grows with the radius.
+  `SHADOW_SOFT_BINS` is the dial (docs/lights.md is the argument; the declaration in `lights.ts`
+  carries the arithmetic), and `SHADOW_TAPS` follows from it rather than being tuned beside it.
+- **The taps wrap around the row rather than clamping to its ends**, unlike the single lookup they
+  replace: an interval straddling bin 0 — due west — otherwise reads that end of the row twice and
+  hardens the shadow along one exact direction.
+- Both halves must agree, so `DynamicLights.unshadowed` runs the same kernel on the CPU and returns
+  a fraction rather than a yes/no: a sprite crossing a shadow's edge dims with the floor under it
+  instead of switching.
+
+The cost is four `texelFetch`es where there was one, paid only by fragments a light actually
+reaches — the falloff test still gates the whole lookup.
 
 ### How the answer reaches a fragment
 
@@ -410,14 +449,20 @@ changed. Three things about the key:
   does not actually reach could crowd out one that does.
 
 The memo governs the **upload** as well as the cast. A row is copied into the shadow texture only
-when the cast was retaken or the light landed in a different committed slot (`LightMemo.slot`), and
-`uLightShadow.needsUpdate` follows that rather than "there is at least one light" — otherwise a
-frame of pure memo hits still re-uploads the whole texture unchanged.
+when the cast was retaken or the row does not already hold this light, and `uLightShadow.needsUpdate`
+follows that rather than "there is at least one light" — otherwise a frame of pure memo hits still
+re-uploads the whole texture unchanged.
+
+**Which light a row holds is tracked on the row (`DynamicLights.rowOwner`), never on the memo.**
+Rows are handed out fresh each `commit` in nearest-first order, so the row a light had last frame
+is not a row it owns: a light that is culled for a frame and comes back to the same row number
+would, under a remembered-on-the-memo slot, skip the copy and draw wearing the shadows of whatever
+light took that row meanwhile. `tests/render/lights.test.ts` covers the three-frame case.
 
 Memos are capped at four frames' worth of lights and pruned to what the last `commit` used, since a
 one-shot effect gets a fresh emitter id every time one spawns (§ What emits). `bindLevel` clears
-them: they are keyed on emitter ids and leaf indices, both of which the next level reuses — and
-clearing them re-dirties every row, since a cleared memo has no slot.
+them and resets `rowOwner`: memos are keyed on emitter ids and leaf indices, both of which the next
+level reuses, and a row whose owner is forgotten re-uploads on its next use.
 
 ## The toggle
 

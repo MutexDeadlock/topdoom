@@ -415,7 +415,7 @@ Lids are built once, into the static batches only: a structure never moves, and 
 
 Each lid is emitted as one `FlatSurface` **per triangle** (`THREE.ShapeUtils.triangulateShape`),
 because these rings are frequently concave and `FlatFader` tests a surface's footprint with the
-convex-only `pointInConvexPolygon` (§ Flats). Triangles keep that contract, so a structure between the
+convex-only `segmentMeetsConvexPolygon` (§ Flats). Triangles keep that contract, so a structure between the
 camera and the player dithers away exactly as a raised floor does — without that, capping them would
 trade a hole for something worse: a pillar you cannot see your own player behind.
 
@@ -598,13 +598,9 @@ hiding anything: the target is already in front of it. In a small room that is t
 E1M2 at (-1906, 1056) stands in a 72-unit-high closet whose east wall is crossed 50 units away, and
 a 192-wide ball around that crossing took the west wall (linedefs 696 and 884, the ones the player
 is *facing*) with it, leaving a room with no walls and a floor that ran on into the next one. So
-each target carries the plane through itself facing the camera (`TargetPlanes`, one normal and one
-offset per target for the frame), and a corner past that plane is skipped outright rather than
-folded. The normal is deliberately **not** unit length: every test compares two dot products taken
-against that same normal, so scaling it changes neither side, and skipping the normalise matters at
-the thousand-odd mover faders a frame refills. The cut costs three multiplies per corner, shares its horizontal and vertical halves across
-a quad's four, and lands exactly at the target's own billboard — so what it leaves standing is what
-draws *behind* the player anyway.
+each target carries the plane its own sprite stands in (`TargetPlanes`), and a corner past that
+plane is skipped outright rather than folded (§ The target is the billboard, for which plane that is
+and why it is vertical).
 
 **Both cuts are load-bearing, and the vertical one is easy to forget.** With alpha written only at a
 quad's left and right edges the hole is a disc in plan view, which on screen is a full-height band
@@ -695,6 +691,74 @@ Measured on EPIC.WAD MAP02 (the heaviest map to hand: 6,582 line sides), both cu
 wall quads from 6,795 to 11,602 and the whole fade pass from 1.10 to 1.16 ms/frame at 25 targets;
 level mesh build goes 21 → 57 ms, once per load.
 
+### The target is the billboard
+
+**Both faders aim at an upright rectangle, not at a point.** A thing is drawn as a plane fixed
+upright in the world that only turns about its vertical axis (`SpriteMaterialCache`, docs/sprites.md),
+and `FadeTarget` says so: `z` is the middle of that rectangle and `halfHeight` how far it reaches
+either side. Two rules follow, and both were bugs before they were rules — `BOOMEDIT.WAD` MAP01 at
+(-1664, 713), looking south over the scrolling-texture block at y 768..800, is the case they were
+found on.
+
+**Every target's rectangle is its own body.** A monster carries its `mobjinfo.height` — 56 for an imp
+to 110 for a cyberdemon — from `MONSTER_STATS` through `PosedThing.bodyHeight` and out of
+`ThingLayer.awakeMonsters` as `StandingBody.height`; the player gets `PLAYER_HEIGHT`. Either way
+`FadeTarget.z` is the middle of that span and `halfHeight` reaches from there to the feet and to the
+crown, so the wedge covers the body exactly. It is the same centre-and-half-extent `shotPath` locks
+onto (`ShotLock.halfHeight`, docs/combat.md § Auto-aim) built from the same field, and it is
+DEHACKED-aware for free: a patch that retunes a height moves the fade with it. One shared
+player-sized band was the earlier shape, and it failed the very case this section exists for — a lid
+covering only a cyberdemon's head sits well above where that band reached.
+
+The height is the **collision** height, not the drawn sprite's. `CachedSprite.quad.height` is what the
+billboard measures on screen and is often the taller of the two, but `mobjinfo.height` is what every
+other "where is this body" question in the engine already answers with, and a fade disagreeing with
+the shot that follows it would be worse than one running a few units short.
+
+**The cut plane is vertical.** Nothing behind the plane an upright sprite stands in can draw over
+that sprite, so a corner past it is skipped; the plane is `TargetPlanes`' `(nx, ny, d0)`, the
+camera→target offset *in plan*. A plane tilted to face the camera instead leans back over the target
+by the camera's own pitch, so geometry that is well past the target but tall counts as in front of
+it: at that MAP01 spot the boundary wall 73 units *behind* the player (linedef 148, `BROWN1`) had its
+top corners 11 units on the camera side of a tilted plane, and dithered away to reveal the void
+behind it. The normal is deliberately **not** unit length: every test compares two dot products taken
+against that same normal, so scaling it changes neither side, and skipping the normalise matters at
+the thousand-odd mover faders a frame refills. Being vertical, it also costs one dot product per quad
+*end* rather than one per corner, since a quad's four corners share their two ends' answer.
+
+**And the sightline is a wedge, not a ray** — from the eye to the whole rectangle, so it is the
+sprite's own half-height thick at the target and nothing at the camera. `WallFader` counts a
+crossing where a quad's `[botH, topH]` meets that wedge rather than the centre ray alone;
+`FlatFader` crosses a floor's height plane over a *span* of the camera→target line — nearest the
+target for the sprite's top, furthest for its feet — and pierces where that span meets a fan
+(`segmentMeetsConvexPolygon`), rather than at the single point the centre ray lands on. Without it
+anything covering only the upper half of a sprite is invisible to the fade: at that MAP01 spot, with
+the camera around 40° off vertical, the lid on top of the block (§ Solid structures) cut the player's
+head off while the wall under it dissolved, because the ray to the player's *middle* passes under
+that lid and only the ray to their head goes through it.
+
+The pierce is still filed at the point the centre ray lands on, not at whichever end of the span a
+fan happened to catch: the dedup that lets one platform split into many fans file a single pierce
+turns on a point that depends only on the height and the target (§ Flats), and an end clamped per
+fan would file one pierce per fan instead.
+
+Neither rule costs anything overall. Measured on the same EPIC.WAD MAP05 map the numbers above are
+taken on, at 49 targets, medians of 200 updates: `WallFader.update` 0.86 → 0.76 ms — the vertical
+plane is two multiplies per *quad* cheaper (the old tilted one already shared its height term across
+a quad's four corners), and a quad's four corners now share its two ends' answer — against
+`FlatFader.update` 0.062 → 0.108 ms for the span, which pays for the two extra crossings and the edge
+walk that replaces a point test.
+
+Three things keep that second figure from being worse, and all three are load-bearing where the
+per-fan loop runs candidates × targets a frame. The three heights the span needs **share one
+reciprocal each per target**, so the per-fan work is a multiply rather than a divide. The
+bounding-circle reject **runs on the span's parameters, not its endpoints** — a fan's centre is
+projected onto the camera→target line and clamped to `[tFar, tNear]`, which is seven multiplies and
+no divide, and means a rejected fan never builds the four coordinates only the footprint walk wants.
+And each fan's **winding is memoised** in `buildLayout` beside its bound circle (`windSign`), because
+`segmentMeetsConvexPolygon` needs to know it and a shoelace pass per fan per target per frame would
+re-derive it over rings that only a mover rebuild reshapes.
+
 ### Which sightlines a wall fades for
 
 `WallFader.update`/`FlatFader.update` take a *list* of sightline targets (`FadeTarget[]`), not just
@@ -719,6 +783,10 @@ own position back to 1 — no fade at all — at `MONSTER_FADE_RANGE`. Two dozen
 fanning sightlines out from one camera used to gut a room between them, each at full strength; and
 a flat cap fading at full strength right up to its edge popped a wall the moment a monster crossed
 it. Where several targets cover one edge, the lowest alpha wins.
+
+**And its own height** (`FadeTarget.halfHeight`) — a monster's `mobjinfo.height`, the player's
+`PLAYER_HEIGHT`, so each sightline is a wedge fitted to the body it aims at (§ The target is the
+billboard).
 
 **And its own hole size** (`FadeTarget.fadeRadius`), which for a monster is half the player's
 (`MONSTER_FADE_RADIUS`). The reason is not cost. The player's hole is centred on the one place the
@@ -766,15 +834,21 @@ equivalent gate — floors have no comparable "visually-solid-but-actually-passa
 
 `FlatFader` is the same idea for a horizontal plane: a raised floor sitting between the camera and a
 target standing below it. Only floors above the target's own height are candidates, which excludes
-the floor being stood on by construction — no "which subsector am I in" tracking needed. The
-sightline crosses a given floor height at exactly one (x, y) point, and alpha falls off radially from
-it on the **same `FADE_CORE`/`FADE_RADIUS` ramp the walls use**, so a hole that spans a floor and the
-wall behind it is one shape rather than two.
+the floor being stood on by construction — no "which subsector am I in" tracking needed. That gate
+stays on the sprite's **centre** even though everything below it works over the sprite's whole
+height, and deliberately: lowering it to the feet would generalize the span cleanly but pull back in
+the floor the target is standing on, which is exactly what it is here to exclude. The cost is the
+asymmetry — a floor between the feet and the centre, one hiding only the legs, is never a candidate.
+The sightline crosses a candidate's height along one segment of the camera→target line (§ The target
+is the billboard), and alpha falls off radially from the point its middle lands on, on the **same
+`FADE_CORE`/`FADE_RADIUS` ramp the walls use**, so a hole that spans a floor and the wall behind it
+is one shape rather than two.
 
 **It runs the same two passes `WallFader` does, and pass one is what keeps a floor beside the
 sightline standing.** A floor's height is a *plane*, and the plane is infinite while the floor is
-not: `collectPierces` keeps a crossing only where the point lands inside some fan's own footprint
-(`pointInConvexPolygon` against `FlatSurface.points`), then pass two dissolves the ball around it.
+not: `collectPierces` keeps a crossing only where that segment meets some fan's own footprint
+(`segmentMeetsConvexPolygon` against `FlatSurface.points`), then pass two dissolves the ball around
+the point it files.
 Without that gate a step up *next to* the target fades, because the sightline meets its height a
 couple of units short of the target — over open floor, on the far side of the step's edge — and the
 step's own fans are then well inside `FADE_RADIUS` of that point. It is not a rare geometry: every

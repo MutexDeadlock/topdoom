@@ -6,6 +6,7 @@ import {
   distSqToSegment,
   pointInConvexPolygon,
   segmentEntersBox,
+  segmentMeetsConvexPolygon,
   segmentIntersect,
   signedPolygonArea2,
   traceHitsBox,
@@ -71,6 +72,49 @@ describe('Geometry · convex polygons', () => {
     // Fewer than three points is not a polygon.
     assert.equal(pointInConvexPolygon(0, 0, [0, 0, 1, 1]), false);
     assert.equal(pointInConvexPolygon(0, 0, []), false);
+  });
+
+  test('segmentMeetsConvexPolygon answers for the whole segment, not its ends', () => {
+    const cw = [0, 0, 0, 10, 10, 10, 10, 0];
+    // The case the point test cannot do: both ends outside, the middle across it.
+    assert.equal(pointInConvexPolygon(-5, 5, UNIT_SQUARE), false);
+    assert.equal(pointInConvexPolygon(15, 5, UNIT_SQUARE), false);
+    assert.equal(segmentMeetsConvexPolygon(-5, 5, 15, 5, UNIT_SQUARE), true);
+    assert.equal(segmentMeetsConvexPolygon(-5, 5, 15, 5, cw), true, 'either winding');
+    // One end in, one out; and wholly inside.
+    assert.equal(segmentMeetsConvexPolygon(5, 5, 100, 5, UNIT_SQUARE), true);
+    assert.equal(segmentMeetsConvexPolygon(2, 2, 8, 8, UNIT_SQUARE), true);
+    // Past it, and short of it: the parameter range is [0, 1], not the whole line.
+    assert.equal(segmentMeetsConvexPolygon(-5, 15, 15, 15, UNIT_SQUARE), false);
+    assert.equal(segmentMeetsConvexPolygon(-20, 5, -11, 5, UNIT_SQUARE), false);
+    // Running along an edge counts as meeting it, the way a point on one does.
+    assert.equal(segmentMeetsConvexPolygon(-5, 0, 15, 0, UNIT_SQUARE), true);
+    // A degenerate segment is just the point test.
+    assert.equal(segmentMeetsConvexPolygon(5, 5, 5, 5, UNIT_SQUARE), true);
+    assert.equal(segmentMeetsConvexPolygon(15, 5, 15, 5, UNIT_SQUARE), false);
+    // Fewer than three points is not a polygon.
+    assert.equal(segmentMeetsConvexPolygon(0, 0, 1, 1, [0, 0, 1, 1]), false);
+  });
+
+  test('a caller may hand segmentMeetsConvexPolygon the winding it already knows', () => {
+    // `FlatFader` memoises it per fan rather than paying a shoelace pass per
+    // call — docs/render.md § The target is the billboard. Same answers either
+    // way, for both windings and for a miss as well as a hit.
+    const cw = [0, 0, 0, 10, 10, 10, 10, 0];
+    const windOf = (poly: number[]) => (signedPolygonArea2(poly) < 0 ? -1 : 1);
+    for (const poly of [UNIT_SQUARE, cw]) {
+      for (const [x0, y0, x1, y1] of [
+        [-5, 5, 15, 5],
+        [-5, 15, 15, 15],
+        [2, 2, 8, 8],
+      ]) {
+        assert.equal(
+          segmentMeetsConvexPolygon(x0, y0, x1, y1, poly, windOf(poly)),
+          segmentMeetsConvexPolygon(x0, y0, x1, y1, poly),
+          `passed winding matches the derived one for ${JSON.stringify([x0, y0, x1, y1])}`,
+        );
+      }
+    }
   });
 
   test('clipConvexPolygon keeps the cross <= 0 half-plane', () => {

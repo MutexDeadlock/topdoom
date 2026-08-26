@@ -17,8 +17,14 @@ import { Transfers } from '../../src/game/specials/transfers.ts';
 import { World, type Opening } from '../../src/game/world.ts';
 import { NO_SIDE } from '../../src/wad/map.ts';
 import { PLAYER_HEIGHT } from '../../src/game/player.ts';
-import { gridMap } from '../fixtures/gridmap.ts';
+import { buildThingSprites } from '../../src/game/things.ts';
+import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
+import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { BANK, MASKED_TEXTURE } from '../fixtures/specialsrig.ts';
+import { BANK as SPRITE_BANK, MATERIALS as SPRITE_MATERIALS } from '../fixtures/spritestubs.ts';
+import { targetAt } from '../fixtures/fadetarget.ts';
 
 /**
  * The fade is a *ball* around where a sightline meets something solid, not the
@@ -63,13 +69,12 @@ function walledRow() {
 }
 
 /**
- * A player-strength fade target at a point. The two dials are still *read* from
- * the source rather than mirrored (docs/render.md § The fade is a hole, not a
- * wall) — this only spells them once, so a dial added to `FadeTarget` does not
- * mean editing every case in the file. The weak/monster cases pass their own.
+ * An awake monster in the shape `collectFadeTargets` takes it — `z` its feet,
+ * `height` its own `mobjinfo.height`. Player-height unless a case is about the
+ * difference.
  */
-function targetAt(x: number, y: number, z: number): FadeTarget {
-  return { x, y, z, fadeFloor: FADE_ALPHA, fadeRadius: FADE_RADIUS };
+function awake(x: number, y: number, z: number, height = PLAYER_HEIGHT) {
+  return { x, y, z, height };
 }
 
 /** The real opening lookup, in the shape `WallFader.update` takes it. */
@@ -200,8 +205,8 @@ describe('render · the sightline box rejects only what it must', () => {
     // `fadeFloor` 1 is "pull nothing down", so these two only move the box.
     const wide = alphasFor(b, camX, camY, 128, [
       target,
-      { x: -1e5, y: -1e5, z: -1e5, fadeFloor: 1, fadeRadius: FADE_RADIUS },
-      { x: 1e5, y: 1e5, z: -1e5, fadeFloor: 1, fadeRadius: FADE_RADIUS },
+      targetAt(-1e5, -1e5, -1e5, { fadeFloor: 1 }),
+      targetAt(1e5, 1e5, -1e5, { fadeFloor: 1 }),
     ]);
     assert.deepEqual(wide, narrow);
     assert.ok(
@@ -347,17 +352,43 @@ describe('render · the fade is a hole, not a wall', () => {
 });
 
 describe('render · what the fade still refuses to touch', () => {
-  test('a quad the crossing passes over or under stays put', () => {
+  /**
+   * Camera and target the same height, either side of the wall and equally far
+   * from it — so the sightline is level and the sprite reaches exactly
+   * `PLAYER_HEIGHT / 4` above and below it where it crosses (half of a half,
+   * the wedge being half-thickness at the target and nothing at the eye).
+   */
+  function levelSightlineAt(heightFor: (botH: number) => number) {
     const b = walledRow();
     const line = lineAtY(b.grid, 2 * CELL, CELL * 1.5);
     const quads = group(b.occluders, line, true);
     const where = quads[0].segAx + CELL / 2;
-    // Camera and target both at floor level: the crossing height lands at 0,
-    // which is the bottom of the quad, not inside it.
     const fader = new WallFader(b.occluders, b.wallMeshes);
-    fader.update(SETTLE, where, 2 * CELL + 512, 0, [targetAt(where, 2 * CELL - 512, 0)], openingsOf(b.world));
+    const y = heightFor(quads[0].botH);
+    fader.update(SETTLE, where, 2 * CELL + 512, y, [targetAt(where, 2 * CELL - 512, y)], openingsOf(b.world));
     fader.commit(() => 1);
+    return { b, quads };
+  }
+
+  /** How far the sprite reaches either side of a level sightline halfway along it. */
+  const REACH_AT_HALFWAY = PLAYER_HEIGHT / 4;
+
+  test('a quad the whole sprite passes over or under stays put', () => {
+    // Not the ray to the target's middle — the wedge to its *whole* sprite has
+    // to clear the quad. docs/render.md § The target is the billboard.
+    const { b, quads } = levelSightlineAt((botH) => botH - 2 * REACH_AT_HALFWAY);
     for (const q of quads) for (const c of cornerList(b.wallMeshes, q)) assert.equal(c.a, 1);
+  });
+
+  test('a quad only the top of the sprite reaches still fades', () => {
+    // Under the quad by less than the sprite reaches up there: the middle of
+    // the target is below the wall and its head is behind it, which is a wall
+    // hiding the player however little of them it hides.
+    const { b, quads } = levelSightlineAt((botH) => botH - REACH_AT_HALFWAY / 2);
+    assert.ok(
+      quads.some((q) => cornerList(b.wallMeshes, q).some((c) => c.a < 1)),
+      'the wall the sprite\u2019s head is behind gives way',
+    );
   });
 
   /** A row of open cells screened by a midtexture of `texture` on every inner line. */
@@ -439,13 +470,37 @@ describe('render · the hole stops at the target', () => {
     // again, and fades — so what held it up was the cut, not its distance.
     assert.ok(faded(b, CHUNK * 0.5, far).some((c) => c.a < 1), 'and gives way once the target is past it');
   });
+
+  test('and keeps standing when the camera looks steeply down on it', () => {
+    // The cut plane is the one the *sprite* stands in, so it is vertical — a
+    // plane tilted to face the camera instead leans back over the target by the
+    // camera's own pitch, and a wall past the target that is taller than the
+    // target then has its top corners on the camera's side of it. Repro:
+    // BOOMEDIT.WAD MAP01 at (-1664, 713) looking south, where linedef 148 stood
+    // 73 units *behind* the player and dithered away to show the void behind
+    // it. docs/render.md § The target is the billboard.
+    const b = narrowRoom();
+    const near = lineAtY(b.grid, 2 * CHUNK, CHUNK * 1.5);
+    const far = lineAtY(b.grid, CHUNK, CHUNK * 1.5);
+    const fader = new WallFader(b.occluders, b.wallMeshes);
+    // High and well back, so the sightline still crosses the near wall inside
+    // its own band while running steeply down onto the target.
+    fader.update(SETTLE, CHUNK * 1.5, 4 * CHUNK, 320, [targetAt(CHUNK * 1.5, CHUNK * 1.5, 0)], openingsOf(b.world));
+    fader.commit(() => 1);
+    const cornersOf = (line: number) =>
+      b.occluders.filter((o) => o.line === line).flatMap((o) => cornerList(b.wallMeshes, o));
+    assert.ok(cornersOf(near).some((c) => c.a < 1), 'the wall in front of the target still gives way');
+    // The corner the tilted plane let through was the *top* one, so this has to
+    // look at every corner rather than at the quad as a whole.
+    assert.ok(cornersOf(far).every((c) => c.a === 1), 'the tall one behind it does not, at any corner');
+  });
 });
 
 describe('render · a monster fades less of a wall than the player does', () => {
   const player = { x: 0, y: 0, z: 0 };
 
   test('a monster opens the narrower hole of the two', () => {
-    const [self, monster] = collectFadeTargets(player, [{ x: 64, y: 0, z: 0 }]);
+    const [self, monster] = collectFadeTargets(player, [awake(64, 0, 0)]);
     assert.equal(self.fadeRadius, FADE_RADIUS, 'the player gets the wide one');
     assert.equal(monster.fadeRadius, MONSTER_FADE_RADIUS);
     assert.ok(MONSTER_FADE_RADIUS < FADE_RADIUS, 'and it really is the narrower');
@@ -469,7 +524,7 @@ describe('render · a monster fades less of a wall than the player does', () => 
 
     const alphaFor = (fadeRadius: number) => {
       const fader = new WallFader(b.occluders, b.wallMeshes);
-      const target: FadeTarget = { x: where, y: 2 * CELL - 512, z: height, fadeFloor: FADE_ALPHA, fadeRadius };
+      const target = targetAt(where, 2 * CELL - 512, height, { fadeRadius });
       fader.update(SETTLE, where, 2 * CELL + 512, height, [target], openingsOf(b.world));
       fader.commit(() => 1);
       return corners(b.wallMeshes, beyond).topRight.a;
@@ -479,17 +534,17 @@ describe('render · a monster fades less of a wall than the player does', () => 
   });
 
   test('the player pulls a wall all the way down, a monster only partway', () => {
-    const near = collectFadeTargets(player, [{ x: MONSTER_FADE_RANGE / 96, y: 0, z: 0 }]);
+    const near = collectFadeTargets(player, [awake(MONSTER_FADE_RANGE / 96, 0, 0)]);
     assert.equal(near[0].fadeFloor, FADE_ALPHA, 'the player is always full strength');
     assert.ok(near[1].fadeFloor > FADE_ALPHA, 'a monster beside them is very nearly so');
     assert.ok(near[1].fadeFloor < ramp(0.02));
 
-    const far = collectFadeTargets(player, [{ x: MONSTER_FADE_RANGE - 1, y: 0, z: 0 }]);
+    const far = collectFadeTargets(player, [awake(MONSTER_FADE_RANGE - 1, 0, 0)]);
     assert.ok(far[1].fadeFloor > ramp(0.99), 'one at the edge of range barely fades anything');
   });
 
   test('the strength eases with distance rather than stepping', () => {
-    const [, half] = collectFadeTargets(player, [{ x: MONSTER_FADE_RANGE / 2, y: 0, z: 0 }]);
+    const [, half] = collectFadeTargets(player, [awake(MONSTER_FADE_RANGE / 2, 0, 0)]);
     // Half the range: half of the way from full strength back to no fade.
     assert.ok(Math.abs(half.fadeFloor - ramp(0.5)) < 1e-6);
   });
@@ -508,7 +563,7 @@ describe('render · a monster fades less of a wall than the player does', () => 
     // still inside the band for any core — so the corner asserted on reads its
     // floor rather than a point on the ramp. The floor is what this is about.
     const height = middle.topH - Math.min(FADE_CORE, middle.topH - middle.botH) / 4;
-    const weak: FadeTarget = { x: where, y: 2 * CELL - 512, z: height, fadeFloor: 0.5, fadeRadius: FADE_RADIUS };
+    const weak = targetAt(where, 2 * CELL - 512, height, { fadeFloor: 0.5 });
 
     const fader = new WallFader(b.occluders, b.wallMeshes);
     fader.update(SETTLE, where, 2 * CELL + 512, height, [weak], openingsOf(b.world));
@@ -666,6 +721,47 @@ describe('render · flats fade around the sightline too', () => {
     assert.ok(alphas.includes(1), 'while the far side of the platform still stands');
   });
 
+  test('a raised floor that covers only the sprite\u2019s head fades', () => {
+    // A plateau between camera and target, posed so the ray to the target's
+    // *middle* meets its height short of it — out over the low floor — while
+    // the ray to the target's head lands on the plateau itself. A crossing
+    // *point* finds nothing to fade here; the span the sprite's own height
+    // sweeps does. docs/render.md § The target is the billboard. The reported
+    // case is the lid on top of a solid block (§ Solid structures):
+    // BOOMEDIT.WAD MAP01 at (-1664, 713) with the camera due north and roughly
+    // 40 degrees off vertical, where that lid cut the player's head off while
+    // the wall under it dissolved.
+    const cell = 256;
+    const top = 128;
+    const grid = gridMap(['..R.'], {
+      cell,
+      heights: { R: { floor: top, ceil: 512 }, '.': { floor: 0, ceil: 512 } },
+    });
+    const b = buildMapMesh(grid.map, BANK, { transfers: new Transfers(grid.map) });
+    const plateau = b.flatSurfaces.filter((s) => !s.isCeiling && s.height === top);
+    assert.ok(plateau.length > 0, 'the fixture built a raised floor to fade');
+
+    const y = grid.centre(0, 0).y;
+    // The plateau's near edge — the one the two rays have to straddle.
+    const edge = 2 * cell;
+    const camX = edge - 512;
+    const camZ = 216;
+    const target = targetAt(edge + 512, y, PLAYER_HEIGHT / 2);
+    const meetsTop = (z: number) => camX + (target.x - camX) * ((top - camZ) / (z - camZ));
+    const middleAt = meetsTop(target.z);
+    const headAt = meetsTop(target.z + target.halfHeight);
+    assert.ok(middleAt < edge, `fixture: the middle ray meets ${top} short of the plateau, at ${middleAt}`);
+    assert.ok(headAt > edge, `fixture: the head ray lands on the plateau, at ${headAt}`);
+    assert.ok(headAt < edge + cell, 'fixture: on it rather than past its far side');
+
+    const fader = new FlatFader(b.flatSurfaces, b.flatMeshes);
+    fader.update(SETTLE, camX, y, camZ, [target]);
+    fader.commit(() => 1);
+    const alphas = plateau.flatMap((s) => fanAlphas(b.flatMeshes, s));
+    assert.ok(Math.min(...alphas) < 1, 'the floor the head is behind gives way');
+    assert.ok(alphas.includes(1), 'while its far side still stands');
+  });
+
   test('a fan the sightline never reaches keeps its base alpha', () => {
     const b = platform();
     const surfaces = b.flatSurfaces.filter((s) => !s.isCeiling);
@@ -719,9 +815,55 @@ describe('render · commit writes only what moved', () => {
 });
 
 describe('render · fade targets', () => {
-  test('both kinds of target are raised to the same eye height', () => {
-    const targets = collectFadeTargets({ x: 0, y: 0, z: 16 }, [{ x: 64, y: 0, z: 48 }]);
+  test('every target is centred in its own body, not in a shared one', () => {
+    // A monster brings its `mobjinfo.height`, so its wedge spans exactly the
+    // body: feet to crown, centre halfway. docs/render.md § The target is the
+    // billboard.
+    const cyberdemon = 110;
+    const targets = collectFadeTargets({ x: 0, y: 0, z: 16 }, [awake(64, 0, 48, cyberdemon)]);
     assert.equal(targets[0].z, 16 + PLAYER_HEIGHT / 2);
-    assert.equal(targets[1].z, 48 + PLAYER_HEIGHT / 2);
+    assert.equal(targets[0].halfHeight, PLAYER_HEIGHT / 2);
+    assert.equal(targets[1].z, 48 + cyberdemon / 2);
+    assert.equal(targets[1].halfHeight, cyberdemon / 2);
+    // The whole point: a tall one reaches higher than the player's band would.
+    assert.ok(targets[1].z + targets[1].halfHeight > 48 + PLAYER_HEIGHT);
+  });
+
+  test('a short body gets a shorter wedge than a tall one at the same spot', () => {
+    const imp = 56;
+    const [, small] = collectFadeTargets({ x: 0, y: 0, z: 0 }, [awake(64, 0, 0, imp)]);
+    const [, big] = collectFadeTargets({ x: 0, y: 0, z: 0 }, [awake(64, 0, 0, 110)]);
+    assert.ok(small.halfHeight < big.halfHeight, 'the imp does not borrow the cyberdemon’s reach');
+    assert.equal(small.z - small.halfHeight, big.z - big.halfHeight, 'both stand on the same floor');
+  });
+
+  test('the live thing layer hands out each species’ own mobjinfo height', () => {
+    // The end of the wiring: `bodyHeight` is seeded from `MONSTER_STATS`
+    // (DEHACKED-patched, so a patch that retunes a height moves the fade with
+    // it), and `awakeMonsters` is what carries it to `collectFadeTargets`.
+    const grid = gridMap(['#'.repeat(8), `#${'.'.repeat(6)}#`, '#'.repeat(8)], { cell: 128 });
+    const map = grid.map;
+    map.things.push(
+      thingAt(grid, 1, 1, 1),
+      thingAt(grid, 3, 1, ThingType.imp, 180),
+      thingAt(grid, 5, 1, ThingType.baronOfHell, 180),
+    );
+    const layer = buildThingSprites(map, new World(map), SPRITE_BANK, SPRITE_MATERIALS, 3);
+    const player = { ...grid.centre(1, 1), z: 0 };
+    // Long enough for `A_Look` to wake both and for the fog to mark them drawn.
+    for (let i = 0; i < 60; i++) layer.update(DOOM_TIC, player);
+
+    const awakened = layer.awakeMonsters();
+    assert.ok(awakened.length >= 2, `both monsters awake and drawn, got ${awakened.length}`);
+    const heights = new Set(awakened.map((m) => m.height));
+    assert.ok(heights.has(MONSTER_STATS[ThingType.imp].height), 'the imp reports its own height');
+    assert.ok(heights.has(MONSTER_STATS[ThingType.baronOfHell].height), 'and the baron its own');
+    assert.equal(heights.size, 2, 'two species, two heights — not one shared band');
+
+    for (const m of awakened) {
+      const target = collectFadeTargets(player, [m])[1];
+      assert.equal(target.halfHeight, m.height / 2, 'the wedge is that body’s own half-height');
+      assert.equal(target.z - target.halfHeight, m.z, 'and its underside sits at the body’s feet');
+    }
   });
 });

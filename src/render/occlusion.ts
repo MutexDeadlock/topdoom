@@ -7,9 +7,10 @@
 import * as THREE from 'three';
 import { WALL_CHUNK_LEN, type FlatSurface, type WallOccluder } from './mapmesh.ts';
 import type { MaterialBank } from './textures.ts';
-import { pointInConvexPolygon, polygonCentroid, segmentCrossT } from '../util/geom.ts';
+import { polygonCentroid, segmentCrossT, segmentMeetsConvexPolygon, signedPolygonArea2 } from '../util/geom.ts';
 import { dampenWith } from '../util/damping.ts';
 import { PLAYER_HEIGHT } from '../game/player.ts';
+import type { StandingBody } from '../game/things/defs.ts';
 import type { Opening } from '../game/world.ts';
 import type { Pos3 } from '../types.ts';
 
@@ -57,12 +58,17 @@ export const FADE_CORE = FADE_RADIUS * FADE_CORE_FRACTION;
 const GRID_MIN_OCCLUDERS = 256;
 
 /**
- * A point occlusion is tested against — the player, or an awake monster (see
- * `WallFader.update`'s doc). `fadeFloor` is how far down this target alone
- * pulls what hides it (`FADE_ALPHA` is full strength) and `fadeRadius` how
- * wide a hole it opens.
+ * What occlusion is tested against — the player, or an awake monster (see
+ * `WallFader.update`'s doc). Not a point: `z` is the middle of an **upright
+ * sprite** and `halfHeight` how far that sprite reaches above and below it, so
+ * a sightline is a wedge rather than a ray and something covering only the
+ * head still counts as hiding the target. docs/render.md § The target is the
+ * billboard.
+ *
+ * `fadeFloor` is how far down this target alone pulls what hides it
+ * (`FADE_ALPHA` is full strength) and `fadeRadius` how wide a hole it opens.
  */
-export type FadeTarget = Pos3 & { fadeFloor: number; fadeRadius: number };
+export type FadeTarget = Pos3 & { halfHeight: number; fadeFloor: number; fadeRadius: number };
 
 /**
  * The alpha one crossing pulls a point at `distanceSquared` from it down to:
@@ -118,47 +124,46 @@ class PointBag {
 }
 
 /**
- * Per target, for the frame: the plane through it facing the camera. Nothing on
- * the far side of that plane can be hiding the target, so nothing there fades —
- * see docs/render.md § The fade is a hole, not a wall. Both faders keep one,
+ * Per target, for the frame: the **vertical** plane its sprite stands in.
+ * Nothing behind that plane can be hiding the target, so nothing there fades —
+ * see docs/render.md § The target is the billboard. Both faders keep one,
  * refilled per `update`; the hole dials stay on the target itself, which every
  * read site already holds.
  */
 class TargetPlanes {
   /**
-   * The camera→target offset, and `dot(n, target)`: `dot(n, p) > d0` is past
-   * the target. Deliberately **not** normalized — every test compares two
+   * The camera→target offset in plan, and `dot(n, target)`: `dot(n, p) > d0` is
+   * past the target. Deliberately **not** normalized — every test compares two
    * dot products against this same `n`, so scaling it changes neither side,
-   * and the hypot-and-three-divides per target is measurable across the
-   * thousand-odd mover faders a frame refills.
+   * and the hypot-and-two-divides per target is measurable across the
+   * thousand-odd mover faders a frame refills — docs/render.md § The target is
+   * the billboard.
    *
-   * A camera sitting exactly on its target falls out of that with no branch:
-   * `n` is zero, `d0` is zero, and `0 > 0` cuts nothing, leaving the hole whole
-   * — what it was before there was a plane at all.
+   * A camera standing exactly over a target *in plan* leaves `n` and `d0` both
+   * zero, and `0 > 0` cuts nothing: that target's hole goes back to the whole
+   * ball it was before there was a plane at all. `MIN_TILT_DEG` keeps the player
+   * off that point; a monster can stand on it, and eats one frame of the wide
+   * hole the cut exists to stop.
    */
   nx = new Float64Array(0);
   ny = new Float64Array(0);
-  nz = new Float64Array(0);
   d0 = new Float64Array(0);
 
   /** Refills for this frame's targets, growing on demand. */
-  fill(camX: number, camY: number, camZ: number, targets: readonly FadeTarget[]): void {
+  fill(camX: number, camY: number, targets: readonly FadeTarget[]): void {
     if (this.nx.length < targets.length) {
       const n = targets.length;
       this.nx = new Float64Array(n);
       this.ny = new Float64Array(n);
-      this.nz = new Float64Array(n);
       this.d0 = new Float64Array(n);
     }
     for (let k = 0; k < targets.length; k++) {
       const t = targets[k];
       const nx = t.x - camX;
       const ny = t.y - camY;
-      const nz = t.z - camZ;
       this.nx[k] = nx;
       this.ny[k] = ny;
-      this.nz[k] = nz;
-      this.d0[k] = nx * t.x + ny * t.y + nz * t.z;
+      this.d0[k] = nx * t.x + ny * t.y;
     }
   }
 }
@@ -204,20 +209,32 @@ const MAX_FADE_TARGETS = 48;
  * first and capped at `MAX_FADE_TARGETS`. A wall/flat hiding a monster only
  * fades once that monster is alerted — an unseen sleeping one is supposed to
  * stay hidden — so the caller passes `ThingLayer.awakeMonsters()`, not every
- * monster. Both reuse `PLAYER_HEIGHT / 2` as the target height, same as
- * `hasLineOfSight`, there being no per-species table.
+ * monster. **Each target's wedge is its own body**: a monster brings its
+ * `mobjinfo.height` (`StandingBody.height`, 56 for an imp to 110 for a
+ * cyberdemon), the player `PLAYER_HEIGHT`, and either way `z` is the middle of
+ * that span and `halfHeight` reaches from there to the feet and to the crown —
+ * the same centre-and-half-extent `shotPath` locks onto as `ShotLock.halfHeight`.
+ * docs/render.md § The target is the billboard.
  */
-export function collectFadeTargets(player: Pos3, awakeMonsters: readonly Pos3[]): FadeTarget[] {
+export function collectFadeTargets(player: Pos3, awakeMonsters: readonly StandingBody[]): FadeTarget[] {
   const nearby = awakeMonsters
     .map((m) => ({ m, d: Math.hypot(m.x - player.x, m.y - player.y) }))
     .filter((e) => e.d <= MONSTER_FADE_RANGE);
   nearby.sort((a, b) => a.d - b.d);
   return [
-    { x: player.x, y: player.y, z: player.z + PLAYER_HEIGHT / 2, fadeFloor: FADE_ALPHA, fadeRadius: FADE_RADIUS },
+    {
+      x: player.x,
+      y: player.y,
+      z: player.z + PLAYER_HEIGHT / 2,
+      halfHeight: PLAYER_HEIGHT / 2,
+      fadeFloor: FADE_ALPHA,
+      fadeRadius: FADE_RADIUS,
+    },
     ...nearby.slice(0, MAX_FADE_TARGETS).map((e) => ({
       x: e.m.x,
       y: e.m.y,
-      z: e.m.z + PLAYER_HEIGHT / 2,
+      z: e.m.z + e.m.height / 2,
+      halfHeight: e.m.height / 2,
       // Full strength beside the player, easing to no fade at all by the range
       // cap: a monster the player can barely make out shouldn't cost a wall,
       // and a fade that reached the cap at full strength would pop as the
@@ -292,13 +309,16 @@ export class WallFader {
   private frameStamp = 0;
   /** Reused by `update`'s per-line opening lookup — see `openingInto`. */
   private opening: Opening = { top: 0, bottom: 0 };
-  /** Per-target scratch, grown on demand: position, fade floor, and the current line side's crossings. */
+  /** Per-target scratch, grown on demand: position, sprite half-height, and the current line side's crossings. */
   private tx = new Float64Array(0);
   private ty = new Float64Array(0);
   private tz = new Float64Array(0);
+  private th = new Float64Array(0);
   private hitX = new Float64Array(0);
   private hitY = new Float64Array(0);
   private hitH = new Float64Array(0);
+  /** Half the height the target's sprite spans *at the crossing* — the wedge's own half-thickness there. */
+  private hitSpread = new Float64Array(0);
   private hitTarget = new Float64Array(0);
   /** This frame's per-target hole dials and cut planes. */
   private planes = new TargetPlanes();
@@ -407,9 +427,11 @@ export class WallFader {
     this.tx = new Float64Array(n);
     this.ty = new Float64Array(n);
     this.tz = new Float64Array(n);
+    this.th = new Float64Array(n);
     this.hitX = new Float64Array(n);
     this.hitY = new Float64Array(n);
     this.hitH = new Float64Array(n);
+    this.hitSpread = new Float64Array(n);
     this.hitTarget = new Float64Array(n);
     this.hitStamp = new Int32Array(n).fill(-1);
   }
@@ -449,8 +471,9 @@ export class WallFader {
       this.tx[k] = t.x;
       this.ty[k] = t.y;
       this.tz[k] = t.z;
+      this.th[k] = t.halfHeight;
     }
-    this.planes.fill(camX, camY, camZ, targets);
+    this.planes.fill(camX, camY, targets);
     this.wanted.fill(1);
 
     // Pass one. The crossings — the expensive part — are solved once per run of
@@ -487,6 +510,10 @@ export class WallFader {
             this.hitX[hits] = camX + (this.tx[k] - camX) * cross;
             this.hitY[hits] = camY + (this.ty[k] - camY) * cross;
             this.hitH[hits] = camZ + (this.tz[k] - camZ) * cross;
+            // The sightline is a wedge from the eye to the whole sprite, so it
+            // is this thick here — nothing at the camera, the sprite's own
+            // half-height at the target.
+            this.hitSpread[hits] = this.th[k] * cross;
             this.hitTarget[hits] = k;
             hits++;
           }
@@ -500,7 +527,8 @@ export class WallFader {
       if (isPassableGap) continue;
       for (let h = 0; h < hits; h++) {
         const height = this.hitH[h];
-        if (height <= o.botH || height >= o.topH) continue;
+        const spread = this.hitSpread[h];
+        if (height + spread <= o.botH || height - spread >= o.topH) continue;
         // One crossing per line side per target, however many tiers of it the
         // sightline passes through — they all name the same point.
         if (this.hitStamp[h] === this.groupStamp) continue;
@@ -522,7 +550,6 @@ export class WallFader {
       const radius = targets[k].fadeRadius;
       const nx = this.planes.nx[k];
       const ny = this.planes.ny[k];
-      const nz = this.planes.nz[k];
       const d0 = this.planes.d0[k];
       const count = this.candidatesNear(cx, cy);
       for (let m = 0; m < count; m++) {
@@ -542,19 +569,21 @@ export class WallFader {
         const rx = q.bx - cx;
         const ry = q.by - cy;
         const right2 = rx * rx + ry * ry;
-        // Where each corner sits against the target's own plane. The two
-        // halves are shared across the four corners rather than recomputed.
+        // Where each end sits against the target's own plane, which being
+        // vertical settles all four corners from the two ends.
         const alongLeft = nx * q.ax + ny * q.ay;
         const alongRight = nx * q.bx + ny * q.by;
-        const alongTop = nz * q.topH;
-        const alongBot = nz * q.botH;
         // A/D/C/B: top-left, bottom-left, bottom-right, top-right. Each corner
-        // measures from its own height, so the hole rounds off vertically too,
-        // and each is skipped outright if it stands past the target.
-        if (alongLeft + alongTop <= d0) this.foldCorner(j * 4, left2 + vTop2, floor, radius);
-        if (alongLeft + alongBot <= d0) this.foldCorner(j * 4 + 1, left2 + vBot2, floor, radius);
-        if (alongRight + alongBot <= d0) this.foldCorner(j * 4 + 2, right2 + vBot2, floor, radius);
-        if (alongRight + alongTop <= d0) this.foldCorner(j * 4 + 3, right2 + vTop2, floor, radius);
+        // measures from its own height, so the hole rounds off vertically too;
+        // an end standing past the target is skipped outright.
+        if (alongLeft <= d0) {
+          this.foldCorner(j * 4, left2 + vTop2, floor, radius);
+          this.foldCorner(j * 4 + 1, left2 + vBot2, floor, radius);
+        }
+        if (alongRight <= d0) {
+          this.foldCorner(j * 4 + 2, right2 + vBot2, floor, radius);
+          this.foldCorner(j * 4 + 3, right2 + vTop2, floor, radius);
+        }
       }
     }
 
@@ -709,6 +738,8 @@ export class FlatFader {
   private boundX = new Float64Array(0);
   private boundY = new Float64Array(0);
   private boundR = new Float64Array(0);
+  /** Which way each fan's ring winds, memoised beside the bound circles: `segmentMeetsConvexPolygon` needs it, and a shoelace per fan per target per frame is pure repeat over rings that only a mover rebuild reshapes. */
+  private windSign = new Int8Array(0);
   /** Whether `update` moved any of a fan's vertices this frame — with a fan diced to hundreds of vertices, a settled one must cost nothing to re-commit. */
   private moved = new Uint8Array(0);
   /** Whether any of a fan's vertices is currently below 1 — a fan that is neither faded nor pierced this frame has nothing to damp, and `update` skips its vertices entirely. */
@@ -753,9 +784,13 @@ export class FlatFader {
     this.boundX = new Float64Array(this.surfaces.length);
     this.boundY = new Float64Array(this.surfaces.length);
     this.boundR = new Float64Array(this.surfaces.length);
+    this.windSign = new Int8Array(this.surfaces.length);
     this.candidates = new Int32Array(this.surfaces.length);
     for (let i = 0; i < this.surfaces.length; i++) {
-      const { vertexXY } = this.surfaces[i];
+      const { vertexXY, points } = this.surfaces[i];
+      // Ahead of the empty-fan skip below: every surface must carry a usable
+      // sign, since `collectPierces` reads it without re-checking the fan.
+      this.windSign[i] = signedPolygonArea2(points) < 0 ? -1 : 1;
       const count = vertexXY.length / 2;
       if (count === 0) continue;
       const { x: cx, y: cy } = polygonCentroid(vertexXY);
@@ -792,7 +827,7 @@ export class FlatFader {
    */
   private collectPierces(camX: number, camY: number, camZ: number, targets: FadeTarget[]): void {
     this.pierces.reset();
-    this.planes.fill(camX, camY, camZ, targets);
+    this.planes.fill(camX, camY, targets);
     // `WallFader`'s reject (see `sightBox`), applied to a fan's bounding circle instead of a
     // segment — and taken once for the frame rather than once per target, which is the whole
     // point: what it replaces is a walk over every fan on the map per target. The per-frame
@@ -816,6 +851,25 @@ export class FlatFader {
 
     for (let k = 0; k < targets.length; k++) {
       const pt = targets[k];
+      const dx = pt.x - camX;
+      const dy = pt.y - camY;
+      // A sprite point at height `z` meets a plane at `h` at `(h - camZ) / (z - camZ)`
+      // along the camera→target line, so the three heights the span needs share
+      // one reciprocal each and the per-fan work is a multiply rather than a
+      // divide. `camZ` is above every candidate (`collectPierces`'s own filter)
+      // and above `pt.z` with it, so neither the middle's divisor nor the feet's
+      // can be zero; the top's can, and the `zTop >= s.height` branch is what
+      // never reads it when it is.
+      const zTop = pt.z + pt.halfHeight;
+      const perMiddle = 1 / (pt.z - camZ);
+      const perTop = 1 / (zTop - camZ);
+      const perFeet = 1 / (pt.z - pt.halfHeight - camZ);
+      // Lets the reject below measure a fan's distance to the span in the
+      // camera→target line's own parameter space, so it needs no endpoints.
+      // Zero when the camera stands exactly over the target in plan, which
+      // collapses the span to the camera point — the honest answer there.
+      const len2 = dx * dx + dy * dy;
+      const invLen2 = len2 > 0 ? 1 / len2 : 0;
       // Where this target's own pierces start: two targets standing on the same
       // spot file the same point twice, and each keeps its own fade floor.
       const mine = this.pierces.count;
@@ -823,21 +877,41 @@ export class FlatFader {
         const i = this.candidates[m];
         const s = this.surfaces[i];
         if (s.height <= pt.z) continue;
-        const t = (s.height - camZ) / (pt.z - camZ);
+        const rise = s.height - camZ;
+        const t = rise * perMiddle;
         if (t <= 0 || t >= 1) continue;
-        const x = camX + (pt.x - camX) * t;
-        const y = camY + (pt.y - camY) * t;
-        // Nowhere near this fan: the cheapest reject, so it goes ahead of both
-        // the dedup scan and the footprint walk.
-        const bx = this.boundX[i] - x;
-        const by = this.boundY[i] - y;
-        if (bx * bx + by * by > this.boundR[i] * this.boundR[i]) continue;
+        // The sprite has height, so this plane is crossed over a *span* of the
+        // camera→target line rather than at `t` alone — docs/render.md § The
+        // target is the billboard.
+        const tNear = zTop >= s.height ? 1 : rise * perTop;
+        const tFar = rise * perFeet;
+        // Nowhere near this fan: still the cheapest reject, so it goes ahead of
+        // both the dedup scan and the footprint walk — and it runs on the span's
+        // parameters rather than its endpoints, so a rejected fan never pays for
+        // the four coordinates only the footprint walk needs.
+        const px = this.boundX[i] - camX;
+        const py = this.boundY[i] - camY;
+        let tp = (px * dx + py * dy) * invLen2;
+        if (tp < tFar) tp = tFar;
+        else if (tp > tNear) tp = tNear;
+        const offX = px - dx * tp;
+        const offY = py - dy * tp;
+        if (offX * offX + offY * offY > this.boundR[i] * this.boundR[i]) continue;
+        const x = camX + dx * t;
+        const y = camY + dy * t;
         let known = false;
         for (let p = mine; p < this.pierces.count && !known; p++) {
           known = this.pierces.h[p] === s.height && this.pierces.x[p] === x && this.pierces.y[p] === y;
         }
         if (known) continue;
-        if (!pointInConvexPolygon(x, y, s.points)) continue;
+        const nearX = camX + dx * tNear;
+        const nearY = camY + dy * tNear;
+        const farX = camX + dx * tFar;
+        const farY = camY + dy * tFar;
+        if (!segmentMeetsConvexPolygon(farX, farY, nearX, nearY, s.points, this.windSign[i])) continue;
+        // Filed at the middle of the sprite's own crossing, not at whichever end
+        // of the span this fan caught — what keeps one platform's many fans to a
+        // single pierce (docs/render.md § The target is the billboard).
         this.pierces.push(x, y, s.height, k);
       }
     }
@@ -900,13 +974,12 @@ export class FlatFader {
         const radius = targets[k].fadeRadius;
         const nx = this.planes.nx[k];
         const ny = this.planes.ny[k];
-        // The plane's own height term is constant over a flat fan.
-        const cut = this.planes.d0[k] - this.planes.nz[k] * s.height;
+        const d0 = this.planes.d0[k];
         for (let p = 0; p < count; p++) {
           const vx = s.vertexXY[p * 2];
           const vy = s.vertexXY[p * 2 + 1];
           // Past the target: nothing there can be hiding it, so it stays whole.
-          if (nx * vx + ny * vy > cut) continue;
+          if (nx * vx + ny * vy > d0) continue;
           const dx = vx - x;
           const dy = vy - y;
           const a = holeAlpha(dx * dx + dy * dy, floor, radius);

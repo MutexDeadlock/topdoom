@@ -229,12 +229,24 @@ export interface PosedThing extends Pos3, MonsterBody {
 }
 
 /**
- * One monster as the rest of the engine sees it: the stable `id`
- * `ThingLayer.damage` takes, live position, doomednum (for the species
- * checks), and current facing — which `game.ts`'s arch-vile flame tracking
- * needs, since `A_Fire` keys off the *target's* facing.
+ * Where a body stands and how tall it is — `z` its feet, `height` its own
+ * `mobjinfo.height` (`PosedThing.bodyHeight`), the real per-species 56-110 unit
+ * figure rather than one shared band. The least a caller can be handed and still
+ * reason about the *whole* of a body rather than a point in it, which is what an
+ * occlusion sightline needs (docs/render.md § The target is the billboard) and
+ * what `MonsterRef` builds its identity on top of.
  */
-export interface MonsterRef extends Pos3 {
+export interface StandingBody extends Pos3 {
+  height: number;
+}
+
+/**
+ * One monster as the rest of the engine sees it: the stable `id`
+ * `ThingLayer.damage` takes, live position and height, doomednum (for the
+ * species checks), and current facing — which `game.ts`'s arch-vile flame
+ * tracking needs, since `A_Fire` keys off the *target's* facing.
+ */
+export interface MonsterRef extends StandingBody {
   id: number;
   type: number;
   angle: number;
@@ -247,8 +259,6 @@ export interface MonsterRef extends Pos3 {
    * is. See docs/combat.md § How a shot deals damage.
    */
   radius: number;
-  /** This body's own `mobjinfo.height` (`PosedThing.bodyHeight`) — carried for the same reason `radius` is: every shot and crush test needs the real per-species figure, not one shared band. */
-  height: number;
 }
 
 /**
@@ -411,13 +421,15 @@ export interface ThingLayer {
   /** Count of living monsters currently alerted (chasing/attacking, or mid-reaction-delay) — for the debug HUD. */
   awakeMonsterCount(): number;
   /**
-   * Positions of the alerted monsters `awakeMonsterCount` counts, narrowed to
-   * those actually being rendered — each is an extra occlusion-fade sightline
-   * target alongside the player. Excluding the unalerted and the fog-hidden is
+   * Where the alerted monsters `awakeMonsterCount` counts are standing and how
+   * tall each is, narrowed to those actually being rendered — each is an extra
+   * occlusion-fade sightline target alongside the player, and the fade aims at
+   * the whole body, so its own height comes with it (docs/render.md § The target
+   * is the billboard). Excluding the unalerted and the fog-hidden is
    * load-bearing (docs/render.md § Wall occlusion fading). **Must be called
    * after `update` has run**, so `visible` reflects this frame's fog.
    */
-  awakeMonsters(): Pos3[];
+  awakeMonsters(): StandingBody[];
   /**
    * Living monsters standing in exactly `sector` — a reference-equality check
    * against the same mutable `Sector` object `PosedThing.sector` was seeded

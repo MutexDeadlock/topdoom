@@ -222,12 +222,12 @@ export function polygonCentroid(poly: ArrayLike<number>): Pos2 {
 /**
  * Point-in-convex-polygon test via consistent cross-product sign (works for
  * either winding order, since only sign *agreement* across edges matters).
- * `poly` is a flat [x0,y0, x1,y1, …] array. Used by render/occlusion.ts's
- * `FlatFader` to tell a sightline that lands *on* a raised floor from one that
- * merely crosses the infinite plane it sits in — docs/render.md § Flats.
+ * `poly` is a flat [x0,y0, x1,y1, …] array. The degenerate case of
+ * `segmentMeetsConvexPolygon` below, which is what the renderer itself asks;
+ * this stays as the primitive tests assert a footprint with.
  */
 export function pointInConvexPolygon(px: number, py: number, poly: ArrayLike<number>): boolean {
-  const n = poly.length / 2;
+  const n = Math.floor(poly.length / 2);
   if (n < 3) return false;
   let sign = 0;
   for (let i = 0; i < n; i++) {
@@ -241,6 +241,60 @@ export function pointInConvexPolygon(px: number, py: number, poly: ArrayLike<num
       if (sign === 0) sign = s;
       else if (s !== sign) return false;
     }
+  }
+  return true;
+}
+
+/**
+ * Whether any part of the segment `(x0, y0) → (x1, y1)` lies inside the convex
+ * `poly` (a flat [x0,y0, x1,y1, …] array), touching edges included. The
+ * segment twin of `pointInConvexPolygon`, and the one `FlatFader` actually
+ * needs: a sightline meets a floor's height plane over a whole *span* rather
+ * than at a point, because the thing it must reveal is an upright sprite with
+ * height — docs/render.md § Flats.
+ *
+ * A Cyrus-Beck clip: each edge is a half-plane the segment's parameter range is
+ * narrowed against, so the whole test is one pass over the edges and allocates
+ * nothing. Either winding works, the way it does for `pointInConvexPolygon` —
+ * but this one has to *know* which, so a caller asking the same immutable ring
+ * every frame passes `wind` (-1 or 1) from its own memo rather than paying a
+ * shoelace pass per call; omitted, it is derived here.
+ */
+export function segmentMeetsConvexPolygon(
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  poly: ArrayLike<number>,
+  wind?: number,
+): boolean {
+  const n = Math.floor(poly.length / 2);
+  if (n < 3) return false;
+  const w = wind ?? (signedPolygonArea2(poly) < 0 ? -1 : 1);
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  let enter = 0;
+  let exit = 1;
+  for (let i = 0; i < n; i++) {
+    const ax = poly[i * 2];
+    const ay = poly[i * 2 + 1];
+    const ex = poly[((i + 1) % n) * 2] - ax;
+    const ey = poly[((i + 1) % n) * 2 + 1] - ay;
+    // Inside is `at + t * rate >= 0`, oriented by the ring's winding.
+    const at = w * (ex * (y0 - ay) - ey * (x0 - ax));
+    const rate = w * (ex * dy - ey * dx);
+    if (rate === 0) {
+      // Parallel to this edge: either the whole segment clears it or none of it does.
+      if (at < 0) return false;
+      continue;
+    }
+    const t = -at / rate;
+    if (rate > 0) {
+      if (t > enter) enter = t;
+    } else if (t < exit) {
+      exit = t;
+    }
+    if (enter > exit) return false;
   }
   return true;
 }

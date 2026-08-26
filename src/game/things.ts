@@ -28,6 +28,7 @@ import {
   type LevelKillItemStats,
   type MonsterRef,
   type PosedThing,
+  type StandingBody,
   type ThingLayer,
   type ThingUpdateResult,
 } from './things/defs.ts';
@@ -41,6 +42,7 @@ export {
   type BarrelExplosion,
   type CrossingBody,
   type MonsterRef,
+  type StandingBody,
   type ThingLayer,
 } from './things/defs.ts';
 import {
@@ -1609,11 +1611,11 @@ export function buildThingSprites(
       }
       return n;
     },
-    awakeMonsters(): Pos3[] {
-      const out: Pos3[] = [];
+    awakeMonsters(): StandingBody[] {
+      const out: StandingBody[] = [];
       for (const p of posed) {
         if (p.dead || !MONSTER_TYPES.has(p.type) || !p.alerted || !p.visible) continue;
-        out.push({ x: p.x, y: p.y, z: p.z });
+        out.push({ x: p.x, y: p.y, z: p.z, height: p.bodyHeight });
       }
       return out;
     },

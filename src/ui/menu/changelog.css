@@ -19,30 +19,17 @@
  * local to that context and is *not* the --z-tint rung of base.css's global ladder.
  */
 #changelog {
-  position: fixed;
-  inset: 0;
   z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: 24px;
   background: rgba(6, 6, 8, 0.8);
-}
-
-#changelog.hidden {
-  display: none;
 }
 
 /* Column layout with a `min-height: 0` scroller: the panel is capped at the viewport and the text
    scrolls inside it, rather than the panel growing to the CHANGELOG's full length. */
 #changelog .panel {
-  display: flex;
-  flex-direction: column;
   width: 100%;
   max-width: 720px;
   max-height: 100%;
-  border: 1px solid var(--border-strong);
-  background: var(--panel-bg);
   padding: 20px 24px 22px;
 }
 

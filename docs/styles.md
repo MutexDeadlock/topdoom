@@ -13,7 +13,8 @@ drives it, and sit next to it.**
 ```
 index.html            the page skeleton: <head>, #app, the @include list, the module script
 src/styles.css        the stylesheet entry, and the only one index.html links
-src/ui/base.css       page reset, #app, canvas, the page-wide scrollbar look, and the tokens below
+src/ui/base.css       page reset, #app, canvas, the shared classes and page-wide scrollbar
+                      look, and the tokens below
 src/ui/fatalerror.*   #fatal-error — owned by src/main.ts, hence not in a subfolder
 src/ui/loading.*      #loading, the boot screen — main.ts's too, and the one element in the
                       markup that starts visible (docs/menu.md § Session lifecycle)
@@ -34,6 +35,11 @@ src/ui/devmode/
     debughud.*        #hud
     profilerhud.*     #profiler-hud, and its #profiler-cpu/#profiler-rows/#profiler-gpu children
 ```
+
+The one thing that doesn't live in a module's own file is a **shared class** — `.hidden`,
+`.overlay`, `.panel`, `.truncate`, all in `base.css` (§ Shared classes below). Ownership still
+holds: a module's file keeps every rule that makes its element *itself*, and takes the shared class
+for the part it has in common with seven others.
 
 Every file here is named after the module that shows and hides its elements, with one exception:
 **`hold.css` is named for a behavior, not an element.** Its rules are keyed on the `.hold` class
@@ -142,6 +148,36 @@ One further documented exception:
 
 A new overlay picks its rung by reading that one block rather than grepping for `z-index`.
 
+## Shared classes
+
+`.hidden`, `.overlay`, `.panel` and `.truncate` live in `base.css`, and a class earns a place there
+the way a token does: **the thing it names is shared by six or more elements across as many files.**
+Nothing lands there for being short or for recurring within one module.
+
+`.hidden` is the odd one, below. The other three are *bases* — an id rule outscoring them is how an
+element refines the shared start (`#death-overlay` turns `.overlay`'s row into a column), so none of
+them takes `!important` and none should.
+
+## Hiding an element
+
+**One class does it: `.hidden`, defined once in `base.css` and toggled from every ui module.** No
+stylesheet declares its own `.hidden` rule.
+
+It is `display: none !important`, and the `!important` is load-bearing rather than defensive. Almost
+every element that hides sets its own `display` through an id selector — `#menu { display: flex }`,
+`#intermission canvas { display: block }` — so a plain `.hidden` at (0,1,0) would lose to all of
+them. It would lose *silently*: nothing errors, the element simply stays on screen.
+
+The cost of that is the rule can no longer be overridden per element, so **anything whose hidden
+state must not be `display: none` needs a different class**, not a scoped `.hidden`. There is one:
+`#menu .tab-panel.inactive` (`visibility: hidden` + `pointer-events: none`), because the panels
+share one grid cell and an inactive one has to keep reserving it or the menu's height jumps on a tab
+switch — docs/menu.md § One screen, two jobs. `menu.ts` toggles `inactive` on both the tab panels
+and the Settings sub-panels; every other element in the tree toggles `hidden`.
+
+Note the HTML `hidden` *attribute* on the file inputs is unrelated — the UA stylesheet's own rule,
+on elements that never become visible.
+
 ## What isn't in CSS
 
 Per-frame animation is written from JS as an inline style, not a CSS transition: the level card's
@@ -149,15 +185,10 @@ fade (`levelcard.ts`, docs/hud.md § Level card), the pain flash's decay (`scree
 profiler bar widths. There are no `@keyframes`, `@font-face` or `@media` rules anywhere — the whole
 UI is one monospace stack declared once in `base.css`.
 
-There is also **no global `.hidden` rule**; every element scopes its own (`#menu.hidden`,
-`#intermission canvas.hidden`, …), because what "hidden" has to mean differs — `display: none` for
-most, `visibility: hidden` for the menu's tab panels so both keep reserving the grid cell
-(docs/menu.md § One screen, two jobs).
-
-The **scrollbars are the one exception** — a look declared page-wide in `base.css`, right after
-the reset, because the menu panels, the changelog reader and the error screen would otherwise each
-repeat it: `scrollbar-width`/`scrollbar-color` on `html` (the latter inherits, so the root
-declaration reaches every scroller), plus a `::-webkit-scrollbar` block giving the same slim,
+The **scrollbars are page-wide too**, and are a look rather than a class — declared in `base.css`
+right after the reset, because the menu panels, the changelog reader and the error screen would
+otherwise each repeat it: `scrollbar-width`/`scrollbar-color` on `html` (the latter inherits, so the
+root declaration reaches every scroller), plus a `::-webkit-scrollbar` block giving the same slim,
 track-less bar on engines that don't support the standard properties. The two are alternatives, not
 a duplicated declaration: an engine that honours `scrollbar-color` ignores the pseudo-elements. A
 new scrolling element inherits the look with no rule of its own.

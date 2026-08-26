@@ -106,7 +106,7 @@ export class ProfilerHud {
         const row = document.createElement('div');
         row.className = 'profiler-row';
         const label = document.createElement('span');
-        label.className = 'profiler-label';
+        label.className = 'profiler-label truncate';
         label.textContent = s.label;
         const bar = document.createElement('span');
         bar.className = 'profiler-bar';

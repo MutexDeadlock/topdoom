@@ -18,16 +18,6 @@
   filter: drop-shadow(0 2px 4px #000);
 }
 
-#level-card.hidden {
-  display: none;
-}
-
-#level-card canvas {
-  image-rendering: pixelated;
-  width: auto;
-  display: block;
-}
-
 #level-card .enter {
   height: 13px;
 }

@@ -4,20 +4,11 @@
  * the same layer as the intermission (the two are never up at once).
  */
 #death-overlay {
-  position: fixed;
-  inset: 0;
   z-index: var(--z-overlay);
-  display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
   gap: 10px;
   pointer-events: none;
   background: rgba(20, 4, 4, 0.35);
-}
-
-#death-overlay.hidden {
-  display: none;
 }
 
 /*
@@ -26,9 +17,6 @@
  * second glyph set.
  */
 #death-overlay canvas {
-  image-rendering: pixelated;
-  width: auto;
-  display: block;
   filter: drop-shadow(0 2px 6px #000);
 }
 

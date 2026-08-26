@@ -21,9 +21,9 @@ lists, the level list and the difficulty options are built in JS.
 - The active tab is *not* reset on open — it's whichever the player last clicked (`newgame` on the
   first open, set in the constructor). Reopening mid-level to change one setting must not throw away
   the tab they were on.
-- All tab panels are stacked in **one CSS grid cell** and hidden with `visibility`, not
-  `display: none`, so the panel's height is always the tallest of them and switching tabs doesn't
-  resize the menu under the cursor. That is also why the Settings tab's rows are kept compact, and
+- All tab panels are stacked in **one CSS grid cell** and hidden with `.inactive` (`visibility`),
+  not the global `.hidden` (`display: none`), so the panel's height is always the tallest of them
+  and switching tabs doesn't resize the menu under the cursor. That is also why the Settings tab's rows are kept compact, and
   why Level and Difficulty share a row on New Game: whatever height any tab costs, the others pay
   too — the save lists cap themselves with the `.list` scroller for the same reason.
 - **A scroller inside a panel grows into height the tabs have already paid for, and never creates
@@ -623,9 +623,9 @@ is why neither belongs on the three tabs beside it. It applies to the level alre
 `blockedByThings` reads the flag per call.
 
 General ends with **`#settings-dev`, a DEVMODE-only section holding the profiler overlay's
-checkbox** (§ Profiling overlay), revealed by the same set-once toggle `#controls-dev` gets. Its
-`.hidden` is `display: none` for the same reason: a hidden section must leave the flow rather than
-hold a gap under Collision.
+checkbox** (§ Profiling overlay), revealed by the same set-once toggle `#controls-dev` gets. It
+takes the global `.hidden` (`display: none`) rather than the tab panels' `.inactive`, for the same
+reason: a hidden section must leave the flow rather than hold a gap under Collision.
 
 **The `Shift` row's description is the word autorun currently makes true** — `walk` when it's on,
 `run` when it's off — so `installAutorun` writes `#shift-action` from the same `show` helper that
@@ -648,9 +648,9 @@ inside rather than a content-sized one a long map name would push past the panel
 The rest is static markup with no `Menu` state — no field lookups, no listeners — except
 `#controls-dev`, the `N`/`P` map-jump row, which the constructor reveals when `DEVMODE` is set (as
 it does `#settings-dev` on General). `DEVMODE` can't change at runtime, so neither is ever
-re-checked. **`#controls-dev.hidden` is `display: none`, not the `visibility` the tab panels use** —
+re-checked. **Both take the global `.hidden` (`display: none`), not the tab panels' `.inactive`** —
 a panel has to keep reserving height, but a hidden section must drop out of the `.columns` flex line
-entirely.
+entirely (docs/styles.md § Hiding an element).
 
 ## Right mouse button
 

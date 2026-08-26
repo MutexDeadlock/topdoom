@@ -579,7 +579,7 @@ export class LibraryUi {
     }
 
     const label = document.createElement('span');
-    label.className = 'name';
+    label.className = 'name truncate';
     label.textContent = node.label;
 
     const count = document.createElement('span');
@@ -768,7 +768,7 @@ export class LibraryUi {
     row.className = 'row' + (selected ? ' selected' : '') + (disabled ? ' disabled' : '');
 
     const name = document.createElement('span');
-    name.className = 'name';
+    name.className = 'name truncate';
     name.textContent = source.label;
 
     row.append(name, mark, ...sourceColumnSpans(source));
@@ -868,7 +868,7 @@ export class LibraryUi {
       // The picker exists but refused — a permissions policy, or an embedding `pickerBlock` did not
       // catch. The plain input still works, so fall through to it rather than leaving the button
       // dead, but say what happened: an unexplained fallback is itself a thing to debug.
-      this.showStatus(`The folder picker refused (${(err as Error).message}) — asking for a one-off folder.`, true);
+      this.showStatus(`The folder picker refused (${(err as Error).message}).`, true);
       this.chooseWithoutPicker();
       return;
     }
@@ -877,7 +877,7 @@ export class LibraryUi {
       // apart: the player dismissing the dialog, and the browser refusing the folder they chose
       // (Chromium blocks system and home directories outright). So the line covers both.
       this.showStatus(
-        'No folder came back. If you picked one, the browser refused it — system and home folders are blocked.',
+        'No folder came back. If you picked one, the browser refused it.',
         true,
       );
       return;

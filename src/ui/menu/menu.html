@@ -1,4 +1,4 @@
-<div id="menu" class="hidden">
+<div id="menu" class="overlay hidden">
   <div class="panel">
     <header>
       <h1>TOPDOOM</h1>
@@ -224,7 +224,7 @@
   </div>
 
   <!-- Inside #menu, so closing the menu can never leave the popup up on its own. -->
-  <div id="changelog" class="hidden">
+  <div id="changelog" class="overlay hidden">
     <div class="panel">
       <header>
         <h2>Changelog</h2>
@@ -235,7 +235,7 @@
   </div>
 
   <!-- Beside the changelog, and inside #menu for the same reason. -->
-  <div id="wadlibrary" class="hidden">
+  <div id="wadlibrary" class="overlay hidden">
     <div class="panel">
       <header>
         <h2>WAD Library</h2>
@@ -259,7 +259,7 @@
         <div class="files" id="wadlibrary-files"></div>
       </div>
       <footer>
-        <span id="wadlibrary-summary"></span>
+        <span id="wadlibrary-summary" class="truncate"></span>
         <span id="wadlibrary-status"></span>
         <button id="wadlibrary-close">Close</button>
         <button class="primary" id="wadlibrary-done">Apply</button>

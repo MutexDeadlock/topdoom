@@ -5,18 +5,9 @@
  * game.ts reads, not by clicking anything here.
  */
 #intermission {
-  position: fixed;
-  inset: 0;
   z-index: var(--z-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   pointer-events: none;
   background: rgba(6, 6, 10, 0.45);
-}
-
-#intermission.hidden {
-  display: none;
 }
 
 /*
@@ -27,8 +18,6 @@
  * stretching the cross axis pulls a short line (the clock) out to the panel's full width.
  */
 #intermission .panel {
-  display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 8px;
   padding: 20px 28px;
@@ -44,19 +33,7 @@
 }
 
 #intermission canvas {
-  image-rendering: pixelated;
   height: 18px;
-  width: auto;
-  display: block;
-}
-
-/*
- * The best-time lines are the only ones that aren't drawn on every exit — there is no record line
- * on an ordinary run, and neither line appears at all on a run that isn't eligible for one. There
- * is no global `.hidden` rule (every element scopes its own), hence this.
- */
-#intermission canvas.hidden {
-  display: none;
 }
 
 /*

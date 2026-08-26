@@ -1,7 +1,8 @@
 /*
- * Page reset plus the tokens every other stylesheet reads. A value earns a token here by being an
- * exact repeat across two or more sites, or by being one rung of a named ladder — see
- * docs/styles.md § Tokens for what deliberately stays a literal.
+ * Page reset, the handful of classes shared page-wide (docs/styles.md § Shared classes), and the
+ * tokens every other stylesheet reads. A value earns a token here by being an exact repeat across
+ * two or more sites, or by being one rung of a named ladder — see docs/styles.md § Tokens for what
+ * deliberately stays a literal.
  */
 :root {
   /* Stacking ladder. The full list, so a new overlay can be placed by reading one block. */
@@ -56,18 +57,68 @@ body {
   inset: 0;
 }
 
+/*
+ * Every canvas on the page but one holds WAD art at its native pixel size and is scaled by CSS, so
+ * the blit rather than the smoothing is the default: sites set a `height` and let `width: auto`
+ * keep the art's own proportions.
+ */
 canvas {
   display: block;
+  image-rendering: pixelated;
+  width: auto;
+}
+
+/* The renderer's own canvas is that one: three.js sizes it inline, and `setPixelRatio` can put the
+   drawing buffer below the display's, where the browser's smooth upscale is what's wanted. */
+#app canvas {
+  image-rendering: auto;
 }
 
 /*
- * Scrollbars, styled once for the whole page: the menu's tab panels and WAD/save lists, the
- * changelog reader and the error screen all scroll, and the platform default reads as chrome
- * bolted onto the panel. `scrollbar-color` is inherited, so declaring it on the root reaches every
- * scroller. The `::-webkit-scrollbar` block below is not a duplicate of it — engines that support
- * the standard properties ignore those pseudo-elements entirely, and the ones that don't get the
- * same look from them.
+ * The full-screen overlay root — #menu, #loading, #fatal-error, #changelog, #wadlibrary,
+ * #intermission, #end-card, #death-overlay. Each keeps only what makes it itself: its rung on the
+ * stacking ladder, its background, its padding. Unlike `.hidden` this takes no `!important` and
+ * wants none — an id rule beating it is how an overlay refines it (#death-overlay's column).
  */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * The bordered surface inside an overlay, holding one column of content. The two cards drawn over a
+ * running level (#end-card, #intermission) restate background and border: they sit on the level
+ * rather than on the backdrop, so they take the softer `--border` and their own translucency.
+ */
+.panel {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-strong);
+  background: var(--panel-bg);
+}
+
+/* One line, clipped with an ellipsis. On a flex child this needs `min-width: 0` beside it, which
+   stays at the site: whether that child may shrink is its layout's business, not this rule's. */
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The one way to hide an element, toggled from every ui module. `!important` because almost every
+ * target sets its own `display` through an id selector (`#menu`, `#intermission canvas`, …) and a
+ * plain class would lose to all of them — silently, since nothing errors, the element just stays
+ * up. What must stay laid out while hidden carries `.inactive` instead — see docs/styles.md.
+ */
+.hidden {
+  display: none !important;
+}
+
+/* Scrollbars, styled once for the whole page */
 html {
   scrollbar-width: thin;
   scrollbar-color: var(--border-strong) transparent;

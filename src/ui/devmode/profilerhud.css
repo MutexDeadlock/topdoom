@@ -43,9 +43,6 @@
 #profiler-hud .profiler-label {
   width: 88px;
   opacity: 0.85;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 #profiler-hud .profiler-bar {

@@ -1,24 +1,19 @@
 #fatal-error {
-  position: fixed;
-  inset: 0;
   z-index: var(--z-fatal);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: 24px;
   overflow-y: auto;
   background: var(--backdrop);
 }
 
-#fatal-error.hidden {
-  display: none;
-}
-
+/*
+ * The menu's own panel measurements — the error screen is the menu's shape with one message in it.
+ * `.panel` lays this out as a flex column, which matches the block flow it replaced only while
+ * every child has content: an empty one would have self-collapsed its margins and no longer does.
+ * `main.ts`'s showFatalError fills .message and .detail on every path, so keep it that way.
+ */
 #fatal-error .panel {
   width: 100%;
   max-width: 620px;
-  border: 1px solid var(--border-strong);
-  background: var(--panel-bg);
   padding: 26px 30px 22px;
 }
 
@@ -41,10 +36,6 @@
 
 #fatal-error .hint code {
   color: var(--fg);
-}
-
-#fatal-error .hint.hidden {
-  display: none;
 }
 
 #fatal-error .detail {

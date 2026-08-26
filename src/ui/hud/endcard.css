@@ -4,23 +4,12 @@
  * game.ts reads, so `pointer-events: none` like every other overlay.
  */
 #end-card {
-  position: fixed;
-  inset: 0;
   z-index: var(--z-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   pointer-events: none;
   background: rgba(6, 6, 10, 0.45);
 }
 
-#end-card.hidden {
-  display: none;
-}
-
 #end-card .panel {
-  display: flex;
-  flex-direction: column;
   align-items: center;
   gap: 12px;
   padding: 24px 32px;
@@ -33,12 +22,6 @@
  * is also what lets the `.subject` line be either text or the episode's `M_EPI` patch without
  * either knowing about the other.
  */
-#end-card canvas {
-  image-rendering: pixelated;
-  width: auto;
-  display: block;
-}
-
 #end-card .title {
   height: 26px;
 }

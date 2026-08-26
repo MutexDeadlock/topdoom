@@ -1,3 +1,14 @@
+v0.16.1 (2026-08-2?)
+
+Features and improvements
+  - a focused text field takes the menu's accent, not the browser's focus ring
+
+Fixed bugs
+
+
+
+===============================================================================
+
 v0.16.0 (2026-08-26)
 
 Features and improvements
@@ -32,7 +43,6 @@ Fixed bugs
   - a voodoo doll carried over an item now collects it for the player
   - a PWAD's eight sprite rotations now beat the IWAD's rotation-0 view for the
     same frame (NoSp3's Cybruiser attacked and flinched as a Wolfenstein SS)
-
 
 
 ===============================================================================

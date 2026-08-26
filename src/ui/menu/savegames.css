@@ -16,7 +16,7 @@
 
 #menu .save-form input:focus {
   outline: none;
-  border-color: var(--border-strong);
+  border-color: var(--accent);
 }
 
 /* The form's Save button next to the input — not the full-width footer kind. */
@@ -116,7 +116,7 @@
 
 #menu .saves .save-label .name:focus {
   outline: none;
-  border-color: var(--border-strong);
+  border-color: var(--accent);
   background: var(--inset-bg);
 }
 

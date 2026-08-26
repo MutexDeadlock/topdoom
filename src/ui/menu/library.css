@@ -4,18 +4,9 @@
  * own stacking context rather than a rung of base.css's global ladder.
  */
 #wadlibrary {
-  position: fixed;
-  inset: 0;
   z-index: 5;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: 24px;
   background: rgba(6, 6, 8, 0.8);
-}
-
-#wadlibrary.hidden {
-  display: none;
 }
 
 /*
@@ -26,12 +17,8 @@
  * changelog's 720px, because two panes plus three detail columns per row need the room.
  */
 #wadlibrary .panel {
-  display: flex;
-  flex-direction: column;
   width: 60%;
   height: 85%;
-  border: 1px solid var(--border-strong);
-  background: var(--panel-bg);
   padding: 20px 24px 18px;
 }
 
@@ -58,6 +45,12 @@
   background: var(--inset-bg);
   color: inherit;
   font: inherit;
+}
+
+/* library.ts focuses this on open, so this is the first thing the panel shows. */
+#wadlibrary-filter:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 /*
@@ -195,9 +188,6 @@
 
 #wadlibrary .folder .name {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 #wadlibrary .folder .meta {
@@ -264,9 +254,6 @@
  */
 #wadlibrary .row .meta {
   flex: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   text-align: right;
 }
 
@@ -335,9 +322,6 @@
 #wadlibrary-summary {
   flex: none;
   max-width: 40%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--fg-button);
 }
 

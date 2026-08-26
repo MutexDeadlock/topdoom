@@ -3,19 +3,10 @@
  * `--backdrop` as #menu and #fatal-error, so whichever follows it changes the text, not the page.
  */
 #loading {
-  position: fixed;
-  inset: 0;
   z-index: var(--z-loading);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: var(--backdrop);
   color: var(--fg-dim);
   font-size: 14px;
   letter-spacing: 6px;
   text-transform: uppercase;
-}
-
-#loading.hidden {
-  display: none;
 }

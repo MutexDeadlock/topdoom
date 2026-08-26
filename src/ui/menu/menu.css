@@ -1,17 +1,8 @@
 #menu {
-  position: fixed;
-  inset: 0;
   z-index: var(--z-menu);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   padding: 24px;
   overflow-y: auto;
   background: var(--backdrop);
-}
-
-#menu.hidden {
-  display: none;
 }
 
 /*
@@ -32,13 +23,9 @@
  * purpose: the changelog popup is a `.panel` inside #menu too and sizes itself.
  */
 #menu > .panel {
-  display: flex;
-  flex-direction: column;
   width: 100%;
   max-width: 620px;
   max-height: calc(100dvh - 48px);
-  border: 1px solid var(--border-strong);
-  background: var(--panel-bg);
   padding: 26px 30px 22px;
 }
 
@@ -109,11 +96,6 @@
   border-bottom-color: var(--accent);
 }
 
-/* The Save tab exists only mid-game (Menu.open). display, not visibility: it must leave the flex row, not hold a gap. */
-#menu .tab.hidden {
-  display: none;
-}
-
 /* The Settings tab's own row of sub-tabs: same markup, one step quieter, and no
    rule under the row so it doesn't read as a second tab bar of equal rank. */
 #menu .subtabs {
@@ -157,7 +139,9 @@
   overflow-y: auto;
 }
 
-#menu .tab-panel.hidden {
+/* Not `.hidden`: every panel shares one grid cell, so an inactive one must keep reserving it or
+   the menu's height jumps on a tab switch. docs/styles.md § Hiding an element. */
+#menu .tab-panel.inactive {
   visibility: hidden;
   pointer-events: none;
 }
@@ -258,9 +242,6 @@
 #menu .row .name {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 #menu .row .meta {
@@ -276,9 +257,6 @@
  * width is per-list: `#wadlibrary .badge` (library.css) has room for the longer wording.
  */
 #menu .badge {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   text-align: right;
   font-size: 11px;
   letter-spacing: 1px;
@@ -300,9 +278,6 @@
  */
 #pwad-list .row .meta {
   flex: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   text-align: right;
 }
 
@@ -475,17 +450,6 @@
   min-width: 4ch;
 }
 
-/*
- * display, not the visibility the tab panels use: a panel stays laid out so
- * the menu keeps its height across a tab switch, but these sections must drop
- * out of the flow entirely in a non-dev build — #controls-dev out of its
- * .columns line, #settings-dev without leaving a gap under Sound.
- */
-#menu #controls-dev.hidden,
-#menu #settings-dev.hidden {
-  display: none;
-}
-
 #menu select {
   width: 100%;
   padding: 8px 10px;
@@ -544,10 +508,6 @@
    starting over aren't neighbours. */
 #resume-button {
   margin-left: auto;
-}
-
-#resume-button.hidden {
-  display: none;
 }
 
 /* Clamped to two lines for the reason the WAD Library's own line is (library.css): a failure here

@@ -302,7 +302,7 @@ export class Menu {
     this.activeTab = tab;
     for (const key of Object.keys(this.tabButtons) as MenuTab[]) {
       this.tabButtons[key].classList.toggle('active', key === tab);
-      this.tabPanels[key].classList.toggle('hidden', key !== tab);
+      this.tabPanels[key].classList.toggle('inactive', key !== tab);
     }
     // A save list is only built while it's the tab on screen — see `SavegamesUi.setVisible`.
     this.savegames.setVisible(tab === 'save' || tab === 'load' ? tab : null);
@@ -315,7 +315,7 @@ export class Menu {
   private setSettingsTab(tab: SettingsTab): void {
     for (const key of Object.keys(this.settingsTabButtons) as SettingsTab[]) {
       this.settingsTabButtons[key].classList.toggle('active', key === tab);
-      this.settingsTabPanels[key].classList.toggle('hidden', key !== tab);
+      this.settingsTabPanels[key].classList.toggle('inactive', key !== tab);
     }
   }
 
@@ -800,13 +800,13 @@ export class Menu {
       input.addEventListener('change', () => this.setPwadEnabled(source, input.checked));
 
       const name = document.createElement('span');
-      name.className = 'name';
+      name.className = 'name truncate';
       name.textContent = source.label;
 
       // The merge position among the add-ons actually being merged, so the numbers stay 1..n with
       // no gaps when one is switched off.
       const order = document.createElement('span');
-      order.className = 'meta order';
+      order.className = 'meta order truncate';
       order.textContent = enabled ? `#${active.indexOf(source) + 1}` : 'off';
 
       row.append(

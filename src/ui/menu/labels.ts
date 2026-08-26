@@ -68,7 +68,7 @@ const SUPPORT_GLYPHS: Record<SupportLevel, string> = {
  */
 export function badge(text: string, kind: '' | 'quiet' | 'reason' = ''): HTMLSpanElement {
   const span = document.createElement('span');
-  span.className = kind ? `badge ${kind}` : 'badge';
+  span.className = kind ? `badge ${kind} truncate` : 'badge truncate';
   span.textContent = text;
   return span;
 }
@@ -76,7 +76,7 @@ export function badge(text: string, kind: '' | 'quiet' | 'reason' = ''): HTMLSpa
 /** One fixed-width detail column. The class name is what both stylesheets target. */
 function metaSpan(kind: string, text: string): HTMLSpanElement {
   const span = document.createElement('span');
-  span.className = `meta ${kind}`;
+  span.className = `meta ${kind} truncate`;
   span.textContent = text;
   return span;
 }
@@ -96,7 +96,8 @@ export function sourceColumnSpans(src: WadSource): HTMLSpanElement[] {
   const support = metaSpan('support', '');
   if (src.support) {
     const level = supportLevel(src.support);
-    support.className = `meta support ${level}`;
+    // Repeats `truncate` because this overwrites what metaSpan set, glyph and all.
+    support.className = `meta support ${level} truncate`;
     support.textContent = SUPPORT_GLYPHS[level];
     // The reasons and the maps that raise them, which is the whole point of the column: the glyph
     // says how bad, the tooltip says what and where.

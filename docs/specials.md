@@ -462,6 +462,13 @@ both its yaw, to match the landing angle, and its follow point (`snapTo`), so th
 destination instead of flying across the map after it: same as the initial spawn, and for the same
 reason (docs/camera.md § The camera is simulation state).
 
+**The arrival sets the body's height**, `EV_Teleport`'s own `thing->z = thing->floorz` — the floor
+it lands on, not the one it left. Both landings do it: `Player.teleportTo` and `ThingLayer`'s
+`arriveAt` (things.ts), the latter covering monsters, corpses and conveyor cargo. Without it a body
+keeps the departure sector's height and gravity takes it down the difference, which for the usual
+teleport ambush — a closet raised above the arena it feeds — reads as monsters dropping out of the
+sky; covered by `tests/regression/teleport-arrival-height.test.ts`.
+
 **A crossing from the *back* of the line never teleports** — `EV_Teleport`'s own `if (side == 1)
 return 0;`, commented there as "so you can get out of teleporter". Without it, stepping off the pad
 you just landed on crosses that pad's own teleport line and bounces you straight back, forever.
@@ -551,8 +558,9 @@ angle to the caller, which is what `Player.teleportTo` needs to rotate `velX`/`v
 clearing them. `TeleportDest.silent` carries the second difference: the height above the floor is
 preserved for a body teleported mid-air (`z = thing->z - thing->floorz`, reapplied at the
 destination, where loud `EV_Teleport` sets `thing->z = thing->floorz`). The offset is measured by
-`Player.teleportTo` and reapplied unclamped, as in Boom, since the controller is never told the
-player's height.
+the two landings themselves — `Player.teleportTo` and `arriveAt` — and reapplied unclamped, as in
+Boom, since the controller is never told the body's height. A silent arrival keeps `velZ` too, where
+the loud one zeroes all three components.
 
 For the thing-destination kind the rotation is `srcLineAngle − markerAngle + 90°`, and vanilla's own
 comment explains the right angle: walking *perpendicularly* across the teleporter line should exit

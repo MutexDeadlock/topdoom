@@ -4,7 +4,8 @@ Features and improvements
   - a focused text field takes the menu's accent, not the browser's focus ring
 
 Fixed bugs
-
+  - a teleported monster stands on the floor it arrives at instead of falling
+    to it from the height of the closet it left
 
 
 ===============================================================================

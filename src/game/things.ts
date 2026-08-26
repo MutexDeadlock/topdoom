@@ -821,21 +821,32 @@ export function buildThingSprites(
   }
 
   /**
-   * Puts a thing down where a walk-line teleport sent it. Momentum follows
-   * vanilla's two arrivals: `P_Teleport` zeroes it outright, while a silent one
-   * rotates it by the same angle the body turned (`TeleportDest.rotateBy`) — the
-   * difference between a conveyor's cargo stopping dead on arrival and coming
-   * out of the far end still moving. docs/specials.md § Silent and line-to-line
+   * Puts a thing down where a walk-line teleport sent it — including its
+   * height, which is the arrival floor for a loud teleport and the departure
+   * height above the floor for a silent one. Momentum follows vanilla's two
+   * arrivals: `P_Teleport` zeroes it outright, while a silent one rotates it by
+   * the same angle the body turned (`TeleportDest.rotateBy`) — the difference
+   * between a conveyor's cargo stopping dead on arrival and coming out of the
+   * far end still moving. docs/specials.md § Silent and line-to-line
    * teleporters.
    */
   function arriveAt(p: PosedThing, dest: TeleportDest): void {
+    // Read before the move, reapplied after: a silent arrival preserves the
+    // height above the floor, and this layer is the only place it can be
+    // measured (`TeleportDest.silent`).
+    const aboveFloor = dest.silent ? p.z - world.groundFloor(p.x, p.y, p.blockRadius, true) : 0;
     p.x = dest.x;
     p.y = dest.y;
     p.angle = dest.angle;
-    p.velZ = 0;
+    // `EV_Teleport`'s own `thing->z = thing->floorz` — the *arrival* floor.
+    // Without it a body keeps the departure sector's height and falls the
+    // difference under gravity, which is what makes a monster closet above the
+    // arena read as monsters dropping out of the sky.
+    p.z = world.groundFloor(p.x, p.y, p.blockRadius, true) + aboveFloor;
     if (dest.rotateBy === undefined) {
       p.velX = 0;
       p.velY = 0;
+      p.velZ = 0;
     } else {
       const cos = Math.cos(dest.rotateBy);
       const sin = Math.sin(dest.rotateBy);

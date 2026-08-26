@@ -64,6 +64,7 @@ const EXCEPTIONS = new Map<string, string>([
   // this engine models that bite as a melee block of the same length. The walker has no chain to
   // read it from.
   ['MT_HEAD melee.duration', 'meleestate is S_NULL; the bite lives in the missile chain'],
+  ['MT_HEAD melee windup', 'meleestate is S_NULL; the bite lives in the missile chain'],
 ]);
 
 /**
@@ -103,6 +104,7 @@ describe('DEHACKED · the frame walker reproduces the shipped tables', () => {
       cmp(`${n} painDuration`, g.painTics, inTics(m.painDuration));
       cmp(`${n} melee.duration`, g.meleeTics, inTics(m.meleeDuration));
       cmp(`${n} ranged.duration`, g.rangedTics, inTics(m.rangedDuration));
+      cmp(`${n} melee windup`, g.meleeWindupTics, inTics(m.meleeDelay));
       cmp(`${n} windup`, g.windupTics, inTics(m.rangedDelay));
       // A volley's shape. The cyberdemon's interval was 12 tics here — one state's length rather
       // than the gap between two `A_CyberAttack` calls — until this comparison was added.
@@ -301,6 +303,7 @@ describe('DEHACKED · the derived tables the engine uses are the shipped reading
       cmp(`${name} painDuration`, g.painTics, inTics(stats.painDuration));
       cmp(`${name} melee.duration`, g.meleeTics, inTics(stats.melee?.duration));
       cmp(`${name} ranged.duration`, g.rangedTics, inTics(stats.ranged?.duration));
+      cmp(`${name} melee windup`, g.meleeWindupTics, inTics(stats.melee?.startDelaySeconds));
       cmp(`${name} windup`, g.windupTics, inTics(stats.ranged?.startDelaySeconds));
       cmp(`${name} shots`, g.shots, stats.ranged?.shots ?? null);
       cmp(`${name} shotInterval`, g.shotIntervalTics, inTics(stats.ranged?.shotInterval));

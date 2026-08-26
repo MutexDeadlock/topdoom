@@ -293,7 +293,8 @@ it is a decision, never a shrug:
 - the **lost soul's and pain elemental's** windup: a charge and a spawn both return straight out of
   `beginRangedAttack`, so the burst timer `startDelaySeconds` is read through never runs.
 - the **cacodemon's melee**: its `meleestate` is `S_NULL` — `A_HeadAttack` bites from inside the
-  missile chain — so there is no chain to measure the bite from.
+  missile chain — so there is no chain to measure the bite's length or its windup from. Both are
+  written out as the missile chain's own.
 
 **Derive twice, write the difference.** For a *patch*, `applyFrames` derives from vanilla's table
 and from the patched one and writes only the entries that differ. On an unpatched set nothing is
@@ -423,7 +424,7 @@ rather than replace it.
 | Pointer | Here |
 |---|---|
 | `A_Scratch` | **applied** — a melee attack of its own: `misc1` flat damage (written as a one-sided die), `misc2` the swing's sound |
-| `A_PlaySound` | **applied** — `misc1` becomes the melee, missile, pain or death chain's own sound |
+| `A_PlaySound` | **applied** — `misc1` becomes the melee, missile, pain or death chain's own sound (the melee chain's is the *connecting* sound, `MonsterSounds.melee`; a `Thing`'s `Attack sound` line is what reaches `meleeWindup`) |
 | `A_Spawn` | **applied on a death chain** — `misc1` is a 1-based `mobjinfo` index, and what it names becomes this type's `MONSTER_DROPS` entry. Elsewhere it would need a state clock |
 | `A_Detonate`, `A_Mushroom` | no sink: the barrel is the only type this engine explodes, off its own chain |
 | `A_Die` | fires at a point in a chain, and nothing steps states here to reach that point |

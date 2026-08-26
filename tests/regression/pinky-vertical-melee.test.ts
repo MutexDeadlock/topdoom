@@ -27,22 +27,19 @@ const DEMON_HEIGHT = MONSTER_STATS[ThingType.demon].height;
 const CHASE_DT = 0.5;
 
 /**
- * Runs one chase call and reports whether the demon swung. `y` walks the player
- * toward the divider at `y = 128`; the demon sits at `y = 160`.
+ * Runs the chase call that decides to swing and then the windup that lands it,
+ * and reports whether the claw connected. Two calls, because a swing chosen on
+ * a chase call does not land on it: the demon's `A_SargAttack` sits 16 tics
+ * into `S_SARG_ATK1`, and the gate is re-tested there
+ * (docs/monster-ai.md § The windup). `y` walks the player toward the divider
+ * at `y = 128`; the demon sits at `y = 160`.
  */
-function bitesFrom(fixture: PinkyFixture, y: number): boolean {
-  const body = fixture.demonBody();
+function bitesFrom(fixture: PinkyFixture, y: number, body = fixture.demonBody()): boolean {
   const player = fixture.playerAt(y);
-  const attack = stepMonsterAI(
-    body,
-    fixture.stats,
-    CHASE_DT,
-    fixture.world,
-    player,
-    PLAYER_RADIUS,
-    PLAYER_HEIGHT,
-  );
-  return attack?.kind === 'melee';
+  const swing = (): ReturnType<typeof stepMonsterAI> =>
+    stepMonsterAI(body, fixture.stats, CHASE_DT, fixture.world, player, PLAYER_RADIUS, PLAYER_HEIGHT);
+  swing();
+  return swing()?.kind === 'melee';
 }
 
 /** Reach against the player: vanilla's `MELEERANGE - 20 + 16`, exclusive. */
@@ -116,18 +113,14 @@ describe('Regressions · vertical melee reach', () => {
     const f = loadPinky('pinky_below_test');
     assert.ok(meleeReachesVertically(0, DEMON_HEIGHT, 0, PLAYER_HEIGHT), 'same floor overlaps');
 
-    // Same map and same 2D distance as the refused cases above — only the
-    // demon's own `z` is lifted out of the pit onto the player's floor.
-    const body = { ...f.demonBody(), z: 0 };
-    const attack = stepMonsterAI(
-      body,
-      f.stats,
-      CHASE_DT,
-      f.world,
-      f.playerAt(112),
-      PLAYER_RADIUS,
-      PLAYER_HEIGHT,
-    );
-    assert.equal(attack?.kind, 'melee', 'the swing connects when both stand at z=0');
+    // Both in the near room, on the one floor at 0. The demon is moved rather
+    // than merely lifted out of the pit: with a windup between the decision and
+    // the claw (§ The windup), a body standing over a lower floor falls back
+    // into it before the swing lands and the bite is refused for the right
+    // reason at the wrong moment.
+    const body = { ...f.demonBody(), y: 98, z: 0 };
+    assert.equal(f.world.groundFloor(body.x, body.y, f.stats.radius), 0, 'it stands on the near floor');
+    assert.ok(Math.hypot(body.x - 0, body.y - 64) < REACH, 'inside reach of a player at y=64');
+    assert.equal(bitesFrom(f, 64, body), true, 'the swing connects when both stand at z=0');
   });
 });

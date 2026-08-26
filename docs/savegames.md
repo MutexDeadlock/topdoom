@@ -177,9 +177,10 @@ nearly so:
   *only* pose that gets it: the arch-vile's cast is 94 tics, most of them after its warning flame
   appears, so a save taken mid-cast otherwise loaded a vile standing in its idle frame with a flame
   burning on the player (docs/monster-archvile.md § The windup flame). `burstLeft > 0` is the test —
-  shots pending only ever means a ranged attack under way, never a melee swing's tail or the
-  arch-vile's deliberately poseless `S_VILE_HEAL` hold. Saved-field-wise this is free: nothing new is
-  stored, the pose is re-derived from `attackPause`/`burstLeft`, which were always saved.
+  something pending only ever means an attack under way, never its tail or the arch-vile's
+  deliberately poseless `S_VILE_HEAL` hold — and `swinging` says whether it is a melee chain or a
+  missile one, which only the revenant animates differently. Saved-field-wise this is free: the pose
+  is re-derived from `attackPause`/`burstLeft`/`swinging`, all of them ordinary AI-block fields.
 - **`SpecialsController`'s one-frame flags** (`lastTeleport`, `lockedLine`) and the derived
   `moveSoundDue`/`crushDamageDue` booleans.
 - **`WeaponSystem.weaponLastFrame`** — derivable, not transient. `WeaponSystem.update` runs last in

@@ -59,6 +59,7 @@ function scene(): { world: World; body: MonsterBody; blockers: ThingBlocker[]; t
     attackPause: 0,
     burstLeft: 0,
     burstTimer: 0,
+    swinging: false,
     chargeTimer: 0,
     chargeAngle: 0,
     painTimer: 0,

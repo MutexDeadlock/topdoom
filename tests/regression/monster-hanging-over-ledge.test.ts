@@ -51,6 +51,7 @@ function demonBody(at: Pos2, world: World, extra: Partial<MonsterBody> = {}): Mo
     attackPause: 0,
     burstLeft: 0,
     burstTimer: 0,
+    swinging: false,
     chargeTimer: 0,
     chargeAngle: 0,
     painTimer: 0,

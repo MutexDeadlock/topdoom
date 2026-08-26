@@ -480,23 +480,25 @@ export function buildThingSprites(
   }
 
   /**
-   * Re-enters the attack pose of a ranged attack that was still mid-state-chain
+   * Re-enters the attack pose of an attack that was still mid-state-chain
    * when the save was taken, fast-forwarded by how much of it had already run —
    * `enterDeathPose`'s `deadTime` treatment, for the one transient pose long
-   * enough to be worth it. `burstLeft > 0` is what identifies it: shots pending
-   * only ever means a ranged attack under way, never a melee swing's tail or
-   * the arch-vile's poseless `S_VILE_HEAL` hold. Without it the arch-vile — 94
-   * tics of cast, most of it after the warning flame appears — loads standing
-   * in its idle frame while the flame burns on the player.
+   * enough to be worth it. `burstLeft > 0` is what identifies it: something
+   * pending only ever means an attack under way, never its tail or the
+   * arch-vile's poseless `S_VILE_HEAL` hold, and `swinging` says which of the
+   * two kinds. Without it the arch-vile — 94 tics of cast, most of it after
+   * the warning flame appears — loads standing in its idle frame while the
+   * flame burns on the player.
    * docs/savegames.md § What is saved and what is deliberately not.
    */
   function restoreAttackPose(p: PosedThing): void {
     if (p.burstLeft <= 0) return;
-    const duration = monsterStats[p.type]?.ranged?.duration ?? 0;
+    const kind = p.swinging ? 'melee' : 'ranged';
+    const duration = monsterStats[p.type]?.[kind]?.duration ?? 0;
     // No span to spread the frames over means no way to say where in the pose
     // this save sat, so it keeps the idle frame rather than guessing a rate.
     if (duration <= 0) return;
-    enterAttackPose(p, 'ranged', duration, duration - p.attackPause);
+    enterAttackPose(p, kind, duration, duration - p.attackPause);
   }
 
   if (restore) {
@@ -998,6 +1000,7 @@ export function buildThingSprites(
     p.refiring = false;
     p.burstLeft = 0;
     p.burstTimer = 0;
+    p.swinging = false;
     p.chargeTimer = 0;
     p.painTimer = 0;
     p.inFloat = false;
@@ -1072,6 +1075,7 @@ export function buildThingSprites(
     p.refiring = false;
     p.burstLeft = 0;
     p.burstTimer = 0;
+    p.swinging = false;
     p.chargeTimer = 0;
     p.painTimer = 0;
     p.attackPause = 0;
@@ -1389,7 +1393,11 @@ export function buildThingSprites(
               // its cast, from snapping it back to frame one. `attackPause` is the span it covers,
               // full here because `stepMonsterAI` decrements it before the call that set it.
               if (p.attackPause > 0 && !p.anim.posing) {
-                enterAttackPose(p, result?.kind === 'melee' ? 'melee' : 'ranged', p.attackPause);
+                // `p.swinging` is what names the kind on the tic a melee attack
+                // *starts*: its claw is still a windup away, so `result` is null
+                // there and only the flag says which chain to pose off. Only the
+                // revenant has two distinct ones, and it is the type that shows it.
+                enterAttackPose(p, result?.kind === 'melee' || p.swinging ? 'melee' : 'ranged', p.attackPause);
               }
             }
           } else {

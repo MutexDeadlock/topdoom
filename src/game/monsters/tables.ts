@@ -145,8 +145,9 @@ const MONSTER_SEED: Record<number, MonsterSeed> = {
     radius: 20,
     height: 56,
     mass: 100,
-    // A_TroopAttack melee: (rand%8+1)*3.
-    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 3},
+    // A_TroopAttack melee: (rand%8+1)*3, or its fireball at anything that got
+    // out of reach during the windup.
+    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 3, missileOnMiss: true },
     // A direct missile hit is vanilla's universal (rand%8+1)*mobjinfo.damage
     // (PIT_CheckThing/p_map.c) — TROOPSHOT's own damage field is 3.
     ranged: {
@@ -165,9 +166,10 @@ const MONSTER_SEED: Record<number, MonsterSeed> = {
     melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 4},
     ranged: null,
     painChance: 0.703,
-    // `A_SargAttack` itself is silent — the bite's sound is the `attacksound`
-    // `A_Chase` plays on entering meleestate. See `MonsterSounds.melee`.
-    sounds: { see: 'sgtsit', active: 'dmact', pain: 'dmpain', death: 'sgtdth', melee: 'sgtatk' },
+    // `A_SargAttack` itself is silent — the growl is the `attacksound` `A_Chase`
+    // plays on *entering* meleestate, so it leads the bite rather than landing
+    // with it, and a bite that misses still growls. See `MonsterSounds.melee`.
+    sounds: { see: 'sgtsit', active: 'dmact', pain: 'dmpain', death: 'sgtdth', meleeWindup: 'sgtatk' },
   },
   [ThingType.spectre]: {
     radius: 30,
@@ -176,7 +178,7 @@ const MONSTER_SEED: Record<number, MonsterSeed> = {
     melee: { range: MELEE_RANGE, diceSides: 10, diceMult: 4},
     ranged: null,
     painChance: 0.703,
-    sounds: { see: 'sgtsit', active: 'dmact', pain: 'dmpain', death: 'sgtdth', melee: 'sgtatk' },
+    sounds: { see: 'sgtsit', active: 'dmact', pain: 'dmpain', death: 'sgtdth', meleeWindup: 'sgtatk' },
   }, // Same stats as the demon; only `MF_SHADOW` differs, and that is purely
   // how it draws — docs/sprites.md § The spectre's fuzz.
   [ThingType.lostSoul]: {
@@ -207,8 +209,11 @@ const MONSTER_SEED: Record<number, MonsterSeed> = {
     radius: 31,
     height: 56,
     mass: 400,
-    // A_HeadAttack melee: (rand%6+1)*10.
-    melee: { range: MELEE_RANGE, diceSides: 6, diceMult: 10, duration: 0.429 },
+    // A_HeadAttack melee: (rand%6+1)*10, or its fireball at anything out of
+    // reach by the time it bites. `duration` and `startDelaySeconds` are the
+    // missile chain's own (15 and 10 tics): `meleestate` is `S_NULL`, so there
+    // is no melee chain for the walker below to read them off — FRAME_OVERRIDES.
+    melee: { range: MELEE_RANGE, diceSides: 6, diceMult: 10, missileOnMiss: true, duration: 0.429, startDelaySeconds: 10 * DOOM_TIC },
     // Universal missile-hit formula; HEADSHOT's own damage field is 5.
     ranged: {
       diceSides: 8,
@@ -225,8 +230,8 @@ const MONSTER_SEED: Record<number, MonsterSeed> = {
     radius: 24,
     height: 64,
     mass: 1000,
-    // A_BruisAttack melee: (rand%8+1)*10.
-    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10},
+    // A_BruisAttack melee: (rand%8+1)*10, or its fireball at anything out of reach.
+    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10, missileOnMiss: true },
     // Universal missile-hit formula; BRUISERSHOT's own damage field is 8.
     ranged: {
       diceSides: 8,
@@ -241,7 +246,7 @@ const MONSTER_SEED: Record<number, MonsterSeed> = {
     height: 64,
     mass: 1000,
     // Baron and hell knight share A_BruisAttack/MT_BRUISERSHOT exactly.
-    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10},
+    melee: { range: MELEE_RANGE, diceSides: 8, diceMult: 10, missileOnMiss: true },
     ranged: {
       diceSides: 8,
       diceMult: 8,
@@ -286,11 +291,11 @@ const MONSTER_SEED: Record<number, MonsterSeed> = {
       minOffsetDist: 196,
     },
     painChance: 0.391,
-    // The one type with two melee sounds in vanilla — `A_SkelWhoosh`'s `skeswg`
-    // during the windup, then `A_SkelFist`'s `skepch` on connecting. This
-    // engine's melee is one moment, so it takes the punch. Its pain sound is
-    // the *human* `popain`, which is vanilla's own `mobjinfo`, not a slip.
-    sounds: { see: 'skesit', active: 'skeact', pain: 'popain', death: 'skedth', melee: 'skepch' },
+    // The one type with two melee sounds in vanilla, and it keeps both:
+    // `A_SkelWhoosh`'s `skeswg` as the fist swings, `A_SkelFist`'s `skepch`
+    // 12 tics later if it connects. Its pain sound is the *human* `popain`,
+    // which is vanilla's own `mobjinfo`, not a slip.
+    sounds: { see: 'skesit', active: 'skeact', pain: 'popain', death: 'skedth', melee: 'skepch', meleeWindup: 'skeswg' },
   },
   [ThingType.mancubus]: {
     radius: 48,
@@ -446,7 +451,8 @@ export const MONSTER_STATS = MONSTER_SEED as Record<number, MonsterStats>;
  *   of `beginRangedAttack`, so the burst timer `startDelaySeconds` is read through never runs.
  *   Writing one would be a trap, not a no-op.
  * - **`melee` on the cacodemon.** Its `meleestate` is `S_NULL` — `A_HeadAttack` bites from inside
- *   the missile chain — so there is no chain for the walker to measure the bite from.
+ *   the missile chain — so there is no chain for the walker to measure the bite's length or its
+ *   windup from; both are written out as the missile chain's own.
  */
 const FRAME_OVERRIDES: Record<number, { melee?: true; ranged?: true; windup?: true }> = {
   [ThingType.wolfensteinSS]: { ranged: true, windup: true },
@@ -472,6 +478,7 @@ for (const [key, m] of Object.entries(pristineFrameTables().monsters)) {
   const keep = FRAME_OVERRIDES[dn] ?? {};
   stats.painDuration = m.painDuration;
   if (stats.melee && m.meleeDuration !== null && !keep.melee) stats.melee.duration = m.meleeDuration;
+  if (stats.melee && m.meleeDelay !== null && !keep.melee) stats.melee.startDelaySeconds = m.meleeDelay;
   if (stats.ranged && !keep.ranged) {
     if (m.rangedDuration !== null) stats.ranged.duration = m.rangedDuration;
     // A single-shot chain leaves both unset and reads as vanilla's default of one shot.

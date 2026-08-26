@@ -136,6 +136,7 @@ export function reactToDamage(body: MonsterBody, stats: MonsterStats): void {
   // the flinch — including any shots of a volley it hadn't fired yet.
   body.attackPause = 0;
   body.burstLeft = 0;
+  body.swinging = false;
   body.refiring = false;
 }
 
@@ -502,6 +503,58 @@ function fireAttack(
 }
 
 /**
+ * `P_CheckMeleeRange`, plus the vertical overlap this engine adds to it
+ * (`meleeReachesVertically`) — the whole gate, tested once when `A_Chase`
+ * decides to swing and again when the claw actually lands, since vanilla's
+ * melee actions re-run it themselves. docs/monster-ai.md § Melee reach.
+ */
+function inMeleeReach(
+  body: MonsterBody,
+  stats: MonsterStats,
+  dist: number,
+  target: Pos3,
+  targetRadius: number,
+  targetHeight: number,
+  canSee: () => boolean,
+): boolean {
+  const melee = stats.melee;
+  if (!melee) return false;
+  return (
+    dist < meleeThreshold(melee.range ?? MELEE_RANGE, targetRadius) &&
+    meleeReachesVertically(body.z, stats.height, target.z, targetHeight) &&
+    canSee()
+  );
+}
+
+/**
+ * The moment a swing lands, `startDelaySeconds` into the attack: the reach is
+ * re-tested here and not where the swing was chosen, so a target that backed
+ * out during the windup is missed. What a miss costs is the type's own —
+ * `AttackStats.missileOnMiss`. docs/monster-ai.md § The windup.
+ */
+function strikeMelee(
+  body: MonsterBody,
+  stats: MonsterStats,
+  dist: number,
+  target: Pos3,
+  targetRadius: number,
+  targetHeight: number,
+  canSee: () => boolean,
+  sfx: SoundEmitter,
+): MonsterAttack | null {
+  const melee = stats.melee;
+  if (!melee) return null;
+  if (inMeleeReach(body, stats, dist, target, targetRadius, targetHeight, canSee)) {
+    // Inside vanilla's own `P_CheckMeleeRange` branch, so a swing that misses
+    // stays silent — see `MonsterSounds.melee`.
+    if (stats.sounds.melee) sfx.play(stats.sounds.melee, body, monsterOrigin(body.id));
+    return fireAttack('melee', melee, body.angle);
+  }
+  if (!melee.missileOnMiss || !stats.ranged) return null;
+  return fireAttack('ranged', stats.ranged, body.angle, undefined, body.homingBias);
+}
+
+/**
  * Advances one already-alerted monster by `dt`: re-routes and closes on
  * `target`, fires whichever attack is in range and off cooldown, and returns
  * it for the caller to apply/render — the same "return what happened, let the
@@ -570,9 +623,21 @@ export function stepMonsterAI(
   let attack: MonsterAttack | null = null;
   const ranged = stats.ranged;
 
+  // The swing already decided on, landing partway into its own state chain
+  // rather than on the chase call that chose it.
+  if (body.swinging && body.burstLeft > 0) {
+    body.angle = Math.atan2(dy, dx); // A_FaceTarget, re-run through the windup
+    body.burstTimer -= dt;
+    if (body.burstTimer <= 0) {
+      body.burstLeft = 0;
+      body.swinging = false;
+      attack = strikeMelee(body, stats, dist, target, targetRadius, targetHeight, canSee, sfx);
+    }
+  }
+
   // Shots of an attack already under way, spaced out inside its own state
   // sequence rather than each costing a fresh chase call.
-  if (ranged && body.burstLeft > 0) {
+  if (ranged && !body.swinging && body.burstLeft > 0) {
     body.angle = Math.atan2(dy, dx); // A_FaceTarget, re-run between volley shots
     body.burstTimer -= dt;
     if (body.burstTimer <= 0) {
@@ -752,18 +817,18 @@ function runChaseCall(
     return null;
   }
 
-  if (
-    stats.melee &&
-    dist < meleeThreshold(stats.melee.range ?? MELEE_RANGE, targetRadius) &&
-    meleeReachesVertically(body.z, stats.height, target.z, targetHeight) &&
-    canSee()
-  ) {
+  if (stats.melee && inMeleeReach(body, stats, dist, target, targetRadius, targetHeight, canSee)) {
     body.angle = Math.atan2(dy, dx); // A_FaceTarget
     body.attackPause = stats.melee.duration;
-    if (stats.sounds.melee) sfx.play(stats.sounds.melee, body, monsterOrigin(body.id));
     // Melee has no P_CheckMissileRange equivalent: A_Chase swings whenever the
-    // target is in reach, so the swing's own length is the entire wait.
-    return fireAttack('melee', stats.melee, body.angle);
+    // target is in reach, so the swing's own length is the entire wait. What
+    // it does have is a windup — the claw lands `startDelaySeconds` in, and
+    // `strikeMelee` re-tests the reach there. docs/monster-ai.md § The windup.
+    body.burstLeft = 1;
+    body.burstTimer = stats.melee.startDelaySeconds ?? 0;
+    body.swinging = true;
+    if (stats.sounds.meleeWindup) sfx.play(stats.sounds.meleeWindup, body, monsterOrigin(body.id));
+    return null;
   }
 
   if (stats.ranged && body.movecount === 0 && checkMissileRange(body, stats, dist, canSee)) {

@@ -277,6 +277,13 @@ function applySounds(
     if (stats) {
       if (name === null) delete stats.sounds[slot as 'see'];
       else stats.sounds[slot as 'see'] = name as SfxId;
+      // `attacksound` has a second sink here: `A_Chase` plays it on entering
+      // meleestate, which is `MonsterSounds.meleeWindup` — the `attack` slot is
+      // only the hitscan actions' own sound. See that field's doc.
+      if (slot === 'attack' && stats.melee) {
+        if (name === null) delete stats.sounds.meleeWindup;
+        else stats.sounds.meleeWindup = name as SfxId;
+      }
     }
     if (inert && name !== null && (slot === 'pain' || slot === 'death')) {
       if (slot === 'pain') inert.painSound = name as SfxId;
@@ -536,6 +543,9 @@ function writeMonster(dn: number, a: MonsterFrames, b: MonsterFrames): void {
   }
   // Only where the type already models a windup: the lost soul's charge and the pain elemental's
   // spawn never read it (see their `MONSTER_STATS` entries), so writing one would be a trap.
+  if (stats.melee?.startDelaySeconds !== undefined && meleeMoved(a.meleeDelay, b.meleeDelay)) {
+    stats.melee.startDelaySeconds = b.meleeDelay ?? 0;
+  }
   if (stats.ranged?.startDelaySeconds !== undefined && rangedMoved(a.rangedDelay, b.rangedDelay)) {
     stats.ranged.startDelaySeconds = b.rangedDelay ?? 0;
   }

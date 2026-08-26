@@ -109,7 +109,9 @@ open with one or more `A_FaceTarget` states before the one carrying the damaging
 `A_PosAttack` is 10 tics into the zombieman's, `A_TroopAttack` 16 into the imp's, `A_VileAttack` 66
 into the arch-vile's — and `AttackStats.startDelaySeconds` is that offset, read off `info.c` for
 every type whose attack goes through the burst timer. `beginRangedAttack` seeds `burstTimer` with
-it, so `attackPause` (and the pose) begins immediately while the shot lands later.
+it, so `attackPause` (and the pose) begins immediately while the shot lands later. **A melee swing
+runs on the same timer**, `MonsterBody.swinging` telling the two apart: a monster is only ever
+inside one attack, so one countdown serves both.
 
 For a long time only the arch-vile had one, every other monster firing at offset 0 as an accepted
 simplification — its windup, the reasoning went, has no mechanical consequence. It has two. The
@@ -121,7 +123,7 @@ moment. `MONSTER_ATTACK_POSE` carrying vanilla's per-state tics is the other hal
 pose keeps the chain's own proportions, so the frame showing when the burst timer expires is the
 frame that fires.
 
-Three cases deliberately keep no windup, each because nothing would read it:
+Two cases deliberately keep no windup, each because nothing would read it:
 
 - **The chaingunner and the two spiders.** Their `A_*Refire` loop is what `duration` covers, and the
   damaging action is the loop's first state — the `A_FaceTarget` lead-in happens once, outside the
@@ -130,13 +132,40 @@ Three cases deliberately keep no windup, each because nothing would read it:
   return straight out of `beginRangedAttack` and never reach the burst timer. Vanilla puts the
   elemental's spawn on its chain's *last* state, so its lost soul appears at the start of the pose
   rather than the end.
-- **Melee.** `A_Chase` swings the instant the target is in reach and the whole swing is the wait, so
-  there is no delay path at all; vanilla's own 16-tic wind-up before `A_TroopAttack`/`A_SargAttack`
-  is not reproduced, and a claw connects at the start of its pose rather than under the claw frame.
 
 `tests/game/dehacked-frames.test.ts` derives all of this from `info.c`'s chains and holds the table
 to it, which is how the numbers above were obtained rather than estimated — it reproduces the
 arch-vile's long-standing 66 exactly.
+
+### A swing that misses
+
+**A melee windup is a window the target can leave**, and that is the whole point of it: the reach
+test runs where vanilla's melee action runs it, not where `A_Chase` chose the swing.
+`A_TroopAttack`, `A_SargAttack`, `A_HeadAttack`, `A_BruisAttack` and `A_SkelFist` each open with
+their own `P_CheckMeleeRange`, 16 tics (12 for the revenant, 10 for the cacodemon) after the
+decision — so `strikeMelee` re-tests the full gate of § Melee reach there and a claw that no longer
+reaches deals nothing. Without this a monster you merely brushed past had already hurt you, and
+`chaseInterval` set how often: a demon at 0.057s could bite four times a second at contact range.
+
+What a miss costs is the type's own, and `AttackStats.missileOnMiss` is which:
+`A_TroopAttack`/`A_HeadAttack`/`A_BruisAttack` fall through to `P_SpawnMissile` and throw that
+type's `ranged` fireball after whoever backed off, while `A_SargAttack` and `A_SkelFist` just miss.
+So backing out of an imp's claw is a dodge that trades a bite for a fireball, and only the demon,
+the spectre and the revenant let you leave with nothing.
+
+Two deviations here, both deliberate:
+
+- **The monster keeps facing its target through the windup**, re-running `A_FaceTarget` every
+  frame — the same approximation the ranged burst already makes. Vanilla faces on each state of the
+  chain, which comes to the same thing everywhere except `A_BruisAttack`, the one melee action with
+  no `A_FaceTarget` of its own: a baron's fallback fireball flies at the heading its second-to-last
+  state fixed, not at where the player got to.
+- **Pain aborts the swing** rather than merely delaying it (`reactToDamage` clears `swinging` with
+  `burstLeft`), which is vanilla — entering painstate replaces the chain — and is why staggering a
+  demon mid-bite is worth a shot.
+
+`tests/regression/melee-windup.test.ts` pins the offset, the miss, the fallback fireball and the
+sound split below.
 
 ## Fast monsters
 
@@ -528,8 +557,9 @@ nearby monsters, every wall any of them stands behind is already faded by a near
 
 ## Melee reach
 
-`runChaseCall`'s melee gate is three tests: 2D distance against `MELEE_RANGE`, a vertical-overlap
-check (`meleeReachesVertically`), and `hasLineOfSight`.
+`inMeleeReach`'s gate is three tests: 2D distance against `MELEE_RANGE`, a vertical-overlap
+check (`meleeReachesVertically`), and `hasLineOfSight`. It runs **twice per swing** — once where
+`A_Chase` picks the attack and once where the claw lands, a windup later (§ A swing that misses).
 
 **The vertical check is a deliberate deviation from vanilla, and the only one in the attack path.**
 `P_CheckMeleeRange` (`p_enemy.c`) tests `P_AproxDistance` and `P_CheckSight` and *nothing else* — so

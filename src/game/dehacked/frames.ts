@@ -145,7 +145,8 @@ export interface MonsterFrames {
   rangedPose: AttackPose | null;
   meleeDuration: number | null;
   rangedDuration: number | null;
-  /** Seconds into the ranged chain the damaging action sits, or null where the chain has none. */
+  /** Seconds into each attack chain the damaging action sits, or null where the chain has none. */
+  meleeDelay: number | null;
   rangedDelay: number | null;
   /** How many damaging actions the ranged chain carries, and the seconds between consecutive ones. */
   rangedShots: number;
@@ -478,6 +479,7 @@ function deriveMonster(
   if (xdeathSpriteName !== undefined && xdeathSpriteName !== sprite) deathSprite.xdeath = xdeathSpriteName;
 
   const missileShots = firingOffsets(states, missile);
+  const meleeSwings = firingOffsets(states, melee);
   const meleeFiring = firingOf(states, args, melee);
   const rangedFiring = firingOf(states, args, missile);
 
@@ -502,6 +504,7 @@ function deriveMonster(
     rangedPose: poseOf(states, missile),
     meleeDuration: melee.indices.length ? durationOf(states, melee) : null,
     rangedDuration: missile.indices.length ? durationOf(states, missile) : null,
+    meleeDelay: firingDelayOf(meleeSwings),
     rangedDelay: firingDelayOf(missileShots),
     rangedShots: missileShots.length,
     rangedInterval: firingIntervalOf(missileShots),

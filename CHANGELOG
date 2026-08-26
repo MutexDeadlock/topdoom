@@ -5,10 +5,13 @@ Features and improvements
   - further optimized wall fading performance
 
 Fixed bugs
+  - monsters with a melee attack no longer hurt you the instant you touch
+    them: a claw lands a windup later
+    - backing out of reach during that windup makes the swing miss; an imp,
+      cacodemon or baron throws its fireball after you instead
   - a teleported monster stands on the floor it arrives at instead of falling
     to it from the height of the closet it left
-  - a voodoo doll parked in slime no longer bleeds the player: damage floors
-    check the body the player occupies, as in vanilla (Sunder 2512 MAP20)
+  - a voodoo doll parked in slime no longer bleeds the player
 
 
 ===============================================================================

@@ -429,7 +429,9 @@ are vanilla's.
 different animations. Only the revenant has two distinct chains (`SKEL` `G`-`I` punches, `J`-`K`
 throws); the imp, demon, baron and hell knight point both pointers at one chain and share a single
 pose. Before the split, one merged letter list covered both kinds because the sprite layer had no
-"which attack" signal — `enterAttackPose` now takes the kind from `MonsterAttack.kind`.
+"which attack" signal — `enterAttackPose` now takes the kind from `MonsterAttack.kind`, or, on the
+tic a *melee* attack starts (whose claw is a windup away, so no attack event exists yet), from
+`MonsterBody.swinging`.
 
 Both tables play through `SpriteAnimator.playOnce`, not `die`: a third animation mode alongside the
 permanent one-shot-then-hold `die` and the looping alive cycle, playing its frames forward once and

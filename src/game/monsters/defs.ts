@@ -32,6 +32,13 @@ export interface MonsterBody extends Pos3 {
   /** Shots left in the attack currently being played out, and the countdown to the next one (`AttackStats.shots`). */
   burstLeft: number;
   burstTimer: number;
+  /**
+   * Set while the pending `burstLeft` is a **melee swing** rather than a ranged
+   * volley: the two share one timer, since a monster is only ever inside one
+   * attack, but they land through different code and pose off different
+   * chains. docs/monster-ai.md § The windup.
+   */
+  swinging: boolean;
   /** >0 while a lost soul's `A_SkullAttack` charge is in flight, travelling `chargeAngle` at charge speed until it connects or hits geometry. */
   chargeTimer: number;
   chargeAngle: number;
@@ -95,6 +102,14 @@ export interface AttackStats {
    * docs/monster-ai.md § Melee reach.
    */
   range?: number;
+  /**
+   * Melee only — what a target that stepped out of reach during the windup
+   * costs. Vanilla's melee actions split on exactly this: `A_TroopAttack`,
+   * `A_HeadAttack` and `A_BruisAttack` fall through to `P_SpawnMissile` and
+   * throw the type's own `ranged` missile after it, while `A_SargAttack` and
+   * `A_SkelFist` simply miss. docs/monster-ai.md § The windup.
+   */
+  missileOnMiss?: true;
   diceSides: number;
   diceMult: number;
   /**
@@ -110,10 +125,13 @@ export interface AttackStats {
   shots?: number;
   shotInterval?: number;
   /**
-   * Seconds before the first shot fires. Every other monster starts at 0 (an
-   * accepted simplification — their windup has no mechanical consequence);
-   * the arch-vile's 66 tics is real, because it re-checks sight at that exact
-   * moment and that is why cover saves you. docs/monster-archvile.md.
+   * Seconds into the attack before it first lands — the `A_FaceTarget` states
+   * vanilla's chain opens with, ahead of the one carrying the damaging action.
+   * Read for **both kinds**: a shot leaves this far into the volley, a claw
+   * connects this far into the swing, and each re-checks its own gate at that
+   * moment rather than at the one the attack was chosen on — which is why
+   * cover saves you from an arch-vile and why backing off spoils a bite.
+   * docs/monster-ai.md § The windup, docs/monster-archvile.md.
    */
   startDelaySeconds?: number;
   /** Vanilla's `A_CPosRefire`/`A_SpidRefire` loop: the attack state re-enters itself until the target stops being visible, never re-rolling `P_CheckMissileRange`. */
@@ -204,14 +222,19 @@ export interface MonsterSounds {
   /** `mobjinfo.deathsound` (`A_Scream`); a gibbed death plays `slop` instead, matching `A_XScream`. */
   death?: SfxId;
   /**
-   * The one sound this engine's single melee moment plays. Vanilla splits that
-   * moment in two — `A_Chase` plays `mobjinfo.attacksound` on *entering*
-   * `meleestate` (the demon's `sgtatk`), the melee action itself plays its own
-   * on connecting (`A_TroopAttack`/`A_BruisAttack`'s `claw`, `A_SkelFist`'s
-   * `skepch`) — and no type but the revenant actually has both, so this is
-   * whichever one that type owns, the connecting one where it owns two.
+   * The sound the melee action plays **on connecting** — `A_TroopAttack`'s and
+   * `A_BruisAttack`'s `claw`, `A_SkelFist`'s `skepch`. Inside vanilla's own
+   * `P_CheckMeleeRange` branch, so a swing that misses is silent.
    */
   melee?: SfxId;
+  /**
+   * The sound the swing *starts* on, a `startDelaySeconds` windup ahead of the
+   * one above: `mobjinfo.attacksound`, which `A_Chase` plays on entering
+   * `meleestate` (the demon's `sgtatk`), and `A_SkelWhoosh`'s `skeswg` on the
+   * revenant's first swing state, which occupies the same moment. Plays
+   * whether or not the swing goes on to land.
+   */
+  meleeWindup?: SfxId;
   /**
    * A hitscan attack's own shot sound: `A_PosAttack`'s `pistol`,
    * `A_SPosAttack`/`A_CPosAttack`'s `shotgn`. Doubles as the lost soul's

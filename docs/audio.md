@@ -122,11 +122,14 @@ action functions play, mapped onto the moments this engine has for them. Rules w
   wake up anywhere on the map. Nothing else about their sounds is special.
 - **A pain sound is gated on the stagger roll**, not on being hit: `A_Pain` sits on the
   painstate, which `painchance` decides you enter.
-- **Melee is one moment here and two in vanilla.** `A_Chase` plays `mobjinfo.attacksound` on
-  *entering* meleestate (the demon's `sgtatk`), and the melee action plays its own on
-  connecting (the imp's and baron's `claw`, `A_SkelFist`'s `skepch`). Only the revenant has
-  both, so `MonsterSounds.melee` is whichever one the type owns — the connecting one where it
-  owns two, which costs the revenant its windup whoosh.
+- **A swing has two sound moments, and they are vanilla's own.** `A_Chase` plays
+  `mobjinfo.attacksound` on *entering* meleestate — `MonsterSounds.meleeWindup`, the demon's
+  `sgtatk`, joined by `A_SkelWhoosh`'s `skeswg` on the revenant's first swing state — and the
+  melee action plays `MonsterSounds.melee` a windup later *if it connects* (the imp's and
+  baron's `claw`, `A_SkelFist`'s `skepch`), since vanilla's `S_StartSound` sits inside the
+  `P_CheckMeleeRange` branch. So a demon growls whether or not it lands the bite, and an imp
+  that swings at someone who stepped back is silent. The revenant is the one type with both.
+  docs/monster-ai.md § A swing that misses.
 - **A projectile-thrower has no attack sound of its own**; what you hear is the missile
   (below). `MonsterSounds.attack` is for hitscan shots, and the chaingunner's is the
   **shotgun** blast — `A_CPosAttack` really does play `sfx_shotgn`.

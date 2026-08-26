@@ -1019,13 +1019,16 @@ never a monster for a monster-only number — with two differences:
 - it raises **no HUD feedback**: a doll shoved into a locked door must not print "you need the blue
   key".
 
-**Damage mirrors onto the real player**, since `P_DamageMobj` on a doll is damage to player 1:
+**Crush damage mirrors onto the real player**, since `P_DamageMobj` on a doll is damage to
+player 1: a crusher catching a doll deals `CRUSH_DAMAGE` to the player, once per doll caught
+(`applyCrushDamage`).
 
-- a crusher catching a doll deals `CRUSH_DAMAGE` to the player, once per doll caught
-  (`applyCrushDamage`);
-- a doll standing on a damage floor bleeds the player on its own shared countdown
-  (`SectorEffects.updateDolls`) — the damage half only, since a secret belongs to whoever walks into
-  it.
+**A damage floor does not.** `P_PlayerInSpecialSector` reads `player->mo` and is called from
+`P_PlayerThink` alone (`p_user.c`: `if (player->mo->subsector->sector->special)`), so it only ever
+runs for the body the console player occupies — the last start, never a doll. Sunder 2512's MAP20
+is the repro: it parks a doll in a slime sector at (-5072, -1568), which under an earlier
+per-doll damage pass bled the player 10 HP a pulse from the moment the level loaded. Secrets are
+player-only for the same reason, and so is the `exitBelowHealth` floor.
 
 Two deliberate deviations, both documented at their declarations. **Dolls are not drawn** — vanilla
 renders them as marines, which in a top-down view reads as a second player standing across the map.

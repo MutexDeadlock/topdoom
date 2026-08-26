@@ -121,8 +121,6 @@ export type SectorEntry = [number, SectorSnapshot];
 
 /** `SectorEffects`' own two counters; `totalSecrets` is re-counted from the map, not saved. */
 export interface SectorEffectsSnapshot {
-  /** The voodoo dolls' shared damage-floor countdown. Optional: absent is a save from before dolls existed. */
-  dollTimer?: number;
   secretsFound: number;
   timer: number;
 }

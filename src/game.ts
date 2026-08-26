@@ -1719,8 +1719,6 @@ export class Game {
       this.player,
       this.inventory,
       (amount) => this.damagePlayer(amount, undefined, undefined, 'slime'),
-      // A doll standing on a damage floor bleeds the real player.
-      this.voodoo.dolls,
     );
     if (sectorEffect.secretFound) {
       this.message.show(SECRET_MESSAGE);

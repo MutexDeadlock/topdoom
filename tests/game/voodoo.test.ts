@@ -175,44 +175,27 @@ describe('Voodoo dolls', () => {
     assert.ok(dealt > 0, 'the doll’s crushing should have hurt the player');
   });
 
-  test('a doll on a damage floor bleeds the player', () => {
+  test('a doll on a damage floor costs the player nothing', () => {
     const grid = gridMap(['...']);
     addStart(grid.map, grid.centre(1, 0).x, grid.centre(1, 0).y);
     addStart(grid.map, grid.centre(2, 0).x, grid.centre(2, 0).y);
-    // Vanilla 7: nukage, 5 HP a pulse.
+    // Vanilla 7: nukage, 5 HP a pulse — for whoever the *player* is standing on it.
     grid.map.sectors[grid.index(1, 0)].special = 7;
     const world = new World(grid.map);
     const dolls = new VoodooDolls(world);
-    const effects = new SectorEffects(grid.map);
-    const inv = createInventory();
-    const player = { ...grid.centre(2, 0), z: 0 };
-    let dealt = 0;
-    for (let i = 0; i < 70; i++) {
-      effects.update(TIC, world, player, inv, (amount) => (dealt += amount), dolls.dolls);
-    }
-    assert.ok(dealt >= 5, `expected the doll to bleed the player, got ${dealt}`);
-  });
-
-  test('the player’s own damage-floor grace period is untouched by a doll elsewhere', () => {
-    const grid = gridMap(['...']);
-    addStart(grid.map, grid.centre(1, 0).x, grid.centre(1, 0).y);
-    addStart(grid.map, grid.centre(2, 0).x, grid.centre(2, 0).y);
-    grid.map.sectors[grid.index(1, 0)].special = 7;
-    const world = new World(grid.map);
-    const withDoll = new VoodooDolls(world);
+    assert.equal(dolls.dolls.length, 1);
     const effects = new SectorEffects(grid.map);
     const inv = createInventory();
     // The player stands on clean floor throughout; only the doll is in the nukage.
     const player = { ...grid.centre(2, 0), z: 0 };
-    let pulses = 0;
+    let dealt = 0;
     for (let i = 0; i < 210; i++) {
-      let dealt = 0;
-      effects.update(TIC, world, player, inv, (amount) => (dealt += amount), withDoll.dolls);
-      if (dealt > 0) pulses++;
+      effects.update(TIC, world, player, inv, (amount) => (dealt += amount));
     }
-    // Six seconds at one pulse per `DAMAGE_FLOOR_INTERVAL` — a steady beat, not
-    // one hit per tic, which is what a shared timer would have produced.
-    assert.ok(pulses >= 5 && pulses <= 8, `expected a steady pulse, got ${pulses}`);
+    // `P_PlayerInSpecialSector` reads `player->mo`, and only `P_PlayerThink` calls it, so a doll
+    // never runs it — Sunder 2512 MAP20 parks one in slime and would otherwise bleed the player
+    // from the first second of the level. docs/specials.md § Voodoo dolls.
+    assert.equal(dealt, 0, 'a doll is not the body the damage floor checks');
   });
 
   test('doll positions survive a save round-trip, and an old save leaves them put', () => {

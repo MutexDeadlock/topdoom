@@ -6,6 +6,8 @@ Features and improvements
 Fixed bugs
   - a teleported monster stands on the floor it arrives at instead of falling
     to it from the height of the closet it left
+  - a voodoo doll parked in slime no longer bleeds the player: damage floors
+    check the body the player occupies, as in vanilla (Sunder 2512 MAP20)
 
 
 ===============================================================================

@@ -1,9 +1,9 @@
 v0.16.1 (2026-08-2?)
 
 Features and improvements
+  - further optimized wall fading performance
   - a focused text field or dropdown takes the menu's accent, not the 
     browser's focus ring
-  - further optimized wall fading performance
 
 Fixed bugs
   - monsters with a melee attack no longer hurt you the instant you touch
@@ -12,7 +12,7 @@ Fixed bugs
       cacodemon or baron throws its fireball after you instead
   - a teleported monster stands on the floor it arrives at instead of falling
     to it from the height of the closet it left
-  - a voodoo doll parked in slime no longer bleeds the player
+  - a voodoo doll parked in damaging floor no longer bleeds the player
   - a spectre behind a fading wall no longer strobes in and out of view
 
 

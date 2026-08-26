@@ -444,9 +444,12 @@ with: `POSS = ZOMB` draws the zombieman from `ZOMB*`. Both prboom-plus's and Ete
 patch runs, so a rename never chains through an earlier one, and later entries win per key.
 
 The sink is `wad/sprites.ts`, applied when a `SpriteBank` is built: a renamed sprite's lumps are
-indexed under the name things ask for as well as their own, so `lookup` pays nothing per call.
-`game.ts` builds the bank after `applyDehacked`, which is the ordering this rests on. Derivation,
-the pose tables and `FULLBRIGHT_FRAMES` all keep the logical name — only lump resolution moves.
+indexed under the name things ask for as well as their own, so `lookup` pays nothing per call. That
+indexing happens in a pass of its own, ahead of the own-name lumps, so a rename outranks them
+whatever the load order — otherwise `POSS = ZOMB` would lose to any `POSS*` lump the set still
+carries (docs/sprites.md § Rotation 0 against directional frames). `game.ts` builds the bank after
+`applyDehacked`, which is the ordering this rests on. Derivation, the pose tables and
+`FULLBRIGHT_FRAMES` all keep the logical name — only lump resolution moves.
 
 A numeric `Sprite N` record is `noTarget`, like `Sound N`: it moves a pointer into the exe's own
 string table.

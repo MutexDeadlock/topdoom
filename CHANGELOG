@@ -30,6 +30,8 @@ Features and improvements
 Fixed bugs
   - an item in an alcove raised too high to step into is collected now
   - a voodoo doll carried over an item now collects it for the player
+  - a PWAD's eight sprite rotations now beat the IWAD's rotation-0 view for the
+    same frame (NoSp3's Cybruiser attacked and flinched as a Wolfenstein SS)
 
 
 

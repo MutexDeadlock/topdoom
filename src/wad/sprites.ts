@@ -56,13 +56,19 @@ export class SpriteBank {
       under.push(from);
       aliases.set(to, under);
     }
-    for (const lump of wad.markedRange(SPRITE_START, SPRITE_END)) {
-      const sprite = lump.name.slice(0, 4);
-      this.index(lump, sprite);
-      // `aliases` is empty for all but a `[SPRITES]` patch, and this runs per sprite lump.
-      const under = aliases.get(sprite);
-      if (under) for (const alias of under) this.index(lump, alias);
+    const lumps = wad.markedRange(SPRITE_START, SPRITE_END);
+    // Both passes walk newest-first, and the aliases go first: a slot keeps its first claimant, so
+    // this order is what makes the last lump in load order win a slot and an alias outrank every
+    // own-name lump. `aliases` is empty for all but a `[SPRITES]` patch, so that pass is normally
+    // skipped outright. docs/sprites.md § Rotation 0 against directional frames,
+    // docs/dehacked.md § Sprite renames.
+    if (aliases.size > 0) {
+      for (let i = lumps.length - 1; i >= 0; i--) {
+        const under = aliases.get(lumps[i].name.slice(0, 4));
+        if (under) for (const alias of under) this.index(lumps[i], alias);
+      }
     }
+    for (let i = lumps.length - 1; i >= 0; i--) this.index(lumps[i], lumps[i].name.slice(0, 4));
   }
 
   private index(lump: Lump, sprite: string): void {
@@ -72,12 +78,31 @@ export class SpriteBank {
     if (name.length >= 8) this.addFrame(sprite, name[6], name[7], name, true);
   }
 
+  /**
+   * Claims rotation slots for one lump, the first claim on a slot standing: a `rot=0` lump takes
+   * every slot still free, and keeps a single `'0'` entry where it reached the frame untouched —
+   * which is the overwhelmingly common frame, and why `lookup` needs no ordering state.
+   * Callers walk newest-first. docs/sprites.md § Rotation 0 against directional frames.
+   */
   private addFrame(sprite: string, frame: string, rotation: string, lump: string, flip: boolean): void {
     if (!/[A-Z]/.test(frame) || !/[0-8]/.test(rotation)) return;
     const key = sprite + frame;
     let byRotation = this.frames.get(key);
     if (!byRotation) this.frames.set(key, (byRotation = new Map()));
-    if (!byRotation.has(rotation)) byRotation.set(rotation, { lump, flip });
+    if (byRotation.has('0')) return; // a newer rot=0 lump already took all eight
+    if (rotation !== '0') {
+      if (!byRotation.has(rotation)) byRotation.set(rotation, { lump, flip });
+      return;
+    }
+    if (byRotation.size === 0) {
+      byRotation.set('0', { lump, flip });
+      return;
+    }
+    const shared = { lump, flip };
+    for (let digit = 1; digit <= 8; digit++) {
+      const slot = String(digit);
+      if (!byRotation.has(slot)) byRotation.set(slot, shared);
+    }
   }
 
   /** Lump for this sprite/frame/rotation digit (1-8); falls back to the omnidirectional "0" frame. */

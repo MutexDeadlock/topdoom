@@ -58,6 +58,33 @@ source a type-226 line radiates its force from (docs/specials.md § Pushers), an
 player starts exist only as voodoo dolls (docs/specials.md § Voodoo dolls), which are deliberately
 not drawn either.
 
+### Rotation 0 against directional frames
+
+A frame letter is drawn either from one omnidirectional `rot=0` lump or from eight directional ones,
+and a merged set can end up holding **both** for the same letter — a PWAD giving eight rotations to
+a frame the IWAD ships as `rot=0` (or the reverse). Vanilla refuses that set outright:
+`R_InstallSpriteLump` (`r_things.c`) raises `I_Error("R_InitSprites: Sprite %s frame %c has
+rotations and a rot=0 lump")` either way round. Boom does not — killough's `R_InitSpriteDefs`
+rewrite walks each sprite's hash chain newest-first ("prepend so that later ones win") and
+`R_InstallSpriteLump` keeps whichever lump claims a rotation slot first, with a `rot=0` lump
+claiming all eight it still finds free. Net effect, and the rule this engine follows: **each of the
+eight slots goes to the last lump in load order that claims it**, a `rot=0` lump claiming all eight.
+
+`SpriteBank` reaches that from Boom's end rather than by ranking: it indexes **newest-first** and
+lets the first claim on a slot stand, a `rot=0` lump taking every slot still free. A frame it
+reaches untouched keeps its single `'0'` entry — the overwhelmingly common case — so nothing has to
+be stored per frame to order it, and `lookup` stays two map reads.
+
+Preferring `rot=0` unconditionally, as this did, is what made **NoSp3.wad**'s Cybruiser flicker back
+into a Wolfenstein SS. That WAD's DEHACKED rebuilds `MT_SPIDER` (doomednum 7) out of the SS's state
+block and ships `SSWVA1`-`SSWVJ8`, eight rotations each, over `DOOM2.WAD`'s rotation-0 `SSWVE0`-
+`SSWVJ0`. Only letters `E`-`J` collide — the monster's attack and pain poses — so it walked and died
+as a Cybruiser and attacked and flinched as vanilla SS art.
+
+A `[SPRITES]` rename is deliberately *not* subject to load order: the aliases are indexed in a pass
+of their own *before* the own-name lumps, claiming their slots first, or `POSS = ZOMB` would lose to
+a `POSS*` lump still in the set. docs/dehacked.md § Sprite renames.
+
 **The split between `render/sprites.ts` and `game/things.ts` follows the same rendering/game divide as
 the rest of the tree.** `render/sprites.ts` only knows how to turn a (sprite name, frame letter,
 viewer angle) into a posed plane — `SpriteAnimator`/`SpriteActor`/`SpriteMaterialCache`, no knowledge

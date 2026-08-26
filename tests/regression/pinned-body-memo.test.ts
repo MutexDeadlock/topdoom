@@ -38,7 +38,7 @@ describe('Regressions · pinned-body memo invalidation', () => {
     const run = (tics: number) => {
       for (let i = 0; i < tics; i++) {
         forces.tick();
-        dolls.update(TIC, forces, () => null);
+        dolls.update(TIC, forces, () => null, () => {});
       }
     };
     run(100);

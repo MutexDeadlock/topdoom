@@ -82,9 +82,17 @@ export class VoodooDolls {
   }
 
   /**
-   * One tic: the world's forces push each doll, it slides, and whatever walk
-   * lines it crossed fire through `cross` — which returns a landing spot when
-   * the crossing was a teleporter, exactly as a monster's does.
+   * One tic: the world's forces push each doll, it slides, whatever it reached
+   * is collected through `collect`, and whatever walk lines it crossed fire
+   * through `cross` — which returns a landing spot when the crossing was a
+   * teleporter, exactly as a monster's does.
+   *
+   * `collect` runs only for a doll that actually moved, and before `cross`, as
+   * vanilla's own order: a doll is an `MT_PLAYER` carrying `MF_PICKUP`, so
+   * `P_XYMovement` -> `P_TryMove` -> `P_CheckPosition` picks items up on the
+   * real player's behalf, before `P_TryMove` gets to the lines it crossed. A
+   * parked doll never reaches `P_XYMovement` and so never collects.
+   * docs/items.md § Collecting things.
    *
    * A doll has no gravity of its own: it rides whatever floor it is standing on
    * (`groundFloor`), which is all a script actor ever needs and keeps a doll
@@ -98,7 +106,12 @@ export class VoodooDolls {
    * water rising over a parked doll, breaks the memo through the impulse
    * compare.
    */
-  update(dt: number, forces: Forces, cross: (prev: Pos2, doll: VoodooDoll) => TeleportDest | null): void {
+  update(
+    dt: number,
+    forces: Forces,
+    cross: (prev: Pos2, doll: VoodooDoll) => TeleportDest | null,
+    collect: (doll: VoodooDoll, attempted: Pos2) => void,
+  ): void {
     for (const doll of this.dolls) {
       const carry = forces.carryForBody(doll, PLAYER_RADIUS, doll.touch);
       // A doll is a player mobj, so the pushers reach it too — and it counts as
@@ -117,6 +130,9 @@ export class VoodooDolls {
 
       const startZ = doll.z;
       const prev = { x: doll.x, y: doll.y };
+      // Non-null only for a doll that moved this tic, which is exactly when
+      // vanilla runs the pickup — see the `collect` note above.
+      let attempted: Pos2 | null = null;
       doll.momX += impX;
       doll.momY += impY;
 
@@ -125,6 +141,9 @@ export class VoodooDolls {
         // normal state of most of them — never pays for the sector walk.
         const speed = Math.hypot(doll.momX, doll.momY);
         const ground = forces.frictionUnder(doll, PLAYER_RADIUS, speed, doll.touch);
+        // Where the move was headed before the slide clipped it, the player's
+        // own `attempted` for a doll — see `Player.attempted`.
+        attempted = { x: doll.x + doll.momX * dt, y: doll.y + doll.momY * dt };
         // `P_SlideMove`, as for the player it is a copy of.
         const moved = slideMove(this.world, doll, doll.momX * dt, doll.momY * dt, PLAYER_RADIUS);
         if (dt > 0) {
@@ -146,6 +165,7 @@ export class VoodooDolls {
       }
 
       doll.z = this.world.groundFloor(doll.x, doll.y, PLAYER_RADIUS);
+      if (attempted) collect(doll, attempted);
       const dest = cross(prev, doll);
       if (dest) {
         doll.x = dest.x;

@@ -27,6 +27,7 @@ Features and improvements
 
 Fixed bugs
   - an item in an alcove raised too high to step into is collected now
+  - a voodoo doll carried over an item now collects it for the player
 
 
 

@@ -100,6 +100,16 @@ through `checkPosition` instead would match vanilla exactly and give voodoo doll
 at the cost of a callback in the engine's hottest predicate for every mover
 (docs/movement.md § Collision).
 
+**A voodoo doll collects on the player's behalf.** It is an `MT_PLAYER` like the player, so it
+carries `MF_PICKUP` and `PIT_CheckThing` runs `P_TouchSpecialThing` for it, which credits
+`toucher->player` — the console player, for every doll. `VoodooDolls.update` therefore takes a
+`collect` callback beside its `cross` one, and fires it on the same move `slideMove` just made, with
+the same two endpoints the player's own pass uses. Only a doll that *moved* collects: vanilla reaches
+the pickup through `P_XYMovement`, which a parked doll never enters, so an item under a doll standing
+still stays put. One deliberate simplification: it is gated on the player being alive, standing in
+for vanilla's per-mobj `toucher->health` check, which a doll has no separate health for here.
+See docs/specials.md § Voodoo dolls.
+
 **`tryPickup`'s `z` check** exists because 2D distance alone lets a player standing at the *base* of a
 not-yet-lowered pillar collect an item still on top of it — DOOM2 MAP04's blue key does exactly this.
 Matching `PIT_CheckThing`'s overhead gate, a pickup more than `PLAYER_HEIGHT` above or below the

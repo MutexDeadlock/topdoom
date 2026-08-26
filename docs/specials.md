@@ -996,6 +996,12 @@ gravity, no input and no AI — the world is the only thing that moves it. A dol
 a wall — the resting state of most dolls on a script map — skips that whole re-derivation via the
 pinned-body memo (docs/movement.md § Pinned-body memo), which is what keeps a 466-doll map ticking.
 
+**What a doll picks up, the player gets.** `MT_PLAYER` carries `MF_PICKUP` (`info.c`), so
+`PIT_CheckThing` hands anything a moving doll's box touches to `P_TouchSpecialThing`, which credits
+`toucher->player` — and every doll's is the console player. A doll run over an item collects it, and
+only while it is moving: vanilla reaches the pickup through `P_XYMovement`, which a parked doll never
+enters. See docs/items.md § Collecting things.
+
 **Triggering** goes through `SpecialsController.crossVoodoo`, the third `Activator`. A doll gates
 exactly like the player it copies — the player's own keys, every line a player may cross, and it is
 never a monster for a monster-only number — with two differences:

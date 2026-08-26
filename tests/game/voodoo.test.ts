@@ -6,7 +6,9 @@ import { Forces } from '../../src/game/specials/forces.ts';
 import { VoodooDolls } from '../../src/game/voodoo.ts';
 import { SectorEffects } from '../../src/game/specials/sectoreffects.ts';
 import { applyCrushDamage } from '../../src/game/specials/moverblocking.ts';
-import { createInventory } from '../../src/game/inventory.ts';
+import { createInventory, PICKUP_RANGE } from '../../src/game/inventory.ts';
+import { buildThingSprites } from '../../src/game/things.ts';
+import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
 import { World } from '../../src/game/world.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import type { DoomMap } from '../../src/wad/map.ts';
@@ -63,7 +65,7 @@ describe('Voodoo dolls', () => {
     assert.equal(grid.map.sectors[door].ceilHeight, 0, 'the door starts shut');
     for (let i = 0; i < 200; i++) {
       forces.tick();
-      dolls.update(TIC, forces, (prev, doll) => rig.specials.crossVoodoo(prev, doll, keys));
+      dolls.update(TIC, forces, (prev, doll) => rig.specials.crossVoodoo(prev, doll, keys), () => {});
       rig.tick();
     }
     assert.ok(dolls.dolls[0].x > start.x + 128, `the doll only reached ${dolls.dolls[0].x - start.x} units`);
@@ -82,6 +84,57 @@ describe('Voodoo dolls', () => {
     assert.equal(grid.map.sectors[door].ceilHeight, 0);
   });
 
+  test('a doll carried over an item collects it for the real player', () => {
+    // `MT_PLAYER` carries `MF_PICKUP` (info.c), so `PIT_CheckThing` hands what a
+    // *moving* doll's box touches to `P_TouchSpecialThing`, which credits
+    // `toucher->player` — the real player. docs/items.md § Collecting things.
+    const grid = gridMap(['...']);
+    const start = grid.centre(0, 0);
+    addStart(grid.map, start.x, start.y);
+    addStart(grid.map, start.x, start.y);
+    for (const col of [0, 1, 2]) grid.map.sectors[grid.index(col, 0)].tag = 7;
+    addControlLine(grid.map, 512, 0, 252, 7);
+    const item = grid.centre(2, 0);
+    grid.map.things.push({ x: item.x, y: item.y, angle: 0, type: ThingType.stimpack, flags: 7 });
+
+    const rig = specialsRig(grid.map, start);
+    const forces = new Forces(grid.map, rig.world);
+    const dolls = new VoodooDolls(rig.world);
+    const layer = buildThingSprites(grid.map, rig.world, BANK, MATERIALS, 3);
+    let taken = 0;
+    for (let i = 0; i < 200; i++) {
+      forces.tick();
+      dolls.update(TIC, forces, () => null, (doll, attempted) =>
+        layer.tryPickup(doll, attempted, PICKUP_RANGE, () => (taken++, true)),
+      );
+      rig.tick();
+    }
+    assert.ok(dolls.dolls[0].x > item.x - PICKUP_RANGE, 'the belt should have carried the doll onto the item');
+    assert.equal(taken, 1, 'the doll ran over it, so the player has it');
+  });
+
+  test('a doll parked on an item never collects it', () => {
+    // Vanilla only reaches the pickup through `P_XYMovement`, which a doll with
+    // no momentum never enters — so an item under a parked doll stays put.
+    const grid = gridMap(['...']);
+    const under = grid.centre(0, 0);
+    addStart(grid.map, under.x, under.y);
+    addStart(grid.map, grid.centre(2, 0).x, grid.centre(2, 0).y);
+    grid.map.things.push({ x: under.x, y: under.y, angle: 0, type: ThingType.stimpack, flags: 7 });
+    const world = new World(grid.map);
+    const forces = new Forces(grid.map, world);
+    const dolls = new VoodooDolls(world);
+    const layer = buildThingSprites(grid.map, world, BANK, MATERIALS, 3);
+    let taken = 0;
+    for (let i = 0; i < 50; i++) {
+      forces.tick();
+      dolls.update(TIC, forces, () => null, (doll, attempted) =>
+        layer.tryPickup(doll, attempted, PICKUP_RANGE, () => (taken++, true)),
+      );
+    }
+    assert.equal(taken, 0);
+  });
+
   test('a doll sitting still on no conveyor never moves', () => {
     const grid = gridMap(['...']);
     addStart(grid.map, grid.centre(0, 0).x, grid.centre(0, 0).y);
@@ -92,7 +145,7 @@ describe('Voodoo dolls', () => {
     const at = { x: dolls.dolls[0].x, y: dolls.dolls[0].y };
     for (let i = 0; i < 50; i++) {
       forces.tick();
-      dolls.update(TIC, forces, () => null);
+      dolls.update(TIC, forces, () => null, () => {});
     }
     assert.deepEqual({ x: dolls.dolls[0].x, y: dolls.dolls[0].y }, at);
   });

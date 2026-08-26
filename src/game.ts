@@ -1457,8 +1457,16 @@ export class Game {
       // And the dolls after the forces that carry them, so a conveyor's
       // impulse and the walk lines it pushes a doll across land in one tic.
       if (!this.voodoo.empty) {
-        this.voodoo.update(TIC_SECONDS, this.forces, (prev, doll) =>
-          this.specials?.crossVoodoo(prev, doll, this.inventory.keys) ?? null,
+        this.voodoo.update(
+          TIC_SECONDS,
+          this.forces,
+          (prev, doll) => this.specials?.crossVoodoo(prev, doll, this.inventory.keys) ?? null,
+          // A doll is a player mobj carrying `MF_PICKUP`, so what it runs over lands in the real
+          // player's inventory — the same "on the player's behalf" the damage floors below use.
+          // Gated on a living player, standing in for vanilla's `toucher->health` check.
+          (doll, attempted) => {
+            if (!this.playerDead) this.things?.tryPickup(doll, attempted, PICKUP_RANGE, this.consumePickup);
+          },
         );
       }
     });
@@ -1683,21 +1691,28 @@ export class Game {
   }
 
   /**
+   * What picking one item up means, for whichever player mobj reached it — the real player or a
+   * voodoo doll collecting on their behalf (docs/items.md § Collecting things). An arrow field
+   * rather than a method because both `tryPickup` call sites hand it straight over.
+   */
+  private consumePickup = (type: number, dropped: boolean): boolean => {
+    const taken = applyPickup(this.inventory, type, dropped, this.skill);
+    // The computer area map is the one pickup whose whole effect lives outside the `Inventory`
+    // struct: it reveals the level's own geometry. Watched for here rather than handled in
+    // `applyPickup` — the same "state there, world effect at the caller" split `tryPickup`
+    // already makes for removing the item itself.
+    if (taken && type === ThingType.computerMap) this.fogOfWar.revealAll();
+    // Unattenuated, as vanilla plays every pickup: you're standing on it.
+    if (taken) this.audio.play(pickupSound(type));
+    return taken;
+  };
+
+  /**
    * The two things the player picks up by standing somewhere: items in reach, and whatever the
    * sector underfoot does to them (damage floors, secrets, an exit) — see game/specials/sectoreffects.ts.
    */
   private collectPickupsAndSectorEffects(dt: number): void {
-    this.things?.tryPickup(this.player, this.player.attempted, PICKUP_RANGE, (type, dropped) => {
-      const taken = applyPickup(this.inventory, type, dropped, this.skill);
-      // The computer area map is the one pickup whose whole effect lives outside the `Inventory`
-      // struct: it reveals the level's own geometry. Watched for here rather than handled in
-      // `applyPickup` — the same "state there, world effect at the caller" split `tryPickup`
-      // already makes for removing the item itself.
-      if (taken && type === ThingType.computerMap) this.fogOfWar.revealAll();
-      // Unattenuated, as vanilla plays every pickup: you're standing on it.
-      if (taken) this.audio.play(pickupSound(type));
-      return taken;
-    });
+    this.things?.tryPickup(this.player, this.player.attempted, PICKUP_RANGE, this.consumePickup);
     const sectorEffect = this.sectorEffects.update(
       dt,
       this.world,

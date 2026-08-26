@@ -1,4 +1,4 @@
-v0.16.0 (2026-08-2?)
+v0.16.0 (2026-08-26)
 
 Features and improvements
   - walls and floors fade as a soft ball around whatever they hide, instead
@@ -8,22 +8,22 @@ Features and improvements
     - the fade aims at the whole sprite, not its middle
     - each monster is aimed at over its own height, so a tall one is no
       longer half-hidden by what a player-sized target would have cleared
-  - massive auto-camera overhaul
   - dynamic lights: torches, lamps, pickups, projectiles in flight, 
     explosions and muzzle flashes now light the level around them
     - a WAD's own GLDEFS/DOOMDEFS lump layers over the stock definitions
     - Settings > Visuals > Lighting turns them off
+  - massive auto-camera overhaul
   - main menu:
     - F2 / F3 / F4 open the menu on the Save / Load / Settings tab
     - switching game WAD keeps the add-ons it can't merge: 
       they stay in the list switched off, with the reason on the row
     - Settings is split four ways: Visuals, Audio, Controls, and General
     - implemented a master volume slider
+  - the HUD's numbers now use DOOMs digit sprites
+    - crosshair uses the same blue than the one used for health/armor > 100
   - map-mesh and rendering optimizations: big maps cost a lot less per frame
   - multisampling is off on high-DPI displays, where it cost a third of every
     frame to smooth edges already drawn at four pixels apiece
-  - the HUD's numbers now use DOOMs digit sprites
-    - crosshair uses the same blue than the one used for health/armor > 100
   - the profiler shows GPU time beside CPU time
   - basic SEO: the page carries its own metadata now
 

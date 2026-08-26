@@ -391,7 +391,7 @@ export class Menu {
    * Whether the camera frames itself from the openness around the player
    * (`auto`, the default) or stays on the manual `+ - [ ]` keys — applied to
    * the level already running, read per tic. The `<option>` values are the
-   * `CameraMode` strings themselves. docs/render.md § Auto camera.
+   * `CameraMode` strings themselves. docs/camera.md § Auto camera.
    */
   private installCameraMode(): void {
     this.cameraModeSelect.value = getCameraMode();

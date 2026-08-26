@@ -6,6 +6,7 @@ import {
   FADE_ALPHA,
   FADE_CORE,
   FADE_RADIUS,
+  MONSTER_FADE_RADIUS,
   MONSTER_FADE_RANGE,
   WallFader,
   FlatFader,
@@ -17,7 +18,7 @@ import { World, type Opening } from '../../src/game/world.ts';
 import { NO_SIDE } from '../../src/wad/map.ts';
 import { PLAYER_HEIGHT } from '../../src/game/player.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { BANK } from '../fixtures/specialsrig.ts';
+import { BANK, MASKED_TEXTURE } from '../fixtures/specialsrig.ts';
 
 /**
  * The fade is a *ball* around where a sightline meets something solid, not the
@@ -29,7 +30,7 @@ import { BANK } from '../fixtures/specialsrig.ts';
 /**
  * The dials are *read*, never mirrored: every fixture below sizes itself from
  * them and every expectation is derived from them, so retuning `FADE_RADIUS`,
- * `FADE_CORE`, `FADE_ALPHA` or `MONSTER_FADE_RANGE` moves this suite with it
+ * `FADE_CORE`, `FADE_ALPHA`, `MONSTER_FADE_RADIUS` or `MONSTER_FADE_RANGE` moves this suite with it
  * instead of reddening it. They are feel dials; a test that pins one in place
  * is a bug in the test.
  */
@@ -59,6 +60,16 @@ function walledRow() {
   }
   const built = buildMapMesh(grid.map, BANK, { transfers: new Transfers(grid.map) });
   return { grid, ...built, world: new World(grid.map) };
+}
+
+/**
+ * A player-strength fade target at a point. The two dials are still *read* from
+ * the source rather than mirrored (docs/render.md § The fade is a hole, not a
+ * wall) — this only spells them once, so a dial added to `FadeTarget` does not
+ * mean editing every case in the file. The weak/monster cases pass their own.
+ */
+function targetAt(x: number, y: number, z: number): FadeTarget {
+  return { x, y, z, fadeFloor: FADE_ALPHA, fadeRadius: FADE_RADIUS };
 }
 
 /** The real opening lookup, in the shape `WallFader.update` takes it. */
@@ -184,13 +195,13 @@ describe('render · the sightline box rejects only what it must', () => {
     const b = walledRow();
     const camX = CELL * 1.5;
     const camY = 2 * CELL + 512;
-    const target: FadeTarget = { x: camX, y: 2 * CELL - 512, z: 0, fadeFloor: FADE_ALPHA };
+    const target = targetAt(camX, 2 * CELL - 512, 0);
     const narrow = alphasFor(b, camX, camY, 128, [target]);
     // `fadeFloor` 1 is "pull nothing down", so these two only move the box.
     const wide = alphasFor(b, camX, camY, 128, [
       target,
-      { x: -1e5, y: -1e5, z: -1e5, fadeFloor: 1 },
-      { x: 1e5, y: 1e5, z: -1e5, fadeFloor: 1 },
+      { x: -1e5, y: -1e5, z: -1e5, fadeFloor: 1, fadeRadius: FADE_RADIUS },
+      { x: 1e5, y: 1e5, z: -1e5, fadeFloor: 1, fadeRadius: FADE_RADIUS },
     ]);
     assert.deepEqual(wide, narrow);
     assert.ok(
@@ -210,7 +221,7 @@ describe('render · the fade is a hole, not a wall', () => {
     const camY = 2 * CELL + 512;
     const targetY = 2 * CELL - 512;
     // Halfway along the sightline, so the crossing height is the mean of the two.
-    return { camX: where, camY, camZ: 128, target: { x: where, y: targetY, z: 0, fadeFloor: FADE_ALPHA } };
+    return { camX: where, camY, camZ: 128, target: targetAt(where, targetY, 0) };
   }
 
   test('only the chunks near the crossing fade; the rest of the wall stands', () => {
@@ -328,7 +339,7 @@ describe('render · the fade is a hole, not a wall', () => {
     const quads = group(b.occluders, line, true);
     // A sightline running along the wall's own row never crosses it.
     const fader = new WallFader(b.occluders, b.wallMeshes);
-    const target: FadeTarget = { x: quads[0].segAx, y: 1.5 * CELL, z: 0, fadeFloor: FADE_ALPHA };
+    const target = targetAt(quads[0].segAx, 1.5 * CELL, 0);
     fader.update(SETTLE, 3 * CELL, 1.5 * CELL, 128, [target], openingsOf(b.world));
     fader.commit(() => 1);
     for (const q of quads) for (const c of cornerList(b.wallMeshes, q)) assert.equal(c.a, 1);
@@ -344,32 +355,128 @@ describe('render · what the fade still refuses to touch', () => {
     // Camera and target both at floor level: the crossing height lands at 0,
     // which is the bottom of the quad, not inside it.
     const fader = new WallFader(b.occluders, b.wallMeshes);
-    fader.update(SETTLE, where, 2 * CELL + 512, 0, [{ x: where, y: 2 * CELL - 512, z: 0, fadeFloor: FADE_ALPHA }], openingsOf(b.world));
+    fader.update(SETTLE, where, 2 * CELL + 512, 0, [targetAt(where, 2 * CELL - 512, 0)], openingsOf(b.world));
     fader.commit(() => 1);
     for (const q of quads) for (const c of cornerList(b.wallMeshes, q)) assert.equal(c.a, 1);
   });
 
-  test('a midtexture hung inside a real opening never fades, however the sightline crosses it', () => {
-    // A grate between two open cells is something to see *through*, not an
-    // occluder — the passable-gap exemption, now fed by `openingInto`.
+  /** A row of open cells screened by a midtexture of `texture` on every inner line. */
+  const screenedRow = (texture: string) => {
     const grid = gridMap(['.....'], { cell: CELL });
     for (const l of grid.map.linedefs) {
-      if (l.left !== NO_SIDE && l.right !== NO_SIDE) grid.map.sidedefs[l.right].middle = WALLTEX;
+      if (l.left !== NO_SIDE && l.right !== NO_SIDE) grid.map.sidedefs[l.right].middle = texture;
     }
     const b = buildMapMesh(grid.map, BANK, { transfers: new Transfers(grid.map) });
-    const world = new World(grid.map);
     assert.ok(b.occluders.length > 0, 'the fixture builds midtexture quads');
+    return { b, world: new World(grid.map) };
+  };
 
+  /** Straight through the screens, along the row. */
+  const lookAlong = (b: ReturnType<typeof screenedRow>['b'], world: World) => {
     const fader = new WallFader(b.occluders, b.wallMeshes);
-    // Straight through the grates, along the row.
-    fader.update(SETTLE, 0, CELL / 2, 96, [{ x: 5 * CELL, y: CELL / 2, z: 32, fadeFloor: FADE_ALPHA }], openingsOf(world));
+    fader.update(SETTLE, 0, CELL / 2, 96, [targetAt(5 * CELL, CELL / 2, 32)], openingsOf(world));
     fader.commit(() => 1);
+  };
+
+  test('a masked midtexture hung inside a real opening never fades, however the sightline crosses it', () => {
+    // A grate between two open cells is something to see *through*, not an
+    // occluder — the passable-gap exemption, now fed by `openingInto`.
+    const { b, world } = screenedRow(MASKED_TEXTURE);
+    lookAlong(b, world);
     for (const o of b.occluders) for (const c of cornerList(b.wallMeshes, o)) assert.equal(c.a, 1);
+  });
+
+  test('a solid one hung in the same opening does fade — it is a wall, whatever it is built from', () => {
+    // The exemption's premise is that a look already passes through. A map may
+    // hang an opaque texture there instead and call it a wall: EPIC.WAD MAP05
+    // at (3231, -5243) does, and it was the one thing that never faded.
+    const { b, world } = screenedRow(WALLTEX);
+    lookAlong(b, world);
+    const faded = b.occluders.some((o) => cornerList(b.wallMeshes, o).some((c) => c.a < 1));
+    assert.ok(faded, 'a solid screen on the sightline gives way');
   });
 });
 
-describe('render · a monster fades a wall less the further off it is', () => {
+/**
+ * A room one chunk deep, so the wall *behind* the target sits well inside
+ * `FADE_RADIUS` of the crossing on the wall in front of it — the shape the
+ * target's own cut plane exists for. docs/render.md § The fade is a hole, not a wall.
+ */
+function narrowRoom() {
+  const grid = gridMap(['###', '...', '###'], { cell: CHUNK });
+  for (const l of grid.map.linedefs) {
+    if (l.right !== NO_SIDE) grid.map.sidedefs[l.right].upper = WALLTEX;
+    if (l.left !== NO_SIDE) grid.map.sidedefs[l.left].upper = WALLTEX;
+  }
+  const built = buildMapMesh(grid.map, BANK, { transfers: new Transfers(grid.map) });
+  return { grid, ...built, world: new World(grid.map) };
+}
+
+describe('render · the hole stops at the target', () => {
+  /** Camera due north, looking south past the near wall at a target `targetY`. */
+  function faded(b: ReturnType<typeof narrowRoom>, targetY: number, line: number) {
+    const fader = new WallFader(b.occluders, b.wallMeshes);
+    const target = targetAt(CHUNK * 1.5, targetY, 0);
+    fader.update(SETTLE, CHUNK * 1.5, 2 * CHUNK + 512, 128, [target], openingsOf(b.world));
+    fader.commit(() => 1);
+    return b.occluders.filter((o) => o.line === line).flatMap((o) => cornerList(b.wallMeshes, o));
+  }
+
+  test('a wall behind the target keeps standing, however near the hole reaches', () => {
+    const b = narrowRoom();
+    const near = lineAtY(b.grid, 2 * CHUNK, CHUNK * 1.5);
+    const far = lineAtY(b.grid, CHUNK, CHUNK * 1.5);
+    // Fixture: the far wall is inside the near wall's hole, so distance alone
+    // would fade it and only the cut can be what leaves it whole.
+    assert.ok(CHUNK < FADE_RADIUS, `fixture: ${CHUNK} apart must be inside a ${FADE_RADIUS} hole`);
+
+    // Target in the middle of the room: the near wall is crossed, the far wall
+    // stands behind it.
+    assert.ok(faded(b, CHUNK * 1.5, near).some((c) => c.a < 1), 'the wall in front of the target gives way');
+    assert.ok(faded(b, CHUNK * 1.5, far).every((c) => c.a === 1), 'the one behind it does not');
+
+    // The same wall with the target beyond it is between camera and target
+    // again, and fades — so what held it up was the cut, not its distance.
+    assert.ok(faded(b, CHUNK * 0.5, far).some((c) => c.a < 1), 'and gives way once the target is past it');
+  });
+});
+
+describe('render · a monster fades less of a wall than the player does', () => {
   const player = { x: 0, y: 0, z: 0 };
+
+  test('a monster opens the narrower hole of the two', () => {
+    const [self, monster] = collectFadeTargets(player, [{ x: 64, y: 0, z: 0 }]);
+    assert.equal(self.fadeRadius, FADE_RADIUS, 'the player gets the wide one');
+    assert.equal(monster.fadeRadius, MONSTER_FADE_RADIUS);
+    assert.ok(MONSTER_FADE_RADIUS < FADE_RADIUS, 'and it really is the narrower');
+  });
+
+  test('a corner between the two radii fades for the player and stands for a monster', () => {
+    const b = walledRow();
+    const line = lineAtY(b.grid, 2 * CELL, CELL * 1.5);
+    const quads = group(b.occluders, line, true);
+    // Cross on one chunk's own east corner; the next chunk's east corner is one
+    // chunk further along — the reach the two radii disagree about.
+    const middle = quads[Math.floor(quads.length / 2)];
+    const beyond = quads[Math.floor(quads.length / 2) + 1];
+    const where = middle.bx;
+    const height = middle.topH - Math.min(FADE_CORE, middle.topH - middle.botH) / 4;
+    const reach = Math.hypot(beyond.bx - where, beyond.by - middle.by, beyond.topH - height);
+    assert.ok(
+      reach > MONSTER_FADE_RADIUS && reach < FADE_RADIUS,
+      `fixture: the corner at ${reach} must sit between the two radii`,
+    );
+
+    const alphaFor = (fadeRadius: number) => {
+      const fader = new WallFader(b.occluders, b.wallMeshes);
+      const target: FadeTarget = { x: where, y: 2 * CELL - 512, z: height, fadeFloor: FADE_ALPHA, fadeRadius };
+      fader.update(SETTLE, where, 2 * CELL + 512, height, [target], openingsOf(b.world));
+      fader.commit(() => 1);
+      return corners(b.wallMeshes, beyond).topRight.a;
+    };
+    assert.ok(alphaFor(FADE_RADIUS) < 1, 'the player’s hole reaches it');
+    assert.equal(alphaFor(MONSTER_FADE_RADIUS), 1, 'a monster’s does not');
+  });
 
   test('the player pulls a wall all the way down, a monster only partway', () => {
     const near = collectFadeTargets(player, [{ x: MONSTER_FADE_RANGE / 96, y: 0, z: 0 }]);
@@ -401,7 +508,7 @@ describe('render · a monster fades a wall less the further off it is', () => {
     // still inside the band for any core — so the corner asserted on reads its
     // floor rather than a point on the ramp. The floor is what this is about.
     const height = middle.topH - Math.min(FADE_CORE, middle.topH - middle.botH) / 4;
-    const weak: FadeTarget = { x: where, y: 2 * CELL - 512, z: height, fadeFloor: 0.5 };
+    const weak: FadeTarget = { x: where, y: 2 * CELL - 512, z: height, fadeFloor: 0.5, fadeRadius: FADE_RADIUS };
 
     const fader = new WallFader(b.occluders, b.wallMeshes);
     fader.update(SETTLE, where, 2 * CELL + 512, height, [weak], openingsOf(b.world));
@@ -438,7 +545,7 @@ describe('render · flats fade around the sightline too', () => {
     const far = surfaces.find((s) => s.subsector === b.grid.index(0, 0))!;
 
     const fader = new FlatFader(surfaces, b.flatMeshes);
-    fader.update(SETTLE, middle.x, middle.y, 512, [{ x: middle.x, y: middle.y, z: -256, fadeFloor: FADE_ALPHA }]);
+    fader.update(SETTLE, middle.x, middle.y, 512, [targetAt(middle.x, middle.y, -256)]);
     fader.commit(() => 1);
 
     // A 512-unit cell is diced fine enough to carry the gradient itself: right
@@ -482,7 +589,7 @@ describe('render · flats fade around the sightline too', () => {
     const x = middle.x - cell / 2 + (cell * 3) / 16;
 
     const fader = new FlatFader(surfaces, b.flatMeshes);
-    fader.update(SETTLE, x, middle.y, 512, [{ x, y: middle.y, z: -256, fadeFloor: FADE_ALPHA }]);
+    fader.update(SETTLE, x, middle.y, 512, [targetAt(x, middle.y, -256)]);
     fader.commit(() => 1);
 
     // Read each vertex's own alpha against its own position, which also pins
@@ -524,7 +631,7 @@ describe('render · flats fade around the sightline too', () => {
     const open = grid.centre(1, 0);
     // A quarter of a hole east of the shared edge, so the whole platform is
     // well within reach of wherever the sightline crosses its height.
-    const target = { x: open.x - cell / 2 + FADE_RADIUS / 4, y: open.y, z: 28, fadeFloor: FADE_ALPHA };
+    const target = targetAt(open.x - cell / 2 + FADE_RADIUS / 4, open.y, 28);
     const platform = built.flatSurfaces.filter((s) => !s.isCeiling && s.subsector === grid.index(0, 0));
     return { ...built, target, platform };
   }
@@ -565,7 +672,7 @@ describe('render · flats fade around the sightline too', () => {
     const fader = new FlatFader(surfaces, b.flatMeshes);
     // Target above the floor: nothing is between it and the camera.
     const middle = b.grid.centre(1, 1);
-    fader.update(SETTLE, middle.x, middle.y, 512, [{ x: middle.x, y: middle.y, z: 128, fadeFloor: FADE_ALPHA }]);
+    fader.update(SETTLE, middle.x, middle.y, 512, [targetAt(middle.x, middle.y, 128)]);
     fader.commit(() => 1);
     for (const s of surfaces) {
       assert.deepEqual(new Set(fanAlphas(b.flatMeshes, s)), new Set([1]));

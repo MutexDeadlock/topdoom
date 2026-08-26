@@ -135,7 +135,8 @@ relevant one before changing that subsystem** — several rules there look like 
 | [dehacked.md](docs/dehacked.md) | DEHACKED/BEX patches: the record grammar, the index bridges, units, `Bits`, the unsupported corners |
 | [menu.md](docs/menu.md) | The menu as launcher and pause screen, the WAD Library, difficulty, persisted settings, URL parameters, `main.ts`'s session lifecycle, `DEVMODE` |
 | [frameloop.md](docs/frameloop.md) | `game.ts`'s frame: the delta, the FPS cap, pausing |
-| [render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, wall occlusion fading, camera orbit and auto camera, view distance, texture animation |
+| [render.md](docs/render.md) | BSP polygons, mesh building, sector lighting, wall occlusion fading, view distance, what a frame costs, texture animation |
+| [camera.md](docs/camera.md) | Camera orbit and camera-relative movement, the camera as simulation state, aim lead, the auto camera and its framing |
 | [lights.md](docs/lights.md) | GLDEFS dynamic lights: the grammar, what emits, the two lighting paths, the GZDoom deviations |
 | [sprites.md](docs/sprites.md) | The named doomednums (`ThingType`) every type-keyed table keys through; billboards, instanced batching, which things spawn |
 | [movement.md](docs/movement.md) | Collision, `groundFloor`, `slideMove`, straferunning, gravity/falling, knockback |

@@ -33,7 +33,7 @@ That constant lives in `player.ts` beside `PLAYER_HEIGHT` it derives from, and i
 `hasLineOfSight`'s body: `world.ts` and `player.ts` import from each other, so a `player.ts` value
 hoisted to module scope in `world.ts` would be read during that cycle's initialization. It is not
 `EYE_HEIGHT`, the view height a unit below it — `game/autocamera.ts`'s probe wants that one
-(docs/render.md § Auto camera), a sight trace wants this one. The target bound uses the full `[z2, z2 + PLAYER_HEIGHT]` span rather than a
+(docs/camera.md § Auto camera), a sight trace wants this one. The target bound uses the full `[z2, z2 + PLAYER_HEIGHT]` span rather than a
 single point, so any part of that range clearing every opening crossed is enough.
 
 **The wedge narrows at two different things, and both are load-bearing.** The primary one walks the
@@ -164,7 +164,7 @@ answer for sector 0's row, so it bounds-checks the table itself.
 **`openingInto(line, out)` is the allocation-free form of `openingOf`**, writing vanilla's
 `P_LineOpening` pair into a caller-owned record. `openingOf` is the wrapper that hands out a fresh
 one, and `blocksSight` — which runs per candidate line inside the fog sweep — is a predicate over
-it, as is the auto camera's own `blocksProbe` (docs/render.md § Auto camera), which brings its own
+it, as is the auto camera's own `blocksProbe` (docs/camera.md § Auto camera), which brings its own
 record rather than a third `World` scratch. The point is that the min-ceiling/max-floor rule is
 written once:
 the copies that remain inline (`checkPosition`'s, and the sector pair `hasLineOfSight` resolves for

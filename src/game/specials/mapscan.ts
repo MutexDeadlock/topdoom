@@ -274,8 +274,37 @@ export function findSwitchEntries(
  * texture — must stay out of the static batch (see mapmesh.ts). `pairs` is
  * `findSwitchEntries`' switch-pair lookup, and must be the same one the
  * controller is given or the two disagree about which sectors carry switches.
+ *
+ * `moving` is `computeMovingSectors`' answer, taken as an argument only so a
+ * caller that needs both sets pays for the scan once; it is copied, never
+ * added to.
  */
-export function computeMovableSectors(map: DoomMap, pairs?: SwitchPairLookup): Set<number> {
+export function computeMovableSectors(
+  map: DoomMap,
+  pairs?: SwitchPairLookup,
+  moving: ReadonlySet<number> = computeMovingSectors(map),
+): Set<number> {
+  const out = new Set(moving);
+  for (const line of map.linedefs) {
+    if (!lookupSpecial(line.special)) continue;
+    for (const e of findSwitchEntries(map, line, pairs)) out.add(e.sectorIndex);
+  }
+  // Re-run over the widened set rather than trusting the one inside
+  // `computeMovingSectors`: a switch sector could itself be a 242 control.
+  addWaterDependents(map, out);
+  return out;
+}
+
+/**
+ * The half of `computeMovableSectors` that is about *movement*: sectors whose
+ * floor or ceiling a special can actually drive, without the ones that are only
+ * pulled out of the static batch so a switch texture can be swapped on them.
+ *
+ * The two are different questions and `mapmesh.ts` needs both — a mesh that
+ * never moves is diced vertically like static geometry, and one that does
+ * cannot be (`WALL_CHUNK_LEN`). docs/render.md § Mover meshes.
+ */
+export function computeMovingSectors(map: DoomMap): Set<number> {
   const out = new Set<number>();
   for (let i = 0; i < map.sectors.length; i++) {
     // Sector-type door timers (10/14) never wait for a linedef trigger, so
@@ -316,7 +345,6 @@ export function computeMovableSectors(map: DoomMap, pairs?: SwitchPairLookup): S
       // for a mesh of its own.
       for (const sectorIndex of resolveTargets(map, line, def)) out.add(sectorIndex);
     }
-    for (const e of findSwitchEntries(map, line, pairs)) out.add(e.sectorIndex);
   }
   // A boss-death tag has no triggering linedef for the loop above to find — see bossDeathSectors.
   for (const sectorIndex of bossDeathSectors(map)) out.add(sectorIndex);

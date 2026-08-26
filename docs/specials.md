@@ -460,7 +460,7 @@ first doomednum-14 landing thing found inside a tag-matched sector (`findTelepor
 reaching it calls back into `game.ts` to move the player (`Player.teleportTo`) and snap the camera —
 both its yaw, to match the landing angle, and its follow point (`snapTo`), so the view cuts to the
 destination instead of flying across the map after it: same as the initial spawn, and for the same
-reason (docs/render.md § The camera is simulation state).
+reason (docs/camera.md § The camera is simulation state).
 
 **A crossing from the *back* of the line never teleports** — `EV_Teleport`'s own `if (side == 1)
 return 0;`, commented there as "so you can get out of teleporter". Without it, stepping off the pad
@@ -595,7 +595,7 @@ Two deliberate divergences:
   surrounding geometry visibly changes regardless, and not snapping the follow point would leave the
   camera flying across the map (§ Teleporters). The yaw is the part that can genuinely be preserved,
   and **must be turned relatively, not reoriented**: `TopDownCamera.yawDeg` is an orbit the player
-  owns with Q/E (docs/render.md § Camera orbit and camera-relative movement), not something slaved to their facing, so setting it
+  owns with Q/E (docs/camera.md § Camera orbit and camera-relative movement), not something slaved to their facing, so setting it
   from the landing angle — what a vanilla teleport correctly does — injects that orbit offset as a
   visible spin on every silent arrival. A pair authored as one continuous doorway has `rotateBy` 0
   and now leaves the view completely still.

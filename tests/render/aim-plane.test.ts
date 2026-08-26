@@ -6,7 +6,7 @@ import { AIM_HEIGHT_OFFSET, EYE_HEIGHT } from '../../src/game/player.ts';
 /**
  * The aim plane is derived from the camera's own follow height, so a fall
  * cannot move the cursor's world point out from under a lagging camera.
- * See docs/render.md § Aim lead.
+ * See docs/camera.md § Aim lead.
  */
 
 const TIC = 1 / 35;

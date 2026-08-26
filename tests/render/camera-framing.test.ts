@@ -4,6 +4,7 @@ import {
   MAX_CAMERA_DISTANCE,
   MAX_TILT_DEG,
   MIN_CAMERA_DISTANCE,
+  MIN_RESCUE_DISTANCE,
   MIN_TILT_DEG,
   TopDownCamera,
 } from '../../src/render/camera.ts';
@@ -11,7 +12,7 @@ import {
 /**
  * The camera's animated framing: `targetDistance`/`targetTiltDeg` glide on the
  * tic clock and interpolate per frame, while a plain `distance`/`tiltDeg`
- * assignment jumps. See docs/render.md § Auto camera.
+ * assignment jumps. See docs/camera.md § Auto camera.
  */
 
 const TIC = 1 / 35;
@@ -62,6 +63,19 @@ describe('render · camera framing', () => {
     assert.equal(camera.targetTiltDeg, MIN_TILT_DEG);
     // Out-of-range construction is clamped too, so no caller can seed past it.
     assert.equal(new TopDownCamera(16 / 9, { distance: 10, tiltDeg: 89 }).distance, MIN_CAMERA_DISTANCE);
+  });
+
+  test('the auto camera’s route has the lower floor, the manual keys’ route does not', () => {
+    const camera = new TopDownCamera(16 / 9);
+    camera.targetDistance = -5;
+    assert.equal(camera.targetDistance, MIN_CAMERA_DISTANCE, 'the route the manual keys share');
+    camera.autoDistance = -5;
+    assert.equal(camera.targetDistance, MIN_RESCUE_DISTANCE, 'the route the rescue writes through');
+    camera.snapFraming(-5, 30);
+    assert.equal(camera.distance, MIN_RESCUE_DISTANCE, 'and the jump route it seeds with');
+    // The lower floor is a floor, not an opening: the top of the envelope is shared.
+    camera.autoDistance = 99999;
+    assert.equal(camera.targetDistance, MAX_CAMERA_DISTANCE);
   });
 
   test('snapFraming jumps with nothing left to interpolate or glide', () => {

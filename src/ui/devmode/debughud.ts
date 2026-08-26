@@ -16,7 +16,7 @@ import { DEVMODE } from '../../constants.ts';
  * distance/tilt they set are framing preferences, not debug state. They act in
  * manual camera mode only and are inert while the auto camera drives the
  * framing (the same inert-not-error shape N/P have outside dev mode) —
- * docs/render.md § Auto camera. They write the *targets* so a held key rides
+ * docs/camera.md § Auto camera. They write the *targets* so a held key rides
  * the camera's framing smoother instead of stepping raw at the tic rate.
  */
 export function handleHotkeys(

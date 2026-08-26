@@ -5,7 +5,7 @@
  * See docs/render.md § Wall occlusion fading and § Scrolling textures.
  */
 import * as THREE from 'three';
-import type { FlatSurface, WallOccluder } from './mapmesh.ts';
+import { WALL_CHUNK_LEN, type FlatSurface, type WallOccluder } from './mapmesh.ts';
 import type { MaterialBank } from './textures.ts';
 import { pointInConvexPolygon, polygonCentroid, segmentCrossT } from '../util/geom.ts';
 import { dampenWith } from '../util/damping.ts';
@@ -28,14 +28,22 @@ const SNAP_EPS = 0.004;
  * How wide a hole a sightline opens in whatever it is stopped by, and the
  * full-strength core inside it where the ramp has not started easing back yet.
  * Walls and flats share both, so a hole spanning a floor and the wall behind
- * it is one shape. Both **tuned by feel**: wide enough to see the player and
- * what they're about to walk into, narrow enough that a wall doesn't dissolve
- * end to end. Their relationship to `mapmesh.ts`'s `WALL_CHUNK_LEN`, and why
- * the tests read these rather than mirroring them:
- * docs/render.md § The fade is a hole, not a wall.
+ * it is one shape. **Tuned by feel**, but not freely: alpha exists only at
+ * chunk corners, so a `FADE_CORE` under `WALL_CHUNK_LEN / 2` cannot open a hole
+ * wider than one chunk however the ramp is shaped, and on a tall occluder seen
+ * at a grazing angle that one chunk reads as a slit. Sized off the chunk for
+ * that reason rather than set as a bare number. Why the tests read these rather
+ * than mirroring them: docs/render.md § The fade is a hole, not a wall.
  */
-export const FADE_RADIUS = 96;
-export const FADE_CORE = FADE_RADIUS / 2;
+export const FADE_RADIUS = WALL_CHUNK_LEN * 1.5;
+/**
+ * The core is this fraction of whatever radius a target carries, so every
+ * target's hole is the one shape scaled. Stated once, here: `holeAlpha` shapes
+ * the ramp through it and `FADE_CORE` is the player's own radius through it, so
+ * retuning the ratio moves the renderer and the tests together.
+ */
+const FADE_CORE_FRACTION = 0.5;
+export const FADE_CORE = FADE_RADIUS * FADE_CORE_FRACTION;
 
 /**
  * Total occluder count below which `WallFader` scans them all instead of building an index: over a
@@ -51,56 +59,107 @@ const GRID_MIN_OCCLUDERS = 256;
 /**
  * A point occlusion is tested against — the player, or an awake monster (see
  * `WallFader.update`'s doc). `fadeFloor` is how far down this target alone
- * pulls what hides it; `FADE_ALPHA` is full strength.
+ * pulls what hides it (`FADE_ALPHA` is full strength) and `fadeRadius` how
+ * wide a hole it opens.
  */
-export type FadeTarget = Pos3 & { fadeFloor: number };
+export type FadeTarget = Pos3 & { fadeFloor: number; fadeRadius: number };
 
 /**
  * The alpha one crossing pulls a point at `distanceSquared` from it down to:
- * `floor` inside `FADE_CORE`, smoothstepped back to 1 by `FADE_RADIUS`, and 1
- * beyond. The one ramp both faders window with — a hole spanning a floor and
- * the wall behind it is one shape because this is one function.
+ * `floor` inside the core, smoothstepped back to 1 by `radius`, and 1 beyond.
+ * The core is always half the radius, so a target's hole is one shape scaled.
+ * The one ramp both faders window with — a hole spanning a floor and the wall
+ * behind it is one shape because this is one function.
  * docs/render.md § The fade is a hole, not a wall.
  */
-function holeAlpha(distanceSquared: number, floor: number): number {
-  if (distanceSquared >= FADE_RADIUS * FADE_RADIUS) return 1;
+function holeAlpha(distanceSquared: number, floor: number, radius: number): number {
+  if (distanceSquared >= radius * radius) return 1;
+  const core = radius * FADE_CORE_FRACTION;
   const d = Math.sqrt(distanceSquared);
-  if (d <= FADE_CORE) return floor;
-  const t = (d - FADE_CORE) / (FADE_RADIUS - FADE_CORE);
+  if (d <= core) return floor;
+  const t = (d - core) / (radius - core);
   return floor + (1 - floor) * t * t * (3 - 2 * t);
 }
 
 /**
  * A growable bag of the points a pass-one sweep found — where a sightline was
- * actually stopped, and how hard the target behind it fades. Both faders file
- * the same four channels, so they share one structure rather than two sets of
- * parallel arrays.
+ * actually stopped, and which target it was stopped for. Everything else about
+ * the hole (its floor, its radius, where the target's own plane cuts it) is a
+ * property of that target, so a crossing carries the index rather than a copy.
+ * Both faders file the same four channels, so they share one structure rather
+ * than two sets of parallel arrays.
  */
 class PointBag {
   x: Float64Array = new Float64Array(64);
   y: Float64Array = new Float64Array(64);
   /** The height the sightline was stopped at: a wall crossing's, or the plane a floor pierce sits in. */
   h: Float64Array = new Float64Array(64);
-  /** The stopping target's own `fadeFloor`, so two targets over one point keep their own strengths. */
-  floor: Float64Array = new Float64Array(64);
+  /** Which target's sightline was stopped here — an index into `TargetPlanes`. */
+  target: Float64Array = new Float64Array(64);
   count = 0;
 
   reset(): void {
     this.count = 0;
   }
 
-  push(x: number, y: number, h: number, floor: number): void {
+  push(x: number, y: number, h: number, target: number): void {
     if (this.count === this.x.length) {
       this.x = grow(this.x);
       this.y = grow(this.y);
       this.h = grow(this.h);
-      this.floor = grow(this.floor);
+      this.target = grow(this.target);
     }
     this.x[this.count] = x;
     this.y[this.count] = y;
     this.h[this.count] = h;
-    this.floor[this.count] = floor;
+    this.target[this.count] = target;
     this.count++;
+  }
+}
+
+/**
+ * Per target, for the frame: the plane through it facing the camera. Nothing on
+ * the far side of that plane can be hiding the target, so nothing there fades —
+ * see docs/render.md § The fade is a hole, not a wall. Both faders keep one,
+ * refilled per `update`; the hole dials stay on the target itself, which every
+ * read site already holds.
+ */
+class TargetPlanes {
+  /**
+   * The camera→target offset, and `dot(n, target)`: `dot(n, p) > d0` is past
+   * the target. Deliberately **not** normalized — every test compares two
+   * dot products against this same `n`, so scaling it changes neither side,
+   * and the hypot-and-three-divides per target is measurable across the
+   * thousand-odd mover faders a frame refills.
+   *
+   * A camera sitting exactly on its target falls out of that with no branch:
+   * `n` is zero, `d0` is zero, and `0 > 0` cuts nothing, leaving the hole whole
+   * — what it was before there was a plane at all.
+   */
+  nx = new Float64Array(0);
+  ny = new Float64Array(0);
+  nz = new Float64Array(0);
+  d0 = new Float64Array(0);
+
+  /** Refills for this frame's targets, growing on demand. */
+  fill(camX: number, camY: number, camZ: number, targets: readonly FadeTarget[]): void {
+    if (this.nx.length < targets.length) {
+      const n = targets.length;
+      this.nx = new Float64Array(n);
+      this.ny = new Float64Array(n);
+      this.nz = new Float64Array(n);
+      this.d0 = new Float64Array(n);
+    }
+    for (let k = 0; k < targets.length; k++) {
+      const t = targets[k];
+      const nx = t.x - camX;
+      const ny = t.y - camY;
+      const nz = t.z - camZ;
+      this.nx[k] = nx;
+      this.ny[k] = ny;
+      this.nz[k] = nz;
+      this.d0[k] = nx * t.x + ny * t.y + nz * t.z;
+    }
   }
 }
 
@@ -118,6 +177,19 @@ function grow(a: Float64Array): Float64Array {
  * Wall occlusion fading.
  */
 export const MONSTER_FADE_RANGE = 768;
+
+/**
+ * How wide a hole an awake *monster* opens, as against the player's
+ * `FADE_RADIUS` — **tuned by feel**, and deliberately the smallest that still
+ * clears a whole chunk rather than a slit (alpha lives only at chunk corners,
+ * so a core under `WALL_CHUNK_LEN / 2` cannot). The player's hole is wider
+ * because it is centred on the one place the view has to be readable, and what
+ * it dissolves is what you were looking at anyway; a monster's is centred
+ * somewhere else, and everything it dissolves is context you wanted — the
+ * switch on the wall in front of you included.
+ * docs/render.md § The fade is a hole, not a wall.
+ */
+export const MONSTER_FADE_RADIUS = FADE_RADIUS / 2;
 
 /**
  * Most awake monsters that can be fade targets at once, nearest first. Purely
@@ -141,7 +213,7 @@ export function collectFadeTargets(player: Pos3, awakeMonsters: readonly Pos3[])
     .filter((e) => e.d <= MONSTER_FADE_RANGE);
   nearby.sort((a, b) => a.d - b.d);
   return [
-    { x: player.x, y: player.y, z: player.z + PLAYER_HEIGHT / 2, fadeFloor: FADE_ALPHA },
+    { x: player.x, y: player.y, z: player.z + PLAYER_HEIGHT / 2, fadeFloor: FADE_ALPHA, fadeRadius: FADE_RADIUS },
     ...nearby.slice(0, MAX_FADE_TARGETS).map((e) => ({
       x: e.m.x,
       y: e.m.y,
@@ -151,6 +223,7 @@ export function collectFadeTargets(player: Pos3, awakeMonsters: readonly Pos3[])
       // and a fade that reached the cap at full strength would pop as the
       // monster crossed it. Linear, **tuned by feel**.
       fadeFloor: FADE_ALPHA + (1 - FADE_ALPHA) * (e.d / MONSTER_FADE_RANGE),
+      fadeRadius: MONSTER_FADE_RADIUS,
     })),
   ];
 }
@@ -204,7 +277,7 @@ export class WallFader {
   private wanted: Float32Array;
   /**
    * Per quad, whether it is the passable gap of its own line — an opening a body can walk through,
-   * which must not fade however solid the texture over it looks.
+   * screened by a **masked** texture a look already passes through, so fading it reveals nothing.
    *
    * **Asked lazily**, of the quads a sightline crosses in pass one and the quads a crossing reaches
    * in pass two, and at most once per quad per frame (`passableStamp`). Deciding it for every quad
@@ -214,6 +287,8 @@ export class WallFader {
   private passable: Uint8Array;
   /** The `update` each `passable` entry was last decided on. */
   private passableStamp: Int32Array;
+  /** Whether each batch's texture is masked, memoised — one material lookup per texture for the fader's life. */
+  private maskedByKey = new Map<string, boolean>();
   private frameStamp = 0;
   /** Reused by `update`'s per-line opening lookup — see `openingInto`. */
   private opening: Opening = { top: 0, bottom: 0 };
@@ -221,11 +296,12 @@ export class WallFader {
   private tx = new Float64Array(0);
   private ty = new Float64Array(0);
   private tz = new Float64Array(0);
-  private tFloor = new Float64Array(0);
   private hitX = new Float64Array(0);
   private hitY = new Float64Array(0);
   private hitH = new Float64Array(0);
-  private hitFloor = new Float64Array(0);
+  private hitTarget = new Float64Array(0);
+  /** This frame's per-target hole dials and cut planes. */
+  private planes = new TargetPlanes();
   /** Which group last recorded a crossing for each hit slot — a stamp, so dedup needs no per-group clear. */
   private hitStamp = new Int32Array(0);
   private groupStamp = 0;
@@ -331,11 +407,10 @@ export class WallFader {
     this.tx = new Float64Array(n);
     this.ty = new Float64Array(n);
     this.tz = new Float64Array(n);
-    this.tFloor = new Float64Array(n);
     this.hitX = new Float64Array(n);
     this.hitY = new Float64Array(n);
     this.hitH = new Float64Array(n);
-    this.hitFloor = new Float64Array(n);
+    this.hitTarget = new Float64Array(n);
     this.hitStamp = new Int32Array(n).fill(-1);
   }
 
@@ -374,8 +449,8 @@ export class WallFader {
       this.tx[k] = t.x;
       this.ty[k] = t.y;
       this.tz[k] = t.z;
-      this.tFloor[k] = t.fadeFloor;
     }
+    this.planes.fill(camX, camY, camZ, targets);
     this.wanted.fill(1);
 
     // Pass one. The crossings — the expensive part — are solved once per run of
@@ -412,14 +487,14 @@ export class WallFader {
             this.hitX[hits] = camX + (this.tx[k] - camX) * cross;
             this.hitY[hits] = camY + (this.ty[k] - camY) * cross;
             this.hitH[hits] = camZ + (this.tz[k] - camZ) * cross;
-            this.hitFloor[hits] = this.tFloor[k];
+            this.hitTarget[hits] = k;
             hits++;
           }
         }
       }
 
       if (hits === 0) continue;
-      const isPassableGap = hasOpening && this.spansOpening(o);
+      const isPassableGap = hasOpening && this.spansOpening(o) && this.masked(o.key);
       this.passable[i] = isPassableGap ? 1 : 0;
       this.passableStamp[i] = this.frameStamp;
       if (isPassableGap) continue;
@@ -430,18 +505,25 @@ export class WallFader {
         // sightline passes through — they all name the same point.
         if (this.hitStamp[h] === this.groupStamp) continue;
         this.hitStamp[h] = this.groupStamp;
-        this.crossings.push(this.hitX[h], this.hitY[h], height, this.hitFloor[h]);
+        this.crossings.push(this.hitX[h], this.hitY[h], height, this.hitTarget[h]);
       }
     }
 
-    // Pass two: a ball of radius FADE_RADIUS around each crossing, softening
-    // whatever it reaches. Height enters as the gap between the crossing and
-    // the quad's own band, so a wall the sightline clears keeps standing.
+    // Pass two: a ball of the crossing target's own radius around each
+    // crossing, cut off at the target's own plane, softening whatever is left.
+    // Height enters as the gap between the crossing and the quad's own band, so
+    // a wall the sightline clears keeps standing.
     for (let c = 0; c < this.crossings.count; c++) {
       const cx = this.crossings.x[c];
       const cy = this.crossings.y[c];
       const ch = this.crossings.h[c];
-      const floor = this.crossings.floor[c];
+      const k = this.crossings.target[c];
+      const floor = targets[k].fadeFloor;
+      const radius = targets[k].fadeRadius;
+      const nx = this.planes.nx[k];
+      const ny = this.planes.ny[k];
+      const nz = this.planes.nz[k];
+      const d0 = this.planes.d0[k];
       const count = this.candidatesNear(cx, cy);
       for (let m = 0; m < count; m++) {
         const j = this.candidates[m];
@@ -449,7 +531,7 @@ export class WallFader {
         const q = this.occluders[j];
         // Cheapest reject first: the whole band is out of vertical reach.
         const vGap = ch < q.botH ? q.botH - ch : ch > q.topH ? ch - q.topH : 0;
-        if (vGap >= FADE_RADIUS) continue;
+        if (vGap >= radius) continue;
         const dTop = q.topH - ch;
         const dBot = q.botH - ch;
         const vTop2 = dTop * dTop;
@@ -460,12 +542,19 @@ export class WallFader {
         const rx = q.bx - cx;
         const ry = q.by - cy;
         const right2 = rx * rx + ry * ry;
+        // Where each corner sits against the target's own plane. The two
+        // halves are shared across the four corners rather than recomputed.
+        const alongLeft = nx * q.ax + ny * q.ay;
+        const alongRight = nx * q.bx + ny * q.by;
+        const alongTop = nz * q.topH;
+        const alongBot = nz * q.botH;
         // A/D/C/B: top-left, bottom-left, bottom-right, top-right. Each corner
-        // measures from its own height, so the hole rounds off vertically too.
-        this.foldCorner(j * 4, left2 + vTop2, floor);
-        this.foldCorner(j * 4 + 1, left2 + vBot2, floor);
-        this.foldCorner(j * 4 + 2, right2 + vBot2, floor);
-        this.foldCorner(j * 4 + 3, right2 + vTop2, floor);
+        // measures from its own height, so the hole rounds off vertically too,
+        // and each is skipped outright if it stands past the target.
+        if (alongLeft + alongTop <= d0) this.foldCorner(j * 4, left2 + vTop2, floor, radius);
+        if (alongLeft + alongBot <= d0) this.foldCorner(j * 4 + 1, left2 + vBot2, floor, radius);
+        if (alongRight + alongBot <= d0) this.foldCorner(j * 4 + 2, right2 + vBot2, floor, radius);
+        if (alongRight + alongTop <= d0) this.foldCorner(j * 4 + 3, right2 + vTop2, floor, radius);
       }
     }
 
@@ -487,6 +576,30 @@ export class WallFader {
   }
 
   /**
+   * Whether this quad's texture is the masked kind — the half of the
+   * passable-gap rule that used to be assumed rather than asked.
+   *
+   * A middle texture living inside its line's opening is a grate, a fence or a
+   * barred window *if it has holes*, and then a look passes through it already.
+   * A map can just as well hang a solid one there and call it a wall, walkable
+   * or not: EPIC.WAD MAP05 at (3231, -5243) is screened by a curved run of
+   * two-sided lines carrying `EBIGBRIK` over a full-height opening, and with
+   * the premise unchecked that wall was the one thing on the map that never
+   * faded. `MaterialBank.get` already answers it — `alphaTest` is non-zero for
+   * exactly the bitmaps with fully transparent texels — and `setFrame` keeps it
+   * across an animation's frames, so it is stable to read.
+   * docs/render.md § The fade is a hole, not a wall.
+   */
+  private masked(key: string): boolean {
+    const cached = this.maskedByKey.get(key);
+    if (cached !== undefined) return cached;
+    const material = this.meshes.get(key)?.material as THREE.MeshBasicMaterial | undefined;
+    const holes = (material?.alphaTest ?? 0) > 0;
+    this.maskedByKey.set(key, holes);
+    return holes;
+  }
+
+  /**
    * Whether quad `j` is its line's passable gap, decided once per quad per `update` — see
    * `passable`. Pass one answers it for the quads it crosses; every other quad first gets asked
    * here, by the crossing that would otherwise fade it.
@@ -494,15 +607,15 @@ export class WallFader {
   private isPassable(j: number, openingInto: (line: number, out: Opening) => boolean): boolean {
     if (this.passableStamp[j] === this.frameStamp) return this.passable[j] === 1;
     const o = this.occluders[j];
-    const gap = openingInto(o.line, this.opening) && this.spansOpening(o);
+    const gap = openingInto(o.line, this.opening) && this.spansOpening(o) && this.masked(o.key);
     this.passable[j] = gap ? 1 : 0;
     this.passableStamp[j] = this.frameStamp;
     return gap;
   }
 
   /** Pulls one corner toward `floor` by how far it sits from the crossing, keeping whichever crossing fades it hardest. */
-  private foldCorner(slot: number, distanceSquared: number, floor: number): void {
-    const a = holeAlpha(distanceSquared, floor);
+  private foldCorner(slot: number, distanceSquared: number, floor: number, radius: number): void {
+    const a = holeAlpha(distanceSquared, floor, radius);
     if (a < this.wanted[slot]) this.wanted[slot] = a;
   }
 
@@ -590,6 +703,8 @@ export class FlatFader {
   private scratch = new Float64Array(0);
   /** This frame's pierce points: where a sightline actually lands *on* a floor. */
   private pierces = new PointBag();
+  /** This frame's per-target hole dials and cut planes — `WallFader` keeps the twin. */
+  private planes = new TargetPlanes();
   /** Each fan's centre and the radius that covers it, so a crossing nowhere near it costs one compare instead of a walk over every vertex. */
   private boundX = new Float64Array(0);
   private boundY = new Float64Array(0);
@@ -677,6 +792,7 @@ export class FlatFader {
    */
   private collectPierces(camX: number, camY: number, camZ: number, targets: FadeTarget[]): void {
     this.pierces.reset();
+    this.planes.fill(camX, camY, camZ, targets);
     // `WallFader`'s reject (see `sightBox`), applied to a fan's bounding circle instead of a
     // segment — and taken once for the frame rather than once per target, which is the whole
     // point: what it replaces is a walk over every fan on the map per target. The per-frame
@@ -698,7 +814,8 @@ export class FlatFader {
       this.candidates[candidateCount++] = i;
     }
 
-    for (const pt of targets) {
+    for (let k = 0; k < targets.length; k++) {
+      const pt = targets[k];
       // Where this target's own pierces start: two targets standing on the same
       // spot file the same point twice, and each keeps its own fade floor.
       const mine = this.pierces.count;
@@ -721,7 +838,7 @@ export class FlatFader {
         }
         if (known) continue;
         if (!pointInConvexPolygon(x, y, s.points)) continue;
-        this.pierces.push(x, y, s.height, pt.fadeFloor);
+        this.pierces.push(x, y, s.height, k);
       }
     }
   }
@@ -778,11 +895,21 @@ export class FlatFader {
           for (let p = 0; p < count; p++) this.scratch[p] = 1;
           pierced = true;
         }
-        const floor = this.pierces.floor[c];
+        const k = this.pierces.target[c];
+        const floor = targets[k].fadeFloor;
+        const radius = targets[k].fadeRadius;
+        const nx = this.planes.nx[k];
+        const ny = this.planes.ny[k];
+        // The plane's own height term is constant over a flat fan.
+        const cut = this.planes.d0[k] - this.planes.nz[k] * s.height;
         for (let p = 0; p < count; p++) {
-          const dx = s.vertexXY[p * 2] - x;
-          const dy = s.vertexXY[p * 2 + 1] - y;
-          const a = holeAlpha(dx * dx + dy * dy, floor);
+          const vx = s.vertexXY[p * 2];
+          const vy = s.vertexXY[p * 2 + 1];
+          // Past the target: nothing there can be hiding it, so it stays whole.
+          if (nx * vx + ny * vy > cut) continue;
+          const dx = vx - x;
+          const dy = vy - y;
+          const a = holeAlpha(dx * dx + dy * dy, floor, radius);
           if (a < this.scratch[p]) this.scratch[p] = a;
         }
       }

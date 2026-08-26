@@ -74,6 +74,10 @@ does (autorun and the right mouse button), so both are there while you play — 
 Ceilings are never rendered — from directly above, one would hide everything underneath it. See
 [Dev mode](#dev-mode) below for the keys marked as needing it.
 
+**The camera frames itself.** By default it opens up in wide rooms, pulls in when you are shut in
+and leans towards where you are heading; the distance and tilt keys above take over in manual mode.
+See [docs/camera.md](docs/camera.md).
+
 **Straferunning works.** Forward and sideways are separate speeds that are never blended into
 one, exactly as in vanilla, so running forward and sideways at once (`W`+`D`+`Shift`) moves you
 faster than either alone. See [docs/movement.md](docs/movement.md).

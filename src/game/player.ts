@@ -364,7 +364,7 @@ export class Player implements Pos3 {
    * camera on screen, independent of where the player is aiming. `forwardDeg`
    * is the DOOM-space bearing the camera currently looks along (from
    * `TopDownCamera.viewerAngleDeg`), so at the default yaw this reduces to the
-   * old fixed-axis mapping exactly. docs/render.md § Camera orbit.
+   * old fixed-axis mapping exactly. docs/camera.md § Camera orbit.
    *
    * `blockers` are the solid bodies the player walks around rather than
    * through, and unlike a monster's own movement this slides along them

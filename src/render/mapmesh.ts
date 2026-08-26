@@ -181,6 +181,12 @@ const WATER_MIN_DEPTH = 8;
  * It carries an unenforced relationship to `render/occlusion.ts`'s `FADE_CORE`,
  * which decides whether the chunk over the player reaches full strength:
  * docs/render.md § The fade is a hole, not a wall.
+ *
+ * The *vertical* cut is the one a mover cannot always have. Its band count is
+ * `ceil(height / this)`, so a moving height changes how many quads a wall is,
+ * and `refreshMoverMesh` may only rewrite buffers whose count held still. A
+ * mover mesh therefore dices vertically exactly where both sectors sizing a
+ * quad hold still — see `processLine`'s `holdsStill`.
  */
 export const WALL_CHUNK_LEN = 128;
 
@@ -322,6 +328,15 @@ export interface MapMeshOptions {
    * ones behind.
    */
   movableSectors?: Set<number>;
+  /**
+   * The subset of `movableSectors` whose floor or ceiling a special can
+   * actually *move* (`computeMovingSectors`), as against the ones pulled out of
+   * the static batch only so a switch texture can be swapped on them. It
+   * decides one thing: whether a mover's walls may be diced vertically like
+   * static ones. Omitted means "assume every one of them moves", which is what
+   * a caller with no specials scan should say. docs/render.md § Mover meshes.
+   */
+  movingSectors?: Set<number>;
   /**
    * The linedefs bordering a sector — vanilla's `sec->lines[]`, the same seam
    * `MoverIndex.linesOf` uses and for the same reason: `game/world.ts` already
@@ -630,7 +645,7 @@ export function refreshMoverMesh(
   options: MapMeshOptions,
   index: MoverIndex,
 ): boolean {
-  const { renderCeilings = false, wallHeightCap = 0, movableSectors } = options;
+  const { renderCeilings = false } = options;
   const transfers = options.transfers ?? ownTransfers(map);
   const texSize = (kind: SurfaceKind, name: string) => bank.size(kind, name);
 
@@ -642,7 +657,7 @@ export function refreshMoverMesh(
   // The walls: rebuilt outright, since a moving height changes which tiers exist at all.
   const batches = new BatchSet();
   const wallQuads: WallOccluder[] = [];
-  buildMoverWalls(map, sectorIndex, batches, texSize, wallHeightCap, movableSectors, transfers, index, wallQuads);
+  buildMoverWalls(map, sectorIndex, batches, texSize, options, transfers, index, wallQuads);
   const drawn = drawnBatches(batches, bank);
   if (drawn.length !== mesh.wallMeshCount || wallQuads.length !== mesh.wallQuads.length) return false;
   // Validated before anything is written, so a refusal can't leave the mesh
@@ -808,7 +823,7 @@ function buildMoverBatches(
   options: MapMeshOptions,
   index: MoverIndex,
 ): { batches: BatchSet; drawn: Batch[]; wallQuads: WallOccluder[]; flatFans: FlatSurface[] } {
-  const { renderCeilings = false, wallHeightCap = 0, movableSectors } = options;
+  const { renderCeilings = false } = options;
   const transfers = options.transfers ?? ownTransfers(map);
   const batches = new BatchSet();
   const texSize = (kind: SurfaceKind, name: string) => bank.size(kind, name);
@@ -821,7 +836,7 @@ function buildMoverBatches(
   for (const ss of index.subsectorsOf(sectorIndex)) {
     processFlat(map, polys[ss], ss, batches, texSize, renderCeilings, flatFans, transfers, holeFill);
   }
-  buildMoverWalls(map, sectorIndex, batches, texSize, wallHeightCap, movableSectors, transfers, index, wallQuads);
+  buildMoverWalls(map, sectorIndex, batches, texSize, options, transfers, index, wallQuads);
 
   return { batches, drawn: drawnBatches(batches, bank), wallQuads, flatFans };
 }
@@ -837,12 +852,21 @@ function buildMoverWalls(
   sectorIndex: number,
   batches: BatchSet,
   texSize: SizeFn,
-  wallHeightCap: number,
-  movableSectors: Set<number> | undefined,
+  options: MapMeshOptions,
   transfers: SectorTransfers,
   index: MoverIndex,
   wallQuads: WallOccluder[],
 ): void {
+  const { wallHeightCap = 0, movableSectors, movingSectors } = options;
+  // A mesh that exists only so a switch texture can be swapped on it never
+  // moves a vertex, so its walls are diced exactly like static ones and the
+  // occlusion fade can open a hole in them. That is not a corner case: one
+  // switch on a sidedef pulls its whole sector out of the static batch, and on
+  // NUTS.WAD MAP01 that is the 12000-unit arena and the pen behind it, whose
+  // one-sided walls stand 900 units tall — undiced, no ball of fade could
+  // dissolve enough of one to see the player through it.
+  // Omitted `movingSectors` means assume they all move, which is the safe half.
+  const holdsStill = (s: number) => movingSectors !== undefined && !movingSectors.has(s);
   // Own sides always; a neighbour's side only when that neighbour is static —
   // it has no mover of its own to build it, and its upper/lower step is sized
   // from *this* sector's moving heights. A neighbour that is itself movable
@@ -860,9 +884,7 @@ function buildMoverWalls(
       wallHeightCap,
       wallQuads,
       transfers,
-      // A mover's walls change height every tic, and `refreshMoverMesh` may only
-      // rewrite buffers whose quad count held still — see WALL_CHUNK_LEN.
-      false,
+      holdsStill,
       includeSide,
     );
   }
@@ -1404,7 +1426,8 @@ interface WallSpec {
 /**
  * True when the quad was drawn — what vanilla's `toptexture`/`bottomtexture` being non-zero decides
  * (see `addTwoSidedSide`'s midtexture clip). `bandVertically` off keeps the wall one quad tall
- * however high it is: see `WALL_CHUNK_LEN` for why mover geometry must.
+ * however high it is, which a wall whose height can move must be: `processLine`'s `holdsStill`
+ * decides it, and `WALL_CHUNK_LEN` says why.
  */
 function addWall(
   batches: BatchSet,
@@ -1510,7 +1533,9 @@ function buildWalls(
     // moving sector's heights, so it can't stay in a batch nobody rebuilds
     // (see MapMeshOptions.movableSectors).
     if (movableSectors && touchesAny(map, line, movableSectors)) continue;
-    processLine(map, line, lineIndex, batches, size, wallHeightCap, occluders, transfers, true);
+    // Nothing here can move: `movableSectors` took every line that touches a
+    // mover out of this batch wholesale, a few lines up.
+    processLine(map, line, lineIndex, batches, size, wallHeightCap, occluders, transfers, () => true);
   }
 }
 
@@ -1523,8 +1548,14 @@ function processLine(
   wallHeightCap: number,
   occluders: WallOccluder[],
   transfers: SectorTransfers,
-  /** Passed through to `addWall`: off for mover geometry, whose quad count must not move with its heights. */
-  bandVertically: boolean,
+  /**
+   * Whether this sector's floor and ceiling hold still. A quad may only be
+   * diced vertically when *both* the sectors that size it do: its band count is
+   * a function of its height, and `refreshMoverMesh` may only rewrite buffers
+   * whose quad count held still — see `WALL_CHUNK_LEN`. Static geometry answers
+   * true for everything; a mover mesh asks `movingSectors`.
+   */
+  holdsStill: (sectorIndex: number) => boolean,
   /**
    * Per-side filter: a side is only built if this returns true for its owning
    * sector (undefined = build every side, the static-batch case, which now
@@ -1575,7 +1606,7 @@ function processLine(
         frontSide: true,
       },
       occluders,
-      bandVertically,
+      holdsStill(front.sector),
     );
     return;
   }
@@ -1586,6 +1617,10 @@ function processLine(
   // against the *drawn* heights opposite it. `addTwoSidedSide` resolves those
   // from the two sector indexes rather than taking them apart, so the only thing
   // that differs between the two calls is which side is doing the looking.
+  // Every tier of a two-sided line is sized from *both* sectors — the lower
+  // from the two floors, the upper from the two ceilings — so one of them
+  // moving is enough to keep the whole side undiced.
+  const bandVertically = holdsStill(front.sector) && holdsStill(back.sector);
   if (!includeSide || includeSide(front.sector)) {
     addTwoSidedSide(batches, size, line.flags, v1, v2, front, front.sector, frontSec, back.sector, backSec, cap, occluders, lineIndex, true, transfers, bandVertically);
   }

@@ -596,7 +596,7 @@ like, in that order: the camera first, being the one a player actually goes look
 **Camera** is `#cameramode-select`, whose `<option>` values are the `CameraMode` strings themselves
 (`auto`, the default, vs `manual`); it is owned by `game/autocamera.ts`
 (`getCameraMode`/`setCameraMode`) and read per tic, so a change applies to the level already running
-(docs/render.md § Auto camera). It sits here rather than in the Controls key list because the mode
+(docs/camera.md § Auto camera). It sits here rather than in the Controls key list because the mode
 is not a key's behavior — the `+ - [ ]` rows there note they act in manual mode only.
 
 The frame limit is `#fpscap-select`, and its `<option>` values *are* the capped rates
@@ -655,7 +655,7 @@ entirely.
 ## Right mouse button
 
 The right button has **no fixed job**: the camera turns with `Q`/`E` rather than by dragging
-(docs/render.md § Camera orbit), which left the button free. `#rightmouse-select` binds it to one of
+(docs/camera.md § Camera orbit), which left the button free. `#rightmouse-select` binds it to one of
 `RightMouseAction`'s three values — `previousweapon` (the default), `use` (same as `Space`), or `none` —
 and the `<option>` values *are* those strings, so the control needs no mapping table.
 
@@ -682,7 +682,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.musicVolume` | `audio/music.ts` | docs/music.md § Volume |
 | `topdoom.autorun` | `game/player.ts` (`getAutorun`/`setAutorun`) | docs/movement.md § Movement speed and straferunning |
 | `topdoom.rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
-| `topdoom.cameraMode` | `game/autocamera.ts` (`getCameraMode`/`setCameraMode`) | docs/render.md § Auto camera |
+| `topdoom.cameraMode` | `game/autocamera.ts` (`getCameraMode`/`setCameraMode`) | docs/camera.md § Auto camera |
 | `topdoom.fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
 | `topdoom.profiler` | `ui/devmode/profilerhud.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
 | `topdoom.dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |
@@ -804,10 +804,12 @@ player has no legitimate reason to reach for them:
 
 - **The debug overlay** (`DebugHud.update`, whose lines come from `Game.debugLines`) — off, `#hud`
   shows only the fps counter; on, the full
-  map/pos/sector/camera-state/awake-monster-count block. **Everything it prints is live state.** It
-  used to end with two static hotkey hint lines as well, which were the game's only controls
-  reference and so invisible to exactly the players who needed them; that list is now the menu's
-  Settings tab (docs/menu.md § Settings tab).
+  map/pos/sector/camera-state/awake-monster-count block. **Everything it prints is live state.** The
+  last line is the auto camera's own readout — `autoCameraReadout` in `game/autocamera.ts`, which
+  lives beside the getters it prints rather than in `game.ts` (docs/camera.md § Auto camera), and
+  reads `manual` in the other camera mode. It used to end with two static hotkey hint lines as well,
+  which were the game's only controls reference and so invisible to exactly the players who needed
+  them; that list is now the menu's Settings tab (docs/menu.md § Settings tab).
 - **The profiling overlay** (`#profiler-hud`, below) — shown when `DEVMODE` *and* its checkbox agree.
 - **The Settings tab's `#controls-dev` section**, the only place `N`/`P` is listed in the UI —
   revealed once in the `Menu` constructor, so a shipped build never advertises a key it ignores.

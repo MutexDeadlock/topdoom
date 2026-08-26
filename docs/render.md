@@ -1,10 +1,11 @@
 # Rendering
 
 `src/render/bsp.ts`, `src/render/solids.ts`, `src/render/mapmesh.ts`, `src/render/occlusion.ts`,
-`src/render/camera.ts`, `src/render/textures.ts`, `src/render/textureanim.ts`
+`src/render/textures.ts`, `src/render/textureanim.ts`, `src/render/viewport.ts`
 
-The level's own geometry: rebuilding it, lighting it, fading it and framing it. Things drawn *in*
-that level are docs/sprites.md; the loop that drives a frame is docs/frameloop.md.
+The level's own geometry: rebuilding it, lighting it, fading it and what a frame of it costs. The
+camera that looks at it — orbit, aim lead, the auto framing — is docs/camera.md; things drawn *in*
+the level are docs/sprites.md; the loop that drives a frame is docs/frameloop.md.
 
 ## BSP polygon reconstruction (`bsp.ts`)
 
@@ -296,8 +297,9 @@ matters, since a bigger map has both more geometry to scan and more movers scann
 new positions/UVs/colours into the existing attributes and updates the `WallOccluder`/`FlatSurface`
 records field-by-field — the faders hold both the arrays and smoothing state indexed into
 them, so replacing either would restart a moving wall's fade. (A height change never alters how many
-chunks a wall is cut into, since that follows its 2D footprint, so a mover keeps its records across
-a refresh however long its walls are.) It returns false, changing nothing,
+chunks a wall is cut into *along its length*, since that follows its 2D footprint — the vertical cut
+is the one it does move, and § A mover dices vertically only where nothing moves is about that.)
+It returns false, changing nothing,
 whenever the sector's batches no longer line up with the buffers they were built from (a quad
 appearing or vanishing — an upper step shrinking to nothing as a door finishes opening); only then
 does `rebuild` throw the mesh away and build a fresh one. Which means the fresh-build path stays the
@@ -332,6 +334,35 @@ Repro for both: literalism.wad MAP18, whose voodoo-doll scripts (docs/specials.m
 keep ~95 sectors moving per tic over 10.6k subsectors and 14.5k linedefs. Before the two, that map
 spent the entire frame in `rebuildAround` and the DEVMODE profiler's "Specials" row read in the
 hundreds of milliseconds.
+
+### A mover dices vertically only where nothing moves
+
+`addWall` cuts a wall into bands of `WALL_CHUNK_LEN` **both ways**, and the occlusion fade needs the
+vertical half as much as the horizontal one: alpha lives at quad corners, so a wall that is one quad
+tall has no vertices anywhere near a sightline crossing its middle and no ball of fade can dissolve
+it (§ The fade is a hole, not a wall).
+
+A mover cannot always have that cut. The band count is `ceil(height / WALL_CHUNK_LEN)`, so a moving
+height changes *how many quads a wall is* — and the refresh above may only rewrite buffers whose
+count held still. So the rule is per quad, and it is about the sectors that **size** it rather than
+the sector that owns it: a quad dices vertically when the floors and ceilings it is measured from
+cannot move. A one-sided wall reads one sector; every tier of a two-sided side reads two (the lower
+spans the two floors, the upper the two ceilings), so one moving neighbour is enough to leave that
+whole side undiced. `processLine`'s `holdsStill` asks it, against
+`MapMeshOptions.movingSectors`.
+
+That set is deliberately **not** `movableSectors`. A sector leaves the static batch either because a
+special drives its height *or* because a switch texture on one of its walls has to be swapped, and
+only the first stops the dicing — `computeMovingSectors` is the first half alone, and
+`computeMovableSectors` is it plus the switch hosts (`game/specials/mapscan.ts`).
+
+The distinction is not a corner case. One switch on one sidedef pulls its whole sector out of the
+static batch, and on NUTS.WAD MAP01 that is the 12000-unit arena the player stands in *and* the pen
+behind it, whose one-sided walls are 900 units tall — as single quads, the one thing on that map
+that could never fade, and with the camera parked behind one at (-505, 6931) looking south the
+player was simply gone. Treating a mover that only carries a switch as the static geometry it
+actually is costs about a quarter more mover quads on a map with real movers (DOOM2 MAP01 137 →
+169, EPIC MAP05 2515 → 3118) and turns NUTS MAP01's 689 into 4065, which is still nothing.
 
 ## Solid structures (`solids.ts`)
 
@@ -544,17 +575,38 @@ corners. `update` then runs in two passes:
 
 1. **Where is the view actually blocked.** Per line side, `segmentCrossT` against each target's
    camera→target sightline; a crossing counts only where some non-passable quad's `[botH, topH]`
-   spans the crossing height. Each such crossing is filed as a point `(x, y, h)` plus the target's
-   own `fadeFloor`, once per line side per target however many tiers it passes through.
-2. **Dissolve a ball around each crossing.** Every chunk corner within `FADE_RADIUS` of a crossing
-   point is pulled toward that crossing's floor: full strength inside `FADE_CORE`, eased out by
-   `FADE_RADIUS`. Each corner measures from its **own height**, so the hole rounds off vertically
-   as well as along the wall. Where several crossings reach one corner, the lowest alpha wins.
+   spans the crossing height. Each such crossing is filed as a point `(x, y, h)` plus the index of
+   the target it was stopped for, once per line side per target however many tiers it passes
+   through — everything else about the hole is a property of that target and lives with it
+   (`TargetPlanes`).
+2. **Dissolve a ball around each crossing, cut off at the target.** Every chunk corner within that
+   crossing's own radius, and on the camera's side of the plane through the target, is pulled toward
+   its floor: full strength inside half that radius, eased out by the whole of it. Each corner
+   measures from its **own height**, so the hole rounds off vertically as well as along the wall.
+   Where several crossings reach one corner, the lowest alpha wins.
+
+**The hole stops at the target, and does not carry on past it.** A ball centred on the crossing
+reaches as far behind the target as in front of it, and everything it dissolves back there was never
+hiding anything: the target is already in front of it. In a small room that is the whole room — DOOM
+E1M2 at (-1906, 1056) stands in a 72-unit-high closet whose east wall is crossed 50 units away, and
+a 192-wide ball around that crossing took the west wall (linedefs 696 and 884, the ones the player
+is *facing*) with it, leaving a room with no walls and a floor that ran on into the next one. So
+each target carries the plane through itself facing the camera (`TargetPlanes`, one normal and one
+offset per target for the frame), and a corner past that plane is skipped outright rather than
+folded. The normal is deliberately **not** unit length: every test compares two dot products taken
+against that same normal, so scaling it changes neither side, and skipping the normalise matters at
+the thousand-odd mover faders a frame refills. The cut costs three multiplies per corner, shares its horizontal and vertical halves across
+a quad's four, and lands exactly at the target's own billboard — so what it leaves standing is what
+draws *behind* the player anyway.
 
 **Both cuts are load-bearing, and the vertical one is easy to forget.** With alpha written only at a
 quad's left and right edges the hole is a disc in plan view, which on screen is a full-height band
 of wall with hard vertical sides — indistinguishable from the whole-wall fade it replaced, and the
 first thing a player notices. Banding the wall is what gives that gradient somewhere to turn over.
+Where a wall does not get it, a tall one cannot be faded at all: its corners are hundreds of units
+from any sightline crossing its middle, and the ramp is 192 wide. That is the one place a mover
+mesh had to withhold it, and § A mover dices vertically only where nothing moves is how far that
+now goes.
 
 **The split between the passes is the point.** An earlier version ramped along the crossed line
 instead — distance from the crossing measured *within that linedef* — and DOOM walls are built from
@@ -569,19 +621,30 @@ Continuity is by construction rather than by bookkeeping: adjacent chunks share 
 position, and so do adjacent *linedefs* at a shared vertex, so every wall meeting at a point
 computes its alpha from the same distance and the gradient crosses both kinds of joint smoothly.
 
-**`FADE_RADIUS` and `FADE_CORE` are the two dials for the size of the hole** — its outer edge and
-its full-strength middle — and both faders read both, so a hole spanning a floor and the wall behind
-it is one shape rather than two. They are feel dials in the strict sense: `tests/render/occlusion-fade.test.ts`
+**`FADE_RADIUS` and `FADE_CORE` are the two dials for the size of the hole the *player* opens** —
+its outer edge and its full-strength middle — and both faders read both, so a hole spanning a floor
+and the wall behind it is one shape rather than two. `holeAlpha` takes the radius per crossing and
+cores at `FADE_CORE_FRACTION` of it, so a target that opens a narrower hole (§ Which sightlines a
+wall fades for) opens the same shape scaled rather than a second one. That fraction is where the
+core is actually set: `FADE_CORE` is the player's radius *through* it, exported for the tests, so
+the ramp and the constant they assert against cannot drift apart. They are feel dials in the strict sense: `tests/render/occlusion-fade.test.ts`
 **imports them and sizes its fixtures from them** rather than mirroring their values, so either can
 be retuned without a test going red. A test that reddens on a retune is pinning the dial, and is a
 bug in the test.
 
-One relationship is worth knowing when turning them, though nothing enforces it. Alpha only exists
-at chunk corners, so a crossing lands `WALL_CHUNK_LEN / 2` from the nearest one at worst: with
-`FADE_CORE` at least that, the chunk over the player always reaches full strength, and below it the
-worst-placed crossing settles a little short — softer, not broken. The flats half has the same shape
-(§ Flats), and the test asserts whichever of the two applies at the current setting rather than
-picking one.
+**One relationship is not optional, and was learned the hard way.** Alpha only exists at chunk
+corners, so a crossing lands `WALL_CHUNK_LEN / 2` from the nearest one at worst, and a `FADE_CORE`
+under that cannot open a hole wider than a single chunk however the ramp is shaped. On a short wall
+one chunk is a perfectly good hole. On a **tall occluder seen at a grazing angle** it is a slit:
+EPIC.WAD MAP05 at (3273, -5737) stands beside a 256-unit ring wall whose top the camera eye clears
+by 35 units, so the wall fills the frame and one chunk of hole across it showed a staircase and no
+player at all. `FADE_RADIUS` is therefore sized off the chunk — `WALL_CHUNK_LEN * 1.5`, so
+`FADE_CORE` is `WALL_CHUNK_LEN * 0.75` — rather than set as a bare number. The old 96/48 sat
+*below* the relationship this paragraph has always described. Measured at that spot: 96 and 128 hide
+the player, 160 shows him through heavy dither, 192 shows him cleanly, and 400 turns the level to
+swiss cheese. DOOM2 MAP01's opening room and E1M1's corridor are indistinguishable at 192 from what
+they were at 96. The flats half has the same shape (§ Flats), and the test asserts whichever of the
+two applies at the current setting rather than picking one.
 
 The real invariant is elsewhere: the crossing point is *not* `segmentCrossT`'s return value — that
 parameter runs along the sightline, not along the wall; `update` interpolates the point from it.
@@ -650,14 +713,40 @@ fanning sightlines out from one camera used to gut a room between them, each at 
 a flat cap fading at full strength right up to its edge popped a wall the moment a monster crossed
 it. Where several targets cover one edge, the lowest alpha wins.
 
+**And its own hole size** (`FadeTarget.fadeRadius`), which for a monster is half the player's
+(`MONSTER_FADE_RADIUS`). The reason is not cost. The player's hole is centred on the one place the
+view has to be readable, so what it dissolves is what you were looking at anyway; a monster's is
+centred somewhere else entirely, and everything it dissolves is context you wanted. EPIC.WAD MAP02
+at (-4368, -2576) is the case: standing at a skull switch with a spectre 311 units off directly
+beyond the wall it is on, the monster's sightline crosses that wall a few units from the player, and
+a `FADE_RADIUS`-wide hole there took the switch with it. The narrower hole gives up the whole-chunk
+guarantee § The fade is a hole, not a wall insists on — a monster behind a tall wall seen edge-on is
+read through a slit — and that is the right trade for a target you need to *notice* rather than to
+frame.
+
 `WallFader.update` also takes an `openingInto` callback (`World.openingInto`, threaded through so
 this class needs no `World` reference — the allocation-free form, since chunking made a per-quad
 record allocation per frame expensive) and skips fading any quad whose own `[botH, topH]` sits
 *inside*
-its line's vertical opening — a masked middle texture (grate, fence, barred window) is built inside
-that opening (§ Mesh building), so a quad living inside it is the passable gap itself: a shot and a look
-already pass straight through it, so fading it has nothing left to reveal. The lookup is per line,
-but the test it feeds has to be a
+its line's vertical opening **and whose texture is masked** — a grate, fence or barred window is
+built inside that opening (§ Mesh building), so a quad living inside it is the passable gap itself:
+a shot and a look already pass straight through it, so fading it has nothing left to reveal.
+
+**The masked half used to be assumed rather than asked, and that was the bug.** Nothing stops a map
+hanging a *solid* texture in a full-height opening and calling it a wall — EPIC.WAD MAP05 at
+(3231, -5243) is screened by a curved run of two-sided lines carrying `EBIGBRIK` over a 0..1288
+opening, and with the premise unchecked it was the one thing on the map that never faded at all,
+which reads as the fade being broken rather than exempt. `WallFader.masked` reads it off the batch's
+own material: `MaterialBank.get` sets a non-zero `alphaTest` for exactly the bitmaps with fully
+transparent texels, and `setFrame` deliberately holds that across an animation's frames, so it is
+stable to read and worth memoising per batch key. Censused over the maps to hand, what changes is
+only the fake walls: DOOM2 MAP01 keeps both its masked middles (`MIDBARS3` — the imp closet below —
+and `BRNSMAL1`) exempt and has no solid ones at all, MAP02 and MAP07 have no middles, and on EPIC
+MAP05 the vines, rails and windows stay exempt while `ESTEP02`, `EBIGBRIK` and the rest of the
+mapper's fake walls start fading. It is not free: at that spot, fading goes 0.98 → 1.31 ms and the
+frame 3.6 → 4.5 ms CPU, which is what a wall that large joining in costs.
+
+The lookup is per line, but the test it feeds has to be a
 **per-quad** check, not a per-*line* one — an earlier version gated on `World.blocksSight(line)` for
 the whole line, which wrongly also suppressed fading for that line's upper/lower step quads (they sit
 *outside* the opening — the riser exposed where the neighbouring floor/ceiling falls short — and are
@@ -843,208 +932,6 @@ Two limits on the substitution, both load-bearing:
   instead flattens BOOMEDIT MAP01's colormap room (sectors 444-452, whose control sectors sit at
   floor level only to carry `GRYMAP`/`REDMAP`/`BLUMAP`/`GRNMAP`) into a room with no walls.
 
-## Camera orbit and camera-relative movement (`camera.ts`, `game/input.ts`, `game/player.ts`)
-
-`TopDownCamera.yawDeg` lets the camera orbit around the followed point by pressing `Q`/`E`
-(`KEY_YAW_STEP`, a 45° step per press). Tilt and distance are unaffected, so the camera always stays
-the same amount off vertical.
-
-**Orbiting is keyboard-only on purpose.** A right-mouse drag used to rotate it too, and that fought
-the cursor: the mouse is the aiming hand, so a drag that swings the world underneath the crosshair
-moves the aim point as a side effect of turning. The freed right button is now a menu-bound action
-instead (docs/menu.md § Right mouse button).
-
-`viewerAngleDeg` (`yawDeg - 90`) is the DOOM-space bearing from the followed point to the camera, and
-is what sprite rendering and player movement both key off — at the default `yawDeg = 0` it's `-90`,
-matching the old fixed south-facing camera exactly, so nothing downstream needed a special case for
-"not yet orbited."
-
-A `stepYaw` call (Q/E) queues its step as a `targetYawDeg` for `tick` to animate `yawDeg` towards
-(`YAW_STEP_SMOOTH_RATE`) rather than jumping. Plain assignment (`camera.yawDeg = ...`, whose only
-remaining caller is the instant reorient on spawn/teleport) still jumps immediately: the `yawDeg`
-setter keeps `targetYawDeg` in lockstep so nothing left over from a prior Q/E animates after an
-instant set. **Nothing may assign `yawDeg` unconditionally every frame** — even a no-op `-= 0` snaps
-`targetYawDeg` back to the current (still mid-animation) value and cancels a Q/E step after one frame
-of smoothing, which is what forced the removed drag handler to guard on a nonzero delta.
-
-All of that input handling lives in `TopDownCamera.applyYawInput`, which `game.ts` calls once a
-**tic**. Holding Q/E auto-repeats the same 45° `stepYaw` every `KEY_YAW_REPEAT_INTERVAL` —
-`qHoldTime`/`eHoldTime` accumulate `dt` while `Input.held` is true and fire+reset once the interval
-is reached, alongside the immediate step fired on `Input.pressed`. The interval is tuned to roughly
-the time one step's smoothing takes to settle, so a hold reads as continuous rotation made of chained
-steps.
-
-Movement (`Player.update`'s `forwardDeg`, passed as `camera.viewerAngleDeg + 180`) is camera-relative
-rather than DOOM-axis-relative: `W` always moves the player away from the camera *on screen*,
-regardless of orbit. `game.ts` recomputes this every tic from the live camera angle.
-
-## The camera is simulation state
-
-`TopDownCamera` splits into `tick(dt, pos, cursor)` — which advances the smoothed follow point and
-`yawDeg` — and `applyToCamera(alpha)`, which interpolates between the last two tics and is the only
-thing that moves the `THREE` camera. **`tick` runs on the simulation clock**, which is unusual for
-something in `src/render/` and is forced rather than stylistic:
-
-- the pointer ray is cast through this camera (`rayFor` → `pickMonster`, `pointerToPlane`), and
-  where that ray lands sets `Player.angle` — the angle every shot is fired at;
-- `viewerAngleDeg` is the basis WASD movement is rotated into, so it decides *which direction the
-  player moves*.
-
-Both would otherwise be functions of how many times the render loop had smoothed the camera, i.e. of
-framerate. Feel is unchanged: both smoothers are `1 - exp(-rate * dt)`, framerate-independent by
-construction, so sampling at 35 Hz and interpolating traces the same curve.
-
-Two angles come out of this, and mixing them up is the easy mistake. `viewerAngleDeg` is **tic-exact**
-and is what the simulation reads; `viewAngleDeg` is the interpolated pose actually drawn, and is what
-billboards must orient to — using the tic-exact one there leaves every sprite a fraction of a yaw snap
-out of line with the walls behind it. docs/frameloop.md § Interpolation.
-
-**The camera outlives the level**, since it belongs to the `Viewport` and a load only replaces the
-`Game` — so the follow point's exponential smoother still holds the *outgoing* level's position when
-the next one starts. `loadMapByIndex` therefore ends the player's placement with `snapTo`, which puts
-the smoothed point, the interpolation source and the `THREE` camera itself on the new player position
-at once; without it a level change or a save restore opens with the camera gliding in from wherever
-the last level left it. It poses the `THREE` camera immediately rather than leaving that to the next
-`applyToCamera` because two paths render without one (the pause loop's `stillFrame`, and
-`captureThumbnail`). The yaw has had this since the beginning — the `yawDeg` setter is the same
-collapse for the orbit angle — which is why `snapTo` is called *after* whichever branch set the yaw.
-
-**A teleport is the same discontinuity** and takes the same pair, in the same order (docs/specials.md
-§ Teleporters). It used to snap only the yaw, which left the camera flying to the landing spot over
-roughly a third of a second while the player was already there and shooting. What still glides after
-either snap is the aim lead alone — `tick` re-applies it to the fresh target on the very next tic —
-which is bounded by `maxLead` and is the intended follow-the-cursor feel rather than a leftover.
-
-## Aim lead
-
-The follow point is nudged `aimLead` (0.18) of the way from the player toward the cursor, capped at
-`maxLead` 220 units so the player never leaves the screen. **What it leads toward is always the
-cursor's own aim-plane point (`pointerToPlane`), never what auto-aim locked onto**, and the two are
-not the same place: the lock returns the monster's anchor, which for a billboard under the pointer
-sits somewhere else entirely than where that pointer meets the plane. Feeding `tick` the lock made
-the view lurch every time the cursor crossed a monster and again when it left — motion the player
-never asked for, from a system that is supposed to be invisible. `game.ts: updateLivingPlayer`
-therefore returns the plane point specifically, while `Player.angle` and the shot keep the lock
-(docs/combat.md § Auto-aim).
-
-**The aim plane sits at `TopDownCamera.followHeight`, not at the player's own `z`.** The two are the
-same height once the follow smoother has caught up — the camera is handed `eyeZ` and the plane sits
-`AIM_HEIGHT_OFFSET` below that — but they part company during a fall, and that is exactly when it
-matters: the camera lags by up to the whole drop for about a third of a second, so a plane pinned to
-the player's live `z` drifts away from the camera under it, moving the cursor's world point and
-turning the player toward it. Deriving the plane from the camera locks the two together, so a fall
-pans the view and changes nothing else. Boom's deep water (docs/specials.md § Deep water) is what
-surfaced this: 242 is render-only, so walking into a pool drawn as a flat sheet of water still drops
-the player up to 200 units, with nothing on screen to explain the swing.
-
-## Auto camera (`game/autocamera.ts`, `camera.ts`)
-
-The default camera mode frames the view from the space around the player: shut-in geometry pulls
-the camera down to `AUTO_NARROW_DISTANCE`/`AUTO_NARROW_TILT` (350u / 50°), open areas push it out
-to `AUTO_WIDE_DISTANCE`/`AUTO_WIDE_TILT` (720u / 70°). The "Camera mode" menu setting
-(`topdoom.cameraMode`, owned by `game/autocamera.ts`) switches between `auto` and `manual`;
-manual keeps the 480u / 60° constructor defaults and the `+ - [ ]` keys. **The framing keys are
-inert in auto mode** — they act only while the mode is manual, the same inert-not-error shape the
-DEVMODE map keys have outside dev mode.
-
-**The probe** (`measureOpenness`) casts `OPENNESS_RAY_COUNT` (24) rays from the player, every 15°
-at **fixed world angles**. Each ray walks the linedef grid
-(`World.forEachLineAlongSegment` + `segmentCrossT` over `lineOverlapEnds`, the
-`projectileStepBlocker` shape) out to `OPENNESS_RANGE` (1280u) and stops at the nearest line whose
-opening no longer straddles the player's eye (`blocksProbe`). Sector heights are read live, so a
-door opening widens the framing on the next tic; `isSolidWall` (movement) and `blocksShot`
-(bullets pass railings) are both deliberately not it. The full fan costs ~0.04 ms per tic on
-NUTS.WAD MAP01, runs under the `Camera` profiler label, and in manual mode never runs at all.
-
-**The fan runs at the player's eye, not flat through the map.** It starts at `player.ts`'s
-`EYE_HEIGHT` over the feet — the same eye `Player.eyeZ` gives the camera to follow — and a ray
-ends at the first line whose opening lies wholly above or wholly below it. `World.blocksSight` is
-**not** the test, even though it is the one the fog of war uses: it asks only whether a line has
-*any* vertical opening, which on a map built out of height steps rather than closed rooms is
-nearly never. EPIC.WAD MAP02 at `(-4018, -3014)` is the case this was found on — a railed pen 48
-to 144 units below the ground around it, where every one of the 24 rays ran the full 1280 units
-over the pen wall and pinned both dials at 1, framing a two-cell pen as wide open. With the eye
-test the same spot reads `spread` 0.43 / `ahead` 0.16. A step **down** still reads open, which is
-right: the player really can see out over a drop.
-
-The camera does see over that pen wall, and that is not a contradiction: these two dials answer
-how much *room the player has*, not how much is on screen. The fog of war is the query that
-answers the latter, which is why it keeps the height-blind test (docs/fogofwar.md § Sight
-blocking).
-
-**Two aggregates come out of that one fan, and each drives one dial**, because the two dials do
-different jobs:
-
-- **`spread`**, the **median** ray, drives the **zoom**. How much room surrounds the player is a
-  property of the place, not of where they happen to be looking. It is a median and not a mean
-  because a mean is dominated by whichever few directions happen to be long: standing in the
-  north-west corner of DOOM2 MAP01's opening room, 15 of the 24 rays stop inside 256 units and
-  six run 1100–1540 down the length of the room, which pulls the *mean* to 478 (zoom 603u, as
-  open as a hall) while the median is 128 (zoom 420u, correctly boxed in). The median reads as
-  "the radius within which half of all directions are walled off", which is the question the zoom
-  is actually asking. Order statistics are continuous in their inputs, so it cannot pop as the
-  player walks and the ray ordering churns.
-- **`ahead`**, the mean weighted by `max(0, cos)` of each ray's angle off the bearing the camera
-  looks along, drives the **tilt**. Tilt is what trades a top-down view of the player's
-  surroundings for reach up the screen, so it is inherently directional: an open room ahead is
-  worth leaning into, a wall two steps ahead is not. A single undirected measure cannot express
-  that, and measurably did not — standing in E1M1's corridor at (1516, -2503), opening the door
-  into the room east moves `spread` from 0.00 to 0.15 but `ahead` from 0.00 to 0.50, and turning
-  the camera 180° to face the near wall drops `ahead` back to 0.06 with `spread` untouched.
-
-**The rays stay world-fixed; only the `ahead` weights rotate.** That is what keeps the
-measurement steady: no ray ever sweeps across a doorjamb as the camera turns, and the cosine lobe
-falls off smoothly rather than at a cone edge, so a Q/E step glides instead of popping. The
-bearing is `camera.viewerAngleDeg + 180` — the camera's own orbit, the same expression the
-movement basis and the audio listener take, **not** the player's facing, which follows the mouse
-and would twitch the framing with every flick of the crosshair. `ahead` is normalised by the
-weight actually used rather than a constant, since a cosine lobe's sum over a fixed ray fan
-ripples slightly as the lobe rotates between rays.
-
-Each aggregate maps to 0..1 through **its own** shut-in/wide-open window — `SPREAD_NEAR`/`FAR`
-(64/400) and `AHEAD_NEAR`/`FAR` (128/640). They cannot share one: a median runs roughly half of
-what the cosine-weighted mean does, so a window that suits one saturates the other. Both were
-picked off measured distributions rather than guessed — sampling every thing position in E1M1,
-DOOM2 MAP01/MAP07 and EPIC MAP01 — which is also how the original 192/960 was caught leaving the
-wide end of the framing unreachable on every one of those maps. The eye test above left both
-windows where they were — on maps built out of rooms, whose walls close in 2D anyway, it barely
-moves the distributions at all. What it changes is the maps that aren't.
-
-**Two smoothing rates on purpose.** Both measured opennesses are damped at `OPENNESS_SMOOTH_RATE`
-(1.5/s) inside `AutoCamera` — the ~1 s "breathing" of the framing — while the camera's own
-`distance`/`tiltDeg` chase their targets at the much faster `FRAMING_SMOOTH_RATE` (10/s,
-`camera.ts`). The split keeps the two dials independent: manual-mode key response stays snappy
-while auto stays gentle.
-
-**Framing is simulation state**, exactly like the follow point and yaw (§ The camera is
-simulation state): `AutoCamera.tick` runs on the tic clock — after movement, so the probe sees
-this tic's position, and before `camera.tick`, whose damping step advances toward the fresh
-target — and `TopDownCamera` interpolates `prevDistance`/`prevTiltDeg` per frame in
-`applyToCamera`. The aim ray reads last tic's settled framing at alpha 1, the same one-tic lag
-the yaw has. `distance`/`tiltDeg` are read-only, and have the two routes `yawDeg` has:
-`snapFraming(distance, tiltDeg)` **jumps** (value, target and prev together, the framing twin of
-`snapTo`), `targetDistance`/`targetTiltDeg` glide.
-
-**A level load seeds, a teleport glides.** `AutoCamera.seed` clears `initialised` and delegates to
-`tick` — which is what makes that one measurement unsmoothed — then `snapFraming`s the result,
-called after the spawn yaw is set (so `ahead` already looks the way
-the level opens) and before the follow point's `snapTo` so the snap poses the
-camera already framed and a level never opens mid-zoom. `seed` and `tick` are both no-ops in
-manual mode, so the mode gate lives with the setting's owner rather than at each call site. A
-teleport deliberately does *not* re-seed: the position must cut, but a zoom/tilt cut is itself a
-lurch, and the damped settle to the destination's framing reads as intended.
-
-**Framing is not in the save format**, and does not need to be in auto mode: it is a pure
-function of world state, position and yaw, so a restore recomputes it through `seed`. In manual
-mode it is a player choice that simply isn't persisted — a restore keeps whatever the session's
-camera already holds, since the camera outlives the level.
-
-The hard envelope — `MIN/MAX_CAMERA_DISTANCE` (200/2400), `MIN/MAX_TILT_DEG` (10/70) — is
-enforced by `TopDownCamera` itself, on both the jump route (`snapFraming`) and the glide route
-(`targetDistance`/`targetTiltDeg`), so no writer has to remember it: the
-manual keys just add their step and saturate. The auto camera's own endpoints sit inside it, so
-in practice only the manual keys ever reach it.
-
 ## What a frame costs (`viewport.ts`)
 
 **This renderer is fragment-bound end to end.** E1M1 draws 32 calls and 5450 triangles, and GPU time
@@ -1087,8 +974,8 @@ one dial for how much *already-explored* level is on screen** — the fade start
 fraction rather than being its own number.
 
 Fog range is measured from the camera *eye*, which hangs `TopDownCamera.distance` (480 in manual
-mode, 360–720 under the auto camera) back from the player, so the view actually reaches that much
-less than `VIEW_DISTANCE` out in front.
+mode, 360–720 under the auto camera — docs/camera.md § Auto camera) back from the player, so the
+view actually reaches that much less than `VIEW_DISTANCE` out in front.
 
 **The camera's far plane is `VIEW_DISTANCE` itself**, not a number of its own (`camera.ts`): a far
 plane below it would clip geometry the fog hasn't finished hiding, and the two were once separately

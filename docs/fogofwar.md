@@ -29,7 +29,7 @@ wrong for sight in *both* directions:
 - A **ledge** the player could never see past at eye level is still on screen, because the eye that
   matters here is the *camera's*, hanging `TopDownCamera.distance` up and behind. So `blocksSight`
   stays height-blind on purpose, and the height-aware sibling the auto camera's probe uses
-  (`blocksProbe`, docs/render.md § Auto camera) is deliberately not it — reveal short of the frame
+  (`blocksProbe`, docs/camera.md § Auto camera) is deliberately not it — reveal short of the frame
   is the gameplay bug § Reveal radius describes, and a raised step is exactly where it would open.
 
 So the test is the vertical opening (`opening.top <= opening.bottom`), which is what `P_CheckSight`
@@ -84,7 +84,7 @@ own is what revisiting it would mean. (The frame figure assumes flat ground: loo
 `h` reaches `(240 + h)/tan(2.5°)` from the eye, so a vantage over a drop frames further still —
 measured across four map sets in docs/render.md § View distance.)
 
-**The auto camera moves the framing inside that ceiling, not past it** (docs/render.md § Auto
+**The auto camera moves the framing inside that ceiling, not past it** (docs/camera.md § Auto
 camera). At its wide end (tilt 70°, distance 720) the eye sits `cos(70°)·720 ≈ 246` up looking 20°
 below horizontal, so the top frustum edge points `27.5° − 20° = 7.5°` *above* horizontal and never
 meets the floor — the fog stays the binding limit and the identity holds exactly. At the narrow

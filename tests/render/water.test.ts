@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildMapMesh, litColor, type FlatSurface } from '../../src/render/mapmesh.ts';
-import { FADE_ALPHA, FlatFader } from '../../src/render/occlusion.ts';
+import { FADE_ALPHA, FADE_RADIUS, FlatFader } from '../../src/render/occlusion.ts';
 import { transfersOf } from '../../src/game/specials/transfers.ts';
 import { WATER_SURFACE_ALPHA } from '../../src/constants.ts';
 import { LF, NO_SIDE } from '../../src/wad/map.ts';
@@ -313,7 +313,7 @@ describe('render · deep water planes', () => {
     }
     const cx = sx / (surface.points.length / 2);
     const cy = sy / (surface.points.length / 2);
-    const submerged = { x: cx, y: cy, z: -32, fadeFloor: FADE_ALPHA };
+    const submerged = { x: cx, y: cy, z: -32, fadeFloor: FADE_ALPHA, fadeRadius: FADE_RADIUS };
 
     const fader = new FlatFader(built.flatSurfaces, built.flatMeshes);
     fader.update(1, cx, cy, 500, [submerged]);

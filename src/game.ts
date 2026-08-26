@@ -47,7 +47,7 @@ import { applyBarrelExplosion, type CombatContext, type DamageCause } from './ga
 import { SpriteFxLayer } from './game/spritefx.ts';
 import { ProjectileLayer } from './game/projectiles.ts';
 import { FogOfWar } from './game/fogofwar.ts';
-import { AutoCamera, getCameraMode } from './game/autocamera.ts';
+import { AutoCamera, autoCameraReadout, getCameraMode } from './game/autocamera.ts';
 import {
   applyCrushDamage,
   blocksCeilingLower,
@@ -56,7 +56,7 @@ import {
   SpecialsController,
   type TeleportDest,
 } from './game/specials.ts';
-import { computeMovableSectors } from './game/specials/mapscan.ts';
+import { computeMovableSectors, computeMovingSectors } from './game/specials/mapscan.ts';
 import type { ShootAim } from './game/specials/shootaim.ts';
 import { Forces } from './game/specials/forces.ts';
 import { transfersOf, type Transfers } from './game/specials/transfers.ts';
@@ -780,19 +780,27 @@ export class Game {
         top: colormapTint(this.wad, names.top),
       });
     }
-    const movableSectors = computeMovableSectors(map, this.switchPairs);
+    // Two sets, not one: everything that must leave the static batch, and the
+    // subset of it that actually moves a vertex — see `MapMeshOptions.movingSectors`.
+    const movingSectors = computeMovingSectors(map);
+    const movableSectors = computeMovableSectors(map, this.switchPairs, movingSectors);
     // A saved mid-motion mover's sector may have had its authored special
     // consumed, dropping it from the scan above — union it back in so its
-    // geometry stays mover-owned (docs/savegames.md § Apply order).
+    // geometry stays mover-owned (docs/savegames.md § Apply order). It is
+    // moving by definition, so it goes into both.
     if (restore) {
       const saved = [...restore.specials.movers, ...(restore.specials.ceilingMovers ?? [])];
-      for (const [sectorIndex] of saved) movableSectors.add(sectorIndex);
+      for (const [sectorIndex] of saved) {
+        movableSectors.add(sectorIndex);
+        movingSectors.add(sectorIndex);
+      }
     }
     // Shared with the mover meshes below, so a door's walls carry the same leaf attribute the
     // static ones do — without it a mover would be the one surface a light shone through.
     const subsectorAt = (x: number, y: number) => this.world.subsectorAt(x, y);
     this.built = buildMapMesh(map, this.materials, {
       movableSectors,
+      movingSectors,
       transfers,
       linesOf: (s) => sectorLines(map, s),
       subsectorAt,
@@ -841,10 +849,10 @@ export class Game {
     // After both branches, and after the yaw each sets: the camera belongs to
     // the session, not the level, so its smoothed follow point still holds the
     // outgoing level's — a load would open with the camera flying to the
-    // player. docs/render.md § The camera is simulation state.
+    // player. docs/camera.md § The camera is simulation state.
     this.autoCamera = new AutoCamera(this.world);
     // Seeded before snapTo, which poses the camera — so a level opens already
-    // framed rather than mid-zoom. docs/render.md § Auto camera.
+    // framed rather than mid-zoom. docs/camera.md § Auto camera.
     this.autoCamera.seed(this.player, this.view.camera);
     this.view.camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
     this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player.x, this.player.y, movableSectors);
@@ -857,7 +865,7 @@ export class Game {
       this.fogOfWar,
       this.built.polys,
       this.built,
-      { transfers, subsectorAt },
+      { transfers, subsectorAt, movingSectors },
       (secret) => {
         this.pendingExit = secret ? 'secret' : 'normal';
       },
@@ -874,7 +882,7 @@ export class Game {
         // docs/specials.md § Silent and line-to-line teleporters.
         if (!dest.silent) this.effects.spawnTeleportPair(from, dest, this.player.z);
         // The camera's follow point always snaps — a teleport should cut, not
-        // fly across the map to catch up (docs/render.md § The camera is
+        // fly across the map to catch up (docs/camera.md § The camera is
         // simulation state). The *yaw* differs by kind, and `yawDeg` is an
         // orbit the player owns with Q/E rather than anything slaved to their
         // facing:
@@ -1511,7 +1519,7 @@ export class Game {
     if (!this.playerDead) this.levelTime += TIC_SECONDS;
     // After movement (the probe runs from this tic's position) and before
     // camera.tick, whose damping advances toward the fresh target.
-    // docs/render.md § Auto camera.
+    // docs/camera.md § Auto camera.
     this.profiler.time('Camera', () => this.autoCamera.tick(this.player, camera));
     camera.tick(TIC_SECONDS, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, cursor);
 
@@ -1572,7 +1580,7 @@ export class Game {
     // The cursor hovering over a monster — or over a switch a shot triggers —
     // locks aim onto it, **on hover, not on click** (docs/combat.md § Auto-aim).
     // The camera leads on `cursor` and never sees either lock, which is
-    // docs/render.md § Aim lead's rule and the reason they are returned
+    // docs/camera.md § Aim lead's rule and the reason they are returned
     // separately at all.
     const { monster, shootLine, cursor } = this.profiler.time('Player', () => {
       // The tic-exact viewer angle, not the interpolated `viewAngleDeg` the
@@ -1587,7 +1595,7 @@ export class Game {
       // player's live `z`: identical once the follow smoother has caught up,
       // but during a fall — into a Boom water pool, off any ledge — a plane
       // that drops while the camera lags swings the cursor's world point and
-      // turns the player with it. docs/render.md § Aim lead.
+      // turns the player with it. docs/camera.md § Aim lead.
       const aimPlaneZ = camera.followHeight - EYE_HEIGHT + AIM_HEIGHT_OFFSET;
       const onPlane = camera.pointerToPlane(input.pointer.x, input.pointer.y, aimPlaneZ);
       const at = m ?? line ?? onPlane;
@@ -1922,11 +1930,8 @@ export class Game {
       `${this.currentMap}   ${this.title}`,
       `${fps} fps   ${this.built?.triangles ?? 0} tris   monsters awake ${this.things?.awakeMonsterCount() ?? 0}`,
       `pos ${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}   z ${this.player.z.toFixed(0)}   sector ${sector}`,
-      `cam ${camera.distance.toFixed(0)}u ${camera.tiltDeg.toFixed(0)}°tilt ${camera.yawDeg.toFixed(0)}°yaw ${
-        getCameraMode() === 'auto'
-          ? `auto spread ${this.autoCamera.spread.toFixed(2)} ahead ${this.autoCamera.ahead.toFixed(2)}`
-          : 'manual'
-      }`,
+      `cam ${camera.distance.toFixed(0)}u ${camera.tiltDeg.toFixed(0)}°tilt ${camera.yawDeg.toFixed(0)}°yaw`,
+      getCameraMode() === 'auto' ? autoCameraReadout(this.autoCamera) : 'manual',
     ];
   }
 }

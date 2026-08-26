@@ -75,7 +75,7 @@ Only the *visual* half of scrolling stays on the frame clock — `Forces.advance
 `Forces.tick` takes no delta at all.
 
 Also in the tic, and worth knowing because they look like presentation: the **camera**
-(docs/render.md § The camera is simulation state), the **fog-of-war reveal scan**
+(docs/camera.md § The camera is simulation state), the **fog-of-war reveal scan**
 (docs/fogofwar.md § What gameplay reads), and `SpriteAnimator.advance` — vanilla's frame durations
 are tic counts, so animation belongs on the tic clock.
 
@@ -166,7 +166,7 @@ Five rules:
   `drawPrev*` to its spawn point for the same reason. The camera's case is the widest, because it
   outlives the level: `snapTo` collapses the *smoother* as well as the window, or a level load —
   a discontinuous move of the follow point if ever there was one — opens with the camera flying in
-  from the previous level's position (docs/render.md § The camera is simulation state).
+  from the previous level's position (docs/camera.md § The camera is simulation state).
 - **Sprite *facing* is not interpolated.** It is quantised to 8 directions, so lerping it is work
   that changes nothing. Positions only — except the player's own billboard, whose facing is
   continuous and so uses a shortest-arc lerp.

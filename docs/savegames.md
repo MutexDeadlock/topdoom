@@ -240,7 +240,7 @@ per read either way and does not depend on it.
    one tic of movement. Only the accelerative integrators need the explicit restore on top.
 7. `new Player(world)` → `player.restore(...)`; camera yaw from the snapshot rather than the spawn
    angle, and `camera.snapTo` on the restored position so the view doesn't fly in from the outgoing
-   level (docs/render.md § The camera is simulation state).
+   level (docs/camera.md § The camera is simulation state).
 8. `new FogOfWar(...)` → `restoreExplored(...)` (the constructor's spawn-seeded reveal is
    overwritten wholesale, not ORed in).
 9. `new SpecialsController(...)` → `specials.restore(...)`. Switch on-textures are flipped *here*,

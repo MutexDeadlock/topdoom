@@ -1,6 +1,6 @@
 /**
  * `TopDownCamera`: the tilted overhead camera — follow smoothing, aim lead, and the Q/E orbit.
- * See docs/render.md § Camera orbit and camera-relative movement, and § The camera is simulation
+ * See docs/camera.md § Camera orbit and camera-relative movement, and § The camera is simulation
  * state.
  */
 import * as THREE from 'three';
@@ -37,12 +37,20 @@ const TILT_SNAP_EPS = 0.001;
 /**
  * The hard zoom/tilt envelope — all four tuned by feel. Enforced here, by both
  * framing setters, rather than by each writer: the manual keys and the auto
- * camera would otherwise each have to remember it. docs/render.md § Auto camera.
+ * camera would otherwise each have to remember it. docs/camera.md § Auto camera.
  */
 export const MIN_CAMERA_DISTANCE = 200;
 export const MAX_CAMERA_DISTANCE = 2400;
 export const MIN_TILT_DEG = 10;
 export const MAX_TILT_DEG = 70;
+
+/**
+ * The floor the auto camera's own route clamps to instead — tuned by feel. Its
+ * buried-eye rescue has to duck under any distance a player would dial by hand,
+ * because geometry, not taste, is what asks for it.
+ * docs/camera.md § The buried-eye rescue.
+ */
+export const MIN_RESCUE_DISTANCE = 64;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -66,7 +74,7 @@ const KEY_YAW_REPEAT_INTERVAL = 0.26;
  * stylistic: the pointer ray is cast through this camera, and the ray decides
  * both `Player.angle` and the basis WASD moves along — so a render-smoothed
  * pose would make aim and movement direction depend on framerate.
- * docs/render.md § The camera is simulation state.
+ * docs/camera.md § The camera is simulation state.
  */
 export class TopDownCamera {
   readonly camera: THREE.PerspectiveCamera;
@@ -175,6 +183,17 @@ export class TopDownCamera {
     this._targetDistance = clamp(value, MIN_CAMERA_DISTANCE, MAX_CAMERA_DISTANCE);
   }
 
+  /**
+   * The auto camera's glide route into the same target — identical to
+   * `targetDistance` but floored at `MIN_RESCUE_DISTANCE`, so its buried-eye
+   * rescue can pull nearer than the manual keys' envelope allows. Write-only on
+   * purpose: `targetDistance` is the one place to read the target from.
+   * docs/camera.md § The buried-eye rescue.
+   */
+  set autoDistance(value: number) {
+    this._targetDistance = clamp(value, MIN_RESCUE_DISTANCE, MAX_CAMERA_DISTANCE);
+  }
+
   /** Where `tiltDeg` is animating towards, clamped to the same envelope. */
   get targetTiltDeg(): number {
     return this._targetTiltDeg;
@@ -189,9 +208,13 @@ export class TopDownCamera {
    * `snapTo`, and the only route that writes value, target and `prev` at once
    * (a mid-glide `prev` would otherwise make `applyToCamera` interpolate out of
    * a stale pose). `AutoCamera.seed` uses it so a level never opens mid-zoom.
+   *
+   * Being the auto camera's route, it takes `autoDistance`'s lower floor rather
+   * than the manual keys' — a level that opens where the framing would bury the
+   * eye must seed at the rescued distance, not be clamped straight back off it.
    */
   snapFraming(distance: number, tiltDeg: number): void {
-    this.targetDistance = distance;
+    this.autoDistance = distance;
     this.targetTiltDeg = tiltDeg;
     this._distance = this._targetDistance;
     this._tiltDeg = this._targetTiltDeg;
@@ -226,7 +249,7 @@ export class TopDownCamera {
 
   /**
    * This frame's orbit input: the Q/E 45° snaps and their auto-repeat.
-   * See docs/render.md § Camera orbit.
+   * See docs/camera.md § Camera orbit.
    */
   applyYawInput(input: Input, dt: number): void {
     // stepYaw (not a plain assignment) is what makes this animate smoothly instead of
@@ -266,7 +289,7 @@ export class TopDownCamera {
    * `z` (`game.ts`). The two agree once the smoother has caught up, but during
    * a fall they do not, and a plane that moves while the camera lags swings the
    * cursor's world point — and with it the player's facing — for the third of a
-   * second it takes to settle. docs/render.md § Aim lead.
+   * second it takes to settle. docs/camera.md § Aim lead.
    */
   get followHeight(): number {
     return this.initialised ? this.viewPoint.y : this.smoothed.y;
@@ -306,7 +329,7 @@ export class TopDownCamera {
    * @param pos     the followed point in DOOM coordinates (the player's feet)
    * @param cursor  where the pointer meets the aim plane, if anywhere — deliberately *not* whatever
    *                auto-aim locked onto, or the view would twitch every time the cursor crossed a
-   *                monster (docs/render.md § Aim lead)
+   *                monster (docs/camera.md § Aim lead)
    */
   tick(dt: number, pos: Pos3, cursor: Pos2 | null): void {
     this.prevSmoothed.copy(this.smoothed);

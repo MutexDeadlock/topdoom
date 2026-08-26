@@ -248,7 +248,7 @@ and the cursor's plane point differ by. Aim has always been set from the cursor 
 lock has to follow the same rule to stay continuous.
 
 **The camera never sees the lock**, which is why `updateLivingPlayer` returns the cursor's plane
-point rather than the aim: docs/render.md § Aim lead.
+point rather than the aim: docs/camera.md § Aim lead.
 
 **A shoot-triggered line is the second thing aim locks onto**
 (`SpecialsController.pickShootTarget`, `game/specials/shootaim.ts`), under the same hover rule: the

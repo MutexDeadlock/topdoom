@@ -3,7 +3,7 @@ import { World } from '../../src/game/world.ts';
 import { FogOfWar } from '../../src/game/fogofwar.ts';
 import { SpecialsController, type TeleportDest } from '../../src/game/specials.ts';
 import { transfersOf } from '../../src/game/specials/transfers.ts';
-import { computeMovableSectors } from '../../src/game/specials/mapscan.ts';
+import { computeMovableSectors, computeMovingSectors } from '../../src/game/specials/mapscan.ts';
 import { buildMapMesh, type BuiltMap } from '../../src/render/mapmesh.ts';
 import type { DoomMap } from '../../src/wad/map.ts';
 import type { MaterialBank } from '../../src/render/textures.ts';
@@ -20,10 +20,19 @@ import type { CrossingBody } from '../../src/game/things/defs.ts';
  * stubs is the production object. docs/testing.md § The specials rig.
  */
 
+/**
+ * The one texture name `BANK` hands back a **masked** material for — a grate,
+ * a fence, a barred window. `MaterialBank.get` marks those with a non-zero
+ * `alphaTest`, and `WallFader` reads exactly that to tell a see-through screen
+ * over an opening from a solid wall hung in one.
+ */
+export const MASKED_TEXTURE = 'GRATE';
+
 /** `buildMapMesh`/`buildMoverMesh` only ask a bank for texture sizes and materials — neither needs a GPU. */
 export const BANK = {
   size: () => ({ w: 64, h: 128 }),
-  get: () => new THREE.MeshBasicMaterial(),
+  get: (_kind: string, name: string) =>
+    new THREE.MeshBasicMaterial({ alphaTest: name.toUpperCase() === MASKED_TEXTURE ? 0.5 : 0 }),
 } as unknown as MaterialBank;
 
 /** Nothing held, nothing clicked — the input a test that isn't about the use key wants. */
@@ -99,11 +108,14 @@ export interface SpecialsRig {
  */
 export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions = {}): SpecialsRig {
   const world = new World(map);
-  const movableSectors = computeMovableSectors(map);
+  // Both sets, as `game.ts` computes them: a rig test that only carries a
+  // switch must see its geometry diced the way the session would dice it.
+  const movingSectors = computeMovingSectors(map);
+  const movableSectors = computeMovableSectors(map, undefined, movingSectors);
   // The same table `game.ts` hands both builders, so a rig test sees the Boom
   // render transfers the real session would (docs/specials.md § Render transfers).
   const transfers = transfersOf(map);
-  const built = buildMapMesh(map, BANK, { movableSectors, transfers });
+  const built = buildMapMesh(map, BANK, { movableSectors, movingSectors, transfers });
   const scene = new THREE.Group();
   const fog = new FogOfWar(world, built.occluders, at.x, at.y);
   const specials = new SpecialsController(
@@ -114,7 +126,7 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
     fog,
     built.polys,
     built,
-    { transfers },
+    { transfers, movingSectors },
     options.onExit ?? (() => {}),
     options.onTeleport ?? (() => {}),
     options.onCrush ?? (() => false),

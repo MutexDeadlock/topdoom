@@ -7,6 +7,14 @@
  * green at exactly 100, sliding through yellow down to red as health drops
  * to 0. See docs/hud.md § The crosshair.
  */
+import { COLOR_BLUE } from './wadfont.ts';
+
+/**
+ * The over-100 blue, as CSS — the HUD's own `ARM2A0`-sampled blue (`COLOR_BLUE`), so the reticle
+ * and the health number cross into it as one cue rather than in two different blues.
+ */
+const OVER_HUNDRED = `rgb(${COLOR_BLUE.join(', ')})`;
+
 
 /** Reticle size in CSS pixels. Tuned by feel, like the rest of the crosshair above. */
 const SIZE = 24;
@@ -14,7 +22,7 @@ const CENTER = SIZE / 2;
 
 /** Health → CSS color. `health <= 100` maps linearly onto hue 120 (green) down to 0 (red). */
 function colorForHealth(health: number): string {
-  if (health > 100) return 'hsl(210, 100%, 60%)';
+  if (health > 100) return OVER_HUNDRED;
   const hue = (Math.max(0, Math.min(100, health)) / 100) * 120;
   return `hsl(${hue}, 100%, 50%)`;
 }

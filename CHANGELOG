@@ -22,6 +22,8 @@ Features and improvements
   - map-mesh and rendering optimizations: big maps cost a lot less per frame
   - multisampling is off on high-DPI displays, where it cost a third of every
     frame to smooth edges already drawn at four pixels apiece
+  - the HUD's numbers now use DOOMs digit sprites
+    - crosshair uses the same blue than the one used for health/armor > 100
   - the profiler shows GPU time beside CPU time
   - basic SEO: the page carries its own metadata now
 

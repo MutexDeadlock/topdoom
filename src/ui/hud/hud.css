@@ -16,7 +16,6 @@
   align-items: center;
   column-gap: 16px;
   pointer-events: none;
-  color: var(--fg);
 }
 
 #hud-bar.hidden {
@@ -29,19 +28,35 @@
   align-items: center;
   gap: 22px;
   padding: 8px 20px;
-  background: rgba(13, 13, 16, 0.85);
+  background: rgba(13, 13, 16, 0.65);
   border: 1px solid var(--border);
 }
 
-#game-hud .icon {
+/*
+ * Every canvas in the bar holds WAD art at its native pixel size and is scaled by CSS: the icons
+ * from the pickup sprites, the readouts from the status bar's own digit lumps (STTNUM/STYSNUM).
+ * Sized by height only — width follows whatever the loaded WAD's art measures, and for the
+ * readouts that is a fixed three-cell block, so no panel resizes as a count crosses 10 or 100.
+ */
+#game-hud .icon,
+#game-hud .value {
   image-rendering: pixelated;
-  height: 32px;
   width: auto;
   display: block;
 }
 
-#game-hud .icon.hidden {
+#game-hud .icon.hidden,
+#game-hud .value.hidden {
   display: none;
+}
+
+#game-hud .icon {
+  height: 32px;
+}
+
+/* The short digit set (STYSNUM), which every readout but health and armor draws with. */
+#game-hud .value {
+  height: 12px;
 }
 
 #game-hud .hud-stat {
@@ -50,14 +65,14 @@
   gap: 8px;
 }
 
-#game-hud .value {
-  font-size: 20px;
-  min-width: 2.2em;
-  text-align: right;
+/* Health and armor draw with the tall set (STTNUM) — `Hud`'s `TieredNumbers`. */
+#game-hud .hud-health .value,
+#game-hud .hud-armor .value {
+  height: 24px;
 }
 
 #game-hud .hud-armor.empty .value {
-  color: var(--fg-faint);
+  opacity: 0.35;
 }
 
 #game-hud .hud-ammo {
@@ -65,24 +80,24 @@
   gap: 14px;
 }
 
+/*
+ * The current weapon's ammo row is the lit one and the other three are dimmed — the sprite digits
+ * have no bold to mark it with, and dimming the row (icon included) reads at a glance where a
+ * font-weight change on the number alone no longer can.
+ */
 #game-hud .hud-ammo > div {
   display: flex;
   align-items: center;
   gap: 4px;
+  opacity: 0.5;
+}
+
+#game-hud .hud-ammo > div.current {
+  opacity: 1;
 }
 
 #game-hud .hud-ammo .icon {
   height: 22px;
-}
-
-#game-hud .hud-ammo .value {
-  font-size: 14px;
-  min-width: 1.6em;
-}
-
-#game-hud .hud-ammo .value.current {
-  font-weight: bold;
-  color: #fff;
 }
 
 #game-hud .hud-keys {
@@ -172,8 +187,3 @@
   height: 22px;
 }
 
-#game-hud .hud-powers .value {
-  font-size: 14px;
-  min-width: 0;
-  color: var(--fg);
-}

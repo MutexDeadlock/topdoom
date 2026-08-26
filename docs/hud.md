@@ -18,6 +18,43 @@ whether or not that WAD's graphics are loaded yet — `Hud`'s constructor draws 
 (doomednum 2010) was mapped to sprite `RCKT`, which isn't a real lump — the actual sprite is `ROCK`,
 so rockets were invisible in the world.
 
+**The numbers are the status bar's own digit sprites too**, not DOM text — `WadNumbers`
+(`ui/hud/wadfont.ts`): health and armor in vanilla's tall red `STTNUM0`-`STTNUM9`, the ammo counts
+and powerup countdowns in the small yellow `STYSNUM0`-`STYSNUM9`, which is the split `st_stuff.c`
+itself draws those same numbers with (`tallnum`/`shortnum`). Layout is `st_lib.c`'s `STlib_drawNum`:
+every digit occupies a fixed cell the width of digit `0` (`ST_TALLNUMWIDTH`), the value fills a
+three-cell block from the right (`ST_HEALTHWIDTH`/`ST_ARMORWIDTH`/`ST_AMMOWIDTH`, all 3), a value of
+0 draws a single `0` rather than a blank, and a value too wide for the block keeps its lowest three
+digits. The block is reserved whether or not the number fills it, which is also what keeps a panel —
+and every panel beside it — from resizing as a count crosses 10 or 100, the same rule
+`.hud-weapon`'s fixed column follows. Nothing here can go negative, so vanilla's `STTMINUS` branch
+has no counterpart (a negative value clamps to 0); a WAD without the digit set falls back to the
+message font's own `STCFN048`-`STCFN057`, which is what these readouts were drawn with before —
+answered for the set as a whole, since a PWAD shipping only some of `STTNUM` would otherwise draw
+two font families inside one cell block with nothing to signal it. `Hud.update` runs every frame
+while almost none of these numbers change, so each readout (`NumberField`) memoizes the value last
+drawn into its canvas and rasterizes only when it moves; a `null` value hides the canvas rather
+than blanking it, so the countdown-less rows (the computer map, the backpack) don't reserve an
+empty block beside their icon.
+
+**Health and armor are tinted by how much is left** (`VALUE_TIERS`): over 100 blue, 50-100 green,
+25-49 yellow, and under 25 `STTNUM`'s own undyed red — the state you are meant to notice keeps the
+color vanilla prints every value in, so the tint reads as "this is fine" rather than as an alarm
+that is always on. Vanilla has no equivalent (`st_stuff.c` draws both numbers from the one red set
+whatever they say), so the thresholds are this engine's own and tuned by feel; the colors are
+sampled from WAD art like every other color here — `ARM2A0`'s blue, `ARM1A0`'s green
+(`LEVEL_STATS_GREEN`, the same green the completed-category cue uses), `STYSNUM1`'s yellow. A
+recolor bakes into the glyphs, so each tier is its own `WadNumbers` instance, built once and held
+by `TieredNumbers` — which presents `WadNumbers`' own surface and picks the tier inside `draw`, so
+the readouts that print in one color and the two that don't are the same kind of thing to
+`NumberField`. All the tiers measure the same, being the same lumps retinted.
+
+**Two cues moved off font styling** when the numbers stopped being text: sprite digits have neither
+a weight nor a color to set. The current weapon's ammo row is now the lit one with the other three
+dimmed — the whole row, icon included, since dimming reads at a glance where the old bold-white
+number no longer can — and an empty armor slot dims its number the same way, in place of the grey it
+used to print in.
+
 **The key strip is one panel per color, lit when either of that color's slots is owned** (cards
 and skulls are tracked separately — docs/items.md § Locked doors and use triggers). The panel
 shows the keycard sprite by default and swaps to the skull sprite (`BSKUA0`/`RSKUA0`/`YSKUA0`)
@@ -335,7 +372,7 @@ The timeout is ticked from `Game.frame`'s `dt`, so a paused game doesn't burn a 
 time behind the menu; `loadMapByIndex` and `dispose` both `clear()` it, since the element is static
 markup that outlives any one `Game` (the same reason `Hud`'s panels `replaceChildren()`).
 
-## `WadFont` (`src/ui/hud/wadfont.ts`)
+## `WadFont` and `WadNumbers` (`src/ui/hud/wadfont.ts`)
 
 The strip is drawn with the IWAD's own font graphics rather than DOM text, and built as a reusable
 primitive rather than a one-off, since more WAD-font text is expected later. `WadFont` wraps
@@ -357,8 +394,9 @@ and underscore at cap height. Nothing else moves: every letter and digit has a z
 
 STCFN's own pixels are already vanilla's HUD-message red, so the red `"M: "`/`"I: "`/`"S: "` labels
 need no recoloring. There is no full-charset yellow font in vanilla WADs (`WINUM`/`STYSNUM` are
-digits-only, and mixing font families within one line would visibly mismatch STCFN's glyph height),
-so the strip's numbers instead recolor STCFN itself — `WadFont`'s optional `recolor` — tinted to
+digits-only — which is exactly why `#game-hud`'s readouts *can* use `STYSNUM` itself, and these
+mixed label-and-number lines can't; mixing font families within one line would visibly mismatch
+STCFN's glyph height), so the strip's numbers instead recolor STCFN itself — `WadFont`'s optional `recolor` — tinted to
 `STYSNUM1`'s own sampled yellow (`COLOR_YELLOW`, `255,255,115`, exported from `wadfont.ts` because
 the center message, the end card's heading and the death overlay's killer line all recolor to it
 too — yellow is what this UI reads as "the thing you came here to know"), so the color still comes
@@ -369,7 +407,14 @@ one solid color — a flat fill was tried first and read as illegible pixel mush
 palette-translation-table mechanism (`GraphicsBank` always blits through the one loaded palette),
 which is why a second color needs this recolor path at all rather than a second baked-color lump set.
 
-The font itself stays proportional (STCFN's own per-glyph widths, matching vanilla) rather than
+`WadNumbers` is the same rasterizer over vanilla's two status-bar digit sets — one glyph per digit,
+a fixed cell instead of proportional advances, and the whole of `STlib_drawNum`'s layout (§ The HUD
+above, which is its only consumer). Both share the glyph loader, the `recolor` path and
+`V_DrawPatch`'s offset handling: `left` matters here in a way it never did for STCFN, since DOOM2's
+`STTNUM1` is a narrow 11px patch with a `leftoffset` of -1 that would otherwise sit wrong in its
+14px cell.
+
+The text font itself stays proportional (STCFN's own per-glyph widths, matching vanilla) rather than
 monospacing every glyph to a fixed cell — a full-font monospace was tried first and read as too
 sparse for a font this narrow. Instead, `Hud.drawStatLine` aligns just the *columns* that need to
 line up: `labelColumnWidth` (the constructor's `Math.max` over all three labels' proportional
@@ -381,8 +426,9 @@ three numbers still form a flush column starting at the same x.
 
 **The mouse cursor is the health readout too.** `src/ui/hud/crosshair.ts`'s `Crosshair` sets the game
 canvas's OS cursor to a plus-shaped reticle (an inline SVG data URI, since the built-in `crosshair`
-keyword can't be recolored) whose color reports health at a glance: blue above 100, sliding from
-green at 100 through yellow down to red at 0 below that. This is TopDoom's own convention, not a
+keyword can't be recolored) whose color reports health at a glance: blue above 100 — `COLOR_BLUE`,
+the same `ARM2A0` blue the health number itself switches to up there (§ The HUD), so the two cross
+over together — sliding from green at 100 through yellow down to red at 0 below that. This is TopDoom's own convention, not a
 vanilla one — vanilla's status bar has a `%`; the cursor doubles as the aim reticle here (`game.ts`'s
 mouse-aim raycast), so there's screen real estate to spend on it that vanilla never had. `update()`
 skips rebuilding the cursor image when the computed color hasn't changed, since it's called every

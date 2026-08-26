@@ -16,7 +16,7 @@ import {
   type WeaponId,
 } from '../../game/inventory.ts';
 import { WEAPON_CYCLE, WEAPONS } from '../../game/weapons.ts';
-import { WadFont, COLOR_YELLOW } from './wadfont.ts';
+import { WadFont, WadNumbers, COLOR_BLUE, COLOR_YELLOW, type WadFontRecolor } from './wadfont.ts';
 
 /**
  * The kill/item/secret totals the level-stats strip shows — see `WadFont`'s doc and
@@ -43,6 +43,23 @@ export interface LevelStats {
  * percentages.
  */
 export const LEVEL_STATS_GREEN: readonly [number, number, number] = [111, 239, 103];
+
+/**
+ * How much health/armor is left, read as a color: over 100 blue, then green, then yellow, and
+ * `STTNUM`'s own undyed red once it's low enough to be the thing you're watching. Vanilla prints
+ * both in that red whatever the number says, so — like `LEVEL_STATS_GREEN`'s completion cue — the
+ * tiers are this engine's addition and **tuned by feel**; only the colors are WAD-derived
+ * (`ARM2A0`, `ARM1A0`, `STYSNUM1`), the convention every other color in this HUD follows. The top
+ * tier is shared with the crosshair, which reports the same over-100 state (`COLOR_BLUE`).
+ *
+ * Ordered high to low: `TieredNumbers` takes the first tier the value reaches, and the undyed red
+ * below all of them.
+ */
+const VALUE_TIERS: readonly { atLeast: number; recolor: WadFontRecolor }[] = [
+  { atLeast: 101, recolor: COLOR_BLUE },
+  { atLeast: 50, recolor: LEVEL_STATS_GREEN },
+  { atLeast: 25, recolor: COLOR_YELLOW },
+];
 
 /**
  * `hh:mm:ss`, shared by the HUD clock and the intermission's "your time" line so the two can never
@@ -161,6 +178,85 @@ export function drawText(canvas: HTMLCanvasElement, font: WadFont, text: string)
 }
 
 /**
+ * How many digit cells every readout in `#game-hud` reserves — vanilla's own `ST_HEALTHWIDTH` /
+ * `ST_ARMORWIDTH` / `ST_AMMOWIDTH` (`st_stuff.c`), all 3. Reserving the block rather than sizing
+ * it to the current value is also what keeps a panel from resizing — and shuffling every panel
+ * beside it — when a count crosses 10 or 100, the same rule `.hud-weapon`'s fixed column follows.
+ */
+const NUMBER_CELLS = 3;
+
+/**
+ * What a `NumberField` draws through: `WadNumbers` itself where the readout prints in one color,
+ * `TieredNumbers` for health and armor, which pick theirs from the value.
+ */
+interface NumberSource {
+  readonly height: number;
+  measure(cells: number): number;
+  draw(ctx: CanvasRenderingContext2D, x: number, y: number, value: number, cells: number): void;
+}
+
+/**
+ * The tall digits, colored by `VALUE_TIERS`. A recolor bakes into the glyphs, so this holds one
+ * built `WadNumbers` per tier and picks between them per value; all of them measure the same,
+ * being the same lumps retinted, so the choice stays inside here and callers see one digit set.
+ */
+class TieredNumbers implements NumberSource {
+  readonly height: number;
+  /** The undyed set: vanilla's own color, and what a value below every tier prints in. */
+  private red: WadNumbers;
+  private tiers: readonly { atLeast: number; font: WadNumbers }[];
+
+  constructor(gfx: GraphicsBank) {
+    this.red = new WadNumbers(gfx, 'tall');
+    this.tiers = VALUE_TIERS.map((tier) => ({ atLeast: tier.atLeast, font: new WadNumbers(gfx, 'tall', tier.recolor) }));
+    this.height = this.red.height;
+  }
+
+  measure(cells: number): number {
+    return this.red.measure(cells);
+  }
+
+  draw(ctx: CanvasRenderingContext2D, x: number, y: number, value: number, cells: number): void {
+    let font = this.red;
+    for (const tier of this.tiers) {
+      if (value >= tier.atLeast) {
+        font = tier.font;
+        break;
+      }
+    }
+    font.draw(ctx, x, y, value, cells);
+  }
+}
+
+/**
+ * One sprite-digit readout: its canvas, the digit set it draws with, and the value last drawn
+ * into it. `Hud.update` runs every frame while almost none of these change from one to the next,
+ * so the memo is what keeps the rasterizing to the numbers that actually moved. A `null` value
+ * hides the canvas — the powerup strip's one `Infinity`-duration row has no countdown to show,
+ * and a blank three-cell block would still reserve its width beside the icon.
+ */
+class NumberField {
+  private ctx: CanvasRenderingContext2D;
+  private font: NumberSource;
+  private shown: number | null | undefined = undefined;
+
+  constructor(canvas: HTMLCanvasElement, font: NumberSource) {
+    canvas.width = Math.max(1, font.measure(NUMBER_CELLS));
+    canvas.height = Math.max(1, font.height);
+    this.ctx = canvas.getContext('2d')!;
+    this.font = font;
+  }
+
+  set(value: number | null): void {
+    if (value === this.shown) return;
+    this.shown = value;
+    this.ctx.canvas.classList.toggle('hidden', value === null);
+    this.ctx.clearRect(0, 0, this.ctx.canvas.width, this.ctx.canvas.height);
+    if (value !== null) this.font.draw(this.ctx, 0, 0, value, NUMBER_CELLS);
+  }
+}
+
+/**
  * The in-game status readout: health, armor, ammo, collected keys, and the kill/item/secret
  * strip. Static markup lives in index.html (`#hud-bar`, containing `#hud-levelstats` and
  * `#game-hud` as siblings — the strip sits outside `#game-hud`'s own bordered box); this class
@@ -179,27 +275,35 @@ export class Hud {
   private secretsCanvas = this.levelStatsRoot.querySelector<HTMLCanvasElement>('.line-secrets')!;
   /** Mirrors `levelStatsRoot`: a plain sibling of `#game-hud` inside `#hud-bar`, on its right this time. */
   private timerCanvas = document.getElementById('hud-timer') as HTMLCanvasElement;
-  private healthValue = this.root.querySelector<HTMLElement>('.hud-health .value')!;
+  private tallNumbers: TieredNumbers;
+  private shortNumbers: WadNumbers;
+  private healthValue: NumberField;
   private healthIconNormal = this.root.querySelector<HTMLCanvasElement>('.hud-health .icon-normal')!;
   private healthIconBerserk = this.root.querySelector<HTMLCanvasElement>('.hud-health .icon-berserk')!;
-  private armorValue = this.root.querySelector<HTMLElement>('.hud-armor .value')!;
+  private armorValue: NumberField;
   private armorPanel = this.root.querySelector<HTMLElement>('.hud-armor')!;
   private armorIconGreen = this.root.querySelector<HTMLCanvasElement>('.hud-armor .icon-green')!;
   private armorIconBlue = this.root.querySelector<HTMLCanvasElement>('.hud-armor .icon-blue')!;
-  private ammoValues: Record<AmmoType, HTMLElement>;
+  private ammoRows: Record<AmmoType, { row: HTMLElement; value: NumberField }>;
   private keyPanels: Record<KeyColor, HTMLElement>;
   private keyVariantShown: Record<KeyColor, 'card' | 'skull'>;
   private gfx: GraphicsBank;
   private weaponIcons: Record<WeaponId, HTMLCanvasElement>;
   private currentWeaponShown: WeaponId | null = null;
   private powerPanel = this.root.querySelector<HTMLElement>('.hud-powers')!;
-  private powerRows: Partial<Record<PowerId, { row: HTMLElement; value: HTMLElement }>>;
+  private powerRows: Partial<Record<PowerId, { row: HTMLElement; value: NumberField }>>;
   private backpackRow: HTMLElement;
 
   constructor(gfx: GraphicsBank) {
     this.redFont = new WadFont(gfx);
     this.yellowFont = new WadFont(gfx, COLOR_YELLOW);
     this.greenFont = new WadFont(gfx, LEVEL_STATS_GREEN);
+    // Health and armor in the tall digits vanilla prints them in, and the ammo counts in the small
+    // yellow ones its own ammo list uses. See `WadNumberSet`.
+    this.tallNumbers = new TieredNumbers(gfx);
+    this.shortNumbers = new WadNumbers(gfx, 'short');
+    this.healthValue = new NumberField(this.root.querySelector<HTMLCanvasElement>('.hud-health .value')!, this.tallNumbers);
+    this.armorValue = new NumberField(this.root.querySelector<HTMLCanvasElement>('.hud-armor .value')!, this.tallNumbers);
     // The widest of the three labels ("M: "/"I: "/"S: ", proportionally spaced) — every line's
     // number starts here rather than right after its own label, so the numbers form a flush
     // column instead of each starting wherever its own (differently-wide) label happens to end.
@@ -209,11 +313,11 @@ export class Hud {
     drawIcon(this.armorIconGreen, gfx, 'ARM1A0');
     drawIcon(this.armorIconBlue, gfx, 'ARM2A0');
 
-    this.ammoValues = {} as Record<AmmoType, HTMLElement>;
+    this.ammoRows = {} as Record<AmmoType, { row: HTMLElement; value: NumberField }>;
     for (const t of AMMO_TYPES) {
       const row = this.root.querySelector<HTMLElement>(`.hud-ammo .row-${t}`)!;
-      drawIcon(row.querySelector('canvas')!, gfx, AMMO_ICONS[t]);
-      this.ammoValues[t] = row.querySelector<HTMLElement>('.value')!;
+      drawIcon(row.querySelector<HTMLCanvasElement>('.icon')!, gfx, AMMO_ICONS[t]);
+      this.ammoRows[t] = { row, value: new NumberField(row.querySelector<HTMLCanvasElement>('.value')!, this.shortNumbers) };
     }
 
     this.gfx = gfx;
@@ -251,17 +355,17 @@ export class Hud {
   }
 
   /** One hidden icon (+ its countdown slot) in the powerup strip, in STRIP_POWER_IDS order. */
-  private addPowerRow(gfx: GraphicsBank, lump: string): { row: HTMLElement; value: HTMLElement } {
+  private addPowerRow(gfx: GraphicsBank, lump: string): { row: HTMLElement; value: NumberField } {
     const row = document.createElement('div');
     row.className = 'hidden';
     const canvas = document.createElement('canvas');
     canvas.className = 'icon';
     drawIcon(canvas, gfx, lump);
-    const value = document.createElement('span');
+    const value = document.createElement('canvas');
     value.className = 'value';
     row.append(canvas, value);
     this.powerPanel.appendChild(row);
-    return { row, value };
+    return { row, value: new NumberField(value, this.shortNumbers) };
   }
 
   /**
@@ -301,15 +405,15 @@ export class Hud {
     this.drawStatLine(this.itemsCanvas, 'I', stats.items, stats.totalItems);
     this.drawStatLine(this.secretsCanvas, 'S', stats.secrets, stats.totalSecrets);
     this.drawTimer(stats.elapsedSeconds);
-    this.healthValue.textContent = String(Math.max(0, Math.round(inv.health)));
+    this.healthValue.set(Math.round(inv.health));
     const berserk = hasPower(inv, 'berserk');
     this.healthIconNormal.classList.toggle('hidden', berserk);
     this.healthIconBerserk.classList.toggle('hidden', !berserk);
-    this.armorValue.textContent = String(Math.round(inv.armor));
+    this.armorValue.set(Math.round(inv.armor));
     this.armorIconGreen.classList.toggle('hidden', inv.armorType !== 1);
     this.armorIconBlue.classList.toggle('hidden', inv.armorType !== 2);
     this.armorPanel.classList.toggle('empty', inv.armorType === 0);
-    for (const t of AMMO_TYPES) this.ammoValues[t].textContent = String(inv.ammo[t]);
+    for (const t of AMMO_TYPES) this.ammoRows[t].value.set(inv.ammo[t]);
     for (const c of KEY_COLORS) {
       const card = inv.keys.has(KEY_SLOTS_BY_COLOR[c].card);
       const skull = inv.keys.has(KEY_SLOTS_BY_COLOR[c].skull);
@@ -329,7 +433,9 @@ export class Hud {
       this.currentWeaponShown = inv.currentWeapon;
     }
     const currentAmmoType = WEAPONS[inv.currentWeapon].ammoType;
-    for (const t of AMMO_TYPES) this.ammoValues[t].classList.toggle('current', t === currentAmmoType);
+    // The whole row lights, not just its number: sprite digits have no bold, and the row's own
+    // dimming reads at a glance where a font-weight change no longer can.
+    for (const t of AMMO_TYPES) this.ammoRows[t].row.classList.toggle('current', t === currentAmmoType);
 
     let anyPower = inv.backpack;
     for (const p of STRIP_POWER_IDS) {
@@ -340,7 +446,7 @@ export class Hud {
       anyPower = true;
       // The computer map never runs out (Infinity), so it shows as a bare
       // icon — a countdown there would only ever read the same number.
-      value.textContent = Number.isFinite(left) ? String(Math.ceil(left)) : '';
+      value.set(Number.isFinite(left) ? Math.ceil(left) : null);
     }
     this.backpackRow.classList.toggle('hidden', !inv.backpack);
     // Collapsed entirely while nothing is active, so the panel's own gap in

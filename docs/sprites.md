@@ -183,13 +183,14 @@ a mesh of its own and fades via `SpriteActor.setOpacity` instead (docs/items.md 
 backpack).
 
 `ThingLayer` draws those things through a third batch, built `fuzz: true`, whose material clones
-`SpriteBatch.applyFuzz` patches: the sprite is darkened to `FUZZ_DARKEN` and `FUZZ_DISCARD` of its
-pixels are discarded, on a noise pattern re-seeded every `FUZZ_STEP_SECONDS` from the `uFuzzTime`
-uniform `ThingLayer.draw` writes. Three decisions there are load-bearing:
+`SpriteBatch.applyFuzz` patches: the sprite is darkened to `FUZZ_DARKEN` and faded to a per-pixel
+alpha between `FUZZ_ALPHA_MIN` and `FUZZ_ALPHA_MAX`, re-drawn every `FUZZ_STEP_SECONDS` from the
+`uFuzzTime` uniform `ThingLayer.draw` writes. Three decisions there are load-bearing:
 
-- **Discard, not blending.** The same trade `render/textures.ts` makes for occlusion/fog fading: a
-  screen-door pattern keeps these planes in the ordinary opaque, depth-tested and depth-written
-  pass, so they composite correctly against the level's per-texture batches whatever the draw order.
+- **Blending, not a screen-door discard**, and the noise is not the wall fade's — see the section
+  below, which is the whole argument. A `fuzz` batch is a `translucent` one whose alpha varies per
+  pixel instead of coming from `setOpacity`, so it inherits that path's `depthWrite: false` and
+  0.01 alpha test.
 - **The shimmer steps on the tic, not the frame.** Vanilla advances `fuzzpos` once per frame in a
   35fps game; stepping `uFuzzTime` at `DOOM_TIC` reproduces that cadence instead of letting a 144Hz
   display shimmer four times as fast.
@@ -206,10 +207,48 @@ material can't do), the silhouette sampled a texel up or down per column per ste
 `fuzzoffset[]`'s crawl, and the darkening jittered per pixel to stand in for the displacement noise.
 It is more faithful and it looks worse here — a top-down spectre is small on screen and vanilla's
 effect leans on a first-person view's size and a floor-height camera. Don't rebuild it. What ships
-is deliberately the cruder thing: the demon's own art, dark, with most of its pixels shot out.
+is deliberately the cruder thing: the demon's own art, dark and mostly see-through.
 
-`FUZZ_DISCARD` and `FUZZ_DARKEN` are therefore tuned by feel outright, with no vanilla number
-underneath either, and are meant to be retuned by eye — more discard is a more transparent spectre.
+`FUZZ_DARKEN` and the two `FUZZ_ALPHA_*` ends are therefore tuned by feel outright, with no vanilla
+number underneath any of them, and are meant to be retuned by eye — a lower alpha range is a more
+transparent spectre. The range's midpoint sits near the player's own `INVISIBILITY_OPACITY`, which
+is the same `MF_SHADOW` in vanilla, so the two read at a comparable strength.
+
+### Why the fuzz can't share the wall dither's noise
+
+**The spectre's translucency must not be decided by a per-pixel threshold, and its noise must not
+come from the generator `render/textures.ts` dithers the wall fade with.** Both are read at
+`gl_FragCoord`, so a spectre standing behind a fading wall is masked twice, and if the two masks are
+drawn from one generator they are not independent — the spectre's visibility becomes a function of
+how they happen to line up rather than of the wall's fade.
+
+That is not a theoretical risk; it is what the first version did. The fuzz seeded the *same*
+interleaved gradient noise the wall dither uses by offsetting `gl_FragCoord` along the screen axes,
+and because IGN is `fract(k · fract(dot(p, c)))`, an offset along `c` only *rotates* the value every
+pixel already had: the fuzz mask was `fract(dither(p) + s)` for one screen-wide constant `s` per
+tic. The two masks were nested one tic and nearly disjoint the next. Measured against the real
+shaders, a spectre behind a wall faded to alpha 0.5 drew between **100% and 9%** of its silhouette
+on consecutive tics — a 35Hz strobe that got worse the *less* the wall was faded.
+
+Two independent changes close it, and both are needed:
+
+- **The alpha is blended, not thresholded.** A blended sprite carries no mask of its own, so there
+  is nothing for the wall's dither to correlate with — the same reason the player's partial
+  invisibility never had this problem.
+- **The noise is a different generator** (Hoskins' `hash13`), with the tic as a real third
+  dimension rather than an offset along the screen axes. Reseeding by offsetting a 2D hash is what
+  produced the rotation above; a third input cannot.
+
+With both, the spectre's visible fraction behind a faded wall is exactly the wall's own hole
+fraction and holds steady tic to tic (measured 0.50 / 0.70 / 0.85 at wall alpha 0.5 / 0.3 / 0.15,
+and still fully hidden behind an unfaded wall). `tests/render/spectre-fuzz.test.ts` guards both
+halves: the material must be `transparent` with no `discard`, and the two patched shaders must share
+no noise constant.
+
+The cost is that a fuzzed sprite leaves the opaque pass, which is what the discard bought. That is
+affordable here and not for geometry: the batch is a handful of small planes with `depthWrite` off,
+where the level's per-texture meshes span the whole map and would sort meaninglessly
+(docs/render.md § Wall occlusion fading).
 
 Nothing else about a spectre differs from a demon — same stats, same batch membership rules, same
 `pickMonster` billboard, and no gameplay effect of `MF_SHADOW` is modelled.

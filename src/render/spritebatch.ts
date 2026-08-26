@@ -12,13 +12,16 @@ import { tinted, type Tint } from './lights.ts';
 const INITIAL_CAPACITY = 64;
 
 /**
- * Fraction of a fuzzed sprite's pixels dropped each fuzz step, and how far the
- * rest are darkened. Both tuned by feel — this engine's fuzz is a look chosen
- * against vanilla's own, not derived from it (docs/sprites.md § The spectre's
- * fuzz), so these two are the whole of it and are meant to be retuned by eye.
+ * How far a fuzzed sprite is darkened, and the two ends of the per-pixel
+ * translucency the shimmer runs between. All three tuned by feel — this
+ * engine's fuzz is a look chosen against vanilla's own, not derived from it
+ * (docs/sprites.md § The spectre's fuzz), so they are the whole of it and are
+ * meant to be retuned by eye. The midpoint of the alpha range sits near the
+ * player's own `INVISIBILITY_OPACITY`, which is the same `MF_SHADOW` in vanilla.
  */
-const FUZZ_DISCARD = 0.52;
 const FUZZ_DARKEN = 0.42;
+const FUZZ_ALPHA_MIN = 0.12;
+const FUZZ_ALPHA_MAX = 0.62;
 
 /**
  * How often the fuzz pattern is redrawn. Vanilla advances `fuzzpos` through
@@ -28,13 +31,19 @@ const FUZZ_DARKEN = 0.42;
  */
 const FUZZ_STEP_SECONDS = DOOM_TIC;
 
-/** The shimmer's clock and its noise, prepended to the fragment shader by `applyFuzz`. */
+/**
+ * The shimmer's clock and its noise, prepended to the fragment shader by `applyFuzz`.
+ * A 3D hash (Hoskins' `hash13`) taking the tic as a third dimension, and
+ * deliberately not the noise `render/textures.ts` dithers the wall fade with —
+ * docs/sprites.md § Why the fuzz can't share the wall dither's noise.
+ */
 const FUZZ_GLSL = `
 uniform float uFuzzTime;
 
-/** Interleaved gradient noise (Jimenez): cheap, decorrelated per pixel. */
-float fuzzNoise(vec2 seed) {
-  return fract(52.9829189 * fract(dot(seed, vec2(0.06711056, 0.00583715))));
+float fuzzNoise(vec2 seed, float t) {
+  vec3 p = fract(vec3(seed, t) * vec3(0.1031, 0.1030, 0.0973));
+  p += dot(p, p.yzx + 33.33);
+  return fract((p.x + p.y) * p.z);
 }
 `;
 
@@ -79,8 +88,9 @@ export class SpriteBatch {
    * sprite through geometry genuinely in front of it.
    *
    * `translucent` builds this batch's materials for `setOpacity` — see there.
-   * `fuzz` draws everything in this batch as vanilla's `MF_SHADOW` fuzz
-   * instead of its own art — see `applyFuzz`.
+   * `fuzz` draws everything in this batch as vanilla's `MF_SHADOW` fuzz — a
+   * translucent batch whose alpha varies per pixel rather than coming from
+   * `setOpacity`; see `applyFuzz`.
    */
   constructor(options: { depthBias?: number; translucent?: boolean; fuzz?: boolean } = {}) {
     this.group.name = 'sprite-batches';
@@ -243,7 +253,10 @@ export class SpriteBatch {
       // `units` term is what does the work here.
       material.polygonOffsetFactor = 0;
     }
-    if (this.translucent) {
+    // A fuzzed sprite is translucent in exactly the way `translucent` builds
+    // for — it just varies its alpha per pixel instead of taking one from
+    // `setOpacity` (see `applyFuzz`).
+    if (this.translucent || this.fuzz) {
       material.transparent = true;
       material.opacity = this.opacity;
       // The shared material alpha-tests at 0.5 against `texture.a * opacity`,
@@ -262,14 +275,13 @@ export class SpriteBatch {
 
   /**
    * Turns a lump's material into this engine's `MF_SHADOW` fuzz: the sprite
-   * darkened to `FUZZ_DARKEN`, with `FUZZ_DISCARD` of its pixels dropped on a
-   * noise pattern re-seeded every `FUZZ_STEP_SECONDS`, so the floor shows
-   * through and shimmers.
+   * darkened to `FUZZ_DARKEN` and faded to a per-pixel alpha between
+   * `FUZZ_ALPHA_MIN` and `FUZZ_ALPHA_MAX`, re-drawn every `FUZZ_STEP_SECONDS`,
+   * so the floor shows through and shimmers.
    *
-   * Discarding rather than blending is the same trade the wall/flat fade makes
-   * (`render/textures.ts`): a screen-door pattern keeps these planes in the
-   * ordinary opaque, depth-tested pass, so they composite correctly against
-   * the level's per-texture batches regardless of draw order.
+   * Blending rather than a screen-door discard, so the spectre carries no
+   * per-pixel mask for a fading wall's own dither to collide with:
+   * docs/sprites.md § Why the fuzz can't share the wall dither's noise.
    *
    * A closer reproduction of vanilla's own effect was built and rejected on how
    * it looked, and the rejection is the load-bearing part: docs/sprites.md §
@@ -281,8 +293,11 @@ export class SpriteBatch {
       shader.fragmentShader = shader.fragmentShader.replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-         if (fuzzNoise(gl_FragCoord.xy + uFuzzTime * vec2(11.0, 7.0)) < ${FUZZ_DISCARD.toFixed(3)}) discard;
-         diffuseColor.rgb *= ${FUZZ_DARKEN.toFixed(3)};`,
+         diffuseColor.rgb *= ${FUZZ_DARKEN.toFixed(3)};
+         diffuseColor.a *= mix(
+           ${FUZZ_ALPHA_MIN.toFixed(3)},
+           ${FUZZ_ALPHA_MAX.toFixed(3)},
+           fuzzNoise(gl_FragCoord.xy, uFuzzTime));`,
       );
       shader.fragmentShader = FUZZ_GLSL + shader.fragmentShader;
     };

@@ -12,6 +12,7 @@ Fixed bugs
   - a teleported monster stands on the floor it arrives at instead of falling
     to it from the height of the closet it left
   - a voodoo doll parked in slime no longer bleeds the player
+  - a spectre behind a fading wall no longer strobes in and out of view
 
 
 ===============================================================================

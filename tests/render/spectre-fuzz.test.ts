@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import type { CachedSprite } from '../../src/render/sprites.ts';
 import { SpriteBatch } from '../../src/render/spritebatch.ts';
+import { MaterialBank } from '../../src/render/textures.ts';
+import type { GraphicsBank } from '../../src/wad/graphics.ts';
 import { FUZZ_TYPES, THING_SPRITES } from '../../src/game/things/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
@@ -63,15 +65,38 @@ describe('Sprites · the spectre draws as fuzz', () => {
 
     const fuzzed = materialOf(new SpriteBatch({ fuzz: true }), cached);
     const { fragmentShader, uniforms } = compile(fuzzed);
-    // Screen-door, not blending: the fuzz has to stay in the opaque pass.
-    assert.equal(fuzzed.blending, plain.blending);
-    assert.equal(fuzzed.transparent, false);
-    assert.match(fragmentShader, /discard;/);
+    // Blended, not a screen-door discard — the whole point of the fix that
+    // stopped the spectre strobing behind a faded wall (docs/sprites.md § Why
+    // the fuzz can't share the wall dither's noise).
+    assert.equal(fuzzed.transparent, true);
+    assert.equal(fuzzed.depthWrite, false);
+    assert.doesNotMatch(fragmentShader, /discard/);
+    assert.match(fragmentShader, /diffuseColor\.a \*= mix\(/);
     assert.match(fragmentShader, /diffuseColor\.rgb \*=/);
     assert.ok(uniforms.uFuzzTime, 'the shimmer clock never reached the shader');
     // Both materials would otherwise key the program cache identically — the
     // fuzzed one has to ask for its own program.
     assert.notEqual(fuzzed.customProgramCacheKey(), plain.customProgramCacheKey());
+  });
+
+  test('the fuzz noise shares no constant with the wall fade\u2019s dither', () => {
+    // Both are read at gl_FragCoord, and the wall the spectre stands behind is
+    // faded by a dither of its own. Drawn from the same generator the two masks
+    // are not independent however the second is seeded, and the spectre's
+    // visibility becomes a function of how they line up — measured swinging
+    // between the whole silhouette and a tenth of it between consecutive tics.
+    const fuzz = compile(materialOf(new SpriteBatch({ fuzz: true }), sprite())).fragmentShader;
+    const gfx = {
+      texture: () => ({ width: 2, height: 2, data: new Uint8Array(16) }),
+      flat: () => null,
+    } as unknown as GraphicsBank;
+    const wall = new MaterialBank(gfx).get('wall', 'ANY')!;
+    const dither = compile(wall).fragmentShader;
+
+    const constantsOf = (glsl: string) =>
+      new Set((glsl.match(/\d+\.\d{4,}/g) ?? []).map(Number));
+    const shared = [...constantsOf(dither)].filter((n) => constantsOf(fuzz).has(n));
+    assert.deepEqual(shared, [], `the fuzz reuses the wall dither's noise constants: ${shared}`);
   });
 
   test('the shimmer steps once per tic, through the uniform the shader holds', () => {

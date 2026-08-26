@@ -21,10 +21,10 @@ import type { Viewport } from './render/viewport.ts';
 import type { TopDownCamera } from './render/camera.ts';
 import type { Input } from './game/input.ts';
 import {
+  bodiesOverlap,
   buildThingSprites,
   monstersTelefrag,
   TELEFRAG_DAMAGE,
-  telefragReaches,
   type CrossingBody,
   type MonsterRef,
   type ThingLayer,
@@ -1112,7 +1112,7 @@ export class Game {
     if (!this.things?.telefragAt(dest, mover.blockRadius, this.monsterStomps, mover.id)) return null;
     // The player half of the stomp: `telefragAt` covered every other body, but the
     // thing layer holds no player reference (same split as the spawn cube's).
-    if (!this.playerDead && telefragReaches(dest, this.player, mover.blockRadius + PLAYER_RADIUS)) {
+    if (!this.playerDead && bodiesOverlap(dest, this.player, mover.blockRadius + PLAYER_RADIUS)) {
       if (!this.monsterStomps) return null;
       this.damagePlayer(TELEFRAG_DAMAGE, dest.x, dest.y, mover.type);
     }
@@ -1687,7 +1687,7 @@ export class Game {
    * sector underfoot does to them (damage floors, secrets, an exit) — see game/specials/sectoreffects.ts.
    */
   private collectPickupsAndSectorEffects(dt: number): void {
-    this.things?.tryPickup(this.player, PICKUP_RANGE, (type, dropped) => {
+    this.things?.tryPickup(this.player, this.player.attempted, PICKUP_RANGE, (type, dropped) => {
       const taken = applyPickup(this.inventory, type, dropped, this.skill);
       // The computer area map is the one pickup whose whole effect lives outside the `Inventory`
       // struct: it reveals the level's own geometry. Watched for here rather than handled in

@@ -96,7 +96,7 @@ any other blocked teleport.
 
 Only **shootable** bodies are stomped or block: monsters and barrels, `MF_SHOOTABLE`. A solid
 decoration is neither — a floor lamp on the landing pad is passed straight through. The overlap is
-`telefragReaches`, the summed-radii **box** every body-vs-body test in this engine uses
+`bodiesOverlap`, the summed-radii **box** every body-vs-body test in this engine uses
 (docs/movement.md § Collision) and the one `PIT_StompThing` is written with; every half of every
 arrival goes through that one predicate, because a stomp that reached past what collision counts as
 occupied would leave a monster standing inside another one. The test is 2D and height-blind,

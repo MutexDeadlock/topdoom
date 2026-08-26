@@ -1,0 +1,69 @@
+import { describe, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { World } from '../../src/game/world.ts';
+import { buildThingSprites } from '../../src/game/things.ts';
+import { Player } from '../../src/game/player.ts';
+import { PICKUP_RANGE } from '../../src/game/inventory.ts';
+import { ThingType } from '../../src/game/things/doomednums.ts';
+import { DOOM_TIC } from '../../src/constants.ts';
+import { gridMap } from '../fixtures/gridmap.ts';
+import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
+import type { Input } from '../../src/game/input.ts';
+
+/**
+ * `P_CheckPosition` picks items up at the position the move *attempted*, before
+ * `P_TryMove` rejects it for a step over 24 — so an item in an alcove raised out
+ * of reach is still collected by running at its edge. EPIC.WAD MAP02's green
+ * armor sits 28 units inside a 32-unit-high alcove, 44 from where the player's
+ * box stops: out of the 36-unit reach box at rest, inside it while running.
+ * docs/items.md § Collecting things.
+ */
+describe('Regression · a pickup reaches where the move was headed', () => {
+  const CELL = 256;
+  const LEDGE = 32; // Over MAX_STEP_UP, so the player never gets in.
+
+  /**
+   * Two cells stacked north-south: the player's own floor below, an alcove
+   * `LEDGE` above it on top. The armor sits `inside` units north of the
+   * boundary between them.
+   */
+  function arena(inside: number) {
+    const grid = gridMap(['###', '#L#', '#.#', '###'], {
+      cell: CELL,
+      heights: { L: { floor: LEDGE, ceil: 128 } },
+    });
+    const floor = grid.centre(1, 2);
+    const edgeY = floor.y + CELL / 2;
+    grid.map.things.push({ x: floor.x, y: edgeY + inside, angle: 0, type: ThingType.greenArmor, flags: 7 });
+    const world = new World(grid.map);
+    const player = new Player(world);
+    player.moveTo({ x: floor.x, y: floor.y });
+    return { player, layer: buildThingSprites(grid.map, world, BANK, MATERIALS, 3), edgeY };
+  }
+
+  /** Holds W (north at `forwardDeg` 90) and nothing else, so `getAutorun` runs. */
+  const RUN_NORTH = { held: (...keys: string[]) => keys.includes('KeyW') } as unknown as Input;
+
+  /** Runs north long enough to reach full speed and hold at the ledge, collecting as `game.ts` does. */
+  function runAtTheLedge(inside: number): { taken: number; stoppedAt: number; edgeY: number } {
+    const { player, layer, edgeY } = arena(inside);
+    let taken = 0;
+    for (let tic = 0; tic < 20; tic++) {
+      player.update(DOOM_TIC, RUN_NORTH, null, 90);
+      layer.tryPickup(player, player.attempted, PICKUP_RANGE, () => (taken++, true));
+    }
+    return { taken, stoppedAt: player.y, edgeY };
+  }
+
+  test('an item too far to touch at rest is collected by running at the ledge', () => {
+    const { taken, stoppedAt, edgeY } = runAtTheLedge(28);
+    assert.ok(edgeY + 28 - stoppedAt > PICKUP_RANGE, 'the ledge leaves the armor outside the resting reach box');
+    assert.equal(taken, 1, 'vanilla collects this; only testing the settled position would not');
+  });
+
+  test('the attempted move is one tic long, not a free extra reach', () => {
+    // A tic of full-speed running covers 500/35 ≈ 14.3 units, so an item this
+    // far past the ledge stays out of reach however long the player pushes.
+    assert.equal(runAtTheLedge(28 + PICKUP_RANGE).taken, 0);
+  });
+});

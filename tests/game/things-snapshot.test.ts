@@ -51,7 +51,8 @@ describe('Savegames · things round-trip', () => {
     layer.damage(0, 20, undefined, undefined, player.x, player.y);
     layer.damage(1, 1000);
     layer.update(DOOM_TIC, player);
-    layer.tryPickup({ ...grid.centre(4, 1), z: 0 }, 24, (type) => type === ThingType.stimpack);
+    const at = { ...grid.centre(4, 1), z: 0 };
+    layer.tryPickup(at, at, 24, (type) => type === ThingType.stimpack);
     for (let i = 0; i < 10; i++) layer.update(DOOM_TIC, player);
 
     const saved = JSON.parse(JSON.stringify(layer.snapshot()));

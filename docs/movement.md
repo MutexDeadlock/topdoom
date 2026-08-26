@@ -238,7 +238,9 @@ along-wall component carries into the next frame and the into-wall component is 
 zero whichever *axis* failed to move — cannot express a diagonal wall's slide at all, since neither
 axis is that wall's tangent. With the write-back, the steady state of "push into a wall at angle θ off
 it, lerp back toward the input direction, project again" settles at exactly `speed × cos θ` along the
-wall, verified across wall angles 0-90° and push angles 10/30/60° to three decimals.
+wall, verified across wall angles 0-90° and push angles 10/30/60° to three decimals. The *pre-clip*
+vector is kept too, as `Player.attempted` — pickups reach the destination vanilla tested, not the one
+the slide settled on (docs/items.md § Collecting things).
 
 ## Movement speed and straferunning (`player.ts`)
 

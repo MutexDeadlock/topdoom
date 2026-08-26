@@ -165,6 +165,17 @@ export class Player implements Pos3 {
   prevZ: number;
   prevAngle: number;
 
+  /**
+   * Where this tic's *unclipped* move would have put the player — vanilla's
+   * `P_TryMove` destination, before a wall or a ledge rejected it. Written by
+   * `update` and reset by `syncInterpolation`; `tryPickup` is the only reader,
+   * and only for the tic it was written in. docs/items.md § Collecting things.
+   *
+   * A live object, rewritten in place, so that reader passes a `Pos2` per tic
+   * without allocating one.
+   */
+  readonly attempted: Pos2 = { x: 0, y: 0 };
+
   private world: World;
 
   constructor(world: World) {
@@ -178,6 +189,8 @@ export class Player implements Pos3 {
     this.prevY = this.y;
     this.prevZ = this.z;
     this.prevAngle = this.angle;
+    this.attempted.x = this.x;
+    this.attempted.y = this.y;
   }
 
   /** Every field the simulation mutates, for a savegame — docs/savegames.md § What is saved and what is deliberately not. */
@@ -212,13 +225,17 @@ export class Player implements Pos3 {
   /**
    * Collapses the interpolation window onto the current position, so the next
    * frame draws the player where they now are instead of gliding there from
-   * where they were. Every discontinuous move has to call this.
+   * where they were, and clears `attempted` with it. Every discontinuous move
+   * has to call this.
    */
   syncInterpolation(): void {
     this.prevX = this.x;
     this.prevY = this.y;
     this.prevZ = this.z;
     this.prevAngle = this.angle;
+    // A discontinuous move has no attempted move to still be reaching for.
+    this.attempted.x = this.x;
+    this.attempted.y = this.y;
   }
 
   get eyeZ(): number {
@@ -422,6 +439,11 @@ export class Player implements Pos3 {
     const k = 1 - Math.exp(-ACCELERATION * ground.accelScale * dt);
     this.velX += (targetX - this.velX) * k;
     this.velY += (targetY - this.velY) * k;
+
+    // One tic of both channels' *desired* move, captured before either
+    // `slideMove` below clips it back to what a wall allowed — see `attempted`.
+    this.attempted.x = this.x + (this.velX + this.momX) * dt;
+    this.attempted.y = this.y + (this.velY + this.momY) * dt;
 
     if (Math.abs(this.velX) > 0.01 || Math.abs(this.velY) > 0.01) {
       const moved = slideMove(this.world, this, this.velX * dt, this.velY * dt, PLAYER_RADIUS, blockers);

@@ -30,17 +30,20 @@ describe('Regression · pickup reach is a box, not a circle', () => {
     // straight line. These are ksutra MAP04's own figures.
     const layer = arena(item.x, item.y);
     let taken = 0;
-    layer.tryPickup({ x: item.x - 31, y: item.y - 32, z: 0 }, PICKUP_RANGE, () => (taken++, true));
+    const at = { x: item.x - 31, y: item.y - 32, z: 0 };
+    layer.tryPickup(at, at, PICKUP_RANGE, () => (taken++, true));
     assert.equal(taken, 1, 'vanilla collects this; a radius test would not');
   });
 
   test('the box edge is exclusive, matching `abs(d) >= blockdist` missing', () => {
     const layer = arena(item.x, item.y);
     let taken = 0;
-    layer.tryPickup({ x: item.x - PICKUP_RANGE, y: item.y, z: 0 }, PICKUP_RANGE, () => (taken++, true));
+    const edge = { x: item.x - PICKUP_RANGE, y: item.y, z: 0 };
+    layer.tryPickup(edge, edge, PICKUP_RANGE, () => (taken++, true));
     assert.equal(taken, 0, 'exactly blockdist away on one axis is a miss');
 
-    layer.tryPickup({ x: item.x - PICKUP_RANGE + 1, y: item.y, z: 0 }, PICKUP_RANGE, () => (taken++, true));
+    const inside = { x: item.x - PICKUP_RANGE + 1, y: item.y, z: 0 };
+    layer.tryPickup(inside, inside, PICKUP_RANGE, () => (taken++, true));
     assert.equal(taken, 1, 'one unit closer is a hit');
   });
 });

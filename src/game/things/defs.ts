@@ -366,15 +366,23 @@ export interface ThingLayer {
    */
   draw(alpha: number, viewAngleDeg: number): void;
   /**
-   * Consumes every not-yet-picked thing whose `blockdist` box overlaps `pos`
-   * and that is within vertical reach of `pos.z`, and that `consume` accepts,
-   * hiding it permanently. `blockdist` is `PIT_CheckThing`'s combined radius,
-   * applied as vanilla's axis-aligned box rather than a circle. This layer owns
-   * only which world instance disappears; `consume` (inventory.ts's
-   * `applyPickup`) owns what picking it up means. Its second argument is the
-   * instance's `dropped` flag. docs/items.md § Collecting things.
+   * Consumes every not-yet-picked thing whose `blockdist` box overlaps either end
+   * of the move — `from`, where the collector stands, and `to`, where it was
+   * headed, since vanilla tests the pickup at the destination before the move is
+   * rejected — that is within vertical reach of `from.z`, and that `consume`
+   * accepts, hiding it permanently. `blockdist` is `PIT_CheckThing`'s combined radius, applied as
+   * vanilla's axis-aligned box rather than a circle. Pass the same point twice
+   * for a collector that attempted no move. This layer owns only which world
+   * instance disappears; `consume` (inventory.ts's `applyPickup`) owns what
+   * picking it up means. Its second argument is the instance's `dropped` flag.
+   * docs/items.md § Collecting things.
    */
-  tryPickup(pos: Pos3, blockdist: number, consume: (type: number, dropped: boolean) => boolean): void;
+  tryPickup(
+    from: Pos3,
+    to: Pos2,
+    blockdist: number,
+    consume: (type: number, dropped: boolean) => boolean,
+  ): void;
   /**
    * The visible monster whose billboard this ray crosses nearest the camera,
    * or null — auto-aim's lock-on (docs/combat.md § Auto-aim). Nothing fog of
@@ -564,12 +572,14 @@ export const DEATH_NOTIFY_TYPES: Set<number> = new Set([
 export const TELEFRAG_DAMAGE = 10000;
 
 /**
- * Whether a body arriving at `at` overlaps the one of `radius` at `body` — `PIT_StompThing`'s own
- * summed-radii box, which is the shape every body-vs-body test in this engine uses
- * (docs/movement.md § Collision). Shared so both halves of a landing, the things and the player,
- * agree on where the pad reaches. See docs/death.md § Telefrag.
+ * Whether a body arriving at `at` overlaps the one of `reach` at `body` — the summed-radii box
+ * `PIT_StompThing` and `PIT_CheckThing` share, and the shape every body-vs-body test in this
+ * engine uses (docs/movement.md § Collision). A box and not a circle: it misses only when
+ * `abs(dx) >= reach || abs(dy) >= reach`, so the corners reach furthest. Shared so both halves of
+ * a landing, the things and the player, agree on where the pad reaches (docs/death.md § Telefrag),
+ * and so a pickup's reach is the same box (docs/items.md § Collecting things).
  */
-export function telefragReaches(at: Pos2, body: Pos2, reach: number): boolean {
+export function bodiesOverlap(at: Pos2, body: Pos2, reach: number): boolean {
   return Math.abs(body.x - at.x) < reach && Math.abs(body.y - at.y) < reach;
 }
 

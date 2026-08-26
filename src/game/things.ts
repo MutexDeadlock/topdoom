@@ -17,12 +17,12 @@ import {
   BARREL_MASS,
   BARREL_HEIGHT,
   BARREL_RADIUS,
+  bodiesOverlap,
   BOSS_TYPES,
   DEATH_NOTIFY_TYPES,
   MAX_SKULLS_ON_LEVEL,
   pickupScaleFor,
   TELEFRAG_DAMAGE,
-  telefragReaches,
   type BarrelExplosion,
   type CrossingBody,
   type LevelKillItemStats,
@@ -36,9 +36,9 @@ export {
   // Re-exported so `./things.ts` stays the thing layer's one public entry
   // point for the rest of the engine — `game.ts` and `combat.ts` have no
   // reason to know which file inside `things/` a type happens to live in.
+  bodiesOverlap,
   monstersTelefrag,
   TELEFRAG_DAMAGE,
-  telefragReaches,
   type BarrelExplosion,
   type CrossingBody,
   type MonsterRef,
@@ -582,7 +582,7 @@ export function buildThingSprites(
     for (const q of posed) {
       if (q.id === moverId || q.dead || q.hidden) continue;
       if (!MONSTER_TYPES.has(q.type) && q.type !== ThingType.barrel) continue;
-      if (!telefragReaches(at, q, radius + q.blockRadius)) continue;
+      if (!bodiesOverlap(at, q, radius + q.blockRadius)) continue;
       if (!stomps) return false;
       // Deliberately unattributed: a telefrag is `P_TeleportMove`'s doing, not
       // an attack, and naming the arriving body as the source would start an
@@ -1480,21 +1480,24 @@ export function buildThingSprites(
       dropBatch.dispose();
       fuzzBatch.dispose();
     },
-    tryPickup(pos: Pos3, blockdist: number, consume: (type: number, dropped: boolean) => boolean): void {
+    tryPickup(
+      from: Pos3,
+      to: Pos2,
+      blockdist: number,
+      consume: (type: number, dropped: boolean) => boolean,
+    ): void {
       for (const p of posed) {
         if (p.picked) continue;
-        // `PIT_CheckThing`'s own overlap test is an axis-aligned box, not a
-        // circle: it misses only when `abs(dx) >= blockdist || abs(dy) >= blockdist`.
-        // The corners are what let a player reach an item across a wall they
-        // can't cross (ksutra.wad MAP04, the shells in sector 233).
+        // `PIT_CheckThing`'s box at both ends of the move, because vanilla picks
+        // items up at the destination before rejecting the move.
         // docs/items.md § Collecting things.
-        if (Math.abs(p.x - pos.x) >= blockdist || Math.abs(p.y - pos.y) >= blockdist) continue;
+        if (!bodiesOverlap(from, p, blockdist) && !bodiesOverlap(to, p, blockdist)) continue;
         // Matches vanilla's PIT_CheckThing overhead/underneath gate: a thing
         // sitting on a not-yet-lowered pillar is in 2D range but out of
         // physical reach, and must stay uncollected until the pillar drops
         // (e.g. DOOM2 MAP04's blue key). Read live off the sector rather than
         // a cached height for the same reason `update` does.
-        if (Math.abs((p.sector?.floorHeight ?? 0) - pos.z) > PLAYER_HEIGHT) continue;
+        if (Math.abs((p.sector?.floorHeight ?? 0) - from.z) > PLAYER_HEIGHT) continue;
         if (consume(p.type, p.dropped)) {
           p.picked = true;
           p.hidden = true;

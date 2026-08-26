@@ -70,22 +70,18 @@ function msRow(label: string, ms: number): string {
  */
 export class ProfilerHud {
   private root = document.getElementById('profiler-hud')!;
-  private totalEl: HTMLElement;
-  private gpuEl: HTMLElement;
+  private cpuEl = document.getElementById('profiler-cpu')!;
+  private gpuEl = document.getElementById('profiler-gpu')!;
+  private rowsEl = document.getElementById('profiler-rows')!;
   private rows = new Map<string, { row: HTMLElement; fill: HTMLElement; value: HTMLElement }>();
 
   constructor() {
     // A new Game (and with it, a new ProfilerHud) is constructed every time
-    // the player returns from ESC's menu and hits Start again, but
-    // `#profiler-hud` itself is static markup in index.html, reused across
-    // instances — without clearing it first, the previous instance's rows
-    // stay put underneath this one's, reading as a second stacked overlay.
-    this.root.replaceChildren();
-    this.totalEl = document.createElement('div');
-    this.totalEl.className = 'profiler-total';
-    this.gpuEl = document.createElement('div');
-    this.gpuEl.className = 'profiler-total';
-    this.root.append(this.totalEl, this.gpuEl);
+    // the player returns from ESC's menu and hits Start again, but the panel
+    // itself is static markup in index.html, reused across instances —
+    // without clearing the row container first, the previous instance's rows
+    // stay put above this one's, reading as a second stacked overlay.
+    this.rowsEl.replaceChildren();
   }
 
   update(samples: ProfileSample[], totalMs: number, gpuMs: number | null): void {
@@ -97,7 +93,7 @@ export class ProfilerHud {
     // milliseconds and a four-figure "fps eq." while the game runs at 50. The HUD's own FPS
     // counter is the real rate; this is the ceiling the CPU alone would allow.
     // docs/menu.md § Profiling overlay.
-    this.totalEl.textContent = msRow('cpu', totalMs);
+    this.cpuEl.textContent = msRow('cpu', totalMs);
     // The two totals are concurrent, not cumulative: the larger one is what sets the frame rate,
     // and a frame that is GPU-bound shows a small `cpu` beside a large `gpu`. `n/a` is the honest
     // reading where the browser withholds `EXT_disjoint_timer_query_webgl2`, which is common.
@@ -128,7 +124,7 @@ export class ProfilerHud {
       entry.fill.classList.toggle('warn', fraction >= WARN_FRACTION && fraction < HOT_FRACTION);
       entry.fill.classList.toggle('hot', fraction >= HOT_FRACTION);
       entry.value.textContent = s.ms.toFixed(2);
-      this.root.appendChild(entry.row);
+      this.rowsEl.appendChild(entry.row);
     }
   }
 }

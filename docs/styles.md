@@ -32,7 +32,7 @@ src/ui/menu/
     hold.css          .hold/.holding, the press-and-hold confirm on any #menu button
 src/ui/devmode/
     debughud.*        #hud
-    profilerhud.*     #profiler-hud
+    profilerhud.*     #profiler-hud, and its #profiler-cpu/#profiler-rows/#profiler-gpu children
 ```
 
 Every file here is named after the module that shows and hides its elements, with one exception:

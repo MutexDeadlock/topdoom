@@ -834,12 +834,20 @@ frame can be traced to *which* system is responsible rather than just how many f
 **Every row is CPU; the GPU gets one number of its own.** The rows and their total time main-thread
 wall clock between `beginFrame()` and `endFrame()`, both inside the same `requestAnimationFrame`
 callback — which cannot see the GPU, whose work finishes long after that callback returns. That is
-why the total says `cpu`, and why the overlay carries a second line:
+why the total says `cpu`, and why the overlay carries a second line. The two bracket the category
+rows — `cpu` above them, since they add up to it, and `gpu` below, since it is a separate number:
 
 ```
 cpu 4.5 ms  (220 fps eq.)
+Render   [====      ]  3.10
+Monsters [=         ]  0.80
+...
 gpu 20.1 ms  (49 fps eq.)
 ```
+
+That layout is `profilerhud.html`'s, not the class's: the panel ships the two total lines and the
+`#profiler-rows` container between them as static markup, and `ProfilerHud` only fills them in — so
+moving a line is an edit to the markup rather than to append order in `update()`.
 
 **The two are concurrent, not cumulative — the larger one is what sets the frame rate.** A frame
 like the one above is GPU-bound, and no amount of work on any row above it will help; docs/render.md

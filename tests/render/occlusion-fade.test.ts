@@ -867,3 +867,87 @@ describe('render · fade targets', () => {
     }
   });
 });
+
+/**
+ * A frame's fade work is proportional to the hole, not to the map: pass one
+ * walks line sides, only unsettled quads are reset and damped, and `commit`
+ * writes the union of what the fade touched and what fog of war moved. Every
+ * case here is about that last one holding the same picture as a full pass.
+ * See docs/render.md § Nothing per-frame is per-quad.
+ */
+describe('render · a frame’s work follows the hole, not the map', () => {
+  /** Camera north of the middle cell's north wall, target south of it — the rig every case here fades with. */
+  function crossing() {
+    const b = walledRow();
+    const camX = CELL * 1.5;
+    return { b, camX, camY: 2 * CELL + 512, camZ: 128, target: targetAt(camX, 2 * CELL - 512, 0) };
+  }
+
+  /** No quad's fog moved this frame — the empty list `commit` gets on a settled level. */
+  const NOTHING_MOVED = { indices: new Int32Array(0), count: 0 };
+
+  /** The lowest alpha `commit` has written anywhere in the level's wall meshes. */
+  function lowest(b: ReturnType<typeof walledRow>): number {
+    let low = 1;
+    for (const key of b.wallMeshes.keys()) {
+      const attr = b.wallMeshes.get(key)!.geometry.getAttribute('color') as THREE.BufferAttribute;
+      for (let v = 0; v < attr.count; v++) low = Math.min(low, attr.getW(v));
+    }
+    return low;
+  }
+
+  test('a quad the fade touched is written even though no fog moved', () => {
+    const { b, camX, camY, camZ, target } = crossing();
+    const fader = new WallFader(b.occluders, b.wallMeshes);
+    fader.update(SETTLE, camX, camY, camZ, [target], openingsOf(b.world));
+    fader.commit(() => 1, NOTHING_MOVED);
+    assert.ok(Math.abs(lowest(b) - FADE_ALPHA) < 1e-6, `the hole reached the mesh, got ${lowest(b)}`);
+  });
+
+  test('a quad that finishes relaxing is written on the frame it settles', () => {
+    // The regression this guards: a quad drops off the active list once its
+    // alpha is back at 1, and dropping it on the frame it *reached* 1 leaves
+    // that last write unmade — a hole in the wall that never closes again,
+    // however far the player walks off.
+    const { b, camX, camY, camZ, target } = crossing();
+    const fader = new WallFader(b.occluders, b.wallMeshes);
+    fader.update(SETTLE, camX, camY, camZ, [target], openingsOf(b.world));
+    fader.commit(() => 1, NOTHING_MOVED);
+    assert.ok(lowest(b) < 1, 'the wall faded first');
+
+    // The target walks off; nothing crosses this wall any more. A few frames of
+    // relaxing, each committed as the game does it — with fog holding still.
+    const away = targetAt(camX + CELL * 8, camY, 0);
+    for (let i = 0; i < 4; i++) {
+      fader.update(SETTLE, camX, camY, camZ, [away], openingsOf(b.world));
+      fader.commit(() => 1, NOTHING_MOVED);
+    }
+    assert.equal(lowest(b), 1, 'the wall is whole again in the mesh, not just in the fader');
+    assert.equal(fader.idle, true, 'and nothing is left on the active list');
+  });
+
+  test('a fog change reaches a quad the fade never touched', () => {
+    const { b } = crossing();
+    const fader = new WallFader(b.occluders, b.wallMeshes);
+    // The first commit writes everything, since nothing has been written yet.
+    fader.commit(() => 1, NOTHING_MOVED);
+    assert.equal(lowest(b), 1);
+
+    // One quad's subsector goes dark, named the way `FogOfWar.changedWalls`
+    // names it. Nothing faded, so the fade's own list is empty.
+    const hidden = 3;
+    const changed = { indices: Int32Array.of(hidden), count: 1 };
+    fader.commit((i) => (i === hidden ? 0 : 1), changed);
+    const attr = b.wallMeshes.get(b.occluders[hidden].key)!.geometry.getAttribute('color') as THREE.BufferAttribute;
+    assert.equal(attr.getW(b.occluders[hidden].vertexStart), 0, 'the quad fog hid is written to 0');
+    assert.equal(lowest(b), 0, 'and it is the only thing that moved');
+  });
+
+  test('`idle` says whether an update could do anything at all', () => {
+    const { b, camX, camY, camZ, target } = crossing();
+    const fader = new WallFader(b.occluders, b.wallMeshes);
+    assert.equal(fader.idle, true, 'a fresh fader has nothing to relax');
+    fader.update(SETTLE, camX, camY, camZ, [target], openingsOf(b.world));
+    assert.equal(fader.idle, false, 'a faded one does');
+  });
+});

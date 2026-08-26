@@ -1881,7 +1881,9 @@ export class Game {
       this.flatFader.update(...camArgs, fadeTargets);
       // Walls resolve their own subsector inside FogOfWar (see wallAlpha); flats
       // and things already know theirs, so they go through alphaOf directly.
-      this.wallFader.commit((i) => fog.wallAlpha(i));
+      // Only what moved: this frame's fade knows its own quads, and the reveal
+      // names the ones it touched (`FogOfWar.changedWalls`).
+      this.wallFader.commit((i) => fog.wallAlpha(i), fog.changedWalls());
       this.flatFader.commit((i) => fog.alphaOf(i));
       // Independent of camera/player position — a scrolling wall animates
       // whether or not it's currently faded or in view. The offsets advance on

@@ -310,6 +310,22 @@ of them know it natively:
   A long wall is several occluders, one per chunk (docs/render.md § The fade is a hole, not a wall),
   so each probes its own chunk's midpoint — the keying is unchanged, just finer-grained.
 
+### Which walls a reveal moved
+
+`updateFade` damps one alpha per subsector, and `WallFader.commit` needs the quads that alpha
+scales. Handing it the whole occluder list means a walk over every quad on the map every frame to
+find the handful a reveal actually touched — 408,705 of them on Sunder 2512 MAP20 — so `updateFade`
+files the quads it moved instead, and `changedWalls()` hands that list over
+(docs/render.md § Nothing per-frame is per-quad).
+
+The index is `wallSubsector` inverted, built once beside it as a prefix-sum table: a changed
+subsector names its quads without a search. `changedWalls()` returns **`null` for "all of them"**,
+which is not an error path but two real cases — a wholesale alpha write that bypassed the damping
+loop (the constructor's spawn seed, `restoreExplored`), and a frame where more quads moved at once
+than `CHANGED_WALL_LIMIT` holds (the computer area map's level-wide ramp), where a full pass is
+cheaper than a list as long as the map. **Reading it consumes that fallback**, so it belongs in the
+one place that commits the walls, once per frame, after `updateFade`.
+
 ### Mover wall quads
 
 The static wall quads are probed **once at load** and their subsectors kept in `wallSubsector`.

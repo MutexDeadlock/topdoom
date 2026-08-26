@@ -30,7 +30,7 @@ import {
 } from '../../render/mapmesh.ts';
 import type { SubSectorPoly } from '../../render/bsp.ts';
 import type { MaterialBank } from '../../render/textures.ts';
-import { FlatFader, type FadeTarget, WallFader } from '../../render/occlusion.ts';
+import { fadeReach, FlatFader, type FadeBox, type FadeTarget, WallFader } from '../../render/occlusion.ts';
 
 /**
  * One movable sector's geometry plus the two faders that own its vertex
@@ -45,9 +45,27 @@ interface MoverEntry {
   mesh: MoverMesh;
   walls: WallFader;
   flats: FlatFader;
+  /**
+   * The mesh's own 2D footprint, against which `updateFading` asks whether this
+   * frame's fading can reach it at all. Built with the mesh: a refresh moves a
+   * mover's heights, never where its quads stand (docs/render.md § Mover
+   * meshes), and one that does reshape it builds a fresh entry.
+   */
+  bounds: FadeBox;
+  /**
+   * Whether this entry has committed once since it was built. Its faders start
+   * with nothing written (`lastCombined` is NaN), so the first pass has to run
+   * whatever else says it could be skipped.
+   */
+  committed: boolean;
 }
 
 const NO_SUBSECTORS: readonly number[] = [];
+
+/** Whether two map-space boxes touch at all — `MoverEntry.bounds` against a fade reach or a reveal. */
+function overlaps(a: FadeBox, b: { minX: number; minY: number; maxX: number; maxY: number }): boolean {
+  return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
+}
 
 /**
  * The renderer's `MoverIndex`: the subsectors grouped once from `polys` (their
@@ -85,6 +103,8 @@ export class MoverGeometry {
   /** Movable sectors sharing a linedef with a given movable sector — see `rebuildAround`. */
   private movableNeighbors = new Map<number, Set<number>>();
   private moverMeshes = new Map<number, MoverEntry>();
+  /** This frame's fade reach, refilled once per `updateFading` — see `fadeReach`. */
+  private reach: FadeBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 
   private sectorOccluders = new Map<number, BuiltMap['occluders']>();
   private sectorFlats = new Map<number, BuiltMap['flatSurfaces']>();
@@ -165,9 +185,21 @@ export class MoverGeometry {
     // Hoisted out of the loop: a level can hold a couple of thousand mover
     // meshes, and this closure captures nothing that varies between them.
     const openingInto = (line: number, out: Opening) => this.world.openingInto(line, out);
+    fadeReach(camX, camY, targets, this.reach);
+    const revealed = this.fog.changedBounds();
     for (const g of this.moverMeshes.values()) {
-      g.walls.update(dt, camX, camY, camZ, targets, openingInto);
-      g.flats.update(dt, camX, camY, camZ, targets);
+      // Nothing that reaches this mesh moved, and nothing in it is still
+      // relaxing: every call below would write back what is already there. On a
+      // map with a couple of thousand movers those calls are the whole cost.
+      // docs/render.md § Mover meshes a frame cannot touch.
+      const idle = g.walls.idle && g.flats.idle;
+      const skipUpdate = idle && !this.reachesMesh(g);
+      if (skipUpdate && g.committed && !(revealed && overlaps(g.bounds, revealed))) continue;
+      if (!skipUpdate) {
+        g.walls.update(dt, camX, camY, camZ, targets, openingInto);
+        g.flats.update(dt, camX, camY, camZ, targets);
+      }
+      g.committed = true;
       // Mover quads aren't in the static occluder list FogOfWar indexed at
       // load; `mapmesh` resolved each one's leaf when the mesh was built, and a
       // refresh preserves it, so -1 means only that the build was given no probe.
@@ -191,15 +223,36 @@ export class MoverGeometry {
     }
   }
 
+  /** Whether this frame's fade reach (`fadeReach`, filled into `reach`) overlaps a mesh's footprint. */
+  private reachesMesh(g: MoverEntry): boolean {
+    return overlaps(g.bounds, this.reach);
+  }
+
   private createMoverMesh(sectorIndex: number): void {
     const mesh = buildMoverMesh(this.map, this.polys, sectorIndex, this.bank, this.meshOptions, this.moverIndex);
     this.scene.add(mesh.group);
+    const bounds: FadeBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    const stretch = (x: number, y: number) => {
+      if (x < bounds.minX) bounds.minX = x;
+      if (x > bounds.maxX) bounds.maxX = x;
+      if (y < bounds.minY) bounds.minY = y;
+      if (y > bounds.maxY) bounds.maxY = y;
+    };
+    for (const q of mesh.wallQuads) {
+      stretch(q.ax, q.ay);
+      stretch(q.bx, q.by);
+    }
+    for (const f of mesh.flatFans) {
+      for (let p = 0; p < f.vertexXY.length; p += 2) stretch(f.vertexXY[p], f.vertexXY[p + 1]);
+    }
     this.moverMeshes.set(sectorIndex, {
       mesh,
       // `trackVisibility` on: these are the faders whose verdict `updateFading`
       // reads to skip drawing an invisible mover mesh.
       walls: new WallFader(mesh.wallQuads, mesh.meshes, true),
       flats: new FlatFader(mesh.flatFans, mesh.meshes, true),
+      bounds,
+      committed: false,
     });
     // A mover mesh holds its own sector's flats plus wall quads from *both*
     // sides of every bordering line, so the sectors it must be relit for are
@@ -226,6 +279,14 @@ export class MoverGeometry {
     const old = this.moverMeshes.get(sectorIndex);
     if (old) {
       if (refreshMoverMesh(old.mesh, this.map, this.polys, sectorIndex, this.bank, this.meshOptions, this.moverIndex)) {
+        // A refresh rewrites the whole colour attribute, alpha channel and all,
+        // so what the faders last wrote is gone from the buffer even though
+        // their own record still claims it. Both halves matter: the entry has
+        // to be visited again however quiet its surroundings, and the faders
+        // have to write rather than recognize their own last value.
+        old.walls.invalidateWritten();
+        old.flats.invalidateWritten();
+        old.committed = false;
         return;
       }
       this.scene.remove(old.mesh.group);

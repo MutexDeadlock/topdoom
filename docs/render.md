@@ -691,6 +691,33 @@ Measured on EPIC.WAD MAP02 (the heaviest map to hand: 6,582 line sides), both cu
 wall quads from 6,795 to 11,602 and the whole fade pass from 1.10 to 1.16 ms/frame at 25 targets;
 level mesh build goes 21 → 57 ms, once per load.
 
+#### Nothing per-frame is per-quad
+
+The sight box, the lazy passable test and the grid all bound the *work a crossing does*. Three
+whole-array walks were left over that a huge map still paid in full, and Sunder 2512 MAP20 is where
+they stopped being invisible: **408,705 wall quads**, of which a frame fades a few dozen.
+
+- **Pass one walks line sides, not quads.** The box test and the crossing solve were always per
+  line side; the loop under them was per quad, so a rejected side still cost one iteration for each
+  chunk and tier it had been cut into. `WallFader` records the runs of quads sharing a line side
+  once (`buildRuns` — `addWall` emits them consecutively) and pass one walks *those*, reaching a
+  run's quads only once its own segment is inside the box.
+- **Only unsettled quads are reset and damped.** `wanted.fill(1)` and the damping sweep both ran
+  over every corner on the map. A quad is on the `active` list from the moment a crossing folds it
+  until it has relaxed all the way back to 1, and those two passes now walk only that list. A
+  settled quad is held one extra frame (`settledStamp`) so the `commit` that follows still writes
+  the value it came to rest on — dropping it the same frame would leave that last write unmade.
+- **`commit` writes what changed, not what exists.** Its two inputs move in known places: this
+  frame's fade knows its own quads (the `active` list) and fog of war names the ones a reveal
+  moved (docs/fogofwar.md § Which walls a reveal moved), so `commit` visits their union. It falls
+  back to every quad when a partial pass can't be trusted — the first commit after a build
+  (`lastCombined` starts NaN), a `trackVisibility` fader (`maxAlphaByKey` is only as complete as
+  what the pass visits, which is why the mover faders still walk their own quads in full), or a
+  caller that passes no change list at all.
+
+Measured on that map at the MAP20 player start, 1 target: `WallFader.update` 6.36 → 0.30 ms/frame,
+`WallFader.commit` 5.50 → 0.01 ms/frame. DOOM2 MAP01 is unchanged at both (already under 0.05 ms).
+
 ### The target is the billboard
 
 **Both faders aim at an upright rectangle, not at a point.** A thing is drawn as a plane fixed
@@ -952,6 +979,41 @@ Why it matters is a mover-count problem rather than a geometry one: a Boom map's
 each get their own small mesh (§ Mover meshes), so literalism.wad MAP18's 973 of them add ~2,150
 meshes averaging 8 triangles. Measured there at spawn, 2,144 of those 2,147 were fully transparent
 while ~1,600 draw calls a frame were still being issued for them.
+
+### Mover meshes a frame cannot touch
+
+The same mover count is a per-frame CPU problem too, and for the same reason: each mover mesh
+carries its own pair of faders, so Sunder 2512 MAP20's **1,633 movers** meant 1,633 × (two
+`update`s, two `commit`s, a visibility walk) every frame over ~11,500 quads and ~4,900 fans in
+total — seven quads a mesh, and the call overhead was the whole cost. `updateFading` skips a mesh
+outright when nothing that could change it happened:
+
+- **Nothing can reach it.** `fadeReach` is the sight box grown by the widest hole any target opens
+  (§ Nothing per-frame is per-quad); a crossing lies on a sightline, so geometry whose footprint
+  misses that box cannot be folded this frame. The mesh's own footprint is fixed at build time — a
+  refresh moves heights, not where quads stand.
+- **Nothing in it is still relaxing.** `WallFader.idle`/`FlatFader.idle` — a mesh that was faded
+  and has since been left behind must keep damping back to 1, and freezing it mid-fade leaves a
+  hole in a wall that never closes. That is the escape a skip on reach alone gets wrong.
+- **Fog of war moved nothing near it.** `FogOfWar.changedBounds` is one box around every subsector
+  whose reveal alpha moved (docs/fogofwar.md § Which walls a reveal moved) — coarse on purpose,
+  since the question is only whether this mesh *might* be affected.
+- **It has committed at least once.** A fader starts with nothing written at all, so a mesh built
+  in a quiet corner of the level would otherwise keep whatever alpha the *builder* left in its
+  buffer.
+
+That last rule extends to a refresh, and the reason is worth stating on its own because it was a
+bug on its own: **`refreshMoverMesh` rewrites the mesh's whole colour attribute, alpha channel
+included** (§ Mover meshes), so what the faders last wrote is gone from the buffer while their own
+`lastCombined` still claims it — and `commit`'s unchanged-alpha skip then leaves the *builder's*
+alpha standing. A lift moving through fog of war it has never lifted drew solid for the whole
+stroke. `MoverGeometry.rebuild` calls `invalidateWritten()` on both faders after a successful
+refresh, which is what makes the next commit write rather than recognize.
+
+Measured on Sunder 2512 MAP20 at the player start, timing each part of `game.ts: updateFading`
+separately: `SpecialsController.updateFading` 3.34 → 0.19 ms/frame, and with the wall-fader work
+above the block as a whole 18.2 → 1.8 ms/frame. What is left of it is the flat fader, which still
+walks its 49,716 fans a frame behind per-fan early-outs (§ Flats).
 
 ## Deep water (`mapmesh.ts: processFlat`, `ceilingFacing`)
 

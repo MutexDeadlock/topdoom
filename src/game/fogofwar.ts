@@ -18,6 +18,19 @@ const FADE_SPEED = 3;
 const SNAP_EPS = 0.004;
 
 /**
+ * How many wall quads one frame's reveal may name individually before
+ * `changedWalls` gives up and reports "all of them" instead. A reveal touches a
+ * handful of subsectors a frame and each holds a few dozen quads; the fallback
+ * is for the level-wide ramp the computer area map starts, where the list would
+ * be as long as the map and the full pass is cheaper than building it.
+ * **Tuned by feel.**
+ */
+const CHANGED_WALL_LIMIT = 4096;
+
+/** What `changedBounds` reports when the change was wholesale — a box nothing is outside. */
+const EVERYWHERE = { minX: -Infinity, minY: -Infinity, maxX: Infinity, maxY: Infinity };
+
+/**
  * Cap on how many not-yet-explored subsectors get their sample rays tested in one `tick` call
  * (tuned by feel; `scanCursor` carries the rest of the nearest-first `order` onto later tics),
  * alongside the work cap below. Counted per tic, not per frame — `explored` is a gameplay input,
@@ -90,6 +103,41 @@ export class FogOfWar {
   /** Bumped once per `tick`, so a line's `blocksSight` is read at most once per tic. */
   private scanId = 0;
 
+  /**
+   * Which wall quads face into each subsector — `wallSubsector` inverted, as a
+   * prefix-sum table plus its items. It exists so `updateFade` can name the
+   * quads a reveal moved instead of leaving `WallFader.commit` to rediscover
+   * them by walking the map: see `changedWalls`.
+   */
+  private wallsBySubsectorStart: Int32Array;
+  private wallsBySubsector: Int32Array;
+  /** The quads `updateFade` moved, refilled per frame — the buffer `changedWalls` hands out. */
+  private changedWallList = new Int32Array(CHANGED_WALL_LIMIT);
+  private changedWallCount = 0;
+  /**
+   * Each subsector's own 2D bounds, so `changedBounds` can say where a frame's
+   * reveal happened without a second pass over the geometry.
+   */
+  private ssMinX: Float64Array;
+  private ssMinY: Float64Array;
+  private ssMaxX: Float64Array;
+  private ssMaxY: Float64Array;
+  /** The union of the bounds of everything `updateFade` moved, and whether it moved anything at all. */
+  private changedBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  private changedAny = false;
+  /**
+   * Set whenever the changed quads are not worth naming one by one — a
+   * wholesale alpha write (the constructor's seed, a restore) or more moving at
+   * once than the buffer holds. `changedWalls` reports "all of them" once and
+   * clears it.
+   */
+  private wallsAllChanged = true;
+  /**
+   * The same fallback for `changedBounds`, kept apart because the two are read
+   * by different callers on the same frame and each consumes its own.
+   */
+  private boundsAllChanged = true;
+
   /** Scratch for `wallSubsectorAt`, which runs per mover quad per tic — see `wallProbePoint`. */
   private wallProbe: Pos2 = { x: 0, y: 0 };
 
@@ -150,6 +198,31 @@ export class FogOfWar {
 
     this.blockStamp = new Int32Array(map.linedefs.length);
     this.blockFlag = new Uint8Array(map.linedefs.length);
+
+    this.ssMinX = new Float64Array(polys.length);
+    this.ssMinY = new Float64Array(polys.length);
+    this.ssMaxX = new Float64Array(polys.length);
+    this.ssMaxY = new Float64Array(polys.length);
+    for (let ss = 0; ss < polys.length; ss++) {
+      const pts = polys[ss].points;
+      // A leaf the BSP clip left with no polygon at all gets the whole plane
+      // rather than the inverted box an empty sweep would produce: `overlaps`
+      // must never answer "nowhere near" for a subsector whose reveal moved.
+      let minX = pts.length === 0 ? -Infinity : Infinity;
+      let minY = pts.length === 0 ? -Infinity : Infinity;
+      let maxX = pts.length === 0 ? Infinity : -Infinity;
+      let maxY = pts.length === 0 ? Infinity : -Infinity;
+      for (let p = 0; p < pts.length; p += 2) {
+        if (pts[p] < minX) minX = pts[p];
+        if (pts[p] > maxX) maxX = pts[p];
+        if (pts[p + 1] < minY) minY = pts[p + 1];
+        if (pts[p + 1] > maxY) maxY = pts[p + 1];
+      }
+      this.ssMinX[ss] = minX;
+      this.ssMinY[ss] = minY;
+      this.ssMaxX[ss] = maxX;
+      this.ssMaxY[ss] = maxY;
+    }
 
     for (let ss = 0; ss < polys.length; ss++) {
       const poly = polys[ss];
@@ -216,6 +289,14 @@ export class FogOfWar {
       const o = occluders[i];
       this.wallSubsector[i] = o.subsector >= 0 ? o.subsector : this.wallSubsectorAt(o.ax, o.ay, o.bx, o.by);
     }
+    this.wallsBySubsectorStart = new Int32Array(polys.length + 1);
+    this.wallsBySubsector = new Int32Array(occluders.length);
+    for (let i = 0; i < occluders.length; i++) this.wallsBySubsectorStart[this.wallSubsector[i] + 1]++;
+    for (let ss = 0; ss < polys.length; ss++) {
+      this.wallsBySubsectorStart[ss + 1] += this.wallsBySubsectorStart[ss];
+    }
+    const cursor = Int32Array.from(this.wallsBySubsectorStart.subarray(0, polys.length));
+    for (let i = 0; i < occluders.length; i++) this.wallsBySubsector[cursor[this.wallSubsector[i]]++] = i;
 
     // Seed the spawn's surroundings fully revealed instead of fading up from
     // black on frame one: unbounded on both caps, so this one call reveals
@@ -243,6 +324,8 @@ export class FogOfWar {
       if (this.sights[ss] && !this.explored[ss]) this.pending++;
     }
     this.alpha.set(this.explored);
+    this.wallsAllChanged = true;
+    this.boundsAllChanged = true;
   }
 
   /**
@@ -396,11 +479,71 @@ export class FogOfWar {
    * shootability framerate-dependent.
    */
   updateFade(dt: number): void {
+    this.changedWallCount = 0;
+    this.changedAny = false;
     for (let ss = 0; ss < this.alpha.length; ss++) {
       const target = this.explored[ss];
       if (this.alpha[ss] === target) continue;
       this.alpha[ss] = dampen(this.alpha[ss], target, FADE_SPEED, dt, SNAP_EPS);
+      // Where the reveal is happening, for `changedBounds`.
+      if (!this.changedAny) {
+        this.changedAny = true;
+        this.changedBox.minX = this.ssMinX[ss];
+        this.changedBox.minY = this.ssMinY[ss];
+        this.changedBox.maxX = this.ssMaxX[ss];
+        this.changedBox.maxY = this.ssMaxY[ss];
+      } else {
+        if (this.ssMinX[ss] < this.changedBox.minX) this.changedBox.minX = this.ssMinX[ss];
+        if (this.ssMinY[ss] < this.changedBox.minY) this.changedBox.minY = this.ssMinY[ss];
+        if (this.ssMaxX[ss] > this.changedBox.maxX) this.changedBox.maxX = this.ssMaxX[ss];
+        if (this.ssMaxY[ss] > this.changedBox.maxY) this.changedBox.maxY = this.ssMaxY[ss];
+      }
+      // The walls this subsector holds now read a different reveal, so file
+      // them for `changedWalls`. Past the buffer it stops filing and says
+      // "everything" instead — a level-wide reveal is worth one full pass, not
+      // a list as long as the map.
+      const from = this.wallsBySubsectorStart[ss];
+      const to = this.wallsBySubsectorStart[ss + 1];
+      if (this.changedWallCount + (to - from) > this.changedWallList.length) {
+        this.wallsAllChanged = true;
+        continue;
+      }
+
+      for (let k = from; k < to; k++) this.changedWallList[this.changedWallCount++] = this.wallsBySubsector[k];
     }
+  }
+
+  /**
+   * Where the last `updateFade`'s reveal happened: one box around every
+   * subsector whose alpha moved, or `null` when none did. A coarse union on
+   * purpose — its reader (`MoverGeometry.updateFading`) only asks whether a
+   * mesh *might* be affected, and a walk of the level's movers is what it saves
+   * by asking. A wholesale alpha write reports the whole plane, the same
+   * fallback `changedWalls` makes, and reading it does not consume that:
+   * `changedWalls` owns the flag.
+   */
+  changedBounds(): { minX: number; minY: number; maxX: number; maxY: number } | null {
+    if (this.boundsAllChanged) {
+      this.boundsAllChanged = false;
+      return EVERYWHERE;
+    }
+    return this.changedAny ? this.changedBox : null;
+  }
+
+  /**
+   * The wall quads whose reveal alpha moved in the last `updateFade`, for
+   * `WallFader.commit` to write without walking every quad on the map — or
+   * `null` for "all of them", which is what a wholesale alpha write reports and
+   * what a frame with more movement than the buffer holds falls back to.
+   * Reading it consumes that fallback, so it must be called once per frame,
+   * after `updateFade`. docs/fogofwar.md § Which walls a reveal moved.
+   */
+  changedWalls(): { indices: Int32Array; count: number } | null {
+    if (this.wallsAllChanged) {
+      this.wallsAllChanged = false;
+      return null;
+    }
+    return { indices: this.changedWallList, count: this.changedWallCount };
   }
 
   /**

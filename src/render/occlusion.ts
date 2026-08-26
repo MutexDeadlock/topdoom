@@ -71,6 +71,18 @@ const GRID_MIN_OCCLUDERS = 256;
 export type FadeTarget = Pos3 & { halfHeight: number; fadeFloor: number; fadeRadius: number };
 
 /**
+ * The quads a `commit` caller knows fog of war moved this frame — `count`
+ * entries of `indices`, which is a reused buffer and longer than `count`.
+ * Declared structurally here rather than imported, so the render layer keeps no
+ * import edge into `game/fogofwar.ts` (the `ScrollOffsets` rule below).
+ * `null` means "assume all of them", which is what a wholesale reveal reports.
+ */
+export interface ChangedQuads {
+  readonly indices: Int32Array;
+  readonly count: number;
+}
+
+/**
  * The alpha one crossing pulls a point at `distanceSquared` from it down to:
  * `floor` inside the core, smoothstepped back to 1 by `radius`, and 1 beyond.
  * The core is always half the radius, so a target's hole is one shape scaled.
@@ -272,6 +284,32 @@ function sightBox(camX: number, camY: number, targets: FadeTarget[]): typeof sig
   return sightBoxOut;
 }
 
+/** A 2D box in DOOM map space, for `fadeReach`'s caller to test its own geometry against. */
+export interface FadeBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/**
+ * Everything this frame's fading can reach: the sight box above, grown by the
+ * widest hole any of the targets opens. A crossing lies on a sightline and so
+ * inside that box, and it folds nothing further than its own radius, so
+ * geometry outside this box cannot change — which is what lets
+ * `MoverGeometry.updateFading` skip a mesh outright once its faders are also
+ * `idle`. See docs/render.md § Mover meshes a frame cannot touch.
+ */
+export function fadeReach(camX: number, camY: number, targets: FadeTarget[], out: FadeBox): void {
+  const box = sightBox(camX, camY, targets);
+  let radius = 0;
+  for (const t of targets) if (t.fadeRadius > radius) radius = t.fadeRadius;
+  out.minX = box.minX - radius;
+  out.maxX = box.maxX + radius;
+  out.minY = box.minY - radius;
+  out.maxY = box.maxY + radius;
+}
+
 /**
  * Fades the wall quads currently sitting on a camera→target sightline. `update` only computes
  * that factor; a wall's on-screen alpha is its *product* with fog of war's reveal — two systems
@@ -341,6 +379,42 @@ export class WallFader {
   /** Occluder indices a crossing might reach, refilled per query (the whole list when there is no grid). */
   private candidates: Int32Array;
   /**
+   * The runs of quads sharing a line side, which `addWall` emits together —
+   * `[runFirst[r], runLast[r]]` plus that side's own segment and linedef. Pass
+   * one walks *these* rather than every quad: the box test is per line side
+   * already, and on a map with hundreds of thousands of quads the run it
+   * belongs to is the only thing most of them would have contributed to. Built
+   * once, since a refresh changes a mover quad's heights but never which line
+   * side it came from (see `buildGrid` for the same argument about footprints).
+   */
+  private runFirst: Int32Array;
+  private runLast: Int32Array;
+  private runLine: Int32Array;
+  private runSegAx: Float64Array;
+  private runSegAy: Float64Array;
+  private runSegBx: Float64Array;
+  private runSegBy: Float64Array;
+  private runCount = 0;
+  /**
+   * The quads whose alpha is not settled at 1 — the only ones `update` has to
+   * reset, damp and hand to `commit`. A quad joins when a crossing first folds
+   * it and leaves once it has relaxed all the way back, so the per-frame cost
+   * follows the size of the hole rather than the size of the map.
+   * `activeSlot[j]` is where quad `j` sits in `active`, or -1.
+   */
+  private active: Int32Array;
+  private activeSlot: Int32Array;
+  private activeCount = 0;
+  /**
+   * The `update` a still-active quad first came to rest on, or -1 while it is
+   * still moving. A quad is kept one extra frame after it settles so the
+   * `commit` that follows still writes the value it settled *on*; the next
+   * `update` is what drops it.
+   */
+  private settledStamp: Int32Array;
+  /** Set until the first `commit`, which has to write every quad because `lastCombined` starts NaN. */
+  private commitAll = true;
+  /**
    * The highest combined alpha the last `commit` resolved for each mesh key —
    * zero means every quad that mesh draws is currently invisible, which is what
    * lets a caller skip drawing it entirely (`MoverGeometry.updateFading`).
@@ -351,6 +425,8 @@ export class WallFader {
    */
   readonly maxAlphaByKey = new Map<string, number>();
   private trackVisibility: boolean;
+  /** The batches this frame's `commit` wrote into, reused rather than reallocated: a level can hold a couple of thousand faders and every one of them commits every frame. */
+  private dirtyKeys = new Set<string>();
 
   constructor(occluders: WallOccluder[], meshes: Map<string, THREE.Mesh>, trackVisibility = false) {
     this.occluders = occluders;
@@ -361,9 +437,71 @@ export class WallFader {
     this.passable = new Uint8Array(occluders.length);
     this.passableStamp = new Int32Array(occluders.length).fill(-1);
     this.candidates = new Int32Array(occluders.length);
+    this.active = new Int32Array(occluders.length);
+    this.activeSlot = new Int32Array(occluders.length).fill(-1);
+    this.settledStamp = new Int32Array(occluders.length).fill(-1);
+    this.runFirst = new Int32Array(occluders.length);
+    this.runLast = new Int32Array(occluders.length);
+    this.runLine = new Int32Array(occluders.length);
+    this.runSegAx = new Float64Array(occluders.length);
+    this.runSegAy = new Float64Array(occluders.length);
+    this.runSegBx = new Float64Array(occluders.length);
+    this.runSegBy = new Float64Array(occluders.length);
     this.trackVisibility = trackVisibility;
+    this.buildRuns();
     if (occluders.length > GRID_MIN_OCCLUDERS) this.buildGrid();
     else for (let i = 0; i < occluders.length; i++) this.candidates[i] = i;
+  }
+
+  /**
+   * Collects the maximal runs of consecutive quads sharing a line side. A run
+   * that broke up would cost an extra crossing solve, never a different answer
+   * — the same tolerance pass one always had for its grouping.
+   */
+  private buildRuns(): void {
+    let line = -1;
+    let front = false;
+    for (let i = 0; i < this.occluders.length; i++) {
+      const o = this.occluders[i];
+      if (this.runCount === 0 || o.line !== line || o.frontSide !== front) {
+        line = o.line;
+        front = o.frontSide;
+        const r = this.runCount++;
+        this.runFirst[r] = i;
+        this.runLine[r] = o.line;
+        this.runSegAx[r] = o.segAx;
+        this.runSegAy[r] = o.segAy;
+        this.runSegBx[r] = o.segBx;
+        this.runSegBy[r] = o.segBy;
+      }
+      this.runLast[this.runCount - 1] = i;
+    }
+    // A line side is many quads on a big map, so the scratch these were built
+    // in is mostly slack: keep what was used and let the rest go.
+    this.runFirst = this.runFirst.slice(0, this.runCount);
+    this.runLast = this.runLast.slice(0, this.runCount);
+    this.runLine = this.runLine.slice(0, this.runCount);
+    this.runSegAx = this.runSegAx.slice(0, this.runCount);
+    this.runSegAy = this.runSegAy.slice(0, this.runCount);
+    this.runSegBx = this.runSegBx.slice(0, this.runCount);
+    this.runSegBy = this.runSegBy.slice(0, this.runCount);
+  }
+
+  /**
+   * Puts a quad on the active list if it isn't there, and gives its four
+   * corners a fresh `wanted` of 1 as it joins — the reset the whole-array fill
+   * used to do for every quad on the map.
+   */
+  private markActive(j: number): void {
+    if (this.activeSlot[j] >= 0) return;
+    this.activeSlot[j] = this.activeCount;
+    this.active[this.activeCount++] = j;
+    this.settledStamp[j] = -1;
+    const base = j * 4;
+    this.wanted[base] = 1;
+    this.wanted[base + 1] = 1;
+    this.wanted[base + 2] = 1;
+    this.wanted[base + 3] = 1;
   }
 
   /**
@@ -421,6 +559,28 @@ export class WallFader {
     return count;
   }
 
+  /**
+   * Whether nothing here is faded or still relaxing — so an `update` that can
+   * fold none of these quads (see `fadeReach`) would do nothing at all.
+   */
+  get idle(): boolean {
+    return this.activeCount === 0;
+  }
+
+  /**
+   * Forgets what `commit` believes is in the vertex buffers, so the next one
+   * writes every quad again. For the one thing that changes those buffers
+   * behind this class's back: `refreshMoverMesh` rewrites a mover's whole
+   * colour attribute, alpha channel included, and without this the
+   * unchanged-alpha skip keeps a refreshed quad at whatever the *builder* put
+   * there — a door in unrevealed space drawn solid while it moves.
+   * docs/render.md § Mover meshes a frame cannot touch.
+   */
+  invalidateWritten(): void {
+    this.lastCombined.fill(NaN);
+    this.commitAll = true;
+  }
+
   /** Grows the per-target scratch to hold `n` targets. */
   private ensureTargetScratch(n: number): void {
     if (this.tx.length >= n) return;
@@ -474,66 +634,73 @@ export class WallFader {
       this.th[k] = t.halfHeight;
     }
     this.planes.fill(camX, camY, targets);
-    this.wanted.fill(1);
+    // Only what is still fading needs a fresh target: every other quad's
+    // `wanted` is read nowhere until a crossing folds it, and `markActive`
+    // resets it as it joins.
+    for (let a = 0; a < this.activeCount; a++) {
+      const base = this.active[a] * 4;
+      this.wanted[base] = 1;
+      this.wanted[base + 1] = 1;
+      this.wanted[base + 2] = 1;
+      this.wanted[base + 3] = 1;
+    }
 
     // Pass one. The crossings — the expensive part — are solved once per run of
-    // quads sharing a line side and reused by every chunk and tier in it, since
-    // `addWall` emits them together. Only the cost rides on that: a run that
-    // broke up would recompute, not answer differently.
+    // quads sharing a line side (`runFirst`/`runLast`) and reused by every
+    // chunk and tier in it, and a run the sight box rejects never reaches its
+    // quads at all.
     this.crossings.reset();
-    let groupLine = -1;
-    let groupFront = false;
-    let hasOpening = false;
-    let hits = 0;
 
-    for (let i = 0; i < this.occluders.length; i++) {
-      const o = this.occluders[i];
-      if (o.line !== groupLine || o.frontSide !== groupFront) {
-        groupLine = o.line;
-        groupFront = o.frontSide;
-        this.groupStamp++;
-        hits = 0;
-        hasOpening = false;
-        // Four compares standing in for `n` crossing tests — see `sightBox`. On a big map this
-        // rejects nearly every line side, the camera holding a few hundred units of a level with
-        // tens of thousands of them.
-        const boxed =
-          (o.segAx < o.segBx ? o.segAx : o.segBx) <= boxMaxX &&
-          (o.segAx > o.segBx ? o.segAx : o.segBx) >= boxMinX &&
-          (o.segAy < o.segBy ? o.segAy : o.segBy) <= boxMaxY &&
-          (o.segAy > o.segBy ? o.segAy : o.segBy) >= boxMinY;
-        if (boxed) {
-          hasOpening = openingInto(o.line, this.opening);
-          for (let k = 0; k < n; k++) {
-            const cross = segmentCrossT(camX, camY, this.tx[k], this.ty[k], o.segAx, o.segAy, o.segBx, o.segBy);
-            if (cross < 0) continue;
-            this.hitX[hits] = camX + (this.tx[k] - camX) * cross;
-            this.hitY[hits] = camY + (this.ty[k] - camY) * cross;
-            this.hitH[hits] = camZ + (this.tz[k] - camZ) * cross;
-            // The sightline is a wedge from the eye to the whole sprite, so it
-            // is this thick here — nothing at the camera, the sprite's own
-            // half-height at the target.
-            this.hitSpread[hits] = this.th[k] * cross;
-            this.hitTarget[hits] = k;
-            hits++;
-          }
-        }
+    for (let r = 0; r < this.runCount; r++) {
+      const segAx = this.runSegAx[r];
+      const segAy = this.runSegAy[r];
+      const segBx = this.runSegBx[r];
+      const segBy = this.runSegBy[r];
+      // Four compares standing in for `n` crossing tests — see `sightBox`. On a big map this
+      // rejects nearly every line side, the camera holding a few hundred units of a level with
+      // tens of thousands of them.
+      if (
+        (segAx < segBx ? segAx : segBx) > boxMaxX ||
+        (segAx > segBx ? segAx : segBx) < boxMinX ||
+        (segAy < segBy ? segAy : segBy) > boxMaxY ||
+        (segAy > segBy ? segAy : segBy) < boxMinY
+      ) {
+        continue;
       }
-
+      this.groupStamp++;
+      let hits = 0;
+      for (let k = 0; k < n; k++) {
+        const cross = segmentCrossT(camX, camY, this.tx[k], this.ty[k], segAx, segAy, segBx, segBy);
+        if (cross < 0) continue;
+        this.hitX[hits] = camX + (this.tx[k] - camX) * cross;
+        this.hitY[hits] = camY + (this.ty[k] - camY) * cross;
+        this.hitH[hits] = camZ + (this.tz[k] - camZ) * cross;
+        // The sightline is a wedge from the eye to the whole sprite, so it
+        // is this thick here — nothing at the camera, the sprite's own
+        // half-height at the target.
+        this.hitSpread[hits] = this.th[k] * cross;
+        this.hitTarget[hits] = k;
+        hits++;
+      }
       if (hits === 0) continue;
-      const isPassableGap = hasOpening && this.spansOpening(o) && this.masked(o.key);
-      this.passable[i] = isPassableGap ? 1 : 0;
-      this.passableStamp[i] = this.frameStamp;
-      if (isPassableGap) continue;
-      for (let h = 0; h < hits; h++) {
-        const height = this.hitH[h];
-        const spread = this.hitSpread[h];
-        if (height + spread <= o.botH || height - spread >= o.topH) continue;
-        // One crossing per line side per target, however many tiers of it the
-        // sightline passes through — they all name the same point.
-        if (this.hitStamp[h] === this.groupStamp) continue;
-        this.hitStamp[h] = this.groupStamp;
-        this.crossings.push(this.hitX[h], this.hitY[h], height, this.hitTarget[h]);
+      const hasOpening = openingInto(this.runLine[r], this.opening);
+
+      for (let i = this.runFirst[r]; i <= this.runLast[r]; i++) {
+        const o = this.occluders[i];
+        const isPassableGap = hasOpening && this.spansOpening(o) && this.masked(o.key);
+        this.passable[i] = isPassableGap ? 1 : 0;
+        this.passableStamp[i] = this.frameStamp;
+        if (isPassableGap) continue;
+        for (let h = 0; h < hits; h++) {
+          const height = this.hitH[h];
+          const spread = this.hitSpread[h];
+          if (height + spread <= o.botH || height - spread >= o.topH) continue;
+          // One crossing per line side per target, however many tiers of it the
+          // sightline passes through — they all name the same point.
+          if (this.hitStamp[h] === this.groupStamp) continue;
+          this.hitStamp[h] = this.groupStamp;
+          this.crossings.push(this.hitX[h], this.hitY[h], height, this.hitTarget[h]);
+        }
       }
     }
 
@@ -573,6 +740,8 @@ export class WallFader {
         // vertical settles all four corners from the two ends.
         const alongLeft = nx * q.ax + ny * q.ay;
         const alongRight = nx * q.bx + ny * q.by;
+        if (alongLeft > d0 && alongRight > d0) continue;
+        this.markActive(j);
         // A/D/C/B: top-left, bottom-left, bottom-right, top-right. Each corner
         // measures from its own height, so the hole rounds off vertically too;
         // an end standing past the target is skipped outright.
@@ -587,11 +756,38 @@ export class WallFader {
       }
     }
 
-    for (let e = 0; e < this.occlusionAlpha.length; e++) {
-      // Most corners sit on their target most frames, and `dampenWith` would
-      // return it unchanged — skipping the store keeps their cache lines clean.
-      if (this.occlusionAlpha[e] === this.wanted[e]) continue;
-      this.occlusionAlpha[e] = dampenWith(this.occlusionAlpha[e], this.wanted[e], lerpT, SNAP_EPS);
+    // Only the active quads: everything else is sitting at 1 with nothing
+    // pulling it down, which is the state a quad leaves this list in.
+    for (let a = 0; a < this.activeCount; a++) {
+      const j = this.active[a];
+      const base = j * 4;
+      let settled = true;
+      for (let e = base; e < base + 4; e++) {
+        const want = this.wanted[e];
+        // Most corners sit on their target most frames, and `dampenWith` would
+        // return it unchanged — skipping the store keeps their cache lines clean.
+        if (this.occlusionAlpha[e] !== want) {
+          this.occlusionAlpha[e] = dampenWith(this.occlusionAlpha[e], want, lerpT, SNAP_EPS);
+        }
+        if (this.occlusionAlpha[e] !== 1) settled = false;
+      }
+      if (!settled) {
+        this.settledStamp[j] = -1;
+        continue;
+      }
+      // Fully relaxed. Kept one more frame so this frame's `commit` still
+      // writes the value it came to rest on, then dropped by swapping the
+      // list's tail into the hole so the walk carries on over what is left.
+      if (this.settledStamp[j] < 0) {
+        this.settledStamp[j] = this.frameStamp;
+        continue;
+      }
+      const last = this.active[--this.activeCount];
+      this.active[a] = last;
+      this.activeSlot[last] = a;
+      this.activeSlot[j] = -1;
+      this.settledStamp[j] = -1;
+      a--;
     }
   }
 
@@ -659,11 +855,22 @@ export class WallFader {
    * — a *third* input to this one channel, and the only one that never changes
    * after the build. docs/render.md § Wall occlusion fading.
    */
-  commit(fogAlphaOf: (occluderIndex: number) => number): void {
-    const dirty = new Set<string>();
+  commit(fogAlphaOf: (occluderIndex: number) => number, fogChanged?: ChangedQuads | null): void {
+    const dirty = this.dirtyKeys;
+    dirty.clear();
     if (this.trackVisibility) this.maxAlphaByKey.clear();
-
-    for (let i = 0; i < this.occluders.length; i++) {
+    // Everything, whenever a partial pass can't be trusted: the first commit
+    // (`lastCombined` starts NaN), a caller rebuilding `maxAlphaByKey` — which
+    // is only as complete as what this pass visits — or a caller that doesn't
+    // say which quads fog of war moved.
+    const visitAll = this.commitAll || this.trackVisibility || !fogChanged;
+    this.commitAll = false;
+    const count = visitAll ? this.occluders.length : this.activeCount + fogChanged.count;
+    for (let v = 0; v < count; v++) {
+      // The two partial sources, in one walk: what this frame's fade touched,
+      // then what the reveal did. A quad in both is written once and skipped
+      // the second time by the unchanged-alpha test below.
+      const i = visitAll ? v : v < this.activeCount ? this.active[v] : fogChanged.indices[v - this.activeCount];
       const o = this.occluders[i];
       const scale = (o.baseAlpha ?? 1) * fogAlphaOf(i);
       // Slots 0/1/2/3 of each quad are its A/D/C/B corners, `addWall`'s order.
@@ -744,12 +951,16 @@ export class FlatFader {
   private moved = new Uint8Array(0);
   /** Whether any of a fan's vertices is currently below 1 — a fan that is neither faded nor pierced this frame has nothing to damp, and `update` skips its vertices entirely. */
   private faded = new Uint8Array(0);
+  /** How many entries of `faded` are set, so `idle` costs no scan. */
+  private fadedCount = 0;
   /** The base x fog scale `commit` last applied per fan, so a fog change still reaches a settled one. */
   private lastScale = new Float64Array(0);
   /** Fans a sightline could reach at all this frame, refilled per `collectPierces` — see there. */
   private candidates = new Int32Array(0);
   /** `WallFader.maxAlphaByKey`'s twin, same opt-in — the two are read together, since one mesh can hold both kinds. */
   readonly maxAlphaByKey = new Map<string, number>();
+  /** `WallFader.dirtyKeys`'s twin, reused for the same reason. */
+  private dirtyKeys = new Set<string>();
   private trackVisibility: boolean;
 
   constructor(surfaces: FlatSurface[], meshes: Map<string, THREE.Mesh>, trackVisibility = false) {
@@ -780,6 +991,7 @@ export class FlatFader {
 
     this.moved = new Uint8Array(this.surfaces.length).fill(1);
     this.faded = new Uint8Array(this.surfaces.length);
+    this.fadedCount = 0;
     this.lastScale = new Float64Array(this.surfaces.length).fill(NaN);
     this.boundX = new Float64Array(this.surfaces.length);
     this.boundY = new Float64Array(this.surfaces.length);
@@ -944,6 +1156,7 @@ export class FlatFader {
         if (this.faded[i] === 0) continue;
         for (let p = 0; p < count; p++) this.alpha[start + p] = 1;
         this.faded[i] = 0;
+        this.fadedCount--;
         this.moved[i] = 1;
         continue;
       }
@@ -1003,13 +1216,28 @@ export class FlatFader {
         this.alpha[start + p] = next;
         this.moved[i] = 1;
       }
-      this.faded[i] = stillFaded ? 1 : 0;
+      const nowFaded = stillFaded ? 1 : 0;
+      if (nowFaded !== this.faded[i]) this.fadedCount += nowFaded === 1 ? 1 : -1;
+      this.faded[i] = nowFaded;
     }
+  }
+
+  /** `WallFader.idle`'s twin: no fan is faded, so nothing here has anything to relax. */
+  get idle(): boolean {
+    return this.fadedCount === 0;
+  }
+
+  /** `WallFader.invalidateWritten`'s twin — `moved` and `lastScale` are this fader's own record of what the buffers hold. */
+  invalidateWritten(): void {
+    this.lastCombined.fill(NaN);
+    this.lastScale.fill(NaN);
+    this.moved.fill(1);
   }
 
   /** Same base × occlusion × fog-of-war write as `WallFader.commit` — here the base is a water surface's, and the alpha varies across the fan. */
   commit(fogAlphaOf: (subsector: number) => number): void {
-    const dirty = new Set<string>();
+    const dirty = this.dirtyKeys;
+    dirty.clear();
     if (this.trackVisibility) this.maxAlphaByKey.clear();
     // Guarded here as well as in `update`, since fog of war can commit a frame
     // this fader never updated — and a stale layout would read points that

@@ -459,6 +459,11 @@
   font: inherit;
 }
 
+#menu select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 #menu button {
   font: inherit;
   cursor: pointer;

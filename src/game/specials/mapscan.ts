@@ -5,7 +5,7 @@
  * death does on this particular map.
  *
  * Everything here is a pure function of the `DoomMap` — no runtime state, no
- * `SpecialsController`, no THREE. `computeMovableSectors` in particular runs
+ * `SpecialsController`, no THREE. `scanSectors` in particular runs
  * before the controller exists at all (`mapmesh.ts` needs it to decide what
  * stays out of the static batch), which is what makes this module the natural
  * home for the rest of the same scans.
@@ -114,7 +114,7 @@ export function bossDeathTriggersFor(mapName: string): BossDeathTrigger[] {
 
 /**
  * Every sector a map's boss-death table can move — the tags in `bossDeathTriggersFor`, resolved
- * against `map.sectors`. **Load-bearing for `computeMovableSectors`:** these sectors are driven by
+ * against `map.sectors`. **Load-bearing for `scanSectors`:** these sectors are driven by
  * `triggerTag`, which has no triggering linedef, so nothing else in that scan can find them. MAP32's
  * Keen door (sector 16, tag 666) and MAP07's Arachnotron platform (sector 1, tag 667) both have no
  * linedef carrying their tag at all; without this they stay in the static batch and get drawn a
@@ -187,7 +187,7 @@ export interface StairStep {
  * group only works if its connector lines all face the same way, same
  * requirement vanilla itself has. Purely a function of static map data
  * (adjacency + floor textures), so it's safe to run once at load time
- * (`computeMovableSectors`) and again at trigger time without the two ever
+ * (`scanSectors`) and again at trigger time without the two ever
  * disagreeing.
  *
  * Boom's generalized stairs (`EV_DoGenStairs`) add `direction` — steps
@@ -270,57 +270,46 @@ export function findSwitchEntries(
 }
 
 /**
- * Sectors whose height a mover will drive, or whose wall carries a switch
- * texture — must stay out of the static batch (see mapmesh.ts). `pairs` is
- * `findSwitchEntries`' switch-pair lookup, and must be the same one the
- * controller is given or the two disagree about which sectors carry switches.
+ * The two sector sets a map's specials imply, from one walk of its linedefs.
  *
- * `moving` is `computeMovingSectors`' answer, taken as an argument only so a
- * caller that needs both sets pays for the scan once; it is copied, never
- * added to.
+ * - `moving`: sectors whose floor or ceiling a special can actually drive.
+ * - `movable`: those plus the ones pulled out of the static batch only so a
+ *   switch texture can be swapped on them — a superset of `moving`.
+ *
+ * They are different questions and `mapmesh.ts` needs both — a mesh that never
+ * moves is diced vertically like static geometry, and one that does cannot be
+ * (`WALL_CHUNK_LEN`). docs/render.md § Mover meshes.
  */
-export function computeMovableSectors(
-  map: DoomMap,
-  pairs?: SwitchPairLookup,
-  moving: ReadonlySet<number> = computeMovingSectors(map),
-): Set<number> {
-  const out = new Set(moving);
-  for (const line of map.linedefs) {
-    if (!lookupSpecial(line.special)) continue;
-    for (const e of findSwitchEntries(map, line, pairs)) out.add(e.sectorIndex);
-  }
-  // Re-run over the widened set rather than trusting the one inside
-  // `computeMovingSectors`: a switch sector could itself be a 242 control.
-  addWaterDependents(map, out);
-  return out;
+export interface SectorScan {
+  moving: Set<number>;
+  movable: Set<number>;
 }
 
 /**
- * The half of `computeMovableSectors` that is about *movement*: sectors whose
- * floor or ceiling a special can actually drive, without the ones that are only
- * pulled out of the static batch so a switch texture can be swapped on them.
- *
- * The two are different questions and `mapmesh.ts` needs both — a mesh that
- * never moves is diced vertically like static geometry, and one that does
- * cannot be (`WALL_CHUNK_LEN`). docs/render.md § Mover meshes.
+ * Both sets of `SectorScan` in one pass. `pairs` is `findSwitchEntries`'
+ * switch-pair lookup, and must be the same one the controller is given or the
+ * two disagree about which sectors carry switches.
  */
-export function computeMovingSectors(map: DoomMap): Set<number> {
-  const out = new Set<number>();
+export function scanSectors(map: DoomMap, pairs?: SwitchPairLookup): SectorScan {
+  const moving = new Set<number>();
+  /** Switch hosts, held aside so they widen `movable` without ever reaching `moving`. */
+  const switchHosts: number[] = [];
   for (let i = 0; i < map.sectors.length; i++) {
     // Sector-type door timers (10/14) never wait for a linedef trigger, so
     // there's no `def`/tag-resolution step to hook into here — the sector
     // itself is the mover from the moment the map loads.
-    if (decodeSectorType(map.sectors[i].special).doorTimer !== null) out.add(i);
+    if (decodeSectorType(map.sectors[i].special).doorTimer !== null) moving.add(i);
   }
   for (const line of map.linedefs) {
     const def = lookupSpecial(line.special);
     if (!def) continue;
+    for (const e of findSwitchEntries(map, line, pairs)) switchHosts.push(e.sectorIndex);
     if (def.effect.kind === 'stairs') {
       // The tag match only names the chain's start; the rest is discovered by
       // walking the same texture-matched adjacency the trigger will use.
       for (const startSector of resolveTargets(map, line, def)) {
         for (const step of findStairChain(map, startSector, def.effect.stepHeight, def.effect.direction, def.effect.ignoreTexture)) {
-          out.add(step.sectorIndex);
+          moving.add(step.sectorIndex);
         }
       }
     } else if (def.effect.kind === 'donut') {
@@ -328,9 +317,9 @@ export function computeMovingSectors(map: DoomMap): Set<number> {
       // its ring neighbor is discovered dynamically (see triggerDonut) so it
       // has to be walked here too, not just resolved from the tag.
       for (const startSector of resolveTargets(map, line, def)) {
-        out.add(startSector);
+        moving.add(startSector);
         const ringIndex = neighborSectorIndices(map, startSector)[0];
-        if (ringIndex !== undefined) out.add(ringIndex);
+        if (ringIndex !== undefined) moving.add(ringIndex);
       }
     } else if (
       def.effect.kind !== 'exit' &&
@@ -340,16 +329,21 @@ export function computeMovingSectors(map: DoomMap): Set<number> {
       // Exit doesn't move geometry; teleport's tag match is a destination
       // lookup, not a mover — the target sector's own height never changes.
       // A pure light change never moves geometry either, so it stays out of
-      // the movable set: `recolorSector` reaches static and mover geometry
+      // the moving set: `recolorSector` reaches static and mover geometry
       // alike, and a sector whose height never changes has no reason to pay
       // for a mesh of its own.
-      for (const sectorIndex of resolveTargets(map, line, def)) out.add(sectorIndex);
+      for (const sectorIndex of resolveTargets(map, line, def)) moving.add(sectorIndex);
     }
   }
   // A boss-death tag has no triggering linedef for the loop above to find — see bossDeathSectors.
-  for (const sectorIndex of bossDeathSectors(map)) out.add(sectorIndex);
-  addWaterDependents(map, out);
-  return out;
+  for (const sectorIndex of bossDeathSectors(map)) moving.add(sectorIndex);
+  addWaterDependents(map, moving);
+  const movable = new Set(moving);
+  for (const sectorIndex of switchHosts) movable.add(sectorIndex);
+  // Run again over the widened set rather than trusting the pass above: a
+  // switch sector could itself be a 242 control.
+  addWaterDependents(map, movable);
+  return { moving, movable };
 }
 
 /**

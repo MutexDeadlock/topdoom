@@ -370,7 +370,7 @@ E4M6's `blazeOpen`. The Icon of Sin (88) is in `DEATH_NOTIFY_TYPES` too but has 
 `A_BrainDie` exits the level directly rather than through a tag, and `game/monsters/iconofsin.ts` owns it — see
 docs/monster-iconofsin.md.
 
-**A boss-death tag has no triggering linedef, and `computeMovableSectors` has to be told.** That
+**A boss-death tag has no triggering linedef, and `scanSectors` has to be told.** That
 function builds the set of sectors pulled out of the static render batch by scanning sector specials
 10/14 and *linedef* specials — neither of which can see a sector that only ever moves via
 `triggerTag`. Without `bossDeathSectors` feeding it the tags from this table, such a sector stays in

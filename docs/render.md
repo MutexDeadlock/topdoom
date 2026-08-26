@@ -195,6 +195,13 @@ Each of those surfaces is then cut lengthwise into quads of at most `WALL_CHUNK_
 occlusion fade can dissolve part of a wall rather than all of it (§ The fade is a hole, not a wall)
 — a chunk is what a `WallOccluder` record and every per-quad rule below mean by "quad".
 
+**Which of the two steps a side draws, and between what heights, is `twoSidedBands` — exported,
+because the auto camera asks the same question.** `addTwoSidedSide` sizes its quads from it and
+`game/autocamera.ts`'s `hidesFromCamera` decides what can hide the player from it, so the rule has
+one owner. It matters because the heights are the *drawn* ones, resolved through Boom's 242
+transfers (§ Deep water) rather than read off the two sectors — the second copy that used the raw
+heights went blind to the wall across from deep water (docs/camera.md § Framing past an occluder).
+
 Every vertex carries three attributes beyond position and UV: the sector's baked light as a vertex
 colour (§ Sector lighting), the fade alpha both faders and fog of war write (§ Wall occlusion
 fading), and **`aLightCell`, the BSP leaf that surface faces into** — a flat's own, a wall's the one
@@ -353,8 +360,8 @@ whole side undiced. `processLine`'s `holdsStill` asks it, against
 
 That set is deliberately **not** `movableSectors`. A sector leaves the static batch either because a
 special drives its height *or* because a switch texture on one of its walls has to be swapped, and
-only the first stops the dicing — `computeMovingSectors` is the first half alone, and
-`computeMovableSectors` is it plus the switch hosts (`game/specials/mapscan.ts`).
+only the first stops the dicing — `scanSectors` answers both in one pass (`game/specials/mapscan.ts`):
+`moving` is the first half alone, `movable` is it plus the switch hosts.
 
 The distinction is not a corner case. One switch on one sidedef pulls its whole sector out of the
 static batch, and on NUTS.WAD MAP01 that is the 12000-unit arena the player stands in *and* the pen

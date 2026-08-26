@@ -1,6 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { gridMap } from '../fixtures/gridmap.ts';
+import { addControlSector, gridMap } from '../fixtures/gridmap.ts';
+import { transfersOf } from '../../src/game/specials/transfers.ts';
 import { World } from '../../src/game/world.ts';
 import {
   AutoCamera,
@@ -665,5 +666,54 @@ describe('game · framing past an occluder', () => {
     assert.ok(afterOneTic < open, 'one tic moves part of the way in');
     for (let i = 0; i < 200; i++) auto.tick(from, camera);
     assert.ok(auto.occluded < afterOneTic, 'and keeps going while the occluder stands');
+  });
+});
+
+/**
+ * The occlusion trace counts the bands the *mesh* drew, not the ones the two
+ * sectors' raw heights imply. Boom's 242 is where those part company: a deep
+ * water sector's upper is sized down to its control sector's ceiling
+ * (`mapmesh.ts`'s `twoSidedBands`, docs/specials.md § Deep water), so the wall
+ * across from one reaches far lower than `ceilHeight` says. Reading the raw
+ * heights here made the camera blind to exactly that stretch.
+ */
+describe('game · framing past an occluder drawn by a render transfer', () => {
+  const TILT = 60;
+  const SOUTH_YAW = 0;
+
+  /**
+   * A row of deep water with the player in it, looking out at an ordinary room
+   * to the south. The water's real ceiling is 192; its control sector's is 32,
+   * which is where the room's upper is actually drawn down to.
+   */
+  function waterToTheNorth() {
+    const grid = gridMap(['.....', '.....', '.....', '.....', 'wwwww', '.....', '.....'], {
+      heights: { '.': { floor: 0, ceil: 512 }, w: { floor: 0, ceil: 192 } },
+    });
+    // Every `w` cell is its own sector, and all of them share the tag.
+    for (let col = 0; col < grid.cols; col++) grid.map.sectors[grid.index(col, 4)].tag = 9;
+    addControlSector(grid.map, { floorHeight: 0, ceilHeight: 32 }, 242, 9);
+    return grid;
+  }
+
+  test('the wall across from deep water is found down at the drawn ceiling, not the real one', () => {
+    const grid = waterToTheNorth();
+    const transfers = transfersOf(grid.map);
+    const world = new World(grid.map);
+    // The player stands in the water; the camera hangs south, in the room.
+    const from = at(grid.centre(2, 4));
+
+    // The crossing sits well below the water's own 192 ceiling — inside the
+    // stretch of upper that only the control sector's 32 accounts for.
+    const found = nearestObstruction(world, from, TILT, SOUTH_YAW, 600, transfers);
+    assert.ok(Number.isFinite(found), `the drawn upper is found, got ${found}`);
+
+    // And the same trace told the sectors' raw heights misses it outright,
+    // which is what this used to do.
+    assert.equal(
+      nearestObstruction(world, from, TILT, SOUTH_YAW, 600),
+      Infinity,
+      'read off raw ceilings the same wall is invisible',
+    );
   });
 });

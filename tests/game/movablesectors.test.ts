@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { NO_SIDE, type DoomMap } from '../../src/wad/map.ts';
-import { computeMovableSectors, computeMovingSectors } from '../../src/game/specials/mapscan.ts';
+import { scanSectors } from '../../src/game/specials/mapscan.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 
 /**
@@ -45,22 +45,24 @@ describe('specials · movable versus moving sectors', () => {
 
   test('a switch puts its own sector in the movable set', () => {
     const { map, host, target } = level();
-    const movable = computeMovableSectors(map);
+    const { movable } = scanSectors(map);
     assert.ok(movable.has(host), 'the wall carrying the switch stayed in the static batch');
     assert.ok(movable.has(target), 'the sector the switch lowers stayed in the static batch');
   });
 
   test('but not in the moving one, which is only the sectors a special drives', () => {
     const { map, host, target } = level();
-    const moving = computeMovingSectors(map);
+    const { moving } = scanSectors(map);
     assert.ok(!moving.has(host), 'a switch was read as movement');
     assert.ok(moving.has(target), 'the sector the switch lowers was not read as movement');
   });
 
-  test('the moving set can be handed back in, so a caller that needs both scans once', () => {
+  test('one scan answers both, and moving stays a subset of movable', () => {
     const { map } = level();
-    const moving = computeMovingSectors(map);
-    assert.deepEqual(computeMovableSectors(map, undefined, moving), computeMovableSectors(map));
-    assert.deepEqual([...moving], [...computeMovingSectors(map)], 'the set handed in was added to');
+    const { moving, movable } = scanSectors(map);
+    for (const sectorIndex of moving) {
+      assert.ok(movable.has(sectorIndex), `sector ${sectorIndex} moves but is not movable`);
+    }
+    assert.ok(movable.size > moving.size, 'the switch host widened only the movable set');
   });
 });

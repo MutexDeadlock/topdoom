@@ -731,7 +731,7 @@ export const NOOP_LINE_SPECIALS: Set<number> = new Set<number>([271, 272]);
 /**
  * Decoded generalized defs, one per distinct number per session — the decode
  * is pure, and memoizing also gives callers a stable identity per number
- * (`computeMovableSectors` and the trigger paths re-look-up per line).
+ * (`scanSectors` and the trigger paths re-look-up per line).
  */
 const generalizedCache = new Map<number, SpecialDef | null>();
 

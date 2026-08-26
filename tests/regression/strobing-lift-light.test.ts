@@ -36,7 +36,7 @@ function strobingLift() {
   const map = grid.map;
   const lift = grid.index(2, 1);
   // Sector type 2 is vanilla's fast strobe; the tag plus a lift line is what
-  // puts this sector in `computeMovableSectors` and thus in a mover mesh.
+  // puts this sector in `scanSectors`' movable set and thus in a mover mesh.
   map.sectors[lift].special = 2;
   map.sectors[lift].tag = 1;
   map.sectors[lift].light = BASE_LIGHT;

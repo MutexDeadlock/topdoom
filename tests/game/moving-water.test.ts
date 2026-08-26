@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { computeMovableSectors } from '../../src/game/specials/mapscan.ts';
+import { scanSectors } from '../../src/game/specials/mapscan.ts';
 import { gridMap, addTransferLine } from '../fixtures/gridmap.ts';
 import { specialsRig, USE_INPUT, TIC } from '../fixtures/specialsrig.ts';
 import type { Pos2 } from '../../src/types.ts';
@@ -140,7 +140,7 @@ function poolWithChangingFlat() {
 describe('specials · moving water', () => {
   test('a movable control sector makes the water it drives movable too', () => {
     const { map, pool, control } = risingPool();
-    const movable = computeMovableSectors(map);
+    const movable = scanSectors(map).movable;
     assert.ok(movable.has(control), 'the control sector moves');
     assert.ok(movable.has(pool), 'so the water it draws must be rebuildable');
   });

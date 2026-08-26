@@ -259,7 +259,7 @@ The index is built once per `DoomMap` and memoized against it in a `WeakMap`. Th
 same reason the heights above are *not* cached: nothing at runtime writes `LineDef.left`/`right` or
 `SideDef.sector`, so a map's adjacency is fixed the moment it loads, while its heights change every
 tic. Keyed by the map object rather than held on `World` because the load-time scans reach it
-before any `World` exists (`computeMovableSectors`, called from `mapmesh.ts`).
+before any `World` exists (`scanSectors`, whose answer `mapmesh.ts` is given).
 
 **This is a measured change, not a reasoned one** (CLAUDE.md § Hot paths): on EPIC.WAD MAP03
 (11,205 lines, 1,093 sectors) running one neighbor query per sector went from ~31 ms to ~0.3 ms,
@@ -289,7 +289,7 @@ through, and the boss-death `triggerTag`. `linesByTag` exists for Boom's line-to
 rather than a sector.
 
 Measured on the same EPIC.WAD MAP03: resolving one tag per tagged special line (218 of them, what
-`computeMovableSectors` does at load and what every trigger repeats at runtime) went from 0.35 ms
+`scanSectors` does at load and what every trigger repeats at runtime) went from 0.35 ms
 to 0.007 ms, against a 0.04 ms build.
 
 **Tag 0 is deliberately absent from both.** Every caller already refuses it upstream —

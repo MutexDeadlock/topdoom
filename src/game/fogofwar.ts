@@ -6,7 +6,7 @@ import { buildSubSectorPolys } from '../render/bsp.ts';
 import { polygonCentroid, segmentCrossT } from '../util/geom.ts';
 import { dampen } from '../util/damping.ts';
 import { decodeRuns, encodeRuns } from './snapshot.ts';
-import { computeMovableSectors } from './specials/mapscan.ts';
+import { scanSectors } from './specials/mapscan.ts';
 import { VIEW_DISTANCE } from '../constants.ts';
 import type { Pos2 } from '../types.ts';
 import { wallProbePoint, type WallOccluder } from '../render/mapmesh.ts';
@@ -78,7 +78,7 @@ export class FogOfWar {
   /** Which sector each subsector belongs to — what `closedTarget` reads to spot a solid one. */
   private sectorOf: Int32Array;
   /**
-   * Sectors a special can drive (`computeMovableSectors`) — the half of "no vertical opening"
+   * Sectors a special can drive (`scanSectors`' `movable`) — the half of "no vertical opening"
    * that is shut space rather than solid geometry, and so excluded from `closedTarget`'s waiver.
    * docs/fogofwar.md § Closed sectors.
    */
@@ -139,7 +139,7 @@ export class FogOfWar {
     // Passed in by `game.ts`, which has already run this scan for the mesh
     // build; derived here only so a caller that has no reason to care (a test,
     // a tool) still gets the right answer rather than a silently permissive one.
-    this.movableSectors = movableSectors ?? computeMovableSectors(map);
+    this.movableSectors = movableSectors ?? scanSectors(map).movable;
     const polys = buildSubSectorPolys(map);
 
     this.sights = new Array(polys.length).fill(null);

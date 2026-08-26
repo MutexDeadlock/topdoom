@@ -167,7 +167,7 @@ graphics bank and skips the episode. Honouring it would make switch behavior dep
 
 The decoded pairs become a bidirectional lookup replacing `switchPairTexture`'s `SW1`/`SW2` name
 convention — Boom pairs need not share a suffix, which is the whole reason a table beats the
-convention. It is threaded as a parameter through `findSwitchEntries` and `computeMovableSectors`
+convention. It is threaded as a parameter through `findSwitchEntries` and `scanSectors`
 rather than held as a module singleton, so both stay pure functions of the map; the controller takes
 the same lookup for the same "must not disagree" reason it takes `movableSectors`
 (docs/specials.md § A switch only flips when it acts).

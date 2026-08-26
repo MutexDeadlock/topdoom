@@ -5,7 +5,7 @@ import { FogOfWar } from '../../src/game/fogofwar.ts';
 import { Player } from '../../src/game/player.ts';
 import { WeaponSystem } from '../../src/game/weapons.ts';
 import { createInventory } from '../../src/game/inventory.ts';
-import { computeMovableSectors } from '../../src/game/specials/mapscan.ts';
+import { scanSectors } from '../../src/game/specials/mapscan.ts';
 import { applySectors, sectorBaseline, snapshotSectors } from '../../src/game/snapshot.ts';
 import { buildMapMesh } from '../../src/render/mapmesh.ts';
 import { NO_SIDE } from '../../src/wad/map.ts';
@@ -165,7 +165,7 @@ describe('Savegames · specials round-trip', () => {
   test('fog of war restores the explored bitmap wholesale and recounts pending', () => {
     const { grid, map } = liftMap();
     const world = new World(map);
-    const built = buildMapMesh(map, BANK, { movableSectors: computeMovableSectors(map) });
+    const built = buildMapMesh(map, BANK, { movableSectors: scanSectors(map).movable });
     const at = grid.centre(1, 1);
     const fog = new FogOfWar(world, built.occluders, at.x, at.y);
     const runs = JSON.parse(JSON.stringify(fog.snapshotExplored()));

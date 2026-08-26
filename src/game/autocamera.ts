@@ -11,10 +11,11 @@
  */
 import { DOOM_TIC } from '../constants.ts';
 import { MAX_CAMERA_DISTANCE, MAX_TILT_DEG, MIN_RESCUE_DISTANCE, type TopDownCamera } from '../render/camera.ts';
+import { ownTransfers, twoSidedBands, type DrawnBands, type SectorTransfers } from '../render/mapmesh.ts';
 import type { Pos3 } from '../types.ts';
 import { dampen } from '../util/damping.ts';
 import { segmentCrossT } from '../util/geom.ts';
-import { NO_SIDE, SKY_FLAT } from '../wad/map.ts';
+import { NO_SIDE } from '../wad/map.ts';
 import { EYE_HEIGHT } from './player.ts';
 import type { Opening, World } from './world.ts';
 
@@ -247,6 +248,13 @@ export function measureOpenness(world: World, from: Pos3, viewDeg: number): Open
 let rayRise = 0;
 /** The height an occluder has to reach for the camera not to be looking over it — see `standsOver`. */
 let rayTopLimit = 0;
+/**
+ * The level's render transfers, and one scratch record for the bands they
+ * resolve — module scratch alongside the ray, for the same reason: the trace is
+ * not reentrant and a visitor per line would allocate.
+ */
+let rayTransfers!: SectorTransfers;
+const rayBands: DrawnBands = { lowerBot: 0, lowerTop: 0, upperBot: 0, upperTop: 0, skyPair: false };
 
 /**
  * Whether this line has geometry *drawn across* height `h`, **facing the
@@ -259,9 +267,9 @@ let rayTopLimit = 0;
  * one sidedef, so a wall is drawn for the side it belongs to and simply is not
  * there from behind: the room's own wall between the player and a camera
  * hanging outside it hides nothing, because what faces the camera is its
- * missing back. Which quads exist follows `mapmesh.ts`'s `addTwoSidedSide` —
- * the lower is drawn on the **lower-floored** side, the upper on the
- * **higher-ceilinged** side, and the upper not at all when both are sky.
+ * missing back. Which quads exist and how tall they stand is *not* decided
+ * here: `mapmesh.ts`'s `twoSidedBands` is the one owner of that rule, so a
+ * Boom 242 moving a drawn floor or ceiling moves what the camera counts too.
  * Ceilings are never emitted, so nothing above the top of a wall can hide
  * anything. Live sector heights, so a door or lift needs no special case.
  * Height is the other half, and `standsOver` owns it.
@@ -273,15 +281,20 @@ function hidesFromCamera(i: number, h: number, cameraSide: number): boolean {
   if (!line) return false;
   const facing = cameraSide === 0 ? line.right : line.left;
   if (facing === NO_SIDE) return false; // nothing drawn on the side the camera is on
-  const near = map.sectors[map.sidedefs[facing]?.sector];
+  const nearIndex = map.sidedefs[facing]?.sector;
+  const near = map.sectors[nearIndex];
   if (!near) return false;
   const otherSide = cameraSide === 0 ? line.left : line.right;
-  const far = otherSide !== NO_SIDE ? map.sectors[map.sidedefs[otherSide]?.sector] : undefined;
-  if (!far) return standsOver(near.floorHeight, near.ceilHeight, h);
+  const farIndex = otherSide !== NO_SIDE ? map.sidedefs[otherSide]?.sector : undefined;
+  const far = farIndex !== undefined ? map.sectors[farIndex] : undefined;
+  // One-sided: the whole wall, from the drawn floor `processLine` stands it on
+  // (a 242 fake floor moves it) up to the ceiling.
+  if (!far || farIndex === undefined) return standsOver(rayTransfers.drawnFloor(nearIndex), near.ceilHeight, h);
 
-  if (standsOver(near.floorHeight, far.floorHeight, h)) return true;
-  if (near.ceilTex === SKY_FLAT && far.ceilTex === SKY_FLAT) return false;
-  return standsOver(far.ceilHeight, near.ceilHeight, h);
+  twoSidedBands(rayTransfers, near, nearIndex, far, farIndex, rayBands);
+  if (standsOver(rayBands.lowerBot, rayBands.lowerTop, h)) return true;
+  if (rayBands.skyPair) return false;
+  return standsOver(rayBands.upperBot, rayBands.upperTop, h);
 }
 
 /**
@@ -346,9 +359,14 @@ export function nearestObstruction(
   tiltDeg: number,
   yawDeg: number,
   distance: number,
+  transfers?: SectorTransfers,
 ): number {
   eyeDirection(tiltDeg, yawDeg);
   rayWorld = world;
+  // Omitted means every sector draws itself, the same default `buildMapMesh`
+  // takes — so a caller with no map-wide scan (tests, tools) is not a special
+  // case. `AutoCamera` always has the level's own, and so allocates none.
+  rayTransfers = transfers ?? ownTransfers(world.map);
   rayX = from.x;
   rayY = from.y;
   rayEyeZ = from.z + EYE_HEIGHT;
@@ -575,6 +593,12 @@ export function autoCameraReadout(auto: AutoCamera): string {
  */
 export class AutoCamera {
   private world: World;
+  /**
+   * The level's render transfers, so the occlusion trace counts the bands the
+   * mesh actually drew (`twoSidedBands`). Omitted means every sector draws
+   * itself — the same default the mesh builder takes.
+   */
+  private transfers: SectorTransfers;
   private smoothedSpread = 0;
   private smoothedAhead = 0;
   private smoothedClearance = MAX_CAMERA_DISTANCE;
@@ -586,8 +610,9 @@ export class AutoCamera {
   private rescue: RescueFraming = { distance: 0, tiltDeg: 0 };
   private initialised = false;
 
-  constructor(world: World) {
+  constructor(world: World, transfers?: SectorTransfers) {
     this.world = world;
+    this.transfers = transfers ?? ownTransfers(world.map);
   }
 
   /** The smoothed opennesses currently driving the framing — the DEVMODE readout. */
@@ -663,7 +688,8 @@ export class AutoCamera {
     // Just inside whatever stands in the way, and no nearer than the floor —
     // a wall half a level off costs the framing almost nothing, one at the
     // player's shoulder costs it everything.
-    const inside = nearestObstruction(this.world, from, mappedTilt, camera.yawDeg, open) - OCCLUDER_STANDOFF;
+    const inside =
+      nearestObstruction(this.world, from, mappedTilt, camera.yawDeg, open, this.transfers) - OCCLUDER_STANDOFF;
     const wanted = Math.max(AUTO_OCCLUDED_DISTANCE, Math.min(open, inside));
     // A framing pulled in to the floor leans further over, so the view reaches
     // in front of the player rather than straight down at them. The cap above

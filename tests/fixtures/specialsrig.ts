@@ -3,7 +3,7 @@ import { World } from '../../src/game/world.ts';
 import { FogOfWar } from '../../src/game/fogofwar.ts';
 import { SpecialsController, type TeleportDest } from '../../src/game/specials.ts';
 import { transfersOf } from '../../src/game/specials/transfers.ts';
-import { computeMovableSectors, computeMovingSectors } from '../../src/game/specials/mapscan.ts';
+import { scanSectors } from '../../src/game/specials/mapscan.ts';
 import { buildMapMesh, type BuiltMap } from '../../src/render/mapmesh.ts';
 import type { DoomMap } from '../../src/wad/map.ts';
 import type { MaterialBank } from '../../src/render/textures.ts';
@@ -110,8 +110,7 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
   const world = new World(map);
   // Both sets, as `game.ts` computes them: a rig test that only carries a
   // switch must see its geometry diced the way the session would dice it.
-  const movingSectors = computeMovingSectors(map);
-  const movableSectors = computeMovableSectors(map, undefined, movingSectors);
+  const { moving: movingSectors, movable: movableSectors } = scanSectors(map);
   // The same table `game.ts` hands both builders, so a rig test sees the Boom
   // render transfers the real session would (docs/specials.md § Render transfers).
   const transfers = transfersOf(map);

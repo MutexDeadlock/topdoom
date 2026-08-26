@@ -230,7 +230,7 @@ per read either way and does not depend on it.
    `restoreTeleportFogs` refilling it. After step 3, so each puff re-samples its sector's *restored*
    light; after `beginLevel`, which would otherwise drop what was just restored.
    `projectiles.beginLevel()` also runs here, clearing that layer for step 13's restore.
-5. `computeMovableSectors(map)` **unioned with every saved mover's sector** — a mid-motion mover
+5. `scanSectors(map)`'s two sets **unioned with every saved mover's sector** — a mid-motion mover
    whose authored sector special was consumed would otherwise land back in the static batch. The
    union is handed to both `buildMapMesh` and the `SpecialsController` constructor.
 6. `buildMapMesh` / faders, unchanged, over restored geometry — then `new Forces(map, world)` →

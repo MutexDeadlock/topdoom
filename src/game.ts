@@ -56,7 +56,7 @@ import {
   SpecialsController,
   type TeleportDest,
 } from './game/specials.ts';
-import { computeMovableSectors, computeMovingSectors } from './game/specials/mapscan.ts';
+import { scanSectors } from './game/specials/mapscan.ts';
 import type { ShootAim } from './game/specials/shootaim.ts';
 import { Forces } from './game/specials/forces.ts';
 import { transfersOf, type Transfers } from './game/specials/transfers.ts';
@@ -780,10 +780,9 @@ export class Game {
         top: colormapTint(this.wad, names.top),
       });
     }
-    // Two sets, not one: everything that must leave the static batch, and the
+    // One scan, two sets: everything that must leave the static batch, and the
     // subset of it that actually moves a vertex — see `MapMeshOptions.movingSectors`.
-    const movingSectors = computeMovingSectors(map);
-    const movableSectors = computeMovableSectors(map, this.switchPairs, movingSectors);
+    const { moving: movingSectors, movable: movableSectors } = scanSectors(map, this.switchPairs);
     // A saved mid-motion mover's sector may have had its authored special
     // consumed, dropping it from the scan above — union it back in so its
     // geometry stays mover-owned (docs/savegames.md § Apply order). It is
@@ -850,7 +849,7 @@ export class Game {
     // the session, not the level, so its smoothed follow point still holds the
     // outgoing level's — a load would open with the camera flying to the
     // player. docs/camera.md § The camera is simulation state.
-    this.autoCamera = new AutoCamera(this.world);
+    this.autoCamera = new AutoCamera(this.world, this.transfers);
     // Seeded before snapTo, which poses the camera — so a level opens already
     // framed rather than mid-zoom. docs/camera.md § Auto camera.
     this.autoCamera.seed(this.player, this.view.camera);

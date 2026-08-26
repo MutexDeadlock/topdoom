@@ -261,7 +261,7 @@ hole in the water, and not fixed by anything done to the water itself. 24 of BOO
 closed subsectors were dark this way.
 
 **"No vertical opening" alone is the wrong test, and a sector a mover can drive is excluded however
-shut it is now** (`computeMovableSectors`, the same load-time scan `mapmesh.ts` uses to keep mover
+shut it is now** (`scanSectors`' movable set, the same load-time scan `mapmesh.ts` uses to keep mover
 geometry out of the static batch — `game.ts` passes it in rather than paying for it twice). A shut
 door, a lift parked flush, a secret closet winched to its floor are all zero-opening, and all of them
 are *space the player may yet explore*: waiving their lines lights a room through its own door.

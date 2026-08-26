@@ -15,7 +15,7 @@ them, which is why they sit under `game/` with the controller that drives them r
 
 **The three files.** `specials.ts` is `SpecialsController`: the movers, the trigger dispatch, the
 switch flashes and the light thinkers — everything with runtime state. `specials/mapscan.ts` is the
-load-time analysis of a map (`computeMovableSectors`, `findStairChain`, `bossDeathTriggersFor`, …),
+load-time analysis of a map (`scanSectors`, `findStairChain`, `bossDeathTriggersFor`, …),
 pure functions of the `DoomMap` with no controller involved, which is why `mapmesh.ts` can call one
 before the controller exists. `specials/movergeometry.ts` (`MoverGeometry`) is everything a height or
 light change means for what is actually *drawn*: the per-sector mover meshes, their faders, and
@@ -68,7 +68,7 @@ mechanisms came with them: **elevators** (227-238, § Elevators) and the **motio
 special from its model (trigger = the line's front sector; numeric = the first neighbor at the
 sector's own floor height, nothing when no neighbor matches — though the activation still counts,
 so switches flip, vanilla's own `rtn = 1`). Change-only sectors are included in
-`computeMovableSectors` despite never moving: the flat swap needs a per-sector mesh to repaint.
+`scanSectors`' movable set despite never moving: the flat swap needs a per-sector mesh to repaint.
 
 Boom's **parameter lines** are the other family, and they sit outside `LINE_SPECIALS` on purpose:
 they configure a permanent property at level spawn rather than being dispatched from a trigger, so
@@ -853,7 +853,7 @@ additionally taking that outer sector's floor texture on arrival (the same defer
 
 Neither the ring nor the outer sector is tag-matched — both are discovered dynamically by walking
 neighbors outward from the hole (`triggerDonut`/`neighborSectorIndices`, mirrored at load time in
-`computeMovableSectors` so the ring's geometry is pulled out of the static batch too), which is exactly
+`scanSectors` so the ring's geometry is pulled out of the static batch too), which is exactly
 as arbitrary as vanilla's own search (whichever neighbor happens to be first in the sector's line list
 — reproduced by walking `map.linedefs` in ascending index order, matching `P_GroupLines`).
 
@@ -1227,7 +1227,7 @@ pusher channels (§ Scrollers and conveyors, § Pushers), which treat a submerge
 the floor.
 
 **Moving water works**: a control sector whose floor is dragged by a mover moves the drawn surface.
-That costs two small load-time rules — `computeMovableSectors` pulls a water sector in when its
+That costs two small load-time rules — `scanSectors` pulls a water sector in when its
 control sector is movable (iterated to a fixpoint, since a water sector can itself control another),
 and `MoverGeometry` links control → dependents so `rebuildAround` reaches geometry that shares no
 linedef with what moved.

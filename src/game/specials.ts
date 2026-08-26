@@ -708,7 +708,7 @@ export class SpecialsController {
      * Which sectors get mover-owned geometry — **the same set the caller gave
      * `buildMapMesh`**, so the mesh and this controller can't disagree about
      * who owns a sector. Required, rather than defaulting to its own
-     * `computeMovableSectors`, for exactly that reason. A savegame restore
+     * its own `scanSectors`, for exactly that reason. A savegame restore
      * unions the scan with every saved mover's sector: a mid-motion mover whose
      * authored sector special was consumed (`FloorMover.arrivalTexture`) would
      * otherwise land back in the static batch. docs/savegames.md § Apply order.
@@ -717,7 +717,7 @@ export class SpecialsController {
     sfx: SoundEmitter = SILENT,
     /**
      * How a switch texture resolves to its opposite state — **the same lookup
-     * the caller gave `computeMovableSectors`**, for the same "must not
+     * the caller gave `scanSectors`**, for the same "must not
      * disagree" reason `movableSectors` is passed in. Defaults to the
      * `SW1`/`SW2` name convention; a WAD set with a `SWITCHES` lump supplies
      * its own (docs/wad.md § ANIMATED and SWITCHES).

@@ -274,13 +274,26 @@ drawn for the side it belongs to and is simply not there from behind. A room's o
 player inside it and a camera hanging outside therefore hides nothing — what faces the camera is its
 missing back. Without that half the test fires on 35–56% of poses and pulls DOOM2 MAP01's opening
 room in from a view that is perfectly clear; with it and the height half together, 0–17%, and
-MAP01's start reads as unobstructed, which it is. `hidesFromCamera` follows `mapmesh.ts`'s
-`addTwoSidedSide` for which quads exist at all: the lower is drawn on the **lower-floored** side,
-the upper on the **higher-ceilinged** side, the upper not at all when both sides are sky, and
-ceilings never — so nothing above the top of a wall can hide anything. **Middle textures are left
-out on purpose**: a railing must not pull the camera in, and a solid one hung in an opening is now
-the fade's business (docs/render.md § The fade is a hole, not a wall), which needs no help from the
-framing. Heights are read live off `map.sectors`, so a door or a lift needs no case of its own.
+MAP01's start reads as unobstructed, which it is. **Which quads exist, and how tall they stand, is
+not decided here at all**: `hidesFromCamera` calls `mapmesh.ts`'s `twoSidedBands`, the same function
+`addTwoSidedSide` sizes its quads from — the lower on the **lower-floored** side, the upper on the
+**higher-ceilinged** side, the upper not at all when both sides are sky, and ceilings never, so
+nothing above the top of a wall can hide anything.
+
+That shared call is the point, not a convenience. The heights those bands are measured between are
+the **drawn** ones, resolved through Boom's 242 transfers (`Transfers.drawnFloor`, `ceilingFacing`),
+and they part company with the raw sector heights exactly where deep water is: the wall across from
+a 242 sector is drawn down to its *control* sector's ceiling, so a room facing one draws an upper
+reaching far below the `ceilHeight` that sector carries. Read off the raw heights the camera was
+blind to that whole stretch — a sightline crossing it found nothing standing there while the mesh
+was drawing a wall — which is what having two copies of the rule cost. `AutoCamera` is handed the
+level's transfers for this; a caller with none (tests, tools) gets `ownTransfers`, every sector
+drawing itself, the same default the mesh builder takes.
+
+**Middle textures are left out on purpose**: a railing must not pull the camera in, and a solid one
+hung in an opening is now the fade's business (docs/render.md § The fade is a hole, not a wall),
+which needs no help from the framing. Heights are read live off `map.sectors`, so a door or a lift
+needs no case of its own.
 
 **The zoom stays undirected; the cap does not, and cannot.** § Auto camera's rule — that `spread`
 drives the zoom because how much room surrounds the player is a property of the place rather than of

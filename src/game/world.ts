@@ -1063,7 +1063,7 @@ export function hasLineOfSight(
  * the sector *heights* every query here reads live — so this is a pure
  * function of the map that happens to be expensive to recompute. Keyed by the
  * map object rather than held on `World` because the load-time scans
- * (`computeMovableSectors`, reached from `mapmesh.ts`) run before any `World`
+ * (`scanSectors`, reached from `mapmesh.ts`) run before any `World`
  * exists. See docs/world.md § Neighbor-height queries.
  */
 const sectorLineIndexes = new WeakMap<DoomMap, number[][]>();

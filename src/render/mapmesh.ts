@@ -330,7 +330,7 @@ export interface MapMeshOptions {
   movableSectors?: Set<number>;
   /**
    * The subset of `movableSectors` whose floor or ceiling a special can
-   * actually *move* (`computeMovingSectors`), as against the ones pulled out of
+   * actually *move* (`scanSectors`' `moving`), as against the ones pulled out of
    * the static batch only so a switch texture can be swapped on them. It
    * decides one thing: whether a mover's walls may be diced vertically like
    * static ones. Omitted means "assume every one of them moves", which is what
@@ -498,7 +498,7 @@ export interface MoverMesh {
  * transfer table", and so a caller that has no scan (tests, tools) is not a
  * special case.
  */
-function ownTransfers(map: DoomMap): SectorTransfers {
+export function ownTransfers(map: DoomMap): SectorTransfers {
   const light = (s: number) => map.sectors[s]?.light ?? 0;
   return {
     floorLight: light,
@@ -1644,6 +1644,52 @@ function ceilingFacing(transfers: SectorTransfers, other: Sector, otherIndex: nu
   return transfers.heightSec(viewerSector) >= 0 ? other.ceilHeight : transfers.drawnCeiling(otherIndex);
 }
 
+/** The two solid tiers one side of a two-sided line draws — see `twoSidedBands`. */
+export interface DrawnBands {
+  /** The lower step, drawn when `lowerTop > lowerBot`. */
+  lowerBot: number;
+  lowerTop: number;
+  /** The upper step, drawn when `upperTop > upperBot` and not `skyPair`. */
+  upperBot: number;
+  upperTop: number;
+  /** Two sky ceilings, between which vanilla draws no upper at all. */
+  skyPair: boolean;
+}
+
+/**
+ * **Which bands one side of a two-sided line actually draws, and how tall** —
+ * the heights resolved through Boom's 242 transfers rather than read off the
+ * two sectors, since a deep-water control sector moves both floors and the
+ * neighbour's ceiling (`ceilingFacing`, `Transfers.drawnFloor`).
+ *
+ * The one owner of that rule. `addTwoSidedSide` sizes its quads from this, and
+ * the auto camera asks it what stands between the player and the camera's eye
+ * (`game/autocamera.ts`'s `hidesFromCamera`) — two questions about the same
+ * geometry, which drifted apart while each answered it from raw sector heights.
+ * Written into a caller's record, so neither allocates.
+ *
+ * The `wallHeightCap` a mesh build may also clip to is deliberately *not* here:
+ * it is a build option nothing in the game sets, and no occlusion question
+ * wants a wall shortened by it. docs/render.md § Mesh building.
+ */
+export function twoSidedBands(
+  transfers: SectorTransfers,
+  sec: Sector,
+  secIndex: number,
+  other: Sector,
+  otherIndex: number,
+  out: DrawnBands,
+): void {
+  out.lowerBot = transfers.drawnFloor(secIndex);
+  out.lowerTop = transfers.drawnFloor(otherIndex);
+  out.upperBot = ceilingFacing(transfers, other, otherIndex, secIndex);
+  out.upperTop = sec.ceilHeight;
+  out.skyPair = sec.ceilTex === SKY_FLAT && other.ceilTex === SKY_FLAT;
+}
+
+/** `addTwoSidedSide`'s own scratch — it is not reentrant, so one record serves every side. */
+const sideBands: DrawnBands = { lowerBot: 0, lowerTop: 0, upperBot: 0, upperTop: 0, skyPair: false };
+
 function addTwoSidedSide(
   batches: BatchSet,
   size: SizeFn,
@@ -1668,9 +1714,11 @@ function addTwoSidedSide(
   // ceiling half has a branch that turns on where the eye is (`ceilingFacing`).
   // Everything below reads these, never `sec.floorHeight`/`other.ceilHeight` —
   // except the midtexture's peg anchor, which is the one thing 242 leaves alone.
-  const otherCeil = ceilingFacing(transfers, other, otherIndex, secIndex);
-  const selfFloor = transfers.drawnFloor(secIndex);
-  const otherFloor = transfers.drawnFloor(otherIndex);
+  twoSidedBands(transfers, sec, secIndex, other, otherIndex, sideBands);
+  const otherCeil = sideBands.upperBot;
+  const selfFloor = sideBands.lowerBot;
+  const otherFloor = sideBands.lowerTop;
+  const skyPair = sideBands.skyPair;
   const base = {
     ax: a.x,
     ay: a.y,
@@ -1688,7 +1736,7 @@ function addTwoSidedSide(
 
   // Upper: this sector's ceiling is higher than the neighbour's.
   let upperDrawn = false;
-  if (sec.ceilHeight > otherCeil && !(sec.ceilTex === SKY_FLAT && other.ceilTex === SKY_FLAT)) {
+  if (sec.ceilHeight > otherCeil && !skyPair) {
     const dim = size('wall', side.upper);
     upperDrawn = addWall(
       batches,
@@ -1743,7 +1791,6 @@ function addTwoSidedSide(
       // sky ceilings are vanilla's one exception: `R_StoreWallRange` pulls the
       // front ceiling down to the back's before any of this ("hack to allow
       // height changes in outdoor areas"), so the cut lands there instead.
-      const skyPair = sec.ceilTex === SKY_FLAT && other.ceilTex === SKY_FLAT;
       const clipTop = skyPair ? otherCeil : upperDrawn ? Math.min(sec.ceilHeight, otherCeil) : sec.ceilHeight;
       const clipBot = lowerDrawn ? Math.max(selfFloor, otherFloor) : selfFloor;
       // The quad is the texture's own band — one copy hung off the pegged

@@ -126,11 +126,28 @@ trigger paths say who is at the line (`Activator`, `'player' | 'monster'`, with 
 dolls to join). All walk crossings — player and monster — run through one scan,
 `SpecialsController.crossLines`.
 
-**PASSUSE (Boom).** A use press collects every use line the trace crosses, nearest first, and
-keeps triggering past a line only while that line carries `LF.PASSUSE` (`p_map.c:
-PTR_UseTraverse`); the vanilla nearest-line-shadows-everything behavior is the flagless case.
-Known divergence, predating this: vanilla's use trace also stops at solid non-special lines,
-which the scan here has never modeled.
+## The use trace
+
+`handleUseTrigger` is `P_UseLines` plus `PTR_UseTraverse`: a segment `USE_RANGE` (64 units) long
+out of the player's own position along their facing, against **every** linedef it crosses, nearest
+first. What each line does to the trace is the whole rule, and the two branches are vanilla's:
+
+- **No special.** `P_LineOpening`'s range decides: a gap the player could stand in
+  (`World.openingInto`, `top > bottom`) lets the press carry on to what is behind, anything shut —
+  a one-sided wall, a closed door, a floor raised to the ceiling — stops the press dead and grunts
+  `noway`. A two-sided line is *not* an opening by virtue of being two-sided: EPIC.WAD MAP01's
+  linedef 1105 is a raisable wall whose sector sits at floor 16 = ceiling 16, and before this was
+  modelled a press went straight through it into the SR lift switch (linedef 1110) behind, which
+  the map means to be reachable only once the wall is down. `LF.BLOCKING` is not consulted — a
+  fence or grate over a real opening passes the trace, as it does in vanilla.
+- **Any special at all.** The line stops the trace whether or not it fires, so a walk-only number,
+  a line met from its back side (§ A `use` trigger only fires from the front, docs/items.md) and a
+  switch whose `EV_` helper refused all shadow what is behind them exactly as a switch that worked
+  does. It fires only if it is a `use` special *and* the player is on its front side.
+
+**PASSUSE (Boom)** is the one exception to the second branch: a special line carrying `LF.PASSUSE`
+lets the trace continue past it, so several stacked specials fire from one press. The vanilla
+nearest-special-shadows-everything behavior is the flagless case.
 
 ## A switch only flips when it acts
 

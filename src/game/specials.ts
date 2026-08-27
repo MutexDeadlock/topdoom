@@ -68,6 +68,7 @@ import {
   sectorLines,
   sectorsByTag,
   linesByTag,
+  type Opening,
 } from './world.ts';
 import { PLAYER_RADIUS } from './player.ts';
 import type { SpecialsSnapshot } from './snapshot.ts';
@@ -667,6 +668,9 @@ export class SpecialsController {
    * lines, and which lines carry a shoot special never changes.
    */
   private shootLines: number[] = [];
+
+  /** `handleUseTrigger`'s scratch `Opening`, so a use press allocates none. Read it before the next lookup. */
+  private useOpening: Opening = { top: 0, bottom: 0 };
 
   private switchTextures = new Map<number, SwitchEntry[]>();
   private switchFlashes = new Map<number, number>();
@@ -2536,29 +2540,45 @@ export class SpecialsController {
     const tx = playerX + Math.cos(playerAngle) * USE_RANGE;
     const ty = playerY + Math.sin(playerAngle) * USE_RANGE;
 
+    // Every line the trace crosses, special or not: a wall with no opening ends
+    // the press before anything behind it is reached, so the scan can't skip the
+    // walls. See docs/specials.md § The use trace.
     const hits: { t: number; line: number }[] = [];
     for (const i of this.world.linesNear(playerX, playerY, USE_RANGE + 8)) {
       const line = this.map.linedefs[i];
-      const def = lookupSpecial(this.lineSpecial(i));
-      if (!def || def.trigger !== 'use') continue;
       const a = this.map.vertexes[line.v1];
       const b = this.map.vertexes[line.v2];
       if (!a || !b) continue;
-      if (!isFrontSide(a.x, a.y, b.x, b.y, playerX, playerY)) continue;
       const hit = segmentIntersect(playerX, playerY, tx, ty, a.x, a.y, b.x, b.y);
       if (hit) hits.push({ t: hit.t, line: i });
     }
-    // Boom's PASSUSE (`p_map.c: PTR_UseTraverse`): the use trace keeps going
-    // past a triggered line only while that line carries the flag, so several
-    // stacked specials can fire from one press. The vanilla behavior — nearest
-    // use line wins, everything behind it is shadowed — is the flagless case.
-    // Known divergence, unchanged here: vanilla's trace also stops at solid
-    // non-special lines, which this scan has never modeled.
     hits.sort((p, q) => p.t - q.t);
     for (const h of hits) {
-      // The player's own stance, for a silent switch teleport (209/210).
-      this.trigger(h.line, ownedKeys, 'player', false, { x: playerX, y: playerY, angle: playerAngle });
-      if (!(this.map.linedefs[h.line].flags & LF.PASSUSE)) break;
+      const line = this.map.linedefs[h.line];
+      const special = this.lineSpecial(h.line);
+      if (special === 0) {
+        // `P_LineOpening`'s range, exactly as `PTR_UseTraverse` reads it: a gap a
+        // body could stand in lets the press carry on past this line, anything
+        // shut — a one-sided wall, a closed door, a raised floor — stops it.
+        const gap = this.world.openingInto(h.line, this.useOpening);
+        if (gap && this.useOpening.top > this.useOpening.bottom) continue;
+        this.sfx.play('noway');
+        return;
+      }
+      const a = this.map.vertexes[line.v1];
+      const b = this.map.vertexes[line.v2];
+      const def = lookupSpecial(special);
+      // A special stops the trace whether or not it fires — a walk-only number,
+      // a line reached from its back side, and one whose EV_ helper refused all
+      // shadow what is behind them the same way a switch that worked does.
+      if (def?.trigger === 'use' && isFrontSide(a.x, a.y, b.x, b.y, playerX, playerY)) {
+        // The player's own stance, for a silent switch teleport (209/210).
+        this.trigger(h.line, ownedKeys, 'player', false, { x: playerX, y: playerY, angle: playerAngle });
+      }
+      // Boom's PASSUSE: the trace keeps going past a special line only while
+      // that line carries the flag, so several stacked specials can fire from
+      // one press. Vanilla — nearest special wins — is the flagless case.
+      if (!(line.flags & LF.PASSUSE)) return;
     }
   }
 

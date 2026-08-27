@@ -202,8 +202,8 @@ all, key or no key.
 **A `use` trigger only fires from a linedef's front (right-sidedef) side** — `isFrontSide`, confirmed
 against `p_switch.c`'s `P_UseSpecialLine`, which unconditionally rejects every use-triggered special
 from the back side except an unused one (124). `handleUseTrigger` computes the player's side of each
-candidate line (via `P_PointOnLineSide`'s cross-product test) and skips any line the player is behind,
-same as `PTR_UseTraverse`. Walk triggers get no such check — `P_CrossSpecialLine` has none — so this
+candidate line (via `P_PointOnLineSide`'s cross-product test) and fires none the player is behind — and,
+as in `PTR_UseTraverse`, the line still stops the trace there (docs/specials.md § The use trace). Walk triggers get no such check — `P_CrossSpecialLine` has none — so this
 is `use`-only. Without it, a manual door or switch mounted on an ordinary-looking wall (a disguised
 "push wall" secret) could be opened from *either* side, letting a player skip the switch a mapper hid
 elsewhere; E1M2's sector 21 secret is exactly this shape.

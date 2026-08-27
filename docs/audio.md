@@ -215,10 +215,9 @@ the sector's linedefs (`P_GroupLines`), not a polygon centroid — computed lazi
 - **Teleports** play `telept` at both ends, from `SpriteFxLayer.spawnTeleportFog` — which
   `spawnTeleportPair` calls twice, so every teleport is heard at both ends whether it was a
   monster's trip or the player's.
-
-Not implemented: vanilla's `noway`, the grunt for using a wall that isn't a door.
-`handleUseTrigger` only scans lines that *have* a special, so there is nothing to hang it on
-without a second geometric search.
+- **A wall that isn't a door** grunts `noway` at full volume, from the use trace's own stop
+  (`PTR_UseTraverse`): the first line in front of the player with no special and no opening.
+  A special line in the way is silent, however little it did — docs/specials.md § The use trace.
 
 ## Player and pickups
 

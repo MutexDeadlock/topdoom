@@ -25,6 +25,15 @@ export const INTERMISSION_INPUT_DELAY = 0.6;
 const RECORD_TEXT = 'NEW BEST TIME!';
 
 /**
+ * What a run that used a cheat code gets instead of the whole popup — no percentages, no clock, no
+ * comparison to a best time, because none of it means anything once the run was cheated
+ * (docs/cheats.md § Saves and best times). Red like the labels it replaces, over the one face in
+ * the status bar's roster that isn't about how the level went.
+ */
+const CHEATED_TEXT = 'You cheated';
+const CHEATED_FACE = 'STFKILL3';
+
+/**
  * The status-bar face shown over the time block, picked by how the level went: the three
  * percentages summed, so 300 is a clean sweep (and kills alone can push past it). Highest
  * `minScore` at or below the sum wins.
@@ -55,6 +64,8 @@ export class Intermission {
   private killsCanvas = this.root.querySelector<HTMLCanvasElement>('.line-kills')!;
   private itemsCanvas = this.root.querySelector<HTMLCanvasElement>('.line-items')!;
   private secretsCanvas = this.root.querySelector<HTMLCanvasElement>('.line-secrets')!;
+  private statsBlock = this.root.querySelector<HTMLElement>('.stats')!;
+  private cheatedCanvas = this.root.querySelector<HTMLCanvasElement>('.line-cheated')!;
   private faceCanvas = this.root.querySelector<HTMLCanvasElement>('.face')!;
   private timeCanvas = this.root.querySelector<HTMLCanvasElement>('.line-time')!;
   private parCanvas = this.root.querySelector<HTMLCanvasElement>('.line-par')!;
@@ -151,16 +162,21 @@ export class Intermission {
   }
 
   /**
-   * The face over the time block, by the summed percentages — see `FACE_TIERS`. Hidden when the
-   * WAD set has no such lump, the same fallback every other WAD graphic here takes.
+   * The face over the time block. Hidden when the WAD set has no such lump, the same fallback every
+   * other WAD graphic here takes.
    */
-  private drawFace(stats: LevelStats): void {
+  private drawFace(lump: string): void {
+    this.faceCanvas.classList.toggle('hidden', !drawIcon(this.faceCanvas, this.gfx, lump));
+  }
+
+  /** Which face this run earned, by the summed percentages — see `FACE_TIERS`. */
+  private faceFor(stats: LevelStats): string {
     const score =
       percentOf(stats.kills, stats.totalKills) +
       percentOf(stats.items, stats.totalItems) +
       percentOf(stats.secrets, stats.totalSecrets);
     const tier = FACE_TIERS.find((t) => score >= t.minScore) ?? FACE_TIERS[FACE_TIERS.length - 1];
-    this.faceCanvas.classList.toggle('hidden', !drawIcon(this.faceCanvas, this.gfx, tier.lump));
+    return tier.lump;
   }
 
   /**
@@ -183,11 +199,37 @@ export class Intermission {
     this.drawTimeLine(this.bestCanvas, label, formatClock(record.previous), this.yellowFont);
   }
 
-  show(stats: LevelStats, record: BestTimeResult | null, parSeconds: number | null): void {
+  /**
+   * The whole popup replaced by one line (see `CHEATED_TEXT`) — every canvas the run's numbers
+   * would have gone on is hidden here, and only here, so each `draw*` below stays the sole owner
+   * of its own line's visibility. The continue hint stays, since it is still what dismisses this.
+   */
+  private showCheated(): void {
+    this.statsBlock.classList.add('hidden');
+    for (const line of [this.timeCanvas, this.recordCanvas, this.bestCanvas, this.parCanvas]) {
+      line.classList.add('hidden');
+    }
+    this.cheatedCanvas.classList.remove('hidden');
+    drawText(this.cheatedCanvas, this.redFont, CHEATED_TEXT);
+    this.drawFace(CHEATED_FACE);
+    this.root.classList.remove('hidden');
+  }
+
+  /**
+   * `cheated` is `game.ts`'s `recordsEligible` inverted — the same flag that already decides
+   * whether a completion may set a record, rather than a second account of what happened this run.
+   */
+  show(stats: LevelStats, record: BestTimeResult | null, parSeconds: number | null, cheated: boolean): void {
+    if (cheated) return this.showCheated();
+    this.cheatedCanvas.classList.add('hidden');
+    this.statsBlock.classList.remove('hidden');
+    // The one line below with no `draw*` of its own to un-hide it: every run that gets here has a
+    // time, so nothing but `showCheated` ever hides it.
+    this.timeCanvas.classList.remove('hidden');
     this.drawStatLine(this.killsCanvas, 'Kills', stats.kills, stats.totalKills);
     this.drawStatLine(this.itemsCanvas, 'Items', stats.items, stats.totalItems);
     this.drawStatLine(this.secretsCanvas, 'Secrets', stats.secrets, stats.totalSecrets);
-    this.drawFace(stats);
+    this.drawFace(this.faceFor(stats));
     // Always yellow, records included — the green `NEW BEST TIME!` line below is what announces one.
     this.drawTimeLine(this.timeCanvas, 'Your time', formatClock(stats.elapsedSeconds), this.yellowFont);
     this.drawParLine(parSeconds, stats.elapsedSeconds);

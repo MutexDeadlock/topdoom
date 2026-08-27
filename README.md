@@ -78,6 +78,11 @@ Ceilings are never rendered — from directly above, one would hide everything u
 and leans towards where you are heading; the distance and tilt keys above take over in manual mode.
 See [docs/camera.md](docs/camera.md).
 
+**The classic cheats work.** Type `IDDQD` (god mode), `IDKFA` (all weapons, ammo and keys) or
+`IDCLIP` (walk through walls) while playing — no console, no key to press first. A cheated session
+sets no best times, and its end-of-level screen says `You cheated` instead of showing how the level
+went. See [docs/cheats.md](docs/cheats.md).
+
 **Straferunning works.** Forward and sideways are separate speeds that are never blended into
 one, exactly as in vanilla, so running forward and sideways at once (`W`+`D`+`Shift`) moves you
 faster than either alone. See [docs/movement.md](docs/movement.md).
@@ -190,7 +195,8 @@ is drawn as the real `PLAY` sprite. Health, armor, ammo, keys, weapons, the back
 powerups are collectible and tracked on a HUD (see [Powerups](#powerups) above); doors, lifts,
 floor movers, crushers, switches and teleporters all work, including locked doors. All nine
 weapons fire, and every stock monster is in — including both DOOM II oddities, Commander Keen and
-the Icon of Sin. Sound effects and music both come out of the loaded WAD (see
+the Icon of Sin. Three of vanilla's cheat codes are typed in as they always were
+(see [Controls](#controls) above). Sound effects and music both come out of the loaded WAD (see
 [Sound and music](#sound-and-music) above).
 
 **BOOM-format maps load and play** (experimental): extended BSP nodes, generalized linedefs and

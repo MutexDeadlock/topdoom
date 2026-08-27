@@ -900,6 +900,12 @@ export class SpecialsController {
     playerAngle: number,
     input: Input,
     ownedKeys: ReadonlySet<KeySlot>,
+    /**
+     * IDCLIP: walk triggers stop firing, exactly as `MF_NOCLIP` keeps `P_TryMove` from running
+     * its `spechit` list at all. Use triggers are untouched — `P_UseLines` never looks at the
+     * flag. docs/cheats.md § IDCLIP.
+     */
+    noclip = false,
   ): void {
     const dirty = new Set<number>();
     // One shared clock for every mover's grind — see MOVE_SOUND_INTERVAL.
@@ -913,7 +919,7 @@ export class SpecialsController {
     this.tickMovers(dt, dirty);
     this.lastTeleport = null;
     this.handleUseTrigger(playerX, playerY, playerAngle, input, ownedKeys);
-    this.handleWalkTriggers(playerX, playerY, playerAngle, ownedKeys);
+    if (!noclip) this.handleWalkTriggers(playerX, playerY, playerAngle, ownedKeys);
     this.geometry.rebuildAround(dirty);
     this.updateSwitchFlashes(dt);
     this.updateLights(dt);

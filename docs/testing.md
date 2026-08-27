@@ -203,6 +203,12 @@ arguments its constructor takes. It also exports the two stubs that go with it (
 and `TIC`, so a test needing a mesh or an input for something else takes them from here rather than
 declaring its own.
 
+Those two are `pressed`-shaped, for the use key. The movement half lives in
+`tests/fixtures/input.ts`: `heldInput('KeyW')` builds an `Input` holding exactly the keys named and
+`IDLE_INPUT` holds nothing, which is all `Player.update` ever asks its input for. Any test driving
+the player takes one of those rather than casting its own object literal — there were three
+byte-identical copies of that cast before.
+
 **It is a rig, not a mock.** The controller, `World`, `FogOfWar` and the built mesh below it are all
 the production objects; only the `MaterialBank` and `Input` are stubs, and only because the first
 wants a GL context and the second a keyboard. What the rig removes is the boilerplate, not the

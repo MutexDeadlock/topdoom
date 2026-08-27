@@ -820,6 +820,8 @@ player has no legitimate reason to reach for them:
   they are simply inert outside dev mode. `+`/`-` (camera distance) and `[`/`]` (camera tilt)
   deliberately sit *ahead* of that gate: they are player-facing framing controls, not debug state,
   and gating them only meant a shipped player couldn't adjust how much of the level fits on screen.
+  Every key here is skipped for a tic whose characters belong to a cheat code being typed — `P`
+  sits inside `idclip` (docs/cheats.md § Typing a code).
 
 Neither the profiling overlay nor the status text's visibility is on that list: `DEVMODE` only picks
 the default of each, and a player can turn either on in any build (§ FPS counter, § Profiling

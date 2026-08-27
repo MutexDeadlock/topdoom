@@ -39,6 +39,7 @@ import { BARREL_CHAIN, type AttackPose } from '../things/defs.ts';
 import { MELEE_RANGE, type AttackStats, type MonsterSounds } from '../monsters/defs.ts';
 import { IMPACT_EFFECTS, PROJECTILE_FRAMES, PROJECTILE_RADIUS, PROJECTILE_SOUNDS } from '../spritefx/tables.ts';
 import { LOCKED_LINES } from '../specials/tables.ts';
+import { CHEAT_MESSAGES } from '../cheats.ts';
 import {
   resetInventoryLimits,
   setClipAmmo,
@@ -127,6 +128,7 @@ const PATCHED_TABLES: readonly (() => void)[] = [
   patchable(WEAPONS),
   patchable(OBITUARIES),
   patchable(LOCKED_LINES),
+  patchable(CHEAT_MESSAGES),
   // What a `Frame` record or a repointed `Thing` re-derives — docs/dehacked.md § Frames.
   patchable(THING_SPRITES),
   patchable(THING_ANIM_FRAMES),
@@ -209,7 +211,8 @@ export function applyDehacked(patch: DehPatch): void {
   for (const edit of patch.weaponEdits) applyWeapon(edit.index, edit.ammoType);
   applyMisc(patch.misc);
   applyObituaries(patch.strings);
-  applyLockedLines(patch.strings);
+  replaceByMnemonic(LOCKED_LINES, patch.strings); // PD_*
+  replaceByMnemonic(CHEAT_MESSAGES, patch.strings); // STSTR_*
   for (const [name, lump] of patch.soundLumps) setSoundLump(name, lump);
   for (const [mnemonic, lump] of patch.musicLumps) setMusicLump(mnemonic, lump);
   for (const [name, to] of patch.spriteRenames) setSpriteLump(name, to);
@@ -393,15 +396,16 @@ function applyObituaries(strings: ReadonlyMap<string, string>): void {
 }
 
 /**
- * Every `PD_*` string the patch set, onto the locked-door line it names. No transform: unlike an
- * `OB_*` these are already whole second-person sentences addressed to the player, and the color
- * words `ui/hud/message.ts` picks out are found in the finished text rather than composed into it.
- * docs/dehacked.md § Locked-door lines.
+ * Every string the patch set whose mnemonic this table already keys, replaced outright. No
+ * transform, unlike an `OB_*`: both tables that come through here hold whole second-person
+ * sentences addressed to the player, and the color words `ui/hud/message.ts` picks out of a
+ * locked-door line are found in the finished text rather than composed into it.
+ * docs/dehacked.md § Locked-door lines, § Cheat responses.
  */
-function applyLockedLines(strings: ReadonlyMap<string, string>): void {
-  for (const mnemonic of Object.keys(LOCKED_LINES)) {
+function replaceByMnemonic(table: Record<string, string>, strings: ReadonlyMap<string, string>): void {
+  for (const mnemonic of Object.keys(table)) {
     const text = strings.get(mnemonic);
-    if (text !== undefined) LOCKED_LINES[mnemonic] = text;
+    if (text !== undefined) table[mnemonic] = text;
   }
 }
 

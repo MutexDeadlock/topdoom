@@ -228,6 +228,14 @@ the player is firing, neither of which this screen knows — so both the idea an
 this engine's own and tuned by feel. A WAD set without the lump hides the canvas rather than
 leaving a gap, like every other WAD graphic here.
 
+**A cheated run gets none of it.** With `Game.recordsEligible` false, `show` draws one red
+`You cheated` line (`.line-cheated`) and the `STFKILL3` face, hides the stat block and every time
+line, and returns — the percentages, the clock and the comparison against a best time all say
+something about a run this one no longer is (docs/cheats.md § Saves and best times). The continue
+hint stays: it is still what dismisses the popup. That is the *same* flag which already refuses the
+record, deliberately rather than a second account of the run — which also means a `?pos=x,y` start,
+excluded from records for its own reasons (§ Best times), reports itself cheated too.
+
 Lines are centered in the panel, but the three stat lines sit in a `.stats` wrapper so they are
 centered as **one block**: centering each on its own would stagger the labels and undo the very
 column `drawStatLine` lines the numbers up in. The time lines need no such wrapper — sharing both
@@ -318,8 +326,11 @@ moment an unrelated add-on is loaded; keying on the file name alone would let tw
 that happen to share a basename fight over one record, and would lose every record on a rename.
 Skill is in the key because a time set on skill 1 says nothing about one set on Ultra-Violence.
 
-Two rules about what counts:
+Three rules about what counts:
 
+- **A cheated run never records.** Any cheat code firing clears `Game.recordsEligible` for the rest
+  of the session, and the flag rides in the savegame, so it can't be washed off by saving and
+  loading (docs/cheats.md § Saves and best times).
 - **A `?pos=x,y` run never records.** That entry point can drop the player anywhere, the exit
   included, and one such run would leave an unbeatable time in the table. `Game.recordsEligible` is
   captured in the constructor, because `startPos` is nulled out once the first map has consumed it.
@@ -336,11 +347,13 @@ since losing one level's time should not cost every other level's.
 
 `src/ui/hud/message.ts`'s `CenterMessage` draws one short line of `WadFont` text over the middle of the
 view (`#hud-message`, horizontally centered, 40% down so it clears the player sprite the camera
-holds at dead center), for 3 seconds. Two callers so far:
+holds at dead center), for 3 seconds. Three callers so far:
 
 - the secret announcement — `Game.collectPickupsAndSectorEffects` shows `SECRET_MESSAGE` (this
   module's own, since it is display text) and plays the `secret` chime on the frame `SectorEffects.update`
   reports `secretFound`;
+- a cheat's response — `Game.applyCheats` shows whatever line the code that just fired returns
+  (docs/cheats.md), in the message's own yellow like the secret announcement;
 - the locked door/switch line — `lockedLineMessage(lock, kind)` resolves the `LockedLine`
   `Game.frame` drained out of `specials` through `specials/tables.ts`'s `LOCKED_LINES`, where
   vanilla's and Boom's `PD_*` text lives and where a DEH patch will have replaced it (docs/items.md

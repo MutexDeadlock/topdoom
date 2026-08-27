@@ -71,7 +71,8 @@ src/render/    BSP polygon reconstruction (bsp) and the linedef-side answers it 
 src/game/      spatial queries + collision, player controller, input, the auto camera, what each
                skill level changes (skill), thing world state, fog of war, inventory/pickups,
                weapons and firing, shots in flight + splash, damage/death, transient effects,
-               voodoo dolls, best times, savegames (the snapshot shape, the IndexedDB store)
+               voodoo dolls, the typed cheat codes (cheats), best times, savegames (the snapshot
+               shape, the IndexedDB store)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through, WebAudio
                playback (channels, attenuation, pan, volume), the level's music
 src/ui/        the page's own chrome (base styles + tokens, the loading and fatal-error screens)
@@ -116,6 +117,7 @@ relevant one before changing that subsystem** — several rules there look like 
 | [monster-archvile.md](docs/monster-archvile.md) | The monster that breaks the `MONSTER_STATS` model: raising corpses, the blast attack |
 | [monster-iconofsin.md](docs/monster-iconofsin.md) | MAP30's boss: the spitter, the spawn cube, the brain's death |
 | [items.md](docs/items.md) | Pickups, inventory, keys/locked doors, monster drops, powerups |
+| [cheats.md](docs/cheats.md) | IDDQD, IDKFA, IDCLIP: typing one, what each does, saves and best times |
 | [hud.md](docs/hud.md) | The HUD, level stats and timer, level card, intermission, best times, center messages, `WadFont`, screen effects |
 | [styles.md](docs/styles.md) | Which `.html`/`.css` owns which element, the `index.html`/`styles.css` entries, the palette/stacking tokens |
 | [savegames.md](docs/savegames.md) | The save format and its version, the snapshot apply order, the store, download/import, WAD-set identity |

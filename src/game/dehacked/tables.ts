@@ -516,21 +516,22 @@ export const MISC_SINKS: Record<string, MiscSink> = {
   'soulsphere health': { limit: 'soulsphereHealth' },
   'megasphere health': { limit: 'megasphereHealth' },
   'bfg cells/shot': { weapon: 'bfg', field: 'ammoPerShot' },
+  // The two cheats this engine has: IDDQD's health and IDKFA's armor (docs/cheats.md).
+  'god mode health': { limit: 'godModeHealth' },
+  'idkfa armor': { limit: 'idkfaArmor' },
+  'idkfa armor class': { limit: 'idkfaArmorClass' },
 };
 
 /**
- * `d_deh.c`'s `deh_misc[]`. The cheat-related rows have no target because this engine has no
- * cheats, and `Monsters Infight` none because infighting here is not a single global switch
- * (docs/monster-ai.md § Infighting).
+ * `d_deh.c`'s `deh_misc[]`. The `IDFA` rows have no target because that cheat isn't implemented
+ * here (the three that are reach their own rows in `MISC_SINKS` above), and `Monsters Infight` none
+ * because infighting here is not a single global switch (docs/monster-ai.md § Infighting).
  */
 const MISC_FIELDS: Record<string, DehSupport> = {
   ...appliedRows(MISC_SINKS),
 
-  'god mode health': 'noTarget',
   'idfa armor': 'noTarget',
   'idfa armor class': 'noTarget',
-  'idkfa armor': 'noTarget',
-  'idkfa armor class': 'noTarget',
   'monsters infight': 'noTarget',
 };
 
@@ -595,6 +596,18 @@ const LOCK_LINE_MNEMONICS: readonly string[] = [
 ];
 
 /**
+ * The `STSTR_*` mnemonics this engine has a response for — `game/cheats.ts`'s `CHEAT_MESSAGES`,
+ * the five `d_englsh.h` strings the three implemented cheats print. Spelled out here rather than
+ * imported for the same read-side reason `LOCK_LINE_MNEMONICS` is, and cross-checked by the same
+ * test.
+ */
+const CHEAT_MESSAGE_MNEMONICS: readonly string[] = [
+  'STSTR_DQDON', 'STSTR_DQDOFF',
+  'STSTR_KFAADDED',
+  'STSTR_NCON', 'STSTR_NCOFF',
+];
+
+/**
  * BEX `[STRINGS]` mnemonic prefixes and what this engine can do with them. Checked longest-prefix
  * first, so `HUSTR_E1M1` and `HUSTR_1` both land on the level-title row while `HUSTR_PLRRED`
  * doesn't. Anything unlisted is `unknown`.
@@ -614,7 +627,7 @@ const STRING_PREFIXES: readonly (readonly [string, DehSupport])[] = [
   ['OB_', 'noTarget'], // obituaries with no killer here to name
   ['CC_', 'noTarget'], // cast-call names
   ['TAG_', 'noTarget'], // weapon names
-  ['STSTR_', 'noTarget'], // cheat responses
+  ['STSTR_', 'noTarget'], // the cheat responses with no cheat here; the five that have one are whole keys below
   ['AMSTR_', 'noTarget'], // automap messages
   ['BGFLAT', 'noTarget'], // intermission backgrounds
   ['QUITMSG', 'noTarget'], // quit messages
@@ -628,6 +641,7 @@ const STRING_KEYS: Record<string, DehSupport> = {
   // Every mnemonic with a sink, so the `OB_`/`PD_` prefix rows are left holding exactly the rest.
   ...Object.fromEntries(Object.keys(OBITUARY_SINKS).map((key) => [key, 'applied'])),
   ...Object.fromEntries(LOCK_LINE_MNEMONICS.map((key) => [key, 'applied'])),
+  ...Object.fromEntries(CHEAT_MESSAGE_MNEMONICS.map((key) => [key, 'applied'])),
 
   NIGHTMARE: 'noTarget', // a skill name
   DOSY: 'noTarget', // a quit message

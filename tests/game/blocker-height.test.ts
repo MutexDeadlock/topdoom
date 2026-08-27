@@ -11,7 +11,7 @@ import {
 } from '../../src/game/world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS, Player } from '../../src/game/player.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
-import type { Input } from '../../src/game/input.ts';
+import { IDLE_INPUT } from '../fixtures/input.ts';
 
 /**
  * Solid bodies carry their real height by default, so a mover clearing one
@@ -37,9 +37,6 @@ function body(z: number, height = BODY_HEIGHT): ThingBlocker {
 function blocked(z: number, blockers: ThingBlocker[], moverHeight = PLAYER_HEIGHT): boolean {
   return positionBlocked(world, at.x, at.y, PLAYER_RADIUS, z, moverHeight, false, blockers);
 }
-
-/** `Player.update` asks its input for nothing but `held`. */
-const IDLE_INPUT = { held: () => false } as unknown as Input;
 
 function settle(player: Player, blockers: ThingBlocker[]): void {
   for (let tic = 0; tic < Math.round(2 / DOOM_TIC); tic++) {

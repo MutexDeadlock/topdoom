@@ -89,7 +89,10 @@ the snapshot inside is unchanged.
 
 ## What is saved and what is deliberately not
 
-Saved: the player (position, velocities, private knockback), inventory (whose exact card/skull
+Saved: the cheats currently switched on (`cheats`, **optional** for the same no-bump reason
+`teleportFogs` is, and written only while one is on: absent means neither, which is what a save
+from before cheats existed also means — docs/cheats.md § Saves and best times), the player
+(position, velocities, private knockback), inventory (whose exact card/skull
 keys ride the optional `keySlots` — the always-written `keys` colors keep the save readable by
 pre-slot builds, and a save without `keySlots` restores each color as both slots, exactly the
 merged semantics those builds had), teleport fogs still
@@ -251,7 +254,9 @@ per read either way and does not depend on it.
 11. `buildThingSprites(..., restore)` — the spawn loop is skipped and `posed` rebuilt from the
     save in order.
 12. `new IconOfSin(...)` → `icon.restore(...)`.
-13. `projectiles.restore(...)` — into the layer step 4's `beginLevel` already cleared.
+13. `projectiles.restore(...)` — into the layer step 4's `beginLevel` already cleared — then
+    `cheats.restore(...)`, order-free: nothing else reads the toggles during a load
+    (docs/cheats.md § Saves and best times).
 14. Inventory deserialized, then `weaponSystem.restore(..., inventory)` — **in that order, and it
     takes the restored inventory**. `WeaponSystem.beginLevel` ran back at the top of the load
     against the *outgoing* inventory, so `weaponLastFrame` is left pointing at whatever weapon was

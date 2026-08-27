@@ -8,7 +8,7 @@ import { ThingType } from '../../src/game/things/doomednums.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { BANK, MATERIALS } from '../fixtures/spritestubs.ts';
-import type { Input } from '../../src/game/input.ts';
+import { heldInput } from '../fixtures/input.ts';
 
 /**
  * `P_CheckPosition` picks items up at the position the move *attempted*, before
@@ -41,8 +41,8 @@ describe('Regression · a pickup reaches where the move was headed', () => {
     return { player, layer: buildThingSprites(grid.map, world, BANK, MATERIALS, 3), edgeY };
   }
 
-  /** Holds W (north at `forwardDeg` 90) and nothing else, so `getAutorun` runs. */
-  const RUN_NORTH = { held: (...keys: string[]) => keys.includes('KeyW') } as unknown as Input;
+  /** North at `forwardDeg` 90, so `getAutorun` runs. */
+  const RUN_NORTH = heldInput('KeyW');
 
   /** Runs north long enough to reach full speed and hold at the ledge, collecting as `game.ts` does. */
   function runAtTheLedge(inside: number): { taken: number; stoppedAt: number; edgeY: number } {

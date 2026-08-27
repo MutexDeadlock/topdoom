@@ -479,9 +479,10 @@ every ammo pickup is worth, not just the backpack maths. `inventory.ts`'s `AMMO_
 a weapon hands over two — which is vanilla's own indirection, and is what lets `setClipAmmo` reach
 the pickups without re-deriving anything.
 
-`Misc` reaches the health/armor limits and `BFG Cells/Shot`. The cheat-related rows (`IDFA Armor`,
-`God Mode Health`) have no target because this engine has no cheats, and `Monsters Infight` none
-because infighting here is not a single global switch (docs/monster-ai.md § Infighting).
+`Misc` reaches the health/armor limits, `BFG Cells/Shot`, and the rows belonging to the cheats this
+engine has — `God Mode Health` and `IDKFA Armor`/`IDKFA Armor Class` (docs/cheats.md). The `IDFA`
+rows have no target because that cheat isn't implemented, and `Monsters Infight` none because
+infighting here is not a single global switch (docs/monster-ai.md § Infighting).
 
 Each name's destination is one **typed** row of `MISC_SINKS` — either `{limit}`, an
 `InventoryLimits` field, or `{weapon, field}`, which today is only `BFG Cells/Shot` →
@@ -646,6 +647,20 @@ writes it, and nothing under `src/game/` may import `src/ui/`. The mirror of tha
 `dehacked/tables.ts` cannot import the specials tables either — it is on the read side, where the
 menu classifies a patch with no `Game` (§ The two entry points) — so it spells the fifteen mnemonics
 out itself and a test cross-checks the two lists.
+
+## Cheat responses
+
+`STSTR_*` replaces the line a cheat code prints. Five of them apply — `STSTR_DQDON`/`STSTR_DQDOFF`,
+`STSTR_KFAADDED`, `STSTR_NCON`/`STSTR_NCOFF` — the responses of the three cheats this engine has
+(docs/cheats.md). `game/cheats.ts`'s `CHEAT_MESSAGES` holds them keyed by mnemonic, verbatim from
+`d_englsh.h`, and `replaceByMnemonic` — the one applier § Locked-door lines also goes through —
+replaces one by name: no transform, because these too are finished lines.
+
+The rest of the family — `STSTR_FAADDED`, `STSTR_BEHOLD`, `STSTR_MUS`, `STSTR_CLEV`,
+`STSTR_CHOPPERS` and the others — stays `noTarget`: the cheats they answer aren't implemented, so
+there is nothing to write them onto. The `STSTR_` prefix row in `dehacked/tables.ts` covers those,
+and the five above are whole keys ahead of it — the same prefix-plus-exceptions shape the `PD_*`
+mnemonics use, spelled out on the read side for the same reason and cross-checked by the same test.
 
 ## Par times
 

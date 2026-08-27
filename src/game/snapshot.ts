@@ -396,8 +396,21 @@ export interface GameSnapshot {
    * what a save from before it restored to.
    */
   scrollers?: ScrollerSnapshot[];
+  /**
+   * The cheats currently switched on. Optional because it was added without a
+   * `SAVE_VERSION` bump — and written only while one *is* on, so an honest run
+   * saves nothing: absent means neither cheat, which is exactly what a save
+   * from before them restored to. docs/cheats.md § Saves and best times.
+   */
+  cheats?: CheatSnapshot;
   /** The two random-table cursors. Restored after every other step — docs/savegames.md § Apply order. */
   rng: { p: number; m: number };
+}
+
+/** IDDQD's and IDCLIP's toggles — `game/cheats.ts`. IDKFA leaves nothing behind but the inventory it filled. */
+export interface CheatSnapshot {
+  god: boolean;
+  noclip: boolean;
 }
 
 /**

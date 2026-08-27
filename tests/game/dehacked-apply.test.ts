@@ -42,8 +42,9 @@ import { applyPickup, ammoMax, createInventory } from '../../src/game/inventory.
 import { ThingType } from '../../src/game/things/doomednums.ts';
 import { soundLumpName } from '../../src/audio/sfx.ts';
 import { finaleMusicFor, intermissionMusicFor, vanillaMusicFor } from '../../src/audio/music/tables.ts';
-import { OBITUARY_SINKS, classifyDehackedString } from '../../src/game/dehacked/tables.ts';
+import { OBITUARY_SINKS, classifyDehackedField, classifyDehackedString } from '../../src/game/dehacked/tables.ts';
 import { LOCKED_LINES, lockedLine } from '../../src/game/specials/tables.ts';
+import { CHEAT_MESSAGES, Cheats } from '../../src/game/cheats.ts';
 import { dehFixture } from '../fixtures/dehacked.ts';
 
 const apply = (text: string) => applyDehacked(parseDehacked(text));
@@ -196,6 +197,20 @@ describe('DEHACKED · applying', () => {
     assert.equal(inv.armorType, 1);
   });
 
+  test("Misc's cheat rows reach the two cheats that have one", () => {
+    // `God Mode Health` and `IDKFA Armor`/`IDKFA Armor Class` are separate from the start health
+    // and the armor classes a pickup follows — docs/cheats.md.
+    apply('Misc 0\nInitial Health = 5\nGod Mode Health = 300\nIDKFA Armor = 50\nIDKFA Armor Class = 1\n');
+    const cheats = new Cheats();
+    const inv = createInventory();
+    cheats.type('iddqdidkfa', inv);
+    assert.equal(inv.health, 300);
+    assert.equal(inv.armor, 50);
+    assert.equal(inv.armorType, 1);
+    // `IDFA` has no cheat here, so its rows still report honestly.
+    assert.equal(classifyDehackedField('misc', 'IDFA Armor'), 'noTarget');
+  });
+
   test('BFG Cells/Shot reaches the weapon, which is the one Misc row that is not a limit', () => {
     // It classifies `applied`, so it has to land somewhere: vanilla's `deh_bfgcells` writes
     // `weaponinfo[wp_bfg].ammopershot`. It used to be assigned onto `LIMITS` under its raw DEH
@@ -288,6 +303,13 @@ describe('DEHACKED · applying', () => {
     assert.equal(lockedLine({ kind: 'all', colorsSuffice: false }, 'door'), 'Bring all six');
     // The object variant of the same color is a separate mnemonic and is untouched.
     assert.equal(lockedLine({ kind: 'color', color: 'blue' }, 'switch'), 'You need a blue key to activate this object');
+  });
+
+  test('[STRINGS] STSTR_* replaces a cheat response, verbatim', () => {
+    // Same by-mnemonic replacement the PD_* lines get, and for the same reason — docs/cheats.md.
+    apply('[STRINGS]\nSTSTR_DQDON = Nice try\n');
+    assert.equal(CHEAT_MESSAGES.STSTR_DQDON, 'Nice try');
+    assert.equal(CHEAT_MESSAGES.STSTR_DQDOFF, 'Degreelessness Mode Off', 'the other half of the toggle is untouched');
   });
 
   test("the classifier's PD_* list is exactly the set of lines that exist", () => {
@@ -547,6 +569,7 @@ describe('DEHACKED · reset restores every table it can write', () => {
       inventory: createInventory(),
       obituaries: { ...OBITUARIES },
       lockedLines: { ...LOCKED_LINES },
+      cheatMessages: { ...CHEAT_MESSAGES },
       sprites: { ...THING_SPRITES },
       anims: structuredClone(THING_ANIM_FRAMES),
       walk: structuredClone(MONSTER_WALK_FRAMES_OVERRIDE),
@@ -574,7 +597,7 @@ describe('DEHACKED · reset restores every table it can write', () => {
         'Ammo 0\nMax ammo = 1\nPer ammo = 2',
         'Weapon 1\nAmmo type = 2',
         'Misc 0\nInitial Health = 3\nInitial Bullets = 4\nGreen Armor Class = 2\nMax Armor = 7',
-        '[STRINGS]\nOB_CRUSH = %o was squished.\nPD_BLUEK = Locked, obviously',
+        '[STRINGS]\nOB_CRUSH = %o was squished.\nPD_BLUEK = Locked, obviously\nSTSTR_NCON = Through walls now',
         '[SOUNDS]\npistol = DSNEWGUN',
         '[MUSIC]\nrunnin = D_OTHER',
         // The frame walker's sinks: a repointed death, a retimed pain, a shortened death chain that
@@ -607,6 +630,7 @@ describe('DEHACKED · reset restores every table it can write', () => {
     assert.equal(vanillaMusicFor('MAP01'), 'D_RUNNIN');
     assert.deepEqual(OBITUARIES, before.obituaries);
     assert.deepEqual(LOCKED_LINES, before.lockedLines);
+    assert.deepEqual(CHEAT_MESSAGES, before.cheatMessages);
     assert.deepEqual(THING_SPRITES, before.sprites);
     assert.deepEqual(THING_ANIM_FRAMES, before.anims);
     assert.deepEqual(MONSTER_WALK_FRAMES_OVERRIDE, before.walk);

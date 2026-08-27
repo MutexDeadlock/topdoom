@@ -44,6 +44,12 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 /**
+ * How many characters one tic may collect. A tic clears the buffer, so this only ever caps a
+ * burst nothing consumed — a keyboard macro, or keys arriving while the loop is stalled.
+ */
+const TYPED_LIMIT = 32;
+
+/**
  * Keyboard and pointer state, sampled by the game loop rather than event-driven.
  *
  * The edge latches (`pressed`, `rightMousePressed`) hold "went down since the
@@ -55,6 +61,7 @@ function isTyping(target: EventTarget | null): boolean {
 export class Input {
   private down = new Set<string>();
   private pressedThisTic = new Set<string>();
+  private typedThisTic = '';
   /** Pointer position in normalised device coordinates (-1..1). */
   readonly pointer = { x: 0, y: 0 };
   mouseDown = false;
@@ -85,6 +92,12 @@ export class Input {
     if (isTyping(e.target)) return;
     if (!this.down.has(e.code)) this.pressedThisTic.add(e.code);
     this.down.add(e.code);
+    // A cheat code is *typed*, so it reads the character rather than the physical key — a `Z` on
+    // a QWERTZ keyboard is a `z`, where `e.code` would say `KeyY`. Never with a modifier down:
+    // Ctrl+D is a browser shortcut, not a letter of `iddqd`.
+    if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey && this.typedThisTic.length < TYPED_LIMIT) {
+      this.typedThisTic += e.key.toLowerCase();
+    }
     // Keep the browser from scrolling the page with the movement keys.
     if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
   };
@@ -136,6 +149,16 @@ export class Input {
   }
 
   /**
+   * The printable characters typed since the last tic, lowercased and in order — what
+   * `game/cheats.ts` matches its codes against. Auto-repeat counts, since the accumulation sits
+   * below the first-press guard: a held movement key puts a character here on most tics, so this
+   * is empty far less often than "nothing was typed" suggests.
+   */
+  typed(): string {
+    return this.typedThisTic;
+  }
+
+  /**
    * True only on the first tic the right button went down, and only if it is
    * currently bound to `action` — so every consumer asks for the action it
    * implements rather than reading the setting itself.
@@ -157,6 +180,7 @@ export class Input {
    */
   endTic(): void {
     this.pressedThisTic.clear();
+    this.typedThisTic = '';
     this.rightPressedThisTic = false;
   }
 
@@ -164,6 +188,7 @@ export class Input {
   reset(): void {
     this.down.clear();
     this.pressedThisTic.clear();
+    this.typedThisTic = '';
     this.mouseDown = false;
     this.rightDown = false;
     this.rightPressedThisTic = false;

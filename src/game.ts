@@ -106,6 +106,7 @@ import {
   tickPowers,
   type Inventory,
 } from './game/inventory.ts';
+import { Cheats } from './game/cheats.ts';
 import { ThingType } from './game/things/doomednums.ts';
 import { WEAPONS, WeaponSystem } from './game/weapons.ts';
 import type { AudioEngine } from './audio/audio.ts';
@@ -377,6 +378,12 @@ export class Game {
    * Captured up front because `startPos` is nulled out once the first map has consumed it.
    */
   private recordsEligible: boolean;
+  /**
+   * The typed cheat codes and the two toggles they leave on. Owned by the session, not the level:
+   * an exit carries them into the next map the way vanilla's `player_t.cheats` does.
+   * docs/cheats.md.
+   */
+  private cheats = new Cheats();
 
   constructor(
     view: Viewport,
@@ -655,6 +662,9 @@ export class Game {
         things: this.things!.snapshot(),
         icon: this.icon!.snapshot(),
         projectiles: this.projectiles.snapshot(),
+        // Only while one is actually on: an honest run's save carries nothing, which is what a
+        // save from before cheats existed also carries. docs/cheats.md § Saves and best times.
+        ...(this.cheats.active ? { cheats: this.cheats.snapshot() } : {}),
         teleportFogs: this.effects.snapshotTeleportFogs(),
         voodoo: this.voodoo.snapshot(),
         scrollers: this.forces.snapshot(),
@@ -978,6 +988,7 @@ export class Game {
     if (restore) {
       this.icon.restore(restore.icon);
       this.projectiles.restore(restore.projectiles);
+      this.cheats.restore(restore.cheats);
       this.inventory = deserializeInventory(restore.inventory);
       // After the line above: `restore` derives `weaponLastFrame` off the
       // inventory it is handed, and `beginLevel` only saw the outgoing one.
@@ -1144,7 +1155,7 @@ export class Game {
     // Before anything reads it — knockback and the pain flash included, exactly as in vanilla.
     const amount = playerDamageAtSkill(rawAmount, this.skill);
     const healthBefore = this.inventory.health;
-    if (!applyDamage(this.inventory, amount)) return false;
+    if (!applyDamage(this.inventory, amount, this.cheats.god)) return false;
     if (fromX !== undefined && fromY !== undefined) {
       this.player.applyDamageThrust(thrustSpeed(amount, PLAYER_MASS), fromX, fromY);
     }
@@ -1178,6 +1189,27 @@ export class Game {
     this.audio.play('plpain', this.player, PLAYER_ORIGIN);
     this.playerActor.playOnce(PLAYER_PAIN_FRAMES, PLAYER_ACTION_FRAME_SECONDS);
     return true;
+  }
+
+  /**
+   * Whatever was typed this tic, and the one response a completed code prints. Returns whether
+   * those characters belonged to a cheat — completed one or are partway into one — which is what
+   * keeps the same keypress from also firing a bound key.
+   *
+   * A cheat also ends this run's claim on a best time, the same way a `?pos=` start does — it
+   * travels in the save with `recordsEligible`. docs/cheats.md § Saves and best times.
+   */
+  private applyCheats(input: Input): boolean {
+    const typed = input.typed();
+    if (!typed) return false;
+    const response = this.cheats.type(typed, this.inventory);
+    if (response) {
+      this.message.show(response);
+      this.recordsEligible = false;
+    }
+    // A code half typed counts too: the hotkey has to be swallowed on the way *into* the match,
+    // not only on the tic that completes it.
+    return response !== null || this.cheats.typing;
   }
 
   /**
@@ -1440,7 +1472,17 @@ export class Game {
       this.enterLevel(this.nextMapIndex, this.pendingEnd !== null); // clears both popups, like every other per-level overlay
       return true;
     }
-    handleHotkeys(input, camera, (delta) => this.enterLevel(this.mapIndex + delta));
+    // Ahead of every system a cheat changes, and only while there is a live player to change:
+    // a corpse answers `R` and nothing else. docs/cheats.md § Typing a code.
+    const cheating = !this.playerDead && this.applyCheats(input);
+    // Set here rather than at the toggle, since a `Player` is rebuilt by every level load and the
+    // cheat outlives it — and here rather than in the player block below, so that every system
+    // this tic reads one `noclip`, not last tic's. docs/cheats.md § IDCLIP.
+    this.player.noclip = this.cheats.noclip;
+    // A letter of a code must not also work its bound key: DEVMODE's map jump `P` sits inside
+    // `idclip`, and jumping level mid-code would eat the cheat. Only that callback is withheld —
+    // the camera keys aren't letters and can't collide. docs/cheats.md § Typing a code.
+    handleHotkeys(input, camera, cheating ? null : (delta) => this.enterLevel(this.mapIndex + delta));
     // Set before any system runs, since specials/monsters/weapons all raise
     // sounds during the update below. The camera's yaw is last tic's (it
     // settles in `camera.tick`, at the end) — a tic of smoothing lag on the
@@ -1451,7 +1493,15 @@ export class Game {
     // Runs before player.update so a lift/door the player is standing on has
     // already moved this tic by the time groundFloor is sampled below.
     this.profiler.time('Specials', () => {
-      this.specials?.update(TIC_SECONDS, this.player.x, this.player.y, this.player.angle, input, this.inventory.keys);
+      this.specials?.update(
+        TIC_SECONDS,
+        this.player.x,
+        this.player.y,
+        this.player.angle,
+        input,
+        this.inventory.keys,
+        this.player.noclip,
+      );
       // After the movers, not before: a displacement scroller's rate is the
       // height change its control sector just made this tic.
       this.forces.tick();
@@ -1488,7 +1538,9 @@ export class Game {
       this.pendingExit = null;
       // The next map isn't loaded here any more: the popup goes up on the level as it stands, and
       // the continue key at the top of `tic` is what loads it.
-      this.intermission.show(this.levelStats(), this.recordCompletion(), this.parFor());
+      // The cheated popup reads the *same* flag that already refuses a best time — a run that
+      // can't set one has nothing worth stating (docs/cheats.md § Saves and best times).
+      this.intermission.show(this.levelStats(), this.recordCompletion(), this.parFor(), !this.recordsEligible);
       // Vanilla's own `S_ChangeMusic(mus_inter)` at the intermission, keeping
       // the level's track when the set has no intermission lump.
       const between = this.levelMusic.intermissionTrackFor(this.currentMap);

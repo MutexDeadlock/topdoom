@@ -21,7 +21,8 @@ import { DEVMODE } from '../../constants.ts';
 export function handleHotkeys(
   input: Input,
   camera: TopDownCamera,
-  changeMap: (delta: number) => void,
+  /** Null while a cheat code is being typed, whose letters must not also jump level — game.ts. */
+  changeMap: ((delta: number) => void) | null,
 ): void {
   if (getCameraMode() === 'manual') {
     // The camera clamps both targets to its own envelope, so a held key just
@@ -31,7 +32,7 @@ export function handleHotkeys(
     if (input.held('BracketLeft')) camera.targetTiltDeg -= 0.5;
     if (input.held('BracketRight')) camera.targetTiltDeg += 0.5;
   }
-  if (!DEVMODE) return;
+  if (!DEVMODE || !changeMap) return;
   if (input.pressed('KeyN')) changeMap(1);
   if (input.pressed('KeyP')) changeMap(-1);
 }

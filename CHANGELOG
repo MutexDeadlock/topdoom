@@ -1,6 +1,9 @@
 v0.16.1 (2026-08-2?)
 
 Features and improvements
+  - add 3 of the classic cheat codes
+    - a cheated run sets no best times, and its intermission screen says
+      "You cheated" instead of showing the level's stats
   - further optimized wall fading performance
   - the crosshair keeps a solid black outline, so it stays readable over
     bright floors and fire

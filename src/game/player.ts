@@ -176,6 +176,14 @@ export class Player implements Pos3 {
    */
   readonly attempted: Pos2 = { x: 0, y: 0 };
 
+  /**
+   * IDCLIP: vanilla's `MF_NOCLIP` on the player mobj. Walls and bodies stop being tested at all,
+   * and the floor underfoot becomes the plain sector one — see `moveBy` and `update`'s ground.
+   * Pushed here from `game.ts`'s `Cheats` every tic, since a `Player` is rebuilt per level.
+   * docs/cheats.md § IDCLIP.
+   */
+  noclip = false;
+
   private world: World;
 
   constructor(world: World) {
@@ -446,7 +454,7 @@ export class Player implements Pos3 {
     this.attempted.y = this.y + (this.velY + this.momY) * dt;
 
     if (Math.abs(this.velX) > 0.01 || Math.abs(this.velY) > 0.01) {
-      const moved = slideMove(this.world, this, this.velX * dt, this.velY * dt, PLAYER_RADIUS, blockers);
+      const moved = this.moveBy(this.velX * dt, this.velY * dt, blockers);
       // Adopt whatever the slide actually managed as the new velocity, exactly
       // as vanilla's P_SlideMove writes its clipped vector back to momx/momy:
       // the component that ran along a wall carries over to the next frame and
@@ -478,7 +486,7 @@ export class Player implements Pos3 {
     // rather than let it creep. A knockback, which nothing sustains, still ends
     // exactly as it always did.
     if (this.forced || Math.abs(this.momX) > MOMENTUM_STOP_SPEED || Math.abs(this.momY) > MOMENTUM_STOP_SPEED) {
-      const moved = slideMove(this.world, this, this.momX * dt, this.momY * dt, PLAYER_RADIUS, blockers);
+      const moved = this.moveBy(this.momX * dt, this.momY * dt, blockers);
       if (dt > 0) {
         this.momX = (moved.x - this.x) / dt;
         this.momY = (moved.y - this.y) / dt;
@@ -510,10 +518,16 @@ export class Player implements Pos3 {
     // A solid body the player is above is ground too (`bodyFloor`) — the
     // player's alone, and inert while infinite-tall actors is on. See
     // docs/movement.md § Vertical physics: stairs, falling, gap-crossing.
-    const groundZ = Math.max(
-      this.world.groundFloor(this.x, this.y, PLAYER_RADIUS),
-      bodyFloor(this.x, this.y, PLAYER_RADIUS, this.z, blockers),
-    );
+    // While noclipping it is the plain sector floor under the player's *centre* instead, matching
+    // `P_CheckPosition`'s `MF_NOCLIP` early-out: it returns having set `tmfloorz` from the
+    // subsector's own sector and before a single line or body was considered, so no ledge holds
+    // the player up and no step limit applies. docs/cheats.md § IDCLIP.
+    const groundZ = this.noclip
+      ? this.world.floorAt(this.x, this.y)
+      : Math.max(
+          this.world.groundFloor(this.x, this.y, PLAYER_RADIUS),
+          bodyFloor(this.x, this.y, PLAYER_RADIUS, this.z, blockers),
+        );
     if (this.z > groundZ) {
       // Airborne: the ground dropped out from under the player (walked off a
       // ledge, or a straddled gap turned out too wide to glide over). Fall
@@ -536,5 +550,16 @@ export class Player implements Pos3 {
     }
 
     if (aim) this.angle = Math.atan2(aim.y - this.y, aim.x - this.x);
+  }
+
+  /**
+   * One displacement, clipped against walls and solid bodies — or taken raw while `noclip` is on,
+   * where `P_TryMove`'s every check is skipped and the move always lands whole. The velocity each
+   * caller reads back off the result is then simply what it asked for, which is exactly right: a
+   * noclipped run into a wall keeps its speed.
+   */
+  private moveBy(dx: number, dy: number, blockers?: readonly ThingBlocker[]): Pos2 {
+    if (this.noclip) return { x: this.x + dx, y: this.y + dy };
+    return slideMove(this.world, this, dx, dy, PLAYER_RADIUS, blockers);
   }
 }

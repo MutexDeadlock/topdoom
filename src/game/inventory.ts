@@ -286,6 +286,11 @@ export interface InventoryLimits {
   soulsphereHealth: number;
   /** Vanilla's `mega_health` — the health a megasphere sets, alongside blue armor. */
   megasphereHealth: number;
+  /** `deh_god_health`: the health IDDQD sets on the way on (docs/cheats.md § IDDQD). */
+  godModeHealth: number;
+  /** `deh_idkfa_armor` / `deh_idkfa_armor_class`: the armor IDKFA hands over (docs/cheats.md § IDKFA). */
+  idkfaArmor: number;
+  idkfaArmorClass: number;
 }
 
 /**
@@ -302,6 +307,15 @@ export function setMaxAmmo(type: AmmoType, max: number): void {
  */
 export function setClipAmmo(type: AmmoType, per: number): void {
   CLIP_AMMO[type] = per;
+}
+
+/**
+ * One patchable `Misc` limit, read at the point of use rather than copied — the same rule
+ * `HEALTH_PICKUPS`' `{limit}` rows follow, so a patch applied mid-session is seen by the next read.
+ * `game/cheats.ts` is the reader outside this module.
+ */
+export function inventoryLimit(field: keyof InventoryLimits): number {
+  return LIMITS[field];
 }
 
 /** Writes the `Misc` limits a patch supplied, leaving the rest alone. */
@@ -323,6 +337,10 @@ const LIMITS: InventoryLimits = {
   initialBullets: 50,
   soulsphereHealth: 100,
   megasphereHealth: 200,
+  /** `st_stuff.c`'s own literals, in `ST_Responder`'s cheat block. */
+  godModeHealth: 100,
+  idkfaArmor: 200,
+  idkfaArmorClass: 2,
 };
 
 /** The pristine values, for `resetDehacked` — see docs/dehacked.md § Applying: reset, then patch. */
@@ -532,13 +550,19 @@ const INVULNERABLE_DAMAGE_LIMIT = 1000;
  * first, in the same place vanilla's own `P_DamageMobj` checks it (see
  * `INVULNERABLE_DAMAGE_LIMIT`). `health` is clamped at 0 rather than going
  * negative — `game.ts`'s own death check is a simple `<= 0`, not "how far past
- * 0". Returns whether the hit actually landed (`false` while invulnerable
- * blocked it outright), the same "did anything happen" boolean `applyPickup`
- * already returns for the same reason — `game.ts: damagePlayer` needs it to
- * skip the pain flash/flinch animation for a hit that did nothing.
+ * 0". Returns whether the hit actually landed (`false` while invulnerability
+ * or `god` blocked it outright), the same "did anything happen" boolean
+ * `applyPickup` already returns for the same reason — `game.ts: damagePlayer`
+ * needs it to skip the pain flash/flinch animation for a hit that did nothing.
+ *
+ * `god` is IDDQD's `CF_GODMODE` (docs/cheats.md § IDDQD), taken as a parameter
+ * rather than read from the inventory because it is not something the player
+ * carries: vanilla tests the two in one condition here, under the same limit.
+ * Required rather than defaulted, so a damage path added later has to say which
+ * it is instead of silently losing god mode.
  */
-export function applyDamage(inv: Inventory, amount: number): boolean {
-  if (hasPower(inv, 'invulnerability') && amount < INVULNERABLE_DAMAGE_LIMIT) return false;
+export function applyDamage(inv: Inventory, amount: number, god: boolean): boolean {
+  if ((god || hasPower(inv, 'invulnerability')) && amount < INVULNERABLE_DAMAGE_LIMIT) return false;
   let damage = amount;
   if (inv.armorType > 0 && inv.armor > 0) {
     let saved = inv.armorType === 1 ? damage / 3 : damage / 2;

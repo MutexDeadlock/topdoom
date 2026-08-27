@@ -174,9 +174,13 @@ export class MonsterAttacks {
     const path = shotPath(world, atk, angleRad, aim, WEAPON_RANGE, null);
 
     // The trace damages the first body it reaches, whatever it was aimed at.
+    // Vertically it is `PTR_ShootTraverse`, not an aim: this bolt already has a
+    // slope (`shotPath` sloped it toward `aim`), so a body only blocks it where
+    // the bolt actually passes through that body's own height.
     const blocker = things?.raycastMonster(atk, angleRad, path.dist, {
       ignoreId: atk.sourceId,
       includeHidden: true,
+      slope: path.dist > 0 ? (path.z - atk.z) / path.dist : 0,
     });
     const dirX = Math.cos(angleRad);
     const dirY = Math.sin(angleRad);

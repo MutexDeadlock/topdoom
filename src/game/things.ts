@@ -12,6 +12,7 @@ import { GRAVITY, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import { pRandom } from '../util/random.ts';
 import { DOOM_TIC } from '../constants.ts';
 import {
+  AIM_SLOPE_LIMIT,
   BARREL_CHAIN,
   BARREL_HEALTH,
   BARREL_MASS,
@@ -1678,10 +1679,14 @@ export function buildThingSprites(
       origin: Pos3,
       angleRad: number,
       maxDist: number,
-      opts?: { ignoreId?: number; includeHidden?: boolean },
+      opts?: { ignoreId?: number; includeHidden?: boolean; slope?: number },
     ): (MonsterRef & { dist: number }) | null {
       const dx = Math.cos(angleRad);
       const dy = Math.sin(angleRad);
+      // The span this trace can reach vertically: one slope for a shot that
+      // already has one, `P_AimLineAttack`'s cone for a trace that is an aim.
+      const topSlope = opts?.slope ?? AIM_SLOPE_LIMIT;
+      const bottomSlope = opts?.slope ?? -AIM_SLOPE_LIMIT;
       let nearest: (MonsterRef & { dist: number }) | null = null;
       // Grid-backed rather than a scan of every thing: this runs once per
       // monster hitscan, which a crowded map fires dozens of times a frame.
@@ -1696,14 +1701,19 @@ export function buildThingSprites(
         // Fog of war is a *player*-facing conceit; a monster shooting another
         // monster in an unrevealed room must still connect.
         if (!opts?.includeHidden && !p.visible) return;
-        // This body's own height, same per-species reasoning as the width below.
-        if (Math.abs(p.z - origin.z) > p.bodyHeight) return;
         // This body's own width, not one shared hitbox: `PIT_AddThingIntercepts`
         // tests the trace against a diagonal of each thing's real bounding box,
         // and the 10-128 unit spread across types is the difference between a
         // bullet threading past a mancubus and stopping in it.
         const t = traceHitsBox(origin.x, origin.y, dx, dy, p.x, p.y, p.blockRadius);
         if (t === null || t > maxDist || (nearest && t >= nearest.dist)) return;
+        // `PTR_AimTraverse`'s vertical test, this body's own height over its own
+        // distance: the slopes reaching its feet and its top have to overlap the
+        // span above. Guarded against a zero distance, where both slopes run off
+        // to infinity around a body the trace starts inside of.
+        const dist = Math.max(t, 1e-6);
+        if ((p.z + p.bodyHeight - origin.z) / dist < bottomSlope) return; // over it
+        if ((p.z - origin.z) / dist > topSlope) return; // under it
         nearest = {
           id: p.id,
           x: origin.x + dx * t,

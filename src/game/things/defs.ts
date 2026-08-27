@@ -525,20 +525,34 @@ export interface ThingLayer {
    * Nearest living monster the ray crosses within `maxDist`, or null — the
    * "didn't click anything, but something's in the path anyway" case for a
    * free shot. Tested laterally against each body's **own** `MonsterRef.radius`
-   * and vertically against its own `MonsterRef.height`.
+   * and vertically against its own `MonsterRef.height`, as a slope span at that
+   * body's distance rather than a flat height band — docs/combat.md
+   * § The vertical test.
    *
-   * `opts` serves a *monster's* own hitscan: `ignoreId` excludes the shooter
-   * from its own trace, `includeHidden` skips the fog-of-war filter, since fog
-   * is a player-facing conceit — two monsters fighting in a room the player
-   * hasn't seen must still connect.
+   * `opts.slope` is the trace's own fixed slope, `PTR_ShootTraverse`'s
+   * `aimslope`; omitting it takes `P_AimLineAttack`'s `±AIM_SLOPE_LIMIT` cone,
+   * which is what every caller that would run an aim in vanilla wants.
+   *
+   * The rest of `opts` serves a *monster's* own hitscan: `ignoreId` excludes the
+   * shooter from its own trace, `includeHidden` skips the fog-of-war filter,
+   * since fog is a player-facing conceit — two monsters fighting in a room the
+   * player hasn't seen must still connect.
    */
   raycastMonster(
     origin: Pos3,
     angleRad: number,
     maxDist: number,
-    opts?: { ignoreId?: number; includeHidden?: boolean },
+    opts?: { ignoreId?: number; includeHidden?: boolean; slope?: number },
   ): (MonsterRef & { dist: number }) | null;
 }
+
+/**
+ * The vertical half-angle `P_AimLineAttack` searches, as a slope: its
+ * `topslope = 100*FRACUNIT/160` and `bottomslope = -100*FRACUNIT/160`
+ * (`p_map.c`). `raycastMonster` takes it as the default span a body's own
+ * slope range has to overlap — see docs/combat.md § The vertical test.
+ */
+export const AIM_SLOPE_LIMIT = 100 / 160;
 
 /**
  * The two types whose sight and death sounds vanilla plays **unattenuated**,

@@ -8,6 +8,8 @@ Fixed bugs
     neighbour, so switches that lower such a platform work
   - the 36/70/71/98 "lower to highest neighbour" specials no longer raise a
     floor that is already level with its highest neighbour
+  - a BFG shot no longer misses a monster standing lower or higher than the
+    player
   
 
 ===============================================================================

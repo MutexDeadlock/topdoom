@@ -103,7 +103,7 @@ Rules that go with it:
   `testStep`'s `floatok` probe answers exactly what it did before heights existed.
 - **Movement blocking only.** Every other z comparison in the engine is one vanilla makes too and is
   untouched by the setting: a missile's over/under (`spritefx/defs.ts: stepTouchesBody`), a hitscan's
-  height band and auto-aim slope (docs/combat.md), `meleeReachesVertically`
+  aim-slope span and auto-aim slope (docs/combat.md), `meleeReachesVertically`
   (docs/monster-ai.md § Melee reach), `tryPickup`'s overhead gate (docs/items.md), and splash, which
   is 2D in vanilla.
 - **The blocker broadphase stays 2D** (`things/grid.ts: blockersFor`). A z pre-filter would shrink

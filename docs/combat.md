@@ -399,8 +399,9 @@ movement), so their perpendicular offset is exactly 0.
 
 The vertical half of the test only ever fires for the super shotgun, the one weapon with a
 `slopeSpread` (§ Spread), and only on the locked-on path: the free-shot `raycastMonster` is a 2D ray
-with a crude height band and models no slope at all, so a wide pellet's *vertical* miss is not
-reproduced once it falls through to that branch.
+that carries no slope of its own, and admits any body inside `P_AimLineAttack`'s aim cone
+(§ The vertical test), so a wide pellet's *vertical* miss is not reproduced once it falls through to
+that branch.
 
 **Only the locked-on gate uses the shared `MONSTER_HIT_RADIUS`; everything a shot can actually
 collide with is tested at its own width.** `raycastMonster` and a projectile's swept contact test both
@@ -445,6 +446,32 @@ like homing — see `MONSTER_HIT_RADIUS`.
 For a hitscan pellet damage is applied immediately (an instant line has no travel time); for a
 projectile it is carried on the `Projectile` and applied wherever `ProjectileLayer.update` finds it
 connecting.
+
+## The vertical test
+
+**`raycastMonster` gates a body vertically on a slope span at that body's own distance, never on a
+flat height band around the fire height.** Vanilla's `PTR_AimTraverse` and `PTR_ShootTraverse`
+(`p_map.c`) both work out `thingtopslope = (th->z + th->height - shootz) / dist` and
+`thingbottomslope = (th->z - shootz) / dist` and skip the thing when that pair lies wholly outside
+the trace's own `[bottomslope, topslope]` — "shot over the thing" / "shot under the thing". The two
+differ in one thing only, which span they carry: an **aim** (`P_AimLineAttack`) searches the
+`±AIM_SLOPE_LIMIT` cone (`topslope = 100*FRACUNIT/160`), a **fired shot** collapses it to the single
+`aimslope` it was handed. `raycastMonster` reproduces both through one `opts.slope` — omitted for the
+cone, supplied for a shot that already has a slope.
+
+Which callers get which follows vanilla: the BFG spray (`A_BFGSpray` calls `P_AimLineAttack`), the
+player's fist and chainsaw (`A_Punch`/`A_Saw`) and a free player pellet (`P_BulletSlope`) are all
+aims and take the cone; a monster's bullet already carries the slope `shotPath` sloped it to
+(`monsters/attacks.ts: resolveBullet`) and passes that, so another monster blocks the bolt only where
+the bolt genuinely crosses its body.
+
+**The flat band this replaced made a monster standing below or above the shooter unhittable.** The
+old gate rejected any body whose feet were more than its own height from the fire height, which is a
+±64 window for a mancubus and pays no attention to how near it is standing. Repro: NoSp2.wad MAP04,
+the mancubus pen around (1100, -3970), whose floor sits 64 below the ledge the player fights it
+from — the aim height is then 96 above the mancubi's feet, and the BFG's 40-ray spray, which is that
+weapon's entire damage (§ Splash and the BFG), passed through the whole group without touching one of
+them.
 
 ## How a projectile finds its target
 
@@ -604,7 +631,8 @@ ball never calls `A_Explode` at all, so there's no radius blast to gate.
 called from `ProjectileLayer.update` the instant the ball reaches wherever it's going). It is nothing like
 a radius blast: 40 rays fan out across a 90° arc (every 2.25°) centered on the ball's own fixed
 flight angle (`Projectile.angleRad` — the ball never homes), each an independent
-`ThingLayer.raycastMonster` trace out to 1024 units (`16*64`, `P_AimLineAttack`'s own distance) that,
+`ThingLayer.raycastMonster` trace out to 1024 units (`16*64`, `P_AimLineAttack`'s own distance) —
+that function's own aim cone included, § The vertical test — that,
 if it connects, deals a full undiminished direct hit — the sum of 15 rolls of a d8 (15-120), with no
 distance falloff at all. Two things make it genuinely different from a radius blast:
 

@@ -465,6 +465,29 @@ Three rules, all in `monsters/ai.ts`:
   rides until floor or ceiling zeroes it. Losing its target doesn't drop it either — `MF_NOGRAVITY`
   outlives the target, so `ThingLayer`'s go-dormant branch leaves a flier's `z` alone.
 
+**The two clamps are applied in `P_ZMovement`'s order — floor first, ceiling last — and the order
+decides what happens where they disagree.** A space shorter than the body has no `z` satisfying
+both, and vanilla lets the *ceiling* win: `p_mobj.c` clamps up to `floorz` and only then, in a
+separate unconditional block, down to `ceilingz - height`, so the body ends up **below** the floor
+under it rather than pushed up into geometry it cannot fit under. Taking the floor instead
+deadlocks a flier whose box straddles a block too short to stand on: the clamp shoves it onto that
+block, every step off is refused as `'adjust'` ("must lower itself to fit") because its head is in
+the ceiling, and the descent `floatOverStep` makes toward the destination floor is undone by the
+clamp again in the same frame. `MonsterBody.inFloat` left set on a body that never moves is that
+loop's fingerprint.
+
+The straddle it needs cannot be walked off, which is why nothing else breaks the loop: `groundFloor`
+pins the box-wide floor to the block for as long as the box spans its linedef (docs/movement.md §
+Collision), and that pinning is load-bearing — vanilla only refreshes `mo->floorz` on a *successful*
+`P_TryMove`, which is its own deadlock (§ The dropoff rule) and not the rule to copy here.
+
+**Repro: DOOM2 MAP29**, the cacodemon authored at (-112, 1104). Sector 76 is the room (floor 352,
+ceiling 504); sector 82 is the diagonal `SW1LION` switch block (floor 480, ceiling 504) whose
+linedef 1131 passes 24 units away — closer than the cacodemon's 31-unit radius, so its box straddles
+that block from the moment it spawns and can never step clear of it. With the floor winning it
+snapped 128 units up to z = 480 the instant it woke and hung there for the rest of the level.
+`tests/regression/floater-under-low-ceiling.test.ts` states the same geometry in round numbers.
+
 `testStep` carries its own copy of vanilla's "mobj must lower itself to fit"
 (`tmceilingz - thing->z < thing->height`) even though `checkPosition` now applies that rule
 per crossed opening too (docs/movement.md § Collision). The two are not redundant: `checkPosition`

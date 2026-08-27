@@ -207,8 +207,13 @@ function settleVertical(body: MonsterBody, stats: MonsterStats, world: World, dt
       body.z += Math.max(-step, Math.min(step, delta));
     }
   }
+  // The floor clamp first and the ceiling clamp *last*, `P_ZMovement`'s own
+  // order — so where the two disagree (a space shorter than this body) the
+  // ceiling wins and `z` ends below the floor, rather than the body being
+  // pushed up into geometry it cannot fit under. See docs/monster-ai.md
+  // § Floating monsters.
   const ceilZ = at.ceilingZ - stats.height;
-  const clamped = Math.min(Math.max(body.z, groundZ), Math.max(groundZ, ceilZ));
+  const clamped = Math.min(Math.max(body.z, groundZ), ceilZ);
   if (clamped !== body.z) body.velZ = 0;
   body.z = clamped;
 }

@@ -16,6 +16,8 @@ Fixed bugs
     to it from the height of the closet it left
   - a voodoo doll parked in damaging floor no longer bleeds the player
   - a spectre behind a fading wall no longer strobes in and out of view
+  - a flying monster spawned against a block too low to sit on no longer
+    pops up onto it and hangs there for the rest of the level
 
 
 ===============================================================================

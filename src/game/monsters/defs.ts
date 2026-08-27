@@ -131,6 +131,11 @@ export interface AttackStats {
    * mancubus's three `A_FatAttack*` are one attack fanned by `pairOffsetsRad`); a DEHACKED patch
    * can mix them, and NoSp2.wad's cybruiser does — rocket, then the baron's green ball.
    * docs/monster-attacks.md § A volley of unlike shots.
+   *
+   * This is the one field that makes `AttackStats` hold its own type, so **anything walking the
+   * stat table has to walk these too** — `fastVariant` and the projectile sweep in `tables.ts`
+   * both do, and a new traversal that forgets them silently misses a patched volley's shots.
+   * One level only: an entry's own `shotAttacks` is stripped when it is built (dehacked/apply.ts).
    */
   shotAttacks?: readonly AttackStats[];
   /**

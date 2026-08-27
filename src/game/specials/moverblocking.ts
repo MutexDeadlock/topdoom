@@ -11,7 +11,7 @@ import type { World } from '../world.ts';
 import type { ThingLayer } from '../things.ts';
 import { TALLEST_BODY_HEIGHT } from '../monsters/tables.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
-import { neighborSectorIndices } from './mapscan.ts';
+import { neighborSectorIndices } from '../world.ts';
 import { CRUSH_DAMAGE } from './defs.ts';
 
 /**

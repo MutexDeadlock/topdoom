@@ -1,6 +1,8 @@
 v0.16.2 (2026-08-2?)
 
 Fixed bugs
+  - a door or lift standing in a wall the occlusion fade opens now fades with
+    it, instead of staying solid in the middle of the hole
   - a monster standing half under a crusher is now crushed by it
   - a DEHACKED attack chain that fires two different actions now throws both,
     instead of repeating its first one
@@ -10,7 +12,7 @@ Fixed bugs
     floor that is already level with its highest neighbour
   - a BFG shot no longer misses a monster standing lower or higher than the
     player
-  
+
 
 ===============================================================================
 

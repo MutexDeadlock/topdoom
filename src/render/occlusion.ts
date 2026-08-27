@@ -106,8 +106,14 @@ function holeAlpha(distanceSquared: number, floor: number, radius: number): numb
  * property of that target, so a crossing carries the index rather than a copy.
  * Both faders file the same four channels, so they share one structure rather
  * than two sets of parallel arrays.
+ *
+ * One bag holds a whole frame's stops across **every** fader of its kind, since
+ * a hole has to dissolve whatever lies inside it whichever mesh that is in —
+ * docs/render.md § One hole, whichever mesh it lands in. Walls and flats keep
+ * one each: a wall crossing and a floor pierce are different points and fold
+ * different geometry.
  */
-class PointBag {
+export class FadeCrossings {
   x: Float64Array = new Float64Array(64);
   y: Float64Array = new Float64Array(64);
   /** The height the sightline was stopped at: a wall crossing's, or the plane a floor pierce sits in. */
@@ -115,9 +121,20 @@ class PointBag {
   /** Which target's sightline was stopped here — an index into `TargetPlanes`. */
   target: Float64Array = new Float64Array(64);
   count = 0;
+  /**
+   * Where the whole bag stands, grown as points arrive. Kept here rather than
+   * derived by each reader because the bag is the frame's, not a fader's: every
+   * fader that folds it would otherwise rebuild the same box, and only `push`
+   * can change the answer. Empty (inverted) until the first point.
+   */
+  readonly bounds: FadeBox = emptyBox();
 
   reset(): void {
     this.count = 0;
+    this.bounds.minX = Infinity;
+    this.bounds.minY = Infinity;
+    this.bounds.maxX = -Infinity;
+    this.bounds.maxY = -Infinity;
   }
 
   push(x: number, y: number, h: number, target: number): void {
@@ -132,6 +149,7 @@ class PointBag {
     this.h[this.count] = h;
     this.target[this.count] = target;
     this.count++;
+    stretchBox(this.bounds, x, y);
   }
 }
 
@@ -292,6 +310,52 @@ export interface FadeBox {
   maxY: number;
 }
 
+/** An inverted box, which `stretchBox` turns into the bound of whatever it is then given. */
+export function emptyBox(): FadeBox {
+  return { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+}
+
+/** Grows `box` to hold one more point. */
+export function stretchBox(box: FadeBox, x: number, y: number): void {
+  if (x < box.minX) box.minX = x;
+  if (x > box.maxX) box.maxX = x;
+  if (y < box.minY) box.minY = y;
+  if (y > box.maxY) box.maxY = y;
+}
+
+/**
+ * Whether two map-space boxes touch at all — a mover's footprint against a fade
+ * reach or a reveal, or a fader's against the frame's bag of crossings. An
+ * empty box (`emptyBox`, never stretched) overlaps nothing, which is the answer
+ * a fader with no quads and a bag with no points both want.
+ */
+export function boxesOverlap(a: FadeBox, b: FadeBox): boolean {
+  return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
+}
+
+/** `box` grown on every side by `by`, written into `out` — an empty box stays empty. */
+function grownBox(box: FadeBox, by: number, out: FadeBox): FadeBox {
+  out.minX = box.minX - by;
+  out.minY = box.minY - by;
+  out.maxX = box.maxX + by;
+  out.maxY = box.maxY + by;
+  return out;
+}
+
+/** The widest hole any of this frame's targets opens — how far a crossing can fold. */
+function maxFadeRadius(targets: readonly FadeTarget[]): number {
+  let radius = 0;
+  for (const t of targets) if (t.fadeRadius > radius) radius = t.fadeRadius;
+  return radius;
+}
+
+/**
+ * Scratch for the whole-bag rejects below. Module-level and reused: they run
+ * once per fader per frame across a level's thousands of them, and the box
+ * never outlives the compare it feeds.
+ */
+const scratchReach: FadeBox = emptyBox();
+
 /**
  * Everything this frame's fading can reach: the sight box above, grown by the
  * widest hole any of the targets opens. A crossing lies on a sightline and so
@@ -301,13 +365,7 @@ export interface FadeBox {
  * `idle`. See docs/render.md § Mover meshes a frame cannot touch.
  */
 export function fadeReach(camX: number, camY: number, targets: FadeTarget[], out: FadeBox): void {
-  const box = sightBox(camX, camY, targets);
-  let radius = 0;
-  for (const t of targets) if (t.fadeRadius > radius) radius = t.fadeRadius;
-  out.minX = box.minX - radius;
-  out.maxX = box.maxX + radius;
-  out.minY = box.minY - radius;
-  out.maxY = box.maxY + radius;
+  grownBox(sightBox(camX, camY, targets), maxFadeRadius(targets), out);
 }
 
 /**
@@ -363,8 +421,12 @@ export class WallFader {
   /** Which group last recorded a crossing for each hit slot — a stamp, so dedup needs no per-group clear. */
   private hitStamp = new Int32Array(0);
   private groupStamp = 0;
-  /** This frame's crossing points: where a sightline actually meets something solid. */
-  private crossings = new PointBag();
+  /**
+   * `update`'s own bag, for a fader that stands alone: a frame with several of
+   * them shares one instead (`collectCrossings`). Allocated on first use, since
+   * a level's mover faders — thousands of them — only ever take the shared one.
+   */
+  private crossings: FadeCrossings | null = null;
   /** Uniform grid over chunk midpoints, so a crossing can find the quads around it without scanning the map. Null below `GRID_MIN_OCCLUDERS`. */
   private grid: {
     cell: number;
@@ -378,6 +440,15 @@ export class WallFader {
   } | null = null;
   /** Occluder indices a crossing might reach, refilled per query (the whole list when there is no grid). */
   private candidates: Int32Array;
+  /**
+   * Every quad's footprint, boxed — what lets `applyCrossings` drop a crossing,
+   * or the frame's whole bag of them, that lands nowhere near this fader.
+   * Built once, for the reason `buildGrid` gives: a refresh changes heights,
+   * never footprints. Empty on a fader with no quads, which then rejects
+   * everything. `MoverGeometry` seeds its mesh bounds from it rather than
+   * walking the same quads again.
+   */
+  readonly footprint: FadeBox = emptyBox();
   /**
    * The runs of quads sharing a line side, which `addWall` emits together —
    * `[runFirst[r], runLast[r]]` plus that side's own segment and linedef. Pass
@@ -456,13 +527,16 @@ export class WallFader {
   /**
    * Collects the maximal runs of consecutive quads sharing a line side. A run
    * that broke up would cost an extra crossing solve, never a different answer
-   * — the same tolerance pass one always had for its grouping.
+   * — the same tolerance pass one always had for its grouping. Takes
+   * `footprint` on the way past, since it is the one walk over every quad.
    */
   private buildRuns(): void {
     let line = -1;
     let front = false;
     for (let i = 0; i < this.occluders.length; i++) {
       const o = this.occluders[i];
+      stretchBox(this.footprint, o.ax, o.ay);
+      stretchBox(this.footprint, o.bx, o.by);
       if (this.runCount === 0 || o.line !== line || o.frontSide !== front) {
         line = o.line;
         front = o.frontSide;
@@ -612,6 +686,11 @@ export class WallFader {
    * only *renders* solid. The lookup is per line, but the test it feeds is per
    * **quad**, and that distinction is load-bearing: docs/render.md § Wall
    * occlusion fading.
+   *
+   * Both passes over this fader's own crossings alone — right for a fader that
+   * is the only one on the map, which is what the tests build. A level splits
+   * its walls across the static batches and one mesh per mover, and those share
+   * a bag through `collectCrossings`/`applyCrossings` instead.
    */
   update(
     dt: number,
@@ -621,7 +700,30 @@ export class WallFader {
     targets: FadeTarget[],
     openingInto: (line: number, out: Opening) => boolean,
   ): void {
-    const lerpT = 1 - Math.exp(-FADE_SPEED * dt);
+    const bag = (this.crossings ??= new FadeCrossings());
+    bag.reset();
+    this.collectCrossings(camX, camY, camZ, targets, openingInto, bag);
+    this.applyCrossings(dt, camX, camY, targets, openingInto, bag);
+  }
+
+  /**
+   * Pass one, appending to `out` rather than replacing it: where this fader's
+   * own walls stop each sightline. The caller resets the bag once for the frame
+   * and hands the same one to every fader, so what one fader's wall stops the
+   * next fader's geometry still has to make way for —
+   * docs/render.md § One hole, whichever mesh it lands in.
+   *
+   * Pairs with `applyCrossings`, and runs first: it is where the frame's
+   * `passable` memo is stamped.
+   */
+  collectCrossings(
+    camX: number,
+    camY: number,
+    camZ: number,
+    targets: FadeTarget[],
+    openingInto: (line: number, out: Opening) => boolean,
+    out: FadeCrossings,
+  ): void {
     const n = targets.length;
     this.frameStamp++;
     this.ensureTargetScratch(n);
@@ -633,24 +735,11 @@ export class WallFader {
       this.tz[k] = t.z;
       this.th[k] = t.halfHeight;
     }
-    this.planes.fill(camX, camY, targets);
-    // Only what is still fading needs a fresh target: every other quad's
-    // `wanted` is read nowhere until a crossing folds it, and `markActive`
-    // resets it as it joins.
-    for (let a = 0; a < this.activeCount; a++) {
-      const base = this.active[a] * 4;
-      this.wanted[base] = 1;
-      this.wanted[base + 1] = 1;
-      this.wanted[base + 2] = 1;
-      this.wanted[base + 3] = 1;
-    }
 
-    // Pass one. The crossings — the expensive part — are solved once per run of
-    // quads sharing a line side (`runFirst`/`runLast`) and reused by every
-    // chunk and tier in it, and a run the sight box rejects never reaches its
-    // quads at all.
-    this.crossings.reset();
-
+    // The crossings — the expensive part — are solved once per run of quads
+    // sharing a line side (`runFirst`/`runLast`) and reused by every chunk and
+    // tier in it, and a run the sight box rejects never reaches its quads at
+    // all.
     for (let r = 0; r < this.runCount; r++) {
       const segAx = this.runSegAx[r];
       const segAy = this.runSegAy[r];
@@ -699,22 +788,68 @@ export class WallFader {
           // sightline passes through — they all name the same point.
           if (this.hitStamp[h] === this.groupStamp) continue;
           this.hitStamp[h] = this.groupStamp;
-          this.crossings.push(this.hitX[h], this.hitY[h], height, this.hitTarget[h]);
+          out.push(this.hitX[h], this.hitY[h], height, this.hitTarget[h]);
         }
       }
     }
+  }
 
-    // Pass two: a ball of the crossing target's own radius around each
-    // crossing, cut off at the target's own plane, softening whatever is left.
-    // Height enters as the gap between the crossing and the quad's own band, so
-    // a wall the sightline clears keeps standing.
-    for (let c = 0; c < this.crossings.count; c++) {
-      const cx = this.crossings.x[c];
-      const cy = this.crossings.y[c];
-      const ch = this.crossings.h[c];
-      const k = this.crossings.target[c];
-      const floor = targets[k].fadeFloor;
+  /**
+   * Pass two, over every crossing the frame filed — this fader's own and every
+   * other fader's. A ball of the crossing target's own radius around each one,
+   * cut off at the target's own plane, softening whatever is left. Height
+   * enters as the gap between the crossing and the quad's own band, so a wall
+   * the sightline clears keeps standing.
+   *
+   * Runs after `collectCrossings`, which is what stamps the `passable` memo the
+   * quad tests below read.
+   */
+  applyCrossings(
+    dt: number,
+    camX: number,
+    camY: number,
+    targets: FadeTarget[],
+    openingInto: (line: number, out: Opening) => boolean,
+    hits: FadeCrossings,
+  ): void {
+    const lerpT = 1 - Math.exp(-FADE_SPEED * dt);
+    this.planes.fill(camX, camY, targets);
+    // Only what is still fading needs a fresh target: every other quad's
+    // `wanted` is read nowhere until a crossing folds it, and `markActive`
+    // resets it as it joins.
+    for (let a = 0; a < this.activeCount; a++) {
+      const base = this.active[a] * 4;
+      this.wanted[base] = 1;
+      this.wanted[base + 1] = 1;
+      this.wanted[base + 2] = 1;
+      this.wanted[base + 3] = 1;
+    }
+
+    // Nothing in the frame's whole bag can reach this fader, so skip the walk
+    // over it rather than reject each crossing in turn. This is the case the
+    // shared bag created: a mover fader that is only awake because it is still
+    // damping back to 1 used to be handed its own empty bag, and would now walk
+    // every crossing on the map to throw them all away. Only the folding is
+    // skipped — the damping below still has to run, which is exactly what such
+    // a fader is awake for.
+    const reachable = boxesOverlap(this.footprint, grownBox(hits.bounds, maxFadeRadius(targets), scratchReach));
+    const crossingCount = reachable ? hits.count : 0;
+
+    for (let c = 0; c < crossingCount; c++) {
+      const cx = hits.x[c];
+      const cy = hits.y[c];
+      const ch = hits.h[c];
+      const k = hits.target[c];
       const radius = targets[k].fadeRadius;
+      // Nothing here is within reach of this crossing. Four compares against
+      // the whole fader's footprint, ahead of the grid: a level's mover faders
+      // are small and numerous, and each of them is now handed the *frame's*
+      // crossings rather than the handful its own walls filed.
+      const box = this.footprint;
+      if (cx + radius < box.minX || cx - radius > box.maxX || cy + radius < box.minY || cy - radius > box.maxY) {
+        continue;
+      }
+      const floor = targets[k].fadeFloor;
       const nx = this.planes.nx[k];
       const ny = this.planes.ny[k];
       const d0 = this.planes.d0[k];
@@ -937,8 +1072,8 @@ export class FlatFader {
   private vertexCount: Int32Array;
   /** This surface's target alpha per vertex, folded across pierce points before damping. */
   private scratch = new Float64Array(0);
-  /** This frame's pierce points: where a sightline actually lands *on* a floor. */
-  private pierces = new PointBag();
+  /** `WallFader.crossings`'s twin — `update`'s own bag, for a flat fader that stands alone, and allocated on first use for the same reason. */
+  private pierces: FadeCrossings | null = null;
   /** This frame's per-target hole dials and cut planes — `WallFader` keeps the twin. */
   private planes = new TargetPlanes();
   /** Each fan's centre and the radius that covers it, so a crossing nowhere near it costs one compare instead of a walk over every vertex. */
@@ -1036,10 +1171,14 @@ export class FlatFader {
    * A given target's crossing point depends only on the height, so the first
    * fan that claims one settles that height for that target and the rest skip
    * the footprint test.
+   *
+   * `WallFader.collectCrossings`'s twin, and appends to `out` the same way and
+   * for the same reason: one bag holds the frame's pierces across every flat
+   * fader, so the fan a mover owns makes way for a hole the static floor beside
+   * it opened. Pairs with `applyPierces`, and runs first.
    */
-  private collectPierces(camX: number, camY: number, camZ: number, targets: FadeTarget[]): void {
-    this.pierces.reset();
-    this.planes.fill(camX, camY, targets);
+  collectPierces(camX: number, camY: number, camZ: number, targets: FadeTarget[], out: FadeCrossings): void {
+    if (!this.layoutValid()) this.buildLayout();
     // `WallFader`'s reject (see `sightBox`), applied to a fan's bounding circle instead of a
     // segment — and taken once for the frame rather than once per target, which is the whole
     // point: what it replaces is a walk over every fan on the map per target. The per-frame
@@ -1084,7 +1223,7 @@ export class FlatFader {
       const invLen2 = len2 > 0 ? 1 / len2 : 0;
       // Where this target's own pierces start: two targets standing on the same
       // spot file the same point twice, and each keeps its own fade floor.
-      const mine = this.pierces.count;
+      const mine = out.count;
       for (let m = 0; m < candidateCount; m++) {
         const i = this.candidates[m];
         const s = this.surfaces[i];
@@ -1112,8 +1251,8 @@ export class FlatFader {
         const x = camX + dx * t;
         const y = camY + dy * t;
         let known = false;
-        for (let p = mine; p < this.pierces.count && !known; p++) {
-          known = this.pierces.h[p] === s.height && this.pierces.x[p] === x && this.pierces.y[p] === y;
+        for (let p = mine; p < out.count && !known; p++) {
+          known = out.h[p] === s.height && out.x[p] === x && out.y[p] === y;
         }
         if (known) continue;
         const nearX = camX + dx * tNear;
@@ -1124,7 +1263,7 @@ export class FlatFader {
         // Filed at the middle of the sprite's own crossing, not at whichever end
         // of the span this fan caught — what keeps one platform's many fans to a
         // single pierce (docs/render.md § The target is the billboard).
-        this.pierces.push(x, y, s.height, k);
+        out.push(x, y, s.height, k);
       }
     }
   }
@@ -1136,12 +1275,34 @@ export class FlatFader {
    *
    * Two passes, the same split `WallFader` runs on: `collectPierces` finds
    * where the view is genuinely blocked, then a ball around each of those
-   * points dissolves every fan **at that height** it reaches.
+   * points dissolves every fan **at that height** it reaches. Over this fader's
+   * own pierces alone, for the reason `WallFader.update`'s doc gives.
    */
   update(dt: number, camX: number, camY: number, camZ: number, targets: FadeTarget[]): void {
-    if (!this.layoutValid()) this.buildLayout();
+    const bag = (this.pierces ??= new FadeCrossings());
+    bag.reset();
+    this.collectPierces(camX, camY, camZ, targets, bag);
+    this.applyPierces(dt, camX, camY, targets, bag);
+  }
+
+  /**
+   * Pass two, over every pierce the frame filed — this fader's own and every
+   * other flat fader's: a ball around each of them dissolves every fan **at
+   * that height** it reaches. `WallFader.applyCrossings`'s twin.
+   *
+   * Runs after `collectPierces`, which is what refreshes the vertex layout the
+   * walk below indexes through.
+   */
+  applyPierces(dt: number, camX: number, camY: number, targets: FadeTarget[], hits: FadeCrossings): void {
     const lerpT = 1 - Math.exp(-FADE_SPEED * dt);
-    this.collectPierces(camX, camY, camZ, targets);
+    this.planes.fill(camX, camY, targets);
+    // Where the whole bag stands, so a fan near none of it skips the walk over
+    // it — the per-pierce circle test below, hoisted to the bag. Worth taking
+    // on a map diced to tens of thousands of fans, since the fan loop cannot be
+    // skipped (a faded one still has to damp) and every fan in it would
+    // otherwise pay one compare per pierce on the map. The bag carries its own
+    // bound, so this costs nothing per fader (`FadeCrossings.bounds`).
+    const bag = hits.bounds;
 
     for (let i = 0; i < this.surfaces.length; i++) {
       const s = this.surfaces[i];
@@ -1167,10 +1328,17 @@ export class FlatFader {
       // it, hence the explicit test.
       const reach = this.boundR[i] + FADE_RADIUS;
       let pierced = false;
-      for (let c = 0; !s.isCeiling && c < this.pierces.count; c++) {
-        if (this.pierces.h[c] !== s.height) continue;
-        const x = this.pierces.x[c];
-        const y = this.pierces.y[c];
+      const reachable =
+        !s.isCeiling &&
+        this.boundX[i] + reach >= bag.minX &&
+        this.boundX[i] - reach <= bag.maxX &&
+        this.boundY[i] + reach >= bag.minY &&
+        this.boundY[i] - reach <= bag.maxY;
+      const pierceCount = reachable ? hits.count : 0;
+      for (let c = 0; c < pierceCount; c++) {
+        if (hits.h[c] !== s.height) continue;
+        const x = hits.x[c];
+        const y = hits.y[c];
         // Nowhere near this fan: skip it whole rather than walk its vertices.
         const bx = this.boundX[i] - x;
         const by = this.boundY[i] - y;
@@ -1182,7 +1350,7 @@ export class FlatFader {
           for (let p = 0; p < count; p++) this.scratch[p] = 1;
           pierced = true;
         }
-        const k = this.pierces.target[c];
+        const k = hits.target[c];
         const floor = targets[k].fadeFloor;
         const radius = targets[k].fadeRadius;
         const nx = this.planes.nx[k];

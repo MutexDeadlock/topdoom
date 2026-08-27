@@ -14,17 +14,13 @@
  */
 import { NO_SIDE, type DoomMap, type LineDef } from '../../wad/map.ts';
 import type { SwitchPairLookup } from '../../wad/switches.ts';
-import { neighborSectorIndices, nextSectorIndices, sectorLines, sectorsByTag } from '../world.ts';
+import { nextSectorIndices, sectorLines, sectorsByTag } from '../world.ts';
 import { BOSS_DEATH_TYPES } from '../things/tables.ts';
 import { ThingType } from '../things/doomednums.ts';
 import { lookupSpecial } from './tables.ts';
 import { decodeSectorType } from './sectortypes.ts';
 import { transfersOf } from './transfers.ts';
 import { switchPairTexture, type SpecialDef } from './defs.ts';
-
-// The two neighbor walks live in `world.ts` — the `getNextSector` rule has one home there — and are
-// re-exported here so a special's scan reaches them beside the rest of its map scans.
-export { neighborSectorIndices, nextSectorIndices };
 
 /** Which sectors a special's linedef affects: the line's own back sector for manual doors, tag matches otherwise. */
 export function resolveTargets(map: DoomMap, line: LineDef, def: SpecialDef): readonly number[] {

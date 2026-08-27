@@ -11,8 +11,6 @@ import {
   findStairChain,
   findSwitchEntries,
   isFrontSide,
-  neighborSectorIndices,
-  nextSectorIndices,
   resolveTargets,
   type BossDeathTrigger,
   type SwitchEntry,
@@ -65,6 +63,8 @@ import {
   nextHigherCeiling,
   nextLowerCeiling,
   darkestNeighborLight,
+  neighborSectorIndices,
+  nextSectorIndices,
   sectorLines,
   sectorsByTag,
   linesByTag,
@@ -82,7 +82,7 @@ import { NO_TEXTURE, type BuiltMap, type MapMeshOptions } from '../render/mapmes
 import type { SubSectorPoly } from '../render/bsp.ts';
 import type { Placement, Pos2 } from '../types.ts';
 import type { MaterialBank } from '../render/textures.ts';
-import type { FadeTarget } from '../render/occlusion.ts';
+import type { FadeCrossings, FadeTarget } from '../render/occlusion.ts';
 import { segmentCrossT, segmentIntersect } from '../util/geom.ts';
 import { sectorOrigin, SILENT, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
 import { DOOM_TIC } from '../constants.ts';
@@ -830,9 +830,28 @@ export class SpecialsController {
     this.geometry.rebuildAround(dirty);
   }
 
+  /** The mover meshes' pass one, into the frame's shared bags — see `MoverGeometry.collectFadeHits`. */
+  collectFadeHits(
+    camX: number,
+    camY: number,
+    camZ: number,
+    targets: FadeTarget[],
+    walls: FadeCrossings,
+    flats: FadeCrossings,
+  ): void {
+    this.geometry.collectFadeHits(camX, camY, camZ, targets, walls, flats);
+  }
+
   /** The mover meshes' own per-frame occlusion/fog fade — see `MoverGeometry.updateFading`. Called from `game.ts` after the camera has settled, not from `update`. */
-  updateFading(dt: number, camX: number, camY: number, camZ: number, targets: FadeTarget[]): void {
-    this.geometry.updateFading(dt, camX, camY, camZ, targets);
+  updateFading(
+    dt: number,
+    camX: number,
+    camY: number,
+    targets: FadeTarget[],
+    walls: FadeCrossings,
+    flats: FadeCrossings,
+  ): void {
+    this.geometry.updateFading(dt, camX, camY, targets, walls, flats);
   }
 
   /**

@@ -718,6 +718,54 @@ they stopped being invisible: **408,705 wall quads**, of which a frame fades a f
 Measured on that map at the MAP20 player start, 1 target: `WallFader.update` 6.36 → 0.30 ms/frame,
 `WallFader.commit` 5.50 → 0.01 ms/frame. DOOM2 MAP01 is unchanged at both (already under 0.05 ms).
 
+### One hole, whichever mesh it lands in
+
+A level's walls are not in one mesh. The static batches hold most of them and **every movable
+sector owns its own** (§ Mover meshes), and each of those carries its own `WallFader`/`FlatFader`.
+Pass one is per fader — it can only cross the sightline against the walls that fader holds — so a
+fader that owns none of what a sightline was stopped by files nothing, and pass two over its own
+empty bag dissolves nothing. A door built into a wall a few units from where the sightline crosses
+it was therefore the one slab that stayed solid, in a hole that opened everywhere around it.
+
+So **the crossings are the frame's, not the fader's**. `game.ts`'s `updateFading` resets one
+`FadeCrossings` for walls and one for flats, runs `collectCrossings`/`collectPierces` on the static
+faders *and* every mover mesh (`MoverGeometry.collectFadeHits`) into them, and only then lets
+`applyCrossings`/`applyPierces` fold. Two bags rather than one: a wall crossing and a floor pierce
+are different points and fold different geometry (a pierce is matched against a fan's exact height).
+Sunder 2512 MAP22 at (-560, 219) is the case — the wall at x = -512 the camera looks over is five
+short line sides, of which the middle one (linedef 60) is lift sector 90, and the player's crossing
+lands at y 219 in the static line beside it.
+
+Two rules keep that from costing what it looks like it should. **The reach gate is unchanged and
+still exact**: a crossing lies on a sightline, so inside the sight box, and folds nothing further
+than its own radius — which is what `fadeReach` already grows the box by, so a mover mesh outside it
+can be skipped by a shared bag exactly as it was by its own. And **a fader rejects a crossing
+against its whole footprint first** (`WallFader.footprint`, boxed as `buildRuns` walks the quads
+since a refresh never moves a quad's footprint): mover faders are small, numerous, and hold no grid,
+so without that box each of them would walk all its quads per crossing.
+
+The bag carries **its own bound** (`FadeCrossings.bounds`, grown in `push`), which is what makes the
+sharing pay for itself in both halves. `applyCrossings` tests the fader's footprint against the
+whole bag once and skips the fold entirely when nothing can reach it — the case sharing created, a
+mover awake only because it is still damping, which used to be handed its own empty bag and would
+otherwise walk every crossing on the map to throw them all away. What it must *not* skip is the
+damping that follows: that is what such a fader is awake for, and returning early there strands a
+faded mover part-way. `FlatFader` gets no footprint box, because its fan loop cannot be skipped for
+the same reason — but `applyPierces` tests each fan's bound circle against the bag's box once, which
+is the per-pierce circle test it already ran hoisted out of the pierce loop. That was worth taking
+on its own: a map diced to tens of thousands of fans used to pay one compare per fan per pierce on
+the whole map. Deriving that box per fader instead would have cost a walk of the bag per mesh.
+
+`WallFader.update`/`FlatFader.update` still run both halves over the fader's own bag — the right
+thing for a fader that is the only one on the map, which is what the tests build. Nothing in `src/`
+calls them, so that bag is allocated on first use: a level's thousands of mover faders never take it.
+
+Measured on Sunder 2512 MAP19 (340,372 wall quads, 54,388 fans, 748 mover meshes) at the player
+start with 25 targets, medians of 300: sharing costs the wall half 0.46 → 0.54 ms, which is the
+crossings the movers file now reaching the static batches — the fix, not overhead. The flat half
+goes 0.87 → 0.45 ms on the bag box, so the pass as a whole comes out ahead: 1.43 → 0.99 ms. MAP20
+(1,533 movers) measures the same either way, and DOOM2 MAP01 stays under 0.03 ms either way.
+
 ### The target is the billboard
 
 **Both faders aim at an upright rectangle, not at a point.** A thing is drawn as a plane fixed
@@ -983,14 +1031,16 @@ while ~1,600 draw calls a frame were still being issued for them.
 ### Mover meshes a frame cannot touch
 
 The same mover count is a per-frame CPU problem too, and for the same reason: each mover mesh
-carries its own pair of faders, so Sunder 2512 MAP20's **1,633 movers** meant 1,633 × (two
-`update`s, two `commit`s, a visibility walk) every frame over ~11,500 quads and ~4,900 fans in
-total — seven quads a mesh, and the call overhead was the whole cost. `updateFading` skips a mesh
-outright when nothing that could change it happened:
+carries its own pair of faders, so Sunder 2512 MAP20's **1,633 movers** meant 1,633 × (both fade
+passes, two `commit`s, a visibility walk) every frame over ~11,500 quads and ~4,900 fans in
+total — seven quads a mesh, and the call overhead was the whole cost. `collectFadeHits` decides
+per mesh (`MoverEntry.fading`) and `updateFading` skips it outright — both halves, so the two
+agree — when nothing that could change it happened:
 
 - **Nothing can reach it.** `fadeReach` is the sight box grown by the widest hole any target opens
   (§ Nothing per-frame is per-quad); a crossing lies on a sightline, so geometry whose footprint
-  misses that box cannot be folded this frame. The mesh's own footprint is fixed at build time — a
+  misses that box cannot be folded this frame — by the frame's shared bag exactly as by the mesh's
+  own (§ One hole, whichever mesh it lands in). The mesh's own footprint is fixed at build time — a
   refresh moves heights, not where quads stand.
 - **Nothing in it is still relaxing.** `WallFader.idle`/`FlatFader.idle` — a mesh that was faded
   and has since been left behind must keep damping back to 1, and freezing it mid-fade leaves a

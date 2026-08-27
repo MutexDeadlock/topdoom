@@ -40,7 +40,7 @@ import {
 } from './game/things/tables.ts';
 import { thrustSpeed } from './game/monsters/defs.ts';
 import { MonsterAttacks } from './game/monsters/attacks.ts';
-import { collectFadeTargets, FlatFader, SurfaceScroller, WallFader } from './render/occlusion.ts';
+import { collectFadeTargets, FadeCrossings, FlatFader, SurfaceScroller, WallFader } from './render/occlusion.ts';
 import { makeTouchCache, sectorLines, World, type Opening, type SectorTouchCache } from './game/world.ts';
 import { AIM_HEIGHT_OFFSET, EYE_HEIGHT, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { applyBarrelExplosion, type CombatContext, type DamageCause } from './game/combat.ts';
@@ -193,6 +193,16 @@ export class Game {
   private playerActor: SpriteActor;
   private wallFader!: WallFader;
   private flatFader!: FlatFader;
+  /**
+   * Where every fader on the map files what stopped a sightline this frame —
+   * the static batches and each mover mesh alike, so one hole reaches all of
+   * them (docs/render.md § One hole, whichever mesh it lands in). Walls and
+   * flats keep one each, and both live here rather than in a fader because no
+   * single fader owns them. Reused across frames and levels: they are scratch,
+   * refilled from scratch every `updateFading`.
+   */
+  private readonly wallHits = new FadeCrossings();
+  private readonly flatHits = new FadeCrossings();
   private surfaceScroller!: SurfaceScroller;
   /** The level's always-on parameter lines — scrollers and conveyors (game/specials/forces.ts). */
   private forces!: Forces;
@@ -1928,11 +1938,26 @@ export class Game {
     this.profiler.time('Fading', () => {
       const fog = this.fogOfWar;
       const camPos = camera.camera.position;
-      const camArgs = [dt, camPos.x, -camPos.z, camPos.y] as const;
+      // The camera in DOOM (x, y, height), which both halves of the pass take.
+      const camX = camPos.x;
+      const camY = -camPos.z;
+      const camZ = camPos.y;
       const fadeTargets = collectFadeTargets(this.player, this.things?.awakeMonsters() ?? []);
       const openingInto = (line: number, out: Opening) => this.world.openingInto(line, out);
-      this.wallFader.update(...camArgs, fadeTargets, openingInto);
-      this.flatFader.update(...camArgs, fadeTargets);
+      // Pass one for every fader on the map — the static batches and each mover
+      // mesh — before any of them dissolves anything. A hole is a ball around
+      // where a sightline was stopped, and it has to dissolve whatever stands
+      // inside it whichever mesh that lives in: a door built into a wall the
+      // player is standing behind used to be the one slab that stayed solid.
+      // docs/render.md § One hole, whichever mesh it lands in.
+      const { wallHits, flatHits } = this;
+      wallHits.reset();
+      flatHits.reset();
+      this.wallFader.collectCrossings(camX, camY, camZ, fadeTargets, openingInto, wallHits);
+      this.flatFader.collectPierces(camX, camY, camZ, fadeTargets, flatHits);
+      this.specials?.collectFadeHits(camX, camY, camZ, fadeTargets, wallHits, flatHits);
+      this.wallFader.applyCrossings(dt, camX, camY, fadeTargets, openingInto, wallHits);
+      this.flatFader.applyPierces(dt, camX, camY, fadeTargets, flatHits);
       // Walls resolve their own subsector inside FogOfWar (see wallAlpha); flats
       // and things already know theirs, so they go through alphaOf directly.
       // Only what moved: this frame's fade knows its own quads, and the reveal
@@ -1952,8 +1977,9 @@ export class Game {
       // cycling across a level transition exactly as it does within one.
       this.animatedTextures.update(dt);
       // Door/lift geometry lives in its own meshes (game/specials.ts), so it
-      // carries its own faders rather than the two above.
-      this.specials?.updateFading(...camArgs, fadeTargets);
+      // carries its own faders rather than the two above — over the same bags,
+      // filled above.
+      this.specials?.updateFading(dt, camX, camY, fadeTargets, wallHits, flatHits);
     });
   }
 

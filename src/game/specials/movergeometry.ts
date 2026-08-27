@@ -30,7 +30,16 @@ import {
 } from '../../render/mapmesh.ts';
 import type { SubSectorPoly } from '../../render/bsp.ts';
 import type { MaterialBank } from '../../render/textures.ts';
-import { fadeReach, FlatFader, type FadeBox, type FadeTarget, WallFader } from '../../render/occlusion.ts';
+import {
+  boxesOverlap,
+  fadeReach,
+  FlatFader,
+  stretchBox,
+  type FadeBox,
+  type FadeCrossings,
+  type FadeTarget,
+  WallFader,
+} from '../../render/occlusion.ts';
 
 /**
  * One movable sector's geometry plus the two faders that own its vertex
@@ -58,14 +67,16 @@ interface MoverEntry {
    * whatever else says it could be skipped.
    */
   committed: boolean;
+  /**
+   * Whether this frame's `collectFadeHits` took this entry's pass one, so
+   * `updateFading` knows to take its pass two. Set once per frame, since the
+   * two halves must agree: a fader that filed no crossings still has to fold
+   * the ones every other fader filed.
+   */
+  fading: boolean;
 }
 
 const NO_SUBSECTORS: readonly number[] = [];
-
-/** Whether two map-space boxes touch at all — `MoverEntry.bounds` against a fade reach or a reveal. */
-function overlaps(a: FadeBox, b: { minX: number; minY: number; maxX: number; maxY: number }): boolean {
-  return a.minX <= b.maxX && a.maxX >= b.minX && a.minY <= b.maxY && a.maxY >= b.minY;
-}
 
 /**
  * The renderer's `MoverIndex`: the subsectors grouped once from `polys` (their
@@ -89,7 +100,6 @@ function disposeGroup(group: THREE.Group): void {
 
 export class MoverGeometry {
   private map: DoomMap;
-  private world: World;
   private bank: MaterialBank;
   private scene: THREE.Scene | THREE.Group;
   private fog: FogOfWar;
@@ -103,8 +113,14 @@ export class MoverGeometry {
   /** Movable sectors sharing a linedef with a given movable sector — see `rebuildAround`. */
   private movableNeighbors = new Map<number, Set<number>>();
   private moverMeshes = new Map<number, MoverEntry>();
-  /** This frame's fade reach, refilled once per `updateFading` — see `fadeReach`. */
+  /** This frame's fade reach, refilled once per `collectFadeHits` — see `fadeReach`. */
   private reach: FadeBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  /**
+   * The opening lookup both fade passes hand their faders. A field rather than
+   * a local: it captures only `this`, and a level holds a couple of thousand
+   * mover meshes to walk past it twice a frame.
+   */
+  private readonly openingInto: (line: number, out: Opening) => boolean;
 
   private sectorOccluders = new Map<number, BuiltMap['occluders']>();
   private sectorFlats = new Map<number, BuiltMap['flatSurfaces']>();
@@ -123,7 +139,7 @@ export class MoverGeometry {
     movableSectors: Set<number>,
   ) {
     this.map = map;
-    this.world = world;
+    this.openingInto = (line: number, out: Opening) => world.openingInto(line, out);
     this.bank = bank;
     this.scene = scene;
     this.fog = fog;
@@ -180,24 +196,57 @@ export class MoverGeometry {
    * with fog-of-war reveal. Separate from `SpecialsController.update` because
    * it needs the camera position, which is only settled after the player has
    * moved.
+   *
+   * Split in two so that every mover's pass one lands in the frame's shared
+   * bags before any fader dissolves anything: a door standing in a wall the
+   * player's sightline crosses beside it has to open with that wall, not stay
+   * behind as a solid slab. docs/render.md § One hole, whichever mesh it lands
+   * in.
    */
-  updateFading(dt: number, camX: number, camY: number, camZ: number, targets: FadeTarget[]): void {
-    // Hoisted out of the loop: a level can hold a couple of thousand mover
-    // meshes, and this closure captures nothing that varies between them.
-    const openingInto = (line: number, out: Opening) => this.world.openingInto(line, out);
+  collectFadeHits(
+    camX: number,
+    camY: number,
+    camZ: number,
+    targets: FadeTarget[],
+    walls: FadeCrossings,
+    flats: FadeCrossings,
+  ): void {
+    const openingInto = this.openingInto;
     fadeReach(camX, camY, targets, this.reach);
-    const revealed = this.fog.changedBounds();
     for (const g of this.moverMeshes.values()) {
       // Nothing that reaches this mesh moved, and nothing in it is still
       // relaxing: every call below would write back what is already there. On a
       // map with a couple of thousand movers those calls are the whole cost.
+      // A crossing lies inside the sight box and folds nothing further than its
+      // own radius, so `reach` is exactly what a shared bag can reach too.
       // docs/render.md § Mover meshes a frame cannot touch.
-      const idle = g.walls.idle && g.flats.idle;
-      const skipUpdate = idle && !this.reachesMesh(g);
-      if (skipUpdate && g.committed && !(revealed && overlaps(g.bounds, revealed))) continue;
-      if (!skipUpdate) {
-        g.walls.update(dt, camX, camY, camZ, targets, openingInto);
-        g.flats.update(dt, camX, camY, camZ, targets);
+      g.fading = !(g.walls.idle && g.flats.idle) || this.reachesMesh(g);
+      if (!g.fading) continue;
+      g.walls.collectCrossings(camX, camY, camZ, targets, openingInto, walls);
+      g.flats.collectPierces(camX, camY, camZ, targets, flats);
+    }
+  }
+
+  /**
+   * The second half of the pass `collectFadeHits` opens, over the frame's whole
+   * bag of stops rather than each mesh's own — plus the fog-of-war combine and
+   * the commit into the mover buffers.
+   */
+  updateFading(
+    dt: number,
+    camX: number,
+    camY: number,
+    targets: FadeTarget[],
+    walls: FadeCrossings,
+    flats: FadeCrossings,
+  ): void {
+    const openingInto = this.openingInto;
+    const revealed = this.fog.changedBounds();
+    for (const g of this.moverMeshes.values()) {
+      if (!g.fading && g.committed && !(revealed && boxesOverlap(g.bounds, revealed))) continue;
+      if (g.fading) {
+        g.walls.applyCrossings(dt, camX, camY, targets, openingInto, walls);
+        g.flats.applyPierces(dt, camX, camY, targets, flats);
       }
       g.committed = true;
       // Mover quads aren't in the static occluder list FogOfWar indexed at
@@ -225,34 +274,29 @@ export class MoverGeometry {
 
   /** Whether this frame's fade reach (`fadeReach`, filled into `reach`) overlaps a mesh's footprint. */
   private reachesMesh(g: MoverEntry): boolean {
-    return overlaps(g.bounds, this.reach);
+    return boxesOverlap(g.bounds, this.reach);
   }
 
   private createMoverMesh(sectorIndex: number): void {
     const mesh = buildMoverMesh(this.map, this.polys, sectorIndex, this.bank, this.meshOptions, this.moverIndex);
     this.scene.add(mesh.group);
-    const bounds: FadeBox = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-    const stretch = (x: number, y: number) => {
-      if (x < bounds.minX) bounds.minX = x;
-      if (x > bounds.maxX) bounds.maxX = x;
-      if (y < bounds.minY) bounds.minY = y;
-      if (y > bounds.maxY) bounds.maxY = y;
-    };
-    for (const q of mesh.wallQuads) {
-      stretch(q.ax, q.ay);
-      stretch(q.bx, q.by);
-    }
+    // `trackVisibility` on: these are the faders whose verdict `updateFading`
+    // reads to skip drawing an invisible mover mesh.
+    const walls = new WallFader(mesh.wallQuads, mesh.meshes, true);
+    // The wall half of this box is the fader's own footprint, which it boxed
+    // over these very quads — so the two cannot drift, and only the fans are
+    // left to walk. `reachesMesh` needs both; `applyCrossings` needs the walls.
+    const bounds: FadeBox = { ...walls.footprint };
     for (const f of mesh.flatFans) {
-      for (let p = 0; p < f.vertexXY.length; p += 2) stretch(f.vertexXY[p], f.vertexXY[p + 1]);
+      for (let p = 0; p < f.vertexXY.length; p += 2) stretchBox(bounds, f.vertexXY[p], f.vertexXY[p + 1]);
     }
     this.moverMeshes.set(sectorIndex, {
       mesh,
-      // `trackVisibility` on: these are the faders whose verdict `updateFading`
-      // reads to skip drawing an invisible mover mesh.
-      walls: new WallFader(mesh.wallQuads, mesh.meshes, true),
+      walls,
       flats: new FlatFader(mesh.flatFans, mesh.meshes, true),
       bounds,
       committed: false,
+      fading: false,
     });
     // A mover mesh holds its own sector's flats plus wall quads from *both*
     // sides of every bordering line, so the sectors it must be relit for are

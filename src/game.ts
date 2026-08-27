@@ -40,7 +40,7 @@ import {
 } from './game/things/tables.ts';
 import { thrustSpeed } from './game/monsters/defs.ts';
 import { MonsterAttacks } from './game/monsters/attacks.ts';
-import { collectFadeTargets, FadeCrossings, FlatFader, SurfaceScroller, WallFader } from './render/occlusion.ts';
+import { collectFadeTargets, FadePass, FlatFader, SurfaceScroller, WallFader } from './render/occlusion.ts';
 import { makeTouchCache, sectorLines, World, type Opening, type SectorTouchCache } from './game/world.ts';
 import { AIM_HEIGHT_OFFSET, EYE_HEIGHT, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { applyBarrelExplosion, type CombatContext, type DamageCause } from './game/combat.ts';
@@ -191,18 +191,13 @@ export class Game {
   private built: BuiltMap | null = null;
   private things: ThingLayer | null = null;
   private playerActor: SpriteActor;
-  private wallFader!: WallFader;
-  private flatFader!: FlatFader;
   /**
-   * Where every fader on the map files what stopped a sightline this frame —
-   * the static batches and each mover mesh alike, so one hole reaches all of
-   * them (docs/render.md § One hole, whichever mesh it lands in). Walls and
-   * flats keep one each, and both live here rather than in a fader because no
-   * single fader owns them. Reused across frames and levels: they are scratch,
-   * refilled from scratch every `updateFading`.
+   * The level's static wall/flat faders and the bags every fader on the map
+   * files into — see `FadePass`, which owns the order the frame runs them in.
    */
-  private readonly wallHits = new FadeCrossings();
-  private readonly flatHits = new FadeCrossings();
+  private fadePass!: FadePass;
+  /** The fade's opening lookup. A field so the frame allocates none; it reads `world` per call, so a level change needs no rebind. */
+  private readonly openingInto = (line: number, out: Opening) => this.world.openingInto(line, out);
   private surfaceScroller!: SurfaceScroller;
   /** The level's always-on parameter lines — scrollers and conveyors (game/specials/forces.ts). */
   private forces!: Forces;
@@ -829,8 +824,10 @@ export class Game {
     // The leaf graph the lights flood through, over the polygons the mesh just built — so a torch
     // stops at its wall. docs/lights.md § Light stops at walls.
     this.lights.bindLevel(new LightVisibility(map, this.built.polys, this.world));
-    this.wallFader = new WallFader(this.built.occluders, this.built.wallMeshes);
-    this.flatFader = new FlatFader(this.built.flatSurfaces, this.built.flatMeshes);
+    this.fadePass = new FadePass(
+      new WallFader(this.built.occluders, this.built.wallMeshes),
+      new FlatFader(this.built.flatSurfaces, this.built.flatMeshes),
+    );
     this.forces = new Forces(map, this.world);
     // Constructed after `applySectors` on purpose, so a displacement scroller
     // spawns watching the restored control-sector height rather than the
@@ -1936,34 +1933,24 @@ export class Game {
   /** Occlusion fading of walls and flats, plus the two texture animators — see render/occlusion.ts. */
   private updateFading(dt: number, camera: TopDownCamera): void {
     this.profiler.time('Fading', () => {
-      const fog = this.fogOfWar;
       const camPos = camera.camera.position;
-      // The camera in DOOM (x, y, height), which both halves of the pass take.
-      const camX = camPos.x;
-      const camY = -camPos.z;
-      const camZ = camPos.y;
-      const fadeTargets = collectFadeTargets(this.player, this.things?.awakeMonsters() ?? []);
-      const openingInto = (line: number, out: Opening) => this.world.openingInto(line, out);
-      // Pass one for every fader on the map — the static batches and each mover
-      // mesh — before any of them dissolves anything. A hole is a ball around
-      // where a sightline was stopped, and it has to dissolve whatever stands
-      // inside it whichever mesh that lives in: a door built into a wall the
-      // player is standing behind used to be the one slab that stayed solid.
-      // docs/render.md § One hole, whichever mesh it lands in.
-      const { wallHits, flatHits } = this;
-      wallHits.reset();
-      flatHits.reset();
-      this.wallFader.collectCrossings(camX, camY, camZ, fadeTargets, openingInto, wallHits);
-      this.flatFader.collectPierces(camX, camY, camZ, fadeTargets, flatHits);
-      this.specials?.collectFadeHits(camX, camY, camZ, fadeTargets, wallHits, flatHits);
-      this.wallFader.applyCrossings(dt, camX, camY, fadeTargets, openingInto, wallHits);
-      this.flatFader.applyPierces(dt, camX, camY, fadeTargets, flatHits);
-      // Walls resolve their own subsector inside FogOfWar (see wallAlpha); flats
-      // and things already know theirs, so they go through alphaOf directly.
-      // Only what moved: this frame's fade knows its own quads, and the reveal
-      // names the ones it touched (`FogOfWar.changedWalls`).
-      this.wallFader.commit((i) => fog.wallAlpha(i), fog.changedWalls());
-      this.flatFader.commit((i) => fog.alphaOf(i));
+      // Door/lift geometry lives in its own meshes (game/specials.ts) and so
+      // carries its own faders; the pass runs them alongside the static batches
+      // over one pair of bags, which is what lets a hole opened in a wall
+      // dissolve a door standing in it.
+      this.fadePass.run(
+        {
+          dt,
+          // The camera in DOOM (x, y, height), not three.js space.
+          camX: camPos.x,
+          camY: -camPos.z,
+          camZ: camPos.y,
+          targets: collectFadeTargets(this.player, this.things?.awakeMonsters() ?? []),
+          openingInto: this.openingInto,
+        },
+        this.fogOfWar,
+        this.specials ?? undefined,
+      );
       // Independent of camera/player position — a scrolling wall animates
       // whether or not it's currently faded or in view. The offsets advance on
       // the frame clock (`Forces.advanceOffsets`) rather than the tic, so this
@@ -1976,10 +1963,6 @@ export class Game {
       // construction in the constructor) — an animated liquid/fire texture keeps
       // cycling across a level transition exactly as it does within one.
       this.animatedTextures.update(dt);
-      // Door/lift geometry lives in its own meshes (game/specials.ts), so it
-      // carries its own faders rather than the two above — over the same bags,
-      // filled above.
-      this.specials?.updateFading(dt, camX, camY, fadeTargets, wallHits, flatHits);
     });
   }
 

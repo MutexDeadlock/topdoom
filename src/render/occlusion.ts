@@ -1465,6 +1465,111 @@ export class FlatFader {
   }
 }
 
+/** Everything the frame's fade varies by: where the camera is, what it is looking past, and the wall half's opening lookup. */
+export interface FadeFrame {
+  dt: number;
+  /** The camera in DOOM (x, y, height) — not three.js space. */
+  camX: number;
+  camY: number;
+  camZ: number;
+  targets: FadeTarget[];
+  openingInto: (line: number, out: Opening) => boolean;
+}
+
+/**
+ * The faders a frame runs besides the static batches: the per-sector meshes
+ * movable geometry is drawn from, which live behind `game/specials.ts`.
+ * Declared structurally, so the render layer keeps no import edge into the game
+ * layer (the `ScrollOffsets` rule above) — and so `FadePass` needs to know only
+ * that the two halves exist and which order they run in.
+ */
+export interface FadeParticipant {
+  collectFadeHits(
+    camX: number,
+    camY: number,
+    camZ: number,
+    targets: FadeTarget[],
+    walls: FadeCrossings,
+    flats: FadeCrossings,
+  ): void;
+  updateFading(
+    dt: number,
+    camX: number,
+    camY: number,
+    targets: FadeTarget[],
+    walls: FadeCrossings,
+    flats: FadeCrossings,
+  ): void;
+}
+
+/**
+ * What the commit combines the fade with: fog of war's reveal. Structural for
+ * the reason above — `FogOfWar` satisfies it as it stands.
+ */
+export interface FadeReveal {
+  wallAlpha(occluderIndex: number): number;
+  alphaOf(subsector: number): number;
+  changedWalls(): ChangedQuads | null;
+}
+
+/**
+ * The frame's whole fade, in the one order it is allowed to run: **every**
+ * fader on the map files what stopped a sightline before **any** of them
+ * dissolves anything. A hole is a ball around a crossing and has to dissolve
+ * whatever stands inside it whichever mesh that lives in, so the bags are the
+ * frame's rather than each fader's — a door built into a wall the player is
+ * standing behind was otherwise the one slab that stayed solid.
+ * docs/render.md § One hole, whichever mesh it lands in.
+ *
+ * Owning the bags is why this is a class: they are scratch shared by faders
+ * none of which owns them, and the reset that arms them belongs with the pass
+ * that fills them rather than with a caller who must remember it.
+ */
+export class FadePass {
+  readonly walls: WallFader;
+  readonly flats: FlatFader;
+  /** Refilled from scratch every `run`, and reused across frames and levels. */
+  private readonly wallHits = new FadeCrossings();
+  private readonly flatHits = new FadeCrossings();
+
+  constructor(walls: WallFader, flats: FlatFader) {
+    this.walls = walls;
+    this.flats = flats;
+  }
+
+  /**
+   * Pass one for the static batches and `movers` alike, then pass two over what
+   * they all filed, then the commit that folds in the reveal.
+   *
+   * `movers`' own pass two runs here rather than at its own call site: it reads
+   * `changedBounds`, whose fallback flag is separate from the `changedWalls`
+   * one the wall commit consumes (game/fogofwar.ts), so the two are order-free
+   * — and keeping them together is what makes the ordering a property of this
+   * method instead of a comment somewhere else.
+   */
+  run(frame: FadeFrame, reveal: FadeReveal, movers?: FadeParticipant): void {
+    const { dt, camX, camY, camZ, targets, openingInto } = frame;
+    const { wallHits, flatHits } = this;
+    wallHits.reset();
+    flatHits.reset();
+    this.walls.collectCrossings(camX, camY, camZ, targets, openingInto, wallHits);
+    this.flats.collectPierces(camX, camY, camZ, targets, flatHits);
+    movers?.collectFadeHits(camX, camY, camZ, targets, wallHits, flatHits);
+
+    this.walls.applyCrossings(dt, camX, camY, targets, openingInto, wallHits);
+    this.flats.applyPierces(dt, camX, camY, targets, flatHits);
+    movers?.updateFading(dt, camX, camY, targets, wallHits, flatHits);
+
+    // Walls resolve their own subsector inside FogOfWar (see `wallAlpha`); flats
+    // already know theirs, so they go through `alphaOf` directly. Only what
+    // moved: this frame's fade knows its own quads, and the reveal names the
+    // ones it touched (`FogOfWar.changedWalls`). The mover meshes commit their
+    // own inside `updateFading`, against the same reveal.
+    this.walls.commit((i) => reveal.wallAlpha(i), reveal.changedWalls());
+    this.flats.commit((i) => reveal.alphaOf(i));
+  }
+}
+
 /**
  * The accumulated texture offsets this scroller draws, in map units — the read
  * side of `game/specials/forces.ts: Forces`, declared structurally so the

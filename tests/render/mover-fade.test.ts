@@ -4,7 +4,14 @@ import * as THREE from 'three';
 import { addControlLine, gridMap } from '../fixtures/gridmap.ts';
 import { specialsRig, type SpecialsRig } from '../fixtures/specialsrig.ts';
 import type { Opening } from '../../src/game/world.ts';
-import { FADE_RADIUS, FadeCrossings, WallFader, type FadeTarget } from '../../src/render/occlusion.ts';
+import {
+  FADE_RADIUS,
+  FadePass,
+  FlatFader,
+  WallFader,
+  type FadeReveal,
+  type FadeTarget,
+} from '../../src/render/occlusion.ts';
 import { WALL_CHUNK_LEN } from '../../src/render/mapmesh.ts';
 import { targetAt } from '../fixtures/fadetarget.ts';
 import { PLAYER_HEIGHT } from '../../src/game/player.ts';
@@ -44,36 +51,33 @@ function moverWallAlpha(scene: THREE.Group): { low: number; high: number } {
 /** One long `dt`, so the damping snaps and each call reads as a steady state. */
 const SETTLE = 10;
 
-/** The static batches a case drives alongside the movers, with the lookup their pass takes. */
-interface Statics {
-  fader: WallFader;
-  openingInto: (line: number, out: Opening) => boolean;
-}
+/**
+ * Fog of war held at full reveal, so what a case reads back off the static
+ * batches is the fade alone. The mover meshes commit against the rig's own real
+ * fog inside `updateFading`, which is what the reveal cases here are about.
+ */
+const FULLY_REVEALED: FadeReveal = {
+  wallAlpha: () => 1,
+  alphaOf: () => 1,
+  changedWalls: () => null,
+};
 
 /**
- * Both halves of the fade over one pair of bags, in `game.ts`'s own order —
- * pass one for every fader on the map, then pass two over what they all filed
- * (docs/render.md § One hole, whichever mesh it lands in). Written once so that
- * order lives in one place here rather than in each case. `statics` is the
- * map's own batches, for a case whose subject is a mover and a static wall
- * sharing one hole; a case about movers alone leaves it out. Fresh bags per
- * call: nothing here measures the allocation.
+ * The frame's fade, driven exactly as `game.ts` drives it — `FadePass` owns the
+ * order (docs/render.md § One hole, whichever mesh it lands in), so no case
+ * here restates it. `statics` is the map's own wall batches, for a case whose
+ * subject is a mover and a static wall sharing one hole; a case about movers
+ * alone passes faders holding nothing, so the only crossings in the bag are the
+ * movers' own.
  */
-function fade(
+function fadePass(
   r: SpecialsRig,
-  camX: number,
-  camY: number,
-  camZ: number,
-  targets: FadeTarget[],
-  statics?: Statics,
-): void {
-  const walls = new FadeCrossings();
-  const flats = new FadeCrossings();
-  statics?.fader.collectCrossings(camX, camY, camZ, targets, statics.openingInto, walls);
-  r.specials.collectFadeHits(camX, camY, camZ, targets, walls, flats);
-  statics?.fader.applyCrossings(SETTLE, camX, camY, targets, statics.openingInto, walls);
-  r.specials.updateFading(SETTLE, camX, camY, targets, walls, flats);
-  statics?.fader.commit(() => 1);
+  statics?: WallFader,
+): (camX: number, camY: number, camZ: number, targets: FadeTarget[]) => void {
+  const pass = new FadePass(statics ?? new WallFader([], new Map()), new FlatFader([], new Map()));
+  const openingInto = (line: number, out: Opening) => r.world.openingInto(line, out);
+  return (camX, camY, camZ, targets) =>
+    pass.run({ dt: SETTLE, camX, camY, camZ, targets, openingInto }, FULLY_REVEALED, r.specials);
 }
 
 /**
@@ -111,11 +115,11 @@ describe('render · mover meshes a frame cannot touch', () => {
     const r = specialsRig(map, grid.centre(7, 0));
     assert.ok(r.movableSectors.has(lift), 'the fixture must actually build a mover mesh');
     const trigger = () => (r.specials as unknown as { trigger(line: number, keys: Set<never>): void }).trigger(control, new Set());
-    return { grid, rig: r, lift, trigger };
+    return { grid, rig: r, lift, trigger, fade: fadePass(r) };
   }
 
   test('a mover on the sightline fades, and is whole again once nothing crosses it', () => {
-    const { grid, rig: r } = rig();
+    const { grid, rig: r, fade } = rig();
     const scene = r.scene;
     // Camera north of the lift, target south of it: the sightline crosses the
     // lift's own north wall, which is a quad of its mover mesh.
@@ -123,7 +127,7 @@ describe('render · mover meshes a frame cannot touch', () => {
     const camX = at.x;
     const camY = at.y + CELL;
     const target = targetAt(at.x, at.y - CELL, 0, {});
-    fade(r, camX, camY, PLAYER_HEIGHT + 256, [target]);
+    fade(camX, camY, PLAYER_HEIGHT + 256, [target]);
     assert.ok(moverAlpha(scene).low < 1, 'the mover mesh faded where the sightline crossed it');
 
     // The player walks to the far end of the row, taking the camera with them.
@@ -133,7 +137,7 @@ describe('render · mover meshes a frame cannot touch', () => {
     const far = grid.centre(7, 0);
     const away = targetAt(far.x, far.y, 0, {});
     for (let i = 0; i < 4; i++) {
-      fade(r, far.x, far.y + CELL, PLAYER_HEIGHT + 256, [away]);
+      fade(far.x, far.y + CELL, PLAYER_HEIGHT + 256, [away]);
     }
     assert.equal(moverAlpha(scene).low, 1, 'the mover mesh is whole again');
   });
@@ -144,7 +148,7 @@ describe('render · mover meshes a frame cannot touch', () => {
     // whatever alpha the builder left in the buffer, which is a fully drawn
     // wall in a corner of the level fog of war has never revealed. The solid
     // cell between is what keeps the spawn sweep off it.
-    const { grid, rig: r } = rig('.L.#....');
+    const { grid, rig: r, fade } = rig('.L.#....');
     const far = grid.centre(7, 0);
     const away = targetAt(far.x, far.y, 0, {});
     const lift = grid.centre(1, 0);
@@ -152,7 +156,7 @@ describe('render · mover meshes a frame cannot touch', () => {
       Math.hypot(lift.x - far.x, lift.y - far.y) > FADE_RADIUS * 2,
       'the fixture must put the mover well out of reach for this to mean anything',
     );
-    fade(r, far.x, far.y + CELL, PLAYER_HEIGHT + 256, [away]);
+    fade(far.x, far.y + CELL, PLAYER_HEIGHT + 256, [away]);
     assert.equal(moverAlpha(r.scene).high, 0, 'every batch of the unrevealed mover was written to the reveal it has');
   });
 
@@ -162,10 +166,10 @@ describe('render · mover meshes a frame cannot touch', () => {
     // their own bookkeeping still claims it. Here the lift is in a part of the
     // level fog of war has never revealed, so the stale buffer would show a
     // fully drawn wall in the dark.
-    const { grid, rig: r, lift, trigger } = rig('.L.#....');
+    const { grid, rig: r, lift, trigger, fade } = rig('.L.#....');
     const far = grid.centre(7, 0);
     const away = targetAt(far.x, far.y, 0, {});
-    const settle = () => fade(r, far.x, far.y + CELL, PLAYER_HEIGHT + 256, [away]);
+    const settle = () => fade(far.x, far.y + CELL, PLAYER_HEIGHT + 256, [away]);
     // Long enough for the reveal around the standing player to finish ramping,
     // so the frames below are ones where fog of war reports no change at all —
     // which is the only kind this case is about.
@@ -219,13 +223,8 @@ describe('render · one hole, whichever mesh it lands in', () => {
     addControlLine(map, 64, 0, 63, 1); // SR door, so the sector is a mover
     const r = specialsRig(map, grid.centre(0, 1));
     assert.ok(r.movableSectors.has(door), 'the fixture must actually build a mover mesh');
-    const statics: Statics = {
-      fader: new WallFader(r.built.occluders, r.built.wallMeshes),
-      openingInto: (line: number, out: Opening) => r.world.openingInto(line, out),
-    };
-    const driveFade = (camX: number, camY: number, camZ: number, targets: FadeTarget[]) =>
-      fade(r, camX, camY, camZ, targets, statics);
-    return { grid, rig: r, door, fade: driveFade };
+    const statics = new WallFader(r.built.occluders, r.built.wallMeshes);
+    return { grid, rig: r, door, fade: fadePass(r, statics) };
   }
 
   /** The lowest alpha the static batches hold over the wall quads standing at `x`. */

@@ -727,11 +727,22 @@ fader that owns none of what a sightline was stopped by files nothing, and pass 
 empty bag dissolves nothing. A door built into a wall a few units from where the sightline crosses
 it was therefore the one slab that stayed solid, in a hole that opened everywhere around it.
 
-So **the crossings are the frame's, not the fader's**. `game.ts`'s `updateFading` resets one
-`FadeCrossings` for walls and one for flats, runs `collectCrossings`/`collectPierces` on the static
-faders *and* every mover mesh (`MoverGeometry.collectFadeHits`) into them, and only then lets
-`applyCrossings`/`applyPierces` fold. Two bags rather than one: a wall crossing and a floor pierce
-are different points and fold different geometry (a pierce is matched against a fan's exact height).
+So **the crossings are the frame's, not the fader's**, and **`FadePass` owns that order** rather
+than the frame loop: it holds the static wall/flat faders and one `FadeCrossings` for each, and its
+`run` resets both bags, runs `collectCrossings`/`collectPierces` on the static faders *and* every
+mover mesh (`MoverGeometry.collectFadeHits`) into them, and only then lets
+`applyCrossings`/`applyPierces` fold. The mover meshes reach it as a `FadeParticipant` — structural,
+so the render layer keeps no import edge into `game/specials.ts`, the `ScrollOffsets` rule — and fog
+of war as a `FadeReveal`. Two bags rather than one: a wall crossing and a floor pierce are different
+points and fold different geometry (a pierce is matched against a fan's exact height).
+
+Keeping the sequence in one method is the point: a reset that a caller forgets, or a `collect` that
+lands after someone else's `apply`, is exactly the bug this section is about, and nothing in the
+signature would have caught it. The movers' own pass two runs there too, ahead of the scrollers and
+texture animation it used to sit behind — it reads `changedBounds`, whose fallback flag is separate
+from the `changedWalls` one the wall commit consumes (docs/fogofwar.md), so the two are order-free.
+`game.ts` is left with one call.
+
 Sunder 2512 MAP22 at (-560, 219) is the case — the wall at x = -512 the camera looks over is five
 short line sides, of which the middle one (linedef 60) is lift sector 90, and the player's crossing
 lands at y 219 in the static line beside it.

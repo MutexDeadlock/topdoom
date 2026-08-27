@@ -226,6 +226,21 @@ position: a test that moves nobody writes `tick()`, one that walks the player wr
 `tick(TIC, x, y)`. The rig's own `scene` is the group the controller hangs its mover meshes on, so a
 test that needs to read those back takes it from there, as `strobing-lift-light` does.
 
+## The fade fixture
+
+`tests/fixtures/fade.ts` holds what the occlusion-fade tests share on both sides of the pass. Going
+in: `targetAt(x, y, z, over)` builds the `FadeTarget` the faders aim at — so a dial added to that
+type is a one-file edit rather than one per case — and `openingsOf(world)` wraps `World.openingInto`
+in the shape the wall half takes it. Coming out: `lowestAlpha(meshes)` is the minimum the commit
+wrote anywhere in a batch, for "did anything fade at all", and `lowestAlphaAt(occluders, meshes, x)`
+narrows that to the quads standing at one `x`, walked through each occluder's own vertex range —
+what a case about **one** wall on a map that has others needs, where a minimum over everything
+would answer about the wrong wall.
+
+The dials are still *read* from the source rather than mirrored (docs/render.md § The fade is a hole,
+not a wall). The readbacks are the half worth sharing: they encode `addWall`'s vertex layout, and
+there were three copies of that walk before.
+
 ## Markup partials
 
 `tests/ui/markup.test.ts` assembles `index.html` through `plugins/html-partials.ts`'s own

@@ -7,7 +7,7 @@ import { WATER_SURFACE_ALPHA } from '../../src/constants.ts';
 import { LF, NO_SIDE } from '../../src/wad/map.ts';
 import { gridMap, addControlSector } from '../fixtures/gridmap.ts';
 import { BANK } from '../fixtures/specialsrig.ts';
-import { targetAt } from '../fixtures/fadetarget.ts';
+import { targetAt } from '../fixtures/fade.ts';
 
 /**
  * Boom's 242 as geometry: the two fans this engine draws where vanilla picks

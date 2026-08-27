@@ -14,7 +14,7 @@ import {
   type FadeTarget,
 } from '../../src/render/occlusion.ts';
 import { Transfers } from '../../src/game/specials/transfers.ts';
-import { World, type Opening } from '../../src/game/world.ts';
+import { World } from '../../src/game/world.ts';
 import { NO_SIDE } from '../../src/wad/map.ts';
 import { PLAYER_HEIGHT } from '../../src/game/player.ts';
 import { buildThingSprites } from '../../src/game/things.ts';
@@ -24,7 +24,7 @@ import { DOOM_TIC } from '../../src/constants.ts';
 import { gridMap, thingAt } from '../fixtures/gridmap.ts';
 import { BANK, MASKED_TEXTURE } from '../fixtures/specialsrig.ts';
 import { BANK as SPRITE_BANK, MATERIALS as SPRITE_MATERIALS } from '../fixtures/spritestubs.ts';
-import { targetAt } from '../fixtures/fadetarget.ts';
+import { lowestAlpha, openingsOf, targetAt } from '../fixtures/fade.ts';
 
 /**
  * The fade is a *ball* around where a sightline meets something solid, not the
@@ -75,11 +75,6 @@ function walledRow() {
  */
 function awake(x: number, y: number, z: number, height = PLAYER_HEIGHT) {
   return { x, y, z, height };
-}
-
-/** The real opening lookup, in the shape `WallFader.update` takes it. */
-function openingsOf(world: World) {
-  return (line: number, out: Opening) => world.openingInto(line, out);
 }
 
 /** Every quad cut from one line side, in build order. */
@@ -886,22 +881,13 @@ describe('render · a frame’s work follows the hole, not the map', () => {
   /** No quad's fog moved this frame — the empty list `commit` gets on a settled level. */
   const NOTHING_MOVED = { indices: new Int32Array(0), count: 0 };
 
-  /** The lowest alpha `commit` has written anywhere in the level's wall meshes. */
-  function lowest(b: ReturnType<typeof walledRow>): number {
-    let low = 1;
-    for (const key of b.wallMeshes.keys()) {
-      const attr = b.wallMeshes.get(key)!.geometry.getAttribute('color') as THREE.BufferAttribute;
-      for (let v = 0; v < attr.count; v++) low = Math.min(low, attr.getW(v));
-    }
-    return low;
-  }
-
   test('a quad the fade touched is written even though no fog moved', () => {
     const { b, camX, camY, camZ, target } = crossing();
     const fader = new WallFader(b.occluders, b.wallMeshes);
     fader.update(SETTLE, camX, camY, camZ, [target], openingsOf(b.world));
     fader.commit(() => 1, NOTHING_MOVED);
-    assert.ok(Math.abs(lowest(b) - FADE_ALPHA) < 1e-6, `the hole reached the mesh, got ${lowest(b)}`);
+    const low = lowestAlpha(b.wallMeshes);
+    assert.ok(Math.abs(low - FADE_ALPHA) < 1e-6, `the hole reached the mesh, got ${low}`);
   });
 
   test('a quad that finishes relaxing is written on the frame it settles', () => {
@@ -913,7 +899,7 @@ describe('render · a frame’s work follows the hole, not the map', () => {
     const fader = new WallFader(b.occluders, b.wallMeshes);
     fader.update(SETTLE, camX, camY, camZ, [target], openingsOf(b.world));
     fader.commit(() => 1, NOTHING_MOVED);
-    assert.ok(lowest(b) < 1, 'the wall faded first');
+    assert.ok(lowestAlpha(b.wallMeshes) < 1, 'the wall faded first');
 
     // The target walks off; nothing crosses this wall any more. A few frames of
     // relaxing, each committed as the game does it — with fog holding still.
@@ -922,7 +908,7 @@ describe('render · a frame’s work follows the hole, not the map', () => {
       fader.update(SETTLE, camX, camY, camZ, [away], openingsOf(b.world));
       fader.commit(() => 1, NOTHING_MOVED);
     }
-    assert.equal(lowest(b), 1, 'the wall is whole again in the mesh, not just in the fader');
+    assert.equal(lowestAlpha(b.wallMeshes), 1, 'the wall is whole again in the mesh, not just in the fader');
     assert.equal(fader.idle, true, 'and nothing is left on the active list');
   });
 
@@ -931,7 +917,7 @@ describe('render · a frame’s work follows the hole, not the map', () => {
     const fader = new WallFader(b.occluders, b.wallMeshes);
     // The first commit writes everything, since nothing has been written yet.
     fader.commit(() => 1, NOTHING_MOVED);
-    assert.equal(lowest(b), 1);
+    assert.equal(lowestAlpha(b.wallMeshes), 1);
 
     // One quad's subsector goes dark, named the way `FogOfWar.changedWalls`
     // names it. Nothing faded, so the fade's own list is empty.
@@ -940,7 +926,7 @@ describe('render · a frame’s work follows the hole, not the map', () => {
     fader.commit((i) => (i === hidden ? 0 : 1), changed);
     const attr = b.wallMeshes.get(b.occluders[hidden].key)!.geometry.getAttribute('color') as THREE.BufferAttribute;
     assert.equal(attr.getW(b.occluders[hidden].vertexStart), 0, 'the quad fog hid is written to 0');
-    assert.equal(lowest(b), 0, 'and it is the only thing that moved');
+    assert.equal(lowestAlpha(b.wallMeshes), 0, 'and it is the only thing that moved');
   });
 
   test('`idle` says whether an update could do anything at all', () => {

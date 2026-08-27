@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { addControlLine, gridMap } from '../fixtures/gridmap.ts';
 import { specialsRig, type SpecialsRig } from '../fixtures/specialsrig.ts';
-import type { Opening } from '../../src/game/world.ts';
 import {
   FADE_RADIUS,
   FadePass,
@@ -13,7 +12,7 @@ import {
   type FadeTarget,
 } from '../../src/render/occlusion.ts';
 import { WALL_CHUNK_LEN } from '../../src/render/mapmesh.ts';
-import { targetAt } from '../fixtures/fadetarget.ts';
+import { lowestAlphaAt, openingsOf, targetAt } from '../fixtures/fade.ts';
 import { PLAYER_HEIGHT } from '../../src/game/player.ts';
 
 /**
@@ -75,7 +74,7 @@ function fadePass(
   statics?: WallFader,
 ): (camX: number, camY: number, camZ: number, targets: FadeTarget[]) => void {
   const pass = new FadePass(statics ?? new WallFader([], new Map()), new FlatFader([], new Map()));
-  const openingInto = (line: number, out: Opening) => r.world.openingInto(line, out);
+  const openingInto = openingsOf(r.world);
   return (camX, camY, camZ, targets) =>
     pass.run({ dt: SETTLE, camX, camY, camZ, targets, openingInto }, FULLY_REVEALED, r.specials);
 }
@@ -227,18 +226,6 @@ describe('render · one hole, whichever mesh it lands in', () => {
     return { grid, rig: r, door, fade: fadePass(r, statics) };
   }
 
-  /** The lowest alpha the static batches hold over the wall quads standing at `x`. */
-  function staticLow(r: SpecialsRig, x: number): number {
-    let low = 1;
-    for (const o of r.built.occluders) {
-      if (Math.min(o.ax, o.bx) > x || Math.max(o.ax, o.bx) < x) continue;
-      const attr = r.built.wallMeshes.get(o.key)?.geometry.getAttribute('color') as THREE.BufferAttribute;
-      if (!attr) continue;
-      for (let v = 0; v < o.vertexCount; v++) low = Math.min(low, attr.getW(o.vertexStart + v));
-    }
-    return low;
-  }
-
   test('a door in a wall opens with the hole the wall beside it opened', () => {
     const { grid, rig: r, fade } = wallWithADoorInIt();
     // Player in the corridor under the *static* west cell of the wall, camera
@@ -248,7 +235,8 @@ describe('render · one hole, whichever mesh it lands in', () => {
     const target = targetAt(at.x, at.y, 0, {});
     fade(at.x, at.y + CELL * 2, PLAYER_HEIGHT + 256, [target]);
 
-    assert.ok(staticLow(r, at.x) < 1, 'the static wall the sightline crosses fades');
+    const staticLow = lowestAlphaAt(r.built.occluders, r.built.wallMeshes, at.x);
+    assert.ok(staticLow < 1, 'the static wall the sightline crosses fades');
     assert.ok(
       moverWallAlpha(r.scene).low < 1,
       'and so does the door beside it — the hole is one shape, not one per mesh',

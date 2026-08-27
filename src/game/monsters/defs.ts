@@ -125,6 +125,15 @@ export interface AttackStats {
   shots?: number;
   shotInterval?: number;
   /**
+   * One entry per shot, where the volley's shots are not all the same attack — each is read for
+   * its roll and its projectile in place of the chain's own, the shot's spacing and the pose
+   * staying the chain's. Absent in vanilla, whose every multi-shot chain repeats one action (the
+   * mancubus's three `A_FatAttack*` are one attack fanned by `pairOffsetsRad`); a DEHACKED patch
+   * can mix them, and NoSp2.wad's cybruiser does — rocket, then the baron's green ball.
+   * docs/monster-attacks.md § A volley of unlike shots.
+   */
+  shotAttacks?: readonly AttackStats[];
+  /**
    * Seconds into the attack before it first lands — the `A_FaceTarget` states
    * vanilla's chain opens with, ahead of the one carrying the damaging action.
    * Read for **both kinds**: a shot leaves this far into the volley, a claw

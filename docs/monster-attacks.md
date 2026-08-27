@@ -134,6 +134,25 @@ death state `S_EXPLODE1` is the one monster-projectile death state in the game t
 there. The splash still can't hurt the cyberdemon or spider mastermind, per `applyRadiusDamage`'s
 existing exemption.
 
+## A volley of unlike shots
+
+`AttackStats.shots`/`shotInterval` fire one attack repeatedly, because that is all vanilla's own
+chains ever do: every state carrying a second `A_*Attack` carries the *same* one, and the mancubus's
+three distinct `A_FatAttack1/2/3` are one attack fanned by `pairOffsetsRad` — all three name the
+mancubus.
+
+A DEHACKED patch can mix them, and `AttackStats.shotAttacks` is that case: one entry per shot, read
+only for **that shot's damage roll and projectile**, with the spacing, the windup, the pose and the
+`pairOffsetsRad` fan staying the chain's own. `dehacked/frames.ts`'s `rangedActions` lists every
+firing action of the missile chain in order and `dehacked/apply.ts`'s `shotAttacksFor` resolves each
+through `ATTACK_ACTION_SOURCES`, exactly as a whole-chain repoint resolves its one action. It is
+built only where the actions have **different owners**, so no vanilla type gains one.
+
+The repro is NoSp2.wad's cybruiser (`Thing 20`, MT_SPIDER): its missile chain runs
+`A_CyberAttack` at frame 737 and `A_BruisAttack` at 741, so one attack throws a rocket and then, 36
+tics later, the baron's green `BAL7` ball. Reading only the chain's first firing action gave it two
+rockets. `tests/game/dehacked-mixed-volley.test.ts` pins it.
+
 ## The revenant's homing missile
 
 `AttackStats.projectile.homing`, `game/projectiles.ts`'s `advanceHoming` — vanilla's `A_Tracer`, the

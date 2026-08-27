@@ -505,7 +505,9 @@ type ProjectileAttack = AttackStats & { projectile: NonNullable<AttackStats['pro
  */
 export function forEachProjectileAttack(sprite: string, visit: (attack: ProjectileAttack) => void): void {
   for (const stats of Object.values(MONSTER_STATS)) {
-    for (const attack of [stats.melee, stats.ranged]) {
+    // The per-shot attacks of a mixed volley are stat blocks like any other and name their own
+    // missiles, so a patched flight sprite has to reach them too (`AttackStats.shotAttacks`).
+    for (const attack of [stats.melee, stats.ranged, ...(stats.ranged?.shotAttacks ?? [])]) {
       if (attack?.projectile?.sprite === sprite) visit(attack as ProjectileAttack);
     }
   }
@@ -564,6 +566,20 @@ function fastVariant(type: number, stats: MonsterStats): MonsterStats {
   const missileSpeed = missile && FAST_MISSILE_SPEED[missile.sprite];
   if (fast.ranged && missile && missileSpeed !== undefined) {
     fast = { ...fast, ranged: { ...fast.ranged, projectile: { ...missile, speed: missileSpeed } } };
+  }
+  // Same edit again for a mixed volley's per-shot missiles: fast mode speeds a `BAL7` up whichever
+  // shot of whichever chain threw it.
+  if (fast.ranged?.shotAttacks?.some((shot) => shot.projectile && FAST_MISSILE_SPEED[shot.projectile.sprite] !== undefined)) {
+    fast = {
+      ...fast,
+      ranged: {
+        ...fast.ranged,
+        shotAttacks: fast.ranged.shotAttacks.map((shot) => {
+          const speed = shot.projectile && FAST_MISSILE_SPEED[shot.projectile.sprite];
+          return shot.projectile && speed !== undefined ? { ...shot, projectile: { ...shot.projectile, speed } } : shot;
+        }),
+      },
+    };
   }
   return fast;
 }

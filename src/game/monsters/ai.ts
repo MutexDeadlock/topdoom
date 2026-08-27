@@ -654,7 +654,11 @@ export function stepMonsterAI(
       // P_CheckMissileRange already confirmed sight, so re-checking here
       // would be redundant.
       if (!ranged.blast || canSee()) {
-        attack = fireAttack('ranged', ranged, body.angle, ranged.projectile?.pairOffsetsRad?.[shotIndex], body.homingBias);
+        // Which attack *this* shot is: a volley whose firing actions differ carries one entry per
+        // shot (`AttackStats.shotAttacks`), and only its roll and its projectile are read from
+        // there — the spacing and the fan stay the chain's own.
+        const shot = ranged.shotAttacks?.[shotIndex] ?? ranged;
+        attack = fireAttack('ranged', shot, body.angle, ranged.projectile?.pairOffsetsRad?.[shotIndex], body.homingBias);
         // A hitscan attack's own shot sound. A projectile-thrower has none —
         // its missile brings one (see `MonsterSounds.attack`) — and the
         // arch-vile's blast plays `barexp` from `monsters/vile.ts` instead.

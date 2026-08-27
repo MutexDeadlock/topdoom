@@ -397,6 +397,14 @@ the one-home rule exists to prevent. Three rules fall out of that:
 - An action that is not an attack at all leaves the type's attack alone rather than clearing it;
   only a chain whose firing action is **gone** (`A_NULL`) loses its attack.
 
+**A missile chain is read for every firing action it carries, not only its first.** Vanilla never
+needs that — its multi-shot chains repeat one action — but a patch can make a chain fire two
+different ones, and NoSp2.wad's cybruiser does: `A_CyberAttack` then `A_BruisAttack`, a rocket and
+then the baron's green ball. `MonsterFrames.rangedActions` lists them in firing order and each
+resolves through `ATTACK_ACTION_SOURCES` exactly as the chain's own does, giving
+`AttackStats.shotAttacks` — one attack per shot, built only where the actions have different
+owners. docs/monster-attacks.md § A volley of unlike shots.
+
 **A repoint is classified as an edit, not as an action** (`classifyDehackedPointer`). Four rules,
 and the first is what keeps a report readable:
 

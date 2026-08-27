@@ -160,6 +160,14 @@ export interface MonsterFrames {
   meleeAction: string | null;
   rangedAction: string | null;
   /**
+   * Every damaging action the *ranged* chain carries, in firing order — one entry per
+   * `rangedShots`. Where they are not all the same attack, each shot of the volley is its own
+   * (`AttackStats.shotAttacks`); the melee chain gets no counterpart because a swing that lands
+   * more than once is not something this engine's melee model has. docs/dehacked.md § Action
+   * pointers.
+   */
+  rangedActions: readonly string[];
+  /**
    * `misc1`/`misc2` of the state that firing action sits on, where the patch gave it any — MBF's
    * `A_Scratch` reads its damage and its sound from them. Null everywhere in vanilla, which has no
    * such fields at all.
@@ -366,6 +374,19 @@ function firingOf(
 }
 
 /**
+ * Every damaging action of a chain's span, in order — what each shot of a volley *is*, where
+ * `firingOf` gives only the first. A chain whose firing actions differ fires a sequence of
+ * different attacks rather than the same one repeated: NoSp2.wad's cybruiser opens its missile
+ * chain with `A_CyberAttack` and closes it with `A_BruisAttack`, a rocket and then a green `BAL7`
+ * ball. docs/dehacked.md § Action pointers.
+ */
+function firingActionsOf(states: readonly StateRow[], chain: Chain): string[] {
+  return spanOf(states, chain)
+    .filter((i) => isFiring(states[i][3]))
+    .map((i) => states[i][3]);
+}
+
+/**
  * MBF's `A_Scratch` carries the swing's sound in its own `misc2`, so a chain that fires one has a
  * melee sound even without an `A_PlaySound` beside it. Read here rather than at the write site so
  * `MonsterFrames.meleeSound` means one thing — docs/dehacked.md § Action pointers.
@@ -510,6 +531,7 @@ function deriveMonster(
     rangedInterval: firingIntervalOf(missileShots),
     meleeAction: meleeFiring.action,
     rangedAction: rangedFiring.action,
+    rangedActions: firingActionsOf(states, missile),
     meleeArgs: meleeFiring.args,
     rangedArgs: rangedFiring.args,
     meleeSound: chainSound(states, args, melee) ?? scratchSound(meleeFiring),

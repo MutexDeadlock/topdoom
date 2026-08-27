@@ -554,13 +554,22 @@ function writeMonster(dn: number, a: MonsterFrames, b: MonsterFrames): void {
     stats.ranged.startDelaySeconds = b.rangedDelay ?? 0;
   }
   // A volley's shape follows its chain too: how many `A_*Attack` calls it carries and how far
-  // apart they sit. Only where the type already models one — a single-shot attack leaves both
-  // unset and reads as vanilla's default of one shot.
-  if (stats.ranged?.shots !== undefined && rangedMoved(a.rangedShots, b.rangedShots)) {
-    stats.ranged.shots = b.rangedShots;
+  // apart they sit. Written the way `monsters/tables.ts` derives them from vanilla's own chains —
+  // a single-shot chain leaves both unset and reads as vanilla's default of one shot — so a patch
+  // that *adds* a firing action to a chain that had one gets the extra shot, rather than the shot
+  // count being frozen at whatever the type happened to model.
+  if (rangedMoved(a.rangedShots, b.rangedShots) && stats.ranged) {
+    if (b.rangedShots > 1) stats.ranged.shots = b.rangedShots;
+    else delete stats.ranged.shots;
   }
-  if (stats.ranged?.shotInterval !== undefined && b.rangedInterval !== null && rangedMoved(a.rangedInterval, b.rangedInterval)) {
+  if (stats.ranged && b.rangedInterval !== null && rangedMoved(a.rangedInterval, b.rangedInterval)) {
     stats.ranged.shotInterval = b.rangedInterval;
+  }
+  // And what each of those shots *is*, where they are not all the same attack.
+  if (stats.ranged && (rangedRepointed || !same(a.rangedActions, b.rangedActions))) {
+    const perShot = shotAttacksFor(stats.ranged, b.rangedActions);
+    if (perShot) stats.ranged.shotAttacks = perShot;
+    else delete stats.ranged.shotAttacks;
   }
   // MBF's `A_PlaySound`, and `A_Scratch`'s own `misc2` alongside it: both are read off the chain by
   // the walker, since a sound is a per-type property here rather than something a state carries.
@@ -590,6 +599,31 @@ function putSound(sounds: MonsterSounds, slot: 'melee' | 'attack' | 'pain' | 'de
   if (name === undefined) return;
   if (index === 0) delete sounds[slot];
   else sounds[slot] = name as SfxId;
+}
+
+/**
+ * The per-shot attacks of a volley whose firing actions don't all belong to the same monster —
+ * `AttackStats.shotAttacks`. Each entry borrows its roll and its projectile from whoever owns that
+ * action in vanilla, exactly as a whole-chain repoint does; the chain's own attack still supplies
+ * the timings and the pose, and stands in wherever the bridge names nobody.
+ *
+ * Undefined unless the *owners* differ, not merely the action names: the mancubus's chain carries
+ * three distinct `A_FatAttack*` that are one attack fanned by `pairOffsetsRad`, and all three name
+ * the mancubus. NoSp2.wad's cybruiser is the case this exists for — `A_CyberAttack` then
+ * `A_BruisAttack` off one missile chain, a rocket and then the baron's green ball.
+ */
+function shotAttacksFor(chain: AttackStats, actions: readonly string[]): AttackStats[] | undefined {
+  if (actions.length < 2) return undefined;
+  if (new Set(actions.map((name) => ATTACK_ACTION_SOURCES[name])).size < 2) return undefined;
+  // Cloned rather than aliased wherever the chain's own attack is the answer: `same` walks these
+  // blocks with `JSON.stringify`, which a self-reference would throw on. The clone drops any
+  // `shotAttacks` of its own, which nothing reads a level down.
+  const ownShot = (): AttackStats => {
+    const copy = structuredClone(chain);
+    delete copy.shotAttacks;
+    return copy;
+  };
+  return actions.map((name, i) => (i === 0 ? ownShot() : attackFor(name, 'ranged', chain, null) ?? ownShot()));
 }
 
 /**

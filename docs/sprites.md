@@ -161,7 +161,14 @@ disagree about where a sprite stands.
 Making monster drops readable). A `translucent` batch builds its material clones transparent, with
 the alpha test dropped to 0.01 and `depthWrite` off, from the start: `setOpacity` runs every frame,
 and flipping `transparent`/`alphaTest` on a live material would recompile its shader each time,
-whereas `opacity` alone is a uniform write. The fade is per *batch*, not per instance —
+whereas `opacity` alone is a uniform write.
+
+**The alpha test has to drop, and 0.01 is as good as any value below the lowest opacity used.** The
+shared material tests at 0.5 against `texture.a * opacity`, which discards the *whole* sprite once
+opacity falls under that. A WAD sprite's alpha is binary — 0 or 255, and `NearestFilter` never
+blends between them — so any threshold under the lowest opacity in use cuts exactly the silhouette
+the 0.5 test does. `depthWrite` stays off for the ordinary reason: one translucent plane among
+opaque geometry would otherwise punch a hole in whatever draws after it. The fade is per *batch*, not per instance —
 `instanceColor` carries no alpha, so a per-sprite fade would need a custom shader.
 
 ### The spectre's fuzz

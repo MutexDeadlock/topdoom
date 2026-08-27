@@ -259,13 +259,8 @@ export class SpriteBatch {
     if (this.translucent || this.fuzz) {
       material.transparent = true;
       material.opacity = this.opacity;
-      // The shared material alpha-tests at 0.5 against `texture.a * opacity`,
-      // which would discard the whole sprite at any opacity below that. WAD
-      // sprite alpha is binary (0 or 255, never blended — NearestFilter), so
-      // any threshold under the lowest opacity used cuts the same silhouette.
+      // Both values: docs/sprites.md § Batching.
       material.alphaTest = 0.01;
-      // One translucent plane among opaque geometry: not writing depth keeps
-      // it from punching a hole in whatever draws after it.
       material.depthWrite = false;
     }
     if (this.fuzz) this.applyFuzz(material);

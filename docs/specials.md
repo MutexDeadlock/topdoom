@@ -269,7 +269,11 @@ Two consequences worth knowing, both vanilla's:
 
 The turbo-16 stair specials (100/127) are deliberately *not* included, even though the wiki names them
 "...and Crush" — the actual `EV_BuildStairs` source never sets a crush flag on the floor movers it
-spawns, so real vanilla turbo stairs don't crush either.
+spawns, so real vanilla turbo stairs don't crush either. Strictly, it never sets the field *at all*:
+unlike `EV_DoFloor`, which opens with `floor->crush = false`, `EV_BuildStairs` leaves it whatever the
+recycled zone block held (`Z_Malloc` does not zero). Treating it as false is what every port does and
+what observed vanilla behavior shows; the point stands that nothing in the source ever asks these
+stairs to crush.
 
 **Nothing blocks a genuine crusher on contact**, matching the `crush==true` branch of `T_MovePlane`
 exactly: it keeps hurting whoever's in the way every interval until they leave or die, rather than
@@ -292,7 +296,8 @@ Unlike vanilla, the door check applies uniformly regardless of speed — this en
 `crush: false` `FloorMover` (covering every ordinary raise, `raiseToTexture`, `lowerAndChange`, the
 donut's ring, and stair builders — stairs never set `crush` either). Two callbacks carry this out —
 `game/specials/moverblocking.ts`'s `blocksCeilingLower`/`blocksFloorRise`, both routed through the shared
-`headroomBlocked` helper there.
+`headroomBlocked` helper there. A *rising* `CeilingMover` is deliberately not checked at all — it only
+ever opens headroom, and vanilla's ceiling-up code never reverts on contact either.
 
 A door reverses direction outright (it already has a `raising` state to fall back into); a
 `CeilingMover`/`FloorMover` has none, so it skips that tick's step and retries the next — reading as

@@ -23,19 +23,6 @@ export type SurfaceKind = 'wall' | 'flat';
 type LightUniforms = DynamicLights['uniforms'];
 
 /**
- * The dynamic-light term, appended to the `#include <color_fragment>` replacement below so it lands
- * while `diffuseColor` is still live. `vColor` is the sector's baked light and `sampledDiffuseColor`
- * the texel: the lights are added to the *multiplier* and clamped there, which reproduces vanilla's
- * fullbright ceiling instead of overbrightening the texture past it. Fog is applied later, to
- * `gl_FragColor`, so a lit surface still fogs. docs/lights.md § Two lighting paths.
- *
- * A light only counts where it can be seen from, tested twice. `vLightCell` is the surface's own
- * BSP leaf and `uLightVis` the per-leaf list of the lights that flooded into it, which is all the
- * fragment loop walks; `uLightShadow` then carries, per light and per direction, how far that
- * light gets before a wall stops it, which drops the rest per pixel. `uLightVisWidth` 0 means no
- * level is bound and geometry draws no dynamic light. docs/lights.md § Light stops at walls.
- */
-/**
  * One JS number as a GLSL float literal. Every float spliced into the shader below goes through
  * here: a whole number would otherwise reach GLSL as an int and turn the surrounding arithmetic
  * into integer arithmetic, which is a silent wrong answer rather than a compile error.
@@ -47,6 +34,19 @@ function glslFloat(n: number): string {
 const SOFT_BINS = glslFloat(SHADOW_SOFT_BINS);
 const SOFT_SPAN = glslFloat(2 * SHADOW_SOFT_BINS);
 
+/**
+ * The dynamic-light term, appended to the `#include <color_fragment>` replacement so it lands
+ * while `diffuseColor` is still live. `vColor` is the sector's baked light and `sampledDiffuseColor`
+ * the texel: the lights are added to the *multiplier* and clamped there, which reproduces vanilla's
+ * fullbright ceiling instead of overbrightening the texture past it. Fog is applied later, to
+ * `gl_FragColor`, so a lit surface still fogs. docs/lights.md § Two lighting paths.
+ *
+ * A light only counts where it can be seen from, tested twice. `vLightCell` is the surface's own
+ * BSP leaf and `uLightVis` the per-leaf list of the lights that flooded into it, which is all the
+ * fragment loop walks; `uLightShadow` then carries, per light and per direction, how far that
+ * light gets before a wall stops it, which drops the rest per pixel. `uLightVisWidth` 0 means no
+ * level is bound and geometry draws no dynamic light. docs/lights.md § Light stops at walls.
+ */
 const DYN_LIGHT_FRAGMENT = /* glsl */ `
             // Gated on the light count and the level being bound, both the same for every
             // fragment: a branch that varies per fragment costs a GPU more than it saves unless it
@@ -179,22 +179,11 @@ export class MaterialBank {
       });
       mat.name = key;
       // Both walls and flats carry a per-vertex alpha: walls for occlusion
-      // fading (render/occlusion.ts) and both walls and flats for
-      // fog-of-war reveal (game/fogofwar.ts). This is deliberately NOT real
-      // alpha blending (material.transparent): geometry is batched one mesh
-      // per texture across the *whole* map, and three.js sorts transparent
-      // objects back-to-front per mesh — with a mesh spanning the entire
-      // level that order is meaningless, and since both meshes still
-      // write depth by default, whichever one draws first can win the
-      // depth test and blank out the other (this is exactly how a faded
-      // pillar could hide the wall behind it). Discarding a dithered
-      // fraction of fragments instead keeps geometry fully in the ordinary
-      // opaque, depth-tested/written pass — no batch, no sort order, no
-      // blending, just fewer pixels — so it composites correctly
-      // regardless of draw order. Same caveat as before applies to
-      // `holes` textures: alphaTest above already tests the *combined*
-      // (texture × vertex) alpha, so a faded grate discards outright
-      // instead of dithering.
+      // fading (render/occlusion.ts) and both for fog-of-war reveal
+      // (game/fogofwar.ts). It is spent on a dithered discard rather than real
+      // alpha blending (`material.transparent`), which keeps geometry in the
+      // ordinary opaque, depth-tested pass — docs/render.md § Wall occlusion
+      // fading has why blending cannot work for a map-wide batch.
       const lights = this.lights;
       mat.onBeforeCompile = (shader) => {
         // Dynamic lights ride along in this same replacement, and they have to: `diffuseColor` is

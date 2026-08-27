@@ -227,13 +227,10 @@ interface FloorMover {
 
 /**
  * A one-way ceiling mover — see `CeilingEffect`'s doc. No hold, no reversal
- * state, no periodic crush *damage*: vanilla has no case that needs any of
- * those for this mover (real vanilla never sets `crush=true` for it — even
- * 44/72's "Ceiling Crush" name is misleading, see `EV_DoCeiling`'s source).
- * It still stalls rather than lowering through someone in its way, though —
- * `tickCeiling`'s `blocksCeilingLower` check, vanilla's own crush==false
- * un-crush rule applying unconditionally here since this mover is always
- * crush==false.
+ * state, no periodic crush *damage*: nothing that reaches this mover needs
+ * them. It still stalls rather than lowering through someone in its way —
+ * `tickCeiling`'s `blocksCeilingLower` check.
+ * docs/specials.md § One-way ceiling movers.
  */
 interface CeilingMover {
   kind: 'ceiling';
@@ -1178,11 +1175,9 @@ export class SpecialsController {
     }
     const next = sector.floorHeight + dir * mover.speed * dt;
     if (dir > 0 && !mover.crush && this.blocksFloorRise(mover.sectorIndex, next)) {
-      // Same un-crush rule as the lift above — but only while `crush` is
-      // false. Vanilla's own floor-up code only reverts for crush==false;
-      // the raiseFloorCrush family (mover.crush===true — 55/56/65/94) is
-      // vanilla's real exception and keeps grinding through instead, dealing
-      // periodic damage via tickCrush below exactly as it already did.
+      // Same un-crush rule as the lift above, but only while `crush` is false:
+      // the raiseFloorCrush family (55/56/65/94) keeps grinding through
+      // instead, damaging via tickCrush below. docs/specials.md § Crushers.
       return;
     }
     sector.floorHeight = next;
@@ -1206,13 +1201,10 @@ export class SpecialsController {
 
   /**
    * One-way ceiling move — see `CeilingMover`'s doc for why there's no
-   * hold/reversal state, unlike a door. A *lowering* move still respects
-   * vanilla's crush=false un-crush rule (`blocksCeilingLower`, the same
-   * callback a closing door uses) — real vanilla never sets `crush=true` for
-   * this mover (see the class doc's `lowerAndCrush` note), so every
-   * `CeilingMover` genuinely should stop rather than grind through. Raising
-   * never blocks, matching vanilla's own ceiling-up code, which never
-   * reverts on contact either.
+   * hold/reversal state, unlike a door. A *lowering* move stalls on whoever is
+   * underneath (`blocksCeilingLower`, the same callback a closing door uses);
+   * a rising one never blocks.
+   * docs/specials.md § Every other mover stops instead.
    */
   private tickCeiling(mover: CeilingMover, dt: number, dirty: Set<number>): void {
     if (mover.state === 'done') return;

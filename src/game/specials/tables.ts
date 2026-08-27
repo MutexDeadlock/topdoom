@@ -401,8 +401,9 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   52: { trigger: 'walk', repeatable: false, effect: { kind: 'exit', secret: false } },
   124: { trigger: 'walk', repeatable: false, effect: { kind: 'exit', secret: true } },
 
-  // Crushers — vanilla numbers confirmed against the Doom wiki's linedef type
-  // table (57/74 stop crushers, not 58, which is an unrelated "floor up 24").
+  // Crushers. 57/74 are the stop-crushers; 58 is *not* a third one despite
+  // looking like it — it is an unrelated "floor up 24" (docs/specials.md
+  // § Scope, which lists this among the wiki's wrong entries).
   6: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED_FAST, silent: false, slowsWhenCrushing: false } },
   25: { trigger: 'walk', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: false, slowsWhenCrushing: true } },
   49: { trigger: 'use', repeatable: false, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: false, slowsWhenCrushing: true } },
@@ -412,15 +413,10 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   57: { trigger: 'walk', repeatable: false, effect: { kind: 'crusherStop' } },
   74: { trigger: 'walk', repeatable: true, effect: { kind: 'crusherStop' } },
 
-  // One-way ceiling movers — see CeilingEffect's doc, including why 44/72
-  // never actually deal damage despite the "crush" in their vanilla name.
-  // 40 ("RaiseCeilingLowerFloor") is deliberately *ceiling-only* here: real
-  // vanilla's own EV_DoCeiling/EV_DoFloor pair share one busy-sector guard
-  // (sec->specialdata) per sector, and since EV_DoCeiling always runs first
-  // within case 40's handler, it claims every tag-matched sector before
-  // EV_DoFloor gets a turn — so the floor half is *never* reachable in real
-  // vanilla, confirmed by tracing both functions' own guards rather than
-  // assumed from the special's "...LowerFloor" name.
+  // One-way ceiling movers — see CeilingEffect's doc. 44/72 deal no damage
+  // despite the "crush" in their name, and 40 ("RaiseCeilingLowerFloor") is
+  // deliberately ceiling-only: its floor half is unreachable in vanilla too.
+  // docs/specials.md § One-way ceiling movers has both traces.
   40: { trigger: 'walk', repeatable: false, effect: ceiling('highestNeighborCeiling') },
   44: { trigger: 'walk', repeatable: false, effect: ceiling('floorPlus8') },
   72: { trigger: 'walk', repeatable: true, effect: ceiling('floorPlus8') },
@@ -435,14 +431,9 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   125: { trigger: 'walk', repeatable: false, monsterActivate: true, effect: { kind: 'teleport', monsterOnly: true } },
   126: { trigger: 'walk', repeatable: true, monsterActivate: true, effect: { kind: 'teleport', monsterOnly: true } },
 
-  // Stair builders — confirmed against the Doom wiki: 7/8 are 8-unit steps,
-  // 100/127 are 16-unit turbo steps. The wiki names 100/127 "...and Crush",
-  // but the actual vanilla `EV_BuildStairs` source (p_floor.c) never sets a
-  // `crush` flag on the floor movers it spawns — `Z_Malloc` zero-inits the
-  // struct and nothing overwrites it — so real vanilla turbo-16 stairs don't
-  // actually crush, unlike the unrelated 55/56/65/94 floor family and the
-  // ceiling crushers, which do set it — the source, not the wiki's naming, is
-  // what settles this family.
+  // Stair builders — 7/8 are 8-unit steps, 100/127 16-unit turbo steps. None
+  // carries a crush effect: the wiki's "...and Crush" naming of 100/127 is
+  // wrong and the source settles it. docs/specials.md § Crushers.
   7: { trigger: 'use', repeatable: false, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
   8: { trigger: 'walk', repeatable: false, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
   100: {

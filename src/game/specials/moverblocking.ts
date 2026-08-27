@@ -1,6 +1,8 @@
 /**
  * The "who is standing in this mover" callbacks `SpecialsController` calls back into: crush
- * damage, and the two obstruction tests that stall or reverse a mover. See docs/specials.md
+ * damage, and the two obstruction tests that stall or reverse a mover. It owns the moving
+ * geometry but has no idea who is in it, so it hands back a sector index — plus, for the two
+ * obstruction tests, the height its next step would put the plane at. See docs/specials.md
  * § Crushers and § Every other mover stops instead.
  */
 import type { DoomMap } from '../../wad/map.ts';
@@ -10,15 +12,6 @@ import type { ThingLayer } from '../things.ts';
 import { TALLEST_BODY_HEIGHT } from '../monsters/tables.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
 import { CRUSH_DAMAGE } from './defs.ts';
-
-/**
- * `SpecialsController`'s three "who is standing in this mover" callbacks. It
- * owns the moving geometry but has no idea who is in it, so it hands back a
- * sector index — plus, for the two obstruction tests, the height its next step
- * would put the plane at — and these answer whether that step has to be
- * refused, or who a crusher just caught. See docs/specials.md § Every other
- * mover stops instead and § Crushers.
- */
 
 /**
  * The eight points of a `radius`-box's rim that `boxOverlapsSector` samples —
@@ -53,11 +46,11 @@ function boxOverlapsSector(world: World, x: number, y: number, radius: number, s
 }
 
 /**
- * Vanilla's `T_MovePlane`/`PIT_ChangeSector` "un-crush" rule: whoever's
- * standing in `sectorIndex` doesn't fit in the vertical gap the mover's next
- * step would leave. Each body is measured against its **own**
- * `mobjinfo.height` (`MonsterRef.height`), so a door closes on a cyberdemon
- * well before it would on an imp.
+ * Whether someone standing in `sectorIndex` doesn't fit in the vertical gap the
+ * mover's next step would leave — the shared test behind both obstruction
+ * callbacks. Each body is measured against its **own** height
+ * (`MonsterRef.height`), so a door closes on a cyberdemon well before it would
+ * on an imp. docs/specials.md § Every other mover stops instead.
  */
 function headroomBlocked(
   world: World,

@@ -21,18 +21,16 @@ export interface SectorEffectResult {
 }
 
 /**
- * Vanilla's `P_PlayerInSpecialSector` — the sector specials that need no mover
- * at all, just `sector.special` and where the player is standing: damage
- * floors and the secret counter. The **console player only**, matching
- * vanilla: `P_PlayerThink` reaches this through `player->mo`
- * (`p_user.c`), which is the one body the player occupies, so a voodoo doll
- * parked on a damage floor costs nothing. See docs/specials.md § Damage floors,
- * § Secret sectors and § Voodoo dolls.
+ * The sector specials that need no mover at all, just `sector.special` and
+ * where the player is standing: damage floors and the secret counter
+ * (vanilla's `P_PlayerInSpecialSector`). Runs for the **console player only**,
+ * so a voodoo doll parked on a damage floor costs nothing. See
+ * docs/specials.md § Damage floors, § Secret sectors and § Voodoo dolls.
  */
 export class SectorEffects {
-  /** Vanilla `totalsecret` — secret sectors (vanilla 9 or the Boom secret bit), counted once per level load. */
+  /** Secret sectors on the map (special 9 or the Boom secret bit), counted once per level load. */
   readonly totalSecrets: number;
-  /** Vanilla `player->secretcount`. */
+  /** How many of `totalSecrets` the player has entered so far — the HUD's and the intermission's tally. */
   secretsFound = 0;
   /**
    * Counts down to the next damage-floor tick while the player stands on one.
@@ -43,7 +41,6 @@ export class SectorEffects {
   private timer = DAMAGE_FLOOR_INTERVAL;
 
   constructor(map: DoomMap) {
-    // Vanilla P_SpawnSpecials' `case 9: totalsecret++`, plus Boom's SECRET_MASK count.
     let secrets = 0;
     for (const sector of map.sectors) if (decodeSectorType(sector.special).secret) secrets++;
     this.totalSecrets = secrets;
@@ -99,9 +96,8 @@ export class SectorEffects {
     let secretFound = false;
     let decoded = decodeSectorType(sector.special);
     if (decoded.secret) {
-      // Vanilla's `case 9: player->secretcount++; sector->special = 0;` — clearing it here means
-      // the decode below never reports the secret again, so this can't double-count on a later
-      // frame. Boom's generalized bit clears just itself (`consumeSecret`).
+      // Clearing the special here is what stops a later frame double-counting the same secret:
+      // the re-decode below no longer reports it. `consumeSecret` clears only the Boom bit.
       this.secretsFound++;
       sector.special = consumeSecret(sector.special);
       decoded = decodeSectorType(sector.special);

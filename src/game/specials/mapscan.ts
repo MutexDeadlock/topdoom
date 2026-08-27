@@ -155,16 +155,16 @@ export function neighborSectorIndices(map: DoomMap, sectorIndex: number): number
 }
 
 /**
- * Vanilla `P_PointOnLineSide`: true when (x, y) sits on the line's front
- * (right-sidedef) side. `P_UseSpecialLine` (confirmed against
- * `linuxdoom-1.10/p_switch.c`) rejects *every* use-triggered special except
- * an unused one (124, a "sliding door" case that never appears as a `use`
- * special in `LINE_SPECIALS`) when activated from the back side — so a
- * manual door or switch mounted on a wall is only usable from the side a
- * mapper actually intended, not through the wall from behind it.
+ * True when (x, y) sits on the line's front (right-sidedef) side
+ * (`P_PointOnLineSide`). Two callers need it:
  *
- * Also the `side` a walk trigger hands `trigger` (`P_TryMove`'s `oldside`),
- * which only teleports act on — docs/specials.md § Teleporters.
+ * - **Use triggers**, which are refused outright from the back side, so a
+ *   manual door or switch mounted on a wall is only usable from the side the
+ *   mapper intended and not through the wall from behind it. Vanilla's one
+ *   exception (special 124) never appears as a `use` special in
+ *   `LINE_SPECIALS`, so this engine has no exception at all.
+ * - **The `side` a walk trigger hands `trigger`**, which only teleports act on
+ *   — docs/specials.md § Teleporters.
  */
 export function isFrontSide(ax: number, ay: number, bx: number, by: number, x: number, y: number): boolean {
   const dx = bx - ax;
@@ -178,22 +178,20 @@ export interface StairStep {
 }
 
 /**
- * Vanilla `EV_BuildStairs`/`T_BuildStairs`: starting at `startSectorIndex`,
- * follow a chain of two-sided lines where the current sector is the line's
- * *front* side and the back sector's floor texture matches the start
- * sector's, each one `stepHeight` higher than the last. This is directional
- * and single-path, exactly like vanilla's own search — it takes the first
- * matching line it finds each round and never branches — so a mapper's stair
- * group only works if its connector lines all face the same way, same
- * requirement vanilla itself has. Purely a function of static map data
- * (adjacency + floor textures), so it's safe to run once at load time
- * (`scanSectors`) and again at trigger time without the two ever
- * disagreeing.
+ * The chain of sectors a stair builder raises, starting at `startSectorIndex`:
+ * follow two-sided lines where the current sector is the line's *front* side
+ * and the back sector's floor texture matches the start sector's, each step
+ * `stepHeight` higher than the last.
  *
- * Boom's generalized stairs (`EV_DoGenStairs`) add `direction` — steps
- * descending by `stepHeight` instead — and `ignoreTexture`, which drops the
- * floor-texture match from the walk (the Igno bit). Both default to the
- * vanilla behavior.
+ * **Directional and single-path** — it takes the first matching line it finds
+ * each round and never branches, so a mapper's stair group only works if its
+ * connector lines all face the same way. That is vanilla's own
+ * `EV_BuildStairs` walk, and mapsets depend on the restriction.
+ *
+ * Purely a function of static map data (adjacency + floor textures), so running
+ * it once at load time (`scanSectors`) and again at trigger time can't
+ * disagree. `direction` and `ignoreTexture` are Boom's generalized additions
+ * (`EV_DoGenStairs`' Igno bit); both default to the vanilla walk.
  */
 export function findStairChain(
   map: DoomMap,

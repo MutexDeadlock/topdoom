@@ -36,9 +36,9 @@ export interface DecodedSectorType {
   damage: DamageFloorEffect | null;
   /** Consuming it differs by era — see `consumeSecret`. */
   secret: boolean;
-  /** Boom sector friction enable — decoded now, consumed when per-sector friction lands. */
+  /** Boom sector friction enable — gates `Forces.frictionUnder` (docs/specials.md § Friction). */
   friction: boolean;
-  /** Boom sector pusher enable — decoded now, consumed when pushers land. */
+  /** Boom sector pusher enable — gates `Forces.pushForBody` (docs/specials.md § Pushers). */
   push: boolean;
   doorTimer: SectorDoorTimer | null;
 }

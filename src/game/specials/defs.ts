@@ -14,11 +14,9 @@ export const DOOR_SPEED = 70; // 2 u/tic
 export const DOOR_SPEED_FAST = 280; // 8 u/tic
 export const DOOR_WAIT = 150 * DOOM_TIC; // seconds a door stays open
 export const FLOOR_SPEED = 35;
-// Vanilla's `downWaitUpStay`/`blazeDWUS` plat types run at PLATSPEED*4/*8 (and
-// PLATSPEED == FLOORSPEED), not *1/*4 — confirmed against the actual source
-// (p_plats.c: EV_DoPlat) after a naive "fast is 4x normal" guess here turned
-// out to make both tiers wrong (the "fast" lift ran at what should've been
-// the *normal* speed, and "normal" ran 4x too slow).
+// `downWaitUpStay`/`blazeDWUS` run at PLATSPEED*4/*8, not *1/*4, and
+// PLATSPEED == FLOORSPEED — confirmed against `p_plats.c: EV_DoPlat`. The
+// tiers are *4/*8 rather than the *1/*4 the naming suggests.
 export const LIFT_SPEED = FLOOR_SPEED * 4; // 4 u/tic
 export const LIFT_SPEED_FAST = FLOOR_SPEED * 8; // 8 u/tic
 export const LIFT_WAIT = 105 * DOOM_TIC; // seconds a lift stays down
@@ -45,13 +43,11 @@ export const STAIR_STEP_TURBO = 16;
 /** Vanilla: a mover with `crush` set deals this much damage every `CRUSH_DAMAGE_INTERVAL` while something is caught in its sector. */
 export const CRUSH_DAMAGE = 10;
 /**
- * Vanilla's `leveltime&3` (4 tics at 35 tics/sec) — one clock shared by every
- * crushing mover on the map, not a per-mover countdown (`SpecialsController`'s
- * `crushDamageTimer`/`crushDamageDue`, the same shared-clock shape
- * `MOVE_SOUND_INTERVAL` already uses for the grind sound). A per-mover
- * countdown reset on each fire drifts out of phase with the level's real tic
- * count and can add an extra hit a real vanilla/GZDoom crusher wouldn't have
- * dealt — confirmed the difference testing `crusher_test.wad` against GZDoom.
+ * How often a crushing mover deals `CRUSH_DAMAGE` (vanilla's `leveltime&3`).
+ * Ticked as **one clock shared by every crusher on the map**, not a per-mover
+ * countdown — `SpecialsController`'s `crushDamageTimer`/`crushDamageDue`, the
+ * same shared-clock shape `MOVE_SOUND_INTERVAL` uses for the grind sound.
+ * docs/specials.md § Crushers has why a per-mover countdown is wrong.
  */
 export const CRUSH_DAMAGE_INTERVAL = 4 * DOOM_TIC;
 /** Vanilla `T_MoveCeiling`'s `ceiling->speed = CEILSPEED / 8` — see `CrusherEffect.slowsWhenCrushing`. */
@@ -299,10 +295,8 @@ export interface ExitEffect {
 /**
  * Ceiling repeatedly lowers to floor+`EIGHT_UNIT_GAP`, then returns to its
  * start height, forever, dealing `CRUSH_DAMAGE` every `CRUSH_DAMAGE_INTERVAL`
- * to anyone it doesn't leave room for — only while lowering: `T_MoveCeiling`
- * (`p_ceilng.c`) hardcodes `crush=false` for the raise call regardless of the
- * mover's own crush flag, so real vanilla never deals crush damage on the way
- * back up either.
+ * to anyone it doesn't leave room for — **only while lowering**, never on the
+ * way back up. docs/specials.md § Crushers.
  */
 export interface CrusherEffect {
   kind: 'crusher';
@@ -315,14 +309,11 @@ export interface CrusherEffect {
    */
   silent: boolean;
   /**
-   * `T_MoveCeiling`'s `ceiling->speed = CEILSPEED / 8` — while its descent is
-   * actually crushing something, a crusher grinds down at an eighth speed,
-   * restored to full when it reaches the bottom. `p_ceilng.c` applies it to
-   * `crushAndRaise` and `silentCrushAndRaise` (25/49/73/141) and pointedly not
-   * to `fastCrushAndRaise` (6/77), which is the whole reason the fast pair
-   * stays fast. Not cosmetic: it is what multiplies the time a body spends
-   * under the ceiling, and so the crush damage a single stroke deals, by eight
-   * — docs/specials.md § Crushers.
+   * While its descent is actually crushing something, the crusher grinds down
+   * at `CRUSH_SLOWDOWN`-th speed, restored to full at the bottom. Set on
+   * 25/49/73/141 and deliberately not on the fast pair 6/77. Not cosmetic — it
+   * multiplies the damage a single stroke deals by eight.
+   * docs/specials.md § Crushers.
    */
   slowsWhenCrushing: boolean;
   /**
@@ -377,12 +368,9 @@ export interface TeleportEffect {
 
 /**
  * Raises a chain of adjacent sectors sharing the trigger sector's floor
- * texture, each `stepHeight` higher than the last, all starting at once —
- * vanilla's `EV_BuildStairs`/`T_BuildStairs`. Despite the wiki naming the
- * 16-unit vanilla specials (100/127) "...and Crush", the actual source never
- * sets a crush flag on the floor movers it spawns — see `tables.ts` — so
- * stairs never deal crush damage, unlike the ceiling crushers and the
- * 55/56/65/94 floor family.
+ * texture, each `stepHeight` higher than the last, all starting at once. There
+ * is no crush field: **no stair special deals crush damage**, including the
+ * 16-unit pair the wiki misnames "...and Crush" (`tables.ts` at 100/127).
  */
 export interface StairsEffect {
   kind: 'stairs';
@@ -419,17 +407,12 @@ export type CeilingTarget =
 
 /**
  * A one-way ceiling mover: moves once to `target`, then stops — no hold, no
- * reversal, unlike `DoorEffect`/`CrusherEffect`. Vanilla's `raiseToHighest`
- * (special 40 — see `tables.ts` for why 40's *floor* half is faithfully
- * omitted) and `lowerAndCrush` (44/72). The latter's name is misleading:
- * confirmed against `p_ceilng.c`'s `EV_DoCeiling`, `lowerAndCrush` falls
- * straight into the same `case` block `lowerToFloor` uses without ever
- * passing through the earlier `ceiling->crush = true;` line the *cyclic*
- * crush types (`crushAndRaise` family) do — so despite the name, a real
- * vanilla 44/72 ceiling never actually deals crush damage, it just lowers to
- * floor+`EIGHT_UNIT_GAP` once and sits there. `game/specials.ts`'s
- * `CeilingMover` has no `crush`/damage handling at all as a result — there is
- * no vanilla case that would ever need it.
+ * reversal, unlike `DoorEffect`/`CrusherEffect`. Two specials reach it,
+ * `raiseToHighest` (40) and `lowerAndCrush` (44/72), and **neither deals crush
+ * damage** despite the latter's name — so this shape carries no `crush` field
+ * and `game/specials.ts`'s `CeilingMover` has no damage handling. Special 40's
+ * *floor* half is faithfully omitted (`tables.ts`).
+ * docs/specials.md § One-way ceiling movers has the source for both.
  */
 export interface CeilingEffect {
   kind: 'ceiling';

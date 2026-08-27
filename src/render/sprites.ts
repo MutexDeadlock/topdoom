@@ -570,14 +570,8 @@ export class SpriteActor {
     if (!clone) {
       clone = base.clone();
       clone.transparent = true;
-      // The shared material alpha-tests at 0.5 against `texture.a * opacity`,
-      // which would discard the *whole* sprite at any opacity below that. A WAD
-      // sprite's alpha is binary (0 or 255, and NearestFilter never blends
-      // between them), so any threshold under the lowest opacity used cuts
-      // exactly the same silhouette the 0.5 test does.
+      // Both values: docs/sprites.md § Batching.
       clone.alphaTest = 0.01;
-      // One translucent plane among opaque geometry: not writing depth keeps it
-      // from punching a hole in whatever is drawn after it.
       clone.depthWrite = false;
       this.translucent.set(base, clone);
     }

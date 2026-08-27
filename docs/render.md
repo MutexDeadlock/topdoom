@@ -339,7 +339,7 @@ holds nothing for it.
 
 Repro for both: literalism.wad MAP18, whose voodoo-doll scripts (docs/specials.md § Voodoo dolls)
 keep ~95 sectors moving per tic over 10.6k subsectors and 14.5k linedefs. Before the two, that map
-spent the entire frame in `rebuildAround` and the DEVMODE profiler's "Specials" row read in the
+spent the entire frame in `rebuildAround` and the profiler overlay's "Specials" row read in the
 hundreds of milliseconds.
 
 ### A mover dices vertically only where nothing moves
@@ -1099,7 +1099,7 @@ Two settings in `Viewport`'s constructor decide the pixel count, and both are lo
 
 The clear and the canvas present are not a cost worth thinking about — 0.03 ms of a 14.7 MP frame.
 
-**Measure this in a browser, not by reasoning.** In-game, the DEVMODE profiler's `gpu` line is the
+**Measure this in a browser, not by reasoning.** In-game, the profiler overlay's `gpu` line is the
 first place to look (docs/menu.md § Profiling overlay): when it dwarfs the `cpu` line beside it, no
 row above it is worth touching. For a real experiment — an A/B of two shader variants, a resolution
 sweep — docs/lights.md § Profiling has the recipe

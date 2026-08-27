@@ -6,6 +6,8 @@ Features and improvements
     bright floors and fire
   - a focused text field or dropdown takes the menu's accent, not the 
     browser's focus ring
+  - profiler overlay and fps count can be switched on/off in any environment: 
+    Settings -> General -> Debug / Dev (off by default)
 
 Fixed bugs
   - monsters with a melee attack no longer hurt you the instant you touch

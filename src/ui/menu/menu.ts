@@ -34,6 +34,7 @@ import { getPistolStart, setPistolStart } from '../../game/inventory.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
 import { requiredWads, wadLabel, type MissingWad, type SaveMeta, type SaveWadSet } from '../../game/savegames.ts';
 import { getProfilerVisible, setProfilerVisible } from '../devmode/profilerhud.ts';
+import { getFpsVisible, setFpsVisible } from '../devmode/debughud.ts';
 import type { AudioEngine } from '../../audio/audio.ts';
 import { DEVMODE, VERSION } from '../../constants.ts';
 
@@ -102,6 +103,7 @@ export class Menu {
   private infiniteTallCheckbox = el<HTMLInputElement>('infinitetall-checkbox');
   private dynLightsCheckbox = el<HTMLInputElement>('dynlights-checkbox');
   private pistolStartCheckbox = el<HTMLInputElement>('pistolstart-checkbox');
+  private fpsCheckbox = el<HTMLInputElement>('fps-checkbox');
   private profilerCheckbox = el<HTMLInputElement>('profiler-checkbox');
   private changelogRoot = el<HTMLDivElement>('changelog');
   private changelogText = el<HTMLPreElement>('changelog-text');
@@ -205,13 +207,13 @@ export class Menu {
     this.installInfiniteTall();
     this.installDynamicLights();
     this.installPistolStart();
+    this.installFps();
     this.installProfiler();
     this.installChangelog();
     this.setTab('newgame');
     this.setSettingsTab('general');
-    // DEVMODE never changes at runtime, so the dev-only rows are revealed once.
+    // DEVMODE never changes at runtime, so the dev-only row is revealed once.
     el<HTMLElement>('controls-dev').classList.toggle('hidden', !DEVMODE);
-    el<HTMLElement>('settings-dev').classList.toggle('hidden', !DEVMODE);
     el<HTMLSpanElement>('menu-version').textContent = `v${VERSION}`;
   }
 
@@ -449,7 +451,19 @@ export class Menu {
   }
 
   /**
-   * The profiling overlay's on/off switch, in the DEVMODE-only section of the
+   * The top-left status text's on/off switch, beside the profiler's in the
+   * Debug / Dev section. Like it, `setFpsVisible` applies to `#hud` itself, so
+   * it takes effect on the running level — see docs/menu.md § FPS counter.
+   */
+  private installFps(): void {
+    this.fpsCheckbox.checked = getFpsVisible();
+    this.fpsCheckbox.addEventListener('change', () => {
+      setFpsVisible(this.fpsCheckbox.checked);
+    });
+  }
+
+  /**
+   * The profiling overlay's on/off switch, in the Debug / Dev section of the
    * General sub-tab. `setProfilerVisible` applies it to `#profiler-hud` itself,
    * so it takes effect on the running level like volume and the fps cap — the
    * point of the checkbox being to get the panel out of the way mid-play.

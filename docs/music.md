@@ -337,7 +337,7 @@ synth with it, so a note still held at the last event can't hang across the loop
 A container-format track skips all of this and loops as a plain `AudioBufferSourceNode`.
 
 That main-thread cost is visible: `MusicPlayer.takeRenderMs` hands what it spent to the next frame,
-which reports it as the DEVMODE profiler's **`Music`** bar (docs/menu.md § Profiling overlay). A
+which reports it as the profiler overlay's **`Music`** bar (docs/menu.md § Profiling overlay). A
 chunk is a millisecond or two every quarter second — bursty, so the profiler spreads each report
 over the following frames rather than charging it to one, and the bar shows the per-frame average
 it really is (that section owns the spreading rule). The bar stays absent entirely for a container

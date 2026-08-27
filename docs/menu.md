@@ -587,8 +587,8 @@ player changing it are the same person on the same trip to the menu — which is
 move to General with the rest.
 
 **General is what is left once the other three have taken theirs**: Level start over Collision,
-stacked full width, with `#settings-dev` following them in a dev build. Level start leads because
-it is the one of the two a player picks *before* a run rather than sets once and forgets.
+stacked full width, with `Debug / Dev` following them. Level start leads because it is the one of
+the two a player picks *before* a run rather than sets once and forgets.
 
 **Visuals is Camera, Frame rate, Lighting** — everything that changes what the running level *looks*
 like, in that order: the camera first, being the one a player actually goes looking for.
@@ -622,10 +622,10 @@ start). What is left on General is exactly the two settings that change how the 
 is why neither belongs on the three tabs beside it. It applies to the level already running, like volume and the cap:
 `blockedByThings` reads the flag per call.
 
-General ends with **`#settings-dev`, a DEVMODE-only section holding the profiler overlay's
-checkbox** (§ Profiling overlay), revealed by the same set-once toggle `#controls-dev` gets. It
-takes the global `.hidden` (`display: none`) rather than the tab panels' `.inactive`, for the same
-reason: a hidden section must leave the flow rather than hold a gap under Collision.
+General ends with **`Debug / Dev`, the section holding the `FPS counter` and `Profiler overlay`
+checkboxes** (§ FPS counter, § Profiling overlay). It is shown in every build — both are
+player-facing settings, only their *defaults* follow `DEVMODE` — so unlike `#controls-dev` nothing
+toggles it at runtime.
 
 **The `Shift` row's description is the word autorun currently makes true** — `walk` when it's on,
 `run` when it's off — so `installAutorun` writes `#shift-action` from the same `show` helper that
@@ -646,11 +646,11 @@ which is why those descriptions are kept to a word or two. Move and fight stays 
 inside rather than a content-sized one a long map name would push past the panel.
 
 The rest is static markup with no `Menu` state — no field lookups, no listeners — except
-`#controls-dev`, the `N`/`P` map-jump row, which the constructor reveals when `DEVMODE` is set (as
-it does `#settings-dev` on General). `DEVMODE` can't change at runtime, so neither is ever
-re-checked. **Both take the global `.hidden` (`display: none`), not the tab panels' `.inactive`** —
-a panel has to keep reserving height, but a hidden section must drop out of the `.columns` flex line
-entirely (docs/styles.md § Hiding an element).
+`#controls-dev`, the `N`/`P` map-jump row, which the constructor reveals when `DEVMODE` is set.
+`DEVMODE` can't change at runtime, so it is never re-checked. **It takes the global `.hidden`
+(`display: none`), not the tab panels' `.inactive`** — a panel has to keep reserving height, but a
+hidden section must drop out of the `.columns` flex line entirely (docs/styles.md § Hiding an
+element).
 
 ## Right mouse button
 
@@ -684,6 +684,7 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.rightMouse` | `game/input.ts` (`getRightMouseAction`/`setRightMouseAction`) | § Right mouse button above |
 | `topdoom.cameraMode` | `game/autocamera.ts` (`getCameraMode`/`setCameraMode`) | docs/camera.md § Auto camera |
 | `topdoom.fpsCap` | `game.ts` (`getFpsCap`/`setFpsCap`) | docs/frameloop.md § The FPS cap |
+| `topdoom.fps` | `ui/devmode/debughud.ts` (`getFpsVisible`/`setFpsVisible`) | § FPS counter below |
 | `topdoom.profiler` | `ui/devmode/profilerhud.ts` (`getProfilerVisible`/`setProfilerVisible`) | § Profiling overlay below |
 | `topdoom.dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |
 | `topdoom.infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
@@ -799,34 +800,60 @@ Rules that hold this together:
 
 `DEVMODE` reads `import.meta.env.VITE_DEVMODE`, defaulting to `false`; set `VITE_DEVMODE=true` in a
 git-ignored `.env.local` at the repo root to turn it on (Vite loads `.env.local` itself, no plugin
-needed). It gates five things — three in `ui/devmode/` and two in `ui/menu/menu.ts` — all because a
+needed). It gates three things — two in `ui/devmode/` and one in `ui/menu/menu.ts` — all because a
 player has no legitimate reason to reach for them:
 
-- **The debug overlay** (`DebugHud.update`, whose lines come from `Game.debugLines`) — off, `#hud`
-  shows only the fps counter; on, the full
-  map/pos/sector/camera-state/awake-monster-count block. **Everything it prints is live state.** The
+- **What `#hud` says** (`DebugHud.update`, whose lines come from `Game.debugLines`) — off, the
+  element shows only the fps counter; on, the full
+  map/pos/sector/camera-state/awake-monster-count block. `DEVMODE` decides how much that text says,
+  **not** whether it shows at all — that is the player's own setting (§ FPS counter below), which is
+  why the `visible` check sits ahead of the `!DEVMODE` branch. **Everything it prints is live
+  state.** The
   last line is the auto camera's own readout — `autoCameraReadout` in `game/autocamera.ts`, which
   lives beside the getters it prints rather than in `game.ts` (docs/camera.md § Auto camera), and
   reads `manual` in the other camera mode. It used to end with two static hotkey hint lines as well,
   which were the game's only controls reference and so invisible to exactly the players who needed
   them; that list is now the menu's Settings tab (docs/menu.md § Settings tab).
-- **The profiling overlay** (`#profiler-hud`, below) — shown when `DEVMODE` *and* its checkbox agree.
 - **The Settings tab's `#controls-dev` section**, the only place `N`/`P` is listed in the UI —
   revealed once in the `Menu` constructor, so a shipped build never advertises a key it ignores.
-- **The General sub-tab's `#settings-dev` section**, the profiler checkbox — revealed by that same
-  constructor line, for the same reason.
 - **`N`/`P` (jump to next/prev map)** in `handleHotkeys` — behind the early-return on `!DEVMODE`, so
   they are simply inert outside dev mode. `+`/`-` (camera distance) and `[`/`]` (camera tilt)
   deliberately sit *ahead* of that gate: they are player-facing framing controls, not debug state,
   and gating them only meant a shipped player couldn't adjust how much of the level fits on screen.
 
+Neither the profiling overlay nor the status text's visibility is on that list: `DEVMODE` only picks
+the default of each, and a player can turn either on in any build (§ FPS counter, § Profiling
+overlay below).
+
 `Game.debugLines` reports `ThingLayer.awakeMonsterCount()` — the number of living monsters
 currently alerted (chasing/attacking, or mid-`reactionTicks` delay) — useful for judging whether a
 level's population has actually noticed the player.
 
+## FPS counter
+
+`#hud`, top-left, is the one element two settings meet on: **whether it shows** is the player's
+`FPS counter` checkbox, **what it says** is `DEVMODE` (§ Dev mode above) — the bare `N fps` outside
+dev mode, the full status block inside it. One switch for the whole element, not one per line: in a
+dev build the fps *is* that block's first line, so splitting them would need `Game.debugLines` cut in
+two for a distinction nobody asked the menu for.
+
+The setting is `debughud.ts`'s own (`topdoom.fps`, `getFpsVisible`/`setFpsVisible`) and **defaults to
+`DEVMODE`** — on in a dev build, off in a shipped one, a stored `'1'`/`'0'` overriding that either
+way. It is deliberately the same rule the profiling overlay follows, and for the same reason: both
+are diagnostics a player may want and neither should be on top of a shipped game unasked. **This is a
+change from the counter always being drawn**, which is what every build did before the checkbox
+existed.
+
+`applyFpsVisible` is the single writer of `#hud`'s `visible` class, called by `DebugHud`'s
+constructor to seed it for the level starting and by the checkbox to change it live; debughud.css
+shows the element by that same class, and **`DebugHud.update` early-returns on it**, so a hidden
+counter costs no per-frame DOM write and never runs the `details` closure. The frame *counting*
+ahead of that return is not gated — three arithmetic operations, and skipping them would make a
+counter switched on mid-level read a rate built from its first half second.
+
 ## Profiling overlay
 
-A third DEVMODE-gated panel, top-right, breaks a frame's cost down by category — `Specials`, `Player`,
+A panel of its own, top-right, breaks a frame's cost down by category — `Specials`, `Player`,
 `Weapons`, `Fog of War`, `Monsters`, `Effects`, `Fading`, `Render`, `Music`, plus an `Other` bucket for
 whatever wasn't explicitly measured (input handling, HUD text, the player sprite's own pose) — so a slow
 frame can be traced to *which* system is responsible rather than just how many fps it costs.
@@ -898,21 +925,24 @@ Every label is smoothed with a plain exponential moving average rather than show
 reasoning as `util/damping.ts`'s `dampen`: a single frame's timing is noisy (GC pauses, OS scheduling),
 and an unsmoothed bar graph would flicker faster than it could be read.
 
-**Measurement itself is not gated behind `DEVMODE`** — `performance.now()` calls are cheap enough not to
-bother branching around, the same call the fps counter already makes. Only the DOM panel's visibility
-and whether `DebugHud.update` bothers pushing samples to it are. `Game.debugLines` is passed as a
-closure for the same reason: its body walks the BSP for the player's sector, and must not run when
-the panel is off.
+**Measurement itself is not gated** — `performance.now()` calls are cheap enough not to bother
+branching around, the same call the fps counter already makes. The `visible` class is the only skip,
+and `ProfilerHud.update` takes the `FrameProfiler` rather than its `samples()` so that a hidden panel
+does not build the array and its per-label objects every frame — which is the default outside dev
+mode. `Game.debugLines` is a closure for the same shape of reason, but a DEVMODE one: its body walks
+the BSP for the player's sector and must not run when the *debug* text is off.
 
-**The panel can be switched off inside a dev build too**, from the General sub-tab's dev section
-(`#profiler-checkbox`), since the overlay covers the top-right corner of the level. The setting is
-`profilerhud.ts`'s own (`topdoom.profiler`, `getProfilerVisible`/`setProfilerVisible`) and
-**defaults on**, so a dev build behaves as it did before the checkbox existed; only an explicit
-`'0'` hides it. `applyProfilerVisible` is the single writer of `#profiler-hud`'s `visible` class —
-`DEVMODE && getProfilerVisible()` — called by `DebugHud`'s constructor to seed it and by the
-checkbox to change it live. **That class is also what `ProfilerHud.update` early-returns on**, so a
-hidden panel costs no per-frame DOM writes and the CSS and the render path can't disagree about
-whether the overlay is up.
+**The checkbox alone decides whether the panel is up** — General's `Debug / Dev` section
+(`#profiler-checkbox`), in every build, since the overlay covers the top-right corner of the level.
+The setting is `profilerhud.ts`'s own (`topdoom.profiler`,
+`getProfilerVisible`/`setProfilerVisible`) and **defaults to `DEVMODE`**: on in a dev build, as it
+behaved before the checkbox existed, off in a shipped one — a stored `'1'`/`'0'` overrides that
+either way. `applyProfilerVisible` is the single writer of `#profiler-hud`'s `visible` class, called
+by `ProfilerHud`'s constructor to seed it for the level starting and by the checkbox to change it
+live. **That class is also what `ProfilerHud.update` early-returns on**, so a hidden panel costs no
+per-frame DOM writes and the CSS and the render path can't disagree about whether the overlay is up.
+`Game` owns the `ProfilerHud` directly — not `DebugHud`, which is DEVMODE's — and reads the same
+setting to decide whether to run the GPU timer query at all.
 
 `ProfilerHud` renders each category as a horizontal bar sized against one 60fps frame's budget (16.6ms)
 rather than against each other — a bar reaching full width means that category *alone* would miss the

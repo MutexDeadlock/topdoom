@@ -1,8 +1,8 @@
 /**
- * The DEVMODE profiling overlay: per-category frame-time bars against the 60fps budget.
+ * The profiling overlay: per-category frame-time bars against the 60fps budget.
  * See docs/menu.md § Profiling overlay.
  */
-import type { ProfileSample } from '../../util/profiler.ts';
+import type { FrameProfiler } from '../../util/profiler.ts';
 import { DEVMODE } from '../../constants.ts';
 
 /** A category's bar fills its row at this many ms — one whole 60fps frame budget, so a bar reaching full width means that category alone would miss it. */
@@ -18,14 +18,18 @@ const PROFILER_STORAGE_KEY = 'topdoom.profiler';
 let visible: boolean | null = null;
 
 /**
- * Whether the overlay is wanted, DEVMODE permitting. Defaults **on**, so a dev
- * build behaves as it did before the checkbox existed; only an explicit `'0'`
- * hides it. See docs/menu.md § Profiling overlay.
+ * Whether the overlay is wanted. Defaults to `DEVMODE` — a dev build shows it
+ * as it did before the checkbox existed, a release build starts hidden — and a
+ * stored choice overrides that either way. See docs/menu.md § Profiling overlay.
  */
 export function getProfilerVisible(): boolean {
   // Memoized because `Game.draw` asks every frame to decide whether to run the GPU timer, and the
-  // setting only ever moves through `setProfilerVisible` below.
-  visible ??= globalThis.localStorage?.getItem(PROFILER_STORAGE_KEY) !== '0';
+  // setting only ever moves through `setProfilerVisible` below — so the read stays inside the
+  // `null` check rather than running ahead of a `??=`.
+  if (visible === null) {
+    const stored = globalThis.localStorage?.getItem(PROFILER_STORAGE_KEY);
+    visible = stored == null ? DEVMODE : stored === '1';
+  }
   return visible;
 }
 
@@ -36,13 +40,13 @@ export function setProfilerVisible(on: boolean): void {
 }
 
 /**
- * Puts the setting on `#profiler-hud`'s class, which is both what devmode.css
- * shows the panel by and what `ProfilerHud.update` reads to skip its work — so
- * the two can't disagree about whether the overlay is up. Safe to call before
- * any `ProfilerHud` exists: the element is static markup.
+ * Puts the setting on `#profiler-hud`'s class, which is both what
+ * profilerhud.css shows the panel by and what `ProfilerHud.update` reads to
+ * skip its work — so the two can't disagree about whether the overlay is up.
+ * Safe to call before any `ProfilerHud` exists: the element is static markup.
  */
 export function applyProfilerVisible(): void {
-  document.getElementById('profiler-hud')?.classList.toggle('visible', DEVMODE && getProfilerVisible());
+  document.getElementById('profiler-hud')?.classList.toggle('visible', getProfilerVisible());
 }
 
 /**
@@ -54,7 +58,7 @@ function msRow(label: string, ms: number): string {
 }
 
 /**
- * DEVMODE's per-category timing overlay (top-right — see devmode.css). Renders
+ * The per-category timing overlay (top-right — see profilerhud.css). Renders
  * `FrameProfiler`'s smoothed samples as horizontal bars sized against one
  * 60fps frame's budget rather than against each other, so a glance at bar
  * *length* (not just the ms text) says whether a category is comfortably
@@ -82,12 +86,21 @@ export class ProfilerHud {
     // without clearing the row container first, the previous instance's rows
     // stay put above this one's, reading as a second stacked overlay.
     this.rowsEl.replaceChildren();
+    // The menu's checkbox owns the setting and toggles the same class live, so
+    // this only has to seed it for the level starting now.
+    applyProfilerVisible();
   }
 
-  update(samples: ProfileSample[], totalMs: number, gpuMs: number | null): void {
+  /**
+   * Takes the `FrameProfiler` rather than its `samples()`, so the array and its
+   * per-label objects are only built once past the early return below — a
+   * hidden panel is the default outside dev mode, and this runs every frame.
+   */
+  update(profiler: FrameProfiler, gpuMs: number | null): void {
     // Toggled off in the menu: nothing on screen to update, and the panel's own
     // class is the single source of that (`applyProfilerVisible`).
     if (!this.root.classList.contains('visible')) return;
+    const totalMs = profiler.totalMs;
     // Named `cpu`, not `frame`: every row here is main-thread wall clock inside the rAF callback,
     // which cannot see the GPU — a scene whose fragment work takes 20 ms still reports a few
     // milliseconds and a four-figure "fps eq." while the game runs at 50. The HUD's own FPS
@@ -99,7 +112,7 @@ export class ProfilerHud {
     // reading where the browser withholds `EXT_disjoint_timer_query_webgl2`, which is common.
     this.gpuEl.textContent = gpuMs === null ? 'gpu n/a' : msRow('gpu', gpuMs);
 
-    const sorted = [...samples].sort((a, b) => b.ms - a.ms);
+    const sorted = profiler.samples().sort((a, b) => b.ms - a.ms);
     for (const s of sorted) {
       let entry = this.rows.get(s.label);
       if (!entry) {

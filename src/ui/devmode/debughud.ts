@@ -1,10 +1,9 @@
 /**
  * The top-left status text, the fps counter behind it, and the debug hotkeys —
- * all of which collapse to "`N` fps" and the camera framing keys once DEVMODE
- * is off. See docs/menu.md § Dev mode.
+ * the text collapsing to "`N` fps" and the hotkeys to the camera framing keys
+ * once DEVMODE is off. Whether the text shows at all is the player's own
+ * setting. See docs/menu.md § Dev mode and § FPS counter.
  */
-import { applyProfilerVisible, ProfilerHud } from './profilerhud.ts';
-import type { FrameProfiler } from '../../util/profiler.ts';
 import type { Input } from '../../game/input.ts';
 import type { TopDownCamera } from '../../render/camera.ts';
 import { getCameraMode } from '../../game/autocamera.ts';
@@ -37,17 +36,49 @@ export function handleHotkeys(
   if (input.pressed('KeyP')) changeMap(-1);
 }
 
+const FPS_STORAGE_KEY = 'topdoom.fps';
+
+/** `getFpsVisible`'s memo of the stored setting; null until first read. */
+let fpsVisible: boolean | null = null;
+
+/**
+ * Whether the top-left status text is wanted. Defaults to `DEVMODE`, like the
+ * profiling overlay's own setting, and a stored choice overrides that either
+ * way. See docs/menu.md § FPS counter.
+ */
+export function getFpsVisible(): boolean {
+  if (fpsVisible === null) {
+    const stored = globalThis.localStorage?.getItem(FPS_STORAGE_KEY);
+    fpsVisible = stored == null ? DEVMODE : stored === '1';
+  }
+  return fpsVisible;
+}
+
+export function setFpsVisible(on: boolean): void {
+  fpsVisible = on;
+  globalThis.localStorage?.setItem(FPS_STORAGE_KEY, on ? '1' : '0');
+  applyFpsVisible();
+}
+
+/**
+ * Puts the setting on `#hud`'s class — what debughud.css shows the text by and
+ * what `DebugHud.update` reads to skip its work, so the two can't disagree.
+ * Safe to call before any `DebugHud` exists: the element is static markup.
+ */
+export function applyFpsVisible(): void {
+  document.getElementById('hud')?.classList.toggle('visible', getFpsVisible());
+}
+
 export class DebugHud {
   private el = document.getElementById('hud')!;
-  private profilerHud = new ProfilerHud();
   private accum = 0;
   private frames = 0;
   private fps = 0;
 
   constructor() {
-    // DEVMODE gates it, the menu's checkbox decides within that — the menu
-    // toggles the same class live, so this only has to seed it.
-    applyProfilerVisible();
+    // The menu's checkbox owns the setting and toggles the same class live, so
+    // this only has to seed it for the level starting now.
+    applyFpsVisible();
   }
 
   /**
@@ -59,7 +90,9 @@ export class DebugHud {
    * which walks the BSP for the player's sector, among other things — only
    * runs when the panel is actually shown.
    */
-  update(rawDt: number, profiler: FrameProfiler, gpuMs: number | null, details: (fps: number) => string[]): void {
+  update(rawDt: number, details: (fps: number) => string[]): void {
+    // Counted even while hidden, so switching the text on mid-level reads a
+    // real rate rather than one built from that first half second.
     this.accum += rawDt;
     this.frames++;
     if (this.accum >= 0.5) {
@@ -67,11 +100,9 @@ export class DebugHud {
       this.accum = 0;
       this.frames = 0;
     }
-    if (!DEVMODE) {
-      this.el.textContent = `${this.fps} fps`;
-      return;
-    }
-    this.el.textContent = details(this.fps).join('\n');
-    this.profilerHud.update(profiler.samples(), profiler.totalMs, gpuMs);
+    // Switched off in the menu: nothing on screen to write, and the element's
+    // own class is the single source of that (`applyFpsVisible`).
+    if (!this.el.classList.contains('visible')) return;
+    this.el.textContent = DEVMODE ? details(this.fps).join('\n') : `${this.fps} fps`;
   }
 }

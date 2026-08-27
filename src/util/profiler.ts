@@ -1,5 +1,5 @@
 /**
- * The per-frame timing `game.ts` feeds and DEVMODE's overlay reads back — the measuring side
+ * The per-frame timing `game.ts` feeds and the profiler overlay reads back — the measuring side
  * only, with no UI of its own. See docs/menu.md § Profiling overlay.
  */
 
@@ -36,7 +36,7 @@ const OFF_FRAME_SPREAD = 0.12;
 const OFF_FRAME_PENDING_CAP = 32;
 
 /**
- * Per-frame wall-clock breakdown DEVMODE's profiler overlay reads from
+ * Per-frame wall-clock breakdown the profiler overlay reads from
  * (`ui/devmode/profilerhud.ts`). A single frame's timing is noisy (GC pauses, OS
  * scheduling, browser compositing) — showing it raw would make the overlay's
  * bars flicker too fast to read anything useful out of them, so every label

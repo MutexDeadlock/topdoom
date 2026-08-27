@@ -78,7 +78,7 @@ import { applyDehacked, resetDehacked } from './game/dehacked/apply.ts';
 import { LevelProgression } from './wad/campaign/progression.ts';
 import { CenterMessage, lockedLineMessage, SECRET_MESSAGE } from './ui/hud/message.ts';
 import { DebugHud, handleHotkeys } from './ui/devmode/debughud.ts';
-import { getProfilerVisible } from './ui/devmode/profilerhud.ts';
+import { getProfilerVisible, ProfilerHud } from './ui/devmode/profilerhud.ts';
 import { ScreenEffects } from './ui/hud/screeneffects.ts';
 import { DeathOverlay } from './ui/hud/deathoverlay.ts';
 import { FrameProfiler } from './util/profiler.ts';
@@ -115,7 +115,7 @@ import { MusicBank } from './wad/music.ts';
 import { MapInfo } from './wad/campaign/mapinfo.ts';
 import { LevelMusic } from './audio/music.ts';
 import type { Pos2 } from './types.ts';
-import { DEVMODE, DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
+import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
 
 /**
  * The simulation's fixed step. Every gameplay system advances by exactly this
@@ -325,10 +325,11 @@ export class Game {
   private progression: LevelProgression;
   /**
    * Measurement itself always runs — `performance.now()` calls are cheap enough
-   * not to bother gating; only `DebugHud`'s decision to render the samples is
-   * DEVMODE-gated.
+   * not to bother gating; only what `ProfilerHud` draws of it follows the
+   * overlay's setting.
    */
   private profiler = new FrameProfiler();
+  private profilerHud = new ProfilerHud();
   private debugHud = new DebugHud();
   private screenEffects: ScreenEffects;
   private deathOverlay: DeathOverlay;
@@ -1559,7 +1560,7 @@ export class Game {
 
     // Measured only while the overlay is up: a timer query is cheap but not free, and nothing
     // reads the answer otherwise. docs/menu.md § Profiling overlay.
-    const gpu = DEVMODE && getProfilerVisible() ? this.view.gpuTimer : null;
+    const gpu = getProfilerVisible() ? this.view.gpuTimer : null;
     this.profiler.time('Render', () => {
       gpu?.begin();
       this.view.renderer.render(this.scene, camera.camera);
@@ -1571,7 +1572,8 @@ export class Game {
     this.profiler.offFrame('Music', this.audio.music.takeRenderMs());
     this.profiler.endFrame();
 
-    this.debugHud.update(rawDt, this.profiler, gpu?.ms ?? null, (fps) => this.debugLines(fps));
+    this.profilerHud.update(this.profiler, gpu?.ms ?? null);
+    this.debugHud.update(rawDt, (fps) => this.debugLines(fps));
   }
 
   /**

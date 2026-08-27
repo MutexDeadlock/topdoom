@@ -1,6 +1,7 @@
-/* The DEVMODE status text and fps counter — src/ui/devmode/debughud.ts. */
+/* The status text and the fps counter behind it — src/ui/devmode/debughud.ts. */
 
 #hud {
+  display: none;
   position: fixed;
   left: 12px;
   top: 12px;
@@ -9,4 +10,8 @@
   pointer-events: none;
   white-space: pre;
   z-index: var(--z-hud);
+}
+
+#hud.visible {
+  display: block;
 }

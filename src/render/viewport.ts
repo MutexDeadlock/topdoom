@@ -11,7 +11,7 @@ export class Viewport {
   readonly renderer: THREE.WebGLRenderer;
   readonly camera: TopDownCamera;
   readonly input: Input;
-  /** GPU time for the DEVMODE profiler, measured around the render call — see docs/menu.md § Profiling overlay. */
+  /** GPU time for the profiler overlay, measured around the render call — see docs/menu.md § Profiling overlay. */
   readonly gpuTimer: GpuTimer;
 
   constructor(container: HTMLElement) {

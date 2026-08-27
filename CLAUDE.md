@@ -63,12 +63,6 @@ src/wad/       WAD files, merged lump directory, content ids (checksum), map lum
                dynamic-light definitions (gldefs), what the text lumps share before each grammar
                takes over (textlump), whether this engine can run a file at all (support), what a
                file holds without loading it (describe), the menu's WAD library
-src/wad/map/         the two lump formats `map.ts` normalizes behind a seam: the BSP encodings
-               (nodes), Hexen's LINEDEFS/THINGS (hexen)
-src/wad/campaign/    the MAPINFO lump family parsed once (mapinfo), level titles + the vanilla
-               title tables (names), par times (pars), where each exit leads (progression)
-src/wad/library/     the player's own WAD folder: picking and walking it (disk), its handle and
-               scan memo remembered between visits (store)
 src/render/    BSP polygon reconstruction (bsp) and the linedef-side answers it can't ask the tree
                for (sectorprobe), the solids a map draws as void (solids), mesh building, materials
                + texture animation, occlusion fading, sprite billboards + their instanced batching,
@@ -78,37 +72,9 @@ src/game/      spatial queries + collision, player controller, input, the auto c
                skill level changes (skill), thing world state, fog of war, inventory/pickups,
                weapons and firing, shots in flight + splash, damage/death, transient effects,
                voodoo dolls, best times, savegames (the snapshot shape, the IndexedDB store)
-src/game/dehacked/   the parsed-patch record shapes (defs), the DEH text parser (parse), the
-               mobjinfo/weapon/ammo/sfx index bridges + the coverage classifiers (tables), vanilla's
-               states[]/sprnames[] as data (states), the A_* action pointers (actions), the pure
-               chain walker both the game tables and a patch derive through (frames), the applier
-               (apply) — a second entry point, so reading a patch pulls in no game table
-src/game/monsters/   record shapes + pure helpers (defs), the vanilla stat tables (tables),
-               chase/attack decisions (ai), attack resolution (attacks), the arch-vile (vile),
-               MAP30's cube spitter (iconofsin)
-src/game/things/     the named doomednums every type-keyed table keys through (doomednums), the
-               thing layer's record shapes (defs) + its WAD-derived tables (tables), monster/corpse
-               spatial index (grid)
-src/game/specials/   the record shapes + their speeds/waits (defs) and the vanilla linedef/sector
-               numbers keyed onto them (tables), Boom's bitfield linedefs (generalized) + sector
-               types (sectortypes), what a line changes about how a sector is drawn (transfers),
-               load-time map analysis (mapscan), mover meshes + relighting (movergeometry), mover
-               obstruction + crush damage (moverblocking), damage floors + secrets (sectoreffects),
-               where the cursor's aim ray meets a shoot-triggered line (shootaim), the always-on
-               parameter lines (forces)
-src/game/spritefx/   the one-shot effect + projectile record shapes and their flight helpers
-               (defs), the effects' sprite/sound/timing tables (tables)
 src/audio/     vanilla's sound table, the emitter game systems raise sounds through, WebAudio
                playback (channels, attenuation, pan, volume), the level's music
-src/audio/music/     the OPL chip emulation (opl), MUS + MIDI score decoding (mus, midi) into the
-               shared event stream (defs), the MIDI-to-register synth (synth), S_music[] and DMX's
-               volume curve (tables)
 src/ui/        the page's own chrome (base styles + tokens, the loading and fatal-error screens)
-src/ui/hud/          everything over the running level: HUD, level card, intermission, center
-               messages, screen tints/pain flash, death overlay, crosshair, WadFont glyphs
-src/ui/menu/         start menu + changelog popup, the WAD Library overlay (library), the Save and
-               Load tabs (savegames), press-and-hold confirm (hold), the row strings (labels)
-src/ui/devmode/      DEVMODE hud + hotkeys (debughud), profiling overlay (profilerhud)
 src/util/      helpers shared across layers: 2D geometry, damped-lerp smoothing, per-frame
                profiling, IndexedDB request plumbing (idb, shared by the save store and the WAD
                library), raw DEFLATE (inflate, for compressed nodes), vanilla's random table — the

@@ -12,6 +12,7 @@ Features and improvements
     browser's focus ring
   - profiler overlay and fps count can be switched on/off in any environment: 
     Settings -> General -> Debug / Dev (off by default)
+  - new app- and favicon
 
 Fixed bugs
   - monsters with a melee attack no longer hurt you the instant you touch

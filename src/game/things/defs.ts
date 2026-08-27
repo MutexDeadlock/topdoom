@@ -615,13 +615,11 @@ export function monstersTelefrag(mapName: string): boolean {
 export const MAX_SKULLS_ON_LEVEL = 20;
 
 /**
- * What `ThingType.barrel` (vanilla `MT_BARREL`) runs on. Unlike every monster, a barrel has no AI
- * at all — `MONSTER_STATS` has no entry for it, so it never enters the `if (stats && player)`
- * branch in `update()`, and these constants stand in for the `mobjinfo` fields that branch would
- * otherwise have read. It's just a plain `MF_SOLID|MF_SHOOTABLE` prop that happens to deal splash
- * damage on death.
+ * Health a barrel spawns with — `MT_BARREL`'s `spawnhealth`, and the first of the four `BARREL_*`
+ * stats. A barrel has no AI at all: `MONSTER_STATS` has no entry for it, so it never enters the
+ * `if (stats && player)` branch in `update()`, and these four stand in for the stats that branch
+ * would otherwise have read. It is a plain solid, shootable prop that deals splash damage on death.
  */
-/** Vanilla `mobjinfo` spawnhealth for `MT_BARREL`. */
 export const BARREL_HEALTH = 20;
 /**
  * Vanilla `MT_BARREL`'s own `radius` (10 map units) — real and much smaller

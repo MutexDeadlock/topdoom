@@ -115,6 +115,41 @@ time, which hoisting would destroy.
 **No section-banner comments.** There are zero in the tree (`// ─────`, `// === X ===`) and there
 should stay zero; grouping is carried by the JSDoc on each symbol.
 
+## Comment shape
+
+CLAUDE.md § Code comments has the three tiers and the header rule. These are the shape rules a
+sweep of `specials/`, `render/` and `things/` turned into repeat findings — each is here because it
+was violated more than once.
+
+**The subject is our code.** A comment says what *this* code does; a vanilla, Boom or GZDoom
+reference is a supporting clause, never the subject. `Vanilla's P_PlayerInSpecialSector — the
+sector specials that need no mover` inverts it and reads as documentation of another engine;
+`The sector specials that need no mover at all … (vanilla's P_PlayerInSpecialSector)` does not.
+The test: **delete the foreign name — if nothing is left, the comment was not earning its place.**
+`/** Vanilla `player->secretcount`. */` on a field named `secretsFound` fails it outright.
+
+This is not a licence to drop citations. A transcribed table, a derived constant and a deliberate
+deviation all still name their source (CLAUDE.md's constants and fidelity rules), and a file that
+*is* a transcription — `audio/sfx.ts`, `wad/campaign/pars.ts`, `specials/generalized.ts` — says so
+in its header, because that is what the file owns. A citation names a source the project trusts:
+the real source, never the Doom wiki alone.
+
+**A doc block belongs to a declaration.** Never stack two `/** */` blocks, and never let one drift
+off what it documents when something is inserted between. Both read as a doc on the wrong symbol,
+and editors show them that way. A group of related constants carries its rationale on the first
+one's JSDoc, per § Source order inside a file — not in a free-floating block above the group.
+
+**State what is true, not what changed.** No "now", "used to", "was tried", "turned out" — those
+date the comment and describe an edit rather than the code. How a bug was found and what was tried
+first belong in the commit message. A decision worth protecting from a well-meaning revert says it
+is deliberate and points at the doc that argues it: *"deliberately not a linear scan however rare
+arch-viles seem — docs/monster-ai.md § Spatial indexing has the map that disproves it."*
+
+**Parallel fields may repeat a comment; arguments may not.** Two sibling fields documented in the
+same words are fine and often better (`WallQuad.baseAlpha` / `FlatSurface.baseAlpha`). An
+*argument* stated at two sites is the tier-1 violation: state it once in the doc, and leave each
+site the fact plus `docs/x.md § heading`.
+
 ## Imports
 
 Every relative import carries an explicit `.ts` extension — `allowImportingTsExtensions` plus Node

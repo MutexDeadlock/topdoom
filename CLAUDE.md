@@ -240,4 +240,7 @@ by what breaks if they're missing:
    rule already requires.
 
 When a doc-owned comment holds something the doc lacks, move it into the doc instead of keeping
-both.
+both. **A comment's subject is our code**, with any vanilla/Boom/GZDoom name as a supporting clause
+— delete the foreign name and something must be left. That rule and the rest of the comment shape
+(doc blocks stay attached to their declaration; state what is true, not what changed) are
+docs/conventions.md § Comment shape.

@@ -1592,8 +1592,8 @@ export function buildThingSprites(
       // or the widest monsters — the ones the subtraction matters most for —
       // would never be considered.
       grid.forEachMonsterNear(pos.x, pos.y, radius + grid.maxBodyRadius(), (p) => {
-        // blockerGrid also carries SOLID_DECORATION_TYPES now (movement only) — not MF_SHOOTABLE
-        // in vanilla, so a projectile must not strike one.
+        // The grid this walks holds solid decorations too, and those block
+        // movement but not shots — docs/monster-ai.md § Spatial indexing.
         if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
         if (blastDistanceToBox(pos.x, pos.y, p.x, p.y, p.blockRadius) >= radius) return;
         out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius, height: p.bodyHeight });
@@ -1610,8 +1610,8 @@ export function buildThingSprites(
       const midY = (from.y + to.y) / 2;
       const half = Math.hypot(to.x - from.x, to.y - from.y) / 2;
       grid.forEachMonsterNear(midX, midY, half + boxReach(reach + grid.maxBodyRadius()), (p) => {
-        // blockerGrid also carries SOLID_DECORATION_TYPES now (movement only) — not MF_SHOOTABLE
-        // in vanilla, so a projectile must not strike one.
+        // The grid this walks holds solid decorations too, and those block
+        // movement but not shots — docs/monster-ai.md § Spatial indexing.
         if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
         if (segmentEntersBox(from.x, from.y, to.x, to.y, p.x, p.y, p.blockRadius + reach) === null) return;
         out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius, height: p.bodyHeight });
@@ -1694,8 +1694,8 @@ export function buildThingSprites(
       // now tested at its own radius rather than one shared 24 units.
       const clearance = boxReach(grid.maxBodyRadius());
       grid.forEachMonsterAlongRay(origin.x, origin.y, dx, dy, maxDist, clearance, (p) => {
-        // blockerGrid also carries SOLID_DECORATION_TYPES now (movement only) — not MF_SHOOTABLE
-        // in vanilla, so a hitscan must pass through one rather than stopping on it.
+        // The grid this walks holds solid decorations too, and those block
+        // movement but not shots — docs/monster-ai.md § Spatial indexing.
         if (p.dead || SOLID_DECORATION_TYPES.has(p.type)) return;
         if (p.id === opts?.ignoreId) return;
         // Fog of war is a *player*-facing conceit; a monster shooting another

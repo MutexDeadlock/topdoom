@@ -134,11 +134,9 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
   const blockerDirty: number[] = [];
 
   /**
-   * Raisable corpses bucketed into `blockerGrid`'s cell grid, filled in the
-   * same `posed` pass. Backs `findRaisableCorpse`, which was a linear scan on
-   * the unverified assumption that arch-viles are rare — they aren't on every
-   * map, and it cost most of a frame there. docs/monster-ai.md § Spatial
-   * indexing.
+   * Raisable corpses bucketed into `blockerGrid`'s cell grid, filled in the same `posed` pass.
+   * Backs `findRaisableCorpse`, which is deliberately not a linear scan however rare arch-viles
+   * seem — docs/monster-ai.md § Spatial indexing has the map that disproves it.
    */
   const corpseGrid: PosedThing[][] = new Array(blockerCols * blockerRows);
   /** Indices of the cells that actually have anything in them, so a rebuild clears only those instead of walking the whole grid. */

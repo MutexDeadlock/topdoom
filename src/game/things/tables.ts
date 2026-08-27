@@ -288,7 +288,7 @@ export const BOSS_DEATH_TYPES = {
   arachnotron: ThingType.arachnotron,
 } as const;
 
-/** Vanilla `mobjinfo` spawn health, confirmed against the Doom Wiki's monster table. */
+/** Health each monster spawns with — `mobjinfo.spawnhealth`, confirmed against `linuxdoom-1.10/info.c`. */
 export const MONSTER_HEALTH: Record<number, number> = {
   [ThingType.zombieman]: 20,
   [ThingType.shotgunGuy]: 30,

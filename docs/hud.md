@@ -312,8 +312,8 @@ Control flow, continuing § Intermission's:
 
 ## Best times
 
-`src/game/besttimes.ts` persists one best completion time per level under `topdoom.bestTimes`
-(docs/menu.md § Persisted settings), and the popup shows it: a `Best time mm:ss` line on an ordinary run,
+`src/game/besttimes.ts` persists one best completion time per level (§ The store below), and the
+popup shows it: a `Best time mm:ss` line on an ordinary run,
 or a green `NEW BEST TIME!` with the beaten time as `Previous mm:ss` when the record falls. The
 clock stays yellow either way — the record line is what announces one, and recoloring the number
 too said the same thing twice. A first-ever completion is a record and so has no `Previous` line to
@@ -339,9 +339,48 @@ Three rules about what counts:
   the popup renders either way — the store and the popup never form separate opinions about which
   time is the best one.
 
-The table is one JSON blob, capped at `MAX_RECORDS` with the oldest evicted first, and validated per
-entry on read: a single hand-edited or malformed record is dropped rather than the whole table,
-since losing one level's time should not cost every other level's.
+### The store
+
+The records live in **`topdoom-besttimes`**, their own IndexedDB database (docs/menu.md § Persisted
+settings), one row per level keyed by `bestTimeKey` — rows rather than one blob so an eviction
+deletes what it evicts. Its own database, deliberately not a `DB_VERSION` bump on the one holding
+savegames: an upgrade that fails here must not be able to take saves down with it, the same split
+`wad/library/store.ts` keeps. The request plumbing is `util/idb.ts`'s, and `savestore.ts`'s
+auto-commit rule applies unchanged — nothing may `await` between opening a transaction and issuing
+its requests.
+
+**The database is read once, into a `Map` the session then answers from.** `loadBestTimes` is
+awaited on the boot path, before anything can reach an exit, so `readBestTime`/`recordBestTime` stay
+synchronous for the one frame that ends a level: the intermission decides what to draw in that
+frame, and an async store would push the comparison a frame past the popup it belongs to. Writes go
+the other way — fire-and-forget, queued one at a time in call order, since the popup must not wait
+on storage and a refused write costs the record, not the run. `setBestTimeBackend` is the test seam,
+in `savegames.ts`'s shape.
+
+The table is capped at `MAX_RECORDS` with the oldest evicted first — computed against the cache and
+sent as deletes in the same transaction as the write that overflowed it — and validated per row on
+read: a single hand-edited or malformed record is dropped rather than the whole table, since losing
+one level's time should not cost every other level's.
+
+A browser that refuses IndexedDB plays on with no records rather than failing to boot: `load` never
+rejects.
+
+### Migration off `localStorage`
+
+Records used to be one JSON blob under `topdoom.bestTimes`. `loadBestTimes` still reads that key,
+folds what it holds into the database, and **then** removes it. Two rules make the one-way move
+safe:
+
+- **The blob is removed only after the write lands.** With the database refusing — private mode,
+  storage pressure — dropping it would throw away times with nowhere to put them, so it stays for
+  the next visit and the session plays off it in memory. Which is why a failed *read* is
+  distinguished from an empty database: only a database that answered may let the blob go.
+- **A migrated entry only wins where the database has nothing better for that key.** The two can
+  only disagree if the blob outlived a browser that had already migrated once, and the faster time
+  is the true record either way.
+
+A blob that is unparseable, of the wrong shape, or entirely malformed migrates nothing and is
+dropped like any other — there is nothing in it to keep.
 
 ## Center messages
 

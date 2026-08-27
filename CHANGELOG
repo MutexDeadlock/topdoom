@@ -13,6 +13,8 @@ Features and improvements
   - profiler overlay and fps count can be switched on/off in any environment: 
     Settings -> General -> Debug / Dev (off by default)
   - new app- and favicon
+  - best times moved from localStorage into IndexedDB; existing times are
+    migrated on the next visit
 
 Fixed bugs
   - monsters with a melee attack no longer hurt you the instant you touch

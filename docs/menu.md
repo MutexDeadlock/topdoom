@@ -691,17 +691,20 @@ getter/setter; the exceptions are skill and the WAD selection, which belong to t
 | `topdoom.pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |
 | `topdoom.skill` | `ui/menu/menu.ts` | § Difficulty above |
 | `topdoom.selection` | `ui/menu/menu.ts` | § Remembered selection below |
-| `topdoom.bestTimes` | `game/besttimes.ts` | docs/hud.md § Best times |
-| `topdoom.save.<id>` | `game/savegames.ts` | docs/savegames.md § Storage |
 
-The player's WAD folder is the one persisted thing here that is **not** a `topdoom.*` key: a
-directory handle can't go through `JSON.stringify`, so it lives in its own IndexedDB database —
-docs/wad.md § The player's own library.
+Three persisted things are **not** `topdoom.*` keys, because none of them fits in one: each has its
+own IndexedDB database, kept separate so an upgrade that fails for one can't take the others down.
 
-`topdoom.save.<id>` (one key per save) is the one departure from per-value structural validation:
-it carries an explicit `version` field, refused on mismatch rather than half-read. A settings
-scalar degrades safely to its default; a save's schema genuinely evolves, and half-reading an old
-one restores a subtly wrong level (docs/savegames.md § The format and its version).
+| Database | Owner | Documented in |
+|---|---|---|
+| `topdoom` | `game/savestore.ts` | docs/savegames.md § Storage |
+| `topdoom-wadlibrary` | `wad/library/store.ts` | docs/wad.md § The player's own library |
+| `topdoom-besttimes` | `game/besttimes.ts` | docs/hud.md § The store |
+
+A savegame is also the one departure from per-value structural validation: it carries an explicit
+`version` field, refused on mismatch rather than half-read. A settings scalar degrades safely to its
+default; a save's schema genuinely evolves, and half-reading an old one restores a subtly wrong
+level (docs/savegames.md § The format and its version).
 
 ## Remembered selection
 

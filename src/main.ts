@@ -19,6 +19,7 @@ import {
   type SaveGame,
 } from './game/savegames.ts';
 import { Game } from './game.ts';
+import { loadBestTimes } from './game/besttimes.ts';
 import { stockGldefs } from './wad/gldefs.ts';
 import { Viewport } from './render/viewport.ts';
 import { AudioEngine } from './audio/audio.ts';
@@ -254,12 +255,20 @@ async function boot(): Promise<void> {
     if (!wasOpen) game?.pause();
   });
 
+  // Alongside the menu's own library scan rather than in front of it — the two share nothing, and
+  // the records aren't needed until a level *ends* (docs/hud.md § The store). Awaited here all the
+  // same, since the frame that ends one compares and files synchronously.
+  const bestTimes = loadBestTimes();
+
   const params = new URLSearchParams(location.search);
-  await menu.init({
-    iwad: params.get('wad'),
-    pwads: (params.get('pwad') ?? '').split(',').filter(Boolean),
-    map: params.get('map'),
-  });
+  await Promise.all([
+    bestTimes,
+    menu.init({
+      iwad: params.get('wad'),
+      pwads: (params.get('pwad') ?? '').split(',').filter(Boolean),
+      map: params.get('map'),
+    }),
+  ]);
 
   // A deep link with ?map= skips the menu; otherwise the menu is the entry point.
   // Awaited, so the boot screen below covers the deep link's WAD load too.

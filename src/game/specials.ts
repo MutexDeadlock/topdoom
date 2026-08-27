@@ -12,6 +12,7 @@ import {
   findSwitchEntries,
   isFrontSide,
   neighborSectorIndices,
+  nextSectorIndices,
   resolveTargets,
   type BossDeathTrigger,
   type SwitchEntry,
@@ -483,8 +484,13 @@ function resolveFloorTarget(
       return (
         Math.min(lowestNeighborCeiling(map, sectorIndex), map.sectors[sectorIndex].ceilHeight) - EIGHT_UNIT_GAP
       );
-    case 'highestNeighborFloorPlus8':
-      return highestNeighborFloor(map, sectorIndex) + EIGHT_UNIT_GAP;
+    case 'turboLower': {
+      // `p_floor.c`'s `case turboLower` adds the 8 only where the found height differs from the
+      // sector's own; unconditionally it hands a lowering mover a target *above* its floor.
+      // docs/specials.md § The turboLower quad.
+      const highest = highestNeighborFloor(map, sectorIndex);
+      return highest === map.sectors[sectorIndex].floorHeight ? highest : highest + EIGHT_UNIT_GAP;
+    }
     case 'plus24':
       return map.sectors[sectorIndex].floorHeight + 24;
     case 'plus32':
@@ -1896,10 +1902,10 @@ export class SpecialsController {
    */
   private triggerDonut(holeIndex: number): boolean {
     if (this.floorActive(holeIndex)) return false;
-    const ringIndex = neighborSectorIndices(this.map, holeIndex)[0];
+    const ringIndex = nextSectorIndices(this.map, holeIndex)[0];
     if (ringIndex === undefined) return false;
     let outerIndex: number | undefined;
-    for (const candidate of neighborSectorIndices(this.map, ringIndex)) {
+    for (const candidate of nextSectorIndices(this.map, ringIndex)) {
       if (candidate === holeIndex) continue;
       outerIndex = candidate;
       break;
@@ -1946,14 +1952,14 @@ export class SpecialsController {
         break;
       case 'brightestNeighbor': {
         let bright = 0;
-        for (const n of neighborSectorIndices(this.map, sectorIndex)) bright = Math.max(bright, this.map.sectors[n].light);
+        for (const n of nextSectorIndices(this.map, sectorIndex)) bright = Math.max(bright, this.map.sectors[n].light);
         sector.light = bright;
         this.geometry.recolorSector(sectorIndex);
         break;
       }
       case 'darkestNeighbor': {
         let min = sector.light;
-        for (const n of neighborSectorIndices(this.map, sectorIndex)) {
+        for (const n of nextSectorIndices(this.map, sectorIndex)) {
           if (this.map.sectors[n].light < min) min = this.map.sectors[n].light;
         }
         sector.light = min;

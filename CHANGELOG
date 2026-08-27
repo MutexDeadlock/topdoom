@@ -4,6 +4,10 @@ Fixed bugs
   - a monster standing half under a crusher is now crushed by it
   - a DEHACKED attack chain that fires two different actions now throws both,
     instead of repeating its first one
+  - a sector fenced off by self-referencing lines is no longer its own
+    neighbour, so switches that lower such a platform work
+  - the 36/70/71/98 "lower to highest neighbour" specials no longer raise a
+    floor that is already level with its highest neighbour
   
 
 ===============================================================================

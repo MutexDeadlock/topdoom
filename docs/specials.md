@@ -732,6 +732,25 @@ label positioned just past that assignment, so jumping to it skips the flag. `Ce
 crush handling at all as a result; `crush==false` is exactly what makes a lowering `CeilingMover` stop
 rather than grind through anyone underneath.
 
+## The turboLower quad
+
+36/70/71/98 (`turboLower`) lower a floor to its highest neighbour and stop **8 short of flush** —
+but the 8 is conditional, which is easy to drop and matters:
+
+```c
+floor->floordestheight = P_FindHighestFloorSurrounding(sec);
+if (floor->floordestheight != sec->floorheight)
+    floor->floordestheight += 8*FRACUNIT;      // p_floor.c, case turboLower
+```
+
+A sector already level with its highest neighbour therefore targets that height exactly, which is
+its own — the mover is created and finishes at once. Adding the 8 unconditionally instead hands a
+**lowering** mover a target *above* its floor, and the platform rises 8 units when the switch was
+meant to drop it. That was the visible half of NoSp2.wad MAP04's switch on linedef 445 (the other
+half is docs/world.md § Self-referencing lines, which is why the search returned the sector's own
+height in the first place). Boom's *generalized* floors have no such offset at all — `FtoHnF` is
+plain `highestNeighborFloor` — so this is confined to the four vanilla numbers.
+
 ## raiseToTexture, lowerAndChange
 
 Both (30/96 and 37/84) are plain `FloorMover`s with trigger-time logic too specific for the
@@ -881,7 +900,7 @@ additionally taking that outer sector's floor texture on arrival (the same defer
 `lowerAndChange`).
 
 Neither the ring nor the outer sector is tag-matched — both are discovered dynamically by walking
-neighbors outward from the hole (`triggerDonut`/`neighborSectorIndices`, mirrored at load time in
+neighbors outward from the hole (`triggerDonut`/`nextSectorIndices`, mirrored at load time in
 `scanSectors` so the ring's geometry is pulled out of the static batch too), which is exactly
 as arbitrary as vanilla's own search (whichever neighbor happens to be first in the sector's line list
 — reproduced by walking `map.linedefs` in ascending index order, matching `P_GroupLines`).

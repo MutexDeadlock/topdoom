@@ -503,6 +503,10 @@ function deriveMonster(
   const meleeSwings = firingOffsets(states, melee);
   const meleeFiring = firingOf(states, args, melee);
   const rangedFiring = firingOf(states, args, missile);
+  // One walk behind all three: `rangedShots` is how many actions the volley has and `rangedAction`
+  // is its first, so the count `apply.ts` writes can't disagree with the list `shotAttacks` is
+  // indexed by. `firingOf` stays for `rangedArgs`, which must name that same first state.
+  const rangedActions = firingActionsOf(states, missile);
 
   const loop = cycleOf(see);
   const loopTics = ticsOf(states, loop);
@@ -527,11 +531,11 @@ function deriveMonster(
     rangedDuration: missile.indices.length ? durationOf(states, missile) : null,
     meleeDelay: firingDelayOf(meleeSwings),
     rangedDelay: firingDelayOf(missileShots),
-    rangedShots: missileShots.length,
+    rangedShots: rangedActions.length,
     rangedInterval: firingIntervalOf(missileShots),
     meleeAction: meleeFiring.action,
-    rangedAction: rangedFiring.action,
-    rangedActions: firingActionsOf(states, missile),
+    rangedAction: rangedActions[0] ?? null,
+    rangedActions,
     meleeArgs: meleeFiring.args,
     rangedArgs: rangedFiring.args,
     meleeSound: chainSound(states, args, melee) ?? scratchSound(meleeFiring),

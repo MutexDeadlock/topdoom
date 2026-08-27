@@ -92,7 +92,7 @@ function lift(speed = LIFT_SPEED, waitSeconds = LIFT_WAIT, target?: LiftTarget):
 const FLOOR_TARGET_DIRECTION: Record<MoveTarget, 'up' | 'down'> = {
   lowestNeighborFloor: 'down',
   highestNeighborFloor: 'down',
-  highestNeighborFloorPlus8: 'down',
+  turboLower: 'down',
   nextLowerFloor: 'down',
   minus24: 'down',
   minus32: 'down',
@@ -381,10 +381,10 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   // "8 above highest neighboring floor, fast" quad (W1/WR/S1/SR) — vanilla's
   // turboLower: normally lowers a floor that started above every neighbor,
   // but stops 8 short of flush rather than levelling with it exactly.
-  36: { trigger: 'walk', repeatable: false, effect: floor('highestNeighborFloorPlus8', FLOOR_SPEED_FAST) },
-  70: { trigger: 'use', repeatable: true, effect: floor('highestNeighborFloorPlus8', FLOOR_SPEED_FAST) },
-  71: { trigger: 'use', repeatable: false, effect: floor('highestNeighborFloorPlus8', FLOOR_SPEED_FAST) },
-  98: { trigger: 'walk', repeatable: true, effect: floor('highestNeighborFloorPlus8', FLOOR_SPEED_FAST) },
+  36: { trigger: 'walk', repeatable: false, effect: floor('turboLower', FLOOR_SPEED_FAST) },
+  70: { trigger: 'use', repeatable: true, effect: floor('turboLower', FLOOR_SPEED_FAST) },
+  71: { trigger: 'use', repeatable: false, effect: floor('turboLower', FLOOR_SPEED_FAST) },
+  98: { trigger: 'walk', repeatable: true, effect: floor('turboLower', FLOOR_SPEED_FAST) },
 
   // Raise-to-texture and lower-and-change — see their Effect docs above for
   // why each needs its own trigger-time logic (`SpecialsController`) rather

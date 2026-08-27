@@ -14,13 +14,17 @@
  */
 import { NO_SIDE, type DoomMap, type LineDef } from '../../wad/map.ts';
 import type { SwitchPairLookup } from '../../wad/switches.ts';
-import { sectorLines, sectorsByTag } from '../world.ts';
+import { neighborSectorIndices, nextSectorIndices, sectorLines, sectorsByTag } from '../world.ts';
 import { BOSS_DEATH_TYPES } from '../things/tables.ts';
 import { ThingType } from '../things/doomednums.ts';
 import { lookupSpecial } from './tables.ts';
 import { decodeSectorType } from './sectortypes.ts';
 import { transfersOf } from './transfers.ts';
 import { switchPairTexture, type SpecialDef } from './defs.ts';
+
+// The two neighbor walks live in `world.ts` — the `getNextSector` rule has one home there — and are
+// re-exported here so a special's scan reaches them beside the rest of its map scans.
+export { neighborSectorIndices, nextSectorIndices };
 
 /** Which sectors a special's linedef affects: the line's own back sector for manual doors, tag matches otherwise. */
 export function resolveTargets(map: DoomMap, line: LineDef, def: SpecialDef): readonly number[] {
@@ -128,28 +132,6 @@ function bossDeathSectors(map: DoomMap): number[] {
   const out: number[] = [];
   for (let i = 0; i < map.sectors.length; i++) {
     if (tags.has(map.sectors[i].tag)) out.push(i);
-  }
-  return out;
-}
-
-/**
- * Every two-sided line's *other-side* sector index, in the order that line
- * appears in `map.linedefs` — which, since every stock WAD's `sector->lines[]`
- * is built by walking linedefs in that same ascending order (vanilla's own
- * `P_GroupLines`), is exactly the order vanilla itself would enumerate a given
- * sector's own bordering lines in. Used wherever a special's own vanilla
- * source walks `sec->lines[i]` and reacts to whichever neighbor comes first —
- * `lowerAndChange`'s model-sector search and the donut's ring/outer search.
- */
-export function neighborSectorIndices(map: DoomMap, sectorIndex: number): number[] {
-  const out: number[] = [];
-  for (const lineIndex of sectorLines(map, sectorIndex)) {
-    const line = map.linedefs[lineIndex];
-    if (line.left === NO_SIDE || line.right === NO_SIDE) continue;
-    const front = map.sidedefs[line.right]?.sector;
-    const back = map.sidedefs[line.left]?.sector;
-    if (front === sectorIndex && back !== undefined) out.push(back);
-    else if (back === sectorIndex && front !== undefined) out.push(front);
   }
   return out;
 }
@@ -316,7 +298,7 @@ export function scanSectors(map: DoomMap, pairs?: SwitchPairLookup): SectorScan 
       // has to be walked here too, not just resolved from the tag.
       for (const startSector of resolveTargets(map, line, def)) {
         moving.add(startSector);
-        const ringIndex = neighborSectorIndices(map, startSector)[0];
+        const ringIndex = nextSectorIndices(map, startSector)[0];
         if (ringIndex !== undefined) moving.add(ringIndex);
       }
     } else if (

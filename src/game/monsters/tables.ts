@@ -562,26 +562,21 @@ function fastVariant(type: number, stats: MonsterStats): MonsterStats {
       ranged: fast.ranged && { ...fast.ranged, duration: fast.ranged.duration / 2 },
     };
   }
-  const missile = fast.ranged?.projectile;
-  const missileSpeed = missile && FAST_MISSILE_SPEED[missile.sprite];
-  if (fast.ranged && missile && missileSpeed !== undefined) {
-    fast = { ...fast, ranged: { ...fast.ranged, projectile: { ...missile, speed: missileSpeed } } };
-  }
-  // Same edit again for a mixed volley's per-shot missiles: fast mode speeds a `BAL7` up whichever
-  // shot of whichever chain threw it.
-  if (fast.ranged?.shotAttacks?.some((shot) => shot.projectile && FAST_MISSILE_SPEED[shot.projectile.sprite] !== undefined)) {
-    fast = {
-      ...fast,
-      ranged: {
-        ...fast.ranged,
-        shotAttacks: fast.ranged.shotAttacks.map((shot) => {
-          const speed = shot.projectile && FAST_MISSILE_SPEED[shot.projectile.sprite];
-          return shot.projectile && speed !== undefined ? { ...shot, projectile: { ...shot.projectile, speed } } : shot;
-        }),
-      },
-    };
+  // The same edit reaches a mixed volley's per-shot missiles: fast mode speeds a `BAL7` up
+  // whichever shot of whichever chain threw it.
+  if (fast.ranged) {
+    const ranged = fastMissile(fast.ranged);
+    const shots = fast.ranged.shotAttacks?.map(fastMissile);
+    fast = { ...fast, ranged: shots ? { ...ranged, shotAttacks: shots } : ranged };
   }
   return fast;
+}
+
+/** One attack with its projectile at fast mode's speed, or unchanged when it throws no missile `G_InitNew` speeds up. */
+function fastMissile(attack: AttackStats): AttackStats {
+  const speed = attack.projectile && FAST_MISSILE_SPEED[attack.projectile.sprite];
+  if (!attack.projectile || speed === undefined) return attack;
+  return { ...attack, projectile: { ...attack.projectile, speed } };
 }
 
 /** The stat table one skill plays on: nightmare's fast monsters, or the plain vanilla one — see `fastMonsters` in game/skill.ts. */

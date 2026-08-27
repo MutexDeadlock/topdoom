@@ -820,6 +820,15 @@ export class World {
   }
 
   /**
+   * The one box walk the three queries below share: a body of this radius standing here, its own
+   * height ignored (`ANY_HEIGHT`) so the walk reports the opening rather than testing a fit. The
+   * result is `checkPosition`'s shared scratch — read the fields out before the next call.
+   */
+  private standingAt(x: number, y: number, radius: number, forMonster: boolean): PositionCheck {
+    return checkPosition(this, x, y, radius, ANY_HEIGHT, ANY_HEIGHT, forMonster, undefined, undefined, false);
+  }
+
+  /**
    * The height a body of this radius should rest at, standing here: the local
    * sector's floor, raised to the bottom of any two-sided opening its box
    * currently spans — vanilla's `thing->floorz` in `P_TryMove`, which
@@ -828,7 +837,7 @@ export class World {
    * ledge; see docs/movement.md § Collision.
    */
   groundFloor(x: number, y: number, radius: number, forMonster = false): number {
-    return checkPosition(this, x, y, radius, ANY_HEIGHT, ANY_HEIGHT, forMonster, undefined, undefined, false).floorZ;
+    return this.standingAt(x, y, radius, forMonster).floorZ;
   }
 
   /**
@@ -840,7 +849,7 @@ export class World {
    * just the rising sector's own ceiling — see docs/movement.md § Collision.
    */
   groundCeiling(x: number, y: number, radius: number, forMonster = false): number {
-    return checkPosition(this, x, y, radius, ANY_HEIGHT, ANY_HEIGHT, forMonster, undefined, undefined, false).ceilingZ;
+    return this.standingAt(x, y, radius, forMonster).ceilingZ;
   }
 
   /**
@@ -852,7 +861,7 @@ export class World {
    * openings the body's box spans and not just its own sector's gap.
    */
   headroom(x: number, y: number, radius: number, forMonster = false): number {
-    const at = checkPosition(this, x, y, radius, ANY_HEIGHT, ANY_HEIGHT, forMonster, undefined, undefined, false);
+    const at = this.standingAt(x, y, radius, forMonster);
     return at.ceilingZ - at.floorZ;
   }
 
@@ -1159,19 +1168,44 @@ export function linesByTag(map: DoomMap, tag: number): readonly number[] {
   return tagIndex(map).lines.get(tag) ?? NO_MATCHES;
 }
 
-/** Sectors on the other side of a two-sided line from `sectorIndex`. */
-function neighborSectors(map: DoomMap, sectorIndex: number): Sector[] {
-  const out: Sector[] = [];
+/**
+ * Every two-sided line's *other-side* sector index, in the order that line appears in
+ * `map.linedefs` — which, since every stock WAD's `sector->lines[]` is built by walking linedefs in
+ * that same ascending order (vanilla's own `P_GroupLines`), is exactly the order vanilla itself
+ * would enumerate a given sector's own bordering lines in. Plain adjacency: a **self-referencing**
+ * line, whose two sides name the same sector, yields that sector. Used wherever a special's own
+ * vanilla source walks `sec->lines[i]` rather than calling `getNextSector` — `lowerAndChange`'s
+ * model-sector search. `nextSectorIndices` is the `getNextSector` form.
+ */
+export function neighborSectorIndices(map: DoomMap, sectorIndex: number): number[] {
+  const out: number[] = [];
   for (const lineIndex of sectorLines(map, sectorIndex)) {
     const line = map.linedefs[lineIndex];
     if (line.left === NO_SIDE || line.right === NO_SIDE) continue;
-    const frontSec = map.sidedefs[line.right]?.sector;
-    const backSec = map.sidedefs[line.left]?.sector;
-    let neighborIndex: number | undefined;
-    if (frontSec === sectorIndex) neighborIndex = backSec;
-    else if (backSec === sectorIndex) neighborIndex = frontSec;
-    if (neighborIndex === undefined) continue;
-    const sec = map.sectors[neighborIndex];
+    const front = map.sidedefs[line.right]?.sector;
+    const back = map.sidedefs[line.left]?.sector;
+    if (front === sectorIndex && back !== undefined) out.push(back);
+    else if (back === sectorIndex && front !== undefined) out.push(front);
+  }
+  return out;
+}
+
+/**
+ * The same walk as vanilla's `getNextSector`, which **skips a self-referencing line** rather than
+ * handing the sector back as its own neighbor. Every neighbor-height query below runs on this, as
+ * do the searches whose vanilla source calls `getNextSector` — the donut's ring/outer walk and the
+ * surrounding-light scans. See docs/world.md § Self-referencing lines for the rule and what breaks
+ * without it; this is its one home.
+ */
+export function nextSectorIndices(map: DoomMap, sectorIndex: number): number[] {
+  return neighborSectorIndices(map, sectorIndex).filter((n) => n !== sectorIndex);
+}
+
+/** `nextSectorIndices` as the `Sector` objects themselves, which the neighbor-height queries want. */
+function neighborSectors(map: DoomMap, sectorIndex: number): Sector[] {
+  const out: Sector[] = [];
+  for (const n of nextSectorIndices(map, sectorIndex)) {
+    const sec = map.sectors[n];
     if (sec) out.push(sec);
   }
   return out;

@@ -245,10 +245,39 @@ lowers from there, and a sector surrounded entirely by brighter ones dims to its
 than *up* to the darkest neighbour. Nothing here is left with nowhere to go, since a light pattern
 with min == max is a legal outcome — one the strobes then override (docs/specials.md § Lights).
 
+### Self-referencing lines
+
+`neighborSectors` — `getNextSector` — **skips a line whose two sidedefs name the same sector**, so
+such a line never makes a sector its own neighbour. This is Boom's reading, not vanilla's:
+`linuxdoom-1.10`'s `getNextSector` returns `line->backsector` unconditionally once
+`line->frontsector == sec`, which for a self-referencing line is `sec` itself. Boom's own comment
+at the change says why (`p_spec.c`, jff 5/3/98): *"don't retn sec unless compatibility — fixes an
+intra-sector line breaking functions like floor->highest floor."* PrBoom keeps vanilla's answer only
+behind `comp[comp_model]`, for demo sync.
+
+Without it a sector fenced off by self-referencing lines — the standard Boom trick for an invisible
+platform edge or a deep-water boundary — is its own highest and lowest neighbour, so every mover
+targeting a neighbour height resolves to the height it already sits at and goes nowhere.
+**NoSp2.wad MAP04, sector 102** (a platform lowered by the switch on linedef 445, special 71): its
+four self-referencing lines 740–743 made `highestNeighborFloor` return the platform's own 64 rather
+than the room's 0. `tests/regression/self-referencing-neighbor.test.ts` pins it.
+
+The rule belongs to `getNextSector` and not to adjacency generally, so `world.ts` exports the walk
+in both forms and the rule has exactly one home: **`nextSectorIndices`** applies it and
+**`neighborSectorIndices`** is the plain adjacency underneath (`specials/mapscan.ts` re-exports both
+rather than keeping a copy). It therefore reaches exactly the searches whose vanilla source calls
+`getNextSector` — the six neighbour-height queries and `darkestNeighborLight` here, the donut's
+ring/outer walk and the two surrounding-light searches in the specials layer.
+`P_FindModelFloorSector`, which walks `twoSided`/`getSector` instead, stays on
+`neighborSectorIndices` and still sees the sector itself.
+
+Across `DOOM.WAD` and `DOOM2.WAD` the rule moves a neighbour height in 46 sectors and not one of
+them is targeted by a special that reads the query that moved, so no stock map behaves differently.
+
 ### The sector→lines index
 
-All of them — plus `neighborSectorIndices`, `findStairChain` and the shortest-texture scans in the
-specials layer — walk one sector's bordering linedefs through **`sectorLines(map, sectorIndex)`**,
+All of them — plus `neighborSectorIndices`/`nextSectorIndices`, `findStairChain` and the
+shortest-texture scans in the specials layer — walk one sector's bordering linedefs through **`sectorLines(map, sectorIndex)`**,
 never the whole `map.linedefs` array. It is vanilla's `P_GroupLines` `sec->lines[]`: every line
 touching the sector, one- and two-sided alike, in ascending linedef order, which is the order
 several specials react to (`lowerAndChange`'s model search, the donut's ring walk). Callers keep

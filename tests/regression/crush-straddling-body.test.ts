@@ -79,9 +79,8 @@ describe('Regressions · a body straddling a crusher edge', () => {
   });
 
   test('one squarely inside the crushing sector is crushed as it always was', () => {
-    const { map, world, things, crusher } = scene(-CELL / 2);
-    const caught = applyCrushDamage(world, map, things, PLAYER, crusher, () => {}, true);
+    const { caught, health } = pulse(scene(-CELL / 2));
     assert.ok(caught, 'the ordinary case is untouched');
-    assert.equal(healthOf(things), 490);
+    assert.equal(health, 490);
   });
 });

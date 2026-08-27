@@ -566,7 +566,9 @@ function writeMonster(dn: number, a: MonsterFrames, b: MonsterFrames): void {
     stats.ranged.shotInterval = b.rangedInterval;
   }
   // And what each of those shots *is*, where they are not all the same attack.
-  if (stats.ranged && (rangedRepointed || !same(a.rangedActions, b.rangedActions))) {
+  // No `rangedRepointed` disjunct here: `rangedAction` *is* `rangedActions[0]`
+  // (`frames.ts: deriveMonster`), so a repoint always shows up in the list comparison.
+  if (stats.ranged && !same(a.rangedActions, b.rangedActions)) {
     const perShot = shotAttacksFor(stats.ranged, b.rangedActions);
     if (perShot) stats.ranged.shotAttacks = perShot;
     else delete stats.ranged.shotAttacks;

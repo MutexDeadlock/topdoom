@@ -205,8 +205,12 @@ export type MoveTarget =
   | 'highestNeighborCeiling'
   /** The 55/56/65/94 family's target ("raiseFloorCrush" in vanilla): the floor rises, rather than the usual lower/level pattern. */
   | 'lowestNeighborCeilingMinus8'
-  /** The 36/70/71/98 "turboLower" family's target: stops 8 short of flush with the highest neighbor. */
-  | 'highestNeighborFloorPlus8'
+  /**
+   * The 36/70/71/98 family's own target, named for its `EV_DoFloor` case rather than its
+   * arithmetic: the highest neighbor, plus 8 **only where that differs from the sector's own
+   * floor**. Not a reusable "+8" — see docs/specials.md § The turboLower quad.
+   */
+  | 'turboLower'
   /**
    * Fixed-height raises — vanilla's `raiseFloor24`/`raiseFloor24AndChange`
    * (58/59/92/93), the `EV_DoPlat(line, raiseAndChange, 24|32)` pair

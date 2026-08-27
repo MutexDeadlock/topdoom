@@ -434,6 +434,15 @@ mouse-aim raycast), so there's screen real estate to spend on it that vanilla ne
 skips rebuilding the cursor image when the computed color hasn't changed, since it's called every
 frame from the same `Game.frame` loop as `Hud.update`.
 
+**The outline is what makes the color legible**, and it is drawn as a second, wider pass of the
+same shape underneath rather than as a filter: solid black, `HALO` pixels proud of the colored
+stroke on every side. Two details are load-bearing. The outline arms run `HALO` *further out at
+both ends* than the colored ones, because the strokes are butt-capped — an outline ending flush
+would leave each arm tip with no dark edge at all, which is exactly where the reticle used to
+disappear into a bright flat. And `HALO` stops at 1.25: at 1.5 the black closes over the center
+gap, so the plus reads as a blob. The colored pass is round-capped inside that margin, which the
+outline still covers.
+
 ## Screen effects
 
 The two screen tints (`#screen-tint`, `screeneffects.css`) are CSS on the composited frame rather than

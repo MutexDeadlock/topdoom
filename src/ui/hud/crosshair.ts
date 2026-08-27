@@ -15,10 +15,20 @@ import { COLOR_BLUE } from './wadfont.ts';
  */
 const OVER_HUNDRED = `rgb(${COLOR_BLUE.join(', ')})`;
 
-
-/** Reticle size in CSS pixels. Tuned by feel, like the rest of the crosshair above. */
-const SIZE = 24;
+/**
+ * Reticle geometry in CSS pixels, all tuned by feel like the rest of the crosshair above.
+ * `SIZE` stays at or under 32 because that's the largest cursor bitmap every platform accepts.
+ * The outline is a second, wider pass of the same shape drawn underneath: it runs `HALO` further
+ * out at both ends than the colored pass so the arm tips are capped too, and stops `HALO` short of
+ * the colored dot so the center gap survives.
+ */
+const SIZE = 28;
 const CENTER = SIZE / 2;
+const HALO = 1.25;
+const STROKE = 2;
+const ARM_INNER = 6;
+const ARM_OUTER = 12;
+const DOT_R = 1.5;
 
 /** Health → CSS color. `health <= 100` maps linearly onto hue 120 (green) down to 0 (red). */
 function colorForHealth(health: number): string {
@@ -27,22 +37,28 @@ function colorForHealth(health: number): string {
   return `hsl(${hue}, 100%, 50%)`;
 }
 
-/** Plus-shaped reticle with a gap at the center, dark-outlined so it reads against any background. */
-function crosshairSvg(color: string): string {
-  const arms = [
-    [CENTER, 2, CENTER, 8],
-    [CENTER, 16, CENTER, 22],
-    [2, CENTER, 8, CENTER],
-    [16, CENTER, 22, CENTER],
+/** The four arms of the plus, as `<line>`s spanning `inner`..`outer` pixels from the center. */
+function arms(inner: number, outer: number): string {
+  return [
+    [CENTER, CENTER - outer, CENTER, CENTER - inner],
+    [CENTER, CENTER + inner, CENTER, CENTER + outer],
+    [CENTER - outer, CENTER, CENTER - inner, CENTER],
+    [CENTER + inner, CENTER, CENTER + outer, CENTER],
   ]
     .map(([x1, y1, x2, y2]) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"/>`)
     .join('');
+}
+
+/** Plus-shaped reticle with a gap at the center, outlined in solid black so it reads against any background. */
+function crosshairSvg(color: string): string {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}">` +
-    `<g fill="none" stroke="black" stroke-width="4" stroke-opacity="0.55">${arms}` +
-    `<circle cx="${CENTER}" cy="${CENTER}" r="1.5"/></g>` +
-    `<g fill="${color}" stroke="${color}" stroke-width="2">${arms}` +
-    `<circle cx="${CENTER}" cy="${CENTER}" r="1.5"/></g></svg>`
+    `<g fill="black" stroke="black" stroke-width="${STROKE + HALO * 2}">` +
+    `${arms(ARM_INNER - HALO, ARM_OUTER + HALO)}` +
+    `<circle cx="${CENTER}" cy="${CENTER}" r="${DOT_R + HALO}" stroke="none"/></g>` +
+    `<g fill="${color}" stroke="${color}" stroke-width="${STROKE}" stroke-linecap="round">` +
+    `${arms(ARM_INNER, ARM_OUTER)}` +
+    `<circle cx="${CENTER}" cy="${CENTER}" r="${DOT_R}" stroke="none"/></g></svg>`
   );
 }
 

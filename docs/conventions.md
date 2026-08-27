@@ -26,11 +26,11 @@ point** for the rest of the engine and the directory holds its internals. `game/
 shape. The parent may re-export out of the directory to keep that true — `things.ts` does exactly
 that for `ThingLayer`, `MonsterRef` and `BarrelExplosion`, so `game.ts` and `combat.ts` never have
 to know which file inside `things/` a type happens to live in, and `map.ts` does it for
-`SUBSECTOR_BIT`, `NodeFormat` and `GL_SIGNATURES` so `wad/support.ts` reads the node formats it
-refuses without reaching into `map/nodes.ts`.
+`SUBSECTOR_BIT`, `NO_LINE` and `NodeFormat` so `render/bsp.ts` reads a seg and a node without
+reaching into `map/nodes.ts`.
 
 `wad/map/` holds the two lump *formats* a map can ship in rather than roles — `nodes.ts` for the
-four BSP encodings, `hexen.ts` for Hexen's own LINEDEFS/THINGS. `campaign/` is the same shape:
+BSP encodings, `hexen.ts` for Hexen's own LINEDEFS/THINGS. `campaign/` is the same shape:
 where a directory groups sub-topics rather than stages of one pipeline, the sub-topic is the name.
 
 The one exception is `game/dehacked.ts` + `game/dehacked/`, which has **two** entry points, split

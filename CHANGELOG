@@ -1,5 +1,8 @@
 v0.16.2 (2026-08-2?)
 
+Features and improvements
+  - add support for ZDoom GL nodes (XGLN/XGL2/XGL3, compressed or not)
+
 Fixed bugs
   - a door or lift standing in a wall the occlusion fade opens now fades with
     it, instead of staying solid in the middle of the hole

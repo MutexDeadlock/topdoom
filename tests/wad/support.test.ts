@@ -27,7 +27,6 @@ function mapSummary(
   name: string,
   over: Record<string, number> = {},
   omit: readonly string[] = [],
-  signature = '',
 ): MapLumpSummary {
   const lumps = new Map<string, number>(
     ['THINGS', 'LINEDEFS', 'SIDEDEFS', 'VERTEXES', 'SEGS', 'SSECTORS', 'NODES', 'SECTORS'].map(
@@ -36,12 +35,10 @@ function mapSummary(
   );
   for (const [lump, size] of Object.entries(over)) lumps.set(lump, size);
   for (const lump of omit) lumps.delete(lump);
-  return { name, lumps, ssectorsSignature: signature };
+  return { name, lumps };
 }
 
 const codes = (support: WadSupport) => support.map((issue) => issue.code);
-
-const encode = (text: string) => new TextEncoder().encode(text);
 
 /**
  * The lumps of one plain, loadable map, as `wadFile` takes them. `over` replaces a lump's bytes —
@@ -103,18 +100,18 @@ describe('WAD parsing · will it run?', () => {
     }
   });
 
-  test('SSECTORS signed with a ZDoom GL format is refused — the same list detectNodeFormat throws on', () => {
-    for (const signature of ['XGLN', 'ZGLN', 'XGL2', 'ZGL2', 'XGL3', 'ZGL3']) {
-      const verdict = wadSupport([mapSummary('MAP01', {}, [], signature)], false);
-      assert.deepEqual(codes(verdict), ['glNodes'], signature);
-    }
-  });
-
-  /** docs/wad.md § Node formats — the payload moves into NODES, so an empty SSECTORS is normal there. */
-  test('XNOD and ZNOD nodes are supported, empty SSECTORS and all', () => {
-    for (const signature of ['XNOD', 'ZNOD', 'xNd4']) {
-      const nodes = mapSummary('MAP01', { SEGS: 0, SSECTORS: 0 }, [], signature);
-      assert.equal(supportLevel(wadSupport([nodes], false)), 'ok', signature);
+  /**
+   * docs/wad.md § Node formats — an extended payload lives in one lump and leaves the other
+   * empty: NODES for XNOD/ZNOD, SSECTORS for the GL family. Either way the map loads.
+   */
+  test('an extended BSP is supported, with the lump it did not use left empty', () => {
+    const empties: Record<string, number>[] = [
+      { SEGS: 0, SSECTORS: 0 },
+      { SEGS: 0, NODES: 0 },
+    ];
+    for (const empty of empties) {
+      const nodes = mapSummary('MAP01', empty);
+      assert.equal(supportLevel(wadSupport([nodes], false)), 'ok', JSON.stringify(empty));
     }
   });
 
@@ -248,9 +245,8 @@ describe('WAD parsing · reaching the verdict from a directory', () => {
     assert.deepEqual(verdict, [{ code: 'udmf', maps: ['MAP01'] }]);
   });
 
-  test("SSECTORS' first four bytes are read, so GL nodes are caught before the map is loaded", async () => {
-    const lumps = okMap('MAP01', { SSECTORS: encode('XGL3') });
-    assert.deepEqual(await support('gl.wad', lumps), [{ code: 'glNodes', maps: ['MAP01'] }]);
+  test('a real GL-node fixture is found supported', async () => {
+    assert.deepEqual((await describeFixture('doom1_e1m1_xgl.wad')).support, []);
   });
 
   test('a map shipped without nodes is caught', async () => {

@@ -7,7 +7,7 @@
  * See docs/render.md § BSP polygon reconstruction, § Walls that stop inside their cell,
  * § Segs on the wrong side of their leaf and § Self-referencing sectors.
  */
-import { segSide, SUBSECTOR_BIT, type DoomMap, type Seg, type Vertex } from '../wad/map.ts';
+import { NO_LINE, segSide, SUBSECTOR_BIT, type DoomMap, type Seg, type Vertex } from '../wad/map.ts';
 import { clipConvexPolygon as clip, polygonCentroid } from '../util/geom.ts';
 import { SectorProbe, selfReferencing } from './sectorprobe.ts';
 
@@ -326,8 +326,8 @@ const built = new WeakMap<DoomMap, SubSectorPoly[]>();
  * SEGS only stores edges that lie on real linedefs; the edges introduced by BSP
  * splits are missing. So each subsector is rebuilt by taking a large starting quad
  * and clipping it against every partition line on the path from the root to the
- * leaf, and finally against each of the subsector's segs. Treat the result as
- * read-only: it is shared between callers.
+ * leaf, and finally against each of the subsector's segs — the GL minisegs among
+ * them skipped, below. Treat the result as read-only: it is shared between callers.
  */
 export function buildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
   const cached = built.get(map);
@@ -362,6 +362,10 @@ function rebuildSubSectorPolys(map: DoomMap): SubSectorPoly[] {
     for (let i = 0; i < ss.count; i++) {
       const seg = map.segs[ss.first + i];
       if (!seg) continue;
+      // A GL miniseg lies on the split that made the leaf, which the node clip above has
+      // already applied — and every repair below asks a question about a linedef, which a
+      // miniseg has none of. docs/wad.md § GL nodes.
+      if (seg.linedef === NO_LINE) continue;
       const a = map.vertexes[seg.v1];
       const b = map.vertexes[seg.v2];
       if (!a || !b) continue;

@@ -85,9 +85,9 @@ export async function describeWad(name: string, src: ByteRanges): Promise<WadDes
     throw new Error(`${name}: WAD directory is out of bounds`);
   }
 
-  // The map summaries are filled in during the walk, bar their SSECTORS signatures — those need a
-  // read, so each group carries where its own signature lives and the wave below fills them in.
-  const groups: MapGroup[] = [];
+  // Every map summary is filled in during the walk itself — the verdict needs nothing from a map
+  // but which lumps follow its marker and how big each one is.
+  const groups: MapLumpSummary[] = [];
   const dehLumps: Entry[] = [];
   const mapInfoLumps = new Map<string, Entry>();
   const dir = reader(await src.read(dirOffset, lumpCount * DIRECTORY_ENTRY_BYTES));
@@ -100,19 +100,12 @@ export async function describeWad(name: string, src: ByteRanges): Promise<WadDes
     const lump = dir.name8();
     if (MAP_MARKER.test(lump)) {
       group = new Map();
-      groups.push({ name: lump, lumps: group, ssectorsSignature: '' });
+      groups.push({ name: lump, lumps: group });
       continue;
     }
     if (group !== null && MAP_GROUP_LUMPS.has(lump)) {
       // First one wins, as in `mapLumps`: a repeated name inside one group is a leftover.
-      if (!group.has(lump)) {
-        group.set(lump, size);
-        // Only worth a read where there are bytes to read: an empty SSECTORS (XNOD/ZNOD) carries
-        // no signature, and a UDMF map has none at all.
-        if (lump === 'SSECTORS' && size >= SIGNATURE_BYTES) {
-          groups[groups.length - 1].ssectors = { offset, size: SIGNATURE_BYTES };
-        }
-      }
+      if (!group.has(lump)) group.set(lump, size);
       continue;
     }
     group = null;
@@ -126,14 +119,11 @@ export async function describeWad(name: string, src: ByteRanges): Promise<WadDes
   const wanted = preferredMapInfoLump([...mapInfoLumps.keys()]);
   // The directory says where all of these are, and none of them depends on another — so they go out
   // together. Over a library scan that is the difference between one round trip per lump and one
-  // per file, on the one wait the player watches (`disk.ts: describeAll`). The node signatures ride
-  // along for the same reason: four bytes per map, not one round trip per map.
-  const [mapInfoText, dehBodies, signatures] = await Promise.all([
+  // per file, on the one wait the player watches (`disk.ts: describeAll`).
+  const [mapInfoText, dehBodies] = await Promise.all([
     wanted ? text(src, mapInfoLumps.get(wanted)!) : Promise.resolve(null),
     Promise.all(dehLumps.map((lump) => text(src, lump))),
-    Promise.all(groups.map((g) => (g.ssectors ? text(src, g.ssectors) : null))),
   ]);
-  signatures.forEach((sig, i) => (groups[i].ssectorsSignature = sig ?? ''));
   const mapInfoTitles = mapInfoText === null ? [] : parseMapInfoNames(mapInfoText);
 
   // Every `DEHACKED` lump in the file, merged in directory order — DEH patches are cumulative,
@@ -162,14 +152,6 @@ export async function describeWad(name: string, src: ByteRanges): Promise<WadDes
     levelNames: mergeLevelTitles(name, mapInfoTitles, strings),
     support: wadSupport(groups, dehShortfall),
   };
-}
-
-/** How many bytes a node-format signature takes (`map/nodes.ts: detectNodeFormat`). */
-const SIGNATURE_BYTES = 4;
-
-/** A summary while it is still being built: `ssectors` is where the signature read will come from. */
-interface MapGroup extends MapLumpSummary {
-  ssectors?: Entry;
 }
 
 interface Entry {

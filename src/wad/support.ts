@@ -1,16 +1,16 @@
 /**
  * Whether this engine can actually run what a file ships — the verdict the WAD Library's support
- * column shows. Decided from the lump directory alone (plus one 4-byte peek per map), so a file
- * can be judged without being loaded and a whole library folder without being read.
+ * column shows. Decided from the lump directory alone, so a file can be judged without being
+ * loaded and a whole library folder without being read.
  * See docs/wad.md § Will it run?
  */
-import { GL_SIGNATURES, MAP_LUMPS } from './map.ts';
+import { MAP_LUMPS } from './map.ts';
 
 /** Green, amber, red: it runs, some of it doesn't play right, some of it won't load at all. */
 export type SupportLevel = 'ok' | 'partial' | 'broken';
 
 /** Every reason a file is not `ok`. `SUPPORT_ISSUES` says what each one costs and how badly. */
-export type SupportCode = 'udmf' | 'glNodes' | 'noBsp' | 'incomplete' | 'hexen' | 'dehacked';
+export type SupportCode = 'udmf' | 'noBsp' | 'incomplete' | 'hexen' | 'dehacked';
 
 /** One reason, and the maps that raise it — empty for a file-level reason, which is only `dehacked`. */
 export interface SupportIssue {
@@ -33,16 +33,12 @@ export type WadSupport = SupportIssue[];
  * here is the order `wadSupport` reports issues in, and the `broken` block ends where `hexen`
  * starts.
  *
- * A `broken` map is one `loadMap` cannot produce geometry for: it either throws (`glNodes`) or
- * yields an empty world, which is a level with no floor to stand on. A `partial` one loads and
- * plays, but not the way its author built it.
+ * A `broken` map is one `loadMap` cannot produce geometry for: it yields an empty world, which is
+ * a level with no floor to stand on. A `partial` one loads and plays, but not the way its author
+ * built it.
  */
 export const SUPPORT_ISSUES: Record<SupportCode, { level: Exclude<SupportLevel, 'ok'>; text: string }> = {
   udmf: { level: 'broken', text: 'built in UDMF (a TEXTMAP lump), which this engine does not read' },
-  glNodes: {
-    level: 'broken',
-    text: 'ZDoom GL nodes, which this engine has no use for — rebuild with plain or XNOD nodes',
-  },
   noBsp: { level: 'broken', text: 'no BSP nodes — the map expects the port to build them at load' },
   incomplete: { level: 'broken', text: 'missing the map lumps a level is made of' },
   hexen: { level: 'partial', text: 'Hexen format: its doors, lifts, switches and ACS scripts do not run' },
@@ -61,16 +57,14 @@ export function supportLevel(support: WadSupport): SupportLevel {
 }
 
 /**
- * What one map group looks like to this check: the sizes of the lumps that follow its marker, and
- * the four bytes its SSECTORS opens with. Deliberately not the lumps themselves — the caller reads
- * ranges off a file it will never load, and this is everything the verdict needs from them.
+ * What one map group looks like to this check: the sizes of the lumps that follow its marker.
+ * Deliberately not the lumps themselves — the caller reads a directory off a file it will never
+ * load, and the sizes are everything the verdict needs from it.
  */
 export interface MapLumpSummary {
   name: string;
   /** Lump name to size, for the lumps in `MAP_GROUP_LUMPS` that follow this map's marker. */
   lumps: ReadonlyMap<string, number>;
-  /** SSECTORS' first four bytes as latin1, or `''` when it has none to read. */
-  ssectorsSignature: string;
 }
 
 /**
@@ -132,10 +126,9 @@ function brokenIssue(map: MapLumpSummary): SupportCode | null {
   const size = (name: string) => map.lumps.get(name) ?? 0;
   if (map.lumps.has('TEXTMAP')) return 'udmf';
   if (REQUIRED_LUMPS.some((name) => size(name) === 0)) return 'incomplete';
-  if (GL_SIGNATURES.includes(map.ssectorsSignature)) return 'glNodes';
-  // Either lump alone is enough: XNOD/ZNOD put the whole BSP in NODES and leave SSECTORS empty,
-  // and a map convex enough to be one subsector has no NODES record to write
-  // (docs/wad.md § Node formats).
+  // Either lump alone is enough: the extended formats put the whole BSP in one of them and leave
+  // the other empty — NODES for XNOD/ZNOD, SSECTORS for the GL family — and a map convex enough to
+  // be one subsector has no NODES record to write (docs/wad.md § Node formats).
   if (size('NODES') === 0 && size('SSECTORS') === 0) return 'noBsp';
   return null;
 }

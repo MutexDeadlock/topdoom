@@ -4,14 +4,15 @@ import { deflateSync } from 'node:zlib';
 import { Wad } from '../../src/wad/wad.ts';
 import { wadFile, type Lump } from '../fixtures/wadfile.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { loadMap, SUBSECTOR_BIT, type DoomMap } from '../../src/wad/map.ts';
+import { loadMap, NO_LINE, SUBSECTOR_BIT, type DoomMap } from '../../src/wad/map.ts';
 import { buildSubSectorPolys } from '../../src/render/bsp.ts';
 
 /**
- * One piece of geometry (a gridmap), serialized into all four on-disk BSP
- * encodings, must load back identical: `readBsp` normalizes every format to the
- * same in-memory convention. The encoders below are the test's own — real WADs
- * exercising the parsers end-to-end stay in `tests/fixtures/wads/`.
+ * One piece of geometry (a gridmap), serialized into every on-disk BSP encoding,
+ * must load back identical: `readBsp` normalizes them all to the same in-memory
+ * convention. The encoders below are the test's own — real WADs exercising the
+ * parsers end-to-end stay in `tests/fixtures/wads/`, and `glnodes.test.ts` is
+ * where a node builder's own GL output is read.
  * See docs/wad.md § Node formats.
  */
 
@@ -128,31 +129,53 @@ function deepV4Bsp(map: DoomMap): Lump[] {
   ];
 }
 
-function xnodPayload(map: DoomMap): Uint8Array {
+/**
+ * The BSP as an extended payload, at the GL level its signature names: 0 is XNOD/ZNOD's
+ * own seg record, 1 writes a GL seg's line as a u16 and 2/3 as a u32, and 3 alone writes
+ * the partition line in 16.16 fixed point. A GL seg's `v2` goes unwritten — a GL reader
+ * takes it from the next seg in the leaf — which is exact here because a gridmap's four
+ * segs per subsector already run in a closed loop (`gridmap.ts`), the property a node
+ * builder gives every leaf it closes.
+ */
+function extendedPayload(map: DoomMap, gl: 0 | 1 | 2 | 3): Uint8Array {
   const w = new ByteWriter();
   w.u32(map.vertexes.length).u32(0); // orgVerts, newVerts
   w.u32(map.subsectors.length);
   for (const ss of map.subsectors) w.u32(ss.count); // `first` is implicit
   w.u32(map.segs.length);
-  for (const s of map.segs) w.u32(s.v1).u32(s.v2).u16(s.linedef).u8(s.direction);
+  if (gl === 0) {
+    for (const s of map.segs) w.u32(s.v1).u32(s.v2).u16(s.linedef).u8(s.direction);
+  } else {
+    for (const ss of map.subsectors) {
+      for (let i = 0; i < ss.count; i++) {
+        const seg = map.segs[ss.first + i];
+        w.u32(seg.v1).u32(0xffffffff); // no partner seg, which nothing here reads anyway
+        if (gl >= 2) w.u32(seg.linedef);
+        else w.u16(seg.linedef);
+        w.u8(seg.direction);
+      }
+    }
+  }
   w.u32(map.nodes.length);
   for (const n of map.nodes) {
-    w.u16(n.x).u16(n.y).u16(n.dx).u16(n.dy);
-    for (let i = 0; i < 8; i++) w.u16(0);
+    if (gl === 3) w.fixed(n.x).fixed(n.y).fixed(n.dx).fixed(n.dy);
+    else w.u16(n.x).u16(n.y).u16(n.dx).u16(n.dy);
+    for (let i = 0; i < 8; i++) w.u16(0); // both bounding boxes
     w.u32(n.rightChild).u32(n.leftChild);
   }
   return w.bytes();
 }
 
-function xnodBsp(map: DoomMap): Lump[] {
-  const nodes = new ByteWriter().ascii('XNOD');
-  return ['SEGS', 'SSECTORS', { name: 'NODES', bytes: Uint8Array.from([...nodes.bytes(), ...xnodPayload(map)]) }];
-}
-
-function znodBsp(map: DoomMap): Lump[] {
-  const nodes = new ByteWriter().ascii('ZNOD');
-  const packed = deflateSync(xnodPayload(map));
-  return ['SEGS', 'SSECTORS', { name: 'NODES', bytes: Uint8Array.from([...nodes.bytes(), ...packed]) }];
+/**
+ * One extended BSP in the lump that carries it, with the other two left empty: a GL payload
+ * rides in SSECTORS, the plain pair in NODES, and a `Z` signature means the body is deflated.
+ */
+function extendedBsp(signature: string, gl: 0 | 1 | 2 | 3, map: DoomMap): Lump[] {
+  const payload = extendedPayload(map, gl);
+  const body = signature[0] === 'Z' ? deflateSync(payload) : payload;
+  const head = new ByteWriter().ascii(signature).bytes();
+  const lump = { name: gl === 0 ? 'NODES' : 'SSECTORS', bytes: Uint8Array.from([...head, ...body]) };
+  return gl === 0 ? ['SEGS', 'SSECTORS', lump] : ['SEGS', lump, 'NODES'];
 }
 
 /** Loads `map`'s geometry back through `loadMap` with its BSP encoded as `bsp`. */
@@ -186,8 +209,14 @@ describe('WAD parsing · node formats', () => {
 
   for (const [format, bsp] of [
     ['deep-v4', deepV4Bsp(source)],
-    ['xnod', xnodBsp(source)],
-    ['znod', znodBsp(source)],
+    ['xnod', extendedBsp('XNOD', 0, source)],
+    ['znod', extendedBsp('ZNOD', 0, source)],
+    ['xgln', extendedBsp('XGLN', 1, source)],
+    ['zgln', extendedBsp('ZGLN', 1, source)],
+    ['xgl2', extendedBsp('XGL2', 2, source)],
+    ['zgl2', extendedBsp('ZGL2', 2, source)],
+    ['xgl3', extendedBsp('XGL3', 3, source)],
+    ['zgl3', extendedBsp('ZGL3', 3, source)],
   ] as const) {
     test(`${format} loads identical to vanilla`, () => {
       const loaded = withSectors(source, [...bsp]);
@@ -237,16 +266,36 @@ describe('WAD parsing · node formats', () => {
     assert.equal(loaded.nodes[0].leftChild, (SUBSECTOR_BIT | 2) >>> 0);
   });
 
-  test('GL nodes are refused with the format named', () => {
-    const ss = new ByteWriter().ascii('XGLN').u32(0);
-    assert.throws(
-      () =>
-        withSectors(source, [
-          ...vanillaBsp(source).slice(0, 1),
-          { name: 'SSECTORS', bytes: ss.bytes() },
-          ...vanillaBsp(source).slice(2),
-        ]),
-      /XGLN/,
-    );
+  test('a GL payload whose subsectors and segs disagree is refused, not read past', () => {
+    const short = { ...source, subsectors: source.subsectors.slice(0, -1) };
+    // The segs are all still written, so the count in the payload outruns what the
+    // subsectors claim — gzdoom's own check (`LoadZNodes`).
+    const bsp = extendedBsp('XGLN', 1, { ...short, segs: source.segs });
+    assert.throws(() => withSectors(short, bsp), /segs/);
+  });
+
+  test('a miniseg loads as NO_LINE, whichever width its format names it in', () => {
+    for (const [signature, gl, sentinel] of [
+      ['XGLN', 1, 0xffff],
+      ['XGL2', 2, 0xffffffff],
+    ] as const) {
+      const mini = { ...source, segs: source.segs.map((s, i) => (i === 0 ? { ...s, linedef: sentinel } : s)) };
+      const loaded = withSectors(mini, extendedBsp(signature, gl, mini));
+      assert.equal(loaded.segs[0].linedef, NO_LINE, signature);
+      assert.equal(loaded.segs[1].linedef, source.segs[1].linedef, 'and its neighbours keep their lines');
+      // The leaf still closes: the miniseg ends where the seg after it begins.
+      assert.equal(loaded.segs[0].v2, loaded.segs[1].v1, signature);
+    }
+  });
+
+  test('XGL3 reads the partition line in fixed point, where the others read whole units', () => {
+    const fractional = { ...source, nodes: source.nodes.map((n) => ({ ...n, x: n.x + 0.5, dx: -0.25 })) };
+    const loaded = withSectors(fractional, extendedBsp('XGL3', 3, fractional));
+    assert.equal(loaded.nodes[0].x, fractional.nodes[0].x);
+    assert.equal(loaded.nodes[0].dx, -0.25);
+    // The same node through XGLN keeps whole units alone, which is all its record holds.
+    const whole = withSectors(fractional, extendedBsp('XGLN', 1, fractional));
+    assert.ok(Number.isInteger(whole.nodes[0].x));
+    assert.equal(whole.nodes[0].dx, 0);
   });
 });

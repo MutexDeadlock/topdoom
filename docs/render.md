@@ -12,7 +12,9 @@ the level are docs/sprites.md; the loop that drives a frame is docs/frameloop.md
 `SEGS` only stores edges that lie on real linedefs — the edges created by BSP splits aren't in the
 WAD. `buildSubSectorPolys` rebuilds each subsector by taking a quad covering the whole map and
 clipping it (Sutherland-Hodgman) against every partition line on the path from the BSP root down to
-that leaf, then against the subsector's own segs. The result is convex, so a triangle fan is enough.
+that leaf, then against the subsector's own segs — skipping the minisegs a GL BSP closes its leaves
+with, which lie on partitions the cell has already been clipped by (docs/wad.md § GL nodes). The
+result is convex, so a triangle fan is enough.
 Traversal is iterative (stack-based), not recursive — some maps have deep BSP trees.
 `sectorOfSubSector` resolves a subsector's sector via its first seg → linedef → sidedef.
 

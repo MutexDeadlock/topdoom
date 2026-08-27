@@ -10,7 +10,7 @@ import { records, type Reader } from './reader.ts';
 import * as hexen from './map/hexen.ts';
 import { readBsp, type NodeFormat } from './map/nodes.ts';
 
-export { GL_SIGNATURES, SUBSECTOR_BIT, type NodeFormat } from './map/nodes.ts';
+export { NO_LINE, SUBSECTOR_BIT, type NodeFormat } from './map/nodes.ts';
 
 export const NO_SIDE = 0xffff;
 
@@ -75,6 +75,7 @@ export interface Seg {
   v1: number;
   v2: number;
   angle: number;
+  /** The line this edge runs on, or `NO_LINE` on a GL miniseg. docs/wad.md § GL nodes. */
   linedef: number;
   /** 0 = same direction as the linedef, 1 = opposite. */
   direction: number;

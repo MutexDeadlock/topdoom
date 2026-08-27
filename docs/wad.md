@@ -86,22 +86,58 @@ under the ceiling for the `MF_SPAWNCEILING` types, exactly as in a Doom map.
 
 ## Node formats
 
-`wad/map/nodes.ts` reads the three BSP lumps (SEGS/SSECTORS/NODES) in the four encodings Boom-era maps
-actually ship, detected per PrBoom+ `p_setup.c` — DeePBSP V4 and the ZDoom formats sign the NODES
-lump (`xNd4\0\0\0\0`, `XNOD`, `ZNOD`), GL nodes sign SSECTORS and are refused with a load error
-naming the format (this engine clips subsector polygons from plain nodes — docs/render.md § BSP
-polygon reconstruction — so GL segs have nothing to offer it):
+`wad/map/nodes.ts` reads the three BSP lumps (SEGS/SSECTORS/NODES) in every encoding Boom- and
+ZDoom-era maps actually ship, detected by signature per PrBoom+ `p_setup.c` and gzdoom
+`maploader.cpp: LoadExtendedNodes`:
 
 - **Vanilla**: 16-bit records, exactly what `linuxdoom-1.10` reads.
 - **DeePBSP V4**: 32-bit vertex indices in segs, 32-bit `firstseg`, 32-bit node children
-  (PrBoom+ `doomdata.h`: `mapseg_v4_t` / `mapsubsector_v4_t` / `mapnode_v4_t`).
+  (PrBoom+ `doomdata.h`: `mapseg_v4_t` / `mapsubsector_v4_t` / `mapnode_v4_t`). Signs NODES with
+  `xNd4\0\0\0\0`.
 - **XNOD**: replaces the SEGS/SSECTORS content wholesale — the payload carries its own split
   vertexes in 16.16 fixed point (appended to the map's `vertexes`, so vertex coordinates can be
   fractional), per-subsector seg counts with the start index implicit, and segs that store no
-  angle/offset (nothing in the engine reads either; they load as 0).
+  angle/offset (nothing in the engine reads either; they load as 0). Signs NODES.
 - **ZNOD**: XNOD with the payload zlib-compressed. Decoded by `util/inflate.ts`, which exists
   because `loadMap` is synchronous all the way up through session start and therefore cannot await
   a `DecompressionStream`.
+- **XGLN / XGL2 / XGL3** and their `ZGL*` compressed twins: the GL family, below. They sign
+  SSECTORS.
+
+The eight extended signatures are one table in `nodes.ts` (`EXTENDED`), each saying whether it is
+compressed and its GL level — which lump signs it, which seg record it uses and how precise its
+partition line is all follow from that level — so the eight differ in two fields rather than in
+eight readers. **NODES is tested before SSECTORS**, the order gzdoom's `LoadLevel` uses: a
+map built with both (`zdbsp -g -X`) ships XNOD in NODES beside XGLN in SSECTORS, and the plain
+nodes are the ones it means for an engine not drawing from GL segs.
+
+### GL nodes
+
+A GL BSP differs from a plain one in that its subsectors are **closed**: the node builder adds the
+edges its own splits introduced, which no linedef backs. Three things follow, and they are the whole
+of what the GL family costs.
+
+**A seg's second vertex is not stored.** A leaf's segs run in order around its boundary, so each
+one's `v2` is the next one's `v1`, wrapping at the end of the leaf — the rule gzdoom's `LoadGLZSegs`
+reconstructs them by, and what `tests/wad/glnodes.test.ts` pins by checking that every seg on a real
+line has *both* ends on that line. The `partner` field beside it is read past; nothing here walks
+between leaves.
+
+**A miniseg — an edge on no linedef — loads with `linedef` = `NO_LINE`** (-1, not either format's
+own `0xFFFF`/`0xFFFFFFFF`, so it indexes `linedefs` as `undefined` whatever the map's line count).
+`render/bsp.ts` then drops minisegs from the leaf's wall list entirely: a miniseg lies on the
+ancestor partition the cell has already been clipped by, so clipping by it again is measured to
+change no polygon on E1M1, and every repair that follows — the wall that stops inside its leaf, the
+wrong-side seg, the self-referencing leaf — asks a question about a *linedef*, which a miniseg has
+none of. Nothing else in `src/` reads `Seg.linedef`.
+
+**XGL3 stores the partition line in 16.16 fixed point**, where XGLN and XGL2 store whole units; and
+XGL2 and XGL3 name a seg's line in a u32 where XGLN uses a u16. Those two fields are the only
+record differences between the three levels.
+
+A GL payload whose seg count disagrees with what its subsectors claim is refused rather than read
+past — gzdoom's own check, and the alternative is every seg index past the first short leaf naming
+a different edge than the file does.
 
 Everything is normalized at read time to **one in-memory convention**: node children are 32-bit
 with `SUBSECTOR_BIT = 0x80000000` marking subsector references, whatever the disk stored. Vanilla's
@@ -588,7 +624,7 @@ The `ok`/`partial`/`broken` level is **derived** (`supportLevel`), never stored.
 copies hold the reasons alone, so reclassifying a code in `SUPPORT_ISSUES` takes effect on rows
 written before the change, and no stored record can assert a level its own reasons contradict.
 
-The whole check runs **off the lump directory**, plus one four-byte read per map. That is the
+The whole check runs **off the lump directory** — nothing in a map is read to reach it. That is the
 constraint the rule set is chosen under, not an implementation detail: a library scan describes
 hundreds of files it will never load (§ Describing a file without loading it), so anything needing
 LINEDEFS or SECTORS is out — including the linedef/sector special coverage `inspect-wad` reports,
@@ -607,8 +643,7 @@ UDMF rather than as the missing LINEDEFS that follow from it:
 |---|---|---|
 | `udmf` | a `TEXTMAP` lump in the group | Text-format maps are not read here at all. `mapLumps` stops at the first lump that isn't one of `MAP_LUMPS`, so such a map loads as an empty world rather than failing loudly. |
 | `incomplete` | THINGS, LINEDEFS, SIDEDEFS, VERTEXES or SECTORS missing or zero-length | There is no level without them, and no player start without THINGS. |
-| `glNodes` | SSECTORS opens with one of `map/nodes.ts: GL_SIGNATURES` | `detectNodeFormat` throws on exactly these (§ Node formats); the signature list is imported, not restated. |
-| `noBsp` | **both** NODES and SSECTORS empty | A map left for the port to build nodes for. Either lump alone is enough — XNOD/ZNOD put the whole BSP in NODES and leave SSECTORS empty, and a map convex enough to be a single subsector has no NODES record to write. |
+| `noBsp` | **both** NODES and SSECTORS empty | A map left for the port to build nodes for — or one whose GL nodes ship in a `GL_<map>` group of their own, which this engine does not read. Either lump alone is enough: an extended BSP fills one of them and leaves the other empty (NODES for XNOD/ZNOD, SSECTORS for the GL family), and a map convex enough to be a single subsector has no NODES record to write. |
 
 **`partial` — it loads and plays, but not as its author built it.**
 

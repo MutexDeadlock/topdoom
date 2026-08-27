@@ -1,4 +1,4 @@
-v0.16.2 (2026-08-2?)
+v0.16.2 (2026-08-28)
 
 Features and improvements
   - add support for ZDoom GL nodes (XGLN/XGL2/XGL3, compressed or not)

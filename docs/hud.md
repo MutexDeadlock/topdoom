@@ -42,12 +42,14 @@ empty block beside their icon.
 color vanilla prints every value in, so the tint reads as "this is fine" rather than as an alarm
 that is always on. Vanilla has no equivalent (`st_stuff.c` draws both numbers from the one red set
 whatever they say), so the thresholds are this engine's own and tuned by feel; the colors are
-sampled from WAD art like every other color here — `ARM2A0`'s blue, `ARM1A0`'s green
-(`LEVEL_STATS_GREEN`, the same green the completed-category cue uses), `STYSNUM1`'s yellow. A
-recolor bakes into the glyphs, so each tier is its own `WadNumbers` instance, built once and held
-by `TieredNumbers` — which presents `WadNumbers`' own surface and picks the tier inside `draw`, so
-the readouts that print in one color and the two that don't are the same kind of thing to
-`NumberField`. All the tiers measure the same, being the same lumps retinted.
+sampled from WAD art like every other color here — `ARM2A0`'s blue (`COLOR_BLUE`, taken a few
+rungs up the same PLAYPAL blue ramp the sprite's pixels sit on: pure blue is the palette's darkest
+hue and read too dim over a level), `ARM1A0`'s green (`LEVEL_STATS_GREEN`, the same green the
+completed-category cue uses), `STYSNUM1`'s yellow. A recolor bakes into the glyphs, so each tier is
+its own `WadNumbers` instance, built once and held by `TieredNumbers` — which presents
+`WadNumbers`' own surface and picks the tier inside `draw`, so the readouts that print in one color
+and the two that don't are the same kind of thing to `NumberField`. All the tiers measure the same,
+being the same lumps retinted.
 
 **Two cues moved off font styling** when the numbers stopped being text: sprite digits have neither
 a weight nor a color to set. The current weapon's ammo row is now the lit one with the other three

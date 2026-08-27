@@ -52,12 +52,15 @@ interface Glyph {
 export type WadFontRecolor = readonly [number, number, number];
 
 /**
- * Sampled from `ARM2A0` (the blue security armor), and here rather than with either consumer for
- * the same reason `COLOR_YELLOW` is: the HUD's over-100 health/armor digits (`ui/hud/hud.ts`'s
- * `VALUE_TIERS`) and the crosshair's over-100 reticle (`ui/hud/crosshair.ts`) are the same cue in
- * two places and must not drift apart.
+ * The blue security armor's own ramp (`ARM2A0`'s pixels sit on PLAYPAL's blue range, indices
+ * 192-207), taken four rungs above the sprite's brightest pixel (index 201, `0,0,227`): pure blue
+ * is the darkest hue in the palette and read too dim against the level behind it, so this picks
+ * index 197 off the same ramp — **brightness tuned by feel**, hue still WAD-derived. Here rather
+ * than with either consumer for the same reason `COLOR_YELLOW` is: the HUD's over-100
+ * health/armor digits (`ui/hud/hud.ts`'s `VALUE_TIERS`) and the crosshair's over-100 reticle
+ * (`ui/hud/crosshair.ts`) are the same cue in two places and must not drift apart.
  */
-export const COLOR_BLUE: WadFontRecolor = [0, 0, 227];
+export const COLOR_BLUE: WadFontRecolor = [99, 99, 255];
 
 /**
  * Sampled from `STYSNUM1` — vanilla's own status-bar yellow. Lives here rather than with either

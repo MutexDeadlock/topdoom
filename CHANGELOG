@@ -4,6 +4,7 @@ Features and improvements
   - further optimized wall fading performance
   - the crosshair keeps a solid black outline, so it stays readable over
     bright floors and fire
+  - blue on health/armor and the crosshair is brighter
   - a focused text field or dropdown takes the menu's accent, not the 
     browser's focus ring
   - profiler overlay and fps count can be switched on/off in any environment: 

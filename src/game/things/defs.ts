@@ -450,16 +450,19 @@ export interface ThingLayer {
    */
   monstersInSector(sector: Sector): MonsterRef[];
   /**
-   * `monstersInSector` plus any still-standing barrel in `sector` — vanilla's
-   * `PIT_ChangeSector` treats a barrel exactly like a monster for crushing
-   * (any `MF_SHOOTABLE` mobj with health left takes the same periodic
+   * `monstersInSector` plus any still-standing barrel, over a *set* of sectors
+   * — vanilla's `PIT_ChangeSector` treats a barrel exactly like a monster for
+   * crushing (any `MF_SHOOTABLE` mobj with health left takes the same periodic
    * damage), so a barrel under a crusher dies and, after its usual
    * `BARREL_CHAIN.explodeDelaySeconds`, explodes the same as if it'd been shot.
-   * Crush damage's own caller (`game.ts`'s `applyCrushDamage`) is the only
-   * user — the headroom-blocked check other movers use deliberately stays on
-   * `monstersInSector` alone, unrelated to this task.
+   *
+   * Crush damage (`specials/moverblocking.ts: applyCrushDamage`) is the only
+   * user, and it asks for the crushing sector *and its neighbors* in one pass:
+   * a body standing next door with its box reaching under the descending
+   * ceiling is crushed too (docs/specials.md § Crushers). The headroom-blocked
+   * check other movers use deliberately stays on `monstersInSector` alone.
    */
-  crushablesInSector(sector: Sector): MonsterRef[];
+  crushablesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[];
   /**
    * Applies `amount` damage to `id`, switching to the death animation at 0 —
    * gibbed or plain per `P_KillMobj`'s overkill rule (docs/death.md § Monster

@@ -1,3 +1,11 @@
+v0.16.2 (2026-08-2?)
+
+Fixed bugs
+  - a monster standing half under a crusher is now crushed by it
+  
+
+===============================================================================
+
 v0.16.1 (2026-08-27)
 
 Features and improvements

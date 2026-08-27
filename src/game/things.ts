@@ -1649,10 +1649,10 @@ export function buildThingSprites(
       }
       return out;
     },
-    crushablesInSector(sector: Sector): MonsterRef[] {
+    crushablesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[] {
       const out: MonsterRef[] = [];
       for (const p of posed) {
-        if (p.dead || p.sector !== sector) continue;
+        if (p.dead || !p.sector || !sectors.has(p.sector)) continue;
         if (!MONSTER_TYPES.has(p.type) && p.type !== ThingType.barrel) continue;
         out.push({ id: p.id, x: p.x, y: p.y, z: p.z, type: p.type, angle: p.angle, radius: p.blockRadius, height: p.bodyHeight });
       }

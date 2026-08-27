@@ -844,6 +844,19 @@ export class World {
   }
 
   /**
+   * The vertical room a body of this radius actually has standing here —
+   * `groundCeiling` minus `groundFloor` from a single box walk, which is what
+   * `P_ThingHeightClip` compares against `thing->height` to decide a body no
+   * longer fits. Crush damage is that comparison
+   * (`specials/moverblocking.ts: applyCrushDamage`), so it must see the
+   * openings the body's box spans and not just its own sector's gap.
+   */
+  headroom(x: number, y: number, radius: number, forMonster = false): number {
+    const at = checkPosition(this, x, y, radius, ANY_HEIGHT, ANY_HEIGHT, forMonster, undefined, undefined, false);
+    return at.ceilingZ - at.floorZ;
+  }
+
+  /**
    * True if this line is a hard wall regardless of height — no opening to
    * test. `forMonster` additionally treats an `LF.BLOCK_MONSTERS` line as
    * solid — vanilla's own `ML_BLOCKMONSTERS`, a line that fences monsters

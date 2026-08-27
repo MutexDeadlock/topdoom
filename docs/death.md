@@ -327,7 +327,7 @@ matching vanilla's `bombsource` propagation. The spider mastermind/cyberdemon sp
 applies here for free.
 
 **A crusher can kill a barrel**, exactly as vanilla's crush damage (real `P_DamageMobj` against
-anything `MF_SHOOTABLE`) allows — `ThingLayer.crushablesInSector` covers barrels alongside
+anything `MF_SHOOTABLE`) allows — `ThingLayer.crushablesInSectors` covers barrels alongside
 `MONSTER_TYPES` for this one caller, rather than widening the `MONSTER_TYPES`-gated
 `monstersInSector` every other system relies on. See docs/specials.md § Crushers.
 

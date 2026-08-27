@@ -182,21 +182,37 @@ return to the sector's *own* start height (not neighbor-derived, unlike a door's
 forever, with no hold/rest state.
 
 They — and the vanilla `raiseFloorCrush` floor family (55/56/65/94) — deal `CRUSH_DAMAGE` every
-`CRUSH_DAMAGE_INTERVAL` (vanilla's 10 HP every 4 tics) to the player or any monster in their sector
-that the current headroom doesn't fit (`sector.ceilHeight - sector.floorHeight` against
-`PLAYER_HEIGHT` and each body's own `mobjinfo.height`), via `SpecialsController`'s `onCrush` callback into
+`CRUSH_DAMAGE_INTERVAL` (vanilla's 10 HP every 4 tics) to the player or any body the moving plane has
+left without the headroom to stand in, via `SpecialsController`'s `onCrush` callback into
 `specials/moverblocking.ts: applyCrushDamage` — the same "hand back a sector index, let someone else work out
 who is standing in it" split as the two obstruction callbacks beside it, since `SpecialsController`
-mutates geometry but has no idea where anyone is. `ThingLayer.
-monstersInSector` finds candidates by comparing against the exact same mutable `Sector` object
-reference `PosedThing.sector` was seeded from, the same trick `tryPickup`'s live-height read relies
-on. The headroom gate matters even for someone in the mover's own sector footprint: standing under a
-crusher parked at the top of its swing, or before it's descended far enough to reach you, must not
-deal damage — `PIT_ChangeSector` (`p_map.c`) only damages a thing `P_ThingHeightClip` reports as not
-fitting, never everyone the sector's blockmap iteration happens to touch.
+mutates geometry but has no idea where anyone is. The headroom gate matters even for someone in the
+mover's own sector footprint: standing under a crusher parked at the top of its swing, or before it's
+descended far enough to reach you, must not deal damage — `PIT_ChangeSector` (`p_map.c`) only damages
+a thing `P_ThingHeightClip` reports as not fitting, never everyone the sector's blockmap iteration
+happens to touch.
 
-**A barrel takes the same crush damage as a monster**, via `crushablesInSector` (`monstersInSector`
-plus any living barrel in the sector) — vanilla's `PIT_ChangeSector` doesn't distinguish `MT_BARREL`
+**"Doesn't fit" is each body's own clipped headroom, not the crushing sector's gap under its centre
+point.** `P_ThingHeightClip` re-runs `P_CheckPosition`, so a body's `ceilingz`/`floorz` come from
+every two-sided opening its *box* spans — which is `World.headroom(x, y, radius)` here — and are
+compared against its own `mobjinfo.height` (`PLAYER_HEIGHT` for the player and for a voodoo doll,
+which is a player mobj). A body straddling the crushing sector's edge is therefore crushed by it, and
+must be: the movement code has always pinned it (`positionBlocked` is box aware, docs/movement.md §
+Collision), so measuring damage from the centre point alone left it frozen under a grinding ceiling
+taking nothing — no flinch, no pain sound, no death. **Repro: NoSp2.wad MAP04**, whose crusher room
+is two sectors, 198 (tag 84) and 141, with identical heights: two thirds of the cybruisers penned
+there stood at the join and survived stroke after stroke. `tests/regression/crush-straddling-body.test.ts`.
+
+Membership in the crushing sector is still required — the eight-point `boxOverlapsSector` sampling —
+so a body squeezed by something else next door is that mover's business, not this one's. Its
+candidates are `ThingLayer.crushablesInSectors` over the crushing sector *and its neighbors*
+(`crushNeighborhood`), standing in for vanilla's walk of the blockmap blocks covering the sector's
+bounding box; the layer finds them by comparing against the exact same mutable `Sector` object
+references `PosedThing.sector` was seeded from, the same trick `tryPickup`'s live-height read relies
+on.
+
+**A barrel takes the same crush damage as a monster**, via `crushablesInSectors` (`monstersInSector`
+plus any living barrel in those sectors) — vanilla's `PIT_ChangeSector` doesn't distinguish `MT_BARREL`
 from any other `MF_SHOOTABLE` mobj, so a barrel under a crusher dies and explodes exactly as if it'd
 been shot (docs/death.md § Exploding barrels covers the death→explode delay itself). The
 headroom-blocked check other movers use (`game/specials/moverblocking.ts`) deliberately stays on
@@ -325,8 +341,8 @@ the same straddling `World.groundFloor` accounts for — so the player's *center
 corridor's sector while the door sector, the one actually about to close on them, is never checked at
 all. A plain point test was the original bug here. The overlap is approximated the way `FogOfWar`
 samples polygons: the box's four corners and four edge midpoints, ample for a doorway-sized sector.
-`applyCrushDamage`, in the same file and directly below it, keeps the cheap point test on purpose —
-a crusher's sector is typically the whole room, where the blind spot barely matters.
+`applyCrushDamage`, in the same file and directly below it, is box aware for the same reason and then
+some — it measures the body's whole clipped headroom (§ Crushers).
 
 Both take prospective heights as explicit parameters rather than reading `player.z`/`m.z`: the caller
 is always asking about the height a boundary is *about* to move to, matching `P_ThingHeightClip`

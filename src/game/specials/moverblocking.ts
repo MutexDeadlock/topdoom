@@ -5,12 +5,13 @@
  * obstruction tests, the height its next step would put the plane at. See docs/specials.md
  * § Crushers and § Every other mover stops instead.
  */
-import type { DoomMap } from '../../wad/map.ts';
+import type { DoomMap, Sector } from '../../wad/map.ts';
 import type { Pos2 } from '../../types.ts';
 import type { World } from '../world.ts';
 import type { ThingLayer } from '../things.ts';
 import { TALLEST_BODY_HEIGHT } from '../monsters/tables.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../player.ts';
+import { neighborSectorIndices } from './mapscan.ts';
 import { CRUSH_DAMAGE } from './defs.ts';
 
 /**
@@ -33,9 +34,9 @@ const BOX_RIM = [
  * whichever sector its bare centre point resolves to. A plain point test misses
  * the player standing half in a doorway.
  *
- * Still a rim approximation where vanilla's `PIT_ChangeSector` walks the
- * sector's own thing list, but sampling the same box the movement code clips
- * (docs/movement.md § Collision) rather than a circle.
+ * Still a rim approximation where vanilla walks the sector's own blockmap, but
+ * sampling the same box the movement code clips (docs/movement.md § Collision)
+ * rather than a circle.
  */
 function boxOverlapsSector(world: World, x: number, y: number, radius: number, sectorIndex: number): boolean {
   if (world.sectorIndexAt(x, y) === sectorIndex) return true;
@@ -122,16 +123,65 @@ export function blocksFloorRise(
   return false;
 }
 
+/** Per map, per sector: `crushNeighborhood`'s answer, memoized as `world.ts`'s `sectorLines` is. */
+const neighborhoods = new WeakMap<DoomMap, Map<number, Set<Sector>>>();
+
+/**
+ * The sectors a body caught by the mover in `sectorIndex` can be standing in:
+ * that sector and everything across a two-sided line from it. Vanilla's
+ * `P_ChangeSector` walks the blockmap blocks covering the sector's *bounding
+ * box*, so a body next door is a candidate there too — and a collision box is
+ * narrower than any sector, so one that reaches into the moving sector from
+ * outside it is standing in a sector bordering it.
+ */
+function crushNeighborhood(map: DoomMap, sectorIndex: number): ReadonlySet<Sector> {
+  let perMap = neighborhoods.get(map);
+  if (!perMap) {
+    perMap = new Map();
+    neighborhoods.set(map, perMap);
+  }
+  let sectors = perMap.get(sectorIndex);
+  if (!sectors) {
+    sectors = new Set([map.sectors[sectorIndex]]);
+    for (const i of neighborSectorIndices(map, sectorIndex)) sectors.add(map.sectors[i]);
+    perMap.set(sectorIndex, sectors);
+  }
+  return sectors;
+}
+
+/**
+ * `PIT_ChangeSector`'s own two questions about one body: does the headroom
+ * `P_ThingHeightClip` gives it here fall short of its own height, and is the
+ * mover's sector what took that headroom away. Measured against the openings
+ * its box spans (`World.headroom`), never against the sector's own gap at its
+ * centre point — the body pinned half under a descending ceiling is the case
+ * that distinguishes the two, and it is crushed.
+ *
+ * Height first: it rejects everyone standing in an ordinary room for one box
+ * walk, leaving the eight-point sector sampling to the few actually squeezed.
+ */
+function crushed(
+  world: World,
+  x: number,
+  y: number,
+  radius: number,
+  height: number,
+  sectorIndex: number,
+  forMonster: boolean,
+): boolean {
+  return world.headroom(x, y, radius, forMonster) < height && boxOverlapsSector(world, x, y, radius, sectorIndex);
+}
+
 /**
  * `SpecialsController`'s `onCrush` callback: deals `CRUSH_DAMAGE` to the player
- * and to every crushable thing in `sectorIndex` that the sector's current
- * headroom doesn't fit. Gated on `PIT_ChangeSector`'s actual "doesn't fit"
+ * and to every crushable body the sector's own moving plane has left without
+ * the headroom to stand in. Gated on `PIT_ChangeSector`'s actual "doesn't fit"
  * test, not merely standing in the sector — a crusher parked at the top of its
- * travel, or one that hasn't reached anyone yet, must not deal damage.
- * Monsters and barrels share one loop, matching `PIT_ChangeSector` treating
- * any shootable mobj the same. 2D membership only; the deliberately cheap
- * point test is docs/specials.md § Crushers, which also says why it isn't
- * `boxOverlapsSector`.
+ * travel, or one that hasn't reached anyone yet, must not deal damage — and
+ * that test is each body's clipped headroom, so a body straddling the sector's
+ * edge is crushed like one standing squarely in it (docs/specials.md §
+ * Crushers). Monsters and barrels share one loop, matching `PIT_ChangeSector`
+ * treating any shootable mobj the same.
  */
 export function applyCrushDamage(
   world: World,
@@ -150,27 +200,31 @@ export function applyCrushDamage(
   // reported whether or not this tic is a damage tic, because the crusher
   // slowdown keys off it every tic — see `SpecialsController.tickCrush`.
   let caught = false;
+  // Both gates are the mover's own gap, and are the cheap "could this plane be
+  // squeezing anyone at all" pre-filter for the per-body measurement below:
+  // headroom shorter than a body's height somewhere *next* to the mover is that
+  // neighbor's business, not this mover's.
   if (gap < PLAYER_HEIGHT) {
     // The doll and the player are the same mobj as far as `PIT_ChangeSector` is
     // concerned — and a crusher over a doll is the classic instant-death script,
     // so this is not an edge case. Damage is dealt once per body caught, exactly
     // as vanilla's per-mobj loop does. docs/specials.md § Voodoo dolls.
     for (const body of dolls) {
-      if (world.sectorIndexAt(body.x, body.y) !== sectorIndex) continue;
+      if (!crushed(world, body.x, body.y, PLAYER_RADIUS, PLAYER_HEIGHT, sectorIndex, false)) continue;
       caught = true;
       if (dealDamage) damagePlayer(CRUSH_DAMAGE);
     }
-    if (world.sectorIndexAt(player.x, player.y) === sectorIndex) {
+    if (crushed(world, player.x, player.y, PLAYER_RADIUS, PLAYER_HEIGHT, sectorIndex, false)) {
       caught = true;
       if (dealDamage) damagePlayer(CRUSH_DAMAGE);
     }
   }
   if (gap < TALLEST_BODY_HEIGHT) {
-    for (const m of things?.crushablesInSector(sector) ?? []) {
+    for (const m of things?.crushablesInSectors(crushNeighborhood(map, sectorIndex)) ?? []) {
       // Per body, not one shared band: a barrel is 42 tall against a
       // cyberdemon's 110, so the ceiling reaches them at very different points
       // of the same descent.
-      if (gap >= m.height) continue;
+      if (!crushed(world, m.x, m.y, m.radius, m.height, sectorIndex, true)) continue;
       caught = true;
       if (dealDamage) things?.damage(m.id, CRUSH_DAMAGE);
     }

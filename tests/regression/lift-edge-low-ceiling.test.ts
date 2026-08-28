@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { MAX_STEP_UP, World, positionBlocked } from '../../src/game/world.ts';
+import { MAX_STEP_UP, World } from '../../src/game/world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 
 /**
@@ -46,19 +46,19 @@ describe('Regressions · a low-ceilinged neighbor blocks a body standing above i
 
   test('blocked at lift height', () => {
     const { world, x, y } = scene();
-    assert.ok(positionBlocked(world, x, y, PLAYER_RADIUS, LIFT_FLOOR, PLAYER_HEIGHT), 'must not walk off the raised lift');
+    assert.ok(world.positionBlocked(x, y, PLAYER_RADIUS, LIFT_FLOOR, PLAYER_HEIGHT), 'must not walk off the raised lift');
   });
 
   test('free on the pit floor, which is the way through', () => {
     const { world, x, y } = scene();
-    assert.ok(!positionBlocked(world, x, y, PLAYER_RADIUS, PIT_FLOOR, PLAYER_HEIGHT), 'the crawl-through must stay open');
+    assert.ok(!world.positionBlocked(x, y, PLAYER_RADIUS, PIT_FLOOR, PLAYER_HEIGHT), 'the crawl-through must stay open');
   });
 
   test('blocked while still airborne above the opening', () => {
     const { world, x, y } = scene();
     // Mid-fall the player's feet are above the opening's top by more than a
     // body height, which vanilla refuses the same way.
-    assert.ok(positionBlocked(world, x, y, PLAYER_RADIUS, CRAWL_CEIL - PLAYER_HEIGHT + 1, PLAYER_HEIGHT), 'no room to fit yet');
-    assert.ok(!positionBlocked(world, x, y, PLAYER_RADIUS, CRAWL_CEIL - PLAYER_HEIGHT, PLAYER_HEIGHT), 'exactly fits');
+    assert.ok(world.positionBlocked(x, y, PLAYER_RADIUS, CRAWL_CEIL - PLAYER_HEIGHT + 1, PLAYER_HEIGHT), 'no room to fit yet');
+    assert.ok(!world.positionBlocked(x, y, PLAYER_RADIUS, CRAWL_CEIL - PLAYER_HEIGHT, PLAYER_HEIGHT), 'exactly fits');
   });
 });

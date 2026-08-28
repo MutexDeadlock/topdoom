@@ -518,9 +518,7 @@ const PISTOL_START_STORAGE_KEY = 'topdoom.pistolStart';
  * behavior for an ordinary exit (it is what vanilla does between *episodes*, and what its level
  * select has always done). Read by `game.ts: enterLevel`, the one place a level transition installs
  * an inventory. docs/items.md § Pistol start.
- *
- * Module-level rather than per-`Game`, for the reason `getInfiniteTallActors` is: it is a
- * settings-tab preference that has to apply to the run already in progress.
+ * Shaped like every persisted setting — docs/menu.md § Persisted settings.
  */
 let pistolStart = globalThis.localStorage?.getItem(PISTOL_START_STORAGE_KEY) === 'true';
 

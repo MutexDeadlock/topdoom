@@ -8,7 +8,6 @@ import {
 } from '../../src/game/monsters/defs.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
-import { hasLineOfSight } from '../../src/game/world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
 import { loadPinky, type PinkyFixture, type PinkyMap } from '../fixtures/pinky.ts';
 
@@ -97,8 +96,8 @@ describe('Regressions · vertical melee reach', () => {
    */
   test('pinky_above_test: sight passes once the player backs off the wall, and the bite is still refused', () => {
     const f = loadPinky('pinky_above_test');
-    assert.equal(hasLineOfSight(f.world, f.demon, f.playerAt(112)), false, 'at the wall: lip blocks it');
-    assert.equal(hasLineOfSight(f.world, f.demon, f.playerAt(102)), true, 'backed off: sees over the lip');
+    assert.equal(f.world.hasLineOfSight(f.demon, f.playerAt(112)), false, 'at the wall: lip blocks it');
+    assert.equal(f.world.hasLineOfSight(f.demon, f.playerAt(102)), true, 'backed off: sees over the lip');
     // 58 units out, so still inside the 60-unit reach — the refusal cannot be
     // distance doing the work here.
     assert.ok(Math.hypot(0 - f.demon.x, 102 - f.demon.y) < REACH);

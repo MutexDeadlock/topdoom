@@ -15,7 +15,6 @@ import {
   type RaiseCandidate,
 } from './defs.ts';
 import { MONSTER_STATS } from './tables.ts';
-import { hasLineOfSight } from '../world.ts';
 import { applyRadiusDamage, type CombatContext } from '../combat.ts';
 import type { SpriteFxLayer } from '../spritefx.ts';
 import { IMPACT_FRAME_SECONDS, VILE_FIRE_FRAMES, VILE_FIRE_OFFSET } from '../spritefx/tables.ts';
@@ -150,7 +149,7 @@ export function spawnWindupFire(
 export function vileFlameFor(ctx: CombatContext, vileId: number, targetId: number | null): Pos3 | null {
   const vile = ctx.things?.monsterById(vileId);
   const target = targetId === null ? ctx.player : ctx.things?.monsterById(targetId);
-  if (!vile || !target || !hasLineOfSight(ctx.world, vile, target)) return null;
+  if (!vile || !target || !ctx.world.hasLineOfSight(vile, target)) return null;
   return fireFrontOf(target);
 }
 

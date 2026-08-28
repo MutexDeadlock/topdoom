@@ -47,7 +47,7 @@ import { applyBarrelExplosion, type CombatContext, type DamageCause } from './ga
 import { SpriteFxLayer } from './game/spritefx.ts';
 import { ProjectileLayer } from './game/projectiles.ts';
 import { FogOfWar } from './game/fogofwar.ts';
-import { AutoCamera, autoCameraReadout, getCameraMode } from './game/autocamera.ts';
+import { AutoCamera, getCameraMode } from './game/autocamera.ts';
 import {
   applyCrushDamage,
   blocksCeilingLower,
@@ -2008,7 +2008,7 @@ export class Game {
       `${fps} fps   ${this.built?.triangles ?? 0} tris   monsters awake ${this.things?.awakeMonsterCount() ?? 0}`,
       `pos ${this.player.x.toFixed(0)}, ${this.player.y.toFixed(0)}   z ${this.player.z.toFixed(0)}   sector ${sector}`,
       `cam ${camera.distance.toFixed(0)}u ${camera.tiltDeg.toFixed(0)}°tilt ${camera.yawDeg.toFixed(0)}°yaw`,
-      getCameraMode() === 'auto' ? autoCameraReadout(this.autoCamera) : 'manual',
+      getCameraMode() === 'auto' ? this.autoCamera.readout() : 'manual',
     ];
   }
 }

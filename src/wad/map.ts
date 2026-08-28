@@ -200,18 +200,12 @@ function readReject(wad: Wad, lumps: Map<string, number>, sectorCount: number): 
   return bytes.some((b) => b !== 0) ? bytes : undefined;
 }
 
-/**
- * Which encoding a map's LINEDEFS and THINGS shipped in. A BEHAVIOR lump — compiled ACS,
- * which only a Hexen map carries — is the signal, the same one gzdoom's `LoadLevel` uses;
- * record-size arithmetic is not a substitute. docs/wad.md § Map formats.
- */
-function readMapFormat(lumps: Map<string, number>): MapFormat {
-  return lumps.has('BEHAVIOR') ? 'hexen' : 'doom';
-}
-
 export function loadMap(wad: Wad, name: string): DoomMap {
   const lumps = mapLumps(wad, name);
-  const format = readMapFormat(lumps);
+  // A BEHAVIOR lump — compiled ACS, which only a Hexen map carries — is what names the encoding
+  // LINEDEFS and THINGS shipped in, the same signal gzdoom's `LoadLevel` uses; record-size
+  // arithmetic is not a substitute. docs/wad.md § Map formats.
+  const format: MapFormat = lumps.has('BEHAVIOR') ? 'hexen' : 'doom';
   const rawLump = (lumpName: string): Uint8Array | undefined => {
     const idx = lumps.get(lumpName);
     return idx === undefined ? undefined : wad.data(wad.lumpAt(idx)!);

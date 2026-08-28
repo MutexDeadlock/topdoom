@@ -6,7 +6,7 @@
  * effect and projectile layers, and the audio engine.
  * docs/monster-attacks.md § Resolving an attack.
  */
-import { shotPath, WEAPON_RANGE } from '../world.ts';
+import { WEAPON_RANGE } from '../world.ts';
 import { AIM_HEIGHT_OFFSET, PLAYER_RADIUS } from '../player.ts';
 import { traceHitsBox } from '../../util/geom.ts';
 import { triangularSpread } from '../../util/random.ts';
@@ -171,7 +171,7 @@ export class MonsterAttacks {
     // `WEAPON_RANGE` rather than the distance to `aim`: a bullet the spread
     // threw wide keeps flying, and can still find a wall or another monster
     // behind whoever it was fired at. `P_LineAttack(..., MISSILERANGE, ...)`.
-    const path = shotPath(world, atk, angleRad, aim, WEAPON_RANGE, null);
+    const path = world.shotPath(atk, angleRad, aim, WEAPON_RANGE, null);
 
     // The trace damages the first body it reaches, whatever it was aimed at.
     // Vertically it is `PTR_ShootTraverse`, not an aim: this bolt already has a

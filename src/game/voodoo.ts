@@ -6,7 +6,6 @@
 import {
   makePinnedMemo,
   makeTouchCache,
-  slideMove,
   type PinnedMemo,
   type SectorTouchCache,
   type World,
@@ -145,7 +144,7 @@ export class VoodooDolls {
         // own `attempted` for a doll — see `Player.attempted`.
         attempted = { x: doll.x + doll.momX * dt, y: doll.y + doll.momY * dt };
         // `P_SlideMove`, as for the player it is a copy of.
-        const moved = slideMove(this.world, doll, doll.momX * dt, doll.momY * dt, PLAYER_RADIUS);
+        const moved = this.world.slideMove(doll, doll.momX * dt, doll.momY * dt, PLAYER_RADIUS);
         if (dt > 0) {
           doll.momX = (moved.x - doll.x) / dt;
           doll.momY = (moved.y - doll.y) / dt;

@@ -1,9 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  hasLineOfSight,
   playerShotRange,
-  shotPath,
   PLAYER_WEAPON_RANGE,
   WEAPON_RANGE,
 } from '../../src/game/world.ts';
@@ -24,19 +22,19 @@ describe('Regressions · player hitscan range', () => {
 
     // WEAPON_RANGE is `P_LineAttack`'s MISSILERANGE and belongs to *monsters*.
     // In open corridor it simply runs out: full range travelled, nothing hit.
-    const monsterShot = shotPath(world, player, NORTH, null, WEAPON_RANGE);
+    const monsterShot = world.shotPath(player, NORTH, null, WEAPON_RANGE);
     assert.equal(monsterShot.dist, 2048);
     assert.equal(monsterShot.lineIndex, null, 'ran out of range rather than hitting anything');
     assert.ok(monsterShot.dist < 3584, 'a 2048 cap cannot reach the chaingunner');
 
     // PLAYER_WEAPON_RANGE is ZDoom's PLAYERMISSILERANGE. It crosses the whole
     // corridor and stops on the far wall 3616 out — past the monster at 3584.
-    const playerShot = shotPath(world, player, NORTH, null, PLAYER_WEAPON_RANGE);
+    const playerShot = world.shotPath(player, NORTH, null, PLAYER_WEAPON_RANGE);
     assert.equal(playerShot.dist, 3616);
     assert.notEqual(playerShot.lineIndex, null, 'stopped by the end wall, not by range');
     assert.ok(playerShot.dist > 3584, 'the shot passes the chaingunner before it stops');
 
-    assert.ok(hasLineOfSight(world, player, monster), 'nothing stands between them');
+    assert.ok(world.hasLineOfSight(player, monster), 'nothing stands between them');
   });
 
   test('playerShotRange bounds a free bullet, a free missile and a locked-on shot differently', () => {

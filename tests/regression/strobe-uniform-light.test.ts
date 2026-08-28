@@ -1,6 +1,6 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { darkestNeighborLight } from '../../src/game/world.ts';
+import { World } from '../../src/game/world.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
 
@@ -47,7 +47,7 @@ describe('Regressions · a strobe with no darker neighbour', () => {
     map.sectors[grid.index(0, 0)].light = 96;
     map.sectors[grid.index(1, 0)].light = LIGHT;
     assert.equal(
-      darkestNeighborLight(map, grid.index(0, 0)),
+      new World(map).darkestNeighborLight(grid.index(0, 0)),
       96,
       'P_FindMinSurroundingLight seeds with the sector itself and only lowers',
     );

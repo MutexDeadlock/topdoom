@@ -141,9 +141,8 @@ export function tinted(light: number, tint: number): number {
 const STORAGE_KEY = 'topdoom.dynamicLights';
 
 /**
- * Whether dynamic lights are drawn at all. On by default. Module-level rather than per-`Game`, for
- * the reason `getInfiniteTallActors` is (`game/world.ts`): it is a settings-tab preference that has
- * to apply to the level already running, and the renderer is rebuilt every map load.
+ * Whether dynamic lights are drawn at all. On by default. Shaped like every persisted setting —
+ * docs/menu.md § Persisted settings.
  */
 let dynamicLightsEnabled = globalThis.localStorage?.getItem(STORAGE_KEY) !== 'false';
 

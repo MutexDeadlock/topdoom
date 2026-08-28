@@ -2,7 +2,6 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { addControlLine, gridMap } from '../fixtures/gridmap.ts';
 import { specialsRig, TIC } from '../fixtures/specialsrig.ts';
-import { highestNeighborFloor, lowestNeighborFloor } from '../../src/game/world.ts';
 import { NO_SIDE, type DoomMap } from '../../src/wad/map.ts';
 
 /**
@@ -50,6 +49,7 @@ function rig(special: number, platformFloor: number) {
   const s = r.specials as unknown as { trigger(lineIndex: number, keys: Set<never>): unknown };
   return {
     map,
+    world: r.world,
     platform,
     press: () => s.trigger(line, new Set()),
     run: (seconds: number) => {
@@ -62,8 +62,8 @@ function rig(special: number, platformFloor: number) {
 describe('Regressions · self-referencing lines and the neighbour search', () => {
   test('a self-referencing line does not make a sector its own neighbour', () => {
     const d = rig(71, 64);
-    assert.equal(highestNeighborFloor(d.map, d.platform), 0, "the room's floor, not the platform's own 64");
-    assert.equal(lowestNeighborFloor(d.map, d.platform), 0);
+    assert.equal(d.world.highestNeighborFloor(d.platform), 0, "the room's floor, not the platform's own 64");
+    assert.equal(d.world.lowestNeighborFloor(d.platform), 0);
   });
 
   test('an S1 turboLower drops the fenced platform to 8 above the room', () => {

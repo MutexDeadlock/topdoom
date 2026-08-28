@@ -2,7 +2,7 @@
  * The player's body: camera-relative movement, running/straferunning, gravity and falling,
  * knockback, and the vanilla `PLAYER_*` constants. See docs/movement.md.
  */
-import { bodyFloor, slideMove, type ThingBlocker, type World } from './world.ts';
+import { bodyFloor, type ThingBlocker, type World } from './world.ts';
 import type { Input } from './input.ts';
 import type { PlayerSnapshot } from './snapshot.ts';
 // Type-only, so the specials <-> player edge stays compile-time and no runtime cycle forms.
@@ -85,12 +85,8 @@ export const MOMENTUM_STOP_SPEED = 1;
 const AUTORUN_STORAGE_KEY = 'topdoom.autorun';
 
 /**
- * Whether Shift *walks* (autorun on, the default) rather than *runs* (vanilla's
- * own sense). Module-level rather than a `Player` field since it's a session
- * preference set from the menu's Settings tab and must apply immediately even
- * when a `Player` is mid-level, and `Player` itself is recreated every map
- * load (`game.ts: loadMapByIndex`) so an instance field would go stale between
- * toggling it and the next level. Persisted like `AudioEngine`'s volume.
+ * Whether Shift *walks* (autorun on, the default) rather than *runs* (vanilla's own sense).
+ * Shaped like every persisted setting — docs/menu.md § Persisted settings.
  */
 let autorunEnabled = globalThis.localStorage?.getItem(AUTORUN_STORAGE_KEY) !== 'false';
 
@@ -560,6 +556,6 @@ export class Player implements Pos3 {
    */
   private moveBy(dx: number, dy: number, blockers?: readonly ThingBlocker[]): Pos2 {
     if (this.noclip) return { x: this.x + dx, y: this.y + dy };
-    return slideMove(this.world, this, dx, dy, PLAYER_RADIUS, blockers);
+    return this.world.slideMove(this, dx, dy, PLAYER_RADIUS, blockers);
   }
 }

@@ -5,7 +5,6 @@
 import type { DoomMap, Thing } from '../../wad/map.ts';
 import type { SpriteBank } from '../../wad/sprites.ts';
 import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../../render/sprites.ts';
-import { hasLineOfSight } from '../world.ts';
 import { PLAYER_RADIUS, SIGHT_EYE_HEIGHT } from '../player.ts';
 import { SPAWN_CUBE_MONSTERS } from '../things/tables.ts';
 import { ThingType } from '../things/doomednums.ts';
@@ -314,7 +313,7 @@ export class IconOfSin {
     if (sector && world.isSoundAlerted(sector)) return true;
     const floor = world.floorAt(this.shooter.x, this.shooter.y);
     const at = { x: this.shooter.x, y: this.shooter.y, z: floor + SHOOTER_SIGHT_Z - SIGHT_EYE_HEIGHT };
-    return hasLineOfSight(world, at, this.ctx.player);
+    return world.hasLineOfSight(at, this.ctx.player);
   }
 
   /** `A_BrainAwake`: collect every `MT_BOSSTARGET` on the level, reset the cursor, shout once. */

@@ -674,6 +674,8 @@ Every persisted value uses a `topdoom.*` `localStorage` key, read through `globa
 `Number(null) === 0` otherwise makes "never set" indistinguishable from "silent"/"skill 0". Each
 value is owned by the module whose behavior it changes, and the menu only wires the control to that
 getter/setter; the exceptions are skill and the WAD selection, which belong to the menu itself.
+Each is a module-level value behind an exported `get`/`set` pair — not an instance field and not a
+`static`, even where the owning module has a class (`Player`, `World`, `AutoCamera` all do).
 
 | Key | Owner | Documented in |
 |---|---|---|
@@ -812,9 +814,9 @@ player has no legitimate reason to reach for them:
   **not** whether it shows at all — that is the player's own setting (§ FPS counter below), which is
   why the `visible` check sits ahead of the `!DEVMODE` branch. **Everything it prints is live
   state.** The
-  last line is the auto camera's own readout — `autoCameraReadout` in `game/autocamera.ts`, which
-  lives beside the getters it prints rather than in `game.ts` (docs/camera.md § Auto camera), and
-  reads `manual` in the other camera mode. It used to end with two static hotkey hint lines as well,
+  last line is the auto camera's own readout — `AutoCamera.readout` in `game/autocamera.ts`, which
+  owns the smoothed state it prints rather than exposing it to `game.ts` (docs/camera.md § Auto
+  camera), and reads `manual` in the other camera mode. It used to end with two static hotkey hint lines as well,
   which were the game's only controls reference and so invisible to exactly the players who needed
   them; that list is now the menu's Settings tab (docs/menu.md § Settings tab).
 - **The Settings tab's `#controls-dev` section**, the only place `N`/`P` is listed in the UI —

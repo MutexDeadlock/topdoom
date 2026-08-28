@@ -115,6 +115,19 @@ time, which hoisting would destroy.
 **No section-banner comments.** There are zero in the tree (`// ─────`, `// === X ===`) and there
 should stay zero; grouping is carried by the JSDoc on each symbol.
 
+## Single-use helpers
+
+A helper called from exactly one place earns its name when **the name states something its body
+does not**; otherwise inline it. `dehacked/frames.ts`'s `isMonsterRow` is one line
+(`pain !== 0 && death !== 0`) and keeps its name, because "is this row a monster" is the concept and
+the expression is not. `wad/map.ts`'s old `readMapFormat` was the other case — `lumps.has('BEHAVIOR')`
+already reads as the question its name asked — so it is now that ternary inside `loadMap`, with its
+fidelity citation as a comment on the `const`.
+
+Length is not the test. A one-line body under a doc block that carries a vanilla citation or a
+hazard is usually worth keeping, since a declaration is where such a block belongs; a body called
+twice on one line (`checksum.ts`'s `hex32`) is not single-use at all.
+
 ## Comment shape
 
 CLAUDE.md § Code comments has the three tiers and the header rule. These are the shape rules a

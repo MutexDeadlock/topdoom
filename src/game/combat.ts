@@ -3,7 +3,7 @@
  * resolves against), damage application to player/monsters/barrels, and splash (radius) damage.
  * See docs/combat.md § How a shot deals damage and § Splash and the BFG.
  */
-import { hasLineOfSight, type World } from './world.ts';
+import { type World } from './world.ts';
 import { PLAYER_RADIUS, type Player } from './player.ts';
 // Type-only, deliberately: a value import here would put `things.ts` — and so
 // `monsters/ai.ts`, which it imports — in the runtime graph of everything that
@@ -94,13 +94,13 @@ export function applyRadiusDamage(
     // no concussion/splash damage at all, direct hits only.
     if (m.type === ThingType.spiderMastermind || m.type === ThingType.cyberdemon) continue;
     const dist = blastDistanceToBox(at.x, at.y, m.x, m.y, m.radius);
-    if (dist >= radius || !hasLineOfSight(ctx.world, at, m)) continue;
+    if (dist >= radius || !ctx.world.hasLineOfSight(at, m)) continue;
     ctx.things?.damage(m.id, maxDamage * (1 - dist / radius), source, undefined, at.x, at.y);
   }
 
   if (!hitsPlayer) return;
   const pdist = blastDistanceToBox(at.x, at.y, ctx.player.x, ctx.player.y, PLAYER_RADIUS);
-  if (pdist < radius && hasLineOfSight(ctx.world, at, ctx.player)) {
+  if (pdist < radius && ctx.world.hasLineOfSight(at, ctx.player)) {
     ctx.damagePlayer(maxDamage * (1 - pdist / radius), at.x, at.y, cause);
   }
 }

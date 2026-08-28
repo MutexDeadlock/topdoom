@@ -25,12 +25,7 @@ export type CameraMode = 'auto' | 'manual';
 const CAMERA_MODE_STORAGE_KEY = 'topdoom.cameraMode';
 const CAMERA_MODES: readonly CameraMode[] = ['auto', 'manual'];
 
-/**
- * The camera mode. Module-level for the same reason `input.ts`'s
- * `rightMouseAction` is: a preference set from the menu's Settings tab that
- * must apply immediately mid-level, while the `AutoCamera` reading it is
- * recreated every map load.
- */
+/** The camera mode, shaped like every persisted setting — docs/menu.md § Persisted settings. */
 let cameraMode: CameraMode = readStoredCameraMode();
 
 function readStoredCameraMode(): CameraMode {
@@ -557,33 +552,12 @@ export function rescueFraming(
 }
 
 /**
- * How far the occluder clamp has to pull the zoom in before `autoCameraReadout`
+ * How far the occluder clamp has to pull the zoom in before `AutoCamera.readout`
  * prints it, in map units — **tuned by feel**, and a readout threshold only:
  * nothing about the framing reads it. `occl` bites a little on an ordinary
  * doorway several times a room, and a line that prints constantly says nothing.
  */
 const OCCL_READOUT_SLACK = 100;
-
-/**
- * The auto camera's own DEVMODE line, the one consumer of the readout getters
- * below: the two openness dials, then only a clamp that is genuinely reshaping
- * the zoom they ask for — `Game.debugLines`' `cam` line already says where they
- * landed. `occl` bites a little on an ordinary doorway several times a room, so
- * it only prints past a threshold worth noticing; `raised`, `tilt` and `buried`
- * are the buried-eye rescue's own moves and print whenever it makes one at all.
- * See docs/camera.md § Auto camera.
- */
-export function autoCameraReadout(auto: AutoCamera): string {
-  const open = auto.openFraming;
-  const framed = Math.min(open, auto.occluded);
-  const occluded = auto.occluded < open - OCCL_READOUT_SLACK ? ` occl ${auto.occluded.toFixed(0)}u` : '';
-  // A unit of slack, so a damper still gliding the last fraction of a unit
-  // into place does not flicker the readout on and off.
-  const raised = auto.occluded > open + 1 ? ` raised ${auto.occluded.toFixed(0)}u` : '';
-  const buried = auto.clearance < framed - 1 ? ` buried ${auto.clearance.toFixed(0)}u` : '';
-  const shift = Math.abs(auto.tiltShift) >= 1 ? ` tilt ${auto.tiltShift > 0 ? '+' : ''}${auto.tiltShift.toFixed(0)}°` : '';
-  return `auto spread ${auto.spread.toFixed(2)} ahead ${auto.ahead.toFixed(2)}${occluded}${raised}${shift}${buried}`;
-}
 
 /**
  * Drives `TopDownCamera.targetDistance`/`targetTiltDeg` from the openness
@@ -615,24 +589,6 @@ export class AutoCamera {
     this.transfers = transfers ?? ownTransfers(world.map);
   }
 
-  /** The smoothed opennesses currently driving the framing — the DEVMODE readout. */
-  get spread(): number {
-    return this.smoothedSpread;
-  }
-
-  get ahead(): number {
-    return this.smoothedAhead;
-  }
-
-  /**
-   * The zoom the openness alone asks for, in map units — the baseline the
-   * DEVMODE readout decides against, so a clamp shows only when it is really
-   * taking something off.
-   */
-  get openFraming(): number {
-    return this.mapDistance();
-  }
-
   /** The framing after the occluder cap and the outward rescue, in map units — the DEVMODE readout. */
   get occluded(): number {
     return this.smoothedFraming;
@@ -643,9 +599,27 @@ export class AutoCamera {
     return this.smoothedTiltShift;
   }
 
-  /** The smoothed clearance currently capping the zoom, in map units — the DEVMODE readout. */
-  get clearance(): number {
-    return this.smoothedClearance;
+  /**
+   * This camera's own DEVMODE line: the two openness dials, then only a clamp that is genuinely
+   * reshaping the zoom they ask for — `Game.debugLines`' `cam` line already says where they landed.
+   * `occl` bites a little on an ordinary doorway several times a room, so it only prints past a
+   * threshold worth noticing; `raised`, `tilt` and `buried` are the buried-eye rescue's own moves
+   * and print whenever it makes one at all. See docs/camera.md § Auto camera.
+   */
+  readout(): string {
+    const open = this.mapDistance();
+    const framed = Math.min(open, this.smoothedFraming);
+    const occluded =
+      this.smoothedFraming < open - OCCL_READOUT_SLACK ? ` occl ${this.smoothedFraming.toFixed(0)}u` : '';
+    // A unit of slack, so a damper still gliding the last fraction of a unit
+    // into place does not flicker the readout on and off.
+    const raised = this.smoothedFraming > open + 1 ? ` raised ${this.smoothedFraming.toFixed(0)}u` : '';
+    const buried = this.smoothedClearance < framed - 1 ? ` buried ${this.smoothedClearance.toFixed(0)}u` : '';
+    const shift =
+      Math.abs(this.smoothedTiltShift) >= 1
+        ? ` tilt ${this.smoothedTiltShift > 0 ? '+' : ''}${this.smoothedTiltShift.toFixed(0)}°`
+        : '';
+    return `auto spread ${this.smoothedSpread.toFixed(2)} ahead ${this.smoothedAhead.toFixed(2)}${occluded}${raised}${shift}${buried}`;
   }
 
   /**

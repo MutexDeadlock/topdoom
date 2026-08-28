@@ -6,9 +6,6 @@
 import type { Sector } from '../../wad/map.ts';
 import {
   ANY_HEIGHT,
-  checkPosition,
-  positionBlocked,
-  hasLineOfSight,
   MAX_STEP_UP,
   type PositionCheck,
   type ThingBlocker,
@@ -105,11 +102,11 @@ export function tryWake(
 ): boolean {
   const heardIt = !!sector && world.isSoundAlerted(sector);
   const seesDespiteDeaf =
-    body.ambush && heardIt && hasLineOfSight(world, body, player, body.subsector, playerSubsector);
+    body.ambush && heardIt && world.hasLineOfSight(body, player, body.subsector, playerSubsector);
   const heardAndAware = !body.ambush && heardIt;
   const spottedNormally =
     canSpotPlayer(body.facingDeg, body.x, body.y, player.x, player.y) &&
-    hasLineOfSight(world, body, player, body.subsector, playerSubsector);
+    world.hasLineOfSight(body, player, body.subsector, playerSubsector);
   if (!seesDespiteDeaf && !heardAndAware && !spottedNormally) return false;
   body.alerted = true;
   body.reactionTicks = REACTION_CHASES;
@@ -243,7 +240,7 @@ let standingY = 0;
 /** One `P_CheckPosition` at the body's own position. `z` is `ANY_HEIGHT` because no height it reads depends on it. */
 function standingAt(body: MonsterBody, stats: MonsterStats, world: World): PositionCheck {
   if (standingBody !== body || standingX !== body.x || standingY !== body.y) {
-    checkPosition(world, body.x, body.y, stats.radius, ANY_HEIGHT, stats.height, true, undefined, undefined, false, standingCheck);
+    world.checkPosition(body.x, body.y, stats.radius, ANY_HEIGHT, stats.height, true, undefined, undefined, false, standingCheck);
     standingBody = body;
     standingX = body.x;
     standingY = body.y;
@@ -289,7 +286,7 @@ function testStep(
   //
   // One `P_CheckPosition` walk answers all three: the destination's headroom,
   // the blocking verdict against this body's own feet, and the dropoff.
-  const check = checkPosition(world, x, y, stats.radius, body.z, stats.height, true, blockers, body, false);
+  const check = world.checkPosition(x, y, stats.radius, body.z, stats.height, true, blockers, body, false);
   if (check.ceilingZ - check.floorZ < stats.height) {
     return 'blocked';
   }
@@ -313,7 +310,7 @@ function testStep(
   // gates while leaving the wall, body and opening-height checks — exactly the
   // tests vanilla runs before it sets `floatok`. The one probe that still needs
   // a second walk, and only for a flier that was already refused.
-  return checkPosition(world, x, y, stats.radius, ANY_HEIGHT, stats.height, true, blockers, body, true).blocked ? 'blocked' : 'adjust';
+  return world.checkPosition(x, y, stats.radius, ANY_HEIGHT, stats.height, true, blockers, body, true).blocked ? 'blocked' : 'adjust';
 }
 
 /**
@@ -457,7 +454,7 @@ function stepCharge(body: MonsterBody, stats: MonsterStats, dt: number, world: W
   const step = charge.speed * dt;
   const nx = body.x + Math.cos(body.chargeAngle) * step;
   const ny = body.y + Math.sin(body.chargeAngle) * step;
-  if (positionBlocked(world, nx, ny, stats.radius, body.z, stats.height, true)) {
+  if (world.positionBlocked(nx, ny, stats.radius, body.z, stats.height, true)) {
     body.chargeTimer = 0;
     return null;
   }
@@ -615,7 +612,7 @@ export function stepMonsterAI(
    */
   let sightCached: boolean | null = null;
   const canSee = (): boolean => {
-    if (sightCached === null) sightCached = hasLineOfSight(world, body, target);
+    if (sightCached === null) sightCached = world.hasLineOfSight(body, target);
     return sightCached;
   };
 

@@ -54,15 +54,6 @@ import {
 } from './specials/defs.ts';
 import {
   World,
-  lowestNeighborFloor,
-  highestNeighborFloor,
-  nextHigherFloor,
-  nextLowerFloor,
-  lowestNeighborCeiling,
-  highestNeighborCeiling,
-  nextHigherCeiling,
-  nextLowerCeiling,
-  darkestNeighborLight,
   neighborSectorIndices,
   nextSectorIndices,
   sectorLines,
@@ -460,36 +451,37 @@ function changedSpecial(change: SurfaceChange, model: Sector): number | undefine
  * walks every linedef, so it must not run for the targets that don't want it.
  */
 function resolveFloorTarget(
-  map: DoomMap,
+  world: World,
   sectorIndex: number,
   target: MoveTarget,
   shortestTexture: () => number,
 ): number {
+  const map = world.map;
   switch (target) {
     case 'lowestNeighborFloor':
-      return lowestNeighborFloor(map, sectorIndex);
+      return world.lowestNeighborFloor(sectorIndex);
     case 'highestNeighborFloor':
-      return highestNeighborFloor(map, sectorIndex);
+      return world.highestNeighborFloor(sectorIndex);
     case 'nextHigherFloor':
-      return nextHigherFloor(map, sectorIndex);
+      return world.nextHigherFloor(sectorIndex);
     case 'nextLowerFloor':
-      return nextLowerFloor(map, sectorIndex);
+      return world.nextLowerFloor(sectorIndex);
     case 'lowestNeighborCeiling':
       // Vanilla's raiseFloor clamps to the sector's own ceiling too — a floor
       // can never be sent above the ceiling it sits under, which matters
       // whenever that ceiling happens to be lower than every neighbor's.
-      return Math.min(lowestNeighborCeiling(map, sectorIndex), map.sectors[sectorIndex].ceilHeight);
+      return Math.min(world.lowestNeighborCeiling(sectorIndex), map.sectors[sectorIndex].ceilHeight);
     case 'highestNeighborCeiling':
-      return highestNeighborCeiling(map, sectorIndex);
+      return world.highestNeighborCeiling(sectorIndex);
     case 'lowestNeighborCeilingMinus8':
       return (
-        Math.min(lowestNeighborCeiling(map, sectorIndex), map.sectors[sectorIndex].ceilHeight) - EIGHT_UNIT_GAP
+        Math.min(world.lowestNeighborCeiling(sectorIndex), map.sectors[sectorIndex].ceilHeight) - EIGHT_UNIT_GAP
       );
     case 'turboLower': {
       // `p_floor.c`'s `case turboLower` adds the 8 only where the found height differs from the
       // sector's own; unconditionally it hands a lowering mover a target *above* its floor.
       // docs/specials.md § The turboLower quad.
-      const highest = highestNeighborFloor(map, sectorIndex);
+      const highest = world.highestNeighborFloor(sectorIndex);
       return highest === map.sectors[sectorIndex].floorHeight ? highest : highest + EIGHT_UNIT_GAP;
     }
     case 'plus24':
@@ -514,24 +506,25 @@ function resolveFloorTarget(
 
 /** Same `shortestTexture` convention as `resolveFloorTarget`, for the `CbyST` pair. */
 function resolveCeilingTarget(
-  map: DoomMap,
+  world: World,
   sectorIndex: number,
   target: CeilingTarget,
   shortestTexture: () => number,
 ): number {
+  const map = world.map;
   switch (target) {
     case 'highestNeighborCeiling':
-      return highestNeighborCeiling(map, sectorIndex);
+      return world.highestNeighborCeiling(sectorIndex);
     case 'floorPlus8':
       return map.sectors[sectorIndex].floorHeight + EIGHT_UNIT_GAP;
     case 'lowestNeighborCeiling':
-      return lowestNeighborCeiling(map, sectorIndex);
+      return world.lowestNeighborCeiling(sectorIndex);
     case 'nextHigherCeiling':
-      return nextHigherCeiling(map, sectorIndex);
+      return world.nextHigherCeiling(sectorIndex);
     case 'nextLowerCeiling':
-      return nextLowerCeiling(map, sectorIndex);
+      return world.nextLowerCeiling(sectorIndex);
     case 'highestNeighborFloor':
-      return highestNeighborFloor(map, sectorIndex);
+      return world.highestNeighborFloor(sectorIndex);
     case 'ownFloor':
       // Boom's CtoF: flush with the floor, unlike vanilla's floorPlus8.
       return map.sectors[sectorIndex].floorHeight;
@@ -763,7 +756,7 @@ export class SpecialsController {
     for (const sectorIndex of lightSectors) {
       const sector = map.sectors[sectorIndex];
       const pattern = decodeSectorType(sector.special).lightPattern!;
-      this.lightStates.set(sectorIndex, makeLightState(pattern, sector.light, darkestNeighborLight(map, sectorIndex)));
+      this.lightStates.set(sectorIndex, makeLightState(pattern, sector.light, world.darkestNeighborLight(sectorIndex)));
     }
   }
 
@@ -888,7 +881,7 @@ export class SpecialsController {
         kind: 'door',
         sectorIndex,
         effect,
-        openHeight: lowestNeighborCeiling(this.map, sectorIndex) - DOOR_OPEN_GAP,
+        openHeight: this.world.lowestNeighborCeiling(sectorIndex) - DOOR_OPEN_GAP,
         closeHeight: sector.floorHeight,
         state: 'holdClosed',
         holdRemaining: DOOR_RAISE_WAIT_SECONDS,
@@ -1465,7 +1458,7 @@ export class SpecialsController {
     // wherever it already sits — vanilla's own `door->topheight =
     // sec->ceilingheight;` (p_doors.c), unlike every other DoorMode here,
     // which always computes a fresh neighbor-ceiling target.
-    const openHeight = closeThenOpen ? sector.ceilHeight : lowestNeighborCeiling(this.map, sectorIndex) - DOOR_OPEN_GAP;
+    const openHeight = closeThenOpen ? sector.ceilHeight : this.world.lowestNeighborCeiling(sectorIndex) - DOOR_OPEN_GAP;
     this.setMover(sectorIndex, {
       kind: 'door',
       sectorIndex,
@@ -1534,8 +1527,8 @@ export class SpecialsController {
         kind: 'lift',
         sectorIndex,
         effect,
-        restHeight: Math.max(highestNeighborFloor(this.map, sectorIndex), floor),
-        downHeight: Math.min(lowestNeighborFloor(this.map, sectorIndex), floor),
+        restHeight: Math.max(this.world.highestNeighborFloor(sectorIndex), floor),
+        downHeight: Math.min(this.world.lowestNeighborFloor(sectorIndex), floor),
         state: (pRandom() & 1) === 0 ? 'raising' : 'lowering',
         holdRemaining: 0,
         perpetual: true,
@@ -1564,10 +1557,10 @@ export class SpecialsController {
     }
     const low =
       target === 'nextLowerFloor'
-        ? nextLowerFloor(this.map, sectorIndex)
+        ? this.world.nextLowerFloor(sectorIndex)
         : target === 'lowestNeighborCeiling'
-          ? lowestNeighborCeiling(this.map, sectorIndex)
-          : lowestNeighborFloor(this.map, sectorIndex);
+          ? this.world.lowestNeighborCeiling(sectorIndex)
+          : this.world.lowestNeighborFloor(sectorIndex);
     this.setMover(sectorIndex, {
       kind: 'lift',
       sectorIndex,
@@ -1603,7 +1596,7 @@ export class SpecialsController {
     // `line` is only actually needed for `changeTexture` — the only caller without a real
     // linedef (`triggerTag`, for a boss-death `lowerFloorToLowest`) never sets that flag.
     if (effect.changeTexture && line) this.applyFloorChange(sectorIndex, line);
-    const target = resolveFloorTarget(this.map, sectorIndex, effect.target, () =>
+    const target = resolveFloorTarget(this.world, sectorIndex, effect.target, () =>
       this.shortestTextureAround(sectorIndex, 'lower'),
     );
     this.setMover(sectorIndex, {
@@ -1784,7 +1777,7 @@ export class SpecialsController {
   /** Vanilla's own `sec->specialdata` guard: a sector already driven by *any* mover ignores this — unlike doors/lifts/floors above, there's no interactive re-trigger behavior worth having for a one-way move. */
   private triggerCeiling(sectorIndex: number, effect: CeilingEffect, line?: LineDef): boolean {
     if (this.ceilingActive(sectorIndex)) return false;
-    const target = resolveCeilingTarget(this.map, sectorIndex, effect.target, () =>
+    const target = resolveCeilingTarget(this.world, sectorIndex, effect.target, () =>
       this.shortestTextureAround(sectorIndex, 'upper'),
     );
     this.setMover(sectorIndex, {
@@ -1840,9 +1833,9 @@ export class SpecialsController {
     const sector = this.map.sectors[sectorIndex];
     let floorTarget: number;
     if (effect.target === 'nextHigherFloor') {
-      floorTarget = nextHigherFloor(this.map, sectorIndex);
+      floorTarget = this.world.nextHigherFloor(sectorIndex);
     } else if (effect.target === 'nextLowerFloor') {
-      floorTarget = nextLowerFloor(this.map, sectorIndex);
+      floorTarget = this.world.nextLowerFloor(sectorIndex);
     } else {
       const front = this.frontSector(line);
       if (!front) return false;
@@ -1894,7 +1887,7 @@ export class SpecialsController {
    */
   private triggerLowerAndChange(sectorIndex: number): boolean {
     if (this.floorActive(sectorIndex)) return false;
-    const target = lowestNeighborFloor(this.map, sectorIndex);
+    const target = this.world.lowestNeighborFloor(sectorIndex);
     let arrivalTexture: { floorTex: string; special: number } | undefined;
     for (const neighborIndex of neighborSectorIndices(this.map, sectorIndex)) {
       const neighbor = this.map.sectors[neighborIndex];
@@ -1995,7 +1988,7 @@ export class SpecialsController {
         // demo-compat mode folds movers into that test, so a sector with a
         // door running is free to start strobing.
         if (this.lightStates.has(sectorIndex)) return false;
-        this.lightStates.set(sectorIndex, makeLightState('blink1', sector.light, darkestNeighborLight(this.map, sectorIndex)));
+        this.lightStates.set(sectorIndex, makeLightState('blink1', sector.light, this.world.darkestNeighborLight(sectorIndex)));
         break;
     }
     return true;

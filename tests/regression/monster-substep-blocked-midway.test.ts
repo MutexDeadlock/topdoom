@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { World, positionBlocked, type ThingBlocker } from '../../src/game/world.ts';
+import { World, type ThingBlocker } from '../../src/game/world.ts';
 import { DIR_X, DIR_Y, DI_NODIR, type MonsterBody } from '../../src/game/monsters/defs.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
@@ -90,7 +90,7 @@ describe('Regressions · a sub-step refused part-way through an approved chase s
   test('the fixture really does block only mid-step', () => {
     const { world, body, blockers } = scene();
     const blockedAt = (travel: number): boolean =>
-      positionBlocked(world, body.x + DIR_X[NE] * travel, body.y + DIR_Y[NE] * travel, stats.radius, body.z, stats.height, true, blockers);
+      world.positionBlocked(body.x + DIR_X[NE] * travel, body.y + DIR_Y[NE] * travel, stats.radius, body.z, stats.height, true, blockers);
 
     assert.equal(blockedAt(0), false, 'starts clear, so this is not the spawned-inside-a-wall case');
     assert.equal(blockedAt(stats.speed * DOOM_TIC), true, 'one tic along the step is refused');
@@ -106,7 +106,7 @@ describe('Regressions · a sub-step refused part-way through an approved chase s
     }
     assert.ok(Math.hypot(body.x - startX, body.y - startY) > 100, 'must cover real ground in two seconds');
     assert.equal(
-      positionBlocked(world, body.x, body.y, stats.radius, body.z, stats.height, true, blockers),
+      world.positionBlocked(body.x, body.y, stats.radius, body.z, stats.height, true, blockers),
       false,
       'and must end up clear of the blocker',
     );
@@ -143,7 +143,7 @@ describe('Regressions · a sub-step refused part-way through an approved chase s
     const at = grid.centre(1, 1);
     body.x = at.x;
     body.y = at.y;
-    assert.ok(positionBlocked(world, body.x, body.y, stats.radius, 0, stats.height, true), 'boxed in');
+    assert.ok(world.positionBlocked(body.x, body.y, stats.radius, 0, stats.height, true), 'boxed in');
     for (let tic = 0; tic < Math.round(2 / DOOM_TIC); tic++) {
       stepMonsterAI(body, stats, DOOM_TIC, world, { x: at.x + 400, y: at.y, z: 0 }, PLAYER_RADIUS, PLAYER_HEIGHT);
     }

@@ -2,7 +2,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Wad } from '../../src/wad/wad.ts';
 import { loadMap, LF, NO_SIDE } from '../../src/wad/map.ts';
-import { World, slideMove } from '../../src/game/world.ts';
+import { World } from '../../src/game/world.ts';
 import { PLAYER_RADIUS } from '../../src/game/player.ts';
 import { fixtureWad } from '../fixtures/wadfile.ts';
 
@@ -66,7 +66,7 @@ describe('Regressions · sliding along a two-sided blocking wall', () => {
       const dx = -nx * side > 0 ? step : -step;
 
       let at = { x: px, y: py };
-      for (let i = 0; i < 4; i++) at = slideMove(world, { ...at, z }, dx, 0, PLAYER_RADIUS);
+      for (let i = 0; i < 4; i++) at = world.slideMove({ ...at, z }, dx, 0, PLAYER_RADIUS);
       const moved = Math.hypot(at.x - px, at.y - py);
       assert.ok(moved > 8, `side ${side}: must slide along the wall, moved ${moved.toFixed(2)}`);
       assert.notEqual(at.y, py, `side ${side}: the slide has to carry along the wall, not just push in`);

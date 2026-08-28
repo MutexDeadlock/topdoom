@@ -775,6 +775,138 @@ export class World {
     return this.sectorAt(x, y)?.ceilHeight ?? 0;
   }
 
+  /** `nextSectorIndices` as the `Sector` objects themselves, which the neighbor queries below want. */
+  private neighborSectors(sectorIndex: number): Sector[] {
+    const out: Sector[] = [];
+    for (const n of nextSectorIndices(this.map, sectorIndex)) {
+      const sec = this.map.sectors[n];
+      if (sec) out.push(sec);
+    }
+    return out;
+  }
+
+  /**
+   * Neighbor-height queries a specials mover needs to resolve a target height —
+   * vanilla's `P_FindLowestFloorSurrounding` family. The `found` flag (rather
+   * than seeding with the sector's own height) is load-bearing; see
+   * docs/world.md § Neighbor-height queries.
+   */
+  lowestNeighborFloor(sectorIndex: number): number {
+    const sector = this.map.sectors[sectorIndex];
+    let result = sector?.floorHeight ?? 0;
+    let found = false;
+    for (const n of this.neighborSectors(sectorIndex)) {
+      if (!found || n.floorHeight < result) result = n.floorHeight;
+      found = true;
+    }
+    return result;
+  }
+
+  highestNeighborFloor(sectorIndex: number): number {
+    const sector = this.map.sectors[sectorIndex];
+    let result = sector?.floorHeight ?? 0;
+    let found = false;
+    for (const n of this.neighborSectors(sectorIndex)) {
+      if (!found || n.floorHeight > result) result = n.floorHeight;
+      found = true;
+    }
+    return result;
+  }
+
+  nextHigherFloor(sectorIndex: number): number {
+    const sector = this.map.sectors[sectorIndex];
+    const base = sector?.floorHeight ?? 0;
+    let result = base;
+    let found = false;
+    for (const n of this.neighborSectors(sectorIndex)) {
+      if (n.floorHeight > base && (!found || n.floorHeight < result)) {
+        result = n.floorHeight;
+        found = true;
+      }
+    }
+    return result;
+  }
+
+  nextLowerFloor(sectorIndex: number): number {
+    const sector = this.map.sectors[sectorIndex];
+    const base = sector?.floorHeight ?? 0;
+    let result = base;
+    let found = false;
+    for (const n of this.neighborSectors(sectorIndex)) {
+      if (n.floorHeight < base && (!found || n.floorHeight > result)) {
+        result = n.floorHeight;
+        found = true;
+      }
+    }
+    return result;
+  }
+
+  lowestNeighborCeiling(sectorIndex: number): number {
+    const sector = this.map.sectors[sectorIndex];
+    let result = sector?.ceilHeight ?? 0;
+    let found = false;
+    for (const n of this.neighborSectors(sectorIndex)) {
+      if (!found || n.ceilHeight < result) result = n.ceilHeight;
+      found = true;
+    }
+    return result;
+  }
+
+  highestNeighborCeiling(sectorIndex: number): number {
+    const sector = this.map.sectors[sectorIndex];
+    let result = sector?.ceilHeight ?? 0;
+    let found = false;
+    for (const n of this.neighborSectors(sectorIndex)) {
+      if (!found || n.ceilHeight > result) result = n.ceilHeight;
+      found = true;
+    }
+    return result;
+  }
+
+  /** Boom `P_FindNextHighestCeiling` — the generalized ceilings' `CtoNnC` with the direction bit up. Same no-candidate fallback shape as `nextHigherFloor`. */
+  nextHigherCeiling(sectorIndex: number): number {
+    const sector = this.map.sectors[sectorIndex];
+    const base = sector?.ceilHeight ?? 0;
+    let result = base;
+    let found = false;
+    for (const n of this.neighborSectors(sectorIndex)) {
+      if (n.ceilHeight > base && (!found || n.ceilHeight < result)) {
+        result = n.ceilHeight;
+        found = true;
+      }
+    }
+    return result;
+  }
+
+  /** Boom `P_FindNextLowestCeiling` — `CtoNnC` with the direction bit down. */
+  nextLowerCeiling(sectorIndex: number): number {
+    const sector = this.map.sectors[sectorIndex];
+    const base = sector?.ceilHeight ?? 0;
+    let result = base;
+    let found = false;
+    for (const n of this.neighborSectors(sectorIndex)) {
+      if (n.ceilHeight < base && (!found || n.ceilHeight > result)) {
+        result = n.ceilHeight;
+        found = true;
+      }
+    }
+    return result;
+  }
+
+  /**
+   * The "minlight" a blink/glow special dims to: `P_FindMinSurroundingLight`,
+   * which vanilla always calls with the sector's own level as its `max` and only
+   * ever lowers from there. So a sector whose neighbours are all *brighter* dims
+   * to its own level — i.e. not at all — rather than up to the darkest of them.
+   */
+  darkestNeighborLight(sectorIndex: number): number {
+    let result = this.map.sectors[sectorIndex]?.light ?? 0;
+    for (const n of this.neighborSectors(sectorIndex)) {
+      if (n.light < result) result = n.light;
+    }
+    return result;
+  }
+
   /**
    * Whether a shot stopping on this line at height `z` ran into sky rather
    * than something that can show an impact — vanilla's "don't shoot the sky"
@@ -825,7 +957,7 @@ export class World {
    * result is `checkPosition`'s shared scratch — read the fields out before the next call.
    */
   private standingAt(x: number, y: number, radius: number, forMonster: boolean): PositionCheck {
-    return checkPosition(this, x, y, radius, ANY_HEIGHT, ANY_HEIGHT, forMonster, undefined, undefined, false);
+    return this.checkPosition(x, y, radius, ANY_HEIGHT, ANY_HEIGHT, forMonster, undefined, undefined, false);
   }
 
   /**
@@ -954,6 +1086,545 @@ export class World {
   isSoundAlerted(sector: Sector): boolean {
     return this.soundAlertedSectors.has(sector);
   }
+
+  /**
+   * True if a straight 3D line between two points is crossed by no
+   * sight-blocking line (`World.blocksSight`) **and** keeps an unbroken sight
+   * wedge through the floor/ceiling of every sector along the way.
+   *
+   * The wedge starts from a *fixed eye height* (`player.ts`'s `SIGHT_EYE_HEIGHT`,
+   * vanilla's `sightzstart`) rather than interpolating toward `z2` — vanilla's
+   * `P_CheckSight` (`sightzstart`/`topslope`/`bottomslope`). Both the fixed
+   * origin and the floor/ceiling half are load-bearing, and this is the engine's
+   * most performance-sensitive query: docs/world.md § hasLineOfSight covers why,
+   * and what keeps it affordable.
+   *
+   * That constant is read *inside* this body, like every other `player.ts` value
+   * in this file: `world.ts` and `player.ts` import from each other, so hoisting
+   * one to module scope here hits the cycle's initialization order — "Cannot
+   * access 'PLAYER_HEIGHT' before initialization".
+   *
+   * It opens with `World.sightRejected`, vanilla's own first test. The two
+   * subsector arguments are hints for it: a caller that already keeps its
+   * subsector (`PosedThing.subsector`) passes it instead of paying a BSP descent
+   * to re-derive it, and `-1` means "look it up".
+   */
+  hasLineOfSight(
+    from: Pos3,
+    to: Pos3,
+    fromSubsector = -1,
+    toSubsector = -1,
+  ): boolean {
+    if (this.sightRejected(from, to, fromSubsector, toSubsector)) return false;
+
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    if (dist === 0) return true;
+
+    const eyeZ = from.z + SIGHT_EYE_HEIGHT;
+    let topSlope = (to.z + PLAYER_HEIGHT - eyeZ) / dist;
+    let bottomSlope = (to.z - eyeZ) / dist;
+
+    // Walks only the cells the sightline crosses; `linesNear`'s radius query is
+    // O(dist²) in cells here — see `World.forEachLineAlongSegment`. A fully
+    // blocking line stops the trace outright; an open two-sided one narrows the
+    // sight wedge at its real opening, matching `P_SightTraverse` — the reason
+    // this exists alongside the periodic sampling below is docs/world.md §
+    // hasLineOfSight.
+    let blocked = false;
+    this.forEachLineAlongSegment(from.x, from.y, to.x, to.y, (i) => {
+      const line = this.map.linedefs[i];
+      const a = this.map.vertexes[line.v1];
+      const b = this.map.vertexes[line.v2];
+      if (!a || !b) return;
+      // The two sectors are resolved once here and the blocking test done inline off them, rather
+      // than through `blocksSight` — which would resolve the same pair and throw it away, leaving
+      // the open branch below to look it up a second time for every line the trace walks.
+      const front = this.map.sectors[this.map.sidedefs[line.right]?.sector ?? -1];
+      const back = this.map.sectors[this.map.sidedefs[line.left]?.sector ?? -1];
+      const openTop = front && back ? Math.min(front.ceilHeight, back.ceilHeight) : 0;
+      const openBottom = front && back ? Math.max(front.floorHeight, back.floorHeight) : 0;
+      if (line.left === NO_SIDE || line.right === NO_SIDE || !front || !back || openTop <= openBottom) {
+        const t = segmentCrossT(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
+        if (t >= 0 && t * dist > SELF_HIT_MARGIN) return (blocked = true);
+        return;
+      }
+      // Two-sided and open. Skip the segment math entirely for a flat
+      // pass-through (equal floors and equal ceilings on both sides) — it
+      // can't narrow the wedge, and it's most of a level's connective tissue —
+      // mirroring `P_SightTraverse`'s own frontsector/backsector inequality
+      // guards.
+      if (front.floorHeight === back.floorHeight && front.ceilHeight === back.ceilHeight) return;
+      const t = segmentCrossT(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
+      if (t < 0 || t * dist <= SELF_HIT_MARGIN) return;
+      const crossDist = t * dist;
+      const crossBottomSlope = (openBottom - eyeZ) / crossDist;
+      const crossTopSlope = (openTop - eyeZ) / crossDist;
+      if (crossBottomSlope > bottomSlope) bottomSlope = crossBottomSlope;
+      if (crossTopSlope < topSlope) topSlope = crossTopSlope;
+      if (topSlope <= bottomSlope) return (blocked = true);
+    });
+    if (blocked) return false;
+
+    const steps = Math.min(
+      SIGHT_MAX_HEIGHT_SAMPLES,
+      Math.max(1, Math.ceil(dist / SIGHT_HEIGHT_SAMPLE_STEP)),
+    );
+    for (let i = 1; i < steps; i++) {
+      const t = i / steps;
+      const sector = this.sectorAt(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
+      if (!sector) continue;
+      const sampleDist = dist * t;
+      const floorSlope = (sector.floorHeight - eyeZ) / sampleDist;
+      const ceilSlope = (sector.ceilHeight - eyeZ) / sampleDist;
+      if (floorSlope > bottomSlope) bottomSlope = floorSlope;
+      if (ceilSlope < topSlope) topSlope = ceilSlope;
+      if (topSlope <= bottomSlope) return false;
+    }
+    return true;
+  }
+
+  /**
+   * One `P_CheckPosition` over the lines a body's box at (x, y) spans, filling
+   * `out` with the verdict and all three accumulated heights at once — vanilla
+   * accumulates them in a single `PIT_CheckLine` walk, and so does this.
+   *
+   * `stopOnBlock` returns on the first refusing line, as `P_CheckPosition` does;
+   * the heights are then only partly accumulated, which is safe for a caller that
+   * wants nothing but the verdict. A caller needing the heights *and* the verdict
+   * (`monsters/ai.ts: testStep`, and the dropoff test below) passes `false` and
+   * gets both from the same walk.
+   *
+   * `forMonster` — see `World.isSolidWall`. `dropoffZ` deliberately ignores it: a
+   * `BLOCK_MONSTERS` line fences a monster's *movement* but its far side is still
+   * real floor, so it must not read as a dropoff.
+   *
+   * `moverHeight` is the mover's own body height and reaches nothing but
+   * `blockedByThings` — the opening gates below measure against `PLAYER_HEIGHT`
+   * whoever is asking (`openingRefuses`), and a monster's real height is applied
+   * separately by `monsters/ai.ts: testStep`. Pass the real height where the
+   * caller has one and `ANY_HEIGHT` where there is no body at all
+   * (`groundFloor`); it is unread either way once `z` is `ANY_HEIGHT`.
+   */
+  checkPosition(
+    x: number,
+    y: number,
+    radius: number,
+    z: number,
+    moverHeight: number,
+    forMonster: boolean,
+    blockers: readonly ThingBlocker[] | undefined,
+    from: Pos2 | undefined,
+    stopOnBlock: boolean,
+    out: PositionCheck = positionScratch,
+  ): PositionCheck {
+    // One BSP descent for both heights — `floorAt`/`ceilingAt` would walk it twice.
+    const here = this.sectorAt(x, y);
+    out.blocked = blockedByThings(x, y, radius, z, moverHeight, blockers, from);
+    out.floorZ = here?.floorHeight ?? 0;
+    out.ceilingZ = here?.ceilHeight ?? 0;
+    out.dropoffZ = out.floorZ;
+    out.centreFloorZ = out.floorZ;
+    if (out.blocked && stopOnBlock) return out;
+
+    const left = x - radius;
+    const right = x + radius;
+    const bottom = y - radius;
+    const top = y + radius;
+    const zFinite = Number.isFinite(z);
+    // The `+ 1` is broadphase slop only; `boxOverlapsLine` below is exact.
+    for (const i of this.linesNear(x, y, radius + 1)) {
+      if (!this.boxOverlapsLine(left, bottom, right, top, i)) continue;
+      if (this.boxOnLineSide(left, bottom, right, top, i) !== -1) continue;
+
+      const solid = this.isSolidWall(i, forMonster);
+      // A `BLOCK_MONSTERS` line fences a monster's *movement* but its far side is
+      // still real floor, hence the second test. Only a monster ever consults
+      // `dropoffZ` at all, so everyone else skips the accumulation — the player
+      // falls off ledges on purpose (docs/movement.md § Vertical physics).
+      if (forMonster && (!solid || !this.isSolidWall(i, false))) {
+        const fenced = this.map.linedefs[i];
+        const front = this.map.sectors[this.map.sidedefs[fenced.right]?.sector];
+        const back = this.map.sectors[this.map.sidedefs[fenced.left]?.sector];
+        if (front && back) out.dropoffZ = Math.min(out.dropoffZ, front.floorHeight, back.floorHeight);
+      }
+      if (solid) {
+        out.blocked = true;
+        if (stopOnBlock) return out;
+        continue;
+      }
+
+      // `P_LineOpening` inline: `openingOf` allocates a record, and this is the
+      // hottest loop in the engine.
+      const line = this.map.linedefs[i];
+      const front = this.map.sectors[this.map.sidedefs[line.right]?.sector];
+      const back = this.map.sectors[this.map.sidedefs[line.left]?.sector];
+      if (!front || !back) {
+        out.blocked = true;
+        if (stopOnBlock) return out;
+        continue;
+      }
+      const openTop = front.ceilHeight < back.ceilHeight ? front.ceilHeight : back.ceilHeight;
+      const openBottom = front.floorHeight > back.floorHeight ? front.floorHeight : back.floorHeight;
+      if (openBottom > out.floorZ) out.floorZ = openBottom;
+      if (openTop < out.ceilingZ) out.ceilingZ = openTop;
+      if (openingRefuses(openTop, openBottom, z, zFinite)) {
+        out.blocked = true;
+        if (stopOnBlock) return out;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * True if a body's collision **box** at (x, y) — half-width `radius`, vanilla's
+   * own `mobjinfo.radius` — overlaps any line that blocks it. This is
+   * `P_CheckPosition`'s line half, and each line goes through `PIT_CheckLine`'s
+   * two gates in vanilla's order: the line's own bounding box, then
+   * `boxOnLineSide`. `forMonster` — see `World.isSolidWall`. `blockers` are the
+   * other solid bodies in the way (see `ThingBlocker`); omitting them means only
+   * geometry blocks.
+   *
+   * A solid wall is refused on the *same* straddle test as a two-sided opening,
+   * not on mere proximity — see docs/movement.md § Collision for why that is what
+   * keeps a body from catching on a wall's endpoint.
+   *
+   * **Geometry and bodies only.** `P_TryMove`'s dropoff rule is not here: it is
+   * a monster's alone and lives with the rest of the chase step in
+   * `monsters/ai.ts: testStep`, which reads `dropoffZ` off its own
+   * `checkPosition` walk (docs/monster-ai.md § The dropoff rule).
+   *
+   * `from` — see `blockedByThings`: the mover's current position, so a body
+   * already touching one of `blockers` can still move away from it.
+   */
+  positionBlocked(
+    x: number,
+    y: number,
+    radius: number,
+    z: number,
+    moverHeight: number,
+    forMonster = false,
+    blockers?: readonly ThingBlocker[],
+    from?: Pos2,
+  ): boolean {
+    // The first refusing line is the whole answer, so the walk stops there.
+    return this.checkPosition(x, y, radius, z, moverHeight, forMonster, blockers, from, true).blocked;
+  }
+
+  /**
+   * `PTR_SlideTraverse`: walks one corner's path from (cornerX, cornerY) along
+   * (mx, my) and keeps the nearest blocking line along it in `slideHit`. A
+   * one-sided line blocks unless the mover already stands behind it; a two-sided
+   * one blocks on `openingRefuses`, the same predicate that decides whether a
+   * position is refused. `PLAYER_HEIGHT` throughout, since `P_SlideMove` is the
+   * player's alone.
+   *
+   * No sort is needed, and it carries two deliberate deviations from vanilla —
+   * one of them the fix for a real dead-stop bug. All three are
+   * docs/movement.md § slideMove.
+   */
+  slideTraverse(
+    moverX: number,
+    moverY: number,
+    cornerX: number,
+    cornerY: number,
+    mx: number,
+    my: number,
+    z: number,
+  ): void {
+    const zFinite = Number.isFinite(z);
+    this.forEachLineAlongSegment(cornerX, cornerY, cornerX + mx, cornerY + my, (i) => {
+      const line = this.map.linedefs[i];
+      const a = this.map.vertexes[line.v1];
+      const b = this.map.vertexes[line.v2];
+      if (!a || !b) return;
+      // Intersect before classifying: most lines in a cell the corner path clips
+      // are not crossed by it, and the opening lookup is the expensive half.
+      const cross = segmentIntersect(cornerX, cornerY, cornerX + mx, cornerY + my, a.x, a.y, b.x, b.y);
+      if (!cross || cross.t >= slideHit.frac) return;
+
+      if (line.left === NO_SIDE || line.right === NO_SIDE) {
+        // Vanilla's "don't hit the back side": behind a one-sided line is void.
+        if (this.pointOnLineSide(moverX, moverY, i) === 1) return;
+      } else if (!(line.flags & LF.BLOCKING)) {
+        const front = this.map.sectors[this.map.sidedefs[line.right]?.sector];
+        const back = this.map.sectors[this.map.sidedefs[line.left]?.sector];
+        if (!front || !back) return;
+        const openTop = front.ceilHeight < back.ceilHeight ? front.ceilHeight : back.ceilHeight;
+        const openBottom = front.floorHeight > back.floorHeight ? front.floorHeight : back.floorHeight;
+        if (!openingRefuses(openTop, openBottom, z, zFinite)) return;
+      }
+      slideHit.frac = cross.t;
+      slideHit.line = i;
+    });
+  }
+
+  /**
+   * Moves a body's collision box by (dx, dy), sliding along whatever it runs into,
+   * and returns the position actually reached — vanilla's `P_SlideMove`
+   * (`p_map.c`), which is the player's alone: a monster gets `P_Move`'s
+   * all-or-nothing step instead (`game/monsters/ai.ts`).
+   *
+   * Three of the box's four corners are traced to find the nearest wall, the move
+   * commits to just short of it, and the remainder is projected onto that wall's
+   * own direction and retried, `SLIDE_ATTEMPTS` walls deep. When no trace finds a
+   * wall — which includes a solid *body* refusing the move, since a thing produces
+   * no line intercept — it falls to vanilla's `stairstep`: one axis at a time, Y
+   * before X. See docs/movement.md § slideMove.
+   */
+  slideMove(
+    from: Pos3,
+    dx: number,
+    dy: number,
+    radius: number,
+    blockers?: readonly ThingBlocker[],
+  ): Pos2 {
+    const z = from.z;
+    let curX = from.x;
+    let curY = from.y;
+    let mx = dx;
+    let my = dy;
+
+    // `from` stays the *original* position for every probe, so a body that began
+    // the tic already overlapping another can still work free of it
+    // (`blockedByThings`) without a multi-attempt slide creeping further in.
+    const free = (x: number, y: number): boolean =>
+      !this.positionBlocked(x, y, radius, z, PLAYER_HEIGHT, false, blockers, from);
+
+    // `P_XYMovement` only reaches `P_SlideMove` once the whole move is refused.
+    if (free(curX + mx, curY + my)) return { x: curX + mx, y: curY + my };
+
+    for (let attempt = 0; attempt < SLIDE_ATTEMPTS; attempt++) {
+      // Vanilla traces the leading corner and the two beside it, never the
+      // trailing one. A zero component takes the same branch a negative one does.
+      const leadX = mx > 0 ? curX + radius : curX - radius;
+      const trailX = mx > 0 ? curX - radius : curX + radius;
+      const leadY = my > 0 ? curY + radius : curY - radius;
+      const trailY = my > 0 ? curY - radius : curY + radius;
+
+      slideHit.frac = Infinity;
+      slideHit.line = -1;
+      this.slideTraverse(curX, curY, leadX, leadY, mx, my, z);
+      this.slideTraverse(curX, curY, trailX, leadY, mx, my, z);
+      this.slideTraverse(curX, curY, leadX, trailY, mx, my, z);
+
+      if (slideHit.line < 0) break;
+
+      const frac = slideHit.frac - SLIDE_FUDGE;
+      if (frac > 0) {
+        const nx = curX + mx * frac;
+        const ny = curY + my * frac;
+        if (!free(nx, ny)) break;
+        curX = nx;
+        curY = ny;
+      }
+
+      // Vanilla clamps the remainder to FRACUNIT here; `segmentIntersect` already
+      // bounds the fraction to [0, 1], so the clamp cannot fire.
+      const rest = 1 - slideHit.frac;
+      if (rest <= 0) return { x: curX, y: curY };
+
+      // `P_HitSlideLine`: what is left of the move projected onto the wall's own
+      // direction, so the along-wall component survives and the into-wall one is
+      // gone. Vanilla's angle arithmetic and its `P_AproxDistance` reduce to
+      // exactly this projection, without that function's ~12% magnitude error.
+      const ldx = this.lineDX[slideHit.line];
+      const ldy = this.lineDY[slideHit.line];
+      const lenSq = ldx * ldx + ldy * ldy;
+      if (lenSq === 0) break;
+      const along = (rest * (mx * ldx + my * ldy)) / lenSq;
+      mx = ldx * along;
+      my = ldy * along;
+
+      if (free(curX + mx, curY + my)) return { x: curX + mx, y: curY + my };
+    }
+
+    // `stairstep`. X is tried only if Y was refused, exactly as vanilla nests it;
+    // with `my` zero the Y attempt is the mover's own position and succeeds, which
+    // is why a purely lateral move stopped by a body does not fall through to X.
+    if (free(curX, curY + my)) return { x: curX, y: curY + my };
+    if (free(curX + mx, curY)) return { x: curX + mx, y: curY };
+    return { x: curX, y: curY };
+  }
+
+  /**
+   * True if this line stops a shot passing through it at height `z` — wherever
+   * *this* shot's (possibly sloped) line is when it crosses, not one height for
+   * the whole flight. The **single-ray** form, for a shot whose slope is already
+   * fixed; a locked-on shot gets `shotPath`'s wedge instead.
+   *
+   * Deliberately **not** `isSolidWall` — `PTR_ShootTraverse` never reads
+   * `ML_BLOCKING`, so a shot passes through bars it can't walk through. See
+   * docs/combat.md § shotPath.
+   */
+  blocksShot(lineIndex: number, z: number): boolean {
+    const line = this.map.linedefs[lineIndex];
+    if (!line || line.left === NO_SIDE || line.right === NO_SIDE) return true;
+    const opening = this.openingOf(lineIndex);
+    if (!opening || opening.top <= opening.bottom) return true;
+    return z < opening.bottom || z > opening.top;
+  }
+
+  /**
+   * Where one frame of a *curving* projectile's flight ran into geometry, or
+   * null if the step is clear — the per-step counterpart to `shotPath`'s single
+   * launch-time trace, for the one projectile whose path isn't straight and so
+   * can't have its stopping point resolved up front: the revenant's homing
+   * missile (`game/projectiles.ts: advanceHoming`, docs/monster-attacks.md § The
+   * revenant's homing missile).
+   *
+   * Blocking is `blocksShot` at the height the step is at where it crosses each
+   * line. A crossing within `SELF_HIT_MARGIN` of the step's start is skipped for
+   * the reason `hasLineOfSight` skips one: a missile that just passed through an
+   * opening starts the next step sitting essentially on it.
+   */
+  projectileStepBlocker(
+    from: Pos3,
+    to: Pos3,
+  ): { x: number; y: number; z: number; lineIndex: number } | null {
+    const dist = Math.hypot(to.x - from.x, to.y - from.y);
+    if (dist === 0) return null;
+    let nearestT = Infinity;
+    let hitLine = -1;
+    this.forEachLineAlongSegment(from.x, from.y, to.x, to.y, (i) => {
+      const e = i * 4;
+      const ends = this.lineOverlapEnds;
+      const t = segmentCrossT(from.x, from.y, to.x, to.y, ends[e], ends[e + 1], ends[e + 2], ends[e + 3]);
+      if (t < 0 || t >= nearestT || t * dist <= SELF_HIT_MARGIN) return;
+      if (!this.blocksShot(i, from.z + (to.z - from.z) * t)) return;
+      nearestT = t;
+      hitLine = i;
+    });
+    if (hitLine < 0) return null;
+    return {
+      x: from.x + (to.x - from.x) * nearestT,
+      y: from.y + (to.y - from.y) * nearestT,
+      z: from.z + (to.z - from.z) * nearestT,
+      lineIndex: hitLine,
+    };
+  }
+
+  /**
+   * Traces a shot fired from `origin` along `angleRad` and returns where it ends
+   * up, stopped at the nearest line that blocks it. Used both for a hitscan
+   * weapon's tracer endpoint and for how far a projectile may fly
+   * (game/weapons.ts, game.ts).
+   *
+   * `target` supplies the **slope** — the trace rises or falls from `origin.z`
+   * toward the target's height, and the origin stays the shooter's own height so
+   * a rendered tracer never starts mid-air. With no target the shot is flat.
+   *
+   * `range` is how far it flies, and is deliberately **separate from the aim**:
+   * it defaults to stopping *at* the target (a player's locked-on shot, whose
+   * target can't move mid-flight) but a caller can pass its own, because a shot
+   * keeps going down the aimed slope whether or not the target is still there. A
+   * monster's bullet passes `WEAPON_RANGE` (`P_LineAttack`'s `MISSILERANGE`), a
+   * player's free bullet the longer `PLAYER_WEAPON_RANGE`, and a missile — which
+   * has no range budget in vanilla at all — `World.mapSpan`. See docs/combat.md
+   * § Range and docs/monster-attacks.md § Hitscan vs. projectile.
+   *
+   * **A `lock` switches blocking** from `blocksShot`'s single fixed ray to a
+   * **slope wedge**, vanilla's `P_AimLineAttack` — the auto-aim leniency — and
+   * re-aims the shot at the wedge it cleared (`PTR_AimTraverse`'s `aimslope`), so
+   * the slope fired is one the geometry admits. A monster's own fired shot passes
+   * none: it needs `target` to aim, but has no "you clicked it" promise to honor.
+   * See docs/combat.md § shotPath.
+   */
+  shotPath(
+    origin: Pos3,
+    angleRad: number,
+    target: Pos3 | null = null,
+    range?: number,
+    lock: ShotLock | null = null,
+  ): ShotPath {
+    const { x, y, z } = origin;
+    const dx = Math.cos(angleRad);
+    const dy = Math.sin(angleRad);
+    const toTarget = target ? Math.hypot(target.x - x, target.y - y) : 0;
+    const maxRange = range ?? (target ? toTarget : WEAPON_RANGE);
+    // Held for the whole trace, so a `range` past the target keeps climbing or
+    // falling at the rate the aim set — `P_LineAttack`'s `slope`, `momz`. The
+    // locked-on branch below may re-aim it within the wedge it cleared.
+    const slope = target && toTarget > 0 ? (target.z - z) / toTarget : 0;
+    let aimSlope = slope;
+    const tx = x + dx * maxRange;
+    const ty = y + dy * maxRange;
+    let nearestT = 1;
+    let blockingLine: number | null = null;
+
+    /** This line's crossing point along the shot, or null — off `World.lineOverlapEnds`, which carries the corner-leak extension documented on `WALL_OVERLAP`. */
+    const crossingT = (i: number): number | null => {
+      const e = i * 4;
+      const ends = this.lineOverlapEnds;
+      const t = segmentCrossT(x, y, tx, ty, ends[e], ends[e + 1], ends[e + 2], ends[e + 3]);
+      return t < 0 ? null : t;
+    };
+
+    if (!lock) {
+      // Walked along the trace, not gathered from a radius box around its start:
+      // a missile's `range` is the whole map (see `World.mapSpan`), and
+      // `linesNear` is O(range²) in cells for what is one thin line.
+      this.forEachLineAlongSegment(x, y, tx, ty, (i) => {
+        const t = crossingT(i);
+        if (t === null || t >= nearestT) return;
+        if (this.blocksShot(i, z + slope * maxRange * t)) {
+          nearestT = t;
+          blockingLine = i;
+        }
+      });
+    } else {
+      // Vanilla's P_AimLineAttack wedge — see this function's doc. Crossings have
+      // to be walked nearest-first for the narrowing to mean anything, so unlike
+      // the single-ray branch above (which can early-out on `nearestT` in any
+      // order) this one collects and sorts first.
+      const crossings: { t: number; i: number }[] = [];
+      this.forEachLineAlongSegment(x, y, tx, ty, (i) => {
+        const t = crossingT(i);
+        if (t !== null) crossings.push({ t, i });
+      });
+      crossings.sort((p, q) => p.t - q.t);
+
+      // The target's own silhouette, `PTR_AimTraverse`'s
+      // `thingtopslope`/`thingbottomslope` — `target.z` is the body's centre, so
+      // the pair spans `[z, z + height]`.
+      let bottomSlope = slope - lock.halfHeight / maxRange;
+      let topSlope = slope + lock.halfHeight / maxRange;
+      for (const { t, i } of crossings) {
+        const line = this.map.linedefs[i];
+        // A genuinely solid wall or a shut door stops any shot outright, the
+        // same two cases `blocksShot` leads with.
+        if (line.left === NO_SIDE || line.right === NO_SIDE) {
+          nearestT = t;
+          blockingLine = i;
+          break;
+        }
+        const opening = this.openingOf(i);
+        if (!opening || opening.top <= opening.bottom) {
+          nearestT = t;
+          blockingLine = i;
+          break;
+        }
+        const d = maxRange * t;
+        if (d <= 0) continue; // a line the shot starts on contributes no constraint
+        const bottom = (opening.bottom - z) / d;
+        const topOfGap = (opening.top - z) / d;
+        if (bottom > bottomSlope) bottomSlope = bottom;
+        if (topOfGap < topSlope) topSlope = topOfGap;
+        if (topSlope <= bottomSlope) {
+          nearestT = t;
+          blockingLine = i;
+          break;
+        }
+      }
+      // `PTR_AimTraverse`'s `aimslope`, the middle of what survived, plus the
+      // pellet's own jitter — docs/combat.md § shotPath for why the shot is aimed
+      // at the wedge rather than at the target, and why the jitter comes after. A
+      // collapsed wedge keeps the raw slope: the shot stops at that line anyway.
+      aimSlope = (topSlope > bottomSlope ? (bottomSlope + topSlope) / 2 : slope) + lock.slopeOffset;
+    }
+
+    const dist = maxRange * nearestT;
+    return { x: x + dx * dist, y: y + dy * dist, z: z + aimSlope * dist, dist, lineIndex: blockingLine };
+  }
 }
 
 /**
@@ -976,102 +1647,6 @@ const SIGHT_HEIGHT_SAMPLE_STEP = 64;
  */
 const SIGHT_MAX_HEIGHT_SAMPLES = 32;
 
-/**
- * True if a straight 3D line between two points is crossed by no
- * sight-blocking line (`World.blocksSight`) **and** keeps an unbroken sight
- * wedge through the floor/ceiling of every sector along the way.
- *
- * The wedge starts from a *fixed eye height* (`player.ts`'s `SIGHT_EYE_HEIGHT`,
- * vanilla's `sightzstart`) rather than interpolating toward `z2` — vanilla's
- * `P_CheckSight` (`sightzstart`/`topslope`/`bottomslope`). Both the fixed
- * origin and the floor/ceiling half are load-bearing, and this is the engine's
- * most performance-sensitive query: docs/world.md § hasLineOfSight covers why,
- * and what keeps it affordable.
- *
- * That constant is read *inside* this body, like every other `player.ts` value
- * in this file: `world.ts` and `player.ts` import from each other, so hoisting
- * one to module scope here hits the cycle's initialization order — "Cannot
- * access 'PLAYER_HEIGHT' before initialization".
- *
- * It opens with `World.sightRejected`, vanilla's own first test. The two
- * subsector arguments are hints for it: a caller that already keeps its
- * subsector (`PosedThing.subsector`) passes it instead of paying a BSP descent
- * to re-derive it, and `-1` means "look it up".
- */
-export function hasLineOfSight(
-  world: World,
-  from: Pos3,
-  to: Pos3,
-  fromSubsector = -1,
-  toSubsector = -1,
-): boolean {
-  if (world.sightRejected(from, to, fromSubsector, toSubsector)) return false;
-
-  const dist = Math.hypot(to.x - from.x, to.y - from.y);
-  if (dist === 0) return true;
-
-  const eyeZ = from.z + SIGHT_EYE_HEIGHT;
-  let topSlope = (to.z + PLAYER_HEIGHT - eyeZ) / dist;
-  let bottomSlope = (to.z - eyeZ) / dist;
-
-  // Walks only the cells the sightline crosses; `linesNear`'s radius query is
-  // O(dist²) in cells here — see `World.forEachLineAlongSegment`. A fully
-  // blocking line stops the trace outright; an open two-sided one narrows the
-  // sight wedge at its real opening, matching `P_SightTraverse` — the reason
-  // this exists alongside the periodic sampling below is docs/world.md §
-  // hasLineOfSight.
-  let blocked = false;
-  world.forEachLineAlongSegment(from.x, from.y, to.x, to.y, (i) => {
-    const line = world.map.linedefs[i];
-    const a = world.map.vertexes[line.v1];
-    const b = world.map.vertexes[line.v2];
-    if (!a || !b) return;
-    // The two sectors are resolved once here and the blocking test done inline off them, rather
-    // than through `blocksSight` — which would resolve the same pair and throw it away, leaving
-    // the open branch below to look it up a second time for every line the trace walks.
-    const front = world.map.sectors[world.map.sidedefs[line.right]?.sector ?? -1];
-    const back = world.map.sectors[world.map.sidedefs[line.left]?.sector ?? -1];
-    const openTop = front && back ? Math.min(front.ceilHeight, back.ceilHeight) : 0;
-    const openBottom = front && back ? Math.max(front.floorHeight, back.floorHeight) : 0;
-    if (line.left === NO_SIDE || line.right === NO_SIDE || !front || !back || openTop <= openBottom) {
-      const t = segmentCrossT(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
-      if (t >= 0 && t * dist > SELF_HIT_MARGIN) return (blocked = true);
-      return;
-    }
-    // Two-sided and open. Skip the segment math entirely for a flat
-    // pass-through (equal floors and equal ceilings on both sides) — it
-    // can't narrow the wedge, and it's most of a level's connective tissue —
-    // mirroring `P_SightTraverse`'s own frontsector/backsector inequality
-    // guards.
-    if (front.floorHeight === back.floorHeight && front.ceilHeight === back.ceilHeight) return;
-    const t = segmentCrossT(from.x, from.y, to.x, to.y, a.x, a.y, b.x, b.y);
-    if (t < 0 || t * dist <= SELF_HIT_MARGIN) return;
-    const crossDist = t * dist;
-    const crossBottomSlope = (openBottom - eyeZ) / crossDist;
-    const crossTopSlope = (openTop - eyeZ) / crossDist;
-    if (crossBottomSlope > bottomSlope) bottomSlope = crossBottomSlope;
-    if (crossTopSlope < topSlope) topSlope = crossTopSlope;
-    if (topSlope <= bottomSlope) return (blocked = true);
-  });
-  if (blocked) return false;
-
-  const steps = Math.min(
-    SIGHT_MAX_HEIGHT_SAMPLES,
-    Math.max(1, Math.ceil(dist / SIGHT_HEIGHT_SAMPLE_STEP)),
-  );
-  for (let i = 1; i < steps; i++) {
-    const t = i / steps;
-    const sector = world.sectorAt(from.x + (to.x - from.x) * t, from.y + (to.y - from.y) * t);
-    if (!sector) continue;
-    const sampleDist = dist * t;
-    const floorSlope = (sector.floorHeight - eyeZ) / sampleDist;
-    const ceilSlope = (sector.ceilHeight - eyeZ) / sampleDist;
-    if (floorSlope > bottomSlope) bottomSlope = floorSlope;
-    if (ceilSlope < topSlope) topSlope = ceilSlope;
-    if (topSlope <= bottomSlope) return false;
-  }
-  return true;
-}
 
 /**
  * Vanilla's `P_GroupLines` `sec->lines[]`: every linedef bordering a sector,
@@ -1084,9 +1659,11 @@ export function hasLineOfSight(
  * nothing at runtime writes `LineDef.left`/`right` or `SideDef.sector`, unlike
  * the sector *heights* every query here reads live — so this is a pure
  * function of the map that happens to be expensive to recompute. Keyed by the
- * map object rather than held on `World` because the load-time scans
- * (`scanSectors`, reached from `mapmesh.ts`) run before any `World`
- * exists. See docs/world.md § Neighbor-height queries.
+ * map object rather than held on `World` because the renderer reaches it
+ * without one — `mapmesh.ts` injects `linesOf` rather than importing `World`,
+ * so `render/` keeps no import edge into `game/`. Construction order does not
+ * force this: `World` reads only static topology and could be built first.
+ * See docs/world.md § Neighbor-height queries.
  */
 const sectorLineIndexes = new WeakMap<DoomMap, number[][]>();
 
@@ -1201,137 +1778,13 @@ export function nextSectorIndices(map: DoomMap, sectorIndex: number): number[] {
   return neighborSectorIndices(map, sectorIndex).filter((n) => n !== sectorIndex);
 }
 
-/** `nextSectorIndices` as the `Sector` objects themselves, which the neighbor-height queries want. */
-function neighborSectors(map: DoomMap, sectorIndex: number): Sector[] {
-  const out: Sector[] = [];
-  for (const n of nextSectorIndices(map, sectorIndex)) {
-    const sec = map.sectors[n];
-    if (sec) out.push(sec);
-  }
-  return out;
-}
-
-/**
- * Neighbor-height queries a specials mover needs to resolve a target height —
- * vanilla's `P_FindLowestFloorSurrounding` family. The `found` flag (rather
- * than seeding with the sector's own height) is load-bearing; see
+/*
+ * The queries reading a sector's *live* heights and light off that adjacency —
+ * `World.lowestNeighborFloor` and the rest of the `P_FindLowestFloorSurrounding`
+ * family — are methods, since only a running level asks them. The adjacency
+ * itself stays free: `render/` reaches it without a `World`.
  * docs/world.md § Neighbor-height queries.
  */
-export function lowestNeighborFloor(map: DoomMap, sectorIndex: number): number {
-  const sector = map.sectors[sectorIndex];
-  let result = sector?.floorHeight ?? 0;
-  let found = false;
-  for (const n of neighborSectors(map, sectorIndex)) {
-    if (!found || n.floorHeight < result) result = n.floorHeight;
-    found = true;
-  }
-  return result;
-}
-
-export function highestNeighborFloor(map: DoomMap, sectorIndex: number): number {
-  const sector = map.sectors[sectorIndex];
-  let result = sector?.floorHeight ?? 0;
-  let found = false;
-  for (const n of neighborSectors(map, sectorIndex)) {
-    if (!found || n.floorHeight > result) result = n.floorHeight;
-    found = true;
-  }
-  return result;
-}
-
-export function nextHigherFloor(map: DoomMap, sectorIndex: number): number {
-  const sector = map.sectors[sectorIndex];
-  const base = sector?.floorHeight ?? 0;
-  let result = base;
-  let found = false;
-  for (const n of neighborSectors(map, sectorIndex)) {
-    if (n.floorHeight > base && (!found || n.floorHeight < result)) {
-      result = n.floorHeight;
-      found = true;
-    }
-  }
-  return result;
-}
-
-export function nextLowerFloor(map: DoomMap, sectorIndex: number): number {
-  const sector = map.sectors[sectorIndex];
-  const base = sector?.floorHeight ?? 0;
-  let result = base;
-  let found = false;
-  for (const n of neighborSectors(map, sectorIndex)) {
-    if (n.floorHeight < base && (!found || n.floorHeight > result)) {
-      result = n.floorHeight;
-      found = true;
-    }
-  }
-  return result;
-}
-
-export function lowestNeighborCeiling(map: DoomMap, sectorIndex: number): number {
-  const sector = map.sectors[sectorIndex];
-  let result = sector?.ceilHeight ?? 0;
-  let found = false;
-  for (const n of neighborSectors(map, sectorIndex)) {
-    if (!found || n.ceilHeight < result) result = n.ceilHeight;
-    found = true;
-  }
-  return result;
-}
-
-export function highestNeighborCeiling(map: DoomMap, sectorIndex: number): number {
-  const sector = map.sectors[sectorIndex];
-  let result = sector?.ceilHeight ?? 0;
-  let found = false;
-  for (const n of neighborSectors(map, sectorIndex)) {
-    if (!found || n.ceilHeight > result) result = n.ceilHeight;
-    found = true;
-  }
-  return result;
-}
-
-/** Boom `P_FindNextHighestCeiling` — the generalized ceilings' `CtoNnC` with the direction bit up. Same no-candidate fallback shape as `nextHigherFloor`. */
-export function nextHigherCeiling(map: DoomMap, sectorIndex: number): number {
-  const sector = map.sectors[sectorIndex];
-  const base = sector?.ceilHeight ?? 0;
-  let result = base;
-  let found = false;
-  for (const n of neighborSectors(map, sectorIndex)) {
-    if (n.ceilHeight > base && (!found || n.ceilHeight < result)) {
-      result = n.ceilHeight;
-      found = true;
-    }
-  }
-  return result;
-}
-
-/** Boom `P_FindNextLowestCeiling` — `CtoNnC` with the direction bit down. */
-export function nextLowerCeiling(map: DoomMap, sectorIndex: number): number {
-  const sector = map.sectors[sectorIndex];
-  const base = sector?.ceilHeight ?? 0;
-  let result = base;
-  let found = false;
-  for (const n of neighborSectors(map, sectorIndex)) {
-    if (n.ceilHeight < base && (!found || n.ceilHeight > result)) {
-      result = n.ceilHeight;
-      found = true;
-    }
-  }
-  return result;
-}
-
-/**
- * The "minlight" a blink/glow special dims to: `P_FindMinSurroundingLight`,
- * which vanilla always calls with the sector's own level as its `max` and only
- * ever lowers from there. So a sector whose neighbours are all *brighter* dims
- * to its own level — i.e. not at all — rather than up to the darkest of them.
- */
-export function darkestNeighborLight(map: DoomMap, sectorIndex: number): number {
-  let result = map.sectors[sectorIndex]?.light ?? 0;
-  for (const n of neighborSectors(map, sectorIndex)) {
-    if (n.light < result) result = n.light;
-  }
-  return result;
-}
 
 const INFINITE_TALL_STORAGE_KEY = 'topdoom.infiniteTallActors';
 
@@ -1340,10 +1793,7 @@ const INFINITE_TALL_STORAGE_KEY = 'topdoom.infiniteTallActors';
  * "infinitely tall actors". Off by default, a deliberate deviation —
  * docs/movement.md § Collision has the rule and its sources. Read by
  * `blockedByThings` and `bodyFloor`, the two functions it changes.
- *
- * Module-level rather than per-`World`, for the reason `getAutorun` is: it is a
- * settings-tab preference that must apply to the level already running, and a
- * `World` is rebuilt every map load.
+ * Shaped like every persisted setting — docs/menu.md § Persisted settings.
  */
 let infiniteTallActors = globalThis.localStorage?.getItem(INFINITE_TALL_STORAGE_KEY) === 'true';
 
@@ -1486,134 +1936,7 @@ function openingRefuses(openTop: number, openBottom: number, z: number, zFinite:
   return openBottom - z > MAX_STEP_UP || openTop - z < PLAYER_HEIGHT;
 }
 
-/**
- * One `P_CheckPosition` over the lines a body's box at (x, y) spans, filling
- * `out` with the verdict and all three accumulated heights at once — vanilla
- * accumulates them in a single `PIT_CheckLine` walk, and so does this.
- *
- * `stopOnBlock` returns on the first refusing line, as `P_CheckPosition` does;
- * the heights are then only partly accumulated, which is safe for a caller that
- * wants nothing but the verdict. A caller needing the heights *and* the verdict
- * (`monsters/ai.ts: testStep`, and the dropoff test below) passes `false` and
- * gets both from the same walk.
- *
- * `forMonster` — see `World.isSolidWall`. `dropoffZ` deliberately ignores it: a
- * `BLOCK_MONSTERS` line fences a monster's *movement* but its far side is still
- * real floor, so it must not read as a dropoff.
- *
- * `moverHeight` is the mover's own body height and reaches nothing but
- * `blockedByThings` — the opening gates below measure against `PLAYER_HEIGHT`
- * whoever is asking (`openingRefuses`), and a monster's real height is applied
- * separately by `monsters/ai.ts: testStep`. Pass the real height where the
- * caller has one and `ANY_HEIGHT` where there is no body at all
- * (`groundFloor`); it is unread either way once `z` is `ANY_HEIGHT`.
- */
-export function checkPosition(
-  world: World,
-  x: number,
-  y: number,
-  radius: number,
-  z: number,
-  moverHeight: number,
-  forMonster: boolean,
-  blockers: readonly ThingBlocker[] | undefined,
-  from: Pos2 | undefined,
-  stopOnBlock: boolean,
-  out: PositionCheck = positionScratch,
-): PositionCheck {
-  // One BSP descent for both heights — `floorAt`/`ceilingAt` would walk it twice.
-  const here = world.sectorAt(x, y);
-  out.blocked = blockedByThings(x, y, radius, z, moverHeight, blockers, from);
-  out.floorZ = here?.floorHeight ?? 0;
-  out.ceilingZ = here?.ceilHeight ?? 0;
-  out.dropoffZ = out.floorZ;
-  out.centreFloorZ = out.floorZ;
-  if (out.blocked && stopOnBlock) return out;
 
-  const left = x - radius;
-  const right = x + radius;
-  const bottom = y - radius;
-  const top = y + radius;
-  const zFinite = Number.isFinite(z);
-  // The `+ 1` is broadphase slop only; `boxOverlapsLine` below is exact.
-  for (const i of world.linesNear(x, y, radius + 1)) {
-    if (!world.boxOverlapsLine(left, bottom, right, top, i)) continue;
-    if (world.boxOnLineSide(left, bottom, right, top, i) !== -1) continue;
-
-    const solid = world.isSolidWall(i, forMonster);
-    // A `BLOCK_MONSTERS` line fences a monster's *movement* but its far side is
-    // still real floor, hence the second test. Only a monster ever consults
-    // `dropoffZ` at all, so everyone else skips the accumulation — the player
-    // falls off ledges on purpose (docs/movement.md § Vertical physics).
-    if (forMonster && (!solid || !world.isSolidWall(i, false))) {
-      const fenced = world.map.linedefs[i];
-      const front = world.map.sectors[world.map.sidedefs[fenced.right]?.sector];
-      const back = world.map.sectors[world.map.sidedefs[fenced.left]?.sector];
-      if (front && back) out.dropoffZ = Math.min(out.dropoffZ, front.floorHeight, back.floorHeight);
-    }
-    if (solid) {
-      out.blocked = true;
-      if (stopOnBlock) return out;
-      continue;
-    }
-
-    // `P_LineOpening` inline: `openingOf` allocates a record, and this is the
-    // hottest loop in the engine.
-    const line = world.map.linedefs[i];
-    const front = world.map.sectors[world.map.sidedefs[line.right]?.sector];
-    const back = world.map.sectors[world.map.sidedefs[line.left]?.sector];
-    if (!front || !back) {
-      out.blocked = true;
-      if (stopOnBlock) return out;
-      continue;
-    }
-    const openTop = front.ceilHeight < back.ceilHeight ? front.ceilHeight : back.ceilHeight;
-    const openBottom = front.floorHeight > back.floorHeight ? front.floorHeight : back.floorHeight;
-    if (openBottom > out.floorZ) out.floorZ = openBottom;
-    if (openTop < out.ceilingZ) out.ceilingZ = openTop;
-    if (openingRefuses(openTop, openBottom, z, zFinite)) {
-      out.blocked = true;
-      if (stopOnBlock) return out;
-    }
-  }
-  return out;
-}
-
-/**
- * True if a body's collision **box** at (x, y) — half-width `radius`, vanilla's
- * own `mobjinfo.radius` — overlaps any line that blocks it. This is
- * `P_CheckPosition`'s line half, and each line goes through `PIT_CheckLine`'s
- * two gates in vanilla's order: the line's own bounding box, then
- * `boxOnLineSide`. `forMonster` — see `World.isSolidWall`. `blockers` are the
- * other solid bodies in the way (see `ThingBlocker`); omitting them means only
- * geometry blocks.
- *
- * A solid wall is refused on the *same* straddle test as a two-sided opening,
- * not on mere proximity — see docs/movement.md § Collision for why that is what
- * keeps a body from catching on a wall's endpoint.
- *
- * **Geometry and bodies only.** `P_TryMove`'s dropoff rule is not here: it is
- * a monster's alone and lives with the rest of the chase step in
- * `monsters/ai.ts: testStep`, which reads `dropoffZ` off its own
- * `checkPosition` walk (docs/monster-ai.md § The dropoff rule).
- *
- * `from` — see `blockedByThings`: the mover's current position, so a body
- * already touching one of `blockers` can still move away from it.
- */
-export function positionBlocked(
-  world: World,
-  x: number,
-  y: number,
-  radius: number,
-  z: number,
-  moverHeight: number,
-  forMonster = false,
-  blockers?: readonly ThingBlocker[],
-  from?: Pos2,
-): boolean {
-  // The first refusing line is the whole answer, so the walk stops there.
-  return checkPosition(world, x, y, radius, z, moverHeight, forMonster, blockers, from, true).blocked;
-}
 
 /** How many walls one `slideMove` projects against before giving up — vanilla's own `hitcount == 3`. */
 const SLIDE_ATTEMPTS = 3;
@@ -1635,143 +1958,7 @@ export const SLIDE_FUDGE = 1 / 32;
  */
 const slideHit = { frac: Infinity, line: -1 };
 
-/**
- * `PTR_SlideTraverse`: walks one corner's path from (cornerX, cornerY) along
- * (mx, my) and keeps the nearest blocking line along it in `slideHit`. A
- * one-sided line blocks unless the mover already stands behind it; a two-sided
- * one blocks on `openingRefuses`, the same predicate that decides whether a
- * position is refused. `PLAYER_HEIGHT` throughout, since `P_SlideMove` is the
- * player's alone.
- *
- * No sort is needed, and it carries two deliberate deviations from vanilla —
- * one of them the fix for a real dead-stop bug. All three are
- * docs/movement.md § slideMove.
- */
-function slideTraverse(
-  world: World,
-  moverX: number,
-  moverY: number,
-  cornerX: number,
-  cornerY: number,
-  mx: number,
-  my: number,
-  z: number,
-): void {
-  const zFinite = Number.isFinite(z);
-  world.forEachLineAlongSegment(cornerX, cornerY, cornerX + mx, cornerY + my, (i) => {
-    const line = world.map.linedefs[i];
-    const a = world.map.vertexes[line.v1];
-    const b = world.map.vertexes[line.v2];
-    if (!a || !b) return;
-    // Intersect before classifying: most lines in a cell the corner path clips
-    // are not crossed by it, and the opening lookup is the expensive half.
-    const cross = segmentIntersect(cornerX, cornerY, cornerX + mx, cornerY + my, a.x, a.y, b.x, b.y);
-    if (!cross || cross.t >= slideHit.frac) return;
 
-    if (line.left === NO_SIDE || line.right === NO_SIDE) {
-      // Vanilla's "don't hit the back side": behind a one-sided line is void.
-      if (world.pointOnLineSide(moverX, moverY, i) === 1) return;
-    } else if (!(line.flags & LF.BLOCKING)) {
-      const front = world.map.sectors[world.map.sidedefs[line.right]?.sector];
-      const back = world.map.sectors[world.map.sidedefs[line.left]?.sector];
-      if (!front || !back) return;
-      const openTop = front.ceilHeight < back.ceilHeight ? front.ceilHeight : back.ceilHeight;
-      const openBottom = front.floorHeight > back.floorHeight ? front.floorHeight : back.floorHeight;
-      if (!openingRefuses(openTop, openBottom, z, zFinite)) return;
-    }
-    slideHit.frac = cross.t;
-    slideHit.line = i;
-  });
-}
-
-/**
- * Moves a body's collision box by (dx, dy), sliding along whatever it runs into,
- * and returns the position actually reached — vanilla's `P_SlideMove`
- * (`p_map.c`), which is the player's alone: a monster gets `P_Move`'s
- * all-or-nothing step instead (`game/monsters/ai.ts`).
- *
- * Three of the box's four corners are traced to find the nearest wall, the move
- * commits to just short of it, and the remainder is projected onto that wall's
- * own direction and retried, `SLIDE_ATTEMPTS` walls deep. When no trace finds a
- * wall — which includes a solid *body* refusing the move, since a thing produces
- * no line intercept — it falls to vanilla's `stairstep`: one axis at a time, Y
- * before X. See docs/movement.md § slideMove.
- */
-export function slideMove(
-  world: World,
-  from: Pos3,
-  dx: number,
-  dy: number,
-  radius: number,
-  blockers?: readonly ThingBlocker[],
-): Pos2 {
-  const z = from.z;
-  let curX = from.x;
-  let curY = from.y;
-  let mx = dx;
-  let my = dy;
-
-  // `from` stays the *original* position for every probe, so a body that began
-  // the tic already overlapping another can still work free of it
-  // (`blockedByThings`) without a multi-attempt slide creeping further in.
-  const free = (x: number, y: number): boolean =>
-    !positionBlocked(world, x, y, radius, z, PLAYER_HEIGHT, false, blockers, from);
-
-  // `P_XYMovement` only reaches `P_SlideMove` once the whole move is refused.
-  if (free(curX + mx, curY + my)) return { x: curX + mx, y: curY + my };
-
-  for (let attempt = 0; attempt < SLIDE_ATTEMPTS; attempt++) {
-    // Vanilla traces the leading corner and the two beside it, never the
-    // trailing one. A zero component takes the same branch a negative one does.
-    const leadX = mx > 0 ? curX + radius : curX - radius;
-    const trailX = mx > 0 ? curX - radius : curX + radius;
-    const leadY = my > 0 ? curY + radius : curY - radius;
-    const trailY = my > 0 ? curY - radius : curY + radius;
-
-    slideHit.frac = Infinity;
-    slideHit.line = -1;
-    slideTraverse(world, curX, curY, leadX, leadY, mx, my, z);
-    slideTraverse(world, curX, curY, trailX, leadY, mx, my, z);
-    slideTraverse(world, curX, curY, leadX, trailY, mx, my, z);
-
-    if (slideHit.line < 0) break;
-
-    const frac = slideHit.frac - SLIDE_FUDGE;
-    if (frac > 0) {
-      const nx = curX + mx * frac;
-      const ny = curY + my * frac;
-      if (!free(nx, ny)) break;
-      curX = nx;
-      curY = ny;
-    }
-
-    // Vanilla clamps the remainder to FRACUNIT here; `segmentIntersect` already
-    // bounds the fraction to [0, 1], so the clamp cannot fire.
-    const rest = 1 - slideHit.frac;
-    if (rest <= 0) return { x: curX, y: curY };
-
-    // `P_HitSlideLine`: what is left of the move projected onto the wall's own
-    // direction, so the along-wall component survives and the into-wall one is
-    // gone. Vanilla's angle arithmetic and its `P_AproxDistance` reduce to
-    // exactly this projection, without that function's ~12% magnitude error.
-    const ldx = world.lineDX[slideHit.line];
-    const ldy = world.lineDY[slideHit.line];
-    const lenSq = ldx * ldx + ldy * ldy;
-    if (lenSq === 0) break;
-    const along = (rest * (mx * ldx + my * ldy)) / lenSq;
-    mx = ldx * along;
-    my = ldy * along;
-
-    if (free(curX + mx, curY + my)) return { x: curX + mx, y: curY + my };
-  }
-
-  // `stairstep`. X is tried only if Y was refused, exactly as vanilla nests it;
-  // with `my` zero the Y attempt is the mover's own position and succeeds, which
-  // is why a purely lateral move stopped by a body does not fall through to X.
-  if (free(curX, curY + my)) return { x: curX, y: curY + my };
-  if (free(curX + mx, curY)) return { x: curX + mx, y: curY };
-  return { x: curX, y: curY };
-}
 
 /** Vanilla's `MISSILERANGE` (`32*64`), what every *monster* hitscan attack passes to `P_LineAttack`. */
 export const WEAPON_RANGE = 2048;
@@ -1800,23 +1987,6 @@ export function playerShotRange(
   return kind === 'projectile' ? mapSpan : PLAYER_WEAPON_RANGE;
 }
 
-/**
- * True if this line stops a shot passing through it at height `z` — wherever
- * *this* shot's (possibly sloped) line is when it crosses, not one height for
- * the whole flight. The **single-ray** form, for a shot whose slope is already
- * fixed; a locked-on shot gets `shotPath`'s wedge instead.
- *
- * Deliberately **not** `isSolidWall` — `PTR_ShootTraverse` never reads
- * `ML_BLOCKING`, so a shot passes through bars it can't walk through. See
- * docs/combat.md § shotPath.
- */
-function blocksShot(world: World, lineIndex: number, z: number): boolean {
-  const line = world.map.linedefs[lineIndex];
-  if (!line || line.left === NO_SIDE || line.right === NO_SIDE) return true;
-  const opening = world.openingOf(lineIndex);
-  if (!opening || opening.top <= opening.bottom) return true;
-  return z < opening.bottom || z > opening.top;
-}
 
 /**
  * The lock a player's shot was fired under: the target's own body for the wedge
@@ -1830,45 +2000,6 @@ export interface ShotLock {
   slopeOffset: number;
 }
 
-/**
- * Where one frame of a *curving* projectile's flight ran into geometry, or
- * null if the step is clear — the per-step counterpart to `shotPath`'s single
- * launch-time trace, for the one projectile whose path isn't straight and so
- * can't have its stopping point resolved up front: the revenant's homing
- * missile (`game/projectiles.ts: advanceHoming`, docs/monster-attacks.md § The
- * revenant's homing missile).
- *
- * Blocking is `blocksShot` at the height the step is at where it crosses each
- * line. A crossing within `SELF_HIT_MARGIN` of the step's start is skipped for
- * the reason `hasLineOfSight` skips one: a missile that just passed through an
- * opening starts the next step sitting essentially on it.
- */
-export function projectileStepBlocker(
-  world: World,
-  from: Pos3,
-  to: Pos3,
-): { x: number; y: number; z: number; lineIndex: number } | null {
-  const dist = Math.hypot(to.x - from.x, to.y - from.y);
-  if (dist === 0) return null;
-  let nearestT = Infinity;
-  let hitLine = -1;
-  world.forEachLineAlongSegment(from.x, from.y, to.x, to.y, (i) => {
-    const e = i * 4;
-    const ends = world.lineOverlapEnds;
-    const t = segmentCrossT(from.x, from.y, to.x, to.y, ends[e], ends[e + 1], ends[e + 2], ends[e + 3]);
-    if (t < 0 || t >= nearestT || t * dist <= SELF_HIT_MARGIN) return;
-    if (!blocksShot(world, i, from.z + (to.z - from.z) * t)) return;
-    nearestT = t;
-    hitLine = i;
-  });
-  if (hitLine < 0) return null;
-  return {
-    x: from.x + (to.x - from.x) * nearestT,
-    y: from.y + (to.y - from.y) * nearestT,
-    z: from.z + (to.z - from.z) * nearestT,
-    lineIndex: hitLine,
-  };
-}
 
 /** Where a shot actually ends up: the point it stopped at, the height it was at there, and how far that was. */
 export interface ShotPath extends Pos3 {
@@ -1877,126 +2008,3 @@ export interface ShotPath extends Pos3 {
   lineIndex: number | null;
 }
 
-/**
- * Traces a shot fired from `origin` along `angleRad` and returns where it ends
- * up, stopped at the nearest line that blocks it. Used both for a hitscan
- * weapon's tracer endpoint and for how far a projectile may fly
- * (game/weapons.ts, game.ts).
- *
- * `target` supplies the **slope** — the trace rises or falls from `origin.z`
- * toward the target's height, and the origin stays the shooter's own height so
- * a rendered tracer never starts mid-air. With no target the shot is flat.
- *
- * `range` is how far it flies, and is deliberately **separate from the aim**:
- * it defaults to stopping *at* the target (a player's locked-on shot, whose
- * target can't move mid-flight) but a caller can pass its own, because a shot
- * keeps going down the aimed slope whether or not the target is still there. A
- * monster's bullet passes `WEAPON_RANGE` (`P_LineAttack`'s `MISSILERANGE`), a
- * player's free bullet the longer `PLAYER_WEAPON_RANGE`, and a missile — which
- * has no range budget in vanilla at all — `World.mapSpan`. See docs/combat.md
- * § Range and docs/monster-attacks.md § Hitscan vs. projectile.
- *
- * **A `lock` switches blocking** from `blocksShot`'s single fixed ray to a
- * **slope wedge**, vanilla's `P_AimLineAttack` — the auto-aim leniency — and
- * re-aims the shot at the wedge it cleared (`PTR_AimTraverse`'s `aimslope`), so
- * the slope fired is one the geometry admits. A monster's own fired shot passes
- * none: it needs `target` to aim, but has no "you clicked it" promise to honor.
- * See docs/combat.md § shotPath.
- */
-export function shotPath(
-  world: World,
-  origin: Pos3,
-  angleRad: number,
-  target: Pos3 | null = null,
-  range?: number,
-  lock: ShotLock | null = null,
-): ShotPath {
-  const { x, y, z } = origin;
-  const dx = Math.cos(angleRad);
-  const dy = Math.sin(angleRad);
-  const toTarget = target ? Math.hypot(target.x - x, target.y - y) : 0;
-  const maxRange = range ?? (target ? toTarget : WEAPON_RANGE);
-  // Held for the whole trace, so a `range` past the target keeps climbing or
-  // falling at the rate the aim set — `P_LineAttack`'s `slope`, `momz`. The
-  // locked-on branch below may re-aim it within the wedge it cleared.
-  const slope = target && toTarget > 0 ? (target.z - z) / toTarget : 0;
-  let aimSlope = slope;
-  const tx = x + dx * maxRange;
-  const ty = y + dy * maxRange;
-  let nearestT = 1;
-  let blockingLine: number | null = null;
-
-  /** This line's crossing point along the shot, or null — off `World.lineOverlapEnds`, which carries the corner-leak extension documented on `WALL_OVERLAP`. */
-  const crossingT = (i: number): number | null => {
-    const e = i * 4;
-    const ends = world.lineOverlapEnds;
-    const t = segmentCrossT(x, y, tx, ty, ends[e], ends[e + 1], ends[e + 2], ends[e + 3]);
-    return t < 0 ? null : t;
-  };
-
-  if (!lock) {
-    // Walked along the trace, not gathered from a radius box around its start:
-    // a missile's `range` is the whole map (see `World.mapSpan`), and
-    // `linesNear` is O(range²) in cells for what is one thin line.
-    world.forEachLineAlongSegment(x, y, tx, ty, (i) => {
-      const t = crossingT(i);
-      if (t === null || t >= nearestT) return;
-      if (blocksShot(world, i, z + slope * maxRange * t)) {
-        nearestT = t;
-        blockingLine = i;
-      }
-    });
-  } else {
-    // Vanilla's P_AimLineAttack wedge — see this function's doc. Crossings have
-    // to be walked nearest-first for the narrowing to mean anything, so unlike
-    // the single-ray branch above (which can early-out on `nearestT` in any
-    // order) this one collects and sorts first.
-    const crossings: { t: number; i: number }[] = [];
-    world.forEachLineAlongSegment(x, y, tx, ty, (i) => {
-      const t = crossingT(i);
-      if (t !== null) crossings.push({ t, i });
-    });
-    crossings.sort((p, q) => p.t - q.t);
-
-    // The target's own silhouette, `PTR_AimTraverse`'s
-    // `thingtopslope`/`thingbottomslope` — `target.z` is the body's centre, so
-    // the pair spans `[z, z + height]`.
-    let bottomSlope = slope - lock.halfHeight / maxRange;
-    let topSlope = slope + lock.halfHeight / maxRange;
-    for (const { t, i } of crossings) {
-      const line = world.map.linedefs[i];
-      // A genuinely solid wall or a shut door stops any shot outright, the
-      // same two cases `blocksShot` leads with.
-      if (line.left === NO_SIDE || line.right === NO_SIDE) {
-        nearestT = t;
-        blockingLine = i;
-        break;
-      }
-      const opening = world.openingOf(i);
-      if (!opening || opening.top <= opening.bottom) {
-        nearestT = t;
-        blockingLine = i;
-        break;
-      }
-      const d = maxRange * t;
-      if (d <= 0) continue; // a line the shot starts on contributes no constraint
-      const bottom = (opening.bottom - z) / d;
-      const topOfGap = (opening.top - z) / d;
-      if (bottom > bottomSlope) bottomSlope = bottom;
-      if (topOfGap < topSlope) topSlope = topOfGap;
-      if (topSlope <= bottomSlope) {
-        nearestT = t;
-        blockingLine = i;
-        break;
-      }
-    }
-    // `PTR_AimTraverse`'s `aimslope`, the middle of what survived, plus the
-    // pellet's own jitter — docs/combat.md § shotPath for why the shot is aimed
-    // at the wedge rather than at the target, and why the jitter comes after. A
-    // collapsed wedge keeps the raw slope: the shot stops at that line anyway.
-    aimSlope = (topSlope > bottomSlope ? (bottomSlope + topSlope) / 2 : slope) + lock.slopeOffset;
-  }
-
-  const dist = maxRange * nearestT;
-  return { x: x + dx * dist, y: y + dy * dist, z: z + aimSlope * dist, dist, lineIndex: blockingLine };
-}

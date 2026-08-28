@@ -7,7 +7,7 @@ import { SpriteAnimator, VIEWER_ANGLE_DEG, type SpriteMaterialCache } from '../r
 import type { SpriteBank } from '../wad/sprites.ts';
 import type { AudioEngine } from '../audio/audio.ts';
 import { PLAYER_ORIGIN } from '../audio/sfx.ts';
-import { hasLineOfSight, playerShotRange, projectileStepBlocker, shotPath } from './world.ts';
+import { playerShotRange } from './world.ts';
 import { transfersOf } from './specials/transfers.ts';
 import { AIM_HEIGHT_OFFSET, PLAYER_HEIGHT, PLAYER_RADIUS } from './player.ts';
 import {
@@ -144,7 +144,7 @@ export class ProjectileLayer {
     const half = target === null ? 0 : target.height / 2;
     const aimAt = target === null ? lineAim : { x: target.x, y: target.y, z: target.z + half };
     const lock = target === null ? null : { halfHeight: half, slopeOffset };
-    const path = shotPath(world, origin, shot.angleRad, aimAt, range, lock);
+    const path = world.shotPath(origin, shot.angleRad, aimAt, range, lock);
 
     if (shot.kind === 'hitscan') {
       const dirX = Math.cos(shot.angleRad);
@@ -273,7 +273,7 @@ export class ProjectileLayer {
     // slope while only its heading is deflected, exactly as `A_FatAttack1/2/3`
     // rewrite momx/momy from the new angle and leave momz alone.
     for (const proj of atk.projectiles) {
-      const path = shotPath(world, atk, proj.angleRad, target, world.mapSpan, null);
+      const path = world.shotPath(atk, proj.angleRad, target, world.mapSpan, null);
       const anim = new SpriteAnimator(this.spriteBank, this.spriteMaterials, proj.sprite, PROJECTILE_FRAMES[proj.sprite]);
       if (!anim.resolve((proj.angleRad * 180) / Math.PI, VIEWER_ANGLE_DEG)) continue;
       const launch = PROJECTILE_SOUNDS[proj.sprite]?.launch;
@@ -466,7 +466,7 @@ export class ProjectileLayer {
     // Proximity alone isn't arrival, and the trace runs player→projectile, not
     // the other way round — docs/monster-attacks.md § Monster projectiles in
     // flight. Last in the chain so it only runs once the cheap tests passed.
-    return hasLineOfSight(world, player, at);
+    return world.hasLineOfSight(player, at);
   }
 
   /**
@@ -490,7 +490,7 @@ export class ProjectileLayer {
       // Same wall check `playerStruckBy` needs, and for the same reason — see
       // its comment. Traced from the monster for the same `SELF_HIT_MARGIN`
       // reason, and last so it only runs on an already-close candidate.
-      if (!hasLineOfSight(this.ctx.world, m, at)) continue;
+      if (!this.ctx.world.hasLineOfSight(m, at)) continue;
       nearestT = t;
       nearest = { id: p.sourceId !== null && sameSpecies(p.sourceType, m.type) ? null : m.id };
     }
@@ -530,7 +530,7 @@ export class ProjectileLayer {
     const fromZ = homing.z;
     homing.x += Math.cos(homing.headingRad) * step;
     homing.y += Math.sin(homing.headingRad) * step;
-    const wall = projectileStepBlocker(world, { x: fromX, y: fromY, z: fromZ }, { x: homing.x, y: homing.y, z: homing.z });
+    const wall = world.projectileStepBlocker({ x: fromX, y: fromY, z: fromZ }, { x: homing.x, y: homing.y, z: homing.z });
     if (wall) {
       homing.x = wall.x;
       homing.y = wall.y;

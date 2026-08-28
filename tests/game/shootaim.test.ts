@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { specialsRig } from '../fixtures/specialsrig.ts';
-import { World, shotPath } from '../../src/game/world.ts';
+import { World } from '../../src/game/world.ts';
 import { pickShootAim } from '../../src/game/specials/shootaim.ts';
 import type { Pos3 } from '../../src/types.ts';
 
@@ -67,7 +67,7 @@ describe('game · shoot-line auto-aim', () => {
     assert.equal(aim.z, FIRE_Z, 'the lower band admits a flat shot');
     const origin = { x: from.x, y: from.y, z: FIRE_Z };
     const angle = Math.atan2(aim.y - origin.y, aim.x - origin.x);
-    const path = shotPath(world, origin, angle, aim, 1000);
+    const path = world.shotPath(origin, angle, aim, 1000);
     assert.equal(path.lineIndex, line, 'the shot stops on the shoot line, which is what fires its special');
   });
 

@@ -5,7 +5,6 @@ import {
   ANY_HEIGHT,
   World,
   bodyFloor,
-  positionBlocked,
   setInfiniteTallActors,
   type ThingBlocker,
 } from '../../src/game/world.ts';
@@ -35,7 +34,7 @@ function body(z: number, height = BODY_HEIGHT): ThingBlocker {
 
 /** The mover is the player's box unless a case says otherwise. */
 function blocked(z: number, blockers: ThingBlocker[], moverHeight = PLAYER_HEIGHT): boolean {
-  return positionBlocked(world, at.x, at.y, PLAYER_RADIUS, z, moverHeight, false, blockers);
+  return world.positionBlocked(at.x, at.y, PLAYER_RADIUS, z, moverHeight, false, blockers);
 }
 
 function settle(player: Player, blockers: ThingBlocker[]): void {

@@ -5,10 +5,8 @@ const RIGHT_MOUSE_STORAGE_KEY = 'topdoom.rightMouse';
 const RIGHT_MOUSE_ACTIONS: readonly RightMouseAction[] = ['none', 'previousweapon', 'use'];
 
 /**
- * The right button's binding. Module-level for the same reason `player.ts`'s
- * `autorunEnabled` is: it's a session preference set from the menu's Settings
- * tab that must apply immediately mid-level, while the systems reading it
- * (`WeaponSystem`, `SpecialsController`) are recreated every map load.
+ * The right button's binding, read by `WeaponSystem` and `SpecialsController`.
+ * Shaped like every persisted setting — docs/menu.md § Persisted settings.
  */
 let rightMouseAction: RightMouseAction = readStoredRightMouseAction();
 

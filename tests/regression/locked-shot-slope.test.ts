@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { shotPath, World, type ShotPath } from '../../src/game/world.ts';
+import { World, type ShotPath } from '../../src/game/world.ts';
 import { AIM_HEIGHT_OFFSET } from '../../src/game/player.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
@@ -56,7 +56,7 @@ function scene(half: number, art = '.=..'): Scene {
     target,
     toStep: grid.cell / 2,
     toTarget: at.x - from.x,
-    fire: (slopeOffset = 0) => shotPath(world, origin, EAST, target, undefined, { halfHeight: half, slopeOffset }),
+    fire: (slopeOffset = 0) => world.shotPath(origin, EAST, target, undefined, { halfHeight: half, slopeOffset }),
   };
 }
 

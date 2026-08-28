@@ -7,6 +7,20 @@ moving something through it. Collision and the movement queries are docs/movemen
 queries (`shotPath`, `Range`) are docs/combat.md. This file holds the two that no single
 subsystem owns — both are called from combat, AI, fog of war and the specials alike.
 
+**What is a method and what stays a free function is a rule, not an accident.** Anything that reads
+the level *through* a `World` is a method on it — `hasLineOfSight`, `checkPosition`,
+`positionBlocked`, `slideMove`, `shotPath`, `projectileStepBlocker`, the neighbour-height family.
+Two kinds of thing stay free, and neither can be folded in:
+
+- **Map-keyed static topology** — `sectorLines`, `sectorsByTag`, `linesByTag`,
+  `neighborSectorIndices`, `nextSectorIndices`. `render/` reaches these without a `World`
+  (§ Neighbor-height queries has the argument), so they are memoized against the `DoomMap`.
+- **Pure helpers that never touch a `World`** — `bodyFloor`, `playerShotRange`, `openingRefuses`,
+  `blockedByThings`. They take scalars and blocker lists, and a `this` would only obscure that.
+
+Converting the first group to methods was measured, not assumed: `positionBlocked`, `hasLineOfSight`,
+`slideMove` and `shotPath` benchmarked identical before and after, inside run-to-run noise.
+
 ## hasLineOfSight
 
 **It checks floor/ceiling, not just walls.** Without this, a monster standing in a room genuinely
@@ -228,9 +242,26 @@ most — a huge open arena is one sector, so NUTS.WAD MAP01's 11-sector map reje
 
 ## Neighbor-height queries
 
-`world.ts`'s `lowestNeighborFloor`/`highestNeighborFloor`/`nextHigherFloor`/`nextLowerFloor`/
+`World.lowestNeighborFloor`/`highestNeighborFloor`/`nextHigherFloor`/`nextLowerFloor`/
 `lowestNeighborCeiling`/`highestNeighborCeiling` are vanilla's `P_FindLowestFloorSurrounding`
 family — how a mover resolves its target height.
+
+**They are methods, while the adjacency underneath them is a free memoized function, and the split
+is not stylistic.** These read a sector's *live* heights and light, so only a running level asks
+them and every caller (`game/specials.ts`) already holds a `World`. The walks they run on —
+`sectorLines`, `neighborSectorIndices`, `nextSectorIndices`, `sectorsByTag`, `linesByTag` — are
+static topology memoized against the `DoomMap`, and must stay callable **without** a `World`,
+because the renderer reaches them without one: `render/mapmesh.ts` takes `linesOf` and `subsectorAt`
+as injected callbacks rather than importing `World`, so `render/` keeps no import edge into `game/`.
+`transfersOf` is memoized on map identity for a related reason — one `Transfers` shared by
+`game.ts`, `things.ts`, `forces.ts` and the mesh builder, which the mesh tests construct with no
+`World` at all.
+
+**Construction order is not the reason.** `World`'s constructor reads only static topology
+(vertexes, linedefs, sidedefs, subsectors, bounds) and no sector height, light or special, so it
+could be built immediately after `loadMap` — before `transfersOf` and `applySectors` — without
+changing an answer. It is built later only because nothing needs it sooner. Moving it up would not
+let the adjacency become methods; the layer direction is what forbids that.
 
 **Each falls back to the sector's own current height only when it has no two-sided neighbors at
 all**, never leaving a mover with nowhere to go. The fallback must *not* kick in merely because the
@@ -247,7 +278,7 @@ with min == max is a legal outcome — one the strobes then override (docs/speci
 
 ### Self-referencing lines
 
-`neighborSectors` — `getNextSector` — **skips a line whose two sidedefs name the same sector**, so
+`World.neighborSectors` — `getNextSector` — **skips a line whose two sidedefs name the same sector**, so
 such a line never makes a sector its own neighbour. This is Boom's reading, not vanilla's:
 `linuxdoom-1.10`'s `getNextSector` returns `line->backsector` unconditionally once
 `line->frontsector == sec`, which for a self-referencing line is `sec` itself. Boom's own comment

@@ -5,7 +5,7 @@
  */
 import type { DoomMap, Thing } from '../../wad/map.ts';
 import { NO_SIDE } from '../../wad/map.ts';
-import { sectorsByTag, linesByTag, hasLineOfSight, type SectorTouchCache, type World } from '../world.ts';
+import { sectorsByTag, linesByTag, type SectorTouchCache, type World } from '../world.ts';
 import { decodeSectorType } from './sectortypes.ts';
 import { transfersOf, type Transfers } from './transfers.ts';
 import { EYE_HEIGHT } from '../player.ts';
@@ -728,7 +728,7 @@ export class Forces {
         this.sightScratch.x = p.x;
         this.sightScratch.y = p.y;
         this.sightScratch.z = pos.z;
-        if (!hasLineOfSight(this.world, pos, this.sightScratch)) continue;
+        if (!this.world.hasLineOfSight(pos, this.sightScratch)) continue;
         // `R_PointToAngle2(thing, source)`, turned around by 180° for a pusher.
         const angle = Math.atan2(p.y - pos.y, p.x - pos.x) + (p.away ? Math.PI : 0);
         px += Math.cos(angle) * speed * TICS_PER_SECOND;

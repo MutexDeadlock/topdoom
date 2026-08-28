@@ -20,7 +20,10 @@ import { SectorProbe, selfReferencing } from './sectorprobe.ts';
  * docs/render.md § Cracks between subsectors.
  */
 const SEG_CLIP_TOLERANCE = 4;
-/** Most slack `segClipTolerance` will hand one seg. Both bounds are measured, not tuned — docs/render.md § Cracks between subsectors. */
+/**
+ * Most slack `segClipTolerance` will hand one seg. Both bounds are measured, not tuned —
+ * docs/render.md § Cracks between subsectors.
+ */
 const SEG_CLIP_MAX_TOLERANCE = 32;
 
 /**

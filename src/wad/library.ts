@@ -38,7 +38,10 @@ const MANIFEST_URL = '/wads/index.json';
  * the user's disk. Bytes are only pulled in when something actually needs them.
  */
 export interface WadSource {
-  /** Where the file lives: the UI's handle for it, and what ?wad= / ?pwad= name. Not an identity — a rename changes it, and the same bytes have different keys as a server file and as an upload. */
+  /**
+   * Where the file lives: the UI's handle for it, and what ?wad= / ?pwad= name. Not an identity — a
+   * rename changes it, and the same bytes have different keys as a server file and as an upload.
+   */
   key: string;
   /**
    * Content id of the bytes (`hashBytes`), known without downloading them: the
@@ -59,9 +62,15 @@ export interface WadSource {
   lumpCount: number;
   /** Whether the file carries a `DEHACKED` lump — docs/dehacked.md § The coverage report. */
   dehacked?: boolean;
-  /** Every reason this engine can't fully run the file; absent is *unknown* — docs/wad.md § Will it run? */
+  /**
+   * Every reason this engine can't fully run the file; absent is *unknown* — docs/wad.md § Will it
+   * run?
+   */
   support?: WadSupport;
-  /** Level titles this file's MAPINFO defines, keyed by map lump name — see docs/wad.md § Level names. */
+  /**
+   * Level titles this file's MAPINFO defines, keyed by map lump name — see docs/wad.md § Level
+   * names.
+   */
   levelNames: Record<string, string>;
   size: number;
   origin: WadOrigin;
@@ -83,10 +92,10 @@ export interface WadSource {
 export type WadOrigin = 'server' | 'upload' | 'library';
 
 /**
- * One `index.json` row — the manifest's wire format, declared **here and only here**. The build-time
- * producer (`plugins/wad-manifest.ts`) imports this same interface rather than restating it: the two
- * had drifted on `folder` alone, and a shape the consumer casts raw JSON to is one the producer must
- * be checked against. See docs/wad.md § The `public/wads/` manifest.
+ * One `index.json` row — the manifest's wire format, declared **here and only here**. The
+ * build-time producer (`plugins/wad-manifest.ts`) imports this same interface rather than restating
+ * it: the two had drifted on `folder` alone, and a shape the consumer casts raw JSON to is one the
+ * producer must be checked against. See docs/wad.md § The `public/wads/` manifest.
  */
 export interface ManifestEntry {
   file: string;
@@ -106,8 +115,11 @@ export interface ManifestEntry {
   /** Whether the file carries a `DEHACKED` lump. Presence only — what a patch actually changes
       needs the bytes, which the menu hasn't downloaded. docs/dehacked.md § The coverage report. */
   dehacked?: boolean;
-  /** The support verdict, written on every row. Optional for the same reason `id` is, and only that
-      reason: an `index.json` cached from before the field reads as unknown — docs/wad.md § Will it run? */
+  /**
+   * The support verdict, written on every row. Optional for the same reason `id` is, and only that
+   * reason: an `index.json` cached from before the field reads as unknown — docs/wad.md § Will it
+   * run?
+   */
   support?: WadSupport;
   /**
    * `hashBytes` content id, so the menu knows a file's identity without downloading it — what a
@@ -266,8 +278,8 @@ export interface MergedMap {
  * Map list for an IWAD plus its add-ons: the IWAD's own maps in order, then any
  * extra maps a PWAD introduces. Each map is attributed to the file that wins.
  *
- * Titles resolve exactly as they do in-game (`wad/campaign/names.ts`), off the manifest alone so the
- * list can be built without downloading anything: MAPINFO from anywhere in the set (later files
+ * Titles resolve exactly as they do in-game (`wad/campaign/names.ts`), off the manifest alone so
+ * the list can be built without downloading anything: MAPINFO from anywhere in the set (later files
  * winning, as with lumps), else the vanilla title for the IWAD's own maps.
  */
 export function mergedMaps(iwad: WadSource, pwads: WadSource[]): MergedMap[] {

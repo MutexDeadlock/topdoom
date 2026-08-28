@@ -18,8 +18,9 @@ Two kinds of thing stay free, and neither can be folded in:
 - **Pure helpers that never touch a `World`** — `bodyFloor`, `playerShotRange`, `openingRefuses`,
   `blockedByThings`. They take scalars and blocker lists, and a `this` would only obscure that.
 
-Converting the first group to methods was measured, not assumed: `positionBlocked`, `hasLineOfSight`,
-`slideMove` and `shotPath` benchmarked identical before and after, inside run-to-run noise.
+Converting the first group to methods was measured, not assumed: `positionBlocked`,
+`hasLineOfSight`, `slideMove` and `shotPath` benchmarked identical before and after, inside
+run-to-run noise.
 
 ## hasLineOfSight
 
@@ -36,10 +37,10 @@ and, in a tall open room, wrong (vanilla has no such cap at all).
 earlier version did exactly that, and it's wrong the moment the two ends stand at different floor
 heights, which is most of a real level: a monster on a raised platform and the player one step below
 it, in an otherwise open room, produces a line that dips below the *platform's own floor* almost
-immediately — it heads toward the lower end over the *entire* distance, not just at the step — so the
-platform's floor was misreported as blocking sight to the monster standing on it. This was a shipped
-bug: a pair of E1M1 zombiemen one step up on a 24-unit platform never woke no matter how long the
-player stood in plain view.
+immediately — it heads toward the lower end over the *entire* distance, not just at the step — so
+the platform's floor was misreported as blocking sight to the monster standing on it. This was a
+shipped bug: a pair of E1M1 zombiemen one step up on a 24-unit platform never woke no matter how
+long the player stood in plain view.
 
 The origin is fixed at `from.z + SIGHT_EYE_HEIGHT` (vanilla's own `sightzstart` fraction — this
 engine has no per-species heights, so both ends reuse the player's) instead of sliding toward `z2`.
@@ -47,15 +48,16 @@ That constant lives in `player.ts` beside `PLAYER_HEIGHT` it derives from, and i
 `hasLineOfSight`'s body: `world.ts` and `player.ts` import from each other, so a `player.ts` value
 hoisted to module scope in `world.ts` would be read during that cycle's initialization. It is not
 `EYE_HEIGHT`, the view height a unit below it — `game/autocamera.ts`'s probe wants that one
-(docs/camera.md § Auto camera), a sight trace wants this one. The target bound uses the full `[z2, z2 + PLAYER_HEIGHT]` span rather than a
-single point, so any part of that range clearing every opening crossed is enough.
+(docs/camera.md § Auto camera), a sight trace wants this one. The target bound uses the full
+`[z2, z2 + PLAYER_HEIGHT]` span rather than a single point, so any part of that range clearing every
+opening crossed is enough.
 
 **The wedge narrows at two different things, and both are load-bearing.** The primary one walks the
 same line candidates `forEachLineAlongSegment` already finds for the wall-blocking test and, for
 every *open* two-sided line among them (skipping a flat pass-through — equal floors and equal
 ceilings on both sides can't narrow anything, matching `P_SightTraverse`'s own
-frontsector/backsector inequality guards), narrows `[bottomSlope, topSlope]` against that line's real
-opening (`World.openingOf`: min ceiling, max floor of its two sides) at the exact distance it's
+frontsector/backsector inequality guards), narrows `[bottomSlope, topSlope]` against that line's
+real opening (`World.openingOf`: min ceiling, max floor of its two sides) at the exact distance it's
 crossed — this *is* vanilla's own `P_SightTraverse`, not an approximation of it. A **periodic
 fallback** additionally samples `sectorAt` every `SIGHT_HEIGHT_SAMPLE_STEP` map units (capped at
 `SIGHT_MAX_HEIGHT_SAMPLES` samples total) and narrows against whatever sector each sample lands in,
@@ -65,30 +67,31 @@ under a ledge" fake-3D construction) — the reason this doc originally gave for
 Both narrow the same wedge monotonically, so running both is always at least as strict as either
 alone, never more permissive.
 
-**The line-crossing narrowing is the one that makes melee range work at all.** `MELEE_RANGE`/vanilla's
-own `MELEERANGE` (64-72 map units) is well inside `SIGHT_HEIGHT_SAMPLE_STEP` (64), so the periodic
-sampler alone never places a single interior sample on a short sightline — `Math.ceil(72/64)` is `1`,
-and the loop that walks samples `1..steps-1` never runs. Before the line-crossing narrowing existed,
-that meant a monster standing at the base of *any* ledge more than `MAX_STEP_UP` (24 units) tall, close
-enough to be in melee range, always passed `hasLineOfSight` regardless of the ledge between it and its
-target — a demon could bite straight through the drop. `tests/fixtures/wads/pinky_above_test.wad` MAP01
-reproduces it directly: two sectors sharing one line, floors 0 and 88, a demon on the high side and the
-player on the low side just below it.
+**The line-crossing narrowing is the one that makes melee range work at all.**
+`MELEE_RANGE`/vanilla's own `MELEERANGE` (64-72 map units) is well inside `SIGHT_HEIGHT_SAMPLE_STEP`
+(64), so the periodic sampler alone never places a single interior sample on a short sightline —
+`Math.ceil(72/64)` is `1`, and the loop that walks samples `1..steps-1` never runs. Before the
+line-crossing narrowing existed, that meant a monster standing at the base of *any* ledge more than
+`MAX_STEP_UP` (24 units) tall, close enough to be in melee range, always passed `hasLineOfSight`
+regardless of the ledge between it and its target — a demon could bite straight through the drop.
+`tests/fixtures/wads/pinky_above_test.wad` MAP01 reproduces it directly: two sectors sharing one
+line, floors 0 and 88, a demon on the high side and the player on the low side just below it.
 
 **It is the most performance-sensitive query in the engine**, and two things keep the base cost
 affordable. Both were verified to produce **bit-identical results** to the straightforward version
-across 21,240 sightline pairs on six maps — this is pure optimization, not an approximation traded for
-speed:
+across 21,240 sightline pairs on six maps — this is pure optimization, not an approximation traded
+for speed:
 
-- **Wall candidates come from `World.forEachLineAlongSegment`, not `linesNear`.** `linesNear` takes a
-  *radius*, so covering a sightline with it means a box half the line's length on a side — O(dist²)
-  grid cells to test a thin segment. Walking only the cells the segment actually crosses is O(dist),
-  and is sound because `buildGrid` buckets each line into every cell its bounding box touches: if a
-  line genuinely crosses the segment, their intersection lies in a cell both pass through. On
-  NUTS.WAD this one change took `hasLineOfSight` from dominating the frame to a small fraction of it.
-  `slideMove`'s corner traces run on it too (docs/movement.md § slideMove) — and need no ordering
-  from it, because `PTR_SlideTraverse`'s blocking decision reads nothing but the line itself, so a
-  running minimum over the grid's own order finds the same nearest wall a sorted traversal would.
+- **Wall candidates come from `World.forEachLineAlongSegment`, not `linesNear`.** `linesNear` takes
+  a *radius*, so covering a sightline with it means a box half the line's length on a side —
+  O(dist²) grid cells to test a thin segment. Walking only the cells the segment actually crosses is
+  O(dist), and is sound because `buildGrid` buckets each line into every cell its bounding box
+  touches: if a line genuinely crosses the segment, their intersection lies in a cell both pass
+  through. On NUTS.WAD this one change took `hasLineOfSight` from dominating the frame to a small
+  fraction of it. `slideMove`'s corner traces run on it too (docs/movement.md § slideMove) — and
+  need no ordering from it, because `PTR_SlideTraverse`'s blocking decision reads nothing but the
+  line itself, so a running minimum over the grid's own order finds the same nearest wall a sorted
+  traversal would.
 - **`SIGHT_MAX_HEIGHT_SAMPLES` caps the floor/ceiling sampling** so the step stretches past
   `SIGHT_HEIGHT_SAMPLE_STEP` instead of the sample count growing without bound. 32 is chosen so
   nothing within `WEAPON_RANGE` (2048, the furthest a monster can shoot, and no player shot's
@@ -118,8 +121,8 @@ Both `forEachLineAlongSegment` and the lazy accessor exist because these run tho
 frame: the segment walk dedupes through a per-linedef stamp array rather than allocating a `Set` and
 spreading it per call, the way `linesNear` does. **An equivalent allocation-free `linesNear` for the
 *collision* callers was tried and measured as no faster** — the callback makes that call site
-megamorphic and costs the early-out — so `checkPosition`, the one collision caller left, deliberately
-still uses the plain array-returning `linesNear`. Don't "fix" that without measuring.
+megamorphic and costs the early-out — so `checkPosition`, the one collision caller left,
+deliberately still uses the plain array-returning `linesNear`. Don't "fix" that without measuring.
 
 `forEachLineNear` is that callback form, kept for the one caller the measurement above does not
 cover: `LightVisibility.castShadows` (docs/lights.md § Shadows), which runs once per committed light
@@ -131,11 +134,11 @@ purpose.
 that wall, and a raw segment-intersection test then reports the blast blocked by the very wall it
 started on (the ray's own origin is a valid crossing at `t≈0`) — so `hasLineOfSight` said "blocked"
 in every direction, including straight out into the open room. Splash only ever worked when a shot
-connected directly with a monster and never when it hit geometry, which for a free shot is the common
-case. The margin skips a crossing within 1 unit of the ray's start, the far-end counterpart to
-`WALL_OVERLAP`'s "nudge off the geometry you're standing on". Tradeoff: a rocket exploding against a
-*closed door* can in principle leak a sliver of splash through, since the door's self-hit is now the
-crossing being ignored — accepted as the same order of approximation.
+connected directly with a monster and never when it hit geometry, which for a free shot is the
+common case. The margin skips a crossing within 1 unit of the ray's start, the far-end counterpart
+to `WALL_OVERLAP`'s "nudge off the geometry you're standing on". Tradeoff: a rocket exploding
+against a *closed door* can in principle leak a sliver of splash through, since the door's self-hit
+is now the crossing being ignored — accepted as the same order of approximation.
 
 ## Point-to-sector lookups
 
@@ -148,8 +151,8 @@ over them, `sectorOfSubsector`, and the REJECT probe below all route through it.
 **The table comes from `buildSubSectorPolys`, not from `sectorOfSubSector` alone.** Vanilla's
 `subsector->sector` is the seg -> linedef -> sidedef walk `sectorOfSubSector` does, and that is what
 the table holds for all but a handful of leaves: the exception is a leaf a node builder filed under
-its *neighbour's* sector, which only the polygon rebuild can recognise, since only it knows where the
-leaf's cell actually lies. `SubSectorPoly.physicalSector` carries that repair (docs/render.md §
+its *neighbour's* sector, which only the polygon rebuild can recognise, since only it knows where
+the leaf's cell actually lies. `SubSectorPoly.physicalSector` carries that repair (docs/render.md §
 Segs on the wrong side of their leaf) and the table takes it, so the sector under the player's feet
 is the one whose flat is drawn there. This is the only reason `world.ts` reaches into `render/`, and
 it costs nothing per frame — the lookup is the same single `Int32Array` read either way. At load the
@@ -218,10 +221,10 @@ that lookup, and it takes **subsector** indices rather than sector ones because 
 indexing is `t1->subsector->sector` — the subsector is what a thing already knows about itself.
 
 **The bit only ever answers "definitely not".** A clear bit says nothing at all, so this is a pure
-early-out: every `true` still comes from the full wall/wedge trace below it, and a map with no usable
-table (`DoomMap.reject === undefined`) behaves exactly as it did before REJECT existed. That is also
-why a table can't go stale as doors and lifts move: it is computed over the linedefs, which are
-static, and it can only *remove* sight the geometry would otherwise have allowed.
+early-out: every `true` still comes from the full wall/wedge trace below it, and a map with no
+usable table (`DoomMap.reject === undefined`) behaves exactly as it did before REJECT existed. That
+is also why a table can't go stale as doors and lifts move: it is computed over the linedefs, which
+are static, and it can only *remove* sight the geometry would otherwise have allowed.
 
 An RMB-built table that deliberately blinds monsters in part of a map is therefore honored rather
 than worked around — the same gameplay effect vanilla gets from it.
@@ -265,8 +268,8 @@ let the adjacency become methods; the layer direction is what forbids that.
 
 **Each falls back to the sector's own current height only when it has no two-sided neighbors at
 all**, never leaving a mover with nowhere to go. The fallback must *not* kick in merely because the
-sector's own height is already the most extreme value, which is why these track a `found` flag rather
-than seeding the reduction with the sector's own height: a closed door's sector has floor ==
+sector's own height is already the most extreme value, which is why these track a `found` flag
+rather than seeding the reduction with the sector's own height: a closed door's sector has floor ==
 ceiling, so seeding a *lowest* ceiling search with it makes every real neighbor lose, pinning the
 door's "open" target at its own closed height instead of the corridor's actual ceiling.
 
@@ -278,11 +281,11 @@ with min == max is a legal outcome — one the strobes then override (docs/speci
 
 ### Self-referencing lines
 
-`World.neighborSectors` — `getNextSector` — **skips a line whose two sidedefs name the same sector**, so
-such a line never makes a sector its own neighbour. This is Boom's reading, not vanilla's:
-`linuxdoom-1.10`'s `getNextSector` returns `line->backsector` unconditionally once
-`line->frontsector == sec`, which for a self-referencing line is `sec` itself. Boom's own comment
-at the change says why (`p_spec.c`, jff 5/3/98): *"don't retn sec unless compatibility — fixes an
+`World.neighborSectors` — `getNextSector` — **skips a line whose two sidedefs name the same
+sector**, so such a line never makes a sector its own neighbour. This is Boom's reading, not
+vanilla's: `linuxdoom-1.10`'s `getNextSector` returns `line->backsector` unconditionally once
+`line->frontsector == sec`, which for a self-referencing line is `sec` itself. Boom's own comment at
+the change says why (`p_spec.c`, jff 5/3/98): *"don't retn sec unless compatibility — fixes an
 intra-sector line breaking functions like floor->highest floor."* PrBoom keeps vanilla's answer only
 behind `comp[comp_model]`, for demo sync.
 
@@ -308,12 +311,12 @@ them is targeted by a special that reads the query that moved, so no stock map b
 ### The sector→lines index
 
 All of them — plus `neighborSectorIndices`/`nextSectorIndices`, `findStairChain` and the
-shortest-texture scans in the specials layer — walk one sector's bordering linedefs through **`sectorLines(map, sectorIndex)`**,
-never the whole `map.linedefs` array. It is vanilla's `P_GroupLines` `sec->lines[]`: every line
-touching the sector, one- and two-sided alike, in ascending linedef order, which is the order
-several specials react to (`lowerAndChange`'s model search, the donut's ring walk). Callers keep
-their own two-sided filters, so filtering a subset preserves exactly the order and membership the
-full scan produced.
+shortest-texture scans in the specials layer — walk one sector's bordering linedefs through
+**`sectorLines(map, sectorIndex)`**, never the whole `map.linedefs` array. It is vanilla's
+`P_GroupLines` `sec->lines[]`: every line touching the sector, one- and two-sided alike, in
+ascending linedef order, which is the order several specials react to (`lowerAndChange`'s model
+search, the donut's ring walk). Callers keep their own two-sided filters, so filtering a subset
+preserves exactly the order and membership the full scan produced.
 
 The index is built once per `DoomMap` and memoized against it in a `WeakMap`. That is safe for the
 same reason the heights above are *not* cached: nothing at runtime writes `LineDef.left`/`right` or

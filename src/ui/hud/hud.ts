@@ -29,7 +29,10 @@ export interface LevelStats {
   totalItems: number;
   secrets: number;
   totalSecrets: number;
-  /** Wall-clock seconds spent in the level so far — see `Hud.drawTimer`'s doc for when this stops advancing. */
+  /**
+   * Wall-clock seconds spent in the level so far — see `Hud.drawTimer`'s doc for when this stops
+   * advancing.
+   */
   elapsedSeconds: number;
 }
 
@@ -101,9 +104,9 @@ const KEY_ICONS: Record<KeyColor, string> = {
 
 /**
  * The skull keys' own pickup sprites — shown in a color's slot when only the
- * skull of that color is owned (cards and skulls are separate pickups now that
- * Boom's generalized locks can tell them apart; a color's panel lights for
- * either). docs/hud.md § The HUD.
+ * skull of that color is owned. Cards and skulls are separate pickups because
+ * Boom's generalized locks tell them apart; a color's panel lights for either.
+ * docs/hud.md § The HUD.
  */
 const KEY_SKULL_ICONS: Record<KeyColor, string> = {
   blue: 'BSKUA0',
@@ -111,7 +114,10 @@ const KEY_SKULL_ICONS: Record<KeyColor, string> = {
   yellow: 'YSKUA0',
 };
 
-/** The two slot names per color, pre-built: `update` runs every frame and must not compose them per call. */
+/**
+ * The two slot names per color, pre-built: `update` runs every frame and must not compose them per
+ * call.
+ */
 const KEY_SLOTS_BY_COLOR: Record<KeyColor, { card: KeySlot; skull: KeySlot }> = {
   blue: { card: 'blueCard', skull: 'blueSkull' },
   red: { card: 'redCard', skull: 'redSkull' },
@@ -139,10 +145,16 @@ const POWER_ICONS: Record<PowerId, string> = {
   lightVisor: 'PVISA0',
 };
 
-/** The powerup strip's own rows — every power except berserk, which swaps the health icon instead (see `POWER_ICONS`'s doc). */
+/**
+ * The powerup strip's own rows — every power except berserk, which swaps the health icon instead
+ * (see `POWER_ICONS`'s doc).
+ */
 const STRIP_POWER_IDS = POWER_IDS.filter((p) => p !== 'berserk');
 
-/** The backpack shares the powerup strip: it's the same kind of "you have this for good now" status, and has no number of its own either. */
+/**
+ * The backpack shares the powerup strip: it's the same kind of "you have this for good now" status,
+ * and has no number of its own either.
+ */
 const BACKPACK_ICON = 'BPAKA0';
 
 /**
@@ -268,12 +280,18 @@ export class Hud {
   private yellowFont: WadFont;
   private greenFont: WadFont;
   private labelColumnWidth: number;
-  /** Sits outside `#game-hud`'s own bordered box — a plain sibling immediately to its left inside `#hud-bar` — so it isn't `this.root`-scoped like everything else here. */
+  /**
+   * Sits outside `#game-hud`'s own bordered box — a plain sibling immediately to its left inside
+   * `#hud-bar` — so it isn't `this.root`-scoped like everything else here.
+   */
   private levelStatsRoot = document.getElementById('hud-levelstats')!;
   private killsCanvas = this.levelStatsRoot.querySelector<HTMLCanvasElement>('.line-kills')!;
   private itemsCanvas = this.levelStatsRoot.querySelector<HTMLCanvasElement>('.line-items')!;
   private secretsCanvas = this.levelStatsRoot.querySelector<HTMLCanvasElement>('.line-secrets')!;
-  /** Mirrors `levelStatsRoot`: a plain sibling of `#game-hud` inside `#hud-bar`, on its right this time. */
+  /**
+   * Mirrors `levelStatsRoot`: a plain sibling of `#game-hud` inside `#hud-bar`, on its right this
+   * time.
+   */
   private timerCanvas = document.getElementById('hud-timer') as HTMLCanvasElement;
   private tallNumbers: TieredNumbers;
   private shortNumbers: WadNumbers;

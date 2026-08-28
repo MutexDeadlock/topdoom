@@ -70,7 +70,7 @@ console.log(
 );
 console.log(`  bounds x[${map.bounds.minX}..${map.bounds.maxX}] y[${map.bounds.minY}..${map.bounds.maxY}]`);
 
-// --- textures referenced by the map must all resolve ---
+// Textures referenced by the map must all resolve.
 // Boom overloads sidedef texture names on two parameter lines: a 242 control
 // line names colormaps and a 260 line can name a translucency map. Neither is a
 // texture, and neither is missing art (docs/specials.md § Render transfers).
@@ -98,7 +98,7 @@ for (const [i, s] of map.sidedefs.entries()) {
 }
 console.log(`\nmissing textures: ${missing.size === 0 ? 'none' : [...missing].join(', ')}`);
 
-// --- Boom's two table lumps, each replacing a built-in table when present ---
+// Boom's two table lumps, each replacing a built-in table when present.
 // docs/wad.md § ANIMATED and SWITCHES.
 const animated = readAnimated(wad);
 const switches = readSwitches(wad);
@@ -108,7 +108,7 @@ console.log(
     `, SWITCHES: ${switches ? `${switches.length - unknownPairs} of ${switches.length} pairs usable` : 'absent (SW1/SW2 convention)'}`,
 );
 
-// --- sounds: which of vanilla's sfx this set can actually play ---
+// Sounds: which of vanilla's sfx this set can actually play.
 // A missing lump is silent rather than substituted (see SoundBank), so this is
 // the way to tell a WAD set that simply has fewer sounds (shareware DOOM1.WAD
 // carries 49 of the 108) from a decoding bug.
@@ -130,7 +130,7 @@ console.log(
     `${missingSounds.length > 0 ? `: ${missingSounds.join(' ')}` : ''}`,
 );
 
-// --- subsector polygons ---
+// Subsector polygons.
 const polys = buildSubSectorPolys(map);
 let empty = 0;
 let redirected = 0;
@@ -171,7 +171,7 @@ console.log(
     `  ${findSolidCaps(map, polys).length} solid structures lidded`,
 );
 
-// --- REJECT: how much sight this map's own table rules out up front ---
+// REJECT: how much sight this map's own table rules out up front.
 // Absent/short/all-zero all arrive here as undefined; see docs/wad.md § REJECT.
 if (!map.reject) {
   console.log(`\nREJECT: none usable (absent, short, or all-zero) — every sight check traces`);
@@ -184,7 +184,7 @@ if (!map.reject) {
   console.log(`\nREJECT: ${map.reject.length}B, ${((set / pairs) * 100).toFixed(1)}% of sector pairs blind`);
 }
 
-// --- player start and its surroundings ---
+// Player start and its surroundings.
 const world = new World(map);
 const start = world.playerStart();
 const sector = world.sectorAt(start.x, start.y);
@@ -204,7 +204,7 @@ for (let i = 0; i < steps; i++) {
 }
 console.log(`  free directions at r=64: ${free}/${steps}`);
 
-// --- the always-on parameter lines: what `specials/forces.ts` found here ---
+// The always-on parameter lines: what `specials/forces.ts` found here.
 {
   const forces = new Forces(map, world);
   const scrollers = forces.counts();
@@ -216,7 +216,7 @@ console.log(`  free directions at r=64: ${free}/${steps}`);
   );
 }
 
-// --- the render transfers: what `specials/transfers.ts` found here ---
+// The render transfers: what `specials/transfers.ts` found here.
 {
   const t = transfers.counts();
   const water = transfers.waterSectors();
@@ -231,7 +231,7 @@ console.log(`  free directions at r=64: ${free}/${steps}`);
   );
 }
 
-// --- specials coverage: which linedef/sector special numbers this engine knows ---
+// Specials coverage: which linedef/sector special numbers this engine knows.
 // The acceptance gate for the Boom work: a target map "loads fully" when
 // nothing lands in `unknown` (docs/specials.md § Scope).
 {
@@ -288,7 +288,7 @@ console.log(`  free directions at r=64: ${free}/${steps}`);
   );
 }
 
-// --- DEHACKED coverage: what a patch in this set asks for, and how far each ask gets ---
+// DEHACKED coverage: what a patch in this set asks for, and how far each ask gets.
 {
   const patch = readDehacked(wad, titleLookupFor());
   if (!patch) {

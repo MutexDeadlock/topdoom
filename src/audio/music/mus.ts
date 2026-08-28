@@ -4,7 +4,9 @@
  */
 import { buildSong, type MusicController, type MusicEvent, type Song } from './defs.ts';
 
-/** MUS runs on a fixed 140 Hz tick — vanilla's `TICRATE`, since DMX drives it off the same timer. */
+/**
+ * MUS runs on a fixed 140 Hz tick — vanilla's `TICRATE`, since DMX drives it off the same timer.
+ */
 const MUS_TICKS_PER_SECOND = 140;
 
 /**

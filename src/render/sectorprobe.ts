@@ -21,9 +21,8 @@ export function selfReferencing(map: DoomMap, lineIndex: number): boolean {
 }
 
 /**
- * Side of the bucket grid the linedefs are binned into, in map units. Measured:
- * a sweep down to 32 over the committed WADs found no win below 256 and a large
- * loss at 32, where the empty bucket per cell costs more than the lines it saves
+ * Side of the bucket grid the linedefs are binned into, in map units. Measured over the committed
+ * WADs, not guessed: below this the empty bucket per cell costs more than the lines it saves
  * scanning.
  */
 const GRID_CELL = 256;

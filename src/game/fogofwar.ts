@@ -97,7 +97,10 @@ export class FogOfWar {
    */
   private movableSectors: ReadonlySet<number>;
 
-  /** Which tic each line's `blocksSight` answer was computed on, and what it was — see `testBlocker`. */
+  /**
+   * Which tic each line's `blocksSight` answer was computed on, and what it was — see
+   * `testBlocker`.
+   */
   private blockStamp: Int32Array;
   private blockFlag: Uint8Array;
   /** Bumped once per `tick`, so a line's `blocksSight` is read at most once per tic. */
@@ -122,7 +125,9 @@ export class FogOfWar {
   private ssMinY: Float64Array;
   private ssMaxX: Float64Array;
   private ssMaxY: Float64Array;
-  /** The union of the bounds of everything `updateFade` moved, and whether it moved anything at all. */
+  /**
+   * The union of the bounds of everything `updateFade` moved, and whether it moved anything at all.
+   */
   private changedBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
   private changedAny = false;
   /**
@@ -154,10 +159,15 @@ export class FogOfWar {
   private rayX2 = 0;
   private rayY2 = 0;
   private rayBlocked = false;
-  /** What is left of this tic's `MAX_SIGHT_WORK_PER_TIC`; `sightClear` charges what each ray cost. */
+  /**
+   * What is left of this tic's `MAX_SIGHT_WORK_PER_TIC`; `sightClear` charges what each ray cost.
+   */
   private workLeft = 0;
 
-  /** Round-robin resume point into `order` for `tick`'s budgeted scan — see `MAX_SIGHT_TESTS_PER_TIC`. */
+  /**
+   * Round-robin resume point into `order` for `tick`'s budgeted scan — see
+   * `MAX_SIGHT_TESTS_PER_TIC`.
+   */
   private scanCursor = 0;
 
   /**
@@ -275,7 +285,8 @@ export class FogOfWar {
 
     this.order = new Int32Array(polys.length);
     // One ring per `ORDER_RING` up to the farthest key `ringOf` admits, inclusive. Sized off
-    // `VIEW_DISTANCE` rather than the map, so it is a handful of entries however large the level is.
+    // `VIEW_DISTANCE` rather than the map, so it is a handful of entries however large the level
+    // is.
     this.orderRings = new Int32Array(Math.floor((VIEW_DISTANCE + ORDER_ANCHOR_SLACK) / ORDER_RING) + 1);
     this.buildOrder(startX, startY);
 
@@ -389,7 +400,10 @@ export class FogOfWar {
     this.scanCursor = k;
   }
 
-  /** Rebuilds `order` if the player has drifted `ORDER_ANCHOR_SLACK` from the point it was built for. */
+  /**
+   * Rebuilds `order` if the player has drifted `ORDER_ANCHOR_SLACK` from the point it was built
+   * for.
+   */
   private ensureOrder(playerX: number, playerY: number): void {
     const dx = playerX - this.orderX;
     const dy = playerY - this.orderY;
@@ -400,8 +414,8 @@ export class FogOfWar {
   /**
    * Fills `order` with every subsector that can be in reveal range of a player near (px, py),
    * nearest first, and restarts the sweep at the near end. A counting sort into `ORDER_RING`-wide
-   * rings rather than a comparison sort, keyed on `distance - radius`; both choices are load-bearing
-   * at this cadence — docs/fogofwar.md § Sweep order.
+   * rings rather than a comparison sort, keyed on `distance - radius`; both choices are
+   * load-bearing at this cadence — docs/fogofwar.md § Sweep order.
    */
   private buildOrder(px: number, py: number): void {
     const rings = this.orderRings;

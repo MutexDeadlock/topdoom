@@ -79,7 +79,10 @@ function headroomBlocked(
   return false;
 }
 
-/** A closing door or a lowering `CeilingMover`. The sector's floor doesn't move here, so it's read straight off the map. */
+/**
+ * A closing door or a lowering `CeilingMover`. The sector's floor doesn't move here, so it's read
+ * straight off the map.
+ */
 export function blocksCeilingLower(
   world: World,
   map: DoomMap,
@@ -191,7 +194,10 @@ export function applyCrushDamage(
   sectorIndex: number,
   damagePlayer: (amount: number) => void,
   dealDamage: boolean,
-  /** The level's voodoo dolls: each is a player mobj, so a crusher catching one hurts the real player. */
+  /**
+   * The level's voodoo dolls: each is a player mobj, so a crusher catching one hurts the real
+   * player.
+   */
   dolls: readonly Pos2[] = [],
 ): boolean {
   const sector = map.sectors[sectorIndex];

@@ -1,6 +1,6 @@
 /**
- * The IndexedDB request plumbing shared by the three things this game stores in a browser database —
- * savegames (`game/savestore.ts`), the remembered WAD folder (`wad/library/store.ts`) and the
+ * The IndexedDB request plumbing shared by the three things this game stores in a browser database
+ * — savegames (`game/savestore.ts`), the remembered WAD folder (`wad/library/store.ts`) and the
  * per-level best times (`game/besttimes.ts`). Callbacks as promises, and one lazily-opened handle
  * per database; what is *in* any of them, and what it means, stays with its own module. See
  * docs/savegames.md § Storage, docs/wad.md § The player's own library and docs/hud.md § The store.
@@ -17,7 +17,10 @@ export const asPromise = <T>(request: IDBRequest<T>): Promise<T> =>
     request.onerror = () => reject(request.error ?? new Error('browser storage read failed'));
   });
 
-/** Resolves on commit; an abort (a quota refusal, mostly) rejects with the transaction's own `DOMException`, name intact. */
+/**
+ * Resolves on commit; an abort (a quota refusal, mostly) rejects with the transaction's own
+ * `DOMException`, name intact.
+ */
 export const txDone = (tx: IDBTransaction): Promise<void> =>
   new Promise((resolve, reject) => {
     tx.oncomplete = () => resolve();

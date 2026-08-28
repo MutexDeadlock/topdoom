@@ -141,10 +141,10 @@ One further documented exception:
 
 ### The stacking ladder
 
-`--z-tint: 5` (`#screen-tint`, `#colormap-tint`, `#pain-flash`) → `--z-hud: 10` (`#hud`, `#profiler-hud`, `#hud-bar`)
-→ `--z-message: 12` (`#hud-message`, `#level-card`) → `--z-overlay: 15` (`#intermission`,
-`#death-overlay`, which can never be up at the same time) → `--z-menu: 20` → `--z-loading: 25`
-(`#loading`, over the menu it hands the page to) → `--z-fatal: 30`.
+`--z-tint: 5` (`#screen-tint`, `#colormap-tint`, `#pain-flash`) → `--z-hud: 10` (`#hud`,
+`#profiler-hud`, `#hud-bar`) → `--z-message: 12` (`#hud-message`, `#level-card`) → `--z-overlay: 15`
+(`#intermission`, `#death-overlay`, which can never be up at the same time) → `--z-menu: 20` →
+`--z-loading: 25` (`#loading`, over the menu it hands the page to) → `--z-fatal: 30`.
 
 A new overlay picks its rung by reading that one block rather than grepping for `z-index`.
 

@@ -17,7 +17,10 @@ import { segmentEntersBox } from '../../util/geom.ts';
  * none of which is a real map `Thing`, so none goes through `ThingLayer`.
  */
 export interface OneShotEffect extends Pos3 {
-  /** A bare `SpriteAnimator` drawn through `SpriteFxLayer`'s own batch, no `THREE.Object3D` of its own — same arrangement as `PosedThing`. */
+  /**
+   * A bare `SpriteAnimator` drawn through `SpriteFxLayer`'s own batch, no `THREE.Object3D` of its
+   * own — same arrangement as `PosedThing`.
+   */
   anim: SpriteAnimator;
   light: number;
   /**
@@ -36,7 +39,10 @@ export interface OneShotEffect extends Pos3 {
    * common case) skips this. See docs/monster-archvile.md.
    */
   followTargetId?: number | null;
-  /** The arch-vile that spawned this flame — sight from it is re-checked before repositioning (`A_Fire`'s `P_CheckSight` gate). Always set alongside `followTargetId`. */
+  /**
+   * The arch-vile that spawned this flame — sight from it is re-checked before repositioning
+   * (`A_Fire`'s `P_CheckSight` gate). Always set alongside `followTargetId`.
+   */
   vileSourceId?: number;
   /**
    * Position at the end of the previous tic, for the render layer to interpolate
@@ -51,38 +57,61 @@ export interface OneShotEffect extends Pos3 {
 }
 
 export interface Projectile {
-  /** Drawn through `SpriteFxLayer`'s own batch, same as `OneShotEffect.anim` — see that field's doc. */
+  /**
+   * Drawn through `SpriteFxLayer`'s own batch, same as `OneShotEffect.anim` — see that field's doc.
+   */
   anim: SpriteAnimator;
   originX: number;
   originY: number;
-  /** Fire height at launch (the player's) — see spawnPlayerShot's doc for why this is never the target's own height. */
+  /**
+   * Fire height at launch (the player's) — see spawnPlayerShot's doc for why this is never the
+   * target's own height.
+   */
   startZ: number;
-  /** shotPath's actual stopping height — the target's height if unobstructed, or wherever it got blocked short of that. */
+  /**
+   * shotPath's actual stopping height — the target's height if unobstructed, or wherever it got
+   * blocked short of that.
+   */
   endZ: number;
   angleRad: number;
   speed: number;
   /** Distance (map units) to where shotPath says this shot's flight ends. */
   maxDist: number;
   traveled: number;
-  /** SpriteBank name (PROJECTILE_FRAMES's key), so the impact explosion can look it up in IMPACT_EFFECTS. */
+  /**
+   * SpriteBank name (PROJECTILE_FRAMES's key), so the impact explosion can look it up in
+   * IMPACT_EFFECTS.
+   */
   sprite: string;
-  /** This missile's own `mobjinfo.radius`, from `PROJECTILE_RADIUS` — half of the contact distance to any body it passes. */
+  /**
+   * This missile's own `mobjinfo.radius`, from `PROJECTILE_RADIUS` — half of the contact distance
+   * to any body it passes.
+   */
   radius: number;
   /** Direct-hit damage, applied to whatever body this strikes in flight. */
   damage: number;
-  /** Splash to apply at the impact point regardless of what was targeted, or null for a non-explosive projectile — see weapons.ts's WeaponDef.splash. */
+  /**
+   * Splash to apply at the impact point regardless of what was targeted, or null for a
+   * non-explosive projectile — see weapons.ts's WeaponDef.splash.
+   */
   splash: { radius: number; damage: number; hitsPlayer: boolean } | null;
-  /** The BFG's real A_BFGSpray secondary attack, straight from weapons.ts's WeaponDef.spray — null for every projectile but the player's own BFG ball (monsters never fire one). */
+  /**
+   * The BFG's real A_BFGSpray secondary attack, straight from weapons.ts's WeaponDef.spray — null
+   * for every projectile but the player's own BFG ball (monsters never fire one).
+   */
   spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number } | null;
   /**
    * The monster that fired this, or `null` for one of the player's own shots.
-   * Only the *player*'s own missiles are told apart by this now — every
+   * Only the *player*'s own missiles are told apart by this — every
    * projectile, whoever fired it, re-tests what it has run into every frame
    * against live positions rather than resolving hit-or-miss up front. See
    * docs/monster-attacks.md § Monster projectiles in flight.
    */
   sourceId: number | null;
-  /** The firing monster's doomednum, for `sameSpecies` — vanilla's "don't hit same species as originator" rule on projectiles. */
+  /**
+   * The firing monster's doomednum, for `sameSpecies` — vanilla's "don't hit same species as
+   * originator" rule on projectiles.
+   */
   sourceType: number;
   /**
    * The wall `shotPath` found blocking this flight at launch, or null. Carried

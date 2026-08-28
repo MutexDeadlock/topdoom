@@ -24,10 +24,15 @@ const DECODER = new TextDecoder('latin1');
  */
 export type LightKind = 'point' | 'pulse' | 'flicker' | 'flicker2';
 
-/** One named light definition — a `pointlight`/`pulselight`/`flickerlight`/`flickerlight2` block. */
+/**
+ * One named light definition — a `pointlight`/`pulselight`/`flickerlight`/`flickerlight2` block.
+ */
 export interface LightDef {
   kind: LightKind;
-  /** Colour, 0..1 per channel, used as a linear-light multiplier (docs/lights.md § Two lighting paths). */
+  /**
+   * Colour, 0..1 per channel, used as a linear-light multiplier (docs/lights.md § Two lighting
+   * paths).
+   */
   r: number;
   g: number;
   b: number;
@@ -47,7 +52,10 @@ export interface LightDef {
   offX: number;
   offY: number;
   offZ: number;
-  /** Whether the emitter's own sprite is excluded from this light (docs/lights.md § Two lighting paths). */
+  /**
+   * Whether the emitter's own sprite is excluded from this light (docs/lights.md § Two lighting
+   * paths).
+   */
   dontLightSelf: boolean;
   /** Parsed but never rendered — see docs/lights.md § Falloff and what is not reproduced. */
   subtractive: boolean;
@@ -107,7 +115,7 @@ function tokenize(text: string): string[] {
   return tokens;
 }
 
-/** GZDoom clamps every radius to 1..1024 map units (`gldefs.cpp`). */
+/** A light's declared radius, held to the 1..1024 map units GZDoom allows (`gldefs.cpp`). */
 function clampSize(value: number): number {
   return Math.min(1024, Math.max(1, Math.round(value)));
 }

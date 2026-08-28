@@ -112,7 +112,9 @@ export class MusicPlayer {
   private bus: GainNode | null = null;
   private bank: MusicBank | null = null;
 
-  /** What `play` was last given, kept so the context or the bank arriving late can still start it. */
+  /**
+   * What `play` was last given, kept so the context or the bank arriving late can still start it.
+   */
   private track: string | null = null;
   private playback: Playback | null = null;
   /** The looping source of an already-decoded container track. */
@@ -126,8 +128,8 @@ export class MusicPlayer {
   private _volume: number;
   /**
    * The master slider's value, pushed in by `AudioEngine` — which owns it and persists it. Held
-   * here only as this player's own start/stop gate: the gain itself is the master node's, downstream
-   * of this bus, so nothing here has to apply it.
+   * here only as this player's own start/stop gate: the gain itself is the master node's,
+   * downstream of this bus, so nothing here has to apply it.
    */
   private _master = 1;
 
@@ -175,8 +177,9 @@ export class MusicPlayer {
 
   /**
    * The master slider, as this player's gate and nothing else — `AudioEngine.setMasterVolume` owns
-   * the value and the gain node. Silent is silent whichever slider got there, so a master of 0 stops
-   * the track for the same reason this one's own 0 does: no chip rendered that nobody can hear.
+   * the value and the gain node. Silent is silent whichever slider got there, so a master of 0
+   * stops the track for the same reason this one's own 0 does: no chip rendered that nobody can
+   * hear.
    */
   setMasterVolume(value: number): void {
     const previous = this.audible;
@@ -201,7 +204,10 @@ export class MusicPlayer {
     this.bank = bank;
   }
 
-  /** Starts a `D_*` lump by name, or stops the music entirely with null. Re-playing the same track is a no-op. */
+  /**
+   * Starts a `D_*` lump by name, or stops the music entirely with null. Re-playing the same track
+   * is a no-op.
+   */
   play(track: string | null): void {
     const wanted = track ? track.toUpperCase() : null;
     if (wanted === this.track) return;

@@ -172,18 +172,18 @@ nearly so:
   monster restarts from its walk cycle. A restored corpse replays its death sequence fast-forwarded
   by `deadTime`; the replay goes through `enterDeathPose`, the same function `damageThing` uses —
   `P_KillMobj`'s overkill-gib rule has exactly one implementation, so a corpse can't look different
-  after a load than before it (docs/death.md § Monster death). This is why `health` is saved with its
-  negative overkill intact.
-  **The exception is an attack pose with shots still pending** (`restoreAttackPose`), replayed and
-  fast-forwarded the same way off `AttackStats.duration - attackPause` — the same "long enough to
-  save inside and notice" argument the teleport fog above makes, and for the same reason it is the
-  *only* pose that gets it: the arch-vile's cast is 94 tics, most of them after its warning flame
-  appears, so a save taken mid-cast otherwise loaded a vile standing in its idle frame with a flame
-  burning on the player (docs/monster-archvile.md § The windup flame). `burstLeft > 0` is the test —
-  something pending only ever means an attack under way, never its tail or the arch-vile's
-  deliberately poseless `S_VILE_HEAL` hold — and `swinging` says whether it is a melee chain or a
-  missile one, which only the revenant animates differently. Saved-field-wise this is free: the pose
-  is re-derived from `attackPause`/`burstLeft`/`swinging`, all of them ordinary AI-block fields.
+  after a load than before it (docs/death.md § Monster death). This is why `health` is saved with
+  its negative overkill intact. **The exception is an attack pose with shots still pending**
+  (`restoreAttackPose`), replayed and fast-forwarded the same way off
+  `AttackStats.duration - attackPause` — the same "long enough to save inside and notice" argument
+  the teleport fog above makes, and for the same reason it is the *only* pose that gets it: the
+  arch-vile's cast is 94 tics, most of them after its warning flame appears, so a save taken
+  mid-cast otherwise loaded a vile standing in its idle frame with a flame burning on the player
+  (docs/monster-archvile.md § The windup flame). `burstLeft > 0` is the test — something pending
+  only ever means an attack under way, never its tail or the arch-vile's deliberately poseless
+  `S_VILE_HEAL` hold — and `swinging` says whether it is a melee chain or a missile one, which only
+  the revenant animates differently. Saved-field-wise this is free: the pose is re-derived from
+  `attackPause`/`burstLeft`/`swinging`, all of them ordinary AI-block fields.
 - **`SpecialsController`'s one-frame flags** (`lastTeleport`, `lockedLine`) and the derived
   `moveSoundDue`/`crushDamageDue` booleans.
 - **`WeaponSystem.weaponLastFrame`** — derivable, not transient. `WeaponSystem.update` runs last in
@@ -215,11 +215,11 @@ points. The order is load-bearing; the two rules are **geometry before anything 
 heights** and **RNG cursors dead last**.
 
 **A `GameSnapshot` is read-only to the restore, and the same object may be applied any number of
-times.** Every step below copies scalars, rebuilds through the ordinary spawner, or `structuredClone`s
-(`specials.restore`'s movers and light states, `projectiles.restore`) — none keeps a live reference
-into the snapshot for the running level to mutate. That is what lets `R` replay the same in-memory
-snapshot after each death (docs/death.md § Player death); a store-backed load gets a fresh object
-per read either way and does not depend on it.
+times.** Every step below copies scalars, rebuilds through the ordinary spawner, or
+`structuredClone`s (`specials.restore`'s movers and light states, `projectiles.restore`) — none
+keeps a live reference into the snapshot for the running level to mutate. That is what lets `R`
+replay the same in-memory snapshot after each death (docs/death.md § Player death); a store-backed
+load gets a fresh object per read either way and does not depend on it.
 
 1. Normal preamble: `clearRandom`, `finishLevel`, `weaponSystem.beginLevel`, overlay clears,
    `loadMap`, then `sectorBaseline(map)` — taken here, off the untouched map, because that is
@@ -238,10 +238,11 @@ per read either way and does not depend on it.
    whose authored sector special was consumed would otherwise land back in the static batch. The
    union is handed to both `buildMapMesh` and the `SpecialsController` constructor.
 6. `buildMapMesh` / faders, unchanged, over restored geometry — then `new Forces(map, world)` →
-   `forces.restore(...)` and `new VoodooDolls(world)` → `voodoo.restore(...)`. **Both after step 3**:
-   a displacement scroller samples its control sector's height at spawn, so building it against the
-   authored heights would make the first restored tic read the whole saved-to-authored difference as
-   one tic of movement. Only the accelerative integrators need the explicit restore on top.
+   `forces.restore(...)` and `new VoodooDolls(world)` → `voodoo.restore(...)`. **Both after step
+   3**: a displacement scroller samples its control sector's height at spawn, so building it against
+   the authored heights would make the first restored tic read the whole saved-to-authored
+   difference as one tic of movement. Only the accelerative integrators need the explicit restore on
+   top.
 7. `new Player(world)` → `player.restore(...)`; camera yaw from the snapshot rather than the spawn
    angle, and `camera.snapTo` on the restored position so the view doesn't fly in from the outgoing
    level (docs/camera.md § The camera is simulation state).
@@ -427,9 +428,9 @@ restored without the add-on that only skinned it comes back with the game WAD's 
 sounds. That is a visible difference the player can see and fix (load the file, load again), where
 refusing was an invisible one they could not.
 
-`Menu.resolveSaveWads` resolves the **whole set at once**, in load order, and is the only place
-that happens: the save row (`describeSave`) and the load path (`main.ts`'s `loadSave`) both call
-it, so a row reporting no problem can't be followed by a load that fails on one. It also does the
+`Menu.resolveSaveWads` resolves the **whole set at once**, in load order, and is the only place that
+happens: the save row (`describeSave`) and the load path (`main.ts`'s `loadSave`) both call it, so a
+row reporting no problem can't be followed by a load that fails on one. It also does the
 *diagnosis*: no id match, but a file of the same name present, means the same WAD in a different
 version. The wording for every outcome — required or not — comes from this module and nowhere else,
 in two lengths that are written together: `missingWadLabel` names the file and the problem for the
@@ -437,8 +438,8 @@ save row, which has ~55 characters before it ellipsizes, and `missingWadText` sa
 it for the surfaces with a whole line — the load error and the row's tooltip. Both kinds are a
 warning on the row, in two colours: the accent's red for a required file, amber for the rest, since
 red is what says *this save can't be loaded* and using it for one that loads fine would read as a
-refusal that isn't there. `asMeta` *blanks* a damaged entry instead of dropping it (`asWad`): dropping one would
-shift every later file into the wrong role, where a blank fails loudly instead.
+refusal that isn't there. `asMeta` *blanks* a damaged entry instead of dropping it (`asWad`):
+dropping one would shift every later file into the wrong role, where a blank fails loudly instead.
 
 Loading resolves every entry before anything is torn down, so the running level survives a load
 that can't happen — only a *required* missing file stops it (`blockingWad`); the rest are simply

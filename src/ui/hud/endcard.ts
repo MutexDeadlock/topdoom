@@ -10,7 +10,9 @@ import { WadFont, COLOR_YELLOW } from './wadfont.ts';
 /** The two headings, by what actually ended — an episode of DOOM, or the whole map set. */
 const TITLES = { episode: 'Episode complete', campaign: 'Game complete' } as const;
 
-/** Which of the two it was, `NextLevel`'s own pair — what `Game` holds on to until the card is due. */
+/**
+ * Which of the two it was, `NextLevel`'s own pair — what `Game` holds on to until the card is due.
+ */
 export type EndScope = keyof typeof TITLES;
 
 /** The other thing the continue key can do here, where the intermission's own hint is the first. */
@@ -24,7 +26,10 @@ export interface EndCardInfo {
   episodeGraphic?: string;
   /** Second line when there is no graphic to draw: the WAD set's label, as the HUD names it. */
   subtitle: string;
-  /** Whether a level follows (the next episode's `E<x+1>M1`) — decides the hint, not the wording above. */
+  /**
+   * Whether a level follows (the next episode's `E<x+1>M1`) — decides the hint, not the wording
+   * above.
+   */
   continues: boolean;
 }
 

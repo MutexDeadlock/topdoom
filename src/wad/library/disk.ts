@@ -47,7 +47,10 @@ type DirectoryPicker = (options?: { mode?: 'read' | 'readwrite' }) => Promise<Fi
 
 /** What the library currently holds, and how its bytes are reached. */
 interface LibraryState {
-  /** The remembered folder, on browsers that have one. Null on the fallback path and before any pick. */
+  /**
+   * The remembered folder, on browsers that have one. Null on the fallback path and before any
+   * pick.
+   */
   handle: FileSystemDirectoryHandle | null;
   /** Session-only files, keyed by relative path — the fallback's answer to a handle. */
   files: Map<string, File>;
@@ -58,7 +61,9 @@ interface LibraryState {
   skipped: LibrarySkip[];
 }
 
-/** One file a scan walked past, and the reason — a WAD that won't parse, or one it couldn't open. */
+/**
+ * One file a scan walked past, and the reason — a WAD that won't parse, or one it couldn't open.
+ */
 export interface LibrarySkip {
   path: string;
   reason: string;
@@ -168,8 +173,8 @@ export async function ensureLibraryAccess(): Promise<boolean> {
 export async function pickLibraryFolder(): Promise<FileSystemDirectoryHandle | null> {
   // Invoked *through* globalThis, never detached into a local first: a native window method is
   // brand-checked on its receiver, and calling a detached copy throws "Illegal invocation" before
-  // any dialog opens. Detached, plus the AbortError catch below swallowing it, made every folder
-  // pick a silent no-op.
+  // any dialog opens. Detached, plus the AbortError catch below swallowing it, turns every folder
+  // pick into a silent no-op.
   const g = globalThis as { showDirectoryPicker?: DirectoryPicker };
   if (!g.showDirectoryPicker) return null;
 
@@ -308,7 +313,9 @@ export function librarySources(): WadSource[] {
   });
 }
 
-/** What the last scan walked past and why — the overlay reports this when a folder yields little. */
+/**
+ * What the last scan walked past and why — the overlay reports this when a folder yields little.
+ */
 export function librarySkips(): readonly LibrarySkip[] {
   return state.skipped;
 }
@@ -421,10 +428,14 @@ async function openLibraryFile(path: string): Promise<File> {
   return (await dir.getFileHandle(segments[segments.length - 1])).getFile();
 }
 
-/** A `webkitdirectory` file's path below the picked folder — its own name when the browser gives none. */
+/**
+ * A `webkitdirectory` file's path below the picked folder — its own name when the browser gives
+ * none.
+ */
 function relativePath(file: File): string {
   const full = file.webkitRelativePath;
   if (!full) return file.name;
-  // The first segment is the picked folder itself, which is the tree's root row, not part of the path.
+  // The first segment is the picked folder itself, which is the tree's root row, not part of the
+  // path.
   return full.split('/').slice(1).join('/') || file.name;
 }

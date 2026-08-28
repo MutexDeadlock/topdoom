@@ -49,7 +49,10 @@ function arms(inner: number, outer: number): string {
     .join('');
 }
 
-/** Plus-shaped reticle with a gap at the center, outlined in solid black so it reads against any background. */
+/**
+ * Plus-shaped reticle with a gap at the center, outlined in solid black so it reads against any
+ * background.
+ */
 function crosshairSvg(color: string): string {
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${SIZE}" height="${SIZE}">` +
@@ -62,7 +65,10 @@ function crosshairSvg(color: string): string {
   );
 }
 
-/** Sets the game canvas's OS cursor to a health-colored reticle; skips the rebuild when the color hasn't changed. */
+/**
+ * Sets the game canvas's OS cursor to a health-colored reticle; skips the rebuild when the color
+ * hasn't changed.
+ */
 export class Crosshair {
   private canvas: HTMLCanvasElement;
   private lastColor: string | null = null;

@@ -32,7 +32,10 @@ import { DOOM_TIC } from '../../constants.ts';
  * outside this file.
  */
 
-/** Vanilla's S_VILE_HEAL1-3: the arch-vile holds still for 30 tics while the corpse it just found rises. */
+/**
+ * Vanilla's S_VILE_HEAL1-3: the arch-vile holds still for 30 tics while the corpse it just found
+ * rises.
+ */
 const VILE_HEAL_DURATION = 30 * DOOM_TIC;
 
 /**
@@ -47,7 +50,10 @@ function vileWindupTrackSeconds(): number {
   return MONSTER_STATS[ThingType.archVile].ranged?.startDelaySeconds ?? 0;
 }
 
-/** `ThingLayer`'s `findRaisableCorpse`, as `stepMonsterAI` receives it — a lookahead point and the vile's own radius in, the one corpse to raise out. */
+/**
+ * `ThingLayer`'s `findRaisableCorpse`, as `stepMonsterAI` receives it — a lookahead point and the
+ * vile's own radius in, the one corpse to raise out.
+ */
 export type Resurrector = (x: number, y: number, vileRadius: number) => RaiseCandidate | null;
 
 /**

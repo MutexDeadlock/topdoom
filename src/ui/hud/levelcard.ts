@@ -84,7 +84,10 @@ export class LevelCard {
     else this.root.style.opacity = String(Math.min(1, this.secondsLeft / FADE_SECONDS));
   }
 
-  /** Drops the card. The element is static markup outliving any one `Game`, so `dispose` goes through here too. */
+  /**
+   * Drops the card. The element is static markup outliving any one `Game`, so `dispose` goes
+   * through here too.
+   */
   clear(): void {
     this.secondsLeft = 0;
     this.root.classList.add('hidden');

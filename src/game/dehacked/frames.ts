@@ -123,10 +123,15 @@ function spriteOf(states: readonly StateRow[], indices: readonly number[]): stri
   return indices.length ? SPRITE_NAMES[states[indices[0]][0]] : undefined;
 }
 
-/** The walk loop's timing: seconds per chase call and the per-call factor `MonsterStats.speed` carries. */
+/**
+ * The walk loop's timing: seconds per chase call and the per-call factor `MonsterStats.speed`
+ * carries.
+ */
 interface ChaseTiming {
   interval: number;
-  /** `chaseCount × 35 / loopTics` — what `mobjinfo.speed` is multiplied by to give units per second. */
+  /**
+   * `chaseCount × 35 / loopTics` — what `mobjinfo.speed` is multiplied by to give units per second.
+   */
   factor: number;
 }
 
@@ -148,7 +153,9 @@ export interface MonsterFrames {
   /** Seconds into each attack chain the damaging action sits, or null where the chain has none. */
   meleeDelay: number | null;
   rangedDelay: number | null;
-  /** How many damaging actions the ranged chain carries, and the seconds between consecutive ones. */
+  /**
+   * How many damaging actions the ranged chain carries, and the seconds between consecutive ones.
+   */
   rangedShots: number;
   rangedInterval: number | null;
   /**
@@ -198,7 +205,10 @@ export interface MonsterFrames {
 export interface WeaponFrames {
   /** Seconds between two shots with the trigger held — `WeaponDef.cooldown`. */
   cooldown: number;
-  /** How many firing actions one pass through the chain carries: 2 for the chainsaw and chaingun, 1 for the rest. */
+  /**
+   * How many firing actions one pass through the chain carries: 2 for the chainsaw and chaingun, 1
+   * for the rest.
+   */
   shots: number;
 }
 
@@ -234,7 +244,9 @@ export interface MissileFrames {
 /** Everything the walker derives, in the shapes the engine's tables hold — one record per table. */
 export interface FrameTables {
   monsters: Record<number, MonsterFrames>;
-  /** Fire rates, keyed by `weapontype_t` index — `dehacked/tables.ts`'s `WEAPON_ORDER` names them. */
+  /**
+   * Fire rates, keyed by `weapontype_t` index — `dehacked/tables.ts`'s `WEAPON_ORDER` names them.
+   */
   weapons: Record<number, WeaponFrames>;
   /** Decoration sprites and idle animations, keyed by doomednum. */
   sprites: Record<number, string>;
@@ -314,7 +326,10 @@ function spanOf(states: readonly StateRow[], chain: Chain): number[] {
   return refires ? loop : chain.indices;
 }
 
-/** A run's tics averaged to one flat per-frame rate, ties rounding down — how the hand-written tables flattened the uneven ones (6/8 → 7, 6/7 → 6, 10/15/8/6 → 10). */
+/**
+ * A run's tics averaged to one flat per-frame rate, ties rounding down — how the hand-written
+ * tables flattened the uneven ones (6/8 → 7, 6/7 → 6, 10/15/8/6 → 10).
+ */
 function flatTics(states: readonly StateRow[], indices: readonly number[]): number {
   return Math.ceil(ticsOf(states, indices) / indices.length - 0.5);
 }
@@ -341,9 +356,9 @@ function argsOf(
 }
 
 /**
- * `A_PlaySound`'s `misc1` on a chain, or null where it carries none — see `MonsterFrames.meleeSound`.
- * Index 0 is `sfx_None`, which reads as "no sound written" rather than as silence, so the type keeps
- * whatever its own table gave it.
+ * `A_PlaySound`'s `misc1` on a chain, or null where it carries none — see
+ * `MonsterFrames.meleeSound`. Index 0 is `sfx_None`, which reads as "no sound written" rather than
+ * as silence, so the type keeps whatever its own table gave it.
  */
 function chainSound(
   states: readonly StateRow[],
@@ -361,8 +376,8 @@ interface FiringState {
 
 /**
  * The first damaging action of a chain's span and whatever `misc1`/`misc2` a patch wrote on *that*
- * state — one scan, because the two must name the same state: `A_Scratch`'s damage and sound are the
- * args of the very state that fires it. Both null for a chain that fires nothing.
+ * state — one scan, because the two must name the same state: `A_Scratch`'s damage and sound are
+ * the args of the very state that fires it. Both null for a chain that fires nothing.
  */
 function firingOf(
   states: readonly StateRow[],
@@ -521,7 +536,8 @@ function deriveMonster(
     death: orNull(deathLetters),
     xdeath: orNull(xdeathLetters),
     deathSprite: Object.keys(deathSprite).length ? deathSprite : null,
-    // The lost soul and pain elemental: a final death state that steps to `S_NULL` removes the corpse.
+    // The lost soul and pain elemental: a final death state that steps to `S_NULL` removes the
+    // corpse.
     vanishes: death.exitsToNull,
     pain: orNull(distinctLetters(states, pain.indices)),
     painDuration: durationOf(states, pain),
@@ -574,7 +590,8 @@ function deriveMissile(states: readonly StateRow[], ms: MobjStates): MissileFram
   const impactSprite = spriteOf(states, death.indices);
   return {
     flightSprite: spriteOf(states, spawn.indices),
-    // A single flight frame needs no entry — `MISL` is deliberately absent from `PROJECTILE_FRAMES`.
+    // A single flight frame needs no entry — `MISL` is deliberately absent from
+    // `PROJECTILE_FRAMES`.
     flight: flight.length > 1 ? flight : null,
     impact: impactSprite !== undefined ? { sprite: impactSprite, frames: distinctLetters(states, death.indices) } : null,
   };
@@ -639,7 +656,10 @@ export function deriveFrameTables({ states, mobjStates, weaponStates, args }: Pa
 
 let pristine: FrameTables | null = null;
 
-/** The walker's reading of vanilla's own tables, derived once — what a patched reading is diffed against. */
+/**
+ * The walker's reading of vanilla's own tables, derived once — what a patched reading is diffed
+ * against.
+ */
 export function pristineFrameTables(): FrameTables {
   return (pristine ??= deriveFrameTables({
     states: STATES,

@@ -17,9 +17,10 @@ export type ActionRole = 'chase' | 'firing' | 'weaponFire' | 'refire' | 'sound' 
 /**
  * One of the eight chains a `mobjinfo` row points at — `defs.ts`'s `StatePointer` under the name
  * this file's rules read in, and one union so a chain added later is added once. A few actions only
- * reach a sink from certain chains — `A_PlaySound` is a chain's sound, `A_Spawn` in a death chain is
- * what this engine has a drop table for — so a repoint onto a state outside them lands nowhere, and
- * the report says which chains it would have needed. `frames.ts: chainKindsOf` answers it for a state.
+ * reach a sink from certain chains — `A_PlaySound` is a chain's sound, `A_Spawn` in a death chain
+ * is what this engine has a drop table for — so a repoint onto a state outside them lands nowhere,
+ * and the report says which chains it would have needed. `frames.ts: chainKindsOf` answers it for a
+ * state.
  */
 export type ChainKind = StatePointer;
 
@@ -94,7 +95,9 @@ const BY_MISS: Record<ActionMiss, readonly string[]> = {
   lineEffect: ['A_LineEffect'],
 };
 
-/** One action pointer: what the walker reads it as, and why a repoint of it misses where it does. */
+/**
+ * One action pointer: what the walker reads it as, and why a repoint of it misses where it does.
+ */
 export interface ActionRow {
   /** `d_deh.c`'s own spelling, which is what a report prints. */
   name: string;
@@ -115,7 +118,10 @@ const CHAIN_SCOPED: Record<string, readonly ChainKind[]> = {
   A_Spawn: ['death', 'xdeath'],
 };
 
-/** Every `deh_bexptrs[]` name, keyed lowercase. `A_NULL` is the list's own terminator: an action cleared. */
+/**
+ * Every `deh_bexptrs[]` name, keyed lowercase. `A_NULL` is the list's own terminator: an action
+ * cleared.
+ */
 export const ACTIONS: ReadonlyMap<string, ActionRow> = new Map([
   ...Object.entries(BY_ROLE).flatMap(([role, names]) =>
     names.map((name): [string, ActionRow] => [
@@ -132,12 +138,15 @@ export const ACTIONS: ReadonlyMap<string, ActionRow> = new Map([
   ['a_null', { name: 'A_NULL', role: 'none' } as ActionRow],
 ]);
 
-/** The action `NULL` is written as, in the states table and in an edit — `deh_bexptrs[]`'s `A_NULL`. */
+/**
+ * The action `NULL` is written as, in the states table and in an edit — `deh_bexptrs[]`'s `A_NULL`.
+ */
 export const NO_ACTION = '';
 
 /**
  * The canonical name a `[CODEPTR]` mnemonic names, or undefined for one no engine has.
- * `deh_procBexCodePointers` prefixes `A_` before looking a mnemonic up, so both spellings are legal.
+ * `deh_procBexCodePointers` prefixes `A_` before looking a mnemonic up, so both spellings are
+ * legal.
  */
 export function lookupAction(mnemonic: string): string | undefined {
   const key = mnemonic.trim().toLowerCase();

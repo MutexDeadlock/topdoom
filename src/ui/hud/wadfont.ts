@@ -9,7 +9,9 @@ import type { GraphicsBank } from '../../wad/graphics.ts';
 const FONT_FIRST = 33; // '!'
 const FONT_LAST = 95; // '_'
 
-/** `hu_lib.c`'s `HUlib_drawTextLine` advance for a space or any character outside the font's range. */
+/**
+ * `hu_lib.c`'s `HUlib_drawTextLine` advance for a space or any character outside the font's range.
+ */
 const SPACE_ADVANCE = 4;
 
 /** ASCII `'0'`, where `WadNumbers`' fallback digits start in the STCFN range. */
@@ -17,8 +19,7 @@ const STCFN_DIGIT_ZERO = 48;
 
 /**
  * The lump holding one STCFN glyph. The three-digit padding is the whole rule and it lives here
- * once: `WadNumbers`' fallback used to spell it out a second way, unpadded, and silently found
- * nothing.
+ * once — spelled out a second way, unpadded, it silently finds nothing.
  */
 function stcfnLump(code: number): string {
   return `STCFN${String(code).padStart(3, '0')}`;
@@ -69,7 +70,10 @@ export const COLOR_BLUE: WadFontRecolor = [99, 99, 255];
  */
 export const COLOR_YELLOW: WadFontRecolor = [255, 255, 115];
 
-/** Decodes one glyph lump, applying `recolor` to its pixels; undefined when the WAD has no such lump. */
+/**
+ * Decodes one glyph lump, applying `recolor` to its pixels; undefined when the WAD has no such
+ * lump.
+ */
 function loadGlyph(gfx: GraphicsBank, lump: string, recolor?: WadFontRecolor): Glyph | undefined {
   const bmp = gfx.picture(lump);
   if (!bmp) return undefined;
@@ -184,12 +188,14 @@ function loadDigits(gfx: GraphicsBank, lumpFor: (d: number) => string, recolor?:
  * than a blank. Everything the HUD counts is unsigned, so vanilla's `STTMINUS` branch has no
  * counterpart here — a negative value clamps to 0. docs/hud.md § The HUD.
  *
- * A WAD missing the set falls back to the message font's own digits (`STCFN048`-`STCFN057`),
- * which is what these readouts were drawn with before; one missing both draws nothing at all.
+ * A WAD missing the set falls back to the message font's own digits (`STCFN048`-`STCFN057`);
+ * one missing both draws nothing at all.
  */
 export class WadNumbers {
   readonly height: number;
-  /** Every digit occupies this much width, whatever its own patch measures — `STlib_drawNum`'s `w`. */
+  /**
+   * Every digit occupies this much width, whatever its own patch measures — `STlib_drawNum`'s `w`.
+   */
   private cellWidth: number;
   private digits: readonly Glyph[];
 

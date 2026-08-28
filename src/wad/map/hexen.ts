@@ -12,7 +12,9 @@ const LINEDEF_SIZE = 16;
 /** `mapthinghexen_t`: a `tid` in front, then `z`, `special` and `args` Doom has no room for. */
 const THING_SIZE = 20;
 
-/** `ML_BLOCKING` … `ML_MAPPED` — everything below `ML_REPEAT_SPECIAL`, shared verbatim with Doom. */
+/**
+ * `ML_BLOCKING` … `ML_MAPPED` — everything below `ML_REPEAT_SPECIAL`, shared verbatim with Doom.
+ */
 const SHARED_LINE_FLAGS = 0x01ff;
 /** `ML_BLOCK_PLAYERS`, and `ML_BLOCKEVERYTHING` beside it. */
 const BLOCK_PLAYERS = 0x4000;

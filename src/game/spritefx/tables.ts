@@ -17,12 +17,21 @@ import { pristineFrameTables } from '../dehacked/frames.ts';
  */
 export const TFOG_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 export const TFOG_FRAME_SECONDS = 6 * DOOM_TIC; // vanilla's S_TFOG* states hold each frame 6 tics
-/** Vanilla spawns the destination fog 20 units ahead of the landing spot, along the direction it faces. */
+/**
+ * Vanilla spawns the destination fog 20 units ahead of the landing spot, along the direction it
+ * faces.
+ */
 export const TFOG_SPAWN_OFFSET = 20;
 
-/** Color of a hitscan tracer line (render/tracer.ts) — a hot yellow-white, like a vanilla muzzle flash. */
+/**
+ * Color of a hitscan tracer line (render/tracer.ts) — a hot yellow-white, like a vanilla muzzle
+ * flash.
+ */
 export const TRACER_COLOR = 0xfff2a8;
-/** Color of a monster's ranged-attack tracer (game/monsters/attacks.ts) — a hostile red, distinct from the player's own tracer color above. */
+/**
+ * Color of a monster's ranged-attack tracer (game/monsters/attacks.ts) — a hostile red, distinct
+ * from the player's own tracer color above.
+ */
 export const MONSTER_TRACER_COLOR = 0xff4433;
 
 /**
@@ -169,7 +178,10 @@ export const BFG_SPRAY_HIT_FRAMES = ['A', 'B', 'C', 'D'];
  */
 export const VILE_FIRE_FRAMES = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
 
-/** Vanilla's own 24-unit offset (`A_VileAttack`'s `FixedMul(24*FRACUNIT, ...)`) — see `resolveVileBlast`'s doc. */
+/**
+ * Vanilla's own 24-unit offset (`A_VileAttack`'s `FixedMul(24*FRACUNIT, ...)`) — see
+ * `resolveVileBlast`'s doc.
+ */
 export const VILE_FIRE_OFFSET = 24;
 
 /**
@@ -179,7 +191,9 @@ export const VILE_FIRE_OFFSET = 24;
  */
 export const REVENANT_TRACER_TURN_RATE_RAD = (16.875 * Math.PI) / 180 / (4 * DOOM_TIC);
 
-/** `A_Tracer`'s vertical aim point, `dest->z + 40*FRACUNIT` — chest height, not the target's feet. */
+/**
+ * `A_Tracer`'s vertical aim point, `dest->z + 40*FRACUNIT` — chest height, not the target's feet.
+ */
 export const TRACER_HOMING_Z_OFFSET = 40;
 
 /**

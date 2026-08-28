@@ -42,7 +42,9 @@ const KEY_TEXT_COLORS: Record<KeyColor, WadFontRecolor> = {
   yellow: [215, 187, 67],
 };
 
-/** One stretch of a message: a bare string draws in `COLOR_YELLOW`, otherwise in the color given. */
+/**
+ * One stretch of a message: a bare string draws in `COLOR_YELLOW`, otherwise in the color given.
+ */
 export type MessageRun = string | { text: string; color: WadFontRecolor };
 
 /**
@@ -62,9 +64,9 @@ const COLOR_WORDS: Record<string, WadFontRecolor> = {
 const COLOR_WORD = new RegExp(`\\b(?:${Object.keys(COLOR_WORDS).join('|')})\\b`, 'gi');
 
 /**
- * The line shown when a locked door or switch is used without what it wants — `specials/tables.ts`'s
- * `LOCKED_LINES`, which is where the vanilla/Boom wording and its `PD_*` mnemonics live, and where
- * a DEH patch will have replaced it.
+ * The line shown when a locked door or switch is used without what it wants —
+ * `specials/tables.ts`'s `LOCKED_LINES`, which is where the vanilla/Boom wording and its `PD_*`
+ * mnemonics live, and where a DEH patch will have replaced it.
  *
  * The one departure from those strings is presentational and applies to whatever text comes back:
  * a color word is drawn in that color instead of the message's. Splitting the finished line rather
@@ -142,14 +144,20 @@ export class CenterMessage {
     this.canvas.classList.remove('hidden');
   }
 
-  /** Ticks the timeout down. Not called while the game is paused, so the menu doesn't eat a message's display time. */
+  /**
+   * Ticks the timeout down. Not called while the game is paused, so the menu doesn't eat a
+   * message's display time.
+   */
   update(dt: number): void {
     if (this.secondsLeft <= 0) return;
     this.secondsLeft -= dt;
     if (this.secondsLeft <= 0) this.clear();
   }
 
-  /** Drops whatever is up. Every level (re)load goes through here, so a message can't outlive its level. */
+  /**
+   * Drops whatever is up. Every level (re)load goes through here, so a message can't outlive its
+   * level.
+   */
   clear(): void {
     this.secondsLeft = 0;
     this.canvas.classList.add('hidden');

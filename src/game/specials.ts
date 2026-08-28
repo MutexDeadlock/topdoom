@@ -231,11 +231,20 @@ interface CeilingMover {
   speed: number;
   target: number;
   state: 'moving' | 'done';
-  /** `ceiling->direction` — `FloorMover.direction`'s mirror, absent on an older save for the same reason. */
+  /**
+   * `ceiling->direction` — `FloorMover.direction`'s mirror, absent on an older save for the same
+   * reason.
+   */
   direction?: 'up' | 'down';
-  /** Boom generalized ceilings only — grind through a body, full speed, periodic damage (see `CeilingEffect.crush`). Absent = vanilla's stall. */
+  /**
+   * Boom generalized ceilings only — grind through a body, full speed, periodic damage (see
+   * `CeilingEffect.crush`). Absent = vanilla's stall.
+   */
   crush?: boolean;
-  /** Boom's arrival-time change, ceiling flavor (`SurfaceChange`) — applied like `FloorMover.arrivalTexture`. */
+  /**
+   * Boom's arrival-time change, ceiling flavor (`SurfaceChange`) — applied like
+   * `FloorMover.arrivalTexture`.
+   */
   arrivalTexture?: { ceilTex: string; special?: number };
 }
 
@@ -244,16 +253,10 @@ interface CeilingMover {
  * lockstep, gap preserved. One target pair fixed at trigger time, one-way,
  * done on arrival.
  *
- * **The one plane mover with no `direction` of its own**, and the one that
- * doesn't need one. `EV_DoElevator` fixes +1/-1 for `elevateUp`/`elevateDown`,
- * but their targets come from `P_FindNextHighestFloor`/`P_FindNextLowestFloor`,
- * which are strictly above/below the sector's own floor by construction (and
- * `triggerElevator` refuses the equal case outright), so a target on the wrong
- * side is unreachable. `elevateCurrent` (236) then derives its direction from
- * the target in Boom itself — `floordestheight > floorheight ? 1 : -1`. Reading
- * the direction off the target each tick is therefore exactly Boom for all
- * three, and the clamp `tickFloor`/`tickCeiling` carry has nothing to catch
- * here. docs/specials.md § Inverted plane moves.
+ * **The one plane mover with no `direction` of its own**, and the one that doesn't need one:
+ * reading the direction off the target each tick is exactly Boom for all three variants, and the
+ * clamp `tickFloor`/`tickCeiling` carry has nothing to catch here.
+ * docs/specials.md § Inverted plane moves.
  */
 interface ElevatorMover {
   kind: 'elevator';
@@ -269,7 +272,10 @@ interface CrusherMover {
   kind: 'crusher';
   sectorIndex: number;
   speed: number;
-  /** The sector's own ceiling height when the crusher was spawned — not neighbor-derived, unlike a door. */
+  /**
+   * The sector's own ceiling height when the crusher was spawned — not neighbor-derived, unlike a
+   * door.
+   */
   topHeight: number;
   bottomHeight: number;
   state: CrusherState;
@@ -286,7 +292,10 @@ interface CrusherMover {
   silent: boolean;
   /** Boom's fully silent generalized crusher — see `CrusherEffect.noEndClack`. */
   noEndClack?: boolean;
-  /** See `CrusherEffect.slowsWhenCrushing`. Absent on a mover from a save written before it existed, where the slowing majority (25/49/73/141) is the safer default. */
+  /**
+   * See `CrusherEffect.slowsWhenCrushing`. Absent on a mover from a save written before it existed,
+   * where the slowing majority (25/49/73/141) is the safer default.
+   */
   slowsWhenCrushing?: boolean;
   /**
    * Currently grinding through a body at an eighth speed — `T_MoveCeiling`'s
@@ -339,7 +348,9 @@ export interface LightState {
   level: number;
 }
 
-/** Blink/flicker periods in seconds, matching vanilla's STROBEBRIGHT/FASTDARK/SLOWDARK tic counts. */
+/**
+ * Blink/flicker periods in seconds, matching vanilla's STROBEBRIGHT/FASTDARK/SLOWDARK tic counts.
+ */
 const BLINK_BRIGHT_TIME = 5 * DOOM_TIC;
 const BLINK_05_DARK = 15 * DOOM_TIC;
 const BLINK_1_DARK = 35 * DOOM_TIC;
@@ -593,7 +604,10 @@ export interface LockedLine {
   kind: 'door' | 'switch';
 }
 
-/** How far around a monster to look for walk-trigger lines — the largest monster radius (the spider mastermind's 128) plus slack. */
+/**
+ * How far around a monster to look for walk-trigger lines — the largest monster radius (the spider
+ * mastermind's 128) plus slack.
+ */
 const MONSTER_CROSS_RADIUS = 136;
 
 /**
@@ -615,7 +629,10 @@ export class SpecialsController {
   private map: DoomMap;
   private world: World;
   private bank: MaterialBank;
-  /** Everything this controller's height and light changes mean for what is actually drawn — see specials/movergeometry.ts. */
+  /**
+   * Everything this controller's height and light changes mean for what is actually drawn — see
+   * specials/movergeometry.ts.
+   */
   private geometry: MoverGeometry;
   private onExit: (secret: boolean) => void;
   private onTeleport: (dest: TeleportDest) => void;
@@ -630,10 +647,16 @@ export class SpecialsController {
    * computed lazily per sector and cached (`soundOrigin`).
    */
   private sectorOrigins = new Map<number, Pos2>();
-  /** Counts down to the next `stnmov` grind, and whether one is due this frame — see `MOVE_SOUND_INTERVAL`. */
+  /**
+   * Counts down to the next `stnmov` grind, and whether one is due this frame — see
+   * `MOVE_SOUND_INTERVAL`.
+   */
   private moveSoundTimer = MOVE_SOUND_INTERVAL;
   private moveSoundDue = false;
-  /** Counts down to the next crush-damage pulse, and whether one is due this frame — see `tickCrush`. */
+  /**
+   * Counts down to the next crush-damage pulse, and whether one is due this frame — see
+   * `tickCrush`.
+   */
   private crushDamageTimer = CRUSH_DAMAGE_INTERVAL;
   private crushDamageDue = false;
 
@@ -662,7 +685,10 @@ export class SpecialsController {
    */
   private shootLines: number[] = [];
 
-  /** `handleUseTrigger`'s scratch `Opening`, so a use press allocates none. Read it before the next lookup. */
+  /**
+   * `handleUseTrigger`'s scratch `Opening`, so a use press allocates none. Read it before the next
+   * lookup.
+   */
   private useOpening: Opening = { top: 0, bottom: 0 };
 
   private switchTextures = new Map<number, SwitchEntry[]>();
@@ -827,7 +853,9 @@ export class SpecialsController {
     this.geometry.rebuildAround(dirty);
   }
 
-  /** The mover meshes' pass one, into the frame's shared bags — see `MoverGeometry.collectFadeHits`. */
+  /**
+   * The mover meshes' pass one, into the frame's shared bags — see `MoverGeometry.collectFadeHits`.
+   */
   collectFadeHits(
     camX: number,
     camY: number,
@@ -839,7 +867,10 @@ export class SpecialsController {
     this.geometry.collectFadeHits(camX, camY, camZ, targets, walls, flats);
   }
 
-  /** The mover meshes' own per-frame occlusion/fog fade — see `MoverGeometry.updateFading`. Called from `game.ts` after the camera has settled, not from `update`. */
+  /**
+   * The mover meshes' own per-frame occlusion/fog fade — see `MoverGeometry.updateFading`. Called
+   * from `game.ts` after the camera has settled, not from `update`.
+   */
   updateFading(
     dt: number,
     camX: number,
@@ -948,8 +979,6 @@ export class SpecialsController {
     this.prevX = teleport ? teleport.x : playerX;
     this.prevY = teleport ? teleport.y : playerY;
   }
-
-  // ---- Movers ----------------------------------------------------------
 
   /**
    * Where a sector's own sounds come from — vanilla's `sector->soundorg`, the
@@ -1296,7 +1325,10 @@ export class SpecialsController {
     dirty.add(mover.sectorIndex);
   }
 
-  /** No hold/rest state, unlike doors and lifts — a crusher reverses at each end and repeats forever. */
+  /**
+   * No hold/rest state, unlike doors and lifts — a crusher reverses at each end and repeats
+   * forever.
+   */
   private tickCrusher(mover: CrusherMover, dt: number, dirty: Set<number>): void {
     if (mover.state === 'stopped') return;
     const sector = this.map.sectors[mover.sectorIndex];
@@ -1765,7 +1797,10 @@ export class SpecialsController {
     return true;
   }
 
-  /** `EV_CeilingCrushStop`: freezes a running crusher where it stands, remembering its direction. Already-stopped is not a hit — vanilla's own `direction != 0` guard, and so its `rtn`. */
+  /**
+   * `EV_CeilingCrushStop`: freezes a running crusher where it stands, remembering its direction.
+   * Already-stopped is not a hit — vanilla's own `direction != 0` guard, and so its `rtn`.
+   */
   private triggerCrusherStop(sectorIndex: number): boolean {
     const existing = this.ceilingMovers.get(sectorIndex);
     if (!existing || existing.kind !== 'crusher' || existing.state === 'stopped') return false;
@@ -1774,7 +1809,11 @@ export class SpecialsController {
     return true;
   }
 
-  /** Vanilla's own `sec->specialdata` guard: a sector already driven by *any* mover ignores this — unlike doors/lifts/floors above, there's no interactive re-trigger behavior worth having for a one-way move. */
+  /**
+   * Vanilla's own `sec->specialdata` guard: a sector already driven by *any* mover ignores this —
+   * unlike doors/lifts/floors above, there's no interactive re-trigger behavior worth having for a
+   * one-way move.
+   */
   private triggerCeiling(sectorIndex: number, effect: CeilingEffect, line?: LineDef): boolean {
     if (this.ceilingActive(sectorIndex)) return false;
     const target = resolveCeilingTarget(this.world, sectorIndex, effect.target, () =>
@@ -1793,7 +1832,10 @@ export class SpecialsController {
     return true;
   }
 
-  /** The ceiling flavor of `resolveFloorChange` — `EV_DoGenCeiling` matches neighbors on *floor* height when the destination is floor-derived. */
+  /**
+   * The ceiling flavor of `resolveFloorChange` — `EV_DoGenCeiling` matches neighbors on *floor*
+   * height when the destination is floor-derived.
+   */
   private resolveCeilingChange(
     sectorIndex: number,
     effect: CeilingEffect,
@@ -2024,7 +2066,10 @@ export class SpecialsController {
     return true;
   }
 
-  /** First teleport-landing marker (`MT_TELEPORTMAN`) sitting in one of the tag-matched sectors — vanilla's own search is just as arbitrary when more than one exists. */
+  /**
+   * First teleport-landing marker (`MT_TELEPORTMAN`) sitting in one of the tag-matched sectors —
+   * vanilla's own search is just as arbitrary when more than one exists.
+   */
   private findTeleportDestination(sectorIndices: readonly number[]): Placement | null {
     if (sectorIndices.length === 0) return null;
     const targets = new Set(sectorIndices);
@@ -2143,8 +2188,6 @@ export class SpecialsController {
     return null;
   }
 
-  // ---- Triggers ----------------------------------------------------------
-
   /**
    * A line's *effective* special: the authored number, XORed with its
    * `retriggerXor` while the line sits flipped (`retriggerFlips`). Every
@@ -2158,16 +2201,6 @@ export class SpecialsController {
     return special ^ (lookupSpecial(special)?.retriggerXor ?? 0);
   }
 
-  /**
-   * `fromBackSide` is vanilla's `P_CrossSpecialLine` `side` argument — the side
-   * the thing was on *before* the move (`P_TryMove` passes `oldside`). Only the
-   * teleport branch reads it, matching vanilla, where `side` reaches nothing but
-   * `EV_Teleport`. See docs/specials.md § Teleporters.
-   *
-   * `at` is where the activator is standing and which way it faces — only the
-   * silent teleports read it (`TeleportSource`), so every other caller can
-   * leave it at the default.
-   */
   /**
    * Whether this line's special can still do anything at all: a spent one-shot and a
    * line that acts by tag but carries none are both dead letters. `trigger` leads with
@@ -2184,6 +2217,16 @@ export class SpecialsController {
     return true;
   }
 
+  /**
+   * `fromBackSide` is vanilla's `P_CrossSpecialLine` `side` argument — the side
+   * the thing was on *before* the move (`P_TryMove` passes `oldside`). Only the
+   * teleport branch reads it, matching vanilla, where `side` reaches nothing but
+   * `EV_Teleport`. See docs/specials.md § Teleporters.
+   *
+   * `at` is where the activator is standing and which way it faces — only the
+   * silent teleports read it (`TeleportSource`), so every other caller can
+   * leave it at the default.
+   */
   private trigger(
     lineIndex: number,
     ownedKeys: ReadonlySet<KeySlot>,
@@ -2279,7 +2322,9 @@ export class SpecialsController {
     return null;
   }
 
-  /** One effect against one tag-matched sector, returning that sector's share of vanilla's `rtn`. */
+  /**
+   * One effect against one tag-matched sector, returning that sector's share of vanilla's `rtn`.
+   */
   private applyEffect(sectorIndex: number, effect: Effect, line?: LineDef): boolean {
     switch (effect.kind) {
       case 'door':
@@ -2413,7 +2458,10 @@ export class SpecialsController {
     }
   }
 
-  /** The tag-matched half of `notifyBossDeath` — no triggering linedef exists, so this scans sector tags directly rather than going through `resolveTargets`/`trigger`. */
+  /**
+   * The tag-matched half of `notifyBossDeath` — no triggering linedef exists, so this scans sector
+   * tags directly rather than going through `resolveTargets`/`trigger`.
+   */
   private triggerTag(tag: number, kind: 'lowerFloorToLowest' | 'raiseToTexture' | 'blazeOpen' | 'open'): void {
     for (const i of sectorsByTag(this.map, tag)) {
       switch (kind) {
@@ -2463,14 +2511,11 @@ export class SpecialsController {
   /**
    * Fires every shoot special a **hitscan** shot from `from` to `to` crossed, in
    * the order it crossed them, plus `blocker` — the line that stopped it, if a
-   * line did — last. Vanilla's `PTR_ShootTraverse` runs
-   * `if (li->special) P_ShootSpecialLine (...)` on each line the traverse reaches
-   * *before* testing whether that line blocks, and `P_TraverseIntercepts` walks
-   * intercepts nearest-first, so a bullet fires the specials of lines it merely
-   * flew through — at whatever height, since the call comes before the opening
-   * test. `blocker` is passed separately rather than found here: it is already
-   * resolved (`ShotPath.lineIndex`), and the trace ends exactly on it, which is
-   * the one crossing floating point can't be trusted to report.
+   * line did — last. A bullet fires the specials of lines it merely flew through, at whatever
+   * height — vanilla runs `P_ShootSpecialLine` before testing whether the line blocks. `blocker` is
+   * passed separately rather than found here: it is already resolved (`ShotPath.lineIndex`), and
+   * the trace ends exactly on it, which is the one crossing floating point can't be trusted to
+   * report.
    *
    * Crossings are tested against the linedefs' **raw vertexes**, deliberately, not
    * `World.lineOverlapEnds`: `shotPath` uses the extended ends so a ray can't leak
@@ -2584,8 +2629,10 @@ export class SpecialsController {
     this.crossLines(this.prevX, this.prevY, playerX, playerY, 'player', ownedKeys, playerAngle);
   }
 
-  // ---- Switch textures -------------------------------------------------
-
+  /**
+   * Swaps a switch line's sidedef textures to their on-state and plays the click — vanilla's
+   * `P_ChangeSwitchTexture`. `useAgain` is what arms the revert timer below.
+   */
   private flashSwitch(lineIndex: number, useAgain: boolean): void {
     const entries = this.switchTextures.get(lineIndex);
     if (!entries || entries.length === 0) return;
@@ -2628,8 +2675,7 @@ export class SpecialsController {
     this.geometry.rebuildAround(dirty);
   }
 
-  // ---- Lights --------------------------------------------------------
-
+  /** Advances every sector light effect a frame, repainting only the sectors whose level moved. */
   private updateLights(dt: number): void {
     for (const [sectorIndex, state] of this.lightStates) {
       const value = Math.round(tickLight(state, dt));

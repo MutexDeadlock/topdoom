@@ -126,7 +126,10 @@ export const SOLID_DECORATION_TYPES: Set<number> = new Set([
   ThingType.hangingTorsoBrainRemoved,
 ]);
 
-/** Vanilla `mobjinfo` radius shared by every entry in `SOLID_DECORATION_TYPES` except `SOLID_DECORATION_RADIUS_OVERRIDE`'s keys — confirmed against `info.c`. */
+/**
+ * Vanilla `mobjinfo` radius shared by every entry in `SOLID_DECORATION_TYPES` except
+ * `SOLID_DECORATION_RADIUS_OVERRIDE`'s keys — confirmed against `info.c`.
+ */
 export const SOLID_DECORATION_RADIUS = 16;
 
 /**
@@ -173,13 +176,9 @@ export const CEILING_HUNG_HEIGHT: Record<number, number> = {
 
 /**
  * Spawn-frame letters for the `MONSTER_TYPES` members whose `mobjinfo.spawnstate` **isn't** a walk
- * cycle, overriding `buildThingSprites`'s shared `MONSTER_WALK_FRAMES` default. Only the two types
- * with no AI qualify: `S_KEENSTND` and `S_BRAIN` are both single held frames (`tics: -1`), and for
- * both of them the letters `MONSTER_WALK_FRAMES` would otherwise cycle through are death art.
- *
- * Load-bearing even though neither type's animator currently advances: `animating` is only ever
- * turned on by the AI branch in `update()`, which these two never enter, so today they hold frame 0
- * by accident rather than by rule. docs/monster-ai.md § Commander Keen.
+ * cycle, overriding `buildThingSprites`'s shared `MONSTER_WALK_FRAMES` default. Only `S_KEENSTND`
+ * and `S_BRAIN` qualify, both single held frames whose walk-cycle letters would be death art.
+ * Load-bearing even though neither animator advances today — docs/monster-ai.md § Commander Keen.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —
  * docs/dehacked.md § Frames.
@@ -193,16 +192,10 @@ export const MONSTER_IDLE_FRAMES: Record<number, string[]> = {};
 export const MONSTER_WALK_FRAMES = ['A', 'B', 'C', 'D'];
 
 /**
- * The walk cycles that **aren't** A-D, read off each type's `seestate` chain in
- * `info.c` (walk the chain to where it loops and keep the distinct frames;
- * vanilla holds most of them for two states each, which the flat per-frame
- * duration here makes a no-op).
- *
- * The cacodemon is the one that gets *noticed*: `S_HEAD_RUN1` is a single state
- * looping to itself on frame A, and `HEAD`'s B/C are its `missilestate` mouth —
- * the same letters `MONSTER_ATTACK_POSE` uses — so the shared 4-frame default
- * had it biting the air continuously as it drifted. docs/sprites.md § Pain,
- * and attack/pain poses.
+ * The walk cycles that **aren't** A-D, read off each type's `seestate` chain in `info.c` (walk the
+ * chain to where it loops and keep the distinct frames; vanilla holds most for two states each,
+ * which the flat per-frame duration here makes a no-op). The cacodemon is the one that gets
+ * *noticed* — docs/sprites.md § Pain, and attack/pain poses.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —
  * docs/dehacked.md § Frames.
@@ -288,7 +281,10 @@ export const BOSS_DEATH_TYPES = {
   arachnotron: ThingType.arachnotron,
 } as const;
 
-/** Health each monster spawns with — `mobjinfo.spawnhealth`, confirmed against `linuxdoom-1.10/info.c`. */
+/**
+ * Health each monster spawns with — `mobjinfo.spawnhealth`, confirmed against
+ * `linuxdoom-1.10/info.c`.
+ */
 export const MONSTER_HEALTH: Record<number, number> = {
   [ThingType.zombieman]: 20,
   [ThingType.shotgunGuy]: 30,
@@ -313,13 +309,10 @@ export const MONSTER_HEALTH: Record<number, number> = {
 };
 
 /**
- * Regular-death sprite frame letters per doomednum — confirmed against the
- * real DOOM.WAD/DOOM2.WAD lump names, and cross-checked against `info.c`.
- * Death art is rotation-0 only, so where a sprite's directional frames stop
- * marks where death art starts; DIE is the front of that tail, XDIE the back.
- * That derivation doesn't reach the two AI-less types at the bottom, whose
- * whole sprite is rotation-0 — theirs come straight off `info.c`'s own chains.
- * docs/sprites.md § Pain, and attack/pain poses.
+ * Regular-death sprite frame letters per doomednum — confirmed against the real DOOM.WAD/DOOM2.WAD
+ * lump names, and cross-checked against `info.c`. Derived from where a sprite's directional frames
+ * stop, except for the two AI-less types at the bottom, whose whole sprite is rotation-0 and whose
+ * letters come straight off `info.c`. docs/death.md § Monster death.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —
  * docs/dehacked.md § Frames.
@@ -360,15 +353,10 @@ export const MONSTER_XDEATH_FRAMES: Record<number, string[]> = {};
 export const MONSTER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
 
 /**
- * The two monster types whose corpse doesn't stay on screen once its death
- * animation finishes. Every monster's final death state holds at `tics: -1`
- * except `S_SKULL_DIE6` and `S_PAIN_DIE6`, which expire into `S_NULL` and so
- * get `P_RemoveMobj`'d outright.
- *
- * This also makes a dead pain elemental unresurrectable despite its real
- * `raisestate` — a genuine vanilla dead-data quirk, reproduced here without a
- * second special case because `ThingGrid.rebuild` never buckets a `hidden`
- * corpse. See docs/death.md § Monster death.
+ * The two monster types whose corpse doesn't stay on screen once its death animation finishes:
+ * `S_SKULL_DIE6` and `S_PAIN_DIE6` are the only final death states that expire into `S_NULL`. This
+ * is also what makes a dead pain elemental unresurrectable despite its real `raisestate`, needing
+ * no second special case here. docs/death.md § Monster death.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —
  * docs/dehacked.md § Frames.
@@ -378,43 +366,33 @@ export const MONSTER_CORPSE_VANISHES: Set<number> = new Set();
 /**
  * Attack poses per doomednum, **split by attack kind** and taken from `info.c`'s `meleestate` and
  * `missilestate` chains — the states, their letters and their own tic counts, cross-checked against
- * the real sprite lumps.
- *
- * Two rules make this table what it is, and both are load-bearing:
- *
- * - **Per-state tics, not a flat rate.** `AttackStats.startDelaySeconds` puts the shot partway into
- *   the chain (docs/monster-ai.md § The windup), and the frame that fires has to be the one showing
- *   when it goes off. An even spread misses it — the zombieman's `F` is 10 tics in, not halfway —
- *   and vanilla marks that frame `FF_FULLBRIGHT`, so the muzzle flash lit up after the bullet had
- *   already landed. docs/sprites.md § Pain, and attack/pain poses.
- * - **Split by kind**, because a type's two chains are genuinely different animations. Only the
- *   revenant has both (`SKEL` `G`-`I` punches, `J`-`K` throws); the imp, demon, baron and hell
- *   knight point `meleestate` and `missilestate` at the same chain, so both kinds share one pose.
+ * the real sprite lumps. Per-state tics rather than a flat rate, and split by kind because a type's
+ * two chains are genuinely different animations — only the revenant has both (`SKEL` `G`-`I`
+ * punches, `J`-`K` throws). Both rules are load-bearing: docs/sprites.md § Pain, and attack/pain
+ * poses.
  *
  * The span is what that type's `AttackStats.duration` covers: the whole chain, or — for the
- * chaingunner and the two spiders, whose `A_*Refire` loops — the loop alone, which is also what
- * drops their `A_FaceTarget` lead-in on the walk-cycle letter.
+ * chaingunner and the two spiders, whose `A_*Refire` loops — the loop alone.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —
  * docs/dehacked.md § Frames.
  */
 export const MONSTER_ATTACK_POSE: Record<number, { melee?: AttackPose; ranged?: AttackPose }> = {};
 
-/** Every frame letter a type can strike a pose on, both kinds together — for the cross-checks in `tests/game/tables.test.ts`. */
+/**
+ * Every frame letter a type can strike a pose on, both kinds together — for the cross-checks in
+ * `tests/game/tables.test.ts`.
+ */
 export function attackPoseLetters(type: number): string[] {
   const pose = MONSTER_ATTACK_POSE[type];
   return [...new Set([...(pose?.melee?.frames ?? []), ...(pose?.ranged?.frames ?? [])])];
 }
 
 /**
- * Pain (flinch) sprite frame letters, derived the same way and with the same
- * WAD cross-check as `MONSTER_ATTACK_POSE` above. Every monster in stock
- * DOOM has exactly one pain frame except the cacodemon (`HEAD`), whose
- * `S_HEAD_PAIN3` genuinely is a second, distinct recoil frame — confirmed
- * against the WAD, not an accident of the derivation. `ThingLayer.damage`
- * only plays this when a hit actually rolls past the monster's own
- * `painChance` (`game/monsters/tables.ts`) — a hit that fails the roll flinches by
- * vanilla rule, not just by art.
+ * Pain (flinch) sprite frame letters, derived the same way and with the same WAD cross-check as
+ * `MONSTER_ATTACK_POSE` above. One frame per type except the cacodemon, whose `S_HEAD_PAIN3` is a
+ * genuine second recoil frame. Played only when a hit rolls past the type's own `painChance` —
+ * docs/sprites.md § Pain, and attack/pain poses.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —
  * docs/dehacked.md § Frames.
@@ -433,13 +411,10 @@ export const MONSTER_ACTION_FRAME_SECONDS = 3 * DOOM_TIC;
 
 /**
  * How long each frame of an attack pose is held: the pose's own `tics`, scaled to fill
- * `attackSeconds` — the length of the attack it poses for.
- *
- * The pose and the wait are the same vanilla states, so the scale factor is 1 whenever the attack
- * runs its full length; it is not when a volley's later shot re-enters a pose spanning only what is
- * left. Keeping vanilla's *proportions* is what puts the firing frame under the shot
- * (`AttackStats.startDelaySeconds`) — the arch-vile's blast lands on its `O` frame, the zombieman's
- * bullet on its `F`. docs/sprites.md § Pain, and attack/pain poses.
+ * `attackSeconds` — the length of the attack it poses for. The factor is 1 whenever the attack runs
+ * its full length, and is not when a volley's later shot re-enters a pose spanning only what is
+ * left. Keeping vanilla's *proportions* is what puts the firing frame under the shot —
+ * docs/sprites.md § Pain, and attack/pain poses.
  *
  * The degenerate guard is not defensive tidiness: a zero rate would freeze the pose on its first
  * frame *forever*, since `FrameSequence.advance` clears a one-shot sequence only by advancing past
@@ -452,19 +427,12 @@ export function attackPoseFrameSeconds(pose: AttackPose, attackSeconds: number):
 }
 
 /**
- * Resurrection frame letters — `mobjinfo.raisestate`, the arch-vile's
- * `A_VileChase` target. Only 14 types have one at all; no entry means "not
- * raisable", the same convention `MONSTER_XDEATH_FRAMES` uses.
- *
- * **Not the reverse of `MONSTER_DEATH_FRAMES`**: vanilla's raise sequences are
- * hand-authored per type with no shared derivation rule, down to each chain's
- * final letter being the first death frame it ends on. Every letter is read off
- * `info.c`'s `S_*_RAISE*` table directly, and `tests/game/dehacked-frames.test.ts`
- * re-derives each list from `dehacked/states.ts`. docs/monster-archvile.md.
- *
- * Played via `playOnce` after `revive()` undoes `die()`, reusing
- * `MONSTER_DEATH_FRAME_SECONDS` — vanilla's raise states hold 5-8 tics,
- * squarely inside death's own range, so a dedicated constant would tune nothing.
+ * Resurrection frame letters — `mobjinfo.raisestate`, the arch-vile's `A_VileChase` target. Only 14
+ * types have one; no entry means "not raisable", the same convention `MONSTER_XDEATH_FRAMES` uses.
+ * **Not the reverse of `MONSTER_DEATH_FRAMES`** — every letter is read off `info.c`'s `S_*_RAISE*`
+ * chains directly (docs/monster-archvile.md § Resurrection). Played via `playOnce` after `revive()`
+ * undoes `die()`, reusing `MONSTER_DEATH_FRAME_SECONDS`, whose range vanilla's raise states sit
+ * squarely inside.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —
  * docs/dehacked.md § Frames.
@@ -472,19 +440,12 @@ export function attackPoseFrameSeconds(pose: AttackPose, attackSeconds: number):
 export const MONSTER_RAISE_FRAMES: Record<number, string[]> = {};
 
 /**
- * The player's own frame letters, the `PLAY`-lump counterparts of the
- * `MONSTER_*_FRAMES` tables above — scalars rather than doomednum-keyed
- * records, there being exactly one player. They live here, with every other
- * sprite-frame table, rather than in `game/player.ts`: that file is the
- * movement/collision controller and owns no sprite at all.
- *
- * Death is confirmed against `PLAY`'s lump names: its rotation-0-only tail runs
- * H-W, split as DIE1-7 (H-N, this sequence) then XDIE1-9 (O-W, the gib variant
- * this engine doesn't model). Attack and pain come from `info.c`, which puts
- * `S_PLAY_ATK1`/`ATK2` at `E`/`F` and `S_PLAY_PAIN`/`PAIN2` at `G`, right
- * before the death sequence starts at `H`. The two action frames play via
- * `SpriteAnimator.playOnce`, not `die`: both hand back to the walk/idle cycle
- * when they finish. docs/death.md § Player death.
+ * The player's own frame letters, the `PLAY`-lump counterparts of the `MONSTER_*_FRAMES` tables
+ * above — scalars rather than doomednum-keyed records, there being exactly one player, and here
+ * rather than in `game/player.ts`, which owns no sprite. Death is confirmed against `PLAY`'s lump
+ * names (its rotation-0 tail runs H-W, DIE1-7 then the XDIE gib variant this engine doesn't model);
+ * attack and pain come from `info.c` and play via `SpriteAnimator.playOnce`, handing back to the
+ * walk cycle when they finish. docs/death.md § Player death.
  */
 export const PLAYER_DEATH_FRAMES = ['H', 'I', 'J', 'K', 'L', 'M', 'N'];
 export const PLAYER_DEATH_FRAME_SECONDS = 6 * DOOM_TIC;
@@ -512,22 +473,12 @@ export const MONSTER_DROPS: Record<number, number> = {
 
 /**
  * Per-doomednum sprite frame(s) for non-monster, non-barrel things, overriding
- * `buildThingSprites`'s single-held-`'A'`-frame default. Two distinct reasons a
- * doomednum ends up here, confirmed letter-by-letter against
- * `linuxdoom-1.10/info.c`'s `states[]` table (not the wiki):
- *
- * - **Idle animation** — decorations, health/armor, keys, powerups whose vanilla
- *   `mobjinfo` state cycle loops through more than one frame (`frames.length > 1`).
- * - **A corpse/gib prop's fixed art isn't frame `'A'`** — the "Dead …" and "Bloody
- *   mess" doomednums (10, 12, 15, 18-23) spawn vanilla's own already-mid-death-cycle
- *   `spawnstate`, e.g. `S_HEAD_DIE6` for the dead cacodemon prop — a single-element
- *   `frames` array naming that exact letter, which `SpriteAnimator` then holds
- *   forever the same way it holds `'A'` for anything with no entry at all.
- *
- * A doomednum absent from this table either has vanilla `tics: -1` (genuinely static) or spawns
- * at its sprite's literal `'A'` frame — both already match `buildThingSprites`'s default.
- * `frameSeconds` is one flat rate per entry standing in for vanilla's per-state tic counts, the
- * same accepted simplification `MONSTER_DEATH_FRAME_SECONDS` makes.
+ * `buildThingSprites`'s single-held-`'A'`-frame default, confirmed letter-by-letter against
+ * `linuxdoom-1.10/info.c`'s `states[]` (not the wiki). Two reasons a doomednum is here: an idle
+ * animation of more than one frame, or a corpse/gib prop whose fixed art isn't frame `'A'` —
+ * docs/sprites.md § Which things spawn. An absent doomednum already matches the default.
+ * `frameSeconds` is one flat rate standing in for vanilla's per-state tics, the same accepted
+ * simplification `MONSTER_DEATH_FRAME_SECONDS` makes.
  *
  * Filled at the bottom of this file by walking vanilla's own state chains —
  * docs/dehacked.md § Frames.
@@ -592,25 +543,20 @@ function sameLetters(a: readonly string[], b: readonly string[]): boolean {
 }
 
 /**
- * Every `(sprite, letter)` vanilla draws at full light, as `SPRITE + LETTER` keys (`TREDA`, `SKULB`):
- * `FF_FULLBRIGHT` in `info.c`'s `states[]`, which the torches, candles, keys, armor and powerups,
- * the lost soul, every projectile and explosion, the teleport fogs and the monsters' firing frames
- * all carry. Read at draw time by `things.ts`, `spritefx.ts` and the player's `SpriteActor` to
- * lift the sprite to light 255 whatever its sector says.
+ * Every `(sprite, letter)` vanilla draws at full light, as `SPRITE + LETTER` keys (`TREDA`,
+ * `SKULB`): `FF_FULLBRIGHT` in `info.c`'s `states[]`. Read at draw time by `things.ts`,
+ * `spritefx.ts` and the player's `SpriteActor` to lift the sprite to light 255 whatever its sector
+ * says, and rebuilt from a DEHACKED patch's `states[]` by `rebuildFullbrightFrames`.
  *
- * Keyed per `(sprite, letter)` rather than per state, because the animator knows no state — so
- * where vanilla draws one letter bright in some states and dim in others, the states vote and a
- * tie is bright. Ten stock letters split that way and the vote lands every one where it looks
- * right: the spider mastermind's and arachnotron's `A_FaceTarget` frame is their walk letter `A`
- * (one bright state against three or four dim ones — dim, or they would glow walking), while the
- * chaingunner's firing frames and the pain elemental's death frames tie and stay bright.
- * `tests/game/dehacked-frames.test.ts` pins the list. Rebuilt from a DEHACKED patch's `states[]`
- * by `rebuildFullbrightFrames`, so a patch can add or clear the bit — freedoom2's does, on the
- * zombieman's firing frame. docs/sprites.md § Fullbright frames.
+ * Keyed per `(sprite, letter)` rather than per state, because the animator knows no state; where
+ * vanilla splits a letter across bright and dim states the states vote and a tie is bright.
+ * docs/sprites.md § Fullbright frames.
  */
 export const FULLBRIGHT_FRAMES: Set<string> = new Set();
 
-/** Refills `FULLBRIGHT_FRAMES` from a frame table — vanilla's own `STATES`, or a patched copy of it. */
+/**
+ * Refills `FULLBRIGHT_FRAMES` from a frame table — vanilla's own `STATES`, or a patched copy of it.
+ */
 export function rebuildFullbrightFrames(states: readonly StateRow[] = STATES): void {
   const votes = new Map<string, number>();
   for (const [sprite, frame] of states) {
@@ -636,16 +582,10 @@ export const BARREL_SPLASH_DAMAGE = 128;
 
 /**
  * The death overlay's middle line, in full, keyed by the `DamageCause` it answers — plus
- * `'default'`, which is not a cause but what a death no call site attributed, or a doomednum with
- * no line of its own, falls back to. See docs/death.md § Who killed the player.
- *
- * Only what can actually land a killing blow is listed: every monster, plus the exploding barrel.
- * Whole sentences rather than "You were killed by " plus a name, because a DEH patch's `OB_*`
- * string replaces a line **entire** and there would be no fragment for it to slot into —
- * docs/dehacked.md § Obituaries
- *
- * Vanilla has no obituaries at all, so nothing here is a fidelity claim: the wording is this
- * engine's own, over the standard manual/editor names for the types.
+ * `'default'`, the fallback for an unattributed death. Only what can land a killing blow is listed:
+ * every monster, plus the exploding barrel. Whole sentences rather than a name to interpolate —
+ * docs/death.md § Who killed the player, docs/dehacked.md § Obituaries. Vanilla has no obituaries,
+ * so nothing here is a fidelity claim.
  */
 export const OBITUARIES: Record<number | string, string> = {
   self: 'You blew yourself up',

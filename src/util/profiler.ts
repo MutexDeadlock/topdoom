@@ -57,7 +57,10 @@ export class FrameProfiler {
   private smoothedByLabel = new Map<string, number>();
   private currentByLabel = new Map<string, number>();
   private frameStart = 0;
-  /** Off-frame work reported but not yet charged into a frame — drained a fraction per frame by `endFrame`. */
+  /**
+   * Off-frame work reported but not yet charged into a frame — drained a fraction per frame by
+   * `endFrame`.
+   */
   private offFramePending = new Map<string, number>();
   /** What `endFrame` charged out of that pool this frame, added to the frame's own wall clock. */
   private offFrameMs = 0;
@@ -99,8 +102,8 @@ export class FrameProfiler {
    * The work arrives in bursts (a chunk every pump interval, a whole lookahead
    * at track start), so it is pooled and charged into frames a fraction at a
    * time (`OFF_FRAME_SPREAD`) rather than dumped on the frame that follows —
-   * dumped, every burst spiked the total and with it the "fps eq." readout,
-   * which divides by it. A stall's oversized backlog is capped away entirely
+   * dumping it spikes the total, and with it the "fps eq." readout that divides
+   * by it. A stall's oversized backlog is capped away entirely
    * (`OFF_FRAME_PENDING_CAP`). docs/menu.md § Profiling overlay.
    */
   offFrame(label: string, ms: number): void {

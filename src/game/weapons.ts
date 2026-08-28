@@ -107,9 +107,15 @@ export interface WeaponDef {
    * while a held burst walks off target.
    */
   accurateFirstShot: boolean;
-  /** Melee only: how far in front of the player the swing reaches (`PLAYER_MELEE_RANGE`); 0 for everything else. */
+  /**
+   * Melee only: how far in front of the player the swing reaches (`PLAYER_MELEE_RANGE`); 0 for
+   * everything else.
+   */
   meleeRange: number;
-  /** Projectile only: travel speed, map units/sec — the spawned missile's own `mobjinfo.speed` (units per tic) × 35, the same conversion `game/monsters/tables.ts` applies to theirs. */
+  /**
+   * Projectile only: travel speed, map units/sec — the spawned missile's own `mobjinfo.speed`
+   * (units per tic) × 35, the same conversion `game/monsters/tables.ts` applies to theirs.
+   */
   projectileSpeed: number;
   /** Projectile only: SpriteBank name the flying shot is drawn as. */
   projectileSprite: string;
@@ -391,7 +397,7 @@ const WEAPON_SEED: Record<WeaponId, WeaponSeed> = {
     hitSound: null,
     missSound: null,
     // MT_PLASMA's mobjinfo damage is 5, rolled by PIT_CheckThing's shared
-    // ((P_Random()%8)+1) — 5-40, not the 5-20 an earlier 4-sided roll gave.
+    // ((P_Random()%8)+1), so 5-40.
     damageDiceSides: 8,
     damageDiceMultiplier: 5,
     splash: null,
@@ -454,7 +460,11 @@ export interface HitscanShot {
    * what `shotPath` derives its slope from.
    */
   slopeOffset: number;
-  /** This pellet's own damage roll (WeaponDef.damageDiceSides/Multiplier) — applied only if this pellet's own `angleRad`, spread included, lands on a body (game/projectiles.ts: spawnPlayerShot). */
+  /**
+   * This pellet's own damage roll (WeaponDef.damageDiceSides/Multiplier) — applied only if this
+   * pellet's own `angleRad`, spread included, lands on a body (game/projectiles.ts:
+   * spawnPlayerShot).
+   */
   damage: number;
 }
 
@@ -463,11 +473,20 @@ export interface ProjectileShot {
   angleRad: number;
   speed: number;
   sprite: string;
-  /** Direct-hit damage roll, applied on arrival if this shot was locked onto a monster that it actually reached. */
+  /**
+   * Direct-hit damage roll, applied on arrival if this shot was locked onto a monster that it
+   * actually reached.
+   */
   damage: number;
-  /** Splash to apply at the impact point regardless of what (if anything) was targeted, straight from WeaponDef.splash — null for a non-explosive projectile (plasma, BFG). */
+  /**
+   * Splash to apply at the impact point regardless of what (if anything) was targeted, straight
+   * from WeaponDef.splash — null for a non-explosive projectile (plasma, BFG).
+   */
   splash: { radius: number; damage: number; hitsPlayer: boolean } | null;
-  /** The BFG's real secondary attack on arrival, straight from WeaponDef.spray — null for every other projectile. */
+  /**
+   * The BFG's real secondary attack on arrival, straight from WeaponDef.spray — null for every
+   * other projectile.
+   */
   spray: { rays: number; arcDeg: number; range: number; diceRolls: number; diceSides: number } | null;
 }
 

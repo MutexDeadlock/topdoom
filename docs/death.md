@@ -7,29 +7,31 @@ How the damage that gets here was dealt is docs/combat.md.
 
 ## Monster death
 
-**Health and death-frame sequences are confirmed against the actual lump names in DOOM.WAD/DOOM2.WAD.**
-Health values are vanilla's `mobjinfo` constants, but the death *frame letters* are derivable from
-the WAD directly: death art in vanilla is rotation-0 (omnidirectional) only, so the point where a
-sprite's directional (rotation 1-8) frames stop and its rotation-0 tail begins marks exactly where
-movement/attack/pain art ends and death art starts. Confirmed by dumping every monster sprite's
-frame/rotation pairs from the real IWADs and cross-checking against known vanilla death-state counts
-(POSS's rotation-0 tail is 14 letters, split 5 DIE + 9 XDIE, matching the zombieman exactly).
+**Health and death-frame sequences are confirmed against the actual lump names in
+DOOM.WAD/DOOM2.WAD.** Health values are vanilla's `mobjinfo` constants, but the death *frame
+letters* are derivable from the WAD directly: death art in vanilla is rotation-0 (omnidirectional)
+only, so the point where a sprite's directional (rotation 1-8) frames stop and its rotation-0 tail
+begins marks exactly where movement/attack/pain art ends and death art starts. Confirmed by dumping
+every monster sprite's frame/rotation pairs from the real IWADs and cross-checking against known
+vanilla death-state counts (POSS's rotation-0 tail is 14 letters, split 5 DIE + 9 XDIE, matching the
+zombieman exactly).
 
 `MONSTER_DEATH_FRAMES` takes the DIE half; `MONSTER_XDEATH_FRAMES` the XDIE (gib) half where one
 exists at all — only five monster types in stock DOOM have gib art (the human grunts and the imp);
 everything else, including similarly-sized monsters like the demon, has no `xdeathstate` in vanilla
 and always plays its plain death. `ThingLayer.damage` picks between them exactly as `P_KillMobj`
 does: gib only if the killing blow pushed health below *minus* the monster's own max health *and*
-gib art exists for that type. Commander Keen (a pain cascade with no distinct DIE state) and the boss
-brain (2 sprite frames total, no death art) are deliberately absent from both — `damage` falls back
-to just hiding a killed monster with no entry.
+gib art exists for that type. Commander Keen (a pain cascade with no distinct DIE state) and the
+boss brain (2 sprite frames total, no death art) are deliberately absent from both — `damage` falls
+back to just hiding a killed monster with no entry.
 
 A death is a **permanent, one-way animation switch, not a new actor**: `SpriteActor.die` overrides
-the alive walk cycle with a one-shot sequence that advances forward and holds its last frame forever,
-reusing the same mesh/materials rather than spawning a second object — cheaper, and it means a corpse
-still participates in fog-of-war fading exactly as it did alive. `ThingLayer.damage(id, amount)` —
-`id` being the stable index `pickMonster`/`monstersNear` hand back — subtracts health and calls `die`
-at 0; `pickMonster` skips anything already dead so a corpse can't be re-targeted.
+the alive walk cycle with a one-shot sequence that advances forward and holds its last frame
+forever, reusing the same mesh/materials rather than spawning a second object — cheaper, and it
+means a corpse still participates in fog-of-war fading exactly as it did alive.
+`ThingLayer.damage(id, amount)` — `id` being the stable index `pickMonster`/`monstersNear` hand back
+— subtracts health and calls `die` at 0; `pickMonster` skips anything already dead so a corpse can't
+be re-targeted.
 
 **A corpse left in the air falls.** `P_KillMobj` strips `MF_NOGRAVITY` from everything it kills
 except `MT_SKULL`, so a cacodemon shot off its hover (docs/monster-ai.md § Floating monsters) or a
@@ -38,8 +40,8 @@ keeps its flag and dies where it was. `ThingLayer.update` runs that fall in its 
 on the thing's own cached sector floor so the overwhelming majority of corpses — already resting on
 it — cost no world query at all.
 
-**Two types don't leave a corpse: the lost soul and the pain elemental.** Every other monster's final
-death state has `tics: -1` ("hold forever"), which is what makes a corpse permanent, but
+**Two types don't leave a corpse: the lost soul and the pain elemental.** Every other monster's
+final death state has `tics: -1` ("hold forever"), which is what makes a corpse permanent, but
 `S_SKULL_DIE6` and `S_PAIN_DIE6` both have a finite tic count and fall through to `S_NULL` — and
 transitioning *to* `S_NULL` is what makes vanilla call `P_RemoveMobj`. `MONSTER_CORPSE_VANISHES` is
 exactly those two doomednums; `ThingLayer.update` hides either type's corpse the instant `deadTime`
@@ -59,8 +61,8 @@ corpse into `corpseGrid`, and a pain elemental's corpse is always hidden by the 
 **A killed monster can drop an item**, lifted from `P_KillMobj`, which has exactly three `switch`
 cases: the zombieman and Wolfenstein SS drop a clip, the shotgun guy a shotgun, the chaingunner a
 chaingun (`MONSTER_DROPS`). Everything else, including monsters that feel like they obviously should
-(the imp, the demon), drops nothing. `ThingLayer.damage` spawns the drop inline the moment it marks a
-monster dead — via a `spawnDrop` helper that's the same pose/push the map-load loop does, for one
+(the imp, the demon), drops nothing. `ThingLayer.damage` spawns the drop inline the moment it marks
+a monster dead — via a `spawnDrop` helper that's the same pose/push the map-load loop does, for one
 instance — so a drop appears no matter *how* the kill happened (direct hit, splash, gib, crusher),
 matching vanilla dropping from that one function regardless of cause. Each `PosedThing` carries a
 `dropped` flag, seeded `true` only for a `spawnDrop` instance and threaded through `tryPickup`'s
@@ -104,9 +106,10 @@ matching `PIT_StompThing`, which never looks at `z`, so a cacodemon hovering ove
 dies. Only the *reach* varies: the cube's player half uses a fixed `PLAYER_TELEFRAG_RADIUS` rather
 than the spawned body's own (see that constant).
 
-The kill is **deliberately unattributed** — no `source` is passed to `damageThing`. A telefrag is the
-teleport's doing, not an attack, and naming the arriving body as the source would start an infight
-it never picked. (Vanilla does pass `tmthing`, but nothing survives 10000 damage to act on it.)
+The kill is **deliberately unattributed** — no `source` is passed to `damageThing`. A telefrag is
+the teleport's doing, not an attack, and naming the arriving body as the source would start an
+infight it never picked. (Vanilla does pass `tmthing`, but nothing survives 10000 damage to act on
+it.)
 
 Every arrival is split across two files for the usual reason: `ThingLayer` has no player reference,
 so it telefrags every overlapping `PosedThing` itself, and the caller does the player half against
@@ -119,16 +122,16 @@ to die. A dead player is neither stomped nor in the way: `P_KillMobj` strips the
 
 **Reuses the exact same mechanism** on `game.ts`'s single persistent `playerActor`:
 `PLAYER_DEATH_FRAMES` (`H`-`N`) is `PLAY`'s own confirmed DIE half, derived the same way as the
-monster tables — and living beside them in `game/things/tables.ts`, not in `game/player.ts`, which owns
-no sprite.
+monster tables — and living beside them in `game/things/tables.ts`, not in `game/player.ts`, which
+owns no sprite.
 
 `Inventory.applyDamage` is vanilla's `P_DamageMobj` armor formula — green armor absorbs a third of
 the damage, blue half, spending armor points 1-for-1 with whatever it absorbed and falling back to
 bare once it runs out mid-hit — reused for the player specifically since monsters have no armor. It
 returns whether the hit actually landed, `false` while invulnerability blocked it outright
 (`INVULNERABLE_DAMAGE_LIMIT`); `damagePlayer` uses that to skip the pain flash and flinch animation
-for a hit that did nothing, which a first version didn't check, so an invulnerable player flashed red
-on every hit that was landing on nothing.
+for a hit that did nothing, which a first version didn't check, so an invulnerable player flashed
+red on every hit that was landing on nothing.
 
 Health hitting 0 sets `Game.playerDead`, which freezes only the input-driven half of `frame` —
 movement/aim/firing/pickups. Everything else keeps running: fog of war, effects, faders and
@@ -136,26 +139,27 @@ rendering, and monster AI — but AI follows vanilla's own rule for it, not a bl
 `P_KillMobj` strips the player's `MF_SHOOTABLE`/`MF_SOLID` on death, so `Game.updateThings` passes
 `ThingLayer.update` `null` for the player once `playerDead` (`game/things.ts`'s `resolveTarget` and
 `blockersFor` both take the `Pos3 | null` this produces). A monster already mid-infight with another
-monster is unaffected and keeps fighting; one whose only target *was* the player finds `resolveTarget`
-reporting no target the very next frame and reverts to idle right there — `p.alerted = false`,
-`movedir`/`movecount` cleared — the same as `A_Chase`'s own "no shootable target" branch falling
-through to `P_SetMobjState(spawnstate)`. It only wakes again via `damage`'s unconditional re-alert
-(getting caught in someone else's infight), same path any other dormant monster uses. A rocket or vile
-blast already in flight still lands and can still deal splash (or, for the vile's knockup, do nothing
-beyond the first killing blow — `resolveVileBlast` gates its knockup on `damagePlayer`'s return, and
-`resolveBullet`'s `!playerDead` guard for the hitscan equivalent) — a dead player can still be
-"hit" for nothing to happen, matching `damagePlayer`'s own early return.
+monster is unaffected and keeps fighting; one whose only target *was* the player finds
+`resolveTarget` reporting no target the very next frame and reverts to idle right there —
+`p.alerted = false`, `movedir`/`movecount` cleared — the same as `A_Chase`'s own "no shootable
+target" branch falling through to `P_SetMobjState(spawnstate)`. It only wakes again via `damage`'s
+unconditional re-alert (getting caught in someone else's infight), same path any other dormant
+monster uses. A rocket or vile blast already in flight still lands and can still deal splash (or,
+for the vile's knockup, do nothing beyond the first killing blow — `resolveVileBlast` gates its
+knockup on `damagePlayer`'s return, and `resolveBullet`'s `!playerDead` guard for the hitscan
+equivalent) — a dead player can still be "hit" for nothing to happen, matching `damagePlayer`'s own
+early return.
 
-The death itself shows `#death-overlay` (`ui/hud/deathoverlay.ts`) — three `WadFont` canvases in
-the `EndCard` arrangement, the IWAD's own type rather than DOM text: the heading in STCFN's native
-HUD red, the killer line in `COLOR_YELLOW`, the hint in red dimmed by CSS. A canvas is always
-`:empty`, so the "nothing attributed the blow" case that used to be a `:empty` selector is now a
-`blank` class the drawing code sets. It does not go up immediately:
-`DeathOverlay.show` only *arms* it, and `DeathOverlay.update` raises it `DEATH_OVERLAY_DELAY` later — `PLAY`'s DIE sequence end to end, so
+The death itself shows `#death-overlay` (`ui/hud/deathoverlay.ts`) — three `WadFont` canvases in the
+`EndCard` arrangement, the IWAD's own type rather than DOM text: the heading in STCFN's native HUD
+red, the killer line in `COLOR_YELLOW`, the hint in red dimmed by CSS. A canvas is always `:empty`,
+so the "nothing attributed the blow" case that used to be a `:empty` selector is now a `blank` class
+the drawing code sets. It does not go up immediately: `DeathOverlay.show` only *arms* it, and
+`DeathOverlay.update` raises it `DEATH_OVERLAY_DELAY` later — `PLAY`'s DIE sequence end to end, so
 the text arrives as the corpse settles instead of on the killing frame. Nothing is gated behind the
 delay (`R` answers throughout, since `tic` reads `playerDead`, not the overlay), and a
-`DeathOverlay.clear` inside the window means the overlay is never seen at all, which is what § Dying on the way out
-needs. Vanilla has no overlay here, so none of this is a fidelity claim.
+`DeathOverlay.clear` inside the window means the overlay is never seen at all, which is what § Dying
+on the way out needs. Vanilla has no overlay here, so none of this is a fidelity claim.
 
 `R` calls `restart`, which reloads the level from one of three states, in this order.
 
@@ -191,9 +195,9 @@ started another level meanwhile.
 against "press R to restart" — because reloading a save and restarting the level are different
 promises to make to a player standing over their own corpse. `damagePlayer` passes
 `DeathOverlay.show` whether a savegame is in hand and `DeathOverlay` owns the wording, the same
-split the killer line uses. Only the savegame can be answered for at death time: whether a *checkpoint* is readable is a
-store read away, so both level-reload outcomes share the one hint, which is a distinction the
-player has no reason to care about anyway.
+split the killer line uses. Only the savegame can be answered for at death time: whether a
+*checkpoint* is readable is a store read away, so both level-reload outcomes share the one hint,
+which is a distinction the player has no reason to care about anyway.
 
 ### Who killed the player
 
@@ -215,11 +219,12 @@ Vanilla has no obituaries at all, so none of the wording here is a fidelity clai
 Every attack path already carried the identity for `ThingLayer.damage`'s retaliation rule and simply
 dropped it on the player branch; each now passes it on: melee and the lost soul's charge plus
 hitscan (`monsters/attacks.ts`), a missile's arrival (`projectiles.ts`), the vile's blast
-(`monsters/vile.ts`), the spawn cube's telefrag (`monsters/iconofsin.ts`). Splash is the one that can't just
-reuse `source`: `applyRadiusDamage` defaults `cause` to `source?.type`, but a barrel blames the
-barrel rather than whoever set it off, and a rocket of the player's own carries no `source` at all,
-so both pass it explicitly. Crushers and damage floors keep their `(amount) => void` callbacks —
-their cause is fixed per wiring site, so `game.ts` binds `'crush'`/`'slime'` where it builds them.
+(`monsters/vile.ts`), the spawn cube's telefrag (`monsters/iconofsin.ts`). Splash is the one that
+can't just reuse `source`: `applyRadiusDamage` defaults `cause` to `source?.type`, but a barrel
+blames the barrel rather than whoever set it off, and a rocket of the player's own carries no
+`source` at all, so both pass it explicitly. Crushers and damage floors keep their
+`(amount) => void` callbacks — their cause is fixed per wiring site, so `game.ts` binds
+`'crush'`/`'slime'` where it builds them.
 
 ### Dying on the way out
 
@@ -292,13 +297,14 @@ movement but are explicitly filtered back out of `raycastMonster`/`monstersNear`
 barrel, none of them carry vanilla's `MF_SHOOTABLE`, so a shot must pass through one rather than
 stop on it.
 
-**Only `ThingLayer.damage`'s death/pain behavior is special-cased**, gated on `ThingType.barrel` (2035):
-no painstate (`MT_BARREL` has `painchance = 0`), no alerting, no infighting retarget (it has no AI),
-and a kill switches its sprite to `BEXP` instead of picking from the death/xdeath tables — a barrel's
-idle art (`BAR1`) and its explosion art are genuinely different lumps, unlike every stock monster,
-whose death states reuse the same sprite name. `SpriteAnimator.die`'s optional third `spriteName`
-argument exists for this; the only other caller is a DEHACKED patch that aims a monster's death at
-another sprite's chain (`MONSTER_DEATH_SPRITE_OVERRIDE`, docs/dehacked.md § Frames).
+**Only `ThingLayer.damage`'s death/pain behavior is special-cased**, gated on `ThingType.barrel`
+(2035): no painstate (`MT_BARREL` has `painchance = 0`), no alerting, no infighting retarget (it has
+no AI), and a kill switches its sprite to `BEXP` instead of picking from the death/xdeath tables — a
+barrel's idle art (`BAR1`) and its explosion art are genuinely different lumps, unlike every stock
+monster, whose death states reuse the same sprite name. `SpriteAnimator.die`'s optional third
+`spriteName` argument exists for this; the only other caller is a DEHACKED patch that aims a
+monster's death at another sprite's chain (`MONSTER_DEATH_SPRITE_OVERRIDE`, docs/dehacked.md §
+Frames).
 
 **`A_Explode` fires partway through the death animation, not instantly on death** — `S_BEXP1`
 through `S_BEXP3` each hold 5 tics before `S_BEXP4` calls it, so `BARREL_CHAIN.explodeDelaySeconds`
@@ -315,8 +321,8 @@ playing `BEXP` at exactly that position. `S_BEXP5` falls through to `S_NULL`, i.
 removed once the animation finishes, the same rule `MONSTER_CORPSE_VANISHES` reproduces — a barrel
 just isn't a `MONSTER_TYPES` member, so it gets its own copy of the check.
 
-**The blast is `applyRadiusDamage`, exactly the rocket's own splash** — `A_Explode`'s literal call is
-`P_RadiusAttack(thingy, thingy->target, 128)`, identical radius and damage. `source`
+**The blast is `applyRadiusDamage`, exactly the rocket's own splash** — `A_Explode`'s literal call
+is `P_RadiusAttack(thingy, thingy->target, 128)`, identical radius and damage. `source`
 (`PosedThing.explodeSource`, captured in `damage` at the moment the barrel died, `null` meaning the
 player) stands in for `thingy->target` and is what makes a chain attribute correctly: since
 `applyRadiusDamage` walks the now-barrel-inclusive `monstersNear` and calls `damage` on what it
@@ -352,23 +358,24 @@ map/type gate and the victory-section action switch:
 | **any map at all** | **Commander Keen (72)** | **tag 666, `open`** |
 | every other map | — | nothing |
 
-The last row before Keen's is real, not a guess: vanilla's `switch(gameepisode)` has a `default` case
-with no per-type check at all, only `if (gamemap != 8) return;` — an unrecognized episode's map 8
-exits on whichever of the five boss types happens to die last. `bossDeathTriggersFor`
-(`game/specials/mapscan.ts`) is a pure function of `map.name` (`E1M8`, `MAP07`, …) that reproduces this whole
-table, gating on the map's own lump name rather than which WAD supplied it — a PWAD's own MAP07 gets
-DOOM2's exact Mancubus/Arachnotron triggers, matching vanilla, which only ever looks at `gamemap`.
+The last row before Keen's is real, not a guess: vanilla's `switch(gameepisode)` has a `default`
+case with no per-type check at all, only `if (gamemap != 8) return;` — an unrecognized episode's map
+8 exits on whichever of the five boss types happens to die last. `bossDeathTriggersFor`
+(`game/specials/mapscan.ts`) is a pure function of `map.name` (`E1M8`, `MAP07`, …) that reproduces
+this whole table, gating on the map's own lump name rather than which WAD supplied it — a PWAD's own
+MAP07 gets DOOM2's exact Mancubus/Arachnotron triggers, matching vanilla, which only ever looks at
+`gamemap`.
 
 **Commander Keen's row is deliberately not part of that switch.** `A_KeenDie` is a *separate action
 function* from `A_BossDeath`, and it has no `gamemap` check at all — it builds a synthetic `line_t`
 with `tag = 666` and calls `EV_DoDoor(&junk, open)` wherever the last Keen happens to die. So
 `bossDeathTriggersFor` appends it to every map's table rather than listing it per map, and 72 is
-added to `things/defs.ts`'s `DEATH_NOTIFY_TYPES` rather than to `BOSS_DEATH_TYPES` — the latter's values
-are what the `default` branch maps over to build the "any of the five exits on map 8" row, which must
-not pick Keen up. The `open` kind is `EV_DoDoor`'s ordinary `VDOORSPEED` open-and-stay, distinct from
-E4M6's `blazeOpen`. The Icon of Sin (88) is in `DEATH_NOTIFY_TYPES` too but has no row here at all:
-`A_BrainDie` exits the level directly rather than through a tag, and `game/monsters/iconofsin.ts` owns it — see
-docs/monster-iconofsin.md.
+added to `things/defs.ts`'s `DEATH_NOTIFY_TYPES` rather than to `BOSS_DEATH_TYPES` — the latter's
+values are what the `default` branch maps over to build the "any of the five exits on map 8" row,
+which must not pick Keen up. The `open` kind is `EV_DoDoor`'s ordinary `VDOORSPEED` open-and-stay,
+distinct from E4M6's `blazeOpen`. The Icon of Sin (88) is in `DEATH_NOTIFY_TYPES` too but has no row
+here at all: `A_BrainDie` exits the level directly rather than through a tag, and
+`game/monsters/iconofsin.ts` owns it — see docs/monster-iconofsin.md.
 
 **A boss-death tag has no triggering linedef, and `scanSectors` has to be told.** That
 function builds the set of sectors pulled out of the static render batch by scanning sector specials
@@ -384,11 +391,11 @@ MAP07's Arachnotron platform (sector 1, tag 667).
 
 - `game/things.ts`'s `damage()` death branch is the only place that can answer "is this the last
   living one of its type" — it already has `posed` in scope, the same array the pain elemental's
-  triple-spawn special-case reads. It reproduces vanilla's own thinker scan (`posed.every(q => q.type
-  !== p.type || q.dead)`) and, if true, calls the optional `onBossDeath` callback `buildThingSprites`
-  was given — the same "callback bundle" shape `sfx: SoundEmitter` already uses there, not a return
-  value threaded back through `ThingUpdateResult`, since a death can happen from any of `game.ts`'s
-  many `things.damage()` call sites, not just inside `update()`.
+  triple-spawn special-case reads. It reproduces vanilla's own thinker scan
+  (`posed.every(q => q.type !== p.type || q.dead)`) and, if true, calls the optional `onBossDeath`
+  callback `buildThingSprites` was given — the same "callback bundle" shape `sfx: SoundEmitter`
+  already uses there, not a return value threaded back through `ThingUpdateResult`, since a death
+  can happen from any of `game.ts`'s many `things.damage()` call sites, not just inside `update()`.
 - `game/specials.ts`'s `SpecialsController.notifyBossDeath` owns the actual per-map table
   (`bossDeathTriggers`, resolved once from `map.name` in the constructor) and dispatches to either
   `onExit(false)` or a new `triggerTag(tag, kind)`. `triggerTag` reuses the existing

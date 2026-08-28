@@ -15,7 +15,10 @@ import { asPromise, idbOpener, txDone } from '../util/idb.ts';
  */
 export const STATE_ENCODING = 1;
 
-/** A save's state record: the compressed snapshot, opaque to this layer. (`<ArrayBuffer>`: a plain `Uint8Array` could sit on a `SharedArrayBuffer`, which `Blob` refuses.) */
+/**
+ * A save's state record: the compressed snapshot, opaque to this layer. (`<ArrayBuffer>`: a plain
+ * `Uint8Array` could sit on a `SharedArrayBuffer`, which `Blob` refuses.)
+ */
 export interface StoredState {
   id: string;
   encoding: number;
@@ -32,7 +35,10 @@ export interface SaveStoreBackend {
   /** `undefined` when no save has this id. */
   readMeta(id: string): Promise<unknown>;
   readState(id: string): Promise<StoredState | undefined>;
-  /** Writes both records in one transaction — all or nothing, so a quota failure can't leave an orphan meta. */
+  /**
+   * Writes both records in one transaction — all or nothing, so a quota failure can't leave an
+   * orphan meta.
+   */
   putSave(meta: unknown, state: StoredState): Promise<void>;
   /** Meta only — a rename must not rewrite the state bytes. */
   putMeta(meta: unknown): Promise<void>;
@@ -121,7 +127,10 @@ export function bytesToBase64(bytes: Uint8Array<ArrayBuffer>): string {
   return btoa(binary);
 }
 
-/** Throws on text that isn't base64 — an import feeds user files through here, and the caller turns the throw into its refusal. */
+/**
+ * Throws on text that isn't base64 — an import feeds user files through here, and the caller turns
+ * the throw into its refusal.
+ */
 export function base64ToBytes(text: string): Uint8Array<ArrayBuffer> {
   const binary = atob(text);
   const bytes = new Uint8Array(binary.length);

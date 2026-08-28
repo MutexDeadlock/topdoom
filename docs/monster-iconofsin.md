@@ -1,10 +1,11 @@
 # The Icon of Sin
 
-`src/game/monsters/iconofsin.ts`, `src/game/things/tables.ts`, `src/game/things.ts`, `src/game/specials.ts`
+`src/game/monsters/iconofsin.ts`, `src/game/things/tables.ts`, `src/game/things.ts`,
+`src/game/specials.ts`
 
 MAP30's boss: the spitter that launches spawn cubes, the cubes themselves, and the brain's death.
-Separate from docs/monster-ai.md because none of it goes through `MONSTER_STATS` or `stepMonsterAI` —
-the eye, the targets and the brain are all inert `MONSTER_TYPES` entries that `IconOfSin` drives
+Separate from docs/monster-ai.md because none of it goes through `MONSTER_STATS` or `stepMonsterAI`
+— the eye, the targets and the brain are all inert `MONSTER_TYPES` entries that `IconOfSin` drives
 itself.
 
 Three doomednums drive it. **Nothing about it is gated on the map's name** — vanilla's only gate is
@@ -20,13 +21,13 @@ inert `IconOfSin` whose `update` returns immediately.
 - **89, `MT_BOSSSPIT`** — the invisible eye that does the spitting.
 - **87, `MT_BOSSTARGET`** — the spawn spots cubes fly to.
 
-87 and 89 are `MF_NOBLOCKMAP|MF_NOSECTOR` with no sprite, so both stay out of `THING_SPRITES` and are
-read straight off `map.things`, the same way `SpecialsController.findTeleportDestination` reads
+87 and 89 are `MF_NOBLOCKMAP|MF_NOSECTOR` with no sprite, so both stay out of `THING_SPRITES` and
+are read straight off `map.things`, the same way `SpecialsController.findTeleportDestination` reads
 teleport landings.
 
 The sequence, all timings off `info.c`'s `states[]`: the eye wakes (`eyeNotices`, below), collects
-every type-87 thing into `braintargets` in map order and shouts `bossit`. 181 tics later it
-spits its first cube, then one every 150 tics, cycling `braintargeton` round-robin through the spots.
+every type-87 thing into `braintargets` in map order and shouts `bossit`. 181 tics later it spits
+its first cube, then one every 150 tics, cycling `braintargeton` round-robin through the spots.
 `A_BrainSpit`'s `easy` toggle is reproduced: on skills 1-2 (vanilla's `sk_baby`/`sk_easy`) every
 other spit is skipped, halving the rate.
 
@@ -40,38 +41,38 @@ mapper happened to give a thing that draws nothing is not worth reproducing.
 
 **The sight origin must be `MT_BOSSSPIT`'s own, not a player-shaped one.** `hasLineOfSight` lifts
 whatever `z` it is handed by `player.ts`'s `SIGHT_EYE_HEIGHT`, which is the right approximation
-everywhere else in the game. The eye is 32 tall standing on a floor at 384 under a ceiling at 416, so that lift
-sights it from 426 — *above its own ceiling*, with the wedge out of the slot pinched shut against
-almost the whole arena. `SHOOTER_SIGHT_Z` (`height - (height >> 2)`, `P_CheckSight`'s own
-`sightzstart`) minus that lift cancels it back out and puts the origin at 408, inside the slot.
+everywhere else in the game. The eye is 32 tall standing on a floor at 384 under a ceiling at 416,
+so that lift sights it from 426 — *above its own ceiling*, with the wedge out of the slot pinched
+shut against almost the whole arena. `SHOOTER_SIGHT_Z` (`height - (height >> 2)`, `P_CheckSight`'s
+own `sightzstart`) minus that lift cancels it back out and puts the origin at 408, inside the slot.
 
 The difference is the entire boss fight, measured on MAP30: from 426 the eye sees only the northern
-half of the pit, so it woke on sound or on a player riding a lift up to slot height. From 408 it sees
-the map's one teleport landing (2880, 352) and 12 of the 13 spawn spots, i.e. it wakes the moment the
-player arrives, which is what vanilla does.
+half of the pit, so it woke on sound or on a player riding a lift up to slot height. From 408 it
+sees the map's one teleport landing (2880, 352) and 12 of the 13 spawn spots, i.e. it wakes the
+moment the player arrives, which is what vanilla does.
 
 ## The spawn cube
 
 `MT_SPAWNSHOT` flies at 350 units/sec (`mobjinfo.speed` of 10 per tic) and is
 `MF_NOBLOCKMAP|MF_NOCLIP|MF_NOGRAVITY` — it passes through all geometry and collides with nothing.
 That is exactly why it is **not** a `ProjectileLayer` projectile: that layer exists to resolve
-wall-blocked flight and damage, and a cube does neither. It is a local record in `monsters/iconofsin.ts` with its
-own `SpriteAnimator`, drawn through `SpriteFxLayer.batchSprite` the same way `ProjectileLayer.update`
-draws a missile, at full light — its `BOSF` frames carry vanilla's fullbright bit, which
-`FULLBRIGHT_FRAMES` applies (docs/sprites.md § Fullbright frames). `boscub` replays once per four-frame
-cycle, since `A_SpawnSound` sits on the looping `S_SPAWN1` alone.
+wall-blocked flight and damage, and a cube does neither. It is a local record in
+`monsters/iconofsin.ts` with its own `SpriteAnimator`, drawn through `SpriteFxLayer.batchSprite` the
+same way `ProjectileLayer.update` draws a missile, at full light — its `BOSF` frames carry vanilla's
+fullbright bit, which `FULLBRIGHT_FRAMES` applies (docs/sprites.md § Fullbright frames). `boscub`
+replays once per four-frame cycle, since `A_SpawnSound` sits on the looping `S_SPAWN1` alone.
 
 One divergence: vanilla decides arrival by a launch-time tic countdown computed from the **y** delta
 only (`(targ->y - mo->y) / momy / state tics`), a quirk that happens to work on MAP30's layout.
 Flying to the target point and arriving when the distance runs out is equivalent there and robust
 anywhere else.
 
-On arrival, `A_SpawnFly` spawns the `MT_SPAWNFIRE` puff (`FIRE A`-`H`), plays `telept`, and rolls one
-`P_Random()` against `things/tables.ts`'s `SPAWN_CUBE_MONSTERS` — eleven ordered upper bounds summing to
-exactly 256, transcribed from `p_enemy.c`'s if/else chain. The weights are deliberately lopsided (an
-imp is 50/256, an arch-vile 2/256) and stay that way. `ThingLayer.spawnMonster` creates the monster
-already alerted and **telefrags** whatever was standing there, so a spawn spot is lethal to stand on
-— docs/death.md § Telefrag.
+On arrival, `A_SpawnFly` spawns the `MT_SPAWNFIRE` puff (`FIRE A`-`H`), plays `telept`, and rolls
+one `P_Random()` against `things/tables.ts`'s `SPAWN_CUBE_MONSTERS` — eleven ordered upper bounds
+summing to exactly 256, transcribed from `p_enemy.c`'s if/else chain. The weights are deliberately
+lopsided (an imp is 50/256, an arch-vile 2/256) and stay that way. `ThingLayer.spawnMonster` creates
+the monster already alerted and **telefrags** whatever was standing there, so a spawn spot is lethal
+to stand on — docs/death.md § Telefrag.
 
 A cube-spawned monster increments `stats.kills` when killed but never `stats.totalKills`, which is
 fixed at load by the map-thing loop. **Kills can exceed 100% on MAP30**; that is vanilla, whose

@@ -6,7 +6,10 @@
 import type { Wad } from './wad.ts';
 import { readPalette } from './graphics.ts';
 
-/** A colormap lump is 34 rows of 256 palette indexes: 32 light levels, the invulnerability row, and one spare. */
+/**
+ * A colormap lump is 34 rows of 256 palette indexes: 32 light levels, the invulnerability row, and
+ * one spare.
+ */
 const COLORMAP_SIZE = 34 * 256;
 
 /** A per-channel multiplier against the plain palette, 0-1 each. */

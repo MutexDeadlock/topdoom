@@ -146,7 +146,10 @@ const LOOK_INTERVAL = 0.3;
  */
 const NIGHTMARE_RESPAWN_DELAY = 12 * 35 * DOOM_TIC;
 
-/** `leveltime & 31` — how often `P_MobjThinker` rolls for a respawn at all, level-wide rather than per corpse. */
+/**
+ * `leveltime & 31` — how often `P_MobjThinker` rolls for a respawn at all, level-wide rather than
+ * per corpse.
+ */
 const RESPAWN_ROLL_INTERVAL_TICS = 32;
 
 /**
@@ -235,11 +238,8 @@ function enterDeathPose(p: PosedThing, deadTime = 0): boolean {
  * single-owner property: the live trigger and the restore path must not derive the same pose two
  * ways.
  *
- * Entered when the attack *starts*, never when its shot lands: with a real windup
- * (`AttackStats.startDelaySeconds`) the firing frame is mid-pose, so a pose started at the shot
- * would show the wind-up frame under the bullet. The caller's `anim.posing` guard is what keeps a
- * volley's later shots inside the pose they are already in — where vanilla's own proportions
- * (`attackPoseFrameSeconds`) put each of them on its firing frame.
+ * Entered when the attack *starts*, never when its shot lands; the caller's `anim.posing` guard is
+ * what keeps a volley's later shots inside the pose they are already in.
  * docs/sprites.md § Pain, and attack/pain poses.
  */
 function enterAttackPose(p: PosedThing, kind: 'melee' | 'ranged', spanSeconds: number, elapsed = 0): void {
@@ -250,7 +250,10 @@ function enterAttackPose(p: PosedThing, kind: 'melee' | 'ranged', spanSeconds: n
   if (elapsed > 0) p.anim.advance(elapsed, false);
 }
 
-/** `litColor(255)`, hoisted: the tint every `FULLBRIGHT_FRAMES` sprite draws at, whatever its sector. */
+/**
+ * `litColor(255)`, hoisted: the tint every `FULLBRIGHT_FRAMES` sprite draws at, whatever its
+ * sector.
+ */
 const LIT_FULL = litColor(255);
 
 /** One static upright plane per map THING whose type is a known, visible sprite. */
@@ -547,10 +550,8 @@ export function buildThingSprites(
    * its reaction delay, so it makes its own first missile-range roll on its
    * next ordinary chase call.
    *
-   * The 20-skull cap is **level-wide**, as in vanilla, not per-elemental. If
-   * the spawn point has no room this does nothing — vanilla spawns the mobj and
-   * immediately kills it with 10000 damage, which is observably identical.
-   * docs/monster-ai.md § The pain elemental: spawning a lost soul.
+   * The 20-skull cap is **level-wide**, as in vanilla, not per-elemental; a spawn point with no
+   * room does nothing. docs/monster-ai.md § The pain elemental: spawning a lost soul.
    */
   function spawnLostSoul(origin: PosedThing, angleRad: number): void {
     let skullCount = 0;
@@ -580,7 +581,10 @@ export function buildThingSprites(
     });
   }
 
-  /** `P_TeleportMove`'s stomp — contract at `ThingLayer.telefragAt`, rules in docs/death.md § Telefrag. */
+  /**
+   * `P_TeleportMove`'s stomp — contract at `ThingLayer.telefragAt`, rules in docs/death.md §
+   * Telefrag.
+   */
   function telefragAt(at: Pos2, radius: number, stomps: boolean, moverId?: number): boolean {
     for (const q of posed) {
       if (q.id === moverId || q.dead || q.hidden) continue;
@@ -603,13 +607,10 @@ export function buildThingSprites(
    * fire puff, the `telept` sound and the *player* half of the telefrag, which
    * this layer holds no reference to.
    *
-   * Vanilla ends `A_SpawnFly` with `P_TeleportMove`, which is what makes a
-   * spawn spot lethal to stand on: everything overlapping the new body takes
-   * `TELEFRAG_DAMAGE` rather than the spawn being blocked or skipped. That is
-   * also why there's no `positionBlocked` guard here, unlike `spawnLostSoul`.
-   * The stomp is unconditional because the cube only ever flies on the one map
-   * where `PIT_StompThing` lets a monster stomp anyway.
-   * docs/monster-iconofsin.md § The spawn cube.
+   * Vanilla ends `A_SpawnFly` with `P_TeleportMove`, so a spawn spot is lethal to stand on rather
+   * than blocked — which is why there is no `positionBlocked` guard here, unlike `spawnLostSoul`.
+   * The stomp is unconditional: the cube only ever flies on the one map where `PIT_StompThing` lets
+   * a monster stomp anyway. docs/monster-iconofsin.md § The spawn cube.
    */
   function spawnMonster(type: number, at: Pos3, angleRad: number): PosedThing | null {
     const spawned = pushThing(type, at, (angleRad * 180) / Math.PI, { alerted: true });
@@ -877,13 +878,10 @@ export function buildThingSprites(
    * The walk lines a thing crossed while the *world* moved it — a conveyor's
    * carry, or a knockback — as opposed to walking there itself.
    *
-   * `P_CrossSpecialLine` fires for **every** non-player mobj that moves, not
-   * just monsters: its only exclusions are the six projectile types (which are
-   * not `PosedThing`s here at all — game/projectiles.ts owns those), and the
-   * "monster only" numbers mean "not the player" rather than "monsters only".
-   * So a barrel or a decoration riding a Boom conveyor over a line teleporter
-   * really does teleport, which is exactly what BOOMEDIT's 252/253 and 216/217
-   * belts are built to demonstrate. docs/specials.md § Scrollers and conveyors.
+   * `P_CrossSpecialLine` fires for **every** non-player mobj that moves, not just monsters — its
+   * only exclusions are the six projectile types, which `game/projectiles.ts` owns and which are
+   * not `PosedThing`s at all. So a barrel or a decoration riding a conveyor over a line teleporter
+   * really does teleport. docs/specials.md § Scrollers and conveyors.
    */
   function crossAfterPush(
     p: PosedThing,
@@ -1091,13 +1089,10 @@ export function buildThingSprites(
   }
 
   /**
-   * A killable thing still in its exact spawn state needs no `MonsterFields`
-   * block at all — the restore's own `pushThing` recreates those defaults.
-   * Alerted, damaged, moving or dead all disqualify; `lookTimer` and
-   * `homingBias` are deliberately ignored, so a never-disturbed monster costs
-   * nothing beyond its `ThingState`, which together with the sparse block is
-   * what keeps a 10k-monster map's save inside the localStorage quota
-   * (docs/savegames.md § Storage).
+   * A killable thing still in its exact spawn state needs no `MonsterFields` block at all — the
+   * restore's own `pushThing` recreates those defaults. Alerted, damaged, moving or dead all
+   * disqualify; `lookTimer` and `homingBias` are deliberately ignored. docs/savegames.md § Storage
+   * is what this buys.
    *
    * `spawnHealthFor` reads a table a DEHACKED patch can move, which stays safe because a save
    * made with one requires that file back (`patchWads`) — so the baseline on restore is the same
@@ -1523,7 +1518,8 @@ export function buildThingSprites(
           p.hidden = true;
           p.visible = false;
           // Vanilla P_TouchSpecialThing's `if (special->flags & MF_COUNTITEM) player->itemcount++`.
-          // A monster drop never matches (ammo/weapons aren't COUNTITEM), so no `dropped` guard needed.
+          // A monster drop never matches (ammo/weapons aren't COUNTITEM), so no `dropped` guard
+          // needed.
           if (COUNTITEM_TYPES.has(p.type)) stats.items++;
         }
       }

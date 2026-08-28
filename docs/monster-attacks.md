@@ -57,20 +57,20 @@ The lost soul, arch-vile and pain elemental's ranged attacks are none of these �
 as radian offsets from straight-at-target. `P_SpawnMissile` computes its own angle at the target and
 ignores the firing actor's facing, so only the *second* missile of `A_FatAttack1`/`2` is deflected
 (`+FATSPREAD` / `-2*FATSPREAD`) while `A_FatAttack3`'s pair straddles the aim line evenly
-(`±FATSPREAD/2`) — a real vanilla asymmetry, not a transcription slip. Every other projectile monster
-omits the field and fires one straight shot per burst entry.
+(`±FATSPREAD/2`) — a real vanilla asymmetry, not a transcription slip. Every other projectile
+monster omits the field and fires one straight shot per burst entry.
 
 **Every monster bullet is thrown off-aim by `MONSTER_BULLET_SPREAD_DEG` — the single most
 load-bearing number in how dangerous the gunners are.** `A_PosAttack`, `A_SPosAttack` and
 `A_CPosAttack` each add `(P_Random()-P_Random())<<20` BAM to the firing angle, ±255/4096 of a full
-turn (±22.4°), triangular — two consecutive entries of the random table subtracted
-(docs/random.md § The triangular draw). It is *not* an accuracy nicety: it is the only thing that makes range
-matter against a hitscanner, and against the 32-unit player box it costs vanilla's gunners roughly
-65% of their shots at 128 units, 80% at 512 and 90% at 1024. Shipping without it — which this
-engine did — made every monster bullet a guaranteed hit at any distance, so a spider mastermind
-(`pellets: 3` × `shots: 2` per 9 tics) dealt ~210 dmg/s where vanilla deals ~32 at 512 units. The
-top-down camera makes this worse than it would be in vanilla, not better: it opens fights at ranges
-where vanilla's gunners are missing four shots in five.
+turn (±22.4°), triangular — two consecutive entries of the random table subtracted (docs/random.md §
+The triangular draw). It is *not* an accuracy nicety: it is the only thing that makes range matter
+against a hitscanner, and against the 32-unit player box it costs vanilla's gunners roughly 65% of
+their shots at 128 units, 80% at 512 and 90% at 1024. Shipping without it — which this engine did —
+made every monster bullet a guaranteed hit at any distance, so a spider mastermind (`pellets: 3` ×
+`shots: 2` per 9 tics) dealt ~210 dmg/s where vanilla deals ~32 at 512 units. The top-down camera
+makes this worse than it would be in vanilla, not better: it opens fights at ranges where vanilla's
+gunners are missing four shots in five.
 
 **A monster's hitscan bolt tests the player's own box**, through the same
 `PIT_AddThingIntercepts` diagonal every monster gets (`util/geom.ts: traceHitsBox`,
@@ -78,11 +78,11 @@ docs/combat.md § How a shot deals damage) — so the player's 32-unit-wide box 
 head-on and 45 on the diagonal, exactly as vanilla's does.
 
 It used to add a `MONSTER_BULLET_SLOP` of 4 to the player's radius, standing a circle of radius 20
-in for that box because 20 presents the same *average* target (`perimeter/π ≈ 40.7`). The average was
-right and the hit rate landed within 1.5% of vanilla's from 64 to 1536 units; testing the real box
-keeps that average and gets the per-angle distribution right too, so the constant is gone. (It had
-earlier been 12, covering a supposedly stale firing angle. The angle isn't stale — `A_FaceTarget`
-re-runs on every burst shot — and the spread dwarfs a frame's worth of error anyway.)
+in for that box because 20 presents the same *average* target (`perimeter/π ≈ 40.7`). The average
+was right and the hit rate landed within 1.5% of vanilla's from 64 to 1536 units; testing the real
+box keeps that average and gets the per-angle distribution right too, so the constant is gone. (It
+had earlier been 12, covering a supposedly stale firing angle. The angle isn't stale —
+`A_FaceTarget` re-runs on every burst shot — and the spread dwarfs a frame's worth of error anyway.)
 
 **Flight speed is that missile type's own `mobjinfo.speed`.** For a missile that field is plain
 fracunits *per tic*, so the conversion is `× 35`: imp/cacodemon 350, baron/hell knight 525, mancubus
@@ -198,11 +198,11 @@ detonation this removes.
 `P_ZMovement`'s floor/ceiling hit is **not** decided here — it is `ProjectileLayer.update`'s
 `hitGround`, applied uniformly to every monster missile (see below). A homing one needs it most: its
 height *eases* toward a target that can sit on a very different floor while its `x`/`y` curves over
-terrain `shotPath` never re-checked, so easing toward a lower target while passing over higher ground
-would sink the sprite into that floor. It used to be decided twice, once here and once there, and the
-copies disagreed on whether the far wall's shoot special still fires — it must not, since a missile
-stopped by the floor never reached that wall. Since this branch never accumulates `traveled` itself,
-`hitGround` and the wall check are the only things that end a homing flight short of a body.
+terrain `shotPath` never re-checked, so easing toward a lower target while passing over higher
+ground would sink the sprite into that floor. It used to be decided twice, once here and once there,
+and the copies disagreed on whether the far wall's shoot special still fires — it must not, since a
+missile stopped by the floor never reached that wall. Since this branch never accumulates `traveled`
+itself, `hitGround` and the wall check are the only things that end a homing flight short of a body.
 
 **A guided missile trails smoke; an unguided one doesn't** — the wiki's "the homing missiles can be
 distinguished by a gray smoke trail" is the entire visible tell, and gating it on
@@ -214,19 +214,19 @@ smoke from the same sprite, so reproducing only one loses nothing.
 
 ## Monster projectiles in flight
 
-A monster projectile reuses the same `Projectile`/`ProjectileLayer.update` machinery the player's own
-rocket/plasma/BFG shots use, distinguished by a non-null `sourceId` (with the doomednum along as
+A monster projectile reuses the same `Projectile`/`ProjectileLayer.update` machinery the player's
+own rocket/plasma/BFG shots use, distinguished by a non-null `sourceId` (with the doomednum along as
 `sourceType` for the species check). Arrival is re-checked every frame against the player's *live*
 position (`playerStruckBy`) and every other living body it might clip (`bodyStruckBy`,
 `sameSpecies`-gated), so stepping behind cover or outrunning a slower fireball actually works. Both
-run over `spritefx/defs.ts`'s `stepTouchesBody`, and **the player's own missiles now take the identical
-path** — docs/combat.md § How a projectile finds its target covers the shared contact rule, the
-per-missile `PROJECTILE_RADIUS` and why the step is swept rather than sampled.
+run over `spritefx/defs.ts`'s `stepTouchesBody`, and **the player's own missiles now take the
+identical path** — docs/combat.md § How a projectile finds its target covers the shared contact
+rule, the per-missile `PROJECTILE_RADIUS` and why the step is swept rather than sampled.
 
 **What `sourceId` still decides is only what a hit *means***, not whether it happens: who the damage
-is attributed to for infighting, whether `sameSpecies` can fizzle the shot, and whether the player is
-a candidate at all. Two other rules stay monster-only for their own reasons — `hitGround` below, and
-`triggerShot`'s `byMonster` flag.
+is attributed to for infighting, whether `sameSpecies` can fizzle the shot, and whether the player
+is a candidate at all. Two other rules stay monster-only for their own reasons — `hitGround` below,
+and `triggerShot`'s `byMonster` flag.
 
 **The player's hit box is vanilla's, not a generous stand-in.** Contact is the player's own 16-unit
 box plus the missile's radius (22 units for the imp/cacodemon/baron/mancubus fireballs, 27 for a
@@ -236,25 +236,24 @@ from `tryPickup`'s window check, i.e. **twice the cross-section** and a band tal
 fireball passing 100 units over the player's head still hit them. That is what "monster projectiles
 collide too loosely" was: fireballs detonating a body-width away and reading as hits you dodged.
 
-**The target sets the missile's slope and nothing else; the flight ends at a wall.** `P_SpawnMissile`
-fixes `momx`/`momy`/`momz` at launch — from `(dest->z - source->z)` over the launch distance — and
-the thing then flies on under its own momentum until `P_XYMovement`, `P_ZMovement` or
+**The target sets the missile's slope and nothing else; the flight ends at a wall.**
+`P_SpawnMissile` fixes `momx`/`momy`/`momz` at launch — from `(dest->z - source->z)` over the launch
+distance — and the thing then flies on under its own momentum until `P_XYMovement`, `P_ZMovement` or
 `PIT_CheckThing` stops it. So `spawnMonsterShot` passes the target to `shotPath` for the slope and
 `World.mapSpan` for the distance — the two are separate parameters precisely so this can be said
 (see docs/combat.md § shotPath). **A missile has no range budget**: `MISSILERANGE` is
 `P_LineAttack`'s bound on a bullet, and lending it to missiles too made them burst in mid-air 2048
 units out, which is what NUTS.WAD's arachnotrons showed. Letting the target set both, as this engine
-earlier did, made `maxDist` the
-launch-time distance to the player, so **every missile burst exactly where the player had been
-standing when it was fired**, whether or not they were still there. With a cyberdemon's
-`{radius: 128, damage: 128}` splash that is a rocket you cannot dodge — it reads as homing, and as
-rockets going off in empty floor space, which is precisely what it was doing. Only the revenant's
-`MT_TRACER` actually homes (`AttackStats.projectile.homing`, `advanceHoming`).
+earlier did, made `maxDist` the launch-time distance to the player, so **every missile burst exactly
+where the player had been standing when it was fired**, whether or not they were still there. With a
+cyberdemon's `{radius: 128, damage: 128}` splash that is a rocket you cannot dodge — it reads as
+homing, and as rockets going off in empty floor space, which is precisely what it was doing. Only
+the revenant's `MT_TRACER` actually homes (`AttackStats.projectile.homing`, `advanceHoming`).
 
 **The player's own missiles follow the same rule now**, for the same reason and out of the same
 `P_SpawnMissile` reading: `spawnPlayerShot` sets `maxDist` from `shotPath`'s wall, never from the
-locked-on target's distance. Ending a rocket or a BFG ball at where a monster stood at launch is what
-had them bursting in empty air a body-length short of a monster that had walked on.
+locked-on target's distance. Ending a rocket or a BFG ball at where a monster stood at launch is
+what had them bursting in empty air a body-length short of a monster that had walked on.
 
 Because the slope now outlives the aim that set it, a monster missile also explodes on meeting the
 floor or ceiling (`ProjectileLayer.update`'s `hitGround`, vanilla's `P_ZMovement`), which is how a

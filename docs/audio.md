@@ -1,8 +1,8 @@
 # Sound
 
-`src/audio/sfx.ts`, `src/audio/audio.ts`, `src/wad/sound.ts`, plus the emitter calls in
-`game.ts`, `game/things.ts`, `game/monsters/ai.ts`, `game/monsters/attacks.ts`, `game/specials.ts`, `game/weapons.ts`,
-`game/projectiles.ts` and `game/spritefx.ts`
+`src/audio/sfx.ts`, `src/audio/audio.ts`, `src/wad/sound.ts`, plus the emitter calls in `game.ts`,
+`game/things.ts`, `game/monsters/ai.ts`, `game/monsters/attacks.ts`, `game/specials.ts`,
+`game/weapons.ts`, `game/projectiles.ts` and `game/spritefx.ts`
 
 Every sound but one comes out of the loaded WAD (the exception is the secret chime, § Player and
 pickups), and every sound's *timing and choice* comes from
@@ -88,11 +88,11 @@ player's, as in vanilla.
 
 ## Who plays what
 
-Sound is the one effect systems raise directly (through `SoundEmitter`) instead of reporting
-back for someone else to realize, unlike damage (`ThingLayer.update`'s attacks, applied by
-`MonsterAttacks`) or shots (`WeaponSystem.fire`'s `Shot[]`). Two reasons: it changes no game state, and several of
-vanilla's sounds sit at moments that have no observable event to hang off — `A_Chase`'s
-3-in-256 idle grunt is inside the chase call, not a result of it. `SILENT` is the no-op
+Sound is the one effect systems raise directly (through `SoundEmitter`) instead of reporting back
+for someone else to realize, unlike damage (`ThingLayer.update`'s attacks, applied by
+`MonsterAttacks`) or shots (`WeaponSystem.fire`'s `Shot[]`). Two reasons: it changes no game state,
+and several of vanilla's sounds sit at moments that have no observable event to hang off —
+`A_Chase`'s 3-in-256 idle grunt is inside the chase call, not a result of it. `SILENT` is the no-op
 emitter, so a headless script or a browser with no `AudioContext` needs no branches.
 
 | Where | Plays |

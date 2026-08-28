@@ -11,7 +11,7 @@ import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './things/doomednums.ts';
 import type { Placement, Pos2, Pos3 } from '../types.ts';
 
-/** Vanilla DOOM value, in map units. */
+/** The tallest step a body walks up without jumping, in map units — vanilla's `MAXSTEPSIZE`. */
 export const MAX_STEP_UP = 24;
 
 /**
@@ -42,7 +42,10 @@ const ST_VERTICAL = 1;
 const ST_POSITIVE = 2;
 const ST_NEGATIVE = 3;
 
-/** Vanilla's `BOXTOP`…`BOXRIGHT` (`p_local.h`), the order `World.lineBox` packs each linedef's bounds in. */
+/**
+ * Vanilla's `BOXTOP`…`BOXRIGHT` (`p_local.h`), the order `World.lineBox` packs each linedef's
+ * bounds in.
+ */
 const BOX_TOP = 0;
 const BOX_BOTTOM = 1;
 const BOX_LEFT = 2;
@@ -120,9 +123,15 @@ export class World {
   private gridMinY: number;
   private gridCols: number;
   private gridRows: number;
-  /** Adjacency list for `noiseAlert`'s flood, precomputed once instead of rescanning every linedef per visited sector. */
+  /**
+   * Adjacency list for `noiseAlert`'s flood, precomputed once instead of rescanning every linedef
+   * per visited sector.
+   */
   private sectorNeighbors: { neighbor: number; lineIndex: number }[][] = [];
-  /** Sectors a noise has ever reached (`noiseAlert`) — never cleared, matching vanilla's own `soundtarget`, which persists for the rest of the level once set. */
+  /**
+   * Sectors a noise has ever reached (`noiseAlert`) — never cleared, matching vanilla's own
+   * `soundtarget`, which persists for the rest of the level once set.
+   */
   private soundAlertedSectors = new Set<Sector>();
   /**
    * Per-linedef "last query that already visited this line" stamps, so
@@ -144,7 +153,10 @@ export class World {
    * See docs/movement.md § Collision.
    */
   private lineBox: Float64Array;
-  /** Each linedef's own direction — vanilla's `ld->dx`/`ld->dy`, what `P_HitSlideLine` projects a refused move onto. */
+  /**
+   * Each linedef's own direction — vanilla's `ld->dx`/`ld->dy`, what `P_HitSlideLine` projects a
+   * refused move onto.
+   */
   readonly lineDX: Float64Array;
   readonly lineDY: Float64Array;
   private lineV1X: Float64Array;
@@ -154,8 +166,8 @@ export class World {
   /**
    * Every linedef's endpoints extended `WALL_OVERLAP` past both ends, packed x1,y1,x2,y2 per line:
    * what every ray-vs-wall crossing test in the engine actually tests against. Precomputed with
-   * the rest because vertexes never move, so the normalize-and-extend it replaces was pure
-   * repeated work — per candidate line, per shot, per projectile step and per fog sight ray.
+   * the rest because vertexes never move: normalizing and extending at the test site would repeat
+   * the same work per candidate line, per shot, per projectile step and per fog sight ray.
    */
   readonly lineOverlapEnds: Float64Array;
 
@@ -350,7 +362,10 @@ export class World {
     }
   }
 
-  /** Every sector's two-sided-line neighbors, for `noiseAlert`'s flood — built once rather than rescanning all linedefs per visited sector. */
+  /**
+   * Every sector's two-sided-line neighbors, for `noiseAlert`'s flood — built once rather than
+   * rescanning all linedefs per visited sector.
+   */
   private buildSectorNeighbors(): void {
     this.sectorNeighbors = this.map.sectors.map(() => []);
     for (let li = 0; li < this.map.linedefs.length; li++) {
@@ -445,11 +460,9 @@ export class World {
    * passes through, each visited at most once. The visitor may return `true`
    * to stop the walk early, the way a `break` would.
    *
-   * This is the query a **sightline** wants; `linesNear`'s radius box is
-   * O(dist²) in cells for a thin line and was the engine's biggest single cost
-   * on a crowded map. Allocation-free by design (stamp array, callback), since
-   * it runs thousands of times per frame. docs/world.md § hasLineOfSight
-   * covers why this is both sound and necessary.
+   * This is the query a **sightline** wants, and it is allocation-free by design (stamp array,
+   * callback) since it runs thousands of times per frame. Why this rather than `linesNear`'s radius
+   * box: docs/world.md § hasLineOfSight.
    *
    * Returns what the walk cost — cells stepped plus lines handed to `visit` — so a caller that
    * budgets its traces can charge the real figure instead of estimating one from the cell size,
@@ -620,7 +633,10 @@ export class World {
     return (reject[pnum >> 3] & (1 << (pnum & 7))) !== 0;
   }
 
-  /** The sector a subsector belongs to, for a caller that already has the subsector `sectorAt` would descend the BSP to find. */
+  /**
+   * The sector a subsector belongs to, for a caller that already has the subsector `sectorAt` would
+   * descend the BSP to find.
+   */
   sectorOfSubsector(subsector: number): Sector | undefined {
     return this.map.sectors[this.sectorIndexOfSubsector(subsector)];
   }
@@ -775,7 +791,9 @@ export class World {
     return this.sectorAt(x, y)?.ceilHeight ?? 0;
   }
 
-  /** `nextSectorIndices` as the `Sector` objects themselves, which the neighbor queries below want. */
+  /**
+   * `nextSectorIndices` as the `Sector` objects themselves, which the neighbor queries below want.
+   */
   private neighborSectors(sectorIndex: number): Sector[] {
     const out: Sector[] = [];
     for (const n of nextSectorIndices(this.map, sectorIndex)) {
@@ -863,7 +881,10 @@ export class World {
     return result;
   }
 
-  /** Boom `P_FindNextHighestCeiling` — the generalized ceilings' `CtoNnC` with the direction bit up. Same no-candidate fallback shape as `nextHigherFloor`. */
+  /**
+   * Boom `P_FindNextHighestCeiling` — the generalized ceilings' `CtoNnC` with the direction bit up.
+   * Same no-candidate fallback shape as `nextHigherFloor`.
+   */
   nextHigherCeiling(sectorIndex: number): number {
     const sector = this.map.sectors[sectorIndex];
     const base = sector?.ceilHeight ?? 0;
@@ -1364,12 +1385,10 @@ export class World {
    * (`p_map.c`), which is the player's alone: a monster gets `P_Move`'s
    * all-or-nothing step instead (`game/monsters/ai.ts`).
    *
-   * Three of the box's four corners are traced to find the nearest wall, the move
-   * commits to just short of it, and the remainder is projected onto that wall's
-   * own direction and retried, `SLIDE_ATTEMPTS` walls deep. When no trace finds a
-   * wall — which includes a solid *body* refusing the move, since a thing produces
-   * no line intercept — it falls to vanilla's `stairstep`: one axis at a time, Y
-   * before X. See docs/movement.md § slideMove.
+   * Three of the box's four corners are traced, the move commits to just short of the nearest wall,
+   * and the remainder is projected onto that wall and retried, `SLIDE_ATTEMPTS` deep. When no trace
+   * finds a wall — which includes a solid *body* refusing the move, since a thing produces no line
+   * intercept — it falls to vanilla's `stairstep`. See docs/movement.md § slideMove.
    */
   slideMove(
     from: Pos3,
@@ -1551,7 +1570,10 @@ export class World {
     let nearestT = 1;
     let blockingLine: number | null = null;
 
-    /** This line's crossing point along the shot, or null — off `World.lineOverlapEnds`, which carries the corner-leak extension documented on `WALL_OVERLAP`. */
+    /**
+     * This line's crossing point along the shot, or null — off `World.lineOverlapEnds`, which
+     * carries the corner-leak extension documented on `WALL_OVERLAP`.
+     */
     const crossingT = (i: number): number | null => {
       const e = i * 4;
       const ends = this.lineOverlapEnds;
@@ -1661,8 +1683,7 @@ const SIGHT_MAX_HEIGHT_SAMPLES = 32;
  * function of the map that happens to be expensive to recompute. Keyed by the
  * map object rather than held on `World` because the renderer reaches it
  * without one — `mapmesh.ts` injects `linesOf` rather than importing `World`,
- * so `render/` keeps no import edge into `game/`. Construction order does not
- * force this: `World` reads only static topology and could be built first.
+ * so `render/` keeps no import edge into `game/`.
  * See docs/world.md § Neighbor-height queries.
  */
 const sectorLineIndexes = new WeakMap<DoomMap, number[][]>();
@@ -1830,18 +1851,12 @@ export interface ThingBlocker extends Pos3 {
  * the summed radii — the same shape the line tests use, and vanilla's own
  * `PIT_CheckThing` (docs/monster-ai.md § Movement).
  *
- * `from`, when given, is where the mover currently stands: a blocker already
- * overlapped there only refuses the move if it presses further in, which is
- * what lets two touching bodies work free instead of freezing forever
- * (docs/movement.md § Collision). A blocker not yet touched at `from` is
- * unaffected — you still can't walk into a thing you weren't already
- * overlapping.
- *
- * Unless infinite-tall actors is on, the mover's own `z`/`height` span
- * additionally passes a blocker it clears entirely, over or under —
- * docs/movement.md § Collision. A span of `ANY_HEIGHT` at either end has
- * nothing to clear with, so it keeps vanilla's blocking whatever the setting
- * says; one `Number.isFinite` over the sum covers both.
+ * `from`, when given, is where the mover currently stands: a blocker already overlapped there only
+ * refuses the move if it presses further in. A blocker not yet touched at `from` is unaffected.
+ * Unless infinite-tall actors is on, the mover's own `z`/`height` span additionally passes a
+ * blocker it clears entirely; a span of `ANY_HEIGHT` at either end has nothing to clear with, so
+ * one `Number.isFinite` over the sum keeps vanilla's blocking whatever the setting says.
+ * Both rules: docs/movement.md § Collision.
  */
 function blockedByThings(
   x: number,
@@ -1938,7 +1953,9 @@ function openingRefuses(openTop: number, openBottom: number, z: number, zFinite:
 
 
 
-/** How many walls one `slideMove` projects against before giving up — vanilla's own `hitcount == 3`. */
+/**
+ * How many walls one `slideMove` projects against before giving up — vanilla's own `hitcount == 3`.
+ */
 const SLIDE_ATTEMPTS = 3;
 
 /**
@@ -1960,7 +1977,9 @@ const slideHit = { frac: Infinity, line: -1 };
 
 
 
-/** Vanilla's `MISSILERANGE` (`32*64`), what every *monster* hitscan attack passes to `P_LineAttack`. */
+/**
+ * Vanilla's `MISSILERANGE` (`32*64`), what every *monster* hitscan attack passes to `P_LineAttack`.
+ */
 export const WEAPON_RANGE = 2048;
 
 /**
@@ -1996,15 +2015,24 @@ export function playerShotRange(
 export interface ShotLock {
   /** Half the target's real `mobjinfo.height` (`MonsterRef.height`); `target.z` is its centre. */
   halfHeight: number;
-  /** `A_FireShotgun2`'s per-pellet `bulletslope + ((P_Random()-P_Random())<<5)`, added after the wedge clamps. */
+  /**
+   * `A_FireShotgun2`'s per-pellet `bulletslope + ((P_Random()-P_Random())<<5)`, added after the
+   * wedge clamps.
+   */
   slopeOffset: number;
 }
 
 
-/** Where a shot actually ends up: the point it stopped at, the height it was at there, and how far that was. */
+/**
+ * Where a shot actually ends up: the point it stopped at, the height it was at there, and how far
+ * that was.
+ */
 export interface ShotPath extends Pos3 {
   dist: number;
-  /** The line that actually stopped it short (a wall, a shut door), or null if it ran out its range unobstructed — the shoot-triggered specials (`game/specials.ts: triggerShot`) key off this. */
+  /**
+   * The line that actually stopped it short (a wall, a shut door), or null if it ran out its range
+   * unobstructed — the shoot-triggered specials (`game/specials.ts: triggerShot`) key off this.
+   */
   lineIndex: number | null;
 }
 

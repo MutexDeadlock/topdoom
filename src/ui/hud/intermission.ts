@@ -230,14 +230,18 @@ export class Intermission {
     this.drawStatLine(this.itemsCanvas, 'Items', stats.items, stats.totalItems);
     this.drawStatLine(this.secretsCanvas, 'Secrets', stats.secrets, stats.totalSecrets);
     this.drawFace(this.faceFor(stats));
-    // Always yellow, records included — the green `NEW BEST TIME!` line below is what announces one.
+    // Always yellow, records included — the green `NEW BEST TIME!` line below is what announces
+    // one.
     this.drawTimeLine(this.timeCanvas, 'Your time', formatClock(stats.elapsedSeconds), this.yellowFont);
     this.drawParLine(parSeconds, stats.elapsedSeconds);
     this.drawBestLines(record);
     this.root.classList.remove('hidden');
   }
 
-  /** Drops the popup. Like the other overlays, the element outlives any one `Game`, so `dispose` clears it too. */
+  /**
+   * Drops the popup. Like the other overlays, the element outlives any one `Game`, so `dispose`
+   * clears it too.
+   */
   clear(): void {
     this.root.classList.add('hidden');
   }

@@ -38,7 +38,10 @@ export interface LibraryDescriptor {
   /** The support verdict. Optional only for a memo row written before the field existed, which
       `describeAll` re-reads rather than listing unknown — docs/wad.md § Will it run? */
   support?: WadSupport;
-  /** `hashBytes` content id, present once something has needed the file's identity — `library.ts: ensureWadId`. */
+  /**
+   * `hashBytes` content id, present once something has needed the file's identity —
+   * `library.ts: ensureWadId`.
+   */
   id?: string;
 }
 
@@ -63,7 +66,10 @@ async function attempt<T>(work: () => Promise<T>, fallback: T): Promise<T> {
   }
 }
 
-/** The remembered folder, or null when there is none — including on browsers with no handle to store. */
+/**
+ * The remembered folder, or null when there is none — including on browsers with no handle to
+ * store.
+ */
 export function readRootHandle(): Promise<FileSystemDirectoryHandle | null> {
   return attempt(async () => {
     const db = await openDb();
@@ -84,7 +90,10 @@ export function writeRootHandle(handle: FileSystemDirectoryHandle): Promise<void
   }, undefined);
 }
 
-/** Forgets the folder *and* its scan memo — picking a different root must not inherit the old one's rows. */
+/**
+ * Forgets the folder *and* its scan memo — picking a different root must not inherit the old one's
+ * rows.
+ */
 export function clearRoot(): Promise<void> {
   return attempt(async () => {
     const tx = (await openDb()).transaction([ROOT_STORE, DESCRIPTOR_STORE], 'readwrite');
@@ -135,7 +144,10 @@ export function writeDescriptor(descriptor: LibraryDescriptor): Promise<void> {
   }, undefined);
 }
 
-/** Validated on read with explicit defaults, the `besttimes.ts` shape: a half-written row degrades rather than throws. */
+/**
+ * Validated on read with explicit defaults, the `besttimes.ts` shape: a half-written row degrades
+ * rather than throws.
+ */
 function asDescriptor(value: unknown): LibraryDescriptor | null {
   if (typeof value !== 'object' || value === null) return null;
   const v = value as Record<string, unknown>;

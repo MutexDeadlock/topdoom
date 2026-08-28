@@ -19,29 +19,29 @@ the cursor: the mouse is the aiming hand, so a drag that swings the world undern
 moves the aim point as a side effect of turning. The freed right button is now a menu-bound action
 instead (docs/menu.md § Right mouse button).
 
-`viewerAngleDeg` (`yawDeg - 90`) is the DOOM-space bearing from the followed point to the camera, and
-is what sprite rendering and player movement both key off — at the default `yawDeg = 0` it's `-90`,
-matching the old fixed south-facing camera exactly, so nothing downstream needed a special case for
-"not yet orbited."
+`viewerAngleDeg` (`yawDeg - 90`) is the DOOM-space bearing from the followed point to the camera,
+and is what sprite rendering and player movement both key off — at the default `yawDeg = 0` it's
+`-90`, matching the old fixed south-facing camera exactly, so nothing downstream needed a special
+case for "not yet orbited."
 
 A `stepYaw` call (Q/E) queues its step as a `targetYawDeg` for `tick` to animate `yawDeg` towards
 (`YAW_STEP_SMOOTH_RATE`) rather than jumping. Plain assignment (`camera.yawDeg = ...`, whose only
 remaining caller is the instant reorient on spawn/teleport) still jumps immediately: the `yawDeg`
 setter keeps `targetYawDeg` in lockstep so nothing left over from a prior Q/E animates after an
 instant set. **Nothing may assign `yawDeg` unconditionally every frame** — even a no-op `-= 0` snaps
-`targetYawDeg` back to the current (still mid-animation) value and cancels a Q/E step after one frame
-of smoothing, which is what forced the removed drag handler to guard on a nonzero delta.
+`targetYawDeg` back to the current (still mid-animation) value and cancels a Q/E step after one
+frame of smoothing, which is what forced the removed drag handler to guard on a nonzero delta.
 
 All of that input handling lives in `TopDownCamera.applyYawInput`, which `game.ts` calls once a
 **tic**. Holding Q/E auto-repeats the same 45° `stepYaw` every `KEY_YAW_REPEAT_INTERVAL` —
 `qHoldTime`/`eHoldTime` accumulate `dt` while `Input.held` is true and fire+reset once the interval
 is reached, alongside the immediate step fired on `Input.pressed`. The interval is tuned to roughly
-the time one step's smoothing takes to settle, so a hold reads as continuous rotation made of chained
-steps.
+the time one step's smoothing takes to settle, so a hold reads as continuous rotation made of
+chained steps.
 
-Movement (`Player.update`'s `forwardDeg`, passed as `camera.viewerAngleDeg + 180`) is camera-relative
-rather than DOOM-axis-relative: `W` always moves the player away from the camera *on screen*,
-regardless of orbit. `game.ts` recomputes this every tic from the live camera angle.
+Movement (`Player.update`'s `forwardDeg`, passed as `camera.viewerAngleDeg + 180`) is
+camera-relative rather than DOOM-axis-relative: `W` always moves the player away from the camera *on
+screen*, regardless of orbit. `game.ts` recomputes this every tic from the live camera angle.
 
 ## The camera is simulation state
 
@@ -59,38 +59,39 @@ Both would otherwise be functions of how many times the render loop had smoothed
 framerate. Feel is unchanged: both smoothers are `1 - exp(-rate * dt)`, framerate-independent by
 construction, so sampling at 35 Hz and interpolating traces the same curve.
 
-Two angles come out of this, and mixing them up is the easy mistake. `viewerAngleDeg` is **tic-exact**
-and is what the simulation reads; `viewAngleDeg` is the interpolated pose actually drawn, and is what
-billboards must orient to — using the tic-exact one there leaves every sprite a fraction of a yaw snap
-out of line with the walls behind it. docs/frameloop.md § Interpolation.
+Two angles come out of this, and mixing them up is the easy mistake. `viewerAngleDeg` is
+**tic-exact** and is what the simulation reads; `viewAngleDeg` is the interpolated pose actually
+drawn, and is what billboards must orient to — using the tic-exact one there leaves every sprite a
+fraction of a yaw snap out of line with the walls behind it. docs/frameloop.md § Interpolation.
 
 **The camera outlives the level**, since it belongs to the `Viewport` and a load only replaces the
 `Game` — so the follow point's exponential smoother still holds the *outgoing* level's position when
-the next one starts. `loadMapByIndex` therefore ends the player's placement with `snapTo`, which puts
-the smoothed point, the interpolation source and the `THREE` camera itself on the new player position
-at once; without it a level change or a save restore opens with the camera gliding in from wherever
-the last level left it. It poses the `THREE` camera immediately rather than leaving that to the next
-`applyToCamera` because two paths render without one (the pause loop's `stillFrame`, and
+the next one starts. `loadMapByIndex` therefore ends the player's placement with `snapTo`, which
+puts the smoothed point, the interpolation source and the `THREE` camera itself on the new player
+position at once; without it a level change or a save restore opens with the camera gliding in from
+wherever the last level left it. It poses the `THREE` camera immediately rather than leaving that to
+the next `applyToCamera` because two paths render without one (the pause loop's `stillFrame`, and
 `captureThumbnail`). The yaw has had this since the beginning — the `yawDeg` setter is the same
 collapse for the orbit angle — which is why `snapTo` is called *after* whichever branch set the yaw.
 
-**A teleport is the same discontinuity** and takes the same pair, in the same order (docs/specials.md
-§ Teleporters). It used to snap only the yaw, which left the camera flying to the landing spot over
-roughly a third of a second while the player was already there and shooting. What still glides after
-either snap is the aim lead alone — `tick` re-applies it to the fresh target on the very next tic —
-which is bounded by `maxLead` and is the intended follow-the-cursor feel rather than a leftover.
+**A teleport is the same discontinuity** and takes the same pair, in the same order
+(docs/specials.md § Teleporters). It used to snap only the yaw, which left the camera flying to the
+landing spot over roughly a third of a second while the player was already there and shooting. What
+still glides after either snap is the aim lead alone — `tick` re-applies it to the fresh target on
+the very next tic — which is bounded by `MAX_AIM_LEAD` and is the intended follow-the-cursor feel
+rather than a leftover.
 
 ## Aim lead
 
 The follow point is nudged `aimLead` (0.18) of the way from the player toward the cursor, capped at
-`maxLead` 220 units so the player never leaves the screen. **What it leads toward is always the
-cursor's own aim-plane point (`pointerToPlane`), never what auto-aim locked onto**, and the two are
-not the same place: the lock returns the monster's anchor, which for a billboard under the pointer
-sits somewhere else entirely than where that pointer meets the plane. Feeding `tick` the lock made
-the view lurch every time the cursor crossed a monster and again when it left — motion the player
-never asked for, from a system that is supposed to be invisible. `game.ts: updateLivingPlayer`
-therefore returns the plane point specifically, while `Player.angle` and the shot keep the lock
-(docs/combat.md § Auto-aim).
+`MAX_AIM_LEAD` (220 units) so the player never leaves the screen. **What it leads toward is always
+the cursor's own aim-plane point (`pointerToPlane`), never what auto-aim locked onto**, and the two
+are not the same place: the lock returns the monster's anchor, which for a billboard under the
+pointer sits somewhere else entirely than where that pointer meets the plane. Feeding `tick` the
+lock made the view lurch every time the cursor crossed a monster and again when it left — motion the
+player never asked for, from a system that is supposed to be invisible.
+`game.ts: updateLivingPlayer` therefore returns the plane point specifically, while `Player.angle`
+and the shot keep the lock (docs/combat.md § Auto-aim).
 
 **The aim plane sits at `TopDownCamera.followHeight`, not at the player's own `z`.** The two are the
 same height once the follow smoother has caught up — the camera is handed `eyeZ` and the plane sits
@@ -244,8 +245,8 @@ returns how far off it stands, and the framing takes that less `OCCLUDER_STANDOF
 **The floor is a floor, not the answer**, and the difference is the whole point. A wall at the
 player's shoulder can never be got in front of, so the framing stops at 250 and accepts being read
 through a dither: EPIC.WAD MAP02 at (-4184, -2611) is that case, the player in an unlit side room
-behind one wall, unreadable at 400u and plain at 250u. A wall half a level off costs almost nothing —
-EPIC.WAD MAP05 at (3248, -5361) stands in open sand with a tower ring 561 units out, and coming to
+behind one wall, unreadable at 400u and plain at 250u. A wall half a level off costs almost nothing
+— EPIC.WAD MAP05 at (3248, -5361) stands in open sand with a tower ring 561 units out, and coming to
 505 clears it while a flat 250u cap threw away a third of the view for no reason anyone standing
 there could see. That asymmetry is why one ray returning a *distance* beats the same ray returning a
 verdict; it costs nothing extra, since the crossing distances along the ray do not depend on how far

@@ -12,7 +12,9 @@ export type SupportLevel = 'ok' | 'partial' | 'broken';
 /** Every reason a file is not `ok`. `SUPPORT_ISSUES` says what each one costs and how badly. */
 export type SupportCode = 'udmf' | 'noBsp' | 'incomplete' | 'hexen' | 'dehacked';
 
-/** One reason, and the maps that raise it — empty for a file-level reason, which is only `dehacked`. */
+/**
+ * One reason, and the maps that raise it — empty for a file-level reason, which is only `dehacked`.
+ */
 export interface SupportIssue {
   code: SupportCode;
   maps: string[];
@@ -50,7 +52,9 @@ export const SUPPORT_ISSUES: Record<SupportCode, { level: Exclude<SupportLevel, 
 
 const SUPPORT_ORDER = Object.keys(SUPPORT_ISSUES) as SupportCode[];
 
-/** How bad the worst of them is — the glyph, the colour and the tooltip's headline all key off this. */
+/**
+ * How bad the worst of them is — the glyph, the colour and the tooltip's headline all key off this.
+ */
 export function supportLevel(support: WadSupport): SupportLevel {
   if (support.some((issue) => SUPPORT_ISSUES[issue.code].level === 'broken')) return 'broken';
   return support.length > 0 ? 'partial' : 'ok';
@@ -106,7 +110,7 @@ export function wadSupport(maps: readonly MapLumpSummary[], dehShortfall: boolea
   for (const map of maps) {
     const broken = brokenIssue(map);
     if (broken) at(broken).push(map.name);
-    // `map.ts: readMapFormat` owns the BEHAVIOR-means-Hexen rule and its citation. Only raised on a
+    // `map.ts: loadMap` owns the BEHAVIOR-means-Hexen rule and its citation. Only raised on a
     // map that loads: a map that doesn't has already said the worse thing about itself.
     else if (map.lumps.has('BEHAVIOR')) at('hexen').push(map.name);
   }

@@ -18,22 +18,22 @@ Both signature mechanics are modeled, confirmed against `p_enemy.c`/`info.c`.
 
 ## Resurrection
 
-`A_VileChase`/`PIT_VileCheck` is `MonsterStats.resurrects`, set only for the
-arch-vile: on every chase call where it has a `movedir`, it checks one chase-call's travel ahead
-(vanilla's `viletryx`/`viletryy`) for a raisable corpse — `MF_CORPSE`, not still mid-death-animation
-(vanilla's `tics != -1`; here `deadTime` against `deathFrameCount * MONSTER_DEATH_FRAME_SECONDS`),
-within `corpse.radius + vile.radius` (vanilla's box test, not a circle), and with room to stand back
-up (`positionBlocked` against the corpse's footprint) — and raises it *instead of* taking its ordinary
+`A_VileChase`/`PIT_VileCheck` is `MonsterStats.resurrects`, set only for the arch-vile: on every
+chase call where it has a `movedir`, it checks one chase-call's travel ahead (vanilla's
+`viletryx`/`viletryy`) for a raisable corpse — `MF_CORPSE`, not still mid-death-animation (vanilla's
+`tics != -1`; here `deadTime` against `deathFrameCount * MONSTER_DEATH_FRAME_SECONDS`), within
+`corpse.radius + vile.radius` (vanilla's box test, not a circle), and with room to stand back up
+(`positionBlocked` against the corpse's footprint) — and raises it *instead of* taking its ordinary
 chase-call turn at all, matching vanilla exactly: a tic that resurrects skips the reactiontime/
 threshold aging and the melee/missile/walk decision entirely.
 
-`things/tables.ts: MONSTER_RAISE_FRAMES` is vanilla's `raisestate` table for the 14 types that have one
-(13 monsters plus the spectre, which carries its own copy of the demon's sequence)
-(every boss, the lost soul, the arch-vile itself, Commander Keen and the boss brain don't). These
-had to be pulled from `info.c` directly — reusing `MONSTER_DEATH_FRAMES` reversed was tried first
-and is wrong, since vanilla's raise sequences are hand-authored per type and share no derivation
-rule (the zombieman's 4 raise states reverse its death sequence's first four frames, the shotgun guy's
-4 reverse its *entire* sequence including the settled final frame, despite both sprites sharing the
+`things/tables.ts: MONSTER_RAISE_FRAMES` is vanilla's `raisestate` table for the 14 types that have
+one (13 monsters plus the spectre, which carries its own copy of the demon's sequence) (every boss,
+the lost soul, the arch-vile itself, Commander Keen and the boss brain don't). These had to be
+pulled from `info.c` directly — reusing `MONSTER_DEATH_FRAMES` reversed was tried first and is
+wrong, since vanilla's raise sequences are hand-authored per type and share no derivation rule (the
+zombieman's 4 raise states reverse its death sequence's first four frames, the shotgun guy's 4
+reverse its *entire* sequence including the settled final frame, despite both sprites sharing the
 identical death letter range).
 
 `ThingLayer.reviveCorpse` is the revival: full health back, immediately alerted and re-targeting the

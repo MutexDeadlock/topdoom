@@ -146,7 +146,10 @@ const PATCHED_TABLES: readonly (() => void)[] = [
   patchable(BARREL_CHAIN),
 ];
 
-/** Every patchable `Set` — the flag sets plus the one the frame walker writes — as arrays, since `structuredClone` is not used on them. */
+/**
+ * Every patchable `Set` — the flag sets plus the one the frame walker writes — as arrays, since
+ * `structuredClone` is not used on them.
+ */
 const PATCHED_SETS: readonly Set<number>[] = [...FLAG_SETS.map(([set]) => set), MONSTER_CORPSE_VANISHES];
 const PRISTINE_SETS = PATCHED_SETS.map((set) => [...set]);
 
@@ -165,7 +168,9 @@ export function thingStatsPatched(): boolean {
 
 let patchedThings = false;
 
-/** Empties a record and refills it from a clone, so the pristine copy is never handed to a mutator. */
+/**
+ * Empties a record and refills it from a clone, so the pristine copy is never handed to a mutator.
+ */
 function restore<T>(table: Record<number | string, T>, from: Record<number | string, T>): void {
   for (const key of Object.keys(table)) delete table[key];
   Object.assign(table, structuredClone(from));
@@ -629,7 +634,7 @@ function shotAttacksFor(chain: AttackStats, actions: readonly string[]): AttackS
 }
 
 /**
- * The `AttackStats` a repointed chain now carries: a copy of the attack the action's own type
+ * The `AttackStats` a repointed chain carries: a copy of the attack the action's own type
  * fires in vanilla (`ATTACK_ACTION_SOURCES`), or null where the chain fires nothing at all.
  *
  * Two fallbacks, both deliberate. An action this bridge doesn't name — MBF's own, or one whose

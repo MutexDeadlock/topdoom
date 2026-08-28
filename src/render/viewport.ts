@@ -11,7 +11,10 @@ export class Viewport {
   readonly renderer: THREE.WebGLRenderer;
   readonly camera: TopDownCamera;
   readonly input: Input;
-  /** GPU time for the profiler overlay, measured around the render call — see docs/menu.md § Profiling overlay. */
+  /**
+   * GPU time for the profiler overlay, measured around the render call — see docs/menu.md §
+   * Profiling overlay.
+   */
   readonly gpuTimer: GpuTimer;
 
   constructor(container: HTMLElement) {
@@ -21,10 +24,10 @@ export class Viewport {
     const pixelRatio = Math.min(window.devicePixelRatio, 2);
     // MSAA only where the pixel ratio is not already supersampling. At a ratio of 2 there are four
     // device pixels per CSS pixel before MSAA adds a sample, and the only thing it can still smooth
-    // is a geometry silhouette: the textures are point-sampled (`NearestFilter`, `render/textures.ts`)
-    // and the occlusion fade discards whole fragments, so neither gets anything from a coverage mask.
-    // It is not a small saving — 38% of the frame's GPU time, measured on an integrated GPU at every
-    // ratio. docs/render.md § What a frame costs.
+    // is a geometry silhouette: the textures are point-sampled (`NearestFilter`,
+    // `render/textures.ts`) and the occlusion fade discards whole fragments, so neither gets
+    // anything from a coverage mask. It is not a small saving — 38% of the frame's GPU time,
+    // measured on an integrated GPU at every ratio. docs/render.md § What a frame costs.
     this.renderer = new THREE.WebGLRenderer({ antialias: pixelRatio < 2, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(pixelRatio);
     this.renderer.setSize(window.innerWidth, window.innerHeight);
@@ -38,7 +41,8 @@ export class Viewport {
     this.renderer.toneMapping = THREE.LinearToneMapping;
     container.appendChild(this.renderer.domElement);
 
-    // three has been WebGL2-only since r163, so the context is one whatever the declared union says.
+    // three has been WebGL2-only since r163, so the context is one whatever the declared union
+    // says.
     this.gpuTimer = new GpuTimer(this.renderer.getContext() as WebGL2RenderingContext);
     this.camera = new TopDownCamera(window.innerWidth / window.innerHeight);
     this.input = new Input(this.renderer.domElement);

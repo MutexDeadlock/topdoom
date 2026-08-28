@@ -30,7 +30,7 @@ const DOOM2_MUSIC = [
 /**
  * The intermission's and finale's tracks. Held as `mus_*` mnemonics, like every other row in this
  * file, so they resolve through `musicLumpName` and a BEX `[MUSIC]` redirect reaches them too —
- * as literal `D_*` lump names they were the one path that silently ignored one.
+ * as literal `D_*` lump names they would be the one path that silently ignores one.
  */
 const INTERMISSION_MUSIC = 'inter';
 const INTERMISSION_MUSIC_COMMERCIAL = 'dm2int';
@@ -68,7 +68,10 @@ const COMMERCIAL_MAP = /^MAP(\d\d)$/;
  */
 const MUSIC_LUMP_OVERRIDES = new Map<string, string>();
 
-/** The lump a `mus_*` mnemonic resolves to — `i_sound.c`'s `sprintf(buf, "d_%s", …)`, unless patched. */
+/**
+ * The lump a `mus_*` mnemonic resolves to — `i_sound.c`'s `sprintf(buf, "d_%s", …)`, unless
+ * patched.
+ */
 function musicLumpName(mnemonic: string): string {
   return MUSIC_LUMP_OVERRIDES.get(mnemonic) ?? `D_${mnemonic.toUpperCase()}`;
 }
@@ -79,7 +82,10 @@ export function setMusicLump(mnemonic: string, lump: string): void {
   MUSIC_LUMP_OVERRIDES.set(mnemonic, upper.startsWith('D_') ? upper : `D_${upper}`);
 }
 
-/** Drops every redirect, before a new patch is applied. docs/dehacked.md § Applying: reset, then patch. */
+/**
+ * Drops every redirect, before a new patch is applied. docs/dehacked.md § Applying: reset, then
+ * patch.
+ */
 export function resetMusicLumps(): void {
   MUSIC_LUMP_OVERRIDES.clear();
 }

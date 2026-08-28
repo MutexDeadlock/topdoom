@@ -329,16 +329,16 @@ player's own `PLAYER_*` letters are constants; a pain, attack or raise chain is 
 own sprite even if its states name another (`playOnce` takes no sprite — only death does). A
 weapon's bob, raise and lower chains have no sink either — nothing here draws a gun.
 
-**A `Frame` is classified by the state it names.** A world state applies, and so does a **fire-chain**
-state: the 40-odd states from each weapon's `atkstate` to the `A_ReFire` that closes it are exactly
-this engine's fire rates (docs/weapons.md § Fire rates), so a patch retuning a gun by editing its
-durations lands. Every other psprite state — the ones `p_pspr.c` steps between `S_LIGHTDONE` and
-`S_BFGFLASH2` — is `noTarget`: a muzzle flash (`isFlashState`, by `statenum_t` name because the
-super shotgun's flash draws the gun's own `SHT2` lump) has nothing here to flash, and a bob, raise
-or lower state nothing to draw. `fireChainStates` (`dehacked/states.ts`) is what splits the two, and
-it lives beside the data because the classifier and the walker must not disagree about where a fire
-chain ends. freedoom2's seven `Frame` records are five fullbright bits on firing frames and two
-super-shotgun flash durations, which report.
+**A `Frame` is classified by the state it names.** A world state applies, and so does a
+**fire-chain** state: the 40-odd states from each weapon's `atkstate` to the `A_ReFire` that closes
+it are exactly this engine's fire rates (docs/weapons.md § Fire rates), so a patch retuning a gun by
+editing its durations lands. Every other psprite state — the ones `p_pspr.c` steps between
+`S_LIGHTDONE` and `S_BFGFLASH2` — is `noTarget`: a muzzle flash (`isFlashState`, by `statenum_t`
+name because the super shotgun's flash draws the gun's own `SHT2` lump) has nothing here to flash,
+and a bob, raise or lower state nothing to draw. `fireChainStates` (`dehacked/states.ts`) is what
+splits the two, and it lives beside the data because the classifier and the walker must not disagree
+about where a fire chain ends. freedoom2's seven `Frame` records are five fullbright bits on firing
+frames and two super-shotgun flash durations, which report.
 
 **`[CODEPTR]` bodies are field lines.** `Frame 185 = A_PosAttack` carries an `=`, and a `Word N`
 candidate with one is never a record header — reading it as one opened an empty `Frame` record per
@@ -643,12 +643,12 @@ from `d_englsh.h`, and `lockedLine` resolves a `LockRule` to one.
 sentences addressed to the player, with no format tokens and no third-person victim to convert.
 
 **The color words survive a patch** because they are found rather than composed.
-`ui/hud/message.ts: lockedLineMessage` used to build `['You need a ', blue, ' key to open this door']`
-as three runs, which is precisely why `PD_*` could not be honored: a patch writes one string and
-there was no seam in it for the colored fragment. Now the finished line is split on whole color
-words — `blue`, `red`, `yellow` in their key colors, `green` in `ARM1A0`'s green for a patch that
-names a color DOOM has no key for — so a rewritten line still colors correctly, and one that names
-no color simply draws in the message's own yellow.
+`ui/hud/message.ts: lockedLineMessage` used to build
+`['You need a ', blue, ' key to open this door']` as three runs, which is precisely why `PD_*` could
+not be honored: a patch writes one string and there was no seam in it for the colored fragment. Now
+the finished line is split on whole color words — `blue`, `red`, `yellow` in their key colors,
+`green` in `ARM1A0`'s green for a patch that names a color DOOM has no key for — so a rewritten line
+still colors correctly, and one that names no color simply draws in the message's own yellow.
 
 **Why the table is in `src/game/` and not beside the module that draws it.** `dehacked/apply.ts`
 writes it, and nothing under `src/game/` may import `src/ui/`. The mirror of that constraint is that
@@ -758,11 +758,12 @@ owning its own derivations. `audio/sfx.ts`, `audio/music/tables.ts` and `wad/spr
 same for their lump redirects.
 
 The patch has to land **before `buildThingSprites`**, which resolves the stat table once per level
-and snapshots each thing's radius and height at spawn, before the `SoundBank`, which pre-decodes
-on construction, and before the `SpriteBank`, which indexes `[SPRITES]` renames as it is built. It also has to land before the session's `createInventory()`, which reads `Misc`'s
-`Initial Health` and `Initial Bullets` off `LIMITS` — which is why `Game.inventory` is assigned in
-the constructor **body** and not as a field initializer: those run first, and did, so the starting
-kit came from whatever the previous session left behind.
+and snapshots each thing's radius and height at spawn, before the `SoundBank`, which pre-decodes on
+construction, and before the `SpriteBank`, which indexes `[SPRITES]` renames as it is built. It also
+has to land before the session's `createInventory()`, which reads `Misc`'s `Initial Health` and
+`Initial Bullets` off `LIMITS` — which is why `Game.inventory` is assigned in the constructor
+**body** and not as a field initializer: those run first, and did, so the starting kit came from
+whatever the previous session left behind.
 
 ## Savegames and patched tables
 

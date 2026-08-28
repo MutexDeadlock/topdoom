@@ -63,7 +63,9 @@ export interface DehThingEdit {
    * `MOBJ_INFO` row from it, so the row's own fields are not copied in here. */
   index: number;
   health?: number;
-  /** Map units per second, already through the walker/missile unit rules (docs/dehacked.md § Units). */
+  /**
+   * Map units per second, already through the walker/missile unit rules (docs/dehacked.md § Units).
+   */
   speed?: number;
   radius?: number;
   height?: number;
@@ -92,7 +94,9 @@ export interface DehThingEdit {
   states?: Partial<Record<StatePointer, number>>;
 }
 
-/** The eight `mobjinfo` state pointers a `Thing` record can repoint, by the name `MOBJ_STATES` uses. */
+/**
+ * The eight `mobjinfo` state pointers a `Thing` record can repoint, by the name `MOBJ_STATES` uses.
+ */
 export type StatePointer = 'spawn' | 'see' | 'pain' | 'melee' | 'missile' | 'death' | 'xdeath' | 'raise';
 
 /**
@@ -135,7 +139,7 @@ export interface DehPointerEdit {
 export interface DehAmmoEdit {
   /** 0-based `ammotype_t`: slot 2 is cells and slot 3 is rockets. */
   index: number;
-  /** Vanilla's `maxammo[]`. */
+  /** The most of this ammo type a player may carry — vanilla's `maxammo[]`. */
   maxAmmo?: number;
   /** Vanilla's `clipammo[]` — what one clip is worth, which every ammo grant multiplies by. */
   perAmmo?: number;
@@ -149,7 +153,10 @@ export interface DehAmmoEdit {
 export interface DehWeaponEdit {
   /** 0-based `weapontype_t`. */
   index: number;
-  /** 0-based `ammotype_t`, or 5 (`am_noammo`) for a weapon that draws none; -1 where the record set none. */
+  /**
+   * 0-based `ammotype_t`, or 5 (`am_noammo`) for a weapon that draws none; -1 where the record set
+   * none.
+   */
   ammoType: number;
   /**
    * The five state pointers, as `states[]` indices, by the name `WEAPON_STATES` uses rather than
@@ -161,7 +168,10 @@ export interface DehWeaponEdit {
   states?: Partial<Record<WeaponStatePointer, number>>;
 }
 
-/** The five `weaponinfo` state pointers a `Weapon` record can repoint, by the name `WEAPON_STATES` uses. */
+/**
+ * The five `weaponinfo` state pointers a `Weapon` record can repoint, by the name `WEAPON_STATES`
+ * uses.
+ */
 export type WeaponStatePointer = 'up' | 'down' | 'ready' | 'atk' | 'flash';
 
 /** Everything a parsed patch carries, plus the report of what it asked for that didn't land. */
@@ -173,10 +183,13 @@ export interface DehPatch {
   pointerEdits: readonly DehPointerEdit[];
   /**
    * BEX `[SPRITES]` and vanilla `Text 4 4` alike: a pristine `sprnames[]` name, lowercased, to the
-   * four-character name its lumps should resolve through instead. docs/dehacked.md § Sprite renames.
+   * four-character name its lumps should resolve through instead. docs/dehacked.md § Sprite
+   * renames.
    */
   spriteRenames: ReadonlyMap<string, string>;
-  /** `Misc`'s values, keyed by the lowercased `deh_misc[]` name — `MISC_SINKS` says where each goes. */
+  /**
+   * `Misc`'s values, keyed by the lowercased `deh_misc[]` name — `MISC_SINKS` says where each goes.
+   */
   misc: Readonly<Record<string, number>>;
   /** BEX `[SOUNDS]`: sfx name to the lump it should resolve to. */
   soundLumps: ReadonlyMap<string, string>;

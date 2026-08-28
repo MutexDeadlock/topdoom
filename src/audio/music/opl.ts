@@ -16,19 +16,11 @@ export const OPL_RATE = 49716;
 const CHANNELS_PER_BANK = 9;
 
 /**
- * Two-operator channels. **Deliberately not the hardware's 18** (the OPL3's two
- * banks of nine; the YM3812 had one). Four banks are instantiated instead,
- * because 18 is where a busy score starts losing notes: DOOM 2's own tracks
- * peak at exactly 18 — `D_RUNNIN` sits right on the ceiling — and the MIDI
- * tracks modern PWADs ship, written for a synth with no such limit, need up to
- * 29 and lose 8% of their notes at 18. The same reasoning as `CHANNELS` = 32
- * in `audio/audio.ts`, and it costs nothing: an idle channel is skipped in
- * `render`, so a track pays for the notes it actually plays.
- *
- * Nothing above this cares — `channelRegisters` addresses the extra banks the
- * way the OPL3 addresses its second — and no id-era track can tell the
- * difference, since none of them ever asks for a 19th voice.
- * See docs/music.md § The chip.
+ * Two-operator channels. **Deliberately not the hardware's 18** (the OPL3's two banks of nine):
+ * four banks are instantiated instead, because 18 is where a busy score starts losing notes — the
+ * same reasoning as `CHANNELS` = 32 in `audio/audio.ts`, and it costs nothing, since an idle
+ * channel is skipped in `render`. Nothing above this cares: `channelRegisters` addresses the extra
+ * banks the way the OPL3 addresses its second. See docs/music.md § The chip.
  */
 export const OPL_CHANNELS = 36;
 
@@ -168,7 +160,9 @@ const KSL_DIVISOR = [Infinity, 2, 4, 1];
 
 type EnvelopeState = 'off' | 'attack' | 'decay' | 'sustain' | 'release';
 
-/** One of a channel's two operators: a phase generator, an envelope, and the levels feeding both. */
+/**
+ * One of a channel's two operators: a phase generator, an envelope, and the levels feeding both.
+ */
 class Operator {
   // Register 0x20.
   tremolo = false;
@@ -201,7 +195,9 @@ class Operator {
   sustainAtten = 0;
   fixedAtten = 0;
 
-  /** This operator's last output, and the one before it — the pair the chip averages for feedback. */
+  /**
+   * This operator's last output, and the one before it — the pair the chip averages for feedback.
+   */
   out = 0;
   prevOut = 0;
 }
@@ -648,7 +644,9 @@ function triangle(phase: number): number {
   return phase < 0.5 ? phase * 2 : 2 - phase * 2;
 }
 
-/** Per-sample multiplier that takes the envelope from silence to full over the attack's own time. */
+/**
+ * Per-sample multiplier that takes the envelope from silence to full over the attack's own time.
+ */
 function attackFactor(rate: number, ksr: number, sampleRate: number): number {
   if (rate === 0) return 0;
   const samples = ATTACK_BASE * Math.pow(2, (4 - Math.min(63, rate * 4 + ksr)) / 4) * sampleRate;
@@ -656,7 +654,9 @@ function attackFactor(rate: number, ksr: number, sampleRate: number): number {
   return Math.pow(1 / (MAX_ATTEN + 1), 1 / Math.max(1, samples));
 }
 
-/** Per-sample attenuation step of a decay or release, both of which sweep the full range linearly. */
+/**
+ * Per-sample attenuation step of a decay or release, both of which sweep the full range linearly.
+ */
 function sweepStep(rate: number, ksr: number, sampleRate: number): number {
   if (rate === 0) return 0;
   const samples = DECAY_BASE * Math.pow(2, (4 - Math.min(63, rate * 4 + ksr)) / 4) * sampleRate;

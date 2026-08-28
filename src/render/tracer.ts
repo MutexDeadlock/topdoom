@@ -127,7 +127,10 @@ export class Tracer {
     this.line = new THREE.Line(geometry, materialFor(color));
   }
 
-  /** Advances the blink and the tail; returns false once the tracer's lifetime is over and it should be removed. */
+  /**
+   * Advances the blink and the tail; returns false once the tracer's lifetime is over and it should
+   * be removed.
+   */
   update(dt: number): boolean {
     this.elapsed += dt;
     if (this.elapsed >= TRACER_LIFETIME) return false;
@@ -160,7 +163,9 @@ export class Tracer {
     this.positions.needsUpdate = true;
   }
 
-  /** Drops this tracer's own geometry. The material is shared and outlives it — see `materialFor`. */
+  /**
+   * Drops this tracer's own geometry. The material is shared and outlives it — see `materialFor`.
+   */
   dispose(): void {
     this.line.geometry.dispose();
   }

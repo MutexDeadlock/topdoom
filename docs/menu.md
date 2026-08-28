@@ -6,8 +6,8 @@
 
 The menu is plain DOM: every element is static markup in `src/ui/menu/menu.html` (pulled into the
 page by `index.html`'s `@include` list — docs/styles.md § Assembling the page), looked up by id in
-`Menu`'s field initializers, so **an id renamed in the HTML fails at construction**, not lazily. Only the WAD
-lists, the level list and the difficulty options are built in JS.
+`Menu`'s field initializers, so **an id renamed in the HTML fails at construction**, not lazily.
+Only the WAD lists, the level list and the difficulty options are built in JS.
 
 ## One screen, two jobs
 
@@ -23,9 +23,10 @@ lists, the level list and the difficulty options are built in JS.
   the tab they were on.
 - All tab panels are stacked in **one CSS grid cell** and hidden with `.inactive` (`visibility`),
   not the global `.hidden` (`display: none`), so the panel's height is always the tallest of them
-  and switching tabs doesn't resize the menu under the cursor. That is also why the Settings tab's rows are kept compact, and
-  why Level and Difficulty share a row on New Game: whatever height any tab costs, the others pay
-  too — the save lists cap themselves with the `.list` scroller for the same reason.
+  and switching tabs doesn't resize the menu under the cursor. That is also why the Settings tab's
+  rows are kept compact, and why Level and Difficulty share a row on New Game: whatever height any
+  tab costs, the others pay too — the save lists cap themselves with the `.list` scroller for the
+  same reason.
 - **A scroller inside a panel grows into height the tabs have already paid for, and never creates
   it** — it must offer a definite height while the menu measures itself, a `max-height` for the WAD
   `.list` and `height: 150px` for `.saves` (savegames.css). Otherwise the shared cell stops being a
@@ -70,10 +71,10 @@ file. Two things about it are load-bearing:
 
 - The text is a **dynamic** `import('../../../CHANGELOG?raw')`, run on first open (`loadChangelog`).
   Dynamic, because the file only grows and nobody who never opens the reader should pay for it: the
-  bundler gives it its own chunk (~12 kB, 5 kB gzipped) instead of the main one. `import` rather than
-  `fetch`, because the file lives at the repo root rather than under `public/`, so a fetch would
-  resolve in dev and 404 in a build. A failed load is reported in the panel and leaves the popup
-  unmarked as loaded, so reopening retries.
+  bundler gives it its own chunk (~12 kB, 5 kB gzipped) instead of the main one. `import` rather
+  than `fetch`, because the file lives at the repo root rather than under `public/`, so a fetch
+  would resolve in dev and 404 in a build. A failed load is reported in the panel and leaves the
+  popup unmarked as loaded, so reopening retries.
 - **`Esc` is handed off explicitly**, not raced. `main.ts`'s `Esc` listener calls
   `menu.closeTopOverlay()` first, which dismisses whichever overlay is up and reports whether there
   was one — so one `Esc` dismisses the popup and leaves the menu (and a paused level) alone. A
@@ -95,9 +96,10 @@ closing the menu can never leave it up, at `z-index: 5` **local to `#menu`'s own
 rather than a rung of `base.css`'s global ladder, dismissed by its close button, by a backdrop click
 guarded with `e.target === root`, or by `Esc`. `Close` sits beside `Apply` in the footer rather than
 in the header: both end the same visit, so they belong to the same corner — but they are **not** the
-same call (see *Ticking stages, Apply commits* below). `Esc` is **handed off explicitly** from `main.ts`, which asks
-`menu.closeTopOverlay()` before closing the menu, so one `Esc` closes one thing and the answer
-doesn't depend on listener registration order. The overlay order lives in `Menu`, not the caller.
+same call (see *Ticking stages, Apply commits* below). `Esc` is **handed off explicitly** from
+`main.ts`, which asks `menu.closeTopOverlay()` before closing the menu, so one `Esc` closes one
+thing and the answer doesn't depend on listener registration order. The overlay order lives in
+`Menu`, not the caller.
 
 What is its own:
 
@@ -133,9 +135,9 @@ What is its own:
   with it up it hands the new sources to `LibraryUi.stage`, which ticks them into the draft. That is
   the same routing `setStatus` does and for the same reason — the overlay covers `#menu`, so a
   selection made behind it is one the player never saw happen and `Close` would not undo. It covers
-  the drop target as well as `Add single WADs…`, since `#wadlibrary` nests inside the `#menu` element
-  the drop listener sits on; a file dropped *on* the open overlay is a pick in it, not a silent one
-  behind it.
+  the drop target as well as `Add single WADs…`, since `#wadlibrary` nests inside the `#menu`
+  element the drop listener sits on; a file dropped *on* the open overlay is a pick in it, not a
+  silent one behind it.
 - **Sources moving under the overlay re-bind the draft by key** — `carryDraft`, called from
   `LibraryUi.refresh` and nowhere else, which is every path by which they can move. A rescan (or a
   re-upload of a file already known) builds fresh `WadSource` objects for the same files and the
@@ -159,12 +161,12 @@ What is its own:
 - **The sidebar is three boxes, not one scroller**, and the panel's height is *definite*
   (`height: min(620px, 100%)`) rather than content-driven — so the overlay is the same size whether
   a library holds three WADs or three hundred. What the server ships is a fixed few rows and the
-  folder buttons must stay put, so only the middle box (`#wadlibrary-tree`, the player's own
-  folders — the one thing that can grow without bound) takes `overflow-y` and the leftover height.
+  folder buttons must stay put, so only the middle box (`#wadlibrary-tree`, the player's own folders
+  — the one thing that can grow without bound) takes `overflow-y` and the leftover height.
   `Dropped on the menu` rides with the server's rows: like them it is a place the player never
-  chose, and never one to scroll past their own folders to reach. **Only the two lists are framed** —
-  `#wadlibrary-controls` gets no inset panel, because those buttons act *on* the library rather than
-  being part of it and a third framed box made the sidebar read as three lists.
+  chose, and never one to scroll past their own folders to reach. **Only the two lists are framed**
+  — `#wadlibrary-controls` gets no inset panel, because those buttons act *on* the library rather
+  than being part of it and a third framed box made the sidebar read as three lists.
 - **`Change folder…` and `Forget folder` share a row**, being two halves of one decision about the
   same folder; `Add single WADs…` sits full-width under them. Both CSS rules name `.ghost`
   explicitly: `#menu button.ghost` forces `width: 100%` for a button stacked under a section, and
@@ -180,17 +182,17 @@ What is its own:
   carries both jobs a tree needs ("this is a folder", "it is open") where a separate disclosure
   triangle would have cost a second column in a sidebar this narrow. A leaf keeps the same glyph,
   dimmed and not clickable: it is still a folder, it just has nothing to open.
-- The glyph is a `<span>` inside the row button, not a nested button —
-  that would be invalid markup and would cost the row its single focusable control. Its click is
-  stopped from bubbling, so the glyph only ever folds and the label only ever selects. Collapsing a
-  folder the selection sits *under* moves the selection up to it, which costs nothing since a folder
-  already lists everything beneath it. **Both the fold test and the walk up use `parent`, never an id
-  prefix**: `library:mega` is a string prefix of `library:megawads` without being its parent. Every
-  such walk goes through `ancestors`, over a `TreeIndex` built **once per render** and threaded down.
-  Each walk used to build its own `byId` — one per row, inside a per-row `filter` — which made a
-  single render quadratic in the row count, on every keystroke in the filter box. `rootedSubtree`
-  is one pass for the same reason: it files each source under its own path and counts it against
-  every folder above it, rather than scanning `sources` once per folder.
+- The glyph is a `<span>` inside the row button, not a nested button — that would be invalid markup
+  and would cost the row its single focusable control. Its click is stopped from bubbling, so the
+  glyph only ever folds and the label only ever selects. Collapsing a folder the selection sits
+  *under* moves the selection up to it, which costs nothing since a folder already lists everything
+  beneath it. **Both the fold test and the walk up use `parent`, never an id prefix**:
+  `library:mega` is a string prefix of `library:megawads` without being its parent. Every such walk
+  goes through `ancestors`, over a `TreeIndex` built **once per render** and threaded down. Each
+  walk used to build its own `byId` — one per row, inside a per-row `filter` — which made a single
+  render quadratic in the row count, on every keystroke in the filter box. `rootedSubtree` is one
+  pass for the same reason: it files each source under its own path and counts it against every
+  folder above it, rather than scanning `sources` once per folder.
 - **The three top-level rows start open, everything below them folded.** `LibraryUi` tracks
   *expanded* ids rather than collapsed ones precisely so the default is a property of that one set:
   a collapsed-id set could not express it, since a folder the player has never touched is absent
@@ -208,14 +210,14 @@ What is its own:
 - **Every ancestor folder gets a row, even one holding no WAD directly.** A file's `folder` names
   only the folder it sits in, so a WAD at `doom/mega/scythe/` names no intermediate at all — without
   synthesizing `doom` and `doom/mega`, the deepest row is indented under a parent that isn't there
-  and has nothing to fold into. A plain sort still puts every parent first: a path is a prefix of its
-  own descendants, and `/` sorts below the characters that could extend a sibling's name.
+  and has nothing to fold into. A plain sort still puts every parent first: a path is a prefix of
+  its own descendants, and `/` sorts below the characters that could extend a sibling's name.
 - **Both of the panel's axes are fixed**: `width: 60%` of the viewport and `height: 85%` of what is
   left inside `#wadlibrary`'s own padding, so the overlay is one size whatever the library holds.
-  `width`/`height`, never `max-*` — those leave the panel sized by its content and only cap it. The sidebar takes a *share* of that (`flex: 0 0 30%`)
-  rather than a pixel basis, so the two panes keep their proportion at any window size, plus
-  `min-width: 0` — without it a long folder name's automatic minimum size overrides the basis
-  outright, and `.name` should ellipse instead.
+  `width`/`height`, never `max-*` — those leave the panel sized by its content and only cap it. The
+  sidebar takes a *share* of that (`flex: 0 0 30%`) rather than a pixel basis, so the two panes keep
+  their proportion at any window size, plus `min-width: 0` — without it a long folder name's
+  automatic minimum size overrides the basis outright, and `.name` should ellipse instead.
 - **The tree is the left pane, the files the right**, split into two panels whose **headings name
   the panel and count what is in it** — `topdoom built-in` and `Your Library`. Those headings
   replaced the container rows that used to sit above each list: a row that owns no files of its own
@@ -255,17 +257,18 @@ What is its own:
   taking the slack and the rest fixed-width and right-aligned, so sizes line up under sizes and map
   counts under map counts rather than each trailing whatever length its file name happened to be.
   `labels.ts: sourceColumns` returns the three detail values separately and `sourceColumnSpans`
-  renders them plus the support glyph, and **both lists use both** — the add-on rows on the New Game tab carry the same
-  columns, just narrower, since that panel is 620px against the overlay's 60% of the viewport. The
-  markup is shared too, not just the strings: the `meta size`/`meta content`/`meta deh`/`meta
-  support` class names the two stylesheets target have one definition, and `#wadlibrary` nests
-  inside `#menu` so its rows inherit `#menu .row` outright — `library.css` carries only the deltas.
-  So the two cannot disagree about what a file *is*, only about how much space there is to say it.
-  (`describeSource` joins the same values and is now only the game-WAD select's one-line label; the
-  support verdict is deliberately not in it, being a glyph rather than text.) The badge **leads** the fixed-width block, ahead of
-  the size: what it carries is the reason a row can't be picked, which has to be read before the
-  file's stats rather than after them. It is rendered **even when it says nothing**, or every column
-  behind it would land somewhere different on each row, which is the whole thing they exist for.
+  renders them plus the support glyph, and **both lists use both** — the add-on rows on the New Game
+  tab carry the same columns, just narrower, since that panel is 620px against the overlay's 60% of
+  the viewport. The markup is shared too, not just the strings: the
+  `meta size`/`meta content`/`meta deh`/`meta support` class names the two stylesheets target have
+  one definition, and `#wadlibrary` nests inside `#menu` so its rows inherit `#menu .row` outright —
+  `library.css` carries only the deltas. So the two cannot disagree about what a file *is*, only
+  about how much space there is to say it. (`describeSource` joins the same values and is now only
+  the game-WAD select's one-line label; the support verdict is deliberately not in it, being a glyph
+  rather than text.) The badge **leads** the fixed-width block, ahead of the size: what it carries
+  is the reason a row can't be picked, which has to be read before the file's stats rather than
+  after them. It is rendered **even when it says nothing**, or every column behind it would land
+  somewhere different on each row, which is the whole thing they exist for.
 - **The last column says whether the file will run at all** — a green tick, an amber warning or a
   red cross, with the reasons and the maps that raise them in its tooltip. The verdict itself is
   `wad/support.ts`'s and is decided when the file is *described* (docs/wad.md § Will it run?), not
@@ -294,12 +297,12 @@ What is its own:
 - **No merge-order number on a library row.** The order is a property of the set being assembled,
   which the New Game tab's add-on list owns and shows; numbering a browser row by it would rank
   files against something the browser has no say over.
-- **The filter box in the header matches folder names as well as file names** (`filterTree`, pure and
-  tested without a DOM). A row survives if its own name matches, if a folder above it matched, or if
-  it holds a matching WAD at or below it — so searching for a file still shows the folders it lives
-  in. A folder matched **by name** lists *entire* rather than having its contents filtered a second
-  time, and hands that down to everything nested inside it: asking for a folder by name is asking
-  for what's in it. Three things follow that are easy to miss:
+- **The filter box in the header matches folder names as well as file names** (`filterTree`, pure
+  and tested without a DOM). A row survives if its own name matches, if a folder above it matched,
+  or if it holds a matching WAD at or below it — so searching for a file still shows the folders it
+  lives in. A folder matched **by name** lists *entire* rather than having its contents filtered a
+  second time, and hands that down to everything nested inside it: asking for a folder by name is
+  asking for what's in it. Three things follow that are easy to miss:
   - **A filter overrides the fold state**, since a row it kept but a collapsed parent hides is a
     match the player is told about and cannot see. It reads `expanded` rather than writing it, so
     clearing the filter restores the folds intact — and the folder icons read open while it is up,
@@ -366,10 +369,9 @@ What is its own:
 
 **The Add-ons list holds the picks, not the offer.** `renderPwads` lists `selectedPwads` alone, in
 merge order — browsing is the overlay's job now, so the list on the tab is short and is no longer a
-second picker that has to agree with the first about what is compatible. Each row is checkbox ·
-name · [reason] · size · contents ·
-DEHACKED · support · `#N` · `×` — the same detail columns the overlay lists, narrower — and the two controls
-mean **different things**:
+second picker that has to agree with the first about what is compatible. Each row is checkbox · name
+· [reason] · size · contents · DEHACKED · support · `#N` · `×` — the same detail columns the overlay
+lists, narrower — and the two controls mean **different things**:
 
 - **The checkbox disables, it does not remove.** An unticked add-on keeps its row and its place in
   the order, so a mod can be switched off for one run and back on without being hunted down in the
@@ -428,29 +430,29 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   a save stores the map *lump* name, which alone can't name a level (docs/wad.md § Level names), so
   the row resolves it against the current library through `mergedMaps` and names it with the same
   `describeMap` the level select uses — `<lump>  —  <title>  —  <provider>`, so the two lists can't
-  disagree about what a level is called. The same pass reports
-  every file of the set the library can no longer supply, one line per file — matched
-  by *content id* (`resolveSaveWads`, the same call the load path makes), so a renamed WAD is not
-  reported and a file whose bytes have changed reads `Different IWAD/PWAD: …` rather than
-  `Missing IWAD/PWAD: …`, which would send the player looking for something they already
-  have. A file the load actually needs back (the game WAD, or the map's provider) is a subtle red
-  warning; the rest are the same line in amber (`.caution`), because they are still a file the save
-  was made with and no longer has — just not one that blocks the load, which is what the red says. **The line is `missingWadLabel`, not the full sentence**: every
-  line in the label column is `white-space: nowrap` with an ellipsis, so the rows keep one height
-  beside the thumbnails, and the column is only ~55 characters wide at 12px (620px menu, less the
-  thumbnail and the row's three buttons). The sentence saying what to *do* — `missingWadText` — goes
-  on that line's `title` and is what a failed Load throws into the status line, both of which have
-  the width for it (docs/savegames.md § WAD-set identity). **A row missing a *required* file greys
-  its Load button out**, the same courtesy Save and Overwrite get for a refused moment — the red
-  line beside the button is the reason, since a disabled button shows no tooltip. A row missing only
-  optional files keeps Load live, because that load works. `addFiles` re-renders the save lists as well as the WAD lists, so
-  bringing that file back clears the warning on the spot rather than on the menu's next `open` —
-  which is also why `Menu` keeps the last `inGame` it was opened with.
+  disagree about what a level is called. The same pass reports every file of the set the library can
+  no longer supply, one line per file — matched by *content id* (`resolveSaveWads`, the same call
+  the load path makes), so a renamed WAD is not reported and a file whose bytes have changed reads
+  `Different IWAD/PWAD: …` rather than `Missing IWAD/PWAD: …`, which would send the player looking
+  for something they already have. A file the load actually needs back (the game WAD, or the map's
+  provider) is a subtle red warning; the rest are the same line in amber (`.caution`), because they
+  are still a file the save was made with and no longer has — just not one that blocks the load,
+  which is what the red says. **The line is `missingWadLabel`, not the full sentence**: every line
+  in the label column is `white-space: nowrap` with an ellipsis, so the rows keep one height beside
+  the thumbnails, and the column is only ~55 characters wide at 12px (620px menu, less the thumbnail
+  and the row's three buttons). The sentence saying what to *do* — `missingWadText` — goes on that
+  line's `title` and is what a failed Load throws into the status line, both of which have the width
+  for it (docs/savegames.md § WAD-set identity). **A row missing a *required* file greys its Load
+  button out**, the same courtesy Save and Overwrite get for a refused moment — the red line beside
+  the button is the reason, since a disabled button shows no tooltip. A row missing only optional
+  files keeps Load live, because that load works. `addFiles` re-renders the save lists as well as
+  the WAD lists, so bringing that file back clears the warning on the spot rather than on the menu's
+  next `open` — which is also why `Menu` keeps the last `inGame` it was opened with.
 - **The name in each row is an `<input>`** — renaming happens in place (`renameSave`), Enter or blur
-  commits, Esc reverts and is stopped from bubbling to `main.ts`'s menu-closing handler. An untouched
-  field re-renders nothing, so a plain focus-and-blur can't pull the row out from under a click
-  heading for one of its own buttons. Nor does a *successful* rename, or a delete: both patch the
-  visible list (the input's own value, `row.remove()`) and only mark the other tab's list stale.
+  commits, Esc reverts and is stopped from bubbling to `main.ts`'s menu-closing handler. An
+  untouched field re-renders nothing, so a plain focus-and-blur can't pull the row out from under a
+  click heading for one of its own buttons. Nor does a *successful* rename, or a delete: both patch
+  the visible list (the input's own value, `row.remove()`) and only mark the other tab's list stale.
   Re-listing rebuilds every row — one thumbnail decode and one `describeSave` each — to redraw one
   string, the cost worth avoiding on the one path a player repeats. (A rename also never rewrites
   the save's state record: `renameSave` puts the meta alone.) It also means nothing may bake a
@@ -464,16 +466,15 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   Load is refused.
 - **Delete and Overwrite confirm by being held** (`hold.ts: confirmOnHold`, `HOLD_MS` — shared with
   the WAD Library's Forget, and styled by the class alone in `hold.css` so any `#menu` button can
-  wear it): a bar sweeps the
-  button and the action fires when it lands, letting go early cancels and says so in the status line.
-  An inline confirm, so the changelog stays the menu's only popup — and one gesture rather than the
-  two-click arm it replaced, which read as a broken button. The sweep is a CSS transition whose
-  duration is handed over as `--hold-time`, so the bar and the timer can't disagree; the label moves
-  into a `.label` span so the `.fill` can paint behind it, and Space/Enter held on a focused button
-  works the same way. Both are per row; Overwrite refills that save
-  from the current moment, keeping its id and its name (renaming has its own affordance). Delete and
-  download are icon-only buttons (`⤓`, `🗑︎` with
-  a text-presentation selector) with their meaning in the tooltip; Load and Overwrite are `.primary`.
+  wear it): a bar sweeps the button and the action fires when it lands, letting go early cancels and
+  says so in the status line. An inline confirm, so the changelog stays the menu's only popup — and
+  one gesture rather than the two-click arm it replaced, which read as a broken button. The sweep is
+  a CSS transition whose duration is handed over as `--hold-time`, so the bar and the timer can't
+  disagree; the label moves into a `.label` span so the `.fill` can paint behind it, and Space/Enter
+  held on a focused button works the same way. Both are per row; Overwrite refills that save from
+  the current moment, keeping its id and its name (renaming has its own affordance). Delete and
+  download are icon-only buttons (`⤓`, `🗑︎` with a text-presentation selector) with their meaning in
+  the tooltip; Load and Overwrite are `.primary`.
 - **Download** writes the save as `<map>-<date>.topdoom.json` through a temporary anchor: one
   tab-indented JSON file whose meta fields are readable and whose `state` is the stored gzip bytes,
   base64'd (`exportSave` — docs/savegames.md § Storage has the format's rules);
@@ -510,9 +511,9 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
 The lists are fed by `/wads/index.json` (docs/wad.md § The `public/wads/` manifest) plus anything
 loaded from disk. Semantics worth knowing before touching `menu.ts`:
 
-- **Game WAD** (`renderIwads`) only offers sources with `type === 'IWAD'`. A PWAD mapset can still be
-  *played* as the game WAD (dropped on the menu, or `?wad=`), but it doesn't appear in this list to
-  pick from directly.
+- **Game WAD** (`renderIwads`) only offers sources with `type === 'IWAD'`. A PWAD mapset can still
+  be *played* as the game WAD (dropped on the menu, or `?wad=`), but it doesn't appear in this list
+  to pick from directly.
 - **Add-ons** (`renderPwads`) lists the picks; anything of `type === 'IWAD'` never reaches them, and
   a source that is *also* the current game WAD is shown refused (badge `game WAD`) rather than
   merged twice. Order matters and is the order they were ticked: it's the merge order, so the
@@ -543,8 +544,8 @@ loaded from disk. Semantics worth knowing before touching `menu.ts`:
   title only when the WAD set knows one (docs/wad.md § Level names — resolved off the manifest
   alone, since nothing has been downloaded at this point), the provider only when an add-on took the
   map over. The lump name always comes first: it is what the level is selected by, what `?map=`
-  takes, and the only thing every map has. The label itself is `ui/menu/labels.ts`'s `describeMap`, shared
-  with the save rows (§ Save and Load tabs) so a level can't be named two ways in one menu.
+  takes, and the only thing every map has. The label itself is `ui/menu/labels.ts`'s `describeMap`,
+  shared with the save rows (§ Save and Load tabs) so a level can't be named two ways in one menu.
 
 ## Difficulty
 
@@ -571,20 +572,20 @@ the other three — **Controls**, the key list and everything bound to it, **Vis
 that changes how the running level looks, and **Audio**, everything you hear. Controls sits second
 because it is the one a player opens to read rather than to change. The sub-panels are the same
 `.tab-panels`/`.tab-panel` grid-cell stack the top-level tabs use, nested one level — so Audio being
-much shorter than Controls costs the menu no resize when the player switches, exactly as above. The sub-tab row is
-styled a step quieter (smaller type, no rule under it) so it doesn't read as a second tab bar of
-equal rank, and like the tabs above it the pick survives an `open`.
+much shorter than Controls costs the menu no resize when the player switches, exactly as above. The
+sub-tab row is styled a step quieter (smaller type, no rule under it) so it doesn't read as a second
+tab bar of equal rank, and like the tabs above it the pick survives an `open`.
 
 **Controls is mostly the full key list, and it is the only one the game itself shows** — it replaced
 two hint lines in the DEVMODE status text, which meant a shipped build listed its controls nowhere.
-Being a menu tab makes it reachable mid-level too, since the menu is the pause screen. README's table
-is the fuller reference.
+Being a menu tab makes it reachable mid-level too, since the menu is the pause screen. README's
+table is the fuller reference.
 
 **The control-shaped settings live inside that list rather than in sections of their own**, because
 what they change *is* a key's behavior: the right button's binding is the `right mouse` row's
-description, the autorun checkbox is the `Shift` row's. A player looking up what a control does and a
-player changing it are the same person on the same trip to the menu — which is why those two did not
-move to General with the rest.
+description, the autorun checkbox is the `Shift` row's. A player looking up what a control does and
+a player changing it are the same person on the same trip to the menu — which is why those two did
+not move to General with the rest.
 
 **General is what is left once the other three have taken theirs**: Level start over Collision,
 stacked full width, with `Debug / Dev` following them. Level start leads because it is the one of
@@ -616,11 +617,11 @@ off, and 0 on it stops both of them the way each channel's own 0 stops itself
 `itemup` as they are dragged; the music slider needs no preview, riding the track already playing
 behind the menu (docs/music.md § Volume).
 
-**Collision** is one checkbox, `Infinite tall actors (vanilla)` — off by default (docs/movement.md
-§ Collision); `Level start`'s `Pistol start every level` is the other (docs/items.md § Pistol
-start). What is left on General is exactly the two settings that change how the game *plays*, which
-is why neither belongs on the three tabs beside it. It applies to the level already running, like volume and the cap:
-`blockedByThings` reads the flag per call.
+**Collision** is one checkbox, `Infinite tall actors (vanilla)` — off by default (docs/movement.md §
+Collision); `Level start`'s `Pistol start every level` is the other (docs/items.md § Pistol start).
+What is left on General is exactly the two settings that change how the game *plays*, which is why
+neither belongs on the three tabs beside it. It applies to the level already running, like volume
+and the cap: `blockedByThings` reads the flag per call.
 
 General ends with **`Debug / Dev`, the section holding the `FPS counter` and `Profiler overlay`
 checkboxes** (§ FPS counter, § Profiling overlay). It is shown in every build — both are
@@ -656,8 +657,8 @@ element).
 
 The right button has **no fixed job**: the camera turns with `Q`/`E` rather than by dragging
 (docs/camera.md § Camera orbit), which left the button free. `#rightmouse-select` binds it to one of
-`RightMouseAction`'s three values — `previousweapon` (the default), `use` (same as `Space`), or `none` —
-and the `<option>` values *are* those strings, so the control needs no mapping table.
+`RightMouseAction`'s three values — `previousweapon` (the default), `use` (same as `Space`), or
+`none` — and the `<option>` values *are* those strings, so the control needs no mapping table.
 
 The setting lives in `game/input.ts` beside the button state it describes, and **only
 `Input.rightMousePressed(action)` reads it**: consumers ask for the action they implement
@@ -710,17 +711,18 @@ level (docs/savegames.md § The format and its version).
 
 ## Remembered selection
 
-`topdoom.selection` holds `{ iwad, pwads, map }` as `WadSource.key`s. Precedence when `init` resolves
-it is **URL > stored > first IWAD on offer**, and every key is resolved against the current library,
-so a WAD that has since left `public/wads/` is silently dropped (an unknown map falls back to the
-set's first, via `selectLevel`'s no-op). Restoring can pair a stored add-on with a `?wad=`-forced
-game WAD it doesn't suit; that pick is **kept**, refused rather than dropped, so the stored set
-survives a deep link (§ Picking a WAD set).
+`topdoom.selection` holds `{ iwad, pwads, map }` as `WadSource.key`s. Precedence when `init`
+resolves it is **URL > stored > first IWAD on offer**, and every key is resolved against the current
+library, so a WAD that has since left `public/wads/` is silently dropped (an unknown map falls back
+to the set's first, via `selectLevel`'s no-op). Restoring can pair a stored add-on with a
+`?wad=`-forced game WAD it doesn't suit; that pick is **kept**, refused rather than dropped, so the
+stored set survives a deep link (§ Picking a WAD set).
 
 `saveSelection` is called from the sites where the *player* changes something (`selectIwad`, the
-add-on toggle, `addFiles`, the level select's `change`) and **deliberately not from `render`**, which
-`init` also runs while restoring: hooking it there wrote the level select back before `selectLevel`
-had applied the stored map, so the stored level decayed to the set's first map after one reload.
+add-on toggle, `addFiles`, the level select's `change`) and **deliberately not from `render`**,
+which `init` also runs while restoring: hooking it there wrote the level select back before
+`selectLevel` had applied the stored map, so the stored level decayed to the set's first map after
+one reload.
 
 It **never writes an upload.** Those bytes are gone after a reload, so storing the key would restore
 a selection that can never load; leaving the last restorable one in place is better. As a
@@ -773,25 +775,25 @@ Rules that hold this together:
   § End card). `endSession` nulls `game` *before* disposing it — the call arrives from inside that
   very `Game`'s tic — and reopens the menu with `open(false)`, as a launcher: there is no returning
   to a run that is over.
-- **`audio.resume()` runs synchronously before `startLevel`'s first `await`**, while still inside the
-  click handler — the only moment a browser reliably lets an `AudioContext` start. A `?map=` deep link
-  never gets that click, so `boot` also arms one-shot `pointerdown`/`keydown` unlockers.
+- **`audio.resume()` runs synchronously before `startLevel`'s first `await`**, while still inside
+  the click handler — the only moment a browser reliably lets an `AudioContext` start. A `?map=`
+  deep link never gets that click, so `boot` also arms one-shot `pointerdown`/`keydown` unlockers.
 - **The `game` slot is cleared before the old level is disposed.** A `Game` constructor that throws
   (a WAD with no maps, a mesh build failure) would otherwise leave `game` pointing at a *disposed*
   instance, and both "Return to game" and the `Esc` handler key off it being non-null — resuming it
-  restarts a render loop over released GPU resources. On failure the menu stays open, shows the error,
-  and is re-synced with `open(game !== null)` so it stops offering a return.
-- **"Return to game" is disabled for the duration of a start** (`startWithSkill`), since the level it
-  would return to is disposed part-way through.
-- **A load is the same `startLevel`**, given the save as a second argument: it verifies the assembled
-  set's game WAD and map provider against the save's own ids (`verifySaveWads`, over
-  `wadSetRefusal` — docs/savegames.md § WAD-set identity) and hands
-  `Game` the snapshot instead of `?pos=`. Everything above — the audio gesture, the dispose ordering,
-  the failure re-sync — is one copy, so a lifecycle fix can't reach the new-game path and miss the
-  load path. `loadSave` only re-resolves each `wads` entry to a `WadSource` by content id first, and a
-  *required* file the library can't supply fails *there*, before anything is torn down, so the running
-  level survives a load that can't happen; an add-on that supplied neither the map nor the game WAD is
-  left out of the set instead.
+  restarts a render loop over released GPU resources. On failure the menu stays open, shows the
+  error, and is re-synced with `open(game !== null)` so it stops offering a return.
+- **"Return to game" is disabled for the duration of a start** (`startWithSkill`), since the level
+  it would return to is disposed part-way through.
+- **A load is the same `startLevel`**, given the save as a second argument: it verifies the
+  assembled set's game WAD and map provider against the save's own ids (`verifySaveWads`, over
+  `wadSetRefusal` — docs/savegames.md § WAD-set identity) and hands `Game` the snapshot instead of
+  `?pos=`. Everything above — the audio gesture, the dispose ordering, the failure re-sync — is one
+  copy, so a lifecycle fix can't reach the new-game path and miss the load path. `loadSave` only
+  re-resolves each `wads` entry to a `WadSource` by content id first, and a *required* file the
+  library can't supply fails *there*, before anything is torn down, so the running level survives a
+  load that can't happen; an add-on that supplied neither the map nor the game WAD is left out of
+  the set instead.
 - A second `Game` builds against the *same* static DOM, so anything holding generated children must
   replace rather than append, and per-level screen state must be cleared — see docs/hud.md
   § The HUD and § Screen effects. `dispose` clears the center message, the level card and the
@@ -809,16 +811,15 @@ needed). It gates three things — two in `ui/devmode/` and one in `ui/menu/menu
 player has no legitimate reason to reach for them:
 
 - **What `#hud` says** (`DebugHud.update`, whose lines come from `Game.debugLines`) — off, the
-  element shows only the fps counter; on, the full
-  map/pos/sector/camera-state/awake-monster-count block. `DEVMODE` decides how much that text says,
-  **not** whether it shows at all — that is the player's own setting (§ FPS counter below), which is
-  why the `visible` check sits ahead of the `!DEVMODE` branch. **Everything it prints is live
-  state.** The
-  last line is the auto camera's own readout — `AutoCamera.readout` in `game/autocamera.ts`, which
-  owns the smoothed state it prints rather than exposing it to `game.ts` (docs/camera.md § Auto
-  camera), and reads `manual` in the other camera mode. It used to end with two static hotkey hint lines as well,
-  which were the game's only controls reference and so invisible to exactly the players who needed
-  them; that list is now the menu's Settings tab (docs/menu.md § Settings tab).
+  element shows only the fps counter; on, the full map/pos/sector/camera-state/awake-monster-count
+  block. `DEVMODE` decides how much that text says, **not** whether it shows at all — that is the
+  player's own setting (§ FPS counter below), which is why the `visible` check sits ahead of the
+  `!DEVMODE` branch. **Everything it prints is live state.** The last line is the auto camera's own
+  readout — `AutoCamera.readout` in `game/autocamera.ts`, which owns the smoothed state it prints
+  rather than exposing it to `game.ts` (docs/camera.md § Auto camera), and reads `manual` in the
+  other camera mode. It used to end with two static hotkey hint lines as well, which were the game's
+  only controls reference and so invisible to exactly the players who needed them; that list is now
+  the menu's Settings tab (docs/menu.md § Settings tab).
 - **The Settings tab's `#controls-dev` section**, the only place `N`/`P` is listed in the UI —
   revealed once in the `Menu` constructor, so a shipped build never advertises a key it ignores.
 - **`N`/`P` (jump to next/prev map)** in `handleHotkeys` — behind the early-return on `!DEVMODE`, so
@@ -841,15 +842,15 @@ level's population has actually noticed the player.
 `#hud`, top-left, is the one element two settings meet on: **whether it shows** is the player's
 `FPS counter` checkbox, **what it says** is `DEVMODE` (§ Dev mode above) — the bare `N fps` outside
 dev mode, the full status block inside it. One switch for the whole element, not one per line: in a
-dev build the fps *is* that block's first line, so splitting them would need `Game.debugLines` cut in
-two for a distinction nobody asked the menu for.
+dev build the fps *is* that block's first line, so splitting them would need `Game.debugLines` cut
+in two for a distinction nobody asked the menu for.
 
-The setting is `debughud.ts`'s own (`topdoom.fps`, `getFpsVisible`/`setFpsVisible`) and **defaults to
-`DEVMODE`** — on in a dev build, off in a shipped one, a stored `'1'`/`'0'` overriding that either
-way. It is deliberately the same rule the profiling overlay follows, and for the same reason: both
-are diagnostics a player may want and neither should be on top of a shipped game unasked. **This is a
-change from the counter always being drawn**, which is what every build did before the checkbox
-existed.
+The setting is `debughud.ts`'s own (`topdoom.fps`, `getFpsVisible`/`setFpsVisible`) and **defaults
+to `DEVMODE`** — on in a dev build, off in a shipped one, a stored `'1'`/`'0'` overriding that
+either way. It is deliberately the same rule the profiling overlay follows, and for the same reason:
+both are diagnostics a player may want and neither should be on top of a shipped game unasked.
+**This is a change from the counter always being drawn**, which is what every build did before the
+checkbox existed.
 
 `applyFpsVisible` is the single writer of `#hud`'s `visible` class, called by `DebugHud`'s
 constructor to seed it for the level starting and by the checkbox to change it live; debughud.css
@@ -861,9 +862,10 @@ counter switched on mid-level read a rate built from its first half second.
 ## Profiling overlay
 
 A panel of its own, top-right, breaks a frame's cost down by category — `Specials`, `Player`,
-`Weapons`, `Fog of War`, `Monsters`, `Effects`, `Fading`, `Render`, `Music`, plus an `Other` bucket for
-whatever wasn't explicitly measured (input handling, HUD text, the player sprite's own pose) — so a slow
-frame can be traced to *which* system is responsible rather than just how many fps it costs.
+`Weapons`, `Fog of War`, `Monsters`, `Effects`, `Fading`, `Render`, `Music`, plus an `Other` bucket
+for whatever wasn't explicitly measured (input handling, HUD text, the player sprite's own pose) —
+so a slow frame can be traced to *which* system is responsible rather than just how many fps it
+costs.
 
 **Every row is CPU; the GPU gets one number of its own.** The rows and their total time main-thread
 wall clock between `beginFrame()` and `endFrame()`, both inside the same `requestAnimationFrame`
@@ -905,17 +907,18 @@ around `renderer.render`, through `EXT_disjoint_timer_query_webgl2`. Four things
 - **It only runs while the overlay is up.** A timer query is cheap but not free, and nothing reads
   the answer otherwise — `game.ts` skips `begin`/`end` entirely when the panel is hidden.
 
-`FrameProfiler` (`util/profiler.ts`) is a plain per-frame timer, not tied to rendering or game state:
-`beginFrame()`, any number of `time(label, fn)`/`add(label, ms)` calls (the same label can be used more
-than once per frame — `game.ts`'s "Player" bucket covers both the movement block and the later
-pickup/damage-floor block, non-contiguous in `frame()` — and accumulates), then `endFrame()`.
+`FrameProfiler` (`util/profiler.ts`) is a plain per-frame timer, not tied to rendering or game
+state: `beginFrame()`, any number of `time(label, fn)`/`add(label, ms)` calls (the same label can be
+used more than once per frame — `game.ts`'s "Player" bucket covers both the movement block and the
+later pickup/damage-floor block, non-contiguous in `frame()` — and accumulates), then `endFrame()`.
 
-**`Music` is the one category measured outside the frame**, because the music synth renders on its own
-timer in the gaps between frames (docs/music.md § Getting it to the speakers). `MusicPlayer` accumulates
-what it spent and the next frame hands it over with `offFrame(label, ms)`, which counts it towards the
-frame total as well as its own label — otherwise a category that never ran inside `beginFrame`/`endFrame`
-would be silently subtracted from `Other`. It only appears once a track is actually being synthesized:
-a container-format track costs nothing here, and `offFrame` registers no label for a zero.
+**`Music` is the one category measured outside the frame**, because the music synth renders on its
+own timer in the gaps between frames (docs/music.md § Getting it to the speakers). `MusicPlayer`
+accumulates what it spent and the next frame hands it over with `offFrame(label, ms)`, which counts
+it towards the frame total as well as its own label — otherwise a category that never ran inside
+`beginFrame`/`endFrame` would be silently subtracted from `Other`. It only appears once a track is
+actually being synthesized: a container-format track costs nothing here, and `offFrame` registers no
+label for a zero.
 
 Because that work arrives in **bursts** — a chunk every pump interval, a whole lookahead at track
 start — `offFrame` pools it and `endFrame` charges the pool a fraction per frame
@@ -929,15 +932,15 @@ frames that didn't do the work. The pause path separately discards what accumula
 (`Game.resume`), so the first frame back isn't charged for it at all.
 
 Every label is smoothed with a plain exponential moving average rather than shown raw, the same
-reasoning as `util/damping.ts`'s `dampen`: a single frame's timing is noisy (GC pauses, OS scheduling),
-and an unsmoothed bar graph would flicker faster than it could be read.
+reasoning as `util/damping.ts`'s `dampen`: a single frame's timing is noisy (GC pauses, OS
+scheduling), and an unsmoothed bar graph would flicker faster than it could be read.
 
 **Measurement itself is not gated** — `performance.now()` calls are cheap enough not to bother
 branching around, the same call the fps counter already makes. The `visible` class is the only skip,
-and `ProfilerHud.update` takes the `FrameProfiler` rather than its `samples()` so that a hidden panel
-does not build the array and its per-label objects every frame — which is the default outside dev
-mode. `Game.debugLines` is a closure for the same shape of reason, but a DEVMODE one: its body walks
-the BSP for the player's sector and must not run when the *debug* text is off.
+and `ProfilerHud.update` takes the `FrameProfiler` rather than its `samples()` so that a hidden
+panel does not build the array and its per-label objects every frame — which is the default outside
+dev mode. `Game.debugLines` is a closure for the same shape of reason, but a DEVMODE one: its body
+walks the BSP for the player's sector and must not run when the *debug* text is off.
 
 **The checkbox alone decides whether the panel is up** — General's `Debug / Dev` section
 (`#profiler-checkbox`), in every build, since the overlay covers the top-right corner of the level.
@@ -951,11 +954,11 @@ per-frame DOM writes and the CSS and the render path can't disagree about whethe
 `Game` owns the `ProfilerHud` directly — not `DebugHud`, which is DEVMODE's — and reads the same
 setting to decide whether to run the GPU timer query at all.
 
-`ProfilerHud` renders each category as a horizontal bar sized against one 60fps frame's budget (16.6ms)
-rather than against each other — a bar reaching full width means that category *alone* would miss the
-budget, a more directly actionable signal than relative proportions, and it turns amber/red past
-25%/100% of that budget so the worst offender is visible without reading the numbers. Rows are created
-once per label (first-seen order) and reused after that, the same "build the DOM once, update fields
-every frame" approach `Hud` uses for its icons — and re-sorted worst-first on every `update()` via
-`appendChild` on the already-existing row (which reorders rather than duplicating), so the biggest cost
-lands at the top without tearing anything down.
+`ProfilerHud` renders each category as a horizontal bar sized against one 60fps frame's budget
+(16.6ms) rather than against each other — a bar reaching full width means that category *alone*
+would miss the budget, a more directly actionable signal than relative proportions, and it turns
+amber/red past 25%/100% of that budget so the worst offender is visible without reading the numbers.
+Rows are created once per label (first-seen order) and reused after that, the same "build the DOM
+once, update fields every frame" approach `Hud` uses for its icons — and re-sorted worst-first on
+every `update()` via `appendChild` on the already-existing row (which reorders rather than
+duplicating), so the biggest cost lands at the top without tearing anything down.

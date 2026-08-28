@@ -12,11 +12,20 @@ import type { DamageFloorEffect } from './defs.ts';
 import { pRandom } from '../../util/random.ts';
 import type { SectorEffectsSnapshot } from '../snapshot.ts';
 
-/** What one frame's `SectorEffects.update` did, for the caller to realize (sound, message, level exit). */
+/**
+ * What one frame's `SectorEffects.update` did, for the caller to realize (sound, message, level
+ * exit).
+ */
 export interface SectorEffectResult {
-  /** The player is standing on an `exitBelowHealth` floor at or below its threshold, dead or alive — end the level. */
+  /**
+   * The player is standing on an `exitBelowHealth` floor at or below its threshold, dead or alive —
+   * end the level.
+   */
   exit: boolean;
-  /** The player just entered a secret sector, on that single frame only (`sector.special` is cleared with it). */
+  /**
+   * The player just entered a secret sector, on that single frame only (`sector.special` is cleared
+   * with it).
+   */
   secretFound: boolean;
 }
 
@@ -30,7 +39,10 @@ export interface SectorEffectResult {
 export class SectorEffects {
   /** Secret sectors on the map (special 9 or the Boom secret bit), counted once per level load. */
   readonly totalSecrets: number;
-  /** How many of `totalSecrets` the player has entered so far — the HUD's and the intermission's tally. */
+  /**
+   * How many of `totalSecrets` the player has entered so far — the HUD's and the intermission's
+   * tally.
+   */
   secretsFound = 0;
   /**
    * Counts down to the next damage-floor tick while the player stands on one.
@@ -123,7 +135,10 @@ export class SectorEffects {
   }
 }
 
-/** Whether a worn radiation suit stops this damage floor's hit — see `DamageFloorEffect.suit` for why the three types differ. */
+/**
+ * Whether a worn radiation suit stops this damage floor's hit — see `DamageFloorEffect.suit` for
+ * why the three types differ.
+ */
 function suitBlocks(effect: DamageFloorEffect, inv: Inventory): boolean {
   if (effect.suit === 'ignored' || !hasPower(inv, 'radiationSuit')) return false;
   // `P_PlayerInSpecialSector`'s `P_Random() < 5`, and `SUIT_LEAK_CHANCE` is that 5 over 256.

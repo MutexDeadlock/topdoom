@@ -10,7 +10,8 @@ import type { SubSectorPoly } from './bsp.ts';
 /**
  * How far past a leaf's edge the neighbour probe steps. **Tuned by feel**, and the same 1.5 units
  * `mapmesh.ts` pushes a wall probe (`WALL_PROBE_OFFSET`): far enough to leave the leaf whatever
- * rounding the clip left at the boundary, far short of anything the BSP would put on the other side.
+ * rounding the clip left at the boundary, far short of anything the BSP would put on the other
+ * side.
  */
 const EDGE_PROBE_OFFSET = 1.5;
 
@@ -32,7 +33,8 @@ const MAX_REACH = 512;
 
 /**
  * The part of `game/world.ts`'s `World` this needs, taken structurally — the same seam `MoverIndex`
- * and `SectorTransfers` use in render/mapmesh.ts, so the renderer keeps no import edge into `game/`.
+ * and `SectorTransfers` use in render/mapmesh.ts, so the renderer keeps no import edge into
+ * `game/`.
  */
 export interface LightWorld {
   subsectorAt(x: number, y: number): number;

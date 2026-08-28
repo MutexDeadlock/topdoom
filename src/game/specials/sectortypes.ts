@@ -26,7 +26,10 @@ const GENERALIZED_DAMAGE: (DamageFloorEffect | null)[] = [
   { amount: 20, suit: 'leaks' },
 ];
 
-/** Whether the decoder recognized anything at all in a sector's special — the sector half of the coverage gate. */
+/**
+ * Whether the decoder recognized anything at all in a sector's special — the sector half of the
+ * coverage gate.
+ */
 export function sectorTypeUnderstood(d: DecodedSectorType): boolean {
   return d.lightPattern !== null || d.damage !== null || d.secret || d.friction || d.push || d.doorTimer !== null;
 }

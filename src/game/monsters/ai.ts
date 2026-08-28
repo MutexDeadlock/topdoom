@@ -60,7 +60,10 @@ const SKULL_CONTACT_RANGE = 72;
  */
 const REACTION_CHASES = 8;
 
-/** Vanilla's `BASETHRESHOLD` — chase calls a monster stays committed to whoever last hurt it. Without it a crowded infight thrashes and nobody lands a second blow. */
+/**
+ * Vanilla's `BASETHRESHOLD` — chase calls a monster stays committed to whoever last hurt it.
+ * Without it a crowded infight thrashes and nobody lands a second blow.
+ */
 const BASE_THRESHOLD = 100;
 
 /** `opposite[]`: the about-face of each direction, which `newChaseDir` avoids picking. */
@@ -151,7 +154,10 @@ export function shouldRetarget(body: MonsterBody, victimType: number, sourceType
   return true;
 }
 
-/** Commits a monster to a freshly-acquired target for `BASE_THRESHOLD` chase calls (vanilla's own `threshold`). */
+/**
+ * Commits a monster to a freshly-acquired target for `BASE_THRESHOLD` chase calls (vanilla's own
+ * `threshold`).
+ */
 export function commitTarget(body: MonsterBody): void {
   body.threshold = BASE_THRESHOLD;
 }
@@ -237,7 +243,10 @@ let standingBody: MonsterBody | null = null;
 let standingX = 0;
 let standingY = 0;
 
-/** One `P_CheckPosition` at the body's own position. `z` is `ANY_HEIGHT` because no height it reads depends on it. */
+/**
+ * One `P_CheckPosition` at the body's own position. `z` is `ANY_HEIGHT` because no height it reads
+ * depends on it.
+ */
 function standingAt(body: MonsterBody, stats: MonsterStats, world: World): PositionCheck {
   if (standingBody !== body || standingX !== body.x || standingY !== body.y) {
     world.checkPosition(body.x, body.y, stats.radius, ANY_HEIGHT, stats.height, true, undefined, undefined, false, standingCheck);
@@ -564,12 +573,9 @@ function strikeMelee(
  * usually the player, but a monster hurt by another chases *it* instead, and
  * nothing here needs to know the difference.
  *
- * **Decisions run on vanilla's clock, movement runs on the tic's.** Every
- * counter `A_Chase` touches is measured in chase calls, so `runChaseCall`
- * fires on `chaseInterval` and nothing else; position is interpolated per
- * frame along the `movedir` the last chase call settled on, since vanilla's
- * full-`speed` jump per call would visibly stutter here. Same distance, same
- * 8-way pathing, no stutter. See docs/monster-ai.md § Movement and § Attacking.
+ * **Decisions run on vanilla's clock, movement runs on the tic's.** `runChaseCall` fires on
+ * `chaseInterval` and nothing else; position is interpolated per frame along the `movedir` the
+ * last chase call settled on. See docs/monster-ai.md § Movement and § Attacking.
  */
 export function stepMonsterAI(
   body: MonsterBody,

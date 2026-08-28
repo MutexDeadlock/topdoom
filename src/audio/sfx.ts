@@ -48,7 +48,9 @@ export type SfxId = keyof typeof SFX;
  */
 const SOUND_LUMP_OVERRIDES = new Map<string, string>();
 
-/** The lump a sfx resolves to: `i_sound.c`'s own `sprintf(name, "ds%s", sfxname)`, unless patched. */
+/**
+ * The lump a sfx resolves to: `i_sound.c`'s own `sprintf(name, "ds%s", sfxname)`, unless patched.
+ */
 export function soundLumpName(name: string): string {
   return SOUND_LUMP_OVERRIDES.get(name) ?? `DS${name.toUpperCase()}`;
 }
@@ -66,7 +68,10 @@ export function setSoundLump(name: string, lump: string): void {
   SOUND_LUMP_OVERRIDES.set(name, `DS${lump.toUpperCase()}`);
 }
 
-/** Drops every redirect, before a new patch is applied. docs/dehacked.md § Applying: reset, then patch. */
+/**
+ * Drops every redirect, before a new patch is applied. docs/dehacked.md § Applying: reset, then
+ * patch.
+ */
 export function resetSoundLumps(): void {
   SOUND_LUMP_OVERRIDES.clear();
 }
@@ -75,14 +80,15 @@ export function resetSoundLumps(): void {
 export const SFX_NAMES = Object.keys(SFX) as SfxId[];
 
 /**
- * Vanilla's `NORM_PITCH`, and the two per-sound random pitch wobbles
- * `S_StartSoundAtVolume` applies on top of it: `±8` for the chainsaw's four
- * sounds (`sfx_sawup`..`sfx_sawhit`, a contiguous run in vanilla's enum),
- * nothing at all for `itemup` and `tink`, and `±16` for everything else.
- * Playback rate is `pitch / NORM_PITCH`, so a shot's length varies with it
- * exactly as it does in vanilla's own mixer.
+ * The pitch a sound plays at before its wobble — vanilla's `NORM_PITCH` — and the two per-sound
+ * random wobbles `S_StartSoundAtVolume` applies on top of it: `±8` for the chainsaw's four sounds
+ * (`sfx_sawup`..`sfx_sawhit`, a contiguous run in vanilla's enum), nothing at all for `itemup` and
+ * `tink`, and `±16` for everything else. Playback rate is `pitch / NORM_PITCH`, so a shot's length
+ * varies with it exactly as it does in vanilla's own mixer.
  *
- * Vanilla: 128 | Topdoom: 192 (more subtle)
+ * **A deliberate deviation**: vanilla's own base is 128. The swing values stay vanilla's, so a
+ * larger base makes the same `±16` a smaller fraction of the rate — a subtler wobble, tuned by
+ * feel.
  */
 const NORM_PITCH = 192;
 const SAW_SOUNDS: ReadonlySet<SfxId> = new Set<SfxId>(['sawup', 'sawidl', 'sawful', 'sawhit']);

@@ -7,8 +7,8 @@ docs/menu.md
 
 `WadFile` (`wad.ts`) parses one physical file (header + lump directory). `Wad` concatenates several
 `WadFile`s into the single merged lump directory the rest of the engine reads, with **later files
-winning on name collisions** — that one rule gives PWAD overrides for free (a replaced `MAP01` marker
-resolves to the add-on, and its map lumps follow it contiguously).
+winning on name collisions** — that one rule gives PWAD overrides for free (a replaced `MAP01`
+marker resolves to the add-on, and its map lumps follow it contiguously).
 
 Two deliberate deviations from vanilla lump-lookup semantics, both load-bearing:
 
@@ -17,14 +17,14 @@ Two deliberate deviations from vanilla lump-lookup semantics, both load-bearing:
 - **Texture definitions are merged by name across all files' `TEXTURE1`/`TEXTURE2`**
   (`graphics.ts: readAllTextures`), not resolved by last-lump-wins like vanilla. Vanilla treats a
   PWAD's `TEXTURE1` as a full replacement of the IWAD's, which breaks IWAD/PWAD pairings the PWAD
-  wasn't built for. Patch indices inside each texture are still per-file, resolved through that file's
-  own `PNAMES` at merge time.
+  wasn't built for. Patch indices inside each texture are still per-file, resolved through that
+  file's own `PNAMES` at merge time.
 
 **Lump names end at the first NUL** (`reader.ts: name8`) — editors don't always zero the remaining
-bytes of the 8-byte name field, so trailing bytes can be leftovers from a previous edit. Reading past
-the first NUL silently corrupts names (e.g. turns `"-"` into `"-GRAY7"`) and breaks texture resolution
-for real PWADs. This was found by testing against community PWADs, not synthetic data, so don't assume
-synthetic WADs will catch a regression here.
+bytes of the 8-byte name field, so trailing bytes can be leftovers from a previous edit. Reading
+past the first NUL silently corrupts names (e.g. turns `"-"` into `"-GRAY7"`) and breaks texture
+resolution for real PWADs. This was found by testing against community PWADs, not synthetic data, so
+don't assume synthetic WADs will catch a regression here.
 
 ## Map formats
 
@@ -38,9 +38,9 @@ nodes all look perfectly sane. That asymmetry is the tell.
 
 Only **LINEDEFS** and **THINGS** differ. SECTORS, SIDEDEFS, VERTEXES, SEGS, SSECTORS, NODES, REJECT
 and BLOCKMAP are byte-identical in both, so a Hexen map still gets the full node-format treatment
-above. `wad/map/hexen.ts` owns those two lumps and normalizes them to the same records and flag bits a
-Doom map yields — the same seam `map/nodes.ts` is for the BSP, so `loadMap` branches once per lump and
-nothing downstream sees a format difference. The two record layouts are gzdoom `doomdata.h`'s
+above. `wad/map/hexen.ts` owns those two lumps and normalizes them to the same records and flag bits
+a Doom map yields — the same seam `map/nodes.ts` is for the BSP, so `loadMap` branches once per lump
+and nothing downstream sees a format difference. The two record layouts are gzdoom `doomdata.h`'s
 `maplinedef2_t` and `mapthinghexen_t`:
 
 - **Linedef, 16 bytes**: `v1` `v2` `flags` (u16 each), `special` (u8), `args[5]` (u8), `sidenum[2]`
@@ -65,21 +65,21 @@ at the cost of also stopping monsters ZDoom would let through.
 bit is Hexen's `MTF_DORMANT` at the same 0x0010, and Hexen names the modes a thing *is* in
 (`MTF_SINGLE` 0x0100) instead of the ones it is kept out of — so the single-player gate **inverts**:
 a Hexen thing without `MTF_SINGLE` is exactly a Doom thing with `MTF_NOTSINGLE`, which is the same
-correspondence gzdoom's `LoadThings` writes in the other direction (a Doom thing gets every mode bit,
-then loses `MTF_SINGLE` for `BTF_NOTSINGLE`). `MTF_DORMANT` and the `MTF_CLASS_MASK` player-class
-bits are dropped: there are neither dormant things nor player classes here, and a dormant monster
-spawning awake beats it not spawning at all.
+correspondence gzdoom's `LoadThings` writes in the other direction (a Doom thing gets every mode
+bit, then loses `MTF_SINGLE` for `BTF_NOTSINGLE`). `MTF_DORMANT` and the `MTF_CLASS_MASK`
+player-class bits are dropped: there are neither dormant things nor player classes here, and a
+dormant monster spawning awake beats it not spawning at all.
 
 ### What a Hexen map does not get
 
 **Action specials do not run.** A Hexen line's special is a ZDoom number in a namespace of its own —
 62 is `Plat_DownWaitUpStay` there and "SR lower floor" in Doom's table — so passing it through would
-fire an unrelated effect rather than none. `LineDef.special` and `.tag` are therefore forced to 0 and
-the raw number and args are parked in `LineDef.action`, which nothing dispatches; `inspect-wad`'s
-coverage report reads it so a map can still say what it asks for. The same goes for a **thing's**
-special and args, and for BEHAVIOR itself: that lump is compiled ACS bytecode, and there is no ACS
-VM here, so a map whose progression runs through `ACS_Execute` cannot be finished. A Hexen map draws,
-collides and fights correctly; its doors, lifts and switches do not move.
+fire an unrelated effect rather than none. `LineDef.special` and `.tag` are therefore forced to 0
+and the raw number and args are parked in `LineDef.action`, which nothing dispatches;
+`inspect-wad`'s coverage report reads it so a map can still say what it asks for. The same goes for
+a **thing's** special and args, and for BEHAVIOR itself: that lump is compiled ACS bytecode, and
+there is no ACS VM here, so a map whose progression runs through `ACS_Execute` cannot be finished. A
+Hexen map draws, collides and fights correctly; its doors, lifts and switches do not move.
 
 A Hexen thing's **`z`** (its height above the floor) is also ignored — things spawn on the floor, or
 under the ceiling for the `MF_SPAWNCEILING` types, exactly as in a Doom map.
@@ -161,9 +161,9 @@ vanilla does:
   whatever happens to follow it in memory and blinds monsters at random. A short lump is a build
   error rather than data, and dropping it is the safe reading.
 - **All-zero.** Behaviorally identical to keeping it — every bit is clear, so nothing is ever
-  rejected — but recognizing it at load keeps the check off the hot path entirely. Not a corner case:
-  SCYTHE.WAD ships correctly sized, entirely zero tables on all 32 maps, as node builders that skip
-  reject computation generally do.
+  rejected — but recognizing it at load keeps the check off the hot path entirely. Not a corner
+  case: SCYTHE.WAD ships correctly sized, entirely zero tables on all 32 maps, as node builders that
+  skip reject computation generally do.
 
 `scripts/inspect-wad.ts` prints the loaded map's table and how much of it is set.
 
@@ -187,7 +187,8 @@ Three things about these that are easy to get wrong:
   does not fit; `Reader.name(width)` is the shared implementation both use. The upper-casing it does
   is load-bearing — every texture and flat lookup keys on upper case.
 - **The terminator can be a partial record.** BOOMEDIT.WAD's `ANIMATED` is 510 bytes: 22 whole
-  records plus 4. So the reader tests the `istexture` byte *before* requiring the rest of its record.
+  records plus 4. So the reader tests the `istexture` byte *before* requiring the rest of its
+  record.
 - **`ANIMATED` replaces the built-in table, it does not merge.** `P_InitPicAnims` builds its whole
   list from the one lump, and `Wad.find` returning the last definition is exactly that rule. A PWAD
   shipping a partial `ANIMATED` really does lose the vanilla animations — real Boom behavior, not
@@ -275,10 +276,10 @@ missing-texture warning.
 `World.playerStart` uses the **last** doomednum-1 thing in the map, not the first. Vanilla's
 `P_SpawnMapThing` calls `P_SpawnPlayer` for *every* player-1 thing it encounters and each call
 overwrites `players[0].mo`, so whichever comes last in the thing list is where the player actually
-ends up; every earlier one becomes an orphaned "voodoo doll" mobj still sitting on the map (a mapping
-trick for scripted effects like crusher-triggered linedefs). Picking the first one instead spawns the
-player on top of a voodoo doll — repro: oku2v31.wad MAP01 has 27 doomednum-1 things, 26 of them a
-voodoo-doll row and the 27th the real start.
+ends up; every earlier one becomes an orphaned "voodoo doll" mobj still sitting on the map (a
+mapping trick for scripted effects like crusher-triggered linedefs). Picking the first one instead
+spawns the player on top of a voodoo doll — repro: oku2v31.wad MAP01 has 27 doomednum-1 things, 26
+of them a voodoo-doll row and the 27th the real start.
 
 ## Level names
 
@@ -290,11 +291,12 @@ a PWAD's `MAP01` is not the IWAD's level of that name at all.
 A file may ship several MAPINFO flavours (`UMAPINFO`, `ZMAPINFO`, `MAPINFO`), which are alternatives
 for different engines rather than layers, so **exactly one of them is read per file** — the first
 `MAPINFO_LUMPS` lists, most preferred first (`preferredMapInfoLump`). That subsumes ZDoom's own
-`ZMAPINFO`-instead-of-`MAPINFO` rule without a special case. It matters that `campaign/mapinfo.ts` and
-`plugins/wad-manifest.ts` share the function rather than each implementing the order: they were once
-separate, one iterating the WAD's directory and one iterating the array, so a file carrying both
-`UMAPINFO` and `MAPINFO` could show one title in the menu and a different one on the level card.
-Across files the ordinary rule still applies — later files win, like the merged directory itself.
+`ZMAPINFO`-instead-of-`MAPINFO` rule without a special case. It matters that `campaign/mapinfo.ts`
+and `plugins/wad-manifest.ts` share the function rather than each implementing the order: they were
+once separate, one iterating the WAD's directory and one iterating the array, so a file carrying
+both `UMAPINFO` and `MAPINFO` could show one title in the menu and a different one on the level
+card. Across files the ordinary rule still applies — later files win, like the merged directory
+itself.
 
 Two entry points over the same rules. `levelTitleFor` returns the level's **title alone** or
 `undefined` — that's what the menu appends after the lump name it already prints. `levelNameFor`
@@ -314,15 +316,15 @@ level — the same trap rule 3 below exists for.
 
 Text resolution order, highest authority first:
 
-1. **The WAD set's own MAPINFO** (`campaign/mapinfo.ts`). `UMAPINFO`, `ZMAPINFO` and `MAPINFO` lumps are read
-   by one tokenizer covering every syntax that names a level: ZDoom's `map MAP01 "Title"` (with or
-   without a `{ … }` block), UMAPINFO's `map MAP01 { levelname = "Title" }`, and Hexen-format
-   numeric `map 01 "Title"`. `map MAP01 lookup HUSTR_1` names no literal and is **skipped**, falling
-   through to the table below — which is the same string it was pointing at. Property blocks are
-   walked brace-by-brace rather than by keyword, so a `map` *property* nested in one can't be
-   mistaken for the next level. Later files win, matching the merged directory; within one file
-   `ZMAPINFO` suppresses that file's `MAPINFO`, as in ZDoom. A MAPINFO title applies even to a map
-   the IWAD provides — renaming the base game's levels is what the lump is for.
+1. **The WAD set's own MAPINFO** (`campaign/mapinfo.ts`). `UMAPINFO`, `ZMAPINFO` and `MAPINFO` lumps
+   are read by one tokenizer covering every syntax that names a level: ZDoom's `map MAP01 "Title"`
+   (with or without a `{ … }` block), UMAPINFO's `map MAP01 { levelname = "Title" }`, and
+   Hexen-format numeric `map 01 "Title"`. `map MAP01 lookup HUSTR_1` names no literal and is
+   **skipped**, falling through to the table below — which is the same string it was pointing at.
+   Property blocks are walked brace-by-brace rather than by keyword, so a `map` *property* nested in
+   one can't be mistaken for the next level. Later files win, matching the merged directory; within
+   one file `ZMAPINFO` suppresses that file's `MAPINFO`, as in ZDoom. A MAPINFO title applies even
+   to a map the IWAD provides — renaming the base game's levels is what the lump is for.
 2. **A DEHACKED/BEX patch in the set** (docs/dehacked.md § Strings), whether from a BEX `[STRINGS]`
    mnemonic or a vanilla `Text` substitution. Like a MAPINFO title and unlike the table below, it
    applies to any map the set provides, because renaming the base game's levels is exactly what
@@ -350,8 +352,8 @@ the build-time plugin and `library.ts` both call — for the same reason `prefer
 read there: stated in two places, the same file could list one way uploaded and another way served.
 docs/dehacked.md § Strings covers the one case where the two can differ.
 
-With no title from any of the three, there is nothing to append in the menu, and the card falls back to
-`<file> <lump>` for a PWAD-provided map (`SCYTHE.WAD MAP05` — which file it came from is the only
+With no title from any of the three, there is nothing to append in the menu, and the card falls back
+to `<file> <lump>` for a PWAD-provided map (`SCYTHE.WAD MAP05` — which file it came from is the only
 true thing left to say about it) or the bare lump name for anything else: an unrecognised IWAD, or a
 map outside its mission's table such as `E5M1`.
 
@@ -359,10 +361,10 @@ map outside its mission's table such as `E5M1`.
 and the IWAD identification depend on the loaded file set, not on which map is current. `MapInfo`
 reads the set's lumps **once** and projects them — titles for `LevelNames`, exits for
 `LevelProgression`, `D_*` lumps for `LevelMusic` (docs/music.md § Which track a level plays) — so
-the three consumers of one lump family don't each re-tokenize it. The menu can't build one — it hasn't downloaded
-anything yet — so it resolves off the manifest instead, which is why `ManifestEntry` carries each
-file's own MAPINFO titles (§ The `public/wads/` manifest) and `mergedMaps` (`library.ts`) merges
-them the same way, later files winning.
+the three consumers of one lump family don't each re-tokenize it. The menu can't build one — it
+hasn't downloaded anything yet — so it resolves off the manifest instead, which is why
+`ManifestEntry` carries each file's own MAPINFO titles (§ The `public/wads/` manifest) and
+`mergedMaps` (`library.ts`) merges them the same way, later files winning.
 
 ## Par times
 
@@ -389,9 +391,9 @@ whatever `MAP01` is loaded.
 
 ## Level progression
 
-Which level an exit leads to (`campaign/progression.ts`). Vanilla keeps this nowhere in the WAD: it is two
-hard-coded tables in `G_DoCompleted` (`g_game.c`), which is why the rules live beside the title
-tables rather than being read off a lump. `LevelProgression` is built once per `Game`, next to
+Which level an exit leads to (`campaign/progression.ts`). Vanilla keeps this nowhere in the WAD: it
+is two hard-coded tables in `G_DoCompleted` (`g_game.c`), which is why the rules live beside the
+title tables rather than being read off a lump. `LevelProgression` is built once per `Game`, next to
 `LevelNames` and for the same reason — it depends on the loaded file set, not on the current map.
 
 A level has **two** exits, and until the flag was routed through they behaved identically. The four
@@ -455,15 +457,16 @@ same buffer, a restart re-wraps the memoized fetch), and a wrapper-keyed memo mi
 re-walking ~14 MB on the level-start path. **Everything that needs an id goes through `idOf` (or
 `wadId`, which is `idOf` over the file's buffer), never `hashBytes` directly** — the menu hashes an
 upload's bytes long before the level start wraps that same buffer, and a direct call leaves the memo
-empty for the wrapper to miss on exactly the path the memo exists for. It is what per-level best times are keyed on (docs/hud.md § Best times), and it is
-what a saved game stores as its WAD set — `wadSetId(wad)` returns every loaded file's
-`{ name, id }` in load order, a list rather than one combined hash so a mismatch can name *which*
-file is wrong. `mapProvider(wad, map)` is the same pair for the one file supplying a map — a save's
-`mapWad`, and what best times are keyed on. A save uses the id as the file's **identity**, not merely as a check: it is what
-`loadSave` re-resolves the library against, so a renamed WAD still loads and the same bytes match
-whether they come from the server or from disk (docs/savegames.md § WAD-set identity). That is also
-why `plugins/wad-manifest.ts` publishes each server WAD's id — the menu has to know a file's
-identity without downloading it.
+empty for the wrapper to miss on exactly the path the memo exists for. It is what per-level best
+times are keyed on (docs/hud.md § Best times), and it is what a saved game stores as its WAD set —
+`wadSetId(wad)` returns every loaded file's `{ name, id }` in load order, a list rather than one
+combined hash so a mismatch can name *which* file is wrong. `mapProvider(wad, map)` is the same pair
+for the one file supplying a map — a save's `mapWad`, and what best times are keyed on. A save uses
+the id as the file's **identity**, not merely as a check: it is what `loadSave` re-resolves the
+library against, so a renamed WAD still loads and the same bytes match whether they come from the
+server or from disk (docs/savegames.md § WAD-set identity). That is also why
+`plugins/wad-manifest.ts` publishes each server WAD's id — the menu has to know a file's identity
+without downloading it.
 
 Two rules hold this up:
 
@@ -508,8 +511,8 @@ a `topdoom.*` key (docs/menu.md § Persisted settings). It gets its **own** data
 `topdoom-wadlibrary`, rather than a `DB_VERSION` bump on the one holding savegames
 (`game/savestore.ts`): a failed upgrade here must not be able to take saves down with it. The
 request plumbing *is* shared — `asPromise`, `txDone` and `idbOpener` come from `util/idb.ts`; the
-databases are what stay apart. Every call in `library/store.ts` is best-effort — a browser with IndexedDB disabled degrades to "no
-remembered folder" rather than throwing on the boot path.
+databases are what stay apart. Every call in `library/store.ts` is best-effort — a browser with
+IndexedDB disabled degrades to "no remembered folder" rather than throwing on the boot path.
 
 Two stores. `root` holds the handle. `descriptors` is the **scan memo**, keyed by path relative to
 the root and validated on read against size and mtime — the same shape `plugins/wad-manifest.ts`
@@ -588,10 +591,11 @@ written by index, not pushed, so a pool finishing out of order doesn't scramble 
 
 ## Describing a file without loading it
 
-Three places need to know what a WAD *is* — its type, its maps, its lump count, whether it carries
-a DEHACKED patch, and the level titles it names — without building a `Wad` and without the engine's
+Three places need to know what a WAD *is* — its type, its maps, its lump count, whether it carries a
+DEHACKED patch, and the level titles it names — without building a `Wad` and without the engine's
 tables: the build-time manifest, a file the player drops on the menu, and a scan of their own
-library folder. `wad/describe.ts: describeWad` is the one implementation, and it is one deliberately.
+library folder. `wad/describe.ts: describeWad` is the one implementation, and it is one
+deliberately.
 
 The header must be read before the directory, but the MAPINFO and `DEHACKED` bodies the directory
 points at depend on nothing but it — so they are read in one `Promise.all`. Over a library scan that
@@ -600,8 +604,8 @@ The manifest and the upload path used to state the same rules separately, each c
 saying the two must not drift, and they had already drifted: `lumpCount` was the header's `numLumps`
 served and `entries.length` uploaded.
 
-It reads through a **`ByteRanges`** — `{ size, read(offset, length) }` — rather than taking a buffer,
-because a library scan describes hundreds of files it will never load. Over a `File`
+It reads through a **`ByteRanges`** — `{ size, read(offset, length) }` — rather than taking a
+buffer, because a library scan describes hundreds of files it will never load. Over a `File`
 (`bytesOfFile`) that resolves to `slice().arrayBuffer()`, so describing a 14 MB IWAD reads the
 12-byte header, the directory, and at most two lumps: a few hundred KB, not the file. `bytesOf`
 wraps bytes already in memory, which is what the manifest plugin and an upload hand it.
@@ -668,20 +672,20 @@ a permanent blank is not.
 ## The `public/wads/` manifest
 
 The Vite plugin scans `public/wads/{iwad,pwad}/`, parsing each file's header and directory plus its
-MAPINFO and `DEHACKED` lumps if it has them, and hashing its bytes for the content id (§ Content id) — the file is
-already in memory, so the id costs one pass and nothing extra to read. That is served as
-`/wads/index.json` (dev middleware and build-time `emitFile`), so the menu can list
+MAPINFO and `DEHACKED` lumps if it has them, and hashing its bytes for the content id (§ Content id)
+— the file is already in memory, so the id costs one pass and nothing extra to read. That is served
+as `/wads/index.json` (dev middleware and build-time `emitFile`), so the menu can list
 types/sizes/map counts, name levels, and know each file's *identity* without downloading anything —
-the last being what lets a savegame's WAD set resolve while the save list renders
-(docs/savegames.md § WAD-set identity). The dev middleware re-scans on every request for the
-manifest, so `describeWad` is memoized on each file's mtime and size (`statSync` is already being
-called for the listing): without it every page reload would re-read and re-hash every WAD in
-`public/wads/` — tens of MB, on the path that gates `Menu.init`. Editing a WAD still re-describes
-it. Bytes are only fetched when a level actually starts, and
-`library.ts: serverSource` memoizes them, so restarting the same WAD set costs no download. A WAD
-picked from disk has no manifest entry, so `uploadedSource` parses its MAPINFO and `DEHACKED`
-itself — the bytes are already in memory by then, and the two paths have to produce the same
-`WadSource` fields or an uploaded file would list differently from the same file on disk.
+the last being what lets a savegame's WAD set resolve while the save list renders (docs/savegames.md
+§ WAD-set identity). The dev middleware re-scans on every request for the manifest, so `describeWad`
+is memoized on each file's mtime and size (`statSync` is already being called for the listing):
+without it every page reload would re-read and re-hash every WAD in `public/wads/` — tens of MB, on
+the path that gates `Menu.init`. Editing a WAD still re-describes it. Bytes are only fetched when a
+level actually starts, and `library.ts: serverSource` memoizes them, so restarting the same WAD set
+costs no download. A WAD picked from disk has no manifest entry, so `uploadedSource` parses its
+MAPINFO and `DEHACKED` itself — the bytes are already in memory by then, and the two paths have to
+produce the same `WadSource` fields or an uploaded file would list differently from the same file on
+disk.
 
 `levelNames` holds finished titles from both sources, MAPINFO first — a patch fills gaps rather
 than overriding, matching `levelTitleFor`'s own order. See § Level names.
@@ -706,8 +710,8 @@ two used to be separate declarations and had already drifted on `folder` (the pr
 paths while the consumer's type still said `'iwad' | 'pwad'`), which nothing could catch: a shape a
 consumer casts raw JSON to is one the producer has to be checked against.
 
-**A WAD's own maps say which game it belongs to** (`library.ts: mapStyle`): `ExMy` → DOOM 1,
-`MAPxx` → DOOM II, and the two never mix within one game. A WAD with no maps of its own (textures,
-sounds, …) has no style and fits either — `describeSource` (`ui/menu/labels.ts`) shows its lump count instead of a map
-count so it doesn't read as an empty file. What the menu *does* with that is docs/menu.md
-§ Picking a WAD set.
+**A WAD's own maps say which game it belongs to** (`library.ts: mapStyle`): `ExMy` → DOOM 1, `MAPxx`
+→ DOOM II, and the two never mix within one game. A WAD with no maps of its own (textures, sounds,
+…) has no style and fits either — `describeSource` (`ui/menu/labels.ts`) shows its lump count
+instead of a map count so it doesn't read as an empty file. What the menu *does* with that is
+docs/menu.md § Picking a WAD set.

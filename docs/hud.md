@@ -1,8 +1,8 @@
 # The HUD, level card, intermission and screen effects
 
-`src/ui/hud/hud.ts`, `src/ui/hud/wadfont.ts`, `src/ui/hud/levelcard.ts`, `src/ui/hud/intermission.ts`,
-`src/ui/hud/message.ts`, `src/ui/hud/crosshair.ts`, `src/ui/hud/screeneffects.ts`, `src/game/besttimes.ts`,
-`src/game.ts`
+`src/ui/hud/hud.ts`, `src/ui/hud/wadfont.ts`, `src/ui/hud/levelcard.ts`,
+`src/ui/hud/intermission.ts`, `src/ui/hud/message.ts`, `src/ui/hud/crosshair.ts`,
+`src/ui/hud/screeneffects.ts`, `src/game/besttimes.ts`, `src/game.ts`
 
 Everything on screen that isn't the world. What the readouts *report* — the inventory, pickups and
 powerups behind them — is docs/items.md. The one other thing drawn over a running level,
@@ -64,8 +64,8 @@ while the skull is the only key of its color held, so what you see is what you a
 
 **The weapon icon is not decoration.** Unlike the original's status bar, where the weapon fills the
 bottom third of the screen, this game's player sprite looks identical whatever it's holding — `PLAY`
-has no per-weapon art, and at this camera distance it wouldn't read anyway. The HUD icon is therefore
-the *only* indication of what's selected. Its markup is built in `Hud`'s constructor from
+has no per-weapon art, and at this camera distance it wouldn't read anyway. The HUD icon is
+therefore the *only* indication of what's selected. Its markup is built in `Hud`'s constructor from
 `WEAPON_CYCLE` rather than written into `hud.html` like the other panels: the weapon list is a
 compile-time constant in `weapons.ts`, so duplicating it as static markup would be two lists to keep
 in sync. Icons reuse each weapon's own ground-pickup sprite (`WeaponDef.iconLump`); fist and pistol
@@ -81,25 +81,25 @@ content into it, since the canvas is a replaced element.
 **The powerup strip** (`.hud-powers`, built from `STRIP_POWER_IDS` the same way) exists for the same
 reason: a running powerup has no other on-screen presence at all — no number that changes, no door
 that opens — so without it there's no way to know one is active or how much is left. Each row shows
-that powerup's ground-pickup sprite plus a countdown, blank for the one remaining `Infinity`-duration
-entry. The backpack shares the strip: same "you have this now" status, also with no number of its own.
-The whole panel collapses via `.hud-stat.hidden` while nothing is active, so `#game-hud`'s flex `gap`
-doesn't leave a hole.
+that powerup's ground-pickup sprite plus a countdown, blank for the one remaining
+`Infinity`-duration entry. The backpack shares the strip: same "you have this now" status, also with
+no number of its own. The whole panel collapses via `.hud-stat.hidden` while nothing is active, so
+`#game-hud`'s flex `gap` doesn't leave a hole.
 
-**Berserk is deliberately not in the strip** (`STRIP_POWER_IDS` = `POWER_IDS` minus `'berserk'`) — it
-already has an on-screen presence the others don't: the health icon swaps from `MEDIA0` to berserk's
-own `PSTRA0` while held, the same idea as the armor icon swapping between its green/blue art by
-`armorType`. Two `<canvas>` elements sit in `.hud-health` (`.icon-normal`/`.icon-berserk`), toggled by
-`.hidden` — no countdown needed, since berserk is one of the `Infinity`-duration powers.
+**Berserk is deliberately not in the strip** (`STRIP_POWER_IDS` = `POWER_IDS` minus `'berserk'`) —
+it already has an on-screen presence the others don't: the health icon swaps from `MEDIA0` to
+berserk's own `PSTRA0` while held, the same idea as the armor icon swapping between its green/blue
+art by `armorType`. Two `<canvas>` elements sit in `.hud-health` (`.icon-normal`/`.icon-berserk`),
+toggled by `.hidden` — no countdown needed, since berserk is one of the `Infinity`-duration powers.
 
-Both dynamically-built panels `replaceChildren()` before filling themselves: `Hud` is constructed per
-`Game` against the *same* static `#game-hud` element, so a second game started from the menu would
-otherwise stack a second full set of icons on the first's.
+Both dynamically-built panels `replaceChildren()` before filling themselves: `Hud` is constructed
+per `Game` against the *same* static `#game-hud` element, so a second game started from the menu
+would otherwise stack a second full set of icons on the first's.
 
 ## Level stats (kills / items / secrets)
 
-`#hud-levelstats` — a plain sibling of `#game-hud`'s own bordered box, both inside `#hud-bar`, sitting
-immediately to its left rather than inside it — shows vanilla's classic three ratios —
+`#hud-levelstats` — a plain sibling of `#game-hud`'s own bordered box, both inside `#hud-bar`,
+sitting immediately to its left rather than inside it — shows vanilla's classic three ratios —
 `M: kills/totalKills`, `I: items/totalItems`, `S: secrets/totalSecrets` — confirmed against
 `linuxdoom-1.10/info.c`'s `mobjinfo` table rather than assumed from doomednum lists that exist for
 other purposes.
@@ -111,9 +111,9 @@ tracks stay equal width regardless of what's in them, so the middle `auto` colum
 always lands exactly on center; `#hud-levelstats` sits in the left track, right-aligned
 (`justify-self: end`) so it's flush against `#game-hud`'s own left edge.
 
-- **Kills** — `things/tables.ts`'s `COUNTKILL_TYPES` is `MONSTER_TYPES` minus the lost soul (3006) and
-  the Icon of Sin's brain (88), neither of which carries vanilla's `MF_COUNTKILL`. `totalKills` is
-  counted once, at map load, in `things.ts`'s `buildThingSprites` spawn loop (mirrors
+- **Kills** — `things/tables.ts`'s `COUNTKILL_TYPES` is `MONSTER_TYPES` minus the lost soul (3006)
+  and the Icon of Sin's brain (88), neither of which carries vanilla's `MF_COUNTKILL`. `totalKills`
+  is counted once, at map load, in `things.ts`'s `buildThingSprites` spawn loop (mirrors
   `P_SpawnMapThing`'s own `if (mobj->flags & MF_COUNTKILL) totalkills++`); `kills` increments in
   `ThingLayer.damage`'s death branch with **no** "already counted" guard, matching vanilla's
   `P_KillMobj` exactly — an arch-vile-resurrected monster killed a second time counts twice.
@@ -163,18 +163,18 @@ and it stays frozen for as long as the popup is up: those frames return early to
 
 ## Level card
 
-`src/ui/hud/levelcard.ts` raises "Entering" over the level's name (`#level-card`, horizontally centered,
-30% down so it clears `#hud-message`'s 40%) for 3.5 seconds after every map load that *enters* a
-level — a normal exit, a `restart()` after death with nothing to reload, and the DEVMODE
+`src/ui/hud/levelcard.ts` raises "Entering" over the level's name (`#level-card`, horizontally
+centered, 30% down so it clears `#hud-message`'s 40%) for 3.5 seconds after every map load that
+*enters* a level — a normal exit, a `restart()` after death with nothing to reload, and the DEVMODE
 `N`/`P` jump alike — fading out over the last second of that. **Loading a save is the one map load
 that raises no card** (`loadMapByIndex`'s `restore` branch, docs/savegames.md § Apply order): it
 resumes a level rather than entering one. A `restart()` that *does* reload something — the level's
 savegame or its checkpoint — goes through that same branch, so it raises none either. The fade is
-`opacity` driven from `update`'s own `dt`, not a CSS transition: a transition runs
-on wall-clock time, so opening the menu on a fresh level would leave the card fading away behind it
-and gone on return, while everything else about the frozen level waited. Two canvases rather than one: both hold
-native-size art and `levelcard.css` gives them different heights, which is how the name draws at twice
-the label's size without a second glyph set. The label is `WadFont` in STCFN's own red.
+`opacity` driven from `update`'s own `dt`, not a CSS transition: a transition runs on wall-clock
+time, so opening the menu on a fresh level would leave the card fading away behind it and gone on
+return, while everything else about the frozen level waited. Two canvases rather than one: both hold
+native-size art and `levelcard.css` gives them different heights, which is how the name draws at
+twice the label's size without a second glyph set. The label is `WadFont` in STCFN's own red.
 
 **The name is the WAD's own `CWILV`/`WILV` graphic wherever the set has one that belongs to this
 map** (`LevelNames.graphicFor`, docs/wad.md § Level names) — the level's name as its artist drew it,
@@ -195,18 +195,18 @@ message's 3 since there is nothing else on screen to read yet.
 
 ## Intermission
 
-`src/ui/hud/intermission.ts` (`#intermission`) is the end-of-level popup: the same three counts the HUD
-strip carries, as vanilla's percentages this time, then a face for how that went, then the time
-block — the frozen level time, the best-time lines (§ Best times), and the par time closing it —
-and the continue hint. The three percentages are **right-aligned** against
-each other, which the HUD strip's own numbers are not: the strip's are one glance among many, while
-these three sit stacked as a block where a ragged right edge is the first thing you read. A value
-wider than the `100%` the column is sized for — kills can pass 100% — widens the column rather than
-being clipped. `Hud`'s other layout rules apply — a red label run, values from a shared column, and
-the yellow→green switch at 100% — and `formatClock`/`percentOf` are shared with the HUD strip
-(`ui/hud/hud.ts`) so the popup and the bar can never disagree about the same numbers. `percentOf`
-truncates, matching `wi_stuff.c`'s C integer division, and reads 100% for a total of 0, where
-vanilla would divide by zero.
+`src/ui/hud/intermission.ts` (`#intermission`) is the end-of-level popup: the same three counts the
+HUD strip carries, as vanilla's percentages this time, then a face for how that went, then the time
+block — the frozen level time, the best-time lines (§ Best times), and the par time closing it — and
+the continue hint. The three percentages are **right-aligned** against each other, which the HUD
+strip's own numbers are not: the strip's are one glance among many, while these three sit stacked as
+a block where a ragged right edge is the first thing you read. A value wider than the `100%` the
+column is sized for — kills can pass 100% — widens the column rather than being clipped. `Hud`'s
+other layout rules apply — a red label run, values from a shared column, and the yellow→green switch
+at 100% — and `formatClock`/`percentOf` are shared with the HUD strip (`ui/hud/hud.ts`) so the popup
+and the bar can never disagree about the same numbers. `percentOf` truncates, matching
+`wi_stuff.c`'s C integer division, and reads 100% for a total of 0, where vanilla would divide by
+zero.
 
 Every line of the **time block** — `Your time`, `Best time`/`Previous`, `Par` — is drawn by
 `drawTimeLine` through one shared label column and one shared clock column, so the labels start
@@ -320,11 +320,12 @@ too said the same thing twice. A first-ever completion is a record and so has no
 show.
 
 **The key is the content id of the WAD file that *provides* the map, plus the map lump, plus the
-skill** — `Game.recordCompletion` takes both from `mapProvider(wad, map)`
-(docs/wad.md § Content id), the same lookup a save's `mapWad` is. Keying on the whole loaded set instead would orphan every record the
-moment an unrelated add-on is loaded; keying on the file name alone would let two different WADs
-that happen to share a basename fight over one record, and would lose every record on a rename.
-Skill is in the key because a time set on skill 1 says nothing about one set on Ultra-Violence.
+skill** — `Game.recordCompletion` takes both from `mapProvider(wad, map)` (docs/wad.md § Content
+id), the same lookup a save's `mapWad` is. Keying on the whole loaded set instead would orphan every
+record the moment an unrelated add-on is loaded; keying on the file name alone would let two
+different WADs that happen to share a basename fight over one record, and would lose every record on
+a rename. Skill is in the key because a time set on skill 1 says nothing about one set on
+Ultra-Violence.
 
 Three rules about what counts:
 
@@ -384,13 +385,13 @@ dropped like any other — there is nothing in it to keep.
 
 ## Center messages
 
-`src/ui/hud/message.ts`'s `CenterMessage` draws one short line of `WadFont` text over the middle of the
-view (`#hud-message`, horizontally centered, 40% down so it clears the player sprite the camera
+`src/ui/hud/message.ts`'s `CenterMessage` draws one short line of `WadFont` text over the middle of
+the view (`#hud-message`, horizontally centered, 40% down so it clears the player sprite the camera
 holds at dead center), for 3 seconds. Three callers so far:
 
 - the secret announcement — `Game.collectPickupsAndSectorEffects` shows `SECRET_MESSAGE` (this
-  module's own, since it is display text) and plays the `secret` chime on the frame `SectorEffects.update`
-  reports `secretFound`;
+  module's own, since it is display text) and plays the `secret` chime on the frame
+  `SectorEffects.update` reports `secretFound`;
 - a cheat's response — `Game.applyCheats` shows whatever line the code that just fired returns
   (docs/cheats.md), in the message's own yellow like the secret announcement;
 - the locked door/switch line — `lockedLineMessage(lock, kind)` resolves the `LockedLine`
@@ -415,12 +416,11 @@ opacity, so blue takes the light end of the same palette ramp instead.
 Both halves of the secret announcement are this engine's own, not vanilla reproductions: vanilla
 announces a secret nowhere at all (its status bar's `S` count just ticks up) and prints what
 messages it does have in the top-left in STCFN's native red; the chime isn't a WAD lump either
-(docs/audio.md § Player and pickups). Placement is
-center-screen in `COLOR_YELLOW`, where a top-down player is already looking, and 3 seconds rather than
-vanilla's 4-second `HU_MSGTIMEOUT` because text in the middle of the view outstays its welcome
-faster than text in a corner. Its CSS size (`13px` glyph height, roughly the level-stats strip's
-own) and `opacity: 0.75` are **tuned by feel** — it sits over the playfield, so it reads as an
-overlay rather than competing with what's under it.
+(docs/audio.md § Player and pickups). Placement is center-screen in `COLOR_YELLOW`, where a top-down
+player is already looking, and 3 seconds rather than vanilla's 4-second `HU_MSGTIMEOUT` because text
+in the middle of the view outstays its welcome faster than text in a corner. Its CSS size (`13px`
+glyph height, roughly the level-stats strip's own) and `opacity: 0.75` are **tuned by feel** — it
+sits over the playfield, so it reads as an overlay rather than competing with what's under it.
 
 The timeout is ticked from `Game.frame`'s `dt`, so a paused game doesn't burn a message's display
 time behind the menu; `loadMapByIndex` and `dispose` both `clear()` it, since the element is static
@@ -438,28 +438,29 @@ lowercase glyphs). `measure()`/`draw()` let a caller compose multiple runs (diff
 different `WadFont` instances) onto one canvas — `draw()` returns the cursor x just past the last
 glyph, so a second call can continue from there.
 
-**Each glyph is placed vertically by its own patch offset**, as `V_DrawPatch` does (`y - topoffset`),
-and the line height is the tallest `top + height`, not the tallest patch. STCFN's short glyphs are
-not full-height images with blank rows: `.` is a 3px patch with `topoffset` -4, `,` 4px with -3,
-`-` 3px with -2. Drawing them all at the line's top — which is what happened before, and showed up
-as the period in `SCYTHE.WAD MAP01` floating above the letters — puts every period, comma, hyphen
-and underscore at cap height. Nothing else moves: every letter and digit has a zero offset, and
-`Q`/`$`/`@` already made the box 8px tall.
+**Each glyph is placed vertically by its own patch offset**, as `V_DrawPatch` does
+(`y - topoffset`), and the line height is the tallest `top + height`, not the tallest patch. STCFN's
+short glyphs are not full-height images with blank rows: `.` is a 3px patch with `topoffset` -4, `,`
+4px with -3, `-` 3px with -2. Drawing them all at the line's top — which is what happened before,
+and showed up as the period in `SCYTHE.WAD MAP01` floating above the letters — puts every period,
+comma, hyphen and underscore at cap height. Nothing else moves: every letter and digit has a zero
+offset, and `Q`/`$`/`@` already made the box 8px tall.
 
 STCFN's own pixels are already vanilla's HUD-message red, so the red `"M: "`/`"I: "`/`"S: "` labels
 need no recoloring. There is no full-charset yellow font in vanilla WADs (`WINUM`/`STYSNUM` are
 digits-only — which is exactly why `#game-hud`'s readouts *can* use `STYSNUM` itself, and these
 mixed label-and-number lines can't; mixing font families within one line would visibly mismatch
-STCFN's glyph height), so the strip's numbers instead recolor STCFN itself — `WadFont`'s optional `recolor` — tinted to
-`STYSNUM1`'s own sampled yellow (`COLOR_YELLOW`, `255,255,115`, exported from `wadfont.ts` because
-the center message, the end card's heading and the death overlay's killer line all recolor to it
-too — yellow is what this UI reads as "the thing you came here to know"), so the color still comes
-from the WAD rather than being invented. Recoloring is **not** a flat fill: each opaque pixel is scaled by its own brightness
-(`max(r,g,b)/255`) before tinting, so STCFN's anti-aliased edges (its glyphs shade from a dark red
-core out to a brighter edge) still shade from a dark tint to a bright one rather than flattening to
-one solid color — a flat fill was tried first and read as illegible pixel mush. This repo has no
-palette-translation-table mechanism (`GraphicsBank` always blits through the one loaded palette),
-which is why a second color needs this recolor path at all rather than a second baked-color lump set.
+STCFN's glyph height), so the strip's numbers instead recolor STCFN itself — `WadFont`'s optional
+`recolor` — tinted to `STYSNUM1`'s own sampled yellow (`COLOR_YELLOW`, `255,255,115`, exported from
+`wadfont.ts` because the center message, the end card's heading and the death overlay's killer line
+all recolor to it too — yellow is what this UI reads as "the thing you came here to know"), so the
+color still comes from the WAD rather than being invented. Recoloring is **not** a flat fill: each
+opaque pixel is scaled by its own brightness (`max(r,g,b)/255`) before tinting, so STCFN's
+anti-aliased edges (its glyphs shade from a dark red core out to a brighter edge) still shade from a
+dark tint to a bright one rather than flattening to one solid color — a flat fill was tried first
+and read as illegible pixel mush. This repo has no palette-translation-table mechanism
+(`GraphicsBank` always blits through the one loaded palette), which is why a second color needs this
+recolor path at all rather than a second baked-color lump set.
 
 `WadNumbers` is the same rasterizer over vanilla's two status-bar digit sets — one glyph per digit,
 a fixed cell instead of proportional advances, and the whole of `STlib_drawNum`'s layout (§ The HUD
@@ -478,15 +479,15 @@ three numbers still form a flush column starting at the same x.
 
 ## The crosshair
 
-**The mouse cursor is the health readout too.** `src/ui/hud/crosshair.ts`'s `Crosshair` sets the game
-canvas's OS cursor to a plus-shaped reticle (an inline SVG data URI, since the built-in `crosshair`
-keyword can't be recolored) whose color reports health at a glance: blue above 100 — `COLOR_BLUE`,
-the same `ARM2A0` blue the health number itself switches to up there (§ The HUD), so the two cross
-over together — sliding from green at 100 through yellow down to red at 0 below that. This is TopDoom's own convention, not a
-vanilla one — vanilla's status bar has a `%`; the cursor doubles as the aim reticle here (`game.ts`'s
-mouse-aim raycast), so there's screen real estate to spend on it that vanilla never had. `update()`
-skips rebuilding the cursor image when the computed color hasn't changed, since it's called every
-frame from the same `Game.frame` loop as `Hud.update`.
+**The mouse cursor is the health readout too.** `src/ui/hud/crosshair.ts`'s `Crosshair` sets the
+game canvas's OS cursor to a plus-shaped reticle (an inline SVG data URI, since the built-in
+`crosshair` keyword can't be recolored) whose color reports health at a glance: blue above 100 —
+`COLOR_BLUE`, the same `ARM2A0` blue the health number itself switches to up there (§ The HUD), so
+the two cross over together — sliding from green at 100 through yellow down to red at 0 below that.
+This is TopDoom's own convention, not a vanilla one — vanilla's status bar has a `%`; the cursor
+doubles as the aim reticle here (`game.ts`'s mouse-aim raycast), so there's screen real estate to
+spend on it that vanilla never had. `update()` skips rebuilding the cursor image when the computed
+color hasn't changed, since it's called every frame from the same `Game.frame` loop as `Hud.update`.
 
 **The outline is what makes the color legible**, and it is drawn as a second, wider pass of the
 same shape underneath rather than as a filter: solid black, `HALO` pixels proud of the colored
@@ -499,23 +500,24 @@ outline still covers.
 
 ## Screen effects
 
-The two screen tints (`#screen-tint`, `screeneffects.css`) are CSS on the composited frame rather than
-anything in the render pipeline. Invulnerability uses `backdrop-filter: grayscale(1) invert(1)` —
-vanilla's `INVULNERABILITYMAP` really is a *grayscale* inverse of the palette, not a colour inversion
-— and the suit a flat green wash. The element sits at `--z-tint`: above the canvas, below every HUD
-layer, so the world recolours and the readouts over it don't. Everything in this section lives
-in `ui/hud/screeneffects.ts`, driven off inventory state every frame rather than toggled on
-pickup/expiry, so clearing the powers needs no teardown path of its own. **`Game.dispose` has to call
-`ScreenEffects.reset`**, since the `Viewport` and these overlay elements outlive a `Game` —
+The two screen tints (`#screen-tint`, `screeneffects.css`) are CSS on the composited frame rather
+than anything in the render pipeline. Invulnerability uses `backdrop-filter: grayscale(1) invert(1)`
+— vanilla's `INVULNERABILITYMAP` really is a *grayscale* inverse of the palette, not a colour
+inversion — and the suit a flat green wash. The element sits at `--z-tint`: above the canvas, below
+every HUD layer, so the world recolours and the readouts over it don't. Everything in this section
+lives in `ui/hud/screeneffects.ts`, driven off inventory state every frame rather than toggled on
+pickup/expiry, so clearing the powers needs no teardown path of its own. **`Game.dispose` has to
+call `ScreenEffects.reset`**, since the `Viewport` and these overlay elements outlive a `Game` —
 otherwise the menu, and the next level started from it, inherit whatever powerup was running.
 
 Boom's 242 colormaps get a third element, `#colormap-tint`, at the same `--z-tint`. It differs from
 the powerup tints in being a **multiply** blend rather than a wash, because that is all a colormap
 can do — take light away — and in being driven from `game.ts` rather than from inventory state:
-which of the control sector's colormaps applies depends on the player's eye height against
-that sector (docs/specials.md § Deep water). `Game.viewColormap` resolves it, `ScreenEffects.setColormapTint`
-writes it, and `reset` clears it with the rest. **The underwater colormap is deliberately never
-applied** — see docs/specials.md § Deep water for why the top-down camera can't wear it.
+which of the control sector's colormaps applies depends on the player's eye height against that
+sector (docs/specials.md § Deep water). `Game.viewColormap` resolves it,
+`ScreenEffects.setColormapTint` writes it, and `reset` clears it with the rest. **The underwater
+colormap is deliberately never applied** — see docs/specials.md § Deep water for why the top-down
+camera can't wear it.
 
 **Invulnerability's tint, the suit's tint and invisibility's sprite translucency all blink for their
 last `POWER_BLINK_WARNING_SECONDS` (3s)**, via the shared `powerBlinkVisible(secondsLeft)`. Not a
@@ -524,26 +526,29 @@ added because these are the powerups where losing track of the exact expiry is a
 (walking back into a hazard, or back into plain sight, a second early). The light visor is left out,
 since a flickering exposure would look broken rather than read as a warning.
 `floor(secondsLeft * POWER_BLINK_HZ) % 2` alternates as the remaining time counts down — a plain
-on/off square wave with no separate phase timer, so it needs nothing reset on pickup or level change.
+on/off square wave with no separate phase timer, so it needs nothing reset on pickup or level
+change.
 
-**A red damage flash (`#pain-flash`, its own element rather than a third `#screen-tint` class)** echoes
-vanilla's palette-shift pain flash (`ST_doPaletteStuff`'s `damagecount`), raised from
-`Game.damagePlayer` via `ScreenEffects.addPain`. Vanilla adds the raw damage to a counter clamped to 100 and ticks it down by 1
-per tic; this mirrors that as a normalized `painFlash` (0-1, `+= amount / PAIN_FLASH_MAX_DAMAGE`,
-clamped) decayed every frame by `dt / PAIN_FLASH_FADE_SECONDS` (100 tics over 35, vanilla's own
-full-to-zero time) and written to the element's `opacity` (scaled by `PAIN_FLASH_MAX_ALPHA`, tuned by
-feel since vanilla swaps palettes outright rather than blending an overlay). **It's a separate element
-because its red has to blend with, not replace, the suit's persistent green wash** — two `background`s
-on one element can't coexist, but two stacked elements can. `damagePlayer` bumps it on every hit,
-lethal or not, and `loadMapByIndex`/`dispose` reset it alongside `playerDead`/the tint classes.
+**A red damage flash (`#pain-flash`, its own element rather than a third `#screen-tint` class)**
+echoes vanilla's palette-shift pain flash (`ST_doPaletteStuff`'s `damagecount`), raised from
+`Game.damagePlayer` via `ScreenEffects.addPain`. Vanilla adds the raw damage to a counter clamped to
+100 and ticks it down by 1 per tic; this mirrors that as a normalized `painFlash` (0-1,
+`+= amount / PAIN_FLASH_MAX_DAMAGE`, clamped) decayed every frame by `dt / PAIN_FLASH_FADE_SECONDS`
+(100 tics over 35, vanilla's own full-to-zero time) and written to the element's `opacity` (scaled
+by `PAIN_FLASH_MAX_ALPHA`, tuned by feel since vanilla swaps palettes outright rather than blending
+an overlay). **It's a separate element because its red has to blend with, not replace, the suit's
+persistent green wash** — two `background`s on one element can't coexist, but two stacked elements
+can. `damagePlayer` bumps it on every hit, lethal or not, and `loadMapByIndex`/`dispose` reset it
+alongside `playerDead`/the tint classes.
 
-`SpriteActor.setOpacity` draws through a per-actor **clone** of the shared cached material rather than
-mutating it: `SpriteMaterialCache` hands out one material per (lump, mirrored) pair to everything
-drawing that lump. Only the player ever uses this, and `PLAY` happens to be the player's alone, but
-relying on that would be a trap the first time something else reuses a lump. The clone drops
-`alphaTest` from 0.5 to 0.01 — the test is against `texture.a * opacity`, so at 0.35 opacity the 0.5
-threshold would discard the *entire* sprite; WAD sprite alpha is binary (0 or 255, and `NearestFilter`
-never blends between them), so any threshold below the opacity in use cuts the same silhouette. It's
-the stand-in for vanilla's `fuzz` colormap (a per-column smear of what's behind the sprite, with no
-direct equivalent here) and deliberately errs toward still being findable: in vanilla the invisible
-thing is *you*, seen from your own eyes; here it's a sprite you have to keep track of.
+`SpriteActor.setOpacity` draws through a per-actor **clone** of the shared cached material rather
+than mutating it: `SpriteMaterialCache` hands out one material per (lump, mirrored) pair to
+everything drawing that lump. Only the player ever uses this, and `PLAY` happens to be the player's
+alone, but relying on that would be a trap the first time something else reuses a lump. The clone
+drops `alphaTest` from 0.5 to 0.01 — the test is against `texture.a * opacity`, so at 0.35 opacity
+the 0.5 threshold would discard the *entire* sprite; WAD sprite alpha is binary (0 or 255, and
+`NearestFilter` never blends between them), so any threshold below the opacity in use cuts the same
+silhouette. It's the stand-in for vanilla's `fuzz` colormap (a per-column smear of what's behind the
+sprite, with no direct equivalent here) and deliberately errs toward still being findable: in
+vanilla the invisible thing is *you*, seen from your own eyes; here it's a sprite you have to keep
+track of.

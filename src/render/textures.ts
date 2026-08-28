@@ -19,7 +19,10 @@ import { BIN_HALF, BIN_PER_RADIAN, SHADOW_STEPS } from './lightvis.ts';
 
 export type SurfaceKind = 'wall' | 'flat';
 
-/** The live uniform objects `DynamicLights` mutates each frame; see docs/lights.md § Two lighting paths. */
+/**
+ * The live uniform objects `DynamicLights` mutates each frame; see docs/lights.md § Two lighting
+ * paths.
+ */
 type LightUniforms = DynamicLights['uniforms'];
 
 /**
@@ -35,9 +38,9 @@ const SOFT_BINS = glslFloat(SHADOW_SOFT_BINS);
 const SOFT_SPAN = glslFloat(2 * SHADOW_SOFT_BINS);
 
 /**
- * The dynamic-light term, appended to the `#include <color_fragment>` replacement so it lands
- * while `diffuseColor` is still live. `vColor` is the sector's baked light and `sampledDiffuseColor`
- * the texel: the lights are added to the *multiplier* and clamped there, which reproduces vanilla's
+ * The dynamic-light term, appended to the `#include <color_fragment>` replacement so it lands while
+ * `diffuseColor` is still live. `vColor` is the sector's baked light and `sampledDiffuseColor` the
+ * texel: the lights are added to the *multiplier* and clamped there, which reproduces vanilla's
  * fullbright ceiling instead of overbrightening the texture past it. Fog is applied later, to
  * `gl_FragColor`, so a lit surface still fogs. docs/lights.md § Two lighting paths.
  *
@@ -222,10 +225,10 @@ export class MaterialBank {
           '#include <begin_vertex>',
           `#include <begin_vertex>
             vDynWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
-            // The leaf's light list, read here rather than in the fragment stage. Every vertex of
-            // a quad or a flat's fan carries the same leaf, so the value is constant across the
-            // primitive and \`flat\` carries it exactly — while the fetch itself drops from once per
-            // drawn pixel to once per vertex. All-ones is the empty list, so an unprobed quad
+            // The leaf's light list, read here rather than in the fragment stage. Every vertex of a
+            // quad or a flat's fan carries the same leaf, so the value is constant across the
+            // primitive and \`flat\` carries it exactly — while the fetch itself drops from once
+            // per drawn pixel to once per vertex. All-ones is the empty list, so an unprobed quad
             // (aLightCell -1) stays unlit. docs/lights.md § How the answer reaches a fragment.
             vLightVis = uvec4(${EMPTY_WORD}u);
             // floor, not a bare cast: GLSL truncates toward zero, which would read the -1 an
@@ -262,7 +265,10 @@ export class MaterialBank {
     return bmp ? { w: bmp.width, h: bmp.height } : null;
   }
 
-  /** True if `name` already has a live material — i.e. some batch actually uses it. `AnimatedTextures` only bothers swapping frames for names that passed this. */
+  /**
+   * True if `name` already has a live material — i.e. some batch actually uses it.
+   * `AnimatedTextures` only bothers swapping frames for names that passed this.
+   */
   has(kind: SurfaceKind, name: string): boolean {
     return !!this.materials.get(kind + ':' + name.toUpperCase());
   }

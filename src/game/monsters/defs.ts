@@ -27,9 +27,15 @@ export interface MonsterBody extends Pos3 {
   velZ: number;
   /** Facing/movement direction, radians — same convention as `Player.angle`. */
   angle: number;
-  /** >0 while playing out an attack, during which the monster holds position and no chase call runs — docs/monster-ai.md § Attacking. */
+  /**
+   * >0 while playing out an attack, during which the monster holds position and no chase call runs
+   * — docs/monster-ai.md § Attacking.
+   */
   attackPause: number;
-  /** Shots left in the attack currently being played out, and the countdown to the next one (`AttackStats.shots`). */
+  /**
+   * Shots left in the attack currently being played out, and the countdown to the next one
+   * (`AttackStats.shots`).
+   */
   burstLeft: number;
   burstTimer: number;
   /**
@@ -39,10 +45,16 @@ export interface MonsterBody extends Pos3 {
    * chains. docs/monster-ai.md § The windup.
    */
   swinging: boolean;
-  /** >0 while a lost soul's `A_SkullAttack` charge is in flight, travelling `chargeAngle` at charge speed until it connects or hits geometry. */
+  /**
+   * >0 while a lost soul's `A_SkullAttack` charge is in flight, travelling `chargeAngle` at charge
+   * speed until it connects or hits geometry.
+   */
   chargeTimer: number;
   chargeAngle: number;
-  /** >0 while staggered by a recent hit; movement and attacks pause until it drops to 0 (see `reactToDamage`). */
+  /**
+   * >0 while staggered by a recent hit; movement and attacks pause until it drops to 0 (see
+   * `reactToDamage`).
+   */
   painTimer: number;
   /**
    * Vanilla's `MF_INFLOAT`: set while a `flies` monster is changing height to
@@ -53,27 +65,48 @@ export interface MonsterBody extends Pos3 {
    */
   inFloat: boolean;
 
-  // --- Vanilla's A_Chase bookkeeping (see `runChaseCall`). Every counter here
-  // is measured in *chase calls*, not seconds, exactly as vanilla measures it;
-  // `chaseTimer` is the only thing that converts between the two. ---
+  // The chase bookkeeping `runChaseCall` drives. Every counter here is measured in *chase calls*,
+  // not seconds, as vanilla's own `A_Chase` measures it; `chaseTimer` is the only thing that
+  // converts between the two.
 
-  /** Which of vanilla's eight movement directions it walks, `DI_NODIR` (8) when it has nowhere to go — the 8-way grid behind DOOM's zig-zag approach. */
+  /**
+   * Which of vanilla's eight movement directions it walks, `DI_NODIR` (8) when it has nowhere to go
+   * — the 8-way grid behind DOOM's zig-zag approach.
+   */
   movedir: number;
-  /** Chase calls left before `newChaseDir` re-routes — vanilla's `movecount`, reseeded to `P_Random() & 15`. */
+  /**
+   * Chase calls left before `newChaseDir` re-routes — vanilla's `movecount`, reseeded to
+   * `P_Random() & 15`.
+   */
   movecount: number;
   /** Accumulates real time toward the next chase call (`MonsterStats.chaseInterval`). */
   chaseTimer: number;
-  /** Set when a frame's move was refused; the next chase call re-routes, the way vanilla reacts to `P_Move` returning false. */
+  /**
+   * Set when a frame's move was refused; the next chase call re-routes, the way vanilla reacts to
+   * `P_Move` returning false.
+   */
   moveBlocked: boolean;
-  /** Chase calls of target commitment left — vanilla's `threshold`, seeded to `BASETHRESHOLD` on being hurt. Keeps an infight from thrashing between targets. */
+  /**
+   * Chase calls of target commitment left — vanilla's `threshold`, seeded to `BASETHRESHOLD` on
+   * being hurt. Keeps an infight from thrashing between targets.
+   */
   threshold: number;
-  /** Vanilla's `MF_JUSTHIT` — "the target just hit the enemy, so fight back": the next missile check fires regardless of the range roll. */
+  /**
+   * Vanilla's `MF_JUSTHIT` — "the target just hit the enemy, so fight back": the next missile check
+   * fires regardless of the range roll.
+   */
   justHit: boolean;
-  /** Vanilla's `MF_JUSTATTACKED` — "do not attack twice in a row": the next chase call re-routes instead of attacking. */
+  /**
+   * Vanilla's `MF_JUSTATTACKED` — "do not attack twice in a row": the next chase call re-routes
+   * instead of attacking.
+   */
   justAttacked: boolean;
   /** Chase calls left of vanilla's `reactiontime`; blocks ranged attacks only. */
   reactionTicks: number;
-  /** True while inside an `AttackStats.refire` loop, which re-enters the attack the instant its state sequence ends. */
+  /**
+   * True while inside an `AttackStats.refire` loop, which re-enters the attack the instant its
+   * state sequence ends.
+   */
   refiring: boolean;
   /**
    * A persistent coin flip standing in for which side of `A_Tracer`'s
@@ -119,9 +152,15 @@ export interface AttackStats {
    * single bullet. See docs/monster-attacks.md § Hitscan vs. projectile.
    */
   pellets?: number;
-  /** Seconds the attack's state sequence runs — its summed `info.c` tics over 35. The monster holds position exactly this long (docs/monster-ai.md § Attacking). */
+  /**
+   * Seconds the attack's state sequence runs — its summed `info.c` tics over 35. The monster holds
+   * position exactly this long (docs/monster-ai.md § Attacking).
+   */
   duration: number;
-  /** Shots fired from this one `missilestate` and how far apart, rather than a fresh `A_Chase` decision per shot. Defaults to a single shot at attack start. */
+  /**
+   * Shots fired from this one `missilestate` and how far apart, rather than a fresh `A_Chase`
+   * decision per shot. Defaults to a single shot at attack start.
+   */
   shots?: number;
   shotInterval?: number;
   /**
@@ -148,7 +187,10 @@ export interface AttackStats {
    * docs/monster-ai.md § The windup, docs/monster-archvile.md.
    */
   startDelaySeconds?: number;
-  /** Vanilla's `A_CPosRefire`/`A_SpidRefire` loop: the attack state re-enters itself until the target stops being visible, never re-rolling `P_CheckMissileRange`. */
+  /**
+   * Vanilla's `A_CPosRefire`/`A_SpidRefire` loop: the attack state re-enters itself until the
+   * target stops being visible, never re-rolling `P_CheckMissileRange`.
+   */
   refire?: boolean;
   /**
    * The lost soul's `A_SkullAttack` — it launches *itself* at `SKULLSPEED`
@@ -205,9 +247,15 @@ export interface AttackStats {
    */
   rangeFalloffScale?: number;
   rangeFalloffCap?: number;
-  /** Revenant-only (`MT_UNDEAD`): won't fire inside this distance, preferring to close to melee. Measured on the **offset** distance, as vanilla does. */
+  /**
+   * Revenant-only (`MT_UNDEAD`): won't fire inside this distance, preferring to close to melee.
+   * Measured on the **offset** distance, as vanilla does.
+   */
   minOffsetDist?: number;
-  /** Arch-vile-only (`MT_VILE`): won't fire beyond `14*64`. The one genuine long-range cutoff in the game; also measured on the offset distance. */
+  /**
+   * Arch-vile-only (`MT_VILE`): won't fire beyond `14*64`. The one genuine long-range cutoff in the
+   * game; also measured on the offset distance.
+   */
   maxOffsetDist?: number;
   /**
    * Arch-vile only (`A_VileAttack`), replacing the hitscan-tracer stand-in:
@@ -227,13 +275,18 @@ export interface AttackStats {
  * `sfx_None`. See docs/audio.md § Monsters.
  */
 export interface MonsterSounds {
-  /** `mobjinfo.seesound`, played by `A_Look` on waking. The two randomized families resolve through `randomVariant` at play time. */
+  /**
+   * `mobjinfo.seesound`, played by `A_Look` on waking. The two randomized families resolve through
+   * `randomVariant` at play time.
+   */
   see?: SfxId;
   /** `mobjinfo.activesound` — the idle grunt `A_Chase` plays on a 3-in-256 roll per chase call. */
   active?: SfxId;
   /** `mobjinfo.painsound` (`A_Pain`), played only by a hit that actually staggers. */
   pain?: SfxId;
-  /** `mobjinfo.deathsound` (`A_Scream`); a gibbed death plays `slop` instead, matching `A_XScream`. */
+  /**
+   * `mobjinfo.deathsound` (`A_Scream`); a gibbed death plays `slop` instead, matching `A_XScream`.
+   */
   death?: SfxId;
   /**
    * The sound the melee action plays **on connecting** — `A_TroopAttack`'s and
@@ -258,7 +311,10 @@ export interface MonsterSounds {
    * vanilla.
    */
   attack?: SfxId;
-  /** Played when a ranged attack's windup *begins* — `A_FatRaise`'s `manatk`, `A_VileStart`'s `vilatk`. */
+  /**
+   * Played when a ranged attack's windup *begins* — `A_FatRaise`'s `manatk`, `A_VileStart`'s
+   * `vilatk`.
+   */
   windup?: SfxId;
   /**
    * Footsteps, and how far apart. Only the three heavy monsters have any
@@ -316,9 +372,15 @@ export interface MonsterStats {
    * a low opening. See `BODY_HEIGHT_FALLBACK`.
    */
   height: number;
-  /** Chance a hit staggers this monster (`reactToDamage`) — `mobjinfo.painchance` over 256, lifted exactly. */
+  /**
+   * Chance a hit staggers this monster (`reactToDamage`) — `mobjinfo.painchance` over 256, lifted
+   * exactly.
+   */
   painChance: number;
-  /** Seconds a stagger lasts — the `painstate` chain's summed tics over 35, 4 (imp, demon, baron) to 12 (cacodemon, pain elemental). */
+  /**
+   * Seconds a stagger lasts — the `painstate` chain's summed tics over 35, 4 (imp, demon, baron) to
+   * 12 (cacodemon, pain elemental).
+   */
   painDuration: number;
   /**
    * Vanilla's `MF_FLOAT | MF_NOGRAVITY` — cacodemon, lost soul and pain
@@ -328,7 +390,11 @@ export interface MonsterStats {
    * See docs/monster-ai.md § Floating monsters.
    */
   flies?: boolean;
-  /** Vanilla's `A_VileChase` corpse search, arch-vile only — tried before anything else on a chase call, falling through to the ordinary decision only if no corpse is raisable. See `monsters/vile.ts: tryRaiseCorpse`. */
+  /**
+   * Vanilla's `A_VileChase` corpse search, arch-vile only — tried before anything else on a chase
+   * call, falling through to the ordinary decision only if no corpse is raisable. See
+   * `monsters/vile.ts: tryRaiseCorpse`.
+   */
   resurrects?: boolean;
 }
 
@@ -352,9 +418,15 @@ export interface MonsterAttack {
    * roll nothing at all (`spawn`, `vileWindup`, `resurrect`).
    */
   bullets: number[];
-  /** The heading it was fired along (`A_FaceTarget`'s angle) — what a hitscan bolt traces down, so it can hit whatever is actually in the way. */
+  /**
+   * The heading it was fired along (`A_FaceTarget`'s angle) — what a hitscan bolt traces down, so
+   * it can hit whatever is actually in the way.
+   */
   angleRad: number;
-  /** One flying projectile sprite per entry instead of an instant hitscan tracer. Almost always one entry; only the mancubus fires two at once (`pairOffsetsRad`). */
+  /**
+   * One flying projectile sprite per entry instead of an instant hitscan tracer. Almost always one
+   * entry; only the mancubus fires two at once (`pairOffsetsRad`).
+   */
   projectiles?: {
     sprite: string;
     speed: number;
@@ -363,9 +435,17 @@ export interface MonsterAttack {
     splash?: { radius: number; damage: number };
     homing?: boolean;
   }[];
-  /** Set only for the arch-vile's real `A_VileAttack` — see `AttackStats.blast`'s doc. `monsters/vile.ts` applies direct damage plus knockback, then a radius blast, instead of the generic hitscan-tracer path every other non-projectile ranged monster uses. */
+  /**
+   * Set only for the arch-vile's real `A_VileAttack` — see `AttackStats.blast`'s doc.
+   * `monsters/vile.ts` applies direct damage plus knockback, then a radius blast, instead of the
+   * generic hitscan-tracer path every other non-projectile ranged monster uses.
+   */
   blast?: { knockUpSpeed: number; splashRadius: number; splashDamage: number };
-  /** Set only for a `'resurrect'` attack (`AttackStats.resurrects`): the raised corpse's `PosedThing` id — see `ThingLayer.update`, which applies the actual revival since `stepMonsterAI` has no access to the thing list itself. */
+  /**
+   * Set only for a `'resurrect'` attack (`AttackStats.resurrects`): the raised corpse's
+   * `PosedThing` id — see `ThingLayer.update`, which applies the actual revival since
+   * `stepMonsterAI` has no access to the thing list itself.
+   */
   resurrectId?: number;
 }
 
@@ -377,33 +457,51 @@ export interface MonsterAttack {
  * coordinate, so it carries no dependency on the thing storage at all.
  */
 export interface MonsterAttackEvent extends MonsterAttack, Pos3 {
-  /** The firing monster's own id and doomednum, so a shot that lands on another monster can be attributed (and species-checked) correctly. */
+  /**
+   * The firing monster's own id and doomednum, so a shot that lands on another monster can be
+   * attributed (and species-checked) correctly.
+   */
   sourceId: number;
   sourceType: number;
-  /** The firing body's own `PosedThing.blockRadius`, carried rather than re-looked-up — how far clear of it a hitscan tracer starts (docs/combat.md § Effects and their batching). */
+  /**
+   * The firing body's own `PosedThing.blockRadius`, carried rather than re-looked-up — how far
+   * clear of it a hitscan tracer starts (docs/combat.md § Effects and their batching).
+   */
   sourceRadius: number;
   /** What it was aimed at: `null` for the player, otherwise another monster's id. */
   targetId: number | null;
 }
 
-/** One corpse `ThingLayer`'s `findRaisableCorpse` found eligible for the arch-vile to raise — just enough for `tryRaiseCorpse` to face it and report which one. */
+/**
+ * One corpse `ThingLayer`'s `findRaisableCorpse` found eligible for the arch-vile to raise — just
+ * enough for `tryRaiseCorpse` to face it and report which one.
+ */
 export interface RaiseCandidate {
   id: number;
   x: number;
   y: number;
 }
 
-/** The subset of `PosedThing` (`game/things.ts`) `tryWake` needs — position, facing, its ambush flag, and the two fields it mutates on success. */
+/**
+ * The subset of `PosedThing` (`game/things.ts`) `tryWake` needs — position, facing, its ambush
+ * flag, and the two fields it mutates on success.
+ */
 export interface WakeCheckBody extends Pos3 {
   facingDeg: number;
   ambush: boolean;
   alerted: boolean;
   reactionTicks: number;
-  /** The thing's cached subsector, handed straight to `hasLineOfSight`'s REJECT test — see docs/world.md § REJECT. */
+  /**
+   * The thing's cached subsector, handed straight to `hasLineOfSight`'s REJECT test — see
+   * docs/world.md § REJECT.
+   */
   subsector: number;
 }
 
-/** Vanilla's `MELEERANGE` (`p_local.h`: `64*FRACUNIT`). Not the melee threshold itself — see `meleeThreshold`. */
+/**
+ * Vanilla's `MELEERANGE` (`p_local.h`: `64*FRACUNIT`). Not the melee threshold itself — see
+ * `meleeThreshold`.
+ */
 export const MELEE_RANGE = 64;
 
 /**

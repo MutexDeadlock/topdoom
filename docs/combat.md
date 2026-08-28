@@ -1,8 +1,8 @@
 # Shots: paths, hits and effects
 
 `src/game/projectiles.ts`, `src/game/combat.ts`, `src/game/world.ts: shotPath`,
-`src/render/tracer.ts`, `src/game/spritefx.ts`, `src/game/spritefx/defs.ts`, `src/game/spritefx/tables.ts`, `src/game/things.ts`,
-`src/game/things/tables.ts`, `src/game.ts`
+`src/render/tracer.ts`, `src/game/spritefx.ts`, `src/game/spritefx/defs.ts`,
+`src/game/spritefx/tables.ts`, `src/game/things.ts`, `src/game/things/tables.ts`, `src/game.ts`
 
 This is the middle of the chain: a weapon has fired (docs/weapons.md) and something is about to die
 (docs/death.md). What happens in between — where the shot goes, what it is allowed to hit, and what
@@ -29,8 +29,8 @@ with no opening at all (a genuinely one-sided wall, or a two-sided line whose op
 like a shut door) **and** by a two-sided line whose vertical opening the shot's height doesn't fit
 through. Neither test alone is enough — `blocksSight` alone lets a shot through a shut door (vanilla
 never flags those `BLOCKING`, so its own no-opening test is what catches them), and omitting the
-height test lets a rocket sail through a knee-high step because the opening beyond it was tall enough
-for *sight*.
+height test lets a rocket sail through a knee-high step because the opening beyond it was tall
+enough for *sight*.
 
 Deliberately **not** `isSolidWall`, and reusing the movement-blocking predicate for shots was a
 shipped bug: it made a shot treat a `BLOCKING`-flagged two-sided line (a barred window/railing) as
@@ -52,10 +52,10 @@ behavior but has no "you clicked it" promise to honor, so it stays on the strict
 line to the target instead meant the wedge cleared a shot on the grounds that *some* slope got
 through, and the shot then went out on a different one that didn't, so the leniency was granted to
 the blocking test and never to the shot. A player's missile shows it plainly, since
-`ProjectileLayer.update` gates its floor/ceiling test to a monster's shot: a rocket aimed over a step
-would clear the wedge, fly at the raw slope straight through the step, and detonate on the far wall.
-With nothing narrowing the wedge the midpoint *is* the target's centre, so an ordinary open-room shot
-is unchanged.
+`ProjectileLayer.update` gates its floor/ceiling test to a monster's shot: a rocket aimed over a
+step would clear the wedge, fly at the raw slope straight through the step, and detonate on the far
+wall. With nothing narrowing the wedge the midpoint *is* the target's centre, so an ordinary
+open-room shot is unchanged.
 
 The span the wedge starts from is the target's **real body** — `ShotLock.halfHeight`, half its
 `mobjinfo.height`, around an aim point that is the body's centre (both derived in
@@ -65,14 +65,15 @@ middle of it; a fixed half-`PLAYER_HEIGHT` band around a fixed 32 units above th
 was — got the imp about right and put a cyberdemon's aim at its knees.
 
 Passing a `ShotLock` at all is what selects the wedge: it and the old separate `lockedOn` flag were
-the same bit at every call site, since only a player's clicked shot has a body to aim at. A monster's
-own shot passes none and stays on the single ray.
+the same bit at every call site, since only a player's clicked shot has a body to aim at. A
+monster's own shot passes none and stays on the single ray.
 
-`ShotLock.slopeOffset` (the super shotgun's per-pellet jitter) is added **after** that clamp, because
-`A_FireShotgun2` adds it to the finished `bulletslope`: vanilla jitters the shot, not the aim, so a
-pellet may scatter into the very step the aim had to clear. Folding it into the aim point before the
-trace — what this used to do — let the wedge clamp the scatter back out. Note the jitter lands after
-the blocking test too, so it moves where the pellet is drawn without moving what stopped it.
+`ShotLock.slopeOffset` (the super shotgun's per-pellet jitter) is added **after** that clamp,
+because `A_FireShotgun2` adds it to the finished `bulletslope`: vanilla jitters the shot, not the
+aim, so a pellet may scatter into the very step the aim had to clear. Folding it into the aim point
+before the trace — what this used to do — let the wedge clamp the scatter back out. Note the jitter
+lands after the blocking test too, so it moves where the pellet is drawn without moving what stopped
+it.
 
 **Both of the other two things this has been are wrong, and the wedge is the fix for the second.**
 The single-ray test is too *strict* for auto-aim: the one ray from gun to target clips the near edge
@@ -132,9 +133,9 @@ Repro: a 3,648-unit corridor with a chaingunner at the far end (3,584 units out)
 chaingunner's own bullets still expire at 2048, so it cannot shoot back.
 
 **A locked-on shot ignores all three and stops at its target**, which is `range`'s default whenever
-`target` is given — see § shotPath for why aim and distance are separate parameters at all. Note this
-makes the lock, not `PLAYER_WEAPON_RANGE`, the real bound on a clicked shot; the cursor can only lock
-what the camera draws, so it never reaches further than the player can see.
+`target` is given — see § shotPath for why aim and distance are separate parameters at all. Note
+this makes the lock, not `PLAYER_WEAPON_RANGE`, the real bound on a clicked shot; the cursor can
+only lock what the camera draws, so it never reaches further than the player can see.
 
 Which of the three a player's shot gets is `world.ts: playerShotRange` — its own function rather
 than an expression inside `ProjectileLayer.spawnPlayerShot` so that the choice is testable without
@@ -156,28 +157,28 @@ two-sided line is where the two part company.
 
 **`triggerShotPath` walks its own shoot-line list, not the blockmap.** The lines that carry a shoot
 special are scanned once at load (`SpecialsController.shootLines` — almost always none, and the loop
-costs nothing on those maps), so a resolved shot tests that handful of segments against its own trace
-instead of re-walking the geometry a second time. The line that *stopped* the shot is passed in
-separately rather than found here: `ShotPath.lineIndex` already has it, and the trace ends exactly on
-it, which is the one crossing floating point can't be trusted to report. Everything each line still
-has to satisfy — the shoot trigger, an unspent one-shot, `monsterCanTrigger` — is `triggerShot`'s,
-unchanged. A body absorbing the shot only shortens the trace: the lines in front of that body still
-fire, and the wall behind it never does.
+costs nothing on those maps), so a resolved shot tests that handful of segments against its own
+trace instead of re-walking the geometry a second time. The line that *stopped* the shot is passed
+in separately rather than found here: `ShotPath.lineIndex` already has it, and the trace ends
+exactly on it, which is the one crossing floating point can't be trusted to report. Everything each
+line still has to satisfy — the shoot trigger, an unspent one-shot, `monsterCanTrigger` — is
+`triggerShot`'s, unchanged. A body absorbing the shot only shortens the trace: the lines in front of
+that body still fire, and the wall behind it never does.
 
 **A melee swing fires nothing**, though `A_Punch`/`A_Saw` reach `P_LineAttack` and the same traverse
 in vanilla: `spawnPlayerShot`'s melee branch skips `shotPath` entirely (it has no geometry to trace,
 only a body to find), so a fist against a switch does nothing here. A known gap, not a decision.
 
 **A projectile's trigger is a deliberate deviation, and is deferred to arrival.**
-`P_ShootSpecialLine` is called from `PTR_ShootTraverse` and nowhere else — in `linuxdoom-1.10` and in
-PrBoom alike — so in vanilla a **missile fires no impact special at all**: `PIT_CheckLine` never calls
-it, and a rocket detonating on a 46 line does nothing. This engine fires it anyway, when the missile
-reaches the wall (`ProjectileLayer.update`, off `Projectile.lineIndex`, which carries the line found
-at launch forward — safe to resolve early, same as `maxDist`: static geometry doesn't move mid-flight).
-Kept on purpose: the pointer makes a switch something the player *aims at* (§ Auto-aim), and the one
-weapon whose shot they can watch fly refusing to work on it reads as a bug rather than as fidelity.
-The same "nothing closer absorbed it" rule applies — `reachedPlayer` and `struck` take priority, as
-does a missile stopped by the floor, which never got there either.
+`P_ShootSpecialLine` is called from `PTR_ShootTraverse` and nowhere else — in `linuxdoom-1.10` and
+in PrBoom alike — so in vanilla a **missile fires no impact special at all**: `PIT_CheckLine` never
+calls it, and a rocket detonating on a 46 line does nothing. This engine fires it anyway, when the
+missile reaches the wall (`ProjectileLayer.update`, off `Projectile.lineIndex`, which carries the
+line found at launch forward — safe to resolve early, same as `maxDist`: static geometry doesn't
+move mid-flight). Kept on purpose: the pointer makes a switch something the player *aims at* (§
+Auto-aim), and the one weapon whose shot they can watch fly refusing to work on it reads as a bug
+rather than as fidelity. The same "nothing closer absorbed it" rule applies — `reachedPlayer` and
+`struck` take priority, as does a missile stopped by the floor, which never got there either.
 
 24 and 47 reuse the plain `FloorEffect` machinery already built for their walkover/switch siblings
 (5/64/91/101 and 20/68/22/95), just tag-triggered by a shot. **Only 46 can be triggered by a
@@ -185,26 +186,27 @@ monster's own shot** — `SpecialDef.monsterCanTrigger`, reproducing a hardcoded
 in `P_ShootSpecialLine` itself (`if (!thing->player)` rejects every case *except* 46) rather than
 some general property of shoot-triggers. Getting 46's repeatability backwards was a real mistake
 caught while adding the other two: `P_ChangeSwitchTexture(line, useAgain)` clears `line->special`
-when `useAgain` is falsy, and 46 passes `1` (repeatable, GR) while 24 and 47 both pass `0` (one-shot,
-G1).
+when `useAgain` is falsy, and 46 passes `1` (repeatable, GR) while 24 and 47 both pass `0`
+(one-shot, G1).
 
 ## Auto-aim
 
 **Auto-aim is click-to-target, not vanilla's autoaim cone** — this game has a mouse pointer, so "aim
 at that one" is expressible directly. `ThingLayer.pickMonster` intersects the cursor ray with each
 candidate's billboard and keeps the nearest, accepting `MONSTER_TYPES` **and the exploding barrel**,
-minus anything already dead, picked up, `NO_AUTO_AIM_TYPES`, or not currently `visible` — the last so
-a fog-of-war-hidden monster can't be targeted through the geometry hiding it. Anything rejected is
-*skipped*, not treated as a blocker, so a decoration standing in front of a monster doesn't make it
-untargetable.
+minus anything already dead, picked up, `NO_AUTO_AIM_TYPES`, or not currently `visible` — the last
+so a fog-of-war-hidden monster can't be targeted through the geometry hiding it. Anything rejected
+is *skipped*, not treated as a blocker, so a decoration standing in front of a monster doesn't make
+it untargetable.
 
 The test is **analytic and reads no render state**: `intersectBillboard` (`render/sprites.ts`)
-reproduces the instance matrix `SpriteBatch.add` writes — the upright plane, its hotspot-shifted quad
-and the shared yaw — against the thing's own tic position and the tic-exact viewer angle. That is
-what lets the tic cast this ray without first re-posing the sprite batch (docs/frameloop.md § Posing
-for the aim ray), and it is why the two must not drift: `tests/render/billboard-pick.test.ts` pins
-the analytic plane against both the batch's matrix and a `THREE` raycast of the same quad. The target
-is the plain quad, transparent corners included, exactly the silhouette the old mesh raycast hit.
+reproduces the instance matrix `SpriteBatch.add` writes — the upright plane, its hotspot-shifted
+quad and the shared yaw — against the thing's own tic position and the tic-exact viewer angle. That
+is what lets the tic cast this ray without first re-posing the sprite batch (docs/frameloop.md §
+Posing for the aim ray), and it is why the two must not drift: `tests/render/billboard-pick.test.ts`
+pins the analytic plane against both the batch's matrix and a `THREE` raycast of the same quad. The
+target is the plain quad, transparent corners included, exactly the silhouette the old mesh raycast
+hit.
 
 A conservative sphere around each thing (`BILLBOARD_MAX_REACH`) rejects the overwhelming majority
 before any `SpriteBank` lookup; without it the scan would resolve a lump per thing per tic, which is
@@ -233,19 +235,20 @@ picking with a pointer instead of tracing down the facing, and none of them miss
   room, not a live sightline — so a monster can be locked through a wall the camera looks over. The
   shot is still stopped by that wall; what carries is the aim.
 
-**`NO_AUTO_AIM_TYPES` (`game/things/tables.ts`) holds the one thing the cursor refuses to lock onto**:
-the Icon of Sin's brain (88). Its recess (DOOM2 MAP30 sector 8, floor 288) opens onto the arena only
-through the 32-unit slot at 384–416 that the eye watches through, and the brain's `BBRN` sprite is 87
-units tall, so its whole body sits *below* that opening. Measured over 4,891 standable sample
-positions on MAP30, a locked-on shot reaches it from four — all of them inside the recess. The
-top-down camera looks over the wall and shows you the brain anyway, so hovering it grabbed the aim
-and sent every shot into the wall below the slot. Everything else about the brain is unchanged: it is
-an ordinary `MONSTER_TYPES` member, still shootable by a free shot, and still counted as a kill.
+**`NO_AUTO_AIM_TYPES` (`game/things/tables.ts`) holds the one thing the cursor refuses to lock
+onto**: the Icon of Sin's brain (88). Its recess (DOOM2 MAP30 sector 8, floor 288) opens onto the
+arena only through the 32-unit slot at 384–416 that the eye watches through, and the brain's `BBRN`
+sprite is 87 units tall, so its whole body sits *below* that opening. Measured over 4,891 standable
+sample positions on MAP30, a locked-on shot reaches it from four — all of them inside the recess.
+The top-down camera looks over the wall and shows you the brain anyway, so hovering it grabbed the
+aim and sent every shot into the wall below the slot. Everything else about the brain is unchanged:
+it is an ordinary `MONSTER_TYPES` member, still shootable by a free shot, and still counted as a
+kill.
 
 **The lock applies on hover, not on click.** Gating it to `input.mouseDown` made `player.angle`
-switch sources the instant a click landed, snapping the player round by whatever the monster's anchor
-and the cursor's plane point differ by. Aim has always been set from the cursor unconditionally; the
-lock has to follow the same rule to stay continuous.
+switch sources the instant a click landed, snapping the player round by whatever the monster's
+anchor and the cursor's plane point differ by. Aim has always been set from the cursor
+unconditionally; the lock has to follow the same rule to stay continuous.
 
 **The camera never sees the lock**, which is why `updateLivingPlayer` returns the cursor's plane
 point rather than the aim: docs/camera.md § Aim lead.
@@ -265,19 +268,19 @@ does nothing is aim taken away from the shot.
 vertical stretch that stops a shot — the wall below the opening and the wall above it, or the whole
 face when there is no opening (one-sided, or a two-sided line whose sectors leave no gap, which is
 what every two-sided shoot switch in the IWADs turns out to be). A band is the part of the line that
-is actually *there* to point at — the opening between them is see-through, and grabbing the aim there
-would quietly redirect a shot the player lined up on whatever lies beyond the window. So a pointer
-over a real opening picks nothing at all and the shot goes through it as aimed, which still fires the
-line's special if the trace crosses it (§ Shoot-triggered specials).
+is actually *there* to point at — the opening between them is see-through, and grabbing the aim
+there would quietly redirect a shot the player lined up on whatever lies beyond the window. So a
+pointer over a real opening picks nothing at all and the shot goes through it as aimed, which still
+fires the line's special if the trace crosses it (§ Shoot-triggered specials).
 
 **The aim height is the band closest to the fire height, clamped inside it** — the flattest shot the
 line still stops, so the shot ends on the wall the player pointed at rather than climbing past it.
-Which band the pointer was over doesn't decide it: both fire the same special, and a steeper shot only
-offers more geometry in between to run into. On every shoot switch in DOOM and
-DOOM2 this comes out dead flat, so the lock is doing nothing but fixing the *angle*. The clamp keeps
-`BAND_INSET` clear of the band's edges, and the aim point the same distance in from the line's ends,
-because the shot is re-traced from the player along its own angle: aiming at an edge risks landing a
-unit the wrong side of it and passing straight through.
+Which band the pointer was over doesn't decide it: both fire the same special, and a steeper shot
+only offers more geometry in between to run into. On every shoot switch in DOOM and DOOM2 this comes
+out dead flat, so the lock is doing nothing but fixing the *angle*. The clamp keeps `BAND_INSET`
+clear of the band's edges, and the aim point the same distance in from the line's ends, because the
+shot is re-traced from the player along its own angle: aiming at an edge risks landing a unit the
+wrong side of it and passing straight through.
 
 **No `ShotLock` comes with it** — a wall has no silhouette to open a wedge around, and the strict
 single ray is the point: a shoot switch behind a step the shot genuinely can't clear must stay
@@ -285,13 +288,13 @@ unreachable, or the lock would carry the shot over geometry that should have sto
 
 ## Effects and their batching
 
-Impact explosions, blood splashes, bullet puffs and the teleport-fog puff share one mechanism, `SpriteFxLayer`
-(`game/spritefx.ts`, `OneShotEffect`/`spawn`/`spawnImpact`): a transient sprite animation playing
-once at a fixed spot, outside `ThingLayer` since none of them is a real map `Thing`. `IMPACT_EFFECTS` maps a projectile's
-flight sprite to its explosion — vanilla reuses `MISL` frames B–D for the rocket's blast, while the
-plasma bolt and BFG ball explode into dedicated `PLSE`/`BFE1` sprites. Hitscan `Tracer` lines live
-there too: not sprites, but the same spawn-animate-drop lifecycle and the same wholesale clear on a
-level change (`beginLevel`).
+Impact explosions, blood splashes, bullet puffs and the teleport-fog puff share one mechanism,
+`SpriteFxLayer` (`game/spritefx.ts`, `OneShotEffect`/`spawn`/`spawnImpact`): a transient sprite
+animation playing once at a fixed spot, outside `ThingLayer` since none of them is a real map
+`Thing`. `IMPACT_EFFECTS` maps a projectile's flight sprite to its explosion — vanilla reuses `MISL`
+frames B–D for the rocket's blast, while the plasma bolt and BFG ball explode into dedicated
+`PLSE`/`BFE1` sprites. Hitscan `Tracer` lines live there too: not sprites, but the same
+spawn-animate-drop lifecycle and the same wholesale clear on a level change (`beginLevel`).
 
 Every one-shot effect carries the subsector it was spawned in and is **drawn only where the player
 has already seen**, the same fog-of-war gate thing sprites use — a teleport fog or a blood splash in
@@ -304,24 +307,24 @@ The muzzle end is the shooter's position at trigger-pull, and the shooter keeps 
 player covers 75 map units over `TRACER_LIFETIME`'s 0.15 s, nearly five player radii, so a line
 frozen at both ends visibly detaches and hangs in the air behind them. Three rules keep it honest,
 all purely presentational and all inside `Tracer` itself, so a monster's tracer gets them for free
-with no live-shooter callback. The line **starts `MUZZLE_GAP` past the shooter's own body** —
-their radius *plus* the constant, clamped to a fraction of a point-blank shot's own length — so the
-eye never expects it to touch the gun in the first place. Added to the radius rather than compared
+with no live-shooter callback. The line **starts `MUZZLE_GAP` past the shooter's own body** — their
+radius *plus* the constant, clamped to a fraction of a point-blank shot's own length — so the eye
+never expects it to touch the gun in the first place. Added to the radius rather than compared
 against it, because the constant then means the same visible clearance whoever fired: measured from
 the centre it would be swallowed whole by a wide body, and the **spider mastermind's** radius of 128
 against an ordinary monster's 20 is enough to start the line inside its own sprite. That is the
 whole reason `addTracer` takes a radius — `PLAYER_RADIUS` for the player, and for a monster
 `MonsterAttackEvent.sourceRadius`, which `ThingLayer.update` fills from the firing body's own
 `blockRadius` rather than re-reading `MONSTER_STATS` (the sparse-key lookup `blockRadius` exists to
-avoid — `game/things/defs.ts`). It then **fades in over `FADE_LENGTH`** from that start, so the end most likely to be stale
-is also the faintest, and the tail **retracts toward the impact at `RETRACT_SPEED`**. Both
-lengths are absolute map units rather than fractions of the line, for the same reason: what they
-exist to cover is a distance the shooter walked, identical on a point-blank shot and one across the
-map, so as fractions they would over-treat a long shot and under-treat a short one. `RETRACT_SPEED`
-is additionally bounded from below by the player's own top speed, or the tail trails the shooter
-instead of clearing them. The line is full-length on the first frame it is *drawn*, which is what
-keeps hitscan reading as an instant line rather than as a slow projectile, the one thing that tells
-the chaingun apart from the plasma rifle at a glance.
+avoid — `game/things/defs.ts`). It then **fades in over `FADE_LENGTH`** from that start, so the end
+most likely to be stale is also the faintest, and the tail **retracts toward the impact at
+`RETRACT_SPEED`**. Both lengths are absolute map units rather than fractions of the line, for the
+same reason: what they exist to cover is a distance the shooter walked, identical on a point-blank
+shot and one across the map, so as fractions they would over-treat a long shot and under-treat a
+short one. `RETRACT_SPEED` is additionally bounded from below by the player's own top speed, or the
+tail trails the shooter instead of clearing them. The line is full-length on the first frame it is
+*drawn*, which is what keeps hitscan reading as an instant line rather than as a slow projectile,
+the one thing that tells the chaingun apart from the plasma rifle at a glance.
 
 **The fade is three vertices, not a subdivided line.** Vertex 0 is the tail, vertex 1 sits
 `FADE_LENGTH` along from it and vertex 2 is the impact; alpha interpolates 0 → 1 across the first
@@ -341,29 +344,29 @@ same ownership reason the fade lives in the attribute: the impact is the only en
 world anchor, so it is the one the other two vertices are measured from.
 
 **That "first drawn frame" is why retraction starts at `RETRACT_START`, not at zero.** `fireWeapons`
-spawns the tracer and `updateEffects` advances it in the *same* tic (docs/frameloop.md § What runs in
-a tic), so it is already one `DOOM_TIC` — a fifth of `TRACER_LIFETIME` — old when it first appears,
-and a retraction measured from spawn is visibly under way on the very first frame the player sees.
-With the blink hiding every other tic on top of that, an aggressive early retraction leaves nothing
-on screen but a stub beside the impact point, which reads as the shot having started meters away
-from the player. The tail only ever moves *toward* the impact, which is why the spawn-time bounding
-sphere is never recomputed.
+spawns the tracer and `updateEffects` advances it in the *same* tic (docs/frameloop.md § What runs
+in a tic), so it is already one `DOOM_TIC` — a fifth of `TRACER_LIFETIME` — old when it first
+appears, and a retraction measured from spawn is visibly under way on the very first frame the
+player sees. With the blink hiding every other tic on top of that, an aggressive early retraction
+leaves nothing on screen but a stub beside the impact point, which reads as the shot having started
+meters away from the player. The tail only ever moves *toward* the impact, which is why the
+spawn-time bounding sphere is never recomputed.
 
 `SpriteFxLayer` only draws and ages what it is handed; who spawns what, and every rule about *why*
 (`A_Fire`'s sightline, `A_VileAttack`'s reposition) stays with the system that owns the mechanic —
 the arch-vile's flame tracks its target through a `VileFlameResolver` callback `MonsterAttacks`
 supplies (`game/monsters/attacks.ts`), rather than the layer reaching into monster state.
 
-Those effects and projectiles in flight are drawn through `SpriteFxLayer`'s batch, a second `SpriteBatch`
-alongside `ThingLayer`'s, so an `OneShotEffect`/`Projectile` holds a bare `SpriteAnimator` and owns
-no `THREE.Object3D`, exactly like `PosedThing`. They were a `SpriteActor` each until the revenant's
-homing missile got its real vanilla flight: a missile that flies until it hits something lives far
-longer than one detonating on a launch-time budget, and spawns a smoke puff every 4 tics for the
-whole flight. On a map with over a thousand revenants that is five figures of live sprites — the
-exact wall `SpriteBatch` was written for. The CPU-side per-sprite work is near-identical either way;
-the meshes were all of it. It also picks up the same per-instance-colour fix batching gave map
-things: sector light used to be written onto the lump's *shared* material, so every smoke puff on
-screen (all `PUFF`) took the tint of whichever was posed last.
+Those effects and projectiles in flight are drawn through `SpriteFxLayer`'s batch, a second
+`SpriteBatch` alongside `ThingLayer`'s, so an `OneShotEffect`/`Projectile` holds a bare
+`SpriteAnimator` and owns no `THREE.Object3D`, exactly like `PosedThing`. They were a `SpriteActor`
+each until the revenant's homing missile got its real vanilla flight: a missile that flies until it
+hits something lives far longer than one detonating on a launch-time budget, and spawns a smoke puff
+every 4 tics for the whole flight. On a map with over a thousand revenants that is five figures of
+live sprites — the exact wall `SpriteBatch` was written for. The CPU-side per-sprite work is
+near-identical either way; the meshes were all of it. It also picks up the same per-instance-colour
+fix batching gave map things: sector light used to be written onto the lump's *shared* material, so
+every smoke puff on screen (all `PUFF`) took the tint of whichever was posed last.
 
 ## How a shot deals damage
 
@@ -379,23 +382,23 @@ about the hitscan half.
 locked-on pellet resolves hit-or-miss against that exact target, and needs **both** halves:
 `spawnPlayerShot` compares `shotPath`'s returned distance against the distance to the target to know
 whether a wall cut the shot short, *and* tests this pellet's own line against the target's body —
-perpendicular offset within `MONSTER_HIT_RADIUS` and, for a pellet carrying a `slopeOffset`, vertical
-miss within half of `MONSTER_LOCK_HEIGHT` at the body's distance. A *free* pellet instead tests its
-straight flight path against every monster's body (`ThingLayer.raycastMonster`), the way any real
-hitscan trace would, so a monster standing between the player and the wall they're shooting at still
-gets hit even though it was never clicked; only the nearer of "a wall/step" (`shotPath`) and "a
-monster in the way" (`raycastMonster`) stops the shot.
+perpendicular offset within `MONSTER_HIT_RADIUS` and, for a pellet carrying a `slopeOffset`,
+vertical miss within half of `MONSTER_LOCK_HEIGHT` at the body's distance. A *free* pellet instead
+tests its straight flight path against every monster's body (`ThingLayer.raycastMonster`), the way
+any real hitscan trace would, so a monster standing between the player and the wall they're shooting
+at still gets hit even though it was never clicked; only the nearer of "a wall/step" (`shotPath`)
+and "a monster in the way" (`raycastMonster`) stops the shot.
 
 **The lateral test is what keeps the lock from being homing.** `WeaponSystem` offsets each hitscan
-pellet by its own spread angle, but the lock is per *trigger pull* — all of a shotgun's pellets carry
-the same `target`/`targetId`. Without the lateral test a distance comparison alone said "connected"
-for every one of them, so firing either shotgun at a monster dealt all 7 (or 20) pellets' damage no
-matter how wide the spread threw them. This is vanilla's own split: `P_BulletSlope` finds the aim
-slope once and `A_FireShotgun` then traces each pellet at its own angle, so the auto-aim decides the
-*slope* and never the hit. A pellet that fails the test falls through to the free-shot branch above
-and can still hit whatever it did fly through. Zero-spread weapons are unaffected — `player.angle` is
-set from the same lock (`Math.atan2` toward `aim`, at the end of `Player.update`, after the frame's
-movement), so their perpendicular offset is exactly 0.
+pellet by its own spread angle, but the lock is per *trigger pull* — all of a shotgun's pellets
+carry the same `target`/`targetId`. Without the lateral test a distance comparison alone said
+"connected" for every one of them, so firing either shotgun at a monster dealt all 7 (or 20)
+pellets' damage no matter how wide the spread threw them. This is vanilla's own split:
+`P_BulletSlope` finds the aim slope once and `A_FireShotgun` then traces each pellet at its own
+angle, so the auto-aim decides the *slope* and never the hit. A pellet that fails the test falls
+through to the free-shot branch above and can still hit whatever it did fly through. Zero-spread
+weapons are unaffected — `player.angle` is set from the same lock (`Math.atan2` toward `aim`, at the
+end of `Player.update`, after the frame's movement), so their perpendicular offset is exactly 0.
 
 The vertical half of the test only ever fires for the super shotgun, the one weapon with a
 `slopeSpread` (§ Spread), and only on the locked-on path: the free-shot `raycastMonster` is a 2D ray
@@ -404,14 +407,15 @@ that carries no slope of its own, and admits any body inside `P_AimLineAttack`'s
 that branch.
 
 **Only the locked-on gate uses the shared `MONSTER_HIT_RADIUS`; everything a shot can actually
-collide with is tested at its own width.** `raycastMonster` and a projectile's swept contact test both
-read `MonsterRef.radius` — `PosedThing.blockRadius`, i.e. that type's exact `mobjinfo.radius`, the
-same 10-128 unit table movement collision already used. A single 24-unit hitbox happens to be about
-right for an imp (20) and is wrong by a factor of two or more for a cacodemon (31), mancubus (48),
-arachnotron (64) and spider mastermind (128), which a shot could thread straight through inside its
-visible bulk. Vanilla's `PIT_AddThingIntercepts` tests the trace against each thing's real bounding
-box, so per-species *is* the vanilla rule. Keeping the lock on the shared box costs nothing: a pellet
-that fails it falls through to `raycastMonster`, which then tests that same body at full width.
+collide with is tested at its own width.** `raycastMonster` and a projectile's swept contact test
+both read `MonsterRef.radius` — `PosedThing.blockRadius`, i.e. that type's exact `mobjinfo.radius`,
+the same 10-128 unit table movement collision already used. A single 24-unit hitbox happens to be
+about right for an imp (20) and is wrong by a factor of two or more for a cacodemon (31), mancubus
+(48), arachnotron (64) and spider mastermind (128), which a shot could thread straight through
+inside its visible bulk. Vanilla's `PIT_AddThingIntercepts` tests the trace against each thing's
+real bounding box, so per-species *is* the vanilla rule. Keeping the lock on the shared box costs
+nothing: a pellet that fails it falls through to `raycastMonster`, which then tests that same body
+at full width.
 
 **Nothing in the engine converts a box to a circle any more.** Vanilla collides axis-aligned
 squares, and both shot tests are now the real thing — `util/geom.ts`'s `traceHitsBox` for a hitscan
@@ -427,9 +431,9 @@ is therefore `h·(|sin θ| + |cos θ|)`: `h` head-on, `h·√2` at 45°.
 
 This replaced a single circle of radius `4h/π ≈ 1.273h`, chosen because a square of half-width `h`
 presents mean width `perimeter/π` to a line on an arbitrary bearing. That average was *right* — the
-mean of `h·(|sin θ| + |cos θ|)` over all bearings is exactly `4h/π` — so the change does not move the
-overall hit rate. It redistributes it by angle: a shot straight down an axis is now 21% narrower than
-the circle allowed, one on the diagonal 11% wider.
+mean of `h·(|sin θ| + |cos θ|)` over all bearings is exactly `4h/π` — so the change does not move
+the overall hit rate. It redistributes it by angle: a shot straight down an axis is now 21% narrower
+than the circle allowed, one on the diagonal 11% wider.
 
 One consequence worth knowing: a hitscan resolves at its crossing with the **diagonal**, not at the
 box's near face, so a shot straight down the middle of a body reports the body's own centre — which
@@ -456,27 +460,27 @@ flat height band around the fire height.** Vanilla's `PTR_AimTraverse` and `PTR_
 the trace's own `[bottomslope, topslope]` — "shot over the thing" / "shot under the thing". The two
 differ in one thing only, which span they carry: an **aim** (`P_AimLineAttack`) searches the
 `±AIM_SLOPE_LIMIT` cone (`topslope = 100*FRACUNIT/160`), a **fired shot** collapses it to the single
-`aimslope` it was handed. `raycastMonster` reproduces both through one `opts.slope` — omitted for the
-cone, supplied for a shot that already has a slope.
+`aimslope` it was handed. `raycastMonster` reproduces both through one `opts.slope` — omitted for
+the cone, supplied for a shot that already has a slope.
 
 Which callers get which follows vanilla: the BFG spray (`A_BFGSpray` calls `P_AimLineAttack`), the
 player's fist and chainsaw (`A_Punch`/`A_Saw`) and a free player pellet (`P_BulletSlope`) are all
 aims and take the cone; a monster's bullet already carries the slope `shotPath` sloped it to
-(`monsters/attacks.ts: resolveBullet`) and passes that, so another monster blocks the bolt only where
-the bolt genuinely crosses its body.
+(`monsters/attacks.ts: resolveBullet`) and passes that, so another monster blocks the bolt only
+where the bolt genuinely crosses its body.
 
 **The flat band this replaced made a monster standing below or above the shooter unhittable.** The
 old gate rejected any body whose feet were more than its own height from the fire height, which is a
 ±64 window for a mancubus and pays no attention to how near it is standing. Repro: NoSp2.wad MAP04,
-the mancubus pen around (1100, -3970), whose floor sits 64 below the ledge the player fights it
-from — the aim height is then 96 above the mancubi's feet, and the BFG's 40-ray spray, which is that
-weapon's entire damage (§ Splash and the BFG), passed through the whole group without touching one of
-them.
+the mancubus pen around (1100, -3970), whose floor sits 64 below the ledge the player fights it from
+— the aim height is then 96 above the mancubi's feet, and the BFG's 40-ray spray, which is that
+weapon's entire damage (§ Splash and the BFG), passed through the whole group without touching one
+of them.
 
 ## How a projectile finds its target
 
-**A projectile has no target — it has a flight, and finds whatever is in it.** Every shot in the air,
-the player's own included, re-tests live bodies each frame in `ProjectileLayer.update`
+**A projectile has no target — it has a flight, and finds whatever is in it.** Every shot in the
+air, the player's own included, re-tests live bodies each frame in `ProjectileLayer.update`
 (`playerStruckBy`, `bodyStruckBy`, both over `spritefx/defs.ts`'s `stepTouchesBody`). What
 `spawnPlayerShot` fixes at launch is the slope and the wall (`shotPath`), never who gets hit.
 
@@ -484,8 +488,8 @@ Resolving that at launch instead is what made **BFG balls pass through monsters*
 875 units/sec, so over a 512-unit shot a target has half a second to walk out of a launch-time ray —
 and an imp covers ~160 units in that time. A locked ball also damaged that exact id wherever it
 happened to arrive, so the same bug read as a phantom hit on a monster that had moved. It showed up
-on the BFG first because it is the one projectile with no splash to cover a miss (`A_Explode` is never
-called on `MT_BFG`), and because the ball's own contact damage is 100-800.
+on the BFG first because it is the one projectile with no splash to cover a miss (`A_Explode` is
+never called on `MT_BFG`), and because the ball's own contact damage is 100-800.
 
 The contact test itself is `PIT_CheckThing`, both halves:
 
@@ -500,20 +504,21 @@ The contact test itself is `PIT_CheckThing`, both halves:
   side of the feet — a fireball level with your knees connects and one clearing your head does not,
   which a symmetric band cannot express.
 
-**The test is swept across the frame's whole step, not sampled at its end.** `game.ts` clamps `dt` at
-0.05s and the fastest missiles fly 875 units/sec, so one frame can carry a shot 43 units — further
-than a body is wide. Sampling endpoints silently drops every graze whose closest approach falls
-between two frames, which gets worse the lower the frame rate. `stepTouchesBody` returns *where along
-the step* contact happened, which is also what orders multiple candidates: first along the flight
-wins, the swept equivalent of vanilla's blockmap traversal order.
+**The test is swept across the frame's whole step, not sampled at its end.** `game.ts` clamps `dt`
+at 0.05s and the fastest missiles fly 875 units/sec, so one frame can carry a shot 43 units —
+further than a body is wide. Sampling endpoints silently drops every graze whose closest approach
+falls between two frames, which gets worse the lower the frame rate. `stepTouchesBody` returns
+*where along the step* contact happened, which is also what orders multiple candidates: first along
+the flight wins, the swept equivalent of vanilla's blockmap traversal order.
 
-A struck body ends the flight, so it fires no shoot-triggered special — the missile never reached the
-wall whose `lineIndex` it carries.
+A struck body ends the flight, so it fires no shoot-triggered special — the missile never reached
+the wall whose `lineIndex` it carries.
 
-**Fog of war doesn't hide a body from a projectile**, unlike `raycastMonster`, where the filter keeps
-the auto-aim lock and a free bullet off monsters the player has never seen. A missile in flight is a
-physical thing that has to collide with whatever is actually there, and `monstersNear` already
-resolves splash the same way — a rocket fired down an unrevealed corridor explodes on what is in it.
+**Fog of war doesn't hide a body from a projectile**, unlike `raycastMonster`, where the filter
+keeps the auto-aim lock and a free bullet off monsters the player has never seen. A missile in
+flight is a physical thing that has to collide with whatever is actually there, and `monstersNear`
+already resolves splash the same way — a rocket fired down an unrevealed corridor explodes on what
+is in it.
 
 **Splash damage is separate from a direct hit and reaches everyone nearby regardless of what was
 targeted** — a rocket fired at a bare wall still explodes and can hurt a monster standing close by.
@@ -528,10 +533,10 @@ a directed weapon's own blocking rules, not "does this omnidirectional blast rea
 **Blood is spawned by a trace hitting a body, not by damage** — vanilla puts `P_SpawnBlood` in
 `PTR_ShootTraverse`, i.e. only on the `P_LineAttack` path. So the player's hitscan pellets
 (`spawnPlayerShot`), the fist/chainsaw swing (its melee branch) and a monster's hitscan bolt
-(`game/monsters/attacks.ts: MonsterAttacks.resolveHitscan`) all splash, and everything reaching `P_DamageMobj` by another
-route does not: a projectile's direct hit, splash, the BFG spray (`A_BFGSpray` damages and spawns
-`MT_EXTRABFG` itself, never blood), a crusher, a damage floor. Don't "fix" the missing cases — a
-rocket that made a monster bleed would be wrong.
+(`game/monsters/attacks.ts: MonsterAttacks.resolveHitscan`) all splash, and everything reaching
+`P_DamageMobj` by another route does not: a projectile's direct hit, splash, the BFG spray
+(`A_BFGSpray` damages and spawns `MT_EXTRABFG` itself, never blood), a crusher, a damage floor.
+Don't "fix" the missing cases — a rocket that made a monster bleed would be wrong.
 
 `SpriteFxLayer.spawnBlood` is one `OneShotEffect` like any other. Two details are vanilla's and look
 arbitrary: the frame letters run **backwards** (`S_BLOOD1`-`3` are `BLUD` C, B, A at 8 tics each),
@@ -546,8 +551,8 @@ exactly zero. `MT_BLOOD`'s brief upward hop (`momz = 2` falling back under gravi
 fixed in place.
 
 **`ThingLayer.bleeds` is vanilla's `MF_NOBLOOD` flag**, which in all of stock DOOM exactly one thing
-carries — `MT_BARREL`, which takes a bullet puff instead. It is keyed by id rather than type because a
-locked-on shot only ever knows the id it hit, and it deliberately ignores `dead`, so the killing
+carries — `MT_BARREL`, which takes a bullet puff instead. It is keyed by id rather than type because
+a locked-on shot only ever knows the id it hit, and it deliberately ignores `dead`, so the killing
 blow still bleeds regardless of which side of `damage` the caller asks from. The player has no
 `MF_NOBLOOD` either and bleeds on a monster's bolt, before the armor calculation and unaffected by
 it — `PTR_ShootTraverse` spawns blood ahead of its `P_DamageMobj` call, so an invulnerable player
@@ -561,8 +566,8 @@ always spawns a puff. So the same three shooters that can splash blood — the p
 fist/chainsaw swing, a monster's bolt — are the only sources, and `MT_PUFF`'s four `PUFF` frames run
 forwards at 4 tics each (`S_PUFF1`-`4`), unlike the blood's backwards three.
 
-`SpriteFxLayer.spawnWallPuff` (`game/spritefx.ts`, shared by the player's pellet and `resolveHitscan`)
-owns the geometry case and **skips two things vanilla also skips**:
+`SpriteFxLayer.spawnWallPuff` (`game/spritefx.ts`, shared by the player's pellet and
+`resolveHitscan`) owns the geometry case and **skips two things vanilla also skips**:
 
 - A shot that ran out of range without crossing a blocking line (`ShotPath.lineIndex === null`).
   Vanilla only reaches `P_SpawnPuff` from the `hitline` label, never from the trace simply ending.
@@ -597,10 +602,10 @@ homing missile records as the reason the batch exists at all.
 ## Splash and the BFG
 
 **A splash's radius and damage are a fixed pair on the weapon, independent of that shot's own random
-direct-hit roll** — `WeaponDef.splash`, not derived from `damageDiceSides`/`Multiplier` as an earlier
-version wrongly assumed. `A_Explode` really does pass a constant 128/128 to `P_RadiusAttack`,
-separate from the missile's `(P_Random()%8+1)*20` contact roll; conflating them made splash swing
-with the same small random roll as contact damage.
+direct-hit roll** — `WeaponDef.splash`, not derived from `damageDiceSides`/`Multiplier` as an
+earlier version wrongly assumed. `A_Explode` really does pass a constant 128/128 to
+`P_RadiusAttack`, separate from the missile's `(P_Random()%8+1)*20` contact roll; conflating them
+made splash swing with the same small random roll as contact damage.
 
 **Range is measured to a body's *edge*, on the Chebyshev metric** — `util/geom.ts:
 blastDistanceToBox`, vanilla's `PIT_RadiusAttack`: `dist = (max(|dx|, |dy|) - thing->radius)`,
@@ -624,17 +629,17 @@ hits it does full damage.
 
 **`hitsPlayer` gates whether a splash can hurt the player who fired it** — `true` for the rocket
 (vanilla lets a rocket's blast hurt whoever fired it, the classic rocket-jump self-damage), so
-`applyRadiusDamage` includes the player as a candidate. The BFG sets `splash` to `null` outright: its
-ball never calls `A_Explode` at all, so there's no radius blast to gate.
+`applyRadiusDamage` includes the player as a candidate. The BFG sets `splash` to `null` outright:
+its ball never calls `A_Explode` at all, so there's no radius blast to gate.
 
 **The BFG's actual damage is `WeaponDef.spray`, vanilla's real `A_BFGSpray`** (`resolveBfgSpray`,
-called from `ProjectileLayer.update` the instant the ball reaches wherever it's going). It is nothing like
-a radius blast: 40 rays fan out across a 90° arc (every 2.25°) centered on the ball's own fixed
-flight angle (`Projectile.angleRad` — the ball never homes), each an independent
+called from `ProjectileLayer.update` the instant the ball reaches wherever it's going). It is
+nothing like a radius blast: 40 rays fan out across a 90° arc (every 2.25°) centered on the ball's
+own fixed flight angle (`Projectile.angleRad` — the ball never homes), each an independent
 `ThingLayer.raycastMonster` trace out to 1024 units (`16*64`, `P_AimLineAttack`'s own distance) —
-that function's own aim cone included, § The vertical test — that,
-if it connects, deals a full undiminished direct hit — the sum of 15 rolls of a d8 (15-120), with no
-distance falloff at all. Two things make it genuinely different from a radius blast:
+that function's own aim cone included, § The vertical test — that, if it connects, deals a full
+undiminished direct hit — the sum of 15 rolls of a d8 (15-120), with no distance falloff at all. Two
+things make it genuinely different from a radius blast:
 
 - **It's traced from the player's own live position at the moment the ball dies, not from the impact
   point.** `A_BFGSpray` reads `mo->target` — the shooter, still a live pointer — at that instant;
@@ -642,8 +647,8 @@ distance falloff at all. Two things make it genuinely different from a radius bl
   `resolveBfgSpray` takes only the ball's travel *angle* and rebuilds the fan from
   `this.player.x/y/z`.
 - **Nothing stops two, or all 40, rays landing on the same target.** A monster directly in front of
-  the player can eat several rays at once, each its own full roll — this, not a bigger radius, is the
-  source of the BFG's reputation against one big target.
+  the player can eat several rays at once, each its own full roll — this, not a bigger radius, is
+  the source of the BFG's reputation against one big target.
 
 `resolveBfgSpray` draws no line for the rays — `A_BFGSpray`'s traces are pure math in vanilla too,
 never rendered, and an earlier approximated splash drew a green tracer purely to make its damage
@@ -652,9 +657,10 @@ legible. **Every ray that connects spawns vanilla's own `MT_EXTRABFG`** on the m
 quarter of the way up the target — vanilla's `linetarget->height>>2`, off that body's own
 `mobjinfo.height` (`MonsterRef.height`). Spawned once *per connecting ray*, unconditionally,
 matching the `P_SpawnMobj` call inside vanilla's loop — a target caught by several rays gets several
-overlapping bursts, which is the flickering green flash a BFG'd monster shows in real vanilla. `BFE1`
-(the ball's own impact where it physically stopped) and `BFE2` are two separate sprites for two
-separate events.
+overlapping bursts, which is the flickering green flash a BFG'd monster shows in real vanilla.
+`BFE1` (the ball's own impact where it physically stopped) and `BFE2` are two separate sprites for
+two separate events.
 
-Per-weapon direct-hit damage rolls follow vanilla's `((rand % sides) + 1) * multiplier` shape and are
-lifted rather than tuned by feel, same reasoning as ammo-per-shot — they decide how tough a fight is.
+Per-weapon direct-hit damage rolls follow vanilla's `((rand % sides) + 1) * multiplier` shape and
+are lifted rather than tuned by feel, same reasoning as ammo-per-shot — they decide how tough a
+fight is.

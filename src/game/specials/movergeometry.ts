@@ -124,7 +124,9 @@ export class MoverGeometry {
 
   private sectorOccluders = new Map<number, BuiltMap['occluders']>();
   private sectorFlats = new Map<number, BuiltMap['flatSurfaces']>();
-  /** Which mover meshes hold geometry coloured from a given sector's light — see `recolorSector`. */
+  /**
+   * Which mover meshes hold geometry coloured from a given sector's light — see `recolorSector`.
+   */
   private moverLightTargets = new Map<number, Set<number>>();
 
   constructor(
@@ -197,11 +199,8 @@ export class MoverGeometry {
    * it needs the camera position, which is only settled after the player has
    * moved.
    *
-   * Split in two so that every mover's pass one lands in the frame's shared
-   * bags before any fader dissolves anything: a door standing in a wall the
-   * player's sightline crosses beside it has to open with that wall, not stay
-   * behind as a solid slab. docs/render.md § One hole, whichever mesh it lands
-   * in.
+   * Split in two so that every mover's pass one lands in the frame's shared bags before any fader
+   * dissolves anything — docs/render.md § One hole, whichever mesh it lands in.
    */
   collectFadeHits(
     camX: number,
@@ -272,7 +271,9 @@ export class MoverGeometry {
     }
   }
 
-  /** Whether this frame's fade reach (`fadeReach`, filled into `reach`) overlaps a mesh's footprint. */
+  /**
+   * Whether this frame's fade reach (`fadeReach`, filled into `reach`) overlaps a mesh's footprint.
+   */
   private reachesMesh(g: MoverEntry): boolean {
     return boxesOverlap(g.bounds, this.reach);
   }

@@ -624,7 +624,9 @@ function readFrameField(
   return true;
 }
 
-/** Whether a number names a row of `states[]` — the one bound every state-valued field is held to. */
+/**
+ * Whether a number names a row of `states[]` — the one bound every state-valued field is held to.
+ */
 function isStateIndex(raw: number): boolean {
   return Number.isInteger(raw) && raw >= 0 && raw < STATES.length;
 }

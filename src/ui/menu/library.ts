@@ -128,13 +128,12 @@ const TOP_LEVEL_FOLDERS = [SERVER_IWADS, SERVER_PWADS, LIBRARY_ROOT, UPLOADS];
  * There is no `topdoom` row above the served pair, and no `Your library` row above the player's
  * folders: which panel a row sits in already says that, and the panel headings carry the totals.
  *
- * **A folder with no WAD beneath it is not a row.** An empty `Game WADs` is nothing the player can
- * act on, and neither is a library root with no folder behind it — the `Your Library` heading and
- * the `Choose folder…` button under it are already the whole invitation, and a row saying the same
- * thing a third time is one more place to click that does nothing. Once a folder *is* set the root
- * stays even while it is empty, because then it is reporting something: that folder held no WADs.
+ * **A folder with no WAD beneath it is not a row** — nothing the player can act on. Once a folder
+ * *is* set its root stays even while empty, because then it is reporting something: that folder
+ * held no WADs.
  *
- * Pure, and separate from `LibraryUi` so it can be tested without a DOM — docs/menu.md § WAD Library.
+ * Pure, and separate from `LibraryUi` so it can be tested without a DOM — docs/menu.md § WAD
+ * Library.
  */
 export function buildFolderTree(
   sources: readonly WadSource[],
@@ -198,9 +197,9 @@ function rootedSubtree(
 
   // Siblings sorted A-Z by their own name, then emitted depth-first so a parent always precedes its
   // children. Deliberately *not* one flat sort of the full paths: that would have to get both the
-  // alphabetical order and the parent-first grouping out of the same comparison, and how a collation
-  // ranks `/` against letters decides whether `a/b` lands under `a` or after `aa`. Sorting one level
-  // at a time needs no such guarantee.
+  // alphabetical order and the parent-first grouping out of the same comparison, and how a
+  // collation ranks `/` against letters decides whether `a/b` lands under `a` or after `aa`.
+  // Sorting one level at a time needs no such guarantee.
   const byParent = new Map<string, string[]>();
   for (const path of paths) {
     const cut = path.lastIndexOf('/');
@@ -252,7 +251,8 @@ export interface FilterMatch {
  * and seeing that it wants the other game is a normal outcome of a search, and having to clear the
  * filter to go and switch game WAD — then type it again — turns one decision into three.
  *
- * Pure, and separate from `LibraryUi` so it can be tested without a DOM — docs/menu.md § WAD Library.
+ * Pure, and separate from `LibraryUi` so it can be tested without a DOM — docs/menu.md § WAD
+ * Library.
  */
 export function filterTree(nodes: readonly FolderNode[], filter: string): FilterMatch {
   const rows = new Set<string>();
@@ -600,12 +600,13 @@ export class LibraryUi {
   private folderControls(): HTMLElement[] {
     const box: HTMLElement[] = [];
 
-    // Everything that acts on the folder itself in one row — picking it, re-reading it, dropping it.
+    // Everything that acts on the folder itself in one row — picking it, re-reading it, dropping
+    // it.
     const folderRow = document.createElement('div');
     folderRow.className = 'folder-buttons';
-    // With no folder set this is the only thing in the panel that does anything, and the panel above
-    // it is empty — so it carries the primary weight until it has been used, and drops back to a
-    // ghost like its neighbours once there is a folder to change.
+    // With no folder set this is the only thing in the panel that does anything, and the panel
+    // above it is empty — so it carries the primary weight until it has been used, and drops back
+    // to a ghost like its neighbours once there is a folder to change.
     const pick = this.controlButton(libraryPicked() ? 'Change…' : 'Choose folder…', () => void this.choose());
     if (!libraryPicked()) pick.classList.add('primary');
     folderRow.append(pick);
@@ -636,8 +637,8 @@ export class LibraryUi {
 
   /**
    * Forget, as a press-and-hold — the one button here that destroys something, and the same confirm
-   * the save list's Delete and Overwrite carry (`hold.ts`). No click handler at all: the hold is the
-   * only way in, so a stray click on a button sitting between Change and Rescan costs nothing.
+   * the save list's Delete and Overwrite carry (`hold.ts`). No click handler at all: the hold is
+   * the only way in, so a stray click on a button sitting between Change and Rescan costs nothing.
    */
   private forgetButton(): HTMLButtonElement {
     const button = this.controlButton('Forget');
@@ -781,7 +782,9 @@ export class LibraryUi {
     this.render();
   }
 
-  /** Adds or removes an add-on in the draft, keeping the tick order that decides the merge order. */
+  /**
+   * Adds or removes an add-on in the draft, keeping the tick order that decides the merge order.
+   */
   private draftPwadToggle(source: WadSource): void {
     const index = this.draftPwads.findIndex((p) => p.key === source.key);
     if (index >= 0) this.draftPwads.splice(index, 1);
@@ -911,9 +914,9 @@ export class LibraryUi {
    *
    * Worded for the case that isn't a dismissal: a directory `<input>` needs a second, browser-drawn
    * confirmation after the folder is chosen, and a window that suppresses it turns a *successful*
-   * pick into this event — which is how a player who did choose a folder gets told nobody chose one.
-   * There is no way to tell the two apart from here, so the line names both and offers the route
-   * that needs no confirmation.
+   * pick into this event — which is how a player who did choose a folder gets told nobody chose
+   * one. There is no way to tell the two apart from here, so the line names both and offers the
+   * route that needs no confirmation.
    */
   private onFolderCancelled(): void {
     window.clearTimeout(this.pickTimer);

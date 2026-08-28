@@ -5,9 +5,15 @@
 import type { FrameProfiler } from '../../util/profiler.ts';
 import { DEVMODE } from '../../constants.ts';
 
-/** A category's bar fills its row at this many ms — one whole 60fps frame budget, so a bar reaching full width means that category alone would miss it. */
+/**
+ * A category's bar fills its row at this many ms — one whole 60fps frame budget, so a bar reaching
+ * full width means that category alone would miss it.
+ */
 const BAR_BUDGET_MS = 1000 / 60;
-/** Bar turns amber once a category alone eats a quarter of the frame budget — still fine, but worth a glance. */
+/**
+ * Bar turns amber once a category alone eats a quarter of the frame budget — still fine, but worth
+ * a glance.
+ */
 const WARN_FRACTION = 0.25;
 /** Bar turns red once a category alone would miss the frame budget by itself. */
 const HOT_FRACTION = 1;

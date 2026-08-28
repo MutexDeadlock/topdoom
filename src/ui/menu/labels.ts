@@ -26,8 +26,10 @@ export interface SourceColumns {
   size: string;
   /** What the file actually contains: its maps, or its lump count when it has none. */
   content: string;
-  /** `DEHACKED` or empty. Presence, not coverage: what a patch lands needs its bytes, and the menu
-      lists a server file from the build-time manifest alone. docs/dehacked.md § The coverage report. */
+  /**
+   * `DEHACKED` or empty. Presence, not coverage: what a patch lands needs its bytes, and the menu
+   * lists a server file from the build-time manifest alone. docs/dehacked.md § The coverage report.
+   */
   dehacked: string;
 }
 

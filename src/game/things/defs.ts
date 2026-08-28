@@ -28,7 +28,10 @@ export interface AttackPose {
    * vanilla's `E,F,E` (wind up, fire, recover) is three frames and not two.
    */
   frames: string[];
-  /** Each frame's `info.c` tic count, parallel to `frames`. Zero-tic states are dropped: they never draw. */
+  /**
+   * Each frame's `info.c` tic count, parallel to `frames`. Zero-tic states are dropped: they never
+   * draw.
+   */
   tics: number[];
 }
 import { DOOM_TIC, PICKUP_SCALE, PICKUP_SCALE_TYPES } from '../../constants.ts';
@@ -78,13 +81,19 @@ export interface PosedThing extends Pos3, MonsterBody {
   /**
    * Whether this thing is drawn (and so targetable/shootable) right now:
    * fog of war hasn't revealed its subsector, it was picked up, or it died
-   * with no death art. Replaces reading `mesh.visible` back off a per-thing
-   * mesh, which the batched renderer no longer gives each thing.
+   * with no death art. A batched thing has no mesh of its own for a caller to
+   * read `visible` off, so this field is where that answer lives.
    */
   visible: boolean;
-  /** Permanently hidden regardless of fog — a consumed pickup, or a corpse with no death animation to play. */
+  /**
+   * Permanently hidden regardless of fog — a consumed pickup, or a corpse with no death animation
+   * to play.
+   */
   hidden: boolean;
-  /** Scratch dedupe marker for `forEachMonsterAlongRay`, whose stepped cell neighbourhoods overlap. Meaningless between queries. */
+  /**
+   * Scratch dedupe marker for `forEachMonsterAlongRay`, whose stepped cell neighbourhoods overlap.
+   * Meaningless between queries.
+   */
   queryStamp: number;
   /**
    * This body's cached touched-sector list for the per-tic conveyor query
@@ -122,7 +131,10 @@ export interface PosedThing extends Pos3, MonsterBody {
   spawnAngle: number;
   subsector: number;
   type: number;
-  /** Set once a pickup consumes this instance; it then stays permanently hidden (see ThingLayer.update). */
+  /**
+   * Set once a pickup consumes this instance; it then stays permanently hidden (see
+   * ThingLayer.update).
+   */
   picked: boolean;
   /**
    * Remaining hit points;
@@ -139,7 +151,12 @@ export interface PosedThing extends Pos3, MonsterBody {
    * `deathFrameCount * MONSTER_DEATH_FRAME_SECONDS` for the same gate.
    */
   deadTime: number;
-  /** Frame count of whichever death animation (`MONSTER_DEATH_FRAMES` or the gibbed `MONSTER_XDEATH_FRAMES`) `ThingLayer.damage` actually played — set at time of death, read back by `deadTime`'s "still settling" check above. 0 for anything that never died with real death art (see `damage`'s `hidden` fallback). */
+  /**
+   * Frame count of whichever death animation (`MONSTER_DEATH_FRAMES` or the gibbed
+   * `MONSTER_XDEATH_FRAMES`) `ThingLayer.damage` actually played — set at time of death, read back
+   * by `deadTime`'s "still settling" check above. 0 for anything that never died with real death
+   * art (see `damage`'s `hidden` fallback).
+   */
   deathFrameCount: number;
   /**
    * This type's resurrection frames (`MONSTER_RAISE_FRAMES`), resolved once
@@ -180,15 +197,18 @@ export interface PosedThing extends Pos3, MonsterBody {
   velX: number;
   velY: number;
   /**
-   * True for an item `ThingLayer.damage` spawned itself (`MONSTER_DROPS`) rather than
-   * one the map placed — threaded through to `applyPickup`'s own `dropped` param, which halves the ammo it grants.
+   * True for an item `ThingLayer.damage` spawned itself (`MONSTER_DROPS`) rather than one the map
+   * placed — threaded through to `applyPickup`'s own `dropped` param, which halves the ammo it
+   * grants.
    */
   dropped: boolean;
 
-  // --- Monster AI. Everything `MonsterBody` declares is inherited above and
-  // inert for a non-monster; these four are the layer's own, which
-  // `game/monsters/ai.ts` has no business knowing about. ---
-  /** True once this monster has spotted the player and started chasing (`update`'s throttled wake check, LOOK_INTERVAL). */
+  // Monster AI. Everything `MonsterBody` declares is inherited above and inert for a non-monster;
+  // these four are the layer's own, which `game/monsters/ai.ts` has no business knowing about.
+  /**
+   * True once this monster has spotted the player and started chasing (`update`'s throttled wake
+   * check, LOOK_INTERVAL).
+   */
   alerted: boolean;
   /**
    * The map thing's "ambush"/deaf flag (`game/skill.ts: isAmbush`) .
@@ -310,9 +330,15 @@ export interface ThingLayer {
    * docs/savegames.md § What is saved and what is deliberately not.
    */
   snapshot(): ThingsSnapshot;
-  /** Releases the instanced meshes/materials this layer owns; call when the map is unloaded. Shared geometry and textures belong to `SpriteMaterialCache`, which outlives a level. */
+  /**
+   * Releases the instanced meshes/materials this layer owns; call when the map is unloaded. Shared
+   * geometry and textures belong to `SpriteMaterialCache`, which outlives a level.
+   */
   dispose(): void;
-  /** Every living monster, still-standing barrel, and solid decoration near (x, y) as a solid body the *player* walks around — all `MF_SOLID` in vanilla. Monsters get `blockersFor` instead. */
+  /**
+   * Every living monster, still-standing barrel, and solid decoration near (x, y) as a solid body
+   * the *player* walks around — all `MF_SOLID` in vanilla. Monsters get `blockersFor` instead.
+   */
   solidBodies(pos: Pos2): ThingBlocker[];
   /**
    * Re-poses every thing at the camera's viewer angle and, for a living
@@ -366,16 +392,13 @@ export interface ThingLayer {
    */
   draw(alpha: number, viewAngleDeg: number): void;
   /**
-   * Consumes every not-yet-picked thing whose `blockdist` box overlaps either end
-   * of the move — `from`, where the collector stands, and `to`, where it was
-   * headed, since vanilla tests the pickup at the destination before the move is
-   * rejected — that is within vertical reach of `from.z`, and that `consume`
-   * accepts, hiding it permanently. `blockdist` is `PIT_CheckThing`'s combined radius, applied as
-   * vanilla's axis-aligned box rather than a circle. Pass the same point twice
-   * for a collector that attempted no move. This layer owns only which world
-   * instance disappears; `consume` (inventory.ts's `applyPickup`) owns what
-   * picking it up means. Its second argument is the instance's `dropped` flag.
-   * docs/items.md § Collecting things.
+   * Consumes every not-yet-picked thing whose `blockdist` box overlaps either end of the move —
+   * `from`, where the collector stands, and `to`, where it was headed — that is within vertical
+   * reach of `from.z` and that `consume` accepts, hiding it permanently. Pass the same point twice
+   * for a collector that attempted no move. This layer owns only which world instance disappears;
+   * `consume` (inventory.ts's `applyPickup`) owns what picking it up means, and its second argument
+   * is the instance's `dropped` flag. Why both ends and why a box — docs/items.md § Collecting
+   * things.
    */
   tryPickup(
     from: Pos3,
@@ -415,7 +438,10 @@ export interface ThingLayer {
    * 2D only; the caller applies the height band and line of sight.
    */
   monstersAlongStep(from: Pos3, to: Pos3, reach: number): MonsterRef[];
-  /** This exact monster's live position and type, or null if the id is stale or it has since died. Lets a shot fired at a monster keep tracking it across frames. */
+  /**
+   * This exact monster's live position and type, or null if the id is stale or it has since died.
+   * Lets a shot fired at a monster keep tracking it across frames.
+   */
   monsterById(id: number): MonsterRef | null;
   /**
    * Whether a shot landing on this thing splashes blood — vanilla's
@@ -426,7 +452,10 @@ export interface ThingLayer {
    * asks from. See docs/combat.md § Blood.
    */
   bleeds(id: number): boolean;
-  /** Count of living monsters currently alerted (chasing/attacking, or mid-reaction-delay) — for the debug HUD. */
+  /**
+   * Count of living monsters currently alerted (chasing/attacking, or mid-reaction-delay) — for the
+   * debug HUD.
+   */
   awakeMonsterCount(): number;
   /**
    * Where the alerted monsters `awakeMonsterCount` counts are standing and how
@@ -450,17 +479,10 @@ export interface ThingLayer {
    */
   monstersInSector(sector: Sector): MonsterRef[];
   /**
-   * `monstersInSector` plus any still-standing barrel, over a *set* of sectors
-   * — vanilla's `PIT_ChangeSector` treats a barrel exactly like a monster for
-   * crushing (any `MF_SHOOTABLE` mobj with health left takes the same periodic
-   * damage), so a barrel under a crusher dies and, after its usual
-   * `BARREL_CHAIN.explodeDelaySeconds`, explodes the same as if it'd been shot.
-   *
-   * Crush damage (`specials/moverblocking.ts: applyCrushDamage`) is the only
-   * user, and it asks for the crushing sector *and its neighbors* in one pass:
-   * a body standing next door with its box reaching under the descending
-   * ceiling is crushed too (docs/specials.md § Crushers). The headroom-blocked
-   * check other movers use deliberately stays on `monstersInSector` alone.
+   * `monstersInSector` plus any still-standing barrel, over a *set* of sectors. Crush damage
+   * (`specials/moverblocking.ts: applyCrushDamage`) is the only user, and asks for the crushing
+   * sector *and its neighbors* in one pass; the headroom-blocked check other movers use
+   * deliberately stays on `monstersInSector` alone. docs/specials.md § Crushers.
    */
   crushablesInSectors(sectors: ReadonlySet<Sector>): MonsterRef[];
   /**
@@ -513,11 +535,8 @@ export interface ThingLayer {
    * Vanilla's `A_SpawnFly` tail; the Icon of Sin's spawn cube (`game/monsters/iconofsin.ts`)
    * is the only caller.
    *
-   * Only the *monster* half of the telefrag happens here: this layer has no
-   * player reference, so the caller tests the returned position against the
-   * player itself. The new monster counts toward `stats.kills` when killed but
-   * never toward `totalKills`, matching vanilla's fixed `P_SpawnMapThing`
-   * total — kills can legitimately exceed 100% on MAP30. docs/monster-iconofsin.md §
+   * Only the *monster* half of the telefrag happens here: this layer has no player reference, so
+   * the caller tests the returned position against the player itself. docs/monster-iconofsin.md §
    * The spawn cube.
    */
   spawnMonster(type: number, at: Pos3, angleRad: number): MonsterRef | null;
@@ -566,14 +585,8 @@ export const BOSS_TYPES: Set<number> = new Set([ThingType.spiderMastermind, Thin
 /**
  * Every type whose death can drive level logic, and so the set `damageThing`'s death branch checks
  * before it's worth scanning `posed` for "any others of this type still alive" at all. Distinct
- * from `BOSS_TYPES` above, which is only about unattenuated sound.
- *
- * `BOSS_DEATH_TYPES` is `A_BossDeath`'s own five candidates; Commander Keen (72, `A_KeenDie`) and
- * the boss brain (88, `A_BrainDie`) are added *here* rather than to that table because vanilla
- * reaches them through their own separate action functions. In particular neither is gated on
- * `gamemap`, and `bossDeathTriggersFor`'s `default` branch maps over `BOSS_DEATH_TYPES` to make
- * every member exit on an unlisted episode's map 8 — which must not apply to these two. See
- * docs/death.md § Boss death.
+ * from `BOSS_TYPES` above, which is only about unattenuated sound. Commander Keen (72) and the boss
+ * brain (88) are here rather than in `BOSS_DEATH_TYPES` — docs/death.md § Boss death.
  */
 export const DEATH_NOTIFY_TYPES: Set<number> = new Set([
   ...Object.values(BOSS_DEATH_TYPES),
@@ -604,14 +617,17 @@ export function bodiesOverlap(at: Pos2, body: Pos2, reach: number): boolean {
  * `PIT_StompThing`'s `gamemap != 30`: a *monster* arriving on a teleport pad only stomps what is
  * standing on it on map 30 — anywhere else the body in the way blocks its teleport instead. The
  * player is never gated this way. Vanilla reads the raw map number whichever game is running, but
- * `wad.ts`'s own `MAP_MARKER` only ever admits `MAPnn` and `ExMy`, so no episodic name can reach 30.
- * See docs/death.md § Telefrag.
+ * `wad.ts`'s own `MAP_MARKER` only ever admits `MAPnn` and `ExMy`, so no episodic name can reach
+ * 30. See docs/death.md § Telefrag.
  */
 export function monstersTelefrag(mapName: string): boolean {
   return mapName === 'MAP30';
 }
 
-/** Vanilla's own hard cap on how many lost souls can exist on a level at once — `A_PainShootSkull`'s "count > 20" guard. */
+/**
+ * Vanilla's own hard cap on how many lost souls can exist on a level at once — `A_PainShootSkull`'s
+ * "count > 20" guard.
+ */
 export const MAX_SKULLS_ON_LEVEL = 20;
 
 /**
@@ -633,7 +649,10 @@ export const BARREL_RADIUS = 10;
  * barrel standing beside it.
  */
 export const BARREL_HEIGHT = 42;
-/** Vanilla `MT_BARREL`'s own `mass` — confirmed against `linuxdoom-1.10/info.c`, feeds `thrustSpeed`. */
+/**
+ * Vanilla `MT_BARREL`'s own `mass` — confirmed against `linuxdoom-1.10/info.c`, feeds
+ * `thrustSpeed`.
+ */
 export const BARREL_MASS = 100;
 /**
  * `MT_BARREL`'s frame chains, **walked out of vanilla's own state table** rather than transcribed
@@ -695,7 +714,10 @@ export interface ThingUpdateResult {
   barrelExplosions: BarrelExplosion[];
 }
 
-/** Whether `type` gets `PICKUP_SCALE` — see `PICKUP_SCALE_TYPES`'s doc for why this is a whitelist, not "everything but monsters/weapons". */
+/**
+ * Whether `type` gets `PICKUP_SCALE` — see `PICKUP_SCALE_TYPES`'s doc for why this is a whitelist,
+ * not "everything but monsters/weapons".
+ */
 export function pickupScaleFor(type: number): number {
   return PICKUP_SCALE_TYPES.has(type) ? PICKUP_SCALE : 1;
 }

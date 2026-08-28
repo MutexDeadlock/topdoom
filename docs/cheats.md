@@ -31,8 +31,9 @@ disagreeing with what was typed — and `game.ts` withholds `handleHotkeys`' map
 that tic: DEVMODE's previous-map jump `P` sits inside `idclip`, and without this, typing the code
 jumps level and eats the cheat. It covers the tic that *completes* a code too, not only the ones
 leading up to it. Only that callback is withheld, not the whole of `handleHotkeys` — the camera's
-zoom and tilt keys aren't letters and can't collide, so they stay live while a code is typed. The movement keys are
-deliberately not covered: `idkfa`'s `a` and `d` strafe, as vanilla's own cheat letters do.
+zoom and tilt keys aren't letters and can't collide, so they stay live while a code is typed. The
+movement keys are deliberately not covered: `idkfa`'s `a` and `d` strafe, as vanilla's own cheat
+letters do.
 
 Codes are read only while the player is alive: a corpse answers `R` and nothing else
 (docs/death.md § Player death). Both noclip spellings work whatever the IWAD is — `idclip` and
@@ -85,10 +86,10 @@ tic. From there it reaches three places:
   `MF_NOCLIP` early-out: it returns with `tmfloorz` set from the subsector's own sector, before a
   line or a body was considered — so no ledge holds the player up over a pit and the 24-unit step
   limit stops applying. Gravity is unchanged: walk out over a lower sector and you fall into it.
-- **Walk triggers.** `SpecialsController.update` takes the flag and skips its walk-line pass, matching `P_TryMove`,
-  which runs its `spechit` list only for a thing without the flag. Nothing fires by being walked
-  over — no doors, no teleports, no exit lines. **Use triggers still work**: `P_UseLines` never
-  looks at the flag, so `Space` opens a door from the wrong side of it as usual.
+- **Walk triggers.** `SpecialsController.update` takes the flag and skips its walk-line pass,
+  matching `P_TryMove`, which runs its `spechit` list only for a thing without the flag. Nothing
+  fires by being walked over — no doors, no teleports, no exit lines. **Use triggers still work**:
+  `P_UseLines` never looks at the flag, so `Space` opens a door from the wrong side of it as usual.
 
 Walking out past the map's edge is as unmapped here as in vanilla: the BSP resolves a point in the
 void to whatever leaf it lands in, and the floor comes back from that sector.

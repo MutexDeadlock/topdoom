@@ -1011,7 +1011,10 @@ export const STATES: readonly StateRow[] = [
   [137, 32771, 4, '', 963, 'S_TECH2LAMP4'], // 966
 ];
 
-/** The eight `states[]` entry points one `mobjinfo` row carries, each 0 (`S_NULL`) where the type has none. */
+/**
+ * The eight `states[]` entry points one `mobjinfo` row carries, each 0 (`S_NULL`) where the type
+ * has none.
+ */
 export interface MobjStates {
   spawn: number;
   see: number;
@@ -1181,9 +1184,15 @@ export interface WeaponStates {
   down: number;
   /** `readystate`, the idle bob — `Bobbing frame`. */
   ready: number;
-  /** `atkstate`, the fire chain a trigger pull enters — `Shooting frame`. The one the rate is walked from. */
+  /**
+   * `atkstate`, the fire chain a trigger pull enters — `Shooting frame`. The one the rate is walked
+   * from.
+   */
   atk: number;
-  /** `flashstate`, the muzzle-flash layer — `Firing frame`. 0 for the fist and chainsaw, which have none. */
+  /**
+   * `flashstate`, the muzzle-flash layer — `Firing frame`. 0 for the fist and chainsaw, which have
+   * none.
+   */
   flash: number;
 }
 
@@ -1210,10 +1219,10 @@ export const WEAPON_STATES: readonly WeaponStates[] = [
 ];
 
 /**
- * The states one weapon's fire chain occupies: from `atkstate` along `next`, up to and **including**
- * the `A_ReFire` state that closes it — with the trigger held, `A_ReFire` re-enters `atkstate` the
- * moment it is reached (`p_pspr.c`), so the chain never runs past it. Bounded by the visited set, so
- * a patched chain that loops back without one still terminates.
+ * The states one weapon's fire chain occupies: from `atkstate` along `next`, up to and
+ * **including** the `A_ReFire` state that closes it — with the trigger held, `A_ReFire` re-enters
+ * `atkstate` the moment it is reached (`p_pspr.c`), so the chain never runs past it. Bounded by the
+ * visited set, so a patched chain that loops back without one still terminates.
  *
  * Lives beside the data rather than in `dehacked/frames.ts` because two readers need the same span
  * and must not disagree about it: the walker sums its tics for the fire rate (docs/weapons.md
@@ -1234,9 +1243,10 @@ export function fireChainStates(states: readonly StateRow[], atk: number): numbe
 
 /**
  * Whether a state belongs to a weapon's first-person chain — `S_LIGHTDONE` through `S_BFGFLASH2`,
- * the states `p_pspr.c` steps rather than `P_MobjThinker`. Decided by sprite: `SPR_SHTG`..`SPR_BFGF`
- * (indices 1-15) are the gun and flash lumps, and nothing in the world draws them. This engine has no
- * first-person weapon, so a `Frame` record on one of these has no sink here.
+ * the states `p_pspr.c` steps rather than `P_MobjThinker`. Decided by sprite:
+ * `SPR_SHTG`..`SPR_BFGF` (indices 1-15) are the gun and flash lumps, and nothing in the world draws
+ * them. This engine has no first-person weapon, so a `Frame` record on one of these has no sink
+ * here.
  */
 export function isPspriteState(index: number): boolean {
   const row = STATES[index];

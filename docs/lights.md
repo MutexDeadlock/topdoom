@@ -164,10 +164,10 @@ offset `mapmesh` uses to resolve a wall quad's leaf. Which linedefs stand betwee
 **crossing test from the leaf's own centre out to that probe point**, cached: the geometry is fixed
 even though each linedef's blocking answer is not.
 
-**One edge becomes a record per leaf across it, not one record.** A leaf's outline is the BSP clip's,
-and its edges are the *partitions* that cut the leaf out — nothing makes one edge stop where the
-geometry behind it changes, so a single edge routinely spans a doorway and the wall beside it. The
-neighbour is therefore not a point probe but `World.subsectorsAlongSegment` (docs/world.md §
+**One edge becomes a record per leaf across it, not one record.** A leaf's outline is the BSP
+clip's, and its edges are the *partitions* that cut the leaf out — nothing makes one edge stop where
+the geometry behind it changes, so a single edge routinely spans a doorway and the wall beside it.
+The neighbour is therefore not a point probe but `World.subsectorsAlongSegment` (docs/world.md §
 Point-to-sector lookups) walking the offset edge through the BSP, each run of it becoming its own
 record with its own sub-edge geometry and its own crossing test. A midpoint probe instead answers
 for whichever neighbour that one point lands in and **loses every other**, which is what left a
@@ -449,9 +449,9 @@ changed. Three things about the key:
   does not actually reach could crowd out one that does.
 
 The memo governs the **upload** as well as the cast. A row is copied into the shadow texture only
-when the cast was retaken or the row does not already hold this light, and `uLightShadow.needsUpdate`
-follows that rather than "there is at least one light" — otherwise a frame of pure memo hits still
-re-uploads the whole texture unchanged.
+when the cast was retaken or the row does not already hold this light, and
+`uLightShadow.needsUpdate` follows that rather than "there is at least one light" — otherwise a
+frame of pure memo hits still re-uploads the whole texture unchanged.
 
 **Which light a row holds is tracked on the row (`DynamicLights.rowOwner`), never on the memo.**
 Rows are handed out fresh each `commit` in nearest-first order, so the row a light had last frame
@@ -487,18 +487,18 @@ fails leaves the base empty and the game unlit rather than unplayable.
 that this is CPU only — the per-pixel cost of the fragment loop lands on the GPU, where it shows up
 in the frame total rather than in any row.
 
-**The per-pixel half is measured in a browser, not reasoned about.** `EXT_disjoint_timer_query_webgl2`
-is available in chromium and gives real GPU milliseconds: begin a `TIME_ELAPSED_EXT` query in a
-`requestAnimationFrame` callback and end it in the next one, and the query spans exactly one frame's
-GL commands. Three things decide whether such a run means anything — the **drawing buffer**
-(`setPixelRatio` up to 2 on a 2560x1600 panel is 5120x2880, and the cost here is per fragment), the
-**GPU** (chromium picks the discrete one by default; `--use-angle=gl` with `DRI_PRIME=0` puts it on
-the integrated one, where a regression shows up an order of magnitude clearer), and whether the
-level is **explored**, since a sprite only offers itself where fog of war has been. `?map=`/`?pos=`
-(docs/menu.md § URL parameters) place the player, and filling `FogOfWar`'s `explored`/`alpha` from
-the console reaches the steady state without walking the level.
+**The per-pixel half is measured in a browser, not reasoned about.**
+`EXT_disjoint_timer_query_webgl2` is available in chromium and gives real GPU milliseconds: begin a
+`TIME_ELAPSED_EXT` query in a `requestAnimationFrame` callback and end it in the next one, and the
+query spans exactly one frame's GL commands. Three things decide whether such a run means anything —
+the **drawing buffer** (`setPixelRatio` up to 2 on a 2560x1600 panel is 5120x2880, and the cost here
+is per fragment), the **GPU** (chromium picks the discrete one by default; `--use-angle=gl` with
+`DRI_PRIME=0` puts it on the integrated one, where a regression shows up an order of magnitude
+clearer), and whether the level is **explored**, since a sprite only offers itself where fog of war
+has been. `?map=`/`?pos=` (docs/menu.md § URL parameters) place the player, and filling `FogOfWar`'s
+`explored`/`alpha` from the console reaches the steady state without walking the level.
 
-The row covers the reach fill and the shadow casting as well as the upload. Measured over DOOM2 MAP15 and DOOM E1M1, a fill
-costs about **2 µs** once the leaf's adjacency is warm and reaches 12–15 leaves at a 200-unit radius,
-so a full complement of lights is well under a tenth of a millisecond. The first fill through a
-given leaf is ~15× that, building the adjacency it then keeps.
+The row covers the reach fill and the shadow casting as well as the upload. Measured over DOOM2
+MAP15 and DOOM E1M1, a fill costs about **2 µs** once the leaf's adjacency is warm and reaches 12–15
+leaves at a 200-unit radius, so a full complement of lights is well under a tenth of a millisecond.
+The first fill through a given leaf is ~15× that, building the adjacency it then keeps.

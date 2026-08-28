@@ -403,8 +403,8 @@ export const THING_STATE_FIELDS: Record<string, StatePointer> = {
  * far each gets here. Matched case-insensitively, as `deh_strcasecmp` does.
  *
  * `Reaction time` has no per-type home: `monsters/ai.ts` seeds one shared `REACTION_CHASES`, and
- * vanilla's own value is 8 for every monster. `Dropped item`, `Blood color` and `Bits2` are MBF21's,
- * not read yet. `ID #` is permanently out — docs/dehacked.md § What is not supported.
+ * vanilla's own value is 8 for every monster. `Dropped item`, `Blood color` and `Bits2` are
+ * MBF21's, not read yet. `ID #` is permanently out — docs/dehacked.md § What is not supported.
  */
 const THING_FIELDS: Record<string, DehSupport> = {
   'hit points': 'applied',

@@ -8,7 +8,9 @@ import type { DoomMap } from '../../wad/map.ts';
 import { NO_SIDE } from '../../wad/map.ts';
 import { sectorsByTag, linesByTag, sectorLines } from '../world.ts';
 
-/** The WAD's "no texture here" sidedef name, spelled out rather than imported from the render layer. */
+/**
+ * The WAD's "no texture here" sidedef name, spelled out rather than imported from the render layer.
+ */
 const NO_TEXTURE = '-';
 
 /**
@@ -76,7 +78,10 @@ export class Transfers {
    * Dense for the same reason its siblings are. See docs/specials.md § Deep water.
    */
   private islandSecs: Int32Array;
-  /** Linedef indexes whose midtexture draws translucent (260), and those whose midtexture is a tranmap name. */
+  /**
+   * Linedef indexes whose midtexture draws translucent (260), and those whose midtexture is a
+   * tranmap name.
+   */
   private translucent = new Set<number>();
   private suppressed = new Set<number>();
   /** Colormap names by control sector — only the 242 control sectors that carry any. */
@@ -287,7 +292,9 @@ export class Transfers {
     }
   }
 
-  /** The sector behind a line's front sidedef — Boom's `sides[*l->sidenum].sector` control lookup. */
+  /**
+   * The sector behind a line's front sidedef — Boom's `sides[*l->sidenum].sector` control lookup.
+   */
   private frontSector(lineIndex: number): number {
     const line = this.map.linedefs[lineIndex];
     if (!line || line.right === NO_SIDE) return -1;
@@ -301,7 +308,9 @@ export class Transfers {
     return sector?.light ?? 0;
   }
 
-  /** The light a sector's ceiling draws with — 261's control sector, else its own (`R_FakeFlat`). */
+  /**
+   * The light a sector's ceiling draws with — 261's control sector, else its own (`R_FakeFlat`).
+   */
   ceilingLight(sectorIndex: number): number {
     const source = this.ceilingLightSec[sectorIndex] ?? -1;
     const sector = this.map.sectors[source < 0 ? sectorIndex : source];

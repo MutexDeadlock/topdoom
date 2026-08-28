@@ -143,7 +143,9 @@ export class MusicBank {
     this.wad = wad;
   }
 
-  /** By lump name (`'D_RUNNIN'`), not by the sfx-style bare name — `S_music[]` stores these whole. */
+  /**
+   * By lump name (`'D_RUNNIN'`), not by the sfx-style bare name — `S_music[]` stores these whole.
+   */
   get(name: string): MusicLump | null {
     const key = name.toUpperCase();
     const cached = this.cache.get(key);

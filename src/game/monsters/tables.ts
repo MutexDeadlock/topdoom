@@ -14,7 +14,10 @@ import { DOOM_TIC } from '../../constants.ts';
 import { pristineFrameTables } from '../dehacked/frames.ts';
 import { MOBJ_INFO } from '../dehacked/tables.ts';
 
-/** Vanilla's own `FATSPREAD` (`ANG90/8`) — the mancubus's fireball-pair fan angle, see `AttackStats.projectile.pairOffsetsRad`. */
+/**
+ * Vanilla's own `FATSPREAD` (`ANG90/8`) — the mancubus's fireball-pair fan angle, see
+ * `AttackStats.projectile.pairOffsetsRad`.
+ */
 const FATSPREAD = Math.PI / 2 / 8;
 
 /**
@@ -37,14 +40,10 @@ const VILE_KNOCKUP_SPEED = (1000 / 100) * 35;
  * applies to something which only stands there and dies lives here instead: its
  * real `mobjinfo.radius`, and the two sounds `A_Pain`/`A_Scream` play.
  *
- * `unattenuated` is the brain's `A_BrainPain`/`A_BrainScream` calling
- * `S_StartSound(NULL, …)` — the Icon of Sin is heard flinching and dying from
- * anywhere on the map, the same rule `things.ts`'s `BOSS_TYPES` applies to the
- * cyberdemon and spider mastermind. Keen's own are ordinary positional calls.
- *
- * `ThingLayer.damage` is the only consumer. No pain *chance* here: neither type
- * has one worth rolling (256 and 255 of 256), so the flinch is unconditional.
- * docs/monster-ai.md § Commander Keen.
+ * `unattenuated` is the brain's `A_BrainPain`/`A_BrainScream` calling `S_StartSound(NULL, …)`, the
+ * same rule `things.ts`'s `BOSS_TYPES` applies to the cyberdemon and spider mastermind; Keen's own
+ * are ordinary positional calls. `ThingLayer.damage` is the only consumer. No pain *chance* here:
+ * neither type has one worth rolling (256 and 255 of 256). docs/monster-ai.md § Commander Keen.
  */
 export const INERT_SHOOTABLE: Record<
   number,
@@ -493,7 +492,9 @@ for (const [key, m] of Object.entries(pristineFrameTables().monsters)) {
   }
 }
 
-/** An `AttackStats` whose `projectile` is known present — what `forEachProjectileAttack` hands back. */
+/**
+ * An `AttackStats` whose `projectile` is known present — what `forEachProjectileAttack` hands back.
+ */
 type ProjectileAttack = AttackStats & { projectile: NonNullable<AttackStats['projectile']> };
 
 /**
@@ -572,19 +573,28 @@ function fastVariant(type: number, stats: MonsterStats): MonsterStats {
   return fast;
 }
 
-/** One attack with its projectile at fast mode's speed, or unchanged when it throws no missile `G_InitNew` speeds up. */
+/**
+ * One attack with its projectile at fast mode's speed, or unchanged when it throws no missile
+ * `G_InitNew` speeds up.
+ */
 function fastMissile(attack: AttackStats): AttackStats {
   const speed = attack.projectile && FAST_MISSILE_SPEED[attack.projectile.sprite];
   if (!attack.projectile || speed === undefined) return attack;
   return { ...attack, projectile: { ...attack.projectile, speed } };
 }
 
-/** The stat table one skill plays on: nightmare's fast monsters, or the plain vanilla one — see `fastMonsters` in game/skill.ts. */
+/**
+ * The stat table one skill plays on: nightmare's fast monsters, or the plain vanilla one — see
+ * `fastMonsters` in game/skill.ts.
+ */
 export function monsterStatsFor(fast: boolean): Record<number, MonsterStats> {
   return fast ? FAST_MONSTER_STATS : MONSTER_STATS;
 }
 
-/** The tallest body in the roster (the cyberdemon's 110), derived from the table so it can't drift — a cheap "nobody can be caught in a gap this big" early-out. */
+/**
+ * The tallest body in the roster (the cyberdemon's 110), derived from the table so it can't drift —
+ * a cheap "nobody can be caught in a gap this big" early-out.
+ */
 export let TALLEST_BODY_HEIGHT = Math.max(...Object.values(MONSTER_STATS).map((s) => s.height));
 
 /**

@@ -2,8 +2,8 @@
  * What a WAD *is*, read from as few of its bytes as possible: type, maps, lump count, whether it
  * carries a DEHACKED patch, the level titles it names, and whether this engine can run any of it.
  * The one implementation behind all three callers that need this without loading the file into the
- * engine — the build-time manifest, an uploaded file, and a scan of the player's own library folder.
- * See docs/wad.md § Describing a file without loading it.
+ * engine — the build-time manifest, an uploaded file, and a scan of the player's own library
+ * folder. See docs/wad.md § Describing a file without loading it.
  */
 import { Reader } from './reader.ts';
 import { MAP_MARKER, type WadType } from './wad.ts';
@@ -16,8 +16,8 @@ import { parseDehacked } from '../game/dehacked.ts';
  * A file's bytes, addressable by range. Deliberately not "an ArrayBuffer": a library scan reads
  * hundreds of files it will never load, and `describeWad` touches only the header, the directory
  * and two lumps — a few hundred KB even for a 14 MB IWAD — so the source must be able to serve a
- * slice without materializing the whole file. A `File` does this natively (`slice().arrayBuffer()`),
- * `bytesOf` below wraps a buffer that is already in memory.
+ * slice without materializing the whole file. A `File` does this natively
+ * (`slice().arrayBuffer()`), `bytesOf` below wraps a buffer that is already in memory.
  */
 export interface ByteRanges {
   size: number;
@@ -31,7 +31,10 @@ export interface WadDescription {
   maps: string[];
   /** Total lump count — shown for map-less add-ons so they don't look empty. */
   lumpCount: number;
-  /** Whether the file carries a `DEHACKED` lump. Presence only — docs/dehacked.md § The coverage report. */
+  /**
+   * Whether the file carries a `DEHACKED` lump. Presence only — docs/dehacked.md § The coverage
+   * report.
+   */
   dehacked: boolean;
   /** Each map's title: its MAPINFO's, and where that names nothing, its DEHACKED patch's. */
   levelNames: Record<string, string>;
@@ -45,7 +48,9 @@ const DIRECTORY_ENTRY_BYTES = 16;
 /** Text lumps are 8-bit, the same as every other string a WAD carries. */
 const DECODER = new TextDecoder('latin1');
 
-/** `ByteRanges` over bytes already in memory — the manifest plugin's file and an upload's buffer. */
+/**
+ * `ByteRanges` over bytes already in memory — the manifest plugin's file and an upload's buffer.
+ */
 export function bytesOf(buffer: ArrayBufferLike | Uint8Array): ByteRanges {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   return {

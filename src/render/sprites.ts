@@ -1,7 +1,7 @@
 /**
- * Things as upright sprite billboards: decoded sprite lumps cached as textures (`SpriteMaterialCache`),
- * rotation-frame picking, and the per-thing animation/pose state (`SpriteAnimator`,
- * `SpriteActor`). See docs/sprites.md.
+ * Things as upright sprite billboards: decoded sprite lumps cached as textures
+ * (`SpriteMaterialCache`), rotation-frame picking, and the per-thing animation/pose state
+ * (`SpriteAnimator`, `SpriteActor`). See docs/sprites.md.
  */
 import * as THREE from 'three';
 import type { GraphicsBank } from '../wad/graphics.ts';
@@ -19,7 +19,10 @@ import { tinted, type Tint } from './lights.ts';
  */
 export const VIEWER_ANGLE_DEG = -90;
 
-/** Which of a sprite's 8 rotation frames (1-8) faces this viewer angle, given the thing's own facing. */
+/**
+ * Which of a sprite's 8 rotation frames (1-8) faces this viewer angle, given the thing's own
+ * facing.
+ */
 export function pickRotationDigit(facingDeg: number, viewerAngleDeg = VIEWER_ANGLE_DEG): number {
   const diff = (((viewerAngleDeg - facingDeg) % 360) + 360) % 360;
   return (Math.floor((diff + 22.5) / 45) % 8) + 1;
@@ -106,15 +109,10 @@ export function intersectBillboard(
  * Builds and caches billboard geometry/materials for sprite lumps, one per
  * (lump, mirrored) pair.
  *
- * Things are rendered as flat planes fixed upright in the world rather than
- * as THREE.Sprite billboards, which fully face the camera on every axis. A
- * camera-facing billboard tips flat whenever the camera tilts toward looking
- * straight down, making a standing DOOM sprite read as a figure lying on the
- * floor. Since this game's camera only ever tilts a fixed amount off
- * vertical (it can orbit in yaw, but never pitches further down or up), the
- * plane only ever needs to turn around its vertical axis to track the
- * camera's azimuth (see SpriteActor.setPose's viewerAngleDeg), never tilt —
- * a cheaper, always-upright approximation instead of a true billboard.
+ * A thing is a flat plane fixed **upright** in the world, turning only around its vertical axis to
+ * track the camera's yaw (`SpriteActor.setPose`'s `viewerAngleDeg`) — never a true camera-facing
+ * billboard, which tips flat as this camera tilts toward straight down.
+ * docs/sprites.md § Why upright planes, not `THREE.Sprite`.
  */
 export class SpriteMaterialCache {
   private cache = new Map<string, CachedSprite | null>();
@@ -141,27 +139,16 @@ export class SpriteMaterialCache {
       texture.colorSpace = THREE.SRGBColorSpace;
       texture.anisotropy = this.maxAnisotropy;
 
-      // WAD bitmaps start at their top row, but a plane's default UVs put v=0
-      // along its bottom edge, so the art arrives upside down. Texture.flipY
-      // cannot fix it: WebGL only honours UNPACK_FLIP_Y_WEBGL for image
-      // sources, not for the typed-array uploads every DataTexture uses —
-      // hence the V axis is inverted through the texture transform instead.
-      // (The map meshes dodge this by building their own UVs with V running
-      // downward.)
+      // WAD bitmaps start at their top row and a plane's default UVs put v=0 along its bottom
+      // edge, so the V axis is inverted through the texture transform — `flipY` cannot do it for a
+      // `DataTexture`. docs/sprites.md § Why upright planes, not `THREE.Sprite`.
       texture.wrapT = THREE.RepeatWrapping;
       texture.repeat.y = -1;
       texture.offset.y = 1;
 
-      // Horizontal centring uses the patch's `left` hotspot, DOOM's usual
-      // convention. Vertically, DOOM instead trusts `top` (world position =
-      // thing.z + top, i.e. the top edge sits `top` units above the floor)
-      // and gets away with whatever slack that leaves beneath the sprite
-      // because its software renderer floor-clips every column and the
-      // camera sits near floor height anyway. Neither safety net exists
-      // here — a tilted-down 3D view over an unclipped plane — so any patch
-      // whose `top` is less than its full height would draw with its feet
-      // below the floor. Anchoring the bottom edge to the floor outright
-      // sidesteps that instead of trusting the offset.
+      // Horizontal centring takes the patch's `left` hotspot; the bottom edge is anchored to the
+      // floor outright rather than trusting `top`, which this view has no floor clip to cover for.
+      // docs/sprites.md § Why upright planes, not `THREE.Sprite`.
       const left = bmp.left ?? bmp.width / 2;
       let offsetX = bmp.width / 2 - left;
       const offsetY = bmp.height / 2;
@@ -178,17 +165,11 @@ export class SpriteMaterialCache {
 
       const geometry = new THREE.PlaneGeometry(bmp.width, bmp.height);
       geometry.translate(offsetX, offsetY, 0);
-      // An all-white per-vertex color, purely so the *instanced* path
-      // (render/spritebatch.ts) can tint each instance by its own sector
-      // light. three.js's fragment shader only multiplies `vColor` in under
-      // `USE_COLOR` — i.e. `material.vertexColors` — and `USE_INSTANCING_COLOR`
-      // alone populates `vColor` in the vertex shader but is then ignored
-      // downstream, so an InstancedMesh's per-instance color needs
-      // `vertexColors: true`, which in turn needs this attribute to exist or
-      // WebGL's default (0,0,0) generic attribute renders every sprite black.
-      // White here means the instanced path's tint is exactly its instanceColor.
-      // Ignored entirely by the non-instanced material below (`vertexColors`
-      // stays false there), which tints via `material.color` instead.
+      // An all-white per-vertex colour, purely so the *instanced* path (render/spritebatch.ts) can
+      // tint each instance by its own sector light: `vertexColors` is what makes `instanceColor`
+      // reach the fragment shader, and without this attribute WebGL's default (0, 0, 0) draws every
+      // batched sprite black. The non-instanced material below ignores it and tints via
+      // `material.color`. docs/sprites.md § Batching.
       geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(12).fill(1), 3));
 
       const material = new THREE.MeshBasicMaterial({
@@ -437,7 +418,10 @@ export class SpriteAnimator {
     this.animTimer = 0;
   }
 
-  /** Whether a one-shot attack/pain sequence is still running — what keeps a volley's later shots from restarting the pose they are already inside. */
+  /**
+   * Whether a one-shot attack/pain sequence is still running — what keeps a volley's later shots
+   * from restarting the pose they are already inside.
+   */
   get posing(): boolean {
     return this.override.frames !== null;
   }
@@ -459,7 +443,10 @@ export class SpriteAnimator {
     this.animTimer = 0;
   }
 
-  /** Undoes `die`, back to the normal alive animation — used when a level restart brings the player back to life. */
+  /**
+   * Undoes `die`, back to the normal alive animation — used when a level restart brings the player
+   * back to life.
+   */
   revive(): void {
     this.death.stop();
     this.override.stop();
@@ -498,7 +485,10 @@ export class SpriteActor {
    */
   private opacity = 1;
   private translucent = new Map<THREE.MeshBasicMaterial, THREE.MeshBasicMaterial>();
-  /** The `(sprite, letter)` keys drawn at full light — `things/tables.ts`'s `FULLBRIGHT_FRAMES`, handed in so this layer stays free of the game tables. */
+  /**
+   * The `(sprite, letter)` keys drawn at full light — `things/tables.ts`'s `FULLBRIGHT_FRAMES`,
+   * handed in so this layer stays free of the game tables.
+   */
   private brightFrames: ReadonlySet<string>;
 
   constructor(
@@ -522,7 +512,9 @@ export class SpriteActor {
     return this.anim.frameKey;
   }
 
-  /** Repositions the actor and advances its animation; returns false if no matching lump was found. */
+  /**
+   * Repositions the actor and advances its animation; returns false if no matching lump was found.
+   */
   setPose(
     x: number,
     y: number,
@@ -538,9 +530,8 @@ export class SpriteActor {
     const cached = this.anim.resolve(facingDeg, viewerAngleDeg);
     if (!cached) return false;
     if (this.mesh.geometry !== cached.geometry) this.mesh.geometry = cached.geometry;
-    // Material and geometry can now disagree (a translucent clone stands in for
-    // the cached material), so it's swapped on its own rather than only when
-    // the geometry changes.
+    // Material and geometry can disagree — a translucent clone stands in for the cached material —
+    // so the material is swapped on its own rather than only when the geometry changes.
     const material = this.opacity < 1 ? this.translucentOf(cached.material) : cached.material;
     if (this.mesh.material !== material) this.mesh.material = material;
 
@@ -560,7 +551,10 @@ export class SpriteActor {
     return true;
   }
 
-  /** Draws this actor at `opacity` (1 = normal) from the next `setPose` on — see the `opacity` field's doc. */
+  /**
+   * Draws this actor at `opacity` (1 = normal) from the next `setPose` on — see the `opacity`
+   * field's doc.
+   */
   setOpacity(opacity: number): void {
     this.opacity = opacity;
   }

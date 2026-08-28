@@ -10,10 +10,13 @@ import type { TeleportDest } from './specials.ts';
 import { NO_FRICTION, type FrictionEffect } from './specials/defs.ts';
 import type { Pos2, Pos3 } from '../types.ts';
 
-/** Vanilla DOOM values, in map units. */
+/** The player's own collision box, in map units — `MT_PLAYER`'s `mobjinfo` radius and height. */
 export const PLAYER_RADIUS = 16;
 export const PLAYER_HEIGHT = 56;
-/** Vanilla `MT_PLAYER`'s own `mobjinfo.mass` — feeds `game.ts`'s use of `game/monsters/defs.ts: thrustSpeed` for the knockback `Player.applyKnockback` receives. */
+/**
+ * Vanilla `MT_PLAYER`'s own `mobjinfo.mass` — feeds `game.ts`'s use of
+ * `game/monsters/defs.ts: thrustSpeed` for the knockback `Player.applyKnockback` receives.
+ */
 export const PLAYER_MASS = 100;
 
 /**
@@ -45,8 +48,15 @@ const MAX_PL_MOVE = 50;
  */
 const MOVE_UNIT_SPEED = 10;
 
-const ACCELERATION = 12; // per second, as a lerp factor
-/** Vanilla's `VIEWHEIGHT`: where the player *views* from, and what `Player.eyeZ` hands the camera. */
+/**
+ * How fast the player approaches its target velocity, as a lerp-per-second rate. **Tuned by feel**,
+ * and the one number here that is not vanilla-derived — docs/movement.md § Movement speed and
+ * straferunning.
+ */
+const ACCELERATION = 12;
+/**
+ * Vanilla's `VIEWHEIGHT`: where the player *views* from, and what `Player.eyeZ` hands the camera.
+ */
 export const EYE_HEIGHT = 41;
 /**
  * Where a **sight trace** starts above the feet — `P_CheckSight`'s `sightzstart`
@@ -79,7 +89,11 @@ export const GRAVITY = 1600;
  */
 export const HARD_LANDING_SPEED = Math.sqrt(2 * GRAVITY * 32);
 
-/** Below this, `momX`/`momY` snap to exactly 0 rather than crawling on forever — see `game/things.ts`'s identical constant, and `applyForce` for the one case exempt from it. `game/voodoo.ts` shares it, a doll's channel being a copy of this one. */
+/**
+ * Below this, `momX`/`momY` snap to exactly 0 rather than crawling on forever — see
+ * `game/things.ts`'s identical constant, and `applyForce` for the one case exempt from it.
+ * `game/voodoo.ts` shares it, a doll's channel being a copy of this one.
+ */
 export const MOMENTUM_STOP_SPEED = 1;
 
 const AUTORUN_STORAGE_KEY = 'topdoom.autorun';
@@ -109,7 +123,11 @@ export class Player implements Pos3 {
 
   velX = 0;
   velY = 0;
-  /** Vertical velocity, map units/sec. Otherwise only ever negative — there's no jump input, only gravity once a step drops out from under the player — except `launchUpward`'s arch-vile knockback, the one thing that ever sets it positive. */
+  /**
+   * Vertical velocity, map units/sec. Otherwise only ever negative — there's no jump input, only
+   * gravity once a step drops out from under the player — except `launchUpward`'s arch-vile
+   * knockback, the one thing that ever sets it positive.
+   */
   private velZ = 0;
   /**
    * Vanilla's `momx`/`momy` for everything that is **not** the player's own
@@ -117,21 +135,12 @@ export class Player implements Pos3 {
    * forces the world applies — conveyors, wind and current
    * (`applyForce`, docs/specials.md § Scrollers and conveyors).
    *
-   * Kept entirely separate from `velX`/`velY` above rather than added into
-   * them, since those track held-key input via an exponential approach to a
-   * target velocity (`update`'s `k`), and folding an impulse into that model
-   * would just have it absorbed or fought by whatever the player is currently
-   * pressing within a frame or two. This instead integrates and decays
-   * (`ORIG_FRICTION`) on its own, as a displacement genuinely additive to ordinary
-   * movement — matching vanilla, where the momentum-driven and input-driven
-   * parts of a player's motion are two separate contributions summed into the
-   * same `momx`/`momy`, only split apart here because this engine's own input
-   * model isn't itself momentum-based (see `update`'s doc on why forward/side
-   * are targets, not thrusts).
+   * Kept entirely separate from `velX`/`velY` above rather than added into them, and integrated
+   * and decayed (`ORIG_FRICTION`) on its own as a displacement additive to ordinary movement —
+   * docs/movement.md § External momentum has why the input model forces the split.
    *
-   * `PlayerSnapshot` still calls the pair `knockVelX`/`knockVelY`: that is the
-   * saved wire format from before the channel widened, and renaming it would
-   * orphan every existing save — docs/movement.md § External momentum.
+   * `PlayerSnapshot` calls the pair `knockVelX`/`knockVelY`: that is the saved wire format the
+   * channel was named by before it widened, and renaming it would orphan every existing save.
    */
   private momX = 0;
   private momY = 0;
@@ -197,7 +206,10 @@ export class Player implements Pos3 {
     this.attempted.y = this.y;
   }
 
-  /** Every field the simulation mutates, for a savegame — docs/savegames.md § What is saved and what is deliberately not. */
+  /**
+   * Every field the simulation mutates, for a savegame — docs/savegames.md § What is saved and what
+   * is deliberately not.
+   */
   snapshot(): PlayerSnapshot {
     return {
       x: this.x,
@@ -269,16 +281,11 @@ export class Player implements Pos3 {
    * Teleporter landing: drops the player at the destination facing
    * `dest.angle`, matching vanilla's own view-angle snap on arrival.
    *
-   * **Boom's silent teleports arrive differently**, on two axes.
-   * `TeleportDest.rotateBy` turns the player's momentum through the same angle
-   * the facing turned, rather than `moveTo` clearing it — walking in comes out
-   * walking. `TeleportDest.silent` preserves the height above ground for a body
-   * that was mid-air: `EV_SilentTeleport`/`EV_SilentLineTeleport` both take
-   * `z = thing->z - thing->floorz` and reapply it at the destination, where
-   * loud `EV_Teleport` sets `thing->z = thing->floorz` outright. That offset is
-   * measured *here* because the specials controller is never told the player's
-   * height. Absent, the landing is vanilla's exactly.
-   * See docs/specials.md § Silent and line-to-line teleporters.
+   * **Boom's silent teleports arrive differently**, on two axes: `TeleportDest.rotateBy` turns the
+   * player's momentum through the angle the facing turned, and `TeleportDest.silent` preserves the
+   * height above ground for a body that was mid-air. That offset is measured *here* because the
+   * specials controller is never told the player's height; absent, the landing is vanilla's
+   * exactly. See docs/specials.md § Silent and line-to-line teleporters.
    */
   teleportTo(dest: TeleportDest): void {
     // Read before `moveTo` overwrites them, reapplied after — the four velocity
@@ -391,15 +398,12 @@ export class Player implements Pos3 {
    * through, and unlike a monster's own movement this slides along them
    * (`slideMove`) — docs/movement.md § Collision.
    *
-   * **Forward and sideways are separate, differently-sized thrusts that are
-   * never renormalized**, which is the whole of vanilla's straferunning;
-   * normalizing the input vector takes SR40 and SR50 away with it.
+   * **Forward and sideways are separate, differently-sized thrusts that are never renormalized** —
    * docs/movement.md § Movement speed and straferunning.
    *
-   * `ground` is what the floor underfoot does to all of this — an icy or muddy
-   * Boom sector (`specials/forces.ts: frictionUnder`). Omitted, or on any floor
-   * with no friction line, it is the identity and every number below is exactly
-   * what it was before friction existed. docs/movement.md § Friction.
+   * `ground` is what the floor underfoot does to all of this — an icy or muddy Boom sector
+   * (`specials/forces.ts: frictionUnder`). Omitted, or on any floor with no friction line, it is
+   * the identity. docs/movement.md § Friction.
    */
   update(
     dt: number,
@@ -465,16 +469,14 @@ export class Player implements Pos3 {
       this.y = moved.y;
     }
 
-    // The external momentum channel (`applyKnockback`, `applyForce`) is a fully
-    // separate displacement from the input-driven movement above — see `momX`'s
-    // own doc for why the two aren't combined — but still slides along walls
-    // through the same `slideMove`, matching vanilla: the player always gets
-    // `P_SlideMove`, whether the momentum came from a hit, a conveyor or the
-    // player's own thrust. Decayed by the floor's own per-tic friction (`ORIG_FRICTION` where no 223 line applies)
-    // (`Math.pow` rather than a continuous-rate conversion, for the same
-    // "survives conversion out of tics intact" reason `game/things.ts`'s
-    // identical decay does), unlike `velX`/`velY`'s own feel-tuned
-    // `ACCELERATION` model.
+    // The external momentum channel (`applyKnockback`, `applyForce`) is a fully separate
+    // displacement from the input-driven movement above — see `momX`'s own doc for why the two
+    // aren't combined — but still slides along walls through the same `slideMove`, matching
+    // vanilla: the player always gets `P_SlideMove`, whether the momentum came from a hit, a
+    // conveyor or the player's own thrust. Decayed by the floor's own per-tic friction
+    // (`ORIG_FRICTION` where no 223 line applies) (`Math.pow` rather than a continuous-rate
+    // conversion, for the same "survives conversion out of tics intact" reason `game/things.ts`'s
+    // identical decay does), unlike `velX`/`velY`'s own feel-tuned `ACCELERATION` model.
     //
     // The stop-speed snap is skipped while a world force is feeding the channel
     // (`forced`): a slow belt settles at an equilibrium that can sit below

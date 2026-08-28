@@ -488,7 +488,10 @@ export const SECTOR_LIGHT_SPECIALS: Record<number, LightPattern> = {
   17: 'flicker',
 };
 
-/** Vanilla `P_PlayerInSpecialSector`'s damage-floor cases — see `DamageFloorEffect` for what `suit` means. */
+/**
+ * Vanilla `P_PlayerInSpecialSector`'s damage-floor cases — see `DamageFloorEffect` for what `suit`
+ * means.
+ */
 export const SECTOR_DAMAGE_SPECIALS: Record<number, DamageFloorEffect> = {
   7: { amount: 5, suit: 'blocks' }, // NUKAGE DAMAGE
   5: { amount: 10, suit: 'blocks' }, // HELLSLIME DAMAGE
@@ -496,7 +499,10 @@ export const SECTOR_DAMAGE_SPECIALS: Record<number, DamageFloorEffect> = {
   4: { amount: 20, suit: 'leaks' }, // STROBE HURT
   11: { amount: 20, suit: 'ignored', exitBelowHealth: 10 }, // EXIT SUPER DAMAGE (E1M8 finale)
 };
-/** Vanilla's `P_Random() < 5`: the chance a `'leaks'` damage floor hurts anyway despite a radiation suit. */
+/**
+ * Vanilla's `P_Random() < 5`: the chance a `'leaks'` damage floor hurts anyway despite a radiation
+ * suit.
+ */
 export const SUIT_LEAK_CHANCE = 5 / 256;
 /**
  * Not vanilla's literal `leveltime&0x1f` (every 32 tics since level start, a
@@ -545,7 +551,7 @@ export const PARAM_LINE_SPECIALS: Set<number> = new Set([
  * one case at a time. docs/specials.md § Scope.
  */
 export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
-  // ---- W1 ----------------------------------------------------------------
+  // W1 — walk over, once.
   142: { trigger: 'walk', repeatable: false, effect: floor('plus512') },
   143: { trigger: 'walk', repeatable: false, effect: floor('plus24', FLOOR_SPEED_HALF, { changeTexture: true }) },
   144: { trigger: 'walk', repeatable: false, effect: floor('plus32', FLOOR_SPEED_HALF, { changeTexture: true }) },
@@ -560,12 +566,11 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   235: { trigger: 'walk', repeatable: false, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'currentFloor' } },
   239: { trigger: 'walk', repeatable: false, effect: { kind: 'changeOnly', model: 'numeric' } },
 
-  // ---- WR ----------------------------------------------------------------
+  // WR — walk over, repeatable.
   147: { trigger: 'walk', repeatable: true, effect: floor('plus512') },
   148: { trigger: 'walk', repeatable: true, effect: floor('plus24', FLOOR_SPEED_HALF, { changeTexture: true }) },
   149: { trigger: 'walk', repeatable: true, effect: floor('plus32', FLOOR_SPEED_HALF, { changeTexture: true }) },
-  // The WR silent crusher — vanilla 141's W1 twin, and the number the old
-  // scope note singled out as Boom-only.
+  // The WR silent crusher — vanilla 141's W1 twin.
   150: { trigger: 'walk', repeatable: true, effect: { kind: 'crusher', speed: CRUSHER_SPEED, silent: true, slowsWhenCrushing: true } },
   // 151/166/186 are Boom's copies of vanilla 40's ceiling+floor combo, and
   // unlike 40's their floor half really runs: Boom gives floors and ceilings
@@ -594,7 +599,7 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   256: { trigger: 'walk', repeatable: true, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
   257: { trigger: 'walk', repeatable: true, effect: { kind: 'stairs', stepHeight: STAIR_STEP_TURBO, speed: STAIR_SPEED_TURBO } },
 
-  // ---- S1 ----------------------------------------------------------------
+  // S1 — switch, once.
   158: { trigger: 'use', repeatable: false, effect: { kind: 'raiseToTexture' } },
   159: { trigger: 'use', repeatable: false, effect: { kind: 'lowerAndChange' } },
   160: { trigger: 'use', repeatable: false, effect: floor('plus24', FLOOR_SPEED, { changeTexture: true }) },
@@ -632,7 +637,7 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   237: { trigger: 'use', repeatable: false, effect: { kind: 'elevator', speed: ELEVATOR_SPEED, target: 'currentFloor' } },
   241: { trigger: 'use', repeatable: false, effect: { kind: 'changeOnly', model: 'numeric' } },
 
-  // ---- SR ----------------------------------------------------------------
+  // SR — switch, repeatable.
   78: { trigger: 'use', repeatable: true, effect: { kind: 'changeOnly', model: 'numeric' } },
   176: { trigger: 'use', repeatable: true, effect: { kind: 'raiseToTexture' } },
   177: { trigger: 'use', repeatable: true, effect: { kind: 'lowerAndChange' } },
@@ -670,11 +675,11 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   258: { trigger: 'use', repeatable: true, effect: { kind: 'stairs', stepHeight: STAIR_STEP, speed: STAIR_SPEED } },
   259: { trigger: 'use', repeatable: true, effect: { kind: 'stairs', stepHeight: STAIR_STEP_TURBO, speed: STAIR_SPEED_TURBO } },
 
-  // ---- G1 ----------------------------------------------------------------
+  // G1 — shot, once.
   197: { trigger: 'shoot', repeatable: false, effect: { kind: 'exit', secret: false } },
   198: { trigger: 'shoot', repeatable: false, effect: { kind: 'exit', secret: true } },
 
-  // ---- Silent + line-to-line teleporters ----------------------------------
+  // The silent and line-to-line teleporters.
   // Grouped by family rather than by trigger: the whole point of these
   // fourteen numbers is the three axes below, and reading them down the
   // columns is how they were checked against `p_spec.c`/`p_switch.c`.
@@ -686,7 +691,7 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   268: silentTeleport('walk', false, { monsterOnly: true }),
   269: silentTeleport('walk', true, { monsterOnly: true }),
 
-  // ---- Toggle plats -------------------------------------------------------
+  // Toggle plats.
   // `EV_DoPlat(toggleUpDn)`: speed and wait are set but never used, since each
   // stroke is instant — docs/specials.md § Toggle plats.
   211: { trigger: 'use', repeatable: true, effect: lift(LIFT_SPEED, LIFT_WAIT, 'toggle') },

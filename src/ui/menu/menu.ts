@@ -669,7 +669,10 @@ export class Menu {
     if (this.selectedIwad) this.iwadSelect.value = this.selectedIwad.key;
   }
 
-  /** Fired when the game-WAD select changes: adopts the pick and re-resolves the add-ons and level list under it. */
+  /**
+   * Fired when the game-WAD select changes: adopts the pick and re-resolves the add-ons and level
+   * list under it.
+   */
   private selectIwad(): void {
     const source = this.sources.find((s) => s.key === this.iwadSelect.value);
     if (source) void this.adoptIwad(source);
@@ -729,7 +732,8 @@ export class Menu {
    */
   private takeAsIwad(source: WadSource): void {
     // Nothing is dropped from the add-ons here: one a new game WAD can't take goes quiet in the
-    // list instead, and comes back the moment one that can is picked (docs/menu.md § Picking a WAD set).
+    // list instead, and comes back the moment one that can is picked (docs/menu.md § Picking a WAD
+    // set).
     this.selectedIwad = source;
   }
 
@@ -758,7 +762,10 @@ export class Menu {
     }
   }
 
-  /** Replaces every library-provided source with what the folder now holds, keeping the picks that survive. */
+  /**
+   * Replaces every library-provided source with what the folder now holds, keeping the picks that
+   * survive.
+   */
   private setLibrarySources(sources: WadSource[]): void {
     const byKey = new Map(sources.map((s) => [s.key, s]));
     const carry = (source: WadSource): WadSource | null =>
@@ -779,9 +786,9 @@ export class Menu {
 
   /**
    * The add-ons **the player has picked**, in merge order — not every add-on on offer. Browsing is
-   * the WAD Library's job now (docs/menu.md § WAD Library), so this list is the picks themselves:
-   * short, always exactly what a start will merge, and no longer a second picker that has to agree
-   * with the first about what is compatible.
+   * the WAD Library's job (docs/menu.md § WAD Library), so this list is the picks themselves:
+   * short, always exactly what a start will merge, and never a second picker that would have to
+   * agree with the first about what is compatible.
    */
   private renderPwads(): void {
     // Emptying the scroller clamps its scrollTop to 0, so removing an add-on far down a
@@ -805,7 +812,8 @@ export class Menu {
       input.type = 'checkbox';
       input.checked = enabled;
       // A pick the game WAD can't take keeps its row and its off-flag untouched, so it comes back
-      // ticked the moment a game WAD that suits it is picked again (docs/menu.md § Picking a WAD set).
+      // ticked the moment a game WAD that suits it is picked again (docs/menu.md § Picking a WAD
+      // set).
       input.disabled = reason !== '';
       input.title =
         reason === ''
@@ -827,8 +835,8 @@ export class Menu {
         input,
         name,
         ...(anyReason ? [badge(reason, 'reason')] : []),
-        // The same three columns the WAD Library lists, so a file reads identically in both places —
-        // just narrower, since this panel has a fraction of the overlay's width.
+        // The same three columns the WAD Library lists, so a file reads identically in both places
+        // — just narrower, since this panel has a fraction of the overlay's width.
         ...sourceColumnSpans(source),
         order,
         this.removeButton(source),
@@ -864,7 +872,9 @@ export class Menu {
     );
   }
 
-  /** Ticks or unticks one add-on. It keeps its place in the list either way — see `disabledPwads`. */
+  /**
+   * Ticks or unticks one add-on. It keeps its place in the list either way — see `disabledPwads`.
+   */
   private setPwadEnabled(source: WadSource, enabled: boolean): void {
     if (enabled) this.disabledPwads.delete(source.key);
     else this.disabledPwads.add(source.key);
@@ -951,7 +961,9 @@ export class Menu {
     });
   }
 
-  /** Reads back the last skill picked; falls back to vanilla's own default when unset or invalid. */
+  /**
+   * Reads back the last skill picked; falls back to vanilla's own default when unset or invalid.
+   */
   private storedSkill(): Skill {
     const stored = Number(globalThis.localStorage?.getItem(SKILL_STORAGE_KEY));
     return stored >= 1 && stored <= 5 ? (stored as Skill) : DEFAULT_SKILL;
@@ -1028,7 +1040,9 @@ export class Menu {
     this.resumeButton.disabled = false;
   }
 
-  /** The WAD Library's "single WADs" button: loose files, wherever they sit, rather than a folder. */
+  /**
+   * The WAD Library's "single WADs" button: loose files, wherever they sit, rather than a folder.
+   */
   private pickFiles(): void {
     this.fileInput.value = '';
     this.fileInput.click();

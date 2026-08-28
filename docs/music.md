@@ -253,10 +253,10 @@ it was audible as the drums vanishing under DOOM 2 MAP01's sustained organ. Afte
 its samples reach it, at a worst cut of 0.13 dB — the transients arrive intact, and the curve is
 there for the track dense enough to need it rather than as a tone control.
 
-**Music keeps playing while the game is paused**, as vanilla's does with the menu up: `AudioEngine.suspend`
-cuts the sfx voices but deliberately leaves the `AudioContext` running, since suspending it would
-freeze the music mid-bar. Nothing raises a sound while paused — the frame loop is stopped — so
-there is nothing else to silence.
+**Music keeps playing while the game is paused**, as vanilla's does with the menu up:
+`AudioEngine.suspend` cuts the sfx voices but deliberately leaves the `AudioContext` running, since
+suspending it would freeze the music mid-bar. Nothing raises a sound while paused — the frame loop
+is stopped — so there is nothing else to silence.
 
 ### What the synth ignores
 

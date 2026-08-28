@@ -27,7 +27,10 @@ const GEN_CEILING_BASE = 0x4000;
 const GEN_FLOOR_BASE = 0x6000;
 const GEN_END = 0x8000;
 
-/** p_spec.h `StairDirection` — `EV_DoGenStairs` XORs it into the line's special on every successful retrigger (`SpecialDef.retriggerXor`). */
+/**
+ * p_spec.h `StairDirection` — `EV_DoGenStairs` XORs it into the line's special on every successful
+ * retrigger (`SpecialDef.retriggerXor`).
+ */
 const STAIR_DIRECTION_BIT = 0x0100;
 
 export function isGeneralized(special: number): boolean {
@@ -215,7 +218,10 @@ function genDoor(special: number): SpecialDef {
   };
 }
 
-/** `keykind_e` 1-6 (RCard..YSkull); its 0 (AnyKey) and 7 (AllKeys) name no slot and are handled separately. */
+/**
+ * `keykind_e` 1-6 (RCard..YSkull); its 0 (AnyKey) and 7 (AllKeys) name no slot and are handled
+ * separately.
+ */
 const SLOT_BY_KEYKIND: KeySlot[] = ['redCard', 'blueCard', 'yellowCard', 'redSkull', 'blueSkull', 'yellowSkull'];
 
 function genLockedDoor(special: number): SpecialDef {

@@ -51,11 +51,11 @@ owned are skipped rather than eating a notch, and every weapon owned is a stop, 
 reaches all of them.
 
 That is `WEAPON_CYCLE`, which the HUD icon strip also lays out (docs/hud.md) — one list, since
-weakest-first inside a slot makes the wheel's order and the strip's the same thing. It is **derived**
-from `WEAPON_SLOTS`, each slot reversed, rather than written out beside it: the two orders are one
-decision, and a weapon added to a slot has to land beside its slotmate here too. Note the reversal
-is the point — `WEAPON_SLOTS` flattened reads each slot best-first, which puts the chainsaw ahead of
-the fist, backwards from both the strip and the pickup progression.
+weakest-first inside a slot makes the wheel's order and the strip's the same thing. It is
+**derived** from `WEAPON_SLOTS`, each slot reversed, rather than written out beside it: the two
+orders are one decision, and a weapon added to a slot has to land beside its slotmate here too. Note
+the reversal is the point — `WEAPON_SLOTS` flattened reads each slot best-first, which puts the
+chainsaw ahead of the fist, backwards from both the strip and the pickup progression.
 
 The wheel is an accumulate-and-drain channel sampled on the tic, not per frame — docs/frameloop.md
 § Input runs on the tic.
@@ -78,10 +78,10 @@ the next switch.
 ## Fire rates
 
 **The cooldown is counted in whole tics, as an integer** (`WeaponSystem.cooldownTics`), not as
-seconds remaining. Every cooldown below is a whole number of tics and the simulation steps one tic at
-a time (docs/frameloop.md § The accumulator), so an integer countdown is exact — and it is the same
-model vanilla has, a psprite sitting in a state with that many tics left. In seconds, float residue
-decides whether a shot lands on tic N or N+1, which is a third of the plasma rifle's rate.
+seconds remaining. Every cooldown below is a whole number of tics and the simulation steps one tic
+at a time (docs/frameloop.md § The accumulator), so an integer countdown is exact — and it is the
+same model vanilla has, a psprite sitting in a state with that many tics left. In seconds, float
+residue decides whether a shot lands on tic N or N+1, which is a third of the plasma rifle's rate.
 
 Two halves of one rule, and it takes both — **an idle trigger banks nothing**:
 
@@ -93,8 +93,8 @@ idle, then fires *every tic* until it climbs back through zero. That combination
 converting the old seconds-based counter carelessly, and `tests/game/weapons.test.ts` § Game rules ·
 fire rates now pins every weapon's gap to its exact vanilla tic count so it cannot again.
 
-**A weapon's cooldown is its own vanilla state chain, and the `A_ReFire` state's tics are not part of
-it.** `A_ReFire` runs on *entry* to its state and, while the trigger is still down, calls
+**A weapon's cooldown is its own vanilla state chain, and the `A_ReFire` state's tics are not part
+of it.** `A_ReFire` runs on *entry* to its state and, while the trigger is still down, calls
 `P_FireWeapon` immediately — `P_SetPsprite`'s loop then leaves the psprite sitting in the fire
 chain's first state with that state's own tics, so the `A_ReFire` state's tics are only ever spent
 when you *release*. Summing a weapon's whole state list therefore overstates its held-trigger rate;
@@ -126,8 +126,8 @@ Two tests anchor it: `tests/fixtures/frametables.ts` holds all nine rates as the
 | BFG | `S_BFG3` + `S_BFG1` + `S_BFG2` | 40 | 1.143 |
 
 Two shapes in that table are easy to get wrong. The **chainsaw and chaingun fire twice per pass**
-(`S_SAW1`/`S_SAW2` both call `A_Saw`, `S_CHAIN1`/`S_CHAIN2` both call `A_FireCGun`), so their rate is
-one state's tics, not the chain's. The **plasma rifle's** `S_PLASMA2` holds 20 tics but carries
+(`S_SAW1`/`S_SAW2` both call `A_Saw`, `S_CHAIN1`/`S_CHAIN2` both call `A_FireCGun`), so their rate
+is one state's tics, not the chain's. The **plasma rifle's** `S_PLASMA2` holds 20 tics but carries
 `A_ReFire`, so a held trigger never spends them — which is what makes it the fastest weapon in the
 game rather than a middling one.
 
@@ -162,12 +162,12 @@ monster that fires the same projectile, exactly as vanilla shares the one `mobji
 ## Spread
 
 Every random fuzz in the game is one distribution — vanilla's `P_Random() - P_Random()`, two
-consecutive draws off the random table subtracted, giving a triangular spread centred on the true aim
-(`util/random.ts`'s `triangularDraw`, and `triangularSpread` for the angular cases). It is literally
-that call, not an
-approximation of it: docs/random.md § The triangular draw covers the table, why the two draws must
-be separate, and where the `/255` comes from. The per-weapon widths are the BAM shift constants in
-`p_pspr.c`, converted as `255 << shift` of a `2^32` turn — the same 255 the draw normalizes by:
+consecutive draws off the random table subtracted, giving a triangular spread centred on the true
+aim (`util/random.ts`'s `triangularDraw`, and `triangularSpread` for the angular cases). It is
+literally that call, not an approximation of it: docs/random.md § The triangular draw covers the
+table, why the two draws must be separate, and where the `/255` comes from. The per-weapon widths
+are the BAM shift constants in `p_pspr.c`, converted as `255 << shift` of a `2^32` turn — the same
+255 the draw normalizes by:
 
 - `<<18` = **5.6°** — `P_GunShot`'s bullet spread, so the pistol, chaingun and each of the shotgun's
   7 pellets, *and* `A_Punch`/`A_Saw`'s swing angle. A melee swing's own share barely matters (~6
@@ -179,36 +179,35 @@ be separate, and where the `/255` comes from. The per-weapon widths are the BAM 
   moving the aim point up or down at the target's distance, since that is what `shotPath` derives a
   slope from.
 
-**The first shot of a held pistol or chaingun has no spread at all.** `A_FirePistol` and `A_FireCGun`
-pass `P_GunShot(mo, !player->refire)`; `A_FireShotgun` hardcodes `false`. `WeaponSystem` mirrors
-`player->refire` with a counter reset whenever the trigger comes up or the weapon changes
-(`A_ReFire`'s else branch), and `WeaponDef.accurateFirstShot` marks the two weapons that read it. Tap
-for accuracy, hold for volume — without this, the auto-aim fix below makes a tapped long-range
-chaingun shot miss ~27% of the time for no reason vanilla would recognize.
+**The first shot of a held pistol or chaingun has no spread at all.** `A_FirePistol` and
+`A_FireCGun` pass `P_GunShot(mo, !player->refire)`; `A_FireShotgun` hardcodes `false`.
+`WeaponSystem` mirrors `player->refire` with a counter reset whenever the trigger comes up or the
+weapon changes (`A_ReFire`'s else branch), and `WeaponDef.accurateFirstShot` marks the two weapons
+that read it. Tap for accuracy, hold for volume — without this, the auto-aim fix below makes a
+tapped long-range chaingun shot miss ~27% of the time for no reason vanilla would recognize.
 
 ## Damage rolls
 
 **Two vanilla formulas, one `((P_Random() % sides) + 1) * multiplier` shape** — `util/random.ts`'s
-`rollDamage`, drawing
-off the random table (docs/random.md § The table and the two cursors). A *bullet's* roll is written
-out at each call site (`5*(P_Random()%3+1)` in both `P_GunShot` and `A_FireShotgun2`: 5/10/15 per
-pellet, and the super shotgun's is identical to the shotgun's — the 20-vs-7 pellet count is its whole
-advantage). A *missile's* is not in the weapon code at all: `PIT_CheckThing` rolls
-`((P_Random()%8)+1) * mobjinfo.damage` for whatever hit something, so every projectile weapon has 8
-sides and takes its multiplier from `info.c` — rocket 20 (20-160), plasma **5 (5-40)**, BFG ball
-**100 (100-800)** before `A_BFGSpray` adds anything. The plasma bolt shipped as a 4-sided roll and
-the BFG ball as `8×30`; both were transcription guesses, and reading `mobjinfo` settles them. Fist
-and chainsaw share `(P_Random()%10+1)<<1` (2-20), the fist ×10 under berserk.
+`rollDamage`, drawing off the random table (docs/random.md § The table and the two cursors). A
+*bullet's* roll is written out at each call site (`5*(P_Random()%3+1)` in both `P_GunShot` and
+`A_FireShotgun2`: 5/10/15 per pellet, and the super shotgun's is identical to the shotgun's — the
+20-vs-7 pellet count is its whole advantage). A *missile's* is not in the weapon code at all:
+`PIT_CheckThing` rolls `((P_Random()%8)+1) * mobjinfo.damage` for whatever hit something, so every
+projectile weapon has 8 sides and takes its multiplier from `info.c` — rocket 20 (20-160), plasma
+**5 (5-40)**, BFG ball **100 (100-800)** before `A_BFGSpray` adds anything. The plasma bolt shipped
+as a 4-sided roll and the BFG ball as `8×30`; both were transcription guesses, and reading
+`mobjinfo` settles them. Fist and chainsaw share `(P_Random()%10+1)<<1` (2-20), the fist ×10 under
+berserk.
 
 Projectile *speeds* come from the same `mobjinfo` rows, × 35 for units/sec exactly as
-`game/monsters/tables.ts` converts a monster's: rocket 700, plasma 875, BFG 875. The player's rocket used to
-fly at 1000 while the cyberdemon's — already converted correctly — flew at 700.
+`game/monsters/tables.ts` converts a monster's: rocket 700, plasma 875, BFG 875. The player's rocket
+used to fly at 1000 while the cyberdemon's — already converted correctly — flew at 700.
 
-**A melee swing is resolved entirely differently from every other shot**: `spawnPlayerShot` returns before
-`shotPath` even runs and just raycasts `WeaponDef.meleeRange` (vanilla's `MELEERANGE`, 64 — the
-chainsaw's own `+1` is about its puff, § Bullet puffs) along the
-aim angle. A swing doesn't travel, so it needs none of `shotPath`'s wall/step blocking, matching
-`A_Punch`/`A_Saw`. It needs no lock-on case either: `player.angle` is already set from the same `aim`
-the lock uses, so the ray finds a hovered monster on its own and simply can't reach one further off
-than the swing's range.
+**A melee swing is resolved entirely differently from every other shot**: `spawnPlayerShot` returns
+before `shotPath` even runs and just raycasts `WeaponDef.meleeRange` (vanilla's `MELEERANGE`, 64 —
+the chainsaw's own `+1` is about its puff, § Bullet puffs) along the aim angle. A swing doesn't
+travel, so it needs none of `shotPath`'s wall/step blocking, matching `A_Punch`/`A_Saw`. It needs no
+lock-on case either: `player.angle` is already set from the same `aim` the lock uses, so the ray
+finds a hovered monster on its own and simply can't reach one further off than the swing's range.
 

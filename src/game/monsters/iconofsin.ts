@@ -19,9 +19,9 @@ import { DOOM_TIC } from '../../constants.ts';
 import { pRandom, triangularDraw } from '../../util/random.ts';
 
 /**
- * Three `ThingType` members drive this file. `bossShooter` (`MT_BOSSSPIT`) is the invisible eye that
- * does the spitting, and the *only* thing that makes a map an Icon of Sin map; `bossTarget` is where
- * a cube is aimed, `bossBrain` the shootable target itself. The first two are
+ * Three `ThingType` members drive this file. `bossShooter` (`MT_BOSSSPIT`) is the invisible eye
+ * that does the spitting, and the *only* thing that makes a map an Icon of Sin map; `bossTarget` is
+ * where a cube is aimed, `bossBrain` the shootable target itself. The first two are
  * `MF_NOBLOCKMAP|MF_NOSECTOR` in `info.c` and neither has a sprite of its own, which is why both
  * stay out of `THING_SPRITES` and are read straight off `map.things` here — the same treatment
  * `SpecialsController.findTeleportDestination` gives the teleport-landing marker.
@@ -33,8 +33,9 @@ import { pRandom, triangularDraw } from '../../util/random.ts';
  *
  * `hasLineOfSight` always lifts the origin it is handed by `SIGHT_EYE_HEIGHT`, which is the right
  * approximation for everything else in the game and wrong for a 32-tall thing sitting in a 32-tall
- * ceiling slot — it would sight from *above* its own ceiling. Subtracting that lift back off is what
- * makes the wedge really start inside the slot. See docs/monster-iconofsin.md § Waking the eye.
+ * ceiling slot — it would sight from *above* its own ceiling. Subtracting that lift back off is
+ * what makes the wedge really start inside the slot. See docs/monster-iconofsin.md § Waking the
+ * eye.
  */
 const SHOOTER_SIGHT_Z = 32 - (32 >> 2);
 
@@ -50,7 +51,8 @@ const CUBE_FRAMES = ['A', 'B', 'C', 'D'];
 const CUBE_FRAME_SECONDS = 3 * DOOM_TIC;
 /**
  * `A_SpawnSound` sits on `S_SPAWN1` alone and that four-state chain loops, so `boscub` restarts
- * once per full cycle rather than once per frame — the cube's audible whoosh as it crosses the room.
+ * once per full cycle rather than once per frame — the cube's audible whoosh as it crosses the
+ * room.
  */
 const CUBE_SOUND_INTERVAL = CUBE_FRAMES.length * CUBE_FRAME_SECONDS;
 /**
@@ -141,7 +143,9 @@ export class IconOfSin {
 
   /** The eye, or null on a map with no `MT_BOSSSPIT` — which makes the whole class inert. */
   private shooter: Thing | null;
-  /** `A_BrainAwake`'s `braintargets`, in map-thing order; filled on waking, exactly as vanilla does. */
+  /**
+   * `A_BrainAwake`'s `braintargets`, in map-thing order; filled on waking, exactly as vanilla does.
+   */
   private targets: Pos3[] = [];
   /** `braintargeton` — the round-robin cursor into `targets`. */
   private targetIndex = 0;
@@ -191,7 +195,10 @@ export class IconOfSin {
     return this.exitTimer >= 0;
   }
 
-  /** Everything mutable for a savegame, or null on a map with no eye (nothing to save). Cubes name their target by index into `targets`, since the live field is a reference into that array. */
+  /**
+   * Everything mutable for a savegame, or null on a map with no eye (nothing to save). Cubes name
+   * their target by index into `targets`, since the live field is a reference into that array.
+   */
   snapshot(): IconSnapshot | null {
     if (!this.shooter) return null;
     return {
@@ -214,7 +221,10 @@ export class IconOfSin {
     };
   }
 
-  /** Restore twin of `snapshot`; each cube goes back through `makeCube`, the same builder `brainSpit` uses. docs/savegames.md § Apply order. */
+  /**
+   * Restore twin of `snapshot`; each cube goes back through `makeCube`, the same builder
+   * `brainSpit` uses. docs/savegames.md § Apply order.
+   */
   restore(s: IconSnapshot | null): void {
     if (!s || !this.shooter) return;
     this.targets = s.targets.map((t) => ({ ...t }));
@@ -418,7 +428,10 @@ export class IconOfSin {
     }
   }
 
-  /** Ticks the 120 tics between `A_BrainScream` and `A_BrainDie`, keeping the cascade going meanwhile. */
+  /**
+   * Ticks the 120 tics between `A_BrainScream` and `A_BrainDie`, keeping the cascade going
+   * meanwhile.
+   */
   private updateExit(dt: number): void {
     this.explodeTimer -= dt;
     if (this.explodeTimer <= 0) {
@@ -434,7 +447,10 @@ export class IconOfSin {
     }
   }
 
-  /** `A_BrainScream`: `bosdth` from nowhere in particular, and a wall of explosions in front of the brain. */
+  /**
+   * `A_BrainScream`: `bosdth` from nowhere in particular, and a wall of explosions in front of the
+   * brain.
+   */
   private brainScream(): void {
     this.sfx.play('bosdth', null);
     const brain = this.brainPos();
@@ -444,7 +460,10 @@ export class IconOfSin {
     }
   }
 
-  /** `A_BrainExplode`'s follow-up: more of the same, scattered around the brain rather than in a row. */
+  /**
+   * `A_BrainExplode`'s follow-up: more of the same, scattered around the brain rather than in a
+   * row.
+   */
   private brainExplode(): void {
     const brain = this.brainPos();
     if (!brain) return;

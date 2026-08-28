@@ -28,7 +28,10 @@ import type { Placement, Pos3 } from '../types.ts';
  */
 export type VileFlameResolver = (vileId: number, targetId: number | null) => Pos3 | null;
 
-/** Whether a subsector has been revealed — `FogOfWar.isVisible`, handed in so this layer needn't know the fog exists. */
+/**
+ * Whether a subsector has been revealed — `FogOfWar.isVisible`, handed in so this layer needn't
+ * know the fog exists.
+ */
 export type FogVisibility = (subsector: number) => boolean;
 
 /**
@@ -47,11 +50,17 @@ export class SpriteFxLayer {
   private audio: AudioEngine;
   private resolveVileFlame: VileFlameResolver;
   private fogVisible: FogVisibility;
-  /** The current level's world, for the sector-light and subsector lookups a spawn does — swapped by `beginLevel`. */
+  /**
+   * The current level's world, for the sector-light and subsector lookups a spawn does — swapped by
+   * `beginLevel`.
+   */
   private world!: World;
 
   private batch = new SpriteBatch();
-  /** Scratch for `doomToWorld`, reused across every batched sprite — same reason `game/things.ts` keeps one. */
+  /**
+   * Scratch for `doomToWorld`, reused across every batched sprite — same reason `game/things.ts`
+   * keeps one.
+   */
   private batchPos = new THREE.Vector3();
   /** `drawList`'s interpolated position, reused per effect so drawing allocates nothing. */
   private drawAt: Pos3 = { x: 0, y: 0, z: 0 };
@@ -154,7 +163,10 @@ export class SpriteFxLayer {
     };
   }
 
-  /** Queues an already-spawned effect (one whose fields the caller had to adjust) onto the impact list. */
+  /**
+   * Queues an already-spawned effect (one whose fields the caller had to adjust) onto the impact
+   * list.
+   */
   addImpact(effect: OneShotEffect): void {
     this.impacts.push(effect);
   }
@@ -205,7 +217,10 @@ export class SpriteFxLayer {
     });
   }
 
-  /** `P_SpawnBlood`/`P_SpawnPuff`'s shared opening line — the same triangular draw every other random fuzz in the game uses. */
+  /**
+   * `P_SpawnBlood`/`P_SpawnPuff`'s shared opening line — the same triangular draw every other
+   * random fuzz in the game uses.
+   */
   private jitter(z: number): number {
     return z + triangularDraw(HIT_Z_JITTER);
   }
@@ -264,7 +279,10 @@ export class SpriteFxLayer {
     });
   }
 
-  /** `shooterRadius` only sets how far short of the shooter the line starts — see `MUZZLE_GAP` (render/tracer.ts). */
+  /**
+   * `shooterRadius` only sets how far short of the shooter the line starts — see `MUZZLE_GAP`
+   * (render/tracer.ts).
+   */
   addTracer(from: Pos3, to: Pos3, color: number, shooterRadius: number): void {
     const tracer = new Tracer(from, to, color, shooterRadius);
     this.scene.add(tracer.line);
@@ -337,7 +355,10 @@ export class SpriteFxLayer {
     this.tracers = remaining;
   }
 
-  /** Advances a one-shot list in place and drops the ones that finished, matching every other list's remaining-array pattern here. */
+  /**
+   * Advances a one-shot list in place and drops the ones that finished, matching every other list's
+   * remaining-array pattern here.
+   */
   private advance(list: OneShotEffect[], dt: number): OneShotEffect[] {
     if (list.length === 0) return list;
     const remaining: OneShotEffect[] = [];

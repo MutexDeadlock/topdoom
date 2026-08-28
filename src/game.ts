@@ -178,7 +178,10 @@ export class Game {
   private mapIndex = 0;
 
   private map!: DoomMap;
-  /** Whether a *monster* arriving on a teleport pad telefrags rather than being turned back by what stands there — `monstersTelefrag`, resolved per level. */
+  /**
+   * Whether a *monster* arriving on a teleport pad telefrags rather than being turned back by what
+   * stands there — `monstersTelefrag`, resolved per level.
+   */
   private monsterStomps = false;
   /**
    * The current level's sectors as the WAD authored them, taken before anything
@@ -196,12 +199,18 @@ export class Game {
    * files into — see `FadePass`, which owns the order the frame runs them in.
    */
   private fadePass!: FadePass;
-  /** The fade's opening lookup. A field so the frame allocates none; it reads `world` per call, so a level change needs no rebind. */
+  /**
+   * The fade's opening lookup. A field so the frame allocates none; it reads `world` per call, so a
+   * level change needs no rebind.
+   */
   private readonly openingInto = (line: number, out: Opening) => this.world.openingInto(line, out);
   private surfaceScroller!: SurfaceScroller;
   /** The level's always-on parameter lines — scrollers and conveyors (game/specials/forces.ts). */
   private forces!: Forces;
-  /** The level's Boom render transfers (game/specials/transfers.ts) — read per frame for the view colormap. */
+  /**
+   * The level's Boom render transfers (game/specials/transfers.ts) — read per frame for the view
+   * colormap.
+   */
   private transfers!: Transfers;
   /**
    * The colour cast of each 242 control sector's colormaps, resolved once per
@@ -230,13 +239,22 @@ export class Game {
    * `MT_BOSSSPIT` thing, which is all of them but MAP30. See game/monsters/iconofsin.ts.
    */
   private icon?: IconOfSin;
-  /** Teleport fog, impact explosions, the smoke trail, the vile's flame and hitscan tracers — see game/spritefx.ts. */
+  /**
+   * Teleport fog, impact explosions, the smoke trail, the vile's flame and hitscan tracers — see
+   * game/spritefx.ts.
+   */
   private effects: SpriteFxLayer;
   /** Everything in flight, player's and monsters' alike — see game/projectiles.ts. */
   private projectiles: ProjectileLayer;
-  /** Turns the attacks `ThingLayer.update` reports into damage, tracers and effects — see game/monsters/attacks.ts. */
+  /**
+   * Turns the attacks `ThingLayer.update` reports into damage, tracers and effects — see
+   * game/monsters/attacks.ts.
+   */
   private monsterAttacks: MonsterAttacks;
-  /** The live-level view `projectiles`, `monsterAttacks` and the splash helpers read this class through — see game/combat.ts. */
+  /**
+   * The live-level view `projectiles`, `monsterAttacks` and the splash helpers read this class
+   * through — see game/combat.ts.
+   */
   private combat: CombatContext;
   private weaponSystem = new WeaponSystem();
   /**
@@ -277,7 +295,9 @@ export class Game {
    * press can't dismiss them both.
    */
   private intermissionTime = 0;
-  /** Damage floors and the secret counter for the current map — see game/specials/sectoreffects.ts. */
+  /**
+   * Damage floors and the secret counter for the current map — see game/specials/sectoreffects.ts.
+   */
   private sectorEffects!: SectorEffects;
   /**
    * Seconds spent in the current level, shown on the HUD as hh:mm:ss. Advanced below in `frame`,
@@ -295,7 +315,10 @@ export class Game {
    * docs/frameloop.md § The accumulator.
    */
   private accumulator = 0;
-  /** Timestamp of the previous rendering opportunity, skipped ones included — the display's own period. See `dueThisFrame`. */
+  /**
+   * Timestamp of the previous rendering opportunity, skipped ones included — the display's own
+   * period. See `dueThisFrame`.
+   */
   private lastRaf = 0;
   /** When the next frame is due under the FPS cap; ignored while uncapped. See `dueThisFrame`. */
   private nextFrameAt = 0;
@@ -323,11 +346,15 @@ export class Game {
    * docs/dehacked.md.
    */
   private dehacked: LoadedDehacked | null;
-  /** Names levels for the card: MAPINFO, then the vanilla title table — see wad/campaign/names.ts. */
+  /**
+   * Names levels for the card: MAPINFO, then the vanilla title table — see wad/campaign/names.ts.
+   */
   private levelNames: LevelNames;
   /** The WAD set's `D_*` lumps, and the MAPINFO overrides of which one a level plays. */
   private levelMusic: LevelMusic;
-  /** Where each exit leads: MAPINFO, then vanilla's own tables — see wad/campaign/progression.ts. */
+  /**
+   * Where each exit leads: MAPINFO, then vanilla's own tables — see wad/campaign/progression.ts.
+   */
   private progression: LevelProgression;
   /**
    * Measurement itself always runs — `performance.now()` calls are cheap enough
@@ -345,7 +372,10 @@ export class Game {
    * point. docs/dehacked.md § Applying: reset, then patch.
    */
   private inventory: Inventory;
-  /** True once the player's health has hit 0 — freezes movement/aim/firing/pickups (see `frame`) until `restart`. */
+  /**
+   * True once the player's health has hit 0 — freezes movement/aim/firing/pickups (see `frame`)
+   * until `restart`.
+   */
   private playerDead = false;
   readonly title: string;
 
@@ -398,7 +428,10 @@ export class Game {
     title: string,
     skill: Skill,
     startPos: Pos2 | null = null,
-    /** A savegame's state payload: the level is built normally, then overwritten step by step — docs/savegames.md § Apply order. */
+    /**
+     * A savegame's state payload: the level is built normally, then overwritten step by step —
+     * docs/savegames.md § Apply order.
+     */
     restore: GameSnapshot | null = null,
     /** The checkpoint store, taken as a port so this class still knows nothing about IndexedDB. */
     checkpoint: CheckpointStore | null = null,
@@ -1115,12 +1148,10 @@ export class Game {
   /**
    * Runs the walk triggers **any non-player thing** crossed this tic
    * (`SpecialsController.crossMonster` — teleports plus the few door/lift types
-   * vanilla lets one activate). Usually that is a monster walking, but a barrel
-   * or a decoration a conveyor carried counts too: `P_CrossSpecialLine` excludes
-   * only projectiles, and its "monster only" numbers mean "not the player"
-   * (docs/specials.md § Scrollers and conveyors). A teleport gets the same
-   * `TFOG` puff at both ends the player's own does; vanilla spawns it for any
-   * thing that teleports, not just the player.
+   * vanilla lets one activate). Usually that is a monster walking, but a barrel or a decoration a
+   * conveyor carried counts too — docs/specials.md § Scrollers and conveyors. A teleport gets the
+   * same `TFOG` puff at both ends the player's own does; vanilla spawns it for any thing that
+   * teleports, not just the player.
    *
    * Returning null after a teleport *did* fire is `P_TeleportMove` refusing the
    * landing, which leaves the thing where it stood — docs/death.md § Telefrag.
@@ -1171,8 +1202,8 @@ export class Game {
       this.playerDead = true;
       // Dying on an `exitBelowHealth` floor ends the level whatever killed the player, not only
       // when that floor's own damage did it — E1M8's pit is the ending, and a baron finishing the
-      // job there must not leave the episode unwon. Set before the overlay below, which `levelEnding`
-      // then keeps from being armed at all. docs/specials.md § Damage floors.
+      // job there must not leave the episode unwon. Set before the overlay below, which
+      // `levelEnding` then keeps from being armed at all. docs/specials.md § Damage floors.
       if (this.sectorEffects.exitsOnDeath(this.world, this.player)) this.pendingExit = 'normal';
       // `player.update` stops running from here on, so it never writes `prev*`
       // again: leaving the window open would have every frame lerp the corpse
@@ -1445,11 +1476,10 @@ export class Game {
    * input is consumed. Returns true if it loaded a different level, which makes
    * every reference the caller holds stale.
    *
-   * The call order here is the old per-frame order verbatim, and parts of it are
-   * load-bearing — specials before `player.update` so a lift underfoot has
-   * already moved when `groundFloor` samples it, the aim ray before
-   * `player.update` so `player.angle` is this tic's.
-   * docs/frameloop.md § What runs in a tic.
+   * Parts of the call order here are load-bearing — specials before
+   * `player.update` so a lift underfoot has already moved when `groundFloor`
+   * samples it, the aim ray before `player.update` so `player.angle` is this
+   * tic's. docs/frameloop.md § What runs in a tic.
    */
   private tic(input: Input, camera: TopDownCamera): boolean {
     // The level is over and frozen behind the popup: nothing is advanced — not the clock, not the
@@ -1534,8 +1564,8 @@ export class Game {
     const locked = this.specials?.consumeLockedLine();
     if (locked) this.message.show(...lockedLineMessage(locked.lock, locked.kind));
     // Deferred from the exit trigger's callback — see `pendingExit`'s doc.
-    // The old SpecialsController's update() has now fully returned, so it's
-    // safe to dispose it and swap in the next map.
+    // The outgoing SpecialsController's update() has fully returned by here, so
+    // it is safe to dispose it and swap in the next map.
     if (this.pendingExit) {
       this.resolveExit(this.pendingExit === 'secret');
       // Before `pendingExit` is cleared, which is half of what `levelEnding` reads. Catches a
@@ -1608,8 +1638,8 @@ export class Game {
     camera.applyToCamera(alpha);
     this.updateOverlays(rawDt);
     this.fogOfWar.updateFade(rawDt);
-    // Opened before anything draws: each draw pass below offers its sprites as emitters as it
-    // goes, and `commit` closes the set once they all have (docs/lights.md § What reaches the shader).
+    // Opened before anything draws: each draw pass below offers its sprites as emitters as it goes,
+    // and `commit` closes the set once they all have (docs/lights.md § What reaches the shader).
     this.lights.beginFrame(rawDt, camera.followX, camera.followY, camera.viewFrustum);
     this.profiler.time('Sprites', () => this.things?.draw(alpha, camera.viewAngleDeg));
     this.drawEffects(alpha, camera.viewAngleDeg);
@@ -1770,7 +1800,8 @@ export class Game {
 
   /**
    * The two things the player picks up by standing somewhere: items in reach, and whatever the
-   * sector underfoot does to them (damage floors, secrets, an exit) — see game/specials/sectoreffects.ts.
+   * sector underfoot does to them (damage floors, secrets, an exit) — see
+   * game/specials/sectoreffects.ts.
    */
   private collectPickupsAndSectorEffects(dt: number): void {
     this.things?.tryPickup(this.player, this.player.attempted, PICKUP_RANGE, this.consumePickup);
@@ -1919,7 +1950,9 @@ export class Game {
     });
   }
 
-  /** The draw half of `updateEffects`: one begin/end pair around every list that batches a sprite. */
+  /**
+   * The draw half of `updateEffects`: one begin/end pair around every list that batches a sprite.
+   */
   private drawEffects(alpha: number, viewAngleDeg: number): void {
     this.profiler.time('Effects', () => {
       this.effects.beginFrame(viewAngleDeg);
@@ -1930,7 +1963,9 @@ export class Game {
     });
   }
 
-  /** Occlusion fading of walls and flats, plus the two texture animators — see render/occlusion.ts. */
+  /**
+   * Occlusion fading of walls and flats, plus the two texture animators — see render/occlusion.ts.
+   */
   private updateFading(dt: number, camera: TopDownCamera): void {
     this.profiler.time('Fading', () => {
       const camPos = camera.camera.position;

@@ -50,7 +50,10 @@ export interface SaveHooks {
  * to load it with. Supplied by `Menu`, which owns the source list.
  */
 export interface SaveSetInfo {
-  /** The level, named exactly as the level select names it (`describeMap`); the bare lump name where the set can't be resolved. */
+  /**
+   * The level, named exactly as the level select names it (`describeMap`); the bare lump name where
+   * the set can't be resolved.
+   */
   level: string;
   /** Files the save was made with that the library can no longer supply, in load order. */
   missing: MissingWad[];
@@ -82,7 +85,10 @@ export class SavegamesUi {
    */
   private visible: 'save' | 'load' | null = null;
   private stale = { save: true, load: true };
-  /** Monotonic ticket for `renderVisible`: a render that finds a newer one started while it awaited discards itself. */
+  /**
+   * Monotonic ticket for `renderVisible`: a render that finds a newer one started while it awaited
+   * discards itself.
+   */
   private renderEpoch = 0;
 
   constructor(
@@ -191,7 +197,10 @@ export class SavegamesUi {
     this.refresh();
   }
 
-  /** Imports downloaded `.json` saves — from the file picker or from a drop on the menu (see `Menu.installDropTarget`). */
+  /**
+   * Imports downloaded `.json` saves — from the file picker or from a drop on the menu (see
+   * `Menu.installDropTarget`).
+   */
   async importFiles(files: File[]): Promise<void> {
     for (const file of files) {
       try {
@@ -336,7 +345,10 @@ export class SavegamesUi {
     this.markOtherListStale();
   }
 
-  /** After a row is patched in place: the tab on screen is up to date, the other one has to be rebuilt before it is shown again. */
+  /**
+   * After a row is patched in place: the tab on screen is up to date, the other one has to be
+   * rebuilt before it is shown again.
+   */
   private markOtherListStale(): void {
     this.stale.save = this.visible !== 'save';
     this.stale.load = this.visible !== 'load';

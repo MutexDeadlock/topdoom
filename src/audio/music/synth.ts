@@ -1,7 +1,7 @@
 /**
  * Plays a decoded song on the chip: instrument selection out of `GENMIDI`, voice allocation over
- * the chip's `OPL_CHANNELS` channels, and the note/volume/bend arithmetic that becomes register writes.
- * See docs/music.md § From notes to registers.
+ * the chip's `OPL_CHANNELS` channels, and the note/volume/bend arithmetic that becomes register
+ * writes. See docs/music.md § From notes to registers.
  */
 import {
   GENMIDI_MELODIC,
@@ -24,7 +24,9 @@ const BEND_SEMITONES = 2;
 /** `TL`'s 6-bit range — full attenuation, and the units a voice's volume is expressed in. */
 const TL_MAX = 0x3f;
 
-/** Each chip channel's register addresses, `channelRegisters` run once — read per score event below. */
+/**
+ * Each chip channel's register addresses, `channelRegisters` run once — read per score event below.
+ */
 const CHANNEL_REGS = Array.from({ length: OPL_CHANNELS }, (_, i) => channelRegisters(i));
 
 /** MIDI's own 0-127, which every table here is indexed by. */
@@ -268,21 +270,15 @@ export class OplSynth {
    * rings on the channel it takes, so *which* free channel is taken is
    * audible, not bookkeeping. Three rules, in order:
    *
-   * 1. **Reclaim**: the channel this MIDI channel released most recently — the
-   *    same note re-struck, or a chord change replacing its predecessor —
-   *    cutting exactly the tail the new note supersedes. Explicit here because
-   *    36 channels leave the free list far from empty, where DMX's own 18-voice
-   *    pressure produced the same effect for free; without it every repeated
-   *    note briefly doubles against its own tail (docs/music.md § From notes to
-   *    registers). On the percussion channel the note must match too: a
-   *    re-struck hi-hat chokes its own ring, but a kick must not cut a crash.
-   * 2. The **least audible** other free channel: a fully silent one outright,
-   *    else the one whose leftover tail has decayed furthest
-   *    (`OplChip.channelAttenuation`) — so a still-ringing cymbal is the last
-   *    thing to be re-keyed. docs/music.md § From notes to registers, which is
-   *    also where this deliberately departs from `i_oplmusic.c`'s FIFO.
-   * 3. With no free channel at all, the sounding voice that will be missed
-   *    least — `victimScore` ranks them; see it for the order.
+   * 1. **Reclaim**: the channel this MIDI channel released most recently, cutting exactly the tail
+   *    the new note supersedes. On the percussion channel the note must match too.
+   * 2. The **least audible** other free channel: a fully silent one outright, else the one whose
+   *    leftover tail has decayed furthest (`OplChip.channelAttenuation`).
+   * 3. With no free channel at all, the sounding voice that will be missed least — `victimScore`
+   *    ranks them; see it for the order.
+   *
+   * Why reclaim is explicit here where DMX got it for free, and why this departs from
+   * `i_oplmusic.c`'s FIFO: docs/music.md § From notes to registers.
    */
   private allocate(midiChannel: number, note: number): number {
     let reclaim = -1;

@@ -49,13 +49,16 @@ interface Sequence {
   /** Every frame's name, in WAD order, start..end inclusive. */
   names: string[];
   speedSeconds: number;
-  /** Last `floor(elapsed / speedSeconds)` this sequence was drawn at, so `update` only touches materials on the tic a frame actually changes. */
+  /**
+   * Last `floor(elapsed / speedSeconds)` this sequence was drawn at, so `update` only touches
+   * materials on the tic a frame actually changes.
+   */
   lastTic: number;
 }
 
 /**
  * Vanilla's `P_UpdateSpecials` "ANIMATE FLATS AND TEXTURES GLOBALLY" pass —
- * the other half of what `render/occlusion.ts: TextureScroller` covers for
+ * the other half of what `render/occlusion.ts: SurfaceScroller` covers for
  * special-48 scrolling. Repoints each affected name's already-built material
  * at a different bitmap every few tics (`MaterialBank.setFrame`); no geometry
  * work needed. Per-frame phase is counted from each sequence's own start

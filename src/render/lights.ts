@@ -49,12 +49,10 @@ const VIS_WORDS = 4;
 
 /**
  * How many lights one subsector's texel can name: 16 byte-sized slots in its four words, each a
- * committed light's index, `EMPTY_SLOT` past the last. A **list, not a bitmask**, because the list
- * is what bounds the fragment loop: with a bitmask the shader walked all `uLightCount` lights per
- * fragment to find the few whose bit was set, and on a light-saturated map (Sunder 2512 MAP05,
- * 64 committed) that walk alone more than halved the frame rate while no leaf was reached by more
- * than 8 lights. Past the cap a leaf drops the excess — by then the sum has clamped to white, so
- * the dropped light is invisible there (docs/lights.md § How the answer reaches a fragment).
+ * committed light's index, `EMPTY_SLOT` past the last. A **list, not a bitmask** — the list is what
+ * bounds the fragment loop, where a bitmask prices every fragment by the size of the whole
+ * committed set. Past the cap a leaf drops the excess, which by then the clamped sum has made
+ * invisible there. Both: docs/lights.md § How the answer reaches a fragment.
  * `MAX_DYN_LIGHTS` must stay below `EMPTY_SLOT`, or a light's index is read as the terminator.
  */
 export const MAX_LIGHTS_PER_LEAF = VIS_WORDS * 4;
@@ -70,8 +68,8 @@ export const EMPTY_WORD = 0xffffffff;
 
 /**
  * How far past its nearest blocker a fragment may still be lit. The wall casting a shadow is itself
- * at exactly the blocker distance, so without this every lit wall face would shadow itself; with it,
- * the face stays lit and the floor behind the wall does not. **Tuned by feel**, bounded on both
+ * at exactly the blocker distance, so without this every lit wall face would shadow itself; with
+ * it, the face stays lit and the floor behind the wall does not. **Tuned by feel**, bounded on both
  * sides: below about 2 the faces flicker on shallow angles, and above the thickness of the thinnest
  * wall a map draws the far side of that wall lights up too.
  */
@@ -226,7 +224,10 @@ interface Emitter {
   y: number;
   z: number;
   radius: number;
-  /** The emitter's own BSP leaf, where the reach fill starts. -1 = the caller had none to hand; resolved at commit. */
+  /**
+   * The emitter's own BSP leaf, where the reach fill starts. -1 = the caller had none to hand;
+   * resolved at commit.
+   */
   subsector: number;
   /** `commit`'s cull key, written only on the frames that overflow — see there. */
   sortKey: number;
@@ -295,9 +296,15 @@ export class DynamicLights {
     uLightColor: { value: new Float32Array(MAX_DYN_LIGHTS * 3) },
     /** Subsector -> compacted list of the lights that reach it. See `bindLevel`. */
     uLightVis: { value: makeVisTexture(new Uint32Array(VIS_WORDS).fill(EMPTY_WORD), 1, 1) },
-    /** Row width of that texture, and the flag for whether it means anything: 0 = no level bound — geometry draws no dynamic light, sprite tints stay ungated. */
+    /**
+     * Row width of that texture, and the flag for whether it means anything: 0 = no level bound —
+     * geometry draws no dynamic light, sprite tints stay ungated.
+     */
     uLightVisWidth: { value: 0 },
-    /** Per light, per direction, how far it gets before a wall stops it. See `LightVisibility.castShadows`. */
+    /**
+     * Per light, per direction, how far it gets before a wall stops it. See
+     * `LightVisibility.castShadows`.
+     */
     uLightShadow: { value: makeShadowTexture(new Float32Array(SHADOW_STEPS * MAX_DYN_LIGHTS)) },
   };
 
@@ -318,7 +325,10 @@ export class DynamicLights {
   private visSlots = new Uint32Array(VIS_WORDS).fill(EMPTY_WORD);
   /** Per subsector, how many of its slots are filled — where the next light appends. */
   private visCount = new Uint8Array(0);
-  /** Which subsectors carry a light this frame, so clearing costs the lit ones rather than the level. */
+  /**
+   * Which subsectors carry a light this frame, so clearing costs the lit ones rather than the
+   * level.
+   */
   private touched: number[] = [];
   /** The shadow texture's own array, one `SHADOW_STEPS` row per committed light. */
   private shadows: Float32Array;
@@ -330,7 +340,9 @@ export class DynamicLights {
    * took the row meanwhile.
    */
   private rowOwner = new Int32Array(MAX_DYN_LIGHTS).fill(-1);
-  /** Whether any row of `shadows` was rewritten this frame, so a frame of memo hits uploads nothing. */
+  /**
+   * Whether any row of `shadows` was rewritten this frame, so a frame of memo hits uploads nothing.
+   */
   private shadowsDirty = false;
   private clock = 0;
   private camX = 0;

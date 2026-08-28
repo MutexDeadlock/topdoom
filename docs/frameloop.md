@@ -71,8 +71,8 @@ The whole simulation, in the order it has always run — several orderings are l
   (docs/specials.md § Scrollers and conveyors, § Voodoo dolls).
 
 Only the *visual* half of scrolling stays on the frame clock — `Forces.advanceOffsets`, drawn by
-`SurfaceScroller` — so a waterfall doesn't step at 35 Hz. Nothing the simulation reads is frame-paced;
-`Forces.tick` takes no delta at all.
+`SurfaceScroller` — so a waterfall doesn't step at 35 Hz. Nothing the simulation reads is
+frame-paced; `Forces.tick` takes no delta at all.
 
 Also in the tic, and worth knowing because they look like presentation: the **camera**
 (docs/camera.md § The camera is simulation state), the **fog-of-war reveal scan**
@@ -102,24 +102,25 @@ the rest of the level. Nothing outside the menu is focusable, which is what make
 ### Posing for the aim ray
 
 The aim ray is cast through the **live `THREE` camera**, which the last rendered frame left at an
-*interpolated* pose — a function of frame timing. Casting through it as it stands makes what auto-aim
-locks onto depend on framerate, and since auto-aim sets `player.angle`, that is the angle every shot
-is fired at.
+*interpolated* pose — a function of frame timing. Casting through it as it stands makes what
+auto-aim locks onto depend on framerate, and since auto-aim sets `player.angle`, that is the angle
+every shot is fired at.
 
-So the tic calls `applyToCamera(1)`, putting the camera back on the previous tic's exact pose, and it
-does so **immediately before the ray**. The placement is the whole trick and it is easy to get wrong:
-posing at the *end* of the tic instead looks equivalent and is not, because `draw` runs afterwards
-and overwrites it. With one tic per frame — the normal case — that end-of-tic pose is never read by
-anything, and the ray goes back to reading an interpolated camera. It shipped that way once.
+So the tic calls `applyToCamera(1)`, putting the camera back on the previous tic's exact pose, and
+it does so **immediately before the ray**. The placement is the whole trick and it is easy to get
+wrong: posing at the *end* of the tic instead looks equivalent and is not, because `draw` runs
+afterwards and overwrites it. With one tic per frame — the normal case — that end-of-tic pose is
+never read by anything, and the ray goes back to reading an interpolated camera. It shipped that way
+once.
 
 Nothing else has to be re-posed. `pickMonster` tests the ray against each thing's billboard
 **analytically** (`intersectBillboard`, `render/sprites.ts`) from the thing's own tic state and the
-tic-exact `viewerAngleDeg` — it reads no render state at all, so the sprite batches can stay wherever
-the last frame left them. They used to be re-filled at alpha 1 for a `THREE.Raycaster` to hit, a fill
-instrumented as `Sprites (aim)` that measured ~1.4 ms/frame on NUTS.WAD (10,617 things) and scaled
-with tics per frame — ~6.4 ms at 3 tics/frame, exactly when the machine could least afford it. The
-analytic pick is a linear scan with a cheap broad phase (`BILLBOARD_MAX_REACH`) and measures ~0.09 ms
-on the same scene, so it no longer earns its own profiler block.
+tic-exact `viewerAngleDeg` — it reads no render state at all, so the sprite batches can stay
+wherever the last frame left them. They used to be re-filled at alpha 1 for a `THREE.Raycaster` to
+hit, a fill instrumented as `Sprites (aim)` that measured ~1.4 ms/frame on NUTS.WAD (10,617 things)
+and scaled with tics per frame — ~6.4 ms at 3 tics/frame, exactly when the machine could least
+afford it. The analytic pick is a linear scan with a cheap broad phase (`BILLBOARD_MAX_REACH`) and
+measures ~0.09 ms on the same scene, so it no longer earns its own profiler block.
 
 The pick is skipped entirely while the player is dead, since nothing aims then.
 
@@ -156,8 +157,8 @@ Everything drawn carries where it was at the end of the previous tic, and `draw`
 
 Five rules:
 
-- **`PosedThing.prev` is not an interpolation source.** It exists for `crossLines`' walk triggers and
-  is maintained only on the alerted-with-a-target path, but knockback, corpse gravity and a
+- **`PosedThing.prev` is not an interpolation source.** It exists for `crossLines`' walk triggers
+  and is maintained only on the alerted-with-a-target path, but knockback, corpse gravity and a
   ceiling-hung prop riding a closing door all move a thing that never runs that path. Hence the
   separate `drawPrev*`, written unconditionally at the top of the per-thing loop.
 - **Every discontinuous move must collapse the window.** A teleport that leaves a stale `prev`
@@ -175,9 +176,9 @@ Five rules:
   tic is coming; when none is, the last two tics stay apart forever while `alpha` — the leftover
   accumulator — keeps changing every frame, so the still subject jitters between them at frame
   cadence. Two cases exist and each closes it at its own scope: the **intermission** freezes the
-  whole simulation, so `frame` draws it at `alpha` 1 outright (the tic-exact pose); a **dead player**
-  freezes only `player.update`, which is what writes `prev*`, so `damagePlayer` collapses that one
-  window with `syncInterpolation` on the killing hit. Both shipped as a visible shake.
+  whole simulation, so `frame` draws it at `alpha` 1 outright (the tic-exact pose); a **dead
+  player** freezes only `player.update`, which is what writes `prev*`, so `damagePlayer` collapses
+  that one window with `syncInterpolation` on the killing hit. Both shipped as a visible shake.
 
 **Movers are deliberately not interpolated.** Doors, lifts, floors and crushers write
 `sector.floorHeight`/`ceilHeight` and rebuild geometry per tic — which is exactly the rate vanilla

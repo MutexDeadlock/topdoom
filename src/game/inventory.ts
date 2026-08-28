@@ -59,9 +59,9 @@ export function satisfiesLock(keys: ReadonlySet<KeySlot>, lock: LockRule): boole
 
 /**
  * Every weapon the player can carry, including fist and pistol — vanilla
- * starts every game with both already owned and neither has a map pickup,
- * but now that weapons are selectable/fireable (game/weapons.ts) they still
- * need an id like every other weapon to be `currentWeapon`-able.
+ * starts every game with both already owned and neither has a map pickup, but
+ * both are selectable and fireable (game/weapons.ts), so both need an id like
+ * every other weapon to be `currentWeapon`-able.
  */
 export type WeaponId =
   | 'fist'
@@ -124,7 +124,10 @@ export interface Inventory {
    * which counts tics the same way.
    */
   powers: Record<PowerId, number>;
-  /** Vanilla's `player->backpack`: doubles every ammo class's cap (`ammoMax`), and unlike the powers above it survives a level transition. */
+  /**
+   * Vanilla's `player->backpack`: doubles every ammo class's cap (`ammoMax`), and unlike the powers
+   * above it survives a level transition.
+   */
   backpack: boolean;
 }
 
@@ -150,7 +153,10 @@ export function hasPower(inv: Inventory, power: PowerId): boolean {
   return inv.powers[power] > 0;
 }
 
-/** Ages every timed powerup by `dt`; the `Infinity`-duration ones (berserk, computer map) are left alone. */
+/**
+ * Ages every timed powerup by `dt`; the `Infinity`-duration ones (berserk, computer map) are left
+ * alone.
+ */
 export function tickPowers(inv: Inventory, dt: number): void {
   for (const p of POWER_IDS) {
     if (inv.powers[p] > 0 && inv.powers[p] !== Infinity) inv.powers[p] = Math.max(0, inv.powers[p] - dt);
@@ -288,7 +294,10 @@ export interface InventoryLimits {
   megasphereHealth: number;
   /** `deh_god_health`: the health IDDQD sets on the way on (docs/cheats.md § IDDQD). */
   godModeHealth: number;
-  /** `deh_idkfa_armor` / `deh_idkfa_armor_class`: the armor IDKFA hands over (docs/cheats.md § IDKFA). */
+  /**
+   * `deh_idkfa_armor` / `deh_idkfa_armor_class`: the armor IDKFA hands over (docs/cheats.md §
+   * IDKFA).
+   */
   idkfaArmor: number;
   idkfaArmorClass: number;
 }
@@ -327,7 +336,9 @@ export function setInventoryLimits(limits: Partial<InventoryLimits>): void {
 const LIMITS: InventoryLimits = {
   /** Vanilla's `MAXHEALTH` (`d_player.h`) — the cap ordinary health pickups stop at. */
   maxHealth: 100,
-  /** Bonus items (health bonus, soulsphere, megasphere) push health past the normal cap, to this. */
+  /**
+   * Bonus items (health bonus, soulsphere, megasphere) push health past the normal cap, to this.
+   */
   maxHealthBonus: 200,
   /** Vanilla's blue-armor cap, `P_GiveArmor`'s `armortype*100` for `armortype` 2. */
   maxArmor: 200,
@@ -343,7 +354,9 @@ const LIMITS: InventoryLimits = {
   idkfaArmorClass: 2,
 };
 
-/** The pristine values, for `resetDehacked` — see docs/dehacked.md § Applying: reset, then patch. */
+/**
+ * The pristine values, for `resetDehacked` — see docs/dehacked.md § Applying: reset, then patch.
+ */
 const PRISTINE_LIMITS: InventoryLimits = { ...LIMITS };
 const PRISTINE_AMMO_MAX: Record<AmmoType, number> = { ...AMMO_MAX };
 const PRISTINE_CLIP_AMMO: Record<AmmoType, number> = { ...CLIP_AMMO };
@@ -540,18 +553,11 @@ export function setPistolStart(enabled: boolean): void {
 const INVULNERABLE_DAMAGE_LIMIT = 1000;
 
 /**
- * Reduces health by `amount`, letting worn armor absorb part of it first —
- * matches vanilla's own `P_DamageMobj`: green armor (`armorType` 1) absorbs a
- * third of the damage, blue (`armorType` 2) half, spending armor points
- * 1-for-1 with whatever it absorbed and falling back to bare (`armorType` 0)
- * once it runs out mid-hit. Invulnerability short-circuits the whole thing
- * first, in the same place vanilla's own `P_DamageMobj` checks it (see
- * `INVULNERABLE_DAMAGE_LIMIT`). `health` is clamped at 0 rather than going
- * negative — `game.ts`'s own death check is a simple `<= 0`, not "how far past
- * 0". Returns whether the hit actually landed (`false` while invulnerability
- * or `god` blocked it outright), the same "did anything happen" boolean
- * `applyPickup` already returns for the same reason — `game.ts: damagePlayer`
- * needs it to skip the pain flash/flinch animation for a hit that did nothing.
+ * Reduces health by `amount`, letting worn armor absorb part of it first — vanilla's own
+ * `P_DamageMobj` armor formula, with invulnerability short-circuiting it in the same place vanilla
+ * checks (see `INVULNERABLE_DAMAGE_LIMIT`). `health` is clamped at 0 rather than going negative:
+ * `game.ts`'s death check is a simple `<= 0`. Returns whether the hit actually landed, the same
+ * "did anything happen" boolean `applyPickup` returns. docs/death.md § Player death.
  *
  * `god` is IDDQD's `CF_GODMODE` (docs/cheats.md § IDDQD), taken as a parameter
  * rather than read from the inventory because it is not something the player

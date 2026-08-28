@@ -48,22 +48,12 @@ const BLOCKER_GRID_CELL = 128;
 const MAX_FRAME_DT = 1 / 35;
 
 /**
- * Slack added to every blocker search so narrowing it to the bodies that can
- * actually touch can't miss one — the longest probe step (`tryWalk` reaches a
- * full `P_Move` ahead) plus the worst one-frame grid staleness. Derived from
- * `MONSTER_STATS` rather than hardcoded so it can't drift out of sync.
- *
- * Both tables feed it, so the one figure covers a nightmare level too: a fast
- * demon out-runs every ordinary monster, and a margin that only knew the
- * normal table would come up short by its extra frame of travel. The probe
- * term needs no such care — halving a monster's tics doubles its speed and
- * halves its `chaseInterval`, leaving their product exactly as it was — but it
- * costs nothing to take both the same way.
- *
- * The two maxima are taken **independently and added**, not maximised as a
- * per-type sum: the monster probing and the monster that drifted are different
- * monsters, so nothing requires them to be the same type. See
- * docs/monster-ai.md § Spatial indexing.
+ * Slack added to every blocker search so narrowing it to the bodies that can actually touch can't
+ * miss one — the longest probe step (`tryWalk` reaches a full `P_Move` ahead) plus the worst
+ * one-frame grid staleness. Derived from `MONSTER_STATS` rather than hardcoded so it can't drift
+ * out of sync, and from the nightmare table too. The two maxima are taken **independently and
+ * added**, not maximised as a per-type sum: the monster probing and the monster that drifted are
+ * different monsters. See docs/monster-ai.md § Spatial indexing.
  *
  * Computed per grid rather than at import, because a DEHACKED patch may have rewritten either
  * table by the time one is built (docs/dehacked.md § Applying: reset, then patch). A grid is
@@ -130,7 +120,10 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
   const blockerCols = Math.max(1, Math.ceil((map.bounds.maxX - map.bounds.minX) / BLOCKER_GRID_CELL) + 1);
   const blockerRows = Math.max(1, Math.ceil((map.bounds.maxY - map.bounds.minY) / BLOCKER_GRID_CELL) + 1);
   const blockerGrid: PosedThing[][] = new Array(blockerCols * blockerRows);
-  /** Indices of the cells that actually have anything in them, so a rebuild clears only those instead of walking the whole grid. */
+  /**
+   * Indices of the cells that actually have anything in them, so a rebuild clears only those
+   * instead of walking the whole grid.
+   */
   const blockerDirty: number[] = [];
 
   /**
@@ -139,16 +132,28 @@ export function createThingGrid(map: DoomMap, world: World, posed: PosedThing[])
    * seem — docs/monster-ai.md § Spatial indexing has the map that disproves it.
    */
   const corpseGrid: PosedThing[][] = new Array(blockerCols * blockerRows);
-  /** Indices of the cells that actually have anything in them, so a rebuild clears only those instead of walking the whole grid. */
+  /**
+   * Indices of the cells that actually have anything in them, so a rebuild clears only those
+   * instead of walking the whole grid.
+   */
   const corpseDirty: number[] = [];
-  /** Largest collision radius among corpses currently in `corpseGrid`, sizing `findRaisableCorpse`'s search box the same way `maxBlockerRadius` sizes `blockersFor`'s. */
+  /**
+   * Largest collision radius among corpses currently in `corpseGrid`, sizing `findRaisableCorpse`'s
+   * search box the same way `maxBlockerRadius` sizes `blockersFor`'s.
+   */
   let maxCorpseRadius = 0;
   /** Bumped per `forEachMonsterAlongRay` call; see `PosedThing.queryStamp`. */
   let monsterQueryStamp = 0;
-  /** Largest collision radius currently in the grid, so `blockersFor` sizes its box to what this map contains rather than to the biggest monster in the game. */
+  /**
+   * Largest collision radius currently in the grid, so `blockersFor` sizes its box to what this map
+   * contains rather than to the biggest monster in the game.
+   */
   let maxBlockerRadius = PLAYER_RADIUS;
 
-  /** Grid column/row for a map coordinate, clamped so a thing outside the map's own bounds still lands in a real cell. */
+  /**
+   * Grid column/row for a map coordinate, clamped so a thing outside the map's own bounds still
+   * lands in a real cell.
+   */
   function blockerCol(x: number): number {
     const c = Math.floor((x - map.bounds.minX) / BLOCKER_GRID_CELL);
     return c < 0 ? 0 : c >= blockerCols ? blockerCols - 1 : c;

@@ -23,7 +23,10 @@ const SPRITE_END = /^(S|SS)_END$/;
  */
 const SPRITE_RENAMES = new Map<string, string>();
 
-/** Redirects one sprite name to another lump prefix — a BEX `[SPRITES]` entry, `d_deh.c`'s `deh_procBexSprites`. */
+/**
+ * Redirects one sprite name to another lump prefix — a BEX `[SPRITES]` entry, `d_deh.c`'s
+ * `deh_procBexSprites`.
+ */
 export function setSpriteLump(name: string, to: string): void {
   SPRITE_RENAMES.set(name.toUpperCase(), to.toUpperCase());
 }
@@ -105,7 +108,9 @@ export class SpriteBank {
     }
   }
 
-  /** Lump for this sprite/frame/rotation digit (1-8); falls back to the omnidirectional "0" frame. */
+  /**
+   * Lump for this sprite/frame/rotation digit (1-8); falls back to the omnidirectional "0" frame.
+   */
   lookup(sprite: string, frame: string, rotationDigit: number): SpriteFrame | undefined {
     const byRotation = this.frames.get(sprite.toUpperCase() + frame.toUpperCase());
     if (!byRotation) return undefined;

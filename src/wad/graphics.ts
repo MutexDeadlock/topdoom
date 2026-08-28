@@ -225,7 +225,9 @@ export class GraphicsBank {
     return [...this.texDefs.keys()];
   }
 
-  /** Flat names in `F_START`..`F_END` lump order — same role as `textureNamesInOrder`, for flats. */
+  /**
+   * Flat names in `F_START`..`F_END` lump order — same role as `textureNamesInOrder`, for flats.
+   */
   flatNamesInOrder(): string[] {
     return [...this.flats.keys()];
   }

@@ -81,29 +81,15 @@ export class VoodooDolls {
   }
 
   /**
-   * One tic: the world's forces push each doll, it slides, whatever it reached
-   * is collected through `collect`, and whatever walk lines it crossed fire
-   * through `cross` — which returns a landing spot when the crossing was a
-   * teleporter, exactly as a monster's does.
+   * One tic: the world's forces push each doll, it slides, whatever it reached is collected through
+   * `collect`, and whatever walk lines it crossed fire through `cross` — which returns a landing
+   * spot when the crossing was a teleporter, exactly as a monster's does.
    *
-   * `collect` runs only for a doll that actually moved, and before `cross`, as
-   * vanilla's own order: a doll is an `MT_PLAYER` carrying `MF_PICKUP`, so
-   * `P_XYMovement` -> `P_TryMove` -> `P_CheckPosition` picks items up on the
-   * real player's behalf, before `P_TryMove` gets to the lines it crossed. A
-   * parked doll never reaches `P_XYMovement` and so never collects.
-   * docs/items.md § Collecting things.
-   *
-   * A doll has no gravity of its own: it rides whatever floor it is standing on
-   * (`groundFloor`), which is all a script actor ever needs and keeps a doll
-   * parked on a lift moving with it.
-   *
-   * A doll pinned against a wall by a conveyor — the resting state of a whole
-   * closet's worth of dolls on a Boom script map — would otherwise re-attempt
-   * the same blocked `slideMove` every tic forever; the `rest` memo skips the
-   * whole tic once it has been proven a no-op (see `VoodooDoll.rest`). The
-   * impulse is still recomputed live each tic, so a belt turning on or off, or
-   * water rising over a parked doll, breaks the memo through the impulse
-   * compare.
+   * `collect` runs only for a doll that actually moved, and before `cross`, which is vanilla's own
+   * order — docs/items.md § Collecting things. A doll has no gravity: it rides whatever floor it
+   * stands on (`groundFloor`), and one a belt pins against a wall skips the whole tic through the
+   * `rest` memo, the impulse compare being what breaks it. docs/specials.md § Voodoo dolls,
+   * docs/movement.md § Pinned-body memo.
    */
   update(
     dt: number,
@@ -205,7 +191,10 @@ export class VoodooDolls {
     }
   }
 
-  /** Every field the simulation mutates — docs/savegames.md § What is saved and what is deliberately not. */
+  /**
+   * Every field the simulation mutates — docs/savegames.md § What is saved and what is deliberately
+   * not.
+   */
   snapshot(): VoodooSnapshot[] {
     return this.dolls.map((d) => ({ x: d.x, y: d.y, z: d.z, angle: d.angle, momX: d.momX, momY: d.momY }));
   }

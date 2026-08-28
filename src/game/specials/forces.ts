@@ -30,7 +30,9 @@ const SCROLL_DIVISOR = 1 << 5;
  */
 const CARRY_FACTOR = 0.09375;
 
-/** Tics per second. Rates lifted from thinkers are per tic; this engine's velocities are per second. */
+/**
+ * Tics per second. Rates lifted from thinkers are per tic; this engine's velocities are per second.
+ */
 const TICS_PER_SECOND = 1 / DOOM_TIC;
 
 /**
@@ -88,7 +90,10 @@ export interface Scroller {
   vdx: number;
   vdy: number;
   lastHeight: number;
-  /** The rate `tick` last resolved for this scroller, units per tic — what `advanceOffsets` integrates between tics. */
+  /**
+   * The rate `tick` last resolved for this scroller, units per tic — what `advanceOffsets`
+   * integrates between tics.
+   */
   rate: Vec2;
 }
 
@@ -133,20 +138,19 @@ const NO_OFFSET: Readonly<Vec2> = { x: 0, y: 0 };
  * The always-on parameter lines of one level: scanned once from the map, then
  * ticked with the simulation.
  *
- * **Two clocks, deliberately.** `tick` advances everything the simulation can
- * observe (the accelerative integrator, the displacement control deltas, and so
- * this tic's conveyor impulses) exactly once per tic, because `T_Scroll` is a
- * thinker and its acceleration is defined per tic. `advanceOffsets` integrates
- * the *visual* offsets per rendered frame off the rate `tick` last computed, so
- * a scrolling waterfall stays as smooth as it has always been rather than
- * stepping at 35 Hz. docs/specials.md § Scrollers and conveyors.
+ * **Two clocks, deliberately.** `tick` advances everything the simulation can observe exactly once
+ * per tic; `advanceOffsets` integrates the *visual* offsets per rendered frame off the rate `tick`
+ * last computed, so a scrolling waterfall doesn't step at 35 Hz.
+ * docs/specials.md § Scrollers and conveyors.
  */
 export class Forces {
   private map: DoomMap;
   private world: World;
   private scrollers: Scroller[] = [];
   private pushers: Pusher[] = [];
-  /** Accumulated offsets by affectee, one map per target kind — read by the renderer every frame. */
+  /**
+   * Accumulated offsets by affectee, one map per target kind — read by the renderer every frame.
+   */
   private sideOffsets = new Map<number, Vec2>();
   private floorOffsets = new Map<number, Vec2>();
   private ceilOffsets = new Map<number, Vec2>();
@@ -159,7 +163,10 @@ export class Forces {
    * BSP descent `sectorsTouching` would cost.
    */
   private carryBounds = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-  /** Returned by `carryForBody` and `pushForBody`, which run per body per tic — see their docs. One each, so a caller can hold both at once. */
+  /**
+   * Returned by `carryForBody` and `pushForBody`, which run per body per tic — see their docs. One
+   * each, so a caller can hold both at once.
+   */
   private carryScratch: Vec2 = { x: 0, y: 0 };
   private pushScratch: Vec2 = { x: 0, y: 0 };
   private frictionScratch: FrictionEffect = { friction: ORIG_FRICTION, targetScale: 1, accelScale: 1 };
@@ -171,7 +178,10 @@ export class Forces {
    */
   private friction = new Float64Array(0);
   private moveFactor = new Float64Array(0);
-  /** Whether any 223 line exists at all, so the per-body query costs nothing on the maps that have none. */
+  /**
+   * Whether any 223 line exists at all, so the per-body query costs nothing on the maps that have
+   * none.
+   */
   private hasFriction = false;
   /**
    * The level's render transfers, for the one thing they change about
@@ -220,18 +230,12 @@ export class Forces {
    * `P_GetFriction` + `P_GetMoveFactor`: what the floor under a body of this
    * radius does to its movement, or `NO_FRICTION` where nothing does.
    *
-   * Every sector the body **touches** is a candidate, and vanilla's own
-   * selection rule is transcribed rather than simplified to a minimum: the
-   * first qualifying sector wins while nothing has been picked yet, and after
-   * that only a strictly *lower* friction displaces it ("muddy has precedence
-   * over icy"). A sector qualifies only if its special still carries Boom's
-   * friction bit and the body is standing at or below its floor.
+   * Every sector the body **touches** is a candidate, and vanilla's own selection rule is
+   * transcribed rather than simplified to a minimum — docs/specials.md § Friction.
    *
-   * `speed` is the body's current horizontal speed in map units/sec, which only
-   * a muddy floor reads: `P_GetMoveFactor` boosts the thrust in three steps as
-   * momentum builds, vanilla's "you start off slowly, then increase as you get
-   * better footing". The thresholds are low enough (8, 16, 32 units/sec) that
-   * anything actually walking sits in the top step.
+   * `speed` is the body's current horizontal speed in map units/sec, which only a muddy floor
+   * reads: `P_GetMoveFactor` boosts the thrust in three steps as momentum builds, and the
+   * thresholds are low enough that anything actually walking sits in the top step.
    *
    * The result is **shared** scratch overwritten by the next call. `cache` is
    * the caller's per-body touch cache, shared with the other two body queries —
@@ -370,7 +374,10 @@ export class Forces {
     return null;
   }
 
-  /** Whether anything in this level scrolls at all — lets the per-frame caller skip the walk entirely. */
+  /**
+   * Whether anything in this level scrolls at all — lets the per-frame caller skip the walk
+   * entirely.
+   */
   get hasScrollers(): boolean {
     return this.scrollers.length > 0;
   }
@@ -397,7 +404,9 @@ export class Forces {
     return out;
   }
 
-  /** How many sectors a 223 line gave a friction other than normal — the inspector's coverage line. */
+  /**
+   * How many sectors a 223 line gave a friction other than normal — the inspector's coverage line.
+   */
   get frictionSectors(): number {
     let n = 0;
     for (let i = 0; i < this.friction.length; i++) if (this.friction[i] !== ORIG_FRICTION) n++;
@@ -482,14 +491,18 @@ export class Forces {
     }
   }
 
-  /** The conveyor half of 252/253: the same rate scaled by `CARRY_FACTOR`, on every tagged sector. */
+  /**
+   * The conveyor half of 252/253: the same rate scaled by `CARRY_FACTOR`, on every tagged sector.
+   */
   private addCarry(dx: number, dy: number, tag: number, control: number, accel: boolean): void {
     for (const s of sectorsByTag(this.map, tag)) {
       this.addScroller('carry', dx * CARRY_FACTOR, dy * CARRY_FACTOR, control, s, accel);
     }
   }
 
-  /** The sector behind a line's front sidedef — Boom's `sides[*l->sidenum].sector` control lookup. */
+  /**
+   * The sector behind a line's front sidedef — Boom's `sides[*l->sidenum].sector` control lookup.
+   */
   private frontSector(lineIndex: number): number {
     const line = this.map.linedefs[lineIndex];
     if (!line || line.right === NO_SIDE) return -1;
@@ -544,7 +557,10 @@ export class Forces {
     });
   }
 
-  /** `sectors[control].floorheight + sectors[control].ceilingheight` — what a displacement scroller watches. */
+  /**
+   * `sectors[control].floorheight + sectors[control].ceilingheight` — what a displacement scroller
+   * watches.
+   */
   private controlHeight(sectorIndex: number): number {
     const sector = this.map.sectors[sectorIndex];
     return sector ? sector.floorHeight + sector.ceilHeight : 0;
@@ -690,18 +706,11 @@ export class Forces {
    * This tic's pusher impulse on the **player** standing at `pos`, map
    * units/sec, or null where nothing pushes — `T_Pusher`.
    *
-   * Wind and current are constant over their sector and differ only in what
-   * being off the floor does: wind gives full force in the air and half on the
-   * ground, a current none in the air and full on it. A point source radiates
-   * from (or pulls toward) its `MT_PUSH`/`MT_PULL` thing, falls off linearly to
-   * zero at twice its magnitude, crosses sector boundaries, and needs line of
-   * sight to the source.
+   * Wind and current are constant over their sector and differ only in what being off the floor
+   * does; a point source radiates from its `MT_PUSH`/`MT_PULL` thing and needs line of sight.
    *
-   * **Players only** — including voodoo dolls, which are player mobjs. Boom's
-   * own `T_Pusher` skips every non-player outright, and `PIT_PushThing` widens
-   * to monsters only under `mbf_features`, which complevel 9 does not set. A
-   * conveyor's carry has no such gate (`carryForBody`); this is the deliberate
-   * asymmetry, not an oversight. See docs/specials.md § Pushers.
+   * **Players only** — including voodoo dolls, which are player mobjs. A conveyor's carry has no
+   * such gate (`carryForBody`); the asymmetry is deliberate. See docs/specials.md § Pushers.
    *
    * Like `carryForBody`, the caller supplies its per-body `cache` and gets
    * back **shared** scratch that this method's next call overwrites — read it
@@ -723,7 +732,8 @@ export class Forces {
         // `(magnitude - (dist >> 1)) << (FRACBITS - PUSH_FACTOR - 1)` — one
         // shift further down than the constant pushers, hence the extra halving.
         const speed = (p.magnitude - Math.floor(dist / 2)) / (PUSH_DIVISOR * 2);
-        // `p->radius = magnitude << (FRACBITS + 1)` — twice the magnitude, where the force reaches zero.
+        // `p->radius = magnitude << (FRACBITS + 1)` — twice the magnitude, where the force reaches
+        // zero.
         if (speed <= 0 || dist > p.magnitude * 2) continue;
         this.sightScratch.x = p.x;
         this.sightScratch.y = p.y;

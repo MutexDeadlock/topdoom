@@ -1,7 +1,8 @@
 # Monster AI
 
-`src/game/monsters/ai.ts`, `src/game/monsters/defs.ts`, `src/game/monsters/tables.ts`, `src/game/monsters/vile.ts`,
-`src/game/things.ts`, `src/game/things/defs.ts`, `src/game/things/grid.ts`
+`src/game/monsters/ai.ts`, `src/game/monsters/defs.ts`, `src/game/monsters/tables.ts`,
+`src/game/monsters/vile.ts`, `src/game/things.ts`, `src/game/things/defs.ts`,
+`src/game/things/grid.ts`
 
 Realizing an attack once one is decided on is docs/monster-attacks.md; a monster's sprite poses are
 docs/sprites.md § Pain, and attack/pain poses; dying is docs/death.md.
@@ -169,15 +170,14 @@ sound split below.
 
 ## Fast monsters
 
-Nightmare's fast monsters are a far smaller change than the name suggests, and
-`FAST_MONSTER_STATS` (`monsters/tables.ts`) is derived from `MONSTER_STATS` rather than typed out so
-a stat corrected in one can't fail to reach the other. It is a `let`, re-derived by
-`rebuildDerivedMonsterStats()` rather than frozen at import, because a DEHACKED patch writes into
-`MONSTER_STATS` after this module has loaded — without that a patched imp would stay
-fast-mode-vanilla (docs/dehacked.md § Applying: reset, then patch). `TALLEST_BODY_HEIGHT` is the
-same. `monsterStatsFor` remains the single accessor either way. `G_InitNew` (`g_game.c`) makes exactly two
-edits to the global tables when the skill is nightmare (or `-fast` is passed, which this engine has
-no switch for):
+Nightmare's fast monsters are a far smaller change than the name suggests, and `FAST_MONSTER_STATS`
+(`monsters/tables.ts`) is derived from `MONSTER_STATS` rather than typed out so a stat corrected in
+one can't fail to reach the other. It is a `let`, re-derived by `rebuildDerivedMonsterStats()`
+rather than frozen at import, because a DEHACKED patch writes into `MONSTER_STATS` after this module
+has loaded — without that a patched imp would stay fast-mode-vanilla (docs/dehacked.md § Applying:
+reset, then patch). `TALLEST_BODY_HEIGHT` is the same. `monsterStatsFor` remains the single accessor
+either way. `G_InitNew` (`g_game.c`) makes exactly two edits to the global tables when the skill is
+nightmare (or `-fast` is passed, which this engine has no switch for):
 
 - `for (i=S_SARG_RUN1; i<=S_SARG_PAIN2; i++) states[i].tics >>= 1` — **the demon's** run, attack
   and pain states, and the spectre's along with them, since `info.c` runs `MT_SPECTRE` on the very
@@ -299,10 +299,11 @@ It measures against the monster's own `stats.height`, vanilla's real 56-110. Onl
 half of the rule (`world.ts: openingRefuses`, which `checkPosition` runs per crossed linedef) still
 measures every body against the shared `PLAYER_HEIGHT` of 56 — a deviation that can only matter for
 a crossing between 56 and the taller species' own height, and a crusher closes far below either
-figure. **The player is deliberately not subject to the fit rule at all**: vanilla applies it to every mobj, so a player under a
-crusher is pinned too, but being unable to move with no on-screen explanation reads as a frozen game
-from a top-down camera that may not even be showing the ceiling. The momentum paths — a lost soul's
-charge and knockback — don't carry it either, both being brief and self-cancelling.
+figure. **The player is deliberately not subject to the fit rule at all**: vanilla applies it to
+every mobj, so a player under a crusher is pinned too, but being unable to move with no on-screen
+explanation reads as a frozen game from a top-down camera that may not even be showing the ceiling.
+The momentum paths — a lost soul's charge and knockback — don't carry it either, both being brief
+and self-cancelling.
 
 **The per-tic sub-step must never be stricter than the chase step `tryWalk` already approved.**
 Vanilla's `P_Move` tests only the *destination* of a full `speed` jump; it never asks whether the
@@ -333,10 +334,11 @@ than one step, which vanilla leaves stuck too. **It cannot walk through a wall**
 property of the numbers rather than an extra check: a refused destination is one whose *box spans* a
 solid line (docs/movement.md § Collision), and every type's chase step is shorter than its own
 radius (the closest is the arch-vile, 15 against 20) — so the box at the destination and the box one
-step behind it always overlap, and a wall that the second one spans the first spans too. Taking the whole step rather than creeping into the refused position is also what
-keeps `settleVertical` honest — standing mid-graze would snap the body up to a `groundFloor` the
-step-up rule exists to refuse, a visible 56-unit hop on the MAP06 case. The extra query is one
-`testStep` inside the already-blocked branch, replacing the two the older overlap-only version ran.
+step behind it always overlap, and a wall that the second one spans the first spans too. Taking the
+whole step rather than creeping into the refused position is also what keeps `settleVertical` honest
+— standing mid-graze would snap the body up to a `groundFloor` the step-up rule exists to refuse, a
+visible 56-unit hop on the MAP06 case. The extra query is one `testStep` inside the already-blocked
+branch, replacing the two the older overlap-only version ran.
 
 Two arguments the player's own movement never sets:
 
@@ -399,12 +401,13 @@ the destination's floor is the low one, more than a step below where it stands.
 own.** The two MBF clauses only stop a body *descending*; nothing in them stops it sliding outward
 until a sliver of its box is all that is still on floor, and with `z` pinned to the straddled
 opening (docs/movement.md § Collision) that reads on screen as a monster walking on air over the
-pit. So the floor under the body's own centre (`World.floorAt` — the height it would rest at with
-no ledge holding it up) gets the same relative treatment as the other two: a step may not carry
-the centre more than `MAX_STEP_UP` below the ground its centre is over now. A hanging body may therefore reach the ledge line and no further, so it hangs at most
-half its box over — exactly what a monster standing at any ledge edge already shows. Stated
-relatively for the same reason the others are: a body whose centre is *already* past a ledge (a
-sector moved under it, a teleport) has to be able to walk back off.
+pit. So the floor under the body's own centre (`World.floorAt` — the height it would rest at with no
+ledge holding it up) gets the same relative treatment as the other two: a step may not carry the
+centre more than `MAX_STEP_UP` below the ground its centre is over now. A hanging body may therefore
+reach the ledge line and no further, so it hangs at most half its box over — exactly what a monster
+standing at any ledge edge already shows. Stated relatively for the same reason the others are: a
+body whose centre is *already* past a ledge (a sector moved under it, a teleport) has to be able to
+walk back off.
 
 **Repro: DOOM1 E1M5**, the alcove in front of the yellow door (sector 13, x -704..-656). It is 48
 units wide against a demon's 60, so a demon in there always straddles the lift line (161) on one
@@ -443,7 +446,8 @@ The cacodemon, lost soul and pain elemental (`MonsterStats.flies`) are `MF_FLOAT
 and all three of those halves are load-bearing — with only the dropoff exemption they still walked
 the floor, and **a cacodemon in a pit deeper than `MAX_STEP_UP` could never leave it**: every chase
 step out was refused as too big a step up, so it paced the far wall forever while vanilla's floats
-straight out (`tests/regression/floating-monster-ledge.test.ts`, `caco_pit_test.wad`: a 48-unit pit).
+straight out (`tests/regression/floating-monster-ledge.test.ts`, `caco_pit_test.wad`: a 48-unit
+pit).
 
 Three rules, all in `monsters/ai.ts`:
 
@@ -489,10 +493,10 @@ snapped 128 units up to z = 480 the instant it woke and hung there for the rest 
 `tests/regression/floater-under-low-ceiling.test.ts` states the same geometry in round numbers.
 
 `testStep` carries its own copy of vanilla's "mobj must lower itself to fit"
-(`tmceilingz - thing->z < thing->height`) even though `checkPosition` now applies that rule
-per crossed opening too (docs/movement.md § Collision). The two are not redundant: `checkPosition`
-only ever sees openings the body is *straddling*, so a flier drifting around inside one sector
-crosses nothing, and it measures against `PLAYER_HEIGHT` rather than the species' own `stats.height`.
+(`tmceilingz - thing->z < thing->height`) even though `checkPosition` now applies that rule per
+crossed opening too (docs/movement.md § Collision). The two are not redundant: `checkPosition` only
+ever sees openings the body is *straddling*, so a flier drifting around inside one sector crosses
+nothing, and it measures against `PLAYER_HEIGHT` rather than the species' own `stats.height`.
 Without the `testStep` copy a hovering monster would sail through the wall above a low doorway.
 
 What did change is that a flier's `checkPosition` probe can now come back blocked purely on the
@@ -533,17 +537,17 @@ Four details are load-bearing:
   numeric keys, so V8 backs it with a dictionary — one hash lookup per candidate per monster per
   frame was more expensive than the collision arithmetic.
 
-**The same grid backs `monstersNear`, `monstersAlongStep` and `raycastMonster`**, and none can afford
-to be the linear scan they started as, because they are called *per shot in flight*, not per frame:
-`monstersAlongStep` runs once per airborne projectile per frame (`game/projectiles.ts`'s
-`bodyStruckBy`) and a crowded map can have over a thousand in the air; `raycastMonster` runs once per
-monster hitscan. `raycastMonster`'s query is a ray rather than a box, so `forEachMonsterAlongRay`
-steps the ray by half a cell and sweeps a square cell neighbourhood at each step — deliberately
-simpler than `World.forEachLineAlongSegment`'s exact DDA, and conservative by a wide margin. Monsters
-are deduped with a stamp on `PosedThing.queryStamp` rather than a `Set`, since consecutive steps
-overlap heavily. All were verified to return results identical to the linear scans across NUTS.WAD,
-DOOM2 MAP07 and DOOM E1M7. `monstersInSector` is deliberately left linear — it runs on a crusher
-tick, not per frame.
+**The same grid backs `monstersNear`, `monstersAlongStep` and `raycastMonster`**, and none can
+afford to be the linear scan they started as, because they are called *per shot in flight*, not per
+frame: `monstersAlongStep` runs once per airborne projectile per frame (`game/projectiles.ts`'s
+`bodyStruckBy`) and a crowded map can have over a thousand in the air; `raycastMonster` runs once
+per monster hitscan. `raycastMonster`'s query is a ray rather than a box, so
+`forEachMonsterAlongRay` steps the ray by half a cell and sweeps a square cell neighbourhood at each
+step — deliberately simpler than `World.forEachLineAlongSegment`'s exact DDA, and conservative by a
+wide margin. Monsters are deduped with a stamp on `PosedThing.queryStamp` rather than a `Set`, since
+consecutive steps overlap heavily. All were verified to return results identical to the linear scans
+across NUTS.WAD, DOOM2 MAP07 and DOOM E1M7. `monstersInSector` is deliberately left linear — it runs
+on a crusher tick, not per frame.
 
 **`stepMonsterAI` resolves sight lazily and memoizes it for the call** (`sightCached`/`canSee`).
 Only the refire loop and `runChaseCall` consume it and both run far less often than `stepMonsterAI`
@@ -553,13 +557,13 @@ the same shape: `P_CheckSight` is called from inside `A_Chase`, not per tic per 
 the call back out of the closure would undo this.
 
 **Both shot queries size their search from the map's own largest body (`ThingGrid.maxBodyRadius`),
-not from the largest in the game.** Since a shot is tested against each body's real `mobjinfo.radius`
-rather than one shared 24-unit box (docs/combat.md § How a shot deals damage), the neighbourhood has
-to clear whatever the *widest* thing present could reach — 163 units around a spider mastermind, but
-still one cell on a map of 20-unit grunts, which is what keeps the common case at its old cost. This
-is the same adaptive trick `blockersFor` uses, and for the same reason: a fixed worst-case box is
-what made monster AI the frame's bottleneck, while sizing from the map's own population measured as
-noise even with a thousand shots in the air.
+not from the largest in the game.** Since a shot is tested against each body's real
+`mobjinfo.radius` rather than one shared 24-unit box (docs/combat.md § How a shot deals damage), the
+neighbourhood has to clear whatever the *widest* thing present could reach — 163 units around a
+spider mastermind, but still one cell on a map of 20-unit grunts, which is what keeps the common
+case at its old cost. This is the same adaptive trick `blockersFor` uses, and for the same reason: a
+fixed worst-case box is what made monster AI the frame's bottleneck, while sizing from the map's own
+population measured as noise even with a thousand shots in the air.
 
 **`blockerGrid` is not monsters-only, and the difference between solid and shootable is what keeps
 that safe.** It admits the exploding barrel and every `SOLID_DECORATION_TYPES` prop, because those
@@ -586,8 +590,8 @@ check (`meleeReachesVertically`), and `hasLineOfSight`. It runs **twice per swin
 
 **The vertical check is a deliberate deviation from vanilla, and the only one in the attack path.**
 `P_CheckMeleeRange` (`p_enemy.c`) tests `P_AproxDistance` and `P_CheckSight` and *nothing else* — so
-a vanilla pinky standing in a pit really can bite someone on the lip above it, and one on a ledge can
-bite someone below. ZDoom added a guard for this and gates it behind `MF5_NOVERTICALMELEERANGE`
+a vanilla pinky standing in a pit really can bite someone on the lip above it, and one on a ledge
+can bite someone below. ZDoom added a guard for this and gates it behind `MF5_NOVERTICALMELEERANGE`
 (`p_enemy.cpp`, commented "Don't melee things too far above or below actor"):
 
 ```c
@@ -596,9 +600,9 @@ if (pl->Top() < actor->Z())  return false;
 ```
 
 This engine follows ZDoom, because vanilla's version reads as a bug to anyone who has played a
-source port. Both comparisons are **strict**, so bodies that exactly touch still connect. Both heights are the real
-per-type `mobjinfo.height`: `MonsterStats.height` for the attacker, and the target's own —
-`PLAYER_HEIGHT` when `ThingLayer` resolved the target to the player, that body's
+source port. Both comparisons are **strict**, so bodies that exactly touch still connect. Both
+heights are the real per-type `mobjinfo.height`: `MonsterStats.height` for the attacker, and the
+target's own — `PLAYER_HEIGHT` when `ThingLayer` resolved the target to the player, that body's
 `PosedThing.bodyHeight` for an infight — threaded in as `stepMonsterAI`'s `targetHeight`.
 
 Repro maps, committed as fixtures: `tests/fixtures/wads/pinky_{below,above}_test.wad`, covered by
@@ -644,11 +648,11 @@ volleys (20), the chaingunner's and spider mastermind's paired bullets (4).
 12 tics for years — the length of the single state `A_CyberAttack` sits on — where `S_CYBER_ATK2`,
 `ATK4` and `ATK6` are separated by a 12-tic `A_FaceTarget` each, making the real spacing 24. Its
 volley therefore arrived twice as fast as vanilla's. Both fields are now derived from the chain by
-`dehacked/frames.ts` and held to it by `tests/game/dehacked-frames.test.ts`, which is what found it. `AttackStats.refire` is the
-extreme case — `A_CPosRefire`/`A_SpidRefire` (chaingunner, spider mastermind, arachnotron) jump the
-attack state straight back into itself and only break out when the target stops being visible, never
-re-rolling `P_CheckMissileRange`. Those three plant themselves and hose continuously for as long as
-they can see the player.
+`dehacked/frames.ts` and held to it by `tests/game/dehacked-frames.test.ts`, which is what found it.
+`AttackStats.refire` is the extreme case — `A_CPosRefire`/`A_SpidRefire` (chaingunner, spider
+mastermind, arachnotron) jump the attack state straight back into itself and only break out when the
+target stops being visible, never re-rolling `P_CheckMissileRange`. Those three plant themselves and
+hose continuously for as long as they can see the player.
 
 **A ranged attack's firing chance falls off with distance** — vanilla's
 `A_Chase`/`P_CheckMissileRange`, run as the real per-chase-call decision rather than a cooldown.
@@ -736,10 +740,11 @@ Three vanilla rules keep it from degenerating:
   it as no hit.
 
 A target that dies hands attention straight back to the player (`resolveTarget`), matching
-`A_Chase`'s fallback to `P_LookForPlayers` once `target->health <= 0` — unless the player is dead too,
-in which case `resolveTarget` reports no target at all and the monster reverts to idle instead of
-turning on the corpse (`game/things.ts`'s per-frame update loop, docs/death.md § Player death). A
-monster already infighting someone else is unaffected by the player's death and fights on regardless.
+`A_Chase`'s fallback to `P_LookForPlayers` once `target->health <= 0` — unless the player is dead
+too, in which case `resolveTarget` reports no target at all and the monster reverts to idle instead
+of turning on the corpse (`game/things.ts`'s per-frame update loop, docs/death.md § Player death). A
+monster already infighting someone else is unaffected by the player's death and fights on
+regardless.
 
 ## The lost soul: a charge, not a projectile
 
@@ -761,18 +766,19 @@ spawns a new `MT_SKULL` in front of the elemental and immediately hands it to th
 `A_SkullAttack`, so the elemental's real attack is entirely mediated through a monster this engine
 already models. `AttackStats.spawn` marks the elemental's `ranged` entry as this kind;
 `beginRangedAttack` reports a `'spawn'` event the instant the attack starts, and
-`things.ts: spawnLostSoul` carries it out, since only `ThingLayer` (which owns the `posed` array) can
-add one. It's applied directly inside `ThingLayer.update` rather than reported through
+`things.ts: spawnLostSoul` carries it out, since only `ThingLayer` (which owns the `posed` array)
+can add one. It's applied directly inside `ThingLayer.update` rather than reported through
 `MonsterAttackEvent` — spawning a monster isn't damage for `MonsterAttacks` to apply.
 
-Two vanilla details reproduced exactly: the spawn point is `4 + 1.5×(elemental radius + lost soul
-radius)` map units in front along the elemental's facing (`4*FRACUNIT + 3*(actor->info->radius +
-skullradius)/2`, both radii already plain map units here so the shared fixed-point scaling divides
-out) and 8 units above its feet, and nothing spawns if that point has no room — vanilla's `P_TryMove`
-check, which in real vanilla spawns the mobj and then kills it with 10000 damage, a difference with
-no visible consequence. There's also a real level-wide cap: vanilla refuses another skull once 20
-already exist anywhere on the level (a plain count of living `MT_SKULL`, not a per-elemental tally),
-so a room full of elementals throttles itself; `spawnLostSoul` counts `posed` the same way.
+Two vanilla details reproduced exactly: the spawn point is
+`4 + 1.5×(elemental radius + lost soul radius)` map units in front along the elemental's facing
+(`4*FRACUNIT + 3*(actor->info->radius + skullradius)/2`, both radii already plain map units here so
+the shared fixed-point scaling divides out) and 8 units above its feet, and nothing spawns if that
+point has no room — vanilla's `P_TryMove` check, which in real vanilla spawns the mobj and then
+kills it with 10000 damage, a difference with no visible consequence. There's also a real level-wide
+cap: vanilla refuses another skull once 20 already exist anywhere on the level (a plain count of
+living `MT_SKULL`, not a per-elemental tally), so a room full of elementals throttles itself;
+`spawnLostSoul` counts `posed` the same way.
 
 One detail is deliberately simplified: `A_PainShootSkull` hands the new skull `actor->target` and
 calls `A_SkullAttack` *synchronously*, so it launches already knowing where its target stands.
@@ -785,12 +791,13 @@ most one `chaseInterval` (~0.17s) of drift, not a different mechanic.
 **A killed pain elemental spawns three more** (`A_PainDie`), fired unconditionally on death
 regardless of what attack was under way — vanilla calls it from the death state sequence itself, not
 from anything AI-related. `ThingLayer.damage`'s death branch calls `spawnLostSoul` three times,
-fanned 90°/180°/270° around the elemental's last facing, subject to the same placement and cap rules.
-This is what makes killing one at melee range reliably worse than shooting it from a distance.
+fanned 90°/180°/270° around the elemental's last facing, subject to the same placement and cap
+rules. This is what makes killing one at melee range reliably worse than shooting it from a
+distance.
 
 `ThingLayer.damage`'s death branch checks one other thing right after: whether the monster that just
-died was the last living one of a doomednum `A_BossDeath` cares about, which on the right map fires a
-level-wide special (a lowering floor, an exit) rather than anything AI-related — see docs/death.md
+died was the last living one of a doomednum `A_BossDeath` cares about, which on the right map fires
+a level-wide special (a lowering floor, an exit) rather than anything AI-related — see docs/death.md
 § Boss death.
 
 ## Commander Keen
@@ -798,11 +805,11 @@ level-wide special (a lowering floor, an exit) rather than anything AI-related �
 `MT_KEEN` (doomednum 72) and `MT_BOSSBRAIN` (88) are the two `MONSTER_TYPES` members with **no
 `MONSTER_STATS` entry**, and that is not an omission: neither has a `seestate`, `meleestate` or
 `missilestate` in `info.c`, so neither wakes, moves, chases or attacks in vanilla either. They are
-`MF_SOLID|MF_SHOOTABLE` targets that stand still, flinch and die. `monsters/tables.ts`'s `INERT_SHOOTABLE`
-holds what a `MonsterStats` would otherwise carry for them — the real `mobjinfo.radius` (16 for both,
-not the 24-unit `MONSTER_HIT_RADIUS` fallback) and the two sounds `A_Pain`/`A_Scream` play — and
-`ThingLayer.damage` has a matching branch that skips pain rolls, retargeting, knockback and
-infighting wholesale.
+`MF_SOLID|MF_SHOOTABLE` targets that stand still, flinch and die. `monsters/tables.ts`'s
+`INERT_SHOOTABLE` holds what a `MonsterStats` would otherwise carry for them — the real
+`mobjinfo.radius` (16 for both, not the 24-unit `MONSTER_HIT_RADIUS` fallback) and the two sounds
+`A_Pain`/`A_Scream` play — and `ThingLayer.damage` has a matching branch that skips pain rolls,
+retargeting, knockback and infighting wholesale.
 
 The flinch is **unconditional** for both, which is exact rather than a simplification: Keen's
 `painchance` is 256 and the brain's 255, so vanilla stagger them on every hit or all but one in 256.
@@ -815,9 +822,9 @@ it keeps measuring `z` down from the live `ceilHeight` even as a corpse. Its dea
 table rather than the rotation-0-tail derivation the other death tables use — Keen's whole sprite is
 rotation-0, so that derivation has nothing to key on.
 
-**`A_KeenDie` is the payoff**: once every Keen on the level is dead it opens the tag-666 door. Unlike
-every `A_BossDeath` case it is *not* gated on `gamemap`, which is why `bossDeathTriggersFor` appends
-Keen's trigger to every map's table rather than putting it in the per-map switch — docs/death.md §
-Boss death. One accepted simplification: vanilla runs it on the eleventh death frame, this engine
-fires it at the death instant. The delay is purely cosmetic here, unlike the barrel's `A_Explode`
-delay, which is gameplay-relevant and *is* modelled.
+**`A_KeenDie` is the payoff**: once every Keen on the level is dead it opens the tag-666 door.
+Unlike every `A_BossDeath` case it is *not* gated on `gamemap`, which is why `bossDeathTriggersFor`
+appends Keen's trigger to every map's table rather than putting it in the per-map switch —
+docs/death.md § Boss death. One accepted simplification: vanilla runs it on the eleventh death
+frame, this engine fires it at the death instant. The delay is purely cosmetic here, unlike the
+barrel's `A_Explode` delay, which is gameplay-relevant and *is* modelled.

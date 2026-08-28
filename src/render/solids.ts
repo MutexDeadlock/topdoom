@@ -7,10 +7,16 @@ import { NO_SIDE, type DoomMap } from '../wad/map.ts';
 import { polygonCentroid, signedPolygonArea2 } from '../util/geom.ts';
 import type { SectorPoly } from './bsp.ts';
 
-/** How far outside an edge the side probe steps, in map units — far enough to clear the line, short enough to stay in the sector it borders. */
+/**
+ * How far outside an edge the side probe steps, in map units — far enough to clear the line, short
+ * enough to stay in the sector it borders.
+ */
 const PROBE_DISTANCE = 1;
 
-/** Rings smaller than this are mapping debris (a slit, a zero-width leftover), not something with a visible top. */
+/**
+ * Rings smaller than this are mapping debris (a slit, a zero-width leftover), not something with a
+ * visible top.
+ */
 const MIN_AREA = 4;
 
 /**
@@ -22,31 +28,26 @@ export interface SolidCap {
   points: Float64Array;
   /** Height the lid sits at: the lowest ceiling among the sectors the ring borders. */
   height: number;
-  /** Wall texture to draw it with — the ring's own, since a solid block's top is made of what its sides are. */
+  /**
+   * Wall texture to draw it with — the ring's own, since a solid block's top is made of what its
+   * sides are.
+   */
   texture: string;
   /** Sector the lid takes its light from, and the one whose ceiling set `height`. */
   sector: number;
-  /** A point just outside one edge, in the bordering sector — for resolving which subsector reveals the lid. */
+  /**
+   * A point just outside one edge, in the bordering sector — for resolving which subsector reveals
+   * the lid.
+   */
   probeX: number;
   probeY: number;
 }
 
 /**
- * Every closed ring of one-sided linedefs that has the map *outside* it.
- *
- * A one-sided linedef has a sector on its front and nothing at all behind it,
- * so a ring of them is either a room's outer wall (the sector is inside) or a
- * solid structure standing in a room (the sector is outside). Only the second
- * kind has a top to draw, and the two are told apart by probing just off an
- * edge's front side: land outside the ring and the sector is outside it.
- *
- * A ring is closed by the simple walk where every vertex joins exactly two
- * one-sided lines, and by `traceVoidFace` where a weld puts a third there.
- *
- * Only rings enclosing **no floor at all** are lidded: a building's outer wall
- * is also a ring with the map outside it, and the void there is just the wall's
- * thickness, so roofing it over would bury every room it contains. A solid
- * block encloses no subsector; a building encloses its rooms'.
+ * Every closed ring of one-sided linedefs that has the map *outside* it — the pillars, crates and
+ * lamp posts that need a lid. A ring with its sector inside is a room's outer wall, and one that
+ * encloses any floor is a building; both are dropped.
+ * docs/render.md § Solid structures has the three rules and why each holds.
  */
 export function findSolidCaps(map: DoomMap, polys: readonly SectorPoly[]): SolidCap[] {
   const linesAt = new Map<number, number[]>();
@@ -78,7 +79,10 @@ export function findSolidCaps(map: DoomMap, polys: readonly SectorPoly[]): Solid
   return caps;
 }
 
-/** The linedefs and vertexes of the closed ring `start` belongs to, or null where it is not a simple one. */
+/**
+ * The linedefs and vertexes of the closed ring `start` belongs to, or null where it is not a simple
+ * one.
+ */
 function traceRing(
   map: DoomMap,
   linesAt: Map<number, number[]>,
@@ -108,21 +112,13 @@ function traceRing(
 }
 
 /**
- * The same outline where a junction stopped the simple walk: a structure welded
- * to a wall, or to another structure, shares a vertex with a third one-sided
- * line, and which line continues *its* outline is then a real choice.
+ * The same outline where a junction stopped the simple walk — a structure welded to a wall, or to
+ * another structure, shares a vertex with a third one-sided line. Void lies to the left of every
+ * one-sided line, so keeping to one face means taking the **rightmost turn** at each vertex.
  *
- * A one-sided line has its sector on the right of `v1 -> v2`, so void is always
- * on the left of that direction, and a structure's outline is the void face
- * lying to the left of every line on it. Keeping to one face means taking the
- * **rightmost turn** available at each vertex: hugging the face on the left is
- * turning as far from it as the lines there allow. Take the leftmost instead and
- * a stub welded to the corner is followed out of the structure entirely.
- *
- * Only ever a fallback, never a replacement: over the committed WADs it
- * reproduces all 6505 rings the simple walk closes, line for line, but four
- * rings it closes are ones this declines — a ring wound inconsistently has no
- * single void side to follow. docs/render.md § Solid structures.
+ * Deliberately a fallback, never a replacement: a ring wound inconsistently has no single void
+ * side to follow, and the simple walk closes rings this declines.
+ * docs/render.md § Solid structures.
  */
 function traceVoidFace(map: DoomMap, outgoing: Map<number, number[]>, start: number): { lines: number[]; vertexes: number[] } | null {
   const lines: number[] = [];
@@ -175,10 +171,8 @@ function capFor(map: DoomMap, polys: readonly SectorPoly[], ring: { lines: numbe
   // normalisation below reads.
   const area = signedPolygonArea2(points) / 2;
   if (Math.abs(area) < MIN_AREA) return null;
-  // Which way round a ring comes out depends on the arbitrary direction the
-  // trace happened to start in, so normalise it: a lid is triangulated and
-  // wound like a floor, and a floor faces up only when its footprint is
-  // counter-clockwise in map space. Backwards, it would be culled away.
+  // The trace starts in an arbitrary direction, so normalise the winding: a lid is triangulated
+  // like a floor, and a floor faces up only where its footprint is counter-clockwise in map space.
   if (area < 0) reversePoints(points);
 
   // The lid takes the *lowest* ceiling the ring borders, so it can never float
@@ -212,13 +206,9 @@ function capFor(map: DoomMap, polys: readonly SectorPoly[], ring: { lines: numbe
 }
 
 /**
- * Whether any of the map's *floor* lies inside the ring, which makes it a
- * building's outer wall rather than a solid block. Asked of the subsectors
- * rather than of stray vertexes: a WAD's `VERTEXES` lump carries plenty that
- * belong to no linedef at all, and a neighbour's corner can sit inside a
- * diagonal block's bounding box without anything standing there.
- *
- * A subsector is convex, so the mean of its points is inside it.
+ * Whether any of the map's *floor* lies inside the ring, which makes it a building's outer wall
+ * rather than a solid block. The question goes to the subsectors and not to the raw vertexes —
+ * docs/render.md § Solid structures. A subsector is convex, so the mean of its points is inside it.
  */
 function enclosesFloor(polys: readonly SectorPoly[], points: Float64Array): boolean {
   let minX = Infinity;
@@ -240,7 +230,10 @@ function enclosesFloor(polys: readonly SectorPoly[], points: Float64Array): bool
   return false;
 }
 
-/** A point `PROBE_DISTANCE` off the front (right) side of the ring's longest edge — the side its sector is on. */
+/**
+ * A point `PROBE_DISTANCE` off the front (right) side of the ring's longest edge — the side its
+ * sector is on.
+ */
 function probeOutside(map: DoomMap, ring: { lines: number[]; vertexes: number[] }): { x: number; y: number } | null {
   let best = -1;
   let bestLength = 0;

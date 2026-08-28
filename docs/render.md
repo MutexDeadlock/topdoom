@@ -181,16 +181,16 @@ BOOMEDIT MAP01 and EPIC MAP03-05 have such leaves at all; the stock IWADs are un
 
 `SubSectorPoly.sector` is the *drawn* sector and `physicalSector` the one gameplay stands in; these
 two part company exactly here. Everything reading `sector` follows the remap — including
-`mapmesh.ts`'s mover meshes, which key their flats off it. A self-referencing sector that is itself a
-mover (an invisible lift is the stock example) therefore contributes no flats of its own to raise:
+`mapmesh.ts`'s mover meshes, which key their flats off it. A self-referencing sector that is itself
+a mover (an invisible lift is the stock example) therefore contributes no flats of its own to raise:
 its leaves are baked into the enclosing sector's static flats, which is what vanilla shows too,
 since none of them were ever drawn.
 
 ## Mesh building (`mapmesh.ts`)
 
 Walls are built per linedef from sidedefs: one-sided lines get their middle texture over the full
-sector height; two-sided lines get upper/lower steps plus an optional masked middle, following DOOM's
-pegging rules (`UPPER_UNPEGGED`/`LOWER_UNPEGGED`) for vertical alignment. Walls are drawn
+sector height; two-sided lines get upper/lower steps plus an optional masked middle, following
+DOOM's pegging rules (`UPPER_UNPEGGED`/`LOWER_UNPEGGED`) for vertical alignment. Walls are drawn
 single-sided (facing DOOM's defined front), which is what culls walls between the camera and the
 player and produces the open dollhouse look — no extra logic needed. `F_SKY1` flats are skipped.
 Each of those surfaces is then cut lengthwise into quads of at most `WALL_CHUNK_LEN`, so the
@@ -362,8 +362,9 @@ whole side undiced. `processLine`'s `holdsStill` asks it, against
 
 That set is deliberately **not** `movableSectors`. A sector leaves the static batch either because a
 special drives its height *or* because a switch texture on one of its walls has to be swapped, and
-only the first stops the dicing — `scanSectors` answers both in one pass (`game/specials/mapscan.ts`):
-`moving` is the first half alone, `movable` is it plus the switch hosts.
+only the first stops the dicing — `scanSectors` answers both in one pass
+(`game/specials/mapscan.ts`): `moving` is the first half alone, `movable` is it plus the switch
+hosts.
 
 The distinction is not a corner case. One switch on one sidedef pulls its whole sector out of the
 static batch, and on NUTS.WAD MAP01 that is the 12000-unit arena the player stands in *and* the pen
@@ -395,6 +396,14 @@ Three rules decide what a lid looks like, and each has a reason:
   under `F_SKY1`, so there is no ceiling flat to continue, and a solid block's top reading as the
   same material as its sides is what the shape wants anyway.
 
+A ring that encloses **any floor at all** is dropped on top of those three (`enclosesFloor`). A
+building's outer wall is also a ring with its sector outside it, and the void inside that one is
+just the wall's thickness, so roofing it would bury every room it contains: a solid block encloses
+no subsector, a building encloses its rooms'. The question goes to the *subsectors* and not to the
+raw vertexes — a WAD's `VERTEXES` lump carries plenty that belong to no linedef at all, and a
+neighbour's corner can sit inside a diagonal block's bounding box with nothing standing there. A
+subsector is convex, so the mean of its points is inside it.
+
 A ring whose every vertex joins exactly two one-sided lines is walked directly. A structure welded
 onto a wall, or onto another structure, shares a vertex with a third line, and there the walk has a
 real choice to make, so it falls back to tracing the **void face**: a one-sided line has its sector
@@ -417,9 +426,9 @@ Lids are built once, into the static batches only: a structure never moves, and 
 
 Each lid is emitted as one `FlatSurface` **per triangle** (`THREE.ShapeUtils.triangulateShape`),
 because these rings are frequently concave and `FlatFader` tests a surface's footprint with the
-convex-only `segmentMeetsConvexPolygon` (§ Flats). Triangles keep that contract, so a structure between the
-camera and the player dithers away exactly as a raised floor does — without that, capping them would
-trade a hole for something worse: a pillar you cannot see your own player behind.
+convex-only `segmentMeetsConvexPolygon` (§ Flats). Triangles keep that contract, so a structure
+between the camera and the player dithers away exactly as a raised floor does — without that,
+capping them would trade a hole for something worse: a pillar you cannot see your own player behind.
 
 ## Closed holes (`mapmesh.ts: closedHoleFill`)
 
@@ -493,8 +502,8 @@ shaders and into the sprite tints below. They are docs/lights.md; nothing in thi
 for them.
 
 
-Walls, flats and sprites are all tinted by a sector's light level through this one function, so
-it decides how the whole game reads. Two things about it are easy to get wrong, and both were shipped
+Walls, flats and sprites are all tinted by a sector's light level through this one function, so it
+decides how the whole game reads. Two things about it are easy to get wrong, and both were shipped
 bugs.
 
 *Which* sector's, though, is not always the surface's own: Boom's 213/261 hand a floor or a ceiling
@@ -507,34 +516,34 @@ docs/specials.md § Transferred lighting; what the renderer carries for them is
 sector's own light and nothing about this changes.
 
 **The ramp is vanilla's own `COLORMAP`, measured from the lump rather than modelled.** Vanilla never
-multiplies a colour by the light level: it picks one of `COLORMAP`'s 32 rows and remaps every palette
-index through it, and that ramp is nothing like linear in light level. `COLORMAP_GAIN` is the mean
-linear-luminance ratio of each row, measured across the PLAYPAL colours — the same "confirm it
-against the real lump" discipline as the sprite and death-frame tables. DOOM.WAD's and DOOM2.WAD's
-COLORMAPs are byte-identical and Freedoom's is within 0.003, so one baked table serves all three;
-per-colour spread is ~12% of the mean (the ramp desaturates slightly as it darkens), close enough for
-a single scalar per row. An earlier hand-tuned curve (`pow(l, 0.85) * 0.9 + 0.1`) was both far too
-bright and far too flat.
+multiplies a colour by the light level: it picks one of `COLORMAP`'s 32 rows and remaps every
+palette index through it, and that ramp is nothing like linear in light level. `COLORMAP_GAIN` is
+the mean linear-luminance ratio of each row, measured across the PLAYPAL colours — the same "confirm
+it against the real lump" discipline as the sprite and death-frame tables. DOOM.WAD's and
+DOOM2.WAD's COLORMAPs are byte-identical and Freedoom's is within 0.003, so one baked table serves
+all three; per-colour spread is ~12% of the mean (the ramp desaturates slightly as it darkens),
+close enough for a single scalar per row. An earlier hand-tuned curve (`pow(l, 0.85) * 0.9 + 0.1`)
+was both far too bright and far too flat.
 
 Vanilla builds the row index as `startmap - scale/DISTMAP` (`r_main.c`), where
 `startmap = (15 - lightnum) * 4` and the subtracted term grows as a surface gets *closer* — so in
 vanilla the light level really sets how fast a surface falls off with distance, not a flat
 brightness. This engine has no distance lighting (the camera hangs at a near-constant distance from
 everything it draws), so the ramp is sampled once at a fixed reference distance: **`REFERENCE_STEPS`
-is that subtracted term, and it is the knob to turn if the game reads too dark or too bright.** 4
-(≈ a 300-unit viewing distance) puts a uniform ~0.12 of display brightness between adjacent light
-segments across light 112-208, which is 88% of every sector in the stock IWADs. Both ends necessarily
-saturate — vanilla spends 4 rows per light segment, so its 16 segments want 64 rows where only 32
-exist. That is vanilla's ramp rather than a shortcut; it just never shows up in vanilla, where
-distance fills the range back in.
+is that subtracted term, and it is the knob to turn if the game reads too dark or too bright.** 4 (≈
+a 300-unit viewing distance) puts a uniform ~0.12 of display brightness between adjacent light
+segments across light 112-208, which is 88% of every sector in the stock IWADs. Both ends
+necessarily saturate — vanilla spends 4 rows per light segment, so its 16 segments want 64 rows
+where only 32 exist. That is vanilla's ramp rather than a shortcut; it just never shows up in
+vanilla, where distance fills the range back in.
 
-**Light is quantized to DOOM's own 16 segments (`light >> 4`)**, so two sectors whose levels differ by
-less than 16 are genuinely identical on screen, as in vanilla. Every stock map's sector lights are
-multiples of 16 anyway. This is also what makes the fake-contrast offset work out: `addWall` passes
-±16, which after the shift is exactly the ±1 *segment* nudge vanilla applies (`lightnum--`/
-`lightnum++`). Vanilla **darkens** east-west walls and **brightens** north-south ones (`r_segs.c:
-R_StoreWallRange`) so corners stay legible under flat sector lighting — this engine had that sign
-inverted for a long time.
+**Light is quantized to DOOM's own 16 segments (`light >> 4`)**, so two sectors whose levels differ
+by less than 16 are genuinely identical on screen, as in vanilla. Every stock map's sector lights
+are multiples of 16 anyway. This is also what makes the fake-contrast offset work out: `addWall`
+passes ±16, which after the shift is exactly the ±1 *segment* nudge vanilla applies (`lightnum--`/
+`lightnum++`). Vanilla **darkens** east-west walls and **brightens** north-south ones
+(`r_segs.c: R_StoreWallRange`) so corners stay legible under flat sector lighting — this engine had
+that sign inverted for a long time.
 
 **The returned value is linear-light, not a display value.** Vertex colours (and
 `material.color.setScalar`, for non-batched sprites) are consumed as-is by the shader, and the
@@ -555,25 +564,26 @@ scheme meant to be hand-retuned later.
 
 **Every sprite reads its light live, never a cached snapshot.** Sector light is mutable at runtime
 (blinking/strobing/glowing sectors, switch-triggered changes — `game/specials.ts`'s
-`SpecialsController`), and geometry always reflects that immediately via `MoverGeometry.recolorSector`. A
-sprite must match: `game/things/defs.ts`'s `PosedThing` has no `light` field precisely so nothing can cache
-one — every map thing (items, decorations, corpses, barrels, monster drops, dormant or actively
-chasing monsters alike) reads `p.sector?.light` at the moment it's batched, not at spawn time. The
-same discipline applies to anything that moves through space across a frame: `ProjectileLayer.update`
-re-resolves `world.sectorAt` at the projectile's *current* position every frame rather than reusing
-its launch-sector light, and the arch-vile's warning flame (`SpriteFxLayer`'s `followTargetId` case)
-re-resolves it every time it re-derives its position from the target it's tracking. A stationary
-one-shot effect (blood, puffs, teleport fog, impact explosions) only needs the single lookup `spawn`
-already does, since it never moves and its lifetime is short enough that a mid-flight relight isn't
-worth chasing.
+`SpecialsController`), and geometry always reflects that immediately via
+`MoverGeometry.recolorSector`. A sprite must match: `game/things/defs.ts`'s `PosedThing` has no
+`light` field precisely so nothing can cache one — every map thing (items, decorations, corpses,
+barrels, monster drops, dormant or actively chasing monsters alike) reads `p.sector?.light` at the
+moment it's batched, not at spawn time. The same discipline applies to anything that moves through
+space across a frame: `ProjectileLayer.update` re-resolves `world.sectorAt` at the projectile's
+*current* position every frame rather than reusing its launch-sector light, and the arch-vile's
+warning flame (`SpriteFxLayer`'s `followTargetId` case) re-resolves it every time it re-derives its
+position from the target it's tracking. A stationary one-shot effect (blood, puffs, teleport fog,
+impact explosions) only needs the single lookup `spawn` already does, since it never moves and its
+lifetime is short enough that a mid-flight relight isn't worth chasing.
 
 ## Wall occlusion fading (`occlusion.ts`, `textures.ts`)
 
 Single-sided back-face culling only removes walls facing away from the camera; it does nothing about
 a wall that legitimately faces the camera but sits directly on the camera→player sightline (a pillar
-in front of the player). `WallFader` tests every wall quad's 2D footprint against that sightline each
-frame and fades the ones that cross it, rather than the coarser fix of drawing the player on top of
-everything, which would also show it through walls that genuinely separate it from the camera.
+in front of the player). `WallFader` tests every wall quad's 2D footprint against that sightline
+each frame and fades the ones that cross it, rather than the coarser fix of drawing the player on
+top of everything, which would also show it through walls that genuinely separate it from the
+camera.
 
 ### The fade is a hole, not a wall
 
@@ -632,10 +642,10 @@ and the wall behind it is one shape rather than two. `holeAlpha` takes the radiu
 cores at `FADE_CORE_FRACTION` of it, so a target that opens a narrower hole (§ Which sightlines a
 wall fades for) opens the same shape scaled rather than a second one. That fraction is where the
 core is actually set: `FADE_CORE` is the player's radius *through* it, exported for the tests, so
-the ramp and the constant they assert against cannot drift apart. They are feel dials in the strict sense: `tests/render/occlusion-fade.test.ts`
-**imports them and sizes its fixtures from them** rather than mirroring their values, so either can
-be retuned without a test going red. A test that reddens on a retune is pinning the dial, and is a
-bug in the test.
+the ramp and the constant they assert against cannot drift apart. They are feel dials in the strict
+sense: `tests/render/occlusion-fade.test.ts` **imports them and sizes its fixtures from them**
+rather than mirroring their values, so either can be retuned without a test going red. A test that
+reddens on a retune is pinning the dial, and is a bug in the test.
 
 **One relationship is not optional, and was learned the hard way.** Alpha only exists at chunk
 corners, so a crossing lands `WALL_CHUNK_LEN / 2` from the nearest one at worst, and a `FADE_CORE`
@@ -771,7 +781,8 @@ the whole map. Deriving that box per fader instead would have cost a walk of the
 
 `WallFader.update`/`FlatFader.update` still run both halves over the fader's own bag — the right
 thing for a fader that is the only one on the map, which is what the tests build. Nothing in `src/`
-calls them, so that bag is allocated on first use: a level's thousands of mover faders never take it.
+calls them, so that bag is allocated on first use: a level's thousands of mover faders never take
+it.
 
 Measured on Sunder 2512 MAP19 (340,372 wall quads, 54,388 fans, 748 mover meshes) at the player
 start with 25 targets, medians of 300: sharing costs the wall half 0.46 → 0.54 ms, which is the
@@ -782,14 +793,14 @@ goes 0.87 → 0.45 ms on the bag box, so the pass as a whole comes out ahead: 1.
 ### The target is the billboard
 
 **Both faders aim at an upright rectangle, not at a point.** A thing is drawn as a plane fixed
-upright in the world that only turns about its vertical axis (`SpriteMaterialCache`, docs/sprites.md),
-and `FadeTarget` says so: `z` is the middle of that rectangle and `halfHeight` how far it reaches
-either side. Two rules follow, and both were bugs before they were rules — `BOOMEDIT.WAD` MAP01 at
-(-1664, 713), looking south over the scrolling-texture block at y 768..800, is the case they were
-found on.
+upright in the world that only turns about its vertical axis (`SpriteMaterialCache`,
+docs/sprites.md), and `FadeTarget` says so: `z` is the middle of that rectangle and `halfHeight` how
+far it reaches either side. Two rules follow, and both were bugs before they were rules —
+`BOOMEDIT.WAD` MAP01 at (-1664, 713), looking south over the scrolling-texture block at y 768..800,
+is the case they were found on.
 
-**Every target's rectangle is its own body.** A monster carries its `mobjinfo.height` — 56 for an imp
-to 110 for a cyberdemon — from `MONSTER_STATS` through `PosedThing.bodyHeight` and out of
+**Every target's rectangle is its own body.** A monster carries its `mobjinfo.height` — 56 for an
+imp to 110 for a cyberdemon — from `MONSTER_STATS` through `PosedThing.bodyHeight` and out of
 `ThingLayer.awakeMonsters` as `StandingBody.height`; the player gets `PLAYER_HEIGHT`. Either way
 `FadeTarget.z` is the middle of that span and `halfHeight` reaches from there to the feet and to the
 crown, so the wedge covers the body exactly. It is the same centre-and-half-extent `shotPath` locks
@@ -798,21 +809,22 @@ DEHACKED-aware for free: a patch that retunes a height moves the fade with it. O
 player-sized band was the earlier shape, and it failed the very case this section exists for — a lid
 covering only a cyberdemon's head sits well above where that band reached.
 
-The height is the **collision** height, not the drawn sprite's. `CachedSprite.quad.height` is what the
-billboard measures on screen and is often the taller of the two, but `mobjinfo.height` is what every
-other "where is this body" question in the engine already answers with, and a fade disagreeing with
-the shot that follows it would be worse than one running a few units short.
+The height is the **collision** height, not the drawn sprite's. `CachedSprite.quad.height` is what
+the billboard measures on screen and is often the taller of the two, but `mobjinfo.height` is what
+every other "where is this body" question in the engine already answers with, and a fade disagreeing
+with the shot that follows it would be worse than one running a few units short.
 
 **The cut plane is vertical.** Nothing behind the plane an upright sprite stands in can draw over
 that sprite, so a corner past it is skipped; the plane is `TargetPlanes`' `(nx, ny, d0)`, the
 camera→target offset *in plan*. A plane tilted to face the camera instead leans back over the target
 by the camera's own pitch, so geometry that is well past the target but tall counts as in front of
-it: at that MAP01 spot the boundary wall 73 units *behind* the player (linedef 148, `BROWN1`) had its
-top corners 11 units on the camera side of a tilted plane, and dithered away to reveal the void
-behind it. The normal is deliberately **not** unit length: every test compares two dot products taken
-against that same normal, so scaling it changes neither side, and skipping the normalise matters at
-the thousand-odd mover faders a frame refills. Being vertical, it also costs one dot product per quad
-*end* rather than one per corner, since a quad's four corners share their two ends' answer.
+it: at that MAP01 spot the boundary wall 73 units *behind* the player (linedef 148, `BROWN1`) had
+its top corners 11 units on the camera side of a tilted plane, and dithered away to reveal the void
+behind it. The normal is deliberately **not** unit length: every test compares two dot products
+taken against that same normal, so scaling it changes neither side, and skipping the normalise
+matters at the thousand-odd mover faders a frame refills. Being vertical, it also costs one dot
+product per quad *end* rather than one per corner, since a quad's four corners share their two ends'
+answer.
 
 **And the sightline is a wedge, not a ray** — from the eye to the whole rectangle, so it is the
 sprite's own half-height thick at the target and nothing at the camera. `WallFader` counts a
@@ -821,9 +833,9 @@ crossing where a quad's `[botH, topH]` meets that wedge rather than the centre r
 target for the sprite's top, furthest for its feet — and pierces where that span meets a fan
 (`segmentMeetsConvexPolygon`), rather than at the single point the centre ray lands on. Without it
 anything covering only the upper half of a sprite is invisible to the fade: at that MAP01 spot, with
-the camera around 40° off vertical, the lid on top of the block (§ Solid structures) cut the player's
-head off while the wall under it dissolved, because the ray to the player's *middle* passes under
-that lid and only the ray to their head goes through it.
+the camera around 40° off vertical, the lid on top of the block (§ Solid structures) cut the
+player's head off while the wall under it dissolved, because the ray to the player's *middle* passes
+under that lid and only the ray to their head goes through it.
 
 The pierce is still filed at the point the centre ray lands on, not at whichever end of the span a
 fan happened to catch: the dedup that lets one platform split into many fans file a single pierce
@@ -834,8 +846,8 @@ Neither rule costs anything overall. Measured on the same EPIC.WAD MAP05 map the
 taken on, at 49 targets, medians of 200 updates: `WallFader.update` 0.86 → 0.76 ms — the vertical
 plane is two multiplies per *quad* cheaper (the old tilted one already shared its height term across
 a quad's four corners), and a quad's four corners now share its two ends' answer — against
-`FlatFader.update` 0.062 → 0.108 ms for the span, which pays for the two extra crossings and the edge
-walk that replaces a point test.
+`FlatFader.update` 0.062 → 0.108 ms for the span, which pays for the two extra crossings and the
+edge walk that replaces a point test.
 
 Three things keep that second figure from being worse, and all three are load-bearing where the
 per-fan loop runs candidates × targets a frame. The three heights the span needs **share one
@@ -843,9 +855,9 @@ reciprocal each per target**, so the per-fan work is a multiply rather than a di
 bounding-circle reject **runs on the span's parameters, not its endpoints** — a fan's centre is
 projected onto the camera→target line and clamped to `[tFar, tNear]`, which is seven multiplies and
 no divide, and means a rejected fan never builds the four coordinates only the footprint walk wants.
-And each fan's **winding is memoised** in `buildLayout` beside its bound circle (`windSign`), because
-`segmentMeetsConvexPolygon` needs to know it and a shoelace pass per fan per target per frame would
-re-derive it over rings that only a mover rebuild reshapes.
+And each fan's **winding is memoised** in `buildLayout` beside its bound circle (`windSign`),
+because `segmentMeetsConvexPolygon` needs to know it and a shoelace pass per fan per target per
+frame would re-derive it over rings that only a mover rebuild reshapes.
 
 ### Which sightlines a wall fades for
 
@@ -909,14 +921,14 @@ MAP05 the vines, rails and windows stay exempt while `ESTEP02`, `EBIGBRIK` and t
 mapper's fake walls start fading. It is not free: at that spot, fading goes 0.98 → 1.31 ms and the
 frame 3.6 → 4.5 ms CPU, which is what a wall that large joining in costs.
 
-The lookup is per line, but the test it feeds has to be a
-**per-quad** check, not a per-*line* one — an earlier version gated on `World.blocksSight(line)` for
-the whole line, which wrongly also suppressed fading for that line's upper/lower step quads (they sit
-*outside* the opening — the riser exposed where the neighbouring floor/ceiling falls short — and are
-genuinely solid regardless). DOOM2 MAP01's east imp closet (sector 38) is the concrete case: its
-fence's masked-middle quad used to fade to near-invisible the moment the imp inside woke, reading as
-the closet wall vanishing rather than "you can see the imp through the bars." `FlatFader` has no
-equivalent gate — floors have no comparable "visually-solid-but-actually-passable" case.
+The lookup is per line, but the test it feeds has to be a **per-quad** check, not a per-*line* one —
+an earlier version gated on `World.blocksSight(line)` for the whole line, which wrongly also
+suppressed fading for that line's upper/lower step quads (they sit *outside* the opening — the riser
+exposed where the neighbouring floor/ceiling falls short — and are genuinely solid regardless).
+DOOM2 MAP01's east imp closet (sector 38) is the concrete case: its fence's masked-middle quad used
+to fade to near-invisible the moment the imp inside woke, reading as the closet wall vanishing
+rather than "you can see the imp through the bars." `FlatFader` has no equivalent gate — floors have
+no comparable "visually-solid-but-actually-passable" case.
 
 ### Flats
 
@@ -979,10 +991,10 @@ it stays. Repro: wade into any BOOMEDIT MAP01 pool and watch the water break up
 overhead.
 
 **`awakeMonsters` only returns monsters fog of war is actually drawing** (`p.actor.mesh.visible`,
-which `ThingLayer.update` sets from `fogAlphaOf` earlier in the same frame). A monster in a subsector
-the player has never had sight of isn't rendered at all, so fading the wall in front of it reveals an
-empty dark room and nothing else — concretely, a MAP01 secret compartment's wall dithered away
-whenever the imps sealed inside woke, with the imps still invisible. This is also why
+which `ThingLayer.update` sets from `fogAlphaOf` earlier in the same frame). A monster in a
+subsector the player has never had sight of isn't rendered at all, so fading the wall in front of it
+reveals an empty dark room and nothing else — concretely, a MAP01 secret compartment's wall dithered
+away whenever the imps sealed inside woke, with the imps still invisible. This is also why
 `WallFader.update` needs no "only fade if this is the *sole* wall in the way" rule: whether fading
 reveals anything is settled here, upstream. A blocker-counting version was written first for this
 same symptom and fixed nothing — that wall had only one blocker; its monsters simply weren't drawn.
@@ -992,11 +1004,11 @@ texture across the whole map, three.js sorts transparent objects back-to-front p
 mesh spanning the entire level that order is meaningless — plus both meshes still write depth by
 default, so whichever draws first can win the depth test and blank out the other. `MaterialBank`
 instead injects a fragment-shader snippet (`onBeforeCompile`) that discards a per-pixel fraction of
-fragments using interleaved-gradient-noise dithering, keyed off a per-vertex alpha `WallFader` writes
-into the 4th colour channel. That keeps walls in the ordinary opaque,
-depth-tested/written pass — no batching or sort-order concerns, just fewer pixels drawn. `holes`
-textures (masked middles) already alpha-test on the *combined* texture × vertex alpha, so a faded
-grate discards outright instead of dithering.
+fragments using interleaved-gradient-noise dithering, keyed off a per-vertex alpha `WallFader`
+writes into the 4th colour channel. That keeps walls in the ordinary opaque, depth-tested/written
+pass — no batching or sort-order concerns, just fewer pixels drawn. `holes` textures (masked
+middles) already alpha-test on the *combined* texture × vertex alpha, so a faded grate discards
+outright instead of dithering.
 
 Fade amount is exponentially smoothed (`FADE_SPEED`) so walls don't pop, but a pure exponential lerp
 never actually reaches its target — `update` snaps once the remaining gap drops below a threshold,
@@ -1092,8 +1104,8 @@ floor).
 
 Mechanically it is one extra `FlatSurface` reusing the same subsector index, so fog of war and
 `FlatFader` need no notion of it, and the surface fades like any other raised floor. What it does
-need is a rebuild edge: a water sector shares no linedef with its control sector, so
-`MoverGeometry` links the two explicitly (§ Wall occlusion fading's product is otherwise unaffected).
+need is a rebuild edge: a water sector shares no linedef with its control sector, so `MoverGeometry`
+links the two explicitly (§ Wall occlusion fading's product is otherwise unaffected).
 
 **242 reaches the walls too**, and not only the flats: `R_FakeFlat` replaces the drawn *ceiling* as
 well as the floor, and `r_bsp.c: R_AddLine` runs it over the backsector of every seg. So a
@@ -1232,14 +1244,14 @@ found through `FlatSurface`'s `sector`/`isCeiling`. A flat fan is an arbitrary-l
 rather than a fixed quad, so its untouched UVs are kept whole in a `Float32Array` and every frame's
 offset is added to that base.
 
-**Static-batch geometry only** — unlike `recolorSector`, which also reaches mover meshes
-(§ Relighting mover geometry), this indexes the static batch alone, so a sector that both scrolls and
-moves keeps its mover mesh unscrolled. In practice this excludes almost nothing real: a mapper puts a
-scroller on decorative or conveyor geometry, rarely on a sector that also has to move.
+**Static-batch geometry only** — unlike `recolorSector`, which also reaches mover meshes (§
+Relighting mover geometry), this indexes the static batch alone, so a sector that both scrolls and
+moves keeps its mover mesh unscrolled. In practice this excludes almost nothing real: a mapper puts
+a scroller on decorative or conveyor geometry, rarely on a sector that also has to move.
 
 The accumulated offset is wrapped to `[0, 1)` before being written into the single-precision `uv`
-buffer, purely to avoid float32 precision loss over a long session — `RepeatWrapping` already renders
-an unwrapped UV outside `[0, 1]` correctly, so the wrap isn't needed for correctness.
+buffer, purely to avoid float32 precision loss over a long session — `RepeatWrapping` already
+renders an unwrapped UV outside `[0, 1]` correctly, so the wrap isn't needed for correctness.
 
 Each indexed surface remembers the wrapped offset it last wrote and **skips both the rewrite and the
 re-upload when it hasn't changed** — the same shape as `WallFader.commit`. That is not a
@@ -1292,10 +1304,10 @@ for free. `MaterialBank.has` gates this to names some batch actually uses, so an
 on-screen name in the current map costs nothing beyond the initial WAD-order lookup.
 
 **Per-frame offset is counted from the sequence's own start (`i` = 0 at the first name), not
-vanilla's absolute internal texture-table index.** Real vanilla computes `pic = basepic +
-((leveltime/speed + i) % numpics)` with `i` ranging over *absolute* texture indices, so a sequence's
-apparent starting phase depends on where its first texture happens to land in vanilla's internal
-table — a WAD-load-order artifact, not something meaningful to reproduce (this engine doesn't build
-that same absolute index space at all). Using the in-sequence offset instead changes only that
-arbitrary phase, never the cycle rate or frame order, and both are equally arbitrary to a player with
-nothing to compare against.
+vanilla's absolute internal texture-table index.** Real vanilla computes
+`pic = basepic + ((leveltime/speed + i) % numpics)` with `i` ranging over *absolute* texture
+indices, so a sequence's apparent starting phase depends on where its first texture happens to land
+in vanilla's internal table — a WAD-load-order artifact, not something meaningful to reproduce (this
+engine doesn't build that same absolute index space at all). Using the in-sequence offset instead
+changes only that arbitrary phase, never the cycle rate or frame order, and both are equally
+arbitrary to a player with nothing to compare against.

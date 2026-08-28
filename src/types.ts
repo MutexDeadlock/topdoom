@@ -3,21 +3,13 @@
  * spelled out inline (`{ x: number; y: number; z: number }`) in a dozen
  * signatures each, or passed as loose scalar parameter runs.
  *
- * These are **structural**, deliberately: `Player`, `PosedThing`, `MonsterBody`
- * and the WAD's own `Thing` all already carry `x`/`y`(/`z`) fields, so they
- * satisfy `Pos2`/`Pos3` without any conversion or allocation at a call site.
- * That's what makes it safe to take one of these as a parameter even in
- * per-frame code — the caller passes the object it already has.
+ * These are **structural**, deliberately: `Player`, `PosedThing`, `MonsterBody` and the WAD's own
+ * `Thing` all already carry `x`/`y`(/`z`), so they satisfy `Pos2`/`Pos3` with no conversion and no
+ * allocation at a call site — which is what makes one safe to take even in per-frame code.
  *
- * Coordinates here are always **DOOM map space** (x east, y north, z up =
- * feet height), never three.js space — `render/mapmesh.ts`'s
- * `doomToWorld`/`worldToDoom` pair is the one place the two meet, and
- * `THREE.Vector3` is used on the other side of it. Nothing in this file is a direction or a velocity: those are stored
- * as separate `velX`/`velY`/`velZ` fields by everything that has them, and
- * headings are plain `angle` numbers.
- *
- * Cross-cutting, so there is no `docs/` page of its own: the rule these follow — including when
- * to take one as a parameter and when to stay on scalars — is CLAUDE.md § Position types.
+ * Cross-cutting, so there is no `docs/` page of its own. The rest of the rule — always DOOM map
+ * space, never a direction or a velocity, and when to take one rather than stay on scalars — is
+ * CLAUDE.md § Position types.
  */
 
 /** A point on the DOOM map plane. */

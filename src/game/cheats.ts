@@ -56,9 +56,12 @@ function startsPartway(code: string, buffer: string): boolean {
  * level exit doesn't clear.
  */
 export class Cheats {
-  /** Vanilla's `CF_GODMODE`: read by `game.ts: damagePlayer`. */
+  /** Damage is refused outright — vanilla's `CF_GODMODE`, read by `game.ts: damagePlayer`. */
   god = false;
-  /** Vanilla's `MF_NOCLIP`: pushed onto `Player.noclip` at the top of every tic, which is what every reader goes through. */
+  /**
+   * Walls and things stop blocking — vanilla's `MF_NOCLIP`, pushed onto `Player.noclip` at the top
+   * of every tic, which is what every reader goes through.
+   */
   noclip = false;
   private buffer = '';
 
@@ -131,7 +134,10 @@ export class Cheats {
     return { god: this.god, noclip: this.noclip };
   }
 
-  /** A save from before cheats existed — or one taken with none on — carries nothing, and means both off. */
+  /**
+   * A save from before cheats existed — or one taken with none on — carries nothing, and means both
+   * off.
+   */
   restore(saved?: CheatSnapshot): void {
     this.god = saved?.god ?? false;
     this.noclip = saved?.noclip ?? false;

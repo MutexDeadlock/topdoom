@@ -63,12 +63,18 @@ export class ProjectileLayer {
     this.audio = audio;
   }
 
-  /** Drops everything still in flight — a missile that outlives its level would otherwise arrive in the next one. */
+  /**
+   * Drops everything still in flight — a missile that outlives its level would otherwise arrive in
+   * the next one.
+   */
   beginLevel(): void {
     this.projectiles = [];
   }
 
-  /** Every shot still in flight, minus its animator (rebuilt from `sprite` on restore) — for a savegame. */
+  /**
+   * Every shot still in flight, minus its animator (rebuilt from `sprite` on restore) — for a
+   * savegame.
+   */
   snapshot(): ProjectileSnapshot[] {
     return this.projectiles.map(({ anim: _anim, ...rest }) => structuredClone(rest));
   }
@@ -94,12 +100,9 @@ export class ProjectileLayer {
    * slopes toward the locked-on monster's mid-body; `shotPath` resolves both
    * the slope it settles on and where it actually gets to.
    *
-   * **Hit-or-miss is settled here only for a hitscan pellet** — an instant line
-   * has no travel time to change its mind about. A projectile leaves with no
-   * target at all and re-tests what it has run into every frame
-   * (`ProjectileLayer.update`), exactly as a monster's missile does; the lock
-   * gives it a slope and nothing else. See docs/combat.md § How a shot deals
-   * damage.
+   * **Hit-or-miss is settled here only for a hitscan pellet.** A projectile leaves with no target
+   * at all and re-tests what it has run into every frame (`ProjectileLayer.update`); the lock gives
+   * it a slope and nothing else. See docs/combat.md § How a shot deals damage.
    *
    * `lineAim` is the other thing aim can lock onto: a point on a shoot-triggered
    * wall (`SpecialsController.pickShootTarget`). It supplies the slope the same
@@ -225,9 +228,8 @@ export class ProjectileLayer {
       speed: shot.speed,
       // The wall, never the target: like `P_SpawnMissile`, the lock fixed this
       // shot's slope at launch and the thing then flies on under its own
-      // momentum. Ending it at the launch-time distance to the target is what
-      // made a BFG ball detonate in mid-air wherever a monster had been
-      // standing half a second earlier.
+      // momentum. Ending it at the launch-time distance to the target detonates
+      // a BFG ball in mid-air wherever a monster stood half a second earlier.
       maxDist: path.dist,
       traveled: 0,
       sprite: shot.sprite,

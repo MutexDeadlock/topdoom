@@ -38,7 +38,10 @@ export const RNDTABLE = new Uint8Array([
   120, 163, 236, 249,
 ]);
 
-/** `prndindex` and `rndindex`. Module-level like vanilla's own globals — see docs/random.md § Why the cursors are global. */
+/**
+ * The two cursors into the table, module-level exactly as vanilla's `prndindex`/`rndindex` are —
+ * docs/random.md § Why the cursors are global.
+ */
 let prndindex = 0;
 let rndindex = 0;
 
@@ -88,7 +91,10 @@ export function setRandomCursors(cursors: { p: number; m: number }): void {
   rndindex = cursors.m & 0xff;
 }
 
-/** `((P_Random() % sides) + 1) * multiplier` — vanilla's own damage-roll shape. 0 sides means "always 0". */
+/**
+ * `((P_Random() % sides) + 1) * multiplier` — vanilla's own damage-roll shape. 0 sides means
+ * "always 0".
+ */
 export function rollDamage(sides: number, multiplier: number): number {
   return sides > 0 ? ((pRandom() % sides) + 1) * multiplier : 0;
 }

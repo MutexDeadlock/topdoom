@@ -302,14 +302,15 @@ export function segmentMeetsConvexPolygon(
 const CLIP_EPS = 1e-6;
 
 /**
- * Twice the shoelace sum of a flat `[x0,y0, x1,y1, …]` ring — that is, the **signed** area: positive
- * counter-clockwise, negative clockwise, and its magnitude the area. Fewer than three points has
- * none.
+ * Twice the shoelace sum of a flat `[x0,y0, x1,y1, …]` ring — that is, the **signed** area:
+ * positive counter-clockwise, negative clockwise, and its magnitude the area. Fewer than three
+ * points has none.
  *
- * The one shoelace in the tree: `render/solids.ts` asks it which way a ring winds, `render/mapmesh.ts`
- * asks how much a diced cell covers, and the tests assert on both. Returning the signed value
- * un-halved keeps every caller's own convention one operation away (`Math.abs`, `/ 2`) rather than
- * making four bodies of the same arithmetic that differ only in which they applied.
+ * The one shoelace in the tree: `render/solids.ts` asks it which way a ring winds,
+ * `render/mapmesh.ts` asks how much a diced cell covers, and the tests assert on both. Returning
+ * the signed value un-halved keeps every caller's own convention one operation away (`Math.abs`,
+ * `/ 2`) rather than making four bodies of the same arithmetic that differ only in which they
+ * applied.
  */
 export function signedPolygonArea2(poly: ArrayLike<number>): number {
   const n = Math.floor(poly.length / 2);

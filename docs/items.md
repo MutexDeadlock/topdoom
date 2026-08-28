@@ -1,7 +1,7 @@
 # Pickups, inventory and powerups
 
-`src/game/inventory.ts`, `src/game/things.ts: ThingLayer.tryPickup`, `src/game/specials/sectoreffects.ts`,
-`src/ui/hud/screeneffects.ts`, `src/game.ts`
+`src/game/inventory.ts`, `src/game/things.ts: ThingLayer.tryPickup`,
+`src/game/specials/sectoreffects.ts`, `src/ui/hud/screeneffects.ts`, `src/game.ts`
 
 What any of this *looks like* on screen — the HUD panels reading off `Inventory`, the powerup strip,
 the screen tints the powers drive — is docs/hud.md.
@@ -13,12 +13,13 @@ plain struct owned by `Game` in `game.ts`, **not by `Player`** — nothing about
 movement needs it, and keeping it separate is what makes `finishLevel` a one-line call at map load
 rather than something `Player`'s constructor has to reason about.
 
-Weapon ownership and ammo land in `Inventory.weapons`/`Inventory.ammo`, read by `game/weapons.ts` for
-selection and firing. `Inventory.currentWeapon` lives here for the same reason the rest of the struct
-does: `game.ts` owns it, and the HUD reads it off the same struct it already reads health/ammo/keys
-from. Picking up a weapon **not already owned** selects it, matching `P_GiveWeapon`; re-picking one
-you have doesn't yank the selection away. `fist` and `pistol` are in `WeaponId` even though neither
-has a map pickup — every game starts owning both, and they still need ids to be `currentWeapon`-able.
+Weapon ownership and ammo land in `Inventory.weapons`/`Inventory.ammo`, read by `game/weapons.ts`
+for selection and firing. `Inventory.currentWeapon` lives here for the same reason the rest of the
+struct does: `game.ts` owns it, and the HUD reads it off the same struct it already reads
+health/ammo/keys from. Picking up a weapon **not already owned** selects it, matching
+`P_GiveWeapon`; re-picking one you have doesn't yank the selection away. `fist` and `pistol` are in
+`WeaponId` even though neither has a map pickup — every game starts owning both, and they still need
+ids to be `currentWeapon`-able.
 
 Both armor shirts and the megasphere go through `P_GiveArmor(class)`, whose amount is
 `armortype*100` and follows from the class — so a `Misc` patch moving `Green`/`Blue Armor Class`
@@ -63,8 +64,8 @@ checkpoint written when the level was entered, which under this setting *is* a p
 ## Collecting things
 
 Removing a picked-up item from the world is `ThingLayer`'s job, not `Inventory`'s: each posed thing
-already carries its doomednum and position, so `tryPickup(from, to, blockdist, consume)` tests reach and
-calls back into `applyPickup`, hiding the mesh and marking it `picked` only if `consume` reports
+already carries its doomednum and position, so `tryPickup(from, to, blockdist, consume)` tests reach
+and calls back into `applyPickup`, hiding the mesh and marking it `picked` only if `consume` reports
 the pickup actually happened. `picked` short-circuits `ThingLayer.update` before it touches
 fog-of-war visibility — without that, a subsector coming into view after its item was picked would
 make `fogAlphaOf` flip the permanently-hidden mesh back to visible.
@@ -104,21 +105,22 @@ at the cost of a callback in the engine's hottest predicate for every mover
 carries `MF_PICKUP` and `PIT_CheckThing` runs `P_TouchSpecialThing` for it, which credits
 `toucher->player` — the console player, for every doll. `VoodooDolls.update` therefore takes a
 `collect` callback beside its `cross` one, and fires it on the same move `slideMove` just made, with
-the same two endpoints the player's own pass uses. Only a doll that *moved* collects: vanilla reaches
-the pickup through `P_XYMovement`, which a parked doll never enters, so an item under a doll standing
-still stays put. One deliberate simplification: it is gated on the player being alive, standing in
-for vanilla's per-mobj `toucher->health` check, which a doll has no separate health for here.
-See docs/specials.md § Voodoo dolls.
+the same two endpoints the player's own pass uses. Only a doll that *moved* collects: vanilla
+reaches the pickup through `P_XYMovement`, which a parked doll never enters, so an item under a doll
+standing still stays put. One deliberate simplification: it is gated on the player being alive,
+standing in for vanilla's per-mobj `toucher->health` check, which a doll has no separate health for
+here. See docs/specials.md § Voodoo dolls.
 
-**`tryPickup`'s `z` check** exists because 2D distance alone lets a player standing at the *base* of a
-not-yet-lowered pillar collect an item still on top of it — DOOM2 MAP04's blue key does exactly this.
-Matching `PIT_CheckThing`'s overhead gate, a pickup more than `PLAYER_HEIGHT` above or below the
-player is skipped regardless of 2D range. That in turn requires a thing's height to track its
+**`tryPickup`'s `z` check** exists because 2D distance alone lets a player standing at the *base* of
+a not-yet-lowered pillar collect an item still on top of it — DOOM2 MAP04's blue key does exactly
+this. Matching `PIT_CheckThing`'s overhead gate, a pickup more than `PLAYER_HEIGHT` above or below
+the player is skipped regardless of 2D range. That in turn requires a thing's height to track its
 sector's *live* `floorHeight` rather than a value cached at load: `PosedThing` stores the `Sector`
 reference itself (the same mutable object `SpecialsController` writes `floorHeight`/`light` onto)
-instead of a frozen `z`, and both `ThingLayer.update` and `tryPickup` read `sector.floorHeight` fresh
-every call. Without this, an item on a lift would hang frozen in its original position while the
-floor moved past it, and stay permanently out of reach even after the pillar carrying it lowered.
+instead of a frozen `z`, and both `ThingLayer.update` and `tryPickup` read `sector.floorHeight`
+fresh every call. Without this, an item on a lift would hang frozen in its original position while
+the floor moved past it, and stay permanently out of reach even after the pillar carrying it
+lowered.
 
 ## Making monster drops readable
 
@@ -133,13 +135,13 @@ by draw order and the clip ends up buried inside the corpse art. Three things fi
   without writing depth. This is **render-only**: `tryPickup` and everything else still work off the
   thing's real `z`, so hovering can't put an item out of reach.
 - **Drops draw through their own `SpriteBatch`, constructed with `DROP_DEPTH_BIAS`** — a
-  `polygonOffset` that pulls their fragments a few depth-buffer units toward the camera. That is what
-  settles the coplanar tie above, deterministically and in the item's favour. It is deliberately far
-  too small to punch through geometry genuinely in front of the item; **don't raise it** to solve a
-  different problem, or drops start showing through walls. It matters *more* now that drops are
-  translucent: a transparent material draws after all opaque geometry but is still depth-tested, and
-  an exact tie fails a `LESS` test outright. Costs no extra draw calls either way — batching is
-  per-lump anyway and a drop never shares a lump with a monster.
+  `polygonOffset` that pulls their fragments a few depth-buffer units toward the camera. That is
+  what settles the coplanar tie above, deterministically and in the item's favour. It is
+  deliberately far too small to punch through geometry genuinely in front of the item; **don't raise
+  it** to solve a different problem, or drops start showing through walls. It matters *more* now
+  that drops are translucent: a transparent material draws after all opaque geometry but is still
+  depth-tested, and an exact tie fails a `LESS` test outright. Costs no extra draw calls either way
+  — batching is per-lump anyway and a drop never shares a lump with a monster.
 - **A drop pulses in and out**, fading between `DROP_OPACITY_MIN` and `DROP_OPACITY_MAX` over
   `DROP_PULSE_SECONDS` (`SpriteBatch.setOpacity`). What catches the eye is the *change*, so nothing
   has to be brightened or recoloured and the item still looks like its own art. The fade is
@@ -192,21 +194,22 @@ point the same way: a DEH patch replaces them by mnemonic (docs/dehacked.md § L
 finished line and splits *that* into colored runs, rather than composing one from colored fragments
 — which is exactly what lets a patched line keep the coloring (docs/hud.md § Center messages).
 
-Getting the key check to fire surfaced a second bug in the same table: 99 and 133-137 were missing or
-mismarked `manual: true`. Unlike 26-34 (real D1 manual doors, which open the *linedef's own* back
-sector and ignore tag entirely), 99/133-137 are S1/SR switches that target sectors by tag — confirmed
-by scanning every stock map, where every 99/133-137 linedef's tag exactly matches the sector(s) it
-opens. The concrete bug: DOOM2 MAP04's blue door (special 99, missing from the table) never opened at
-all, key or no key.
+Getting the key check to fire surfaced a second bug in the same table: 99 and 133-137 were missing
+or mismarked `manual: true`. Unlike 26-34 (real D1 manual doors, which open the *linedef's own* back
+sector and ignore tag entirely), 99/133-137 are S1/SR switches that target sectors by tag —
+confirmed by scanning every stock map, where every 99/133-137 linedef's tag exactly matches the
+sector(s) it opens. The concrete bug: DOOM2 MAP04's blue door (special 99, missing from the table)
+never opened at all, key or no key.
 
-**A `use` trigger only fires from a linedef's front (right-sidedef) side** — `isFrontSide`, confirmed
-against `p_switch.c`'s `P_UseSpecialLine`, which unconditionally rejects every use-triggered special
-from the back side except an unused one (124). `handleUseTrigger` computes the player's side of each
-candidate line (via `P_PointOnLineSide`'s cross-product test) and fires none the player is behind — and,
-as in `PTR_UseTraverse`, the line still stops the trace there (docs/specials.md § The use trace). Walk triggers get no such check — `P_CrossSpecialLine` has none — so this
-is `use`-only. Without it, a manual door or switch mounted on an ordinary-looking wall (a disguised
-"push wall" secret) could be opened from *either* side, letting a player skip the switch a mapper hid
-elsewhere; E1M2's sector 21 secret is exactly this shape.
+**A `use` trigger only fires from a linedef's front (right-sidedef) side** — `isFrontSide`,
+confirmed against `p_switch.c`'s `P_UseSpecialLine`, which unconditionally rejects every
+use-triggered special from the back side except an unused one (124). `handleUseTrigger` computes the
+player's side of each candidate line (via `P_PointOnLineSide`'s cross-product test) and fires none
+the player is behind — and, as in `PTR_UseTraverse`, the line still stops the trace there
+(docs/specials.md § The use trace). Walk triggers get no such check — `P_CrossSpecialLine` has none
+— so this is `use`-only. Without it, a manual door or switch mounted on an ordinary-looking wall (a
+disguised "push wall" secret) could be opened from *either* side, letting a player skip the switch a
+mapper hid elsewhere; E1M2's sector 21 secret is exactly this shape.
 
 ## Ammo counts, and what a patch can move
 
@@ -236,48 +239,48 @@ the computer area map are `Infinity`: vanilla stores them as a flag that never c
 four timed ones always take and **restart** their clock (they never stack), berserk always takes and
 additionally tops health back up to the normal 100 cap (`P_GiveBody`, never past it the way a bonus
 item would) and switches to the fist, and the computer area map is the only one that can be
-**refused** — it falls into `P_GivePower`'s generic "already got it" branch, so a second one stays on
-the ground.
+**refused** — it falls into `P_GivePower`'s generic "already got it" branch, so a second one stays
+on the ground.
 
 Where each effect lives is the load-bearing part, since only two of the seven are inventory
 arithmetic:
 
-- **Backpack** (`ammoMax`) doubles every cap permanently and hands over one `CLIP_AMMO` of each class.
-  Every cap check in `inventory.ts` routes through `ammoMax` rather than reading `AMMO_MAX` — a weapon
-  pickup's own ammo grant respects the raised cap too. It is always consumed, even at full ammo,
-  unlike every other ammo pickup.
-- **Invulnerability** is checked in `applyDamage`, in the same place and with the same `damage < 1000`
-  threshold `P_DamageMobj` uses.
-- **Radiation suit** gates `SectorEffects.update`'s damage through `suitBlocks`, and vanilla is deliberately not
-  uniform here: `DamageFloorEffect.suit` is per sector type — nukage/hellslime are blocked outright,
-  the two 20-damage slimes share a `case` reading `!pw_ironfeet || (P_Random()<5)` so a suit still
-  leaks `SUIT_LEAK_CHANCE` of hits, and E1M8's finale type (11) never consults the suit at all. The
-  interval keeps running while a hit is blocked (vanilla's clock is the global `leveltime&0x1f`), so
-  the suit skips damage rather than banking it up for the moment it expires.
+- **Backpack** (`ammoMax`) doubles every cap permanently and hands over one `CLIP_AMMO` of each
+  class. Every cap check in `inventory.ts` routes through `ammoMax` rather than reading `AMMO_MAX` —
+  a weapon pickup's own ammo grant respects the raised cap too. It is always consumed, even at full
+  ammo, unlike every other ammo pickup.
+- **Invulnerability** is checked in `applyDamage`, in the same place and with the same
+  `damage < 1000` threshold `P_DamageMobj` uses.
+- **Radiation suit** gates `SectorEffects.update`'s damage through `suitBlocks`, and vanilla is
+  deliberately not uniform here: `DamageFloorEffect.suit` is per sector type — nukage/hellslime are
+  blocked outright, the two 20-damage slimes share a `case` reading `!pw_ironfeet || (P_Random()<5)`
+  so a suit still leaks `SUIT_LEAK_CHANCE` of hits, and E1M8's finale type (11) never consults the
+  suit at all. The interval keeps running while a hit is blocked (vanilla's clock is the global
+  `leveltime&0x1f`), so the suit skips damage rather than banking it up for the moment it expires.
 - **Berserk**'s ×10 is applied in `WeaponSystem.fire`, to the **fist only** — `A_Punch` reads
   `pw_strength` and `A_Saw` deliberately doesn't.
-- **Computer area map** is the one whose whole effect lives outside `Inventory`: `FogOfWar.revealAll`,
-  watched for by doomednum (`ThingType.computerMap`) in `game.ts`'s pickup callback. Here that *is*
-  vanilla's `pw_allmap` — this engine's play view and its map view are the same view, so revealing the
-  geometry is exactly what filling in the automap does. It sets only the `explored` flags, not
-  `alpha`, so the ordinary reveal lerp fades the level in rather than snapping it on.
+- **Computer area map** is the one whose whole effect lives outside `Inventory`:
+  `FogOfWar.revealAll`, watched for by doomednum (`ThingType.computerMap`) in `game.ts`'s pickup
+  callback. Here that *is* vanilla's `pw_allmap` — this engine's play view and its map view are the
+  same view, so revealing the geometry is exactly what filling in the automap does. It sets only the
+  `explored` flags, not `alpha`, so the ordinary reveal lerp fades the level in rather than snapping
+  it on.
 - **Partial invisibility** is two things, neither of them a rule about being seen:
-  `INVISIBILITY_OPACITY` on the player sprite, and `applyShadowAim` throwing a monster's *ranged* shot
-  off-aim by vanilla's own `A_FaceTarget` fuzz (`(P_Random()-P_Random())<<21`, up to ±44.8°,
+  `INVISIBILITY_OPACITY` on the player sprite, and `applyShadowAim` throwing a monster's *ranged*
+  shot off-aim by vanilla's own `A_FaceTarget` fuzz (`(P_Random()-P_Random())<<21`, up to ±44.8°,
   `SHADOW_AIM_SPREAD_DEG`). That fuzz is the entire vanilla mechanic — `MF_SHADOW` never touches
-  `P_CheckSight`, waking, or a monster's willingness to attack, so none of those are gated on it here
-  either. Applied per shot (each bullet of a burst goes its own way) and only to a shot aimed at the
-  player (`targetId === null`): nothing else carries `MF_SHADOW`, and an infight shouldn't go wide
-  because the player drank something. Melee is deliberately unaffected, matching vanilla, whose melee
-  lands on `P_CheckMeleeRange` rather than the fuzzed angle.
+  `P_CheckSight`, waking, or a monster's willingness to attack, so none of those are gated on it
+  here either. Applied per shot (each bullet of a burst goes its own way) and only to a shot aimed
+  at the player (`targetId === null`): nothing else carries `MF_SHADOW`, and an infight shouldn't go
+  wide because the player drank something. Melee is deliberately unaffected, matching vanilla, whose
+  melee lands on `P_CheckMeleeRange` rather than the fuzzed angle.
 - **Light amplification visor** rides `WebGLRenderer.toneMappingExposure` (`LIGHT_VISOR_EXPOSURE`).
-  `render/viewport.ts`'s `Viewport` sets `toneMapping = LinearToneMapping` **once**, at construction:
-  changing `toneMapping`
-  itself recompiles every material's shader, while the exposure is a plain uniform, and
-  `LinearToneMapping` at exposure 1 is `saturate(color)` — bit-identical to `NoToneMapping` for
-  anything already in range, so it costs nothing until the visor turns it up. A flat multiply is an
-  approximation of vanilla's "force the brightest colormap row everywhere"; matching that exactly
-  would mean rebuilding every surface's baked vertex lighting.
+  `render/viewport.ts`'s `Viewport` sets `toneMapping = LinearToneMapping` **once**, at
+  construction: changing `toneMapping` itself recompiles every material's shader, while the exposure
+  is a plain uniform, and `LinearToneMapping` at exposure 1 is `saturate(color)` — bit-identical to
+  `NoToneMapping` for anything already in range, so it costs nothing until the visor turns it up. A
+  flat multiply is an approximation of vanilla's "force the brightest colormap row everywhere";
+  matching that exactly would mean rebuilding every surface's baked vertex lighting.
 
 ## Skill
 

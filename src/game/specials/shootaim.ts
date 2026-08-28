@@ -31,7 +31,10 @@ const PICK_TOLERANCE = 16;
  */
 const BAND_INSET = 4;
 
-/** A vertical stretch of a line's face that stops a shot — the solid wall above and/or below its opening. */
+/**
+ * A vertical stretch of a line's face that stops a shot — the solid wall above and/or below its
+ * opening.
+ */
 interface Band {
   lo: number;
   hi: number;

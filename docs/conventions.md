@@ -84,11 +84,10 @@ Everything else is named for what it *does*: `ai.ts`, `attacks.ts`, `grid.ts`, `
 The `defs`/`tables` split earns its keep when both halves are large — the thing layer's are 555 and
 833 lines, the monsters' 491 and 503 — or when the subsystem needs a directory anyway and the split
 is what fills it, which is `spritefx/`'s case at 159 and 208 and `specials/`'s at 360 and 392. A
-subsystem needing neither keeps its
-shapes and tables in one `defs.ts`. **`tables.ts` may import `defs.ts`, never the reverse**: the shapes
-have to stay usable by a module that wants nothing to do with the data, which is what lets
-`monsters/ai.ts` take `MonsterStats` without pulling the whole stat table's dependency on
-`world.ts` in behind it.
+subsystem needing neither keeps its shapes and tables in one `defs.ts`. **`tables.ts` may import
+`defs.ts`, never the reverse**: the shapes have to stay usable by a module that wants nothing to do
+with the data, which is what lets `monsters/ai.ts` take `MonsterStats` without pulling the whole
+stat table's dependency on `world.ts` in behind it.
 
 ## Source order inside a file
 
@@ -112,17 +111,14 @@ types and constants immediately above it instead of hoisting them, and interleav
 exported. `specials/mapscan.ts` is the case — reading it top-to-bottom is reading one analysis at a
 time, which hoisting would destroy.
 
-**No section-banner comments.** There are zero in the tree (`// ─────`, `// === X ===`) and there
-should stay zero; grouping is carried by the JSDoc on each symbol.
-
 ## Single-use helpers
 
-A helper called from exactly one place earns its name when **the name states something its body
-does not**; otherwise inline it. `dehacked/frames.ts`'s `isMonsterRow` is one line
+A helper called from exactly one place earns its name when **the name states something its body does
+not**; otherwise inline it. `dehacked/frames.ts`'s `isMonsterRow` is one line
 (`pain !== 0 && death !== 0`) and keeps its name, because "is this row a monster" is the concept and
-the expression is not. `wad/map.ts`'s old `readMapFormat` was the other case — `lumps.has('BEHAVIOR')`
-already reads as the question its name asked — so it is now that ternary inside `loadMap`, with its
-fidelity citation as a comment on the `const`.
+the expression is not. `wad/map.ts`'s old `readMapFormat` was the other case —
+`lumps.has('BEHAVIOR')` already reads as the question its name asked — so it is now that ternary
+inside `loadMap`, with its fidelity citation as a comment on the `const`.
 
 Length is not the test. A one-line body under a doc block that carries a vanilla citation or a
 hazard is usually worth keeping, since a declaration is where such a block belongs; a body called
@@ -162,6 +158,11 @@ arch-viles seem — docs/monster-ai.md § Spatial indexing has the map that disp
 same words are fine and often better (`WallQuad.baseAlpha` / `FlatSurface.baseAlpha`). An
 *argument* stated at two sites is the tier-1 violation: state it once in the doc, and leave each
 site the fact plus `docs/x.md § heading`.
+
+**100 columns.** Comments and `docs/` prose alike. A one-line `/** … */` that would run past it
+becomes a multi-line block rather than trailing off the screen. Exempt: markdown tables, code
+fences, and a line whose overflow is a single unbreakable token (a URL, a long inline `` `code` ``
+span). Code is not held to it.
 
 ## Imports
 

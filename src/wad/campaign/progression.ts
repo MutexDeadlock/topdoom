@@ -26,7 +26,9 @@ export type NextLevel =
   /** Neither MAPINFO nor either vanilla table knows: `Game` falls back to the set's load order. */
   | { kind: 'unknown' };
 
-/** `E<episode>M<mission>`, DOOM's own naming — the only map names the episode rules below apply to. */
+/**
+ * `E<episode>M<mission>`, DOOM's own naming — the only map names the episode rules below apply to.
+ */
 const DOOM1_MAP = /^E(\d)M(\d)$/;
 /** `MAP<nn>`, DOOM II's. */
 const DOOM2_MAP = /^MAP(\d\d)$/;
@@ -98,7 +100,10 @@ export function vanillaNextMap(mapName: string, secret: boolean): NextLevel {
  */
 export class LevelProgression {
   private mapInfo: MapInfo;
-  /** The loaded set's maps, upper-cased for lookup but kept in their own spelling: what `nextMap` returns has to be a name `Game` can find in its own list. */
+  /**
+   * The loaded set's maps, upper-cased for lookup but kept in their own spelling: what `nextMap`
+   * returns has to be a name `Game` can find in its own list.
+   */
   private known: Map<string, string>;
 
   constructor(mapInfo: MapInfo, mapNames: readonly string[]) {

@@ -22,7 +22,10 @@ import { decodeSectorType } from './sectortypes.ts';
 import { transfersOf } from './transfers.ts';
 import { switchPairTexture, type SpecialDef } from './defs.ts';
 
-/** Which sectors a special's linedef affects: the line's own back sector for manual doors, tag matches otherwise. */
+/**
+ * Which sectors a special's linedef affects: the line's own back sector for manual doors, tag
+ * matches otherwise.
+ */
 export function resolveTargets(map: DoomMap, line: LineDef, def: SpecialDef): readonly number[] {
   if (def.manual) {
     const backSector = line.left !== NO_SIDE ? map.sidedefs[line.left]?.sector : undefined;
@@ -115,10 +118,10 @@ export function bossDeathTriggersFor(mapName: string): BossDeathTrigger[] {
 /**
  * Every sector a map's boss-death table can move — the tags in `bossDeathTriggersFor`, resolved
  * against `map.sectors`. **Load-bearing for `scanSectors`:** these sectors are driven by
- * `triggerTag`, which has no triggering linedef, so nothing else in that scan can find them. MAP32's
- * Keen door (sector 16, tag 666) and MAP07's Arachnotron platform (sector 1, tag 667) both have no
- * linedef carrying their tag at all; without this they stay in the static batch and get drawn a
- * second time the moment their mover mesh appears. See docs/death.md § Boss death.
+ * `triggerTag`, which has no triggering linedef, so nothing else in that scan can find them.
+ * MAP32's Keen door (sector 16, tag 666) and MAP07's Arachnotron platform (sector 1, tag 667) both
+ * have no linedef carrying their tag at all; without this they stay in the static batch and get
+ * drawn a second time the moment their mover mesh appears. See docs/death.md § Boss death.
  */
 function bossDeathSectors(map: DoomMap): number[] {
   const tags = new Set<number>();

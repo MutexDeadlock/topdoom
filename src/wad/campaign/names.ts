@@ -411,7 +411,10 @@ export class LevelNames {
     return this.patchFor(mapName, episodeNamePatch(mapName.toUpperCase()));
   }
 
-  /** The shared half of the two lookups above: the patch, if the set has it and it belongs to this map. */
+  /**
+   * The shared half of the two lookups above: the patch, if the set has it and it belongs to this
+   * map.
+   */
   private patchFor(mapName: string, patch: string | undefined): string | undefined {
     const lump = patch ? this.wad.find(patch) : undefined;
     if (!lump) return undefined;

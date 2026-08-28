@@ -63,7 +63,10 @@ const MASTER_VOLUME_STORAGE_KEY = 'topdoom.masterVolume';
  * one that plays silently.
  */
 const ASSETS = {
-  /** Entering a secret sector. Priority is `getpow`'s 60: an announcement, cut off by almost nothing. */
+  /**
+   * Entering a secret sector. Priority is `getpow`'s 60: an announcement, cut off by almost
+   * nothing.
+   */
   secret: { url: '/secret.ogg', priority: 60 },
 } as const;
 
@@ -75,7 +78,10 @@ interface Voice {
   /** This sfx's `SFX` priority, which is what `allocate` evicts by. */
   priority: number;
   source: AudioBufferSourceNode;
-  /** Disconnects this voice's whole chain. Called once, by whichever comes first: the sound ending or being evicted. */
+  /**
+   * Disconnects this voice's whole chain. Called once, by whichever comes first: the sound ending
+   * or being evicted.
+   */
   release: () => void;
 }
 
@@ -111,9 +117,15 @@ export class AudioEngine implements SoundEmitter {
 
   private bank: SoundBank | null = null;
   private buffers = new Map<SfxId, AudioBuffer | null>();
-  /** Names whose async `decodeAudioData` is in flight, so a second play doesn't start a second decode. */
+  /**
+   * Names whose async `decodeAudioData` is in flight, so a second play doesn't start a second
+   * decode.
+   */
   private decoding = new Set<SfxId>();
-  /** `ASSETS`' decoded buffers, null while one is still loading or failed to. Populated once per context. */
+  /**
+   * `ASSETS`' decoded buffers, null while one is still loading or failed to. Populated once per
+   * context.
+   */
   private assetBuffers = new Map<AssetSfxId, AudioBuffer | null>();
 
   private voices: (Voice | null)[] = new Array(CHANNELS).fill(null);
@@ -142,7 +154,9 @@ export class AudioEngine implements SoundEmitter {
     return this._masterVolume;
   }
 
-  /** What an sfx actually comes out at: the two sliders multiplied, and the thing 0 is tested on. */
+  /**
+   * What an sfx actually comes out at: the two sliders multiplied, and the thing 0 is tested on.
+   */
   private get sfxAudible(): number {
     return this._volume * this._masterVolume;
   }
@@ -214,7 +228,10 @@ export class AudioEngine implements SoundEmitter {
     this.forwardSin = Math.sin(rad);
   }
 
-  /** Starts the context, or wakes one the browser suspended on its own. Must be reached from a user gesture. */
+  /**
+   * Starts the context, or wakes one the browser suspended on its own. Must be reached from a user
+   * gesture.
+   */
   resume(): void {
     const ctx = this.ensureContext();
     if (ctx && ctx.state !== 'running') void ctx.resume();
@@ -276,7 +293,10 @@ export class AudioEngine implements SoundEmitter {
     this.start(buffer, ASSETS[id].priority, 1, 1, 0, undefined);
   }
 
-  /** Takes a channel for `buffer` and starts it — the half of `play` that has nothing left to decide. */
+  /**
+   * Takes a channel for `buffer` and starts it — the half of `play` that has nothing left to
+   * decide.
+   */
   private start(
     buffer: AudioBuffer,
     priority: number,

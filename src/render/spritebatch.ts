@@ -205,7 +205,10 @@ export class SpriteBatch {
     return batch;
   }
 
-  /** Doubles a full batch's capacity, carrying the instances already written this frame over to the new buffers. */
+  /**
+   * Doubles a full batch's capacity, carrying the instances already written this frame over to the
+   * new buffers.
+   */
   private grow(cached: CachedSprite, batch: Batch): void {
     const old = batch.mesh;
     const next = this.makeMesh(cached, old.instanceMatrix.count * 2);
@@ -223,11 +226,8 @@ export class SpriteBatch {
     mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(capacity * 3), 3);
     mesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
     mesh.count = 0;
-    // A batch's instances are scattered across the whole map, so its bounds are
-    // effectively the level — culling it as one object could only ever cull
-    // nothing, and would cost a per-frame bounds recompute to decide that.
-    // Off-screen instances are clipped by the GPU for the price of a trivially
-    // cheap vertex shader on 4 vertices, which is the better trade here.
+    // A batch's instances are scattered across the whole map, so culling it as one object could
+    // only ever cull nothing while costing a bounds recompute a frame — docs/sprites.md § Batching.
     mesh.frustumCulled = false;
     return mesh;
   }
@@ -236,7 +236,7 @@ export class SpriteBatch {
    * The instanced twin of a lump's material: same texture and alpha test, but
    * `vertexColors` on (so `instanceColor` actually reaches the fragment
    * shader — see the `color` attribute comment in `render/sprites.ts`) and a
-   * white base color, since the tint now rides per instance instead of on the
+   * white base color, since the tint rides per instance rather than on the
    * shared material.
    */
   private materialFor(cached: CachedSprite): THREE.MeshBasicMaterial {
@@ -278,8 +278,8 @@ export class SpriteBatch {
    * per-pixel mask for a fading wall's own dither to collide with:
    * docs/sprites.md § Why the fuzz can't share the wall dither's noise.
    *
-   * A closer reproduction of vanilla's own effect was built and rejected on how
-   * it looked, and the rejection is the load-bearing part: docs/sprites.md §
+   * Deliberately cruder than vanilla's own effect rather than an approximation of it, and the
+   * rejection of the closer reproduction is the load-bearing part: docs/sprites.md §
    * The spectre's fuzz.
    */
   private applyFuzz(material: THREE.MeshBasicMaterial): void {

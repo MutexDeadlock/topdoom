@@ -141,7 +141,10 @@ function readVanilla(segsData: Uint8Array | undefined, ssectorsData: Uint8Array 
   return { format: 'vanilla', segs, subsectors, nodes };
 }
 
-/** DeePBSP V4: `mapseg_v4_t` / `mapsubsector_v4_t` / `mapnode_v4_t`; children already carry the 0x80000000 flag on disk. */
+/**
+ * DeePBSP V4: `mapseg_v4_t` / `mapsubsector_v4_t` / `mapnode_v4_t`; children already carry the
+ * 0x80000000 flag on disk.
+ */
 function readDeepV4(segsData: Uint8Array | undefined, ssectorsData: Uint8Array | undefined, nodesData: Uint8Array | undefined): BspData {
   const segs = records(segsData, 0, 16, (r) => ({
     v1: r.i32(),
@@ -163,7 +166,9 @@ function readDeepV4(segsData: Uint8Array | undefined, ssectorsData: Uint8Array |
   return { format: 'deep-v4', segs, subsectors, nodes };
 }
 
-/** `mapseg_znod_t`: both endpoints stored, and no angle/offset — nothing in the engine reads either. */
+/**
+ * `mapseg_znod_t`: both endpoints stored, and no angle/offset — nothing in the engine reads either.
+ */
 function readPlainSegs(r: Reader, count: number): Seg[] {
   const segs: Seg[] = new Array(count);
   for (let i = 0; i < count; i++) {
@@ -232,7 +237,8 @@ function readExtended(entry: Extended, payload: Uint8Array, vertexes: Vertex[]):
 
   const numSubs = r.u32();
   const subsectors: SubSector[] = new Array(numSubs);
-  // `first` ends as the total seg count the subsectors claim, which is what a GL payload is checked against.
+  // `first` ends as the total seg count the subsectors claim, which is what a GL payload is checked
+  // against.
   let first = 0;
   for (let i = 0; i < numSubs; i++) {
     const count = r.u32();

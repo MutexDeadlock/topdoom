@@ -36,10 +36,16 @@ export const SAVE_VERSION = 1;
  * save can land on it.
  */
 export const AUTOSAVE_ID = 'auto';
-/** Never shown anywhere — `createMeta` wants a name, and a blank one would be replaced by the map-and-date default. */
+/**
+ * Never shown anywhere — `createMeta` wants a name, and a blank one would be replaced by the
+ * map-and-date default.
+ */
 const AUTOSAVE_NAME = 'Checkpoint';
 
-/** The IndexedDB backend, created on first touch so importing this module in Node never reaches for `indexedDB`. */
+/**
+ * The IndexedDB backend, created on first touch so importing this module in Node never reaches for
+ * `indexedDB`.
+ */
 let backend: SaveStoreBackend | null = null;
 const store = (): SaveStoreBackend => (backend ??= idbBackend());
 
@@ -69,7 +75,10 @@ export interface SaveWad {
   id: string;
 }
 
-/** What to call a saved file in a message; the name is for humans, so it needs a fallback and the id doesn't. */
+/**
+ * What to call a saved file in a message; the name is for humans, so it needs a fallback and the id
+ * doesn't.
+ */
 export function wadLabel(wad: SaveWad): string {
   return wad.name || 'unknown file';
 }
@@ -142,13 +151,22 @@ export function wadSetRefusal(save: SaveWadSet, actual: SaveWad[], mapProvider: 
   return null;
 }
 
-/** One file of a save's set the library can't supply. The role is just the position in `wads`, `[0]` being the game WAD. */
+/**
+ * One file of a save's set the library can't supply. The role is just the position in `wads`, `[0]`
+ * being the game WAD.
+ */
 export interface MissingWad {
   name: string;
   role: 'IWAD' | 'PWAD';
-  /** The library has a file by this name, but not these bytes — worth saying, since "missing" would send the player looking for something they already have. */
+  /**
+   * The library has a file by this name, but not these bytes — worth saying, since "missing" would
+   * send the player looking for something they already have.
+   */
   wrongVersion: boolean;
-  /** Whether the load actually needs this file back: the game WAD and `mapWad`'s provider, nothing else. docs/savegames.md § WAD-set identity. */
+  /**
+   * Whether the load actually needs this file back: the game WAD and `mapWad`'s provider, nothing
+   * else. docs/savegames.md § WAD-set identity.
+   */
   required: boolean;
 }
 
@@ -185,7 +203,10 @@ function adviceFor(file: MissingWad): string {
   return file.wrongVersion ? '— not the version this save was made with' : '— load it from disk first';
 }
 
-/** The one file of a set that stops a load, or undefined when the set is playable — what greys Load out and what `loadSave` refuses over. */
+/**
+ * The one file of a set that stops a load, or undefined when the set is playable — what greys Load
+ * out and what `loadSave` refuses over.
+ */
 export function blockingWad(missing: MissingWad[]): MissingWad | undefined {
   return missing.find((file) => file.required);
 }
@@ -199,9 +220,14 @@ export interface SaveMeta {
   name: string;
   /** Map lump name, e.g. `MAP05`. */
   map: string;
-  /** Load-bearing for thing identity, not just difficulty — the save's things were filtered by it. */
+  /**
+   * Load-bearing for thing identity, not just difficulty — the save's things were filtered by it.
+   */
   skill: Skill;
-  /** The whole WAD set in load order, `[0]` the game WAD — one list, so a file's name and id can't drift apart and a file's role is just its position (docs/savegames.md § WAD-set identity). */
+  /**
+   * The whole WAD set in load order, `[0]` the game WAD — one list, so a file's name and id can't
+   * drift apart and a file's role is just its position (docs/savegames.md § WAD-set identity).
+   */
   wads: SaveWad[];
   /**
    * Content id of the file that supplied `map`'s lumps. **This, with the game
@@ -239,7 +265,11 @@ export type SaveCapture = Omit<SaveGame, 'id' | 'version' | 'at' | 'name'>;
 
 export interface SaveListEntry {
   meta: SaveMeta;
-  /** False for a version this build can't load, or a meta too damaged to trust — still listed so it can be deleted or downloaded. A damaged *state* is invisible here (listing never reads it) and surfaces at load instead. */
+  /**
+   * False for a version this build can't load, or a meta too damaged to trust — still listed so it
+   * can be deleted or downloaded. A damaged *state* is invisible here (listing never reads it) and
+   * surfaces at load instead.
+   */
   supported: boolean;
 }
 
@@ -260,7 +290,10 @@ const asWad = (v: unknown): SaveWad => {
   return { name: asText(w.name), id: asText(w.id) };
 };
 
-/** Best-effort meta for the list; every field degrades to something displayable rather than failing the whole row. */
+/**
+ * Best-effort meta for the list; every field degrades to something displayable rather than failing
+ * the whole row.
+ */
 function asMeta(raw: unknown, id: string): SaveMeta {
   const r = isRecord(raw) ? raw : {};
   return {
@@ -290,12 +323,18 @@ function hasLoadableMeta(raw: unknown): boolean {
   return isRecord(raw) && raw.version === SAVE_VERSION && typeof raw.map === 'string' && Array.isArray(raw.wads);
 }
 
-/** The state half: without these the restore path would crash mid-load. Checked wherever a snapshot is actually decoded. */
+/**
+ * The state half: without these the restore path would crash mid-load. Checked wherever a snapshot
+ * is actually decoded.
+ */
 function isLoadableState(state: unknown): state is GameSnapshot {
   return isRecord(state) && isRecord(state.player) && isRecord(state.rng);
 }
 
-/** The stored meta for `id`, or a thrown refusal — the shared opening of every read-modify-write below. */
+/**
+ * The stored meta for `id`, or a thrown refusal — the shared opening of every read-modify-write
+ * below.
+ */
 async function readMeta(id: string): Promise<unknown> {
   const raw = await store().readMeta(id);
   if (raw === undefined) throw new Error('that save no longer exists');
@@ -321,7 +360,10 @@ export async function listSaves(): Promise<SaveListEntry[]> {
 
 const damaged = (): Error => new Error('this save is damaged and cannot be loaded');
 
-/** The full save, or a thrown, user-readable refusal — an unsupported version names both versions rather than half-loading. */
+/**
+ * The full save, or a thrown, user-readable refusal — an unsupported version names both versions
+ * rather than half-loading.
+ */
 export async function readSave(id: string): Promise<SaveGame> {
   const rawMeta = await readMeta(id);
   if (isRecord(rawMeta) && rawMeta.version !== SAVE_VERSION) {
@@ -340,7 +382,10 @@ export async function readSave(id: string): Promise<SaveGame> {
   return { ...asMeta(rawMeta, id), state };
 }
 
-/** The one place a snapshot is serialized, so `roundFloat` is applied exactly where the bytes it saves are counted. */
+/**
+ * The one place a snapshot is serialized, so `roundFloat` is applied exactly where the bytes it
+ * saves are counted.
+ */
 async function encodeState(id: string, state: GameSnapshot): Promise<StoredState> {
   return { id, encoding: STATE_ENCODING, bytes: await compressText(JSON.stringify(state, roundFloat)) };
 }
@@ -362,10 +407,16 @@ async function putSave(meta: SaveMeta, state: StoredState): Promise<void> {
   }
 }
 
-/** Session-scoped tiebreaker for saves landing in the same millisecond; uniqueness is checked against the stored ids anyway. */
+/**
+ * Session-scoped tiebreaker for saves landing in the same millisecond; uniqueness is checked
+ * against the stored ids anyway.
+ */
 let idCounter = 0;
 
-/** Deliberately entropy-free — the engine's one randomness source is the DOOM table (docs/random.md), and a save id needs uniqueness, not randomness. */
+/**
+ * Deliberately entropy-free — the engine's one randomness source is the DOOM table
+ * (docs/random.md), and a save id needs uniqueness, not randomness.
+ */
 async function freshId(): Promise<string> {
   const existing = new Set((await store().listMeta()).map((raw) => (isRecord(raw) ? raw.id : undefined)));
   let id: string;

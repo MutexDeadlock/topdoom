@@ -133,7 +133,7 @@ export const LF = {
 
 export interface DoomMap {
   name: string;
-  /** Which on-disk encoding LINEDEFS and THINGS shipped in (`readMapFormat`). */
+  /** Which on-disk encoding LINEDEFS and THINGS shipped in (`loadMap`). */
   format: MapFormat;
   /** Which on-disk BSP encoding the map shipped (`readBsp` normalizes them all). */
   nodeFormat: NodeFormat;
@@ -145,7 +145,10 @@ export interface DoomMap {
   subsectors: SubSector[];
   nodes: Node[];
   things: Thing[];
-  /** The REJECT matrix — one bit per ordered sector pair — or `undefined` when the map has none worth consulting (`readReject`). */
+  /**
+   * The REJECT matrix — one bit per ordered sector pair — or `undefined` when the map has none
+   * worth consulting (`readReject`).
+   */
   reject: Uint8Array | undefined;
   bounds: { minX: number; minY: number; maxX: number; maxY: number };
 }

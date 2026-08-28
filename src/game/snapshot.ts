@@ -324,7 +324,9 @@ export interface CubeState {
   y: number;
   z: number;
   angleRad: number;
-  /** Index into `IconSnapshot.targets` — the live cube holds an object reference into that array. */
+  /**
+   * Index into `IconSnapshot.targets` — the live cube holds an object reference into that array.
+   */
   targetIndex: number;
   remaining: number;
   soundTimer: number;
@@ -359,7 +361,9 @@ export interface TeleportFogState extends Pos3 {
 export interface GameSnapshot {
   levelTime: number;
   cameraYawDeg: number;
-  /** Carried through so a `?pos=` run can't become best-time-eligible by being saved and restored. */
+  /**
+   * Carried through so a `?pos=` run can't become best-time-eligible by being saved and restored.
+   */
   recordsEligible: boolean;
   player: PlayerSnapshot;
   inventory: InventorySnapshot;
@@ -370,7 +374,9 @@ export interface GameSnapshot {
   sectorEffects: SectorEffectsSnapshot;
   /** `encodeRuns` of the fog-of-war `explored` bitmap. */
   fog: number[];
-  /** Sector indices of `World.soundAlertedSectors` — the live set holds `Sector` object references. */
+  /**
+   * Sector indices of `World.soundAlertedSectors` — the live set holds `Sector` object references.
+   */
   soundAlerted: number[];
   things: ThingsSnapshot;
   icon: IconSnapshot | null;
@@ -403,11 +409,17 @@ export interface GameSnapshot {
    * from before them restored to. docs/cheats.md § Saves and best times.
    */
   cheats?: CheatSnapshot;
-  /** The two random-table cursors. Restored after every other step — docs/savegames.md § Apply order. */
+  /**
+   * The two random-table cursors. Restored after every other step — docs/savegames.md § Apply
+   * order.
+   */
   rng: { p: number; m: number };
 }
 
-/** IDDQD's and IDCLIP's toggles — `game/cheats.ts`. IDKFA leaves nothing behind but the inventory it filled. */
+/**
+ * IDDQD's and IDCLIP's toggles — `game/cheats.ts`. IDKFA leaves nothing behind but the inventory it
+ * filled.
+ */
 export interface CheatSnapshot {
   god: boolean;
   noclip: boolean;
@@ -484,7 +496,10 @@ export function encodeRuns(data: Uint8Array): number[] {
   return runs;
 }
 
-/** Decodes `encodeRuns` output into a fresh array of `length` bytes; surplus runs past `length` are dropped. */
+/**
+ * Decodes `encodeRuns` output into a fresh array of `length` bytes; surplus runs past `length` are
+ * dropped.
+ */
 export function decodeRuns(runs: number[], length: number): Uint8Array {
   const data = new Uint8Array(length);
   let at = 0;

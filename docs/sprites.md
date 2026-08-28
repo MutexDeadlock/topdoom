@@ -8,9 +8,10 @@ is docs/fogofwar.md.
 
 ## Thing types have names
 
-Every doomednum this engine knows sits in `game/things/doomednums.ts` as a named member of one `as const`
-object, and **every type-keyed table keys through it** — `THING_SPRITES`, `MONSTER_STATS`, the pickup
-records in `inventory.ts`, the membership sets, all of them — rather than spelling the number:
+Every doomednum this engine knows sits in `game/things/doomednums.ts` as a named member of one
+`as const` object, and **every type-keyed table keys through it** — `THING_SPRITES`,
+`MONSTER_STATS`, the pickup records in `inventory.ts`, the membership sets, all of them — rather
+than spelling the number:
 
 ```ts
 export const MONSTER_HEALTH: Record<number, number> = {
@@ -32,8 +33,9 @@ load-bearing, not laziness: a PWAD may contain doomednums this registry has neve
 `pushThing` already treats an unknown type as "does not spawn". A union type here would make legal
 map data unrepresentable.
 
-`things/doomednums.ts` imports nothing, so any table module can take it without a cycle — the same leaf
-property `things/tables.ts` has, for the same reason (docs/monster-attacks.md § Resolving an attack).
+`things/doomednums.ts` imports nothing, so any table module can take it without a cycle — the same
+leaf property `things/tables.ts` has, for the same reason (docs/monster-attacks.md § Resolving an
+attack).
 
 Names distinguish types that share art rather than collapsing them: `bloodyMess`/`bloodyMessAlt` (10
 and 12, one sprite under two editor numbers) and the two hanging-victim families — `…NoBlock` marks
@@ -49,14 +51,14 @@ docs/dehacked.md § Thing records.
 ## Things as sprites (`wad/sprites.ts`, `render/sprites.ts`, `game/things.ts`, `game/things/tables.ts`)
 
 `SpriteBank` (`wad/sprites.ts`) indexes `S_START`/`S_END` lumps by sprite name + frame letter,
-resolving DOOM's `SSSSFR` / `SSSSFRfr` naming (a frame can list a second frame+rotation meaning "this
-same lump, mirrored, is also that rotation" — the usual way DOOM halves the art needed for symmetric
-actors). `things/tables.ts` maps THING doomednums to their sprite name; a type absent from that table
-renders nothing, same as DOOM's own invisible spawn markers (player starts, deathmatch spots,
-teleport landings) and Boom's two point-pusher control things, 5001/5002 — those exist only as the
-source a type-226 line radiates its force from (docs/specials.md § Pushers), and a map's *extra*
-player starts exist only as voodoo dolls (docs/specials.md § Voodoo dolls), which are deliberately
-not drawn either.
+resolving DOOM's `SSSSFR` / `SSSSFRfr` naming (a frame can list a second frame+rotation meaning
+"this same lump, mirrored, is also that rotation" — the usual way DOOM halves the art needed for
+symmetric actors). `things/tables.ts` maps THING doomednums to their sprite name; a type absent from
+that table renders nothing, same as DOOM's own invisible spawn markers (player starts, deathmatch
+spots, teleport landings) and Boom's two point-pusher control things, 5001/5002 — those exist only
+as the source a type-226 line radiates its force from (docs/specials.md § Pushers), and a map's
+*extra* player starts exist only as voodoo dolls (docs/specials.md § Voodoo dolls), which are
+deliberately not drawn either.
 
 ### Rotation 0 against directional frames
 
@@ -85,14 +87,14 @@ A `[SPRITES]` rename is deliberately *not* subject to load order: the aliases ar
 of their own *before* the own-name lumps, claiming their slots first, or `POSS = ZOMB` would lose to
 a `POSS*` lump still in the set. docs/dehacked.md § Sprite renames.
 
-**The split between `render/sprites.ts` and `game/things.ts` follows the same rendering/game divide as
-the rest of the tree.** `render/sprites.ts` only knows how to turn a (sprite name, frame letter,
-viewer angle) into a posed plane — `SpriteAnimator`/`SpriteActor`/`SpriteMaterialCache`, no knowledge
-of maps, AI, health or pickups. `game/things.ts` owns `buildThingSprites`: which map things exist,
-their per-instance game state, and the update loop that ticks monster AI, applies pickups/damage and
-drives drops. Its `things/` folder holds the record shapes those run on (`defs.ts`:
-`ThingLayer`/`PosedThing`) and the spatial index they query (`grid.ts`, docs/monster-ai.md § Spatial
-indexing).
+**The split between `render/sprites.ts` and `game/things.ts` follows the same rendering/game divide
+as the rest of the tree.** `render/sprites.ts` only knows how to turn a (sprite name, frame letter,
+viewer angle) into a posed plane — `SpriteAnimator`/`SpriteActor`/`SpriteMaterialCache`, no
+knowledge of maps, AI, health or pickups. `game/things.ts` owns `buildThingSprites`: which map
+things exist, their per-instance game state, and the update loop that ticks monster AI, applies
+pickups/damage and drives drops. Its `things/` folder holds the record shapes those run on
+(`defs.ts`: `ThingLayer`/`PosedThing`) and the spatial index they query (`grid.ts`,
+docs/monster-ai.md § Spatial indexing).
 
 ### Batching
 
@@ -114,15 +116,15 @@ cheap enough to do unconditionally:
   plain scalars — no per-sprite `Matrix4`/`Quaternion` allocation or `compose` call. (Verified
   against three.js's own `compose` on all of NUTS.WAD's things: worst element error 1e-8, i.e.
   float32 rounding.)
-- **Sector light rides along as a per-instance colour**, which *fixes* a pre-existing bug rather than
-  merely preserving behavior: the one-mesh-each path tints by mutating the lump's **shared**
+- **Sector light rides along as a per-instance colour**, which *fixes* a pre-existing bug rather
+  than merely preserving behavior: the one-mesh-each path tints by mutating the lump's **shared**
   material, so wherever several things shared a lump the last one posed each frame decided the light
   for all of them.
 
 That per-instance colour needs one non-obvious thing. three.js's fragment shader only multiplies
 `vColor` in under `USE_COLOR` — i.e. `material.vertexColors` — while `USE_INSTANCING_COLOR` alone
-populates `vColor` in the *vertex* shader and is then ignored downstream. So the batch's materials are
-clones with `vertexColors: true` and a white base colour, and `SpriteMaterialCache` gives every
+populates `vColor` in the *vertex* shader and is then ignored downstream. So the batch's materials
+are clones with `vertexColors: true` and a white base colour, and `SpriteMaterialCache` gives every
 sprite geometry an all-white `color` attribute, without which WebGL's default (0,0,0) generic
 attribute would render every batched sprite black. The non-instanced material ignores that attribute
 entirely.
@@ -143,18 +145,18 @@ instead. Nothing raycasts a batch either (see below), so no bounds are computed 
 material) lookup with **no `THREE.Object3D` of its own**. `SpriteActor` wraps one in a `THREE.Mesh`
 for the **player**, now the only sprite that genuinely wants one: there is exactly one of it, and it
 needs `setOpacity` (partial invisibility), which has no per-instance equivalent in a batch.
-Everything else holds a bare `SpriteAnimator` and feeds a `SpriteBatch` — `PosedThing` for map things,
-and `SpriteFxLayer`'s batch (`game/spritefx.ts`) for projectiles, impact explosions, teleport fog and
-the revenant's smoke trail. Because a batched thing has no mesh of its own, `PosedThing.visible` replaces what used
-to be read off `mesh.visible`.
+Everything else holds a bare `SpriteAnimator` and feeds a `SpriteBatch` — `PosedThing` for map
+things, and `SpriteFxLayer`'s batch (`game/spritefx.ts`) for projectiles, impact explosions,
+teleport fog and the revenant's smoke trail. Because a batched thing has no mesh of its own,
+`PosedThing.visible` replaces what used to be read off `mesh.visible`.
 
-**A batch is write-only: nothing reads geometry back out of it.** Auto-aim's `ThingLayer.pickMonster`
-used to raycast the instance geometry, which forced the tic to re-fill the whole batch at alpha 1
-before every aim ray; it now intersects the billboard analytically instead (`intersectBillboard`,
-docs/combat.md § Auto-aim). What that function needs from this file is `CachedSprite.quad` — the
-rectangle the lump's geometry spans, hotspot shift folded in, feet at y=0 — and the same yaw
-`begin()` fixes for the batch. The two derive their plane from the same two numbers so they cannot
-disagree about where a sprite stands.
+**A batch is write-only: nothing reads geometry back out of it.** Auto-aim's
+`ThingLayer.pickMonster` used to raycast the instance geometry, which forced the tic to re-fill the
+whole batch at alpha 1 before every aim ray; it now intersects the billboard analytically instead
+(`intersectBillboard`, docs/combat.md § Auto-aim). What that function needs from this file is
+`CachedSprite.quad` — the rectangle the lump's geometry spans, hotspot shift folded in, feet at y=0
+— and the same yaw `begin()` fixes for the batch. The two derive their plane from the same two
+numbers so they cannot disagree about where a sprite stands.
 
 `ThingLayer` owns **two** batches under one `things` group: ordinary things, and monster death drops
 — which are depth-biased (above) and `translucent`, so `setOpacity` can pulse them (docs/items.md §
@@ -168,8 +170,9 @@ shared material tests at 0.5 against `texture.a * opacity`, which discards the *
 opacity falls under that. A WAD sprite's alpha is binary — 0 or 255, and `NearestFilter` never
 blends between them — so any threshold under the lowest opacity in use cuts exactly the silhouette
 the 0.5 test does. `depthWrite` stays off for the ordinary reason: one translucent plane among
-opaque geometry would otherwise punch a hole in whatever draws after it. The fade is per *batch*, not per instance —
-`instanceColor` carries no alpha, so a per-sprite fade would need a custom shader.
+opaque geometry would otherwise punch a hole in whatever draws after it. The fade is per *batch*,
+not per instance — `instanceColor` carries no alpha, so a per-sprite fade would need a custom
+shader.
 
 ### The spectre's fuzz
 
@@ -177,17 +180,17 @@ The spectre carries the demon's own `SARG` art (`THING_SPRITES`) and vanilla's `
 the flag is the entire difference between the two: `r_things.c: R_ProjectSprite` sets
 `vis->colormap = NULL` for it, which makes `R_DrawVisSprite` swap in `R_DrawFuzzColumn`. That column
 routine draws **none of the sprite's own pixels**. For every pixel of the silhouette it reads the
-*background* one screen row up or down (`fuzzoffset[FUZZTABLE]`, alternating `±SCREENWIDTH`) and runs
-it through colormap 6, so a spectre reads as a dark, shimmering hole in the scene rather than as a
-monster, and `fuzzpos` walking the table each frame is what makes it shimmer.
+*background* one screen row up or down (`fuzzoffset[FUZZTABLE]`, alternating `±SCREENWIDTH`) and
+runs it through colormap 6, so a spectre reads as a dark, shimmering hole in the scene rather than
+as a monster, and `fuzzpos` walking the table each frame is what makes it shimmer.
 
-`FUZZ_TYPES` (`game/things/tables.ts`) is that flag: `MT_SHADOWS` and nothing else in `info.c`, so the
-spectre alone. It stays set through death — `P_KillMobj` clears `MF_SHOOTABLE|MF_FLOAT|MF_SKULLFLY`
-and never `MF_SHADOW` — so a spectre's **corpse is fuzzed too**, and the type-keyed set gets that
-right for free where a check on the live monster wouldn't have. The player's invisibility powerup is
-the flag's one other vanilla user and deliberately does not come through here: it is one sprite with
-a mesh of its own and fades via `SpriteActor.setOpacity` instead (docs/items.md § Powerups and the
-backpack).
+`FUZZ_TYPES` (`game/things/tables.ts`) is that flag: `MT_SHADOWS` and nothing else in `info.c`, so
+the spectre alone. It stays set through death — `P_KillMobj` clears
+`MF_SHOOTABLE|MF_FLOAT|MF_SKULLFLY` and never `MF_SHADOW` — so a spectre's **corpse is fuzzed too**,
+and the type-keyed set gets that right for free where a check on the live monster wouldn't have. The
+player's invisibility powerup is the flag's one other vanilla user and deliberately does not come
+through here: it is one sprite with a mesh of its own and fades via `SpriteActor.setOpacity` instead
+(docs/items.md § Powerups and the backpack).
 
 `ThingLayer` draws those things through a third batch, built `fuzz: true`, whose material clones
 `SpriteBatch.applyFuzz` patches: the sprite is darkened to `FUZZ_DARKEN` and faded to a per-pixel
@@ -284,11 +287,11 @@ one *without* the bit is the real single-player pickup.
   uses — so the V axis is inverted through `texture.repeat`/`offset` instead. (Wall/flat UVs in
   `mapmesh.ts` dodge this differently: they're built by hand with V running downward.)
 - **The patch's `top` hotspot is not trusted for floor placement.** DOOM anchors a sprite at
-  `thing.z + top` and gets away with the slack because its software renderer floor-clips every column
-  and the camera sits near floor height. Neither safety net exists in an unclipped 3D top-down view,
-  so a patch whose `top` is less than its full height (common, worst on small pickups) would draw
-  with its feet below the floor. The bottom edge is anchored to the floor outright; `left` is still
-  used as-is for horizontal centring.
+  `thing.z + top` and gets away with the slack because its software renderer floor-clips every
+  column and the camera sits near floor height. Neither safety net exists in an unclipped 3D
+  top-down view, so a patch whose `top` is less than its full height (common, worst on small
+  pickups) would draw with its feet below the floor. The bottom edge is anchored to the floor
+  outright; `left` is still used as-is for horizontal centring.
 - **Rotation frame (which of the 8 sprite angles) is picked from the live viewer angle** every frame
   (`pickRotationDigit`), same as the plane's own yaw.
 
@@ -300,38 +303,38 @@ far, tilted camera small collectibles get lost.
 
 **Both halves of that decision live in `src/constants.ts`** — the factor and `PICKUP_SCALE_TYPES`,
 the whitelist of which doomednums take it — rather than the whitelist sitting with the other thing
-tables in `things/tables.ts`. They are one tuned-by-feel presentation choice and get retuned together;
-splitting them put the dial and the list of what it applies to in different files. It is a whitelist
-of exactly those four blocks, not "everything but monsters/weapons" — monsters are already large
-enough to read, weapons already stand out, and solid decorations/gore props (torches, columns, trees,
-corpses) are already sized to fill a room or a body, so blowing them up another 40% on top of
+tables in `things/tables.ts`. They are one tuned-by-feel presentation choice and get retuned
+together; splitting them put the dial and the list of what it applies to in different files. It is a
+whitelist of exactly those four blocks, not "everything but monsters/weapons" — monsters are already
+large enough to read, weapons already stand out, and solid decorations/gore props (torches, columns,
+trees, corpses) are already sized to fill a room or a body, so blowing them up another 40% on top of
 vanilla's own size reads as oversized rather than more readable.
 
 Carried per instance (`pickupScaleFor` in `game/things/defs.ts` → `PosedThing.scale` →
 `SpriteBatch.add`) rather than baked into the shared per-lump geometry, since scale varies by thing
 type even when two types reuse art. `SpriteActor.setScale` is the same value applied to a real
-`mesh.scale` for the one unbatched sprite, the player — which never takes `PICKUP_SCALE`. It composes
-safely with floor-anchoring: geometry is translated so the plane's bottom-center sits at local
-`(0, 0)` *before* `scale` is applied, so scaling stretches the plane upward and outward from that
-point instead of moving its anchor.
+`mesh.scale` for the one unbatched sprite, the player — which never takes `PICKUP_SCALE`. It
+composes safely with floor-anchoring: geometry is translated so the plane's bottom-center sits at
+local `(0, 0)` *before* `scale` is applied, so scaling stretches the plane upward and outward from
+that point instead of moving its anchor.
 
 Animation (`setPose`'s `animFrames`/`animating`) is a plain frame-letter cycle with no separate idle
-art, matching DOOM itself: the player's `PLAY` sprite reuses `A,B,C,D` as its walk cycle and holds `A`
-while not moving.
+art, matching DOOM itself: the player's `PLAY` sprite reuses `A,B,C,D` as its walk cycle and holds
+`A` while not moving.
 
-Monsters gate `animating` on whether they actually stepped this frame (`ThingLayer.update`), like the
-player — but they run their own per-type frame tables rather than `THING_ANIM_FRAMES`, and a monster's
-pose is also driven by attacking, pain and death (docs/sprites.md § Pain, and attack/pain poses).
-Every non-monster thing (barrel sway, decoration flicker, item/key/
-powerup blink) instead animates unconditionally — vanilla's own idle art loops regardless of motion,
-there being none to gate on. Which doomednums get more than the single held `'A'` frame
-`buildThingSprites` defaults to, and their frame letters/timing, is data in `game/things/tables.ts`'s
-`THING_ANIM_FRAMES` (cross-checked against `info.c`'s `states[]`, not the wiki). The same table also
-covers the opposite case — a corpse/gib prop (the "Dead …"/"Bloody mess" doomednums) whose vanilla
-`spawnstate` is a fixed frame that *isn't* `'A'` — with a single-element `frames` array naming that
-letter, so it holds correctly instead of drawing the sprite's first (unrelated) frame. A doomednum
-absent from the table either has vanilla `tics: -1` (genuinely static — ammo, weapons, STIM/MEDI, the
-plain column) or spawns at the literal `'A'` frame already, and needs neither case.
+Monsters gate `animating` on whether they actually stepped this frame (`ThingLayer.update`), like
+the player — but they run their own per-type frame tables rather than `THING_ANIM_FRAMES`, and a
+monster's pose is also driven by attacking, pain and death (docs/sprites.md § Pain, and attack/pain
+poses). Every non-monster thing (barrel sway, decoration flicker, item/key/ powerup blink) instead
+animates unconditionally — vanilla's own idle art loops regardless of motion, there being none to
+gate on. Which doomednums get more than the single held `'A'` frame `buildThingSprites` defaults to,
+and their frame letters/timing, is data in `game/things/tables.ts`'s `THING_ANIM_FRAMES`
+(cross-checked against `info.c`'s `states[]`, not the wiki). The same table also covers the opposite
+case — a corpse/gib prop (the "Dead …"/"Bloody mess" doomednums) whose vanilla `spawnstate` is a
+fixed frame that *isn't* `'A'` — with a single-element `frames` array naming that letter, so it
+holds correctly instead of drawing the sprite's first (unrelated) frame. A doomednum absent from the
+table either has vanilla `tics: -1` (genuinely static — ammo, weapons, STIM/MEDI, the plain column)
+or spawns at the literal `'A'` frame already, and needs neither case.
 
 Every one of these tables — `THING_SPRITES`, `THING_ANIM_FRAMES`, the seven `MONSTER_*_FRAMES`, the
 barrel's `BARREL_CHAIN`, the missiles' flight and impact art — is **not written out at all**. Each
@@ -387,8 +390,8 @@ to day and costs one rule, which every future sequence-switching method has to k
 > after an `advance`.
 
 Both directions of a switch can break it, and they are fixed in different places. A sequence
-*ending* (an override running out, handing back to a shorter base cycle) is clamped inside `advance`.
-A sequence *starting* is reset by `die`/`playOnce`/`revive` themselves.
+*ending* (an override running out, handing back to a shorter base cycle) is clamped inside
+`advance`. A sequence *starting* is reset by `die`/`playOnce`/`revive` themselves.
 
 The starting half was missing and went unnoticed for a long time, because ordering hid it: `advance`
 and `resolve` sat adjacent in one loop, so the clamp always ran first. Splitting simulation from
@@ -405,8 +408,8 @@ tics over 35.** Both are plain constants in the same table `MONSTER_HEALTH` alre
 earlier eyeballed set had the imp and demon shrugging off roughly half the hits that stagger them in
 vanilla, and flattened pain length to one shared value where vanilla ranges from 4 tics (imp, demon,
 baron barely flinch) to 12 (cacodemon, pain elemental recoil visibly). A stagger also *aborts*
-whatever attack was under way, including the unfired shots of a volley, matching vanilla's pain state
-replacing the attack state outright.
+whatever attack was under way, including the unfired shots of a volley, matching vanilla's pain
+state replacing the attack state outright.
 
 **The walk cycle defaults to `A`-`D` and overrides per type.** `MONSTER_WALK_FRAMES` is DOOM's RUN-
 state convention, the same cycle `PLAY` uses and correct for most of the roster;
@@ -425,12 +428,13 @@ or death table. Every override letter was also confirmed to exist as real rotati
 **Attack and pain each get a real, dedicated pose** (`things/tables.ts`'s `MONSTER_ATTACK_POSE`/
 `MONSTER_PAIN_FRAMES`). The blocker an earlier walk-cycle stand-in was working around was real:
 unlike death frames, which are derivable straight from the WAD because death art is structurally the
-rotation-0-only tail of a sprite's frame set, attack and pain frames are ordinary rotation 1-8 frames
-indistinguishable from walk frames by structure alone. The fix was to stop deriving them from the
-WAD and instead take vanilla's `info.c` `missilestate`/`painstate` chains and convert each state's
-frame number to a letter — then verify every letter for every monster (walk + attack + pain + death
-[+ xdeath]) against the real `SpriteBank`-indexed lumps, checking each sprite's *total* letter count
-against its WAD-confirmed rotation-1 range. All 18 sprites (17 monsters + `PLAY`) matched exactly.
+rotation-0-only tail of a sprite's frame set, attack and pain frames are ordinary rotation 1-8
+frames indistinguishable from walk frames by structure alone. The fix was to stop deriving them from
+the WAD and instead take vanilla's `info.c` `missilestate`/`painstate` chains and convert each
+state's frame number to a letter — then verify every letter for every monster (walk + attack + pain
++ death [+ xdeath]) against the real `SpriteBank`-indexed lumps, checking each sprite's *total*
+letter count against its WAD-confirmed rotation-1 range. All 18 sprites (17 monsters + `PLAY`)
+matched exactly.
 
 That cross-check caught **four pre-existing bugs** the WAD-derivation method had gotten wrong: the
 lost soul, revenant and arch-vile's death tables were each missing their actual first frame
@@ -443,8 +447,8 @@ misses), and the chaingunner's death/xdeath split fell two letters too early, dr
 proportions inside it.** The pain pose keeps the flat `MONSTER_ACTION_FRAME_SECONDS`, but an attack
 pose is `MONSTER_ATTACK_POSE`'s frames scaled to fill `MonsterBody.attackPause`
 (`attackPoseFrameSeconds`) — each frame holding its share of the chain's tics, not an equal slice.
-Entering the pose goes through one function, `enterAttackPose`, for the reason `enterDeathPose` does:
-the live trigger and the savegame restore below must not derive the same pose two ways.
+Entering the pose goes through one function, `enterAttackPose`, for the reason `enterDeathPose`
+does: the live trigger and the savegame restore below must not derive the same pose two ways.
 
 The pose and the wait are the same vanilla states — `duration` is the `missilestate`/`meleestate`
 chain's summed tics and those states are the frames the table lists — so getting either the length
@@ -490,6 +494,7 @@ which has no queueing either.
 fired attack, and the pain pose inside `damage()` right after `reactToDamage` — gated on
 `p.painTimer > 0` rather than every non-lethal hit, since `reactToDamage` only sets it when the hit
 rolls past the monster's `painChance` (a failed roll still alerts and retargets, just doesn't
-stagger). The player's own letters (`things/tables.ts`'s `PLAYER_ATTACK_FRAMES`/`PLAYER_PAIN_FRAMES`, derived
-and WAD-checked the same way) trigger analogously: attack whenever `WeaponSystem.fire` returns a
-nonempty `Shot[]`, pain inside `damagePlayer` whenever the player survives a hit.
+stagger). The player's own letters (`things/tables.ts`'s
+`PLAYER_ATTACK_FRAMES`/`PLAYER_PAIN_FRAMES`, derived and WAD-checked the same way) trigger
+analogously: attack whenever `WeaponSystem.fire` returns a nonempty `Shot[]`, pain inside
+`damagePlayer` whenever the player survives a hit.

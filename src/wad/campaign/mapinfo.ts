@@ -58,15 +58,24 @@ function normalizeMapName(name: string): string {
   return name.toUpperCase();
 }
 
-/** What one `map` entry in a MAPINFO-family lump tells this engine. Every field is optional: most entries define only a name. */
+/**
+ * What one `map` entry in a MAPINFO-family lump tells this engine. Every field is optional: most
+ * entries define only a name.
+ */
 export interface MapInfoEntry {
   /** The level's own title — see `parseMapInfo`'s list of the syntaxes that carry one. */
   title?: string;
   /** Where the normal exit leads (`next`), as a map lump name — or `MAPINFO_END` for a finale. */
   next?: string;
-  /** Where the secret exit leads — ZDoom spells the key `secretnext`, UMAPINFO `nextsecret`; both are read. Also takes `MAPINFO_END`. */
+  /**
+   * Where the secret exit leads — ZDoom spells the key `secretnext`, UMAPINFO `nextsecret`; both
+   * are read. Also takes `MAPINFO_END`.
+   */
   secretNext?: string;
-  /** The `D_*` lump this level's music comes from, replacing the vanilla per-map choice (docs/music.md § Which track a level plays). */
+  /**
+   * The `D_*` lump this level's music comes from, replacing the vanilla per-map choice
+   * (docs/music.md § Which track a level plays).
+   */
   music?: string;
 }
 
@@ -263,7 +272,9 @@ export class MapInfo {
     this.entries = readEntries(wad);
   }
 
-  /** What the set defines for one map, or undefined for a map no file names. Keys are upper-case. */
+  /**
+   * What the set defines for one map, or undefined for a map no file names. Keys are upper-case.
+   */
   entry(mapName: string): MapInfoEntry | undefined {
     return this.entries.get(mapName);
   }

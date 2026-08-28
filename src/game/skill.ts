@@ -19,9 +19,15 @@ export const SKILL_NAMES: Record<Skill, string> = {
   5: 'Nightmare!',
 };
 
-/** `sk_baby`, vanilla's own name for skill 1 — the two rules below are the only places it differs from skill 2. */
+/**
+ * `sk_baby`, vanilla's own name for skill 1 — the two rules below are the only places it differs
+ * from skill 2.
+ */
 const SKILL_BABY: Skill = 1;
-/** `sk_nightmare`. Everything it changes beyond skill 4 is keyed off this: double ammo, fast monsters and respawning monsters. */
+/**
+ * `sk_nightmare`. Everything it changes beyond skill 4 is keyed off this: double ammo, fast
+ * monsters and respawning monsters.
+ */
 const SKILL_NIGHTMARE: Skill = 5;
 
 /**
@@ -113,7 +119,10 @@ export function spawnAngleDeg(angle: number): number {
   return Math.trunc(angle / 45) * 45;
 }
 
-/** THING flag bit marking a thing "ambush" in the editor — vanilla's `MF_AMBUSH`, commonly called "deaf". */
+/**
+ * THING flag bit marking a thing "ambush" in the editor — vanilla's `MF_AMBUSH`, commonly called
+ * "deaf".
+ */
 const AMBUSH = 0x0008;
 
 /**

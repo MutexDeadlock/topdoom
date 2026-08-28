@@ -65,7 +65,10 @@ const SPREAD_FAR = 600;
 const AHEAD_NEAR = 90;
 const AHEAD_FAR = 1200;
 
-/** How fast the smoothed openness follows a measurement, 1/seconds — tuned by feel (the ~1 s "breathing" dial). */
+/**
+ * How fast the smoothed openness follows a measurement, 1/seconds — tuned by feel (the ~1 s
+ * "breathing" dial).
+ */
 const OPENNESS_SMOOTH_RATE = 1.5;
 /** Snap epsilon for the openness damper — tuned by feel (imperceptible). */
 const OPENNESS_SNAP_EPS = 1e-3;
@@ -182,7 +185,9 @@ function blocksProbe(i: number): boolean {
 export interface Openness {
   /** The median ray: how boxed in the player is, whichever way they look. Drives the zoom. */
   spread: number;
-  /** Weighted toward the bearing the camera looks along: how far the view reaches. Drives the tilt. */
+  /**
+   * Weighted toward the bearing the camera looks along: how far the view reaches. Drives the tilt.
+   */
   ahead: number;
 }
 
@@ -241,7 +246,9 @@ export function measureOpenness(world: World, from: Pos3, viewDeg: number): Open
 
 /** How far the occlusion ray climbs over its length — its one extra piece of state. */
 let rayRise = 0;
-/** The height an occluder has to reach for the camera not to be looking over it — see `standsOver`. */
+/**
+ * The height an occluder has to reach for the camera not to be looking over it — see `standsOver`.
+ */
 let rayTopLimit = 0;
 /**
  * The level's render transfers, and one scratch record for the bands they
@@ -263,11 +270,9 @@ const rayBands: DrawnBands = { lowerBot: 0, lowerTop: 0, upperBot: 0, upperTop: 
  * there from behind: the room's own wall between the player and a camera
  * hanging outside it hides nothing, because what faces the camera is its
  * missing back. Which quads exist and how tall they stand is *not* decided
- * here: `mapmesh.ts`'s `twoSidedBands` is the one owner of that rule, so a
- * Boom 242 moving a drawn floor or ceiling moves what the camera counts too.
- * Ceilings are never emitted, so nothing above the top of a wall can hide
- * anything. Live sector heights, so a door or lift needs no special case.
- * Height is the other half, and `standsOver` owns it.
+ * here: `mapmesh.ts`'s `twoSidedBands` is the one owner of that rule, so a Boom 242 moving a drawn
+ * floor or ceiling moves what the camera counts too. Live sector heights, so a door or lift needs
+ * no special case. Height is the other half, and `standsOver` owns it.
  * docs/camera.md § Framing past an occluder.
  */
 function hidesFromCamera(i: number, h: number, cameraSide: number): boolean {
@@ -375,18 +380,9 @@ export function nearestObstruction(
 }
 
 /**
- * Whether a camera eye here would sit inside drawn ground rather than above it.
- *
- * Ceilings are never emitted (`render/mapmesh.ts`'s `renderCeilings`), so a
- * camera hanging over a room's ceiling sees straight in and a wall between it
- * and the player is the occlusion fade's job, not this one's — being *under a
- * floor* is the one case no fade can undo, because what buries the eye is the
- * ground it is looking through from below. Live sector heights, so a lift
- * rising into the camera reads on the next tic.
- *
- * Known gap: a void solid drawn as a cap (`render/solids.ts`) has no sector to
- * read a floor from, so an eye inside a pillar is not caught.
- * docs/camera.md § The buried-eye rescue.
+ * Whether a camera eye here would sit inside drawn ground rather than above it. Floor heights
+ * alone, read live so a lift rising into the camera lands on the next tic; why only floors, and
+ * the known gap on void solids, are docs/camera.md § The buried-eye rescue.
  */
 function eyeBuried(world: World, x: number, y: number, h: number): boolean {
   const sector = world.sectorAt(x, y);
@@ -463,46 +459,23 @@ export interface RescueFraming {
   tiltDeg: number;
 }
 
-/** The k-th offset of the alternating walk 0, −step, +step, −2·step, … — `|offset|` never decreases. */
+/**
+ * The k-th offset of the alternating walk 0, −step, +step, −2·step, … — `|offset|` never decreases.
+ */
 function walkOffset(k: number, step: number): number {
   const ring = (k + 1) >> 1;
   return k % 2 === 0 ? ring * step : -ring * step;
 }
 
 /**
- * The framing **nearest the one the openness dials asked for** whose eye is not
- * buried, searched over *both* dials at once — distance from
- * `MIN_RESCUE_DISTANCE` to `limit`, tilt across the camera's whole envelope.
- * `wanted`/`mappedTilt` themselves whenever they are already clear, which is
- * nearly always.
+ * The framing **nearest the one the openness dials asked for** whose eye is not buried, searched
+ * over *both* dials at once — distance from `MIN_RESCUE_DISTANCE` to `limit`, tilt across the
+ * camera's whole envelope. Returns `wanted`/`mappedTilt` untouched whenever they are already clear,
+ * which is nearly always; `measureClearance` is the fallback when nothing in the envelope clears.
+ * The tilt half only ever leans further off vertical, never back toward top-down.
  *
- * Searching beats moving in one hand-picked direction because which direction
- * even exists is geometry, not taste. Coming *nearer* clears a plateau the
- * camera would otherwise hang over; backing *off* clears the rim of a shaft the
- * player is standing at the bottom of, since the eye rises along its own ray;
- * and changing the tilt trades one against the other, a steeper look needing
- * more distance to reach the same height. Both were tried alone here first and
- * each fixed one map while breaking another.
- *
- * **The tilt half only ever leans further off vertical**, never back toward
- * top-down. Turning overhead is the cheap way to lift a buried eye — it beats
- * any distance change, and an unrestricted search takes it on up to 1.2% of
- * poses and by as much as 45° — but it buys that height by spending exactly
- * what a shut-in framing is already short of: sight of what the player is
- * walking into. It also pulls against `nearTiltLean`, which leans the other way
- * for the same reason. So the rescue leans over or holds, and when neither that
- * nor the distance clears, pulling in is the fallback rather than a plan view.
- *
- * **Nearness weighs a degree against a unit by each dial's own span** — 370
- * units of distance (`AUTO_NARROW_DISTANCE`..`AUTO_WIDE_DISTANCE`) against 20°
- * of tilt (`AUTO_NARROW_TILT`..`AUTO_WIDE_TILT`) — so one full swing of the
- * zoom costs the same as one full swing of the tilt. Those are the ranges the
- * `spread` and `ahead` dials themselves sweep, which is what makes the trade
- * a statement about the framing rather than a tuned number.
- *
- * The walk visits candidates in ascending cost on each axis, so the first hit
- * prunes nearly everything after it and a clear framing costs one lookup.
- * docs/camera.md § The buried-eye rescue.
+ * Why a search rather than one chosen direction, why the tilt is one-way, and how a degree is
+ * weighed against a unit: docs/camera.md § The buried-eye rescue.
  */
 export function rescueFraming(
   world: World,
@@ -576,9 +549,15 @@ export class AutoCamera {
   private smoothedSpread = 0;
   private smoothedAhead = 0;
   private smoothedClearance = MAX_CAMERA_DISTANCE;
-  /** The zoom the occluder leaves — or the buried-eye rescue asks for — in map units. Damped, so a doorjamb in passing cannot pop it. */
+  /**
+   * The zoom the occluder leaves — or the buried-eye rescue asks for — in map units. Damped, so a
+   * doorjamb in passing cannot pop it.
+   */
   private smoothedFraming = MAX_CAMERA_DISTANCE;
-  /** How far the buried-eye rescue is shifting the tilt off the mapped one, in degrees — damped like the clearance. */
+  /**
+   * How far the buried-eye rescue is shifting the tilt off the mapped one, in degrees — damped like
+   * the clearance.
+   */
   private smoothedTiltShift = 0;
   /** The rescue's answer, reused so a tic allocates nothing. */
   private rescue: RescueFraming = { distance: 0, tiltDeg: 0 };
@@ -589,12 +568,16 @@ export class AutoCamera {
     this.transfers = transfers ?? ownTransfers(world.map);
   }
 
-  /** The framing after the occluder cap and the outward rescue, in map units — the DEVMODE readout. */
+  /**
+   * The framing after the occluder cap and the outward rescue, in map units — the DEVMODE readout.
+   */
   get occluded(): number {
     return this.smoothedFraming;
   }
 
-  /** How far the buried-eye rescue is currently shifting the tilt, in degrees — the DEVMODE readout. */
+  /**
+   * How far the buried-eye rescue is currently shifting the tilt, in degrees — the DEVMODE readout.
+   */
   get tiltShift(): number {
     return this.smoothedTiltShift;
   }

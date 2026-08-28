@@ -1,10 +1,10 @@
 # Line and sector specials
 
 `src/game/specials.ts`, `src/game/specials/defs.ts`, `src/game/specials/tables.ts`,
-`src/game/specials/mapscan.ts`,
-`src/game/specials/movergeometry.ts`, `src/game/specials/moverblocking.ts`, `src/game/specials/sectoreffects.ts`,
-`src/game/specials/forces.ts`, `src/game/specials/transfers.ts`,
-`src/game/voodoo.ts`, `src/game.ts`, `src/render/occlusion.ts`
+`src/game/specials/mapscan.ts`, `src/game/specials/movergeometry.ts`,
+`src/game/specials/moverblocking.ts`, `src/game/specials/sectoreffects.ts`,
+`src/game/specials/forces.ts`, `src/game/specials/transfers.ts`, `src/game/voodoo.ts`,
+`src/game.ts`, `src/render/occlusion.ts`
 
 **The data half.** `specials/defs.ts` holds the shapes a special is expressed as — `SpecialDef`, the
 `Effect` union, and the speeds/waits/damage amounts those carry. `specials/tables.ts` keys the
@@ -15,21 +15,21 @@ them, which is why they sit under `game/` with the controller that drives them r
 
 **The three files.** `specials.ts` is `SpecialsController`: the movers, the trigger dispatch, the
 switch flashes and the light thinkers — everything with runtime state. `specials/mapscan.ts` is the
-load-time analysis of a map (`scanSectors`, `findStairChain`, `bossDeathTriggersFor`, …),
-pure functions of the `DoomMap` with no controller involved, which is why `mapmesh.ts` can call one
-before the controller exists. `specials/movergeometry.ts` (`MoverGeometry`) is everything a height or
-light change means for what is actually *drawn*: the per-sector mover meshes, their faders, and
+load-time analysis of a map (`scanSectors`, `findStairChain`, `bossDeathTriggersFor`, …), pure
+functions of the `DoomMap` with no controller involved, which is why `mapmesh.ts` can call one
+before the controller exists. `specials/movergeometry.ts` (`MoverGeometry`) is everything a height
+or light change means for what is actually *drawn*: the per-sector mover meshes, their faders, and
 `recolorSector`. The controller mutates `Sector` fields and tells `MoverGeometry` which sectors went
 stale; it holds no THREE object of its own.
 
 That mutation is direct — `Sector.floorHeight`/`ceilHeight`/`light` change on the `DoomMap` itself,
-and `World` never caches them, so collision, sight-blocking and resting heights pick a mover's change
-up on their very next query with no invalidation step. The controller also has no idea who is
+and `World` never caches them, so collision, sight-blocking and resting heights pick a mover's
+change up on their very next query with no invalidation step. The controller also has no idea who is
 standing where: crush damage, obstruction, exits and teleports all reach `game.ts` through callbacks
-(`onCrush`/`onExit`/`onTeleport`, `game/specials/moverblocking.ts`). And a stair builder is not its own mover
-type: each step is a plain `FloorMover` rising to a fixed height, over the chain of sectors
-`findStairChain` discovered at load time by the same texture-matched adjacency walk vanilla's
-`EV_BuildStairs` does at runtime.
+(`onCrush`/`onExit`/`onTeleport`, `game/specials/moverblocking.ts`). And a stair builder is not its
+own mover type: each step is a plain `FloorMover` rising to a fixed height, over the chain of
+sectors `findStairChain` discovered at load time by the same texture-matched adjacency walk
+vanilla's `EV_BuildStairs` does at runtime.
 
 The vanilla-only line special table is confirmed against the Doom wiki's linedef type table **and,
 where the two disagree, against the real `linuxdoom-1.10` source** — after a first pass briefly (and
@@ -39,8 +39,8 @@ looks like it could be a third stop-crusher alongside 57/74, but is an unrelated
 
 **Use triggers fire on `Space` *or* the right mouse button**, the latter only while it is bound to
 `use`, which is not the default (docs/menu.md § Right mouse button). `handleUseTrigger` asks
-`Input.rightMousePressed('use')` rather than reading the setting, and both sources are edge-triggered,
-so a held button activates a switch exactly once.
+`Input.rightMousePressed('use')` rather than reading the setting, and both sources are
+edge-triggered, so a held button activates a switch exactly once.
 
 Every mover here also makes noise, and *which* noise is part of the mechanism: docs/audio.md §
 Specials has the per-mover rules, including the shared 8-tic grind clock and the silent crusher
@@ -111,13 +111,14 @@ older builds' savegame readers have never seen its shape, which is fine in the d
 `SAVE_VERSION` tracks (new builds read all old saves).
 
 Every trigger path resolves a line's number through **`lookupSpecial` (`specials/tables.ts`)**,
-never by indexing `LINE_SPECIALS` directly — that is the seam where Boom's extended numbers and
-the generalized bitfield ranges join without reshaping the vanilla table (which stays exactly as
+never by indexing `LINE_SPECIALS` directly — that is the seam where Boom's extended numbers and the
+generalized bitfield ranges join without reshaping the vanilla table (which stays exactly as
 audited, one entry per vanilla number). `PARAM_LINE_SPECIALS` sits beside it: the numbers that are
 *not* triggerable effects but level-spawn parameters (vanilla 48's scroll, Boom's scrollers,
 friction and pushers in `specials/forces.ts`; the render transfers in `specials/transfers.ts`),
-listed so a coverage report can tell "known, handled elsewhere" from "unknown number". Boom behaviors are confirmed against the boom202 /
-PrBoom+ source the same way vanilla ones are confirmed against `linuxdoom-1.10`.
+listed so a coverage report can tell "known, handled elsewhere" from "unknown number". Boom
+behaviors are confirmed against the boom202 / PrBoom+ source the same way vanilla ones are confirmed
+against `linuxdoom-1.10`.
 
 **Activation is data plus an activator.** A def says who a number admits (`monsterActivate` for
 walk lines — vanilla `P_CrossSpecialLine`'s seven-number monster allow-list, and Boom's
@@ -158,8 +159,8 @@ nearest-special-shadows-everything behavior is the flagless case.
 **`P_UseSpecialLine` calls it inside `if (EV_…)`.** A switch whose EV_ helper returned 0 — every
 tag-matched sector already busy, a donut with no ring, a stair chain that couldn't start — is left
 untouched and unspent, so the player can press it again once whatever was in the way has finished.
-Getting this wrong is worse than a cosmetic bug: an S1 switch consumed by a press that did nothing is
-dead for the rest of the level, and on a map where it is the only way to raise a floor or open a
+Getting this wrong is worse than a cosmetic bug: an S1 switch consumed by a press that did nothing
+is dead for the rest of the level, and on a map where it is the only way to raise a floor or open a
 crusher, the level is unfinishable.
 
 The exceptions are exact, not approximate, and `SWITCH_ALWAYS_FLIPS` (`game/specials.ts`) is the
@@ -177,20 +178,20 @@ whole list:
 **The flip is permanent unless the switch is repeatable.** `P_ChangeSwitchTexture`'s second argument
 is `useAgain`, and it does two things with it: `if (!useAgain) line->special = 0` spends a one-shot
 line, and `if (useAgain) P_StartButton(..., BUTTONTIME)` starts the 35-tic timer that flips the art
-*back*. So only an SR/WR switch reverts, so it can visibly be pressed again; an S1/W1 switch is given
-no button at all and shows its pressed art for the rest of the level. Running the revert timer on
-every switch — which this engine did — makes every one-shot switch in the game flick green and back
-to red a second later. `flashSwitch` takes `useAgain` for exactly this.
+*back*. So only an SR/WR switch reverts, so it can visibly be pressed again; an S1/W1 switch is
+given no button at all and shows its pressed art for the rest of the level. Running the revert timer
+on every switch — which this engine did — makes every one-shot switch in the game flick green and
+back to red a second later. `flashSwitch` takes `useAgain` for exactly this.
 
 That also means `switchFlashes` is no longer the full set of pressed switches, which the savegame
-restore has to account for: it re-applies on-textures from `switchFlashes` **and** `usedOnce`, since a
-permanently-flipped switch has no timer to be found under. (A `usedOnce` line with no switch art —
+restore has to account for: it re-applies on-textures from `switchFlashes` **and** `usedOnce`, since
+a permanently-flipped switch has no timer to be found under. (A `usedOnce` line with no switch art —
 most of them, all the walk triggers — resolves to no entries and costs nothing.)
 
-Each `trigger*` method therefore returns its EV_ helper's `rtn` rather than `void`: **true only for a
-sector that actually took the effect**, which for most of them is exactly `!sectorActive(sectorIndex)`
-— vanilla's `rtn = 1` and its `if (sec->specialdata) continue;` are the same test read two ways. The
-crusher is the one that isn't; see § Crushers.
+Each `trigger*` method therefore returns its EV_ helper's `rtn` rather than `void`: **true only for
+a sector that actually took the effect**, which for most of them is exactly
+`!sectorActive(sectorIndex)` — vanilla's `rtn = 1` and its `if (sec->specialdata) continue;` are the
+same test read two ways. The crusher is the one that isn't; see § Crushers.
 
 ## Crushers
 
@@ -199,26 +200,27 @@ return to the sector's *own* start height (not neighbor-derived, unlike a door's
 forever, with no hold/rest state.
 
 They — and the vanilla `raiseFloorCrush` floor family (55/56/65/94) — deal `CRUSH_DAMAGE` every
-`CRUSH_DAMAGE_INTERVAL` (vanilla's 10 HP every 4 tics) to the player or any body the moving plane has
-left without the headroom to stand in, via `SpecialsController`'s `onCrush` callback into
-`specials/moverblocking.ts: applyCrushDamage` — the same "hand back a sector index, let someone else work out
-who is standing in it" split as the two obstruction callbacks beside it, since `SpecialsController`
-mutates geometry but has no idea where anyone is. The headroom gate matters even for someone in the
-mover's own sector footprint: standing under a crusher parked at the top of its swing, or before it's
-descended far enough to reach you, must not deal damage — `PIT_ChangeSector` (`p_map.c`) only damages
-a thing `P_ThingHeightClip` reports as not fitting, never everyone the sector's blockmap iteration
-happens to touch.
+`CRUSH_DAMAGE_INTERVAL` (vanilla's 10 HP every 4 tics) to the player or any body the moving plane
+has left without the headroom to stand in, via `SpecialsController`'s `onCrush` callback into
+`specials/moverblocking.ts: applyCrushDamage` — the same "hand back a sector index, let someone else
+work out who is standing in it" split as the two obstruction callbacks beside it, since
+`SpecialsController` mutates geometry but has no idea where anyone is. The headroom gate matters
+even for someone in the mover's own sector footprint: standing under a crusher parked at the top of
+its swing, or before it's descended far enough to reach you, must not deal damage —
+`PIT_ChangeSector` (`p_map.c`) only damages a thing `P_ThingHeightClip` reports as not fitting,
+never everyone the sector's blockmap iteration happens to touch.
 
 **"Doesn't fit" is each body's own clipped headroom, not the crushing sector's gap under its centre
 point.** `P_ThingHeightClip` re-runs `P_CheckPosition`, so a body's `ceilingz`/`floorz` come from
 every two-sided opening its *box* spans — which is `World.headroom(x, y, radius)` here — and are
 compared against its own `mobjinfo.height` (`PLAYER_HEIGHT` for the player and for a voodoo doll,
-which is a player mobj). A body straddling the crushing sector's edge is therefore crushed by it, and
-must be: the movement code has always pinned it (`positionBlocked` is box aware, docs/movement.md §
-Collision), so measuring damage from the centre point alone left it frozen under a grinding ceiling
-taking nothing — no flinch, no pain sound, no death. **Repro: NoSp2.wad MAP04**, whose crusher room
-is two sectors, 198 (tag 84) and 141, with identical heights: two thirds of the cybruisers penned
-there stood at the join and survived stroke after stroke. `tests/regression/crush-straddling-body.test.ts`.
+which is a player mobj). A body straddling the crushing sector's edge is therefore crushed by it,
+and must be: the movement code has always pinned it (`positionBlocked` is box aware,
+docs/movement.md § Collision), so measuring damage from the centre point alone left it frozen under
+a grinding ceiling taking nothing — no flinch, no pain sound, no death. **Repro: NoSp2.wad MAP04**,
+whose crusher room is two sectors, 198 (tag 84) and 141, with identical heights: two thirds of the
+cybruisers penned there stood at the join and survived stroke after stroke.
+`tests/regression/crush-straddling-body.test.ts`.
 
 Membership in the crushing sector is still required — the eight-point `boxOverlapsSector` sampling —
 so a body squeezed by something else next door is that mover's business, not this one's. Its
@@ -229,39 +231,40 @@ references `PosedThing.sector` was seeded from, the same trick `tryPickup`'s liv
 on.
 
 **A barrel takes the same crush damage as a monster**, via `crushablesInSectors` (`monstersInSector`
-plus any living barrel in those sectors) — vanilla's `PIT_ChangeSector` doesn't distinguish `MT_BARREL`
-from any other `MF_SHOOTABLE` mobj, so a barrel under a crusher dies and explodes exactly as if it'd
-been shot (docs/death.md § Exploding barrels covers the death→explode delay itself). The
-headroom-blocked check other movers use (`game/specials/moverblocking.ts`) deliberately stays on
-`monstersInSector` alone — whether a barrel should also stall a closing door is a separate question
-this change doesn't touch.
+plus any living barrel in those sectors) — vanilla's `PIT_ChangeSector` doesn't distinguish
+`MT_BARREL` from any other `MF_SHOOTABLE` mobj, so a barrel under a crusher dies and explodes
+exactly as if it'd been shot (docs/death.md § Exploding barrels covers the death→explode delay
+itself). The headroom-blocked check other movers use (`game/specials/moverblocking.ts`) deliberately
+stays on `monstersInSector` alone — whether a barrel should also stall a closing door is a separate
+question this change doesn't touch.
 
-**Only a *lowering* `CrusherMover` deals damage, matching `T_MoveCeiling`** (`p_ceilng.c`): its raise
-call always passes a hardcoded `crush=false` to `T_MovePlane` regardless of the mover's own crush
-flag, so `P_ChangeSector`'s `crushchange` is false and the damage branch never runs on the way back
-up, even while the gap is still too small. `tickCrusher` captures its direction before the tick's
-move (and any end-of-travel state flip) and only calls `tickCrush` when that was `'lowering'`. The
-`raiseFloorCrush` floor family has no such asymmetry — `T_MoveFloor` always passes the mover's real
-`crush` flag regardless of direction, and a floor crusher only ever moves one way (up) per trigger
-anyway — so `tickFloor` calls `tickCrush` unconditionally while `mover.crush` is set and moving.
+**Only a *lowering* `CrusherMover` deals damage, matching `T_MoveCeiling`** (`p_ceilng.c`): its
+raise call always passes a hardcoded `crush=false` to `T_MovePlane` regardless of the mover's own
+crush flag, so `P_ChangeSector`'s `crushchange` is false and the damage branch never runs on the way
+back up, even while the gap is still too small. `tickCrusher` captures its direction before the
+tick's move (and any end-of-travel state flip) and only calls `tickCrush` when that was
+`'lowering'`. The `raiseFloorCrush` floor family has no such asymmetry — `T_MoveFloor` always passes
+the mover's real `crush` flag regardless of direction, and a floor crusher only ever moves one way
+(up) per trigger anyway — so `tickFloor` calls `tickCrush` unconditionally while `mover.crush` is
+set and moving.
 
 **The damage pulse itself is one clock shared by every crushing mover on the map, not a per-mover
 countdown** — `SpecialsController.crushDamageTimer`/`crushDamageDue`, computed once in `update` the
-same way `moveSoundDue` already is for the shared grind sound (§ above this one, `MOVE_SOUND_INTERVAL`).
-This reproduces vanilla's literal `leveltime&3` — one level-wide clock every crusher's
-`PIT_ChangeSector` call checks, so two crushers running at once always pulse on the same tic. A
-per-mover countdown, reset to `CRUSH_DAMAGE_INTERVAL` on each fire, was tried first and drifts out of
-phase with the level's real tic count over a long-running crusher — caught by testing
-`crusher_test.wad`'s WR fast crusher against GZDoom side by side, which came out one `CRUSH_DAMAGE` hit
-lower than this engine over the same run.
+same way `moveSoundDue` already is for the shared grind sound (§ above this one,
+`MOVE_SOUND_INTERVAL`). This reproduces vanilla's literal `leveltime&3` — one level-wide clock every
+crusher's `PIT_ChangeSector` call checks, so two crushers running at once always pulse on the same
+tic. A per-mover countdown, reset to `CRUSH_DAMAGE_INTERVAL` on each fire, was tried first and
+drifts out of phase with the level's real tic count over a long-running crusher — caught by testing
+`crusher_test.wad`'s WR fast crusher against GZDoom side by side, which came out one `CRUSH_DAMAGE`
+hit lower than this engine over the same run.
 
-**A descent that is actually crushing something drops to an eighth speed.**
-`T_MoveCeiling` sets `ceiling->speed = CEILSPEED / 8` whenever `T_MovePlane` comes back `crushed`, and
-restores full speed on reaching the bottom (`CrusherEffect.slowsWhenCrushing`, `CrusherMover.slowed`).
-This is not a flourish — it multiplies the time a body spends under the descending ceiling, and so the
-damage one stroke deals, **by eight**. Without it MAP06's crusher deals ~140 damage a cycle and a
-500 HP Hell Knight walks away from four of them; with it the stroke deals over 1000 and kills him on
-the first, which is what vanilla and GZDoom both do. Three details are load-bearing:
+**A descent that is actually crushing something drops to an eighth speed.** `T_MoveCeiling` sets
+`ceiling->speed = CEILSPEED / 8` whenever `T_MovePlane` comes back `crushed`, and restores full
+speed on reaching the bottom (`CrusherEffect.slowsWhenCrushing`, `CrusherMover.slowed`). This is not
+a flourish — it multiplies the time a body spends under the descending ceiling, and so the damage
+one stroke deals, **by eight**. Without it MAP06's crusher deals ~140 damage a cycle and a 500 HP
+Hell Knight walks away from four of them; with it the stroke deals over 1000 and kills him on the
+first, which is what vanilla and GZDoom both do. Three details are load-bearing:
 
 - `crushed` and `pastdest` are mutually exclusive in `T_MoveCeiling` (the slowdown lives in the
   `else` of the `pastdest` test), so the tic that lands on the bottom restores full speed and must
@@ -300,13 +303,13 @@ Two consequences worth knowing, both vanilla's:
   the up-stroke. The switch, line 587, is an S1 (49) and already spent. This is the map's own
   design, not a bug, and the report that chased it down is in the commit history.
 
-The turbo-16 stair specials (100/127) are deliberately *not* included, even though the wiki names them
-"...and Crush" — the actual `EV_BuildStairs` source never sets a crush flag on the floor movers it
-spawns, so real vanilla turbo stairs don't crush either. Strictly, it never sets the field *at all*:
-unlike `EV_DoFloor`, which opens with `floor->crush = false`, `EV_BuildStairs` leaves it whatever the
-recycled zone block held (`Z_Malloc` does not zero). Treating it as false is what every port does and
-what observed vanilla behavior shows; the point stands that nothing in the source ever asks these
-stairs to crush.
+The turbo-16 stair specials (100/127) are deliberately *not* included, even though the wiki names
+them "...and Crush" — the actual `EV_BuildStairs` source never sets a crush flag on the floor movers
+it spawns, so real vanilla turbo stairs don't crush either. Strictly, it never sets the field *at
+all*: unlike `EV_DoFloor`, which opens with `floor->crush = false`, `EV_BuildStairs` leaves it
+whatever the recycled zone block held (`Z_Malloc` does not zero). Treating it as false is what every
+port does and what observed vanilla behavior shows; the point stands that nothing in the source ever
+asks these stairs to crush.
 
 **Nothing blocks a genuine crusher on contact**, matching the `crush==true` branch of `T_MovePlane`
 exactly: it keeps hurting whoever's in the way every interval until they leave or die, rather than
@@ -328,42 +331,43 @@ Unlike vanilla, the door check applies uniformly regardless of speed — this en
 `CeilingMover` (real vanilla never sets `crush=true` for this mover) and to a rising `LiftMover` or
 `crush: false` `FloorMover` (covering every ordinary raise, `raiseToTexture`, `lowerAndChange`, the
 donut's ring, and stair builders — stairs never set `crush` either). Two callbacks carry this out —
-`game/specials/moverblocking.ts`'s `blocksCeilingLower`/`blocksFloorRise`, both routed through the shared
-`headroomBlocked` helper there. A *rising* `CeilingMover` is deliberately not checked at all — it only
-ever opens headroom, and vanilla's ceiling-up code never reverts on contact either.
+`game/specials/moverblocking.ts`'s `blocksCeilingLower`/`blocksFloorRise`, both routed through the
+shared `headroomBlocked` helper there. A *rising* `CeilingMover` is deliberately not checked at all
+— it only ever opens headroom, and vanilla's ceiling-up code never reverts on contact either.
 
 A door reverses direction outright (it already has a `raising` state to fall back into); a
 `CeilingMover`/`FloorMover` has none, so it skips that tick's step and retries the next — reading as
-the mover stalling until the obstruction clears, the same practical result as vanilla's per-tic retry.
-That covers `T_MoveFloor`/`T_MoveCeiling`, neither of which does anything with a `crushed` result
-beyond letting the next tic retry.
+the mover stalling until the obstruction clears, the same practical result as vanilla's per-tic
+retry. That covers `T_MoveFloor`/`T_MoveCeiling`, neither of which does anything with a `crushed`
+result beyond letting the next tic retry.
 
-**`LiftMover` is the one exception, and it does reverse**: `T_PlatRaise`'s own `res == crushed &&
-!plat->crush` branch sets `plat->status = down` (and plays `pstart`) the instant a rise is blocked,
-rather than stalling — confirmed against `p_plats.c`. `tickLift`'s `'raising'` branch mirrors this
-exactly: on `blocksFloorRise`, it flips `state` to `'lowering'` and plays `pstart`, so a lift a player
-is standing under (or half-straddling into a lower-ceilinged neighbor — see docs/movement.md §
-Collision's `groundCeiling`) backs off immediately instead of waiting at the ceiling for them to move.
-A lowering `CeilingMover`/closing door stopped at their *own* obstruction check still just stalls —
-this asymmetry (reverse vs. stall) is vanilla's own, not a simplification here.
+**`LiftMover` is the one exception, and it does reverse**: `T_PlatRaise`'s own
+`res == crushed && !plat->crush` branch sets `plat->status = down` (and plays `pstart`) the instant
+a rise is blocked, rather than stalling — confirmed against `p_plats.c`. `tickLift`'s `'raising'`
+branch mirrors this exactly: on `blocksFloorRise`, it flips `state` to `'lowering'` and plays
+`pstart`, so a lift a player is standing under (or half-straddling into a lower-ceilinged neighbor —
+see docs/movement.md § Collision's `groundCeiling`) backs off immediately instead of waiting at the
+ceiling for them to move. A lowering `CeilingMover`/closing door stopped at their *own* obstruction
+check still just stalls — this asymmetry (reverse vs. stall) is vanilla's own, not a simplification
+here.
 
 **Deliberately asymmetric, matching vanilla**: only the direction that closes the gap on someone is
 ever checked (a closing door/lowering ceiling, a rising lift/floor). The opposite direction is left
 unchecked, since `P_ThingHeightClip` rides a grounded thing along with a receding floor/ceiling
 automatically, so that direction essentially never traps anyone.
 
-**`headroomBlocked` must test sector membership with `boxOverlapsSector`, not a bare
-`sectorIndexAt` point test.** Walking up to a door leaves the collision box straddling the frame —
-the same straddling `World.groundFloor` accounts for — so the player's *center* still reads as the
-corridor's sector while the door sector, the one actually about to close on them, is never checked at
-all. A plain point test was the original bug here. The overlap is approximated the way `FogOfWar`
-samples polygons: the box's four corners and four edge midpoints, ample for a doorway-sized sector.
-`applyCrushDamage`, in the same file and directly below it, is box aware for the same reason and then
-some — it measures the body's whole clipped headroom (§ Crushers).
+**`headroomBlocked` must test sector membership with `boxOverlapsSector`, not a bare `sectorIndexAt`
+point test.** Walking up to a door leaves the collision box straddling the frame — the same
+straddling `World.groundFloor` accounts for — so the player's *center* still reads as the corridor's
+sector while the door sector, the one actually about to close on them, is never checked at all. A
+plain point test was the original bug here. The overlap is approximated the way `FogOfWar` samples
+polygons: the box's four corners and four edge midpoints, ample for a doorway-sized sector.
+`applyCrushDamage`, in the same file and directly below it, is box aware for the same reason and
+then some — it measures the body's whole clipped headroom (§ Crushers).
 
-Both take prospective heights as explicit parameters rather than reading `player.z`/`m.z`: the caller
-is always asking about the height a boundary is *about* to move to, matching `P_ThingHeightClip`
-re-syncing a grounded thing's `z` to the new floor before testing it.
+Both take prospective heights as explicit parameters rather than reading `player.z`/`m.z`: the
+caller is always asking about the height a boundary is *about* to move to, matching
+`P_ThingHeightClip` re-syncing a grounded thing's `z` to the new floor before testing it.
 
 **`blocksFloorRise` also checks `World.groundCeiling` at the player's position**, beyond
 `headroomBlocked`'s own-sector-only test — straddling half onto a rising lift/floor and half into a
@@ -513,12 +517,12 @@ you just landed on crosses that pad's own teleport line and bounces you straight
 Repro: freedoom2 MAP01's two-way pair, sectors 167 (tag 3) and 133 (tag 5), whose 97 lines all have
 the pad on their back side; covered by `tests/regression/teleport-back-side.test.ts`.
 
-The side is vanilla's `P_CrossSpecialLine` `side` argument, which `P_TryMove` fills with **`oldside`**
-— the side the thing occupied *before* the move, not after — so `trigger`'s `fromBackSide` is computed
-from `prevX`/`prevY` (the player) or `prev` (a monster), not the current position. Teleports are the
-only consumer: tracing `P_CrossSpecialLine`, `side` reaches nothing but `EV_Teleport`, so no other
-special is direction-gated this way. `handleUseTrigger`'s own front-side test is a separate vanilla
-rule (`P_UseSpecialLine`) that happens to share `isFrontSide`.
+The side is vanilla's `P_CrossSpecialLine` `side` argument, which `P_TryMove` fills with
+**`oldside`** — the side the thing occupied *before* the move, not after — so `trigger`'s
+`fromBackSide` is computed from `prevX`/`prevY` (the player) or `prev` (a monster), not the current
+position. Teleports are the only consumer: tracing `P_CrossSpecialLine`, `side` reaches nothing but
+`EV_Teleport`, so no other special is direction-gated this way. `handleUseTrigger`'s own front-side
+test is a separate vanilla rule (`P_UseSpecialLine`) that happens to share `isFrontSide`.
 
 **A blocked teleport still consumes a one-shot line.** Vanilla's `case 39` is
 `EV_Teleport(...); line->special = 0;` — the clear is unconditional, so a W1 teleport crossed from
@@ -546,31 +550,31 @@ in the game, the spider mastermind's 128, plus slack. A monster wider than that 
 its own walk triggers, silently, so the constant is coupled to the widest `MONSTER_STATS.radius`
 rather than being free.
 
-A monster's teleport deliberately does **not** touch `lastTeleport` — that exists solely to reseed the
-*player's* walk-trigger tracking — but it does get the same `TFOG` puff at both ends, since vanilla
-spawns that for any thing that teleports.
+A monster's teleport deliberately does **not** touch `lastTeleport` — that exists solely to reseed
+the *player's* walk-trigger tracking — but it does get the same `TFOG` puff at both ends, since
+vanilla spawns that for any thing that teleports.
 
 **An arrival telefrags what is standing on the pad** (`P_TeleportMove`), and off MAP30 a monster's
-arrival is *refused* by anything standing there instead — so `crossMonster` can return a landing spot
-that `game.ts` then declines to move the monster to. The rules, and why the line is spent either way,
-are in docs/death.md § Telefrag.
+arrival is *refused* by anything standing there instead — so `crossMonster` can return a landing
+spot that `game.ts` then declines to move the monster to. The rules, and why the line is spent
+either way, are in docs/death.md § Telefrag.
 
-**`lastTeleport`**: teleporting moves the player an arbitrary distance in a single frame, which breaks
-`SpecialsController`'s own walk-trigger detection. It tracks `prevX`/`prevY` to know what segment the
-player just crossed, and leaving those at the pre-teleport position would make the next frame test a
-segment from the old spot all the way to the pad — long enough to cross, and wrongly re-trigger,
-unrelated lines along the way. `lastTeleport` is set inside `trigger` and consumed at the end of
-`update` to reseed `prevX`/`prevY` from the destination.
+**`lastTeleport`**: teleporting moves the player an arbitrary distance in a single frame, which
+breaks `SpecialsController`'s own walk-trigger detection. It tracks `prevX`/`prevY` to know what
+segment the player just crossed, and leaving those at the pre-teleport position would make the next
+frame test a segment from the old spot all the way to the pad — long enough to cross, and wrongly
+re-trigger, unrelated lines along the way. `lastTeleport` is set inside `trigger` and consumed at
+the end of `update` to reseed `prevX`/`prevY` from the destination.
 
-Vanilla also spawns a one-shot `MT_TFOG` puff at both ends (where the player stood, and 20 units ahead
-of the landing spot along its facing). That isn't a real map `Thing`, so it isn't modeled through
-`ThingLayer` — the pair comes from `SpriteFxLayer.spawnTeleportPair` (game/spritefx.ts), which owns the
-20-unit offset so the player's trip and a monster's can't drift apart; only the landing `z` differs
-between the two callers, and each passes its own. Each puff is a transient `OneShotEffect` playing
-through the `TFOG` sprite's frames (`A`-`J`, confirmed against the actual
-lump names, all rotation-0 so no facing logic is needed) once before removing itself. Map transitions
-clear any still-active puffs explicitly, since a teleport onto an exit line could otherwise leave one
-animating over the next level.
+Vanilla also spawns a one-shot `MT_TFOG` puff at both ends (where the player stood, and 20 units
+ahead of the landing spot along its facing). That isn't a real map `Thing`, so it isn't modeled
+through `ThingLayer` — the pair comes from `SpriteFxLayer.spawnTeleportPair` (game/spritefx.ts),
+which owns the 20-unit offset so the player's trip and a monster's can't drift apart; only the
+landing `z` differs between the two callers, and each passes its own. Each puff is a transient
+`OneShotEffect` playing through the `TFOG` sprite's frames (`A`-`J`, confirmed against the actual
+lump names, all rotation-0 so no facing logic is needed) once before removing itself. Map
+transitions clear any still-active puffs explicitly, since a teleport onto an exit line could
+otherwise leave one animating over the next level.
 
 ## Silent and line-to-line teleporters
 
@@ -630,9 +634,9 @@ whose clear is unconditional — the behavior § Teleporters describes and
 split, per number rather than as a global rule.
 
 **209/210 flip their switch inside the teleport branch**, not at the end of `trigger`: the branch
-returns early, and `P_UseSpecialLine` calls `P_ChangeSwitchTexture` inside `if (EV_SilentTeleport(…))`
-— so a switch teleport that found no destination is left unflipped and unspent, the same rule as
-every other gated switch (§ A switch only flips when it acts).
+returns early, and `P_UseSpecialLine` calls `P_ChangeSwitchTexture` inside
+`if (EV_SilentTeleport(…))` — so a switch teleport that found no destination is left unflipped and
+unspent, the same rule as every other gated switch (§ A switch only flips when it acts).
 
 Two deliberate divergences:
 
@@ -641,12 +645,13 @@ Two deliberate divergences:
   surrounding geometry visibly changes regardless, and not snapping the follow point would leave the
   camera flying across the map (§ Teleporters). The yaw is the part that can genuinely be preserved,
   and **must be turned relatively, not reoriented**: `TopDownCamera.yawDeg` is an orbit the player
-  owns with Q/E (docs/camera.md § Camera orbit and camera-relative movement), not something slaved to their facing, so setting it
-  from the landing angle — what a vanilla teleport correctly does — injects that orbit offset as a
-  visible spin on every silent arrival. A pair authored as one continuous doorway has `rotateBy` 0
-  and now leaves the view completely still.
-- **A monster's momentum is not rotated**, because monsters have none in this engine (docs/movement.md).
-  Their facing rotates; the AI re-routes from the arrival anyway (`movedir = DI_NODIR`).
+  owns with Q/E (docs/camera.md § Camera orbit and camera-relative movement), not something slaved
+  to their facing, so setting it from the landing angle — what a vanilla teleport correctly does —
+  injects that orbit offset as a visible spin on every silent arrival. A pair authored as one
+  continuous doorway has `rotateBy` 0 and now leaves the view completely still.
+- **A monster's momentum is not rotated**, because monsters have none in this engine
+  (docs/movement.md). Their facing rotates; the AI re-routes from the arrival anyway
+  (`movedir = DI_NODIR`).
 
 Monsters can activate every one of these lines except through a *switch*: `p_switch.c` does list
 209/210 alongside 174/195 as monster-usable, but no monster here presses switches at all, so that
@@ -658,12 +663,12 @@ gap predates this work and is unchanged.
 ceiling — sealing the sector — and snaps back on the next activation. No travel time, no wait, no
 sound at all; `EV_DoPlat` starts none for this type and `T_PlatRaise` skips both `pstop` calls.
 
-**The instantness is emergent in vanilla, and explicit here.** `EV_DoPlat` sets `low = ceilingheight`,
-`high = floorheight` and a *downward* direction — so `T_MovePlane`'s first step is told to move down
-toward a destination *above* the floor, clamps straight to it and reports `pastdest`. This engine's
-movers auto-direction toward their target instead (§ Generalized linedefs lists that as a known
-divergence), so nothing would clamp; `LiftMover.instant` says so outright rather than reproducing a
-sign trick that no longer has the same effect.
+**The instantness is emergent in vanilla, and explicit here.** `EV_DoPlat` sets
+`low = ceilingheight`, `high = floorheight` and a *downward* direction — so `T_MovePlane`'s first
+step is told to move down toward a destination *above* the floor, clamps straight to it and reports
+`pastdest`. This engine's movers auto-direction toward their target instead (§ Generalized linedefs
+lists that as a known divergence), so nothing would clamp; `LiftMover.instant` says so outright
+rather than reproducing a sign trick that no longer has the same effect.
 
 Each stroke parks in `'stasis'` with `stasisFrom` recording which way it went, and the next
 activation **reverses** it — `plat->status = plat->oldstatus==up ? down : up`, not the plain resume
@@ -736,18 +741,18 @@ needed the same machinery.
 raise or a crusher's cycle: once to a target and stop, no hold, no reversal.
 
 Special 40 ("RaiseCeilingLowerFloor") is the one vanilla case that needs it — `raiseToHighest` — but
-**this engine deliberately only implements 40's ceiling half, because real vanilla's floor half never
-actually runs.** Tracing `EV_DoCeiling`/`EV_DoFloor`: both guard on the same per-sector `specialdata`
-"already busy" pointer, `case 40`'s handler calls `EV_DoCeiling` before `EV_DoFloor`, and since they
-target the same tag-matched sectors, `EV_DoCeiling` claims `specialdata` first — so `EV_DoFloor` does
-nothing, every time.
+**this engine deliberately only implements 40's ceiling half, because real vanilla's floor half
+never actually runs.** Tracing `EV_DoCeiling`/`EV_DoFloor`: both guard on the same per-sector
+`specialdata` "already busy" pointer, `case 40`'s handler calls `EV_DoCeiling` before `EV_DoFloor`,
+and since they target the same tag-matched sectors, `EV_DoCeiling` claims `specialdata` first — so
+`EV_DoFloor` does nothing, every time.
 
 Special 44/72 ("Ceiling Crush", `lowerAndCrush`) is the other user, lowering once to floor+8 and
 stopping — and **despite the name it never deals crush damage**: `EV_DoCeiling`'s `switch` sets
 `ceiling->crush = true` only for the *cyclic* crush types, and `lowerAndCrush` is a separate `case`
 label positioned just past that assignment, so jumping to it skips the flag. `CeilingMover` has no
-crush handling at all as a result; `crush==false` is exactly what makes a lowering `CeilingMover` stop
-rather than grind through anyone underneath.
+crush handling at all as a result; `crush==false` is exactly what makes a lowering `CeilingMover`
+stop rather than grind through anyone underneath.
 
 ## The turboLower quad
 
@@ -778,12 +783,12 @@ two-sided lines — checking *both* sidedefs of each line, not just the far side
 `p_floor.c` — resolved via `MaterialBank.textureHeight`, which decodes (and caches) the full bitmap
 just for its height; it fires rarely enough that a second header-only lookup path isn't worth it.
 
-`lowerAndChange` searches the sector's own two-sided neighbors for the first whose floor already sits
-exactly at the destination height, and copies *that* neighbor's floor texture and `special` — a
+`lowerAndChange` searches the sector's own two-sided neighbors for the first whose floor already
+sits exactly at the destination height, and copies *that* neighbor's floor texture and `special` — a
 different texture-source rule from the `changeTexture` family, which always copies the triggering
-*line's* front sector — and, confirmed against `T_MoveFloor`, applies it only once the mover actually
-**arrives**, not at trigger time. `FloorMover.arrivalTexture` carries that pair from trigger to
-whichever tick flips `state` to `'done'`.
+*line's* front sector — and, confirmed against `T_MoveFloor`, applies it only once the mover
+actually **arrives**, not at trigger time. `FloorMover.arrivalTexture` carries that pair from
+trigger to whichever tick flips `state` to `'done'`.
 
 ## Delayed doors
 
@@ -791,38 +796,39 @@ Two different vanilla mechanisms that both boil down to "wait, then move once, u
 
 Line specials 16/76 (`DoorMode: 'closeThenOpen'`) close immediately, wait `DOOR_CLOSE_WAIT_SECONDS`
 (30s) at the bottom, then reopen once to wherever they already were — confirmed against `p_doors.c`:
-`door->topheight = sec->ceilingheight` at trigger time, unlike every other `DoorMode`, which computes
-a fresh neighbor-ceiling target — and stay open for good.
+`door->topheight = sec->ceilingheight` at trigger time, unlike every other `DoorMode`, which
+computes a fresh neighbor-ceiling target — and stay open for good.
 
 Sector types 10/14 (`SECTOR_DOOR_SPECIALS`) skip the trigger entirely: a `DoorMover` is spawned
 straight into `SpecialsController`'s constructor at map load, assumed already open (10, closes once
 after 30s and stays shut) or already closed (14, opens once after `DOOR_RAISE_WAIT_SECONDS` = 5
-minutes, then runs one ordinary open-wait-close cycle and settles shut, since nothing re-triggers it).
+minutes, then runs one ordinary open-wait-close cycle and settles shut, since nothing re-triggers
+it).
 
-Both reuse existing `DoorState`s: 10 is seeded straight into `'hold'` (already "wait, then lower, then
-stop"), 14 into a new `'holdClosed'` — the wait-at-the-*bottom* mirror of `'hold'`, which 16/76's
-post-close wait also uses.
+Both reuse existing `DoorState`s: 10 is seeded straight into `'hold'` (already "wait, then lower,
+then stop"), 14 into a new `'holdClosed'` — the wait-at-the-*bottom* mirror of `'hold'`, which
+16/76's post-close wait also uses.
 
 ## Movers run at the tic rate
 
-Doors, lifts, floors, ceilings and crushers write `sector.floorHeight`/`ceilHeight` and rebuild their
-mover geometry once per simulation tic, and that motion is **deliberately not interpolated** for
-display the way sprite positions are (docs/frameloop.md § Interpolation). 35 Hz is the rate vanilla
-ran them at, a lift is a large slow object where the stepping reads far less than it does on a
-sprite, and interpolating would mean lerping heights and rebuilding meshes on the render clock — the
-most invasive change available in the riskiest code here. If a door ever *does* need smoothing, that
-is its own change, not an oversight to be fixed in passing.
+Doors, lifts, floors, ceilings and crushers write `sector.floorHeight`/`ceilHeight` and rebuild
+their mover geometry once per simulation tic, and that motion is **deliberately not interpolated**
+for display the way sprite positions are (docs/frameloop.md § Interpolation). 35 Hz is the rate
+vanilla ran them at, a lift is a large slow object where the stepping reads far less than it does on
+a sprite, and interpolating would mean lerping heights and rebuilding meshes on the render clock —
+the most invasive change available in the riskiest code here. If a door ever *does* need smoothing,
+that is its own change, not an oversight to be fixed in passing.
 
 What that per-tic rebuild is allowed to cost is a rendering matter, and it is a real constraint on
 heavily scripted maps, where hundreds of sectors move at once — docs/render.md § Mover meshes.
 
 ## Lights
 
-The sector-type patterns (`SECTOR_LIGHT_SPECIALS`, `game/specials/tables.ts`) are assigned once at map load
-and ticked by `updateLights` → `tickLight` (`game/specials.ts`). Each holds a `baseLight` (the
-sector's own level) and a `darkLight` (`darkestNeighborLight`, vanilla's `P_FindMinSurroundingLight`)
-and interpolates or toggles between them. Every random period draws from `pRandom()` —
-docs/random.md § The table and the two cursors.
+The sector-type patterns (`SECTOR_LIGHT_SPECIALS`, `game/specials/tables.ts`) are assigned once at
+map load and ticked by `updateLights` → `tickLight` (`game/specials.ts`). Each holds a `baseLight`
+(the sector's own level) and a `darkLight` (`darkestNeighborLight`, vanilla's
+`P_FindMinSurroundingLight`) and interpolates or toggles between them. Every random period draws
+from `pRandom()` — docs/random.md § The table and the two cursors.
 
 The strobes (`blink05`, `blink1` and their synced variants) are the easy ones: a fixed 5-tic lit
 period against a 15- or 35-tic dark one, straight off vanilla's `STROBEBRIGHT`/`FASTDARK`/`SLOWDARK`
@@ -833,8 +839,8 @@ runs slow-then-fast where the unsynced one runs fast-then-slow (`P_SpawnSpecials
 **A strobe whose `darkLight` equals its `baseLight` blinks to black**, vanilla's
 `if (minlight == maxlight) minlight = 0` — and `P_SpawnStrobeFlash` is the only spawn that carries
 it, `P_SpawnLightFlash`/`P_SpawnGlowingLight`/`P_SpawnFireFlicker` all leaving the two equal and so
-standing still. Without it a strobing sector as dark as everything it touches simply does not strobe:
-`EPIC.WAD` MAP02 sector 0 is type 2 at light 240 with one neighbour, also at 240.
+standing still. Without it a strobing sector as dark as everything it touches simply does not
+strobe: `EPIC.WAD` MAP02 sector 0 is type 2 at light 240 with one neighbour, also at 240.
 
 The two patterns that are **not** simple toggles are worth knowing:
 
@@ -861,39 +867,40 @@ The two patterns that are **not** simple toggles are worth knowing:
 ## Light changes
 
 `LightChangeEffect` is the runtime-triggered counterpart to the sector-type blink patterns: those
-assign an ongoing pattern once at map load, these mutate (or start animating) a *tag-matched* sector's
-light on demand.
+assign an ongoing pattern once at map load, these mutate (or start animating) a *tag-matched*
+sector's light on demand.
 
 - `'setLevel'` (13/35/79/81/138/139) — a literal light value.
 - `'brightestNeighbor'` (12/80) — vanilla's "bright = 0 means search" rule: the max level among
   immediate two-sided neighbors, or pitch black if there are none (`EV_LightTurnOn`).
 - `'darkestNeighbor'` (104, `EV_TurnTagLightsOff`) — the min of the sector's own *current* level and
-  its neighbors', which unlike `'brightestNeighbor'` never brightens, only darkens or leaves unchanged.
-- `'startStrobe'` (17, `EV_StartLightStrobing`) — spawns the same slow, non-synced `blink1` pattern a
-  sector-type-3 sector gets at load, skipped if the sector already has an active mover (vanilla's
+  its neighbors', which unlike `'brightestNeighbor'` never brightens, only darkens or leaves
+  unchanged.
+- `'startStrobe'` (17, `EV_StartLightStrobing`) — spawns the same slow, non-synced `blink1` pattern
+  a sector-type-3 sector gets at load, skipped if the sector already has an active mover (vanilla's
   `specialdata` guard — light thinkers and movers share that slot in real vanilla; this engine's
   `lightStates`/`movers` maps are already independent, but the *trigger* still respects the guard).
 
-Because any of these can target a sector that was never a light-pattern sector, `indexLightGeometry` —
-previously scoped to just the load-time blink sectors — now indexes every sector's static-batch
+Because any of these can target a sector that was never a light-pattern sector, `indexLightGeometry`
+— previously scoped to just the load-time blink sectors — now indexes every sector's static-batch
 occluders/flats unconditionally, a one-time load cost.
 
 ### Relighting mover geometry
 
 `recolorSector` (`specials/movergeometry.ts`) rewrites the RGB of every surface lit by a sector, in
-two places: the static batches
-(`sectorOccluders`/`sectorFlats`) and, via `recolorMoverGeometry`, any mover mesh holding that sector's
-geometry. Both are needed because a mover mesh carries its own sector's flats **plus** wall quads from
-*both* sides of every bordering line — so a sector that moves, and a static sector next to one, each
-have geometry that `indexLightGeometry` cannot see. `moverLightTargets` (filled in `createMoverMesh`
-from each quad's/fan's own `sector` field) is the sector → owning-mover-meshes index that makes the
-second pass cheap; a rebuild never changes which sectors a mesh covers, so it only grows once.
+two places: the static batches (`sectorOccluders`/`sectorFlats`) and, via `recolorMoverGeometry`,
+any mover mesh holding that sector's geometry. Both are needed because a mover mesh carries its own
+sector's flats **plus** wall quads from *both* sides of every bordering line — so a sector that
+moves, and a static sector next to one, each have geometry that `indexLightGeometry` cannot see.
+`moverLightTargets` (filled in `createMoverMesh` from each quad's/fan's own `sector` field) is the
+sector → owning-mover-meshes index that makes the second pass cheap; a rebuild never changes which
+sectors a mesh covers, so it only grows once.
 
-The invariant: **a sector's light must reach its geometry whether or not that geometry is currently in
-a mover mesh.** Without the mover pass a strobing lift only relights while it happens to be *moving* —
-a height change rebuilds the mesh from the live `sector.light` anyway, which is exactly what masked the
-bug. Repro: DOOM1 E1M5 sectors 2 and 32, the tag-1 strobing lifts (also E1M5 sector 91, tag 2), covered
-by `tests/regression/strobing-lift-light.test.ts`.
+The invariant: **a sector's light must reach its geometry whether or not that geometry is currently
+in a mover mesh.** Without the mover pass a strobing lift only relights while it happens to be
+*moving* — a height change rebuilds the mesh from the live `sector.light` anyway, which is exactly
+what masked the bug. Repro: DOOM1 E1M5 sectors 2 and 32, the tag-1 strobing lifts (also E1M5 sector
+91, tag 2), covered by `tests/regression/strobing-lift-light.test.ts`.
 
 This covers **every** light effect, since `updateLights` (all the sector-type patterns) and
 `triggerLightChange` (the runtime line specials above) both funnel through `recolorSector` — and the
@@ -906,29 +913,29 @@ deep-water bottom is in play (§ Render transfers), and keying this way is the w
 transferred light live — recoloring the control sector reaches its dependents because they are
 filed under it.
 
-Only RGB is written (`setXYZ`); vertex alpha belongs to `WallFader`/`FlatFader` (render/occlusion.ts)
-and the two must not clobber each other.
+Only RGB is written (`setXYZ`); vertex alpha belongs to `WallFader`/`FlatFader`
+(render/occlusion.ts) and the two must not clobber each other.
 
 ## The donut
 
-Special 9 (`DonutEffect`) is `EV_DoDonut`: the tagged sector (the "hole") lowers while a second sector
-surrounding it (the "ring") rises, both toward a *third*, outer sector's floor height, with the ring
-additionally taking that outer sector's floor texture on arrival (the same deferred-copy mechanism as
-`lowerAndChange`).
+Special 9 (`DonutEffect`) is `EV_DoDonut`: the tagged sector (the "hole") lowers while a second
+sector surrounding it (the "ring") rises, both toward a *third*, outer sector's floor height, with
+the ring additionally taking that outer sector's floor texture on arrival (the same deferred-copy
+mechanism as `lowerAndChange`).
 
 Neither the ring nor the outer sector is tag-matched — both are discovered dynamically by walking
 neighbors outward from the hole (`triggerDonut`/`nextSectorIndices`, mirrored at load time in
-`scanSectors` so the ring's geometry is pulled out of the static batch too), which is exactly
-as arbitrary as vanilla's own search (whichever neighbor happens to be first in the sector's line list
+`scanSectors` so the ring's geometry is pulled out of the static batch too), which is exactly as
+arbitrary as vanilla's own search (whichever neighbor happens to be first in the sector's line list
 — reproduced by walking `map.linedefs` in ascending index order, matching `P_GroupLines`).
 
 **One vanilla wrinkle is deliberately not reproduced**: the real `EV_DoDonut` excludes "the line
 leading back to the hole" via `!s2->lines[i]->flags & ML_TWOSIDED`, which — due to C operator
 precedence (`!` binds tighter than `&`) — always evaluates to zero, so that check is dead code and
-vanilla's two-sidedness filtering silently never fires. This engine does the check *correctly*, since
-blindly porting the bug risks dereferencing a one-sided line's absent back sector. Checked against the
-two real donut sectors in the shipped IWADs (E1M2 tag 8, E2M2 tag 1; DOOM2.WAD has none) — both
-resolve to sane, non-degenerate ring/outer sectors.
+vanilla's two-sidedness filtering silently never fires. This engine does the check *correctly*,
+since blindly porting the bug risks dereferencing a one-sided line's absent back sector. Checked
+against the two real donut sectors in the shipped IWADs (E1M2 tag 8, E2M2 tag 1; DOOM2.WAD has none)
+— both resolve to sane, non-degenerate ring/outer sectors.
 
 ## Generalized linedefs
 
@@ -1064,8 +1071,8 @@ pinned-body memo (docs/movement.md § Pinned-body memo), which is what keeps a 4
 **What a doll picks up, the player gets.** `MT_PLAYER` carries `MF_PICKUP` (`info.c`), so
 `PIT_CheckThing` hands anything a moving doll's box touches to `P_TouchSpecialThing`, which credits
 `toucher->player` — and every doll's is the console player. A doll run over an item collects it, and
-only while it is moving: vanilla reaches the pickup through `P_XYMovement`, which a parked doll never
-enters. See docs/items.md § Collecting things.
+only while it is moving: vanilla reaches the pickup through `P_XYMovement`, which a parked doll
+never enters. See docs/items.md § Collecting things.
 
 **Triggering** goes through `SpecialsController.crossVoodoo`, the third `Activator`. A doll gates
 exactly like the player it copies — the player's own keys, every line a player may cross, and it is
@@ -1096,8 +1103,8 @@ so jamming the level's own machinery is the worse failure. Crush *damage* still 
 ## Friction
 
 Linedef **223** sets its tagged sectors' friction — ice or mud — and the dial is again the control
-line's own length: longer is more slippery. Two curves out of `P_SpawnFriction`, meeting at vanilla's
-own 0.90625:
+line's own length: longer is more slippery. Two curves out of `P_SpawnFriction`, meeting at
+vanilla's own 0.90625:
 
 ```
 friction   = (0x1EB8 × length) / 0x80 + 0xD000
@@ -1116,9 +1123,9 @@ inside them"). `Forces` holds those two arrays; nothing about friction is ticked
 A sector's friction applies only while its special still carries the friction bit (0x100) —
 `decodeSectorType(...).friction`, the same re-check `P_GetFriction` makes. Which sector wins for a
 body touching several is vanilla's rule transcribed rather than a plain minimum: the first
-qualifying sector is taken while nothing is picked yet, and after that only a strictly lower friction
-displaces it ("muddy has precedence over icy"). A body only qualifies for a sector whose floor it is
-standing at or below.
+qualifying sector is taken while nothing is picked yet, and after that only a strictly lower
+friction displaces it ("muddy has precedence over icy"). A body only qualifies for a sector whose
+floor it is standing at or below.
 
 **Deviation:** MBF's clamps (`friction` into [0, 1], `movefactor` at least 32) are applied
 unconditionally, where PrBoom gates them on `mbf_features` and so skips them at the Boom complevel
@@ -1158,11 +1165,11 @@ sector boundaries** (what matters is distance to the source, not which sector yo
 requires line of sight to the source. Both 5001 and 5002 are invisible markers with no sprite art,
 so they never spawn as things (`THING_SPRITES` has no entry, which is what gates spawning).
 
-Every figure here comes from `Add_Pusher`/`T_Pusher`/`PIT_PushThing`: `PUSH_FACTOR` 7 (so the impulse
-is the line vector over 128 map units per tic, and a point source's one shift smaller again), the
-radius as `magnitude << 1`, and `P_AproxDistance` — vanilla's octagonal distance estimate, reproduced
-rather than replaced with a true hypotenuse because both the reach and the falloff are *defined* in
-terms of it.
+Every figure here comes from `Add_Pusher`/`T_Pusher`/`PIT_PushThing`: `PUSH_FACTOR` 7 (so the
+impulse is the line vector over 128 map units per tic, and a point source's one shift smaller
+again), the radius as `magnitude << 1`, and `P_AproxDistance` — vanilla's octagonal distance
+estimate, reproduced rather than replaced with a true hypotenuse because both the reach and the
+falloff are *defined* in terms of it.
 
 **Pushers reach the player only** (voodoo dolls included — they are player mobjs). Boom's own
 `T_Pusher` skips every non-player outright, and `PIT_PushThing` widens to monsters only under
@@ -1195,9 +1202,10 @@ it are scattered across `game/` and the mesh builder needs it before any control
 
 ### Transferred lighting
 
-`R_FakeFlat` resolves a surface's light as `lightsec === -1 ? sector.light : sectors[lightsec].light`,
-per **surface**, which is why `Transfers` exposes `floorLight`/`ceilingLight` rather than one
-"the sector's light". Three consumers, each matching a different line of the vanilla renderer:
+`R_FakeFlat` resolves a surface's light as
+`lightsec === -1 ? sector.light : sectors[lightsec].light`, per **surface**, which is why
+`Transfers` exposes `floorLight`/`ceilingLight` rather than one "the sector's light". Three
+consumers, each matching a different line of the vanilla renderer:
 
 - **flats** take `floorLight` (`ceilingLight` for a ceiling) — `r_bsp.c`'s `R_Subsector`.
 - **walls take the sector's own light, untransferred** — `rw_lightlevel` in `r_segs.c` reads
@@ -1207,8 +1215,8 @@ per **surface**, which is why `Transfers` exposes `floorLight`/`ceilingLight` ra
   (`r_bsp.c: R_AddSprites`) — `Transfers.spriteLight`. On a map with no transfer lines both halves
   are the sector's own light, so the average is exactly what every sprite read before.
 
-That average is the only visible effect **261** has here: ceilings are never drawn
-(docs/render.md § Mesh building), so a transferred ceiling light can only move half the sprite light.
+That average is the only visible effect **261** has here: ceilings are never drawn (docs/render.md §
+Mesh building), so a transferred ceiling light can only move half the sprite light.
 
 A transferred light is *live* — the control sector may be a strobe. The plumbing for that is
 `FlatSurface.lightSector` (docs/render.md § Sector lighting): every fan records which sector its
@@ -1239,14 +1247,14 @@ the real floor — but the flat and light still come from the control sector, no
 own, which in every deep-water setup is the *water* flat the surface wears. Boom draws that water
 flat instead — `R_FakeFlat`'s plain branch keeps `sec`'s own `floorpic` and only moves the height to
 `s->floorheight` (`r_bsp.c`) — so this is the same deviation the two fans above are, carried to the
-case where the bottom has risen through the surface. `Transfers.poolBottom`
-is what remembers this: `markPools` records at load which 242 sectors had water over them, since the
-live heights no longer say so. Repro: BOOMEDIT MAP01's stairs in sector 35's pool (sectors 34, 37-40,
-42, 43) — the top step comes to rest exactly at the surface, and drew a patch of FWATER1 beside
-siblings still showing their RROCK13. **The load-time half of that has to be resolved before a
-savegame's sector heights are applied**, which is why `Game.beginLevel` calls `transfersOf` ahead of
-`applySectors` (docs/savegames.md § Apply order); after it, a restored save classifies the risen step
-as a sector that was never water.
+case where the bottom has risen through the surface. `Transfers.poolBottom` is what remembers this:
+`markPools` records at load which 242 sectors had water over them, since the live heights no longer
+say so. Repro: BOOMEDIT MAP01's stairs in sector 35's pool (sectors 34, 37-40, 42, 43) — the top
+step comes to rest exactly at the surface, and drew a patch of FWATER1 beside siblings still showing
+their RROCK13. **The load-time half of that has to be resolved before a savegame's sector heights
+are applied**, which is why `Game.beginLevel` calls `transfersOf` ahead of `applySectors`
+(docs/savegames.md § Apply order); after it, a restored save classifies the risen step as a sector
+that was never water.
 
 **A sector walled in by a pool gets that pool's surface drawn over it**, even though it carries none
 of the pool's tag. Boom draws water only for a tagged sector, so an untagged one inside a pool is a
@@ -1254,16 +1262,17 @@ square the sheet stops at — visible only from overhead, where this camera look
 `Transfers.markPoolIslands` finds them: no 242 of its own, and every side facing a 242 sector that
 borrows the *same* control sector. The adjacency alone is settled at load; the two height tests stay
 live in `processFlat` — the island's floor must be `WATER_MIN_DEPTH` under the surface, and its
-**ceiling at or below** it, so a sealed chamber whose roof clears the water stays dry inside whatever
-surrounds it. The surface fan wears the *pool* sector's flat and light, not the island's, which is
-the whole point: the island's own floor keeps drawing underneath it, seen through the water.
+**ceiling at or below** it, so a sealed chamber whose roof clears the water stays dry inside
+whatever surrounds it. The surface fan wears the *pool* sector's flat and light, not the island's,
+which is the whole point: the island's own floor keeps drawing underneath it, seen through the
+water.
 
 Repro: BOOMEDIT MAP01 sector 121, a closed 4-sided pillar in sector 93's pool, floor and ceiling
 both at −80 with the surface at −16. It is a vanilla sky pit (a sky ceiling over a sky ceiling draws
-no upper, so a first-person player sees sky through the water); ceilings and sky are never drawn here
-at all, so the only choice this camera has is between a void-looking hole and water running over it.
-It is the one sector across every committed WAD that qualifies — `inspect-wad`'s transfers line
-counts them ("enclosed by a pool").
+no upper, so a first-person player sees sky through the water); ceilings and sky are never drawn
+here at all, so the only choice this camera has is between a void-looking hole and water running
+over it. It is the one sector across every committed WAD that qualifies — `inspect-wad`'s transfers
+line counts them ("enclosed by a pool").
 
 The surface fan is only built when the control sector's floor is at least `WATER_MIN_DEPTH` above
 the sector's own — deep enough for the two planes to be worth drawing separately, and far enough
@@ -1381,9 +1390,9 @@ Two deliberate simplifications:
 
 ## Damage floors
 
-`SECTOR_DAMAGE_SPECIALS` is vanilla's `P_PlayerInSpecialSector`: nukage (7, 5 HP), hellslime (5,
-10 HP), super hellslime (16, 20 HP) and strobe-hurt (4, 20 HP), all every `DAMAGE_FLOOR_INTERVAL`,
-plus E1M8's finale special (11, 20 HP, which also ends the level once it drops the player to 10 HP or
+`SECTOR_DAMAGE_SPECIALS` is vanilla's `P_PlayerInSpecialSector`: nukage (7, 5 HP), hellslime (5, 10
+HP), super hellslime (16, 20 HP) and strobe-hurt (4, 20 HP), all every `DAMAGE_FLOOR_INTERVAL`, plus
+E1M8's finale special (11, 20 HP, which also ends the level once it drops the player to 10 HP or
 below — vanilla's inline `G_ExitLevel()` in that same case).
 
 That exit test sits **outside** the damage pulse and has **no lower bound**, both as in vanilla's
@@ -1393,7 +1402,8 @@ the case that matters on E1M8's own sector 66 — a full-health player, whose 10
 walk straight down through 20 to 0, exits on the pulse that kills them. Requiring them to still be
 alive left that player dead in the pit with the level never ending, which is the one way most
 players meet this sector. The corpse still gets its exit: `pendingExit` is queued on the same frame
-and `Game.endingOverCorpse` takes the death overlay back down (docs/death.md § Dying on the way out).
+and `Game.endingOverCorpse` takes the death overlay back down (docs/death.md § Dying on the way
+out).
 
 **A death from anything else in that sector ends the level too** — `SectorEffects.exitsOnDeath`,
 asked by `damagePlayer` on the killing hit. This one is a deliberate deviation: vanilla only ever
@@ -1406,24 +1416,25 @@ is set before the death overlay is armed, so `levelEnding` keeps it from being r
 than clearing it a frame later.
 
 **Player-only**, matching vanilla, which passes a `player_t*` and never damages monsters this way.
-Dealt directly in `game/specials/sectoreffects.ts: SectorEffects.update` rather than through `SpecialsController` — a damage
-floor has no mover, nothing for that machinery to own, just `sector.special` plus the player's live
-position, so it's checked once a frame off `World.sectorAt`. That same method also covers special 9
-(§ Secret sectors below) — both are cases of the one vanilla switch this method reimplements.
+Dealt directly in `game/specials/sectoreffects.ts: SectorEffects.update` rather than through
+`SpecialsController` — a damage floor has no mover, nothing for that machinery to own, just
+`sector.special` plus the player's live position, so it's checked once a frame off `World.sectorAt`.
+That same method also covers special 9 (§ Secret sectors below) — both are cases of the one vanilla
+switch this method reimplements.
 
-Gated on `player.z === sector.floorHeight` (vanilla's `mo->z != sector->floorheight` guard, skipping a
-player still falling in) — deliberately the *local* 2D-position sector's own floor, **not**
+Gated on `player.z === sector.floorHeight` (vanilla's `mo->z != sector->floorheight` guard, skipping
+a player still falling in) — deliberately the *local* 2D-position sector's own floor, **not**
 `World.groundFloor` (which reads a straddled ledge's higher side), so standing on a ledge next to a
 damage pit doesn't damage the player until they step down into it.
 
 Special 4 is *also* one of the sector-type light-blink specials: vanilla spawns the same non-synced
-fast strobe sector type 2 gets and then explicitly restores `sector->special = 4` so the damage check
-still sees it. This engine never clears `sector.special` after seeding a light pattern in the first
-place, so 4 living in both tables works without reproducing that restore step.
+fast strobe sector type 2 gets and then explicitly restores `sector->special = 4` so the damage
+check still sees it. This engine never clears `sector.special` after seeding a light pattern in the
+first place, so 4 living in both tables works without reproducing that restore step.
 
-A radiation suit gates the damage per type (`DamageFloorEffect.suit`, `game/specials/sectoreffects.ts: suitBlocks`) exactly as
-`P_PlayerInSpecialSector` does — see the powerups doc for why the five types don't all treat it the
-same.
+A radiation suit gates the damage per type (`DamageFloorEffect.suit`,
+`game/specials/sectoreffects.ts: suitBlocks`) exactly as `P_PlayerInSpecialSector` does — see the
+powerups doc for why the five types don't all treat it the same.
 
 E1M8's finale is actually two mechanisms working together: § Boss death below is what lowers the
 tag-666 floor that exposes this special-11 pit in the first place; this section is just what happens
@@ -1432,13 +1443,14 @@ once the player steps down into it.
 ## Secret sectors
 
 `sector.special === 9` is vanilla's "SECRET SECTOR" — handled in the same `case` statement as the
-damage floors above, by the same `game/specials/sectoreffects.ts: SectorEffects.update`, under the same
-`player.z === sector.floorHeight` guard. Entering it increments `SectorEffects.secretsFound` and clears
-`sector.special` back to 0, matching vanilla's own `case 9: player->secretcount++; sector->special =
-0;` exactly — the clear is also what prevents a second frame from double-counting, no separate
-"already found" flag needed. `SectorEffects.totalSecrets` is counted once per level load, straight off
-`map.sectors`, mirroring vanilla `P_SpawnSpecials`' own `case 9: totalsecret++`. See docs/hud.md §
-Level stats for where these numbers surface on screen.
+damage floors above, by the same `game/specials/sectoreffects.ts: SectorEffects.update`, under the
+same `player.z === sector.floorHeight` guard. Entering it increments `SectorEffects.secretsFound`
+and clears `sector.special` back to 0, matching vanilla's own
+`case 9: player->secretcount++; sector->special = 0;` exactly — the clear is also what prevents a
+second frame from double-counting, no separate "already found" flag needed.
+`SectorEffects.totalSecrets` is counted once per level load, straight off `map.sectors`, mirroring
+vanilla `P_SpawnSpecials`' own `case 9: totalsecret++`. See docs/hud.md § Level stats for where
+these numbers surface on screen.
 
 `update` reports the entry back to `game.ts` (`SectorEffectResult.secretFound`, true on that one
 frame only) rather than just bumping the counter, because finding a secret also announces itself —

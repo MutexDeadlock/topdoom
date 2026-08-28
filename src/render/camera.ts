@@ -20,8 +20,21 @@ export interface TopDownCameraOptions {
   yawDeg?: number;
 }
 
-/** How fast `yawDeg` catches up to a `stepYaw` target, as a lerp-per-second rate. */
+/**
+ * How fast `yawDeg` catches up to a `stepYaw` target, as a lerp-per-second rate — tuned by feel.
+ */
 const YAW_STEP_SMOOTH_RATE = 18;
+
+/**
+ * How fast the follow point catches up to the player, as a lerp-per-second rate — tuned by feel.
+ */
+const FOLLOW_SMOOTH_RATE = 10;
+
+/**
+ * Cap on the aim lead, in map units — however far the cursor is, the follow point never leaves the
+ * player this far behind, so the player stays on screen. Tuned by feel. docs/camera.md § Aim lead.
+ */
+const MAX_AIM_LEAD = 220;
 
 /**
  * How fast `distance`/`tiltDeg` catch up to their targets, as a lerp-per-second
@@ -30,7 +43,9 @@ const YAW_STEP_SMOOTH_RATE = 18;
  * has to make target changes read as motion rather than steps.
  */
 const FRAMING_SMOOTH_RATE = 10;
-/** Snap epsilons for the framing dampers, in map units / degrees — tuned by feel (imperceptible). */
+/**
+ * Snap epsilons for the framing dampers, in map units / degrees — tuned by feel (imperceptible).
+ */
 const DISTANCE_SNAP_EPS = 0.01;
 const TILT_SNAP_EPS = 0.001;
 
@@ -67,13 +82,9 @@ const KEY_YAW_REPEAT_INTERVAL = 0.26;
  * `yawDeg` lets it orbit around the followed point (Q/E, see `applyYawInput`)
  * so geometry facing away from the default south view stays reachable.
  *
- * **This camera's follow point, yaw and framing (distance/tilt) are simulation
- * state, not view state**,
- * and advance in `tick` on the tic clock; `applyToCamera` interpolates them into
- * the actual `THREE` camera for display. That split is forced rather than
- * stylistic: the pointer ray is cast through this camera, and the ray decides
- * both `Player.angle` and the basis WASD moves along — so a render-smoothed
- * pose would make aim and movement direction depend on framerate.
+ * **This camera's follow point, yaw and framing (distance/tilt) are simulation state, not view
+ * state**, and advance in `tick` on the tic clock; `applyToCamera` interpolates them into the
+ * actual `THREE` camera for display. The split is forced rather than stylistic —
  * docs/camera.md § The camera is simulation state.
  */
 export class TopDownCamera {
@@ -91,12 +102,17 @@ export class TopDownCamera {
   private _targetTiltDeg: number;
 
   private _yawDeg: number;
-  /** Where `yawDeg` is animating towards — see `stepYaw`. Equal to `_yawDeg` outside of a Q/E snap. */
+  /**
+   * Where `yawDeg` is animating towards — see `stepYaw`. Equal to `_yawDeg` outside of a Q/E snap.
+   */
   private targetYawDeg: number;
 
   private target = new THREE.Vector3();
   private smoothed = new THREE.Vector3();
-  /** Last tic's `smoothed`/`_yawDeg`/`_distance`/`_tiltDeg`, the interpolation source for `applyToCamera`. */
+  /**
+   * Last tic's `smoothed`/`_yawDeg`/`_distance`/`_tiltDeg`, the interpolation source for
+   * `applyToCamera`.
+   */
   private prevSmoothed = new THREE.Vector3();
   private prevYawDeg: number;
   private prevDistance: number;
@@ -164,12 +180,18 @@ export class TopDownCamera {
     this.targetYawDeg += deltaDeg;
   }
 
-  /** Camera distance from the follow point, in map units. Read-only: `targetDistance` glides, `snapFraming` jumps. */
+  /**
+   * Camera distance from the follow point, in map units. Read-only: `targetDistance` glides,
+   * `snapFraming` jumps.
+   */
   get distance(): number {
     return this._distance;
   }
 
-  /** Tilt away from straight down, in degrees. Read-only: `targetTiltDeg` glides, `snapFraming` jumps. */
+  /**
+   * Tilt away from straight down, in degrees. Read-only: `targetTiltDeg` glides, `snapFraming`
+   * jumps.
+   */
   get tiltDeg(): number {
     return this._tiltDeg;
   }
@@ -252,10 +274,6 @@ export class TopDownCamera {
    * See docs/camera.md § Camera orbit.
    */
   applyYawInput(input: Input, dt: number): void {
-    // stepYaw (not a plain assignment) is what makes this animate smoothly instead of
-    // snapping. Holding the key auto-repeats the same step every KEY_YAW_REPEAT_INTERVAL,
-    // roughly how long one step's smoothing takes to settle, so a hold reads as continuous
-    // rotation made of chained 45° steps rather than a single tap.
     this.qHoldTime = input.held('KeyQ') ? this.qHoldTime + dt : 0;
     this.eHoldTime = input.held('KeyE') ? this.eHoldTime + dt : 0;
     if (input.pressed('KeyQ') || this.qHoldTime >= KEY_YAW_REPEAT_INTERVAL) {
@@ -346,8 +364,7 @@ export class TopDownCamera {
       const dx = cursor.x - pos.x;
       const dy = cursor.y - pos.y;
       const dist = Math.hypot(dx, dy);
-      const maxLead = 220;
-      const scale = dist > 0 ? (Math.min(dist * this.aimLead, maxLead) / dist) : 0;
+      const scale = dist > 0 ? Math.min(dist * this.aimLead, MAX_AIM_LEAD) / dist : 0;
       this.target.x += dx * scale;
       this.target.z += -dy * scale;
     }
@@ -357,7 +374,7 @@ export class TopDownCamera {
       this.prevSmoothed.copy(this.target);
       this.initialised = true;
     } else {
-      this.smoothed.lerp(this.target, 1 - Math.exp(-10 * dt));
+      this.smoothed.lerp(this.target, 1 - Math.exp(-FOLLOW_SMOOTH_RATE * dt));
     }
 
     this._yawDeg += (this.targetYawDeg - this._yawDeg) * (1 - Math.exp(-YAW_STEP_SMOOTH_RATE * dt));

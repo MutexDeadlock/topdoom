@@ -22,7 +22,10 @@ export const LIFT_SPEED_FAST = FLOOR_SPEED * 8; // 8 u/tic
 export const LIFT_WAIT = 105 * DOOM_TIC; // seconds a lift stays down
 /** Vanilla turboLower: FLOORSPEED*4, same fast-quad scaling as doors/lifts above. */
 export const FLOOR_SPEED_FAST = FLOOR_SPEED * 4;
-/** Vanilla's "AndChange" plat family (raiseToNearestAndChange) runs at PLATSPEED/2, and PLATSPEED == FLOORSPEED. */
+/**
+ * Vanilla's "AndChange" plat family (raiseToNearestAndChange) runs at PLATSPEED/2, and PLATSPEED ==
+ * FLOORSPEED.
+ */
 export const FLOOR_SPEED_HALF = FLOOR_SPEED / 2;
 export const CEILING_SPEED = 35;
 /** Vanilla CEILSPEED: 1 u/tic; crush-and-raise "fast" variants run at 2x. */
@@ -40,7 +43,10 @@ export const STAIR_SPEED = FLOOR_SPEED / 4;
 export const STAIR_SPEED_TURBO = FLOOR_SPEED * 4;
 export const STAIR_STEP = 8;
 export const STAIR_STEP_TURBO = 16;
-/** Vanilla: a mover with `crush` set deals this much damage every `CRUSH_DAMAGE_INTERVAL` while something is caught in its sector. */
+/**
+ * Vanilla: a mover with `crush` set deals this much damage every `CRUSH_DAMAGE_INTERVAL` while
+ * something is caught in its sector.
+ */
 export const CRUSH_DAMAGE = 10;
 /**
  * How often a crushing mover deals `CRUSH_DAMAGE` (vanilla's `leveltime&3`).
@@ -50,7 +56,10 @@ export const CRUSH_DAMAGE = 10;
  * docs/specials.md § Crushers has why a per-mover countdown is wrong.
  */
 export const CRUSH_DAMAGE_INTERVAL = 4 * DOOM_TIC;
-/** Vanilla `T_MoveCeiling`'s `ceiling->speed = CEILSPEED / 8` — see `CrusherEffect.slowsWhenCrushing`. */
+/**
+ * Vanilla `T_MoveCeiling`'s `ceiling->speed = CEILSPEED / 8` — see
+ * `CrusherEffect.slowsWhenCrushing`.
+ */
 export const CRUSH_SLOWDOWN = 8;
 
 /** Gap vanilla leaves between an open door's ceiling and the lowest neighboring ceiling. */
@@ -68,7 +77,10 @@ export const ELEVATOR_SPEED = FLOOR_SPEED * 4;
  * for both rather than declared twice.
  */
 export const DOOR_CLOSE_WAIT_SECONDS = 30;
-/** Vanilla `P_SpawnDoorRaiseIn5Mins`: seconds a sector-type-14 door waits, fully closed, before it opens for the first and only time. */
+/**
+ * Vanilla `P_SpawnDoorRaiseIn5Mins`: seconds a sector-type-14 door waits, fully closed, before it
+ * opens for the first and only time.
+ */
 export const DOOR_RAISE_WAIT_SECONDS = 5 * 60;
 
 /** Vanilla BUTTONTIME: seconds a used switch shows its "pressed" texture before reverting. */
@@ -94,7 +106,10 @@ export const ORIG_FRICTION = 0xe800 / 0x10000;
  */
 export interface FrictionEffect {
   friction: number;
-  /** Multiplier on the target velocity: vanilla's terminal speed here over vanilla's terminal speed on a normal floor. */
+  /**
+   * Multiplier on the target velocity: vanilla's terminal speed here over vanilla's terminal speed
+   * on a normal floor.
+   */
   targetScale: number;
   /** Multiplier on the approach rate, matching the time constant of vanilla's own decay here. */
   accelScale: number;
@@ -182,7 +197,10 @@ export interface LiftEffect {
   kind: 'lift';
   speed: number;
   waitSeconds: number;
-  /** Absent = `'lowestNeighborFloor'`, vanilla's downWaitUpStay — the default every pre-Boom entry relies on. */
+  /**
+   * Absent = `'lowestNeighborFloor'`, vanilla's downWaitUpStay — the default every pre-Boom entry
+   * relies on.
+   */
   target?: LiftTarget;
 }
 
@@ -203,7 +221,10 @@ export type MoveTarget =
   | 'nextLowerFloor'
   | 'lowestNeighborCeiling'
   | 'highestNeighborCeiling'
-  /** The 55/56/65/94 family's target ("raiseFloorCrush" in vanilla): the floor rises, rather than the usual lower/level pattern. */
+  /**
+   * The 55/56/65/94 family's target ("raiseFloorCrush" in vanilla): the floor rises, rather than
+   * the usual lower/level pattern.
+   */
   | 'lowestNeighborCeilingMinus8'
   /**
    * The 36/70/71/98 family's own target, named for its `EV_DoFloor` case rather than its
@@ -250,7 +271,10 @@ export type MoveTarget =
  */
 export interface SurfaceChange {
   model: 'trigger' | 'numeric';
-  /** FChgTxt / FChgZero / FChgTyp: texture only, texture + special cleared, texture + the model's special. */
+  /**
+   * FChgTxt / FChgZero / FChgTyp: texture only, texture + special cleared, texture + the model's
+   * special.
+   */
   type: 'texOnly' | 'texZeroType' | 'texAndType';
 }
 
@@ -380,9 +404,15 @@ export interface StairsEffect {
   kind: 'stairs';
   stepHeight: number;
   speed: number;
-  /** Boom's generalized stairs build downward too (`EV_DoGenStairs`' direction bit). Absent = `'up'`, every vanilla number. */
+  /**
+   * Boom's generalized stairs build downward too (`EV_DoGenStairs`' direction bit). Absent =
+   * `'up'`, every vanilla number.
+   */
   direction?: 'up' | 'down';
-  /** `EV_DoGenStairs`' Igno bit: keep chaining across neighbors whose floor texture differs. Absent = vanilla's texture-matched walk. */
+  /**
+   * `EV_DoGenStairs`' Igno bit: keep chaining across neighbors whose floor texture differs. Absent
+   * = vanilla's texture-matched walk.
+   */
   ignoreTexture?: boolean;
 }
 
@@ -438,7 +468,10 @@ export interface CeilingEffect {
    * name.
    */
   crush?: boolean;
-  /** Boom's arrival-time change — see `SurfaceChange`; ceilings copy `ceilTex`. Absent on every vanilla entry. */
+  /**
+   * Boom's arrival-time change — see `SurfaceChange`; ceilings copy `ceilTex`. Absent on every
+   * vanilla entry.
+   */
   change?: SurfaceChange;
 }
 
@@ -505,13 +538,26 @@ export interface DonutEffect {
 }
 
 export type LightChangeMode =
-  /** Vanilla's `EV_LightTurnOn(line, bright)` with a nonzero `bright` (13/35/79/81/138/139): set to that exact level. */
+  /**
+   * Vanilla's `EV_LightTurnOn(line, bright)` with a nonzero `bright` (13/35/79/81/138/139): set to
+   * that exact level.
+   */
   | 'setLevel'
-  /** `EV_LightTurnOn(line, 0)` (12/80): vanilla searches for "0 means brightest neighbor" — the max light level among immediate two-sided neighbors, or pitch black (0) if there are none. */
+  /**
+   * `EV_LightTurnOn(line, 0)` (12/80): vanilla searches for "0 means brightest neighbor" — the max
+   * light level among immediate two-sided neighbors, or pitch black (0) if there are none.
+   */
   | 'brightestNeighbor'
-  /** `EV_TurnTagLightsOff` (104): the min of the sector's own current level and every immediate neighbor's — never brightens, unlike `brightestNeighbor` never having a floor. */
+  /**
+   * `EV_TurnTagLightsOff` (104): the min of the sector's own current level and every immediate
+   * neighbor's — never brightens, unlike `brightestNeighbor` never having a floor.
+   */
   | 'darkestNeighbor'
-  /** `EV_StartLightStrobing` (17): spawns the same slow, non-synced strobe pattern (`blink1`) a sector-type 3 gets at map load, skipped if the sector already has an active mover (vanilla's own `sec->specialdata` guard). */
+  /**
+   * `EV_StartLightStrobing` (17): spawns the same slow, non-synced strobe pattern (`blink1`) a
+   * sector-type 3 gets at map load, skipped if the sector already has an active mover (vanilla's
+   * own `sec->specialdata` guard).
+   */
   | 'startStrobe';
 
 export interface LightChangeEffect {
@@ -565,18 +611,19 @@ export type LockRule =
  * activates exactly what a monster would. The name follows Boom's own "monster
  * only" numbering, which means the same thing.
  *
- * A **voodoo doll** gates like the player it is a copy of — same keys, same
- * lines, and it is not a monster for any monster-only number — but its teleport
- * destination comes back to the caller the way a monster's does, since the doll
- * moves rather than the player. It also raises no HUD feedback: a doll bumping a
- * locked door must not print "you need the blue key". docs/specials.md § Voodoo dolls.
+ * A **voodoo doll** gates like the player it is a copy of, with two differences: its teleport
+ * destination comes back to the caller the way a monster's does, and it raises no HUD feedback.
+ * docs/specials.md § Voodoo dolls.
  */
 export type Activator = 'player' | 'monster' | 'voodoo';
 
 export interface SpecialDef {
   trigger: 'use' | 'walk' | 'shoot';
   repeatable: boolean;
-  /** Manual doors act on the linedef's own back sector instead of a tag lookup (vanilla `line->backsector`). */
+  /**
+   * Manual doors act on the linedef's own back sector instead of a tag lookup (vanilla
+   * `line->backsector`).
+   */
   manual?: boolean;
   /** What the line demands before it acts — see `LockRule`. Absent = never locked. */
   lock?: LockRule;

@@ -42,7 +42,7 @@ import { thrustSpeed } from './game/monsters/defs.ts';
 import { MonsterAttacks } from './game/monsters/attacks.ts';
 import { collectFadeTargets, FadePass, FlatFader, WallFader } from './render/occlusion.ts';
 import { SurfaceScroller } from './render/scroller.ts';
-import { makeTouchCache, sectorLines, World, type Opening, type SectorTouchCache } from './game/world.ts';
+import { makeTouchCache, World, type Opening, type SectorTouchCache } from './game/world.ts';
 import { AIM_HEIGHT_OFFSET, EYE_HEIGHT, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { applyBarrelExplosion, type CombatContext, type DamageCause } from './game/combat.ts';
 import { SpriteFxLayer } from './game/spritefx.ts';
@@ -859,7 +859,6 @@ export class Game {
       movableSectors,
       movingSectors,
       transfers,
-      linesOf: (s) => sectorLines(map, s),
       subsectorAt,
     });
     this.scene.add(this.built.group);

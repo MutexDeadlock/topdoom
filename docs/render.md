@@ -186,6 +186,21 @@ a mover (an invisible lift is the stock example) therefore contributes no flats 
 its leaves are baked into the enclosing sector's static flats, which is what vanilla shows too,
 since none of them were ever drawn.
 
+### Leaf adjacency (`bsp.ts: buildLeafGraph`)
+
+Which leaves border which — what `closedHoleFill` walks. GZDoom reads it off `seg_t.PartnerSeg`;
+vanilla SEGS carry no minisegs, so a leaf's splits into the rest of its own sector have no seg to
+read a partner off at all, and the neighbour has to be recovered geometrically: half a map unit past
+the midpoint of every polygon edge, resolved with `subsectorAtPoint` (vanilla's
+`R_PointInSubsector`). Built once per map, weak on it, beside the polygons.
+
+The probe is what makes it approximate, and the two ways it can be wrong pull in opposite
+directions. A leaf thinner than the probe distance is stepped over, so an edge can name the leaf
+*behind* the neighbour; and `segClipTolerance` lets a polygon overhang its true cell by up to 32
+units (§ Cracks between subsectors), so an edge midpoint may already sit outside the leaf it belongs
+to. Both cost a link or add a wrong one; neither is load-bearing anywhere the graph is used, since
+`closedHoleFill` treats an unexplained neighbour as grounds to give the whole region up.
+
 ## Mesh building (`mapmesh.ts`)
 
 Walls are built per linedef from sidedefs: one-sided lines get their middle texture over the full
@@ -444,67 +459,89 @@ capping them would trade a hole for something worse: a pillar you cannot see you
 
 ## Closed holes (`mapmesh.ts: closedHoleFill`)
 
-A sector whose **every** side is a two-sided drop with no lower texture is a hole the mapper never
-meant anyone to look into. Vanilla HOMs it, which is invisible from the floor of a first-person
-view; from overhead it is a black pit in the middle of the level, because the sides draw nothing and
-the pit's own floor is too far down to be in view — a 64-wide, 128-deep pit needs a ray steeper than
-`atan(128/64)` to show any of its bottom, and this camera's steepest is 57.5° below horizontal.
-Repro: EPIC.WAD MAP01 sector 88, three 64×64 pits at floor −144 in the −16 grass of sector 14, which
-line 585 (a `19` W1 "lower floor to highest" that, the floor being *below* its neighbours already,
-snaps it up instead) fills in later.
+A region of leaves ringed entirely by two-sided drops with no lower texture is a hole the mapper
+never meant anyone to look into. Vanilla HOMs it, which is invisible from the floor of a
+first-person view; from overhead it is a black pit in the middle of the level, because the sides
+draw nothing and the pit's own floor is too far down to be in view — a 64-wide, 128-deep pit needs a
+ray steeper than `atan(128/64)` to show any of its bottom, and this camera's steepest is 57.5° below
+horizontal. Repro: EPIC.WAD MAP01 sector 88, three 64×64 pits at floor −144 in the −16 grass of
+sector 14, which line 585 (a `19` W1 "lower floor to highest" that, the floor being *below* its
+neighbours already, snaps it up instead) fills in later.
 
-So every leaf of that sector is lidded with the surrounding sector's floor plane, drawn on top of
-its real floor. **This follows GZDoom** (`hw_renderhacks.cpp: HandleMissingTextures` →
-`DoOneSectorLower` → `AddOtherFloorPlane`), which is what the map was checked against, and not
-vanilla, which has no such hack. Its conditions are GZDoom's:
+So every leaf of the region is lidded with the surrounding sector's floor plane, drawn on top of its
+real floor. **This follows GZDoom** (`hw_renderhacks.cpp: HandleMissingTextures` →
+`DoOneSectorLower` → `AddOtherFloorPlane`), which is what the maps were checked against, and not
+vanilla, which has no such hack.
 
-- every side two-sided, i.e. no one-sided wall anywhere on the sector,
-- every neighbour's floor **above** this one and all of them at the **same** height — the lid is one
-  plane, so one height,
-- that step drawing **no** lower texture (a textured one is ordinary geometry), and the neighbour's
-  floor flat not being sky.
+### Finding the region (`floodClosedHole`)
 
-A sector *inside a pool* is left alone by all of this — `closedHoleFill` declines the moment a
-neighbour carries a 242, Boom's idioms being built on missing textures. What it gets instead is the
-pool's own surface drawn over it, docs/specials.md § Deep water's island rule.
+A **seed** is a leaf with a two-sided seg drawing no lower texture — GZDoom's
+`AddLowerMissingTexture`. Its plane is the highest floor those bare steps of its adjoin
+(`MissingLowerTextures[i].Planez`), and the flood then spreads from it across the leaf graph
+(§ Leaf adjacency), giving up on the first sign that the region is a room:
 
-**The test is per sector, never per BSP leaf**, and that is what makes it safe rather than tidy.
-GZDoom decides per leaf but then floods across minisegs into the rest of the sector
-(`DoOneSectorLower` recurses through every partner seg) and gives up at the first one-sided wall it
-reaches. Vanilla SEGS carry no minisegs, so a leaf's splits into the rest of its own sector are
-simply *absent* here — a leaf left holding a single seg reads as fully enclosed by it, and an open
-room gets its floor painted over at the neighbour's height. Repro: DOOM2 MAP01 subsector 22, whose
-one seg is line 335 (the barred alcove's floor, 48 units up), which lidded ~23,000 map units² of the
-courtyard's grass with the alcove's flat; DOOM2 MAP31 subsector 31 was a 128×1536 slab of the same.
-Scanning the whole sector's linedefs instead is GZDoom's flood with the recursion already done —
-stricter only for a sector whose leaves fall into disconnected pieces, where GZDoom would still lid
-the enclosed piece and this does not.
+- **a one-sided wall** anywhere in it,
+- **a neighbour above the plane**, which is a step the lid could not span,
+- **a neighbour at the plane whose step draws a lower texture** — that is ordinary geometry, not a
+  hole's rim — or whose floor flat is sky,
+- **a leaf standing at the plane's own height**: the lid goes *over* a hole, not level with one.
 
-Those linedefs are vanilla's `sec->lines[]`, reached through `MapMeshOptions.linesOf` — the same
-structural seam `MoverIndex.linesOf` uses, and for the same reason: `game/world.ts: sectorLines`
-already builds and memoizes the index per map, and the renderer keeps no import edge into `game/`.
-A caller that supplies none (tests, tools) gets a plain local adjacency list, which is deliberately
-*not* a second `sec->lines[]`: `closedHoleFill` reads each line from one sector's side and is
-idempotent in it, so a line listed twice changes no answer and the `P_GroupLines` ordering/dedupe
-rule keeps a single implementation.
+A neighbour **below** the plane is more of the same hole, whatever its step draws, and the flood
+walks into it. That is what lets a hole span sectors at several depths — overboard.wad MAP02's
+sunken boat is 16 sectors between −272 and −160, its inner walls fully textured, under a sea at 0.
+
+A hole *inside a pool* is left alone by all of this — the flood declines the moment a 242 is
+involved, Boom's idioms being built on missing textures. What it gets instead is the pool's own
+surface drawn over it, docs/specials.md § Deep water's island rule.
+
+**The test is per leaf, and the flood crosses BSP splits the SEGS lump cannot describe.** Scanning a
+sector's linedefs instead is the same test with the recursion already done, and it was what this did
+until overboard.wad MAP02: it cannot see a hole that spans depths, and a sector with **disconnected
+pieces** is judged on all of them at once — the boat's sectors 10 and 105 each also own a walled
+closet parked off the map at x≈7800, whose one-sided lines vetoed the boat 6000 units away. Going
+per leaf brings back the false positive that drove the per-sector test, and only the leaf graph
+holds it off: a leaf left holding a single seg reads as fully enclosed by it unless something
+supplies the split its own sector continues through. Repro: DOOM2 MAP01 subsector 22, whose one seg
+is line 335 (the barred alcove's floor, 48 units up), which lidded ~23,000 map units² of the
+courtyard's grass with the alcove's flat.
+
+### What the pass costs
+
+Every hole on the map is redecided in one pass (`beginHoleFills`), and a mover runs the same
+whole-map pass rather than one over its own sector. That is a **deliberate deviation** from GZDoom,
+whose hack is per frame over whatever the wall pass just recorded, and it is what a rebuilt-per-tic
+mover needs: a region is seeded from the leaf carrying the missing texture, and that leaf need not
+be in the sector being rebuilt. Sector 112's leaves are the only ones of the boat's 16 sectors that
+touch the sea, and all 16 are movers.
+
+Two things keep that off the frame:
+
+- **The seeds are found once per map** (`holeSeedLeaves`, weak on it). Which segs draw no lower
+  texture is fixed geometry; only whether they are a *step* moves, and that is a height compare
+  against the current floors.
+- **The pass is skipped while no floor has moved**, on a signature over every sector's floor height
+  (`floorSignature`). Without it a level of movers redoes the pass per mover per tic: 16 sectors
+  rebuilding through one door's tic cost 4.8 ms of a 5.7 ms frame on overboard.wad MAP02.
 
 Three restrictions are this engine's, and each closes a way the baked lid could go stale or fight
 something else:
 
-- **No lid where a Boom 242 is involved** on either side. A 242 draws its floors at borrowed heights
-  and the invisible-platform idiom *wants* its missing textures.
-- **No lid over a movable neighbour** from the static batches — its height is what the lid is baked
-  at. A mover's own sector has no such guard (`buildMoverFlats` passes no set): `MoverGeometry`
-  already rebuilds a mover whenever a movable neighbour moves.
+- **No lid where a Boom 242 is involved**, on the hole or on its rim. A 242 draws its floors at
+  borrowed heights and the invisible-platform idiom *wants* its missing textures.
+- **No lid resting on a movable rim** from the static batches — its height is what the lid is baked
+  at. A mover's own build lifts that (`Build.rebuiltWithNeighbours`): `MoverGeometry` already
+  rebuilds a mover whenever a movable neighbour moves.
 - **The lid is not gated on where the eye is.** GZDoom re-decides per frame and skips the hack when
   the viewpoint is *below* the fill height; baked geometry cannot. What covers the case is that the
   lid is an ordinary `FlatSurface`, so `FlatFader` dissolves it out of the way of a body underneath
   exactly as it does a solid structure's lid — a player who falls into the pit stays visible.
 
-Neither is GZDoom's fallback path reproduced: where the neighbours sit at *different* heights,
-GZDoom projects one of the floors through the gap from the viewpoint (`CreateFloodPoly`, per frame,
-through a stencil) and this engine leaves the hole black. It is rare — over every committed WAD the
-lid fires on 6–43 leaves per WAD set (13 of DOOM2's 13,253, none of DOOM1's 3,423).
+Nor is GZDoom's fallback path reproduced: where the flood gives up, GZDoom projects the floor
+through the gap from the viewpoint (`CreateFloodPoly`, per frame, through a stencil) and this engine
+leaves the hole black. From directly above that projection covers nothing, so there is no version of
+it to port. What the flood does cover stays narrow on the stock IWADs — 5 leaves of DOOM1's 3,423
+(E1M7 sectors 141/142), 6 of DOOM2's 13,253 — and opens up on WADs built around the idiom:
+overboard.wad's 32 maps lid 716 leaves between them.
 
 ## Sector lighting (`mapmesh.ts: lightToColor`)
 

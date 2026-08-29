@@ -4,8 +4,19 @@
  * space and three.js space meet. See docs/render.md § Mesh building and § Sector lighting.
  */
 import * as THREE from 'three';
-import { LF, NO_SIDE, SKY_FLAT, type DoomMap, type LineDef, type SideDef, type Sector } from '../wad/map.ts';
-import { buildSubSectorPolys, type SectorPoly, type SubSectorPoly } from './bsp.ts';
+import {
+  LF,
+  NO_LINE,
+  NO_SIDE,
+  segBackSide,
+  segSide,
+  SKY_FLAT,
+  type DoomMap,
+  type LineDef,
+  type SideDef,
+  type Sector,
+} from '../wad/map.ts';
+import { buildLeafGraph, buildSubSectorPolys, type LeafGraph, type SectorPoly, type SubSectorPoly } from './bsp.ts';
 import { findSolidCaps, pointInPolygon, type SolidCap } from './solids.ts';
 import type { MaterialBank, Size, SurfaceKind } from './textures.ts';
 import type { Pos2, Pos3 } from '../types.ts';
@@ -361,13 +372,8 @@ export interface MapMeshOptions {
    */
   movingSectors?: Set<number>;
   /**
-   * The linedefs bordering a sector — vanilla's `sec->lines[]`, injected so the renderer keeps no
-   * import edge into `game/`. Omitted (tests, tools) means a plain local adjacency list
-   * (`borderingLines`). docs/render.md § Closed holes.
-   */
-  linesOf?: (sectorIndex: number) => readonly number[];
-  /**
-   * `World.subsectorAt`, injected the same way `linesOf` is. Supplied, every surface carries the
+   * `World.subsectorAt`, injected so the renderer keeps no import edge into `game/`. Supplied,
+   * every surface carries the
    * leaf it faces into, which is what lets a dynamic light stop at a wall (docs/lights.md § Light
    * stops at walls); omitted, nothing is gated.
    */
@@ -690,6 +696,8 @@ interface Build {
   map: DoomMap;
   /** Subsector footprints, shared with the mover builds — see `MoverBuild.polys`. */
   polys: SubSectorPoly[];
+  /** Which leaves border which, over those same footprints — what `floodClosedHole` walks. */
+  graph: LeafGraph;
   bank: MaterialBank;
   batches: BatchSet;
   /** Texture dimensions, recording into `missing` whatever the WAD has no lump for. */
@@ -703,8 +711,13 @@ interface Build {
   renderCeilings: boolean;
   wallHeightCap: number;
   movableSectors?: Set<number>;
-  linesOf?: (sectorIndex: number) => readonly number[];
   subsectorAt?: (x: number, y: number) => number;
+  /**
+   * Whether this build is redone when a *neighbouring* sector moves, which only a mover's is
+   * (`MoverGeometry`). It decides whether a closed hole may rest its lid on a movable rim: baked
+   * once into the static batches that would go stale, rebuilt alongside it it cannot.
+   */
+  rebuiltWithNeighbours: boolean;
   /**
    * Whether a sector's floor and ceiling hold still, so a quad sized against it may be diced
    * vertically — see `WALL_CHUNK_LEN` and docs/render.md § A mover dices vertically only where
@@ -731,6 +744,7 @@ function beginBuild(map: DoomMap, polys: SubSectorPoly[], bank: MaterialBank, op
   return {
     map,
     polys,
+    graph: buildLeafGraph(map),
     bank,
     batches: new BatchSet(),
     size: (kind, name) => {
@@ -744,10 +758,10 @@ function beginBuild(map: DoomMap, polys: SubSectorPoly[], bank: MaterialBank, op
     transfers,
     occluders: [],
     flatSurfaces: [],
+    rebuiltWithNeighbours: false,
     renderCeilings: options.renderCeilings ?? false,
     wallHeightCap: options.wallHeightCap ?? 0,
     movableSectors: options.movableSectors,
-    linesOf: options.linesOf,
     subsectorAt: options.subsectorAt,
     holdsStill: () => true,
   };
@@ -765,6 +779,7 @@ function beginMoverBuild(mover: MoverBuild, sectorIndex: number): Build {
   // it has no mover of its own to build it, and its upper/lower step is sized
   // from *this* sector's moving heights.
   build.includeSide = (s) => s === sectorIndex || !movableSectors?.has(s);
+  build.rebuiltWithNeighbours = true;
   return build;
 }
 
@@ -808,10 +823,10 @@ const flatPlan: FlatPlan[] = [];
  */
 function planFlatRefresh(build: Build, mesh: MoverMesh, sectorIndex: number, index: MoverIndex): FlatPlan[] | null {
   const fans = mesh.flatFans;
-  const holeFill = closedHoleFill(build.map, sectorIndex, index.linesOf(sectorIndex), build.transfers);
+  beginHoleFills(build);
   let at = 0;
   for (const ss of index.subsectorsOf(sectorIndex)) {
-    const count = flatSpecsOf(build, build.polys[ss], holeFill, flatSpecs);
+    const count = flatSpecsOf(build, build.polys[ss], closedHoleFill(ss), flatSpecs);
     // A leaf too degenerate to have produced a vertex produced no fan either, and never will.
     // `buildMoverFlats` appended the rest in this same order.
     if (fans[at]?.subsector !== ss) continue;
@@ -906,8 +921,8 @@ function writeAttribute(geom: THREE.BufferGeometry, name: string, values: number
 function buildMoverFlats(build: Build, sectorIndex: number, index: MoverIndex): void {
   // No `movableSectors` here on purpose: a mover is rebuilt alongside its
   // movable neighbours, so its lids cannot go stale against one.
-  const holeFill = closedHoleFill(build.map, sectorIndex, index.linesOf(sectorIndex), build.transfers);
-  for (const ss of index.subsectorsOf(sectorIndex)) processFlat(build, build.polys[ss], ss, holeFill);
+  beginHoleFills(build);
+  for (const ss of index.subsectorsOf(sectorIndex)) processFlat(build, build.polys[ss], ss, closedHoleFill(ss));
 }
 
 /**
@@ -930,11 +945,11 @@ function touchesAny(map: DoomMap, line: LineDef, sectors: Set<number>): boolean 
 
 /** Floors and ceilings, triangulated per subsector (each one is convex). */
 function buildFlats(build: Build): void {
-  const { map, polys, movableSectors } = build;
-  const fills = closedHoleFills(map, build.transfers, build.linesOf, movableSectors);
+  const { polys, movableSectors } = build;
+  beginHoleFills(build);
   for (let ss = 0; ss < polys.length; ss++) {
     if (movableSectors?.has(polys[ss].sector)) continue;
-    processFlat(build, polys[ss], ss, fills[polys[ss].sector]);
+    processFlat(build, polys[ss], ss, closedHoleFill(ss));
   }
 }
 
@@ -998,84 +1013,232 @@ function triangulate(points: Float64Array): Float64Array[] {
 }
 
 /**
- * The neighbouring sector a **sector** closes itself over, or -1 where it is ordinary geometry: a
- * sector whose every side is a two-sided drop with no lower texture is a hole the mapper never
- * meant anyone to look into, and this camera looks into every pit. Follows GZDoom's render hack
- * (`hw_renderhacks.cpp: HandleMissingTextures`), whose conditions the tests below are.
- * `lines` is vanilla's `sec->lines[]`. docs/render.md § Closed holes.
+ * Most leaves one closed hole may span. **Tuned by feel**: a bound on how far a broken map can
+ * drag the flood, well past the largest region any of the committed WADs produces.
  */
-function closedHoleFill(
-  map: DoomMap,
-  sectorIndex: number,
-  lines: readonly number[],
-  transfers: SectorTransfers,
-  movableSectors?: Set<number>,
-): number {
-  const self = map.sectors[sectorIndex];
-  // Boom's 242 idioms are built *on* missing textures, so the hack keeps clear.
-  if (!self || transfers.heightSec(sectorIndex) >= 0) return -1;
+const HOLE_REGION_MAX = 4096;
 
-  let from = -1;
-  for (const lineIndex of lines) {
-    const line = map.linedefs[lineIndex];
-    if (!line) continue;
-    const right = line.right === NO_SIDE ? undefined : map.sidedefs[line.right];
-    const left = line.left === NO_SIDE ? undefined : map.sidedefs[line.left];
-    // The line seen from this sector: whichever side it owns, and the one behind it.
-    const side = right?.sector === sectorIndex ? right : left;
-    if (!side || side.sector !== sectorIndex) continue;
-    const back = side === right ? left : right;
-    // A one-sided wall means the sector is a room, not a hole.
-    if (!back) return -1;
-    if (back.sector === sectorIndex) continue;
-    const other = map.sectors[back.sector];
-    if (!other || transfers.heightSec(back.sector) >= 0) return -1;
-    // The lid is baked at this neighbour's height, so a movable one would leave it stale — only
-    // `buildMoverFlats`, rebuilt alongside its movable neighbours, passes no set.
-    if (movableSectors?.has(back.sector)) return -1;
-    // Every side the same step down, drawing nothing: the lid is one plane, so it has one height.
-    if (other.floorHeight <= self.floorHeight || other.floorTex === SKY_FLAT) return -1;
-    if (side.lower !== NO_TEXTURE && side.lower !== '') return -1;
-    if (from >= 0 && other.floorHeight !== map.sectors[from].floorHeight) return -1;
-    from = back.sector;
-  }
-  return from;
+/** A closed hole the flood accepted: every leaf it covers, and the sector whose floor lids them. */
+interface HoleRegion {
+  leaves: number[];
+  fill: number;
 }
 
+/** One list per map, weak on it like `bsp.ts`'s polygons — see `holeSeedLeaves`. */
+const holeSeeds = new WeakMap<DoomMap, Int32Array>();
+
 /**
- * Sector→bordering-linedefs for a caller that supplied no `linesOf`. Plain adjacency, deliberately
- * **not** a second `sec->lines[]`: `closedHoleFill` is idempotent in a repeated line, and the
- * `P_GroupLines` rule keeps one implementation (`game/world.ts: sectorLines`).
+ * Which leaves could seed a hole: those with a two-sided seg drawing no lower texture, the
+ * `AddLowerMissingTexture` case GZDoom collects while it walks the walls. Whether that seg is a
+ * *step* moves with the floors, but which segs are bare does not, so the list is built once — what
+ * keeps a pass proportional to the candidates rather than to the level.
  */
-function borderingLines(map: DoomMap): number[][] {
-  const lines: number[][] = Array.from({ length: map.sectors.length }, () => []);
-  for (let i = 0; i < map.linedefs.length; i++) {
-    const line = map.linedefs[i];
-    for (const sideIndex of [line.right, line.left]) {
-      if (sideIndex === NO_SIDE) continue;
-      lines[map.sidedefs[sideIndex]?.sector]?.push(i);
+function holeSeedLeaves(map: DoomMap): Int32Array {
+  const cached = holeSeeds.get(map);
+  if (cached) return cached;
+  const seeds: number[] = [];
+  for (let leaf = 0; leaf < map.subsectors.length; leaf++) {
+    const ss = map.subsectors[leaf];
+    for (let i = 0; i < ss.count; i++) {
+      const seg = map.segs[ss.first + i];
+      if (!seg || seg.linedef === NO_LINE) continue;
+      const line = map.linedefs[seg.linedef];
+      if (!line || line.left === NO_SIDE || line.right === NO_SIDE) continue;
+      const own = map.sidedefs[segSide(line, seg.direction)];
+      const back = map.sidedefs[segBackSide(line, seg.direction)];
+      if (!own || !back || own.sector === back.sector) continue;
+      if (own.lower !== NO_TEXTURE && own.lower !== '') continue;
+      seeds.push(leaf);
+      break;
     }
   }
-  return lines;
+  const result = Int32Array.from(seeds);
+  holeSeeds.set(map, result);
+  return result;
 }
 
 /**
- * Every sector's `closedHoleFill` in one pass, indexed by sector — what
- * `buildFlats` hands each leaf. A mover builds its one sector's answer straight
- * from `MoverIndex.linesOf` instead.
+ * `closedHoleFill`'s answers, one slot per leaf, as module scratch. `stamp` is what spares clearing
+ * a map-sized array per pass: a leaf answered in an earlier pass reads as unanswered in this one.
+ * The rest is what lets a pass be skipped — see `beginHoleFills`.
  */
-function closedHoleFills(
-  map: DoomMap,
-  transfers: SectorTransfers,
-  linesOf: ((sectorIndex: number) => readonly number[]) | undefined,
-  movableSectors?: Set<number>,
-): Int32Array {
-  const fallback = linesOf ? undefined : borderingLines(map);
-  const fills = new Int32Array(map.sectors.length);
-  for (let s = 0; s < fills.length; s++) {
-    fills[s] = closedHoleFill(map, s, linesOf ? linesOf(s) : fallback![s], transfers, movableSectors);
+const holeFills = {
+  fills: new Int32Array(0),
+  stamp: new Int32Array(0),
+  pass: 0,
+  map: null as DoomMap | null,
+  signature: 0,
+  rimsMayMove: false,
+  movable: undefined as Set<number> | undefined,
+};
+
+/**
+ * A number that changes whenever any floor does — what decides whether the last pass still stands.
+ * Nothing else the flood reads moves during a level: which sidedef slots are bare survives a switch
+ * swap (a bare slot carries no switch), and a 242 is fixed at load.
+ */
+function floorSignature(map: DoomMap): number {
+  let sum = 0;
+  let mix = map.sectors.length;
+  for (const sector of map.sectors) {
+    sum = (sum + sector.floorHeight) | 0;
+    mix = (Math.imul(mix, 0x01000193) ^ sector.floorHeight) | 0;
   }
-  return fills;
+  return (sum ^ mix) | 0;
+}
+
+/**
+ * Redecides every hole on the map, at the heights the sectors stand at now — the pass that has to
+ * precede any `closedHoleFill`.
+ *
+ * Running it over the whole map even for a mover, which rebuilds one sector's leaves alone, is a
+ * **deliberate deviation** from GZDoom, whose hack is per frame over whatever the wall pass just
+ * recorded. A region is seeded from the leaf that carries the missing texture, and that leaf need
+ * not be in the sector being rebuilt: overboard.wad MAP02's sunken boat spans 16 sectors, every one
+ * of them a mover, and only sector 112's leaves touch the sea it hides under. `holeSeedLeaves`
+ * keeps the cost off the level's size.
+ */
+function beginHoleFills(build: Build): void {
+  const leafCount = build.polys.length;
+  const signature = floorSignature(build.map);
+  // Every mover redoing this per tic is most of a frame on a detailed map; nothing it reads has
+  // moved since the last one unless a floor has.
+  if (
+    holeFills.map === build.map &&
+    holeFills.signature === signature &&
+    holeFills.rimsMayMove === build.rebuiltWithNeighbours &&
+    holeFills.movable === build.movableSectors &&
+    holeFills.fills.length >= leafCount
+  ) {
+    return;
+  }
+  if (holeFills.fills.length < leafCount) {
+    holeFills.fills = new Int32Array(leafCount);
+    holeFills.stamp = new Int32Array(leafCount);
+    holeFills.pass = 0;
+  }
+  holeFills.map = build.map;
+  holeFills.signature = signature;
+  holeFills.rimsMayMove = build.rebuiltWithNeighbours;
+  holeFills.movable = build.movableSectors;
+  holeFills.pass++;
+  for (const seed of holeSeedLeaves(build.map)) {
+    if (holeFills.stamp[seed] === holeFills.pass) continue;
+    const region = floodClosedHole(build, seed);
+    if (!region) continue;
+    for (const covered of region.leaves) {
+      holeFills.stamp[covered] = holeFills.pass;
+      holeFills.fills[covered] = region.fill;
+    }
+  }
+}
+
+/**
+ * The neighbouring sector a **leaf** closes itself over, or -1 where it is ordinary geometry: a
+ * region of leaves ringed entirely by untextured drops is a hole the mapper never meant anyone to
+ * look into, and this camera looks into every pit. Reads what `beginHoleFills` settled.
+ * docs/render.md § Closed holes.
+ */
+function closedHoleFill(leaf: number): number {
+  return holeFills.stamp[leaf] === holeFills.pass ? holeFills.fills[leaf] : -1;
+}
+
+/**
+ * The hole `start` opens onto, or null where it opens onto none. GZDoom's `DoOneSectorLower`
+ * (`hw_renderhacks.cpp`): the plane comes from the highest floor the seed's own missing lower
+ * textures adjoin, and the flood then spreads across every leaf below it, giving up the moment
+ * anything says the region is a room rather than a pit.
+ */
+function floodClosedHole(build: Build, start: number): HoleRegion | null {
+  const { map, polys, graph, transfers } = build;
+
+  // The lid's plane: vanilla's `MissingLowerTextures[i].Planez`, the highest adjoining floor.
+  let planez = -Infinity;
+  let fill = -1;
+  const seedFloor = map.sectors[polys[start]?.sector]?.floorHeight;
+  if (seedFloor === undefined) return null;
+  const seedSegs = map.subsectors[start];
+  for (let i = 0; seedSegs && i < seedSegs.count; i++) {
+    const step = holeStep(build, start, i);
+    if (!step || step.height <= seedFloor || step.height <= planez) continue;
+    if (!rimSector(build, step.sector)) continue;
+    if (step.textured) continue;
+    planez = step.height;
+    fill = step.sector;
+  }
+  if (fill < 0) return null;
+
+  const region = [start];
+  const inRegion = new Set(region);
+  for (let at = 0; at < region.length; at++) {
+    const covered = region[at];
+    const sector = polys[covered].sector;
+    // The lid goes *over* the hole: a leaf standing at the rim's own height is not in one.
+    if ((map.sectors[sector]?.floorHeight ?? planez) >= planez) return null;
+    // Boom's 242 idioms are built *on* missing textures, so the hack keeps clear.
+    if (transfers.heightSec(sector) >= 0) return null;
+    const leafSegs = map.subsectors[covered];
+    for (let i = 0; leafSegs && i < leafSegs.count; i++) {
+      const step = holeStep(build, covered, i);
+      // A one-sided wall means the region is a room, not a hole.
+      if (step === null) return null;
+      if (step === undefined) continue;
+      if (step.height > planez) return null;
+      // Below the plane is more of the hole, which the leaf graph below walks into. At the plane is
+      // the rim the lid rests on, and every bit of that has to draw nothing.
+      if (step.height < planez) continue;
+      if (step.textured || !rimSector(build, step.sector)) return null;
+    }
+    for (let i = graph.starts[covered]; i < graph.starts[covered + 1]; i++) {
+      const other = graph.leaves[i];
+      if (inRegion.has(other)) continue;
+      // Leaves no seg of this one names: a BSP split, or a probe across a seg filed on the wrong
+      // side of its line. Only their height is known, so only their height can be asked.
+      const height = map.sectors[polys[other]?.sector]?.floorHeight;
+      if (height === undefined || height > planez) return null;
+      if (height === planez) continue;
+      inRegion.add(other);
+      region.push(other);
+      if (region.length > HOLE_REGION_MAX) return null;
+    }
+  }
+  return { leaves: region, fill };
+}
+
+/**
+ * The step the `i`th seg of `leaf` looks across: `null` on a one-sided wall, `undefined` where the
+ * seg bounds nothing (a GL miniseg, a self-referencing line). Module scratch — one flood at a time,
+ * and it runs per seg per leaf.
+ */
+const holeStepOut = { height: 0, sector: 0, textured: false };
+
+function holeStep(build: Build, leaf: number, i: number): typeof holeStepOut | null | undefined {
+  const { map } = build;
+  const ss = map.subsectors[leaf];
+  const seg = map.segs[ss.first + i];
+  if (!seg || seg.linedef === NO_LINE) return undefined;
+  const line = map.linedefs[seg.linedef];
+  if (!line) return undefined;
+  if (line.left === NO_SIDE || line.right === NO_SIDE) return null;
+  const own = map.sidedefs[segSide(line, seg.direction)];
+  const back = map.sidedefs[segBackSide(line, seg.direction)];
+  if (!own || !back) return null;
+  if (own.sector === back.sector) return undefined;
+  const other = map.sectors[back.sector];
+  if (!other) return null;
+  holeStepOut.height = other.floorHeight;
+  holeStepOut.sector = back.sector;
+  holeStepOut.textured = own.lower !== NO_TEXTURE && own.lower !== '';
+  return holeStepOut;
+}
+
+/** Whether a sector may carry the lid's plane: a real flat, at a height that will hold still. */
+function rimSector(build: Build, sectorIndex: number): boolean {
+  if (build.map.sectors[sectorIndex]?.floorTex === SKY_FLAT) return false;
+  if (build.transfers.heightSec(sectorIndex) >= 0) return false;
+  // A lid baked at this neighbour's height would go stale the moment it moved — unless the build
+  // holding it is redone alongside it, which a mover's is.
+  return build.rebuiltWithNeighbours || !build.movableSectors?.has(sectorIndex);
 }
 
 /** One flat fan's parameters — everything `addFlatFan` needs that isn't the footprint. */

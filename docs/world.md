@@ -276,8 +276,9 @@ is not stylistic.** These read a sector's *live* heights and light, so only a ru
 them and every caller (`game/specials.ts`) already holds a `World`. The walks they run on —
 `sectorLines`, `neighborSectorIndices`, `nextSectorIndices`, `sectorsByTag`, `linesByTag` — are
 static topology memoized against the `DoomMap`, and must stay callable **without** a `World`,
-because the renderer reaches them without one: `render/mapmesh.ts` takes `linesOf` and `subsectorAt`
-as injected callbacks rather than importing `World`, so `render/` keeps no import edge into `game/`.
+because the renderer reaches them without one: `game/specials/movergeometry.ts` supplies
+`MoverIndex.linesOf` from `sectorLines`, and `render/mapmesh.ts` takes `subsectorAt` as an injected
+callback rather than importing `World`, so `render/` keeps no import edge into `game/`.
 `transfersOf` is memoized on map identity for a related reason — one `Transfers` shared by
 `game.ts`, `things.ts`, `forces.ts` and the mesh builder, which the mesh tests construct with no
 `World` at all.

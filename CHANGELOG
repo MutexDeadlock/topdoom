@@ -6,6 +6,8 @@ Features and improvements
 Fixed bugs
   - monsters now open the doors they walk into
   - weapon explosions no longer stay invisible against some walls
+  - a structure sunk out of sight behind untextured drops now stays hidden
+    under the floor above it, instead of showing through from overhead
 
 
 

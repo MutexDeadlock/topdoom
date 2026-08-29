@@ -173,3 +173,90 @@ describe('Regressions · a leaf of an open room is not a hole', () => {
     assert.deepEqual(lids, [], 'the room has one-sided walls elsewhere, so it is not a pit');
   });
 });
+
+/**
+ * What the per-sector test could not see. A hole is a region of *leaves*, so it may span sectors at
+ * several depths, and a sector's leaves may fall into pieces that have nothing to do with each
+ * other. Repro: overboard.wad MAP02's sunken boat, 16 sectors between −272 and −160 under a sea at
+ * 0, two of whose sectors also own a walled closet parked off the map.
+ * docs/render.md § Closed holes.
+ */
+describe('Rendering · a closed hole spanning several sectors', () => {
+  const DEEP = -128;
+  const SHELF = -64;
+
+  /** A 5×5 grid whose two middle cells are a two-step hole in an otherwise flat floor. */
+  function trench(): { grid: GridMap; deep: number; shelf: number; lids: () => FlatSurface[] } {
+    const grid = gridMap(['.....', '.....', '.....', '.....', '.....']);
+    const deep = grid.index(2, 2);
+    const shelf = grid.index(2, 1);
+    grid.map.sectors[deep].floorHeight = DEEP;
+    grid.map.sectors[deep].floorTex = OWN_FLAT;
+    grid.map.sectors[shelf].floorHeight = SHELF;
+    grid.map.sectors[shelf].floorTex = OWN_FLAT;
+    for (const sector of grid.map.sectors) {
+      if (sector.floorHeight === 0) sector.floorTex = RIM_FLAT;
+    }
+    const lids = () =>
+      buildMapMesh(grid.map, BANK, { transfers: transfersOf(grid.map) }).flatSurfaces.filter(
+        (f) => (f.subsector === deep || f.subsector === shelf) && f.height === 0,
+      );
+    return { grid, deep, shelf, lids };
+  }
+
+  test('both floors are lidded, at the one height the rim stands at', () => {
+    const { deep, shelf, lids } = trench();
+    const lid = lids();
+    assert.deepEqual(
+      lid.map((f) => f.subsector).sort((a, b) => a - b),
+      [shelf, deep].sort((a, b) => a - b),
+      'the shelf is inside the hole, not its rim',
+    );
+    assert.deepEqual(new Set(lid.map((f) => f.key)), new Set(['flat:' + RIM_FLAT]));
+  });
+
+  test('a textured step anywhere on the rim is enough to make it ordinary geometry', () => {
+    const { grid, deep, lids } = trench();
+    sideFacing(grid.map, grid.westEdge(2, 2), deep).lower = 'STEP1';
+    assert.deepEqual(lids(), []);
+  });
+
+  test('a wall inside the region says it is a room, not a hole', () => {
+    const { grid, lids } = trench();
+    // The shelf's own north side walled off: a one-sided line, reached only through the deep cell.
+    const wall = grid.map.linedefs[grid.westEdge(2, 1)];
+    wall.left = NO_SIDE;
+    assert.deepEqual(lids(), []);
+  });
+
+  test('the lid goes once the region has risen flush', () => {
+    const { grid, deep, shelf } = trench();
+    grid.map.sectors[deep].floorHeight = 0;
+    grid.map.sectors[shelf].floorHeight = 0;
+    const fans = buildMapMesh(grid.map, BANK, { transfers: transfersOf(grid.map) }).flatSurfaces.filter(
+      (f) => f.subsector === deep || f.subsector === shelf,
+    );
+    assert.deepEqual(
+      fans.map((f) => f.height),
+      [0, 0],
+      'one real floor each, and nothing on top of them',
+    );
+  });
+
+  test('a walled second piece of a hole’s sector does not veto it', () => {
+    const { grid, deep, shelf, lids } = trench();
+    // The corner cell, whose outer sides are the map's own one-sided walls, made part of the deep
+    // sector — a piece of it the hole never touches, and so no evidence about the hole.
+    const closet = grid.index(0, 0);
+    for (const side of grid.map.sidedefs) {
+      if (side.sector === closet) side.sector = deep;
+    }
+    grid.map.sectors[closet].floorHeight = DEEP;
+    assert.deepEqual(
+      lids()
+        .map((f) => f.subsector)
+        .sort((a, b) => a - b),
+      [shelf, deep].sort((a, b) => a - b),
+    );
+  });
+});

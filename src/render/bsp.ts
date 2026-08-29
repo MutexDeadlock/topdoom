@@ -3,9 +3,10 @@
  * clipped against its own segs — sparing that clip where a wall stops inside the leaf or a
  * seg was filed into the wrong side of its own line, and redirecting a leaf hidden behind
  * self-referencing lines to the sector that encloses it. All of these ask `sectorprobe.ts`
- * where a point is, since the BSP is what is being rebuilt here.
+ * where a point is, since the BSP is what is being rebuilt here. Over those polygons it also
+ * answers which leaves border which, the adjacency vanilla SEGS carries no minisegs to state.
  * See docs/render.md § BSP polygon reconstruction, § Walls that stop inside their cell,
- * § Segs on the wrong side of their leaf and § Self-referencing sectors.
+ * § Segs on the wrong side of their leaf, § Self-referencing sectors and § Leaf adjacency.
  */
 import { NO_LINE, segSide, SUBSECTOR_BIT, type DoomMap, type Seg, type Vertex } from '../wad/map.ts';
 import { clipConvexPolygon as clip, polygonCentroid } from '../util/geom.ts';
@@ -494,4 +495,86 @@ export function sectorOfSubSector(map: DoomMap, ssIndex: number): number {
     if (sector >= 0) return sector;
   }
   return 0;
+}
+
+/**
+ * How far past a leaf's edge the neighbour probe samples, in map units. **Tuned by feel**: a
+ * robustness value, far enough out to clear the clip's float noise and the overhang
+ * `segClipTolerance` leaves, short enough not to step over a sliver leaf whole.
+ */
+const NEIGHBOUR_PROBE = 0.5;
+
+/**
+ * Which leaves border each one, as compressed rows: leaf `i`'s neighbours are
+ * `leaves[starts[i]]` up to `leaves[starts[i + 1]]`.
+ */
+export interface LeafGraph {
+  starts: Int32Array;
+  leaves: Int32Array;
+}
+
+/** Vanilla's `R_PointInSubsector`, or -1 on a tree the descent can't finish. */
+export function subsectorAtPoint(map: DoomMap, x: number, y: number): number {
+  if (map.nodes.length === 0) return map.subsectors.length > 0 ? 0 : -1;
+  let child = map.nodes.length - 1;
+  // The tree is data from a file: a corrupt child index could otherwise loop forever.
+  for (let step = 0; step <= map.nodes.length; step++) {
+    if (child & SUBSECTOR_BIT) {
+      const leaf = child & ~SUBSECTOR_BIT;
+      return leaf < map.subsectors.length ? leaf : -1;
+    }
+    const node = map.nodes[child];
+    if (!node) return -1;
+    // The same side test `rebuildSubSectorPolys` clips with: cross <= 0 is the right child.
+    child = node.dx * (y - node.y) - node.dy * (x - node.x) <= 0 ? node.rightChild : node.leftChild;
+  }
+  return -1;
+}
+
+/** One rebuild per map, like `buildSubSectorPolys`, and weak on it for the same reason. */
+const graphs = new WeakMap<DoomMap, LeafGraph>();
+
+/**
+ * Which leaves touch which. Vanilla SEGS carry no minisegs, so a leaf's splits into the rest of
+ * its own sector have no edge to read the neighbour off; this recovers them geometrically instead,
+ * probing a map unit's half past the midpoint of every polygon edge and descending the tree there.
+ * docs/render.md § Leaf adjacency.
+ */
+export function buildLeafGraph(map: DoomMap): LeafGraph {
+  const cached = graphs.get(map);
+  if (cached) return cached;
+  const graph = rebuildLeafGraph(map);
+  graphs.set(map, graph);
+  return graph;
+}
+
+function rebuildLeafGraph(map: DoomMap): LeafGraph {
+  const polys = buildSubSectorPolys(map);
+  const starts = new Int32Array(polys.length + 1);
+  const leaves: number[] = [];
+  const found: number[] = [];
+  for (let i = 0; i < polys.length; i++) {
+    starts[i] = leaves.length;
+    const points = polys[i].points;
+    const n = points.length / 2;
+    found.length = 0;
+    for (let e = 0; e < n; e++) {
+      const ax = points[e * 2];
+      const ay = points[e * 2 + 1];
+      const bx = points[((e + 1) % n) * 2];
+      const by = points[((e + 1) % n) * 2 + 1];
+      const ex = bx - ax;
+      const ey = by - ay;
+      const length = Math.hypot(ex, ey);
+      if (length < 1e-6) continue;
+      // The rings are counter-clockwise (`SectorPoly.points`), so (ey, -ex) points out of one.
+      const step = NEIGHBOUR_PROBE / length;
+      const other = subsectorAtPoint(map, (ax + bx) / 2 + ey * step, (ay + by) / 2 - ex * step);
+      if (other < 0 || other === i || found.includes(other)) continue;
+      found.push(other);
+      leaves.push(other);
+    }
+  }
+  starts[polys.length] = leaves.length;
+  return { starts, leaves: Int32Array.from(leaves) };
 }

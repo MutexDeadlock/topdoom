@@ -477,6 +477,21 @@ export class SpecialsController {
   private shootLines: number[] = [];
 
   /**
+   * Every line a *monster* could push its way through (`useMonster`), decided once from the three
+   * static halves of the test: `PIT_CheckLine` never puts a one-sided or `BLOCKING`/
+   * `BLOCK_MONSTERS` line in `spechit` at all, and `P_UseSpecialLine` refuses a secret line and
+   * anything outside its non-player allow-list (`SpecialDef.monsterActivate`). Only the geometry
+   * is left to test per call, which is what makes the pass cheap enough to run on a blocked step.
+   */
+  private monsterUseLines = new Set<number>();
+  /**
+   * `useMonster`'s hit list — vanilla's `spechit`, refilled in place rather than allocated per
+   * blocked step. Collected before anything fires, so a `trigger` that queries the world can't
+   * disturb the line walk it was found in.
+   */
+  private monsterUseHits: number[] = [];
+
+  /**
    * `handleUseTrigger`'s scratch `Opening`, so a use press allocates none. Read it before the next
    * lookup.
    */
@@ -537,6 +552,7 @@ export class SpecialsController {
       const def = lookupSpecial(line.special);
       if (!def) continue;
       if (def.trigger === 'shoot') this.shootLines.push(i);
+      if (def.trigger === 'use' && def.monsterActivate && monsterCouldPush(line)) this.monsterUseLines.add(i);
       const entries = findSwitchEntries(map, line, switchPairs);
       if (entries.length > 0) this.switchTextures.set(i, entries);
     }
@@ -1221,7 +1237,7 @@ export class SpecialsController {
    * than reused, and only a `reverseWhenMoving` press touches a door still in
    * motion. See docs/specials.md § Retriggering a door.
    */
-  private triggerDoor(sectorIndex: number, effect: DoorEffect): boolean {
+  private triggerDoor(sectorIndex: number, effect: DoorEffect, activator: Activator = 'player'): boolean {
     // `ceilingActive` is vanilla's `sec->specialdata`, so a settled
     // ('open'/'closed') record falls through to a new mover below.
     if (this.ceilingActive(sectorIndex)) {
@@ -1231,7 +1247,15 @@ export class SpecialsController {
       // else, and returns before its sound switch — hence no `playSector`
       // here. `holdClosed` is left out: a door parked at the bottom on a delay
       // timer (§ Delayed doors) has no direction to reverse.
-      if (running.state !== 'holdClosed') running.state = running.state === 'lowering' ? 'raising' : 'lowering';
+      if (running.state === 'lowering') {
+        running.state = 'raising';
+        return true;
+      }
+      // "JDC: bad guys never close doors" (`EV_VerticalDoor`): every other direction reverses
+      // *down* for a player and is left alone for a monster, which would otherwise slam the door
+      // shut every frame it stayed blocked against it. docs/monster-ai.md § Opening doors.
+      if (activator === 'monster') return true;
+      if (running.state !== 'holdClosed') running.state = 'lowering';
       return true;
     }
     const sector = this.map.sectors[sectorIndex];
@@ -1998,7 +2022,10 @@ export class SpecialsController {
     if (def.lock && !satisfiesLock(ownedKeys, def.lock)) {
       // Vanilla's own feedback: a "you need the X key" message plus `oof` at full volume
       // (`S_StartSound(NULL, sfx_oof)`). A manual door is the door itself, anything else keyed is
-      // a remote switch — see `LockedLine`. Both are player-only; a monster never uses a line.
+      // a remote switch — see `LockedLine`. A monster gets neither: `EV_VerticalDoor` returns on
+      // `if (!player)` *before* the key test that speaks, so 32/33/34 refuse it in silence
+      // (`useMonster`).
+      if (activator === 'monster') return null;
       if (activator === 'player') this.lockedLine = { lock: def.lock, kind: def.manual ? 'door' : 'switch' };
       this.sfx.play('oof');
       return null;
@@ -2054,14 +2081,14 @@ export class SpecialsController {
 
     // Vanilla's `rtn`: true once any target sector actually took the effect.
     let applied = false;
-    for (const sectorIndex of targets) applied = this.applyEffect(sectorIndex, def.effect, line) || applied;
+    for (const sectorIndex of targets) applied = this.applyEffect(sectorIndex, def.effect, activator, line) || applied;
     // Boom's three ceiling-then-floor pairs — see `SpecialDef.secondEffect`.
     // The second pass is its own loop over the same targets, matching the
     // real dispatch: `EV_DoCeiling` runs over every tagged sector before
     // `EV_DoFloor` is attempted on any of them.
     const second = def.secondEffect;
     if (second && !(second.onlyIfPrimaryFailed && applied)) {
-      for (const sectorIndex of targets) applied = this.applyEffect(sectorIndex, second.effect, line) || applied;
+      for (const sectorIndex of targets) applied = this.applyEffect(sectorIndex, second.effect, activator, line) || applied;
     }
     // Boom's retrigger alternation (generalized stairs' build direction): the
     // line's *effective* special flips on every activation that did something.
@@ -2078,11 +2105,13 @@ export class SpecialsController {
 
   /**
    * One effect against one tag-matched sector, returning that sector's share of vanilla's `rtn`.
+   * `activator` reaches only the door, the one effect that acts differently for a monster — see
+   * `triggerDoor`.
    */
-  private applyEffect(sectorIndex: number, effect: Effect, line?: LineDef): boolean {
+  private applyEffect(sectorIndex: number, effect: Effect, activator: Activator, line?: LineDef): boolean {
     switch (effect.kind) {
       case 'door':
-        return this.triggerDoor(sectorIndex, effect);
+        return this.triggerDoor(sectorIndex, effect, activator);
       case 'lift':
         return this.triggerLift(sectorIndex, effect);
       case 'liftStop':
@@ -2139,6 +2168,43 @@ export class SpecialsController {
     // The facing matters: Boom's silent numbers rotate a body rather than
     // aiming it.
     return this.crossLines(prev.x, prev.y, pos.x, pos.y, 'monster', ownedKeys, pos.angle);
+  }
+
+  /**
+   * The door a chasing monster walks into, opened — `P_Move`'s `spechit` pass, run when a step is
+   * refused, over the lines the monster's box at the *attempted* position `(tryX, tryY)` crossed.
+   * Every one of them that admits a non-player (`SpecialDef.monsterActivate`: the manual doors and
+   * Boom's switch teleporters) is pushed, exactly as `P_UseSpecialLine` does with `side` 0 — so
+   * unlike the player's own press, the side the monster stands on is never tested.
+   * Returns a landing spot the same way `crossMonster` does, for the teleport switches.
+   * docs/monster-ai.md § Opening doors.
+   *
+   * The key check still runs, and a monster carries no keys: 32/33/34 are in the allow-list and
+   * fail it, which is `EV_VerticalDoor`'s `if (!player) return;` by another route.
+   */
+  useMonster(body: CrossingBody, tryX: number, tryY: number, ownedKeys: ReadonlySet<KeySlot>): TeleportDest | null {
+    if (this.monsterUseLines.size === 0) return null;
+    const radius = body.blockRadius;
+    const left = tryX - radius;
+    const right = tryX + radius;
+    const bottom = tryY - radius;
+    const top = tryY + radius;
+    const hits = this.monsterUseHits;
+    hits.length = 0;
+    // `PIT_CheckLine`'s own two gates, in its order — the box, then the side test. The `+ 1` is
+    // broadphase slop only, as in `checkPosition`.
+    this.world.forEachLineNear(tryX, tryY, radius + 1, (i) => {
+      if (!this.monsterUseLines.has(i)) return;
+      if (!this.world.boxOverlapsLine(left, bottom, right, top, i)) return;
+      if (this.world.boxOnLineSide(left, bottom, right, top, i) !== -1) return;
+      hits.push(i);
+    });
+    let dest: TeleportDest | null = null;
+    // Where the monster *stands*, not where it was heading: a silent teleport reads the body's
+    // own position, as `P_UseSpecialLine` does from `thing`.
+    const at: TeleportSource = { x: body.x, y: body.y, angle: body.angle };
+    for (const i of hits) dest = this.trigger(i, ownedKeys, 'monster', false, at) ?? dest;
+    return dest;
   }
 
   /**
@@ -2440,6 +2506,17 @@ export class SpecialsController {
     }
   }
 
+}
+
+/**
+ * Whether a blocked monster could ever push this line, from its flags alone — the static half of
+ * `SpecialsController.useMonster`'s test, and the reason a monster cannot open a door that is
+ * fenced off (`BLOCK_MONSTERS`), barred (`BLOCKING`), one-sided, or flagged secret.
+ * See `monsterUseLines`.
+ */
+function monsterCouldPush(line: LineDef): boolean {
+  if (line.left === NO_SIDE || line.right === NO_SIDE) return false;
+  return (line.flags & (LF.BLOCKING | LF.BLOCK_MONSTERS | LF.SECRET)) === 0;
 }
 
 /**

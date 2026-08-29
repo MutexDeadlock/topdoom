@@ -369,6 +369,34 @@ ground for the player alone. `ThingLayer.solidBodies` is the outward-facing half
 equivalent list internally (`blockersFor`), whose search box stays 2D. The player *slides* along
 bodies while monsters don't, matching vanilla exactly.
 
+## Opening doors
+
+A refused step runs `P_Move`'s `spechit` pass: every special line the monster's box crossed **at
+the position the step was reaching for** is pushed, which is how a chasing monster opens a door
+(`ai.ts: MonsterStep.useLines` → `SpecialsController.useMonster`). The refused sub-step, not the
+full chase step, is the box position — it is the one that touched the door.
+
+A line reaches the pass only if `PIT_CheckLine` would have put it in `spechit` — two-sided, and
+neither `BLOCKING` nor `BLOCK_MONSTERS` — and only if `P_UseSpecialLine`'s non-player allow-list
+admits it: not `SECRET`, and `SpecialDef.monsterActivate` on a `use` trigger. That is vanilla's
+1/32/33/34, Boom's switch teleporters 174/195/209/210, and any generalized line carrying its own
+monster bit. All of it is static, so the candidate lines are found once per level
+(`SpecialsController.monsterUseLines`) and only the box test runs per blocked step.
+
+Three consequences, all vanilla:
+
+- **32/33/34 fail silently.** A monster carries no keys, and `EV_VerticalDoor` returns on
+  `if (!player)` before the key test that speaks — so no message and no `oof`.
+- **The side is never tested.** `P_Move` passes `P_UseSpecialLine` a hardcoded `side` 0, unlike the
+  player's own press, which fires only from a line's front.
+- **A monster never closes a door.** `EV_VerticalDoor`'s reuse branch sends a door back up for
+  anyone but only sends it down for a player ("JDC: bad guys never close doors"). Without it a
+  monster leaning on an open door would slam it shut every frame it stayed blocked.
+
+Boom's `pr_opendoor` fix for monsters stuck in door tracks (a 90% answer instead of a flat one) is
+deliberately not implemented: it would draw from the random table on a path vanilla never draws on
+(docs/random.md).
+
 ## The dropoff rule
 
 Every type except the cacodemon, lost soul and pain elemental (`MonsterStats.flies`) refuses a step

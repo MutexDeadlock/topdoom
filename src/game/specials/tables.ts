@@ -171,7 +171,10 @@ function silentTeleport(
   return {
     trigger,
     repeatable,
-    monsterActivate: trigger === 'walk',
+    // Both trigger paths admit a monster: `P_CrossSpecialLine`'s allow-list
+    // carries 207/208, and `P_UseSpecialLine`'s carries 209/210 beside the
+    // manual doors ("jff 3/5/98 add ability to use teleporters for monsters").
+    monsterActivate: true,
     effect: {
       kind: 'teleport',
       monsterOnly: options.monsterOnly ?? false,
@@ -200,7 +203,10 @@ function lineTeleport(repeatable: boolean, options: { reversed?: boolean; monste
 
 export const LINE_SPECIALS: Record<number, SpecialDef> = {
   // Manual doors (untagged, target the line's own back sector).
-  1: { trigger: 'use', repeatable: true, manual: true, effect: raiseDoor(DOOR_SPEED) },
+  // `monsterActivate` on 1 (and on 32/33/34 below) is `P_UseSpecialLine`'s own
+  // non-player allow-list, which is what lets a chasing monster walk a door
+  // open — see `SpecialDef.monsterActivate`.
+  1: { trigger: 'use', repeatable: true, manual: true, monsterActivate: true, effect: raiseDoor(DOOR_SPEED) },
   31: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED, 'openOnly') },
   117: { trigger: 'use', repeatable: true, manual: true, effect: raiseDoor(DOOR_SPEED_FAST) },
   118: { trigger: 'use', repeatable: false, manual: true, effect: door(DOOR_SPEED_FAST, 'openOnly') },
@@ -210,9 +216,9 @@ export const LINE_SPECIALS: Record<number, SpecialDef> = {
   26: { trigger: 'use', repeatable: true, manual: true, lock: color('blue'), effect: raiseDoor(DOOR_SPEED) },
   27: { trigger: 'use', repeatable: true, manual: true, lock: color('yellow'), effect: raiseDoor(DOOR_SPEED) },
   28: { trigger: 'use', repeatable: true, manual: true, lock: color('red'), effect: raiseDoor(DOOR_SPEED) },
-  32: { trigger: 'use', repeatable: false, manual: true, lock: color('blue'), effect: door(DOOR_SPEED, 'openOnly') },
-  33: { trigger: 'use', repeatable: false, manual: true, lock: color('red'), effect: door(DOOR_SPEED, 'openOnly') },
-  34: { trigger: 'use', repeatable: false, manual: true, lock: color('yellow'), effect: door(DOOR_SPEED, 'openOnly') },
+  32: { trigger: 'use', repeatable: false, manual: true, monsterActivate: true, lock: color('blue'), effect: door(DOOR_SPEED, 'openOnly') },
+  33: { trigger: 'use', repeatable: false, manual: true, monsterActivate: true, lock: color('red'), effect: door(DOOR_SPEED, 'openOnly') },
+  34: { trigger: 'use', repeatable: false, manual: true, monsterActivate: true, lock: color('yellow'), effect: door(DOOR_SPEED, 'openOnly') },
   // Keyed remote doors (S1/SR switches, tag-targeted — see file doc comment
   // on why these are not `manual` despite being use-triggered like the ones above).
   99: { trigger: 'use', repeatable: true, lock: color('blue'), effect: door(DOOR_SPEED_FAST, 'openOnly') },
@@ -626,7 +632,7 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   // 174 is Boom's S1 teleport, not a vanilla number — the wiki lists it as
   // vanilla and the source does not. It sits in this file because Boom's
   // extended numbers key onto the same shapes; docs/specials.md § Scope.
-  174: { trigger: 'use', repeatable: false, effect: { kind: 'teleport', monsterOnly: false } },
+  174: { trigger: 'use', repeatable: false, monsterActivate: true, effect: { kind: 'teleport', monsterOnly: false } },
   175: { trigger: 'use', repeatable: false, effect: door(DOOR_SPEED, 'closeThenOpen') },
   189: { trigger: 'use', repeatable: false, effect: { kind: 'changeOnly', model: 'trigger' } },
   203: { trigger: 'use', repeatable: false, effect: ceiling('lowestNeighborCeiling') },
@@ -664,7 +670,7 @@ export const BOOM_LINE_SPECIALS: Record<number, SpecialDef> = {
   192: { trigger: 'use', repeatable: true, effect: { kind: 'lightChange', mode: 'brightestNeighbor' } },
   193: { trigger: 'use', repeatable: true, effect: { kind: 'lightChange', mode: 'startStrobe' } },
   194: { trigger: 'use', repeatable: true, effect: { kind: 'lightChange', mode: 'darkestNeighbor' } },
-  195: { trigger: 'use', repeatable: true, effect: { kind: 'teleport', monsterOnly: false } },
+  195: { trigger: 'use', repeatable: true, monsterActivate: true, effect: { kind: 'teleport', monsterOnly: false } },
   196: { trigger: 'use', repeatable: true, effect: door(DOOR_SPEED, 'closeThenOpen') },
   205: { trigger: 'use', repeatable: true, effect: ceiling('lowestNeighborCeiling') },
   206: { trigger: 'use', repeatable: true, effect: ceiling('highestNeighborFloor') },

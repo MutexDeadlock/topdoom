@@ -84,6 +84,7 @@ import {
   MONSTER_HIT_RADIUS,
   thrustSpeed,
   type MonsterAttackEvent,
+  type MonsterBody,
 } from './monsters/defs.ts';
 import { INERT_SHOOTABLE, monsterStatsFor } from './monsters/tables.ts';
 import { commitTarget, reactToDamage, shouldRetarget, stepMonsterAI, tryWake } from './monsters/ai.ts';
@@ -330,6 +331,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
     player: Pos3 | null,
     fogVisible?: (subsector: number) => boolean,
     crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null,
+    useLines?: (mover: CrossingBody, tryX: number, tryY: number) => TeleportDest | null,
     carry?: (
       pos: Pos3,
       radius: number,
@@ -338,6 +340,15 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
   ): ThingUpdateResult {
     const attacks: MonsterAttackEvent[] = [];
     const barrelExplosions: BarrelExplosion[] = [];
+    // Built once per tic rather than per monster: `stepMonsterAI` hands back the very record it
+    // was given, which is always one of `posed`, so the wrapper needs no capture of its own.
+    const useBlockingLines = useLines
+      ? (body: MonsterBody, tryX: number, tryY: number) => {
+          const thing = body as PosedThing;
+          const dest = useLines(thing, tryX, tryY);
+          if (dest) arriveAt(thing, dest);
+        }
+      : undefined;
     // Once per tic, ahead of any `blockersFor` call below — docs/monster-ai.md § Spatial indexing
     // on why a tic-granular grid is accurate enough for contact.
     grid.rebuild();
@@ -472,6 +483,7 @@ export function buildThingSprites(world: World, options: ThingLayerOptions): Thi
               targetHeight,
               blockers: grid.blockersFor(p, player),
               resurrect: grid.findRaisableCorpse,
+              useLines: useBlockingLines,
               sfx,
             });
             // Additive on top of the AI walk step above, as `P_XYMovement` is on `A_Chase`'s —

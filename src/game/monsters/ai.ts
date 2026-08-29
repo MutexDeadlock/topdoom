@@ -49,6 +49,14 @@ export interface MonsterStep {
   blockers?: readonly ThingBlocker[];
   resurrect?: Resurrector;
   sfx?: SoundEmitter;
+  /**
+   * `P_Move`'s `spechit` pass, given the position a refused step was reaching for: whatever
+   * special lines the monster's box *there* crossed get pushed, which is how a chasing monster
+   * opens a door. Nothing comes back, because realizing what one did — a door thinker, a
+   * teleport landing — belongs to the layer that owns the world, not to a chase decision.
+   * docs/monster-ai.md § Opening doors.
+   */
+  useLines?: (body: MonsterBody, x: number, y: number) => void;
 }
 
 /**
@@ -253,6 +261,7 @@ export function stepMonsterAI(
     targetHeight: step.targetHeight,
     blockers: step.blockers,
     resurrect: step.resurrect,
+    useLines: step.useLines,
     sfx: step.sfx ?? SILENT,
     dx,
     dy,
@@ -379,6 +388,10 @@ export function stepMonsterAI(
       floatOverStep(c, nx, ny);
     } else if (result === 'blocked') {
       body.moveBlocked = true;
+      // Where the step was heading, not where the monster stands: the door line only lies inside
+      // the box it was refused at. Vanilla collects the same lines during the refused
+      // `P_TryMove` itself. docs/monster-ai.md § Opening doors.
+      c.useLines?.(body, nx, ny);
     } else {
       body.x = nx;
       body.y = ny;

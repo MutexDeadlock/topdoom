@@ -48,9 +48,16 @@ describe('specials · PASSUSE', () => {
   });
 });
 
-describe('specials · monster walk activation', () => {
-  test("the table's monsterActivate set is exactly vanilla P_CrossSpecialLine's allow-list", () => {
-    const allowed = new Set([4, 10, 39, 88, 97, 125, 126]);
+describe('specials · monster activation', () => {
+  /**
+   * The two vanilla allow-lists `monsterActivate` carries, audited together
+   * because they are one flag: `P_CrossSpecialLine`'s seven walk numbers, and
+   * `P_UseSpecialLine`'s four manual doors — the ones a blocked monster pushes
+   * (`useMonster`). Boom's own additions live in `BOOM_LINE_SPECIALS` and are
+   * deliberately out of this table's audit.
+   */
+  test("the table's monsterActivate set is exactly the two vanilla allow-lists", () => {
+    const allowed = new Set([4, 10, 39, 88, 97, 125, 126, 1, 32, 33, 34]);
     for (const [num, def] of Object.entries(LINE_SPECIALS)) {
       assert.equal(
         def.monsterActivate === true,

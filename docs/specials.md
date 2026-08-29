@@ -124,9 +124,10 @@ against `linuxdoom-1.10`.
 
 **Activation is data plus an activator.** A def says who a number admits (`monsterActivate` for
 walk lines — vanilla `P_CrossSpecialLine`'s seven-number monster allow-list, and Boom's
-generalized trigger bit; `monsterCanTrigger` for shoot lines — vanilla's lone `case 46`), and the
-trigger paths say who is at the line (`Activator`, `'player' | 'monster'`, with Boom's voodoo
-dolls to join). All walk crossings — player and monster — run through one scan,
+generalized trigger bit — and for the `use` lines a blocked monster pushes, vanilla
+`P_UseSpecialLine`'s own allow-list; `monsterCanTrigger` for shoot lines — vanilla's lone
+`case 46`), and the trigger paths say who is at the line (`Activator`, `'player' | 'monster'`, with
+Boom's voodoo dolls to join). All walk crossings — player and monster — run through one scan,
 `SpecialsController.crossLines`.
 
 ## The use trace
@@ -481,6 +482,10 @@ It writes `door->direction` and nothing else — the running door keeps its own 
 | going down | back up |
 | going up, or waiting at the top | straight down — shutting the door behind you |
 
+**A monster only ever gets the first row.** `EV_VerticalDoor`'s second one is guarded by
+`if (!thing->player) return;` — "JDC: bad guys never close doors" — so a monster pressed against an
+open door leaves it open (docs/monster-ai.md § Opening doors).
+
 **Both reversals are silent**, vanilla returning before its sound switch; the *automatic* close at
 the end of the wait still announces itself from `tickDoor`. A press does not restart the wait, and
 a door parked at the bottom on a delay timer (`'holdClosed'`, § Delayed doors) is left alone rather
@@ -546,6 +551,11 @@ Everything else — exit lines, stair builders, most doors and floors — does
 nothing under a monster's feet, which is why a level's monsters can't wander around rearranging its
 geometry. **125/126 are the monster-only pair**: vanilla lists them *only* in the non-player branch,
 so a player walking one does nothing, which is what makes the classic monster-closet setup work.
+
+**And monsters push `use` lines**, via `useMonster` — `P_Move`'s `spechit` pass, run when a chase
+step is refused, which is how a monster opens the door it walked into. Which lines, and the three
+rules that follow from being a monster rather than a player, are docs/monster-ai.md § Opening
+doors; the door's own end of it is § Retriggering a door below.
 
 The lookup around a monster is **radius-bounded** at `MONSTER_CROSS_RADIUS` (136) — the widest body
 in the game, the spider mastermind's 128, plus slack. A monster wider than that would start missing

@@ -1146,12 +1146,29 @@ export class Game {
    * conveyor carried counts too — docs/specials.md § Scrollers and conveyors. A teleport gets the
    * same `TFOG` puff at both ends the player's own does; vanilla spawns it for any thing that
    * teleports, not just the player.
+   */
+  private thingCrossedLines(prev: Pos2, mover: CrossingBody): TeleportDest | null {
+    return this.realizeThingTeleport(this.specials?.crossMonster(prev, mover, this.inventory.keys), mover);
+  }
+
+  /**
+   * The other half of the same pair: `P_Move`'s `spechit` pass for a monster whose step to
+   * `(tryX, tryY)` was refused (`SpecialsController.useMonster`), which is what opens a door for a
+   * chasing monster. A teleport-switch landing is realized exactly as a crossed one is.
+   * docs/monster-ai.md § Opening doors.
+   */
+  private thingUsedLines(mover: CrossingBody, tryX: number, tryY: number): TeleportDest | null {
+    return this.realizeThingTeleport(this.specials?.useMonster(mover, tryX, tryY, this.inventory.keys), mover);
+  }
+
+  /**
+   * The landing a monster's teleport asked for, stomped and puffed — shared by the two paths
+   * above, since a teleport means the same thing however the line was activated.
    *
    * Returning null after a teleport *did* fire is `P_TeleportMove` refusing the
    * landing, which leaves the thing where it stood — docs/death.md § Telefrag.
    */
-  private thingCrossedLines(prev: Pos2, mover: CrossingBody): TeleportDest | null {
-    const dest = this.specials?.crossMonster(prev, mover, this.inventory.keys);
+  private realizeThingTeleport(dest: TeleportDest | null | undefined, mover: CrossingBody): TeleportDest | null {
     if (!dest) return null;
     if (!this.things?.telefragAt(dest, mover.blockRadius, this.monsterStomps, mover.id)) return null;
     // The player half of the stomp: `telefragAt` covered every other body, but the
@@ -1903,6 +1920,7 @@ export class Game {
           this.playerDead ? null : this.player,
           (subsector) => this.fogOfWar.isVisible(subsector),
           (prev, mover) => this.thingCrossedLines(prev, mover),
+          (mover, tryX, tryY) => this.thingUsedLines(mover, tryX, tryY),
           (pos, radius, cache) => this.forces.carryForBody(pos, radius, cache),
         ) ?? { attacks: [], barrelExplosions: [] },
     );

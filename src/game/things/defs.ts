@@ -369,6 +369,13 @@ export interface ThingLayer {
     fogVisible?: (subsector: number) => boolean,
     crossLines?: (prev: Pos2, mover: CrossingBody) => TeleportDest | null,
     /**
+     * `P_Move`'s `spechit` pass for a monster whose step to `(tryX, tryY)` was refused — the door
+     * it walked into, opened (`SpecialsController.useMonster`). Same split as `crossLines`, down
+     * to returning a teleport landing for this layer to apply.
+     * docs/monster-ai.md § Opening doors.
+     */
+    useLines?: (mover: CrossingBody, tryX: number, tryY: number) => TeleportDest | null,
+    /**
      * This tic's conveyor impulse for a body of this radius standing at `pos`,
      * map units/sec, or null where nothing carries it — `specials/forces.ts:
      * Forces.carryForBody`. A callback rather than a `Forces` reference for the

@@ -1,6 +1,12 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyPickup, createInventory } from '../../src/game/inventory.ts';
+import {
+  applyPickup,
+  createInventory,
+  setAutoSwitchWeapon,
+  type Inventory,
+  type WeaponId,
+} from '../../src/game/inventory.ts';
 import { ThingType } from '../../src/game/things/doomednums.ts';
 
 /**
@@ -58,5 +64,82 @@ describe('Game rules · ammo pickups by skill', () => {
     inv.health = 50;
     applyPickup(inv, ThingType.stimpack, false, 1);
     assert.equal(inv.health, 60, 'a stimpack is 10 on every skill');
+  });
+});
+
+/**
+ * `P_GiveAmmo`'s tail: a class collected from zero raises the ready weapon to the one it feeds.
+ * See docs/items.md § Ammo raises the weapon.
+ */
+describe('Game rules · ammo raises the weapon', () => {
+  /** A player holding `weapon`, owning `owned`, at zero of everything unless `ammo` says otherwise. */
+  function pickingUp(
+    type: number,
+    weapon: WeaponId,
+    owned: WeaponId[],
+    ammo: Partial<Inventory['ammo']> = {},
+  ): WeaponId {
+    const inv = createInventory();
+    inv.ammo = { bullets: 0, shells: 0, rockets: 0, cells: 0, ...ammo };
+    inv.weapons = new Set([weapon, ...owned]);
+    inv.currentWeapon = weapon;
+    applyPickup(inv, type, false, 3);
+    return inv.currentWeapon;
+  }
+
+  test('each class raises the fist to the weapon it feeds', () => {
+    assert.equal(pickingUp(ThingType.clip, 'fist', ['chaingun']), 'chaingun');
+    assert.equal(pickingUp(ThingType.shells, 'fist', ['shotgun']), 'shotgun');
+    assert.equal(pickingUp(ThingType.cellCharge, 'fist', ['plasmaRifle']), 'plasmaRifle');
+    assert.equal(pickingUp(ThingType.rocket, 'fist', ['rocketLauncher']), 'rocketLauncher');
+  });
+
+  test('bullets fall back to the pistol when no chaingun is owned', () => {
+    assert.equal(pickingUp(ThingType.clip, 'fist', ['pistol']), 'pistol');
+    assert.equal(pickingUp(ThingType.clip, 'fist', []), 'fist', 'and to nothing when it is not owned either');
+  });
+
+  test('shells and cells raise the pistol too, rockets and bullets do not', () => {
+    assert.equal(pickingUp(ThingType.shells, 'pistol', ['shotgun']), 'shotgun');
+    assert.equal(pickingUp(ThingType.cellCharge, 'pistol', ['plasmaRifle']), 'plasmaRifle');
+    // `am_misl` and `am_clip` name only the fist — the asymmetry is vanilla's.
+    assert.equal(pickingUp(ThingType.rocket, 'pistol', ['rocketLauncher']), 'pistol');
+    assert.equal(pickingUp(ThingType.clip, 'pistol', ['chaingun']), 'pistol');
+  });
+
+  test('anything above the fist and pistol is left holding what it holds', () => {
+    assert.equal(pickingUp(ThingType.shells, 'shotgun', ['shotgun', 'supershotgun']), 'shotgun');
+  });
+
+  test('a partial stock is left alone: the player was lower on purpose', () => {
+    assert.equal(pickingUp(ThingType.shells, 'fist', ['shotgun'], { shells: 1 }), 'fist');
+  });
+
+  test('a weapon pickup still wins over the ammo it carries', () => {
+    // `P_GiveWeapon` runs `P_GiveAmmo` first and then overwrites its pick.
+    assert.equal(pickingUp(ThingType.shotgun, 'fist', ['chaingun']), 'shotgun');
+    // Re-picking one already owned leaves the ammo rule's answer standing.
+    assert.equal(pickingUp(ThingType.rocketLauncher, 'fist', ['rocketLauncher']), 'rocketLauncher');
+  });
+
+  test('the backpack is walked in ammotype_t order, so the last class wins', () => {
+    // `P_GiveBackpack` grants all four and each overwrites the last one's pick; `am_misl` is last,
+    // which is why `AMMO_UPGRADE` may not reuse `AMMO_TYPES`' rockets-before-cells order.
+    const owned: WeaponId[] = ['chaingun', 'shotgun', 'plasmaRifle', 'rocketLauncher'];
+    assert.equal(pickingUp(ThingType.backpack, 'fist', owned), 'rocketLauncher');
+    // Without the launcher the pick falls back to the class before it.
+    assert.equal(pickingUp(ThingType.backpack, 'fist', ['plasmaRifle', 'shotgun']), 'plasmaRifle');
+  });
+
+  test('with the setting off nothing is raised, but a new weapon still selects itself', () => {
+    setAutoSwitchWeapon(false);
+    try {
+      assert.equal(pickingUp(ThingType.shells, 'fist', ['shotgun']), 'fist');
+      assert.equal(pickingUp(ThingType.backpack, 'fist', ['rocketLauncher']), 'fist');
+      // Ungated, being vanilla's own "what you picked up is what you hold".
+      assert.equal(pickingUp(ThingType.shotgun, 'fist', []), 'shotgun');
+    } finally {
+      setAutoSwitchWeapon(true);
+    }
   });
 });

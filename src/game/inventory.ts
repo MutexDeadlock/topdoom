@@ -8,7 +8,11 @@ import { DEFAULT_SKILL, ammoAtSkill, type Skill } from './skill.ts';
 import { PLAYER_RADIUS } from './player.ts';
 import type { LockRule } from './specials/defs.ts';
 
-/** The four ammo classes DOOM tracks; matches vanilla's `ammotype_t`. */
+/**
+ * The four ammo classes DOOM tracks — vanilla's `ammotype_t` set, but **not its order**: that enum
+ * is `am_clip, am_shell, am_cell, am_misl` (cells before rockets). Nothing keyed by `AmmoType`
+ * cares, but anything reproducing a vanilla *loop* over ammo classes does — see `AMMO_UPGRADE`.
+ */
 export const AMMO_TYPES = ['bullets', 'shells', 'rockets', 'cells'] as const;
 export type AmmoType = (typeof AMMO_TYPES)[number];
 
@@ -260,6 +264,52 @@ const POWERUP_PICKUPS: Record<number, PowerId> = {
 const CLIP_AMMO: Record<AmmoType, number> = { bullets: 10, shells: 4, rockets: 1, cells: 20 };
 
 /**
+ * `P_GiveAmmo`'s tail: collecting a class you had **none** of raises the ready weapon to the one it
+ * feeds, so walking over a box of shells with nothing but fists brings up a shotgun you already
+ * owned. Only fist and pistol are ever raised off — vanilla's own comment is "Preferences are not
+ * user selectable", which is why there is no dial here beyond the whole feature's own toggle
+ * (`getAutoSwitchWeapon`). docs/items.md § Ammo raises the weapon.
+ *
+ * An **ordered array in `ammotype_t` order** (`doomdef.h`: `am_clip, am_shell, am_cell, am_misl`),
+ * deliberately not a `Record` and deliberately not reusing `AMMO_TYPES`, whose last two entries are
+ * swapped. `P_GiveBackpack` grants all four in this order and each overwrites the last one's pick,
+ * so the order decides what a backpack taken at zero across the board hands you: the rocket
+ * launcher, `am_misl` being last.
+ */
+const AMMO_UPGRADE: { ammo: AmmoType; from: readonly WeaponId[]; to: readonly WeaponId[] }[] = [
+  { ammo: 'bullets', from: ['fist'], to: ['chaingun', 'pistol'] },
+  { ammo: 'shells', from: ['fist', 'pistol'], to: ['shotgun'] },
+  { ammo: 'cells', from: ['fist', 'pistol'], to: ['plasmaRifle'] },
+  { ammo: 'rockets', from: ['fist'], to: ['rocketLauncher'] },
+];
+
+/**
+ * Applies `AMMO_UPGRADE` for one ammo class, given what the player held **before** the grant —
+ * vanilla's `oldammo`, which is why a partial stock is left alone ("player was lower on purpose").
+ * Call it once per class granted, in `AMMO_UPGRADE`'s own order where several land together.
+ *
+ * `ready` is the weapon held when the *pickup* began, not when this class was granted, and the two
+ * differ only in the backpack loop. Vanilla sets `pendingweapon` here and never touches
+ * `readyweapon`, so each of `P_GiveBackpack`'s four grants tests against the same weapon and simply
+ * overwrites the previous one's pick; this engine has no pending/ready split, so the caller has to
+ * hold that weapon still. Reading `inv.currentWeapon` per call instead would let the first
+ * qualifying class lock out every later one — a backpack taken at zero would hand over a chaingun
+ * and stop there. docs/items.md § Ammo raises the weapon.
+ *
+ * The `bullets` row's `pistol` fallback is unconditional in vanilla (`weaponowned[wp_pistol]` is
+ * never false there); here it goes through the same ownership test as every other entry, since
+ * `Inventory.weapons` is a real set this engine treats as authoritative — the same deviation
+ * `AMMO_FALLBACK_ORDER` carries in game/weapons.ts.
+ */
+function upgradeOnAmmo(inv: Inventory, type: AmmoType, oldAmount: number, ready: WeaponId): void {
+  if (oldAmount > 0 || !getAutoSwitchWeapon()) return;
+  const rule = AMMO_UPGRADE.find((r) => r.ammo === type);
+  if (!rule || !rule.from.includes(ready)) return;
+  const pick = rule.to.find((w) => inv.weapons.has(w));
+  if (pick) inv.currentWeapon = pick;
+}
+
+/**
  * Ammo granted alongside a weapon pickup follows vanilla's `P_GiveWeapon`:
  * it hands over `2 * clipammo[type]` — twice what a single clip gives — for a
  * weapon placed directly on the map, or exactly half that for one a dead
@@ -419,7 +469,15 @@ export function applyPickup(inv: Inventory, type: number, dropped = false, skill
     // first time, but always hands over one clip of everything and always consumes the
     // backpack — even at full ammo, unlike every other ammo pickup here.
     inv.backpack = true;
-    for (const t of AMMO_TYPES) inv.ammo[t] = Math.min(inv.ammo[t] + ammoAtSkill(CLIP_AMMO[t], skill), ammoMax(inv, t));
+    // Walked in `AMMO_UPGRADE`'s order, not `AMMO_TYPES`', because `P_GiveBackpack`'s
+    // `P_GiveAmmo` per class each overwrite the last one's weapon pick — see that table. `ready` is
+    // held still across all four for the reason `upgradeOnAmmo`'s own doc gives.
+    const ready = inv.currentWeapon;
+    for (const { ammo: t } of AMMO_UPGRADE) {
+      const had = inv.ammo[t];
+      inv.ammo[t] = Math.min(had + ammoAtSkill(CLIP_AMMO[t], skill), ammoMax(inv, t));
+      upgradeOnAmmo(inv, t, had, ready);
+    }
     return true;
   }
 
@@ -432,7 +490,9 @@ export function applyPickup(inv: Inventory, type: number, dropped = false, skill
     if (inv.ammo[ammo.type] >= cap) return false;
     const full = ammo.clips * CLIP_AMMO[ammo.type];
     const amount = ammoAtSkill(dropped ? Math.floor(full / 2) : full, skill);
-    inv.ammo[ammo.type] = Math.min(inv.ammo[ammo.type] + amount, cap);
+    const had = inv.ammo[ammo.type];
+    inv.ammo[ammo.type] = Math.min(had + amount, cap);
+    upgradeOnAmmo(inv, ammo.type, had, inv.currentWeapon);
     return true;
   }
 
@@ -450,14 +510,20 @@ export function applyPickup(inv: Inventory, type: number, dropped = false, skill
       const cap = ammoMax(inv, weapon.ammoType);
       const full = weapon.clips * CLIP_AMMO[weapon.ammoType];
       const amount = ammoAtSkill(dropped ? Math.floor(full / 2) : full, skill);
-      if (inv.ammo[weapon.ammoType] < cap) {
-        inv.ammo[weapon.ammoType] = Math.min(inv.ammo[weapon.ammoType] + amount, cap);
+      const had = inv.ammo[weapon.ammoType];
+      if (had < cap) {
+        inv.ammo[weapon.ammoType] = Math.min(had + amount, cap);
         gaveAmmo = true;
+        // Before the weapon's own switch below, as `P_GiveWeapon` runs `P_GiveAmmo` first and then
+        // lets its own `pendingweapon` overwrite whatever that chose. Do not reorder.
+        upgradeOnAmmo(inv, weapon.ammoType, had, inv.currentWeapon);
       }
     }
     inv.weapons.add(weapon.weapon);
     // Matches vanilla's P_GiveWeapon, which switches the player to a weapon
     // the instant it's newly picked up (not on every re-pickup of one already owned).
+    // Ungated by `getAutoSwitchWeapon`, unlike the two rules it does govern: vanilla has no
+    // preference list here, just "the thing you just picked up is what you are now holding".
     if (!hadWeapon) inv.currentWeapon = weapon.weapon;
     return !hadWeapon || gaveAmmo;
   }
@@ -542,6 +608,30 @@ export function getPistolStart(): boolean {
 export function setPistolStart(enabled: boolean): void {
   pistolStart = enabled;
   globalThis.localStorage?.setItem(PISTOL_START_STORAGE_KEY, String(enabled));
+}
+
+const AUTO_SWITCH_STORAGE_KEY = 'topdoom.autoSwitchWeapon';
+
+/**
+ * Whether the game picks a *better* weapon for you: on ammo collected from empty (`AMMO_UPGRADE`)
+ * and on the ready weapon running dry (`AMMO_FALLBACK_ORDER`, game/weapons.ts). **On by default** —
+ * vanilla does both unconditionally, so the setting exists to opt out. Read per call, so it applies
+ * to the level already running. docs/weapons.md § Automatic weapon switching.
+ *
+ * Two switches are deliberately **outside** it, both because neither is a guess at which weapon is
+ * better: a newly picked-up weapon selecting itself (`P_GiveWeapon`, in `applyPickup` below), and
+ * berserk selecting the fist (`givePower`) — punching is that pickup's entire effect.
+ * Shaped like every persisted setting — docs/menu.md § Persisted settings.
+ */
+let autoSwitchWeapon = globalThis.localStorage?.getItem(AUTO_SWITCH_STORAGE_KEY) !== 'false';
+
+export function getAutoSwitchWeapon(): boolean {
+  return autoSwitchWeapon;
+}
+
+export function setAutoSwitchWeapon(enabled: boolean): void {
+  autoSwitchWeapon = enabled;
+  globalThis.localStorage?.setItem(AUTO_SWITCH_STORAGE_KEY, String(enabled));
 }
 
 /**

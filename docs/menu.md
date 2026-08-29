@@ -618,10 +618,15 @@ off, and 0 on it stops both of them the way each channel's own 0 stops itself
 behind the menu (docs/music.md § Volume).
 
 **Collision** is one checkbox, `Infinite tall actors (vanilla)` — off by default (docs/movement.md §
-Collision); `Level start`'s `Pistol start every level` is the other (docs/items.md § Pistol start).
-What is left on General is exactly the two settings that change how the game *plays*, which is why
-neither belongs on the three tabs beside it. It applies to the level already running, like volume
-and the cap: `blockedByThings` reads the flag per call.
+Collision); `Level start`'s `Pistol start every level` and `Weapons`' `Switch weapons automatically`
+(on by default, docs/weapons.md § Automatic weapon switching) are the other two. What is left on
+General is exactly the three settings that change how the game *plays*, which is why none of them
+belongs on the three tabs beside it. Each applies to the level already running, like volume and the
+cap: `blockedByThings` reads its flag per call, and so do the other two.
+
+`Weapons` sits between them rather than in Controls because auto-switching fires on a pickup and on
+a weapon running dry — no key is involved, so it is not a key's behavior in the sense the paragraph
+above uses.
 
 General ends with **`Debug / Dev`, the section holding the `FPS counter` and `Profiler overlay`
 checkboxes** (§ FPS counter, § Profiling overlay). It is shown in every build — both are
@@ -692,6 +697,7 @@ Each is a module-level value behind an exported `get`/`set` pair — not an inst
 | `topdoom.dynamicLights` | `render/lights.ts` (`getDynamicLights`/`setDynamicLights`) | docs/lights.md § The toggle |
 | `topdoom.infiniteTallActors` | `game/world.ts` (`getInfiniteTallActors`/`setInfiniteTallActors`) | docs/movement.md § Collision |
 | `topdoom.pistolStart` | `game/inventory.ts` (`getPistolStart`/`setPistolStart`) | docs/items.md § Pistol start |
+| `topdoom.autoSwitchWeapon` | `game/inventory.ts` (`getAutoSwitchWeapon`/`setAutoSwitchWeapon`) | docs/weapons.md § Automatic weapon switching |
 | `topdoom.skill` | `ui/menu/menu.ts` | § Difficulty above |
 | `topdoom.selection` | `ui/menu/menu.ts` | § Remembered selection below |
 

@@ -75,6 +75,67 @@ The two fields differ by one frame and are easy to confuse: `weaponLastFrame` is
 noticed), while `previousWeapon` is the older selection the toggle switches *back* to, held until
 the next switch.
 
+## Automatic weapon switching
+
+Three rules select a weapon for you. One is ungated; the other two are the
+`topdoom.autoSwitchWeapon` setting, on by default (`getAutoSwitchWeapon`, `game/inventory.ts`,
+docs/menu.md § Persisted settings).
+
+| Rule | Vanilla | Where | Gated |
+|---|---|---|---|
+| A newly picked-up weapon selects itself | `P_GiveWeapon` | `inventory.ts: applyPickup` | no |
+| Berserk selects the fist | `P_GivePower` | `inventory.ts: givePower` | no |
+| Ammo collected from empty raises the weapon | `P_GiveAmmo` | `AMMO_UPGRADE`, `inventory.ts` | yes |
+| The ready weapon running dry drops you | `P_CheckAmmo` | `AMMO_FALLBACK_ORDER`, `checkAmmo` | yes |
+
+The two ungated ones are not guesses at which weapon is better — the pickup *is* the choice — which
+is why the setting doesn't reach them. Every rule writes `Inventory.currentWeapon`, so
+`WeaponSystem.update`'s once-a-frame comparison notices all of them and `previousWeapon`, the slot
+memory and the chainsaw's `sawup` follow for free (§ Switch to previous weapon).
+
+### The check runs on the ready state, never mid-chain
+
+`P_CheckAmmo` has exactly three callers, and `A_WeaponReady` is **not** one of them — its else
+branch is `player->attackdown = false;` and nothing more:
+
+- `P_FireWeapon`, opening a trigger pull;
+- `A_ReFire`, the action on the last state of every fire chain — trigger held it re-enters
+  `P_FireWeapon`, trigger released its else branch checks directly, so the check lands either way;
+- `A_CheckReload`, the super shotgun only (below).
+
+`WeaponSystem.fire` reproduces the first two as `cooldownTics === 0 && (firing || chainEnding)`,
+`chainEnding` being set on every shot. **Selecting an empty weapon while idle must not bounce you
+off it** — that would break § The wheel walks the slot order's promise that every owned weapon is a
+stop. Only firing, or having just fired, switches.
+
+The super shotgun is the exception: `A_CheckReload` sits on `S_DSGUN4`, 14 tics after the shot, so
+an SSG fired with the last two shells switches away there rather than at the end of its 57-tic
+cooldown. `updateReloadSounds` runs the same `checkAmmo`, which is why the reload falling silent and
+the weapon lowering are one thing and not two (docs/audio.md § Weapons and projectiles).
+
+### AMMO_FALLBACK_ORDER
+
+`P_CheckAmmo`'s chain, first match wins, terminating at the fist: plasma rifle, super shotgun,
+chaingun, shotgun, pistol, chainsaw, rocket launcher, BFG. A third order unrelated to
+`WEAPON_SLOTS` and `WEAPON_CYCLE` — vanilla's preference for "still useful right now", which is why
+the chainsaw outranks a rocket launcher and the BFG comes last.
+
+`minAmmo` is **strictly greater than, and is not `ammoPerShot`**: the chain wants three shells
+before handing you a super shotgun that fires on two, and 41 cells before a BFG that fires on 40.
+Vanilla's own off-by-one, transcribed rather than corrected.
+
+Two deviations, both deliberate: vanilla's `gamemode` clauses are dropped (ownership subsumes them —
+a WAD without the weapon has no pickup for it), and the pistol row tests ownership where vanilla's
+bare `else if (player->ammo[am_clip])` does not, since `Inventory.weapons` is authoritative here for
+the wheel and the HUD strip.
+
+With the setting off, `checkAmmo` still returns "cannot fire" but switches nothing: an empty weapon
+stays selected and fires silently, as it did before the rule existed.
+
+Nothing here is saved. `chainEnding` is a one-tic transient reset by `beginLevel`/`restore` — losing
+it across a load costs one trigger pull — and both tables are pure functions of inventory state the
+snapshot already carries (docs/savegames.md).
+
 ## Fire rates
 
 **The cooldown is counted in whole tics, as an integer** (`WeaponSystem.cooldownTics`), not as

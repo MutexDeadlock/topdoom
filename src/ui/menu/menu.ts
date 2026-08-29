@@ -30,7 +30,7 @@ import { getCameraMode, setCameraMode, type CameraMode } from '../../game/autoca
 import { getFpsCap, setFpsCap, type FpsCap } from '../../game.ts';
 import { getInfiniteTallActors, setInfiniteTallActors } from '../../game/world.ts';
 import { getDynamicLights, setDynamicLights } from '../../render/lights.ts';
-import { getPistolStart, setPistolStart } from '../../game/inventory.ts';
+import { getAutoSwitchWeapon, getPistolStart, setAutoSwitchWeapon, setPistolStart } from '../../game/inventory.ts';
 import { SavegamesUi, type SaveHooks, type SaveSetInfo } from './savegames.ts';
 import { requiredWads, wadLabel, type MissingWad, type SaveMeta, type SaveWadSet } from '../../game/savegames.ts';
 import { getProfilerVisible, setProfilerVisible } from '../devmode/profilerhud.ts';
@@ -103,6 +103,7 @@ export class Menu {
   private infiniteTallCheckbox = el<HTMLInputElement>('infinitetall-checkbox');
   private dynLightsCheckbox = el<HTMLInputElement>('dynlights-checkbox');
   private pistolStartCheckbox = el<HTMLInputElement>('pistolstart-checkbox');
+  private autoSwitchCheckbox = el<HTMLInputElement>('autoswitch-checkbox');
   private fpsCheckbox = el<HTMLInputElement>('fps-checkbox');
   private profilerCheckbox = el<HTMLInputElement>('profiler-checkbox');
   private changelogRoot = el<HTMLDivElement>('changelog');
@@ -207,6 +208,7 @@ export class Menu {
     this.installInfiniteTall();
     this.installDynamicLights();
     this.installPistolStart();
+    this.installAutoSwitch();
     this.installFps();
     this.installProfiler();
     this.installChangelog();
@@ -447,6 +449,18 @@ export class Menu {
     this.pistolStartCheckbox.checked = getPistolStart();
     this.pistolStartCheckbox.addEventListener('change', () => {
       setPistolStart(this.pistolStartCheckbox.checked);
+    });
+  }
+
+  /**
+   * Whether ammo collected from empty and a weapon running dry pick a weapon for you — on by
+   * default, read at each pickup and each trigger pull, so it applies to the run already in
+   * progress. docs/weapons.md § Automatic weapon switching.
+   */
+  private installAutoSwitch(): void {
+    this.autoSwitchCheckbox.checked = getAutoSwitchWeapon();
+    this.autoSwitchCheckbox.addEventListener('change', () => {
+      setAutoSwitchWeapon(this.autoSwitchCheckbox.checked);
     });
   }
 

@@ -21,6 +21,40 @@ health/ammo/keys from. Picking up a weapon **not already owned** selects it, mat
 `WeaponId` even though neither has a map pickup — every game starts owning both, and they still need
 IDs to be `currentWeapon`-able.
 
+### Ammo raises the weapon
+
+`P_GiveAmmo`'s tail (`AMMO_UPGRADE`): collecting a class you had **none** of raises the ready weapon
+to the one it feeds. Only fist and pistol are ever raised off, and a partial stock is left alone —
+vanilla's "player was lower on purpose".
+
+| Ammo | Ready weapon | Raised to |
+|---|---|---|
+| bullets | fist | chaingun, else pistol |
+| shells | fist, pistol | shotgun |
+| cells | fist, pistol | plasma rifle |
+| rockets | fist | rocket launcher |
+
+All three grant sites go through it: a plain ammo pickup, a weapon's own ammo grant, and the
+backpack. At the weapon site it runs **before** the `P_GiveWeapon` switch above, which then
+overwrites it — vanilla's own order, and not to be reordered.
+
+The weapon each class tests against is the one held when the **pickup** began, not when that class
+was granted. Vanilla writes `pendingweapon` here and never touches `readyweapon`, so the backpack's
+four grants all test the same weapon and simply overwrite each other's pick; this engine has no
+pending/ready split, so `upgradeOnAmmo` takes that weapon as a parameter. Reading the live
+`currentWeapon` per class instead would let the first qualifying one lock out the rest — a backpack
+taken at zero would stop at the chaingun.
+
+The table is an **ordered array in `ammotype_t` order** (`doomdef.h`: `am_clip, am_shell, am_cell,
+am_misl`), deliberately not reusing `AMMO_TYPES`, whose last two entries are swapped. It is
+observable: `P_GiveBackpack` grants all four in that order and each overwrites the last one's pick,
+so a backpack taken at zero across the board with everything owned hands you the **rocket
+launcher** — `am_misl` is last. Under `AMMO_TYPES`' order it would hand you the plasma rifle.
+
+Gated by `topdoom.autoSwitchWeapon`, unlike the weapon-pickup switch above — docs/weapons.md §
+Automatic weapon switching. The cheats are not on this path: `IDKFA` assigns ammo directly, as
+`ST_Responder` does, and so switches nothing.
+
 Both armor shirts and the megasphere go through `P_GiveArmor(class)`, whose amount is
 `armortype*100` and follows from the class — so a `Misc` patch moving `Green`/`Blue Armor Class`
 moves the amount and the absorption together, and `Max Armor` is *only* the armor bonus' own cap

@@ -1,5 +1,8 @@
 v0.1?.? (2026-08-??)
 
+Features and improvements
+  - automatic weapon switching; toggle in Settings / General
+
 Fixed bugs
   - monsters now open the doors they walk into
 

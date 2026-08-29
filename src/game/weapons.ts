@@ -2,7 +2,7 @@
  * `WeaponSystem`: the nine weapons — selection and slot toggling, vanilla fire rates, spread and
  * damage rolls, ammo spend — raising fire events for `game.ts` to realize. See docs/weapons.md.
  */
-import { hasPower, type AmmoType, type Inventory, type WeaponId } from './inventory.ts';
+import { getAutoSwitchWeapon, hasPower, type AmmoType, type Inventory, type WeaponId } from './inventory.ts';
 import type { WeaponsSnapshot } from './snapshot.ts';
 import type { Input } from './input.ts';
 import type { AudioEngine } from '../audio/audio.ts';
@@ -190,6 +190,37 @@ export const WEAPON_SLOTS: WeaponId[][] = [
  * beside its slotmate here too — docs/weapons.md § The wheel walks the slot order
  */
 export const WEAPON_CYCLE: WeaponId[] = WEAPON_SLOTS.flatMap((slot) => [...slot].reverse());
+
+/**
+ * `P_CheckAmmo`'s fallback chain (`p_pspr.c`), first match wins: what the ready weapon is replaced
+ * with once it can no longer fire. A third order, unrelated to `WEAPON_SLOTS` and `WEAPON_CYCLE`
+ * above — vanilla's own preference for "still useful right now", which is why the BFG sits below
+ * the fist's neighbours and the chainsaw outranks a rocket launcher.
+ * docs/weapons.md § Automatic weapon switching.
+ *
+ * `minAmmo` is **strictly greater than**, and it is not `ammoPerShot`: the chain wants *three*
+ * shells before it hands you a super shotgun that fires on two, and *41* cells before a BFG that
+ * fires on 40. Vanilla's own off-by-one, transcribed rather than corrected.
+ *
+ * Two deviations from that C, both deliberate:
+ * - vanilla's `gamemode` clauses (`!= shareware` on plasma/BFG, `== commercial` on the SSG) are
+ *   dropped: this engine has no gamemode, and ownership already subsumes them — a WAD without the
+ *   weapon has no pickup for it, and where a PWAD does place one, owning it is the honest answer.
+ * - the pistol row tests ownership, which vanilla's bare `else if (player->ammo[am_clip])` does not
+ *   (it cannot lose the pistol). `Inventory.weapons` is a real set this engine treats as
+ *   authoritative for the wheel and the HUD strip, so landing on an unowned weapon would contradict
+ *   both. `fist` needs no such test — nothing removes it, and it is the chain's terminator.
+ */
+const AMMO_FALLBACK_ORDER: { weapon: WeaponId; ammo: AmmoType | null; minAmmo: number }[] = [
+  { weapon: 'plasmaRifle', ammo: 'cells', minAmmo: 0 },
+  { weapon: 'supershotgun', ammo: 'shells', minAmmo: 2 },
+  { weapon: 'chaingun', ammo: 'bullets', minAmmo: 0 },
+  { weapon: 'shotgun', ammo: 'shells', minAmmo: 0 },
+  { weapon: 'pistol', ammo: 'bullets', minAmmo: 0 },
+  { weapon: 'chainsaw', ammo: null, minAmmo: 0 },
+  { weapon: 'rocketLauncher', ammo: 'rockets', minAmmo: 0 },
+  { weapon: 'bfg', ammo: 'cells', minAmmo: 40 },
+];
 
 /**
  * A weapon as written out here: every field its own state chain can't carry.
@@ -565,6 +596,15 @@ export class WeaponSystem {
    */
   private refire = 0;
   private refireWeapon: WeaponId | null = null;
+  /**
+   * Whether a fire chain is still running, i.e. a shot has been fired that
+   * `A_ReFire` has not yet closed. It is what makes `checkAmmo` run once after
+   * the *last* shot of a burst even though the trigger came up — vanilla's
+   * `A_ReFire` sits on the chain's final state and runs either way.
+   * A one-tic transient, deliberately not saved: losing it across a load costs
+   * one trigger pull. docs/weapons.md § Automatic weapon switching.
+   */
+  private chainEnding = false;
 
   /**
    * Resyncs the switch tracking to whatever is selected as a level starts, so
@@ -582,6 +622,7 @@ export class WeaponSystem {
     this.reloadTic = -1;
     this.refire = 0;
     this.refireWeapon = null;
+    this.chainEnding = false;
   }
 
   /**
@@ -633,6 +674,8 @@ export class WeaponSystem {
     this.reloadTic = s.reloadTic ?? -1;
     this.refire = s.refire;
     this.refireWeapon = s.refireWeapon;
+    // Derived, not saved — see the field's own doc.
+    this.chainEnding = false;
   }
 
   /**
@@ -670,7 +713,10 @@ export class WeaponSystem {
       this.reloadTic = -1;
       return;
     }
-    if (this.reloadTic === SSG_RELOAD_CHECK_TIC && inv.ammo.shells < WEAPONS.supershotgun.ammoPerShot) {
+    // `A_CheckReload` is `P_CheckAmmo`'s third caller, and the only one that runs mid-chain: it
+    // both silences the rest of the reload *and* lowers the weapon, 14 tics in rather than at the
+    // end of the SSG's 57. Running the real check here is what makes the two one thing.
+    if (this.reloadTic === SSG_RELOAD_CHECK_TIC && !this.checkAmmo(inv)) {
       this.reloadTic = -1;
       return;
     }
@@ -750,6 +796,29 @@ export class WeaponSystem {
   }
 
   /**
+   * Vanilla's `P_CheckAmmo`: whether the ready weapon can pay for one shot, and if it can't, the
+   * switch to the best owned weapon that can — `AMMO_FALLBACK_ORDER`, ending at the fist. Returns
+   * what vanilla does, **true when the shot may go ahead**, so a caller reads it as its own guard.
+   *
+   * The switch is what `getAutoSwitchWeapon` governs; the *answer* is not. With the setting off an
+   * empty weapon stays selected and simply fires nothing, which is what this engine did before the
+   * rule existed. docs/weapons.md § Automatic weapon switching.
+   *
+   * Ownership of the *ready* weapon is deliberately not tested — vanilla doesn't, and the fire-rate
+   * tests drive weapons they never add to `inv.weapons`.
+   */
+  private checkAmmo(inv: Inventory): boolean {
+    const def = WEAPONS[inv.currentWeapon];
+    if (!def.ammoType || inv.ammo[def.ammoType] >= def.ammoPerShot) return true;
+    if (!getAutoSwitchWeapon()) return false;
+    const pick = AMMO_FALLBACK_ORDER.find(
+      (r) => inv.weapons.has(r.weapon) && (r.ammo === null || inv.ammo[r.ammo] > r.minAmmo),
+    );
+    inv.currentWeapon = pick?.weapon ?? 'fist';
+    return false;
+  }
+
+  /**
    * Ticks the fire cooldown and, while `firing` is held and both cooldown
    * and ammo allow it, spends ammo and returns the shot(s) fired this frame:
    * one `HitscanShot` per pellet, one `ProjectileShot` per launch, or one
@@ -766,10 +835,18 @@ export class WeaponSystem {
     // A_ReFire's else branch: letting the trigger up — or having a weapon
     // switch pending — resets the burst, so the next shot counts as its first.
     if (!firing || inv.currentWeapon !== this.refireWeapon) this.refire = 0;
+    // `P_CheckAmmo`'s two general callers, and the only two moments it can run: `P_FireWeapon`
+    // opening a trigger pull, and `A_ReFire` closing a fire chain whether or not the trigger is
+    // still down. Both sit on the ready state, never mid-chain — hence the cooldown gate, which is
+    // also what keeps a weapon merely *selected* while empty from bouncing you off it
+    // (docs/weapons.md § The wheel walks the slot order).
+    if (this.cooldownTics === 0 && (firing || this.chainEnding)) {
+      this.chainEnding = false;
+      if (!this.checkAmmo(inv)) return [];
+    }
     if (!firing || this.cooldownTics > 0) return [];
 
     const def = WEAPONS[inv.currentWeapon];
-    if (def.ammoType && inv.ammo[def.ammoType] < def.ammoPerShot) return [];
 
     // Assigned, not added — the other half of the rule at the decrement above:
     // the interval between two shots is exactly this weapon's own state length,
@@ -787,6 +864,7 @@ export class WeaponSystem {
     const accurate = def.accurateFirstShot && this.refire === 0;
     this.refire++;
     this.refireWeapon = inv.currentWeapon;
+    this.chainEnding = true;
 
     if (def.kind === 'melee') {
       // Berserk scales the fist only, exactly as vanilla's A_Punch/A_Saw split

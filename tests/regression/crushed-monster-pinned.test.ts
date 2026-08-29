@@ -57,7 +57,7 @@ function walkFor(ceil: number, stats = STATS): number {
   const startX = body.x;
   const startY = body.y;
   for (let i = 0; i < 35; i++) {
-    stepMonsterAI(body, stats, TIC, world, target, 16, 56);
+    stepMonsterAI(body, stats, world, { dt: TIC, target, targetRadius: 16, targetHeight: 56 });
   }
   return Math.hypot(body.x - startX, body.y - startY);
 }

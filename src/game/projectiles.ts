@@ -82,7 +82,7 @@ export class ProjectileLayer {
   /**
    * Rebuilds the in-flight list from a save, re-arming each missile's animator
    * the same way `spawnPlayerShot`/`spawnMonsterShot` do. A sprite this WAD
-   * set can't draw is dropped silently — unlike a thing, a missile owns no id
+   * set can't draw is dropped silently — unlike a thing, a missile owns no ID
    * anything else references. docs/savegames.md § Apply order.
    */
   restore(saved: ProjectileSnapshot[]): void {

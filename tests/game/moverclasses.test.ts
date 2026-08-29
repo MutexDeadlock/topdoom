@@ -119,7 +119,7 @@ describe('specials · mover classes', () => {
 
     // And both still tick from there — `tickMovers` walks each map.
     const start = { floor: map.sectors[1].floorHeight, ceil: map.sectors[1].ceilHeight };
-    for (let i = 0; i < 20; i++) r.specials.update(TIC, 0, 0, 0, NO_INPUT, new Set());
+    for (let i = 0; i < 20; i++) r.specials.update(TIC, { x: 0, y: 0, angle: 0 }, NO_INPUT, new Set());
     assert.notEqual(map.sectors[1].floorHeight, start.floor, 'restored floor mover ticks');
     assert.notEqual(map.sectors[1].ceilHeight, start.ceil, 'restored ceiling mover ticks');
   });

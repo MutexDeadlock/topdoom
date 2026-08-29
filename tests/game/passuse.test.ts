@@ -31,7 +31,7 @@ describe('specials · PASSUSE', () => {
     map.sectors[3].tag = 7;
     map.sectors[2].tag = 8;
     const rig = specialsRig(map, { x: 28, y: 16 });
-    rig.specials.update(TIC, 28, 16, 0, USE_INPUT, new Set());
+    rig.specials.update(TIC, { x: 28, y: 16, angle: 0 }, USE_INPUT, new Set());
     return map;
   }
 
@@ -85,7 +85,7 @@ describe('specials · monster walk activation', () => {
     for (let i = 0; i < 5; i++) rig.tick();
     assert.equal(map.sectors[2].ceilHeight, 0);
     // Same crossing as the player: prev seeded by the rig's start, one update at the far side.
-    rig.specials.update(TIC, pos.x, pos.y, 0, NO_INPUT, new Set());
+    rig.specials.update(TIC, { ...pos, angle: 0 }, NO_INPUT, new Set());
     for (let i = 0; i < 5; i++) rig.tick(TIC, pos.x, pos.y);
     assert.ok(map.sectors[2].ceilHeight > 0);
   });
@@ -175,7 +175,7 @@ describe('specials · the use trace stops at walls', () => {
     if (options.nearSpecial) map.linedefs[grid.westEdge(1, 0)].special = options.nearSpecial;
     const log = soundLog();
     const rig = specialsRig(map, { x: 28, y: 16 }, { sfx: log.sfx });
-    rig.specials.update(TIC, 28, 16, 0, USE_INPUT, new Set());
+    rig.specials.update(TIC, { x: 28, y: 16, angle: 0 }, USE_INPUT, new Set());
     return { map, played: log.played };
   }
 

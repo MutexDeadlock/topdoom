@@ -82,7 +82,7 @@ export interface FolderNode {
  */
 interface TreeIndex {
   byId: Map<string, FolderNode>;
-  /** Ids with at least one child row, so a folder knows whether it is foldable at all. */
+  /** IDs with at least one child row, so a folder knows whether it is foldable at all. */
   parents: Set<string>;
 }
 
@@ -97,7 +97,7 @@ function indexTree(nodes: readonly FolderNode[]): TreeIndex {
 }
 
 /**
- * The chain of rows from `id` upwards, nearest first. Walked by `parent`, never by id prefix:
+ * The chain of rows from `id` upwards, nearest first. Walked by `parent`, never by ID prefix:
  * `library:mega` is a prefix of `library:megawads` without being its parent, so a prefix test would
  * take a sibling for an ancestor.
  */
@@ -332,7 +332,7 @@ export class LibraryUi {
   private draftPwads: WadSource[] = [];
   /**
    * Folder rows whose children are shown. Tracked as *expanded* rather than collapsed so the
-   * default is a property of this set alone: a collapsed-id set could not express "folded by
+   * default is a property of this set alone: a collapsed-ID set could not express "folded by
    * default", since a folder the player has never touched is absent from it and would read as open.
    *
    * Seeded with every top-level row, which start open — folding those would leave the overlay
@@ -377,7 +377,7 @@ export class LibraryUi {
 
   /**
    * Commits the draft and closes. The one path out that changes anything the menu holds — `close`
-   * is a discard, whether it came from the button, the backdrop or Esc.
+   * is a discard, whether it came from the button, the backdrop or ESC.
    *
    * Closed *first*: applying redraws the menu, which redraws this overlay, and a set whose files
    * still need hashing leaves the panel up and frozen for the length of a disk read.
@@ -389,7 +389,7 @@ export class LibraryUi {
 
   /**
    * Closes the overlay **without applying anything**, reporting whether it *was* open — `main.ts`'s
-   * Esc handler asks this first, so one Esc dismisses the overlay and leaves the menu (and a paused
+   * ESC handler asks this first, so one ESC dismisses the overlay and leaves the menu (and a paused
    * level) alone. The same explicit hand-off `closeChangelog` gets, rather than two listeners
    * racing over one key.
    */
@@ -461,7 +461,7 @@ export class LibraryUi {
     }
     this.renderTree(nodes, shown, picked, tree);
     // Looked up among the rows the filter kept, not among all of them: with nothing matching, the
-    // fallback id above can name a row that is no longer on screen, and listing its contents would
+    // fallback ID above can name a row that is no longer on screen, and listing its contents would
     // answer a search that found nothing with a pane full of files.
     const selected = visible.find((n) => n.id === this.selectedFolder);
     this.renderFiles(selected, selected !== undefined && match.whole.has(selected.id));
@@ -528,7 +528,7 @@ export class LibraryUi {
     tree: TreeIndex,
   ): void {
     // Exact match or a real path segment below it — a bare `startsWith` would also claim a future
-    // top-level row whose id merely began with the same letters.
+    // top-level row whose ID merely began with the same letters.
     const isLibrary = (node: FolderNode) => node.id === LIBRARY_ROOT || node.id.startsWith(`${LIBRARY_ROOT}/`);
     const row = (node: FolderNode) => this.folderRow(node, tree, picked.has(node.id));
     this.servedEl.replaceChildren(...shown.filter((n) => !isLibrary(n)).map(row));

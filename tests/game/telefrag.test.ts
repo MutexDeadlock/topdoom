@@ -28,7 +28,7 @@ function arena() {
     thingAt(grid, 4, 1, 1),
   );
   const world = new World(map);
-  const layer = buildThingSprites(map, world, BANK, MATERIALS, 3);
+  const layer = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
   return { layer, pad: grid.centre(1, 1), lamp: grid.centre(2, 1), away: grid.centre(3, 1) };
 }
 

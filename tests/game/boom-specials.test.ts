@@ -78,7 +78,7 @@ describe('specials · elevators and motionless changes', () => {
     map.sectors[1].tag = 1;
     const rig = specialsRig(map, grid.centre(0, 0));
     const gap = map.sectors[1].ceilHeight - map.sectors[1].floorHeight;
-    rig.specials.update(TIC, grid.centre(1, 0).x, grid.centre(1, 0).y, 0, NO_INPUT, new Set());
+    rig.specials.update(TIC, { ...grid.centre(1, 0), angle: 0 }, NO_INPUT, new Set());
     for (let i = 0; i < 30; i++) {
       rig.tick();
       assert.equal(map.sectors[1].ceilHeight - map.sectors[1].floorHeight, gap, 'gap preserved mid-travel');
@@ -97,7 +97,7 @@ describe('specials · elevators and motionless changes', () => {
     map.linedefs[line].tag = 2;
     map.sectors[1].tag = 2;
     const rig = specialsRig(map, grid.centre(0, 0));
-    rig.specials.update(TIC, grid.centre(1, 0).x, grid.centre(1, 0).y, 0, NO_INPUT, new Set());
+    rig.specials.update(TIC, { ...grid.centre(1, 0), angle: 0 }, NO_INPUT, new Set());
     assert.equal(map.sectors[1].floorTex, 'GRASS1');
     assert.equal(map.sectors[1].special, 4);
     assert.equal(map.sectors[1].floorHeight, 0, 'nothing moved');

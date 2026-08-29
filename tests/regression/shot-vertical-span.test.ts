@@ -36,7 +36,7 @@ function scene(pitDepth: number, col: number): { layer: ThingLayer; origin: Pos3
   });
   const map = grid.map;
   map.things.push(thingAt(grid, FROM, 1, 1), thingAt(grid, col, 1, ThingType.mancubus));
-  const layer = buildThingSprites(map, new World(map), BANK, MATERIALS, 3);
+  const layer = buildThingSprites(new World(map), { bank: BANK, materials: MATERIALS, skill: 3 });
   const player: Pos3 = { ...grid.centre(FROM, 1), z: 0 };
   // One tic so the layer settles the body onto its floor and marks it seen —
   // `raycastMonster` filters on fog visibility.

@@ -104,7 +104,7 @@ describe('specials · generalized end-to-end', () => {
     const { map } = grid;
     map.linedefs[grid.westEdge(1, 0)].special = 0x3c00 | 6; // PushOnce slow OdC
     const rig = specialsRig(map, { x: 32, y: 32 });
-    rig.specials.update(TIC, 32, 32, 0, USE_INPUT, new Set());
+    rig.specials.update(TIC, { x: 32, y: 32, angle: 0 }, USE_INPUT, new Set());
     for (let i = 0; i < 10; i++) rig.tick();
     assert.ok(map.sectors[1].ceilHeight > 0);
   });
@@ -121,7 +121,7 @@ describe('specials · generalized end-to-end', () => {
     map.linedefs[line].tag = 1;
     map.sectors[1].tag = 1;
     const rig = specialsRig(map, grid.centre(0, 0));
-    rig.specials.update(TIC, grid.centre(1, 0).x, grid.centre(1, 0).y, 0, NO_INPUT, new Set());
+    rig.specials.update(TIC, { ...grid.centre(1, 0), angle: 0 }, NO_INPUT, new Set());
     for (let i = 0; i < 60; i++) rig.tick();
     assert.equal(map.sectors[1].floorHeight, 32, 'rose to the next higher floor');
     assert.equal(map.sectors[1].floorTex, 'NUKAGE1', 'copied the model neighbor floor flat on arrival');
@@ -139,7 +139,7 @@ describe('specials · generalized end-to-end', () => {
     map.linedefs[line].tag = 2;
     map.sectors[1].tag = 2;
     const rig = specialsRig(map, grid.centre(0, 0));
-    rig.specials.update(TIC, grid.centre(1, 0).x, grid.centre(1, 0).y, 0, NO_INPUT, new Set());
+    rig.specials.update(TIC, { ...grid.centre(1, 0), angle: 0 }, NO_INPUT, new Set());
     for (let i = 0; i < 40; i++) rig.tick();
     assert.equal(map.sectors[1].floorHeight, 24);
     assert.equal(map.sectors[1].floorTex, 'RROCK01');
@@ -154,7 +154,7 @@ describe('specials · generalized end-to-end', () => {
     map.linedefs[line].tag = 3;
     map.sectors[1].tag = 3;
     const rig = specialsRig(map, grid.centre(0, 0));
-    rig.specials.update(TIC, grid.centre(1, 0).x, grid.centre(1, 0).y, 0, NO_INPUT, new Set());
+    rig.specials.update(TIC, { ...grid.centre(1, 0), angle: 0 }, NO_INPUT, new Set());
     for (let i = 0; i < 200; i++) rig.tick();
     assert.equal(map.sectors[1].ceilHeight, 0);
   });
@@ -169,8 +169,8 @@ describe('specials · generalized end-to-end', () => {
     map.sectors[0].tag = 4;
     const rig = specialsRig(map, grid.centre(0, 0));
     const cross = () => {
-      rig.specials.update(TIC, grid.centre(0, 0).x, grid.centre(0, 0).y, 0, NO_INPUT, new Set());
-      rig.specials.update(TIC, grid.centre(1, 0).x, grid.centre(1, 0).y, 0, NO_INPUT, new Set());
+      rig.specials.update(TIC, { ...grid.centre(0, 0), angle: 0 }, NO_INPUT, new Set());
+      rig.specials.update(TIC, { ...grid.centre(1, 0), angle: 0 }, NO_INPUT, new Set());
       for (let i = 0; i < 200; i++) rig.tick();
     };
 

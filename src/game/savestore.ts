@@ -32,7 +32,7 @@ export interface StoredState {
  */
 export interface SaveStoreBackend {
   listMeta(): Promise<unknown[]>;
-  /** `undefined` when no save has this id. */
+  /** `undefined` when no save has this ID. */
   readMeta(id: string): Promise<unknown>;
   readState(id: string): Promise<StoredState | undefined>;
   /**
@@ -56,7 +56,7 @@ const openDb = idbOpener(DB_NAME, DB_VERSION, (db) => {
 });
 
 /**
- * The real backend: one database, two object stores keyed by save id —
+ * The real backend: one database, two object stores keyed by save ID —
  * `saves-meta` holds plain `SaveMeta` objects so listing never touches a
  * snapshot, `saves-state` the compressed bytes. An IndexedDB transaction
  * auto-commits as soon as control returns to the event loop with no request

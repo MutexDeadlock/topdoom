@@ -38,7 +38,7 @@ function scene(inset: number) {
   map.things.push({ x: 2 * CELL + inset, y: centre.y, angle: 0, type: ThingType.hellKnight, flags: 7 });
   map.sectors[crusher].ceilHeight = 24;
   const world = new World(map);
-  const things = buildThingSprites(map, world, BANK, MATERIALS, 3);
+  const things = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
   return { map, world, things, crusher, room };
 }
 
@@ -46,7 +46,6 @@ function scene(inset: number) {
 function pulse(room: ReturnType<typeof scene>): { caught: boolean; health: number } {
   const caught = applyCrushDamage(
     room.world,
-    room.map,
     room.things,
     PLAYER,
     room.crusher,

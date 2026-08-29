@@ -60,18 +60,12 @@ describe('Dynamic lights · gathering emitters from the draw funnels', () => {
     map.things.push(thingAt(grid, 1, 1, ThingType.tallRedTorch));
     const at0 = grid.centre(1, 1);
     const lights = new RecordingLights(DEFS);
-    const layer = buildThingSprites(
-      map,
-      new World(map),
-      ROT0_BANK,
-      MATERIALS,
-      3,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
+    const layer = buildThingSprites(new World(map), {
+      bank: ROT0_BANK,
+      materials: MATERIALS,
+      skill: 3,
       lights,
-    );
+    });
     // `update` is what settles `visible`; the draw loop skips anything it has not.
     layer.update(DOOM_TIC, { x: at0.x, y: at0.y, z: 0 });
     lights.beginFrame(0, 0, 0);
@@ -187,7 +181,7 @@ describe('Dynamic lights · gathering emitters from the draw funnels', () => {
     const grid = gridMap(['####', '#..#', '####'], { cell: 128 });
     const map = grid.map;
     map.things.push(thingAt(grid, 1, 1, ThingType.tallRedTorch));
-    const layer = buildThingSprites(map, new World(map), ROT0_BANK, MATERIALS, 3);
+    const layer = buildThingSprites(new World(map), { bank: ROT0_BANK, materials: MATERIALS, skill: 3 });
     assert.doesNotThrow(() => layer.draw(1, 0));
   });
 });

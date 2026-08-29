@@ -30,12 +30,13 @@ function level() {
   }
   const polys = buildSubSectorPolys(map);
   const options = { movableSectors: new Set([sector]) };
-  const index = buildMoverIndex(map, polys);
+  const mover = { map, polys, bank: BANK, options, index: buildMoverIndex(map, polys) };
   return {
     map,
     sector,
-    build: () => buildMoverMesh(map, polys, sector, BANK, options, index),
-    refresh: (mesh: MoverMesh) => refreshMoverMesh(mesh, map, polys, sector, BANK, options, index),
+    mover,
+    build: () => buildMoverMesh(mover, sector),
+    refresh: (mesh: MoverMesh) => refreshMoverMesh(mesh, mover, sector),
   };
 }
 
@@ -130,8 +131,8 @@ describe('render · mover meshes', () => {
     }
     const polys = buildSubSectorPolys(map);
     const options = { movableSectors: new Set([sector]) };
-    const index = buildMoverIndex(map, polys);
-    const mesh = buildMoverMesh(map, polys, sector, BANK, options, index);
+    const mover = { map, polys, bank: BANK, options, index: buildMoverIndex(map, polys) };
+    const mesh = buildMoverMesh(mover, sector);
 
     assert.ok(
       mesh.wallQuads.some((q) => q.ax !== q.segAx || q.ay !== q.segAy),
@@ -141,7 +142,7 @@ describe('render · mover meshes', () => {
     const records = [...mesh.wallQuads];
 
     map.sectors[sector].floorHeight = 37;
-    assert.equal(refreshMoverMesh(mesh, map, polys, sector, BANK, options, index), true);
+    assert.equal(refreshMoverMesh(mesh, mover, sector), true);
 
     assert.deepEqual([...mesh.wallQuads], records, 'the same record objects, so no fade restarts');
     for (const [i, q] of mesh.wallQuads.entries()) {
@@ -175,12 +176,12 @@ describe('render · mover meshes', () => {
     const polys = buildSubSectorPolys(map);
     const movable = new Set(map.sectors.map((_, i) => i).filter((i) => layout[i % layout.length] !== '.'));
     const options = { movableSectors: new Set([sector, ...movable]), movingSectors };
-    const index = buildMoverIndex(map, polys);
+    const mover = { map, polys, bank: BANK, options, index: buildMoverIndex(map, polys) };
     return {
       map,
       sector,
-      mesh: buildMoverMesh(map, polys, sector, BANK, options, index),
-      refresh: (mesh: MoverMesh) => refreshMoverMesh(mesh, map, polys, sector, BANK, options, index),
+      mesh: buildMoverMesh(mover, sector),
+      refresh: (mesh: MoverMesh) => refreshMoverMesh(mesh, mover, sector),
     };
   }
 

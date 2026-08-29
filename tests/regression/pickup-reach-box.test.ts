@@ -20,7 +20,7 @@ describe('Regression · pickup reach is a box, not a circle', () => {
     const map = grid.map;
     map.things.push({ x, y, angle: 0, type: ThingType.shells, flags: 7 });
     const world = new World(map);
-    return buildThingSprites(map, world, BANK, MATERIALS, 3);
+    return buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
   }
 
   const item = { x: 320, y: 320 };

@@ -22,9 +22,12 @@ function arena(skill: Skill, fogs: [Pos3, Pos3][] = []) {
   const map = grid.map;
   map.things.push(thingAt(grid, 1, 1, 1), thingAt(grid, 2, 1, ThingType.imp));
   const world = new World(map);
-  const layer = buildThingSprites(map, world, BANK, MATERIALS, skill, undefined, undefined, undefined, (from, to) =>
-    fogs.push([{ ...from }, { ...to }]),
-  );
+  const layer = buildThingSprites(world, {
+    bank: BANK,
+    materials: MATERIALS,
+    skill,
+    onRespawn: (from, to) => fogs.push([{ ...from }, { ...to }]),
+  });
   return { grid, map, world, layer, player: { ...grid.centre(8, 1), z: 0 } };
 }
 
@@ -97,13 +100,13 @@ describe('Monster AI · nightmare respawn', () => {
 
   test('the spawn point survives a savegame round-trip', () => {
     clearRandom();
-    const { layer, player, map, world } = arena(5);
+    const { layer, player, world } = arena(5);
     const spawn = { x: imp(layer).x, y: imp(layer).y };
     run(layer, player, 4);
     layer.damage(IMP_ID, MONSTER_HEALTH[ThingType.imp]);
 
     const saved = layer.snapshot();
-    const restored = buildThingSprites(map, world, BANK, MATERIALS, 5, undefined, undefined, saved);
+    const restored = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 5, restore: saved });
     // The imp walked east, so only `spawnX` differs from where it lies and only `spawnX` is
     // written; `spawnY` is elided and stands for the saved `y`, which is still the spawn row.
     assert.equal(imp(restored).monster?.spawnX, spawn.x);

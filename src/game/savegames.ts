@@ -17,7 +17,7 @@ import {
 
 /**
  * The savegame store: one meta record and one gzipped state record per save,
- * both keyed by id, in `game/savestore.ts`'s IndexedDB backend — split so that
+ * both keyed by ID, in `game/savestore.ts`'s IndexedDB backend — split so that
  * listing reads metas alone and never touches a snapshot. Reads are validated
  * per entry in the `besttimes.ts` style, but unlike every other `topdoom.*`
  * value a save carries an explicit `version`, refused (not half-read) on
@@ -27,9 +27,9 @@ import {
 export const SAVE_VERSION = 1;
 
 /**
- * The checkpoint's reserved id. An ordinary save under a fixed id, which is what
+ * The checkpoint's reserved ID. An ordinary save under a fixed ID, which is what
  * makes it self-overwriting and needs no field of its own: it is hidden from
- * `listSaves` by *this id*, not by a `SaveMeta` flag a v1 reader would not know
+ * `listSaves` by *this ID*, not by a `SaveMeta` flag a v1 reader would not know
  * about. docs/savegames.md § The checkpoint.
  *
  * `freshId` can never produce it (base-36 timestamp and counter), so no player
@@ -76,7 +76,7 @@ export interface SaveWad {
 }
 
 /**
- * What to call a saved file in a message; the name is for humans, so it needs a fallback and the id
+ * What to call a saved file in a message; the name is for humans, so it needs a fallback and the ID
  * doesn't.
  */
 export function wadLabel(wad: SaveWad): string {
@@ -225,12 +225,12 @@ export interface SaveMeta {
    */
   skill: Skill;
   /**
-   * The whole WAD set in load order, `[0]` the game WAD — one list, so a file's name and id can't
+   * The whole WAD set in load order, `[0]` the game WAD — one list, so a file's name and ID can't
    * drift apart and a file's role is just its position (docs/savegames.md § WAD-set identity).
    */
   wads: SaveWad[];
   /**
-   * Content id of the file that supplied `map`'s lumps. **This, with the game
+   * Content ID of the file that supplied `map`'s lumps. **This, with the game
    * WAD, is what a load requires** — every index a snapshot keys through
    * (sector, `posed`, subsector) comes from that one map, so an add-on which
    * supplied none of it can be absent without the save meaning anything else.
@@ -240,7 +240,7 @@ export interface SaveMeta {
    */
   mapWad: string;
   /**
-   * Content ids of the files in `wads` that carry a `DEHACKED` lump, if any. Optional: **absent
+   * Content IDs of the files in `wads` that carry a `DEHACKED` lump, if any. Optional: **absent
    * means no patch was applied**, which is what every save written before this field existed
    * meant, so an older save keeps exactly today's looser rule. docs/savegames.md § WAD-set
    * identity, docs/dehacked.md § Savegames and patched tables.
@@ -282,7 +282,7 @@ const asText = (v: unknown): string => (typeof v === 'string' ? v : '');
  * One stored WAD entry, each field degraded on its own. Deliberately *mapped*
  * rather than filtered: `wads` is in load order and `[0]` is the game WAD, so
  * dropping a damaged entry would silently shift every file after it into the
- * wrong role. A blanked entry instead fails loudly — an empty id matches
+ * wrong role. A blanked entry instead fails loudly — an empty ID matches
  * nothing in the library, so the file is reported as one to go and find.
  */
 const asWad = (v: unknown): SaveWad => {
@@ -409,13 +409,13 @@ async function putSave(meta: SaveMeta, state: StoredState): Promise<void> {
 
 /**
  * Session-scoped tiebreaker for saves landing in the same millisecond; uniqueness is checked
- * against the stored ids anyway.
+ * against the stored IDs anyway.
  */
 let idCounter = 0;
 
 /**
  * Deliberately entropy-free — the engine's one randomness source is the DOOM table
- * (docs/random.md), and a save id needs uniqueness, not randomness.
+ * (docs/random.md), and a save ID needs uniqueness, not randomness.
  */
 async function freshId(): Promise<string> {
   const existing = new Set((await store().listMeta()).map((raw) => (isRecord(raw) ? raw.id : undefined)));
@@ -447,7 +447,7 @@ function createMeta(id: string, name: string, capture: SaveCapture): SaveMeta {
   };
 }
 
-/** Stores a fresh capture under a new id; throws (readably) at the storage quota. */
+/** Stores a fresh capture under a new ID; throws (readably) at the storage quota. */
 export async function writeSave(capture: SaveCapture, name: string): Promise<SaveMeta> {
   const meta = createMeta(await freshId(), name, capture);
   await putSave(meta, await encodeState(meta.id, capture.state));
@@ -455,7 +455,7 @@ export async function writeSave(capture: SaveCapture, name: string): Promise<Sav
 }
 
 /**
- * Refills an existing save from a fresh capture, keeping its id and its name —
+ * Refills an existing save from a fresh capture, keeping its ID and its name —
  * an overwrite replaces a slot's contents, and the name is the slot's label
  * (changed on its own through `renameSave`).
  */
@@ -479,7 +479,7 @@ export interface CheckpointStore {
 }
 
 /**
- * Replaces the checkpoint with a fresh capture: the id is the engine's own, so
+ * Replaces the checkpoint with a fresh capture: the ID is the engine's own, so
  * the same key replaces both records and there is only ever one.
  * docs/savegames.md § The checkpoint.
  */
@@ -545,7 +545,7 @@ export async function exportSave(id: string): Promise<string> {
 }
 
 /**
- * Validates a downloaded save's JSON and stores it under a fresh id (never the
+ * Validates a downloaded save's JSON and stores it under a fresh ID (never the
  * embedded one — importing the same file twice must not overwrite). Same
  * version strictness as `readSave`: an old-format file is refused with both
  * versions named, not stored as a dead row. The embedded state is fully decoded

@@ -36,7 +36,7 @@ const CHASE_DT = 0.5;
 function bitesFrom(fixture: PinkyFixture, y: number, body = fixture.demonBody()): boolean {
   const player = fixture.playerAt(y);
   const swing = (): ReturnType<typeof stepMonsterAI> =>
-    stepMonsterAI(body, fixture.stats, CHASE_DT, fixture.world, player, PLAYER_RADIUS, PLAYER_HEIGHT);
+    stepMonsterAI(body, fixture.stats, fixture.world, { dt: CHASE_DT, target: player, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
   swing();
   return swing()?.kind === 'melee';
 }

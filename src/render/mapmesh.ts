@@ -58,7 +58,7 @@ function batchKey(kind: SurfaceKind, texture: string): string {
   return kind + ':' + texture;
 }
 
-/** What every wall batch's key starts with, from `batchKey` itself rather than spelled again. */
+/** The batches a build is accumulating into, one per `batchKey`. */
 class BatchSet {
   private batches = new Map<string, Batch>();
 
@@ -85,10 +85,8 @@ class BatchSet {
 }
 
 /**
- * What each of `COLORMAP`'s 32 rows does to brightness, as a **linear-light**
- * multiplier — *measured* from the real lump rather than modelled, since
- * vanilla remaps palette indices through a colormap row instead of scaling a
- * colour by the light level. One baked table serves DOOM, DOOM2 and Freedoom.
+ * What each of `COLORMAP`'s 32 rows does to brightness, as a **linear-light** multiplier —
+ * measured from the real lump, one baked table for DOOM, DOOM2 and Freedoom.
  * docs/render.md § Sector lighting.
  */
 const COLORMAP_GAIN = [
@@ -99,10 +97,9 @@ const COLORMAP_GAIN = [
 ];
 
 /**
- * `r_main.c`'s `scale/DISTMAP` distance term, sampled at one fixed viewing
- * distance since this engine has no distance lighting. **The knob to turn if
- * the whole game reads too dark or too bright** — docs/render.md § Sector
- * lighting for why 4, and why both ends of the ramp saturate.
+ * `r_main.c`'s `scale/DISTMAP` distance term, sampled at one fixed viewing distance since this
+ * engine has no distance lighting. **The knob to turn if the whole game reads too dark or too
+ * bright** — docs/render.md § Sector lighting.
  */
 const REFERENCE_STEPS = 4;
 
@@ -113,17 +110,10 @@ const LIGHT_GAIN = Array.from({ length: 16 }, (_, seg) => {
 });
 
 /**
- * Sector light level (0..255) as a linear vertex colour, plus fake contrast.
- *
- * The result is deliberately linear-light, not a display value: vertex colours
- * (and `material.color.setScalar`, for the non-batched sprites) are consumed
- * as-is by the shader, and the renderer's `outputColorSpace` (`SRGBColorSpace`,
- * `game.ts`) encodes the final fragment to sRGB on the way out. Returning a
- * display-space value here would get it gamma-encoded a second time.
- *
- * `contrast` is the fake-contrast offset in light units; vanilla nudges its
- * *segment* index by one (`lightnum--`/`++`), which is exactly what +/-16 here
- * amounts to after the shift below.
+ * Sector light level (0..255) as a **linear-light** vertex colour — not a display value, since the
+ * renderer's `outputColorSpace` encodes the fragment on the way out. `contrast` is the
+ * fake-contrast offset in light units, of which ±16 is vanilla's ±1 segment.
+ * docs/render.md § Sector lighting.
  */
 export function lightToColor(light: number, contrast = 0): number {
   const clamped = Math.max(0, Math.min(255, light + contrast));
@@ -143,11 +133,9 @@ export function wallContrast(ax: number, ay: number, bx: number, by: number): nu
 }
 
 /**
- * A "lift" toward full brightness: pushes `linear` up by a fraction `lift` of
- * its remaining headroom `(1 - linear)`, so a pitch-black surface (linear = 0)
- * brightens by the full `lift` while an already-bright one barely moves — the
- * effect a surface gets is proportional to how dark it already is. `lift = 0`
- * is a no-op, `lift = 1` flattens everything to full bright.
+ * A "lift" toward full brightness: pushes `linear` up by a fraction `lift` of its remaining
+ * headroom `(1 - linear)`, so the darker a surface already is the more it moves. `lift = 0` is a
+ * no-op, `lift = 1` flattens everything to full bright. docs/render.md § Sector lighting.
  */
 export function applyBrightnessLift(linear: number, lift: number): number {
   const l = Math.max(0, Math.min(1, lift));
@@ -155,60 +143,51 @@ export function applyBrightnessLift(linear: number, lift: number): number {
 }
 
 /**
- * `lightToColor` plus `BRIGHTNESS_LIFT` (`constants.ts`) — what everything
- * should actually be drawn with. `lightToColor` itself stays pure and
- * vanilla-exact so it's easy to verify in isolation; every real draw call
- * (walls, flats, sprites) goes through this instead.
+ * `lightToColor` plus `BRIGHTNESS_LIFT` (`constants.ts`) — what every real draw call uses.
+ * `lightToColor` itself stays pure and vanilla-exact, so it can be verified in isolation.
  */
 export function litColor(light: number, contrast = 0): number {
   return applyBrightnessLift(lightToColor(light, contrast), BRIGHTNESS_LIFT);
 }
 
 /**
- * How opaque a Boom 260 midtexture draws. Vanilla blends it through a `TRANMAP`
- * generated at `tran_filter_pct` percent, whose default is 66 (`m_misc.c`'s
- * config table); custom tranmap lumps have no meaning to an RGBA renderer, so
- * every 260 line gets this one value — docs/specials.md § Translucent midtextures.
+ * How opaque a Boom 260 midtexture draws: `tran_filter_pct`'s default of 66 (`m_misc.c`'s config
+ * table), the percentage Boom generates its `TRANMAP` at. Every 260 line gets this one value —
+ * docs/specials.md § Translucent midtextures.
  */
 const TRANSLUCENT_ALPHA = 0.66;
 
 /**
- * How much water a Boom 242 sector needs before its surface is drawn over a
- * pool bottom rather than simply *being* the drawn floor. **Tuned by feel**,
- * against the artifact it exists to stop: BOOMEDIT MAP01 sector 405 is one map
- * unit deep, and two fans that close together z-fight into a shimmering mess.
- * docs/specials.md § Deep water.
+ * How much water a Boom 242 sector needs before its surface is drawn over a pool bottom rather
+ * than simply *being* the drawn floor. **Tuned by feel** against the artifact it stops: two fans
+ * a map unit apart z-fight (BOOMEDIT MAP01 sector 405). docs/specials.md § Deep water.
  */
 const WATER_MIN_DEPTH = 8;
 
 /**
- * How finely a surface is cut up so the occlusion fade has somewhere to put a
- * gradient: the longest quad `addWall` emits before cutting a linedef into
- * several. **Tuned by feel** — against vertex count, which grows with `1 / this`.
- *
- * It carries an unenforced relationship to `render/occlusion.ts`'s `FADE_CORE`,
- * which decides whether the chunk over the player reaches full strength:
+ * The longest quad `addWall` emits before cutting a wall into several, so the occlusion fade has
+ * vertices to put a gradient on. **Tuned by feel** against vertex count, which grows with
+ * `1 / this`, and carrying an unenforced relationship to `occlusion.ts`'s `FADE_CORE` —
  * docs/render.md § The fade is a hole, not a wall.
  *
- * The *vertical* cut is the one a mover cannot always have. Its band count is
- * `ceil(height / this)`, so a moving height changes how many quads a wall is,
- * and `refreshMoverMesh` may only rewrite buffers whose count held still. A
- * mover mesh therefore dices vertically exactly where both sectors sizing a
- * quad hold still — see `processLine`'s `holdsStill`.
+ * The *vertical* cut is the one a mover cannot always have, since the band count follows the
+ * height: docs/render.md § A mover dices vertically only where nothing moves, and `Build.holdsStill`.
  */
 export const WALL_CHUNK_LEN = 128;
 
 /**
- * The world-aligned grid `addFlatFan` dices a flat on, derived from `WALL_CHUNK_LEN` rather than
- * tuned: a square cell split by its diagonal leaves that diagonal as the longest edge, so a cell
- * this wide is the largest one whose longest edge still obeys the chunk length.
- *
- * What the fade actually needs is not an edge bound but a *vertex* near every point, and this is
- * the tighter of the two readings — no point of a cell is further than `WALL_CHUNK_LEN / 2` = 64
- * units from one of its corners, against the 74 the old per-triangle dicing left at worst.
- * docs/render.md § Flats are diced on a world grid.
+ * The world-aligned grid `addFlatFan` dices a flat on. Derived rather than tuned: a square cell
+ * split by its diagonal leaves that diagonal as its longest edge, so this is the widest cell whose
+ * edges still obey `WALL_CHUNK_LEN`. docs/render.md § Flats are diced on a world grid.
  */
 export const FLAT_GRID_LEN = WALL_CHUNK_LEN / Math.SQRT2;
+
+/**
+ * Every flat lump is 64x64 and aligned to the world grid, so a flat's UVs divide by this rather
+ * than by a per-texture size — `render/scroller.ts` steps a scrolling flat's offset by the same
+ * number.
+ */
+export const FLAT_TEX_SIZE = 64;
 
 /**
  * `processFlat`'s two loop bodies, hoisted out of a function a mover rebuild runs per subsector per
@@ -217,6 +196,11 @@ export const FLAT_GRID_LEN = WALL_CHUNK_LEN / Math.SQRT2;
 const FLOOR_ONLY = [false];
 const FLOOR_AND_CEILING = [false, true];
 
+/**
+ * One vertex into a batch's four attribute arrays. Scalars rather than a record, and the file's
+ * only signature this long: it runs once per emitted vertex, so a point parameter would allocate
+ * one per vertex — docs/conventions.md § Named arguments.
+ */
 function pushVertex(
   b: Batch,
   x: number,
@@ -248,12 +232,9 @@ const WALL_PROBE_OFFSET = 1.5;
 
 /**
  * The point a wall quad's leaf is probed at: the face's midpoint, stepped `WALL_PROBE_OFFSET` off
- * the front side. `addWall` builds every quad facing right of a->b, which is DOOM's front side.
- *
- * Shared with fog of war, which probes the same quantity for a mover's quads (docs/fogofwar.md
- * § Mover wall quads) — one definition, so the probe geometry and its offset cannot drift into
- * disagreeing about which room a quad faces. Writes into `out` rather than returning a point: the
- * fog path runs it per mover quad per tic.
+ * the front side (`addWall` builds every quad facing right of a→b). The one definition, so fog of
+ * war cannot disagree about which room a quad faces — docs/fogofwar.md § Mover wall quads. Writes
+ * into `out`: the fog path runs it per mover quad per tic.
  */
 export function wallProbePoint(ax: number, ay: number, bx: number, by: number, out: Pos2): void {
   const dx = bx - ax;
@@ -263,17 +244,54 @@ export function wallProbePoint(ax: number, ay: number, bx: number, by: number, o
   out.y = (ay + by) / 2 + (-dx / len) * WALL_PROBE_OFFSET;
 }
 
+/** The two solid tiers one side of a two-sided line draws — see `twoSidedBands`. */
+export interface DrawnBands {
+  /** The lower step, drawn when `lowerTop > lowerBot`. */
+  lowerBot: number;
+  lowerTop: number;
+  /** The upper step, drawn when `upperTop > upperBot` and not `skyPair`. */
+  upperBot: number;
+  upperTop: number;
+  /** Two sky ceilings, between which vanilla draws no upper at all. */
+  skyPair: boolean;
+}
+
+/**
+ * **Which bands one side of a two-sided line draws, and how tall** — the heights resolved through
+ * Boom's 242 transfers rather than read off the two sectors. Exported because the auto camera asks
+ * the same question (`autocamera.ts`'s `hidesFromCamera`), and the one owner of the rule so the
+ * two cannot drift; written into a caller's record, so neither allocates.
+ *
+ * `wallHeightCap` is deliberately *not* applied here: no occlusion question wants a wall shortened
+ * by a build option. docs/render.md § Mesh building.
+ */
+export function twoSidedBands(
+  transfers: SectorTransfers,
+  sec: Sector,
+  secIndex: number,
+  other: Sector,
+  otherIndex: number,
+  out: DrawnBands,
+): void {
+  out.lowerBot = transfers.drawnFloor(secIndex);
+  out.lowerTop = transfers.drawnFloor(otherIndex);
+  out.upperBot = ceilingFacing(transfers, other, otherIndex, secIndex);
+  out.upperTop = sec.ceilHeight;
+  out.skyPair = sec.ceilTex === SKY_FLAT && other.ceilTex === SKY_FLAT;
+}
+
 /**
  * Resolves each wall quad's leaf and stamps it onto that quad's vertices, so the dynamic-light
  * shader can ask whether a light reached the room this wall faces. Runs once the quads exist
- * rather than inside `addWall`, which would mean threading a BSP probe through five signatures for
- * a value the occluder records anyway. Without `subsectorAt` (tests, tools) the quads stay at -1,
- * which the shader reads as an empty light list — unlit. docs/lights.md § Light stops at walls.
+ * rather than inside `addWall`, for a value the occluder records anyway. Without
+ * `MapMeshOptions.subsectorAt` (tests, tools) the quads stay at -1, which the shader reads as an
+ * empty light list — unlit. docs/lights.md § Light stops at walls.
  */
-function fillWallCells(batches: BatchSet, occluders: WallOccluder[], subsectorAt?: (x: number, y: number) => number): void {
+function fillWallCells(build: Build): void {
+  const { subsectorAt, batches } = build;
   if (!subsectorAt) return;
   const probe: Pos2 = { x: 0, y: 0 };
-  for (const o of occluders) {
+  for (const o of build.occluders) {
     if (Math.hypot(o.bx - o.ax, o.by - o.ay) < 1e-6) continue;
     wallProbePoint(o.ax, o.ay, o.bx, o.by, probe);
     o.subsector = subsectorAt(probe.x, probe.y);
@@ -288,7 +306,7 @@ function fillWallCells(batches: BatchSet, occluders: WallOccluder[], subsectorAt
  * a sector's drawn floor/ceiling light, the height its water surface sits at,
  * and which linedefs draw a translucent midtexture.
  *
- * Declared structurally here, like `ScrollOffsets` in render/occlusion.ts, so
+ * Declared structurally here, like `ScrollOffsets` in render/scroller.ts, so
  * the renderer keeps no import edge into `game/` — `game/specials/transfers.ts`
  * implements it. See docs/render.md § Sector lighting and § Deep water.
  */
@@ -329,43 +347,29 @@ export interface MapMeshOptions {
   /** Walls above this height above their floor are omitted (0 = no limit). */
   wallHeightCap?: number;
   /**
-   * Sectors driven by a specials mover (game/specials.ts): every line that
-   * touches one is left out of the static batches here entirely — *both* its
-   * sides, not just the one the mover owns. A moving door/lift changes not
-   * just vertex positions but which quads exist at all (an upper step shrinks
-   * to nothing as a door opens), and that is just as true of the *neighbour's*
-   * side: DOOM puts a platform's visible front texture on the sidedef of the
-   * lower sector looking at it, i.e. on the static room's side of the line, not
-   * the lift's. Leaving that side static froze the lift's front wall at its
-   * raised height while the platform slid down behind it. `buildMoverMesh`
-   * builds those sides too, in its own small per-sector mesh the mover
-   * rebuilds on demand. It also suppresses a lid baked against a movable
-   * neighbour's height (`closedHoleFill`), so an incomplete set leaves stale
-   * ones behind.
+   * Sectors a specials mover drives (game/specials.ts). Every line touching one is left out of the
+   * static batches — *both* its sides, since a moving height changes which quads exist on each —
+   * and a lid baked against one's height is suppressed too, so an incomplete set leaves stale
+   * geometry behind. `buildMoverMesh` builds those sides instead. docs/render.md § Mover meshes.
    */
   movableSectors?: Set<number>;
   /**
-   * The subset of `movableSectors` whose floor or ceiling a special can
-   * actually *move* (`scanSectors`' `moving`), as against the ones pulled out of
-   * the static batch only so a switch texture can be swapped on them. It
-   * decides one thing: whether a mover's walls may be diced vertically like
-   * static ones. Omitted means "assume every one of them moves", which is what
-   * a caller with no specials scan should say. docs/render.md § Mover meshes.
+   * The subset of `movableSectors` whose planes a special can actually *move* (`scanSectors`'
+   * `moving`), as against the ones pulled out only so a switch texture can be swapped. It decides
+   * whether a mover's walls dice vertically; omitted means assume they all move.
+   * docs/render.md § A mover dices vertically only where nothing moves.
    */
   movingSectors?: Set<number>;
   /**
-   * The linedefs bordering a sector — vanilla's `sec->lines[]`, the same seam
-   * `MoverIndex.linesOf` uses and for the same reason: `game/world.ts` already
-   * builds and memoizes this per map, and the renderer keeps no import edge
-   * into `game/`. Omitted (tests, tools) means build a plain adjacency list
-   * locally — see `borderingLines`.
+   * The linedefs bordering a sector — vanilla's `sec->lines[]`, injected so the renderer keeps no
+   * import edge into `game/`. Omitted (tests, tools) means a plain local adjacency list
+   * (`borderingLines`). docs/render.md § Closed holes.
    */
   linesOf?: (sectorIndex: number) => readonly number[];
   /**
-   * `World.subsectorAt` — which BSP leaf a point falls in, injected the same way `linesOf` is so
-   * the renderer keeps no import edge into `game/`. Supplied, every surface carries the leaf it
-   * faces into as a vertex attribute, which is what lets a dynamic light stop at a wall
-   * (docs/lights.md § Light stops at walls); omitted (tests, tools), nothing is gated.
+   * `World.subsectorAt`, injected the same way `linesOf` is. Supplied, every surface carries the
+   * leaf it faces into, which is what lets a dynamic light stop at a wall (docs/lights.md § Light
+   * stops at walls); omitted, nothing is gated.
    */
   subsectorAt?: (x: number, y: number) => number;
 }
@@ -406,9 +410,8 @@ export interface WallOccluder {
   botH: number;
   topH: number;
   /**
-   * The full line-side segment this quad was cut from (`ax..by` when the wall
-   * was short enough to stay whole) — `WallFader` crosses the sightline against
-   * this once per line side, not once per chunk.
+   * The full line-side segment this quad was cut from — `WallFader` crosses the sightline against
+   * it once per line side, not once per chunk.
    */
   segAx: number;
   segAy: number;
@@ -417,20 +420,22 @@ export interface WallOccluder {
   /** Sector whose light level this quad was coloured from — for specials-driven relight. */
   sector: number;
   /**
-   * Linedef this quad was built from — for `SurfaceScroller` (render/occlusion.ts) to find a
+   * Linedef this quad was built from — for `SurfaceScroller` (render/scroller.ts) to find a
    * scrolling line's front side.
    */
   line: number;
+  /**
+   * The wall texture this quad draws, which `key` encodes — recorded rather than recovered from
+   * the key, which would make `batchKey`'s encoding load-bearing in both directions. The
+   * `FlatSurface.texName` precedent; `SurfaceScroller` sizes its UV step from it.
+   */
+  texName: string;
   /**
    * True if this quad came from the linedef's front (right) sidedef — vanilla's `sidenum[0]`, the
    * only side a scrolling special ever animates.
    */
   frontSide: boolean;
-  /**
-   * The BSP leaf this quad's face looks into, or -1 when the build was given no probe. Both the
-   * dynamic lights and fog of war key off it, so it is resolved once here rather than twice —
-   * see `fillWallCells`.
-   */
+  /** The BSP leaf this quad's face looks into, or -1 with no probe — resolved by `fillWallCells`. */
   subsector: number;
   /**
    * Permanent translucency, multiplied into the vertex alpha the faders write
@@ -470,19 +475,16 @@ export interface FlatSurface {
    */
   points: Float64Array;
   /**
-   * DOOM (x, y) of every vertex this fan drew, in the order it drew them —
-   * what `FlatFader` measures each vertex's own fade from. Separate from
-   * `points` because the fan is diced finer than its outline (see `addFlatFan`),
-   * and single-precision because there is one entry per drawn vertex and the
-   * only thing read off it is a distance compared against `FADE_RADIUS`.
+   * DOOM (x, y) of every vertex this fan drew, in draw order — what `FlatFader` measures each
+   * vertex's own fade from. Separate from `points` because the fan is diced finer than its outline
+   * (`addFlatFan`), and single-precision because the only thing read off it is a distance.
    */
   vertexXY: Float32Array;
   /** World height (floor or ceiling) this surface sits at. */
   height: number;
   /**
-   * The light level this fan's colour was last written from. Kept beside `height` because a
-   * refresh's no-op test needs both, and the colour attribute cannot answer for it: `litColor`
-   * returns a double that does not survive the float32 round trip the buffer stores it through.
+   * The light level this fan's colour was last written from — carried here rather than recovered
+   * from the colour attribute, which cannot answer for it. docs/render.md § Mover meshes.
    */
   light: number;
   isCeiling: boolean;
@@ -494,18 +496,37 @@ export interface FlatSurface {
 }
 
 /**
- * Which subsectors and linedefs a sector owns — what a mover rebuild would
- * otherwise re-derive by scanning the whole map, once per rebuilt sector.
- *
- * Declared structurally here, like `SectorTransfers` above, so the renderer
- * keeps no import edge into `game/`: the linedef half is vanilla's own
- * `sec->lines[]`, which `game/world.ts` already builds and memoizes.
- * `game/specials/movergeometry.ts` supplies both. See docs/render.md
- * § Mover meshes.
+ * Which subsectors and linedefs a sector owns — what keeps a rebuild proportional to the sector
+ * rather than to the map. Declared structurally here like `SectorTransfers`, and supplied by
+ * `game/specials/movergeometry.ts`. docs/render.md § Mover meshes.
  */
 export interface MoverIndex {
   subsectorsOf(sectorIndex: number): readonly number[];
   linesOf(sectorIndex: number): readonly number[];
+}
+
+/**
+ * What building or refreshing a mover's mesh takes beside the sector index — one record, since
+ * `buildMoverMesh` and `refreshMoverMesh` need exactly the same and `MoverGeometry` holds it for
+ * the level's lifetime.
+ */
+export interface MoverBuild {
+  map: DoomMap;
+  /**
+   * The array `buildMapMesh` returned, or an equivalent from `buildSubSectorPolys`: subsector
+   * footprints don't depend on sector height, so recomputing them per mover per frame would be
+   * pure waste.
+   */
+  polys: SubSectorPoly[];
+  bank: MaterialBank;
+  /**
+   * `movableSectors` is required here, not merely honoured — it is what decides which of a shared
+   * line's two sides this mover owns, and without it a line between two movers would have both of
+   * them build both sides — so the type demands it rather than leaving it to prose.
+   */
+  options: MapMeshOptions & { movableSectors: Set<number> };
+  /** What keeps a rebuild proportional to the sector rather than to the map. */
+  index: MoverIndex;
 }
 
 /** One sector's worth of dynamic geometry — see `buildMoverMesh`. */
@@ -513,10 +534,9 @@ export interface MoverMesh {
   group: THREE.Group;
   meshes: Map<string, THREE.Mesh>;
   /**
-   * How many of `meshes` draw walls, counted from the batch kinds at build time. A refresh
-   * compares its rebuilt wall batches against this to decide whether the buffers still fit;
-   * recorded rather than recovered from the keys, which would make `batchKey`'s encoding
-   * load-bearing in both directions. See `refreshMoverMesh`.
+   * How many of `meshes` draw walls, which a refresh compares its rebuilt batches against to
+   * decide whether the buffers still fit. Recorded rather than recovered from the keys, which
+   * would make `batchKey`'s encoding load-bearing in both directions.
    */
   wallMeshCount: number;
   wallQuads: WallOccluder[];
@@ -524,10 +544,8 @@ export interface MoverMesh {
 }
 
 /**
- * What a map with no Boom transfer lines resolves to: every sector lights and
- * draws itself. Handed to the builders so they never branch on "is there a
- * transfer table", and so a caller that has no scan (tests, tools) is not a
- * special case.
+ * What a map with no Boom transfer lines resolves to: every sector lights and draws itself. Handed
+ * to the builders so nothing below branches on whether there is a transfer table at all.
  */
 export function ownTransfers(map: DoomMap): SectorTransfers {
   const light = (s: number) => map.sectors[s]?.light ?? 0;
@@ -549,26 +567,11 @@ export function ownTransfers(map: DoomMap): SectorTransfers {
 }
 
 export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshOptions = {}): BuiltMap {
-  const { renderCeilings = false, wallHeightCap = 0, movableSectors, linesOf, subsectorAt } = options;
-  const transfers = options.transfers ?? ownTransfers(map);
-  const batches = new BatchSet();
-  const missing = new Set<string>();
-  const occluders: WallOccluder[] = [];
-  const flatSurfaces: FlatSurface[] = [];
-
-  const texSize = (kind: SurfaceKind, name: string) => {
-    const s = bank.size(kind, name);
-    // A 242 control line's sidedef names colormaps, not textures — absent art
-    // there is the feature working, not a hole in the WAD.
-    if (!s && !transfers.colormapName(name)) missing.add(kind + ':' + name);
-    return s;
-  };
-
-  const polys = buildSubSectorPolys(map);
-  buildFlats(map, polys, batches, texSize, renderCeilings, flatSurfaces, transfers, linesOf, movableSectors);
-  buildWalls(map, batches, texSize, wallHeightCap, occluders, transfers, movableSectors);
-  buildSolidCaps(map, polys, batches, texSize, flatSurfaces, transfers);
-  fillWallCells(batches, occluders, subsectorAt);
+  const build = beginBuild(map, buildSubSectorPolys(map), bank, options);
+  buildFlats(build);
+  buildWalls(build);
+  buildSolidCaps(build);
+  fillWallCells(build);
 
   const group = new THREE.Group();
   group.name = 'map:' + map.name;
@@ -576,21 +579,8 @@ export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshO
   const wallMeshes = new Map<string, THREE.Mesh>();
   const flatMeshes = new Map<string, THREE.Mesh>();
 
-  for (const b of batches.all()) {
-    if (b.positions.length === 0) continue;
-    const material = bank.get(b.kind, b.texture);
-    if (!material) continue;
-
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(b.positions, 3));
-    geom.setAttribute('uv', new THREE.Float32BufferAttribute(b.uvs, 2));
-    geom.setAttribute('color', new THREE.Float32BufferAttribute(b.colors, 4));
-    geom.setAttribute('aLightCell', new THREE.Float32BufferAttribute(b.cells, 1));
-    geom.computeBoundingSphere();
-
-    const mesh = new THREE.Mesh(geom, material);
-    mesh.name = b.key;
-    mesh.frustumCulled = true;
+  for (const b of drawnBatches(build)) {
+    const mesh = batchMesh(b, bank.get(b.kind, b.texture)!);
     group.add(mesh);
     triangles += b.positions.length / 9;
     if (b.kind === 'wall') wallMeshes.set(b.key, mesh);
@@ -602,97 +592,73 @@ export function buildMapMesh(map: DoomMap, bank: MaterialBank, options: MapMeshO
   // `FlatSurface`, and both `FlatFader` and `MoverGeometry`'s relight index
   // look a surface's mesh up in `flatMeshes`. Register it under both, so a lid
   // fades and relights like the floors it is filed with.
-  for (const surface of flatSurfaces) {
+  for (const surface of build.flatSurfaces) {
     if (flatMeshes.has(surface.key)) continue;
     const mesh = wallMeshes.get(surface.key);
     if (mesh) flatMeshes.set(surface.key, mesh);
   }
 
-  return { group, missingTextures: [...missing].sort(), triangles, occluders, wallMeshes, flatSurfaces, flatMeshes, polys };
+  return {
+    group,
+    missingTextures: [...build.missing].sort(),
+    triangles,
+    occluders: build.occluders,
+    wallMeshes,
+    flatSurfaces: build.flatSurfaces,
+    flatMeshes,
+    polys: build.polys,
+  };
 }
 
 /**
  * One sector's touching geometry (its own flats, plus every wall quad on
  * either side of a line bordering it) as a small standalone mesh, for
  * game/specials.ts to own and rebuild whenever that sector's height changes.
- * `polys` must be the same array `buildMapMesh` used (or an equivalent one
- * from `buildSubSectorPolys`) — subsector footprints don't depend on sector
- * height, so recomputing them per mover/per frame would be pure waste.
- * `options.movableSectors` is required (not merely honoured): it is what
- * decides which of a shared line's two sides this mover owns, and without it
- * a line between two movers would have both of them build both sides.
- *
- * `index` is what keeps a rebuild proportional to the sector rather than to the
- * map — see `MoverIndex`.
  */
-export function buildMoverMesh(
-  map: DoomMap,
-  polys: SubSectorPoly[],
-  sectorIndex: number,
-  bank: MaterialBank,
-  options: MapMeshOptions,
-  index: MoverIndex,
-): MoverMesh {
-  const { batches, drawn, wallQuads, flatFans } = buildMoverBatches(map, polys, sectorIndex, bank, options, index);
-  fillWallCells(batches, wallQuads, options.subsectorAt);
+export function buildMoverMesh(mover: MoverBuild, sectorIndex: number): MoverMesh {
+  const build = beginMoverBuild(mover, sectorIndex);
+  buildMoverFlats(build, sectorIndex, mover.index);
+  buildMoverWalls(build, sectorIndex, mover.index);
+  fillWallCells(build);
 
+  const drawn = drawnBatches(build);
   const group = new THREE.Group();
   const meshes = new Map<string, THREE.Mesh>();
   for (const b of drawn) {
-    const material = bank.get(b.kind, b.texture)!;
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.Float32BufferAttribute(b.positions, 3));
-    geom.setAttribute('uv', new THREE.Float32BufferAttribute(b.uvs, 2));
-    geom.setAttribute('color', new THREE.Float32BufferAttribute(b.colors, 4));
-    geom.setAttribute('aLightCell', new THREE.Float32BufferAttribute(b.cells, 1));
-    geom.computeBoundingSphere();
-
-    const mesh = new THREE.Mesh(geom, material);
-    mesh.name = b.key;
+    const mesh = batchMesh(b, mover.bank.get(b.kind, b.texture)!);
     group.add(mesh);
     meshes.set(b.key, mesh);
   }
 
-  return { group, meshes, wallMeshCount: drawn.reduce((n, b) => n + (b.kind === 'wall' ? 1 : 0), 0), wallQuads, flatFans };
+  return {
+    group,
+    meshes,
+    wallMeshCount: drawn.reduce((n, b) => n + (b.kind === 'wall' ? 1 : 0), 0),
+    wallQuads: build.occluders,
+    flatFans: build.flatSurfaces,
+  };
 }
 
 /**
- * Rewrites an existing mover mesh from the sector's current heights **in
- * place**, and returns false — leaving `mesh` untouched — when the sector's
- * geometry no longer fits the buffers it was built with, which is the caller's
- * cue to build a fresh one.
- *
- * The records are updated field-by-field rather than replaced because
- * `WallFader`/`FlatFader` hold the arrays and index smoothing state into them.
- * See docs/render.md § Mover meshes for when the buffers stop fitting and why
- * a moving sector must not reallocate.
+ * Rewrites a mover mesh from its sector's current heights **in place**, returning false — mesh
+ * untouched — when the geometry no longer fits the buffers it was built with, which is the
+ * caller's cue to build a fresh one. Records are updated field-by-field rather than replaced,
+ * because the faders hold the arrays. docs/render.md § Mover meshes.
  */
-export function refreshMoverMesh(
-  mesh: MoverMesh,
-  map: DoomMap,
-  polys: SubSectorPoly[],
-  sectorIndex: number,
-  bank: MaterialBank,
-  options: MapMeshOptions,
-  index: MoverIndex,
-): boolean {
-  const { renderCeilings = false } = options;
-  const transfers = options.transfers ?? ownTransfers(map);
-  const texSize = (kind: SurfaceKind, name: string) => bank.size(kind, name);
+export function refreshMoverMesh(mesh: MoverMesh, mover: MoverBuild, sectorIndex: number): boolean {
+  const build = beginMoverBuild(mover, sectorIndex);
 
   // The flats: re-decided, never re-diced. A leaf whose *set* of fans changed refuses here, before
   // anything is written; what the rest are to move to comes back in `plan`.
-  const plan = planFlatRefresh(mesh, map, polys, sectorIndex, renderCeilings, transfers, texSize, index);
+  const plan = planFlatRefresh(build, mesh, sectorIndex, mover.index);
   if (plan === null) return false;
 
   // The walls: rebuilt outright, since a moving height changes which tiers exist at all.
-  const batches = new BatchSet();
-  const wallQuads: WallOccluder[] = [];
-  buildMoverWalls(map, sectorIndex, batches, texSize, options, transfers, index, wallQuads);
-  const drawn = drawnBatches(batches, bank);
+  buildMoverWalls(build, sectorIndex, mover.index);
+  const wallQuads = build.occluders;
+  const drawn = drawnBatches(build);
   if (drawn.length !== mesh.wallMeshCount || wallQuads.length !== mesh.wallQuads.length) return false;
-  // Validated before anything is written, so a refusal can't leave the mesh
-  // half-rewritten.
+  // Validated before anything is written, so a refusal can't leave the mesh half-rewritten.
   for (const b of drawn) {
     const attr = mesh.meshes.get(b.key)?.geometry.getAttribute('position');
     if (!attr || attr.array.length !== b.positions.length) return false;
@@ -712,9 +678,113 @@ export function refreshMoverMesh(
   return true;
 }
 
+type SizeFn = (kind: SurfaceKind, name: string) => Size | null;
+
+/**
+ * The working set every builder below threads: the map, the options resolved once, and the
+ * batches and records they append to. One covers either the whole map's static geometry or a
+ * single mover's sector — which of the two is `holdsStill`/`includeSide`, and nothing else here
+ * knows the difference. See docs/render.md § Mesh building.
+ */
+interface Build {
+  map: DoomMap;
+  /** Subsector footprints, shared with the mover builds — see `MoverBuild.polys`. */
+  polys: SubSectorPoly[];
+  bank: MaterialBank;
+  batches: BatchSet;
+  /** Texture dimensions, recording into `missing` whatever the WAD has no lump for. */
+  size: SizeFn;
+  missing: Set<string>;
+  transfers: SectorTransfers;
+  /** Every wall quad emitted, appended in draw order. */
+  occluders: WallOccluder[];
+  /** Every flat fan emitted, appended in draw order. */
+  flatSurfaces: FlatSurface[];
+  renderCeilings: boolean;
+  wallHeightCap: number;
+  movableSectors?: Set<number>;
+  linesOf?: (sectorIndex: number) => readonly number[];
+  subsectorAt?: (x: number, y: number) => number;
+  /**
+   * Whether a sector's floor and ceiling hold still, so a quad sized against it may be diced
+   * vertically — see `WALL_CHUNK_LEN` and docs/render.md § A mover dices vertically only where
+   * nothing moves.
+   */
+  holdsStill(sectorIndex: number): boolean;
+  /**
+   * Which sides this build owns, or undefined for every side. Side granularity rather than line
+   * granularity for the one case where a line's two sides have different owners: between two
+   * movable sectors (a switch mounted on a lift's own frame, say) each mover builds only its own
+   * side, or both would build both and double every quad.
+   */
+  includeSide?(sectorIndex: number): boolean;
+}
+
+/**
+ * A build over the whole map's static geometry. Everything left in it is static — `buildWalls`
+ * and `buildFlats` drop every line and leaf touching a mover wholesale — so `holdsStill` answers
+ * true for everything and every side is this build's.
+ */
+function beginBuild(map: DoomMap, polys: SubSectorPoly[], bank: MaterialBank, options: MapMeshOptions): Build {
+  const transfers = options.transfers ?? ownTransfers(map);
+  const missing = new Set<string>();
+  return {
+    map,
+    polys,
+    bank,
+    batches: new BatchSet(),
+    size: (kind, name) => {
+      const s = bank.size(kind, name);
+      // A 242 control line's sidedef names colormaps, not textures — absent art
+      // there is the feature working, not a hole in the WAD.
+      if (!s && !transfers.colormapName(name)) missing.add(kind + ':' + name);
+      return s;
+    },
+    missing,
+    transfers,
+    occluders: [],
+    flatSurfaces: [],
+    renderCeilings: options.renderCeilings ?? false,
+    wallHeightCap: options.wallHeightCap ?? 0,
+    movableSectors: options.movableSectors,
+    linesOf: options.linesOf,
+    subsectorAt: options.subsectorAt,
+    holdsStill: () => true,
+  };
+}
+
+/** A build over one mover's own sector — `buildMoverMesh` and `refreshMoverMesh` share it. */
+function beginMoverBuild(mover: MoverBuild, sectorIndex: number): Build {
+  const build = beginBuild(mover.map, mover.polys, mover.bank, mover.options);
+  const { movingSectors, movableSectors } = mover.options;
+  // A sector pulled out of the static batch only so a switch texture can be
+  // swapped on it never moves a vertex, so it dices like static geometry.
+  // Omitted `movingSectors` means assume they all move, which is the safe half.
+  build.holdsStill = (s) => movingSectors !== undefined && !movingSectors.has(s);
+  // Own sides always; a neighbour's side only when that neighbour is static —
+  // it has no mover of its own to build it, and its upper/lower step is sized
+  // from *this* sector's moving heights.
+  build.includeSide = (s) => s === sectorIndex || !movableSectors?.has(s);
+  return build;
+}
+
 /** The batches that end up on screen: the ones that emitted anything and whose art the bank has. */
-function drawnBatches(batches: BatchSet, bank: MaterialBank): Batch[] {
-  return batches.all().filter((b) => b.positions.length > 0 && bank.get(b.kind, b.texture));
+function drawnBatches(build: Build): Batch[] {
+  return build.batches.all().filter((b) => b.positions.length > 0 && build.bank.get(b.kind, b.texture));
+}
+
+/** One batch as a three.js mesh: the four attributes every surface carries, named by its key. */
+function batchMesh(batch: Batch, material: THREE.Material): THREE.Mesh {
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(batch.positions, 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute(batch.uvs, 2));
+  geom.setAttribute('color', new THREE.Float32BufferAttribute(batch.colors, 4));
+  geom.setAttribute('aLightCell', new THREE.Float32BufferAttribute(batch.cells, 1));
+  geom.computeBoundingSphere();
+
+  const mesh = new THREE.Mesh(geom, material);
+  mesh.name = batch.key;
+  return mesh;
 }
 
 /**
@@ -731,35 +801,23 @@ interface FlatPlan {
 const flatPlan: FlatPlan[] = [];
 
 /**
- * Whether a mover's flats can be moved in place, and — where they can — what to move them to,
- * one entry per `mesh.flatFans`; null is a refusal, and the caller builds a fresh mesh.
- *
- * A tic can lift a fan's plane and relight it, but never change its footprint. What it *can*
- * change is which fans a leaf draws at all, so the specs are re-decided (cheap: no geometry) and
- * matched against the fans the mesh holds. docs/render.md § Mover meshes.
+ * Whether a mover's flats can be moved in place, and where to — one entry per `mesh.flatFans`;
+ * null is a refusal. A tic can lift a fan's plane and relight it but never change its footprint,
+ * so the specs are re-decided without emitting geometry and matched against the fans the mesh
+ * holds. docs/render.md § Mover meshes.
  */
-function planFlatRefresh(
-  mesh: MoverMesh,
-  map: DoomMap,
-  polys: SubSectorPoly[],
-  sectorIndex: number,
-  renderCeilings: boolean,
-  transfers: SectorTransfers,
-  texSize: SizeFn,
-  index: MoverIndex,
-): FlatPlan[] | null {
+function planFlatRefresh(build: Build, mesh: MoverMesh, sectorIndex: number, index: MoverIndex): FlatPlan[] | null {
   const fans = mesh.flatFans;
-  const holeFill = closedHoleFill(map, sectorIndex, index.linesOf(sectorIndex), transfers);
+  const holeFill = closedHoleFill(build.map, sectorIndex, index.linesOf(sectorIndex), build.transfers);
   let at = 0;
   for (const ss of index.subsectorsOf(sectorIndex)) {
-    const count = flatSpecsOf(map, polys[ss], renderCeilings, transfers, holeFill, flatSpecs);
-    // A leaf too degenerate to have produced a vertex produced no fan either, and never will:
-    // where the mesh holds nothing for it there is nothing to move. `buildMoverBatches` appended
-    // the rest in this same order.
+    const count = flatSpecsOf(build, build.polys[ss], holeFill, flatSpecs);
+    // A leaf too degenerate to have produced a vertex produced no fan either, and never will.
+    // `buildMoverFlats` appended the rest in this same order.
     if (fans[at]?.subsector !== ss) continue;
     for (let i = 0; i < count; i++) {
       const spec = flatSpecs[i];
-      if (!flatArt('flat', spec.texName, texSize)) continue;
+      if (!flatArt('flat', spec.texName, build.size)) continue;
       const fan = fans[at];
       if (
         fan === undefined ||
@@ -793,9 +851,8 @@ function applyFlatRefresh(mesh: MoverMesh, plan: FlatPlan[]): void {
     const fan = mesh.flatFans[i];
     const { height, light, lightSector } = plan[i];
     fan.lightSector = lightSector;
-    // Nothing moved and nothing relit: the common case for a mover's ceiling while its floor runs.
-    // Tested against the fan's own record before the mesh is looked up at all, so the common case
-    // costs two number compares rather than a map lookup and two attribute fetches.
+    // Nothing moved and nothing relit — the common case for a mover's ceiling while its floor
+    // runs. Both halves read the fan's own record, before the mesh is looked up at all.
     if (fan.height === height && fan.light === light) continue;
     const geom = mesh.meshes.get(fan.key)?.geometry;
     if (!geom) continue;
@@ -806,7 +863,7 @@ function applyFlatRefresh(mesh: MoverMesh, plan: FlatPlan[]): void {
     fan.light = light;
     const end = fan.vertexStart + fan.vertexCount;
     for (let v = fan.vertexStart; v < end; v++) {
-      // Only the plane: x and z are the footprint, and the footprint is what never moves.
+      // Only the plane: x and z are the footprint, which never moves.
       pos[v * 3 + 1] = height;
       col[v * 4] = color;
       col[v * 4 + 1] = color;
@@ -823,12 +880,11 @@ function applyFlatRefresh(mesh: MoverMesh, plan: FlatPlan[]): void {
 }
 
 /**
- * Copies a rebuilt quad's state over the live one, preserving what a rebuild cannot know: a mover
- * changes heights, never a quad's footprint, so `subsector` stays the leaf the build-time probe
- * resolved (`fillWallCells`) rather than the -1 `buildMoverBatches` emits without one. Re-probing
- * would be a BSP descent per quad per tic. Same rule as `aLightCell` above, and it lives here
- * rather than in the refresh loop so the next footprint-fixed field on `WallOccluder` is handled
- * where the exception is already stated.
+ * Copies a rebuilt quad over the live one, preserving what a rebuild cannot know: a mover changes
+ * heights, never a footprint, so `subsector` keeps the leaf the build-time probe resolved rather
+ * than the -1 `buildMoverWalls` emits — re-probing would be a BSP descent per quad per tic. Same
+ * rule as `aLightCell` above, stated here so the next footprint-fixed field on `WallOccluder` is
+ * handled where the exception already lives.
  */
 function copyRefreshedQuad(dst: WallOccluder, src: WallOccluder): void {
   const subsector = dst.subsector;
@@ -843,83 +899,25 @@ function writeAttribute(geom: THREE.BufferGeometry, name: string, values: number
 }
 
 /**
- * `buildMoverMesh`'s geometry pass — everything up to the three.js objects. A refresh rebuilds
- * only the walls (`buildMoverWalls`) and does not come through here, but both reach the same
- * verdict about which batches draw through `drawnBatches`. The whole `BatchSet` comes back too,
- * since `buildMoverMesh` has to resolve wall leaves against it before the buffers are built.
+ * The flat half of a mover's geometry: its own sector's leaves, lids included. A refresh
+ * re-decides these without emitting any (`planFlatRefresh`), because a mover changes a flat's
+ * plane and its light but never its footprint — docs/render.md § Mover meshes.
  */
-function buildMoverBatches(
-  map: DoomMap,
-  polys: SubSectorPoly[],
-  sectorIndex: number,
-  bank: MaterialBank,
-  options: MapMeshOptions,
-  index: MoverIndex,
-): { batches: BatchSet; drawn: Batch[]; wallQuads: WallOccluder[]; flatFans: FlatSurface[] } {
-  const { renderCeilings = false } = options;
-  const transfers = options.transfers ?? ownTransfers(map);
-  const batches = new BatchSet();
-  const texSize = (kind: SurfaceKind, name: string) => bank.size(kind, name);
-  const wallQuads: WallOccluder[] = [];
-  const flatFans: FlatSurface[] = [];
-
+function buildMoverFlats(build: Build, sectorIndex: number, index: MoverIndex): void {
   // No `movableSectors` here on purpose: a mover is rebuilt alongside its
   // movable neighbours, so its lids cannot go stale against one.
-  const holeFill = closedHoleFill(map, sectorIndex, index.linesOf(sectorIndex), transfers);
-  for (const ss of index.subsectorsOf(sectorIndex)) {
-    processFlat(map, polys[ss], ss, batches, texSize, renderCeilings, flatFans, transfers, holeFill);
-  }
-  buildMoverWalls(map, sectorIndex, batches, texSize, options, transfers, index, wallQuads);
-
-  return { batches, drawn: drawnBatches(batches, bank), wallQuads, flatFans };
+  const holeFill = closedHoleFill(build.map, sectorIndex, index.linesOf(sectorIndex), build.transfers);
+  for (const ss of index.subsectorsOf(sectorIndex)) processFlat(build, build.polys[ss], ss, holeFill);
 }
 
 /**
- * The wall half of a mover's geometry, alone — the half `refreshMoverMesh` must rebuild every
- * tic, because a moving height changes not just where a quad's corners sit but *which* tiers
- * exist (an upper step shrinks to nothing as a door opens). Its flats are the other half, and
- * they hold still: see `refreshMoverMesh`.
+ * The wall half, alone — the half `refreshMoverMesh` must rebuild every tic, because a moving
+ * height changes not just where a quad's corners sit but *which* tiers exist (an upper step
+ * shrinks to nothing as a door opens).
  */
-function buildMoverWalls(
-  map: DoomMap,
-  sectorIndex: number,
-  batches: BatchSet,
-  texSize: SizeFn,
-  options: MapMeshOptions,
-  transfers: SectorTransfers,
-  index: MoverIndex,
-  wallQuads: WallOccluder[],
-): void {
-  const { wallHeightCap = 0, movableSectors, movingSectors } = options;
-  // A mesh that exists only so a switch texture can be swapped on it never
-  // moves a vertex, so its walls are diced exactly like static ones and the
-  // occlusion fade can open a hole in them. That is not a corner case: one
-  // switch on a sidedef pulls its whole sector out of the static batch, and on
-  // NUTS.WAD MAP01 that is the 12000-unit arena and the pen behind it, whose
-  // one-sided walls stand 900 units tall — undiced, no ball of fade could
-  // dissolve enough of one to see the player through it.
-  // Omitted `movingSectors` means assume they all move, which is the safe half.
-  const holdsStill = (s: number) => movingSectors !== undefined && !movingSectors.has(s);
-  // Own sides always; a neighbour's side only when that neighbour is static —
-  // it has no mover of its own to build it, and its upper/lower step is sized
-  // from *this* sector's moving heights. A neighbour that is itself movable
-  // builds its own side and is rebuilt alongside this one (see
-  // SpecialsController's neighbour propagation).
-  const includeSide = (s: number) => s === sectorIndex || !movableSectors?.has(s);
-
+function buildMoverWalls(build: Build, sectorIndex: number, index: MoverIndex): void {
   for (const lineIndex of index.linesOf(sectorIndex)) {
-    processLine(
-      map,
-      map.linedefs[lineIndex],
-      lineIndex,
-      batches,
-      texSize,
-      wallHeightCap,
-      wallQuads,
-      transfers,
-      holdsStill,
-      includeSide,
-    );
+    processLine(build, build.map.linedefs[lineIndex], lineIndex);
   }
 }
 
@@ -930,46 +928,24 @@ function touchesAny(map: DoomMap, line: LineDef, sectors: Set<number>): boolean 
   return (front !== undefined && sectors.has(front.sector)) || (back !== undefined && sectors.has(back.sector));
 }
 
-type SizeFn = (kind: SurfaceKind, name: string) => Size | null;
-
 /** Floors and ceilings, triangulated per subsector (each one is convex). */
-function buildFlats(
-  map: DoomMap,
-  polys: SubSectorPoly[],
-  batches: BatchSet,
-  size: SizeFn,
-  renderCeilings: boolean,
-  flatSurfaces: FlatSurface[],
-  transfers: SectorTransfers,
-  linesOf: ((sectorIndex: number) => readonly number[]) | undefined,
-  movableSectors?: Set<number>,
-): void {
-  const fills = closedHoleFills(map, transfers, linesOf, movableSectors);
+function buildFlats(build: Build): void {
+  const { map, polys, movableSectors } = build;
+  const fills = closedHoleFills(map, build.transfers, build.linesOf, movableSectors);
   for (let ss = 0; ss < polys.length; ss++) {
-    if (movableSectors && movableSectors.has(polys[ss].sector)) continue;
-    processFlat(map, polys[ss], ss, batches, size, renderCeilings, flatSurfaces, transfers, fills[polys[ss].sector]);
+    if (movableSectors?.has(polys[ss].sector)) continue;
+    processFlat(build, polys[ss], ss, fills[polys[ss].sector]);
   }
 }
 
 /**
- * Lids over the map's solid structures — the rings of one-sided linedefs that
- * enclose no sector (render/solids.ts). Without them the overhead camera looks
- * straight into a pillar and out the far side, since its walls are drawn
- * single-sided and face away from the inside. docs/render.md § Solid structures.
- *
- * One surface **per triangle**, not one per lid: a ring is often concave, and
- * `FlatFader` tests a surface's footprint with the convex-only helper that
- * every other flat here satisfies. Triangles keep that contract, at the cost of
- * a big lid dissolving in pieces rather than all at once.
+ * Lids over the map's solid structures — the rings of one-sided linedefs that enclose no sector
+ * (`render/solids.ts`). One `FlatSurface` **per triangle**, not one per lid: a ring is often
+ * concave, and `FlatFader` tests footprints with a convex-only helper.
+ * docs/render.md § Solid structures.
  */
-function buildSolidCaps(
-  map: DoomMap,
-  polys: SubSectorPoly[],
-  batches: BatchSet,
-  size: SizeFn,
-  flatSurfaces: FlatSurface[],
-  transfers: SectorTransfers,
-): void {
+function buildSolidCaps(build: Build): void {
+  const { map, polys, size, transfers } = build;
   for (const cap of findSolidCaps(map, polys)) {
     if (!size('wall', cap.texture)) continue;
     const subsector = subsectorNear(polys, cap);
@@ -978,11 +954,9 @@ function buildSolidCaps(
     const lightSector = transfers.ceilingLightSector(cap.sector);
     for (const triangle of triangulate(cap.points)) {
       addFlatFan(
+        build,
         { points: triangle, sector: cap.sector },
         subsector,
-        batches,
-        size,
-        flatSurfaces,
         { texName: cap.texture, height: cap.height, light, lightSector, isCeiling: false },
         'wall',
       );
@@ -1024,13 +998,11 @@ function triangulate(points: Float64Array): Float64Array[] {
 }
 
 /**
- * The neighbouring sector a **sector** closes itself over, or -1 where it is
- * ordinary geometry. A sector whose *every* side is a two-sided drop with no
- * lower texture is a hole the mapper never meant to be looked into, and this
- * camera looks into every pit; the lid follows GZDoom's own render hack
- * (`hw_renderhacks.cpp: HandleMissingTextures` / `DoOneSectorLower`).
- * `lines` is every linedef bordering the sector — vanilla's `sec->lines[]`.
- * docs/render.md § Closed holes.
+ * The neighbouring sector a **sector** closes itself over, or -1 where it is ordinary geometry: a
+ * sector whose every side is a two-sided drop with no lower texture is a hole the mapper never
+ * meant anyone to look into, and this camera looks into every pit. Follows GZDoom's render hack
+ * (`hw_renderhacks.cpp: HandleMissingTextures`), whose conditions the tests below are.
+ * `lines` is vanilla's `sec->lines[]`. docs/render.md § Closed holes.
  */
 function closedHoleFill(
   map: DoomMap,
@@ -1049,8 +1021,7 @@ function closedHoleFill(
     if (!line) continue;
     const right = line.right === NO_SIDE ? undefined : map.sidedefs[line.right];
     const left = line.left === NO_SIDE ? undefined : map.sidedefs[line.left];
-    // The line seen from this sector: whichever side it owns, and the one behind
-    // it. A line with both sides here falls out at `back.sector` below.
+    // The line seen from this sector: whichever side it owns, and the one behind it.
     const side = right?.sector === sectorIndex ? right : left;
     if (!side || side.sector !== sectorIndex) continue;
     const back = side === right ? left : right;
@@ -1059,12 +1030,10 @@ function closedHoleFill(
     if (back.sector === sectorIndex) continue;
     const other = map.sectors[back.sector];
     if (!other || transfers.heightSec(back.sector) >= 0) return -1;
-    // The lid is baked at this neighbour's height, so a movable one would leave
-    // it stale — only `buildMoverBatches`, rebuilt alongside its movable
-    // neighbours, passes no set.
+    // The lid is baked at this neighbour's height, so a movable one would leave it stale — only
+    // `buildMoverFlats`, rebuilt alongside its movable neighbours, passes no set.
     if (movableSectors?.has(back.sector)) return -1;
-    // Every side a step down into the sector that draws nothing, and every one
-    // of them the same step: the lid is one plane, so it has one height.
+    // Every side the same step down, drawing nothing: the lid is one plane, so it has one height.
     if (other.floorHeight <= self.floorHeight || other.floorTex === SKY_FLAT) return -1;
     if (side.lower !== NO_TEXTURE && side.lower !== '') return -1;
     if (from >= 0 && other.floorHeight !== map.sectors[from].floorHeight) return -1;
@@ -1074,11 +1043,9 @@ function closedHoleFill(
 }
 
 /**
- * Sector→bordering-linedefs for a caller that supplied no `linesOf`. Plain
- * adjacency, and deliberately **not** a second `sec->lines[]`: `closedHoleFill`
- * reads each line from one sector's side and is idempotent in it, so a line
- * listed twice changes no answer. The `P_GroupLines` ordering/dedupe rule has
- * one implementation, `game/world.ts: sectorLines`, which `linesOf` routes to.
+ * Sector→bordering-linedefs for a caller that supplied no `linesOf`. Plain adjacency, deliberately
+ * **not** a second `sec->lines[]`: `closedHoleFill` is idempotent in a repeated line, and the
+ * `P_GroupLines` rule keeps one implementation (`game/world.ts: sectorLines`).
  */
 function borderingLines(map: DoomMap): number[][] {
   const lines: number[][] = Array.from({ length: map.sectors.length }, () => []);
@@ -1124,60 +1091,43 @@ interface FlatSpec {
 
 /**
  * Which fans one leaf draws and with what — every decision `processFlat` makes before a vertex
- * exists, written into `out` (grown as needed) and counted back.
- *
- * Split out from the emission because `refreshMoverMesh` needs exactly these and none of the
- * geometry: a mover changes a flat's plane and its light, never its footprint, so re-deciding is
- * what tells a height it can write in place from a structural change that needs a fresh mesh.
- * docs/render.md § Mover meshes.
+ * exists, written into `out` (grown as needed) and counted back. Split out from the emission so a
+ * refresh can re-decide without re-dicing. docs/render.md § Mover meshes.
  */
 function flatSpecsOf(
-  map: DoomMap,
+  build: Build,
   poly: SubSectorPoly,
-  renderCeilings: boolean,
-  transfers: SectorTransfers,
   /** The sector this leaf's own sector closes itself over (`closedHoleFill`), or -1. */
   holeFill: number,
   out: FlatSpec[],
 ): number {
+  const { map, transfers, renderCeilings } = build;
   let count = 0;
   const n = poly.points.length / 2;
   if (n < 3) return 0;
   const sector = map.sectors[poly.sector];
   if (!sector) return 0;
 
-  // Boom's 242: `R_FakeFlat` picks one of two views by where the eye is, and
-  // this draws both at once — the pool bottom below a translucent surface — so
-  // the player stays visible under water. Too shallow to hold a body, and there
-  // is nothing to see between the two: that case falls back to vanilla's own
-  // above-water view, one fan at the surface height wearing the sector's flat,
-  // which is also the only way two planes a unit apart avoid z-fighting.
-  // Where the control sector sits *below* instead, the one fan goes to
-  // `drawnFloor` — vanilla's height for the invisible-platform idiom.
-  // docs/specials.md § Deep water.
+  // Boom's 242. Vanilla picks one of two views by where the eye is; a deep pool draws both at
+  // once, so a player who wades in stays visible. Too shallow for that, and the one fan is
+  // vanilla's above-water view; a control sector *below* instead is the invisible-platform idiom,
+  // one fan at `drawnFloor`. docs/specials.md § Deep water.
   const surfaceHeight = transfers.waterHeight(poly.sector);
   const deep = surfaceHeight !== null && surfaceHeight - sector.floorHeight >= WATER_MIN_DEPTH;
-  // A pool bottom a mover has raised clear of the surface (`waterHeight` is null
-  // once it reaches it) is the same ground it was, so it keeps the control
-  // sector's flat and light rather than snapping to the water flat this sector
-  // wears for its surface — a deviation from `R_FakeFlat`'s plain branch, which
-  // draws that water flat. BOOMEDIT MAP01's stairs in sector 35's pool.
-  // docs/specials.md § Deep water.
+  // A bottom a mover has raised clear of the surface keeps the control sector's flat and light
+  // rather than snapping to the water flat — a deviation from `R_FakeFlat`'s plain branch, which
+  // draws that flat. Repro: BOOMEDIT MAP01's stairs in sector 35's pool.
   const control = deep
     ? transfers.heightSec(poly.sector)
     : surfaceHeight === null
       ? transfers.poolBottom(poly.sector)
       : -1;
   const bottom = control >= 0 ? map.sectors[control] : undefined;
-  // The bottom wears the control sector's flat, except where that sector has
-  // none to lend (sky, or an unset slot) — falling back to the sector's own
-  // keeps a pool with a floor rather than a hole in the level.
+  // Where the control sector has no flat to lend (sky, or an unset slot), falling back to the
+  // sector's own keeps a pool with a floor rather than a hole in the level.
   const bottomTex =
     bottom && bottom.floorTex !== SKY_FLAT && bottom.floorTex !== NO_TEXTURE ? bottom.floorTex : undefined;
   const floorLightFrom = bottom ? control : poly.sector;
-  // The pool bottom sits at the real floor; a shallow 242 draws its one floor at
-  // the surface, exactly as vanilla does; below-floor control sectors land on the
-  // fake floor.
   const floorHeight = deep ? sector.floorHeight : (surfaceHeight ?? transfers.drawnFloor(poly.sector));
 
   for (const isCeiling of renderCeilings ? FLOOR_AND_CEILING : FLOOR_ONLY) {
@@ -1192,9 +1142,8 @@ function flatSpecsOf(
     spec.baseAlpha = undefined;
   }
 
-  // The lid over a hole in the map (`closedHoleFill`), drawn on top of the real
-  // floor as GZDoom draws its own. An ordinary `FlatSurface`, so `FlatFader`
-  // dissolves it for a body underneath.
+  // The lid over a hole in the map (`closedHoleFill`), drawn on top of the real floor. An ordinary
+  // `FlatSurface`, so `FlatFader` dissolves it for a body underneath.
   if (holeFill >= 0) {
     const spec = specAt(out, count++);
     spec.texName = map.sectors[holeFill].floorTex;
@@ -1205,11 +1154,10 @@ function flatSpecsOf(
     spec.baseAlpha = undefined;
   }
 
-  // Which pool's surface covers this fan: this sector's own, or — for a sector
-  // walled in by a pool but left out of its tag — that pool's, so the sheet runs
-  // over the island instead of stopping at it. The island has to be *under* the
-  // water for that: a chamber whose ceiling stands above the surface is dry
-  // inside, whatever it is surrounded by. docs/specials.md § Deep water.
+  // Which pool's surface covers this fan: this sector's own, or — for a sector walled in by a pool
+  // but left out of its tag — that pool's, so the sheet runs over the island rather than stopping
+  // at it. Only where the island is submerged: a chamber whose ceiling stands above the surface is
+  // dry inside, whatever surrounds it. docs/specials.md § Deep water.
   const island = deep ? -1 : transfers.poolIsland(poly.sector);
   const islandSurface = island < 0 ? null : transfers.waterHeight(island);
   const submerged = islandSurface !== null && sector.ceilHeight <= islandSurface;
@@ -1242,29 +1190,15 @@ function specAt(out: FlatSpec[], at: number): FlatSpec {
   return spec;
 }
 
-function processFlat(
-  map: DoomMap,
-  poly: SubSectorPoly,
-  ss: number,
-  batches: BatchSet,
-  size: SizeFn,
-  renderCeilings: boolean,
-  flatSurfaces: FlatSurface[],
-  transfers: SectorTransfers,
-  holeFill: number,
-): void {
-  const count = flatSpecsOf(map, poly, renderCeilings, transfers, holeFill, flatSpecs);
-  for (let i = 0; i < count; i++) addFlatFan(poly, ss, batches, size, flatSurfaces, flatSpecs[i]);
+function processFlat(build: Build, poly: SubSectorPoly, ss: number, holeFill: number): void {
+  const count = flatSpecsOf(build, poly, holeFill, flatSpecs);
+  for (let i = 0; i < count; i++) addFlatFan(build, poly, ss, flatSpecs[i]);
 }
 
 /**
- * Below this a diced cell is degeneracy, not geometry: a convex ring clipped by a grid line it
- * only grazes comes back as three near-collinear points. Dropping one leaves a gap thinner than
- * a thousandth of a map unit, against a triangle that covers nothing and still costs three
- * vertices in every buffer.
- *
- * **Tuned by feel** — a robustness floor, not a measured figure: anything well under a square map
- * unit and well over the clip's own float noise does the same job.
+ * Below this a diced cell is degeneracy rather than geometry — a ring clipped by a grid line it
+ * only grazes comes back as three near-collinear points. **Tuned by feel**: a robustness floor,
+ * anywhere well under a square map unit and well over the clip's float noise.
  */
 const FLAT_CELL_MIN_AREA = 0.05;
 
@@ -1286,10 +1220,10 @@ function reversedRing(points: ArrayLike<number>): number[] {
 
 /**
  * Cuts a convex ring along the world-aligned `FLAT_GRID_LEN` grid and hands each cell to `fan`.
- * docs/render.md § Flats are diced on a world grid.
+ * Convex in, convex out — which `SubSectorPoly.points` guarantees (`render/bsp.ts`) and which is
+ * what lets each cell be fanned. docs/render.md § Flats are diced on a world grid.
  *
- * The buffers are module-level scratch: this runs per flat per level build, and once more per
- * moving subsector whenever a mover's footprint is rebuilt. Nothing here reenters.
+ * The buffers are module-level scratch, reused across every flat on the map; nothing here reenters.
  *
  * The cuts go through `util/geom.ts`'s `clipConvexPolygon`, which keeps the `cross <= 0` half-plane
  * of a line given as a point plus a direction. The four axis-aligned halves this needs are that
@@ -1301,9 +1235,6 @@ function reversedRing(points: ArrayLike<number>): number[] {
  * | `x <= at` | `(at, 0)` | `(0, -1)` |
  * | `y >= at` | `(0, at)` | `(-1, 0)` |
  * | `y <= at` | `(0, at)` | `(1, 0)`  |
- *
- * Convex in, convex out — which `SubSectorPoly.points` guarantees (`render/bsp.ts`) and which is
- * what lets each cell be fanned.
  */
 function diceOnGrid(ring: ArrayLike<number>, fan: (cell: ArrayLike<number>) => void): void {
   const n = ring.length / 2;
@@ -1361,9 +1292,9 @@ function diceOnGrid(ring: ArrayLike<number>, fan: (cell: ArrayLike<number>) => v
 }
 
 /**
- * The art a flat fan would draw with, or null where there is none to draw — sky and the unset slot
- * are holes in the level by design, a name the WAD has no lump for is a hole by accident. Shared
- * with `planFlatRefresh`, which has to reach the same verdict about a fan it is *not* emitting.
+ * The art a flat fan would draw with, or null where there is none — sky and the unset slot are
+ * holes by design, a name the WAD has no lump for is one by accident. Shared with
+ * `planFlatRefresh`, which must reach the same verdict about a fan it is *not* emitting.
  */
 function flatArt(kind: SurfaceKind, texName: string, size: SizeFn): Size | null {
   if (texName === SKY_FLAT || texName === NO_TEXTURE || texName === '') return null;
@@ -1371,11 +1302,9 @@ function flatArt(kind: SurfaceKind, texName: string, size: SizeFn): Size | null 
 }
 
 function addFlatFan(
+  build: Build,
   poly: SectorPoly,
   ss: number,
-  batches: BatchSet,
-  size: SizeFn,
-  flatSurfaces: FlatSurface[],
   spec: FlatSpec,
   /**
    * Which bank the texture comes from: a solid structure's lid wears a *wall* texture (see
@@ -1384,22 +1313,20 @@ function addFlatFan(
   kind: SurfaceKind = 'flat',
 ): void {
   const { texName, height, isCeiling } = spec;
-  const dim = flatArt(kind, texName, size);
+  const dim = flatArt(kind, texName, build.size);
   if (!dim) return;
-  // Flats are 64x64 by definition and aligned to the world grid; a wall
-  // texture borrowed for a lid tiles at its own size instead.
-  const uw = kind === 'flat' ? 64 : dim.w;
-  const uh = kind === 'flat' ? 64 : dim.h;
+  // A wall texture borrowed for a lid tiles at its own size; a real flat at `FLAT_TEX_SIZE`.
+  const uw = kind === 'flat' ? FLAT_TEX_SIZE : dim.w;
+  const uh = kind === 'flat' ? FLAT_TEX_SIZE : dim.h;
 
   if (poly.points.length < 6) return;
   const color = litColor(spec.light);
   const alpha = spec.baseAlpha ?? 1;
-  const batch = batches.get(kind, texName);
+  const batch = build.batches.get(kind, texName);
   const vertexStart = batch.positions.length / 3;
   const xy: number[] = [];
 
-  // Floors keep the polygon's winding (normal up); ceilings are handed the reversed ring, which is
-  // the same coverage wound the other way, so their normal points down.
+  // Floors keep the polygon's winding (normal up); a ceiling gets the ring wound the other way.
   const ring = isCeiling ? reversedRing(poly.points) : poly.points;
 
   const emit = (cell: ArrayLike<number>, i: number): void => {
@@ -1420,7 +1347,7 @@ function addFlatFan(
 
   const vertexCount = batch.positions.length / 3 - vertexStart;
   if (vertexCount > 0) {
-    flatSurfaces.push({
+    build.flatSurfaces.push({
       key: batch.key,
       texName,
       vertexStart,
@@ -1466,19 +1393,13 @@ interface WallSpec {
 /**
  * True when the quad was drawn — what vanilla's `toptexture`/`bottomtexture` being non-zero decides
  * (see `addTwoSidedSide`'s midtexture clip). `bandVertically` off keeps the wall one quad tall
- * however high it is, which a wall whose height can move must be: `processLine`'s `holdsStill`
- * decides it, and `WALL_CHUNK_LEN` says why.
+ * however high it is, which a wall whose height can move must be: `Build.holdsStill` decides it,
+ * and `WALL_CHUNK_LEN` says why.
  */
-function addWall(
-  batches: BatchSet,
-  size: SizeFn,
-  spec: WallSpec,
-  occluders: WallOccluder[],
-  bandVertically: boolean,
-): boolean {
+function addWall(build: Build, spec: WallSpec, bandVertically: boolean): boolean {
   if (spec.topH <= spec.botH) return false;
   if (spec.texture === NO_TEXTURE || spec.texture === '') return false;
-  const dim = size('wall', spec.texture);
+  const dim = build.size('wall', spec.texture);
   if (!dim) return false;
 
   const dx = spec.bx - spec.ax;
@@ -1486,8 +1407,8 @@ function addWall(
   const len = Math.hypot(dx, dy);
   if (len < 1e-6) return false;
 
-  // DOOM darkens east-west walls and brightens north-south ones so that
-  // corners stay legible without real lighting (r_segs.c: R_StoreWallRange).
+  // Fake contrast: east-west walls darken, north-south brighten, so corners stay legible under
+  // flat sector lighting (`r_segs.c: R_StoreWallRange`).
   const color = litColor(spec.light, wallContrast(spec.ax, spec.ay, spec.bx, spec.by));
 
   const u0 = spec.xOffset / dim.w;
@@ -1495,11 +1416,11 @@ function addWall(
   const vTop = (spec.pegRef - spec.topH + spec.yOffset) / dim.h;
   const vBot = (spec.pegRef - spec.botH + spec.yOffset) / dim.h;
 
-  const batch = batches.get('wall', spec.texture);
+  const batch = build.batches.get('wall', spec.texture);
   const { ax, ay, bx, by, topH, botH } = spec;
 
-  // Cut into chunks both ways so the occlusion fade can dissolve a ball around
-  // the sightline instead of a full-height slab of wall — see WALL_CHUNK_LEN.
+  // Cut both ways so the fade can dissolve a ball around the sightline rather than a full-height
+  // slab of wall — see `WALL_CHUNK_LEN`.
   const chunks = Math.max(1, Math.ceil(len / WALL_CHUNK_LEN));
   const bands = bandVertically ? Math.max(1, Math.ceil((spec.topH - spec.botH) / WALL_CHUNK_LEN)) : 1;
   const alpha = spec.baseAlpha ?? 1;
@@ -1510,9 +1431,8 @@ function addWall(
     const cay = ay + dy * t0;
     const cbx = ax + dx * t1;
     const cby = ay + dy * t1;
-    // U runs linearly with wall length, so a chunk's edge U is the same lerp —
-    // exact, and shared edges land on identical values. V does the same with
-    // height, so a band's edges line up with its neighbours' just as exactly.
+    // U runs linearly with wall length, so a chunk's edge U is the same lerp and shared edges land
+    // on identical values. V does the same with height, for the bands.
     const cu0 = u0 + (u1 - u0) * t0;
     const cu1 = u0 + (u1 - u0) * t1;
 
@@ -1523,11 +1443,9 @@ function addWall(
       const bandVTop = vTop + ((vBot - vTop) * r) / bands;
       const bandVBot = vTop + ((vBot - vTop) * (r + 1)) / bands;
 
-      // A = top-left, B = top-right, C = bottom-right, D = bottom-left, with the face pointing to
-      // the right of a->b (DOOM's front side), as the two triangles A-D-C and A-C-B. Written out
-      // rather than built as tuples and iterated: the dicing above turns one wall into up to
-      // `chunks * bands` of these, and `refreshMoverMesh` re-runs the lot per moving sector per
-      // tic.
+      // A = top-left, B = top-right, C = bottom-right, D = bottom-left, facing right of a→b
+      // (DOOM's front side), as the triangles A-D-C and A-C-B. Written out rather than iterated:
+      // the dicing above makes up to `chunks * bands` of these, and a mover re-runs the lot per tic.
       const vertexStart = batch.positions.length / 3;
       pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, color, alpha); // A
       pushVertex(batch, cax, bandBot, -cay, cu0, bandVBot, color, alpha); // D
@@ -1535,7 +1453,7 @@ function addWall(
       pushVertex(batch, cax, bandTop, -cay, cu0, bandVTop, color, alpha); // A
       pushVertex(batch, cbx, bandBot, -cby, cu1, bandVBot, color, alpha); // C
       pushVertex(batch, cbx, bandTop, -cby, cu1, bandVTop, color, alpha); // B
-      occluders.push({
+      build.occluders.push({
         key: batch.key,
         vertexStart,
         vertexCount: 6,
@@ -1551,6 +1469,7 @@ function addWall(
         segBy: by,
         sector: spec.sector,
         line: spec.line,
+        texName: spec.texture,
         frontSide: spec.frontSide,
         subsector: -1,
         baseAlpha: spec.baseAlpha,
@@ -1560,54 +1479,44 @@ function addWall(
   return true;
 }
 
-function buildWalls(
-  map: DoomMap,
-  batches: BatchSet,
-  size: SizeFn,
-  wallHeightCap: number,
-  occluders: WallOccluder[],
-  transfers: SectorTransfers,
-  movableSectors?: Set<number>,
-): void {
+function buildWalls(build: Build): void {
+  const { map, movableSectors } = build;
   for (const [lineIndex, line] of map.linedefs.entries()) {
-    // Whole line, both sides: a static neighbour's step is sized from the
-    // moving sector's heights, so it can't stay in a batch nobody rebuilds
-    // (see MapMeshOptions.movableSectors).
+    // Whole line, both sides: a static neighbour's step is sized from the moving sector's heights,
+    // so it cannot stay in a batch nobody rebuilds (`MapMeshOptions.movableSectors`).
     if (movableSectors && touchesAny(map, line, movableSectors)) continue;
-    // Nothing here can move: `movableSectors` took every line that touches a
-    // mover out of this batch wholesale, a few lines up.
-    processLine(map, line, lineIndex, batches, size, wallHeightCap, occluders, transfers, () => true);
+    processLine(build, line, lineIndex);
   }
 }
 
-function processLine(
-  map: DoomMap,
-  line: LineDef,
-  lineIndex: number,
-  batches: BatchSet,
-  size: SizeFn,
-  wallHeightCap: number,
-  occluders: WallOccluder[],
-  transfers: SectorTransfers,
-  /**
-   * Whether this sector's floor and ceiling hold still. A quad may only be
-   * diced vertically when *both* the sectors that size it do: its band count is
-   * a function of its height, and `refreshMoverMesh` may only rewrite buffers
-   * whose quad count held still — see `WALL_CHUNK_LEN`. Static geometry answers
-   * true for everything; a mover mesh asks `movingSectors`.
-   */
-  holdsStill: (sectorIndex: number) => boolean,
-  /**
-   * Per-side filter: a side is only built if this returns true for its owning
-   * sector (undefined = build every side, the static-batch case, which excludes
-   * movable lines wholesale before it gets here). `buildMoverMesh`
-   * needs *side* granularity rather than line granularity for the one case
-   * where a line's two sides have different owners: between two movable
-   * sectors (e.g. a switch mounted on a lift's own frame) each mover builds
-   * only its own side, or both would build both and double every quad.
-   */
-  includeSide?: (sectorIndex: number) => boolean,
-): void {
+/** What both sides of a two-sided line share — resolved once per line by `processLine`. */
+interface LineView {
+  index: number;
+  flags: number;
+  /** `MapMeshOptions.wallHeightCap` applied: the height a wall in a sector is clipped to. */
+  cap: (sec: Sector, top: number) => number;
+  /** Whether these quads may be diced vertically — see `Build.holdsStill`. */
+  bandVertically: boolean;
+}
+
+/**
+ * One side of a two-sided line as `addTwoSidedSide` looks at it: the sidedef doing the drawing and
+ * the sector across from it. The two calls a line makes differ only in this.
+ */
+interface SideView {
+  /** The line's ends, ordered so the quads face right of a→b — this side's outward normal. */
+  a: Pos2;
+  b: Pos2;
+  side: SideDef;
+  secIndex: number;
+  sec: Sector;
+  otherIndex: number;
+  other: Sector;
+  frontSide: boolean;
+}
+
+function processLine(build: Build, line: LineDef, lineIndex: number): void {
+  const { map, transfers, wallHeightCap, holdsStill, includeSide } = build;
   const v1 = map.vertexes[line.v1];
   const v2 = map.vertexes[line.v2];
   if (!v1 || !v2) return;
@@ -1621,15 +1530,13 @@ function processLine(
 
   if (front && frontSec && !backSec) {
     if (includeSide && !includeSide(front.sector)) return;
-    // Solid wall: the middle texture spans the whole sector height — down to the
-    // *drawn* floor, so a 242 fake floor is not left ringed by the gap the flat
-    // moved away from (`Transfers.drawnFloor`, docs/render.md § Deep water).
+    // Solid wall: the middle texture spans the sector height, down to the *drawn* floor so a 242
+    // fake floor is not left ringed by a gap (docs/render.md § Deep water).
     const unpegged = (line.flags & LF.LOWER_UNPEGGED) !== 0;
     const floor = transfers.drawnFloor(front.sector);
-    const dim = size('wall', front.middle);
+    const dim = build.size('wall', front.middle);
     addWall(
-      batches,
-      size,
+      build,
       {
         ax: v1.x,
         ay: v1.y,
@@ -1646,7 +1553,6 @@ function processLine(
         line: lineIndex,
         frontSide: true,
       },
-      occluders,
       holdsStill(front.sector),
     );
     return;
@@ -1655,106 +1561,61 @@ function processLine(
   if (!front || !back || !frontSec || !backSec) return;
 
   // Two-sided line: each side gets its own step-up/step-down pieces, sized
-  // against the *drawn* heights opposite it. `addTwoSidedSide` resolves those
-  // from the two sector indexes rather than taking them apart, so the only thing
-  // that differs between the two calls is which side is doing the looking.
-  // Every tier of a two-sided line is sized from *both* sectors — the lower
-  // from the two floors, the upper from the two ceilings — so one of them
-  // moving is enough to keep the whole side undiced.
-  const bandVertically = holdsStill(front.sector) && holdsStill(back.sector);
+  // against the *drawn* heights opposite it (`twoSidedBands`). Every tier is
+  // sized from *both* sectors — the lower from the two floors, the upper from
+  // the two ceilings — so one of them moving is enough to leave the whole side
+  // undiced.
+  const view: LineView = {
+    index: lineIndex,
+    flags: line.flags,
+    cap,
+    bandVertically: holdsStill(front.sector) && holdsStill(back.sector),
+  };
   if (!includeSide || includeSide(front.sector)) {
-    addTwoSidedSide(batches, size, line.flags, v1, v2, front, front.sector, frontSec, back.sector, backSec, cap, occluders, lineIndex, true, transfers, bandVertically);
+    addTwoSidedSide(build, view, {
+      a: v1,
+      b: v2,
+      side: front,
+      secIndex: front.sector,
+      sec: frontSec,
+      otherIndex: back.sector,
+      other: backSec,
+      frontSide: true,
+    });
   }
   if (!includeSide || includeSide(back.sector)) {
-    addTwoSidedSide(batches, size, line.flags, v2, v1, back, back.sector, backSec, front.sector, frontSec, cap, occluders, lineIndex, false, transfers, bandVertically);
+    addTwoSidedSide(build, view, {
+      a: v2,
+      b: v1,
+      side: back,
+      secIndex: back.sector,
+      sec: backSec,
+      otherIndex: front.sector,
+      other: frontSec,
+      frontSide: false,
+    });
   }
 }
 
 /**
- * The ceiling a side of a two-sided line is sized against: the neighbour's
- * *drawn* ceiling, which a Boom 242 moves (`Transfers.drawnCeiling`), except
- * where the sector doing the looking has a 242 of its own.
- *
- * That exception is where a mesh built once has to stand in for a branch
- * vanilla picks per frame: an eye *inside* a 242 sector takes `R_FakeFlat`'s
- * above-ceiling branch, which hands the real ceiling straight back. Resolving
- * it against the sector the quads face into costs nothing, because that is the
- * only place they are ever seen from. docs/render.md § Deep water.
+ * The ceiling a side of a two-sided line is sized against: the neighbour's *drawn* ceiling, which
+ * a Boom 242 moves, except where the sector doing the looking has a 242 of its own. That exception
+ * stands in for a branch vanilla picks per frame from where the eye is — a quad is only ever seen
+ * from the sector it faces into. docs/render.md § Deep water.
  */
 function ceilingFacing(transfers: SectorTransfers, other: Sector, otherIndex: number, viewerSector: number): number {
   return transfers.heightSec(viewerSector) >= 0 ? other.ceilHeight : transfers.drawnCeiling(otherIndex);
 }
 
-/** The two solid tiers one side of a two-sided line draws — see `twoSidedBands`. */
-export interface DrawnBands {
-  /** The lower step, drawn when `lowerTop > lowerBot`. */
-  lowerBot: number;
-  lowerTop: number;
-  /** The upper step, drawn when `upperTop > upperBot` and not `skyPair`. */
-  upperBot: number;
-  upperTop: number;
-  /** Two sky ceilings, between which vanilla draws no upper at all. */
-  skyPair: boolean;
-}
-
-/**
- * **Which bands one side of a two-sided line actually draws, and how tall** —
- * the heights resolved through Boom's 242 transfers rather than read off the
- * two sectors, since a deep-water control sector moves both floors and the
- * neighbour's ceiling (`ceilingFacing`, `Transfers.drawnFloor`).
- *
- * The one owner of that rule, and deliberately so. `addTwoSidedSide` sizes its quads from this,
- * and the auto camera asks it what stands between the player and the camera's eye
- * (`game/autocamera.ts`'s `hidesFromCamera`) — two questions about the same geometry, which
- * answered from raw sector heights each drift apart. Written into a caller's record, so neither
- * allocates.
- *
- * The `wallHeightCap` a mesh build may also clip to is deliberately *not* here:
- * it is a build option nothing in the game sets, and no occlusion question
- * wants a wall shortened by it. docs/render.md § Mesh building.
- */
-export function twoSidedBands(
-  transfers: SectorTransfers,
-  sec: Sector,
-  secIndex: number,
-  other: Sector,
-  otherIndex: number,
-  out: DrawnBands,
-): void {
-  out.lowerBot = transfers.drawnFloor(secIndex);
-  out.lowerTop = transfers.drawnFloor(otherIndex);
-  out.upperBot = ceilingFacing(transfers, other, otherIndex, secIndex);
-  out.upperTop = sec.ceilHeight;
-  out.skyPair = sec.ceilTex === SKY_FLAT && other.ceilTex === SKY_FLAT;
-}
-
 /** `addTwoSidedSide`'s own scratch — it is not reentrant, so one record serves every side. */
 const sideBands: DrawnBands = { lowerBot: 0, lowerTop: 0, upperBot: 0, upperTop: 0, skyPair: false };
 
-function addTwoSidedSide(
-  batches: BatchSet,
-  size: SizeFn,
-  flags: number,
-  a: Pos2,
-  b: Pos2,
-  side: SideDef,
-  secIndex: number,
-  sec: Sector,
-  otherIndex: number,
-  other: Sector,
-  cap: (sec: Sector, top: number) => number,
-  occluders: WallOccluder[],
-  lineIndex: number,
-  frontSide: boolean,
-  transfers: SectorTransfers,
-  bandVertically: boolean,
-): void {
-  // The heights this side is *sized* against. Boom's 242 moves the floors on
-  // both sides of the line and the ceiling only on the neighbour's: vanilla
-  // fakes front and back sector alike (`r_bsp.c: R_AddLine`), and only the
-  // ceiling half has a branch that turns on where the eye is (`ceilingFacing`).
-  // Everything below reads these, never `sec.floorHeight`/`other.ceilHeight` —
-  // except the midtexture's peg anchor, which is the one thing 242 leaves alone.
+function addTwoSidedSide(build: Build, line: LineView, view: SideView): void {
+  const { size, transfers } = build;
+  const { a, b, side, secIndex, sec, otherIndex, other } = view;
+  // The heights this side is *sized* against. Everything below reads these, never
+  // `sec.floorHeight`/`other.ceilHeight` — except the midtexture's peg anchor, the one thing a 242
+  // leaves alone (docs/render.md § Deep water).
   twoSidedBands(transfers, sec, secIndex, other, otherIndex, sideBands);
   const otherCeil = sideBands.upperBot;
   const selfFloor = sideBands.lowerBot;
@@ -1769,41 +1630,36 @@ function addTwoSidedSide(
     yOffset: side.yOffset,
     light: sec.light,
     sector: secIndex,
-    line: lineIndex,
-    frontSide,
+    line: line.index,
+    frontSide: view.frontSide,
   };
-  const upperUnpegged = (flags & LF.UPPER_UNPEGGED) !== 0;
-  const lowerUnpegged = (flags & LF.LOWER_UNPEGGED) !== 0;
+  const upperUnpegged = (line.flags & LF.UPPER_UNPEGGED) !== 0;
+  const lowerUnpegged = (line.flags & LF.LOWER_UNPEGGED) !== 0;
 
   // Upper: this sector's ceiling is higher than the neighbour's.
   let upperDrawn = false;
   if (sec.ceilHeight > otherCeil && !skyPair) {
     const dim = size('wall', side.upper);
     upperDrawn = addWall(
-      batches,
-      size,
+      build,
       {
         ...base,
-        topH: cap(sec, sec.ceilHeight),
-        botH: Math.min(cap(sec, sec.ceilHeight), otherCeil),
+        topH: line.cap(sec, sec.ceilHeight),
+        botH: Math.min(line.cap(sec, sec.ceilHeight), otherCeil),
         texture: side.upper,
         pegRef: upperUnpegged ? sec.ceilHeight : otherCeil + (dim?.h ?? 128),
       },
-      occluders,
-      bandVertically,
+      line.bandVertically,
     );
   }
 
-  // Lower: the neighbour's floor is higher, so a step faces this side. A 242
-  // pool's surface never moves this — its bottom is drawn at the real floor, and
-  // a step sized to the surface would ring that bottom with a hole. A 242 *fake
-  // floor* does, on both sides at once, because there the one drawn floor is the
-  // fake one (`Transfers.drawnFloor`, docs/render.md § Deep water).
+  // Lower: the neighbour's floor is higher, so a step faces this side. A pool's surface never
+  // moves this — a step sized to it would ring the bottom with a hole — but a fake floor does, on
+  // both sides at once. docs/render.md § Deep water.
   let lowerDrawn = false;
   if (otherFloor > selfFloor) {
     lowerDrawn = addWall(
-      batches,
-      size,
+      build,
       {
         ...base,
         topH: otherFloor,
@@ -1811,38 +1667,25 @@ function addTwoSidedSide(
         texture: side.lower,
         pegRef: lowerUnpegged ? sec.ceilHeight : otherFloor,
       },
-      occluders,
-      bandVertically,
+      line.bandVertically,
     );
   }
 
-  // Middle: optional masked texture (grates, bars) hung across the line. Boom's
-  // 260 makes one translucent, and overloads this same name to point at the
-  // translucency map — in which case there is no texture to draw at all.
-  // docs/specials.md § Translucent midtextures.
-  if (side.middle !== NO_TEXTURE && side.middle !== '' && !transfers.midtexSuppressed(lineIndex)) {
+  // Middle: optional masked texture (grates, bars) hung across the line. Boom's 260 makes one
+  // translucent and overloads the same name to point at the translucency map, in which case there
+  // is no texture to draw at all. docs/specials.md § Translucent midtextures.
+  if (side.middle !== NO_TEXTURE && side.middle !== '' && !transfers.midtexSuppressed(line.index)) {
     const dim = size('wall', side.middle);
     if (dim) {
-      // What the midtexture is cut to: the tiers this side actually drew, which
-      // is the opening only where both of them are there. A step whose texture
-      // the mapper left off draws nothing and so cuts nothing, and the
-      // midtexture runs on to this sector's own floor/ceiling — the barred-gate
-      // idiom depends on it (`r_segs.c: R_RenderSegLoop`'s `ceilingclip =
-      // yl - 1` / `floorclip = yh + 1`, docs/render.md § Mesh building). Two
-      // sky ceilings are vanilla's one exception: `R_StoreWallRange` pulls the
-      // front ceiling down to the back's before any of this ("hack to allow
-      // height changes in outdoor areas"), so the cut lands there instead.
+      // What the midtexture is cut to: the tiers this side actually drew, so a step the mapper
+      // left untextured cuts nothing and the texture runs on to this sector's own floor and
+      // ceiling. Two sky ceilings are vanilla's one exception. docs/render.md § What cuts a
+      // midtexture.
       const clipTop = skyPair ? otherCeil : upperDrawn ? Math.min(sec.ceilHeight, otherCeil) : sec.ceilHeight;
       const clipBot = lowerDrawn ? Math.max(selfFloor, otherFloor) : selfFloor;
-      // The quad is the texture's own band — one copy hung off the pegged
-      // anchor, sidedef y-offset included — clipped to that range, never sized
-      // to it: vanilla draws a masked midtexture once and lets the seg's clip
-      // arrays cut it (r_segs.c: R_RenderMaskedSegRange).
-      //
-      // The anchor is the seg's *real* sectors even where the opening is a 242's
-      // drawn one: `R_RenderMaskedSegRange` reads `curline->frontsector` and
-      // `->backsector` straight off the seg, and runs `R_FakeFlat` only to pick
-      // the light level. docs/render.md § Deep water.
+      // The quad is the texture's own band — one copy hung off the pegged anchor, y-offset
+      // included — *clipped* to that range, never sized to it. The anchor reads the **real**
+      // sectors even where the opening is a 242's drawn one (docs/render.md § Deep water).
       const pegTop = Math.min(sec.ceilHeight, other.ceilHeight);
       const pegBot = Math.max(sec.floorHeight, other.floorHeight);
       const pegRef = lowerUnpegged ? pegBot + dim.h : pegTop;
@@ -1850,18 +1693,16 @@ function addTwoSidedSide(
       const top = Math.min(clipTop, texTop);
       const bot = Math.max(clipBot, texTop - dim.h);
       addWall(
-        batches,
-        size,
+        build,
         {
           ...base,
           topH: top,
           botH: bot,
           texture: side.middle,
           pegRef,
-          baseAlpha: transfers.translucentLine(lineIndex) ? TRANSLUCENT_ALPHA : undefined,
+          baseAlpha: transfers.translucentLine(line.index) ? TRANSLUCENT_ALPHA : undefined,
         },
-        occluders,
-        bandVertically,
+        line.bandVertically,
       );
     }
   }

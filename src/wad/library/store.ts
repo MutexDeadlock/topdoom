@@ -39,7 +39,7 @@ export interface LibraryDescriptor {
       `describeAll` re-reads rather than listing unknown — docs/wad.md § Will it run? */
   support?: WadSupport;
   /**
-   * `hashBytes` content id, present once something has needed the file's identity —
+   * `hashBytes` content ID, present once something has needed the file's identity —
    * `library.ts: ensureWadId`.
    */
   id?: string;
@@ -129,7 +129,7 @@ export function writeDescriptors(descriptors: readonly LibraryDescriptor[]): Pro
 }
 
 /**
- * Re-writes one row — how a content id reaches the memo, so a file is hashed once ever.
+ * Re-writes one row — how a content ID reaches the memo, so a file is hashed once ever.
  *
  * Takes the whole finished record rather than reading the stored one and patching it: an IndexedDB
  * transaction auto-commits as soon as control returns to the event loop with no request pending, so

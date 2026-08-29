@@ -5,8 +5,8 @@
 `src/main.ts`, `src/constants.ts: DEVMODE`, `src/ui/devmode/`, `src/util/profiler.ts`
 
 The menu is plain DOM: every element is static markup in `src/ui/menu/menu.html` (pulled into the
-page by `index.html`'s `@include` list — docs/styles.md § Assembling the page), looked up by id in
-`Menu`'s field initializers, so **an id renamed in the HTML fails at construction**, not lazily.
+page by `index.html`'s `@include` list — docs/styles.md § Assembling the page), looked up by ID in
+`Menu`'s field initializers, so **an ID renamed in the HTML fails at construction**, not lazily.
 Only the WAD lists, the level list and the difficulty options are built in JS.
 
 ## One screen, two jobs
@@ -54,13 +54,13 @@ ladder).
 
 ### Hotkeys
 
-`Esc` toggles between the menu and the game. With the menu open and no level loaded it does nothing
+`ESC` toggles between the menu and the game. With the menu open and no level loaded it does nothing
 — there is nothing to return to.
 
 `F2`, `F3` and `F4` open the menu directly on **Save**, **Load** and **Settings** (`Menu.showTab`,
-wired in `main.ts` beside the `Esc` handler); with the menu already open they only switch tabs.
+wired in `main.ts` beside the `ESC` handler); with the menu already open they only switch tabs.
 Two rules keep them from acting behind the player's back: an overlay up (changelog, WAD Library)
-takes precedence exactly as it does for `Esc`, and `F2` with no level loaded does nothing rather
+takes precedence exactly as it does for `ESC`, and `F2` with no level loaded does nothing rather
 than opening the menu on the Save tab `open` hides. `preventDefault` is called only when the key
 actually did something, so a refused press still reaches the browser's own binding.
 
@@ -75,9 +75,9 @@ file. Two things about it are load-bearing:
   than `fetch`, because the file lives at the repo root rather than under `public/`, so a fetch
   would resolve in dev and 404 in a build. A failed load is reported in the panel and leaves the
   popup unmarked as loaded, so reopening retries.
-- **`Esc` is handed off explicitly**, not raced. `main.ts`'s `Esc` listener calls
+- **`ESC` is handed off explicitly**, not raced. `main.ts`'s `ESC` listener calls
   `menu.closeTopOverlay()` first, which dismisses whichever overlay is up and reports whether there
-  was one — so one `Esc` dismisses the popup and leaves the menu (and a paused level) alone. A
+  was one — so one `ESC` dismisses the popup and leaves the menu (and a paused level) alone. A
   second window listener in `Menu` would have made that depend on registration order.
 
 `#changelog` is a child of `#menu` so it disappears with it; `close()` also closes it, or it would
@@ -94,10 +94,10 @@ reload.
 Structurally it is `#changelog`'s twin, and deliberately so (§ Changelog): a child of `#menu` so
 closing the menu can never leave it up, at `z-index: 5` **local to `#menu`'s own stacking context**
 rather than a rung of `base.css`'s global ladder, dismissed by its close button, by a backdrop click
-guarded with `e.target === root`, or by `Esc`. `Close` sits beside `Apply` in the footer rather than
+guarded with `e.target === root`, or by `ESC`. `Close` sits beside `Apply` in the footer rather than
 in the header: both end the same visit, so they belong to the same corner — but they are **not** the
-same call (see *Ticking stages, Apply commits* below). `Esc` is **handed off explicitly** from
-`main.ts`, which asks `menu.closeTopOverlay()` before closing the menu, so one `Esc` closes one
+same call (see *Ticking stages, Apply commits* below). `ESC` is **handed off explicitly** from
+`main.ts`, which asks `menu.closeTopOverlay()` before closing the menu, so one `ESC` closes one
 thing and the answer doesn't depend on listener registration order. The overlay order lives in
 `Menu`, not the caller.
 
@@ -105,7 +105,7 @@ What is its own:
 
 - **Ticking stages, `Apply` commits, `Close` discards.** Every control in the file pane edits
   `LibraryUi`'s own `draftIwad`/`draftPwads` and nothing else; `Apply` hands the pair to
-  `Menu.applyPicks` and closes, and every other way out — the `Close` button, the backdrop, `Esc`,
+  `Menu.applyPicks` and closes, and every other way out — the `Close` button, the backdrop, `ESC`,
   the menu closing under it — throws the draft away. Browsing is what this overlay is *for*, so
   trying a game WAD on to see which add-ons it then allows, or ticking half a set and thinking
   better of it, has to cost nothing. `open` re-snapshots the draft from the menu, which is the whole
@@ -155,7 +155,7 @@ What is its own:
   this is testable without a DOM.
 - **A folder holding a picked WAD is highlighted**, and so is every folder above it, so a folded
   parent still says something inside it is in the set. The mark walks up `parent` from each row
-  whose own `sources` contain a pick — never by id prefix, for the `library:mega` /
+  whose own `sources` contain a pick — never by ID prefix, for the `library:mega` /
   `library:megawads` reason below — and lands on `.name` rather than the row, so it survives
   `.active`'s own colour.
 - **The sidebar is three boxes, not one scroller**, and the panel's height is *definite*
@@ -186,7 +186,7 @@ What is its own:
   and would cost the row its single focusable control. Its click is stopped from bubbling, so the
   glyph only ever folds and the label only ever selects. Collapsing a folder the selection sits
   *under* moves the selection up to it, which costs nothing since a folder already lists everything
-  beneath it. **Both the fold test and the walk up use `parent`, never an id prefix**:
+  beneath it. **Both the fold test and the walk up use `parent`, never an ID prefix**:
   `library:mega` is a string prefix of `library:megawads` without being its parent. Every such walk
   goes through `ancestors`, over a `TreeIndex` built **once per render** and threaded down. Each
   walk used to build its own `byId` — one per row, inside a per-row `filter` — which made a single
@@ -194,8 +194,8 @@ What is its own:
   pass for the same reason: it files each source under its own path and counts it against every
   folder above it, rather than scanning `sources` once per folder.
 - **The three top-level rows start open, everything below them folded.** `LibraryUi` tracks
-  *expanded* ids rather than collapsed ones precisely so the default is a property of that one set:
-  a collapsed-id set could not express it, since a folder the player has never touched is absent
+  *expanded* IDs rather than collapsed ones precisely so the default is a property of that one set:
+  a collapsed-ID set could not express it, since a folder the player has never touched is absent
   from it and would read as open. The set is seeded with `SERVER_ROOT`/`LIBRARY_ROOT`/`UPLOADS` —
   folding those too would open the overlay on two or three bare headings with nothing to act on.
   `selectedFolder` starts on a **top-level** row for the same reason: any deeper default would be a
@@ -245,8 +245,8 @@ What is its own:
   the only way to drop a pick from this pane, and a game WAD that no longer suits one is exactly
   when the player might want to — what the row must not do is accept a *new* pick the set can't
   use.
-- **Applying a library file gives it its content id** (`Menu.identify` → `ensureWadId` +
-  `rememberLibraryId`), which the scan deliberately skipped — docs/wad.md § Content id. It is
+- **Applying a library file gives it its content ID** (`Menu.identify` → `ensureWadId` +
+  `rememberLibraryId`), which the scan deliberately skipped — docs/wad.md § Content ID. It is
   remembered on disk, so a file is hashed once ever rather than once per session. Deferred to
   `applyPicks` rather than paid on the tick, so trying a WAD on and thinking better of it hashes
   nothing.
@@ -431,7 +431,7 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   the row resolves it against the current library through `mergedMaps` and names it with the same
   `describeMap` the level select uses — `<lump>  —  <title>  —  <provider>`, so the two lists can't
   disagree about what a level is called. The same pass reports every file of the set the library can
-  no longer supply, one line per file — matched by *content id* (`resolveSaveWads`, the same call
+  no longer supply, one line per file — matched by *content ID* (`resolveSaveWads`, the same call
   the load path makes), so a renamed WAD is not reported and a file whose bytes have changed reads
   `Different IWAD/PWAD: …` rather than `Missing IWAD/PWAD: …`, which would send the player looking
   for something they already have. A file the load actually needs back (the game WAD, or the map's
@@ -449,7 +449,7 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   the WAD lists, so bringing that file back clears the warning on the spot rather than on the menu's
   next `open` — which is also why `Menu` keeps the last `inGame` it was opened with.
 - **The name in each row is an `<input>`** — renaming happens in place (`renameSave`), Enter or blur
-  commits, Esc reverts and is stopped from bubbling to `main.ts`'s menu-closing handler. An
+  commits, ESC reverts and is stopped from bubbling to `main.ts`'s menu-closing handler. An
   untouched field re-renders nothing, so a plain focus-and-blur can't pull the row out from under a
   click heading for one of its own buttons. Nor does a *successful* rename, or a delete: both patch
   the visible list (the input's own value, `row.remove()`) and only mark the other tab's list stale.
@@ -472,7 +472,7 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
   a CSS transition whose duration is handed over as `--hold-time`, so the bar and the timer can't
   disagree; the label moves into a `.label` span so the `.fill` can paint behind it, and Space/Enter
   held on a focused button works the same way. Both are per row; Overwrite refills that save from
-  the current moment, keeping its id and its name (renaming has its own affordance). Delete and
+  the current moment, keeping its ID and its name (renaming has its own affordance). Delete and
   download are icon-only buttons (`⤓`, `🗑︎` with a text-presentation selector) with their meaning in
   the tooltip; Load and Overwrite are `.primary`.
 - **Download** writes the save as `<map>-<date>.topdoom.json` through a temporary anchor: one
@@ -497,7 +497,7 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
 - **Only the tab on screen is built.** `refresh` marks both lists stale and renders whichever
   `Menu.setTab` last declared visible (`setVisible`); the other waits until it's picked. Listing
   itself is a cheap meta read since the store's meta/state split, but rendering still costs one
-  thumbnail decode and one `describeSave` per row, and `open()` runs on every `Esc` pause and once
+  thumbnail decode and one `describeSave` per row, and `open()` runs on every `ESC` pause and once
   at boot — a player who never opens Save or Load must not pay for the rows at all. `renderVisible`
   is async (the listing awaits IndexedDB) and guards itself with an epoch ticket: a refresh or tab
   switch while a listing is in flight starts a newer render, the older one discards instead of
@@ -752,7 +752,7 @@ window is several rooms away from the spawn, so scripting a walk to it is far mo
 ## Session lifecycle (`main.ts`)
 
 `boot()` creates everything that must outlive a level exactly once — `Viewport` (one WebGL context
-and one canvas for the whole page), `AudioEngine` (one `AudioContext`), the `Menu`, and the `Esc`
+and one canvas for the whole page), `AudioEngine` (one `AudioContext`), the `Menu`, and the `ESC`
 listener — and holds a single mutable `game: Game | null`. A `Game` is per-WAD-set/per-level and is
 built to be thrown away and replaced.
 
@@ -772,7 +772,7 @@ Rules that hold this together:
   unrelated bug isn't misreported as a GPU problem.
 - **A finished campaign ends the session.** `Game` takes an `onCampaignEnd` port beside its
   checkpoint store, called when the end card's continue key has nowhere left to go (docs/hud.md
-  § End card). `endSession` nulls `game` *before* disposing it — the call arrives from inside that
+  § End card). The handler nulls `game` *before* disposing it — the call arrives from inside that
   very `Game`'s tic — and reopens the menu with `open(false)`, as a launcher: there is no returning
   to a run that is over.
 - **`audio.resume()` runs synchronously before `startLevel`'s first `await`**, while still inside
@@ -780,17 +780,17 @@ Rules that hold this together:
   deep link never gets that click, so `boot` also arms one-shot `pointerdown`/`keydown` unlockers.
 - **The `game` slot is cleared before the old level is disposed.** A `Game` constructor that throws
   (a WAD with no maps, a mesh build failure) would otherwise leave `game` pointing at a *disposed*
-  instance, and both "Return to game" and the `Esc` handler key off it being non-null — resuming it
+  instance, and both "Return to game" and the `ESC` handler key off it being non-null — resuming it
   restarts a render loop over released GPU resources. On failure the menu stays open, shows the
   error, and is re-synced with `open(game !== null)` so it stops offering a return.
 - **"Return to game" is disabled for the duration of a start** (`startWithSkill`), since the level
   it would return to is disposed part-way through.
 - **A load is the same `startLevel`**, given the save as a second argument: it verifies the
-  assembled set's game WAD and map provider against the save's own ids (`verifySaveWads`, over
+  assembled set's game WAD and map provider against the save's own IDs (`verifySaveWads`, over
   `wadSetRefusal` — docs/savegames.md § WAD-set identity) and hands `Game` the snapshot instead of
   `?pos=`. Everything above — the audio gesture, the dispose ordering, the failure re-sync — is one
   copy, so a lifecycle fix can't reach the new-game path and miss the load path. `loadSave` only
-  re-resolves each `wads` entry to a `WadSource` by content id first, and a *required* file the
+  re-resolves each `wads` entry to a `WadSource` by content ID first, and a *required* file the
   library can't supply fails *there*, before anything is torn down, so the running level survives a
   load that can't happen; an add-on that supplied neither the map nor the game WAD is left out of
   the set instead.
@@ -799,7 +799,7 @@ Rules that hold this together:
   § The HUD and § Screen effects. `dispose` clears the center message, the level card and the
   intermission popup for that reason: all three are static markup that outlives the `Game` that
   raised them.
-- `Esc` works during the intermission popup too. `pause()`/`stillFrame` keep drawing, the menu sits
+- `ESC` works during the intermission popup too. `pause()`/`stillFrame` keep drawing, the menu sits
   over the popup, and `resume()`'s `input.reset()` drops the keypress that would otherwise dismiss
   it the moment the game comes back.
 

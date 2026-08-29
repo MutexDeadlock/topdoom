@@ -57,7 +57,7 @@ function fanHeights(scene: THREE.Object3D, built: { flatSurfaces: { sector: numb
 
 /** Press the switch the player is standing at, then let whatever it started run to a stop. */
 function pressSwitch(rig: ReturnType<typeof specialsRig>, at: Pos2): void {
-  rig.specials.update(TIC, at.x, at.y, 0, USE_INPUT, new Set());
+  rig.specials.update(TIC, { ...at, angle: 0 }, USE_INPUT, new Set());
   for (let i = 0; i < 200; i++) rig.tick(TIC);
 }
 

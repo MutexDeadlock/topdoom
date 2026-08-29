@@ -443,7 +443,7 @@ export interface MonsterAttack {
   blast?: { knockUpSpeed: number; splashRadius: number; splashDamage: number };
   /**
    * Set only for a `'resurrect'` attack (`AttackStats.resurrects`): the raised corpse's
-   * `PosedThing` id — see `ThingLayer.update`, which applies the actual revival since
+   * `PosedThing` ID — see `ThingLayer.update`, which applies the actual revival since
    * `stepMonsterAI` has no access to the thing list itself.
    */
   resurrectId?: number;
@@ -453,12 +453,12 @@ export interface MonsterAttack {
  * A fired `MonsterAttack`, plus who fired it and at what — what
  * `ThingLayer.update` hands back for the caller to realize (a tracer, a
  * projectile, `damage` on whatever it actually reached). Lives here rather than
- * with `ThingLayer`: everything it adds to `MonsterAttack` is a plain id or
+ * with `ThingLayer`: everything it adds to `MonsterAttack` is a plain ID or
  * coordinate, so it carries no dependency on the thing storage at all.
  */
 export interface MonsterAttackEvent extends MonsterAttack, Pos3 {
   /**
-   * The firing monster's own id and doomednum, so a shot that lands on another monster can be
+   * The firing monster's own ID and doomednum, so a shot that lands on another monster can be
    * attributed (and species-checked) correctly.
    */
   sourceId: number;
@@ -468,7 +468,7 @@ export interface MonsterAttackEvent extends MonsterAttack, Pos3 {
    * clear of it a hitscan tracer starts (docs/combat.md § Effects and their batching).
    */
   sourceRadius: number;
-  /** What it was aimed at: `null` for the player, otherwise another monster's id. */
+  /** What it was aimed at: `null` for the player, otherwise another monster's ID. */
   targetId: number | null;
 }
 

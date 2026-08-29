@@ -774,7 +774,7 @@ version).
 A PWAD carrying a `DEHACKED` lump is now a **required** WAD. Without that it would be droppable with
 a warning row, and dropping it would silently revert every patched table under a save written
 against it — a change in what the save *means*, not just how it looks. `SaveMeta` carries an
-optional `patchWads` naming those files' content ids; its absence means no patch was applied, which
+optional `patchWads` naming those files' content IDs; its absence means no patch was applied, which
 is exactly what every save written before the field existed meant.
 
 `snapshotThings` elides a monster's `health` when it equals `spawnHealthFor(type, dropped)`, which

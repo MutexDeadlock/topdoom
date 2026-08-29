@@ -164,7 +164,7 @@ export const SILENT: SoundEmitter = { play: () => {} };
 /**
  * Origin keys (`SoundEmitter.play`'s third argument). Vanilla keys the
  * one-sound-per-origin rule on the emitting `mobj_t*`; the equivalents here are
- * the player, a `PosedThing` id and a sector index, which overlap as plain
+ * the player, a `PosedThing` ID and a sector index, which overlap as plain
  * numbers and so get disjoint ranges. The offsets sit far past any WAD's own
  * 16-bit thing/sector index counts.
  */

@@ -12,7 +12,7 @@ types and encoding helpers in `game/snapshot.ts`, the menu surface in `ui/menu/s
 
 ## The format and its version
 
-`SaveGame` = `SaveMeta` (id, `version`, ISO date, display name, map lump name, skill, the WAD list,
+`SaveGame` = `SaveMeta` (ID, `version`, ISO date, display name, map lump name, skill, the WAD list,
 level time, `thumb` data URL) + `state: GameSnapshot`. The snapshot serializes as JSON with four
 deliberate encodings, all owned by `game/snapshot.ts`:
 
@@ -73,7 +73,7 @@ bump (pinned in `tests/game/things-snapshot.test.ts`).
 Object references never serialize as references: a thing's `sector`, the world's
 `soundAlertedSectors` and a spawn cube's `target` are saved as indices and re-resolved against the
 freshly loaded map (the reference-equality hazard is real: `ThingLayer.monstersInSector` compares
-`Sector` objects by identity). Cross-*thing* references (`targetId`, `sourceId`) were already ids —
+`Sector` objects by identity). Cross-*thing* references (`targetId`, `sourceId`) were already IDs —
 `PosedThing.id` is its index in `posed`, and the saved thing list keeps that order, which is why a
 restore must never skip an entry (`buildThingSprites` throws on missing art instead).
 
@@ -252,8 +252,8 @@ load gets a fresh object per read either way and does not depend on it.
    not in step 3: `findSwitchEntries` reads the authored sidedef as the off state, so flipping
    before that scan would invert every pair.
 10. `world.restoreSoundAlerted(...)`.
-11. `buildThingSprites(..., restore)` — the spawn loop is skipped and `posed` rebuilt from the
-    save in order.
+11. `buildThingSprites(world, { restore, … })` — the spawn loop is skipped and `posed` rebuilt
+    from the save in order.
 12. `new IconOfSin(...)` → `icon.restore(...)`.
 13. `projectiles.restore(...)` — into the layer step 4's `beginLevel` already cleared — then
     `cheats.restore(...)`, order-free: nothing else reads the toggles during a load
@@ -274,7 +274,7 @@ load gets a fresh object per read either way and does not depend on it.
 ## Storage
 
 Saves live in IndexedDB (database `topdoom`, `game/savestore.ts`), split across two object stores
-keyed by save id: `saves-meta` holds each `SaveMeta` as a plain structured-clone object, and
+keyed by save ID: `saves-meta` holds each `SaveMeta` as a plain structured-clone object, and
 `saves-state` holds the snapshot as **gzipped JSON bytes** (`CompressionStream`, native in browser
 and Node alike) tagged with a `STATE_ENCODING` number. The split is the point: `listSaves` is one
 `getAll` over metas and never touches a state, so the save list costs thumbnails, not snapshots.
@@ -301,7 +301,7 @@ the plumbing is shared.
 Reads are validated per meta in the `besttimes.ts` style: a malformed record renders as unloadable
 rather than taking the list down. **The save list has no count limit**: storage is bounded by the
 origin's quota alone, and nothing evicts a save the player did not delete. `overwriteSave` refills a
-slot keeping its id and name, and `renameSave` touches the name only (`at` included, so the list
+slot keeping its ID and name, and `renameSave` touches the name only (`at` included, so the list
 can't reorder under the cursor — and the meta record only, so renaming never rewrites state bytes).
 A `QuotaExceededError` out of the write transaction surfaces as a
 readable message in the menu (mapped in `savegames.ts`, not the backend, so the tests' in-memory
@@ -314,7 +314,7 @@ NUTS.WAD with all 10k monsters wounded ~3 MB.
 
 ## The checkpoint
 
-Advancing into a level writes a **checkpoint**: an ordinary save, under the reserved id
+Advancing into a level writes a **checkpoint**: an ordinary save, under the reserved ID
 `AUTOSAVE_ID` (`'auto'`), taken by `Game.enterLevel` immediately *after* `loadMapByIndex` has built
 the new level. Dying and pressing `R` reloads it, so a death costs the level and not the run's
 inventory (docs/death.md § Player death) — unless the level has a savegame of its own, which `R`
@@ -325,8 +325,8 @@ Both ways of arriving at the next level go through
 a level with no checkpoint to restart from. The session's *first* level is deliberately not one of
 them: nothing was advanced into, so `R` there restarts as it always did.
 
-The reserved id is the whole mechanism, and that is deliberate: hiding a save by *id* needs no
-`SaveMeta` field, so the format is unchanged and `SAVE_VERSION` did not move. The id is also what
+The reserved ID is the whole mechanism, and that is deliberate: hiding a save by *ID* needs no
+`SaveMeta` field, so the format is unchanged and `SAVE_VERSION` did not move. The ID is also what
 makes it self-overwriting — the same key replaces both records, so there is only ever one — and
 `freshId` (a base-36 timestamp plus a counter) can never collide with it. Two consequences the
 code has to honor, both in `savegames.ts`:
@@ -368,7 +368,7 @@ state record is missing outright: there are no bytes left to hand over.
 
 `importSave` re-validates everything a foreign file could get wrong — JSON, version (named both
 ways on mismatch), meta shape, base64, gzip, the snapshot's own shape — and then stores the
-*decoded* bytes verbatim rather than recompressing, under a fresh id (importing the same file
+*decoded* bytes verbatim rather than recompressing, under a fresh ID (importing the same file
 twice must make two saves, never overwrite) and a meta rebuilt through `asMeta` so no extra
 top-level keys are smuggled into storage. The pre-IndexedDB export shape (`state` as a plain JSON
 object) is refused: the format is unreleased, so it gets no compat path.
@@ -376,11 +376,11 @@ object) is refused: the format is unreleased, so it gets no compat path.
 ## WAD-set identity
 
 A save embeds its whole WAD set as **one list in load order**, `wads[0]` the game WAD, plus
-`mapWad` — the content id of the file that supplied the saved map's lumps. A `SaveWad` is exactly
+`mapWad` — the content ID of the file that supplied the saved map's lumps. A `SaveWad` is exactly
 what `wadSetId(wad)` produces and `mapWad` exactly what `wadId(wad.providerOf(map))` does — nothing
 is added on the way into the store — and a `SaveWad`'s two fields have sharply different jobs:
 
-- **`id`** — `wadId`'s content hash (docs/wad.md § Content id, designed for exactly this). **This
+- **`id`** — `wadId`'s content hash (docs/wad.md § Content ID, designed for exactly this). **This
   is the file's identity**, and the only thing a load matches on.
 - **`name`** — what the file was called at save time. Purely for the player: it names the file to
   go and find. Nothing keys through it, so a renamed WAD still loads.
@@ -392,9 +392,9 @@ that key and resolve through it, which meant a save made against an uploaded IWA
 from the server's byte-identical copy. Matching on `id` fixes both, and it is why `Game.captureSave`
 needs to know nothing about the library the files came from — the capture *is* the format.
 
-Matching by id requires every `WadSource` to know its own id up front, since the save list resolves
+Matching by ID requires every `WadSource` to know its own ID up front, since the save list resolves
 synchronously on every render and must not download anything. So **the manifest carries each
-server WAD's id**, computed in `plugins/wad-manifest.ts`, whose `describeWad` already holds the
+server WAD's ID**, computed in `plugins/wad-manifest.ts`, whose `describeWad` already holds the
 whole file in memory; an upload is hashed once as it is added. The two must produce the same string
 for the same bytes — the plugin hashes a Node `Buffer`, the runtime an `ArrayBuffer` — or every
 load would refuse, so `tests/wad/checksum.test.ts` pins that agreement directly.
@@ -431,7 +431,7 @@ refusing was an invisible one they could not.
 `Menu.resolveSaveWads` resolves the **whole set at once**, in load order, and is the only place that
 happens: the save row (`describeSave`) and the load path (`main.ts`'s `loadSave`) both call it, so a
 row reporting no problem can't be followed by a load that fails on one. It also does the
-*diagnosis*: no id match, but a file of the same name present, means the same WAD in a different
+*diagnosis*: no ID match, but a file of the same name present, means the same WAD in a different
 version. The wording for every outcome — required or not — comes from this module and nowhere else,
 in two lengths that are written together: `missingWadLabel` names the file and the problem for the
 save row, which has ~55 characters before it ellipsizes, and `missingWadText` says what to do about
@@ -454,5 +454,5 @@ message or null. `verifySaveWads` (`main.ts`, on the shared `startLevel` path �
 docs/menu.md § Session lifecycle) throws what it returns; `Game.matchesSession`, the checkpoint's
 fit test, compares it to null, so a checkpoint cannot refuse where a manual load would work. Both
 feed it freshly re-hashed bytes (`wadSetId`, `mapProvider` in `wad/checksum.ts`) even though
-resolution already matched ids: a manifest id is a build-time claim, and re-hashing what is
+resolution already matched IDs: a manifest ID is a build-time claim, and re-hashing what is
 actually in hand is what catches a manifest left stale by a changed file.

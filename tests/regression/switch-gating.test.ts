@@ -1,7 +1,9 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { NO_SIDE, type DoomMap } from '../../src/wad/map.ts';
+import type { Placement, Pos2 } from '../../src/types.ts';
 import type { Input } from '../../src/game/input.ts';
+import type { SpecialsController } from '../../src/game/specials.ts';
 import { gridMap } from '../fixtures/gridmap.ts';
 import { NO_INPUT, specialsRig, TIC } from '../fixtures/specialsrig.ts';
 
@@ -30,9 +32,26 @@ function boundary(map: DoomMap, a: number, b: number): number {
   return i;
 }
 
-function controller(map: DoomMap, startX: number, startY: number) {
-  return specialsRig(map, { x: startX, y: startY }).specials;
+/**
+ * The rig's controller as these tests drive it: `update` picked off the class so its signature is
+ * never re-declared here, plus the two private members they reach for. `SpecialsController &` will
+ * not do — TS treats private members nominally, so intersecting over them yields `never`.
+ */
+type SwitchProbe = Pick<SpecialsController, 'update'> & {
+  trigger(i: number, keys: Set<never>): unknown;
+  usedOnce: Set<number>;
+};
+
+function controller(map: DoomMap, at: Pos2): SwitchProbe {
+  return specialsRig(map, at).specials as unknown as SwitchProbe;
 }
+
+/** The crusher test reaches for three more of the controller's private members. */
+type CrusherProbe = SwitchProbe & {
+  triggerCrusherStop(s: number): boolean;
+  triggerCrusher(s: number, e: unknown): boolean;
+  ceilingMovers: Map<number, { state: string; stoppedFrom?: string; speed: number; silent: boolean }>;
+};
 
 /**
  * Two rooms either side of a corridor. Both switch lines carry the same tag, so
@@ -61,11 +80,7 @@ describe('Regressions · switch gating and crusher stasis', () => {
     // that the second press lands while the first is still running.
     const { grid, map, lineA, lineB } = twoSwitchMap(23);
     const start = grid.centre(1, 1);
-    const specials = controller(map, start.x, start.y) as unknown as {
-      trigger(i: number, keys: Set<never>): unknown;
-      usedOnce: Set<number>;
-      update(dt: number, x: number, y: number, a: number, input: Input, keys: Set<never>): void;
-    };
+    const specials = controller(map, start);
 
     specials.trigger(lineA, new Set());
     assert.ok(specials.usedOnce.has(lineA), 'the first switch acted, so it is spent');
@@ -79,7 +94,7 @@ describe('Regressions · switch gating and crusher stasis', () => {
     );
 
     // Let the floor finish, then the same line works and is spent.
-    for (let i = 0; i < 400; i++) specials.update(TIC, start.x, start.y, 0, NO_INPUT, new Set());
+    for (let i = 0; i < 400; i++) specials.update(TIC, { ...start, angle: 0 }, NO_INPUT, new Set());
     specials.trigger(lineB, new Set());
     assert.ok(specials.usedOnce.has(lineB), 'once the sector is free the switch acts and is spent');
   });
@@ -104,10 +119,7 @@ describe('Regressions · switch gating and crusher stasis', () => {
     for (const i of [once, again]) map.sidedefs[map.linedefs[i].right].middle = 'SW1BRCOM';
 
     const start = grid.centre(1, 1);
-    const specials = controller(map, start.x, start.y) as unknown as {
-      trigger(i: number, keys: Set<never>): unknown;
-      update(dt: number, x: number, y: number, a: number, input: Input, keys: Set<never>): void;
-    };
+    const specials = controller(map, start);
     const art = (i: number) => map.sidedefs[map.linedefs[i].right].middle;
 
     specials.trigger(once, new Set());
@@ -116,7 +128,7 @@ describe('Regressions · switch gating and crusher stasis', () => {
     assert.equal(art(again), 'SW2BRCOM');
 
     // Well past BUTTONTIME (35 tics).
-    for (let i = 0; i < 70; i++) specials.update(TIC, start.x, start.y, 0, NO_INPUT, new Set());
+    for (let i = 0; i < 70; i++) specials.update(TIC, { ...start, angle: 0 }, NO_INPUT, new Set());
     assert.equal(art(once), 'SW2BRCOM', 'the one-shot switch is pressed for good — no P_StartButton');
     assert.equal(art(again), 'SW1BRCOM', 'the repeatable one reverts so it can be pressed again');
   });
@@ -147,11 +159,11 @@ describe('Regressions · switch gating and crusher stasis', () => {
     }).specials as unknown as {
       trigger(i: number, keys: Set<never>): unknown;
       ceilingMovers: Map<number, { state: string; slowed?: boolean }>;
-      update(dt: number, x: number, y: number, a: number, input: Input, keys: Set<never>): void;
+      update(dt: number, at: Placement, input: Input, keys: Set<never>): void;
     };
 
     specials.trigger(line, new Set());
-    const tick = () => specials.update(TIC, start.x, start.y, 0, NO_INPUT, new Set());
+    const tick = () => specials.update(TIC, { ...start, angle: 0 }, NO_INPUT, new Set());
 
     // One tic at full speed, then the first crush report slows it.
     tick();
@@ -187,13 +199,7 @@ describe('Regressions · switch gating and crusher stasis', () => {
     map.linedefs[line].tag = 1;
 
     const start = grid.centre(1, 1);
-    const specials = controller(map, start.x, start.y) as unknown as {
-      trigger(i: number, keys: Set<never>): unknown;
-      triggerCrusherStop(s: number): boolean;
-      triggerCrusher(s: number, e: unknown): boolean;
-      ceilingMovers: Map<number, { state: string; stoppedFrom?: string; speed: number; silent: boolean }>;
-      update(dt: number, x: number, y: number, a: number, input: Input, keys: Set<never>): void;
-    };
+    const specials = controller(map, start) as CrusherProbe;
 
     specials.trigger(line, new Set());
     // Read through accessors, not a captured `mover`: `assert/strict`'s `equal`
@@ -205,7 +211,7 @@ describe('Regressions · switch gating and crusher stasis', () => {
 
     // Run to the bottom and into the up-stroke.
     for (let i = 0; i < 2000 && state() !== 'raising'; i++) {
-      specials.update(TIC, start.x, start.y, 0, NO_INPUT, new Set());
+      specials.update(TIC, { ...start, angle: 0 }, NO_INPUT, new Set());
     }
     assert.equal(state(), 'raising', 'the crusher reversed at the bottom');
     const frozenAt = map.sectors[crush].ceilHeight;
@@ -214,7 +220,7 @@ describe('Regressions · switch gating and crusher stasis', () => {
     assert.equal(state(), 'stopped');
     assert.equal(stoppedFrom(), 'raising', 'the direction is remembered — vanilla olddirection');
 
-    for (let i = 0; i < 35; i++) specials.update(TIC, start.x, start.y, 0, NO_INPUT, new Set());
+    for (let i = 0; i < 35; i++) specials.update(TIC, { ...start, angle: 0 }, NO_INPUT, new Set());
     assert.equal(map.sectors[crush].ceilHeight, frozenAt, 'in stasis it does not move at all');
 
     // A second stop is not a hit: vanilla's own `direction != 0` guard.
@@ -226,7 +232,7 @@ describe('Regressions · switch gating and crusher stasis', () => {
     assert.equal(restarted, false, 'reactivating an in-stasis crusher is not a fresh thinker');
     assert.equal(state(), 'raising', 'it resumes upward, not back down');
 
-    specials.update(TIC, start.x, start.y, 0, NO_INPUT, new Set());
+    specials.update(TIC, { ...start, angle: 0 }, NO_INPUT, new Set());
     assert.ok(map.sectors[crush].ceilHeight > frozenAt, 'and actually moves up');
   });
 });

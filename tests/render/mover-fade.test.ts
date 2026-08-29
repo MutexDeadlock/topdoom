@@ -76,7 +76,7 @@ function fadePass(
   const pass = new FadePass(statics ?? new WallFader([], new Map()), new FlatFader([], new Map()));
   const openingInto = openingsOf(r.world);
   return (camX, camY, camZ, targets) =>
-    pass.run({ dt: SETTLE, camX, camY, camZ, targets, openingInto }, FULLY_REVEALED, r.specials);
+    pass.run({ dt: SETTLE, camX, camY, camZ, targets, openingInto }, FULLY_REVEALED, r.specials.fadeParticipant);
 }
 
 /**

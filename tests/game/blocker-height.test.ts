@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
 import {
   ANY_HEIGHT,
-  World,
   bodyFloor,
+  makeCollider,
   setInfiniteTallActors,
   type ThingBlocker,
+  World,
 } from '../../src/game/world.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS, Player } from '../../src/game/player.ts';
 import { DOOM_TIC } from '../../src/constants.ts';
@@ -34,7 +35,7 @@ function body(z: number, height = BODY_HEIGHT): ThingBlocker {
 
 /** The mover is the player's box unless a case says otherwise. */
 function blocked(z: number, blockers: ThingBlocker[], moverHeight = PLAYER_HEIGHT): boolean {
-  return world.positionBlocked(at.x, at.y, PLAYER_RADIUS, z, moverHeight, false, blockers);
+  return world.positionBlocked(at.x, at.y, makeCollider({ radius: PLAYER_RADIUS, z, height: moverHeight, blockers }));
 }
 
 function settle(player: Player, blockers: ThingBlocker[]): void {

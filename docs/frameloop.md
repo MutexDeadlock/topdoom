@@ -5,7 +5,7 @@
 Who starts and stops a session around this loop is docs/menu.md § Session lifecycle.
 
 **The simulation runs at a fixed 35 Hz and the display runs as fast as it can.** Every gameplay
-system advances by exactly `TIC_SECONDS` (`DOOM_TIC`, vanilla's own clock) and never by a frame
+system advances by exactly `DOOM_TIC`, vanilla's own 35 Hz clock, and never by a frame
 delta, so the same inputs produce the same run on a 60 Hz laptop and a 144 Hz monitor. Rendering
 then poses everything part-way between the last two tics so motion still looks smooth.
 
@@ -19,14 +19,14 @@ about the RNG.
 ## The accumulator (`game.ts: frame`)
 
 Real elapsed time is *banked*, not consumed. Each frame adds `rawDt` to `accumulator`, spends it in
-whole `TIC_SECONDS` steps, and hands whatever is left over to `draw` as the interpolation alpha:
+whole `DOOM_TIC` steps, and hands whatever is left over to `draw` as the interpolation alpha:
 
 ```ts
 const rawDt = Math.max(0, (now - this.lastTime) / 1000);
 this.accumulator += rawDt;
-if (this.accumulator > MAX_TICS_PER_FRAME * TIC_SECONDS) this.accumulator = MAX_TICS_PER_FRAME * TIC_SECONDS;
-while (this.accumulator >= TIC_SECONDS && ran < MAX_TICS_PER_FRAME) { this.accumulator -= TIC_SECONDS; this.tic(...); }
-this.draw(this.accumulator / TIC_SECONDS, rawDt);
+if (this.accumulator > MAX_TICS_PER_FRAME * DOOM_TIC) this.accumulator = MAX_TICS_PER_FRAME * DOOM_TIC;
+while (this.accumulator >= DOOM_TIC && ran < MAX_TICS_PER_FRAME) { this.accumulator -= DOOM_TIC; this.tic(...); }
+this.draw(this.accumulator / DOOM_TIC, rawDt);
 ```
 
 Three rules hold it together:
@@ -140,7 +140,7 @@ can go — past 5 tics of debt the engine gives up and drops the rest, and *then
 
 Presentation only — it advances no gameplay state. The camera pose, the sprite batches, the HUD and
 overlays, the occlusion and fog *fades*, the texture scroller and animator, and the render call.
-These take `rawDt`, not `TIC_SECONDS`: they are measuring real frames.
+These take `rawDt`, not `DOOM_TIC`: they are measuring real frames.
 
 ## Interpolation
 

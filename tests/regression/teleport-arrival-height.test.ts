@@ -43,7 +43,7 @@ describe('Regressions · teleport arrival height', () => {
 
     const start = grid.centre(5, 1);
     const rigged = specialsRig(map, start);
-    const layer = buildThingSprites(map, rigged.world, BANK, MATERIALS, 3);
+    const layer = buildThingSprites(rigged.world, { bank: BANK, materials: MATERIALS, skill: 3 });
     // A hit alerts the monster, which is all a closet monster needs to start
     // chasing — sight through a doorway would do it in a real map.
     layer.damage(0, 1, undefined, undefined, start.x, start.y);

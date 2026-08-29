@@ -131,6 +131,31 @@ export type Pusher = { sector: number } & (
     }
 );
 
+/**
+ * What `frictionUnder` measures for, beside the point it stands at: the body's box, how fast it is
+ * going, and its own touched-sector cache. Named because `radius` and `speed` are adjacent numbers
+ * a call site could swap in silence — docs/conventions.md § Named arguments. The per-thing queries
+ * beside it stay scalar; see `carryForBody`.
+ */
+export interface FrictionQuery {
+  radius: number;
+  speed: number;
+  cache: SectorTouchCache;
+}
+
+/**
+ * What one 250-254 control line says about every scroller it spawns: the authored rate in map
+ * units per tic, the sector whose height drives it (-1 for a plain scroller), and whether it
+ * accelerates. Taken as a record because `control` and `affectee` are both plain sector-ish
+ * indexes and were adjacent arguments — docs/conventions.md § Named arguments.
+ */
+interface ScrollSource {
+  dx: number;
+  dy: number;
+  control: number;
+  accel: boolean;
+}
+
 /** Zero, handed back for every surface that has no scroller — never mutated. */
 const NO_OFFSET: Readonly<Vec2> = { x: 0, y: 0 };
 
@@ -202,31 +227,6 @@ export class Forces {
   }
 
   /**
-   * Fills `carryBounds` from the linedefs bounding every conveyor sector — a
-   * sector's footprint is contained in its own lines' vertices, so this is a
-   * conservative box. Runs once, after `spawnScrollers` has decided which
-   * sectors carry.
-   */
-  private boundCarrySectors(): void {
-    const carrying = new Set<number>();
-    for (const s of this.scrollers) if (s.target === 'carry') carrying.add(s.affectee);
-    if (carrying.size === 0) return;
-    const b = this.carryBounds;
-    for (const line of this.map.linedefs) {
-      const front = line.right === NO_SIDE ? undefined : this.map.sidedefs[line.right]?.sector;
-      const back = line.left === NO_SIDE ? undefined : this.map.sidedefs[line.left]?.sector;
-      if (!(front !== undefined && carrying.has(front)) && !(back !== undefined && carrying.has(back))) continue;
-      for (const v of [this.map.vertexes[line.v1], this.map.vertexes[line.v2]]) {
-        if (!v) continue;
-        if (v.x < b.minX) b.minX = v.x;
-        if (v.x > b.maxX) b.maxX = v.x;
-        if (v.y < b.minY) b.minY = v.y;
-        if (v.y > b.maxY) b.maxY = v.y;
-      }
-    }
-  }
-
-  /**
    * `P_GetFriction` + `P_GetMoveFactor`: what the floor under a body of this
    * radius does to its movement, or `NO_FRICTION` where nothing does.
    *
@@ -241,8 +241,9 @@ export class Forces {
    * the caller's per-body touch cache, shared with the other two body queries —
    * see `carryForBody`.
    */
-  frictionUnder(pos: Pos3, radius: number, speed: number, cache: SectorTouchCache): Readonly<FrictionEffect> {
+  frictionUnder(pos: Pos3, body: FrictionQuery): Readonly<FrictionEffect> {
     if (!this.hasFriction) return NO_FRICTION;
+    const { radius, speed, cache } = body;
     let friction = ORIG_FRICTION;
     let moveFactor = ORIG_FRICTION_FACTOR;
     for (const sectorIndex of this.world.sectorsTouchingCached(pos.x, pos.y, radius, cache)) {
@@ -286,92 +287,6 @@ export class Forces {
     // floor's. docs/movement.md § Friction.
     this.frictionScratch.accelScale = Math.log(bounded) / Math.log(ORIG_FRICTION);
     return this.frictionScratch;
-  }
-
-  /**
-   * `P_SpawnPushers`. 224 is wind, 225 a current, 226 a point source — and 226
-   * only takes effect where the tagged sector actually holds an
-   * `MT_PUSH`/`MT_PULL` thing to radiate from (`P_GetPushThing`), the pusher's
-   * strength and reach coming from the line's length rather than the thing.
-   */
-  private spawnPushers(): void {
-    for (const line of this.map.linedefs) {
-      if (line.special < 224 || line.special > 226) continue;
-      const v1 = this.map.vertexes[line.v1];
-      const v2 = this.map.vertexes[line.v2];
-      if (!v1 || !v2) continue;
-      // `Add_Pusher`'s `x_mag>>FRACBITS`: the line's vector in whole map units.
-      const xMag = v2.x - v1.x;
-      const yMag = v2.y - v1.y;
-      for (const sector of sectorsByTag(this.map, line.tag)) {
-        if (line.special === 226) {
-          const source = this.pushThingIn(sector);
-          if (!source) continue; // "No MT_P* means no effect"
-          this.pushers.push({
-            kind: 'point',
-            sector,
-            x: source.x,
-            y: source.y,
-            magnitude: aproxDistance(xMag, yMag),
-            away: source.type === ThingType.pointPusher,
-          });
-        } else {
-          this.pushers.push({ kind: line.special === 224 ? 'wind' : 'current', sector, xMag, yMag });
-        }
-      }
-    }
-  }
-
-  /**
-   * `P_SpawnFriction`, in PrBoom's thinkerless form: every sector starts at
-   * normal friction and each 223 line overwrites its tagged sectors' pair, once
-   * at load. Boom's original spawned a thinker that re-stamped every mobj in
-   * the sector every tic; killough's replacement makes friction a property of
-   * the sector, which is both what this engine wants and the behavior PrBoom
-   * ships.
-   *
-   * The line's **length** is the dial: longer is more slippery. Both curves and
-   * the crossover at `ORIG_FRICTION` are transcribed as written, including the
-   * comment's own warning that a *higher* friction value means *less* friction.
-   *
-   * **Deviation:** MBF's clamps (killough 8/28/98, `friction` into [0, 1] and
-   * `movefactor` to at least 32) are applied unconditionally, where PrBoom
-   * gates them on `mbf_features` and so skips them at the Boom complevel this
-   * engine targets. Unclamped, a 223 line longer than ~200 units yields a
-   * friction of 1 or more, which makes momentum in that sector never decay (or
-   * grow without bound) — an engine hazard, not a behavior a map can be relying
-   * on.
-   */
-  private spawnFriction(): void {
-    this.friction = new Float64Array(this.map.sectors.length).fill(ORIG_FRICTION);
-    this.moveFactor = new Float64Array(this.map.sectors.length).fill(ORIG_FRICTION_FACTOR);
-    for (const line of this.map.linedefs) {
-      if (line.special !== 223) continue;
-      const v1 = this.map.vertexes[line.v1];
-      const v2 = this.map.vertexes[line.v2];
-      if (!v1 || !v2) continue;
-      const length = Math.floor(aproxDistance(v2.x - v1.x, v2.y - v1.y));
-      let friction = (0x1eb8 * length) / 0x80 + 0xd000;
-      let moveFactor =
-        friction > 0xe800 ? ((0x10092 - friction) * 0x70) / 0x158 : ((friction - 0xdb34) * 0xa) / 0x80;
-      friction = Math.max(0, Math.min(0x10000, friction));
-      moveFactor = Math.max(32, moveFactor);
-      for (const s of sectorsByTag(this.map, line.tag)) {
-        if (s >= this.friction.length) continue;
-        this.friction[s] = friction / 0x10000;
-        this.moveFactor[s] = moveFactor;
-        this.hasFriction = true;
-      }
-    }
-  }
-
-  /** `P_GetPushThing`: the `MT_PUSH`/`MT_PULL` thing standing in this sector, if any. */
-  private pushThingIn(sectorIndex: number): Thing | null {
-    for (const thing of this.map.things) {
-      if (thing.type !== ThingType.pointPusher && thing.type !== ThingType.pointPuller) continue;
-      if (this.world.sectorIndexAt(thing.x, thing.y) === sectorIndex) return thing;
-    }
-    return null;
   }
 
   /**
@@ -423,147 +338,6 @@ export class Forces {
     const out: Record<ScrollTarget, number> = { side: 0, floorTex: 0, ceilTex: 0, carry: 0 };
     for (const s of this.scrollers) out[s.target]++;
     return out;
-  }
-
-  /**
-   * `P_SpawnScrollers`. The rate is the line's own vector shifted down by
-   * `SCROLL_SHIFT`, so a longer control line scrolls faster; 48 and 85 instead
-   * use a fixed ±1 unit/tic (`FRACUNIT`), which is where vanilla's 35 units/sec
-   * comes from.
-   *
-   * 245-249 (displacement, driven by the control sector's height changes) and
-   * 214-218 (the same but accelerative) are remapped onto 250-254 up front,
-   * exactly as Boom does, so only one set of cases is written out.
-   */
-  private spawnScrollers(): void {
-    for (const [i, line] of this.map.linedefs.entries()) {
-      const v1 = this.map.vertexes[line.v1];
-      const v2 = this.map.vertexes[line.v2];
-      if (!v1 || !v2) continue;
-      let dx = (v2.x - v1.x) / SCROLL_DIVISOR;
-      let dy = (v2.y - v1.y) / SCROLL_DIVISOR;
-      let control = -1;
-      let accel = false;
-      let special = line.special;
-
-      if (special >= 245 && special <= 249) {
-        special += 250 - 245;
-        control = this.frontSector(i);
-      } else if (special >= 214 && special <= 218) {
-        accel = true;
-        special += 250 - 214;
-        control = this.frontSector(i);
-      }
-
-      switch (special) {
-        case 250: // scroll ceiling texture
-          for (const s of sectorsByTag(this.map, line.tag)) this.addScroller('ceilTex', -dx, dy, control, s, accel);
-          break;
-        case 251: // scroll floor texture
-        case 253: // scroll floor texture *and* carry what stands on it
-          for (const s of sectorsByTag(this.map, line.tag)) this.addScroller('floorTex', -dx, dy, control, s, accel);
-          // 253 is 251 and 252 in one line (Boom reaches the carry half by
-          // falling through). The carry rate is the **unnegated** vector — only
-          // the flat's own texture axis needs the sign flip above.
-          if (special === 253) this.addCarry(dx, dy, line.tag, control, accel);
-          break;
-        case 252: // carry what stands on the floor
-          this.addCarry(dx, dy, line.tag, control, accel);
-          break;
-        case 254: // scroll the tagged lines' walls, in each line's own frame
-          for (const s of linesByTag(this.map, line.tag)) {
-            if (s !== i) this.addWallScroller(dx, dy, s, control, accel);
-          }
-          break;
-        case 255: {
-          // Scroll by the trigger line's own authored sidedef offsets.
-          const side = this.map.sidedefs[line.right];
-          if (side) this.addScroller('side', -side.xOffset, side.yOffset, -1, i, accel);
-          break;
-        }
-        case 48: // vanilla's own scroll-left, `FRACUNIT` per tic
-          this.addScroller('side', 1, 0, -1, i, accel);
-          break;
-        case 85: // Boom's scroll-right twin
-          this.addScroller('side', -1, 0, -1, i, accel);
-          break;
-      }
-    }
-  }
-
-  /**
-   * The conveyor half of 252/253: the same rate scaled by `CARRY_FACTOR`, on every tagged sector.
-   */
-  private addCarry(dx: number, dy: number, tag: number, control: number, accel: boolean): void {
-    for (const s of sectorsByTag(this.map, tag)) {
-      this.addScroller('carry', dx * CARRY_FACTOR, dy * CARRY_FACTOR, control, s, accel);
-    }
-  }
-
-  /**
-   * The sector behind a line's front sidedef — Boom's `sides[*l->sidenum].sector` control lookup.
-   */
-  private frontSector(lineIndex: number): number {
-    const line = this.map.linedefs[lineIndex];
-    if (!line || line.right === NO_SIDE) return -1;
-    return this.map.sidedefs[line.right]?.sector ?? -1;
-  }
-
-  /**
-   * `Add_WallScroller`: rotates the rate into the *target* line's own frame, so
-   * a control line drawn across the wall scrolls it vertically and one drawn
-   * along it scrolls horizontally. Vanilla does this in fixed point with a
-   * `finesine` table to avoid overflow on long linedefs; the float form is the
-   * same projection onto the line's unit normal and tangent.
-   */
-  private addWallScroller(dx: number, dy: number, lineIndex: number, control: number, accel: boolean): void {
-    const line = this.map.linedefs[lineIndex];
-    if (!line) return;
-    const v1 = this.map.vertexes[line.v1];
-    const v2 = this.map.vertexes[line.v2];
-    if (!v1 || !v2) return;
-    const lx = v2.x - v1.x;
-    const ly = v2.y - v1.y;
-    const len = Math.hypot(lx, ly);
-    if (len < 1e-6) return;
-    const x = -(dy * ly + dx * lx) / len;
-    const y = -(dx * ly - dy * lx) / len;
-    this.addScroller('side', x, y, control, lineIndex, accel);
-  }
-
-  private addScroller(
-    target: ScrollTarget,
-    dx: number,
-    dy: number,
-    control: number,
-    affectee: number,
-    accel: boolean,
-  ): void {
-    if (affectee < 0) return;
-    this.scrollers.push({
-      target,
-      dx,
-      dy,
-      affectee,
-      control,
-      accel,
-      vdx: 0,
-      vdy: 0,
-      lastHeight: control >= 0 ? this.controlHeight(control) : 0,
-      // A plain scroller's rate never changes, so it is live from spawn and the
-      // first frame scrolls even before the first tic. A displacement one waits
-      // for its control sector to move, an accelerative one for `vdx` to build.
-      rate: control < 0 && !accel ? { x: dx, y: dy } : { x: 0, y: 0 },
-    });
-  }
-
-  /**
-   * `sectors[control].floorheight + sectors[control].ceilingheight` — what a displacement scroller
-   * watches.
-   */
-  private controlHeight(sectorIndex: number): number {
-    const sector = this.map.sectors[sectorIndex];
-    return sector ? sector.floorHeight + sector.ceilHeight : 0;
   }
 
   /**
@@ -633,12 +407,6 @@ export class Forces {
     }
   }
 
-  private offsetsFor(target: ScrollTarget): Map<number, Vec2> {
-    if (target === 'ceilTex') return this.ceilOffsets;
-    if (target === 'floorTex') return this.floorOffsets;
-    return this.sideOffsets;
-  }
-
   /** Accumulated offset of a linedef's front sidedef, in map units. */
   sideOffset(lineIndex: number): Readonly<Vec2> {
     return this.sideOffsets.get(lineIndex) ?? NO_OFFSET;
@@ -655,25 +423,15 @@ export class Forces {
   }
 
   /**
-   * This tic's conveyor impulse for a body of this radius standing at `z`, or
-   * null where nothing carries it — `T_Scroll`'s `sc_carry` walk seen from the
-   * thing rather than from the sector.
+   * This tic's conveyor impulse for a body of this radius standing at `z`, or null where nothing
+   * carries it — `T_Scroll`'s `sc_carry` walk seen from the thing rather than from the sector.
+   * Every touched sector counts, a body only rides a floor it is standing on, and overlapping
+   * belts sum. docs/specials.md § Scrollers and conveyors.
    *
-   * Every sector the body **touches** counts, not just the one under its centre
-   * (`World.sectorsTouching`), and a body only rides a sector whose floor it is
-   * actually standing on (`thing->z > height` is vanilla's own skip), so
-   * stepping onto a ledge inside a conveyor sector takes you off the belt.
-   * Overlapping belts sum, as several `sc_carry` thinkers on one sector do.
-   *
-   * The caller supplies `cache` — its **own body's** `SectorTouchCache`, never
-   * a shared scratch: the touched-sector walk is the expensive half of this
-   * query, and the cache elides it entirely for a body that hasn't moved
-   * (`World.sectorsTouchingCached`), which on a belt-heavy map is most of them
-   * most tics. The floor/water tests still read live heights every call, so a
-   * lift or rising water under a stationary body changes the answer without
-   * invalidating anything. The return is **shared** scratch that the next call
-   * overwrites. `MF_NOGRAVITY` bodies are the caller's to skip; this has no
-   * thing table.
+   * `cache` must be the caller's **own body's** (docs/world.md § Sectors under a body). Scalars
+   * rather than a record: this runs per thing per frame, through `ThingLayer.update`'s carry
+   * callback. The return is shared scratch the next call overwrites, and `MF_NOGRAVITY` bodies are
+   * the caller's to skip — this has no thing table.
    */
   carryForBody(pos: Pos3, radius: number, cache: SectorTouchCache): Readonly<Vec2> | null {
     if (this.carry.size === 0) return null;
@@ -782,18 +540,14 @@ export class Forces {
   }
 
   /**
-   * The restore twin. Absent block means every integrator is at zero, which is
-   * both what a fresh spawn produces and what a save from before this field
-   * existed restored to — the reason it needs no `SAVE_VERSION` bump. Indices
-   * outside the list are ignored: the scroller list comes from the map, not
-   * from the save.
+   * The restore twin. An absent block means every integrator is at zero, which is both a fresh
+   * spawn and a save from before the field existed — the reason it needs no `SAVE_VERSION` bump.
+   * Indices outside the list are ignored: the scroller list comes from the map, not the save.
    *
-   * `lastHeight` needs no equivalent, but only because of the apply order:
-   * `Forces` is constructed *after* `applySectors` has written the restored
-   * heights (docs/savegames.md § Apply order), so every displacement scroller
-   * spawns already watching the height it was saved at. Spawning it earlier
-   * would make the first restored tic see the whole saved-to-authored
-   * difference as one tic's movement.
+   * `lastHeight` needs no equivalent **only because of the apply order**: `Forces` is constructed
+   * after `applySectors` has written the restored heights, so every displacement scroller spawns
+   * watching the height it was saved at. Spawning it earlier would make the first restored tic see
+   * the whole saved-to-authored difference as one tic's movement. docs/savegames.md § Apply order.
    */
   restore(saved: readonly ScrollerSnapshot[] | undefined): void {
     if (!saved) return;
@@ -803,6 +557,248 @@ export class Forces {
       s.vdx = vdx;
       s.vdy = vdy;
     }
+  }
+
+  /**
+   * Fills `carryBounds` from the linedefs bounding every conveyor sector — a
+   * sector's footprint is contained in its own lines' vertices, so this is a
+   * conservative box. Runs once, after `spawnScrollers` has decided which
+   * sectors carry.
+   */
+  private boundCarrySectors(): void {
+    const carrying = new Set<number>();
+    for (const s of this.scrollers) if (s.target === 'carry') carrying.add(s.affectee);
+    if (carrying.size === 0) return;
+    const b = this.carryBounds;
+    for (const line of this.map.linedefs) {
+      const front = line.right === NO_SIDE ? undefined : this.map.sidedefs[line.right]?.sector;
+      const back = line.left === NO_SIDE ? undefined : this.map.sidedefs[line.left]?.sector;
+      if (!(front !== undefined && carrying.has(front)) && !(back !== undefined && carrying.has(back))) continue;
+      for (const v of [this.map.vertexes[line.v1], this.map.vertexes[line.v2]]) {
+        if (!v) continue;
+        if (v.x < b.minX) b.minX = v.x;
+        if (v.x > b.maxX) b.maxX = v.x;
+        if (v.y < b.minY) b.minY = v.y;
+        if (v.y > b.maxY) b.maxY = v.y;
+      }
+    }
+  }
+
+  /**
+   * `P_SpawnPushers`. 224 is wind, 225 a current, 226 a point source — and 226
+   * only takes effect where the tagged sector actually holds an
+   * `MT_PUSH`/`MT_PULL` thing to radiate from (`P_GetPushThing`), the pusher's
+   * strength and reach coming from the line's length rather than the thing.
+   */
+  private spawnPushers(): void {
+    for (const line of this.map.linedefs) {
+      if (line.special < 224 || line.special > 226) continue;
+      const v1 = this.map.vertexes[line.v1];
+      const v2 = this.map.vertexes[line.v2];
+      if (!v1 || !v2) continue;
+      // `Add_Pusher`'s `x_mag>>FRACBITS`: the line's vector in whole map units.
+      const xMag = v2.x - v1.x;
+      const yMag = v2.y - v1.y;
+      for (const sector of sectorsByTag(this.map, line.tag)) {
+        if (line.special === 226) {
+          const source = this.pushThingIn(sector);
+          if (!source) continue; // "No MT_P* means no effect"
+          this.pushers.push({
+            kind: 'point',
+            sector,
+            x: source.x,
+            y: source.y,
+            magnitude: aproxDistance(xMag, yMag),
+            away: source.type === ThingType.pointPusher,
+          });
+        } else {
+          this.pushers.push({ kind: line.special === 224 ? 'wind' : 'current', sector, xMag, yMag });
+        }
+      }
+    }
+  }
+
+  /**
+   * `P_SpawnFriction`, in PrBoom's thinkerless form: two per-sector arrays filled once at load
+   * rather than a thinker re-stamping every mobj. The control line's **length** is the dial, and
+   * both curves are transcribed as written — including the C's own warning that a *higher*
+   * `friction` value means *less* friction. MBF's clamps are a deliberate deviation, applied
+   * unconditionally here. docs/specials.md § Friction.
+   */
+  private spawnFriction(): void {
+    this.friction = new Float64Array(this.map.sectors.length).fill(ORIG_FRICTION);
+    this.moveFactor = new Float64Array(this.map.sectors.length).fill(ORIG_FRICTION_FACTOR);
+    for (const line of this.map.linedefs) {
+      if (line.special !== 223) continue;
+      const v1 = this.map.vertexes[line.v1];
+      const v2 = this.map.vertexes[line.v2];
+      if (!v1 || !v2) continue;
+      const length = Math.floor(aproxDistance(v2.x - v1.x, v2.y - v1.y));
+      let friction = (0x1eb8 * length) / 0x80 + 0xd000;
+      let moveFactor =
+        friction > 0xe800 ? ((0x10092 - friction) * 0x70) / 0x158 : ((friction - 0xdb34) * 0xa) / 0x80;
+      friction = Math.max(0, Math.min(0x10000, friction));
+      moveFactor = Math.max(32, moveFactor);
+      for (const s of sectorsByTag(this.map, line.tag)) {
+        if (s >= this.friction.length) continue;
+        this.friction[s] = friction / 0x10000;
+        this.moveFactor[s] = moveFactor;
+        this.hasFriction = true;
+      }
+    }
+  }
+
+  /** `P_GetPushThing`: the `MT_PUSH`/`MT_PULL` thing standing in this sector, if any. */
+  private pushThingIn(sectorIndex: number): Thing | null {
+    for (const thing of this.map.things) {
+      if (thing.type !== ThingType.pointPusher && thing.type !== ThingType.pointPuller) continue;
+      if (this.world.sectorIndexAt(thing.x, thing.y) === sectorIndex) return thing;
+    }
+    return null;
+  }
+
+  /**
+   * `P_SpawnScrollers`. The rate is the line's own vector shifted down by
+   * `SCROLL_SHIFT`, so a longer control line scrolls faster; 48 and 85 instead
+   * use a fixed ±1 unit/tic (`FRACUNIT`), which is where vanilla's 35 units/sec
+   * comes from.
+   *
+   * 245-249 (displacement, driven by the control sector's height changes) and
+   * 214-218 (the same but accelerative) are remapped onto 250-254 up front,
+   * exactly as Boom does, so only one set of cases is written out.
+   */
+  private spawnScrollers(): void {
+    for (const [i, line] of this.map.linedefs.entries()) {
+      const v1 = this.map.vertexes[line.v1];
+      const v2 = this.map.vertexes[line.v2];
+      if (!v1 || !v2) continue;
+      const dx = (v2.x - v1.x) / SCROLL_DIVISOR;
+      const dy = (v2.y - v1.y) / SCROLL_DIVISOR;
+      let control = -1;
+      let accel = false;
+      let special = line.special;
+
+      if (special >= 245 && special <= 249) {
+        special += 250 - 245;
+        control = this.frontSector(i);
+      } else if (special >= 214 && special <= 218) {
+        accel = true;
+        special += 250 - 214;
+        control = this.frontSector(i);
+      }
+
+      switch (special) {
+        case 250: // scroll ceiling texture
+          for (const s of sectorsByTag(this.map, line.tag)) {
+            this.addScroller('ceilTex', s, { dx: -dx, dy, control, accel });
+          }
+          break;
+        case 251: // scroll floor texture
+        case 253: // scroll floor texture *and* carry what stands on it
+          for (const s of sectorsByTag(this.map, line.tag)) {
+            this.addScroller('floorTex', s, { dx: -dx, dy, control, accel });
+          }
+          // 253 is 251 and 252 in one line (Boom reaches the carry half by
+          // falling through). The carry rate is the **unnegated** vector — only
+          // the flat's own texture axis needs the sign flip above.
+          if (special === 253) this.addCarry(line.tag, { dx, dy, control, accel });
+          break;
+        case 252: // carry what stands on the floor
+          this.addCarry(line.tag, { dx, dy, control, accel });
+          break;
+        case 254: // scroll the tagged lines' walls, in each line's own frame
+          for (const s of linesByTag(this.map, line.tag)) {
+            if (s !== i) this.addWallScroller(s, { dx, dy, control, accel });
+          }
+          break;
+        case 255: {
+          // Scroll by the trigger line's own authored sidedef offsets.
+          const side = this.map.sidedefs[line.right];
+          if (side) this.addScroller('side', i, { dx: -side.xOffset, dy: side.yOffset, control: -1, accel });
+          break;
+        }
+        case 48: // vanilla's own scroll-left, `FRACUNIT` per tic
+          this.addScroller('side', i, { dx: 1, dy: 0, control: -1, accel });
+          break;
+        case 85: // Boom's scroll-right twin
+          this.addScroller('side', i, { dx: -1, dy: 0, control: -1, accel });
+          break;
+      }
+    }
+  }
+
+  /**
+   * The conveyor half of 252/253: the same rate scaled by `CARRY_FACTOR`, on every tagged sector.
+   */
+  private addCarry(tag: number, from: ScrollSource): void {
+    const rate = { ...from, dx: from.dx * CARRY_FACTOR, dy: from.dy * CARRY_FACTOR };
+    for (const s of sectorsByTag(this.map, tag)) this.addScroller('carry', s, rate);
+  }
+
+  /**
+   * The sector behind a line's front sidedef — Boom's `sides[*l->sidenum].sector` control lookup.
+   */
+  private frontSector(lineIndex: number): number {
+    const line = this.map.linedefs[lineIndex];
+    if (!line || line.right === NO_SIDE) return -1;
+    return this.map.sidedefs[line.right]?.sector ?? -1;
+  }
+
+  /**
+   * `Add_WallScroller`: rotates the rate into the *target* line's own frame, so
+   * a control line drawn across the wall scrolls it vertically and one drawn
+   * along it scrolls horizontally. Vanilla does this in fixed point with a
+   * `finesine` table to avoid overflow on long linedefs; the float form is the
+   * same projection onto the line's unit normal and tangent.
+   */
+  private addWallScroller(lineIndex: number, from: ScrollSource): void {
+    const line = this.map.linedefs[lineIndex];
+    if (!line) return;
+    const v1 = this.map.vertexes[line.v1];
+    const v2 = this.map.vertexes[line.v2];
+    if (!v1 || !v2) return;
+    const lx = v2.x - v1.x;
+    const ly = v2.y - v1.y;
+    const len = Math.hypot(lx, ly);
+    if (len < 1e-6) return;
+    const x = -(from.dy * ly + from.dx * lx) / len;
+    const y = -(from.dx * ly - from.dy * lx) / len;
+    this.addScroller('side', lineIndex, { ...from, dx: x, dy: y });
+  }
+
+  private addScroller(target: ScrollTarget, affectee: number, from: ScrollSource): void {
+    if (affectee < 0) return;
+    const { dx, dy, control, accel } = from;
+    this.scrollers.push({
+      target,
+      dx,
+      dy,
+      affectee,
+      control,
+      accel,
+      vdx: 0,
+      vdy: 0,
+      lastHeight: control >= 0 ? this.controlHeight(control) : 0,
+      // A plain scroller's rate never changes, so it is live from spawn and the
+      // first frame scrolls even before the first tic. A displacement one waits
+      // for its control sector to move, an accelerative one for `vdx` to build.
+      rate: control < 0 && !accel ? { x: dx, y: dy } : { x: 0, y: 0 },
+    });
+  }
+
+  /**
+   * `sectors[control].floorheight + sectors[control].ceilingheight` — what a displacement scroller
+   * watches.
+   */
+  private controlHeight(sectorIndex: number): number {
+    const sector = this.map.sectors[sectorIndex];
+    return sector ? sector.floorHeight + sector.ceilHeight : 0;
+  }
+
+  private offsetsFor(target: ScrollTarget): Map<number, Vec2> {
+    if (target === 'ceilTex') return this.ceilOffsets;
+    if (target === 'floorTex') return this.floorOffsets;
+    return this.sideOffsets;
   }
 }
 

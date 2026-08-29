@@ -44,7 +44,7 @@ Dropping a WAD on the window still works for one-off files.
 
 Your game WAD, add-ons, level and difficulty are remembered for the next visit.
 
-`Esc` pauses and brings up the menu over the level; **Return to game** or `Esc` again resumes
+`ESC` pauses and brings up the menu over the level; **Return to game** or `ESC` again resumes
 where you left off. `?wad=DOOM2.WAD&pwad=SCYTHE.WAD&map=MAP05` preselects and skips the menu.
 
 See [docs/menu.md](docs/menu.md) for the WAD manifest, settings persistence and URL parameters.
@@ -52,7 +52,7 @@ See [docs/menu.md](docs/menu.md) for the WAD manifest, settings persistence and 
 ## Controls
 
 The same list is in the menu's **Settings** tab, along with the two settings that change what a key
-does (autorun and the right mouse button), so both are there while you play — `Esc` pauses.
+does (autorun and the right mouse button), so both are there while you play — `ESC` pauses.
 
 | Key | |
 |---|---|
@@ -69,7 +69,7 @@ does (autorun and the right mouse button), so both are there while you play — 
 | `[` / `]` | camera tilt *(manual camera mode)* |
 | `N` / `P` | next / previous map *(dev mode only)* |
 | `R` | restart the level (once dead) |
-| `Esc` | menu / resume |
+| `ESC` | menu / resume |
 
 Ceilings are never rendered — from directly above, one would hide everything underneath it. See
 [Dev mode](#dev-mode) below for the keys marked as needing it.

@@ -84,7 +84,7 @@ function scene(type: number): Scene {
   let tic = 0;
 
   const step = (): string | null => {
-    const attack = stepMonsterAI(body, stats, DOOM_TIC, world, target, PLAYER_RADIUS, PLAYER_HEIGHT, undefined, undefined, log.sfx);
+    const attack = stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, sfx: log.sfx });
     tic++;
     return attack?.kind ?? null;
   };

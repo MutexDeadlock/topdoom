@@ -72,7 +72,8 @@ one `P_Random()` against `things/tables.ts`'s `SPAWN_CUBE_MONSTERS` — eleven o
 summing to exactly 256, transcribed from `p_enemy.c`'s if/else chain. The weights are deliberately
 lopsided (an imp is 50/256, an arch-vile 2/256) and stay that way. `ThingLayer.spawnMonster` creates
 the monster already alerted and **telefrags** whatever was standing there, so a spawn spot is lethal
-to stand on — docs/death.md § Telefrag.
+to stand on — docs/death.md § Telefrag. The stomp is passed unconditionally rather than gated on
+`PIT_StompThing`'s "monsters only stomp on MAP30" rule: the cube only ever flies on that one map.
 
 A cube-spawned monster increments `stats.kills` when killed but never `stats.totalKills`, which is
 fixed at load by the map-thing loop. **Kills can exceed 100% on MAP30**; that is vanilla, whose

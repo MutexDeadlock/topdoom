@@ -44,13 +44,13 @@ export interface WadSource {
    */
   key: string;
   /**
-   * Content id of the bytes (`hashBytes`), known without downloading them: the
+   * Content ID of the bytes (`hashBytes`), known without downloading them: the
    * manifest carries it for a server file, an upload is hashed as it is added.
    * *This* is the file's identity — what a savegame's WAD set is matched
    * against (docs/savegames.md § WAD-set identity).
    *
    * Empty until `ensureWadId` fills it in for a library file, which is the one source that has
-   * *not* read its bytes yet — an empty id matches no savegame rather than matching wrongly.
+   * *not* read its bytes yet — an empty ID matches no savegame rather than matching wrongly.
    * docs/wad.md § The player's own library.
    */
   id: string;
@@ -122,13 +122,13 @@ export interface ManifestEntry {
    */
   support?: WadSupport;
   /**
-   * `hashBytes` content id, so the menu knows a file's identity without downloading it — what a
+   * `hashBytes` content ID, so the menu knows a file's identity without downloading it — what a
    * savegame's WAD set is matched against (docs/savegames.md § WAD-set identity). Computed at build
    * time because those bytes are already in memory; the alternative is fetching every WAD in the
    * library just to draw the save list.
    *
    * Optional because a cached `index.json` can predate the field, which is what the `?? ''` below
-   * degrades to: a source with no id matches no savegame rather than matching wrongly.
+   * degrades to: a source with no ID matches no savegame rather than matching wrongly.
    */
   id?: string;
   /**
@@ -229,8 +229,8 @@ export async function uploadedSource(name: string, buffer: ArrayBuffer): Promise
   return {
     ...described,
     key: `upload:${name}:${buffer.byteLength}`,
-    // The one place an id costs real work (a pass over up to ~14 MB), paid here
-    // rather than lazily: the save list matches by id and renders synchronously,
+    // The one place an ID costs real work (a pass over up to ~14 MB), paid here
+    // rather than lazily: the save list matches by ID and renders synchronously,
     // and unlike a library file these bytes are already in memory. Memoized against
     // the buffer, so starting a level with this file does not walk it a second time.
     id: idOf(buffer),
@@ -242,7 +242,7 @@ export async function uploadedSource(name: string, buffer: ArrayBuffer): Promise
 }
 
 /**
- * A source's content id, hashing its bytes if that hasn't happened yet, and writing the answer
+ * A source's content ID, hashing its bytes if that hasn't happened yet, and writing the answer
  * back onto the source so it is paid once. Only a library file ever needs this — its scan reads a
  * few hundred KB per file rather than the whole thing (docs/wad.md § The player's own library),
  * so the menu calls this the moment such a file is picked, which is strictly before it can appear

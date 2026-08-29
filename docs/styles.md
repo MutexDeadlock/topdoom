@@ -5,7 +5,7 @@ assembled by `plugins/html-partials.ts`
 
 ## One owner per element
 
-Markup is static, looked up by id in a module's field initializers, and the module only ever
+Markup is static, looked up by ID in a module's field initializers, and the module only ever
 toggles class names and text (`src/ui/menu/menu.ts`, `hud/hud.ts`, …). Both the markup and the
 rules follow that ownership: **an element's `.html` and `.css` are named after the `.ts` that
 drives it, and sit next to it.**
@@ -67,7 +67,7 @@ module graph, and every module resolves its elements once in its field initializ
 markup under a live `Menu`/`Hud` would leave it holding detached nodes.
 
 `tests/ui/markup.test.ts` is what makes the spread safe: it assembles the page the same way the
-build does and checks every id modules look up against it in both directions, plus that no partial
+build does and checks every ID modules look up against it in both directions, plus that no partial
 is left unreferenced. Without it a dropped `@include` builds green and fails as a `null` field.
 
 `styles.css` is at `src/` rather than in `ui/` because it belongs to the page, not to any one UI
@@ -77,7 +77,7 @@ inlines the imports into a single asset at build. **The parts are never imported
 (`import './hud.css'` in a module): anything under `src/` may be pulled in by a script run through
 Node's native TS stripping, which would choke on it.
 
-Every rule is id-scoped, so ordering between the parts is not load-bearing — but keep the import
+Every rule is ID-scoped, so ordering between the parts is not load-bearing — but keep the import
 list in stacking order anyway, since that's the order a reader will look for.
 
 ## Page metadata
@@ -154,7 +154,7 @@ A new overlay picks its rung by reading that one block rather than grepping for 
 the way a token does: **the thing it names is shared by six or more elements across as many files.**
 Nothing lands there for being short or for recurring within one module.
 
-`.hidden` is the odd one, below. The other three are *bases* — an id rule outscoring them is how an
+`.hidden` is the odd one, below. The other three are *bases* — an ID rule outscoring them is how an
 element refines the shared start (`#death-overlay` turns `.overlay`'s row into a column), so none of
 them takes `!important` and none should.
 
@@ -164,7 +164,7 @@ them takes `!important` and none should.
 stylesheet declares its own `.hidden` rule.
 
 It is `display: none !important`, and the `!important` is load-bearing rather than defensive. Almost
-every element that hides sets its own `display` through an id selector — `#menu { display: flex }`,
+every element that hides sets its own `display` through an ID selector — `#menu { display: flex }`,
 `#intermission canvas { display: block }` — so a plain `.hidden` at (0,1,0) would lose to all of
 them. It would lose *silently*: nothing errors, the element simply stays on screen.
 

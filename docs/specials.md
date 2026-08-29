@@ -20,7 +20,9 @@ functions of the `DoomMap` with no controller involved, which is why `mapmesh.ts
 before the controller exists. `specials/movergeometry.ts` (`MoverGeometry`) is everything a height
 or light change means for what is actually *drawn*: the per-sector mover meshes, their faders, and
 `recolorSector`. The controller mutates `Sector` fields and tells `MoverGeometry` which sectors went
-stale; it holds no THREE object of its own.
+stale; it holds no THREE object of its own. That split is in the constructors too: `SpecialsOptions`
+**extends** `MoverGeometryOptions`, so the render half's needs are declared once, by the half that
+consumes them, and the controller forwards its own options rather than restating six fields.
 
 That mutation is direct — `Sector.floorHeight`/`ceilHeight`/`light` change on the `DoomMap` itself,
 and `World` never caches them, so collision, sight-blocking and resting heights pick a mover's

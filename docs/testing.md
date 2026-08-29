@@ -200,8 +200,9 @@ partition convention (a node's right side is `cross <= 0`) is easy to get backwa
 ## The specials rig
 
 `tests/fixtures/specialsrig.ts` puts a real `SpecialsController` over a `gridMap` in one call —
-`specialsRig(map, at, { onExit, onTeleport, onCrush, … })` — instead of the fifteen positional
-arguments its constructor takes. It also exports the two stubs that go with it (`BANK`, `NO_INPUT`)
+`specialsRig(map, at, { onExit, onTeleport, onCrush, … })` — building the `World`, mesh and sector
+scan the constructor's own `SpecialsOptions` expects. It also exports the two stubs that go with it
+(`BANK`, `NO_INPUT`)
 and `TIC`, so a test needing a mesh or an input for something else takes them from here rather than
 declaring its own.
 
@@ -247,13 +248,13 @@ and there were three copies of that walk before.
 
 `tests/ui/markup.test.ts` assembles `index.html` through `plugins/html-partials.ts`'s own
 `assemblePage` — the same expansion the build runs, so the test can't drift from it — and checks
-the result three ways: every id a module looks up exists in it, every id in it is reached from some
+the result three ways: every ID a module looks up exists in it, every ID in it is reached from some
 `.ts` or `.css`, and every `src/ui/**/*.html` on disk is actually `@include`d somewhere.
 
 It exists because the markup is one file per owning module (docs/styles.md § One owner per
 element). A dropped `@include` removes a whole panel from the page while the build stays green, and
 the only symptom is a `null` in some module's field initializers — the hardest place to read it.
-Id lookups are matched as literals (`getElementById('x')` and the `el<T>('x')` helper), which is
+ID lookups are matched as literals (`getElementById('x')` and the `el<T>('x')` helper), which is
 every lookup in the tree; `querySelector` selectors are not checked.
 
 ## The DEHACKED layer split

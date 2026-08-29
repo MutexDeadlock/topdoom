@@ -98,7 +98,7 @@ function loadBlock(type: number = ThingType.cacodemon): { world: World; body: Mo
 function run(f: ReturnType<typeof loadBlock>, seconds: number): void {
   const dt = 1 / 35;
   for (let t = 0; t < seconds; t += dt) {
-    stepMonsterAI(f.body, CACO, dt, f.world, f.player, PLAYER_RADIUS, PLAYER_HEIGHT);
+    stepMonsterAI(f.body, CACO, f.world, { dt, target: f.player, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
   }
 }
 
@@ -134,7 +134,7 @@ describe('Regressions · a floater straddling a block it cannot fit on', () => {
       const start = { x: f.body.x, y: f.body.y };
       const dt = 1 / 35;
       for (let t = 0; t < 3; t += dt) {
-        stepMonsterAI(f.body, stats, dt, f.world, f.player, PLAYER_RADIUS, PLAYER_HEIGHT);
+        stepMonsterAI(f.body, stats, f.world, { dt, target: f.player, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
       }
       const moved = Math.hypot(f.body.x - start.x, f.body.y - start.y);
       assert.ok(moved > stats.radius, `left the block (moved ${moved.toFixed(1)} units)`);

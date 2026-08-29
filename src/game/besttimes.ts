@@ -61,7 +61,7 @@ export interface BestTimeBackend {
 }
 
 /**
- * The record key. The WAD part is the content id of the file that actually *provides* the map
+ * The record key. The WAD part is the content ID of the file that actually *provides* the map
  * (`Wad.find(map)!.source`), not of the whole loaded set — see docs/hud.md § Best times for why
  * the distinction matters.
  */

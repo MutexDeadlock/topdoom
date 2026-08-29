@@ -181,7 +181,7 @@ export function parseMapInfo(text: string): Map<string, MapInfoEntry> {
     const entry: MapInfoEntry = {};
     const next = tokens[i + 1];
     if (next && !next.quoted && next.text.toLowerCase() === 'lookup') {
-      i += 2; // the `lookup` and the string-table id after it
+      i += 2; // the `lookup` and the string-table ID after it
     } else if (next && next.quoted) {
       entry.title = next.text;
       i++;

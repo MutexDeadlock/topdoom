@@ -100,12 +100,12 @@ describe('keys · locked lines in the controller', () => {
 
   test('using a keyed door without the key refuses, reports the lock, and stays unspent', () => {
     const { map, rig } = lockedDoorRig();
-    rig.specials.update(TIC, 32, 32, 0, USE_INPUT, new Set());
+    rig.specials.update(TIC, { x: 32, y: 32, angle: 0 }, USE_INPUT, new Set());
     assert.deepEqual(rig.specials.consumeLockedLine(), { lock: { kind: 'color', color: 'blue' }, kind: 'door' });
     assert.equal(map.sectors[1].ceilHeight, 0);
 
     // The skull opens a card-agnostic color lock, and the earlier refusal spent nothing.
-    rig.specials.update(TIC, 32, 32, 0, USE_INPUT, new Set<KeySlot>(['blueSkull']));
+    rig.specials.update(TIC, { x: 32, y: 32, angle: 0 }, USE_INPUT, new Set<KeySlot>(['blueSkull']));
     assert.equal(rig.specials.consumeLockedLine(), null);
     for (let i = 0; i < 5; i++) rig.tick();
     assert.ok(map.sectors[1].ceilHeight > 0);

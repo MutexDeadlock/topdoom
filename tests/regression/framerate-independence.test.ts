@@ -17,8 +17,8 @@ import { DOOM_TIC } from '../../src/constants.ts';
  * rest on, and it is invisible in ordinary play — nothing else here would fail
  * if a system quietly went back to scaling by the frame delta.
  *
- * `game.ts`'s `TIC_SECONDS` is `DOOM_TIC`; `runTics` below mirrors its
- * accumulator. See docs/frameloop.md § The accumulator.
+ * `runTics` below mirrors `game.ts`'s accumulator.
+ * See docs/frameloop.md § The accumulator.
  */
 
 const stats = MONSTER_STATS[ThingType.imp];
@@ -107,7 +107,7 @@ function runTics(deltas: readonly number[]): Outcome {
       accumulator -= DOOM_TIC;
       ran++;
       tics++;
-      stepMonsterAI(body, stats, DOOM_TIC, world, target, PLAYER_RADIUS, PLAYER_HEIGHT);
+      stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
     }
   }
   return outcome(body, tics);
@@ -118,7 +118,7 @@ function runDtScaled(deltas: readonly number[]): Outcome {
   const { world, body, target } = scene();
   clearRandom();
   for (const rawDt of deltas) {
-    stepMonsterAI(body, stats, Math.min(0.05, rawDt), world, target, PLAYER_RADIUS, PLAYER_HEIGHT);
+    stepMonsterAI(body, stats, world, { dt: Math.min(0.05, rawDt), target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
   }
   return outcome(body, deltas.length);
 }

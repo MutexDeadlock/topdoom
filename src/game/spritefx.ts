@@ -73,10 +73,10 @@ export class SpriteFxLayer {
   /** The frame's dynamic lights, or null when the session runs without them (docs/lights.md). */
   private lights: DynamicLights | null = null;
   /**
-   * A stable emitter id per drawn effect, for the light's flicker phase and its `dontlightself`.
+   * A stable emitter ID per drawn effect, for the light's flicker phase and its `dontlightself`.
    * Keyed on the `SpriteAnimator` rather than stored on the effect: an animator is owned by
    * exactly one effect/projectile/cube for its whole life, so this needs no field on any of those
-   * record shapes — and so nothing here reaches a savegame. Ids are negative to stay clear of
+   * record shapes — and so nothing here reaches a savegame. IDs are negative to stay clear of
    * `PosedThing.id`, which is a plain array index.
    */
   private emitterIds = new WeakMap<SpriteAnimator, number>();

@@ -40,7 +40,8 @@ import {
 } from './game/things/tables.ts';
 import { thrustSpeed } from './game/monsters/defs.ts';
 import { MonsterAttacks } from './game/monsters/attacks.ts';
-import { collectFadeTargets, FadePass, FlatFader, SurfaceScroller, WallFader } from './render/occlusion.ts';
+import { collectFadeTargets, FadePass, FlatFader, WallFader } from './render/occlusion.ts';
+import { SurfaceScroller } from './render/scroller.ts';
 import { makeTouchCache, sectorLines, World, type Opening, type SectorTouchCache } from './game/world.ts';
 import { AIM_HEIGHT_OFFSET, EYE_HEIGHT, HARD_LANDING_SPEED, Player, PLAYER_MASS, PLAYER_RADIUS } from './game/player.ts';
 import { applyBarrelExplosion, type CombatContext, type DamageCause } from './game/combat.ts';
@@ -119,15 +120,6 @@ import type { Pos2 } from './types.ts';
 import { DOOM_TIC, FOG_START_FRACTION, VIEW_DISTANCE } from './constants.ts';
 
 /**
- * The simulation's fixed step. Every gameplay system advances by exactly this
- * and never by a frame delta, which is what makes a run independent of the
- * display it is drawn on. It is `DOOM_TIC` because vanilla's own 35 Hz clock is
- * what every duration in the engine is already quoted in.
- * docs/frameloop.md § The accumulator.
- */
-const TIC_SECONDS = DOOM_TIC;
-
-/**
  * Most tics one frame may run before the rest of the banked time is dropped.
  * Bounds both the catch-up burst after a stall and the worst-case cost of a
  * single frame; without it a backgrounded tab returns owing minutes of
@@ -149,11 +141,6 @@ export type FpsCap = (typeof FPS_CAPS)[number];
  */
 let fpsCap: FpsCap = readStoredFpsCap();
 
-function readStoredFpsCap(): FpsCap {
-  const stored = Number(globalThis.localStorage?.getItem(FPS_CAP_STORAGE_KEY));
-  return FPS_CAPS.find((c) => c === stored) ?? 0;
-}
-
 export function getFpsCap(): FpsCap {
   return fpsCap;
 }
@@ -161,6 +148,45 @@ export function getFpsCap(): FpsCap {
 export function setFpsCap(cap: FpsCap): void {
   fpsCap = cap;
   globalThis.localStorage?.setItem(FPS_CAP_STORAGE_KEY, String(cap));
+}
+
+/**
+ * What a `Game` is being asked to play, beside the three handles it is given. Named rather than
+ * positional because `startMap` and `title` are both strings and a swap would typecheck.
+ */
+export interface GameOptions {
+  /**
+   * Map lump to start on; the set's first map when it holds no such lump and nothing is
+   * restored.
+   */
+  startMap: string;
+  /** A short label naming the WAD set, for the HUD. */
+  title: string;
+  skill: Skill;
+  /**
+   * `?pos=` — where to drop the player instead of the map's own start
+   * (docs/menu.md § URL parameters).
+   */
+  startPos?: Pos2 | null;
+  /**
+   * A savegame's state payload: the level is built normally, then overwritten step by step —
+   * docs/savegames.md § Apply order.
+   */
+  restore?: GameSnapshot | null;
+  /** The checkpoint store, taken as a port so this class still knows nothing about IndexedDB. */
+  checkpoint?: CheckpointStore | null;
+  /**
+   * Called when the campaign is over and nothing follows: the session layer's cue to tear this
+   * `Game` down and put the menu back up (docs/menu.md § Session lifecycle). A port like
+   * `checkpoint` — this class knows nothing about the menu.
+   */
+  onCampaignEnd?: (() => void) | null;
+  /**
+   * The stock GLDEFS text (`public/gldefs.txt`), fetched by the session layer alongside the WAD
+   * files. A loaded set's own GLDEFS lumps layer over it; an empty string means no lights at all.
+   * docs/lights.md.
+   */
+  gldefsText?: string;
 }
 
 /** One loaded WAD set, playing one level at a time. */
@@ -310,7 +336,7 @@ export class Game {
   private running = false;
   private lastTime = 0;
   /**
-   * Real time banked but not yet spent on a tic, always under `TIC_SECONDS` once
+   * Real time banked but not yet spent on a tic, always under `DOOM_TIC` once
    * `frame` has drained it. Doubles as the interpolation alpha's numerator — see
    * docs/frameloop.md § The accumulator.
    */
@@ -420,34 +446,17 @@ export class Game {
    */
   private cheats = new Cheats();
 
-  constructor(
-    view: Viewport,
-    audio: AudioEngine,
-    wad: Wad,
-    startMap: string,
-    title: string,
-    skill: Skill,
-    startPos: Pos2 | null = null,
-    /**
-     * A savegame's state payload: the level is built normally, then overwritten step by step —
-     * docs/savegames.md § Apply order.
-     */
-    restore: GameSnapshot | null = null,
-    /** The checkpoint store, taken as a port so this class still knows nothing about IndexedDB. */
-    checkpoint: CheckpointStore | null = null,
-    /**
-     * Called when the campaign is over and nothing follows: the session layer's cue to tear this
-     * `Game` down and put the menu back up (docs/menu.md § Session lifecycle). A port like
-     * `checkpoint` — this class knows nothing about the menu.
-     */
-    onCampaignEnd: (() => void) | null = null,
-    /**
-     * The stock GLDEFS text (`public/gldefs.txt`), fetched by the session layer alongside the WAD
-     * files. A loaded set's own GLDEFS lumps layer over it; an empty string means no lights at all.
-     * docs/lights.md.
-     */
-    gldefsText = '',
-  ) {
+  constructor(view: Viewport, audio: AudioEngine, wad: Wad, options: GameOptions) {
+    const {
+      startMap,
+      title,
+      skill,
+      startPos = null,
+      restore = null,
+      checkpoint = null,
+      onCampaignEnd = null,
+      gldefsText = '',
+    } = options;
     this.view = view;
     this.audio = audio;
     this.wad = wad;
@@ -662,7 +671,7 @@ export class Game {
    * Refuses by *throwing* the reason, the same convention the store's own
    * writers use, so the whole save path has one refusal shape and the player is
    * told which condition actually applies (docs/menu.md § Save and Load tabs).
-   * Only the store's own bookkeeping (id, name, date) is the caller's to add: a
+   * Only the store's own bookkeeping (ID, name, date) is the caller's to add: a
    * capture identifies its WAD set by content, so this class needs to know
    * nothing about the library it was picked from.
    */
@@ -870,14 +879,7 @@ export class Game {
     // Absent in a save from before dolls existed, which leaves them on their own
     // player starts — the same state a fresh load gives them.
     this.voodoo.restore(restore?.voodoo);
-    this.surfaceScroller = new SurfaceScroller(
-      this.forces,
-      this.built.occluders,
-      this.built.wallMeshes,
-      this.built.flatSurfaces,
-      this.built.flatMeshes,
-      this.materials,
-    );
+    this.surfaceScroller = new SurfaceScroller(this.forces, this.built, this.materials);
     this.player = new Player(this.world);
     if (restore) {
       // The saved position and camera replace both the map's own start and any
@@ -907,19 +909,16 @@ export class Game {
     this.view.camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
     this.fogOfWar = new FogOfWar(this.world, this.built.occluders, this.player.x, this.player.y, movableSectors);
     if (restore) this.fogOfWar.restoreExplored(restore.fog);
-    this.specials = new SpecialsController(
-      map,
-      this.world,
-      this.materials,
-      this.scene,
-      this.fogOfWar,
-      this.built.polys,
-      this.built,
-      { transfers, subsectorAt, movingSectors },
-      (secret) => {
+    this.specials = new SpecialsController(this.world, {
+      bank: this.materials,
+      scene: this.scene,
+      fog: this.fogOfWar,
+      built: this.built,
+      meshOptions: { transfers, subsectorAt, movingSectors },
+      onExit: (secret) => {
         this.pendingExit = secret ? 'secret' : 'normal';
       },
-      (dest) => {
+      onTeleport: (dest) => {
         // `P_TeleportMove` stomps whatever is standing on the landing pad; the
         // player always stomps, so this arrival is never refused — docs/death.md § Telefrag.
         this.things?.telefragAt(dest, PLAYER_RADIUS, true);
@@ -954,10 +953,9 @@ export class Game {
             : camera.yawDeg + (dest.rotateBy * 180) / Math.PI;
         camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
       },
-      (sectorIndex, dealDamage) =>
+      onCrush: (sectorIndex, dealDamage) =>
         applyCrushDamage(
           this.world,
-          this.map,
           this.things,
           this.player,
           sectorIndex,
@@ -968,47 +966,43 @@ export class Game {
           // A crusher over a voodoo doll kills the player it stands for.
           this.voodoo.dolls,
         ),
-      (sectorIndex, ceilingHeight) =>
-        blocksCeilingLower(this.world, this.map, this.things, this.player, sectorIndex, ceilingHeight),
-      (sectorIndex, floorHeight) =>
-        blocksFloorRise(this.world, this.map, this.things, this.player, sectorIndex, floorHeight),
-      this.player.x,
-      this.player.y,
+      blocksCeilingLower: (sectorIndex, ceilingHeight) =>
+        blocksCeilingLower(this.world, this.things, this.player, sectorIndex, ceilingHeight),
+      blocksFloorRise: (sectorIndex, floorHeight) =>
+        blocksFloorRise(this.world, this.things, this.player, sectorIndex, floorHeight),
+      playerAt: this.player,
       movableSectors,
-      this.audio,
-      this.switchPairs,
-    );
+      sfx: this.audio,
+      switchPairs: this.switchPairs,
+    });
     if (restore) {
       this.specials.restore(restore.specials);
       this.world.restoreSoundAlerted(restore.soundAlerted);
     }
 
-    this.things = buildThingSprites(
-      map,
-      this.world,
-      this.spriteBank,
-      this.spriteMaterials,
-      this.skill,
-      this.audio,
-      // A_BossDeath — see docs/death.md § Boss death. Fanned out to both owners: the tag-driven
-      // actions (including Commander Keen's door) belong to `specials`, the Icon of Sin's own
-      // `A_BrainDie` to `icon`; each ignores the doomednums it doesn't handle. The player-alive
-      // gate is `A_BossDeath`'s alone and travels with it — `A_BrainDie` has none, so the icon
-      // is notified over a corpse too. docs/death.md § Dying on the way out.
-      (type) => {
+    this.things = buildThingSprites(this.world, {
+      bank: this.spriteBank,
+      materials: this.spriteMaterials,
+      skill: this.skill,
+      sfx: this.audio,
+      // Fanned out to both owners: the tag-driven actions (including Commander Keen's door)
+      // belong to `specials`, the Icon of Sin's own `A_BrainDie` to `icon`; each ignores the
+      // doomednums it doesn't handle. The player-alive gate is `A_BossDeath`'s alone and travels
+      // with it — `A_BrainDie` has none, so the icon is notified over a corpse too.
+      // docs/death.md § Dying on the way out.
+      onBossDeath: (type) => {
         this.specials?.notifyBossDeath(type, !this.playerDead);
         this.icon?.notifyBossDeath(type);
         this.endingOverCorpse();
       },
-      restore?.things,
-      // `P_NightmareRespawn`'s two `MT_TFOG`s, at the corpse and at the spawn point it returns to.
+      restore: restore?.things,
       // `spawnTeleportFog` plays the `telept` that goes with each, exactly as a teleport does.
-      (from, to) => {
+      onRespawn: (from, to) => {
         this.effects.spawnTeleportFog(from);
         this.effects.spawnTeleportFog(to);
       },
-      this.lights,
-    );
+      lights: this.lights,
+    });
     this.scene.add(this.things.group);
 
     // Built after `things`, which its cube spawns and telefrags go through.
@@ -1063,7 +1057,7 @@ export class Game {
 
   resume(): void {
     if (this.running) return;
-    // Reached from the Start button or Esc, i.e. from a real user gesture —
+    // Reached from the Start button or ESC, i.e. from a real user gesture —
     // which is the only way a browser lets an AudioContext start.
     this.audio.resume();
     this.paused = false;
@@ -1429,7 +1423,7 @@ export class Game {
       return;
     }
     // `rawDt` is the real elapsed wall-clock time, and it is banked rather than
-    // consumed: the simulation only ever advances in whole `TIC_SECONDS` steps
+    // consumed: the simulation only ever advances in whole `DOOM_TIC` steps
     // (`tic`), and whatever is left over becomes the interpolation alpha the
     // draw below poses everything at. `DebugHud` gets `rawDt` because it is
     // measuring real frames, not tics.
@@ -1446,13 +1440,13 @@ export class Game {
     this.accumulator += rawDt;
     // A stall (backgrounded tab, a slow map load) must not be paid back as a
     // burst of catch-up tics — drop the debt instead: never take a giant step.
-    if (this.accumulator > MAX_TICS_PER_FRAME * TIC_SECONDS) this.accumulator = MAX_TICS_PER_FRAME * TIC_SECONDS;
+    if (this.accumulator > MAX_TICS_PER_FRAME * DOOM_TIC) this.accumulator = MAX_TICS_PER_FRAME * DOOM_TIC;
     this.profiler.beginFrame();
 
     const { input, camera } = this.view;
     let ran = 0;
-    while (this.accumulator >= TIC_SECONDS && ran < MAX_TICS_PER_FRAME) {
-      this.accumulator -= TIC_SECONDS;
+    while (this.accumulator >= DOOM_TIC && ran < MAX_TICS_PER_FRAME) {
+      this.accumulator -= DOOM_TIC;
       ran++;
       // A tic that swapped the level (an exit, a restart) invalidates
       // everything the rest of this frame would touch — stop and let the next
@@ -1467,12 +1461,12 @@ export class Game {
     // accumulator: with no further tic coming, the last two tics stay apart
     // forever while `alpha` keeps changing every frame, so the still scene
     // shakes between them. docs/frameloop.md § Interpolation.
-    this.draw(this.popup ? 1 : this.accumulator / TIC_SECONDS, rawDt);
+    this.draw(this.popup ? 1 : this.accumulator / DOOM_TIC, rawDt);
     requestAnimationFrame(this.frame);
   };
 
   /**
-   * One fixed `TIC_SECONDS` step of the whole simulation, and the only place
+   * One fixed `DOOM_TIC` step of the whole simulation, and the only place
    * input is consumed. Returns true if it loaded a different level, which makes
    * every reference the caller holds stale.
    *
@@ -1487,7 +1481,7 @@ export class Game {
     // any key, since Escape belongs to the menu (main.ts) and would otherwise both pause and eat
     // the popup in the same press.
     if (this.popup) {
-      this.intermissionTime += TIC_SECONDS;
+      this.intermissionTime += DOOM_TIC;
       const go = input.pressed('Space') || input.pressed('Enter');
       input.endTic();
       if (this.intermissionTime < INTERMISSION_INPUT_DELAY || !go) return false;
@@ -1525,20 +1519,12 @@ export class Game {
     // settles in `camera.tick`, at the end) — a tic of smoothing lag on the
     // pan axis, which is inaudible.
     this.audio.setListener(this.player, camera.viewerAngleDeg + 180);
-    camera.applyYawInput(input, TIC_SECONDS);
+    camera.applyYawInput(input, DOOM_TIC);
 
     // Runs before player.update so a lift/door the player is standing on has
     // already moved this tic by the time groundFloor is sampled below.
     this.profiler.time('Specials', () => {
-      this.specials?.update(
-        TIC_SECONDS,
-        this.player.x,
-        this.player.y,
-        this.player.angle,
-        input,
-        this.inventory.keys,
-        this.player.noclip,
-      );
+      this.specials?.update(DOOM_TIC, this.player, input, this.inventory.keys, this.player.noclip);
       // After the movers, not before: a displacement scroller's rate is the
       // height change its control sector just made this tic.
       this.forces.tick();
@@ -1546,7 +1532,7 @@ export class Game {
       // impulse and the walk lines it pushes a doll across land in one tic.
       if (!this.voodoo.empty) {
         this.voodoo.update(
-          TIC_SECONDS,
+          DOOM_TIC,
           this.forces,
           (prev, doll) => this.specials?.crossVoodoo(prev, doll, this.inventory.keys) ?? null,
           // A doll is a player mobj carrying `MF_PICKUP`, so what it runs over lands in the real
@@ -1611,18 +1597,18 @@ export class Game {
     // happen immediately before the ray: `draw` overwrites the pose afterwards.
     // docs/frameloop.md § Posing for the aim ray.
     if (!this.playerDead) camera.applyToCamera(1);
-    const cursor = this.playerDead ? null : this.updateLivingPlayer(TIC_SECONDS, input, camera);
+    const cursor = this.playerDead ? null : this.updateLivingPlayer(DOOM_TIC, input, camera);
 
-    if (!this.playerDead) this.levelTime += TIC_SECONDS;
+    if (!this.playerDead) this.levelTime += DOOM_TIC;
     // After movement (the probe runs from this tic's position) and before
     // camera.tick, whose damping advances toward the fresh target.
     // docs/camera.md § Auto camera.
     this.profiler.time('Camera', () => this.autoCamera.tick(this.player, camera));
-    camera.tick(TIC_SECONDS, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, cursor);
+    camera.tick(DOOM_TIC, { x: this.player.x, y: this.player.y, z: this.player.eyeZ }, cursor);
 
     this.profiler.time('Fog of War', () => this.fogOfWar.tick(this.player.x, this.player.y));
-    this.updateThings(TIC_SECONDS);
-    this.updateEffects(TIC_SECONDS);
+    this.updateThings(DOOM_TIC);
+    this.updateEffects(DOOM_TIC);
 
     input.endTic();
     return false;
@@ -1713,12 +1699,11 @@ export class Game {
       }
       // What the floor underfoot does to the player's own movement — ice, mud,
       // or (on every map with no 223 line) nothing at all.
-      const ground = this.forces.frictionUnder(
-        this.player,
-        PLAYER_RADIUS,
-        Math.hypot(this.player.velX, this.player.velY),
-        this.playerTouch,
-      );
+      const ground = this.forces.frictionUnder(this.player, {
+        radius: PLAYER_RADIUS,
+        speed: Math.hypot(this.player.velX, this.player.velY),
+        cache: this.playerTouch,
+      });
       // Monsters are solid: the player walks around them, not through them.
       this.player.update(
         dt,
@@ -1984,7 +1969,7 @@ export class Game {
           openingInto: this.openingInto,
         },
         this.fogOfWar,
-        this.specials ?? undefined,
+        this.specials?.fadeParticipant,
       );
       // Independent of camera/player position — a scrolling wall animates
       // whether or not it's currently faded or in view. The offsets advance on
@@ -1992,7 +1977,7 @@ export class Game {
       // stays as smooth as the rest of the presentation layer.
       if (this.forces.hasScrollers) {
         this.forces.advanceOffsets(dt);
-        this.surfaceScroller.update(this.forces);
+        this.surfaceScroller.update();
       }
       // Same independence, and session-scoped rather than per-map (see its
       // construction in the constructor) — an animated liquid/fire texture keeps
@@ -2026,7 +2011,7 @@ export class Game {
     const light = sector ? transfersOf(this.world.map).spriteLight(this.world.sectorIndexAt(x, y)) : 128;
     // The player is an emitter too — `PLAY F`, the firing frame, is the muzzle flash GLDEFS binds
     // `ZOMBIEATK` to, the same light the zombieman's own `POSS F` gets. `PLAYER_EMITTER_ID` keeps
-    // it clear of `PosedThing.id` (a plain array index) and of the effects' negative ids.
+    // it clear of `PosedThing.id` (a plain array index) and of the effects' negative IDs.
     // The leaf is left to `DynamicLights` to resolve: both `offer` and `tintAt` fall back to the
     // same descent, and only once a light is actually live — so a WAD with no GLDEFS, or lights
     // switched off, pays nothing for it here.
@@ -2046,4 +2031,9 @@ export class Game {
       getCameraMode() === 'auto' ? this.autoCamera.readout() : 'manual',
     ];
   }
+}
+
+function readStoredFpsCap(): FpsCap {
+  const stored = Number(globalThis.localStorage?.getItem(FPS_CAP_STORAGE_KEY));
+  return FPS_CAPS.find((c) => c === stored) ?? 0;
 }

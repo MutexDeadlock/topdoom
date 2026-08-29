@@ -50,7 +50,7 @@ function arena(restore?: ThingsSnapshot): Fixture {
   map.things.push(thingAt(grid, 1, 1, 1), thingAt(grid, 3, 2, ThingType.archVile));
   const player: Pos3 = { x: map.things[0].x, y: map.things[0].y, z: 0 };
   const { bank, asked } = recordingBank();
-  const layer = buildThingSprites(map, new World(map), bank, MATERIALS, 3, undefined, undefined, restore ?? awake(map.things[1]));
+  const layer = buildThingSprites(new World(map), { bank: bank, materials: MATERIALS, skill: 3, restore: restore ?? awake(map.things[1]) });
   return {
     layer,
     player,

@@ -61,7 +61,7 @@ describe('Regressions · pinned-body memo invalidation', () => {
     map.things.push(thingAt(grid, 1, 1, ThingType.evilEye), thingAt(grid, 4, 1, ThingType.playerStart));
     const world = new World(map);
     const forces = new Forces(map, world);
-    const layer = buildThingSprites(map, world, BANK, MATERIALS, 3);
+    const layer = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
     const run = (tics: number) => {
       for (let i = 0; i < tics; i++) {
         forces.tick();

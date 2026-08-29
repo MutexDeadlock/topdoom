@@ -735,8 +735,8 @@ Three vanilla rules keep it from degenerating:
   another cyberdemon still calls `A_Explode` and still splashes. Fixing this settled two smaller
   things in the same function: candidates are resolved **first-along-the-step** (with a fizzle and a
   real hit both possible among the bodies a missile passes, which one it picks matters), and
-  `bodyStruckBy` returns a result *object* rather than a bare id, removing a latent truthiness bug
-  — `posed` index 0 is a valid monster id, and `if (reachedPlayer || struck || …)` treated a hit on
+  `bodyStruckBy` returns a result *object* rather than a bare ID, removing a latent truthiness bug
+  — `posed` index 0 is a valid monster ID, and `if (reachedPlayer || struck || …)` treated a hit on
   it as no hit.
 
 A target that dies hands attention straight back to the player (`resolveTarget`), matching

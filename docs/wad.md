@@ -448,13 +448,13 @@ every exit did before there was a progression at all. An `end` raises the end ca
 no vanilla finale, no victory text and no cast call, but ending the run is no longer something it
 cannot do.
 
-## Content id
+## Content ID
 
-`checksum.ts` gives a `WadFile` a **content id**: a hash of its whole byte range, memoized in a
+`checksum.ts` gives a `WadFile` a **content ID**: a hash of its whole byte range, memoized in a
 `WeakMap` keyed on the underlying `ArrayBuffer` rather than on the `WadFile` — the same bytes get
 wrapped more than once (an upload hashes its own `WadFile`, `loadWadFiles` builds another over the
 same buffer, a restart re-wraps the memoized fetch), and a wrapper-keyed memo misses every time,
-re-walking ~14 MB on the level-start path. **Everything that needs an id goes through `idOf` (or
+re-walking ~14 MB on the level-start path. **Everything that needs an ID goes through `idOf` (or
 `wadId`, which is `idOf` over the file's buffer), never `hashBytes` directly** — the menu hashes an
 upload's bytes long before the level start wraps that same buffer, and a direct call leaves the memo
 empty for the wrapper to miss on exactly the path the memo exists for. It is what per-level best
@@ -462,25 +462,25 @@ times are keyed on (docs/hud.md § Best times), and it is what a saved game stor
 `wadSetId(wad)` returns every loaded file's `{ name, id }` in load order, a list rather than one
 combined hash so a mismatch can name *which* file is wrong. `mapProvider(wad, map)` is the same pair
 for the one file supplying a map — a save's `mapWad`, and what best times are keyed on. A save uses
-the id as the file's **identity**, not merely as a check: it is what `loadSave` re-resolves the
+the ID as the file's **identity**, not merely as a check: it is what `loadSave` re-resolves the
 library against, so a renamed WAD still loads and the same bytes match whether they come from the
 server or from disk (docs/savegames.md § WAD-set identity). That is also why
-`plugins/wad-manifest.ts` publishes each server WAD's id — the menu has to know a file's identity
+`plugins/wad-manifest.ts` publishes each server WAD's ID — the menu has to know a file's identity
 without downloading it.
 
 Two rules hold this up:
 
-- **The id follows the bytes, not the file name.** Renaming a WAD keeps its records; editing one
+- **The ID follows the bytes, not the file name.** Renaming a WAD keeps its records; editing one
   loses them, which is correct — an edited WAD is a different WAD.
 - **The hash is synchronous, and deliberately not `crypto.subtle`.** `crypto.subtle` is undefined
   outside a secure context, and the Vite dev server reached over a plain-http LAN address is not
-  one. An id that depended on how the page was opened would cost a record here and would make a
+  one. An ID that depended on how the page was opened would cost a record here and would make a
   save refuse to load once saves key off the same function, so there is one scheme everywhere.
   What that scheme is: two FNV-1a-shaped lanes with different basis and multiplier, run in one pass
   and concatenated to 16 hex chars, with the byte length folded in so a truncated file can't
   collide with the whole one. 13ms for the 14 MB `DOOM2.WAD`.
 
-`Game`'s constructor primes the id for every loaded file, so the cost lands in a load that is
+`Game`'s constructor primes the ID for every loaded file, so the cost lands in a load that is
 already building every mesh in the level rather than on the frame a level ends.
 
 **When each kind of source pays for it** follows from that 13ms/14 MB, and the three answers
@@ -489,7 +489,7 @@ differ on purpose:
 - A **server file** is hashed at build time by the manifest plugin, whose bytes are in memory
   anyway — the alternative is downloading every WAD in `public/wads/` to draw the save list.
 - An **upload** is hashed as it is added, in `uploadedSource`: the bytes are already in memory, and
-  the save list matches by id and renders synchronously.
+  the save list matches by ID and renders synchronously.
 - A **library file** is hashed only when it is picked (`library.ts: ensureWadId`, then
   `rememberLibraryId` writing it back to the scan memo), because its folder may hold hundreds of
   files that will never be loaded — § The player's own library. Until then its `WadSource.id` is
@@ -610,7 +610,7 @@ buffer, because a library scan describes hundreds of files it will never load. O
 12-byte header, the directory, and at most two lumps: a few hundred KB, not the file. `bytesOf`
 wraps bytes already in memory, which is what the manifest plugin and an upload hand it.
 
-What it does **not** do is hash. The content id is a pass over every byte (§ Content id), and the
+What it does **not** do is hash. The content ID is a pass over every byte (§ Content ID), and the
 three callers want it at three different moments — see there.
 
 Failures are `throw`n, with `WadFile`'s own messages, because an upload has someone waiting on an
@@ -672,8 +672,8 @@ a permanent blank is not.
 ## The `public/wads/` manifest
 
 The Vite plugin scans `public/wads/{iwad,pwad}/`, parsing each file's header and directory plus its
-MAPINFO and `DEHACKED` lumps if it has them, and hashing its bytes for the content id (§ Content id)
-— the file is already in memory, so the id costs one pass and nothing extra to read. That is served
+MAPINFO and `DEHACKED` lumps if it has them, and hashing its bytes for the content ID (§ Content ID)
+— the file is already in memory, so the ID costs one pass and nothing extra to read. That is served
 as `/wads/index.json` (dev middleware and build-time `emitFile`), so the menu can list
 types/sizes/map counts, name levels, and know each file's *identity* without downloading anything —
 the last being what lets a savegame's WAD set resolve while the save list renders (docs/savegames.md

@@ -274,7 +274,7 @@ did:** `play` short-circuits rather than starting inaudible sources, and
 running silently, and sliding back up part-way through would drop the player into the middle of it.
 
 The slider previews itself (`itemup`) as you drag — but only once a WAD set's sounds are
-loaded, i.e. from the first Esc back to the menu onward. On the very first visit there is no
+loaded, i.e. from the first ESC back to the menu onward. On the very first visit there is no
 bank yet and the preview is silent; downloading a 14 MB IWAD to audition a slider would be
 worse.
 
@@ -283,7 +283,7 @@ renderer — and is created lazily on the first `resume()`, since browsers only 
 user gesture. Three places reach it: `startLevel` (synchronously, before
 `loadWadFiles`' first `await`), the volume slider, and a one-shot `pointerdown`/`keydown`
 listener in `main.ts` that covers a `?map=` deep link, which starts a level with no click at
-all. `Game.pause()` suspends it and `resume()` wakes it, so Esc to the menu is silent; a
+all. `Game.pause()` suspends it and `resume()` wakes it, so ESC to the menu is silent; a
 level change calls `stopAll()`, since anything still ringing belongs to the level being torn
 down and its origins are about to be reused.
 

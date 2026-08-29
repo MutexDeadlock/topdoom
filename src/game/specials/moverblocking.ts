@@ -85,12 +85,12 @@ function headroomBlocked(
  */
 export function blocksCeilingLower(
   world: World,
-  map: DoomMap,
   things: ThingLayer | null,
   player: Pos2,
   sectorIndex: number,
   ceilingHeight: number,
 ): boolean {
+  const map = world.map;
   return headroomBlocked(world, map, things, player, sectorIndex, map.sectors[sectorIndex].floorHeight, ceilingHeight);
 }
 
@@ -105,7 +105,6 @@ export function blocksCeilingLower(
  */
 export function blocksFloorRise(
   world: World,
-  map: DoomMap,
   things: ThingLayer | null,
   player: Pos2,
   sectorIndex: number,
@@ -116,6 +115,7 @@ export function blocksFloorRise(
   // by the mapper precisely where the script needs it and is usually meant to be
   // crushed there — having it silently jam the level's own machinery is the
   // worse failure. Crush *damage* still reaches it (`applyCrushDamage`).
+  const map = world.map;
   if (headroomBlocked(world, map, things, player, sectorIndex, floorHeight, map.sectors[sectorIndex].ceilHeight)) {
     return true;
   }
@@ -188,7 +188,6 @@ function crushed(
  */
 export function applyCrushDamage(
   world: World,
-  map: DoomMap,
   things: ThingLayer | null,
   player: Pos2,
   sectorIndex: number,
@@ -200,6 +199,7 @@ export function applyCrushDamage(
    */
   dolls: readonly Pos2[] = [],
 ): boolean {
+  const map = world.map;
   const sector = map.sectors[sectorIndex];
   const gap = sector.ceilHeight - sector.floorHeight;
   // `nofit`: something shootable is in the sector and doesn't fit the gap. It is

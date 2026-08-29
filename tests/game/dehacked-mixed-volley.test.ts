@@ -73,7 +73,7 @@ function volleySprites(type: number): string[] {
   const log = soundLog();
   const sprites: string[] = [];
   for (let i = 0; i < 120; i++) {
-    const attack = stepMonsterAI(body, stats, DOOM_TIC, world, target, PLAYER_RADIUS, PLAYER_HEIGHT, undefined, undefined, log.sfx);
+    const attack = stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, sfx: log.sfx });
     for (const shot of attack?.projectiles ?? []) sprites.push(shot.sprite);
     // One volley only: stop the moment its last shot has left, before a second attack is chosen.
     if (sprites.length > 0 && body.burstLeft === 0) break;

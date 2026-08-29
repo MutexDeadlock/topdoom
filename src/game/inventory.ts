@@ -60,7 +60,7 @@ export function satisfiesLock(keys: ReadonlySet<KeySlot>, lock: LockRule): boole
 /**
  * Every weapon the player can carry, including fist and pistol — vanilla
  * starts every game with both already owned and neither has a map pickup, but
- * both are selectable and fireable (game/weapons.ts), so both need an id like
+ * both are selectable and fireable (game/weapons.ts), so both need an ID like
  * every other weapon to be `currentWeapon`-able.
  */
 export type WeaponId =

@@ -59,16 +59,17 @@ is still right for a one-off investigation — those go in the scratchpad, never
 ## Architecture
 
 ```
-src/wad/       WAD files, merged lump directory, content ids (checksum), map lumps (map), graphics
+src/wad/       WAD files, merged lump directory, content IDs (checksum), map lumps (map), graphics
                + sprite + sound + music decoding, Boom's ANIMATED/SWITCHES/colormap lumps, GZDoom's
                dynamic-light definitions (gldefs), what the text lumps share before each grammar
                takes over (textlump), whether this engine can run a file at all (support), what a
                file holds without loading it (describe), the menu's WAD library
 src/render/    BSP polygon reconstruction (bsp) and the linedef-side answers it can't ask the tree
                for (sectorprobe), the solids a map draws as void (solids), mesh building, materials
-               + texture animation, occlusion fading, sprite billboards + their instanced batching,
-               GLDEFS dynamic lights (lights) and which subsectors one reaches (lightvis), shot
-               tracers, camera, viewport, the GPU's own frame time (gputimer)
+               + texture animation, occlusion fading, Boom's scrolling surfaces (scroller), sprite
+               billboards + their instanced batching, GLDEFS dynamic lights (lights) and which
+               subsectors one reaches (lightvis), shot tracers, camera, viewport, the GPU's own
+               frame time (gputimer)
 src/game/      spatial queries + collision, player controller, input, the auto camera, what each
                skill level changes (skill), thing world state, fog of war, inventory/pickups,
                weapons and firing, shots in flight + splash, damage/death, transient effects,

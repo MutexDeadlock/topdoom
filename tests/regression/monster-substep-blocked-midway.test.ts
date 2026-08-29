@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { World, type ThingBlocker } from '../../src/game/world.ts';
+import { makeCollider, type ThingBlocker, World } from '../../src/game/world.ts';
 import { DIR_X, DIR_Y, DI_NODIR, type MonsterBody } from '../../src/game/monsters/defs.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
@@ -44,6 +44,10 @@ const BLOCKER_DY = -(REACH - 5.5);
 
 /** North-east, the direction `newChaseDir` takes toward a target up and to the right. */
 const NE = 1;
+
+/** The demon's box with its feet at `z`, and whatever else is solid around it. */
+const asMonster = (z: number, blockers?: readonly ThingBlocker[]) =>
+  makeCollider({ radius: stats.radius, z, height: stats.height, forMonster: true, blockers });
 
 function scene(): { world: World; body: MonsterBody; blockers: ThingBlocker[]; target: { x: number; y: number; z: number } } {
   const grid = gridMap(['#######', '#.....#', '#.....#', '#.....#', '#.....#', '#.....#', '#######'], { cell: 128 });
@@ -90,7 +94,7 @@ describe('Regressions · a sub-step refused part-way through an approved chase s
   test('the fixture really does block only mid-step', () => {
     const { world, body, blockers } = scene();
     const blockedAt = (travel: number): boolean =>
-      world.positionBlocked(body.x + DIR_X[NE] * travel, body.y + DIR_Y[NE] * travel, stats.radius, body.z, stats.height, true, blockers);
+      world.positionBlocked(body.x + DIR_X[NE] * travel, body.y + DIR_Y[NE] * travel, asMonster(body.z, blockers));
 
     assert.equal(blockedAt(0), false, 'starts clear, so this is not the spawned-inside-a-wall case');
     assert.equal(blockedAt(stats.speed * DOOM_TIC), true, 'one tic along the step is refused');
@@ -102,11 +106,11 @@ describe('Regressions · a sub-step refused part-way through an approved chase s
     const startX = body.x;
     const startY = body.y;
     for (let tic = 0; tic < Math.round(2 / DOOM_TIC); tic++) {
-      stepMonsterAI(body, stats, DOOM_TIC, world, target, PLAYER_RADIUS, PLAYER_HEIGHT, blockers);
+      stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockers });
     }
     assert.ok(Math.hypot(body.x - startX, body.y - startY) > 100, 'must cover real ground in two seconds');
     assert.equal(
-      world.positionBlocked(body.x, body.y, stats.radius, body.z, stats.height, true, blockers),
+      world.positionBlocked(body.x, body.y, asMonster(body.z, blockers)),
       false,
       'and must end up clear of the blocker',
     );
@@ -123,7 +127,7 @@ describe('Regressions · a sub-step refused part-way through an approved chase s
     body.movecount = 8;
     const startX = body.x;
     const startY = body.y;
-    stepMonsterAI(body, stats, DOOM_TIC, world, target, PLAYER_RADIUS, PLAYER_HEIGHT, blockers);
+    stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockers });
     const moved = Math.hypot(body.x - startX, body.y - startY);
     // `DIR_X`/`DIR_Y`'s diagonals are vanilla's 0.71716, so a diagonal step is
     // the documented ~1.4% longer than a cardinal one.
@@ -143,9 +147,9 @@ describe('Regressions · a sub-step refused part-way through an approved chase s
     const at = grid.centre(1, 1);
     body.x = at.x;
     body.y = at.y;
-    assert.ok(world.positionBlocked(body.x, body.y, stats.radius, 0, stats.height, true), 'boxed in');
+    assert.ok(world.positionBlocked(body.x, body.y, asMonster(0)), 'boxed in');
     for (let tic = 0; tic < Math.round(2 / DOOM_TIC); tic++) {
-      stepMonsterAI(body, stats, DOOM_TIC, world, { x: at.x + 400, y: at.y, z: 0 }, PLAYER_RADIUS, PLAYER_HEIGHT);
+      stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target: { x: at.x + 400, y: at.y, z: 0 }, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
     }
     assert.equal(body.x, at.x, 'goes nowhere');
     assert.equal(body.y, at.y, 'goes nowhere');

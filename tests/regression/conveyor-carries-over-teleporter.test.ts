@@ -49,7 +49,7 @@ describe('Regressions · a conveyor carries a thing over a teleporter', () => {
 
     const rigged = specialsRig(map, grid.centre(4, 1));
     const forces = new Forces(map, rigged.world);
-    const layer = buildThingSprites(map, rigged.world, BANK, MATERIALS, 3);
+    const layer = buildThingSprites(rigged.world, { bank: BANK, materials: MATERIALS, skill: 3 });
     const step = () => {
       forces.tick();
       layer.update(
@@ -88,7 +88,7 @@ describe('Regressions · a conveyor carries a thing over a teleporter', () => {
     map.things.push(thingAt(grid, 1, 1, ThingType.imp), thingAt(grid, 4, 1, ThingType.playerStart));
     const world = new World(map);
     const forces = new Forces(map, world);
-    const layer = buildThingSprites(map, world, BANK, MATERIALS, 3);
+    const layer = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
     layer.damage(0, 1000); // dead where it stands, before the belt has run
     const startX = layer.snapshot().things[0].x;
     for (let i = 0; i < 100; i++) {
@@ -108,7 +108,7 @@ describe('Regressions · a conveyor carries a thing over a teleporter', () => {
     map.things.push(thingAt(grid, 1, 1, ThingType.evilEye), thingAt(grid, 4, 1, ThingType.playerStart));
     const world = new World(map);
     const forces = new Forces(map, world);
-    const layer = buildThingSprites(map, world, BANK, MATERIALS, 3);
+    const layer = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
     for (let i = 0; i < 200; i++) {
       forces.tick();
       layer.update(TIC, null, undefined, undefined, (pos, radius, cache) => forces.carryForBody(pos, radius, cache));

@@ -32,10 +32,15 @@ function fireOnce(type: number): { pose: string[]; shotTic: number; poseStart: n
   map.things.push(thingAt(grid, 1, 1, 1), thingAt(grid, 3, 2, type));
   const player = { x: map.things[0].x, y: map.things[0].y, z: 0 };
   const { bank, asked } = recordingBank();
-  const layer = buildThingSprites(map, new World(map), bank, MATERIALS, 3, undefined, undefined, {
-    clock: 0,
-    stats: { totalKills: 1, kills: 0, totalItems: 0, items: 0 },
-    things: [{ type, x: map.things[1].x, y: map.things[1].y, z: 0, facingDeg: 180, monster: { alerted: true } }],
+  const layer = buildThingSprites(new World(map), {
+    bank,
+    materials: MATERIALS,
+    skill: 3,
+    restore: {
+      clock: 0,
+      stats: { totalKills: 1, kills: 0, totalItems: 0, items: 0 },
+      things: [{ type, x: map.things[1].x, y: map.things[1].y, z: 0, facingDeg: 180, monster: { alerted: true } }],
+    },
   });
 
   const walk = new Set(['A', 'B', 'C', 'D']);

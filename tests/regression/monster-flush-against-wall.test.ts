@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gridMap } from '../fixtures/gridmap.ts';
-import { World } from '../../src/game/world.ts';
+import { makeCollider, World } from '../../src/game/world.ts';
 import { MONSTER_STATS } from '../../src/game/monsters/tables.ts';
 import { stepMonsterAI } from '../../src/game/monsters/ai.ts';
 import { PLAYER_HEIGHT, PLAYER_RADIUS } from '../../src/game/player.ts';
@@ -23,6 +23,9 @@ const stats = MONSTER_STATS[ThingType.zombieman];
 
 /** Big enough that a whole chase step plus the monster's radius stays inside one cell. */
 const CELL = 128;
+
+/** The zombieman's box with its feet at `z`. */
+const asMonster = (z: number) => makeCollider({ radius: stats.radius, z, height: stats.height, forMonster: true });
 
 /**
  * One open row with a wall at each end. The monster starts hard against the
@@ -70,7 +73,7 @@ function travelled(world: World, body: MonsterBody, target: { x: number; y: numb
   const startX = body.x;
   const startY = body.y;
   for (let f = 0; f < Math.round(seconds / DOOM_TIC); f++) {
-    stepMonsterAI(body, stats, DOOM_TIC, world, target, PLAYER_RADIUS, PLAYER_HEIGHT);
+    stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
   }
   return Math.hypot(body.x - startX, body.y - startY);
 }
@@ -79,7 +82,7 @@ describe('Regressions · a monster spawned flush against a wall', () => {
   test('the fixture really does start it inside the wall', () => {
     const { world, body } = scene(4);
     assert.ok(
-      world.positionBlocked(body.x, body.y, stats.radius, body.z, stats.height, true),
+      world.positionBlocked(body.x, body.y, asMonster(body.z)),
       'its own spawn point is blocked — otherwise this test proves nothing',
     );
   });
@@ -89,7 +92,7 @@ describe('Regressions · a monster spawned flush against a wall', () => {
       const { world, body, target } = scene(overlap);
       assert.ok(travelled(world, body, target, 2) > 32, `overlap of ${overlap}: must cover real ground in two seconds`);
       assert.equal(
-        world.positionBlocked(body.x, body.y, stats.radius, body.z, stats.height, true),
+        world.positionBlocked(body.x, body.y, asMonster(body.z)),
         false,
         `overlap of ${overlap}: must end up clear of the wall`,
       );
@@ -131,7 +134,7 @@ describe('Regressions · a monster spawned flush against a wall', () => {
     body.x = start.x;
     body.y = start.y;
     assert.equal(
-      world.positionBlocked(body.x, body.y, stats.radius, 0, stats.height, true),
+      world.positionBlocked(body.x, body.y, asMonster(0)),
       false,
       'starts clear, so the escape hatch never applies',
     );

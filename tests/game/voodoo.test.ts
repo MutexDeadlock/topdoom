@@ -100,7 +100,7 @@ describe('Voodoo dolls', () => {
     const rig = specialsRig(grid.map, start);
     const forces = new Forces(grid.map, rig.world);
     const dolls = new VoodooDolls(rig.world);
-    const layer = buildThingSprites(grid.map, rig.world, BANK, MATERIALS, 3);
+    const layer = buildThingSprites(rig.world, { bank: BANK, materials: MATERIALS, skill: 3 });
     let taken = 0;
     for (let i = 0; i < 200; i++) {
       forces.tick();
@@ -124,7 +124,7 @@ describe('Voodoo dolls', () => {
     const world = new World(grid.map);
     const forces = new Forces(grid.map, world);
     const dolls = new VoodooDolls(world);
-    const layer = buildThingSprites(grid.map, world, BANK, MATERIALS, 3);
+    const layer = buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
     let taken = 0;
     for (let i = 0; i < 50; i++) {
       forces.tick();
@@ -162,7 +162,6 @@ describe('Voodoo dolls', () => {
     let dealt = 0;
     const caught = applyCrushDamage(
       world,
-      grid.map,
       null,
       // The player is somewhere else entirely.
       grid.centre(2, 0),

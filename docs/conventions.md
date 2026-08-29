@@ -1,10 +1,14 @@
 # File conventions
 
-Where a file goes, what it is called, and the order things sit in inside it. All of this is
+Where a file goes, what it is called, and the order things sit in inside it. Most of this is
 **descriptive** — it was written down by reading `src/` and naming the shape that was already
 dominant, so almost every file already conforms. The deviations that remain are listed at the
 bottom rather than swept: a file gets brought into line when it is next touched for another reason,
 not in a rename pass of its own.
+
+§ Source order inside a file and § Publics above privates are the exception and are
+**prescriptive**: they were chosen against the shape `src/` already had, so most files do not
+conform yet. Same discipline — convert on touch, never in a sweep.
 
 The header-comment and code-comment rules themselves are in CLAUDE.md § Code comments; this doc
 covers only naming and layout.
@@ -101,15 +105,77 @@ after that. A pure helper goes directly after the table it reads — `attackPose
 hoisted to the top: `BarrelExplosion` sits at the end of `things/defs.ts` with the `BARREL_*`
 constants, and that is correct.
 
-**A system module** (one class or factory): exported constants → private tuned dials → module-level
-state → free helper functions → **the single class or factory last**, occupying the rest of the
-file. `player.ts`, `game.ts`, `render/camera.ts`, `ui/hud/hud.ts` and `game/specials.ts` are all
-this shape.
+**A system module** (one class, factory or entry function): **public surface, subject, private
+support, side effects** — in that order. The subject splits the same way inside
+(§ Publics above privates).
+
+```
+import …
+export interface GameOptions { … }    the API's shapes
+export const PLAYER_RADIUS = 16;      the API's constants
+const TURN_RATE = 3.2;                private tuned dials
+let fpsCap = readStoredFpsCap();      module-level state
+export function getFpsCap() { … }     the API's functions
+export class Player { … }             the subject
+function clampToSector(…) { … }       private helpers
+for (const [i, id] of WEAPON_ORDER…)  module-evaluation side effects, last
+```
+
+The split is by what a use site can carry on its own. A helper's name and signature state what it
+does, so the subject reads fine above it — that is § Single-use helpers' test. A constant's name
+never states its *value*, and here the declaration is also the only place its provenance lives
+(CLAUDE.md's constants rule: a vanilla citation, or "tuned by feel"), which is what a reader needs
+to judge the line using it. `game/player.ts` spends 93 lines on 16 constants, nearly all of it
+citation. So values go above the subject and behavior goes below it.
+
+`src/main.ts` is the same shape with `boot()` as its subject and `void boot()` as the side effect.
+
+Three rules constrain the tail:
+
+- **Helpers below the subject are `function` declarations**, never `const helper = () => …`.
+  Declarations hoist and are safe wherever they sit; a `const` is only initialized when its own line
+  runs, so anything reaching it during module evaluation gets a TDZ error. This is load-bearing, not
+  theoretical: `game.ts`'s `let fpsCap = readStoredFpsCap()` calls a function declared below it.
+- **A private constant only one private helper reads travels with that helper**, below the subject —
+  the same pairing the data module keeps. Private constants only: module-level state and everything
+  exported stay above the subject whatever reads them, since an importer opens the file to find
+  them. `game.ts`'s FPS cap is the worked case — its state and both accessors above, only
+  `readStoredFpsCap` below.
+- **Type declarations are order-free.** An options interface sits directly above the class it
+  configures (§ Named arguments), never hoisted away from it.
+
+**When the constant block itself buries the subject, that is the signal to split**, not to bend the
+order: a type-keyed table big enough to push the class hundreds of lines down belongs in the
+subsystem's `tables.ts` (§ The role names), at the size bar that section sets.
+
+This is the one **prescriptive** rule here, but it usually asks for less than it looks: in most
+files only *private* helpers move, so 41 of the 62 modules with a class already conform. The
+exception to expect is a module whose tail is free functions, where **exported** ones sit down there
+too and move up as well — `game/world.ts` had eighteen. Of the 21 that don't, three carry real
+weight — `wad/graphics.ts` (106 lines of helper bodies above its class), `wad/campaign/mapinfo.ts`
+(67) and `ui/menu/library.ts` (65) — and the other eighteen are under 30 lines each. Convert a file
+when you next touch it for another reason, never in a sweep of its own.
 
 **The exception**: a module that is a bag of independent pure functions keeps each function's own
 types and constants immediately above it instead of hoisting them, and interleaves private with
 exported. `specials/mapscan.ts` is the case — reading it top-to-bottom is reading one analysis at a
 time, which hoisting would destroy.
+
+## Publics above privates
+
+**Inside a class or factory, the public surface comes before the private support** — the same split
+the module order makes, one level down. A reader who opens `ThingLayer` to find out what it can do
+reaches `update`, `draw` and `damage` before `pushThing` and `refreshSector`.
+
+A factory's members are `function` declarations in its closure, not properties on a returned
+literal, so this order is available to it at all: declarations hoist, so the public half can call
+the private half above it. The returned object is then a bare manifest of names — `game/things.ts`
+ends in one — and is the closure's own "side effects last" line, since it has to be last for
+`count: posed.length` and `missingArt: [...missingArt]` to read final values.
+
+Inside the closure the order is state, then construction, then publics, then privates: a `const`
+does not hoist, so anything a public reads must already be declared, and `createThingGrid` buckets
+what it is handed eagerly, so `grid` has to be built after the spawn loop that fills `posed`.
 
 ## Single-use helpers
 
@@ -123,6 +189,53 @@ inside `loadMap`, with its fidelity citation as a comment on the `const`.
 Length is not the test. A one-line body under a doc block that carries a vanilla citation or a
 hazard is usually worth keeping, since a declaration is where such a block belongs; a body called
 twice on one line (`checksum.ts`'s `hex32`) is not single-use at all.
+
+## Named arguments
+
+**Past three or four arguments — and always where two adjacent ones share a type — the tail goes
+in a named object.** `new TopDownCamera(aspect, options)` and `new Game(view, audio, wad, options)`
+are the shape: the handles that cannot be confused with each other stay positional, everything
+describing *this* call goes behind a name. `GameOptions.startMap` and `.title` are both strings, so
+positionally a swap typechecks and produces a level named after the WAD set.
+
+**The per-field JSDoc lives on the options interface**, and is not repeated at the call site
+(§ Comment shape). A call site keeps only `//` notes about the *value* it passes.
+
+**Nor does a parameter repeat what the object beside it already owns.**
+`new SpecialsController(world, options)` takes no `map`: `World` holds the map it was built over,
+and a second parameter is a second chance for the two to disagree.
+
+**The one exception is a coordinate pair on a hot path**, which keeps its `x`/`y` scalars —
+CLAUDE.md's position-types rule names `World`'s (`linesNear`, `subsectorAt`, `floorAt`,
+`positionBlocked`), and `ThingGrid.forEachMonsterNear` has the same shape: callers compute the
+coordinates inline, so a point parameter allocates one per call in code that runs thousands of
+times a frame. The same reasoning keeps `ThingGrid.pushBlocker`'s five scalars and
+`mapmesh.ts`'s `pushVertex`, where the record would be the allocation the pool or buffer exists to
+avoid.
+
+That is the whole exception. Anywhere else, being on a hot path is a reason to **measure**, not a
+reason to skip the name: `ThingGrid.forEachMonsterAlongRay` and `stepMonsterAI` both take the
+object.
+
+**Where a call's helpers all want the same handles, thread one context rather than an options
+object per helper.** `monsters/ai.ts` is the worked case: `stepMonsterAI(body, stats, world, step)`
+builds a `Chase` from its own parameters plus the four values it derives, and its fourteen helpers
+take that — collapsing about seventy parameters to fourteen, `runChaseCall`'s thirteen to one.
+
+The exported half is the options interface (`MonsterStep`), by the handles-vs-description test
+above; the private context extends it with what the call derives, so a caller is never asked for a
+field only the call can compute.
+
+**A record read on a hot path must reach it as one shape.** V8 keys a property load on the object's
+hidden class, and that class follows the literal: an omitted optional, a spread, or the same fields
+written in another order each make a different one, and a load site fed several goes megamorphic.
+So build such a record in exactly one place and require every field, which is what makes the type
+checker refuse a literal — `world.ts`'s `makeCollider` is the worked case, and skipping it measured
+10% on the monster path (docs/world.md § The collider).
+
+**A context carries policy as well as data.** `render/mapmesh.ts`'s `Build` covers either the whole
+map's static geometry or one mover's sector, and the two differ only in the `holdsStill` and
+`includeSide` predicates on it — so none of the dozen builders below has to know which it is in.
 
 ## Comment shape
 
@@ -163,6 +276,20 @@ site the fact plus `docs/x.md § heading`.
 becomes a multi-line block rather than trailing off the screen. Exempt: markdown tables, code
 fences, and a line whose overflow is a single unbreakable token (a URL, a long inline `` `code` ``
 span). Code is not held to it.
+
+## Abbreviations
+
+**An abbreviation is upper case in prose** — comments, `docs/` and player-facing text alike:
+`ESC`, `ID`, `IDs`. Never `Esc`, `Id`, `id`.
+
+**Code keeps its own casing** and is exempt, backtick spans in prose included: `getElementById` is
+the DOM's, `wadSetId`/`SfxId`/`targetId` are camelCase like the rest of `src/`, and `SaveGame.id` /
+`SaveWad.id` are persisted field names — renaming those is a `SAVE_VERSION` bump (CLAUDE.md's
+save-compatibility rule), not a casing sweep.
+
+**`id Software` is the company's own spelling** and stays lowercase, as do `id-era` and
+`id-Software` URLs. That collision is the reason for the rule: in prose, lowercase `id` is the
+company and upper-case `ID` is an identifier, so neither has to be read from context.
 
 ## Imports
 

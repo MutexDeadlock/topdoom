@@ -109,7 +109,7 @@ describe('Regressions · a pit that is also a mover', () => {
   function moverFans(map: DoomMap, sector: number) {
     const polys = buildSubSectorPolys(map);
     const options = { transfers: transfersOf(map), movableSectors: new Set([sector]) };
-    return buildMoverMesh(map, polys, sector, BANK, options, buildMoverIndex(map, polys)).flatFans;
+    return buildMoverMesh({ map, polys, bank: BANK, options, index: buildMoverIndex(map, polys) }, sector).flatFans;
   }
 
   test('the mover mesh lids it too, not just the static batches', () => {

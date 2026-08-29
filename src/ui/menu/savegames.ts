@@ -81,7 +81,7 @@ export class SavegamesUi {
    * Which of the two lists is on screen, and whether each still matches the
    * store. Only the visible one is ever built: listing itself is a cheap meta
    * read now, but rendering still means one thumbnail decode and one WAD-set
-   * resolution per row, which must not happen on a plain Esc pause or at boot.
+   * resolution per row, which must not happen on a plain ESC pause or at boot.
    */
   private visible: 'save' | 'load' | null = null;
   private stale = { save: true, load: true };
@@ -299,8 +299,8 @@ export class SavegamesUi {
   }
 
   /**
-   * The name, editable in place: Enter or leaving the field commits, Esc
-   * reverts. Esc also stops there rather than bubbling to `main.ts`'s handler,
+   * The name, editable in place: Enter or leaving the field commits, ESC
+   * reverts. ESC also stops there rather than bubbling to `main.ts`'s handler,
    * which would otherwise close the whole menu on the same key.
    */
   private makeNameInput(meta: SaveMeta): HTMLInputElement {

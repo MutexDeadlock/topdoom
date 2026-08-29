@@ -212,6 +212,10 @@ take the same answer. It is what lets a dynamic light stop at a wall (docs/light
 at walls), and it is written once: a mover changes heights, never a quad's footprint, so
 `refreshMoverMesh` leaves it alone.
 
+Every builder threads one `Build` record: the map, the options resolved once, and the arrays each
+appends to. A whole-map build and a mover's differ only in the `holdsStill`/`includeSide` predicates
+on it (§ Mover meshes), so nothing below `buildMapMesh`/`buildMoverMesh` branches on which it is in.
+
 ### Flats are diced on a world grid
 
 A flat is cut up for the same reason a wall is — a fan whose only vertices are its corners has
@@ -291,8 +295,16 @@ no surface — though its height still sizes the walls across from it (§ Deep w
 
 Every sector a specials mover can drive is left out of the static batches entirely and drawn from
 its own small mesh instead (`MapMeshOptions.movableSectors`, `specials/movergeometry.ts`), which
-`MoverGeometry.rebuild` brings up to date on each tic the sector's height changed. That call is on
-the tic path for *every* moving sector at once, so two things about it are load-bearing:
+`MoverGeometry.rebuild` brings up to date on each tic the sector's height changed.
+
+**A line touching a mover leaves the static batch on *both* its sides**, not just the one the mover
+owns. DOOM puts a platform's visible front texture on the sidedef of the lower sector looking at it
+— the static room's side of the line, not the lift's — so leaving that side static freezes the
+lift's front wall at its raised height while the platform slides down behind it. Which of the two a
+mover then builds is `Build.includeSide`.
+
+That rebuild is on the tic path for *every* moving sector at once, so two things about it are
+load-bearing:
 
 **A rebuild costs the sector's own size, never the map's.** `buildMoverMesh` walks a `MoverIndex`
 rather than scanning: its subsectors, grouped once per level, and its linedefs, which are vanilla's
@@ -357,7 +369,7 @@ count held still. So the rule is per quad, and it is about the sectors that **si
 the sector that owns it: a quad dices vertically when the floors and ceilings it is measured from
 cannot move. A one-sided wall reads one sector; every tier of a two-sided side reads two (the lower
 spans the two floors, the upper the two ceilings), so one moving neighbour is enough to leave that
-whole side undiced. `processLine`'s `holdsStill` asks it, against
+whole side undiced. `Build.holdsStill` asks it, against
 `MapMeshOptions.movingSectors`.
 
 That set is deliberately **not** `movableSectors`. A sector leaves the static batch either because a
@@ -482,7 +494,7 @@ something else:
 - **No lid where a Boom 242 is involved** on either side. A 242 draws its floors at borrowed heights
   and the invisible-platform idiom *wants* its missing textures.
 - **No lid over a movable neighbour** from the static batches — its height is what the lid is baked
-  at. A mover's own sector has no such guard (`buildMoverBatches` passes no set): `MoverGeometry`
+  at. A mover's own sector has no such guard (`buildMoverFlats` passes no set): `MoverGeometry`
   already rebuilds a mover whenever a movable neighbour moves.
 - **The lid is not gated on where the eye is.** GZDoom re-decides per frame and skips the hack when
   the viewpoint is *below* the fill height; baked geometry cannot. What covers the case is that the
@@ -874,8 +886,8 @@ the level would fade every wall along that line. The range cap is deliberately a
 a `hasLineOfSight` check — an earlier version required unobstructed line of sight, which made the
 fade a no-op for exactly the case it exists for (a wall genuinely hiding a nearby monster also means
 `hasLineOfSight` is false, so the monster never became a fade target and the wall stopped fading).
-`SpecialsController.updateFading` (doors, lifts) takes the same target list, reusing the identical
-machinery for its own meshes.
+`MoverGeometry.updateFading` (doors, lifts — reached through `SpecialsController.fadeParticipant`)
+takes the same target list, reusing the identical machinery for its own meshes.
 
 **Each target carries its own strength** (`FadeTarget.fadeFloor`, how far down it alone pulls what
 hides it). The player is always `FADE_ALPHA`; a monster's eases linearly from that at the player's
@@ -1085,8 +1097,16 @@ alpha standing. A lift moving through fog of war it has never lifted drew solid 
 stroke. `MoverGeometry.rebuild` calls `invalidateWritten()` on both faders after a successful
 refresh, which is what makes the next commit write rather than recognize.
 
+`invalidateWritten()` carries a second job: **re-resolving each quad's and fan's colour buffer**.
+Both faders hold those buffers directly rather than looking them up by batch key on every commit,
+and a refresh can move a quad to a different batch — `copyRefreshedQuad`'s `Object.assign` copies
+`key`. A refresh that swaps two quads' textures leaves the batch set and every buffer length
+unchanged, so it is accepted in place; without the re-resolve the fader would go on writing into
+the batch the quad no longer draws in. Pinned by
+`tests/regression/fader-rebatched-quad.test.ts`.
+
 Measured on Sunder 2512 MAP20 at the player start, timing each part of `game.ts: updateFading`
-separately: `SpecialsController.updateFading` 3.34 → 0.19 ms/frame, and with the wall-fader work
+separately: `MoverGeometry.updateFading` 3.34 → 0.19 ms/frame, and with the wall-fader work
 above the block as a whole 18.2 → 1.8 ms/frame. What is left of it is the flat fader, which still
 walks its 49,716 fans a frame behind per-fan early-outs (§ Flats).
 
@@ -1217,9 +1237,9 @@ units, a 144-unit drop), NUTS.WAD MAP01 (7306, 300) and oku2v31 MAP01 (10679, 64
 raising the reveal 5100 → 12000 across eight maps moved the spawn seed sweep by under 0.5 ms and the
 subsector count revealed at spawn not at all, except on NUTS MAP01 (8 → 21).
 
-## Scrolling textures
+## Scrolling textures (`scroller.ts`)
 
-`occlusion.ts: SurfaceScroller` draws every scrolling surface: vanilla's linedef 48 (a front sidedef
+`SurfaceScroller` draws every scrolling surface: vanilla's linedef 48 (a front sidedef
 scrolling 35 map-units/second forever, no trigger, active from map load — used surprisingly often in
 the stock IWADs, 250 linedefs across both games, for waterfalls and lava streams) and Boom's whole
 scroller family beside it, walls and floor/ceiling flats alike.
@@ -1227,8 +1247,9 @@ scroller family beside it, walls and floor/ceiling flats alike.
 **It computes nothing.** Which surfaces scroll and by how much is simulation state owned by
 `game/specials/forces.ts: Forces` (docs/specials.md § Scrollers and conveyors); this class indexes
 the affected geometry once and applies the offsets it is handed. The read side is the structural
-`ScrollOffsets` interface declared here and satisfied by `Forces`, so the render layer keeps no
-import edge into the game layer — the same shape as `SwitchPairLookup`.
+`ScrollOffsets` interface declared there and satisfied by `Forces`, so the render layer keeps no
+import edge into the game layer — the same shape as `SwitchPairLookup`. The geometry it indexes
+arrives as one `ScrollableGeometry`, which `BuiltMap` satisfies.
 
 Mechanically it is `WallFader`/`FlatFader` again: index the affected vertex ranges once, rewrite one
 attribute every frame — here `uv` instead of vertex alpha. Walls convert map units to UV through
@@ -1243,6 +1264,11 @@ the only side any of these numbers ever scrolls — can be found among the batch
 found through `FlatSurface`'s `sector`/`isCeiling`. A flat fan is an arbitrary-length triangle fan
 rather than a fixed quad, so its untouched UVs are kept whole in a `Float32Array` and every frame's
 offset is added to that base.
+
+The index holds each surface's `uv` buffer itself, resolved once when it is built rather than looked
+up per frame through the mesh maps. Safe because the static meshes are built once per level and the
+scroller is constructed with them (`game.ts`), so the buffer cannot go stale; a build that replaced
+static geometry mid-level would have to rebuild the scroller with it.
 
 **Static-batch geometry only** — unlike `recolorSector`, which also reaches mover meshes (§
 Relighting mover geometry), this indexes the static batch alone, so a sector that both scrolls and

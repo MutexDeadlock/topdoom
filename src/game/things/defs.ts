@@ -241,7 +241,7 @@ export interface PosedThing extends Pos3, MonsterBody {
   drawPrevZ: number;
   /**
    * Who this monster is currently hunting: `null` for the player, otherwise
-   * another `PosedThing`'s id. Set by `damage` when something hurts it (see
+   * another `PosedThing`'s ID. Set by `damage` when something hurts it (see
    * `shouldRetarget`) — the mechanism behind infighting — and reset to the
    * player once that target dies.
    */
@@ -323,10 +323,10 @@ export interface ThingLayer {
   stats: LevelKillItemStats;
   /**
    * Every live thing's mutable state in `posed` order for a savegame — the
-   * array index is the id, which is what keeps saved cross-thing references
+   * array index is the ID, which is what keeps saved cross-thing references
    * (`targetId`, a projectile's `sourceId`) valid on restore. The restore half
-   * is `buildThingSprites`' own `restore` parameter, not a method here: things
-   * are rebuilt through `pushThing`, which only exists inside the factory.
+   * is `ThingLayerOptions.restore`, not a method here: things are rebuilt through `pushThing`,
+   * which only exists inside the factory.
    * docs/savegames.md § What is saved and what is deliberately not.
    */
   snapshot(): ThingsSnapshot;
@@ -439,7 +439,7 @@ export interface ThingLayer {
    */
   monstersAlongStep(from: Pos3, to: Pos3, reach: number): MonsterRef[];
   /**
-   * This exact monster's live position and type, or null if the id is stale or it has since died.
+   * This exact monster's live position and type, or null if the ID is stale or it has since died.
    * Lets a shot fired at a monster keep tracking it across frames.
    */
   monsterById(id: number): MonsterRef | null;
@@ -447,7 +447,7 @@ export interface ThingLayer {
    * Whether a shot landing on this thing splashes blood — vanilla's
    * `MF_NOBLOOD`, which in all of stock DOOM exactly one thing carries
    * (`MT_BARREL`; `PTR_ShootTraverse` spawns a puff there instead). Keyed by
-   * id and deliberately blind to whether the thing is already dead, so the
+   * ID and deliberately blind to whether the thing is already dead, so the
    * killing blow still bleeds no matter which side of `damage` the caller
    * asks from. See docs/combat.md § Blood.
    */

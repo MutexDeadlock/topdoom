@@ -41,7 +41,7 @@ function arena(): { layer: ThingLayer; player: Pos3 } {
     // facing away never sees the player at all.
     thingAt(grid, cells - 3, 1, ThingType.archVile, 180),
   );
-  const layer = buildThingSprites(map, new World(map), BANK, MATERIALS, 3);
+  const layer = buildThingSprites(new World(map), { bank: BANK, materials: MATERIALS, skill: 3 });
   return { layer, player: { ...grid.centre(1, 1), z: 0 } };
 }
 

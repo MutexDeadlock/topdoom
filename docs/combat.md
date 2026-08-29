@@ -486,7 +486,7 @@ air, the player's own included, re-tests live bodies each frame in `ProjectileLa
 
 Resolving that at launch instead is what made **BFG balls pass through monsters**. The ball flies at
 875 units/sec, so over a 512-unit shot a target has half a second to walk out of a launch-time ray —
-and an imp covers ~160 units in that time. A locked ball also damaged that exact id wherever it
+and an imp covers ~160 units in that time. A locked ball also damaged that exact ID wherever it
 happened to arrive, so the same bug read as a phantom hit on a monster that had moved. It showed up
 on the BFG first because it is the one projectile with no splash to cover a miss (`A_Explode` is
 never called on `MT_BFG`), and because the ball's own contact damage is 100-800.
@@ -551,8 +551,8 @@ exactly zero. `MT_BLOOD`'s brief upward hop (`momz = 2` falling back under gravi
 fixed in place.
 
 **`ThingLayer.bleeds` is vanilla's `MF_NOBLOOD` flag**, which in all of stock DOOM exactly one thing
-carries — `MT_BARREL`, which takes a bullet puff instead. It is keyed by id rather than type because
-a locked-on shot only ever knows the id it hit, and it deliberately ignores `dead`, so the killing
+carries — `MT_BARREL`, which takes a bullet puff instead. It is keyed by ID rather than type because
+a locked-on shot only ever knows the ID it hit, and it deliberately ignores `dead`, so the killing
 blow still bleeds regardless of which side of `damage` the caller asks from. The player has no
 `MF_NOBLOOD` either and bleeds on a monster's bolt, before the armor calculation and unaffected by
 it — `PTR_ShootTraverse` spawns blood ahead of its `P_DamageMobj` call, so an invulnerable player

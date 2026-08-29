@@ -100,16 +100,16 @@ Every drawn sprite offers its frame key, at the three places a sprite is drawn:
 had sight of (`PosedThing.visible`, `SpriteFxLayer.drawList`'s `fogVisible` gate), so an unrevealed
 room lights nothing — the gather sits inside those gates rather than beside them.
 
-Emitter ids come from three disjoint ranges, because the id is what `dontlightself` and the flicker
+Emitter IDs come from three disjoint ranges, because the ID is what `dontlightself` and the flicker
 phase key off: `PosedThing.id` is a plain array index (0 and up), `SpriteFxLayer` hands out negative
-ids from a `WeakMap` on the animator, and the player has `PLAYER_EMITTER_ID` below both. The effect
-ids live on a `WeakMap` rather than a field precisely so no record shape — and so no snapshot —
+IDs from a `WeakMap` on the animator, and the player has `PLAYER_EMITTER_ID` below both. The effect
+IDs live on a `WeakMap` rather than a field precisely so no record shape — and so no snapshot —
 changes.
 
-**The range constants live in `render/lights.ts`**, the only module that reads an id, rather than
-in each of the three call sites that mints one — an id whose meaning is split across three files is
+**The range constants live in `render/lights.ts`**, the only module that reads an ID, rather than
+in each of the three call sites that mints one — an ID whose meaning is split across three files is
 an invariant nothing enforces. `effectEmitterId` wraps at `PLAYER_EMITTER_ID` rather than counting
-down forever, so no session is long enough to walk an effect onto the player's id; the collision
+down forever, so no session is long enough to walk an effect onto the player's ID; the collision
 would be silent (a barrel that stops lighting itself, two emitters sharing a flicker phase), which
 is why it is closed by construction rather than by the range being large.
 
@@ -386,6 +386,13 @@ volume cannot reach a drawn pixel, and `offer` drops it in six dot products and 
 `TopDownCamera.viewFrustum` is that volume, derived at the end of `applyToCamera` because three
 only refreshes the camera's matrices inside `render`, which is after the lights have closed.
 
+**`offer` and the three methods beside it take the emitter as scalars, not a record.** That is the
+exception docs/conventions.md § Named arguments allows on a hot path, and it was measured rather
+than assumed: `offerAndTint` runs once per drawn sprite per frame, two of its three callers compute
+the coordinates inline, and passing `{x, y, z, id, subsector}` instead cost about 5% of the funnel
+(400 sprites x 60 frames: 2.58 ms against 2.77 ms, interleaved in one process). The class pools its
+`Emitter` slots for the same reason.
+
 Without it E1M1 sits near the cap every frame — 54 lights on a fully explored map — paying 54 fills,
 54 shadow maps and a 54-iteration fragment loop over a screen's worth of pixels for a room lit by
 three torches. The cost is entirely per-pixel: the CPU side of a frame is well under a tenth of a
@@ -430,7 +437,7 @@ candles, barrels and pickups, and they stand still in a level where nothing is o
 64 committed lights the pair measured 0.31 ms/frame on E1M1, 0.59 on DOOM2 MAP15 and 0.47 on EPIC
 MAP05 — the cast being roughly two thirds of it — spent re-deriving the previous frame's answer.
 
-`DynamicLights` keeps a `LightMemo` per emitter id and reuses it while nothing it depends on has
+`DynamicLights` keeps a `LightMemo` per emitter ID and reuses it while nothing it depends on has
 changed. Three things about the key:
 
 - **The blocker half is derived, not announced.** `LightVisibility.sightVersion` hashes every
@@ -460,8 +467,8 @@ would, under a remembered-on-the-memo slot, skip the copy and draw wearing the s
 light took that row meanwhile. `tests/render/lights.test.ts` covers the three-frame case.
 
 Memos are capped at four frames' worth of lights and pruned to what the last `commit` used, since a
-one-shot effect gets a fresh emitter id every time one spawns (§ What emits). `bindLevel` clears
-them and resets `rowOwner`: memos are keyed on emitter ids and leaf indices, both of which the next
+one-shot effect gets a fresh emitter ID every time one spawns (§ What emits). `bindLevel` clears
+them and resets `rowOwner`: memos are keyed on emitter IDs and leaf indices, both of which the next
 level reuses, and a row whose owner is forgotten re-uploads on its next use.
 
 ## The toggle

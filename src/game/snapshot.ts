@@ -292,7 +292,7 @@ export function copyMonsterField<K extends keyof MonsterFields>(
 }
 
 /**
- * One `PosedThing`, saved in `posed` order so ids stay implicit — the array
+ * One `PosedThing`, saved in `posed` order so IDs stay implicit — the array
  * index *is* `PosedThing.id`, which is what keeps every saved `targetId`/
  * `sourceId` reference valid. Type-derived fields (`anim`, `scale`,
  * `blockRadius`, the frame tables) are never saved; `pushThing` re-derives

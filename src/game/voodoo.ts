@@ -125,7 +125,7 @@ export class VoodooDolls {
         // Only asked for once the doll is actually moving: a parked doll — the
         // normal state of most of them — never pays for the sector walk.
         const speed = Math.hypot(doll.momX, doll.momY);
-        const ground = forces.frictionUnder(doll, PLAYER_RADIUS, speed, doll.touch);
+        const ground = forces.frictionUnder(doll, { radius: PLAYER_RADIUS, speed, cache: doll.touch });
         // Where the move was headed before the slide clipped it, the player's
         // own `attempted` for a doll — see `Player.attempted`.
         attempted = { x: doll.x + doll.momX * dt, y: doll.y + doll.momY * dt };

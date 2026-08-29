@@ -19,7 +19,7 @@ struct does: `game.ts` owns it, and the HUD reads it off the same struct it alre
 health/ammo/keys from. Picking up a weapon **not already owned** selects it, matching
 `P_GiveWeapon`; re-picking one you have doesn't yank the selection away. `fist` and `pistol` are in
 `WeaponId` even though neither has a map pickup — every game starts owning both, and they still need
-ids to be `currentWeapon`-able.
+IDs to be `currentWeapon`-able.
 
 Both armor shirts and the megasphere go through `P_GiveArmor(class)`, whose amount is
 `armortype*100` and follows from the class — so a `Misc` patch moving `Green`/`Blue Armor Class`
@@ -169,7 +169,7 @@ manual-door groups don't share an ordering (26/27/28 are Blue/Yellow/Red, 32/33/
 Blue/Red/Yellow). `trigger` checks `satisfiesLock` before doing anything else — no flashing switch
 texture, no `usedOnce` mark — so a player without the key can walk off, find it, and press the
 same line later, matching vanilla. `ownedKeys` is threaded from `Game.frame` as
-`this.inventory.keys` on every `SpecialsController.update` call, same as `playerX`/`playerY`.
+`this.inventory.keys` on every `SpecialsController.update` call, same as `playerAt`.
 
 **A refused line reports what it wants** — vanilla's `oof` plus its message, both. `trigger`
 records the refusal as a `LockedLine` (the `LockRule`, plus `'door'` vs `'switch'`) rather than

@@ -393,8 +393,8 @@ MAP07's Arachnotron platform (sector 1, tag 667).
   living one of its type" — it already has `posed` in scope, the same array the pain elemental's
   triple-spawn special-case reads. It reproduces vanilla's own thinker scan
   (`posed.every(q => q.type !== p.type || q.dead)`) and, if true, calls the optional `onBossDeath`
-  callback `buildThingSprites` was given — the same "callback bundle" shape `sfx: SoundEmitter`
-  already uses there, not a return value threaded back through `ThingUpdateResult`, since a death
+  `ThingLayerOptions.onBossDeath` — the same "callback bundle" shape `sfx: SoundEmitter` already
+  uses there, not a return value threaded back through `ThingUpdateResult`, since a death
   can happen from any of `game.ts`'s many `things.damage()` call sites, not just inside `update()`.
 - `game/specials.ts`'s `SpecialsController.notifyBossDeath` owns the actual per-map table
   (`bossDeathTriggers`, resolved once from `map.name` in the constructor) and dispatches to either

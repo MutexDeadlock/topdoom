@@ -16,7 +16,7 @@
  */
 import * as THREE from 'three';
 import { NO_SIDE, type DoomMap } from '../../wad/map.ts';
-import { sectorLines, type Opening, type World } from '../world.ts';
+import { sectorLines, type World } from '../world.ts';
 import type { FogOfWar } from '../fogofwar.ts';
 import {
   buildMoverMesh,
@@ -25,6 +25,7 @@ import {
   wallContrast,
   type BuiltMap,
   type MapMeshOptions,
+  type MoverBuild,
   type MoverIndex,
   type MoverMesh,
 } from '../../render/mapmesh.ts';
@@ -37,7 +38,7 @@ import {
   stretchBox,
   type FadeBox,
   type FadeCrossings,
-  type FadeTarget,
+  type FadeFrame,
   WallFader,
 } from '../../render/occlusion.ts';
 
@@ -98,16 +99,28 @@ function disposeGroup(group: THREE.Group): void {
   });
 }
 
+/** What a `MoverGeometry` needs beside the `World` it draws over. */
+export interface MoverGeometryOptions {
+  bank: MaterialBank;
+  scene: THREE.Scene | THREE.Group;
+  fog: FogOfWar;
+  built: BuiltMap;
+  /** Render preferences only — `movableSectors` below is merged in, and wins. */
+  meshOptions: MapMeshOptions;
+  /**
+   * Which sectors get mover-owned geometry — **the same set the caller gave `buildMapMesh`**, so
+   * the mesh and this cannot disagree about who owns a sector.
+   * docs/savegames.md § Apply order.
+   */
+  movableSectors: Set<number>;
+}
+
 export class MoverGeometry {
-  private map: DoomMap;
-  private bank: MaterialBank;
+  /** Everything a mover mesh is built or refreshed from — the map included. */
+  private mover: MoverBuild;
   private scene: THREE.Scene | THREE.Group;
   private fog: FogOfWar;
-  private polys: SubSectorPoly[];
   private built: BuiltMap;
-  private meshOptions: MapMeshOptions;
-  /** See `buildMoverIndex`. */
-  private moverIndex: MoverIndex;
 
   private movableSectors: Set<number>;
   /** Movable sectors sharing a linedef with a given movable sector — see `rebuildAround`. */
@@ -115,13 +128,6 @@ export class MoverGeometry {
   private moverMeshes = new Map<number, MoverEntry>();
   /** This frame's fade reach, refilled once per `collectFadeHits` — see `fadeReach`. */
   private reach: FadeBox = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-  /**
-   * The opening lookup both fade passes hand their faders. A field rather than
-   * a local: it captures only `this`, and a level holds a couple of thousand
-   * mover meshes to walk past it twice a frame.
-   */
-  private readonly openingInto: (line: number, out: Opening) => boolean;
-
   private sectorOccluders = new Map<number, BuiltMap['occluders']>();
   private sectorFlats = new Map<number, BuiltMap['flatSurfaces']>();
   /**
@@ -129,29 +135,24 @@ export class MoverGeometry {
    */
   private moverLightTargets = new Map<number, Set<number>>();
 
-  constructor(
-    map: DoomMap,
-    world: World,
-    bank: MaterialBank,
-    scene: THREE.Scene | THREE.Group,
-    fog: FogOfWar,
-    polys: SubSectorPoly[],
-    built: BuiltMap,
-    meshOptions: MapMeshOptions,
-    movableSectors: Set<number>,
-  ) {
-    this.map = map;
-    this.openingInto = (line: number, out: Opening) => world.openingInto(line, out);
-    this.bank = bank;
+  constructor(world: World, options: MoverGeometryOptions) {
+    const { bank, scene, fog, built, meshOptions, movableSectors } = options;
+    // Map and polygons are taken off what already owns them rather than passed alongside: `World`
+    // holds the map it was built over, and `BuiltMap` the polygons it was built from.
+    const map = world.map;
+    this.mover = {
+      map,
+      polys: built.polys,
+      bank,
+      // buildMoverMesh needs the full set to decide which side of a shared line
+      // is its own — see its doc; the caller only passes render preferences.
+      options: { ...meshOptions, movableSectors },
+      index: buildMoverIndex(map, built.polys),
+    };
     this.scene = scene;
     this.fog = fog;
-    this.polys = polys;
     this.built = built;
     this.movableSectors = movableSectors;
-    // buildMoverMesh needs the full set to decide which side of a shared line
-    // is its own — see its doc; the caller only passes render preferences.
-    this.meshOptions = { ...meshOptions, movableSectors };
-    this.moverIndex = buildMoverIndex(map, polys);
     this.indexMovableNeighbors();
     this.indexWaterDependents();
     for (const sectorIndex of movableSectors) this.createMoverMesh(sectorIndex);
@@ -202,16 +203,8 @@ export class MoverGeometry {
    * Split in two so that every mover's pass one lands in the frame's shared bags before any fader
    * dissolves anything — docs/render.md § One hole, whichever mesh it lands in.
    */
-  collectFadeHits(
-    camX: number,
-    camY: number,
-    camZ: number,
-    targets: FadeTarget[],
-    walls: FadeCrossings,
-    flats: FadeCrossings,
-  ): void {
-    const openingInto = this.openingInto;
-    fadeReach(camX, camY, targets, this.reach);
+  collectFadeHits(frame: FadeFrame, walls: FadeCrossings, flats: FadeCrossings): void {
+    fadeReach(frame.camX, frame.camY, frame.targets, this.reach);
     for (const g of this.moverMeshes.values()) {
       // Nothing that reaches this mesh moved, and nothing in it is still
       // relaxing: every call below would write back what is already there. On a
@@ -221,8 +214,8 @@ export class MoverGeometry {
       // docs/render.md § Mover meshes a frame cannot touch.
       g.fading = !(g.walls.idle && g.flats.idle) || this.reachesMesh(g);
       if (!g.fading) continue;
-      g.walls.collectCrossings(camX, camY, camZ, targets, openingInto, walls);
-      g.flats.collectPierces(camX, camY, camZ, targets, flats);
+      g.walls.collectCrossings(frame, walls);
+      g.flats.collectPierces(frame, flats);
     }
   }
 
@@ -231,21 +224,13 @@ export class MoverGeometry {
    * bag of stops rather than each mesh's own — plus the fog-of-war combine and
    * the commit into the mover buffers.
    */
-  updateFading(
-    dt: number,
-    camX: number,
-    camY: number,
-    targets: FadeTarget[],
-    walls: FadeCrossings,
-    flats: FadeCrossings,
-  ): void {
-    const openingInto = this.openingInto;
+  updateFading(frame: FadeFrame, walls: FadeCrossings, flats: FadeCrossings): void {
     const revealed = this.fog.changedBounds();
     for (const g of this.moverMeshes.values()) {
       if (!g.fading && g.committed && !(revealed && boxesOverlap(g.bounds, revealed))) continue;
       if (g.fading) {
-        g.walls.applyCrossings(dt, camX, camY, targets, openingInto, walls);
-        g.flats.applyPierces(dt, camX, camY, targets, flats);
+        g.walls.applyCrossings(frame, walls);
+        g.flats.applyPierces(frame, flats);
       }
       g.committed = true;
       // Mover quads aren't in the static occluder list FogOfWar indexed at
@@ -279,7 +264,7 @@ export class MoverGeometry {
   }
 
   private createMoverMesh(sectorIndex: number): void {
-    const mesh = buildMoverMesh(this.map, this.polys, sectorIndex, this.bank, this.meshOptions, this.moverIndex);
+    const mesh = buildMoverMesh(this.mover, sectorIndex);
     this.scene.add(mesh.group);
     // `trackVisibility` on: these are the faders whose verdict `updateFading`
     // reads to skip drawing an invisible mover mesh.
@@ -323,7 +308,7 @@ export class MoverGeometry {
   private rebuild(sectorIndex: number): void {
     const old = this.moverMeshes.get(sectorIndex);
     if (old) {
-      if (refreshMoverMesh(old.mesh, this.map, this.polys, sectorIndex, this.bank, this.meshOptions, this.moverIndex)) {
+      if (refreshMoverMesh(old.mesh, this.mover, sectorIndex)) {
         // A refresh rewrites the whole colour attribute, alpha channel and all,
         // so what the faders last wrote is gone from the buffer even though
         // their own record still claims it. Both halves matter: the entry has
@@ -362,10 +347,11 @@ export class MoverGeometry {
   }
 
   private indexMovableNeighbors(): void {
-    for (const line of this.map.linedefs) {
+    const map = this.mover.map;
+    for (const line of map.linedefs) {
       if (line.right === NO_SIDE || line.left === NO_SIDE) continue;
-      const a = this.map.sidedefs[line.right]?.sector;
-      const b = this.map.sidedefs[line.left]?.sector;
+      const a = map.sidedefs[line.right]?.sector;
+      const b = map.sidedefs[line.left]?.sector;
       if (a === undefined || b === undefined || a === b) continue;
       if (!this.movableSectors.has(a) || !this.movableSectors.has(b)) continue;
       this.link(a, b);
@@ -382,7 +368,7 @@ export class MoverGeometry {
    * docs/specials.md § Deep water.
    */
   private indexWaterDependents(): void {
-    const transfers = this.meshOptions.transfers;
+    const transfers = this.mover.options.transfers;
     if (!transfers) return;
     // Collected first, applied after: `link` writes the very sets this reads.
     const edges: [number, number][] = [];
@@ -411,7 +397,7 @@ export class MoverGeometry {
    * See docs/specials.md § Light changes.
    */
   recolorSector(sectorIndex: number): void {
-    const sector = this.map.sectors[sectorIndex];
+    const sector = this.mover.map.sectors[sectorIndex];
     const dirty = new Set<string>();
 
     for (const o of this.sectorOccluders.get(sectorIndex) ?? []) {

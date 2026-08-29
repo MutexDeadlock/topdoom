@@ -1,12 +1,12 @@
 /**
- * Content id for a WAD file: a hash of its bytes, stable across renames and across however the
+ * Content ID for a WAD file: a hash of its bytes, stable across renames and across however the
  * page was opened. Keys per-level records today and is meant to validate a save's WAD set later —
- * see docs/wad.md § Content id.
+ * see docs/wad.md § Content ID.
  */
 import type { Wad, WadFile } from './wad.ts';
 
 /**
- * One file's id, keyed by the *bytes* rather than by the `WadFile` wrapping
+ * One file's ID, keyed by the *bytes* rather than by the `WadFile` wrapping
  * them: the same buffer is wrapped more than once — an uploaded source hashes
  * its own `WadFile`, then `loadWadFiles` builds another over the same
  * `ArrayBuffer`, and a restart re-wraps the memoized fetch — and a wrapper-keyed
@@ -47,8 +47,8 @@ function hex32(n: number): string {
 }
 
 /**
- * A buffer's content id, computed once and memoized against the buffer itself. Everything that
- * needs an id goes through here rather than calling `hashBytes` directly — the menu hashes an
+ * A buffer's content ID, computed once and memoized against the buffer itself. Everything that
+ * needs an ID goes through here rather than calling `hashBytes` directly — the menu hashes an
  * upload's bytes long before `loadWadFiles` wraps that same `ArrayBuffer` in a `WadFile`, and a
  * direct call would leave the memo empty for the wrapper to miss on the level-start path.
  */
@@ -61,13 +61,13 @@ export function idOf(buffer: ArrayBuffer): string {
   return id;
 }
 
-/** The file's content id, computed once and memoized. */
+/** The file's content ID, computed once and memoized. */
 export function wadId(file: WadFile): string {
   return idOf(file.buffer);
 }
 
 /**
- * Every loaded file's name and id, in load order — the shape a saved game embeds so it can name
+ * Every loaded file's name and ID, in load order — the shape a saved game embeds so it can name
  * *which* WAD is missing or different rather than only reporting that something is.
  */
 export function wadSetId(wad: Wad): { name: string; id: string }[] {

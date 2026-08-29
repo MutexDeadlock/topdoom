@@ -22,6 +22,28 @@ Converting the first group to methods was measured, not assumed: `positionBlocke
 `hasLineOfSight`, `slideMove` and `shotPath` benchmarked identical before and after, inside
 run-to-run noise.
 
+## The collider
+
+Every collision query takes the position being tested as bare `x`/`y` and everything *about the
+asker* as one `Collider` — radius, feet height, body height, `forMonster`, the blockers around it,
+and where it currently stands. The split follows the caller's shape: one body probes many candidate
+positions, so the positions stay scalar (docs/conventions.md § Named arguments) and the body is
+built once. `slideMove` builds one and reuses it across up to ten probes; a chasing monster's rides
+on its `Chase` context, since `newChaseDir` probes up to eight destinations.
+
+**`makeCollider` is the only place one is built, and every field is required.** Both halves are
+load-bearing, and neither is style: `checkPosition` and `blockedByThings` read these fields in the
+engine's hottest loop, so every collider reaching them has to share one V8 hidden class. Literals
+at call sites do not — an omitted optional, or the same fields written in another order, is a
+different map, and the property loads in that loop go megamorphic. Measured on DOOM2 MAP01, 120
+imps chasing for 200 tics: 13.2 ms with one shape, 14.6 ms with several. The required fields are
+what makes the type checker refuse a hand-built literal.
+
+A caller that probes repeatedly keeps its record and rewrites the fields that move rather than
+making a fresh one — `Chase.collider`'s feet height per probe, `standingCollider` here, and the
+per-call scratches `monsters/ai.ts`, `things.ts` and `things/grid.ts` each keep for their own
+probes.
+
 ## hasLineOfSight
 
 **It checks floor/ceiling, not just walls.** Without this, a monster standing in a room genuinely

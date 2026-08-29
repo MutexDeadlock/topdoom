@@ -78,7 +78,7 @@ canvas {
  * The full-screen overlay root — #menu, #loading, #fatal-error, #changelog, #wadlibrary,
  * #intermission, #end-card, #death-overlay. Each keeps only what makes it itself: its rung on the
  * stacking ladder, its background, its padding. Unlike `.hidden` this takes no `!important` and
- * wants none — an id rule beating it is how an overlay refines it (#death-overlay's column).
+ * wants none — an ID rule beating it is how an overlay refines it (#death-overlay's column).
  */
 .overlay {
   position: fixed;
@@ -110,7 +110,7 @@ canvas {
 
 /*
  * The one way to hide an element, toggled from every ui module. `!important` because almost every
- * target sets its own `display` through an id selector (`#menu`, `#intermission canvas`, …) and a
+ * target sets its own `display` through an ID selector (`#menu`, `#intermission canvas`, …) and a
  * plain class would lose to all of them — silently, since nothing errors, the element just stays
  * up. What must stay laid out while hidden carries `.inactive` instead — see docs/styles.md.
  */

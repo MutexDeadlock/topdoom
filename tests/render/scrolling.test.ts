@@ -1,7 +1,7 @@
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
-import { SurfaceScroller } from '../../src/render/occlusion.ts';
+import { SurfaceScroller } from '../../src/render/scroller.ts';
 import { Forces } from '../../src/game/specials/forces.ts';
 import { World } from '../../src/game/world.ts';
 import type { FlatSurface, WallOccluder } from '../../src/render/mapmesh.ts';
@@ -53,6 +53,7 @@ describe('Scrolling textures · special 48', () => {
   function occluder(line: number, frontSide: boolean): WallOccluder {
     return {
       key: 'wall:WALL',
+      texName: 'WALL',
       vertexStart: 0,
       vertexCount: 6,
       ax: 0,
@@ -84,13 +85,17 @@ describe('Scrolling textures · special 48', () => {
     const mesh = quadMesh();
     const meshes = new Map([['wall:WALL', mesh]]);
     const forces = forcesFor(oneLineMap(special));
-    const scroller = new SurfaceScroller(forces, [occluder(0, frontSide)], meshes, NO_FLATS, new Map(), BANK);
+    const scroller = new SurfaceScroller(
+      forces,
+      { occluders: [occluder(0, frontSide)], wallMeshes: meshes, flatSurfaces: NO_FLATS, flatMeshes: new Map() },
+      BANK,
+    );
     const uv = mesh.geometry.getAttribute('uv') as THREE.BufferAttribute;
     /** One tic of simulation plus `seconds` of presentation, the way `game.ts` drives the pair. */
     const run = (seconds: number) => {
       forces.tick();
       forces.advanceOffsets(seconds);
-      scroller.update(forces);
+      scroller.update();
     };
     return { run, uv };
   }

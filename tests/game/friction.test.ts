@@ -31,7 +31,8 @@ describe('Boom friction', () => {
   /** `frictionUnder` at a cell's centre, standing on its floor. */
   function under(rigged: ReturnType<typeof rig>, col: number, speed = WALKING) {
     const at = rigged.grid.centre(col, 0);
-    const f = rigged.forces.frictionUnder({ x: at.x, y: at.y, z: 0 }, PLAYER_RADIUS, speed, rigged.cache);
+    const at3 = { x: at.x, y: at.y, z: 0 };
+    const f = rigged.forces.frictionUnder(at3, { radius: PLAYER_RADIUS, speed, cache: rigged.cache });
     return { friction: f.friction, targetScale: f.targetScale, accelScale: f.accelScale };
   }
 
@@ -101,7 +102,10 @@ describe('Boom friction', () => {
     const grid = gridMap(['...']);
     const forces = new Forces(grid.map, new World(grid.map));
     const at = grid.centre(1, 0);
-    const f = forces.frictionUnder({ x: at.x, y: at.y, z: 0 }, PLAYER_RADIUS, WALKING, makeTouchCache());
+    const f = forces.frictionUnder(
+      { x: at.x, y: at.y, z: 0 },
+      { radius: PLAYER_RADIUS, speed: WALKING, cache: makeTouchCache() },
+    );
     assert.equal(f.friction, ORIG_FRICTION);
     assert.equal(f.targetScale, 1);
     assert.equal(f.accelScale, 1);
@@ -110,21 +114,30 @@ describe('Boom friction', () => {
   test('the neighbouring sector is unaffected', () => {
     const rigged = rig(160);
     const at = rigged.grid.centre(0, 0);
-    const f = rigged.forces.frictionUnder({ x: at.x - 32, y: at.y, z: 0 }, PLAYER_RADIUS, WALKING, rigged.cache);
+    const f = rigged.forces.frictionUnder(
+      { x: at.x - 32, y: at.y, z: 0 },
+      { radius: PLAYER_RADIUS, speed: WALKING, cache: rigged.cache },
+    );
     assert.equal(f.friction, ORIG_FRICTION);
   });
 
   test('standing above a friction sector’s floor does not pick it up', () => {
     const rigged = rig(160);
     const at = rigged.grid.centre(1, 0);
-    const f = rigged.forces.frictionUnder({ x: at.x, y: at.y, z: 8 }, PLAYER_RADIUS, WALKING, rigged.cache);
+    const f = rigged.forces.frictionUnder(
+      { x: at.x, y: at.y, z: 8 },
+      { radius: PLAYER_RADIUS, speed: WALKING, cache: rigged.cache },
+    );
     assert.equal(f.friction, ORIG_FRICTION);
   });
 
   test('a body straddling an ice patch is on it', () => {
     const rigged = rig(160);
     const edgeX = (rigged.grid.centre(0, 0).x + rigged.grid.centre(1, 0).x) / 2;
-    const f = rigged.forces.frictionUnder({ x: edgeX - 4, y: rigged.grid.centre(1, 0).y, z: 0 }, PLAYER_RADIUS, WALKING, rigged.cache);
+    const f = rigged.forces.frictionUnder(
+      { x: edgeX - 4, y: rigged.grid.centre(1, 0).y, z: 0 },
+      { radius: PLAYER_RADIUS, speed: WALKING, cache: rigged.cache },
+    );
     assert.ok(f.friction > ORIG_FRICTION, `friction was ${f.friction}`);
   });
 
@@ -138,7 +151,10 @@ describe('Boom friction', () => {
     addControlLine(grid.map, 160, 0, 223, 11); // ice on the right one
     const forces = new Forces(grid.map, new World(grid.map));
     const edgeX = (grid.centre(0, 0).x + grid.centre(1, 0).x) / 2;
-    const f = forces.frictionUnder({ x: edgeX, y: grid.centre(0, 0).y, z: 0 }, PLAYER_RADIUS, WALKING, makeTouchCache());
+    const f = forces.frictionUnder(
+      { x: edgeX, y: grid.centre(0, 0).y, z: 0 },
+      { radius: PLAYER_RADIUS, speed: WALKING, cache: makeTouchCache() },
+    );
     assert.ok(f.friction < ORIG_FRICTION, `expected the muddy value, got ${f.friction}`);
   });
 

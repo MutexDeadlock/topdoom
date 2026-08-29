@@ -77,7 +77,7 @@ function loadCacoPit(): { world: World; body: MonsterBody; player: Pos3 } {
 function run(f: ReturnType<typeof loadCacoPit>, seconds: number): void {
   const dt = 1 / 35;
   for (let t = 0; t < seconds; t += dt) {
-    stepMonsterAI(f.body, MONSTER_STATS[ThingType.cacodemon], dt, f.world, f.player, PLAYER_RADIUS, PLAYER_HEIGHT);
+    stepMonsterAI(f.body, MONSTER_STATS[ThingType.cacodemon], f.world, { dt, target: f.player, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
   }
 }
 
@@ -123,7 +123,7 @@ describe('Regressions · floating monsters over a ledge', () => {
     assert.equal(demon.flies, undefined);
     const dt = 1 / 35;
     for (let t = 0; t < 5; t += dt) {
-      stepMonsterAI(f.body, demon, dt, f.world, f.player, PLAYER_RADIUS, PLAYER_HEIGHT);
+      stepMonsterAI(f.body, demon, f.world, { dt, target: f.player, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT });
     }
     assert.ok(f.body.y > LEDGE_Y, `still in the pit (y = ${f.body.y})`);
     assert.equal(f.body.z, PIT_FLOOR, 'and still on its floor');

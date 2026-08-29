@@ -7,7 +7,7 @@ import { WATER_SURFACE_ALPHA } from '../../src/constants.ts';
 import { LF, NO_SIDE } from '../../src/wad/map.ts';
 import { gridMap, addControlSector } from '../fixtures/gridmap.ts';
 import { BANK } from '../fixtures/specialsrig.ts';
-import { targetAt } from '../fixtures/fade.ts';
+import { fadeFrame, targetAt } from '../fixtures/fade.ts';
 
 /**
  * Boom's 242 as geometry: the two fans this engine draws where vanilla picks
@@ -317,14 +317,14 @@ describe('render · deep water planes', () => {
     const submerged = targetAt(cx, cy, -32);
 
     const fader = new FlatFader(built.flatSurfaces, built.flatMeshes);
-    fader.update(1, cx, cy, 500, [submerged]);
+    fader.update(fadeFrame(1, cx, cy, 500, [submerged]));
     fader.commit(() => 1);
     assert.equal(lowestAlphaOf(built, surface), WATER_SURFACE_ALPHA, 'still the base alpha, not dithered away');
 
     // The same fan on the same sightline without its base alpha: an ordinary
     // floor there does fade, so it is the exemption sparing the surface.
     const opaque = new FlatFader([{ ...surface, baseAlpha: undefined }], built.flatMeshes);
-    opaque.update(1, cx, cy, 500, [submerged]);
+    opaque.update(fadeFrame(1, cx, cy, 500, [submerged]));
     opaque.commit(() => 1);
     // Any fade at all is the control this needs — how deep it goes is a feel
     // dial (`FADE_ALPHA`), and pinning a number here would pin that.

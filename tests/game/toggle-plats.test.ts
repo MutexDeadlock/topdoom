@@ -31,7 +31,7 @@ describe('specials · toggle plats', () => {
     /** Trigger, then one tic — the stroke completes inside that tic. */
     const press = () => {
       s.trigger(line, new Set());
-      r.specials.update(TIC, 0, 0, 0, NO_INPUT, new Set());
+      r.specials.update(TIC, { x: 0, y: 0, angle: 0 }, NO_INPUT, new Set());
     };
     return { map, rig: r, s, line, press, ceil: map.sectors[1].ceilHeight, floor: map.sectors[1].floorHeight };
   }
@@ -57,7 +57,7 @@ describe('specials · toggle plats', () => {
     const { map, rig: r, s, press, ceil } = rig(212);
     press();
     assert.equal(s.floorMovers.get(1)?.state, 'stasis');
-    for (let i = 0; i < 100; i++) r.specials.update(TIC, 0, 0, 0, NO_INPUT, new Set());
+    for (let i = 0; i < 100; i++) r.specials.update(TIC, { x: 0, y: 0, angle: 0 }, NO_INPUT, new Set());
     assert.equal(map.sectors[1].floorHeight, ceil, 'still sealed after three seconds of ticks');
   });
 

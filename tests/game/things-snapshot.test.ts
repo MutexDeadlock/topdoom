@@ -34,14 +34,13 @@ function arena() {
   return { grid, map, world };
 }
 
-const build = (world: World, map: ReturnType<typeof arena>['map']) =>
-  buildThingSprites(map, world, BANK, MATERIALS, 3);
+const build = (world: World) => buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 });
 
 describe('Savegames · things round-trip', () => {
   test('a battle-scarred layer restores field for field and steps identically', () => {
     clearRandom();
-    const { grid, world, map } = arena();
-    const layer = build(world, map);
+    const { grid, world } = arena();
+    const layer = build(world);
     assert.equal(layer.count, 5, 'everything but the player start spawned');
 
     const player: Pos3 = { ...grid.centre(1, 1), z: 0 };
@@ -59,7 +58,7 @@ describe('Savegames · things round-trip', () => {
     const cursors = getRandomCursors();
 
     const fresh = arena();
-    const restored = buildThingSprites(fresh.map, fresh.world, BANK, MATERIALS, 3, undefined, undefined, saved);
+    const restored = buildThingSprites(fresh.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: saved });
     setRandomCursors(cursors);
     assert.deepEqual(restored.snapshot(), layer.snapshot(), 'the rebuilt layer snapshots identically');
     assert.deepEqual(restored.stats, layer.stats);
@@ -83,8 +82,8 @@ describe('Savegames · things round-trip', () => {
 
   test('an undisturbed monster is saved compactly, without the AI block', () => {
     clearRandom();
-    const { world, map } = arena();
-    const layer = build(world, map);
+    const { world } = arena();
+    const layer = build(world);
     const saved = layer.snapshot();
     assert.equal(saved.things[2].monster, undefined, 'the untouched demon has no monster block');
     assert.equal(saved.things[4].monster, undefined, 'the stimpack never has one');
@@ -95,8 +94,8 @@ describe('Savegames · things round-trip', () => {
 
   test('a disturbed monster saves only its off-default fields', () => {
     clearRandom();
-    const { grid, world, map } = arena();
-    const layer = build(world, map);
+    const { grid, world } = arena();
+    const layer = build(world);
     const player = { ...grid.centre(1, 1), z: 0 };
     layer.damage(0, 20, undefined, undefined, player.x, player.y); // wound one imp
     layer.damage(1, 1000); // gib the other
@@ -118,8 +117,8 @@ describe('Savegames · things round-trip', () => {
 
   test('a fully-populated pre-sparse monster block still restores the same', () => {
     clearRandom();
-    const { grid, world, map } = arena();
-    const layer = build(world, map);
+    const { grid, world } = arena();
+    const layer = build(world);
     const player = { ...grid.centre(1, 1), z: 0 };
     layer.damage(0, 20, undefined, undefined, player.x, player.y);
     layer.damage(1, 1000);
@@ -145,7 +144,7 @@ describe('Savegames · things round-trip', () => {
     }
 
     const fresh = arena();
-    const restored = buildThingSprites(fresh.map, fresh.world, BANK, MATERIALS, 3, undefined, undefined, padded);
+    const restored = buildThingSprites(fresh.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: padded });
     setRandomCursors(cursors);
     assert.deepEqual(restored.snapshot(), saved, 'the padded block round-trips to the same sparse snapshot');
     assert.equal(restored.monsterById(1), null, 'the corpse is still dead');
@@ -157,8 +156,8 @@ describe('Savegames · things round-trip', () => {
     // re-applied on every death of that level, so the restore must treat it as
     // read-only (docs/savegames.md § Apply order, docs/death.md § Player death).
     clearRandom();
-    const { grid, world, map } = arena();
-    const layer = build(world, map);
+    const { grid, world } = arena();
+    const layer = build(world);
     const player: Pos3 = { ...grid.centre(1, 1), z: 0 };
     layer.damage(0, 20, undefined, undefined, player.x, player.y);
     layer.damage(1, 1000);
@@ -170,7 +169,7 @@ describe('Savegames · things round-trip', () => {
     const cursors = getRandomCursors();
 
     const first = arena();
-    const once = buildThingSprites(first.map, first.world, BANK, MATERIALS, 3, undefined, undefined, saved);
+    const once = buildThingSprites(first.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: saved });
     setRandomCursors(cursors);
     const afterFirst = once.snapshot();
     // Run the restored level on, which is what would corrupt a snapshot the
@@ -179,19 +178,19 @@ describe('Savegames · things round-trip', () => {
     once.damage(2, 30, undefined, undefined, player.x, player.y);
 
     const second = arena();
-    const twice = buildThingSprites(second.map, second.world, BANK, MATERIALS, 3, undefined, undefined, saved);
+    const twice = buildThingSprites(second.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: saved });
     setRandomCursors(cursors);
     assert.deepEqual(twice.snapshot(), afterFirst, 'the second restore lands on the same state as the first');
   });
 
   test('a save naming a type this WAD set cannot draw refuses to restore', () => {
     clearRandom();
-    const { world, map } = arena();
-    const saved = build(world, map).snapshot();
+    const { world } = arena();
+    const saved = build(world).snapshot();
     saved.things[0].type = 99999; // no THING_SPRITES entry
     const fresh = arena();
     assert.throws(
-      () => buildThingSprites(fresh.map, fresh.world, BANK, MATERIALS, 3, undefined, undefined, saved),
+      () => buildThingSprites(fresh.world, { bank: BANK, materials: MATERIALS, skill: 3, restore: saved }),
       /no art for thing 99999/,
     );
   });

@@ -105,7 +105,7 @@ describe('a monster already hanging over a ledge', () => {
     let lowest = body.z;
     let westmost = body.x;
     for (let i = 0; i < tics(30); i++) {
-      stepMonsterAI(body, stats, DOOM_TIC, world, target, PLAYER_RADIUS, PLAYER_HEIGHT, []);
+      stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockers: [] });
       travelled = Math.max(travelled, Math.hypot(body.x - start.x, body.y - start.y));
       lowest = Math.min(lowest, body.z);
       westmost = Math.min(westmost, body.x);
@@ -130,7 +130,7 @@ describe('a monster already hanging over a ledge', () => {
     const body = demonBody({ x: edge + 5, y: grid.centre(2, 2).y }, world, { movedir: 4 });
     const target = { x: edge - 256, y: body.y, z: PIT_FLOOR };
     for (let i = 0; i < tics(20); i++) {
-      stepMonsterAI(body, stats, DOOM_TIC, world, target, PLAYER_RADIUS, PLAYER_HEIGHT, []);
+      stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockers: [] });
       assert.equal(body.z, 0, `stepped into the pit at frame ${i}`);
       assert.ok(body.x >= edge, `centre crossed the ledge by ${(edge - body.x).toFixed(1)} units at frame ${i}`);
     }
@@ -145,7 +145,7 @@ describe('a monster already hanging over a ledge', () => {
     const body = demonBody(at, world, { movedir: 4 });
     const target = { x: at.x - 4 * 128, y: at.y, z: PIT_FLOOR }; // straight across the pit
     for (let i = 0; i < tics(8); i++) {
-      stepMonsterAI(body, stats, DOOM_TIC, world, target, PLAYER_RADIUS, PLAYER_HEIGHT, []);
+      stepMonsterAI(body, stats, world, { dt: DOOM_TIC, target, targetRadius: PLAYER_RADIUS, targetHeight: PLAYER_HEIGHT, blockers: [] });
       assert.equal(body.z, 0, `stepped into the pit at frame ${i}`);
     }
   });

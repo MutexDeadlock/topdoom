@@ -15,7 +15,7 @@ import {
   type BossDeathTrigger,
   type SwitchEntry,
 } from './specials/mapscan.ts';
-import { MoverGeometry } from './specials/movergeometry.ts';
+import { MoverGeometry, type MoverGeometryOptions } from './specials/movergeometry.ts';
 import { pickShootAim, type ShootAim } from './specials/shootaim.ts';
 import { lookupSpecial } from './specials/tables.ts';
 import { decodeSectorType } from './specials/sectortypes.ts';
@@ -68,13 +68,11 @@ import { spawnAngleDeg } from './skill.ts';
 import { ThingType } from './things/doomednums.ts';
 import type { CrossingBody } from './things/defs.ts';
 import type { Input } from './input.ts';
-import type { FogOfWar } from './fogofwar.ts';
 import { satisfiesLock, type KeySlot } from './inventory.ts';
-import { NO_TEXTURE, type BuiltMap, type MapMeshOptions } from '../render/mapmesh.ts';
-import type { SubSectorPoly } from '../render/bsp.ts';
+import { NO_TEXTURE } from '../render/mapmesh.ts';
 import type { Placement, Pos2 } from '../types.ts';
 import type { MaterialBank } from '../render/textures.ts';
-import type { FadeCrossings, FadeTarget } from '../render/occlusion.ts';
+import type { FadeParticipant } from '../render/occlusion.ts';
 import { segmentCrossT, segmentIntersect } from '../util/geom.ts';
 import { sectorOrigin, SILENT, type SfxId, type SoundEmitter } from '../audio/sfx.ts';
 import { DOOM_TIC } from '../constants.ts';
@@ -313,27 +311,6 @@ interface CrusherMover {
  */
 export type Mover = DoorMover | LiftMover | FloorMover | CrusherMover | CeilingMover | ElevatorMover;
 
-/**
- * Which of Boom's two per-sector "busy" slots a mover kind occupies —
- * `sec->floordata` vs `sec->ceilingdata`, the split `P_SectorActive` reads.
- * The elevator claims *both* in vanilla; it lives in the floor map here and
- * `ceilingActive` looks for it there, since one object in two maps would
- * `structuredClone` into two on save and then tick twice.
- * docs/specials.md § One mover per sector.
- */
-function moverClass(kind: Mover['kind']): 'floor' | 'ceiling' {
-  switch (kind) {
-    case 'floor':
-    case 'lift':
-    case 'elevator':
-      return 'floor';
-    case 'door':
-    case 'ceiling':
-    case 'crusher':
-      return 'ceiling';
-  }
-}
-
 export interface LightState {
   pattern: LightPattern;
   baseLight: number;
@@ -346,212 +323,6 @@ export interface LightState {
    * isn't a two-level toggle `bright` can express — see `tickLight`.
    */
   level: number;
-}
-
-/**
- * Blink/flicker periods in seconds, matching vanilla's STROBEBRIGHT/FASTDARK/SLOWDARK tic counts.
- */
-const BLINK_BRIGHT_TIME = 5 * DOOM_TIC;
-const BLINK_05_DARK = 15 * DOOM_TIC;
-const BLINK_1_DARK = 35 * DOOM_TIC;
-const GLOW_HALF_CYCLE = 1.3;
-/**
- * `T_LightFlash`'s `mintime`/`maxtime`, used as **bit masks** and not as
- * durations: `&7` is 0-7 tics dark, but `&64` is 0 *or* 64 and nothing between,
- * so a broken light's lit period is either 1 tic or 65. That split is the whole
- * character of the pattern. docs/specials.md § Lights.
- */
-const FLASH_DARK_MASK = 7;
-const FLASH_BRIGHT_MASK = 64;
-/** `T_FireFlicker`: a new level every 4 tics, in steps of 16 below the sector's own light. */
-const FLICKER_INTERVAL = 4 * DOOM_TIC;
-const FLICKER_STEP = 16;
-
-/**
- * The four patterns `P_SpawnStrobeFlash` spawns, and so the only ones carrying
- * its `minlight == maxlight` rule — see `makeLightState`.
- */
-const STROBE_PATTERNS = new Set<LightPattern>(['blink05', 'blink1', 'syncBlink05', 'syncBlink1']);
-
-function makeLightState(pattern: LightPattern, baseLight: number, minLight: number): LightState {
-  // A strobe with nothing darker around it blinks to black instead of standing
-  // still: `P_SpawnStrobeFlash`'s `if (minlight == maxlight) minlight = 0`, and
-  // its alone — `P_SpawnLightFlash`, `P_SpawnGlowingLight` and
-  // `P_SpawnFireFlicker` all leave the two equal. docs/specials.md § Lights.
-  const darkLight = minLight === baseLight && STROBE_PATTERNS.has(pattern) ? 0 : minLight;
-  // `P_SpawnLightFlash` seeds its counter with the same `(P_Random()&64)+1` the
-  // tick uses, so a map's broken lights start out of phase with each other.
-  const timer = pattern === 'blinkRandom' ? ((pRandom() & FLASH_BRIGHT_MASK) + 1) * DOOM_TIC : pattern === 'flicker' ? FLICKER_INTERVAL : 0;
-  return { pattern, baseLight, darkLight, timer, bright: true, phase: 1, level: baseLight };
-}
-
-function tickLight(s: LightState, dt: number): number {
-  switch (s.pattern) {
-    case 'blinkRandom': {
-      // `T_LightFlash` — see FLASH_DARK_MASK for why the two branches are so lopsided.
-      s.timer -= dt;
-      if (s.timer <= 0) {
-        s.bright = !s.bright;
-        const mask = s.bright ? FLASH_BRIGHT_MASK : FLASH_DARK_MASK;
-        s.timer = ((pRandom() & mask) + 1) * DOOM_TIC;
-      }
-      return s.bright ? s.baseLight : s.darkLight;
-    }
-    case 'flicker': {
-      // `T_FireFlicker`, which is four brightness steps rather than a toggle.
-      // The floor is the darkest neighbour + 16, and the `< min` test reads the
-      // *current* level while the assignment uses the sector's own — vanilla's
-      // own asymmetry, and what makes the pattern sit at its floor as often as
-      // it does. docs/specials.md § Lights.
-      s.timer -= dt;
-      if (s.timer <= 0) {
-        s.timer = FLICKER_INTERVAL;
-        const amount = (pRandom() & 3) * FLICKER_STEP;
-        const min = s.darkLight + FLICKER_STEP;
-        s.level = s.level - amount < min ? min : s.baseLight - amount;
-      }
-      return s.level;
-    }
-    case 'blink05':
-    case 'syncBlink05': {
-      s.timer -= dt;
-      if (s.timer <= 0) {
-        s.bright = !s.bright;
-        s.timer = s.bright ? BLINK_BRIGHT_TIME : BLINK_05_DARK;
-      }
-      return s.bright ? s.baseLight : s.darkLight;
-    }
-    case 'blink1':
-    case 'syncBlink1': {
-      s.timer -= dt;
-      if (s.timer <= 0) {
-        s.bright = !s.bright;
-        s.timer = s.bright ? BLINK_BRIGHT_TIME : BLINK_1_DARK;
-      }
-      return s.bright ? s.baseLight : s.darkLight;
-    }
-    case 'glow': {
-      const dir = s.bright ? 1 : -1;
-      s.phase += (dir * dt) / GLOW_HALF_CYCLE;
-      if (s.phase >= 1) {
-        s.phase = 1;
-        s.bright = false;
-      } else if (s.phase <= 0) {
-        s.phase = 0;
-        s.bright = true;
-      }
-      return s.darkLight + (s.baseLight - s.darkLight) * s.phase;
-    }
-  }
-}
-
-/**
- * The new special's sector `special` after a Boom change: untouched for a
- * texture-only change (`FChgTxt`), cleared for `FChgZero`, the model's own for
- * `FChgTyp` — `p_genlin.c`'s three `*ChgT` cases.
- */
-function changedSpecial(change: SurfaceChange, model: Sector): number | undefined {
-  if (change.type === 'texOnly') return undefined;
-  return change.type === 'texZeroType' ? 0 : model.special;
-}
-
-/**
- * `shortestTexture` resolves the two `FbyST` targets alone, and is a thunk
- * because the scan behind it needs the material bank (controller state) while
- * every other target is a pure function of the map — and because the scan
- * walks every linedef, so it must not run for the targets that don't want it.
- */
-function resolveFloorTarget(
-  world: World,
-  sectorIndex: number,
-  target: MoveTarget,
-  shortestTexture: () => number,
-): number {
-  const map = world.map;
-  switch (target) {
-    case 'lowestNeighborFloor':
-      return world.lowestNeighborFloor(sectorIndex);
-    case 'highestNeighborFloor':
-      return world.highestNeighborFloor(sectorIndex);
-    case 'nextHigherFloor':
-      return world.nextHigherFloor(sectorIndex);
-    case 'nextLowerFloor':
-      return world.nextLowerFloor(sectorIndex);
-    case 'lowestNeighborCeiling':
-      // Vanilla's raiseFloor clamps to the sector's own ceiling too — a floor
-      // can never be sent above the ceiling it sits under, which matters
-      // whenever that ceiling happens to be lower than every neighbor's.
-      return Math.min(world.lowestNeighborCeiling(sectorIndex), map.sectors[sectorIndex].ceilHeight);
-    case 'highestNeighborCeiling':
-      return world.highestNeighborCeiling(sectorIndex);
-    case 'lowestNeighborCeilingMinus8':
-      return (
-        Math.min(world.lowestNeighborCeiling(sectorIndex), map.sectors[sectorIndex].ceilHeight) - EIGHT_UNIT_GAP
-      );
-    case 'turboLower': {
-      // `p_floor.c`'s `case turboLower` adds the 8 only where the found height differs from the
-      // sector's own; unconditionally it hands a lowering mover a target *above* its floor.
-      // docs/specials.md § The turboLower quad.
-      const highest = world.highestNeighborFloor(sectorIndex);
-      return highest === map.sectors[sectorIndex].floorHeight ? highest : highest + EIGHT_UNIT_GAP;
-    }
-    case 'plus24':
-      return map.sectors[sectorIndex].floorHeight + 24;
-    case 'plus32':
-      return map.sectors[sectorIndex].floorHeight + 32;
-    case 'plus512':
-      return map.sectors[sectorIndex].floorHeight + 512;
-    case 'minus24':
-      return map.sectors[sectorIndex].floorHeight - 24;
-    case 'minus32':
-      return map.sectors[sectorIndex].floorHeight - 32;
-    case 'ownCeiling':
-      // Boom's FtoC: flush with the sector's own ceiling, no vanilla 8-unit gap.
-      return map.sectors[sectorIndex].ceilHeight;
-    case 'shortestLowerTexture':
-      return map.sectors[sectorIndex].floorHeight + shortestTexture();
-    case 'shortestLowerTextureDown':
-      return map.sectors[sectorIndex].floorHeight - shortestTexture();
-  }
-}
-
-/** Same `shortestTexture` convention as `resolveFloorTarget`, for the `CbyST` pair. */
-function resolveCeilingTarget(
-  world: World,
-  sectorIndex: number,
-  target: CeilingTarget,
-  shortestTexture: () => number,
-): number {
-  const map = world.map;
-  switch (target) {
-    case 'highestNeighborCeiling':
-      return world.highestNeighborCeiling(sectorIndex);
-    case 'floorPlus8':
-      return map.sectors[sectorIndex].floorHeight + EIGHT_UNIT_GAP;
-    case 'lowestNeighborCeiling':
-      return world.lowestNeighborCeiling(sectorIndex);
-    case 'nextHigherCeiling':
-      return world.nextHigherCeiling(sectorIndex);
-    case 'nextLowerCeiling':
-      return world.nextLowerCeiling(sectorIndex);
-    case 'highestNeighborFloor':
-      return world.highestNeighborFloor(sectorIndex);
-    case 'ownFloor':
-      // Boom's CtoF: flush with the floor, unlike vanilla's floorPlus8.
-      return map.sectors[sectorIndex].floorHeight;
-    case 'plus24':
-      return map.sectors[sectorIndex].ceilHeight + 24;
-    case 'plus32':
-      return map.sectors[sectorIndex].ceilHeight + 32;
-    case 'minus24':
-      return map.sectors[sectorIndex].ceilHeight - 24;
-    case 'minus32':
-      return map.sectors[sectorIndex].ceilHeight - 32;
-    case 'shortestUpperTexture':
-      return map.sectors[sectorIndex].ceilHeight + shortestTexture();
-    case 'shortestUpperTextureDown':
-      return map.sectors[sectorIndex].ceilHeight - shortestTexture();
-  }
 }
 
 /**
@@ -624,6 +395,26 @@ const SWITCH_ALWAYS_FLIPS = new Set([
   138, // light turn on
   139, // light turn off
 ]);
+
+/** What a `SpecialsController` needs beside the `World` it runs over. */
+export interface SpecialsOptions extends MoverGeometryOptions {
+  onExit: (secret: boolean) => void;
+  onTeleport: (dest: TeleportDest) => void;
+  onCrush: (sectorIndex: number, dealDamage: boolean) => boolean;
+  blocksCeilingLower: (sectorIndex: number, ceilingHeight: number) => boolean;
+  blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean;
+  /** Where the player stands as the level opens, seeding the first `update`'s crossing test. */
+  playerAt: Pos2;
+  sfx?: SoundEmitter;
+  /**
+   * How a switch texture resolves to its opposite state — **the same lookup
+   * the caller gave `scanSectors`**, for the same "must not
+   * disagree" reason `movableSectors` is passed in. Defaults to the
+   * `SW1`/`SW2` name convention; a WAD set with a `SWITCHES` lump supplies
+   * its own (docs/wad.md § ANIMATED and SWITCHES).
+   */
+  switchPairs?: SwitchPairLookup;
+}
 
 export class SpecialsController {
   private map: DoomMap;
@@ -714,42 +505,21 @@ export class SpecialsController {
    */
   private lockedLine: LockedLine | null = null;
 
-  constructor(
-    map: DoomMap,
-    world: World,
-    bank: MaterialBank,
-    scene: THREE.Scene | THREE.Group,
-    fog: FogOfWar,
-    polys: SubSectorPoly[],
-    built: BuiltMap,
-    meshOptions: MapMeshOptions,
-    onExit: (secret: boolean) => void,
-    onTeleport: (dest: TeleportDest) => void,
-    onCrush: (sectorIndex: number, dealDamage: boolean) => boolean,
-    blocksCeilingLower: (sectorIndex: number, ceilingHeight: number) => boolean,
-    blocksFloorRise: (sectorIndex: number, floorHeight: number) => boolean,
-    playerX: number,
-    playerY: number,
-    /**
-     * Which sectors get mover-owned geometry — **the same set the caller gave
-     * `buildMapMesh`**, so the mesh and this controller can't disagree about
-     * who owns a sector. Required, rather than defaulting to its own
-     * its own `scanSectors`, for exactly that reason. A savegame restore
-     * unions the scan with every saved mover's sector: a mid-motion mover whose
-     * authored sector special was consumed (`FloorMover.arrivalTexture`) would
-     * otherwise land back in the static batch. docs/savegames.md § Apply order.
-     */
-    movableSectors: Set<number>,
-    sfx: SoundEmitter = SILENT,
-    /**
-     * How a switch texture resolves to its opposite state — **the same lookup
-     * the caller gave `scanSectors`**, for the same "must not
-     * disagree" reason `movableSectors` is passed in. Defaults to the
-     * `SW1`/`SW2` name convention; a WAD set with a `SWITCHES` lump supplies
-     * its own (docs/wad.md § ANIMATED and SWITCHES).
-     */
-    switchPairs: SwitchPairLookup = switchPairTexture,
-  ) {
+  constructor(world: World, options: SpecialsOptions) {
+    const {
+      bank,
+      onExit,
+      onTeleport,
+      onCrush,
+      blocksCeilingLower,
+      blocksFloorRise,
+      playerAt,
+      sfx = SILENT,
+      switchPairs = switchPairTexture,
+    } = options;
+    // Taken off `World` rather than passed alongside it: the two must describe the same level, and
+    // a second parameter is a second chance to disagree.
+    const map = world.map;
     this.map = map;
     this.world = world;
     this.bank = bank;
@@ -760,8 +530,8 @@ export class SpecialsController {
     this.blocksFloorRise = blocksFloorRise;
     this.sfx = sfx;
     this.bossDeathTriggers = bossDeathTriggersFor(map.name);
-    this.prevX = playerX;
-    this.prevY = playerY;
+    this.prevX = playerAt.x;
+    this.prevY = playerAt.y;
 
     for (const [i, line] of map.linedefs.entries()) {
       const def = lookupSpecial(line.special);
@@ -771,7 +541,7 @@ export class SpecialsController {
       if (entries.length > 0) this.switchTextures.set(i, entries);
     }
 
-    this.geometry = new MoverGeometry(map, world, bank, scene, fog, polys, built, meshOptions, movableSectors);
+    this.geometry = new MoverGeometry(world, options);
 
     for (let i = 0; i < map.sectors.length; i++) {
       const timer = decodeSectorType(map.sectors[i].special).doorTimer;
@@ -854,32 +624,12 @@ export class SpecialsController {
   }
 
   /**
-   * The mover meshes' pass one, into the frame's shared bags — see `MoverGeometry.collectFadeHits`.
+   * The mover meshes as the fade pass sees them — `MoverGeometry` satisfies `FadeParticipant` on
+   * its own, so `game.ts` hands the fader this rather than the controller. Driven from there after
+   * the camera has settled, not from `update`.
    */
-  collectFadeHits(
-    camX: number,
-    camY: number,
-    camZ: number,
-    targets: FadeTarget[],
-    walls: FadeCrossings,
-    flats: FadeCrossings,
-  ): void {
-    this.geometry.collectFadeHits(camX, camY, camZ, targets, walls, flats);
-  }
-
-  /**
-   * The mover meshes' own per-frame occlusion/fog fade — see `MoverGeometry.updateFading`. Called
-   * from `game.ts` after the camera has settled, not from `update`.
-   */
-  updateFading(
-    dt: number,
-    camX: number,
-    camY: number,
-    targets: FadeTarget[],
-    walls: FadeCrossings,
-    flats: FadeCrossings,
-  ): void {
-    this.geometry.updateFading(dt, camX, camY, targets, walls, flats);
+  get fadeParticipant(): FadeParticipant {
+    return this.geometry;
   }
 
   /**
@@ -945,9 +695,7 @@ export class SpecialsController {
 
   update(
     dt: number,
-    playerX: number,
-    playerY: number,
-    playerAngle: number,
+    player: Placement,
     input: Input,
     ownedKeys: ReadonlySet<KeySlot>,
     /**
@@ -968,13 +716,19 @@ export class SpecialsController {
     if (this.crushDamageDue) this.crushDamageTimer += CRUSH_DAMAGE_INTERVAL;
     this.tickMovers(dt, dirty);
     this.lastTeleport = null;
+    // Read once, up front: `player` is the live `Player`, and a use-triggered teleport moves it
+    // inside `handleUseTrigger`. Both the walk pass and the reseed below mean where the player
+    // stood when the tic began, not where a switch just sent them.
+    const playerX = player.x;
+    const playerY = player.y;
+    const playerAngle = player.angle;
     this.handleUseTrigger(playerX, playerY, playerAngle, input, ownedKeys);
     if (!noclip) this.handleWalkTriggers(playerX, playerY, playerAngle, ownedKeys);
     this.geometry.rebuildAround(dirty);
     this.updateSwitchFlashes(dt);
     this.updateLights(dt);
-    // See `lastTeleport`'s doc: a teleport this frame reseeds prevX/prevY from
-    // the destination, not the (now stale, pre-teleport) playerX/playerY.
+    // See `lastTeleport`'s doc: a teleport this frame reseeds prevX/prevY from the destination,
+    // not from where the player stood before it.
     const teleport = this.consumeLastTeleport();
     this.prevX = teleport ? teleport.x : playerX;
     this.prevY = teleport ? teleport.y : playerY;
@@ -2686,4 +2440,233 @@ export class SpecialsController {
     }
   }
 
+}
+
+/**
+ * Which of Boom's two per-sector "busy" slots a mover kind occupies —
+ * `sec->floordata` vs `sec->ceilingdata`, the split `P_SectorActive` reads.
+ * The elevator claims *both* in vanilla; it lives in the floor map here and
+ * `ceilingActive` looks for it there, since one object in two maps would
+ * `structuredClone` into two on save and then tick twice.
+ * docs/specials.md § One mover per sector.
+ */
+function moverClass(kind: Mover['kind']): 'floor' | 'ceiling' {
+  switch (kind) {
+    case 'floor':
+    case 'lift':
+    case 'elevator':
+      return 'floor';
+    case 'door':
+    case 'ceiling':
+    case 'crusher':
+      return 'ceiling';
+  }
+}
+
+/**
+ * Blink/flicker periods in seconds, matching vanilla's STROBEBRIGHT/FASTDARK/SLOWDARK tic counts.
+ */
+const BLINK_BRIGHT_TIME = 5 * DOOM_TIC;
+const BLINK_05_DARK = 15 * DOOM_TIC;
+const BLINK_1_DARK = 35 * DOOM_TIC;
+const GLOW_HALF_CYCLE = 1.3;
+
+/**
+ * `T_LightFlash`'s `mintime`/`maxtime`, used as **bit masks** and not as
+ * durations: `&7` is 0-7 tics dark, but `&64` is 0 *or* 64 and nothing between,
+ * so a broken light's lit period is either 1 tic or 65. That split is the whole
+ * character of the pattern. docs/specials.md § Lights.
+ */
+const FLASH_DARK_MASK = 7;
+const FLASH_BRIGHT_MASK = 64;
+
+/** `T_FireFlicker`: a new level every 4 tics, in steps of 16 below the sector's own light. */
+const FLICKER_INTERVAL = 4 * DOOM_TIC;
+const FLICKER_STEP = 16;
+
+/**
+ * The four patterns `P_SpawnStrobeFlash` spawns, and so the only ones carrying
+ * its `minlight == maxlight` rule — see `makeLightState`.
+ */
+const STROBE_PATTERNS = new Set<LightPattern>(['blink05', 'blink1', 'syncBlink05', 'syncBlink1']);
+
+function makeLightState(pattern: LightPattern, baseLight: number, minLight: number): LightState {
+  // A strobe with nothing darker around it blinks to black instead of standing
+  // still: `P_SpawnStrobeFlash`'s `if (minlight == maxlight) minlight = 0`, and
+  // its alone — `P_SpawnLightFlash`, `P_SpawnGlowingLight` and
+  // `P_SpawnFireFlicker` all leave the two equal. docs/specials.md § Lights.
+  const darkLight = minLight === baseLight && STROBE_PATTERNS.has(pattern) ? 0 : minLight;
+  // `P_SpawnLightFlash` seeds its counter with the same `(P_Random()&64)+1` the
+  // tick uses, so a map's broken lights start out of phase with each other.
+  const timer = pattern === 'blinkRandom' ? ((pRandom() & FLASH_BRIGHT_MASK) + 1) * DOOM_TIC : pattern === 'flicker' ? FLICKER_INTERVAL : 0;
+  return { pattern, baseLight, darkLight, timer, bright: true, phase: 1, level: baseLight };
+}
+
+function tickLight(s: LightState, dt: number): number {
+  switch (s.pattern) {
+    case 'blinkRandom': {
+      // `T_LightFlash` — see FLASH_DARK_MASK for why the two branches are so lopsided.
+      s.timer -= dt;
+      if (s.timer <= 0) {
+        s.bright = !s.bright;
+        const mask = s.bright ? FLASH_BRIGHT_MASK : FLASH_DARK_MASK;
+        s.timer = ((pRandom() & mask) + 1) * DOOM_TIC;
+      }
+      return s.bright ? s.baseLight : s.darkLight;
+    }
+    case 'flicker': {
+      // `T_FireFlicker`, which is four brightness steps rather than a toggle.
+      // The floor is the darkest neighbour + 16, and the `< min` test reads the
+      // *current* level while the assignment uses the sector's own — vanilla's
+      // own asymmetry, and what makes the pattern sit at its floor as often as
+      // it does. docs/specials.md § Lights.
+      s.timer -= dt;
+      if (s.timer <= 0) {
+        s.timer = FLICKER_INTERVAL;
+        const amount = (pRandom() & 3) * FLICKER_STEP;
+        const min = s.darkLight + FLICKER_STEP;
+        s.level = s.level - amount < min ? min : s.baseLight - amount;
+      }
+      return s.level;
+    }
+    case 'blink05':
+    case 'syncBlink05': {
+      s.timer -= dt;
+      if (s.timer <= 0) {
+        s.bright = !s.bright;
+        s.timer = s.bright ? BLINK_BRIGHT_TIME : BLINK_05_DARK;
+      }
+      return s.bright ? s.baseLight : s.darkLight;
+    }
+    case 'blink1':
+    case 'syncBlink1': {
+      s.timer -= dt;
+      if (s.timer <= 0) {
+        s.bright = !s.bright;
+        s.timer = s.bright ? BLINK_BRIGHT_TIME : BLINK_1_DARK;
+      }
+      return s.bright ? s.baseLight : s.darkLight;
+    }
+    case 'glow': {
+      const dir = s.bright ? 1 : -1;
+      s.phase += (dir * dt) / GLOW_HALF_CYCLE;
+      if (s.phase >= 1) {
+        s.phase = 1;
+        s.bright = false;
+      } else if (s.phase <= 0) {
+        s.phase = 0;
+        s.bright = true;
+      }
+      return s.darkLight + (s.baseLight - s.darkLight) * s.phase;
+    }
+  }
+}
+
+/**
+ * The new special's sector `special` after a Boom change: untouched for a
+ * texture-only change (`FChgTxt`), cleared for `FChgZero`, the model's own for
+ * `FChgTyp` — `p_genlin.c`'s three `*ChgT` cases.
+ */
+function changedSpecial(change: SurfaceChange, model: Sector): number | undefined {
+  if (change.type === 'texOnly') return undefined;
+  return change.type === 'texZeroType' ? 0 : model.special;
+}
+
+/**
+ * `shortestTexture` resolves the two `FbyST` targets alone, and is a thunk
+ * because the scan behind it needs the material bank (controller state) while
+ * every other target is a pure function of the map — and because the scan
+ * walks every linedef, so it must not run for the targets that don't want it.
+ */
+function resolveFloorTarget(
+  world: World,
+  sectorIndex: number,
+  target: MoveTarget,
+  shortestTexture: () => number,
+): number {
+  const map = world.map;
+  switch (target) {
+    case 'lowestNeighborFloor':
+      return world.lowestNeighborFloor(sectorIndex);
+    case 'highestNeighborFloor':
+      return world.highestNeighborFloor(sectorIndex);
+    case 'nextHigherFloor':
+      return world.nextHigherFloor(sectorIndex);
+    case 'nextLowerFloor':
+      return world.nextLowerFloor(sectorIndex);
+    case 'lowestNeighborCeiling':
+      // Vanilla's raiseFloor clamps to the sector's own ceiling too — a floor
+      // can never be sent above the ceiling it sits under, which matters
+      // whenever that ceiling happens to be lower than every neighbor's.
+      return Math.min(world.lowestNeighborCeiling(sectorIndex), map.sectors[sectorIndex].ceilHeight);
+    case 'highestNeighborCeiling':
+      return world.highestNeighborCeiling(sectorIndex);
+    case 'lowestNeighborCeilingMinus8':
+      return (
+        Math.min(world.lowestNeighborCeiling(sectorIndex), map.sectors[sectorIndex].ceilHeight) - EIGHT_UNIT_GAP
+      );
+    case 'turboLower': {
+      // `p_floor.c`'s `case turboLower` adds the 8 only where the found height differs from the
+      // sector's own; unconditionally it hands a lowering mover a target *above* its floor.
+      // docs/specials.md § The turboLower quad.
+      const highest = world.highestNeighborFloor(sectorIndex);
+      return highest === map.sectors[sectorIndex].floorHeight ? highest : highest + EIGHT_UNIT_GAP;
+    }
+    case 'plus24':
+      return map.sectors[sectorIndex].floorHeight + 24;
+    case 'plus32':
+      return map.sectors[sectorIndex].floorHeight + 32;
+    case 'plus512':
+      return map.sectors[sectorIndex].floorHeight + 512;
+    case 'minus24':
+      return map.sectors[sectorIndex].floorHeight - 24;
+    case 'minus32':
+      return map.sectors[sectorIndex].floorHeight - 32;
+    case 'ownCeiling':
+      // Boom's FtoC: flush with the sector's own ceiling, no vanilla 8-unit gap.
+      return map.sectors[sectorIndex].ceilHeight;
+    case 'shortestLowerTexture':
+      return map.sectors[sectorIndex].floorHeight + shortestTexture();
+    case 'shortestLowerTextureDown':
+      return map.sectors[sectorIndex].floorHeight - shortestTexture();
+  }
+}
+
+/** Same `shortestTexture` convention as `resolveFloorTarget`, for the `CbyST` pair. */
+function resolveCeilingTarget(
+  world: World,
+  sectorIndex: number,
+  target: CeilingTarget,
+  shortestTexture: () => number,
+): number {
+  const map = world.map;
+  switch (target) {
+    case 'highestNeighborCeiling':
+      return world.highestNeighborCeiling(sectorIndex);
+    case 'floorPlus8':
+      return map.sectors[sectorIndex].floorHeight + EIGHT_UNIT_GAP;
+    case 'lowestNeighborCeiling':
+      return world.lowestNeighborCeiling(sectorIndex);
+    case 'nextHigherCeiling':
+      return world.nextHigherCeiling(sectorIndex);
+    case 'nextLowerCeiling':
+      return world.nextLowerCeiling(sectorIndex);
+    case 'highestNeighborFloor':
+      return world.highestNeighborFloor(sectorIndex);
+    case 'ownFloor':
+      // Boom's CtoF: flush with the floor, unlike vanilla's floorPlus8.
+      return map.sectors[sectorIndex].floorHeight;
+    case 'plus24':
+      return map.sectors[sectorIndex].ceilHeight + 24;
+    case 'plus32':
+      return map.sectors[sectorIndex].ceilHeight + 32;
+    case 'minus24':
+      return map.sectors[sectorIndex].ceilHeight - 24;
+    case 'minus32':
+      return map.sectors[sectorIndex].ceilHeight - 32;
+    case 'shortestUpperTexture':
+      return map.sectors[sectorIndex].ceilHeight + shortestTexture();
+    case 'shortestUpperTextureDown':
+      return map.sectors[sectorIndex].ceilHeight - shortestTexture();
+  }
 }

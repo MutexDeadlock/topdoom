@@ -38,7 +38,7 @@ describe('Regression · a pickup reaches where the move was headed', () => {
     const world = new World(grid.map);
     const player = new Player(world);
     player.moveTo({ x: floor.x, y: floor.y });
-    return { player, layer: buildThingSprites(grid.map, world, BANK, MATERIALS, 3), edgeY };
+    return { player, layer: buildThingSprites(world, { bank: BANK, materials: MATERIALS, skill: 3 }), edgeY };
   }
 
   /** North at `forwardDeg` 90, so `getAutorun` runs. */

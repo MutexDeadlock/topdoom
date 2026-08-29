@@ -32,8 +32,8 @@ describe('specials · perpetual lifts', () => {
       const [a, b] = [map.vertexes[map.linedefs[line].v1], map.vertexes[map.linedefs[line].v2]];
       const x = a.x; // vertical edge
       const y = (a.y + b.y) / 2;
-      rig.specials.update(TIC, x - 8, y, 0, NO_INPUT, new Set());
-      rig.specials.update(TIC, x + 8, y, 0, NO_INPUT, new Set());
+      rig.specials.update(TIC, { x: x - 8, y, angle: 0 }, NO_INPUT, new Set());
+      rig.specials.update(TIC, { x: x + 8, y, angle: 0 }, NO_INPUT, new Set());
     };
     return { map, rig, cross, perpetualLine, stopLine };
   }

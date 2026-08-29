@@ -321,7 +321,7 @@ export function librarySkips(): readonly LibrarySkip[] {
 }
 
 /**
- * Persists a library file's content id once something has computed it, so it is hashed once ever
+ * Persists a library file's content ID once something has computed it, so it is hashed once ever
  * rather than once per session. A no-op for any other kind of source.
  */
 export async function rememberLibraryId(source: WadSource): Promise<void> {

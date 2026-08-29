@@ -477,7 +477,7 @@ export class Menu {
 
   /**
    * The CHANGELOG reader behind the header's link. Dismissed by the close button, by clicking the
-   * backdrop around the panel, or by Esc — see `closeChangelog` and docs/menu.md § Changelog.
+   * backdrop around the panel, or by ESC — see `closeChangelog` and docs/menu.md § Changelog.
    */
   private installChangelog(): void {
     el<HTMLButtonElement>('changelog-button').addEventListener('click', () => {
@@ -514,7 +514,7 @@ export class Menu {
 
   /**
    * Closes the changelog popup, reporting whether it *was* open. `main.ts` calls this first in its
-   * own Esc handler, so one Esc dismisses the popup instead of the whole menu — an explicit
+   * own ESC handler, so one ESC dismisses the popup instead of the whole menu — an explicit
    * hand-off rather than two window listeners racing over the same key.
    */
   private get changelogOpen(): boolean {
@@ -529,8 +529,8 @@ export class Menu {
 
   /**
    * Dismisses whichever overlay is up, topmost first, and reports whether there was one — the
-   * hand-off `main.ts` gives Esc before it acts on the menu itself. The order lives here rather
-   * than in the caller, so a third overlay is one edit and never changes what Esc does elsewhere.
+   * hand-off `main.ts` gives ESC before it acts on the menu itself. The order lives here rather
+   * than in the caller, so a third overlay is one edit and never changes what ESC does elsewhere.
    */
   closeTopOverlay(): boolean {
     return this.closeChangelog() || this.library.close();
@@ -550,7 +550,7 @@ export class Menu {
    * Resolves a stored `WadSource.key` — `init`'s restored selection — against
    * the current library, uploads included, since `addFiles` unshifts a
    * re-uploaded file under the same key. A savegame's set does *not* come
-   * through here: it resolves by content id (`resolveSaveWads`).
+   * through here: it resolves by content ID (`resolveSaveWads`).
    */
   findSource(key: string): WadSource | undefined {
     return this.sources.find((s) => s.key.toLowerCase() === key.toLowerCase());
@@ -561,10 +561,10 @@ export class Menu {
    * order — the one place that rule lives, so the save row and the load path
    * can't disagree about which files a save can be played with.
    *
-   * Matching is by content id, the file's real identity, so a renamed WAD (or
+   * Matching is by content ID, the file's real identity, so a renamed WAD (or
    * the server's copy of one that was uploaded when the save was made) still
    * matches. The name is only the fallback *diagnosis*: a file matching by name
-   * but not by id is the same WAD in a different version, worth saying
+   * but not by ID is the same WAD in a different version, worth saying
    * precisely rather than reporting as missing (docs/savegames.md § WAD-set
    * identity). `wads[0]` is the game WAD, so a file's role is just its position.
    *
@@ -746,7 +746,7 @@ export class Menu {
   }
 
   /**
-   * Gives a source its content id before it can end up in a savegame. Only a library file ever
+   * Gives a source its content ID before it can end up in a savegame. Only a library file ever
    * needs this — its scan read a few hundred KB rather than the whole file — and the answer is
    * remembered on disk, so it is hashed once ever (docs/wad.md § The player's own library).
    */

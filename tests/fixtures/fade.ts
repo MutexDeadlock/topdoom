@@ -7,7 +7,7 @@
  * rather than mirrored (docs/render.md § The fade is a hole, not a wall).
  */
 import * as THREE from 'three';
-import { FADE_ALPHA, FADE_RADIUS, type FadeTarget } from '../../src/render/occlusion.ts';
+import { FADE_ALPHA, FADE_RADIUS, type FadeFrame, type FadeTarget } from '../../src/render/occlusion.ts';
 import type { WallOccluder } from '../../src/render/mapmesh.ts';
 import type { Opening, World } from '../../src/game/world.ts';
 import { PLAYER_HEIGHT } from '../../src/game/player.ts';
@@ -68,4 +68,19 @@ export function lowestAlphaAt(
     for (let v = 0; v < o.vertexCount; v++) low = Math.min(low, attr.getW(o.vertexStart + v));
   }
   return low;
+}
+
+/**
+ * One frame's worth of fade input for a test driving a fader directly, in the order the faders
+ * used to take these as arguments — `FadeFrame` is what they take now (render/occlusion.ts).
+ */
+export function fadeFrame(
+  dt: number,
+  camX: number,
+  camY: number,
+  camZ: number,
+  targets: FadeTarget[],
+  openingInto: FadeFrame['openingInto'] = () => false,
+): FadeFrame {
+  return { dt, camX, camY, camZ, targets, openingInto };
 }

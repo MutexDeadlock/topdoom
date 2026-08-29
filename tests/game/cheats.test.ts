@@ -132,7 +132,7 @@ describe('Cheats · IDCLIP', () => {
     });
     const floor = grid.centre(1, 2);
     const player = new Player(new World(grid.map));
-    player.moveTo({ x: floor.x, y: floor.y });
+    player.moveTo(floor);
     return { player, edgeY: floor.y + CELL / 2 };
   }
 
@@ -170,8 +170,8 @@ describe('Cheats · IDCLIP', () => {
       const boundary = grid.centre(2, 1).x - grid.cell / 2;
       const y = grid.centre(1, 1).y;
       // The first update seeds prevX/prevY, the second is the crossing.
-      rig.specials.update(TIC, boundary - 20, y, 0, NO_INPUT, new Set(), noclip);
-      rig.specials.update(TIC, boundary + 20, y, 0, NO_INPUT, new Set(), noclip);
+      rig.specials.update(TIC, { x: boundary - 20, y, angle: 0 }, NO_INPUT, new Set(), noclip);
+      rig.specials.update(TIC, { x: boundary + 20, y, angle: 0 }, NO_INPUT, new Set(), noclip);
       return arrivals.length;
     }
 

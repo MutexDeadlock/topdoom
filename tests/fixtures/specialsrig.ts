@@ -1,3 +1,10 @@
+/**
+ * Everything needed to get a real `SpecialsController` ticking over a `gridMap` in Node: the
+ * `World`, mesh and sector scan its `SpecialsOptions` expects, built in one call. The controller
+ * needs no GL context — only texture sizes and materials from its bank, a bare `THREE.Group` to
+ * hang mover meshes on, and a real `FogOfWar` — which is what makes this the fixture rather than a
+ * mock: everything below the stubs is the production object. docs/testing.md § The specials rig.
+ */
 import * as THREE from 'three';
 import { World } from '../../src/game/world.ts';
 import { FogOfWar } from '../../src/game/fogofwar.ts';
@@ -11,14 +18,6 @@ import type { Input } from '../../src/game/input.ts';
 import type { SfxId, SoundEmitter } from '../../src/audio/sfx.ts';
 import type { Pos2 } from '../../src/types.ts';
 import type { CrossingBody } from '../../src/game/things/defs.ts';
-
-/**
- * Everything needed to get a real `SpecialsController` ticking over a `gridMap` in Node, in one
- * call instead of its sixteen positional arguments. The controller needs no GL context — only
- * texture sizes and materials from its bank, a bare `THREE.Group` to hang mover meshes on, and a
- * real `FogOfWar` — which is what makes this the fixture rather than a mock: everything below the
- * stubs is the production object. docs/testing.md § The specials rig.
- */
 
 /**
  * The one texture name `BANK` hands back a **masked** material for — a grate,
@@ -117,27 +116,23 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
   const built = buildMapMesh(map, BANK, { movableSectors, movingSectors, transfers });
   const scene = new THREE.Group();
   const fog = new FogOfWar(world, built.occluders, at.x, at.y);
-  const specials = new SpecialsController(
-    map,
-    world,
-    BANK,
+  const specials = new SpecialsController(world, {
+    bank: BANK,
     scene,
     fog,
-    built.polys,
     built,
-    { transfers, movingSectors },
-    options.onExit ?? (() => {}),
-    options.onTeleport ?? (() => {}),
-    options.onCrush ?? (() => false),
+    meshOptions: { transfers, movingSectors },
+    onExit: options.onExit ?? (() => {}),
+    onTeleport: options.onTeleport ?? (() => {}),
+    onCrush: options.onCrush ?? (() => false),
     // The two "is the player in the way" predicates. No test drives a *ceiling*
     // into the player yet, so that one stands at "nothing ever blocks one".
-    () => false,
-    options.blocksFloorRise ?? (() => false),
-    at.x,
-    at.y,
+    blocksCeilingLower: () => false,
+    blocksFloorRise: options.blocksFloorRise ?? (() => false),
+    playerAt: at,
     movableSectors,
-    options.sfx,
-  );
+    sfx: options.sfx,
+  });
   return {
     specials,
     world,
@@ -145,6 +140,6 @@ export function specialsRig(map: DoomMap, at: Pos2, options: SpecialsRigOptions 
     built,
     movableSectors,
     /** `angle` is the player's facing in radians — what Boom's silent teleports rotate relative to. */
-    tick: (dt = TIC, x = at.x, y = at.y, angle = 0) => specials.update(dt, x, y, angle, NO_INPUT, new Set()),
+    tick: (dt = TIC, x = at.x, y = at.y, angle = 0) => specials.update(dt, { x, y, angle }, NO_INPUT, new Set()),
   };
 }

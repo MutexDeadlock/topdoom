@@ -528,6 +528,21 @@ radius, skips anyone `hasLineOfSight` says is blocked, and falls off linearly to
 edge, matching `P_RadiusAttack`. It uses `hasLineOfSight`, deliberately not `shotPath` — that models
 a directed weapon's own blocking rules, not "does this omnidirectional blast reach that point".
 
+## Where an impact sits
+
+**A missile that ends against a wall explodes `PROJECTILE_RADIUS` back along its flight**
+(`ProjectileLayer.backOffWall`), never further than it has travelled — vanilla's own stopping point,
+since `P_XYMovement` blocks the missile a radius short of the plane and `P_ExplodeMissile` fires
+there. The explosion, its splash and its sound all move together. Only a wall arrival moves: a body
+hit stays on the body, a missile stopped by the floor stays on the floor. The hitscan counterpart is
+`PUFF_WALL_OFFSET` (§ Bullet puffs).
+
+`shotPath` returns the exact plane crossing, and an effect spawned there resolves its subsector to
+whichever side of the BSP splitter the point falls on. A far-side leaf the player has never seen is
+skipped by the fog gate (§ Effects and their batching), so without the pullback the rocket, plasma
+and BFG explosions were **not drawn at all** against those walls. Repro: DOOM2 MAP01's start room,
+whose north wall (lines 22-25) puts every impact in subsector 184 behind it.
+
 ## Blood
 
 **Blood is spawned by a trace hitting a body, not by damage** — vanilla puts `P_SpawnBlood` in

@@ -379,6 +379,10 @@ export class ProjectileLayer {
       const struck = reachedPlayer ? null : this.bodyStruckBy(p, from, at);
 
       if (reachedPlayer || struck || hitGround || p.traveled >= p.maxDist) {
+        // Nothing nearer absorbed it, so this is the wall `shotPath` stopped it
+        // at — and that point sits exactly *on* the wall plane, which is not
+        // where a missile explodes. See docs/combat.md § Where an impact sits.
+        if (!reachedPlayer && !struck && !hitGround && p.lineIndex !== null) this.backOffWall(p, at);
         if (reachedPlayer) {
           this.ctx.damagePlayer(p.damage, at.x, at.y, p.sourceType);
         } else if (struck) {
@@ -453,6 +457,23 @@ export class ProjectileLayer {
       this.drawAt.z = p.drawPrevZ + (p.drawZ - p.drawPrevZ) * alpha;
       this.effects.batchSprite(p.anim, this.drawAt, (p.drawAngleRad * 180) / Math.PI, p.drawLight);
     }
+  }
+
+  /**
+   * Pulls an arrival that ended against a wall back off the plane, by the missile's own radius and
+   * along the direction it was flying — vanilla's own stopping point, and the point its explosion,
+   * splash and sound all belong at. Never past where the shot came from, so a point-blank hit
+   * explodes at the muzzle rather than behind the shooter. See docs/combat.md § Where an impact
+   * sits.
+   */
+  private backOffWall(p: Projectile, at: Pos3): void {
+    const back = Math.min(p.radius, Math.hypot(at.x - p.originX, at.y - p.originY));
+    if (back <= 0) return;
+    const heading = p.homing?.headingRad ?? p.angleRad;
+    at.x -= Math.cos(heading) * back;
+    at.y -= Math.sin(heading) * back;
+    // The straight flight's own slope; a homing missile eases its height per step and has none.
+    if (!p.homing && p.maxDist > 0) at.z -= ((p.endZ - p.startZ) / p.maxDist) * back;
   }
 
   /**

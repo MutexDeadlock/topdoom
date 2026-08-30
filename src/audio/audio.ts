@@ -4,7 +4,16 @@
  */
 import type { SoundBank } from '../wad/sound.ts';
 import type { Pos2 } from '../types.ts';
-import { randomPlaybackRate, SFX, SFX_NAMES, soundLumpName, type SfxId, type SoundEmitter } from './sfx.ts';
+import {
+  randomPlaybackRate,
+  sampleGroup,
+  SFX,
+  SFX_NAMES,
+  soundLumpName,
+  type SfxId,
+  type SoundEmitter,
+} from './sfx.ts';
+import { DOOM_TIC } from '../constants.ts';
 import { MusicPlayer } from './music.ts';
 import { storedVolume } from './volume.ts';
 
@@ -14,6 +23,37 @@ import { storedVolume } from './volume.ts';
  * rule they are allocated by is still vanilla's own (`allocate`). docs/audio.md § The mixer model.
  */
 const CHANNELS = 32;
+
+/**
+ * Copies of one sample that may *start* inside one tic. **Tuned by feel**, and not vanilla, which
+ * limits nothing per sound: a whole region's monsters wake on a single frame, and a dozen copies of
+ * a 1.2-second cry then own a third of `CHANNELS` for the length of it. Counting *starts per tic*
+ * rather than voices in flight is what leaves a sound that layers across tics by design alone —
+ * `plasma`, which carries no origin, stacks about six deep and never reaches this.
+ * docs/audio.md § Same-tic bursts.
+ */
+const MAX_STARTS_PER_TIC = 4;
+
+/**
+ * How long "one tic" lasts for that budget — vanilla's own tic (`constants.ts`). The frame loop
+ * runs at display rate, not 35 Hz, so a wake vanilla would put in a single tic can straddle two
+ * frames; one `DOOM_TIC` covers both.
+ */
+const BURST_WINDOW = DOOM_TIC;
+
+/**
+ * Seconds between the copies a burst does admit. **Tuned by feel**, and not vanilla: identical
+ * samples started at one instant comb-filter into a single loud copy rather than a crowd, and the
+ * pitch wobble alone doesn't decorrelate them. docs/audio.md § Same-tic bursts.
+ */
+const BURST_STAGGER = 0.018;
+
+/**
+ * How close in pan two copies of a sample must sit to crowd each other, softening `burstVictim`'s
+ * crowding sum — and, at a distance of zero, what keeps that sum finite so loudness still separates
+ * copies sharing one pan. **Tuned by feel**. docs/audio.md § Same-tic bursts.
+ */
+const CROWD_FALLOFF = 0.15;
 
 /**
  * Vanilla's `S_CLIPPING_DIST`/`S_CLOSE_DIST`/`S_ATTENUATOR` (`s_sound.c`), in map units — full
@@ -70,6 +110,8 @@ export type AssetSfxId = keyof typeof ASSETS;
 
 /** What one channel is started with — see `AudioEngine.start`. */
 interface VoiceSpec {
+  /** `sampleGroup`'s key, which is what the same-tic start budget is spent from. */
+  key: string;
   /** `SFX`'s own priority, which is what a full pool evicts by. */
   priority: number;
   /** Playback rate, vanilla's per-shot pitch wobble. */
@@ -86,12 +128,50 @@ interface Voice {
   origin: number | undefined;
   /** This sfx's `SFX` priority, which is what `allocate` evicts by. */
   priority: number;
+  /** `VoiceSpec.key`, and the gain and pan `burstVictim` rates this copy by. */
+  key: string;
+  gain: number;
+  pan: number;
+  /** When `play` raised this, in context time — *before* its stagger. `admitBurst`'s window. */
+  raisedAt: number;
+  /** This copy's place in its burst's stagger, inherited by whatever displaces it. */
+  burstIndex: number;
   source: AudioBufferSourceNode;
   /**
    * Disconnects this voice's whole chain. Called once, by whichever comes first: the sound ending
    * or being evicted.
    */
   release: () => void;
+}
+
+/**
+ * Which member of a same-tic burst is worth least, as an index into `members`: the highest
+ * `crowding / gain`, where crowding sums `1 / (panDistance + CROWD_FALLOFF)` over every other
+ * member. The sum, rather than the distance to the nearest neighbour alone, is what keeps a burst
+ * spread: nearest-neighbour saturates once each side of the field holds two copies, and can no
+ * longer tell a stack of three from a lone source. Gain divides it, so a crowd all in one
+ * direction — where crowding is uniform — admits its nearest instead.
+ *
+ * Ties go to the **later** index, and `admitBurst` passes the newcomer last, so an over-budget
+ * burst of copies that rate exactly alike turns nobody away for nothing.
+ * docs/audio.md § Same-tic bursts.
+ */
+export function burstVictim(members: readonly { pan: number; gain: number }[]): number {
+  let worst = 0;
+  let worstScore = -Infinity;
+  for (let i = 0; i < members.length; i++) {
+    let crowding = 0;
+    for (let j = 0; j < members.length; j++) {
+      if (j !== i) crowding += 1 / (Math.abs(members[i].pan - members[j].pan) + CROWD_FALLOFF);
+    }
+    // `gain` is the distance attenuation, which `play` has already checked is above zero.
+    const score = crowding / members[i].gain;
+    if (score >= worstScore) {
+      worstScore = score;
+      worst = i;
+    }
+  }
+  return worst;
 }
 
 /**
@@ -132,6 +212,8 @@ export class AudioEngine implements SoundEmitter {
   private assetBuffers = new Map<AssetSfxId, AudioBuffer | null>();
 
   private voices: (Voice | null)[] = new Array(CHANNELS).fill(null);
+  /** Copies the same-tic budget has turned away since the level loaded — DEVMODE's status text. */
+  private burstDropped = 0;
 
   private listenerX = 0;
   private listenerY = 0;
@@ -157,13 +239,13 @@ export class AudioEngine implements SoundEmitter {
     return this._masterVolume;
   }
 
-  /** Voices in flight and the pool they came from — DEVMODE's status text. */
-  get channelUsage(): { playing: number; total: number } {
+  /** Voices in flight, the pool they came from, and `burstDropped` — DEVMODE's status text. */
+  get channelUsage(): { playing: number; total: number; dropped: number } {
     let playing = 0;
     for (const voice of this.voices) {
       if (voice) playing++;
     }
-    return { playing, total: this.voices.length };
+    return { playing, total: this.voices.length, dropped: this.burstDropped };
   }
 
   /**
@@ -203,6 +285,7 @@ export class AudioEngine implements SoundEmitter {
   setBank(bank: SoundBank | null): void {
     this.stopAll();
     this.bank = bank;
+    this.burstDropped = 0;
     this.buffers.clear();
     this.decoding.clear();
     if (bank && this.ctx) for (const name of bank.encodedNames(SFX_NAMES)) this.decodeEncoded(name);
@@ -272,7 +355,8 @@ export class AudioEngine implements SoundEmitter {
 
     const buffer = this.bufferFor(id);
     if (!buffer) return;
-    this.start(buffer, { priority: SFX[id], rate: randomPlaybackRate(id), gain, pan, origin });
+    const rate = randomPlaybackRate(id);
+    this.start(buffer, { key: sampleGroup(id), priority: SFX[id], rate, gain, pan, origin });
   }
 
   /**
@@ -286,7 +370,9 @@ export class AudioEngine implements SoundEmitter {
     const buffer = this.assetBuffers.get(id);
     if (!buffer) return;
     const { priority } = ASSETS[id];
-    this.start(buffer, { priority, rate: 1, gain: 1, pan: 0, origin: undefined });
+    // Prefixed: `ASSETS`' names and `sampleGroup`'s are separate spaces that share this one key.
+    const key = `asset:${id}`;
+    this.start(buffer, { key, priority, rate: 1, gain: 1, pan: 0, origin: undefined });
   }
 
   /**
@@ -308,12 +394,16 @@ export class AudioEngine implements SoundEmitter {
 
   /**
    * Takes a channel for `buffer` and starts it — the half of `play` that has nothing left to
-   * decide.
+   * decide. Two culls stand in front of the sound: the same-tic start budget (`admitBurst`) and
+   * then the pool itself (`allocate`), either of which may drop it.
    */
   private start(buffer: AudioBuffer, voice: VoiceSpec): void {
-    const { priority, rate, gain, pan, origin } = voice;
+    const { key, priority, rate, gain, pan, origin } = voice;
     const ctx = this.ctx;
     if (!ctx || ctx.state !== 'running' || !this.sfxBus) return;
+    const now = ctx.currentTime;
+    const burstIndex = this.admitBurst(voice, now);
+    if (burstIndex === null) return;
     const channel = this.allocate(origin, priority);
     if (channel < 0) return;
 
@@ -337,14 +427,42 @@ export class AudioEngine implements SoundEmitter {
       released = true;
       for (const node of chain) node.disconnect();
     };
-    this.voices[channel] = { origin, priority, source, release };
+    this.voices[channel] = { origin, priority, key, gain, pan, burstIndex, raisedAt: now, source, release };
     source.onended = () => {
       // Only clear the slot if this voice still owns it: eviction hands the
       // channel to someone else before this fires.
       if (this.voices[channel]?.source === source) this.voices[channel] = null;
       release();
     };
-    source.start();
+    source.start(now + burstIndex * BURST_STAGGER);
+  }
+
+  /**
+   * The same-tic start budget, run in front of `allocate`: this copy's place in its burst's
+   * stagger, or null to drop it. Under budget a copy queues behind the burst's existing members;
+   * at budget it gets in only by displacing whichever member `burstVictim` rates lowest, and
+   * inherits that member's place — so the burst keeps its even spacing however often it turns
+   * over. A displaced copy whose staggered start hasn't come round yet never sounds at all.
+   * docs/audio.md § Same-tic bursts.
+   */
+  private admitBurst(voice: VoiceSpec, now: number): number | null {
+    const { key, gain, pan, origin } = voice;
+    const peers: { channel: number; gain: number; pan: number; burstIndex: number }[] = [];
+    for (let i = 0; i < this.voices.length; i++) {
+      const peer = this.voices[i];
+      if (!peer || peer.key !== key || now - peer.raisedAt >= BURST_WINDOW) continue;
+      // `allocate` is about to cut this one for sharing our origin, so it is not competition.
+      if (origin !== undefined && peer.origin === origin) continue;
+      peers.push({ channel: i, gain: peer.gain, pan: peer.pan, burstIndex: peer.burstIndex });
+    }
+    if (peers.length < MAX_STARTS_PER_TIC) return peers.length;
+    const victim = burstVictim([...peers, { gain, pan }]);
+    if (victim === peers.length) {
+      this.burstDropped++;
+      return null;
+    }
+    this.stopVoice(peers[victim].channel);
+    return peers[victim].burstIndex;
   }
 
   /**

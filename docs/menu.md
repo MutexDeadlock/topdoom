@@ -861,7 +861,10 @@ overlay below).
 currently alerted (chasing/attacking, or mid-`reactionTicks` delay) — useful for judging whether a
 level's population has actually noticed the player. Its sound-channel line is
 `AudioEngine.channelUsage` — voices in flight over the pool size (`CHANNELS`, docs/audio.md § The
-mixer model) — which is how you see a scene running the pool dry and cutting sounds off.
+mixer model) — which is how you see a scene running the pool dry and cutting sounds off. The count
+beside it is how many copies the same-tic start budget has turned away since the level loaded
+(docs/audio.md § Same-tic bursts): it climbing while the pool sits half empty is the burst rule
+working, not a scene in trouble.
 
 ## FPS counter
 

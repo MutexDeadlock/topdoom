@@ -73,8 +73,10 @@ and one stereo panner per voice, both computed the way `S_AdjustSoundParams` com
   *origin* was already playing, take a free channel, else evict the **first** channel whose
   priority is no higher than the new sound's, else drop the sound. "First, not oldest or
   quietest" is vanilla's, and it is why a crowd of same-priority sight sounds fights over one
-  channel instead of flushing the pool. `AudioEngine.channelUsage` reports how much of the pool
-  is live, printed as the DEVMODE status text's sound-channel line (docs/menu.md § Dev mode).
+  channel instead of flushing the pool — which is why a second cull, § Same-tic bursts, stands in
+  front of it. `AudioEngine.channelUsage` reports how much of the pool is live and how much the
+  burst rule turned away, printed as the DEVMODE status text's sound-channel line
+  (docs/menu.md § Dev mode).
 - **Origins** are vanilla's `origin` mobj pointer as a numeric key (`monsterOrigin`,
   `sectorOrigin`, `PLAYER_ORIGIN`, in disjoint ranges). One sound per origin at a time is
   what makes a held chaingun trigger sound like a chaingun instead of a dozen layered shots
@@ -86,6 +88,51 @@ other off. And the listener's *orientation* is the **camera's**, not the player'
 mouse-driven and swings freely while the view doesn't, so panning off the player's facing
 would have a fight swap ears while nothing on screen moved. Listener *position* is the
 player's, as in vanilla.
+
+### Same-tic bursts
+
+**At most `MAX_STARTS_PER_TIC` copies of one sample may *start* within one `DOOM_TIC`**
+(`audio.ts: admitBurst`), and the copies that do are spaced `BURST_STAGGER` apart. Both are
+deliberate non-vanilla additions, and both exist because of one event: a `noiseAlert` floods a
+region, every unalerted monster in it wakes on the **same frame** — `PosedThing` spawns with
+`lookTimer: 0` and they all accumulate the same `dt`, so a region's `LOOK_INTERVAL` ticks are in
+phase — and each raises a sight sound over a second long (`DSBGSIT1` 1.24 s, `DSSGTSIT` 1.01 s).
+A dozen of those own a third of `CHANNELS` for the length of the cry, and vanilla's per-origin and
+per-priority culls catch neither: every waker has its own `monsterOrigin`, and every sight sound
+shares priority 98.
+
+The rule stays in the mixer. Scattering the wake itself would change a spawn default the snapshot's
+sparse encodings elide against and would consume `pRandom` draws in the play simulation — this
+changes no game state at all.
+
+- **The budget counts starts per tic, not voices in flight.** A sound that layers by design across
+  tics is untouched: `plasma` carries no origin (§ Weapons and projectiles) and a held trigger
+  stacks about six deep at its 3-tic cadence, one start per tic, so it never reaches the budget.
+- **The key is the variant family, not the lump** (`sfx.ts: sampleGroup`). Ten zombiemen waking
+  together draw a different `randomVariant` each; keying on the lump would give one wake three
+  budgets.
+- **A burst at budget admits a copy only by displacing one**, and which one is
+  `burstVictim`: the highest `crowding / gain`, where crowding sums `1 / (panDistance +
+  CROWD_FALLOFF)` over the burst's other members. The sum rather than the distance to the nearest
+  neighbour alone is load-bearing — nearest-neighbour saturates once each side of the stereo field
+  holds two copies and can no longer tell a stack of three from a lone source, which settles five
+  monsters left and five right at three-and-one instead of two-and-two. Gain divides it, so a crowd
+  all in one direction, where crowding is uniform, admits its nearest instead. Ties go to the later
+  index and the newcomer is passed last, so copies that rate exactly alike turn nobody away for
+  nothing.
+- **A displaced copy inherits the victim's place in the stagger**, so the spacing stays even however
+  often a burst turns over — and a copy displaced before its staggered start has come round never
+  sounds at all, which is why replacement inside a burst cannot click.
+- **A voice sharing the newcomer's origin is not counted**: `allocate` is about to cut it.
+
+The stagger is the other half. Four copies of one sample started at a single instant comb-filter
+into one loud copy rather than a crowd, and vanilla's ±16 pitch wobble only partly decorrelates
+them; a few milliseconds between them is what makes four wakers read as four monsters.
+
+`MAX_STARTS_PER_TIC` and `BURST_STAGGER` are **tuned by feel** and meant to be retuned by ear.
+`tests/audio/burst.test.ts` pins `burstVictim` and `sampleGroup` — the pure half — and states every
+claim as a comparison, never as one of the dial's values; the budget itself needs an `AudioContext`
+and sits in docs/testing.md's carve-out.
 
 ## Who plays what
 

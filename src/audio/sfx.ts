@@ -130,6 +130,18 @@ export function randomVariant(id: SfxId): SfxId {
 }
 
 /**
+ * The key one sfx spends its same-tic start budget from — its `VARIANT_GROUPS` family, or its own
+ * name. A crowd of zombiemen waking together draws a different `randomVariant` each, so keying the
+ * budget on the lump would give one wake three budgets. docs/audio.md § Same-tic bursts.
+ */
+export function sampleGroup(id: SfxId): string {
+  for (const group of VARIANT_GROUPS) {
+    if (group.includes(id)) return group[0];
+  }
+  return id;
+}
+
+/**
  * How a game system asks for a sound without knowing anything about Web Audio
  * — `audio/audio.ts: AudioEngine` is the only implementation, and `SILENT`
  * below stands in wherever there is no audio at all (a headless script, a

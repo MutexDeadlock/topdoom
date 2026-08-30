@@ -26,11 +26,29 @@ case for "not yet orbited."
 
 A `stepYaw` call (Q/E) queues its step as a `targetYawDeg` for `tick` to animate `yawDeg` towards
 (`YAW_STEP_SMOOTH_RATE`) rather than jumping. Plain assignment (`camera.yawDeg = ...`, whose only
-remaining caller is the instant reorient on spawn/teleport) still jumps immediately: the `yawDeg`
-setter keeps `targetYawDeg` in lockstep so nothing left over from a prior Q/E animates after an
-instant set. **Nothing may assign `yawDeg` unconditionally every frame** — even a no-op `-= 0` snaps
-`targetYawDeg` back to the current (still mid-animation) value and cancels a Q/E step after one
-frame of smoothing, which is what forced the removed drag handler to guard on a nonzero delta.
+remaining caller is the absolute reorient on spawn and on a loud teleport) still jumps immediately:
+the `yawDeg` setter keeps `targetYawDeg` in lockstep so nothing left over from a prior Q/E animates
+after an instant set. **Nothing may assign `yawDeg` unconditionally every frame** — even a no-op
+`-= 0` snaps `targetYawDeg` back to the current (still mid-animation) value and cancels a Q/E step
+after one frame of smoothing, which is what forced the removed drag handler to guard on a nonzero
+delta.
+
+**A *relative* instant turn is `turnYaw`, not an assignment**, for the same reason. Boom's silent
+teleporters turn the orbit by the angle between the two ends rather than aiming it (§ The camera is
+simulation state), and `yawDeg = yawDeg + delta` reads the mid-animation angle: it strands a Q/E
+step in flight wherever the smoothing had got to, off the 45° lattice, and a `rotateBy` of 0 — a
+line-to-line pair with matching alignment, as in BOOMEDIT.WAD — is exactly the banned no-op above.
+`turnYaw` shifts `yawDeg`, `targetYawDeg` and both interpolation ends together, so the pending step
+lands on the lattice measured from the new bearing. `tests/render/camera-yaw.test.ts` pins it.
+
+**`yawDeg` stays in (-180°, 180°]** (`normaliseYaw`, run at the end of every `tick` and by both
+instant routes), so crossing a silent teleporter back and forth doesn't climb the readout by a turn
+a time. Its rule is the same one `turnYaw` follows and is what makes wrapping safe at all: it shifts
+*every* yaw field by the *same* whole turn, never one alone. Every consumer reads the yaw through
+trig or an explicit `% 360` (`sprites.ts: pickRotationDigit`), so a shared turn is invisible to all
+of them — but a lone wrapped field would leave the target or the previous tic a turn away and send
+the camera the long way round. A stored `cameraYawDeg` from an older save needs nothing: the setter
+wraps it on the way in.
 
 All of that input handling lives in `TopDownCamera.applyYawInput`, which `game.ts` calls once a
 **tic**. Holding Q/E auto-repeats the same 45° `stepYaw` every `KEY_YAW_REPEAT_INTERVAL` —
@@ -76,7 +94,9 @@ collapse for the orbit angle — which is why `snapTo` is called *after* whichev
 
 **A teleport is the same discontinuity** and takes the same pair, in the same order
 (docs/specials.md § Teleporters). It used to snap only the yaw, which left the camera flying to the
-landing spot over roughly a third of a second while the player was already there and shooting. What
+landing spot over roughly a third of a second while the player was already there and shooting. A
+loud teleport aims the yaw at the landing angle; a silent one turns it by `TeleportDest.rotateBy`
+through `turnYaw` (§ Camera orbit), which is what preserves the player's own orbit across the trip. What
 still glides after either snap is the aim lead alone — `tick` re-applies it to the fresh target on
 the very next tic — which is bounded by `MAX_AIM_LEAD` and is the intended follow-the-cursor feel
 rather than a leftover.

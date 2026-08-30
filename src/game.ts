@@ -972,14 +972,13 @@ export class Game {
         // docs/specials.md § Silent and line-to-line teleporters.
         if (!dest.silent) this.effects.spawnTeleportPair(from, dest, this.player.z);
         // The follow point always snaps; the yaw is reoriented by a vanilla teleport and turned
-        // *relatively* by a silent one, which is what preserves the player's own Q/E orbit
+        // *relatively* by a silent one, which is what preserves the player's own Q/E orbit —
+        // `turnYaw`, not an assignment, so a step still animating survives the trip
         // (docs/specials.md § Silent and line-to-line teleporters). Yaw first either way: `snapTo`
         // poses the camera with it.
         const camera = this.view.camera;
-        camera.yawDeg =
-          dest.rotateBy === undefined
-            ? (dest.angle * 180) / Math.PI - 90
-            : camera.yawDeg + (dest.rotateBy * 180) / Math.PI;
+        if (dest.rotateBy === undefined) camera.yawDeg = (dest.angle * 180) / Math.PI - 90;
+        else camera.turnYaw((dest.rotateBy * 180) / Math.PI);
         camera.snapTo({ x: this.player.x, y: this.player.y, z: this.player.eyeZ });
       },
       onCrush: (sectorIndex, dealDamage) =>

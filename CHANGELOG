@@ -5,6 +5,8 @@ Features and improvements
 
 Fixed bugs
   - shots no longer slip through a crusher that has come down
+  - a silent teleporter no longer strands a camera turn (Q/E) part-way through
+  - the camera yaw wraps at ±180° instead of counting up
 
 
 ===============================================================================

@@ -163,6 +163,23 @@ export class TopDownCamera {
     // frame to interpolate out of, or the spawn/teleport snap animates instead.
     this.prevYawDeg = value;
     this.viewYawDeg = value;
+    this.normaliseYaw();
+  }
+
+  /**
+   * Brings `yawDeg` back into (-180°, 180°] by shifting **every** yaw field — the target, both
+   * interpolation ends — by the *same* whole turn. Each of those is read only as a difference or
+   * through trig, so a shared turn changes nothing; wrapping one alone would leave the others a
+   * turn away and send the camera the long way round. docs/camera.md § Camera orbit.
+   */
+  private normaliseYaw(): void {
+    const turns = Math.ceil((this._yawDeg - 180) / 360);
+    if (turns === 0) return;
+    const shift = turns * 360;
+    this._yawDeg -= shift;
+    this.targetYawDeg -= shift;
+    this.prevYawDeg -= shift;
+    this.viewYawDeg -= shift;
   }
 
   /**
@@ -172,6 +189,20 @@ export class TopDownCamera {
    */
   stepYaw(deltaDeg: number): void {
     this.targetYawDeg += deltaDeg;
+  }
+
+  /**
+   * Turns the orbit instantly by `deltaDeg` — the silent teleporter's relative reorient. Unlike a
+   * `yawDeg` assignment it carries a Q/E step still in flight along with it instead of collapsing
+   * the target onto the mid-animation angle, which would abandon the orbit off the 45° lattice.
+   * docs/camera.md § Camera orbit.
+   */
+  turnYaw(deltaDeg: number): void {
+    this._yawDeg += deltaDeg;
+    this.targetYawDeg += deltaDeg;
+    this.prevYawDeg += deltaDeg;
+    this.viewYawDeg += deltaDeg;
+    this.normaliseYaw();
   }
 
   /**
@@ -347,6 +378,7 @@ export class TopDownCamera {
     }
 
     this._yawDeg += (this.targetYawDeg - this._yawDeg) * (1 - Math.exp(-YAW_STEP_SMOOTH_RATE * dt));
+    this.normaliseYaw();
   }
 
   /**
@@ -357,9 +389,9 @@ export class TopDownCamera {
    */
   applyToCamera(alpha: number): void {
     this.viewPoint.copy(this.prevSmoothed).lerp(this.smoothed, alpha);
-    // Both yaws are plain accumulating degrees rather than a wrapped angle
-    // (`stepYaw` adds ±45 without normalising), so a straight lerp is right and
-    // there is no shortest-arc case to handle.
+    // A straight lerp, with no shortest-arc case to handle: `normaliseYaw` only ever shifts both
+    // ends by the same whole turn, so their difference is always the arc actually being turned
+    // through (`stepYaw` adds ±45 without normalising at all).
     const yawDeg = this.prevYawDeg + (this._yawDeg - this.prevYawDeg) * alpha;
     this.viewYawDeg = yawDeg;
 

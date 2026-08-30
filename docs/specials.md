@@ -617,6 +617,10 @@ the two landings themselves — `Player.teleportTo` and `arriveAt` — and reapp
 Boom, since the controller is never told the body's height. A silent arrival keeps `velZ` too, where
 the loud one zeroes all three components.
 
+**The camera turns by the same angle**, through `TopDownCamera.turnYaw` rather than a `yawDeg`
+assignment, so the player's Q/E orbit survives the trip even if a step is still animating —
+docs/camera.md § Camera orbit.
+
 For the thing-destination kind the rotation is `srcLineAngle − markerAngle + 90°`, and vanilla's own
 comment explains the right angle: walking *perpendicularly* across the teleporter line should exit
 in the direction the marker points.

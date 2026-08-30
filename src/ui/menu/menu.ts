@@ -1,6 +1,6 @@
 /**
  * The start menu — launcher and pause screen in one: WAD/level/difficulty selection, the settings
- * and save/load tabs, and the changelog and WAD Library popups. See docs/menu.md.
+ * and save/load tabs, and the About and WAD Library popups. See docs/menu.md.
  */
 import {
   ensureLibraryAccess,
@@ -18,6 +18,7 @@ import {
   type WadSource,
 } from '../../wad/library.ts';
 import { badge, describeMap, describeSource, sourceColumnSpans } from './labels.ts';
+import { AboutUi } from './about.ts';
 import { LibraryUi } from './library.ts';
 import { DEFAULT_SKILL, SKILL_NAMES, type Skill } from '../../game/skill.ts';
 import { getAutorun, setAutorun } from '../../game/player.ts';
@@ -106,9 +107,6 @@ export class Menu {
   private autoSwitchCheckbox = el<HTMLInputElement>('autoswitch-checkbox');
   private fpsCheckbox = el<HTMLInputElement>('fps-checkbox');
   private profilerCheckbox = el<HTMLInputElement>('profiler-checkbox');
-  private changelogRoot = el<HTMLDivElement>('changelog');
-  private changelogText = el<HTMLPreElement>('changelog-text');
-  private changelogLoaded = false;
   private tabButtons = {
     newgame: el<HTMLButtonElement>('tab-button-newgame'),
     save: el<HTMLButtonElement>('tab-button-save'),
@@ -136,6 +134,7 @@ export class Menu {
   };
   private savegames: SavegamesUi;
   private library: LibraryUi;
+  private about = new AboutUi();
 
   private sources: WadSource[] = [];
   /**
@@ -211,7 +210,7 @@ export class Menu {
     this.installAutoSwitch();
     this.installFps();
     this.installProfiler();
-    this.installChangelog();
+    this.installAbout();
     this.setTab('newgame');
     this.setSettingsTab('general');
     // DEVMODE never changes at runtime, so the dev-only row is revealed once.
@@ -275,7 +274,7 @@ export class Menu {
 
   close(): void {
     // Otherwise they would be waiting, still open, the next time the menu comes up.
-    this.closeChangelog();
+    this.about.close();
     this.library.close();
     // Nothing in the menu may keep focus once it's gone: a control that still
     // had it would go on taking keys the game wants (`isTyping`, game/input.ts)
@@ -308,12 +307,12 @@ export class Menu {
    * than in the caller, so a third overlay is one edit and never changes what ESC does elsewhere.
    */
   closeTopOverlay(): boolean {
-    return this.closeChangelog() || this.library.close();
+    return this.about.close() || this.library.close();
   }
 
   /** Whether any of them is up — the same set as `closeTopOverlay`, kept next to it. */
   get hasOverlay(): boolean {
-    return this.changelogOpen || this.library.isOpen;
+    return this.about.isOpen || this.library.isOpen;
   }
 
   /** True once a level can actually be started. */
@@ -586,55 +585,15 @@ export class Menu {
   }
 
   /**
-   * The CHANGELOG reader behind the header's link. Dismissed by the close button, by clicking the
-   * backdrop around the panel, or by ESC — see `closeChangelog` and docs/menu.md § Changelog.
+   * The two header links, each opening `AboutUi` on its own tab — see docs/menu.md § About. The
+   * popup handles its own dismissal; `Menu` only decides when it comes up, and closes it with the
+   * menu (`close`, `closeTopOverlay`).
    */
-  private installChangelog(): void {
-    el<HTMLButtonElement>('changelog-button').addEventListener('click', () => {
-      this.changelogRoot.classList.remove('hidden');
-      // Reopening always starts at the newest entry rather than where the last read left off.
-      this.changelogText.scrollTop = 0;
-      void this.loadChangelog();
-    });
-    el<HTMLButtonElement>('changelog-close').addEventListener('click', () => this.closeChangelog());
-    this.changelogRoot.addEventListener('click', (e) => {
-      if (e.target === this.changelogRoot) this.closeChangelog();
-    });
-  }
-
-  /**
-   * Fills the popup on first open. The file is a *dynamic* `import`, so the bundler resolves it at
-   * build time (no `public/` copy, and nothing that can 404) but parks the text in its own chunk,
-   * downloaded only by someone who actually opens the reader — docs/menu.md § Changelog.
-   *
-   * A failed load is reported in the panel and leaves `changelogLoaded` false, so simply reopening
-   * retries.
-   */
-  private async loadChangelog(): Promise<void> {
-    if (this.changelogLoaded) return;
-    this.changelogText.textContent = 'Loading …';
-    try {
-      const { default: text } = await import('../../../CHANGELOG?raw');
-      this.changelogText.textContent = text.trimEnd();
-      this.changelogLoaded = true;
-    } catch (err) {
-      this.changelogText.textContent = `Could not load the changelog: ${(err as Error).message}`;
-    }
-  }
-
-  /**
-   * Closes the changelog popup, reporting whether it *was* open. `main.ts` calls this first in its
-   * own ESC handler, so one ESC dismisses the popup instead of the whole menu — an explicit
-   * hand-off rather than two window listeners racing over the same key.
-   */
-  private get changelogOpen(): boolean {
-    return !this.changelogRoot.classList.contains('hidden');
-  }
-
-  private closeChangelog(): boolean {
-    if (!this.changelogOpen) return false;
-    this.changelogRoot.classList.add('hidden');
-    return true;
+  private installAbout(): void {
+    el<HTMLButtonElement>('about-button').addEventListener('click', () => this.about.open('about'));
+    el<HTMLButtonElement>('changelog-button').addEventListener('click', () =>
+      this.about.open('changelog'),
+    );
   }
 
   /** `mergedMaps` for a set, from `mapCache` — see that field's doc. */

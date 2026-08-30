@@ -1,7 +1,8 @@
 # Menu, settings, session lifecycle and dev mode
 
-`src/ui/menu/menu.ts`, `src/ui/menu/labels.ts`, `src/ui/menu/library.ts`, `src/ui/menu/menu.html`,
-`src/ui/menu/menu.css` + `src/ui/menu/changelog.css` + `src/ui/menu/library.css`,
+`src/ui/menu/menu.ts`, `src/ui/menu/labels.ts`, `src/ui/menu/about.ts`, `src/ui/menu/library.ts`,
+`src/ui/menu/menu.html` + `src/ui/menu/about.html`,
+`src/ui/menu/menu.css` + `src/ui/menu/about.css` + `src/ui/menu/library.css`,
 `src/main.ts`, `src/constants.ts: DEVMODE`, `src/ui/devmode/`, `src/util/profiler.ts`
 
 The menu is plain DOM: every element is static markup in `src/ui/menu/menu.html` (pulled into the
@@ -49,8 +50,8 @@ fatal-error screen — the whole ladder is one block in `base.css` (docs/styles.
 ladder).
 
 `VERSION` (`constants.ts`) is shown prefixed with `v`, right-aligned on the title's own row
-(`#menu header` is a `space-between` flex row), with the changelog link stacked under it in the same
-`.build` column; a static credit sits bottom-left, outside the panel.
+(`#menu header` is a `space-between` flex row), with the **ABOUT** and **CHANGELOG** links stacked
+under it in the same `.build` column; a static credit sits bottom-left, outside the panel.
 
 ### Hotkeys
 
@@ -59,28 +60,43 @@ ladder).
 
 `F2`, `F3` and `F4` open the menu directly on **Save**, **Load** and **Settings** (`Menu.showTab`,
 wired in `main.ts` beside the `ESC` handler); with the menu already open they only switch tabs.
-Two rules keep them from acting behind the player's back: an overlay up (changelog, WAD Library)
+Two rules keep them from acting behind the player's back: an overlay up (About, WAD Library)
 takes precedence exactly as it does for `ESC`, and `F2` with no level loaded does nothing rather
 than opening the menu on the Save tab `open` hides. `preventDefault` is called only when the key
 actually did something, so a refused press still reaches the browser's own binding.
 
-## Changelog
+## About
 
-The header's **CHANGELOG** link opens `#changelog`, a scrolling reader over the repo's `CHANGELOG`
-file. Two things about it are load-bearing:
+The header's two links open `#about` (`about.ts`, `AboutUi`), a popup with a tab each: **ABOUT**
+opens what this is and what it's built on, **CHANGELOG** a scrolling reader over the repo's
+`CHANGELOG` file. The link decides the tab — `open(tab)` takes it, nothing is remembered between
+opens.
 
-- The text is a **dynamic** `import('../../../CHANGELOG?raw')`, run on first open (`loadChangelog`).
-  Dynamic, because the file only grows and nobody who never opens the reader should pay for it: the
-  bundler gives it its own chunk (~12 kB, 5 kB gzipped) instead of the main one. `import` rather
-  than `fetch`, because the file lives at the repo root rather than under `public/`, so a fetch
-  would resolve in dev and 404 in a build. A failed load is reported in the panel and leaves the
-  popup unmarked as loaded, so reopening retries.
+Load-bearing:
+
+- The changelog text is a **dynamic** `import('../../../CHANGELOG?raw')`, run the first time that
+  tab is shown (`loadChangelog`). Dynamic, because the file only grows and nobody who never opens
+  the tab should pay for it: the bundler gives it its own chunk (~12 kB, 5 kB gzipped) instead of
+  the main one. `import` rather than `fetch`, because the file lives at the repo root rather than
+  under `public/`, so a fetch would resolve in dev and 404 in a build. A failed load is reported in
+  the panel and leaves the popup unmarked as loaded, so reopening retries.
 - **`ESC` is handed off explicitly**, not raced. `main.ts`'s `ESC` listener calls
   `menu.closeTopOverlay()` first, which dismisses whichever overlay is up and reports whether there
   was one — so one `ESC` dismisses the popup and leaves the menu (and a paused level) alone. A
   second window listener in `Menu` would have made that depend on registration order.
+- The tabs are `#menu`'s own `.tabs`/`.tab-panels` markup, so the popup inherits the tab bar and
+  the one-grid-cell panel stacking (§ One screen, two jobs) rather than restating either. Each
+  panel is its own scroller, which is what keeps the CHANGELOG inside the panel instead of
+  stretching it.
+- **The panel's height is fixed** (`height: min(90%, 620px)`), not capped. The tabs share one grid
+  cell sized to the tallest of them, so a panel free to shrink sits at the About tab's own height
+  until the CHANGELOG is first measured and then jumps to the cap.
+- **The contact address is not in the markup**: `about.ts` holds it ROT13'd and writes the link's
+  text and `mailto:` at construction, so neither the partial nor a text scrape of the bundle yields
+  anything mailable. It stops harvesters that don't run the page — which is most of them, and all
+  this can do from a static page.
 
-`#changelog` is a child of `#menu` so it disappears with it; `close()` also closes it, or it would
+`#about` is a child of `#menu` so it disappears with it; `Menu.close()` also closes it, or it would
 still be up the next time the menu opens.
 
 ## WAD Library
@@ -91,7 +107,7 @@ anything dropped on the menu. It replaced two buttons — `Load IWAD from disk�
 `Add PWAD from disk…` — which between them could only ever add one file at a time and forgot it on
 reload.
 
-Structurally it is `#changelog`'s twin, and deliberately so (§ Changelog): a child of `#menu` so
+Structurally it is `#about`'s twin, and deliberately so (§ About): a child of `#menu` so
 closing the menu can never leave it up, at `z-index: 5` **local to `#menu`'s own stacking context**
 rather than a rung of `base.css`'s global ladder, dismissed by its close button, by a backdrop click
 guarded with `e.target === root`, or by `ESC`. `Close` sits beside `Apply` in the footer rather than
@@ -468,7 +484,7 @@ format, apply order and WAD-identity rules are docs/savegames.md's. What is the 
 - **Delete and Overwrite confirm by being held** (`hold.ts: confirmOnHold`, `HOLD_MS` — shared with
   the WAD Library's Forget, and styled by the class alone in `hold.css` so any `#menu` button can
   wear it): a bar sweeps the button and the action fires when it lands, letting go early cancels and
-  says so in the status line. An inline confirm, so the changelog stays the menu's only popup — and
+  says so in the status line. An inline confirm, so About stays the menu's only reader popup — and
   one gesture rather than the two-click arm it replaced, which read as a broken button. The sweep is
   a CSS transition whose duration is handed over as `--hold-time`, so the bar and the timer can't
   disagree; the label moves into a `.label` span so the `.fill` can paint behind it, and Space/Enter

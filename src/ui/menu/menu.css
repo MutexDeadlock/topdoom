@@ -20,7 +20,7 @@
  * A column capped at the viewport (the 48px is #menu's own padding), so a panel
  * whose content wants more height — the save lists, which fill whatever is left
  * — scrolls inside itself instead of growing off-screen. Direct child on
- * purpose: the changelog popup is a `.panel` inside #menu too and sizes itself.
+ * purpose: the About popup is a `.panel` inside #menu too and sizes itself.
  */
 #menu > .panel {
   width: 100%;
@@ -30,7 +30,7 @@
 }
 
 /*
- * The title sits on the *last* baseline of the row — the changelog link's, not the version's above
+ * The title sits on the *last* baseline of the row — the popup links', not the version's above
  * it. Plain `baseline` hangs the title off the first line of the `.build` column, leaving it riding
  * high once that column has two lines in it. No fallback declaration: the CSS minifier drops a
  * duplicated property, and every browser that can run a WebGL2 game handles `last baseline`.
@@ -52,12 +52,17 @@
   color: var(--accent);
 }
 
-/* The title row's right-hand side: the version, with the changelog link under it. */
+/* The title row's right-hand side: the version, with the two popup links under it. */
 #menu .build {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 4px;
+}
+
+#menu .build .links {
+  display: flex;
+  gap: 14px;
 }
 
 #menu-version {

@@ -4,7 +4,10 @@
       <h1>TOPDOOM</h1>
       <div class="build">
         <span id="menu-version"></span>
-        <button class="link" id="changelog-button">CHANGELOG</button>
+        <div class="links">
+          <button class="link" id="about-button">ABOUT</button>
+          <button class="link" id="changelog-button">CHANGELOG</button>
+        </div>
       </div>
     </header>
 
@@ -236,17 +239,9 @@
   </div>
 
   <!-- Inside #menu, so closing the menu can never leave the popup up on its own. -->
-  <div id="changelog" class="overlay hidden">
-    <div class="panel">
-      <header>
-        <h2>Changelog</h2>
-        <button id="changelog-close">Close</button>
-      </header>
-      <pre id="changelog-text"></pre>
-    </div>
-  </div>
+  <!-- @include ./about.html -->
 
-  <!-- Beside the changelog, and inside #menu for the same reason. -->
+  <!-- Beside the About popup, and inside #menu for the same reason. -->
   <div id="wadlibrary" class="overlay hidden">
     <div class="panel">
       <header>

@@ -1,5 +1,5 @@
 /*
- * The WAD Library overlay — docs/menu.md § WAD Library. A sibling of #changelog in every structural
+ * The WAD Library overlay — docs/menu.md § WAD Library. A sibling of #about in every structural
  * way: a child of #menu, so it can only exist while the menu is up, at a z-index local to #menu's
  * own stacking context rather than a rung of base.css's global ladder.
  */

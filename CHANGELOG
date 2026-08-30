@@ -1,12 +1,13 @@
 v0.16.3 (2026-08-30)
 
 Many behind-the-scenes refactorings and cleanup.
-Features noted here are done in a nice Twitch livestream, bringing gameplay
-in a much better shape.
+Most features and fixes noted here are done in a nice Twitch livestream, 
+bringing gameplay in a much better shape.
 Next stop: v0.17.0
 
 Features and improvements
-  - automatic weapon switching; toggle in Settings / General
+  - automatic weapon switching: toggle in Settings / General
+  - About screen in the menu header, with the changelog as its second tab
 
 Fixed bugs
   - monsters now open the doors they walk into

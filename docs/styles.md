@@ -26,8 +26,9 @@ src/ui/hud/           everything drawn over the running level (docs/hud.md's own
     intermission.*    #intermission
     deathoverlay.*    #death-overlay
 src/ui/menu/
-    menu.css/.html    #menu, and #changelog inside it
-    changelog.css     #changelog's own rules and its #menu button.link trigger
+    menu.css/.html    #menu
+    about.*           #about, the About/Changelog popup inside #menu, and its
+                      #menu button.link triggers
     savegames.css     the save/load lists inside #menu's tab panels
     library.css       #wadlibrary, the WAD Library overlay inside #menu
     hold.css          .hold/.holding, the press-and-hold confirm on any #menu button
@@ -49,9 +50,9 @@ after somewhere else. It is imported after `menu.css` so `#menu button.hold` fol
 rules it sits alongside; the two set disjoint properties, so the order is for reading, not cascade.
 
 Two modules drive parts of markup they don't own the *element* of, and so have no `.html`:
-`savegames.ts` fills panels inside `#menu`, and the changelog popup is driven by `menu.ts` itself.
-`crosshair.ts` and `wadfont.ts` have neither file — one writes a data-URI cursor, the other only
-rasterizes glyphs.
+`savegames.ts` fills panels inside `#menu`, and `library.ts` drives `#wadlibrary`, whose markup sits
+in `menu.html` beside the `@include` of `about.html`. `crosshair.ts` and `wadfont.ts` have neither
+file — one writes a data-URI cursor, the other only rasterizes glyphs.
 
 ## Assembling the page
 
@@ -137,7 +138,7 @@ would only be a near-miss.
 
 One further documented exception:
 
-- **`#changelog { z-index: 5 }`** is inside `#menu`'s stacking context, not on the global ladder.
+- **`#about { z-index: 5 }`** is inside `#menu`'s stacking context, not on the global ladder.
 
 ### The stacking ladder
 
@@ -186,7 +187,7 @@ profiler bar widths. There are no `@keyframes`, `@font-face` or `@media` rules a
 UI is one monospace stack declared once in `base.css`.
 
 The **scrollbars are page-wide too**, and are a look rather than a class — declared in `base.css`
-right after the reset, because the menu panels, the changelog reader and the error screen would
+right after the reset, because the menu panels, the About popup and the error screen would
 otherwise each repeat it: `scrollbar-width`/`scrollbar-color` on `html` (the latter inherits, so the
 root declaration reaches every scroller), plus a `::-webkit-scrollbar` block giving the same slim,
 track-less bar on engines that don't support the standard properties. The two are alternatives, not

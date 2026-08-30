@@ -75,7 +75,7 @@ canvas {
 }
 
 /*
- * The full-screen overlay root — #menu, #loading, #fatal-error, #changelog, #wadlibrary,
+ * The full-screen overlay root — #menu, #loading, #fatal-error, #about, #wadlibrary,
  * #intermission, #end-card, #death-overlay. Each keeps only what makes it itself: its rung on the
  * stacking ladder, its background, its padding. Unlike `.hidden` this takes no `!important` and
  * wants none — an ID rule beating it is how an overlay refines it (#death-overlay's column).

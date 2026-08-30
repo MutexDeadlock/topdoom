@@ -1,0 +1,118 @@
+/* Text links rather than buttons, since they open a reader and change nothing. */
+#menu button.link {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--fg-dim);
+  text-decoration: underline;
+}
+
+#menu button.link:hover:not(:disabled) {
+  color: #fff;
+}
+
+/*
+ * A child of #menu (whose own z-index 20 is the stacking context this sits in), so it covers the
+ * menu panel and nothing else — the popup only ever exists while the menu is up. The 5 below is
+ * local to that context and is *not* the --z-tint rung of base.css's global ladder.
+ */
+#about {
+  z-index: 5;
+  padding: 24px;
+  background: rgba(6, 6, 8, 0.8);
+}
+
+/*
+ * Column layout at a *fixed* height, so the tab bar and Close stay put and the active tab scrolls
+ * inside the panel. Fixed rather than capped: the tabs share one grid cell sized to the tallest of
+ * them (docs/menu.md § One screen, two jobs), so a panel free to shrink would jump from the About
+ * tab's own height to the cap the moment the CHANGELOG's is measured.
+ */
+#about .panel {
+  width: 100%;
+  max-width: 720px;
+  height: min(90%, 620px);
+  padding: 20px 24px 22px;
+}
+
+/* The tab row sits in the header beside Close, so the rule under it is the header's own (from
+   #menu header) rather than the one #menu .tabs draws — one line, not two stacked. The tabs keep
+   their -1px margin, so the active tab's accent still overlaps that rule. */
+#about header {
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+#about .tabs {
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+#about .tab-panels {
+  padding-top: 18px;
+}
+
+/* An even 20px above every heading, whatever precedes it: #menu section's own bottom margin is
+   larger than a paragraph's, so the two are split between the section's own two margins. */
+#about section {
+  margin: 8px 0 12px;
+}
+
+#about p {
+  margin: 0 0 12px;
+  color: var(--fg-button);
+}
+
+#about .lead {
+  color: var(--fg);
+}
+
+/* The closing attribution and licence note, quieter than the body above it and pushed to the
+   panel's bottom edge, whatever height the tab's own content leaves over. */
+#about .fineprint {
+  margin-top: auto;
+  padding-top: 8px;
+  font-size: 11px;
+  color: var(--fg-faint);
+}
+
+/* Two columns, the label track sized to that list's own longest term — the lists have terms of
+   very different lengths, and one track wide enough for all of them would strand the short ones. */
+#about .facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 16px;
+  margin: 0;
+}
+
+#about .facts dt {
+  color: var(--fg-faint);
+}
+
+#about .facts dd {
+  margin: 0;
+  color: var(--fg-button);
+}
+
+#about a {
+  color: var(--accent-text-hover);
+}
+
+#about a:hover {
+  color: #fff;
+}
+
+/* The one inline code span, in the WAD name the Game data section names. */
+#about code {
+  color: var(--fg);
+}
+
+#about pre {
+  margin: 0;
+  /* The file is hand-wrapped, but a long line still has to wrap rather than scroll sideways. */
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--fg-button);
+}

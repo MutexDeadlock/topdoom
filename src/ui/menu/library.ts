@@ -279,7 +279,7 @@ export class LibraryUi {
   /**
    * Closes the overlay **without applying anything**, reporting whether it *was* open — `main.ts`'s
    * ESC handler asks this first, so one ESC dismisses the overlay and leaves the menu (and a paused
-   * level) alone. The same explicit hand-off `closeChangelog` gets, rather than two listeners
+   * level) alone. The same explicit hand-off `AboutUi.close` gets, rather than two listeners
    * racing over one key.
    */
   close(): boolean {

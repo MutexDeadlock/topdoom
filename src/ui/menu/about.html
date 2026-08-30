@@ -1,0 +1,89 @@
+<div id="about" class="overlay hidden">
+  <div class="panel">
+    <header>
+      <div class="tabs">
+        <button class="tab" id="about-tab-button-about" data-tab="about">About</button>
+        <button class="tab" id="about-tab-button-changelog" data-tab="changelog">Changelog</button>
+      </div>
+      <button id="about-close">Close</button>
+    </header>
+
+    <div class="tab-panels">
+      <div class="tab-panel" id="about-tab-about">
+        <p class="lead">
+          An experimental DOOM engine with a top-down view and twin-stick shooter gameplay.
+        </p>
+
+        <section>
+          <h2>Credits</h2>
+          <dl class="facts">
+            <dt>A project by</dt>
+            <!-- The address itself is never in the markup — `about.ts` writes it into the link. -->
+            <dd>Fauler - <a id="about-mail"></a></dd>
+            <dt>Additional playtest</dt>
+            <dd>Wombat</dd>
+            <dt>Source</dt>
+            <dd>
+              <!-- The tags hug the text: a newline inside the anchor is a space, and it underlines. -->
+              <a href="https://github.com/MutexDeadlock/topdoom" target="_blank" rel="noreferrer"
+                >github.com/MutexDeadlock/topdoom</a
+              >
+              (will go public soon!)
+            </dd>
+            <dt>License</dt>
+            <dd>GPL-2.0</dd>
+            <dt>Built with</dt>
+            <dd>
+              <a href="https://www.typescriptlang.org/" target="_blank" rel="noreferrer">TypeScript</a>,
+              <a href="https://threejs.org/" target="_blank" rel="noreferrer">three.js</a>,
+              <a href="https://vite.dev/" target="_blank" rel="noreferrer">Vite</a>,
+              <a href="https://code.visualstudio.com/" target="_blank" rel="noreferrer">VS Code</a>,
+              <a href="https://claude.com/claude-code" target="_blank" rel="noreferrer">Claude Code</a>
+            </dd>
+            <dt>Other used tools</dt>
+            <dd>
+              <a href="https://slade.mancubus.net/" target="_blank" rel="noreferrer">SLADE</a>,
+              <a href="https://www.gimp.org/" target="_blank" rel="noreferrer">GIMP</a>
+            </dd>
+          </dl>
+        </section>
+
+        <section>
+          <h2>Game data</h2>
+          <p>
+            Whatever you add stays yours: All content you add are read out
+            of the file(s) on your own machine, and nothing is uploaded anywhere.
+          </p>
+        </section>
+
+        <section>
+          <h2>More quality content from Fauler</h2>
+          <dl class="facts">
+            <dt>X</dt>
+            <dd>
+              <a href="https://x.com/fauler420" target="_blank" rel="noreferrer">@fauler420</a>
+            </dd>
+            <dt>YouTube</dt>
+            <dd>
+              <a href="https://www.youtube.com/@Fauler420" target="_blank" rel="noreferrer">@Fauler420</a>
+            </dd>
+          </dl>
+        </section>
+
+        <p class="fineprint">
+          DOOM and DOOM II are id Software's. This is a fan-made engine, not affiliated with or
+          endorsed by id Software or ZeniMax.<br />
+          The original DOOM source is GPL-2.0 and this engine is
+          matched against it, but ports none of its code.<br />
+          The bundled shareware <code>DOOM1.WAD</code> is id Software's, redistributed under its 
+          own shareware terms.<br />
+          Freedoom is BSD-licensed.
+        </p>
+      </div>
+
+      <div class="tab-panel" id="about-tab-changelog">
+        <pre id="changelog-text"></pre>
+      </div>
+    </div>
+  </div>
+</div>

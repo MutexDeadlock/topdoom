@@ -12,8 +12,8 @@ const HOLD_MS = 500;
 
 /**
  * Turns `button` into a press-and-hold confirm. The action fires when the fill lands; letting go
- * early cancels it and puts `hint` in the status line. An inline confirm, so the changelog stays
- * the menu's only popup (docs/menu.md § Changelog).
+ * early cancels it and puts `hint` in the status line. An inline confirm, so About stays the
+ * menu's only reader popup (docs/menu.md § About).
  *
  * The label moves into a `.label` span so the `.fill` bar can sit behind it, and the fill's own
  * duration is handed to CSS as `--hold-time` — one number, so the bar can't finish at a different

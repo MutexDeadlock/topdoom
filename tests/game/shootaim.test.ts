@@ -31,7 +31,7 @@ describe('game · shoot-line auto-aim', () => {
     return { grid, world: new World(grid.map), line: grid.westEdge(1, 1) };
   }
 
-  /** A shot leaves the player 32 above the floor (`AIM_HEIGHT_OFFSET`); this fixture's floors are at 0. */
+  /** The height a shot leaves the player at (`AIM_HEIGHT_OFFSET`-ish); this fixture's floors are at 0. */
   const FIRE_Z = 32;
 
   test('a solid face is aimed at flat, at the point the pointer is over', () => {

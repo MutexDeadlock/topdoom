@@ -95,13 +95,13 @@ and the shot keep the lock (docs/combat.md § Auto-aim).
 
 **The aim plane sits at `TopDownCamera.followHeight`, not at the player's own `z`.** The two are the
 same height once the follow smoother has caught up — the camera is handed `eyeZ` and the plane sits
-`AIM_HEIGHT_OFFSET` below that — but they part company during a fall, and that is exactly when it
-matters: the camera lags by up to the whole drop for about a third of a second, so a plane pinned to
-the player's live `z` drifts away from the camera under it, moving the cursor's world point and
-turning the player toward it. Deriving the plane from the camera locks the two together, so a fall
-pans the view and changes nothing else. Boom's deep water (docs/specials.md § Deep water) is what
-surfaced this: 242 is render-only, so walking into a pool drawn as a flat sheet of water still drops
-the player up to 200 units, with nothing on screen to explain the swing.
+`EYE_HEIGHT - AIM_HEIGHT_OFFSET` below that — but they part company during a fall, and that is
+exactly when it matters: the camera lags by up to the whole drop for about a third of a second, so a
+plane pinned to the player's live `z` drifts away from the camera under it, moving the cursor's
+world point and turning the player toward it. Deriving the plane from the camera locks the two
+together, so a fall pans the view and changes nothing else. Boom's deep water (docs/specials.md
+§ Deep water) is what surfaced this: 242 is render-only, so walking into a pool drawn as a flat
+sheet of water still drops the player up to 200 units, with nothing on screen to explain the swing.
 
 ## Auto camera (`game/autocamera.ts`, `camera.ts`)
 

@@ -1,3 +1,11 @@
+v0.17.3 (2026-0?-??)
+
+Fixed bugs
+  - shots no longer slip through a crusher that has come down
+
+
+===============================================================================
+
 v0.16.3 (2026-08-30)
 
 Many behind-the-scenes refactorings and cleanup.

@@ -1643,18 +1643,29 @@ export class World {
       return t < 0 ? null : t;
     };
 
-    if (!lock) {
-      // Walked along the trace, not gathered from a radius box around its start:
-      // a missile's `range` is the whole map (see `World.mapSpan`), and
-      // `linesNear` is O(range²) in cells for what is one thin line.
+    /**
+     * Walks the trace at one fixed slope and stops it at the nearest line that refuses it — the
+     * free shot's whole test, and the locked branch's fallback below.
+     *
+     * Walked along the trace, not gathered from a radius box around its start: a missile's
+     * `range` is the whole map (see `World.mapSpan`), and `linesNear` is O(range²) in cells for
+     * what is one thin line.
+     */
+    const traceRay = (raySlope: number): void => {
+      nearestT = 1;
+      blockingLine = null;
       this.forEachLineAlongSegment(x, y, tx, ty, (i) => {
         const t = crossingT(i);
         if (t === null || t >= nearestT) return;
-        if (this.blocksShot(i, z + slope * maxRange * t)) {
+        if (this.blocksShot(i, z + raySlope * maxRange * t)) {
           nearestT = t;
           blockingLine = i;
         }
       });
+    };
+
+    if (!lock) {
+      traceRay(slope);
     } else {
       // Vanilla's P_AimLineAttack wedge — see this function's doc. Crossings have
       // to be walked nearest-first for the narrowing to mean anything, so unlike
@@ -1699,11 +1710,19 @@ export class World {
           break;
         }
       }
-      // `PTR_AimTraverse`'s `aimslope`, the middle of what survived, plus the
-      // pellet's own jitter — docs/combat.md § shotPath for why the shot is aimed
-      // at the wedge rather than at the target, and why the jitter comes after. A
-      // collapsed wedge keeps the raw slope: the shot stops at that line anyway.
-      aimSlope = (topSlope > bottomSlope ? (bottomSlope + topSlope) / 2 : slope) + lock.slopeOffset;
+      if (blockingLine !== null && nearestT * maxRange < toTarget) {
+        // Geometry stopped the wedge short of the target: `P_AimLineAttack` with
+        // no `linetarget`, which returns slope 0 rather than `aimslope`
+        // (`p_map.c`). The shot is fired flat and re-traced flat, so it ends
+        // where a flat shot stops. docs/combat.md § shotPath.
+        aimSlope = lock.slopeOffset;
+        traceRay(0);
+      } else {
+        // `PTR_AimTraverse`'s `aimslope`, the middle of what survived, plus the
+        // pellet's own jitter — docs/combat.md § shotPath for why the shot is aimed
+        // at the wedge rather than at the target, and why the jitter comes after.
+        aimSlope = (bottomSlope + topSlope) / 2 + lock.slopeOffset;
+      }
     }
 
     const dist = maxRange * nearestT;

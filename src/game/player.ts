@@ -23,10 +23,11 @@ export const PLAYER_MASS = 100;
  * Height above the feet a weapon fires from, and the plane the mouse cursor
  * is projected onto for aiming (`game.ts`'s `camera.pointerToPlane`) — the two
  * have to match, or a tracer/projectile would visibly start from a different
- * height than where the crosshair appears to be. A monster's own equivalent is
+ * height than where the crosshair appears to be. The value is vanilla's `shootz`
+ * (`p_map.c`) — docs/combat.md § shotPath. A monster's own equivalent is
  * `game/monsters/defs.ts`'s `MONSTER_FIRE_HEIGHT`.
  */
-export const AIM_HEIGHT_OFFSET = 32;
+export const AIM_HEIGHT_OFFSET = PLAYER_HEIGHT / 2 + 8;
 
 /**
  * Vanilla's own ticcmd move tables (`g_game.c`'s `forwardmove`/`sidemove`),

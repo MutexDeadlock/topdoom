@@ -57,6 +57,13 @@ step would clear the wedge, fly at the raw slope straight through the step, and 
 wall. With nothing narrowing the wedge the midpoint *is* the target's centre, so an ordinary
 open-room shot is unchanged.
 
+**A wedge stopped short of the target fires flat.** `P_AimLineAttack` returns `aimslope` only when
+its traverse reached a thing; with `linetarget` null it returns 0 (`p_map.c`), and the shot goes out
+flat. `shotPath` re-traces the flat ray, so the shot also *ends* where a flat one does. Without it
+the lock bought a slope no aim ever found: on DOOM2 MAP04 a pellet clicked at a monster past the
+shut crusher corridor (sector 76, floor 24, ceiling down at 32 against neighbour floors of 32) took
+the slot left under that ceiling and flew ~200 units on past the crusher.
+
 The span the wedge starts from is the target's **real body** — `ShotLock.halfHeight`, half its
 `mobjinfo.height`, around an aim point that is the body's centre (both derived in
 `spawnPlayerShot` from the `MonsterRef` the lock handed it). Vanilla measures
@@ -89,7 +96,11 @@ expected, since sight samples sector floors/ceilings at discrete points while th
 against exact line openings.
 
 Both modes start at the shooter's own height, never the target's — using the target's made tracers
-and projectiles visibly begin in mid-air rather than at the gun. Blocking is evaluated at the
+and projectiles visibly begin in mid-air rather than at the gun. For the player that height is
+`AIM_HEIGHT_OFFSET` (`game/player.ts`), vanilla's `shootz` = `z + (height>>1) + 8` = 36, which is
+also the plane the cursor is projected onto (docs/camera.md § Aim lead). The flat 32 it was is 4
+units low and sits *exactly on* any floor 32 above the shooter's own — MAP04's crusher corridor, so
+every shot crossing it fitted under the shut crusher. Blocking is evaluated at the
 interpolated height where the ray crosses each candidate line, not one height for the whole flight.
 Candidate lines are extended `WALL_OVERLAP` past both ends — two walls meeting at a shared vertex
 otherwise let a shot aimed at that corner slip between them. Shots, projectile steps and the fog's
